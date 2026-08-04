@@ -149,7 +149,8 @@ mod tests {
             .unwrap();
         assert_eq!(item.state, WorkState::AwaitingReview);
 
-        let env = item.environment.clone().unwrap();
+        let attempt_id = item.attempts[0].id.clone();
+        let env = item.environment_for_attempt(&attempt_id).cloned().unwrap();
         let sealed_head = forge.git().head_oid(&env.worktree).unwrap();
         let manifest: EvidenceManifest = serde_json::from_str(
             &fs::read_to_string(
@@ -164,8 +165,8 @@ mod tests {
         let decision = ReviewDecision {
             id: ReviewDecisionId::new(),
             actor: actor(),
-            attempt_id: item.attempts[0].id.clone(),
-            environment_generation: 1,
+            attempt_id,
+            environment_generation: env.generation,
             evidence_id: manifest.evidence_id.clone(),
             evidence_digest: manifest.bundle_digest.clone().unwrap(),
             baseline_oid: baseline.clone(),

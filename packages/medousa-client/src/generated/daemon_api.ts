@@ -88,6 +88,23 @@ export interface InteractiveTurnResponse {
   turn_id: string;
 }
 
+export type AgentModeId = "general" | "coder";
+
+export interface CodeIntentContext {
+  active_path?: string | null;
+  containing_symbol?: string | null;
+  cursor_line?: number | null;
+  diagnostics?: string[];
+  last_verification?: string | null;
+  open_files?: string[];
+  outcome?: string | null;
+  project_title?: string | null;
+  selected_text?: string | null;
+  selection_end_line?: number | null;
+  selection_start_line?: number | null;
+  work_id?: string | null;
+}
+
 export interface HostContextPosition {
   character: number;
   line: number;
@@ -157,6 +174,9 @@ export interface TurnSurfaceContext {
 
 export interface InteractiveTurnRequest {
   additional_manuscript_ids?: string[] | null;
+  agent_mode?: AgentModeId | null;
+  code_context?: CodeIntentContext | null;
+  code_project_setup_authorized?: boolean;
   host_context?: HostTurnContext | null;
   identity_user_id?: string | null;
   manuscript_id?: string | null;
@@ -176,4 +196,121 @@ export interface InteractiveTurnRequest {
   surface?: TurnSurfaceContext | null;
   voice_appendix?: string | null;
   voice_preset_id?: string | null;
+}
+
+export type AgentModeScope = "session" | "task";
+
+export interface SetSessionAgentModeRequest {
+  expires_at_utc?: string | null;
+  mode: AgentModeId;
+  scope?: AgentModeScope;
+  task_id?: string | null;
+}
+
+export interface AgentModeLeaseResponse {
+  acquired_at_utc: string;
+  expires_at_utc?: string | null;
+  lease_id: string;
+  mode: AgentModeId;
+  task_id: string;
+}
+
+export type AgentModeSource = "default" | "session" | "task" | "turn";
+
+export interface SessionAgentModeResponse {
+  effective_mode: AgentModeId;
+  effective_source: AgentModeSource;
+  revision: number;
+  selected_mode?: AgentModeId | null;
+  session_id: string;
+  task_lease?: AgentModeLeaseResponse | null;
+  updated_at_utc?: string | null;
+}
+
+export interface AgentModeAvailability {
+  available: boolean;
+  contract_revision?: string | null;
+  label: string;
+  mode: AgentModeId;
+  unavailable_reason?: string | null;
+}
+
+export interface AgentModeListResponse {
+  modes: AgentModeAvailability[];
+}
+
+export type AgentModeAutoAccept = "never" | "task" | "all";
+
+export interface AgentModeTransitionPolicy {
+  auto_accept?: AgentModeAutoAccept;
+  proposal_ttl_seconds: number;
+}
+
+export type AgentModeProposalResolution = "user_accepted" | "user_denied" | "auto_accepted" | "expired";
+
+export type AgentModeProposalStatus = "pending" | "accepted" | "denied" | "expired";
+
+export interface AgentModeProposalResponse {
+  created_at_utc: string;
+  expires_at_utc: string;
+  from_mode: AgentModeId;
+  proposal_id: string;
+  reason: string;
+  resolution?: AgentModeProposalResolution | null;
+  resolved_at_utc?: string | null;
+  scope: AgentModeScope;
+  session_id: string;
+  status: AgentModeProposalStatus;
+  task_id?: string | null;
+  to_mode: AgentModeId;
+}
+
+export interface AgentModeProposalListResponse {
+  proposals: AgentModeProposalResponse[];
+}
+
+export interface SessionCodeBindingResponse {
+  session_id: string;
+  updated_at_utc?: string | null;
+  work_id?: string | null;
+}
+
+export type CodeProjectSource = "blank" | "repository";
+
+export interface StartSessionCodeProjectRequest {
+  base_ref?: string | null;
+  brief: string;
+  repo_path?: string | null;
+  source?: CodeProjectSource;
+  title: string;
+}
+
+export interface SessionCodeProjectResponse {
+  base_ref: string;
+  brief: string;
+  created_repository: boolean;
+  human_phase: string;
+  repo_path: string;
+  session_id: string;
+  state: string;
+  title: string;
+  work_id: string;
+  worktree: string;
+}
+
+export type TurnTicketMode = "interactive" | "background";
+
+export type TurnTicketPhase = "accepted" | "streaming" | "worker_handoff" | "workshop_handoff" | "budget_blocked" | "done" | "error" | "cancelled";
+
+export interface TurnTicketRecord {
+  composer_handoff: boolean;
+  mode: TurnTicketMode;
+  phase: TurnTicketPhase;
+  prompt_preview: string;
+  session_id: string;
+  started_at: string;
+  stream_url: string;
+  turn_id: string;
+  updated_at: string;
+  workspace_card_id?: string | null;
 }

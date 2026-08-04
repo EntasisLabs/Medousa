@@ -79,6 +79,30 @@ Domain `coding` in `tool_bootstrap` (worker lane) — unlocked via
 `cognition_shell_session_status`, `cognition_shell_session_run`,
 `cognition_shell_session_interrupt`.
 
+`cognition_code_read` keeps whole-file reads for model-safe files and returns a
+SHA-256 content digest. Oversized whole-file requests return a successful
+`orientation_required` observation with size, digest/line metadata when a
+bounded scan is safe, and suggested line/byte range calls. Ranged reads return
+exact coverage plus a continuation call; payload limits are navigation
+boundaries rather than opaque failures. Every
+`cognition_code_apply_patch` call must present that digest as
+`expected_sha256` (or `missing` when creating a file), so stale observations
+fail before mutation. Reads, writes, recursive search, and shell output have
+hard payload limits; symlinks cannot be used to escape an allowed root.
+
+The shared tool loop adds a zero-persistence perception governor after tool
+execution. Authoritative invocation outputs still drive receipts and UI events;
+only the copy returned to the next model inference is bounded. Each round has a
+fixed 96 Ki-character observation envelope, priority metadata and actionable
+orientation survive truncation, and repeated identical failures collapse into
+an occurrence-counted cluster so retries must change course.
+
+The governor also emits compact debug telemetry and process-level counters for
+bounded re-queryable, reference-replayable, and non-replayable observations.
+Only oversized non-replayable results contribute to `would_spool` counts and
+byte volume. These measurements retain no tool payload, path, or content and
+therefore do not create a disk-growth path.
+
 One-shot `cognition_shell_run` remains for non-coding probes; coding mode
 prefers the shared session. Default interactive palette is unchanged.
 

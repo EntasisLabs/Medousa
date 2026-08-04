@@ -76,6 +76,7 @@ pub async fn delete_session(
     crate::session_catalog::delete_catalog_row(session_id);
     crate::shared_session_catalog::delete_shared_row(session_id);
     crate::session_meta_store::delete_session_meta(session_id);
+    crate::agent_mode_state::delete_session_mode_state(session_id);
     crate::verification_store::delete_verifications_for_session(session_id);
     crate::tool_bootstrap::delete_session_tool_surface(session_id);
     remove_turn_ledger_dir(session_id);

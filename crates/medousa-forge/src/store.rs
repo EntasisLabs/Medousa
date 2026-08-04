@@ -501,6 +501,7 @@ mod tests {
                 EventPayload::OperationStarted {
                     operation_id: op.clone(),
                     kind: crate::events::OperationKind::Provision,
+                    attempt_id: None,
                 },
             )
             .unwrap();

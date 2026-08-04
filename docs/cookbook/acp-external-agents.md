@@ -106,7 +106,7 @@ Forge undertaking's governed worktree instead of a bare chat:
 ```text
 register + provision via /v1/forge   →   work item Ready with a worktree
 POST /v1/agents/sessions { work_id, runtime: "cursor" | "codex" }
-        → cwd forced to the worktree, lease begins on first prompt
+        → isolated lease acquired first, provider cwd forced to its worktree
 prompt(s) → heartbeats + command-log staging beside the chat SSE stream
 POST /v1/forge/leases/{id}/complete → seal + evidence (explicit — never auto)
 cancel    → interrupt_attempt; ACP *wire* sessionId stashed as ResumeSupported

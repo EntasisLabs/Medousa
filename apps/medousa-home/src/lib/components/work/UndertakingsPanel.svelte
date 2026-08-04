@@ -529,6 +529,7 @@
       const result = await restoreReviewFile(detail!.id, {
         path: comparison.path,
         expected_reviewed_oid: comparison.reviewed_oid,
+        attempt_id: comparison.attempt_id,
       });
       undertakings.setActiveFromItem(result.item);
       await undertakings.refreshDetail();
@@ -554,6 +555,7 @@
     await run(async () => {
       providerHandoff = await shareProviderHandoff(detail!.id, {
         title: detail!.title,
+        attempt_id: review?.attempt_id ?? undefined,
       });
       if (providerHandoff.review_url) {
         window.open(providerHandoff.review_url, "_blank", "noopener,noreferrer");
@@ -824,7 +826,7 @@
               <div
                 class="absolute right-0 top-full z-30 mt-1 w-52 rounded-lg border border-surface-500/40 bg-surface-900 p-1.5 shadow-xl"
               >
-                {#if !agentRunning && actions?.start_agent.allowed}
+                {#if actions?.start_agent.allowed}
                   <button
                     type="button"
                     class="secondary-action"
@@ -937,6 +939,7 @@
                   {busy}
                   onOpenFile={(path, line) => revealLocation({ path, line })}
                   onRestore={restoreReviewedFile}
+                  onSelectCandidate={(attemptId) => undertakings.selectReviewAttempt(attemptId)}
                 />
 
                 {#if review.policy && (review.policy.violations.length || review.policy.capture_risks.length)}

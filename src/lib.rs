@@ -179,6 +179,7 @@ pub mod session_lifecycle;
 pub mod session_retention;
 pub mod locus_semantic_tags;
 pub mod session_meta_store;
+pub mod agent_mode_state;
 pub mod surreal_config;
 pub mod settings_guard;
 pub mod stage_route_command_runtime;

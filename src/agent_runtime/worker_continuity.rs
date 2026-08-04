@@ -263,6 +263,10 @@ mod tests {
 
     fn sample_prepared() -> PreparedTurnPrompt {
         PreparedTurnPrompt {
+            agent_mode: crate::agent_runtime::resolve_agent_mode(
+                crate::daemon_api::AgentModeId::General,
+            )
+            .expect("general mode"),
             resolved_prompt: "resolved".to_string(),
             pack_note: None,
             verification_state: None,

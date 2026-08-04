@@ -1,6 +1,10 @@
 #[cfg(feature = "async")]
 use medousa_types::{
-    ActiveSessionTurnResponse, CancelActiveSessionTurnResponse, SessionAppendTurnRequest,
+    ActiveSessionTurnResponse, AgentModeProposalListResponse, AgentModeProposalResponse,
+    AgentModeScope, CancelActiveSessionTurnResponse, DecideAgentModeProposalRequest,
+    SessionAgentModeResponse, SessionCodeBindingResponse, SessionCodeProjectResponse,
+    SetSessionAgentModeRequest, SetSessionCodeBindingRequest, StartSessionCodeProjectRequest,
+    SessionAppendTurnRequest,
     SessionAppendTurnResponse, SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListResponse,
     SessionHistoryResponse, SessionSetDisplayNameRequest, SessionSetDisplayNameResponse,
     SessionActiveTurnsResponse,
@@ -52,6 +56,147 @@ impl SessionsApi<'_> {
             .client
             .transport()
             .put_json(self.client.base_url(), &path, body)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn agent_mode(
+        &self,
+        session_id: &str,
+    ) -> Result<SessionAgentModeResponse, crate::SdkError> {
+        let path = format!("/v1/sessions/{session_id}/agent-mode");
+        let value = self
+            .client
+            .transport()
+            .get_json(self.client.base_url(), &path)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn set_agent_mode(
+        &self,
+        session_id: &str,
+        request: &SetSessionAgentModeRequest,
+    ) -> Result<SessionAgentModeResponse, crate::SdkError> {
+        let body =
+            serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let path = format!("/v1/sessions/{session_id}/agent-mode");
+        let value = self
+            .client
+            .transport()
+            .put_json(self.client.base_url(), &path, body)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn clear_agent_mode(
+        &self,
+        session_id: &str,
+        scope: AgentModeScope,
+    ) -> Result<SessionAgentModeResponse, crate::SdkError> {
+        let scope = match scope {
+            AgentModeScope::Session => "session",
+            AgentModeScope::Task => "task",
+        };
+        let path = path_with_query(
+            &format!("/v1/sessions/{session_id}/agent-mode"),
+            &[("scope", scope.to_string())],
+        );
+        let value = self
+            .client
+            .transport()
+            .delete_json(self.client.base_url(), &path)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn agent_mode_proposals(
+        &self,
+        session_id: &str,
+    ) -> Result<AgentModeProposalListResponse, crate::SdkError> {
+        let path = format!("/v1/sessions/{session_id}/agent-mode/proposals");
+        let value = self
+            .client
+            .transport()
+            .get_json(self.client.base_url(), &path)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn decide_agent_mode_proposal(
+        &self,
+        session_id: &str,
+        proposal_id: &str,
+        accept: bool,
+    ) -> Result<AgentModeProposalResponse, crate::SdkError> {
+        let body = serde_json::to_value(DecideAgentModeProposalRequest { accept })
+            .map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let path =
+            format!("/v1/sessions/{session_id}/agent-mode/proposals/{proposal_id}");
+        let value = self
+            .client
+            .transport()
+            .put_json(self.client.base_url(), &path, body)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn code_binding(
+        &self,
+        session_id: &str,
+    ) -> Result<SessionCodeBindingResponse, crate::SdkError> {
+        let path = format!("/v1/sessions/{session_id}/code-binding");
+        let value = self
+            .client
+            .transport()
+            .get_json(self.client.base_url(), &path)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn set_code_binding(
+        &self,
+        session_id: &str,
+        work_id: &str,
+    ) -> Result<SessionCodeBindingResponse, crate::SdkError> {
+        let body = serde_json::to_value(SetSessionCodeBindingRequest {
+            work_id: work_id.to_string(),
+        })
+        .map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let path = format!("/v1/sessions/{session_id}/code-binding");
+        let value = self
+            .client
+            .transport()
+            .put_json(self.client.base_url(), &path, body)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn clear_code_binding(
+        &self,
+        session_id: &str,
+    ) -> Result<SessionCodeBindingResponse, crate::SdkError> {
+        let path = format!("/v1/sessions/{session_id}/code-binding");
+        let value = self
+            .client
+            .transport()
+            .delete_json(self.client.base_url(), &path)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn start_code_project(
+        &self,
+        session_id: &str,
+        request: &StartSessionCodeProjectRequest,
+    ) -> Result<SessionCodeProjectResponse, crate::SdkError> {
+        let body = serde_json::to_value(request)
+            .map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let path = format!("/v1/sessions/{session_id}/code-project");
+        let value = self
+            .client
+            .transport()
+            .post_json(self.client.base_url(), &path, body)
             .await?;
         decode(value).await
     }

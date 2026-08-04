@@ -60,6 +60,8 @@ export interface CancelActiveSessionTurnResponse {
 
 export type TurnTicketMode = "interactive" | "background";
 
+export type AgentModeId = "general" | "coder";
+
 export type TurnTicketPhase =
   | "accepted"
   | "streaming"
@@ -103,6 +105,9 @@ export interface SessionTurnsResponse {
 export interface CreateTurnTicketRequest {
   sessionId: string;
   prompt: string;
+  agentMode?: AgentModeId;
+  codeContext?: import("$lib/daemon").CodeIntentContext | null;
+  codeProjectSetupAuthorized?: boolean;
   mode?: TurnTicketMode;
   provider?: string;
   model?: string;

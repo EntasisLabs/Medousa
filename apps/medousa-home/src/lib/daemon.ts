@@ -16,6 +16,16 @@ import type {
   SessionDeleteResponse,
   SessionSummary,
 } from "$lib/types/session";
+import type {
+  AgentModeListResponse,
+  AgentModeProposalListResponse,
+  AgentModeProposalResponse,
+  AgentModeTransitionPolicy,
+  SessionAgentModeResponse,
+  SessionCodeBindingResponse,
+  SessionCodeProjectResponse,
+  StartSessionCodeProjectRequest,
+} from "$lib/types/generated/daemon_api";
 import type { ArtifactCommandResponse } from "$lib/types/artifact";
 import type {
   IdentityContextResponse,
@@ -233,6 +243,89 @@ export async function setSessionDisplayName(
   });
 }
 
+export async function listAgentModes(): Promise<AgentModeListResponse> {
+  return invoke<AgentModeListResponse>("agent_mode_list");
+}
+
+export async function getAgentModeTransitionPolicy(): Promise<AgentModeTransitionPolicy> {
+  return invoke<AgentModeTransitionPolicy>("agent_mode_transition_policy_get");
+}
+
+export async function setAgentModeTransitionPolicy(
+  policy: AgentModeTransitionPolicy,
+): Promise<AgentModeTransitionPolicy> {
+  return invoke<AgentModeTransitionPolicy>("agent_mode_transition_policy_set", {
+    policy,
+  });
+}
+
+export async function getSessionAgentMode(
+  sessionId: string,
+): Promise<SessionAgentModeResponse> {
+  return invoke<SessionAgentModeResponse>("session_get_agent_mode", {
+    sessionId,
+  });
+}
+
+export async function setSessionAgentMode(
+  sessionId: string,
+  mode: import("$lib/types/session").AgentModeId,
+): Promise<SessionAgentModeResponse> {
+  return invoke<SessionAgentModeResponse>("session_set_agent_mode", {
+    sessionId,
+    mode,
+  });
+}
+
+export async function listSessionAgentModeProposals(
+  sessionId: string,
+): Promise<AgentModeProposalListResponse> {
+  return invoke<AgentModeProposalListResponse>("session_list_agent_mode_proposals", {
+    sessionId,
+  });
+}
+
+export async function decideSessionAgentModeProposal(
+  sessionId: string,
+  proposalId: string,
+  accept: boolean,
+): Promise<AgentModeProposalResponse> {
+  return invoke<AgentModeProposalResponse>("session_decide_agent_mode_proposal", {
+    sessionId,
+    proposalId,
+    accept,
+  });
+}
+
+export async function getSessionCodeBinding(
+  sessionId: string,
+): Promise<SessionCodeBindingResponse> {
+  return invoke<SessionCodeBindingResponse>("session_get_code_binding", { sessionId });
+}
+
+export async function setSessionCodeBinding(
+  sessionId: string,
+  workId: string,
+): Promise<SessionCodeBindingResponse> {
+  return invoke<SessionCodeBindingResponse>("session_set_code_binding", { sessionId, workId });
+}
+
+export async function clearSessionCodeBinding(
+  sessionId: string,
+): Promise<SessionCodeBindingResponse> {
+  return invoke<SessionCodeBindingResponse>("session_clear_code_binding", { sessionId });
+}
+
+export async function startSessionCodeProject(
+  sessionId: string,
+  request: StartSessionCodeProjectRequest,
+): Promise<SessionCodeProjectResponse> {
+  return invoke<SessionCodeProjectResponse>("session_start_code_project", {
+    sessionId,
+    request: invokePlain(request),
+  });
+}
+
 export async function deleteSession(
   sessionId: string,
   options?: { purgeMemory?: boolean },
@@ -278,6 +371,9 @@ export async function createTurnTicket(
   return invoke<import("$lib/types/session").TurnTicketResponse>("turn_create", {
     sessionId: request.sessionId,
     prompt: request.prompt,
+    agentMode: request.agentMode ?? null,
+    codeContext: invokePlain(request.codeContext ?? null),
+    codeProjectSetupAuthorized: request.codeProjectSetupAuthorized ?? false,
     mode: request.mode ?? "interactive",
     provider: request.provider ?? null,
     model: request.model ?? null,
@@ -679,6 +775,8 @@ export function onEnvironmentError(
 }
 
 export interface InteractiveTurnOptions {
+  agentMode?: import("$lib/types/session").AgentModeId;
+  codeContext?: CodeIntentContext | null;
   provider?: string;
   model?: string;
   responseDepthMode?: string;
@@ -696,6 +794,8 @@ export async function sendInteractiveTurn(
   return invoke<InteractiveTurnAccepted>("interactive_turn_send", {
     sessionId,
     prompt,
+    agentMode: options?.agentMode ?? null,
+    codeContext: invokePlain(options?.codeContext ?? null),
     provider: options?.provider,
     model: options?.model,
     responseDepthMode: options?.responseDepthMode,
@@ -1688,6 +1788,77 @@ export async function updateArtifactRetention(request: {
   next_run_at_utc: string;
 }> {
   return invoke("artifact_retention_update", { request });
+}
+
+export interface StorageGovernorSettings {
+  enabled: boolean;
+  repository_cache_max_bytes: number;
+  global_cache_max_bytes: number;
+  free_disk_floor_bytes: number;
+  min_inactive_age_hours: number;
+}
+
+export interface StorageCategoryUsage {
+  physical_bytes: number;
+  file_count: number;
+}
+
+export interface ForgeCacheUsage {
+  repository_key: string;
+  physical_bytes: number;
+  file_count: number;
+  last_used_unix_seconds: number;
+  protected: boolean;
+  protection_reason: string | null;
+}
+
+export interface StorageUsageReport {
+  settings: StorageGovernorSettings;
+  data_root: string;
+  available_disk_bytes: number | null;
+  total_managed_bytes: number;
+  forge_metadata: StorageCategoryUsage;
+  forge_worktrees: StorageCategoryUsage;
+  build_caches: StorageCategoryUsage;
+  detamu: StorageCategoryUsage;
+  artifacts: StorageCategoryUsage;
+  coder_evidence: StorageCategoryUsage;
+  forge_caches: ForgeCacheUsage[];
+  scan_warnings: string[];
+}
+
+export interface StorageMaintenanceReport {
+  enabled: boolean;
+  dry_run: boolean;
+  before: StorageUsageReport;
+  after: StorageUsageReport;
+  selected_bytes: number;
+  reclaimed_bytes: number;
+  actions: Array<{
+    repository_key: string;
+    physical_bytes: number;
+    reason: string;
+    status: string;
+  }>;
+  pressure_remaining: boolean;
+}
+
+export async function getStorageStatus(): Promise<StorageUsageReport> {
+  return invoke<StorageUsageReport>("storage_status");
+}
+
+export async function updateStorageSettings(
+  request: StorageGovernorSettings,
+): Promise<StorageUsageReport> {
+  return invoke<StorageUsageReport>("storage_settings_update", { request });
+}
+
+export async function runStorageMaintenance(
+  dryRun: boolean,
+): Promise<StorageMaintenanceReport> {
+  return invoke<StorageMaintenanceReport>("storage_maintenance_run", {
+    request: { dry_run: dryRun },
+  });
 }
 
 export async function registerRecurringPrompt(request: {

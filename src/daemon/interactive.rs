@@ -54,6 +54,9 @@ pub fn build_interactive_request_from_ticket(
     InteractiveTurnRequest {
         session_id: request.session_id.clone(),
         prompt: request.prompt.clone(),
+        agent_mode: request.agent_mode,
+        code_context: request.code_context.clone(),
+        code_project_setup_authorized: request.code_project_setup_authorized,
         persist_user_turn: request.persist_user_turn,
         response_depth_mode: request.response_depth_mode.clone(),
         reasoning_effort: request.reasoning_effort.clone(),
@@ -216,6 +219,7 @@ pub async fn spawn_turn_ticket(
     };
 
     let turn_id_for_task = turn_id.clone();
+    let project_state = state.clone();
     let envelope = TurnEnvelope::new(turn_id_for_task.clone(), Principal::operator())
         .with_correlation_id(turn_id_for_task.clone());
     let lifecycle_ports = TurnLifecyclePorts {
@@ -231,6 +235,7 @@ pub async fn spawn_turn_ticket(
                 interactive_request,
                 &backend,
                 agent_runtime.as_ref(),
+                project_state,
                 stream_entry,
                 Some(delivery),
                 Some(continuation_scope),
@@ -407,6 +412,9 @@ pub async fn start_interactive_turn(
     let ticket_request = CreateTurnTicketRequest {
         session_id: request.session_id.clone(),
         prompt: request.prompt.clone(),
+        agent_mode: request.agent_mode,
+        code_context: request.code_context.clone(),
+        code_project_setup_authorized: request.code_project_setup_authorized,
         mode: crate::turn_ticket::TurnTicketMode::Interactive,
         persist_user_turn: request.persist_user_turn,
         response_depth_mode: request.response_depth_mode.clone(),

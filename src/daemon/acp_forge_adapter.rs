@@ -55,7 +55,7 @@ impl<'a> AcpForgeAdapter<'a> {
             detail: serde_json::Value::Object(detail),
         };
         self.forge
-            .begin_attempt(work_id, executor, ctx.pid, &self.daemon_actor())
+            .begin_isolated_attempt(work_id, executor, ctx.pid, &self.daemon_actor())
     }
 
     /// Liveness heartbeat during a prompt pump.
@@ -194,12 +194,14 @@ mod tests {
     fn begin_heartbeat_interrupt_round_trip() {
         let (_dir, forge, work_id) = provisioned_work();
         let adapter = AcpForgeAdapter::new(&forge);
+        let staging = forge.load(&work_id).unwrap().environment.unwrap().worktree;
 
         let (item, lease) = adapter.begin_attempt(&work_id, &ctx()).unwrap();
         assert!(matches!(item.state, WorkState::Executing));
         assert_eq!(lease.work_id, work_id);
         let attempt = item.attempts.last().unwrap();
         assert_eq!(attempt.executor.kind, "acp-cursor");
+        assert_ne!(attempt.environment.as_ref().unwrap().worktree, staging);
         assert_eq!(
             attempt.executor.detail["agent_session_id"],
             serde_json::Value::String("agent-test".into())

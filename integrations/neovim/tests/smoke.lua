@@ -29,6 +29,8 @@ medousa.setup({ keymaps = {} })
 assert(vim.fn.exists(":MedousaToggle") == 2)
 assert(vim.fn.exists(":MedousaApply") == 2)
 assert(vim.fn.exists(":MedousaSessions") == 2)
+assert(vim.fn.exists(":MedousaMode") == 2)
+assert(vim.fn.exists(":MedousaProject") == 2)
 assert(vim.fn.exists(":MedousaRename") == 2)
 assert(vim.fn.exists(":MedousaAttention") == 2)
 
@@ -78,5 +80,20 @@ assert(request.path == "/v1/turns/budget-requests/budget%2Fone/approve")
 assert(request.body.extra_rounds == 3 and request.body.resolved_by == "neovim")
 client:resolve_permission("permission/one", false, function() end)
 assert(request.path == "/v1/agents/permission-requests/permission%2Fone/deny")
+client:set_agent_mode("session/one", "coder", function() end)
+assert(request.method == "PUT" and request.path == "/v1/sessions/session%2Fone/agent-mode")
+assert(request.body.mode == "coder" and request.body.scope == "session")
+client:set_code_binding("session/one", "work/one", function() end)
+assert(request.path == "/v1/sessions/session%2Fone/code-binding" and request.body.work_id == "work/one")
+client:start_code_project("session/one", {
+  title = "Compiler",
+  brief = "Build it",
+  source = "blank",
+}, function() end)
+assert(request.method == "POST" and request.path == "/v1/sessions/session%2Fone/code-project")
+assert(request.body.title == "Compiler" and request.body.source == "blank")
+client:decide_mode_proposal("session/one", "proposal/one", true, function() end)
+assert(request.path == "/v1/sessions/session%2Fone/agent-mode/proposals/proposal%2Fone")
+assert(request.body.accept == true)
 
 print("neovim stream smoke: ok")

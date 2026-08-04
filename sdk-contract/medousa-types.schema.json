@@ -1,4 +1,380 @@
 {
+  "AgentModeAutoAccept": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentModeAutoAccept",
+    "type": "string",
+    "enum": [
+      "never",
+      "task",
+      "all"
+    ]
+  },
+  "AgentModeId": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentModeId",
+    "description": "Behavioral runtime profile for an agent turn.\n\nThis is distinct from [`TurnTicketMode`], which selects interactive versus background delivery. Agent modes preserve one Medousa identity while changing context, tools, lane policy, and completion behavior.",
+    "type": "string",
+    "enum": [
+      "general",
+      "coder"
+    ]
+  },
+  "AgentModeListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentModeListResponse",
+    "type": "object",
+    "required": [
+      "modes"
+    ],
+    "properties": {
+      "modes": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/AgentModeAvailability"
+        }
+      }
+    },
+    "definitions": {
+      "AgentModeAvailability": {
+        "type": "object",
+        "required": [
+          "available",
+          "label",
+          "mode"
+        ],
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "contract_revision": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/definitions/AgentModeId"
+          },
+          "unavailable_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AgentModeId": {
+        "description": "Behavioral runtime profile for an agent turn.\n\nThis is distinct from [`TurnTicketMode`], which selects interactive versus background delivery. Agent modes preserve one Medousa identity while changing context, tools, lane policy, and completion behavior.",
+        "type": "string",
+        "enum": [
+          "general",
+          "coder"
+        ]
+      }
+    }
+  },
+  "AgentModeProposalListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentModeProposalListResponse",
+    "type": "object",
+    "required": [
+      "proposals"
+    ],
+    "properties": {
+      "proposals": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/AgentModeProposalResponse"
+        }
+      }
+    },
+    "definitions": {
+      "AgentModeId": {
+        "description": "Behavioral runtime profile for an agent turn.\n\nThis is distinct from [`TurnTicketMode`], which selects interactive versus background delivery. Agent modes preserve one Medousa identity while changing context, tools, lane policy, and completion behavior.",
+        "type": "string",
+        "enum": [
+          "general",
+          "coder"
+        ]
+      },
+      "AgentModeProposalResolution": {
+        "type": "string",
+        "enum": [
+          "user_accepted",
+          "user_denied",
+          "auto_accepted",
+          "expired"
+        ]
+      },
+      "AgentModeProposalResponse": {
+        "type": "object",
+        "required": [
+          "created_at_utc",
+          "expires_at_utc",
+          "from_mode",
+          "proposal_id",
+          "reason",
+          "scope",
+          "session_id",
+          "status",
+          "to_mode"
+        ],
+        "properties": {
+          "created_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "from_mode": {
+            "$ref": "#/definitions/AgentModeId"
+          },
+          "proposal_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "resolution": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/AgentModeProposalResolution"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolved_at_utc": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "scope": {
+            "$ref": "#/definitions/AgentModeScope"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/definitions/AgentModeProposalStatus"
+          },
+          "task_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "to_mode": {
+            "$ref": "#/definitions/AgentModeId"
+          }
+        }
+      },
+      "AgentModeProposalStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "accepted",
+          "denied",
+          "expired"
+        ]
+      },
+      "AgentModeScope": {
+        "type": "string",
+        "enum": [
+          "session",
+          "task"
+        ]
+      }
+    }
+  },
+  "AgentModeProposalResolution": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentModeProposalResolution",
+    "type": "string",
+    "enum": [
+      "user_accepted",
+      "user_denied",
+      "auto_accepted",
+      "expired"
+    ]
+  },
+  "AgentModeProposalResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentModeProposalResponse",
+    "type": "object",
+    "required": [
+      "created_at_utc",
+      "expires_at_utc",
+      "from_mode",
+      "proposal_id",
+      "reason",
+      "scope",
+      "session_id",
+      "status",
+      "to_mode"
+    ],
+    "properties": {
+      "created_at_utc": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "expires_at_utc": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "from_mode": {
+        "$ref": "#/definitions/AgentModeId"
+      },
+      "proposal_id": {
+        "type": "string"
+      },
+      "reason": {
+        "type": "string"
+      },
+      "resolution": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/AgentModeProposalResolution"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "resolved_at_utc": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "date-time"
+      },
+      "scope": {
+        "$ref": "#/definitions/AgentModeScope"
+      },
+      "session_id": {
+        "type": "string"
+      },
+      "status": {
+        "$ref": "#/definitions/AgentModeProposalStatus"
+      },
+      "task_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "to_mode": {
+        "$ref": "#/definitions/AgentModeId"
+      }
+    },
+    "definitions": {
+      "AgentModeId": {
+        "description": "Behavioral runtime profile for an agent turn.\n\nThis is distinct from [`TurnTicketMode`], which selects interactive versus background delivery. Agent modes preserve one Medousa identity while changing context, tools, lane policy, and completion behavior.",
+        "type": "string",
+        "enum": [
+          "general",
+          "coder"
+        ]
+      },
+      "AgentModeProposalResolution": {
+        "type": "string",
+        "enum": [
+          "user_accepted",
+          "user_denied",
+          "auto_accepted",
+          "expired"
+        ]
+      },
+      "AgentModeProposalStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "accepted",
+          "denied",
+          "expired"
+        ]
+      },
+      "AgentModeScope": {
+        "type": "string",
+        "enum": [
+          "session",
+          "task"
+        ]
+      }
+    }
+  },
+  "AgentModeProposalStatus": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentModeProposalStatus",
+    "type": "string",
+    "enum": [
+      "pending",
+      "accepted",
+      "denied",
+      "expired"
+    ]
+  },
+  "AgentModeScope": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentModeScope",
+    "type": "string",
+    "enum": [
+      "session",
+      "task"
+    ]
+  },
+  "AgentModeSource": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentModeSource",
+    "type": "string",
+    "enum": [
+      "default",
+      "session",
+      "task",
+      "turn"
+    ]
+  },
+  "AgentModeTransitionPolicy": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentModeTransitionPolicy",
+    "type": "object",
+    "required": [
+      "proposal_ttl_seconds"
+    ],
+    "properties": {
+      "auto_accept": {
+        "default": "never",
+        "allOf": [
+          {
+            "$ref": "#/definitions/AgentModeAutoAccept"
+          }
+        ]
+      },
+      "proposal_ttl_seconds": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      }
+    },
+    "definitions": {
+      "AgentModeAutoAccept": {
+        "type": "string",
+        "enum": [
+          "never",
+          "task",
+          "all"
+        ]
+      }
+    }
+  },
   "AgentPermissionRequestListResponse": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "AgentPermissionRequestListResponse",
@@ -1966,6 +2342,15 @@
       }
     }
   },
+  "CodeProjectSource": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CodeProjectSource",
+    "type": "string",
+    "enum": [
+      "blank",
+      "repository"
+    ]
+  },
   "ComponentRuntimeEventsQuery": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "ComponentRuntimeEventsQuery",
@@ -2561,6 +2946,19 @@
           "string",
           "null"
         ]
+      }
+    }
+  },
+  "DecideAgentModeProposalRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "DecideAgentModeProposalRequest",
+    "type": "object",
+    "required": [
+      "accept"
+    ],
+    "properties": {
+      "accept": {
+        "type": "boolean"
       }
     }
   },
@@ -8955,6 +9353,33 @@
           "type": "string"
         }
       },
+      "agent_mode": {
+        "description": "Per-turn behavioral mode override. Omitted requests inherit task/session state.",
+        "anyOf": [
+          {
+            "$ref": "#/definitions/AgentModeId"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "code_context": {
+        "description": "Advisory editor/undertaking intent. Coder entry re-resolves Forge authority.",
+        "anyOf": [
+          {
+            "$ref": "#/definitions/CodeIntentContext"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "code_project_setup_authorized": {
+        "description": "The principal explicitly selected the surface action allowing unbound Coder to choose, bind, or create a project for this turn.",
+        "default": false,
+        "type": "boolean"
+      },
       "host_context": {
         "description": "Advisory editor, note, or page snapshot. The daemon bounds and formats it.",
         "anyOf": [
@@ -9082,6 +9507,98 @@
       }
     },
     "definitions": {
+      "AgentModeId": {
+        "description": "Behavioral runtime profile for an agent turn.\n\nThis is distinct from [`TurnTicketMode`], which selects interactive versus background delivery. Agent modes preserve one Medousa identity while changing context, tools, lane policy, and completion behavior.",
+        "type": "string",
+        "enum": [
+          "general",
+          "coder"
+        ]
+      },
+      "CodeIntentContext": {
+        "description": "Bounded, user-intent-oriented context carried from the permanent Code workspace into an external coding-agent prompt. Paths are relative to the governed Forge worktree; the daemon remains authoritative for the cwd.",
+        "type": "object",
+        "properties": {
+          "active_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "containing_symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cursor_line": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "last_verification": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "open_files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selected_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selection_end_line": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "selection_start_line": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "HostContextDiagnostic": {
         "type": "object",
         "required": [
@@ -12802,6 +13319,110 @@
       }
     }
   },
+  "SessionAgentModeResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SessionAgentModeResponse",
+    "type": "object",
+    "required": [
+      "effective_mode",
+      "effective_source",
+      "revision",
+      "session_id"
+    ],
+    "properties": {
+      "effective_mode": {
+        "$ref": "#/definitions/AgentModeId"
+      },
+      "effective_source": {
+        "$ref": "#/definitions/AgentModeSource"
+      },
+      "revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "selected_mode": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/AgentModeId"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "session_id": {
+        "type": "string"
+      },
+      "task_lease": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/AgentModeLeaseResponse"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "updated_at_utc": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "date-time"
+      }
+    },
+    "definitions": {
+      "AgentModeId": {
+        "description": "Behavioral runtime profile for an agent turn.\n\nThis is distinct from [`TurnTicketMode`], which selects interactive versus background delivery. Agent modes preserve one Medousa identity while changing context, tools, lane policy, and completion behavior.",
+        "type": "string",
+        "enum": [
+          "general",
+          "coder"
+        ]
+      },
+      "AgentModeLeaseResponse": {
+        "type": "object",
+        "required": [
+          "acquired_at_utc",
+          "lease_id",
+          "mode",
+          "task_id"
+        ],
+        "properties": {
+          "acquired_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at_utc": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "lease_id": {
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/definitions/AgentModeId"
+          },
+          "task_id": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentModeSource": {
+        "type": "string",
+        "enum": [
+          "default",
+          "session",
+          "task",
+          "turn"
+        ]
+      }
+    }
+  },
   "SessionAppendTurnRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "SessionAppendTurnRequest",
@@ -13446,6 +14067,81 @@
       },
       "stored": {
         "type": "boolean"
+      }
+    }
+  },
+  "SessionCodeBindingResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SessionCodeBindingResponse",
+    "type": "object",
+    "required": [
+      "session_id"
+    ],
+    "properties": {
+      "session_id": {
+        "type": "string"
+      },
+      "updated_at_utc": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "date-time"
+      },
+      "work_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
+  "SessionCodeProjectResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SessionCodeProjectResponse",
+    "type": "object",
+    "required": [
+      "base_ref",
+      "brief",
+      "created_repository",
+      "human_phase",
+      "repo_path",
+      "session_id",
+      "state",
+      "title",
+      "work_id",
+      "worktree"
+    ],
+    "properties": {
+      "base_ref": {
+        "type": "string"
+      },
+      "brief": {
+        "type": "string"
+      },
+      "created_repository": {
+        "type": "boolean"
+      },
+      "human_phase": {
+        "type": "string"
+      },
+      "repo_path": {
+        "type": "string"
+      },
+      "session_id": {
+        "type": "string"
+      },
+      "state": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      },
+      "work_id": {
+        "type": "string"
+      },
+      "worktree": {
+        "type": "string"
       }
     }
   },
@@ -14245,6 +14941,70 @@
       }
     }
   },
+  "SetSessionAgentModeRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SetSessionAgentModeRequest",
+    "type": "object",
+    "required": [
+      "mode"
+    ],
+    "properties": {
+      "expires_at_utc": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "date-time"
+      },
+      "mode": {
+        "$ref": "#/definitions/AgentModeId"
+      },
+      "scope": {
+        "default": "session",
+        "allOf": [
+          {
+            "$ref": "#/definitions/AgentModeScope"
+          }
+        ]
+      },
+      "task_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "definitions": {
+      "AgentModeId": {
+        "description": "Behavioral runtime profile for an agent turn.\n\nThis is distinct from [`TurnTicketMode`], which selects interactive versus background delivery. Agent modes preserve one Medousa identity while changing context, tools, lane policy, and completion behavior.",
+        "type": "string",
+        "enum": [
+          "general",
+          "coder"
+        ]
+      },
+      "AgentModeScope": {
+        "type": "string",
+        "enum": [
+          "session",
+          "task"
+        ]
+      }
+    }
+  },
+  "SetSessionCodeBindingRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SetSessionCodeBindingRequest",
+    "type": "object",
+    "required": [
+      "work_id"
+    ],
+    "properties": {
+      "work_id": {
+        "type": "string"
+      }
+    }
+  },
   "StageRouteCommandRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "StageRouteCommandRequest",
@@ -14493,6 +15253,52 @@
             "$ref": "#/definitions/StageRoute"
           }
         }
+      }
+    }
+  },
+  "StartSessionCodeProjectRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "StartSessionCodeProjectRequest",
+    "type": "object",
+    "required": [
+      "brief",
+      "title"
+    ],
+    "properties": {
+      "base_ref": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "brief": {
+        "type": "string"
+      },
+      "repo_path": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "source": {
+        "default": "blank",
+        "allOf": [
+          {
+            "$ref": "#/definitions/CodeProjectSource"
+          }
+        ]
+      },
+      "title": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "CodeProjectSource": {
+        "type": "string",
+        "enum": [
+          "blank",
+          "repository"
+        ]
       }
     }
   },
@@ -14756,6 +15562,81 @@
             "format": "date-time"
           }
         }
+      }
+    }
+  },
+  "TurnTicketRecord": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "TurnTicketRecord",
+    "type": "object",
+    "required": [
+      "composer_handoff",
+      "mode",
+      "phase",
+      "prompt_preview",
+      "session_id",
+      "started_at",
+      "stream_url",
+      "turn_id",
+      "updated_at"
+    ],
+    "properties": {
+      "composer_handoff": {
+        "type": "boolean"
+      },
+      "mode": {
+        "$ref": "#/definitions/TurnTicketMode"
+      },
+      "phase": {
+        "$ref": "#/definitions/TurnTicketPhase"
+      },
+      "prompt_preview": {
+        "type": "string"
+      },
+      "session_id": {
+        "type": "string"
+      },
+      "started_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "stream_url": {
+        "type": "string"
+      },
+      "turn_id": {
+        "type": "string"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "workspace_card_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "definitions": {
+      "TurnTicketMode": {
+        "type": "string",
+        "enum": [
+          "interactive",
+          "background"
+        ]
+      },
+      "TurnTicketPhase": {
+        "type": "string",
+        "enum": [
+          "accepted",
+          "streaming",
+          "worker_handoff",
+          "workshop_handoff",
+          "budget_blocked",
+          "done",
+          "error",
+          "cancelled"
+        ]
       }
     }
   },

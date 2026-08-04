@@ -1192,11 +1192,253 @@ impl TurnSurfaceContext {
     }
 }
 
+/// Behavioral runtime profile for an agent turn.
+///
+/// This is distinct from [`TurnTicketMode`], which selects interactive versus
+/// background delivery. Agent modes preserve one Medousa identity while
+/// changing context, tools, lane policy, and completion behavior.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum AgentModeId {
+    #[default]
+    General,
+    Coder,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum AgentModeScope {
+    #[default]
+    Session,
+    Task,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum AgentModeSource {
+    #[default]
+    Default,
+    Session,
+    Task,
+    Turn,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum AgentModeAutoAccept {
+    #[default]
+    Never,
+    Task,
+    All,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentModeTransitionPolicy {
+    pub proposal_ttl_seconds: u64,
+    #[serde(default)]
+    pub auto_accept: AgentModeAutoAccept,
+}
+
+impl Default for AgentModeTransitionPolicy {
+    fn default() -> Self {
+        Self {
+            proposal_ttl_seconds: 30,
+            auto_accept: AgentModeAutoAccept::Never,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum AgentModeProposalStatus {
+    #[default]
+    Pending,
+    Accepted,
+    Denied,
+    Expired,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum AgentModeProposalResolution {
+    UserAccepted,
+    UserDenied,
+    AutoAccepted,
+    Expired,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentModeProposalResponse {
+    pub proposal_id: String,
+    pub session_id: String,
+    pub from_mode: AgentModeId,
+    pub to_mode: AgentModeId,
+    pub scope: AgentModeScope,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
+    pub reason: String,
+    pub status: AgentModeProposalStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolution: Option<AgentModeProposalResolution>,
+    pub created_at_utc: DateTime<Utc>,
+    pub expires_at_utc: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_at_utc: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentModeProposalListResponse {
+    pub proposals: Vec<AgentModeProposalResponse>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct SessionCodeBindingResponse {
+    pub session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at_utc: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct SetSessionCodeBindingRequest {
+    pub work_id: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum CodeProjectSource {
+    #[default]
+    Blank,
+    Repository,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct StartSessionCodeProjectRequest {
+    pub title: String,
+    pub brief: String,
+    #[serde(default)]
+    pub source: CodeProjectSource,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_ref: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct SessionCodeProjectResponse {
+    pub session_id: String,
+    pub work_id: String,
+    pub title: String,
+    pub brief: String,
+    pub state: String,
+    pub human_phase: String,
+    pub repo_path: String,
+    pub worktree: String,
+    pub base_ref: String,
+    pub created_repository: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct DecideAgentModeProposalRequest {
+    pub accept: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct SetSessionAgentModeRequest {
+    pub mode: AgentModeId,
+    #[serde(default)]
+    pub scope: AgentModeScope,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at_utc: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentModeLeaseResponse {
+    pub lease_id: String,
+    pub task_id: String,
+    pub mode: AgentModeId,
+    pub acquired_at_utc: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at_utc: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct SessionAgentModeResponse {
+    pub session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_mode: Option<AgentModeId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_lease: Option<AgentModeLeaseResponse>,
+    pub effective_mode: AgentModeId,
+    pub effective_source: AgentModeSource,
+    pub revision: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at_utc: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentModeAvailability {
+    pub mode: AgentModeId,
+    pub label: String,
+    pub available: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contract_revision: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unavailable_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentModeListResponse {
+    pub modes: Vec<AgentModeAvailability>,
+}
+
+impl AgentModeId {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::General => "general",
+            Self::Coder => "coder",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct InteractiveTurnRequest {
     pub session_id: String,
     pub prompt: String,
+    /// Per-turn behavioral mode override. Omitted requests inherit task/session state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_mode: Option<AgentModeId>,
+    /// Advisory editor/undertaking intent. Coder entry re-resolves Forge authority.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code_context: Option<CodeIntentContext>,
+    /// The principal explicitly selected the surface action allowing unbound Coder
+    /// to choose, bind, or create a project for this turn.
+    #[serde(default)]
+    pub code_project_setup_authorized: bool,
     pub persist_user_turn: bool,
     pub response_depth_mode: String,
     #[serde(default)]
@@ -1280,6 +1522,14 @@ pub struct InteractiveTurnResponse {
 pub struct CreateTurnTicketRequest {
     pub session_id: String,
     pub prompt: String,
+    /// Per-turn behavioral mode override; independent of delivery mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_mode: Option<AgentModeId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code_context: Option<CodeIntentContext>,
+    /// Structured principal authorization from a project-setup surface action.
+    #[serde(default)]
+    pub code_project_setup_authorized: bool,
     #[serde(default)]
     pub mode: TurnTicketMode,
     #[serde(default = "default_persist_user_turn")]
@@ -1683,6 +1933,84 @@ pub struct UpdateArtifactRetentionRequest {
 pub struct UpdateArtifactRetentionResponse {
     pub settings: ArtifactRetentionSettingsResponse,
     pub next_run_at_utc: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct StorageGovernorSettingsResponse {
+    pub enabled: bool,
+    pub repository_cache_max_bytes: u64,
+    pub global_cache_max_bytes: u64,
+    pub free_disk_floor_bytes: u64,
+    pub min_inactive_age_hours: u64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct StorageCategoryUsageResponse {
+    pub physical_bytes: u64,
+    pub file_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ForgeCacheUsageResponse {
+    pub repository_key: String,
+    pub physical_bytes: u64,
+    pub file_count: u64,
+    pub last_used_unix_seconds: u64,
+    pub protected: bool,
+    pub protection_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct StorageUsageReportResponse {
+    pub settings: StorageGovernorSettingsResponse,
+    pub data_root: String,
+    pub available_disk_bytes: Option<u64>,
+    pub total_managed_bytes: u64,
+    pub forge_metadata: StorageCategoryUsageResponse,
+    pub forge_worktrees: StorageCategoryUsageResponse,
+    pub build_caches: StorageCategoryUsageResponse,
+    pub detamu: StorageCategoryUsageResponse,
+    pub artifacts: StorageCategoryUsageResponse,
+    pub coder_evidence: StorageCategoryUsageResponse,
+    pub forge_caches: Vec<ForgeCacheUsageResponse>,
+    pub scan_warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct StorageEvictionActionResponse {
+    pub repository_key: String,
+    pub physical_bytes: u64,
+    pub reason: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct StorageMaintenanceReportResponse {
+    pub enabled: bool,
+    pub dry_run: bool,
+    pub before: StorageUsageReportResponse,
+    pub after: StorageUsageReportResponse,
+    pub selected_bytes: u64,
+    pub reclaimed_bytes: u64,
+    pub actions: Vec<StorageEvictionActionResponse>,
+    pub pressure_remaining: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct StorageMaintenanceRequest {
+    #[serde(default = "default_storage_maintenance_dry_run")]
+    pub dry_run: bool,
+}
+
+fn default_storage_maintenance_dry_run() -> bool {
+    true
 }
 
 // ── Ingester types ────────────────────────────────────────────────────────────

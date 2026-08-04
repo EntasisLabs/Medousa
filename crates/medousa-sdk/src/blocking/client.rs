@@ -1,7 +1,9 @@
 #[cfg(feature = "blocking")]
 use medousa_types::{
-    ActiveSessionTurnResponse, ArchiveAskJobRequest, ArchiveAskJobResponse,
-    ArtifactCommandRequest, ArtifactCommandResponse, ArtifactDeleteRequest, ArtifactDeleteResponse,
+    ActiveSessionTurnResponse, AgentModeListResponse, AgentModeProposalListResponse,
+    AgentModeProposalResponse, AgentModeScope, AgentModeTransitionPolicy, ArchiveAskJobRequest,
+    ArchiveAskJobResponse, ArtifactCommandRequest, ArtifactCommandResponse, ArtifactDeleteRequest,
+    ArtifactDeleteResponse,
     ArtifactFetchRequest, ArtifactFetchResponse, ArtifactListUiRequest, ArtifactListUiResponse,
     ArtifactWriteRequest, ArtifactWriteResponse, AskJobCompleteActionsRequest,
     AskJobCompleteActionsResponse, CancelActiveSessionTurnResponse, CapabilityListResponse,
@@ -14,8 +16,11 @@ use medousa_types::{
     RecurringRunsQuery, RecurringRunsResponse, RegisterRecurringPromptRequest,
     RegisterRecurringResponse, RuntimeConfigCommandRequest, RuntimeConfigCommandResponse,
     SessionActiveTurnsResponse, SessionAppendTurnRequest, SessionAppendTurnResponse,
+    SessionAgentModeResponse, SessionCodeBindingResponse, SessionCodeProjectResponse,
     SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListResponse, SessionHistoryResponse,
-    SessionSetDisplayNameRequest, SessionSetDisplayNameResponse, StageRouteCommandRequest,
+    SessionSetDisplayNameRequest, SessionSetDisplayNameResponse, SetSessionCodeBindingRequest,
+    StartSessionCodeProjectRequest,
+    DecideAgentModeProposalRequest, SetSessionAgentModeRequest, StageRouteCommandRequest,
     StageRouteCommandResponse, TurnBudgetApproveRequest, TurnBudgetDenyRequest,
     TurnBudgetRequestListResponse, TurnBudgetRequestRecord, TurnBudgetRequestResponse,
     UpdateRecurringRequest, UpdateRecurringResponse, VaultAddRootRequest, VaultBacklinksQuery,
@@ -444,6 +449,97 @@ impl BlockingSessionsApi<'_> {
         )
     }
 
+    pub fn agent_mode(&self, session_id: &str) -> Result<SessionAgentModeResponse, SdkError> {
+        self.http
+            .get(&format!("/v1/sessions/{session_id}/agent-mode"))
+    }
+
+    pub fn set_agent_mode(
+        &self,
+        session_id: &str,
+        request: &SetSessionAgentModeRequest,
+    ) -> Result<SessionAgentModeResponse, SdkError> {
+        self.http.put(
+            &format!("/v1/sessions/{session_id}/agent-mode"),
+            request,
+        )
+    }
+
+    pub fn clear_agent_mode(
+        &self,
+        session_id: &str,
+        scope: AgentModeScope,
+    ) -> Result<SessionAgentModeResponse, SdkError> {
+        let scope = match scope {
+            AgentModeScope::Session => "session",
+            AgentModeScope::Task => "task",
+        };
+        self.http.delete(&path_with_query(
+            &format!("/v1/sessions/{session_id}/agent-mode"),
+            &[("scope", scope.to_string())],
+        ))
+    }
+
+    pub fn agent_mode_proposals(
+        &self,
+        session_id: &str,
+    ) -> Result<AgentModeProposalListResponse, SdkError> {
+        self.http.get(&format!(
+            "/v1/sessions/{session_id}/agent-mode/proposals"
+        ))
+    }
+
+    pub fn decide_agent_mode_proposal(
+        &self,
+        session_id: &str,
+        proposal_id: &str,
+        accept: bool,
+    ) -> Result<AgentModeProposalResponse, SdkError> {
+        self.http.put(
+            &format!(
+                "/v1/sessions/{session_id}/agent-mode/proposals/{proposal_id}"
+            ),
+            &DecideAgentModeProposalRequest { accept },
+        )
+    }
+
+    pub fn code_binding(&self, session_id: &str) -> Result<SessionCodeBindingResponse, SdkError> {
+        self.http
+            .get(&format!("/v1/sessions/{session_id}/code-binding"))
+    }
+
+    pub fn set_code_binding(
+        &self,
+        session_id: &str,
+        work_id: &str,
+    ) -> Result<SessionCodeBindingResponse, SdkError> {
+        self.http.put(
+            &format!("/v1/sessions/{session_id}/code-binding"),
+            &SetSessionCodeBindingRequest {
+                work_id: work_id.to_string(),
+            },
+        )
+    }
+
+    pub fn clear_code_binding(
+        &self,
+        session_id: &str,
+    ) -> Result<SessionCodeBindingResponse, SdkError> {
+        self.http
+            .delete(&format!("/v1/sessions/{session_id}/code-binding"))
+    }
+
+    pub fn start_code_project(
+        &self,
+        session_id: &str,
+        request: &StartSessionCodeProjectRequest,
+    ) -> Result<SessionCodeProjectResponse, SdkError> {
+        self.http.post(
+            &format!("/v1/sessions/{session_id}/code-project"),
+            request,
+        )
+    }
+
     pub fn append_turn(
         &self,
         session_id: &str,
@@ -505,6 +601,21 @@ impl BlockingInteractiveApi<'_> {
 
 #[cfg(feature = "blocking")]
 impl BlockingRuntimeApi<'_> {
+    pub fn agent_modes(&self) -> Result<AgentModeListResponse, SdkError> {
+        self.http.get("/v1/agent-modes")
+    }
+
+    pub fn agent_mode_transition_policy(&self) -> Result<AgentModeTransitionPolicy, SdkError> {
+        self.http.get("/v1/agent-modes/policy")
+    }
+
+    pub fn set_agent_mode_transition_policy(
+        &self,
+        policy: &AgentModeTransitionPolicy,
+    ) -> Result<AgentModeTransitionPolicy, SdkError> {
+        self.http.put("/v1/agent-modes/policy", policy)
+    }
+
     pub fn artifact_command(
         &self,
         request: &ArtifactCommandRequest,

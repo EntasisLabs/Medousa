@@ -37,6 +37,7 @@ export type ForgeWorkItem = {
   updated_at?: string;
   environment?: {
     worktree: string;
+    branch: string;
     baseline_oid: string;
     generation: number;
   } | null;
@@ -45,6 +46,12 @@ export type ForgeWorkItem = {
     seq: number;
     state: string;
     executor?: { kind?: string; detail?: Record<string, unknown> } | null;
+    environment?: {
+      worktree: string;
+      branch: string;
+      baseline_oid: string;
+      generation: number;
+    } | null;
     evidence_id?: string | null;
     lease?: {
       lease_id: string;
@@ -52,6 +59,7 @@ export type ForgeWorkItem = {
     } | null;
   }>;
   active_attempt?: string | null;
+  active_attempts?: string[];
   review_decisions?: Array<{ id: string; strategy: string }>;
   disposition?: string | null;
   target?: { Git?: { repo_path: string; base_ref: string } };
@@ -68,6 +76,20 @@ export type ReviewProjection = {
   state: string;
   human_phase: string;
   allowed_actions: AllowedActions;
+  candidates: Array<{
+    attempt_id: string;
+    attempt_seq: number;
+    executor: string;
+    evidence_id: string;
+    evidence_digest: string;
+    baseline_oid: string;
+    sealed_head_oid: string;
+    branch: string;
+    worktree: string;
+    changed_file_count: number;
+    sealed_at: string;
+    decision_id?: string | null;
+  }>;
   baseline_oid?: string | null;
   sealed_head_oid?: string | null;
   evidence_id?: string | null;
@@ -130,6 +152,7 @@ export type ReviewProjection = {
 
 export type ReviewFileDiff = {
   work_id: string;
+  attempt_id: string;
   path: string;
   status: string;
   old_path?: string | null;
@@ -248,7 +271,15 @@ export type EvidencePage = {
 
 export type BeginAttemptResponse = {
   item: ItemProjection;
-  lease: { lease_id: string; generation: number };
+  lease: {
+    lease_id: string;
+    generation: number;
+    work_id: string;
+    attempt_id: string;
+  };
+  attempt_id: string;
+  worktree: string;
+  branch: string;
 };
 
 export type ForgeSourceFile = {
@@ -690,7 +721,7 @@ export async function getProviderHandoff(workId: string): Promise<ProviderHandof
 
 export async function shareProviderHandoff(
   workId: string,
-  input: { title?: string; body?: string },
+  input: { title?: string; body?: string; attempt_id?: string },
 ): Promise<ProviderHandoff> {
   return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/provider`, {
     method: "POST",
@@ -843,12 +874,20 @@ export async function heartbeatLease(leaseId: string, generation: number): Promi
   });
 }
 
-export async function getReview(workId: string): Promise<ReviewProjection> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/review`);
+export async function getReview(workId: string, attemptId?: string): Promise<ReviewProjection> {
+  const query = new URLSearchParams();
+  if (attemptId) query.set("attempt_id", attemptId);
+  const suffix = query.size ? `?${query.toString()}` : "";
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/review${suffix}`);
 }
 
-export async function getReviewFile(workId: string, path: string): Promise<ReviewFileDiff> {
+export async function getReviewFile(
+  workId: string,
+  path: string,
+  attemptId?: string,
+): Promise<ReviewFileDiff> {
   const query = new URLSearchParams({ path });
+  if (attemptId) query.set("attempt_id", attemptId);
   return forgeFetch(
     `/v1/forge/items/${encodeURIComponent(workId)}/review/file?${query.toString()}`,
   );
@@ -856,7 +895,7 @@ export async function getReviewFile(workId: string, path: string): Promise<Revie
 
 export async function restoreReviewFile(
   workId: string,
-  input: { path: string; expected_reviewed_oid: string },
+  input: { path: string; expected_reviewed_oid: string; attempt_id?: string },
 ): Promise<RestoreReviewFileResponse> {
   return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/review/file`, {
     method: "POST",

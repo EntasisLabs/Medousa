@@ -7413,6 +7413,7 @@ dependencies = [
  "detamu-source-git",
  "dirs 5.0.1",
  "ed25519-dalek 2.2.0",
+ "flate2",
  "fs2",
  "futures-util",
  "genai 0.6.5",

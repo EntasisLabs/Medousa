@@ -126,6 +126,68 @@ function M:create_session(callback)
   self:request("POST", "/v1/sessions", { catalog = "single" }, callback)
 end
 
+function M:agent_modes(callback)
+  self:request("GET", "/v1/agent-modes", nil, callback)
+end
+
+function M:agent_mode(session_id, callback)
+  self:request("GET", "/v1/sessions/" .. url_encode(session_id) .. "/agent-mode", nil, callback)
+end
+
+function M:set_agent_mode(session_id, mode, callback)
+  self:request("PUT", "/v1/sessions/" .. url_encode(session_id) .. "/agent-mode", {
+    mode = mode,
+    scope = "session",
+  }, callback)
+end
+
+function M:mode_proposals(session_id, callback)
+  self:request("GET", "/v1/sessions/" .. url_encode(session_id) .. "/agent-mode/proposals", nil, callback)
+end
+
+function M:decide_mode_proposal(session_id, proposal_id, accept, callback)
+  self:request(
+    "PUT",
+    "/v1/sessions/" .. url_encode(session_id) .. "/agent-mode/proposals/" .. url_encode(proposal_id),
+    { accept = accept },
+    callback
+  )
+end
+
+function M:code_binding(session_id, callback)
+  self:request("GET", "/v1/sessions/" .. url_encode(session_id) .. "/code-binding", nil, callback)
+end
+
+function M:set_code_binding(session_id, work_id, callback)
+  self:request("PUT", "/v1/sessions/" .. url_encode(session_id) .. "/code-binding", {
+    work_id = work_id,
+  }, callback)
+end
+
+function M:clear_code_binding(session_id, callback)
+  self:request("DELETE", "/v1/sessions/" .. url_encode(session_id) .. "/code-binding", nil, callback)
+end
+
+function M:forge_items(callback)
+  self:request("GET", "/v1/forge/items", nil, function(value, err)
+    if not value then
+      callback(nil, err)
+    elseif vim.islist(value) then
+      callback(value, nil)
+    else
+      callback(value.items or {}, nil)
+    end
+  end)
+end
+
+function M:forge_item(work_id, callback)
+  self:request("GET", "/v1/forge/items/" .. url_encode(work_id), nil, callback)
+end
+
+function M:start_code_project(session_id, request, callback)
+  self:request("POST", "/v1/sessions/" .. url_encode(session_id) .. "/code-project", request, callback)
+end
+
 function M:ensure_session(callback)
   local stored = util.read_session()
   if stored then
@@ -189,7 +251,8 @@ function M:resolve_permission(request_id, approve, callback)
   }, callback)
 end
 
-function M:turn(session_id, prompt, context, callbacks)
+function M:turn(session_id, prompt, context, callbacks, options)
+  options = options or {}
   self.stream_cancelled = false
   self.stream_terminal = false
   self.stream_generation = self.stream_generation + 1
@@ -205,6 +268,7 @@ function M:turn(session_id, prompt, context, callbacks)
       persist_user_turn = true,
       prompt = prompt,
       host_context = context,
+      code_project_setup_authorized = options.code_project_setup_authorized == true,
       provider = defaults.provider,
       response_depth_mode = defaults.response_depth_mode,
       reasoning_effort = defaults.reasoning_effort,

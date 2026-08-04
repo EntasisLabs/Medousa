@@ -198,6 +198,9 @@ impl JobHandler for RecurringAgentTurnJobHandler {
         let request = InteractiveTurnRequest {
             session_id: payload.session_id.clone(),
             prompt: payload.user_prompt.clone(),
+            agent_mode: None,
+            code_context: None,
+            code_project_setup_authorized: false,
             persist_user_turn: false,
             response_depth_mode: payload
                 .response_depth_mode
@@ -236,6 +239,7 @@ impl JobHandler for RecurringAgentTurnJobHandler {
             &self.backend,
             self.agent.as_ref(),
             sink,
+            None,
             None,
             None,
         )

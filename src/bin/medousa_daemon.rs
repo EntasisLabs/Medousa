@@ -37,6 +37,7 @@ use tokio::sync::{RwLock, watch};
 /// (env-gated, 6h) durable retention pass so memory stays bounded on every
 /// deployment even when durable retention is disabled.
 const MEM_PRUNE_INTERVAL: Duration = Duration::from_secs(5 * 60);
+const STORAGE_MAINTENANCE_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 
 /// Drop terminal `agent_turn_jobs` records (which hold full response text) once
 /// they are older than this. Comfortably outlives normal result polling.
@@ -96,6 +97,71 @@ impl DaemonSchedulerSideEffects {
             "in-memory state prune completed"
         );
     }
+
+    async fn govern_storage_if_due(&self, now_utc: DateTime<Utc>) {
+        let should_run = {
+            let last = *self.state.last_storage_maintenance_at.read().await;
+            last.is_none_or(|at| {
+                now_utc
+                    .signed_duration_since(at)
+                    .to_std()
+                    .unwrap_or(STORAGE_MAINTENANCE_INTERVAL)
+                    >= STORAGE_MAINTENANCE_INTERVAL
+            })
+        };
+        if !should_run {
+            return;
+        }
+        *self.state.last_storage_maintenance_at.write().await = Some(now_utc);
+        let forge = self.state.forge.clone();
+        let data_root = medousa::paths::medousa_data_dir();
+        let settings = medousa::daemon::storage_governor::load_settings(&data_root);
+        let evidence_root = data_root.clone();
+        match tokio::task::spawn_blocking(move || {
+            medousa::agent_runtime::coder_evidence::maintain_default_store(&evidence_root)
+        })
+        .await
+        {
+            Ok(Ok(report))
+                if report.expired_objects > 0
+                    || report.pressure_evicted_objects > 0
+                    || report.orphan_objects > 0 =>
+            {
+                tracing::info!(
+                    expired_objects = report.expired_objects,
+                    pressure_evicted_objects = report.pressure_evicted_objects,
+                    orphan_objects = report.orphan_objects,
+                    reclaimed_bytes = report.reclaimed_physical_bytes,
+                    remaining_bytes = report.remaining_physical_bytes,
+                    "ephemeral Coder evidence maintenance completed"
+                );
+            }
+            Ok(Ok(_)) => {}
+            Ok(Err(err)) => tracing::warn!(error = %err, "Coder evidence maintenance failed"),
+            Err(err) => tracing::warn!(error = %err, "Coder evidence maintenance task failed"),
+        }
+        if !settings.enabled {
+            return;
+        }
+        let report = tokio::task::spawn_blocking(move || {
+            medousa::daemon::storage_governor::maintain_storage(&data_root, &forge, settings, false)
+        })
+        .await;
+        match report {
+            Ok(Ok(report)) if !report.actions.is_empty() || report.pressure_remaining => {
+                tracing::info!(
+                    selected_bytes = report.selected_bytes,
+                    reclaimed_bytes = report.reclaimed_bytes,
+                    actions = report.actions.len(),
+                    pressure_remaining = report.pressure_remaining,
+                    "Forge cache maintenance completed"
+                );
+            }
+            Ok(Ok(_)) => {}
+            Ok(Err(err)) => tracing::warn!(error = %err, "Forge cache maintenance failed"),
+            Err(err) => tracing::warn!(error = %err, "Forge cache maintenance task failed"),
+        }
+    }
 }
 
 #[async_trait]
@@ -117,6 +183,7 @@ impl SchedulerTickSideEffects for DaemonSchedulerSideEffects {
         // Bound in-memory state on every deployment, independent of the
         // (env-gated) durable retention config below.
         self.prune_in_memory_state_if_due(now_utc).await;
+        self.govern_storage_if_due(now_utc).await;
 
         if !self.state.retention_config.enabled() {
             return;
@@ -397,6 +464,7 @@ async fn main() -> Result<()> {
         retention_config,
         last_retention_at: Arc::new(RwLock::new(None)),
         last_mem_prune_at: Arc::new(RwLock::new(None)),
+        last_storage_maintenance_at: Arc::new(RwLock::new(None)),
         last_context_usage_by_session: Arc::new(RwLock::new(HashMap::new())),
         client_registry: platform.client_registry(),
         forge,

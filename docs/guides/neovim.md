@@ -49,6 +49,8 @@ Default normal-mode mappings are:
 - `<leader>mf` asks about current diagnostics, or pre-fills a buffer review.
 - `<leader>mo{motion}` captures a motion as context before opening the composer.
 - `<leader>ms` opens conversation history.
+- `<leader>mm` switches the conversation between General and Coder.
+- `<leader>mp` chooses, creates, or detaches the conversation's governed project.
 
 The composer is an ordinary editable Neovim buffer: Enter creates a new line,
 normal-mode Enter or Ctrl-S sends, and closing the room keeps the unfinished
@@ -60,8 +62,8 @@ inside a fence previews that block directly.
 
 The commands `MedousaToggle`, `MedousaAsk`, `MedousaExplain`, `MedousaFix`,
 `MedousaApply`, `MedousaNew`, `MedousaCancel`, `MedousaSessions`,
-`MedousaRename`, `MedousaDelete`, `MedousaDiagnostics`, `MedousaAttention`,
-and `MedousaStatus`
+`MedousaMode`, `MedousaProject`, `MedousaRename`, `MedousaDelete`,
+`MedousaDiagnostics`, `MedousaAttention`, and `MedousaStatus`
 provide the same paths for custom mappings. `:MedousaAsk` accepts an optional
 prompt and Ex range, for example `:'<,'>MedousaAsk simplify this`.
 
@@ -83,6 +85,39 @@ picker when available; otherwise the plugin uses `vim.ui.select`.
 Use `R`/`:MedousaRename` to name the active conversation and
 `D`/`:MedousaDelete` to delete it after confirmation. Composer drafts are kept
 separately while switching between conversations.
+
+## General and Coder modes
+
+Run `:MedousaMode` or press `<leader>mm` to change the active mode for the
+same daemon conversation used by Medousa and VS Code. Coder can be selected
+before a project exists. Its setup phase has no file or shell authority.
+
+On the first Coder send, Neovim keeps the draft intact and asks you to choose
+a ready Forge project, create a blank project, or let Medousa choose or create
+one from that message. Selecting or creating directly continues the original
+send after binding. The Medousa option records the picker action as structured
+principal authorization while preserving the exact human prompt in history;
+full coding tools activate on the following bound turn.
+
+`:MedousaProject` or `<leader>mp` opens the same project picker at any time.
+Detaching leaves Coder active in its restricted setup phase. When the governed
+worktree is visible on the Neovim host, the plugin offers to change directory;
+remote workshop paths remain daemon-owned and are never treated as local paths.
+Coder executes in a private attempt worktree. Runtime refreshes expose that same
+path through the existing project binding, and interrupted turns preserve it—
+including unfinished edits—for the next turn without mutating the staging
+worktree.
+Separate conversations may run agents against the same project concurrently;
+each lease owns a different worktree and branch.
+
+Coder still sees logical overlap across those private worktrees. Normal file
+overlap is reported as coordination context, while shared-risk operations such
+as lockfiles, migrations, ports, and deployment are serialized with an
+actionable conflict result instead of racing silently.
+
+Mode changes proposed by Medousa appear as a Switch/Not now picker after the
+turn. The workshop's configured expiry and auto-accept policy remains
+authoritative.
 
 ## Applying code safely
 

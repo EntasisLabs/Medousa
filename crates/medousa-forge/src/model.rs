@@ -305,6 +305,10 @@ pub struct Attempt {
     pub seq: u32,
     pub executor: ExecutorDescriptor,
     pub state: AttemptState,
+    /// Isolated mutation environment owned by this attempt. Older/shared
+    /// attempts omit it and fall back to the undertaking environment.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment: Option<GovernedEnv>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lease: Option<ExecutionLease>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -408,9 +412,19 @@ pub struct PolicyReport {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CaptureRisk {
-    OversizeFile { path: String, bytes: u64, limit: u64 },
-    OversizeTotal { bytes: u64, limit: u64 },
-    SecretPattern { path: String, pattern: String },
+    OversizeFile {
+        path: String,
+        bytes: u64,
+        limit: u64,
+    },
+    OversizeTotal {
+        bytes: u64,
+        limit: u64,
+    },
+    SecretPattern {
+        path: String,
+        pattern: String,
+    },
 }
 
 impl PolicyReport {
@@ -451,6 +465,41 @@ pub struct SubmodulePin {
     pub changed: bool,
 }
 
+/// Durable provenance for a redacted ephemeral Coder object. The raw object is
+/// deliberately absent: sealing promotes identity and lifecycle metadata only.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompactEvidenceReceipt {
+    pub schema_version: u32,
+    pub work_id: String,
+    pub source_tool: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_call_id: Option<String>,
+    pub digest: String,
+    pub ephemeral_reference: String,
+    pub content_type: String,
+    pub logical_bytes: u64,
+    pub physical_bytes: u64,
+    pub retention: CompactEvidenceRetention,
+    pub expires_at_unix_seconds: u64,
+    pub redacted: bool,
+    pub raw_evidence: RawEvidenceDisposition,
+    pub recorded_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompactEvidenceRetention {
+    SuccessfulOrReproducible,
+    FailedOrNonReproducible,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RawEvidenceDisposition {
+    /// Raw bytes remain in the bounded TTL store and are never copied by seal.
+    EphemeralOnly,
+}
+
 /// Canonical evidence manifest. The `bundle_digest` is computed over the
 /// canonical serialization of this manifest *without* the digest field —
 /// deterministic field ordering, normalized paths, stable list ordering,
@@ -467,6 +516,12 @@ pub struct EvidenceManifest {
     pub patch_digest: Digest,
     pub command_log_digest: Digest,
     pub policy_report_digest: Digest,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compact_receipts_digest: Option<Digest>,
+    #[serde(default)]
+    pub compact_receipt_count: u64,
+    #[serde(default)]
+    pub compact_receipt_rejections: u64,
     pub changed_files: Vec<ChangedFile>,
     #[serde(default)]
     pub submodule_state: Vec<SubmodulePin>,
@@ -513,6 +568,11 @@ pub struct WorkItem {
     pub environment: Option<GovernedEnv>,
     #[serde(default)]
     pub attempts: Vec<Attempt>,
+    /// Canonical set of running attempts. Every active attempt owns a fenced,
+    /// attempt-scoped mutation environment.
+    #[serde(default)]
+    pub active_attempts: Vec<AttemptId>,
+    /// Legacy projection retained while existing snapshots and clients migrate.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_attempt: Option<AttemptId>,
     pub state: WorkState,
@@ -529,7 +589,12 @@ pub struct WorkItem {
 }
 
 impl WorkItem {
-    pub fn new(title: impl Into<String>, brief: impl Into<String>, target: WorkTarget, owner: impl Into<String>) -> Self {
+    pub fn new(
+        title: impl Into<String>,
+        brief: impl Into<String>,
+        target: WorkTarget,
+        owner: impl Into<String>,
+    ) -> Self {
         let now = Utc::now();
         Self {
             schema_version: MODEL_SCHEMA_VERSION,
@@ -540,6 +605,7 @@ impl WorkItem {
             policy: WorkPolicy::default(),
             environment: None,
             attempts: Vec::new(),
+            active_attempts: Vec::new(),
             active_attempt: None,
             state: WorkState::Draft,
             disposition: None,
@@ -560,6 +626,95 @@ impl WorkItem {
 
     pub fn next_attempt_seq(&self) -> u32 {
         self.attempts.iter().map(|a| a.seq).max().unwrap_or(0) + 1
+    }
+
+    /// Active ids from the canonical set, with a legacy snapshot fallback.
+    pub fn active_attempt_ids(&self) -> Vec<&AttemptId> {
+        if self.active_attempts.is_empty() {
+            self.active_attempt.iter().collect()
+        } else {
+            self.active_attempts.iter().collect()
+        }
+    }
+
+    pub fn has_active_attempts(&self) -> bool {
+        !self.active_attempts.is_empty() || self.active_attempt.is_some()
+    }
+
+    pub fn latest_active_attempt(&self) -> Option<&Attempt> {
+        self.active_attempt_ids()
+            .into_iter()
+            .filter_map(|id| self.attempt(id))
+            .max_by_key(|attempt| attempt.seq)
+    }
+
+    pub fn environment_for_attempt(&self, id: &AttemptId) -> Option<&GovernedEnv> {
+        self.attempt(id)
+            .and_then(|attempt| attempt.environment.as_ref())
+            .or(self.environment.as_ref())
+    }
+
+    pub fn latest_attempt_environment(&self) -> Option<&GovernedEnv> {
+        self.attempts
+            .iter()
+            .filter_map(|attempt| {
+                attempt
+                    .environment
+                    .as_ref()
+                    .map(|environment| (attempt.seq, environment))
+            })
+            .max_by_key(|(seq, _)| *seq)
+            .map(|(_, environment)| environment)
+    }
+
+    /// The worktree users and tools should see between attempts. Once an
+    /// isolated attempt exists, its preserved environment carries continuity;
+    /// the original undertaking environment remains the staging anchor.
+    pub fn workspace_environment(&self) -> Option<&GovernedEnv> {
+        if self.state == WorkState::Discarded {
+            return None;
+        }
+        self.latest_active_attempt()
+            .and_then(|attempt| attempt.environment.as_ref())
+            .or_else(|| self.latest_attempt_environment())
+            .or(self.environment.as_ref())
+    }
+
+    /// Aggregate state after one attempt changes lifecycle. A healthy peer
+    /// keeps the undertaking executing; sealed evidence becomes reviewable
+    /// only after the last active attempt releases custody.
+    pub fn state_after_attempts(&self) -> WorkState {
+        if self.has_active_attempts() {
+            WorkState::Executing
+        } else if self
+            .attempts
+            .iter()
+            .any(|attempt| attempt.evidence_id.is_some())
+        {
+            WorkState::AwaitingReview
+        } else {
+            WorkState::Ready
+        }
+    }
+
+    pub fn activate_attempt(&mut self, id: AttemptId) {
+        if !self.active_attempts.contains(&id) {
+            self.active_attempts.push(id.clone());
+        }
+        self.active_attempt = Some(id);
+    }
+
+    pub fn deactivate_attempt(&mut self, id: &AttemptId) {
+        self.active_attempts.retain(|active| active != id);
+        self.active_attempt = self
+            .active_attempts
+            .iter()
+            .filter_map(|active| self.attempt(active).map(|attempt| (attempt.seq, active)))
+            .max_by_key(|(seq, _)| *seq)
+            .map(|(_, active)| active.clone());
+        if self.active_attempts.is_empty() && self.active_attempt.as_ref() == Some(id) {
+            self.active_attempt = None;
+        }
     }
 }
 
@@ -583,6 +738,19 @@ mod tests {
         let back: WorkItem = serde_json::from_str(&json).unwrap();
         assert_eq!(item, back);
         assert_eq!(back.schema_version, MODEL_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn legacy_active_attempt_snapshot_projects_into_canonical_set() {
+        let mut item = WorkItem::new("t", "b", sample_target(), "user-1");
+        let active = AttemptId::new();
+        item.active_attempt = Some(active.clone());
+        let mut value = serde_json::to_value(&item).unwrap();
+        value.as_object_mut().unwrap().remove("active_attempts");
+
+        let restored: WorkItem = serde_json::from_value(value).unwrap();
+        assert!(restored.has_active_attempts());
+        assert_eq!(restored.active_attempt_ids(), vec![&active]);
     }
 
     #[test]
@@ -622,20 +790,22 @@ mod tests {
                 detail: serde_json::json!({"argv": ["echo", "hi"]}),
             },
             state: AttemptState::Running,
+            environment: None,
             lease: Some(lease),
             recovery: None,
             evidence_id: None,
             started_at: Utc::now(),
             ended_at: None,
         };
-        item.active_attempt = Some(attempt.id.clone());
+        item.activate_attempt(attempt.id.clone());
         item.attempts.push(attempt);
         item.state = WorkState::Executing;
 
         let json = serde_json::to_string(&item).unwrap();
         let back: WorkItem = serde_json::from_str(&json).unwrap();
         assert_eq!(item, back);
-        let att = back.attempt(&back.active_attempt.clone().unwrap()).unwrap();
+        assert_eq!(back.active_attempts.len(), 1);
+        let att = back.latest_active_attempt().unwrap();
         assert_eq!(att.lease.as_ref().unwrap().generation, 1);
     }
 

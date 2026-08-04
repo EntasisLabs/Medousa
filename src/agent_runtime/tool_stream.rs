@@ -257,6 +257,15 @@ pub fn persist_and_enrich_artifact_refs(
     output_receipt: Option<&ArtifactReceiptMeta>,
     mut refs: Vec<StreamToolArtifactRef>,
 ) -> Vec<StreamToolArtifactRef> {
+    if tool_payload_is_requeryable(tool_name) {
+        for item in &mut refs {
+            item.label = Some(format!(
+                "{tool_name} {} — re-queryable, not persisted",
+                item.role
+            ));
+        }
+        return refs;
+    }
     if let Some(receipt) = input_receipt
         && let Ok(record) = crate::artifact_store::persist_tool_artifact(
             session_id,
@@ -286,6 +295,13 @@ pub fn persist_and_enrich_artifact_refs(
             }
         }
     refs
+}
+
+pub fn tool_payload_is_requeryable(tool_name: &str) -> bool {
+    crate::code_intelligence_tools::is_code_cognition_tool(tool_name)
+        || crate::detamu_tools::is_detamu_cognition_tool(tool_name)
+        || tool_name == crate::coding_tools::COGNITION_SHELL_SESSION_STATUS
+        || tool_name == super::coder_tools::COGNITION_CODER_EVIDENCE_READ
 }
 
 pub fn ui_artifact_from_tool_output(
@@ -482,5 +498,19 @@ mod tests {
             })),
             "succeeded"
         );
+    }
+
+    #[test]
+    fn code_and_detamu_payloads_are_requeried_instead_of_persisted() {
+        assert!(tool_payload_is_requeryable("cognition_code_read"));
+        assert!(tool_payload_is_requeryable("cognition_code_diagnostics"));
+        assert!(tool_payload_is_requeryable("cognition_detamu_impact"));
+        assert!(tool_payload_is_requeryable(
+            "cognition_shell_session_status"
+        ));
+        assert!(tool_payload_is_requeryable(
+            super::super::coder_tools::COGNITION_CODER_EVIDENCE_READ
+        ));
+        assert!(!tool_payload_is_requeryable("cognition_shell_session_run"));
     }
 }

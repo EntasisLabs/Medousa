@@ -96,6 +96,15 @@ this generic HTTP client rather than a dedicated typed SDK accessor. See the
 | `list(limit)` | `GET /v1/sessions?limit=` | `SessionHistoryListResponse` |
 | `history(session_id)` | `GET /v1/sessions/{id}/history` | `SessionHistoryResponse` |
 | `set_display_name(session_id, name)` | `PUT /v1/sessions/{id}/name` | `SessionSetDisplayNameRequest` |
+| `agent_mode(session_id)` | `GET /v1/sessions/{id}/agent-mode` | `SessionAgentModeResponse` |
+| `set_agent_mode(session_id, request)` | `PUT /v1/sessions/{id}/agent-mode` | Persist a session selection or task lease |
+| `clear_agent_mode(session_id, scope)` | `DELETE /v1/sessions/{id}/agent-mode` | Clear a session selection or task lease |
+| `agent_mode_proposals(session_id)` | `GET /v1/sessions/{id}/agent-mode/proposals` | List pending and resolved mode suggestions |
+| `decide_agent_mode_proposal(session_id, proposal_id, accept)` | `PUT /v1/sessions/{id}/agent-mode/proposals/{proposal_id}` | Accept or deny a pending suggestion |
+| `code_binding(session_id)` | `GET /v1/sessions/{id}/code-binding` | Read the conversation's shared Forge undertaking |
+| `set_code_binding(session_id, work_id)` | `PUT /v1/sessions/{id}/code-binding` | Bind Home and editor surfaces to the same undertaking |
+| `clear_code_binding(session_id)` | `DELETE /v1/sessions/{id}/code-binding` | Remove the shared undertaking binding |
+| `start_code_project(session_id, request)` | `POST /v1/sessions/{id}/code-project` | Create, provision, and bind a repository-backed or blank project |
 | `append_turn(session_id, request)` | `POST /v1/sessions/{id}/turns` | `SessionAppendTurnRequest` |
 | `delete(session_id)` | `DELETE /v1/sessions/{id}` | `SessionDeleteResponse` |
 | `list_turns(session_id)` | `GET /v1/sessions/{id}/turns` | `SessionHistoryResponse` |
@@ -115,6 +124,11 @@ this generic HTTP client rather than a dedicated typed SDK accessor. See the
 | `stream_reconnecting_with_policy(stream_url, policy)` | SSE with custom `ReconnectPolicy` | `InteractiveTurnStreamEvent` stream |
 | `stream_turn_reconnecting(request)` | start + reconnecting SSE | combined helper (recommended) |
 | `cancel(session_id)` | `POST /v1/sessions/{id}/active-turn` | cancel active turn |
+
+Set `InteractiveTurnRequest.code_project_setup_authorized` only after the
+principal explicitly chooses a client action that allows unbound Coder to
+choose, bind, or create a project. It does not expand authority on bound or
+non-Coder turns, and it is stored separately from the human prompt.
 
 **Client helpers** (`stream_reconnecting*`, `stream_turn_reconnecting`) are not separate HTTP routes — they track `event.seq`, reconnect with `?since=<last_seq>`, and apply bounded backoff + overlap guard. See `medousa_sdk::ReconnectPolicy` and `medousa_sdk::stream_path_with_since`.
 
@@ -167,6 +181,9 @@ diagnostics into provider-specific prompt text.
 
 | Method | HTTP | Types |
 |--------|------|-------|
+| `agent_modes()` | `GET /v1/agent-modes` | `AgentModeListResponse` |
+| `agent_mode_transition_policy()` | `GET /v1/agent-modes/policy` | Read proposal timeout and auto-accept policy |
+| `set_agent_mode_transition_policy(policy)` | `PUT /v1/agent-modes/policy` | Update proposal timeout and auto-accept policy |
 | `artifact_command(request)` | `POST /v1/runtime/artifact/command` | `ArtifactCommandRequest` |
 | `artifact_fetch(request)` | `POST /v1/runtime/artifact/fetch` | `ArtifactFetchRequest` |
 | `artifact_write(request)` | `POST /v1/runtime/artifact/write` | `ArtifactWriteRequest` |

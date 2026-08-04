@@ -1,7 +1,11 @@
 use crate::daemon::types::{
-    ActiveSessionTurnResponse, CancelActiveSessionTurnResponse, MediaRef, SessionDeleteQuery,
-    SessionDeleteResponse, SessionHistoryListResponse, SessionHistoryResponse,
-    SessionSetDisplayNameResponse, StageRoutingMatrix, TurnSurfaceContext,
+    ActiveSessionTurnResponse, AgentModeId, AgentModeListResponse, AgentModeProposalListResponse,
+    AgentModeProposalResponse, AgentModeScope, AgentModeTransitionPolicy,
+    CancelActiveSessionTurnResponse, CodeIntentContext, MediaRef, SessionAgentModeResponse,
+    SessionCodeBindingResponse, SessionDeleteQuery, SessionDeleteResponse,
+    SessionCodeProjectResponse, StartSessionCodeProjectRequest,
+    SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameResponse,
+    SetSessionAgentModeRequest, StageRoutingMatrix, TurnSurfaceContext,
 };
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -108,6 +112,161 @@ pub async fn session_set_display_name(
     client(&state)
         .sessions()
         .set_display_name(trimmed_id, trimmed_name)
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn agent_mode_list(
+    state: State<'_, DaemonState>,
+) -> Result<AgentModeListResponse, String> {
+    client(&state)
+        .runtime()
+        .agent_modes()
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn agent_mode_transition_policy_get(
+    state: State<'_, DaemonState>,
+) -> Result<AgentModeTransitionPolicy, String> {
+    client(&state)
+        .runtime()
+        .agent_mode_transition_policy()
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn agent_mode_transition_policy_set(
+    state: State<'_, DaemonState>,
+    policy: AgentModeTransitionPolicy,
+) -> Result<AgentModeTransitionPolicy, String> {
+    client(&state)
+        .runtime()
+        .set_agent_mode_transition_policy(&policy)
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn session_get_agent_mode(
+    state: State<'_, DaemonState>,
+    session_id: String,
+) -> Result<SessionAgentModeResponse, String> {
+    let trimmed = session_id.trim();
+    if trimmed.is_empty() {
+        return Err("session_id is required".to_string());
+    }
+    client(&state)
+        .sessions()
+        .agent_mode(trimmed)
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn session_set_agent_mode(
+    state: State<'_, DaemonState>,
+    session_id: String,
+    mode: AgentModeId,
+) -> Result<SessionAgentModeResponse, String> {
+    let trimmed = session_id.trim();
+    if trimmed.is_empty() {
+        return Err("session_id is required".to_string());
+    }
+    client(&state)
+        .sessions()
+        .set_agent_mode(
+            trimmed,
+            &SetSessionAgentModeRequest {
+                mode,
+                scope: AgentModeScope::Session,
+                task_id: None,
+                expires_at_utc: None,
+            },
+        )
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn session_list_agent_mode_proposals(
+    state: State<'_, DaemonState>,
+    session_id: String,
+) -> Result<AgentModeProposalListResponse, String> {
+    let trimmed = session_id.trim();
+    if trimmed.is_empty() {
+        return Err("session_id is required".to_string());
+    }
+    client(&state)
+        .sessions()
+        .agent_mode_proposals(trimmed)
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn session_decide_agent_mode_proposal(
+    state: State<'_, DaemonState>,
+    session_id: String,
+    proposal_id: String,
+    accept: bool,
+) -> Result<AgentModeProposalResponse, String> {
+    client(&state)
+        .sessions()
+        .decide_agent_mode_proposal(session_id.trim(), proposal_id.trim(), accept)
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn session_get_code_binding(
+    state: State<'_, DaemonState>,
+    session_id: String,
+) -> Result<SessionCodeBindingResponse, String> {
+    client(&state)
+        .sessions()
+        .code_binding(session_id.trim())
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn session_set_code_binding(
+    state: State<'_, DaemonState>,
+    session_id: String,
+    work_id: String,
+) -> Result<SessionCodeBindingResponse, String> {
+    client(&state)
+        .sessions()
+        .set_code_binding(session_id.trim(), work_id.trim())
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn session_clear_code_binding(
+    state: State<'_, DaemonState>,
+    session_id: String,
+) -> Result<SessionCodeBindingResponse, String> {
+    client(&state)
+        .sessions()
+        .clear_code_binding(session_id.trim())
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn session_start_code_project(
+    state: State<'_, DaemonState>,
+    session_id: String,
+    request: StartSessionCodeProjectRequest,
+) -> Result<SessionCodeProjectResponse, String> {
+    client(&state)
+        .sessions()
+        .start_code_project(session_id.trim(), &request)
         .await
         .map_err(sdk_error)
 }
@@ -281,6 +440,12 @@ pub struct SessionTurnsResponse {
 struct CreateTurnTicketBody {
     session_id: String,
     prompt: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    agent_mode: Option<AgentModeId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    code_context: Option<CodeIntentContext>,
+    #[serde(default)]
+    code_project_setup_authorized: bool,
     #[serde(default)]
     mode: TurnTicketMode,
     #[serde(default = "default_persist_user_turn")]
@@ -321,6 +486,9 @@ pub async fn turn_create(
     activation_state: State<'_, super::local_inference::LocalInferenceActivationState>,
     session_id: String,
     prompt: String,
+    agent_mode: Option<AgentModeId>,
+    code_context: Option<CodeIntentContext>,
+    code_project_setup_authorized: Option<bool>,
     mode: Option<String>,
     provider: Option<String>,
     model: Option<String>,
@@ -413,6 +581,9 @@ pub async fn turn_create(
     let body = CreateTurnTicketBody {
         session_id: trimmed_session.to_string(),
         prompt,
+        agent_mode,
+        code_context,
+        code_project_setup_authorized: code_project_setup_authorized.unwrap_or(false),
         mode: ticket_mode,
         persist_user_turn: true,
         response_depth_mode,

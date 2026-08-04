@@ -550,6 +550,9 @@ pub fn build_interactive_turn_request_for_ingest(
     InteractiveTurnRequest {
         session_id: session_id.to_string(),
         prompt,
+        agent_mode: None,
+        code_context: None,
+        code_project_setup_authorized: false,
         persist_user_turn: true,
         response_depth_mode: response_depth_mode.to_string(),
         reasoning_effort: reasoning_effort.to_string(),

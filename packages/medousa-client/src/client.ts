@@ -1,5 +1,10 @@
 import { isBackgroundHandoffEvent, readSse, streamPathWithSince } from "./stream.js";
 import type {
+  AgentModeId,
+  AgentModeListResponse,
+  AgentModeProposalListResponse,
+  AgentModeProposalResponse,
+  AgentModeScope,
   CapabilityListResponse,
   ClientRegistrationRequest,
   ClientRegistrationResponse,
@@ -11,6 +16,7 @@ import type {
   CreateSessionRequest,
   CreateSessionResponse,
   HealthResponse,
+  ForgeUndertaking,
   InteractiveTurnRequest,
   InteractiveTurnResponse,
   InteractiveTurnStreamEvent,
@@ -24,6 +30,10 @@ import type {
   VaultWriteResponse,
   RuntimeDefaults,
   SessionHistoryResponse,
+  SessionAgentModeResponse,
+  SessionCodeBindingResponse,
+  SessionCodeProjectResponse,
+  StartSessionCodeProjectRequest,
   StreamOptions,
 } from "./types.js";
 
@@ -132,6 +142,131 @@ export class MedousaClient {
   ): Promise<SessionHistoryResponse> {
     return this.request<SessionHistoryResponse>(
       `/v1/sessions/${encodeURIComponent(sessionId)}/history`,
+      { signal: options?.signal },
+    );
+  }
+
+  async agentModes(options?: ClientRequestOptions): Promise<AgentModeListResponse> {
+    return this.request<AgentModeListResponse>("/v1/agent-modes", {
+      signal: options?.signal,
+    });
+  }
+
+  async sessionAgentMode(
+    sessionId: string,
+    options?: ClientRequestOptions,
+  ): Promise<SessionAgentModeResponse> {
+    return this.request<SessionAgentModeResponse>(
+      `/v1/sessions/${encodeURIComponent(sessionId)}/agent-mode`,
+      { signal: options?.signal },
+    );
+  }
+
+  async setSessionAgentMode(
+    sessionId: string,
+    mode: AgentModeId,
+    scope: AgentModeScope = "session",
+    taskId?: string,
+    options?: ClientRequestOptions,
+  ): Promise<SessionAgentModeResponse> {
+    return this.request<SessionAgentModeResponse>(
+      `/v1/sessions/${encodeURIComponent(sessionId)}/agent-mode`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ mode, scope, task_id: taskId }),
+        signal: options?.signal,
+      },
+    );
+  }
+
+  async agentModeProposals(
+    sessionId: string,
+    options?: ClientRequestOptions,
+  ): Promise<AgentModeProposalListResponse> {
+    return this.request<AgentModeProposalListResponse>(
+      `/v1/sessions/${encodeURIComponent(sessionId)}/agent-mode/proposals`,
+      { signal: options?.signal },
+    );
+  }
+
+  async decideAgentModeProposal(
+    sessionId: string,
+    proposalId: string,
+    accept: boolean,
+    options?: ClientRequestOptions,
+  ): Promise<AgentModeProposalResponse> {
+    return this.request<AgentModeProposalResponse>(
+      `/v1/sessions/${encodeURIComponent(sessionId)}/agent-mode/proposals/${encodeURIComponent(proposalId)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ accept }),
+        signal: options?.signal,
+      },
+    );
+  }
+
+  async sessionCodeBinding(
+    sessionId: string,
+    options?: ClientRequestOptions,
+  ): Promise<SessionCodeBindingResponse> {
+    return this.request<SessionCodeBindingResponse>(
+      `/v1/sessions/${encodeURIComponent(sessionId)}/code-binding`,
+      { signal: options?.signal },
+    );
+  }
+
+  async setSessionCodeBinding(
+    sessionId: string,
+    workId: string,
+    options?: ClientRequestOptions,
+  ): Promise<SessionCodeBindingResponse> {
+    return this.request<SessionCodeBindingResponse>(
+      `/v1/sessions/${encodeURIComponent(sessionId)}/code-binding`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ work_id: workId }),
+        signal: options?.signal,
+      },
+    );
+  }
+
+  async clearSessionCodeBinding(
+    sessionId: string,
+    options?: ClientRequestOptions,
+  ): Promise<SessionCodeBindingResponse> {
+    return this.request<SessionCodeBindingResponse>(
+      `/v1/sessions/${encodeURIComponent(sessionId)}/code-binding`,
+      { method: "DELETE", signal: options?.signal },
+    );
+  }
+
+  async startSessionCodeProject(
+    sessionId: string,
+    request: StartSessionCodeProjectRequest,
+    options?: ClientRequestOptions,
+  ): Promise<SessionCodeProjectResponse> {
+    return this.request<SessionCodeProjectResponse>(
+      `/v1/sessions/${encodeURIComponent(sessionId)}/code-project`,
+      {
+        method: "POST",
+        body: JSON.stringify(request),
+        signal: options?.signal,
+      },
+    );
+  }
+
+  async forgeUndertakings(options?: ClientRequestOptions): Promise<ForgeUndertaking[]> {
+    return this.request<ForgeUndertaking[]>("/v1/forge/items", {
+      signal: options?.signal,
+    });
+  }
+
+  async forgeUndertaking(
+    workId: string,
+    options?: ClientRequestOptions,
+  ): Promise<ForgeUndertaking> {
+    return this.request<ForgeUndertaking>(
+      `/v1/forge/items/${encodeURIComponent(workId)}`,
       { signal: options?.signal },
     );
   }

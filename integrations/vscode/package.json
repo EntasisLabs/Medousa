@@ -18,6 +18,8 @@
     "onCommand:medousa.ask",
     "onCommand:medousa.configureConnection",
     "onCommand:medousa.newConversation",
+    "onCommand:medousa.selectMode",
+    "onCommand:medousa.bindUndertaking",
     "onView:medousa.chat"
   ],
   "main": "./dist/extension.js",
@@ -53,6 +55,14 @@
         "command": "medousa.newConversation",
         "title": "Medousa: New Conversation",
         "icon": "$(add)"
+      },
+      {
+        "command": "medousa.selectMode",
+        "title": "Medousa: Select Agent Mode"
+      },
+      {
+        "command": "medousa.bindUndertaking",
+        "title": "Medousa: Bind Forge Undertaking"
       }
     ],
     "menus": {

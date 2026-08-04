@@ -399,6 +399,12 @@ pub fn build_core_router(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/v1/stats", get(stats))
         .route("/v1/runtime/defaults", get(runtime_defaults))
+        .route("/v1/agent-modes", get(crate::daemon_handlers::list_agent_modes))
+        .route(
+            "/v1/agent-modes/policy",
+            get(crate::daemon_handlers::get_agent_mode_transition_policy)
+                .put(crate::daemon_handlers::set_agent_mode_transition_policy),
+        )
         .route(
             "/v1/sessions",
             get(crate::daemon_handlers::list_session_history)
@@ -415,6 +421,26 @@ pub fn build_core_router(state: AppState) -> Router {
         .route(
             "/v1/sessions/{session_id}/name",
             put(crate::daemon_handlers::set_session_display_name),
+        )
+        .route(
+            "/v1/sessions/{session_id}/agent-mode",
+            get(crate::daemon_handlers::get_session_agent_mode)
+                .put(crate::daemon_handlers::set_session_agent_mode)
+                .delete(crate::daemon_handlers::clear_session_agent_mode),
+        )
+        .route(
+            "/v1/sessions/{session_id}/agent-mode/proposals",
+            get(crate::daemon_handlers::list_session_agent_mode_proposals),
+        )
+        .route(
+            "/v1/sessions/{session_id}/agent-mode/proposals/{proposal_id}",
+            put(crate::daemon_handlers::decide_session_agent_mode_proposal),
+        )
+        .route(
+            "/v1/sessions/{session_id}/code-binding",
+            get(crate::daemon_handlers::get_session_code_binding)
+                .put(crate::daemon_handlers::set_session_code_binding)
+                .delete(crate::daemon_handlers::clear_session_code_binding),
         )
         .route("/v1/sessions/{session_id}", delete(delete_session_handler))
         .route(
@@ -498,6 +524,12 @@ pub fn build_core_router(state: AppState) -> Router {
         .route(
             "/v1/maintenance/artifacts",
             get(get_artifact_retention_status).put(update_artifact_retention),
+        )
+        .route(
+            "/v1/maintenance/storage",
+            get(crate::daemon::storage_governor::get_storage_status)
+                .put(crate::daemon::storage_governor::put_storage_settings)
+                .post(crate::daemon::storage_governor::post_storage_maintenance),
         )
         .route("/v1/runtime/config/command", post(runtime_config_command))
         .route("/v1/runtime/stage-route/command", post(stage_route_command))

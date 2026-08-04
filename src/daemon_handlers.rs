@@ -7,7 +7,11 @@ use uuid::Uuid;
 use stasis::ports::outbound::memory::memory_operations::MemoryOperations;
 
 use crate::daemon_api::{
-    CreateSessionRequest, CreateSessionResponse, SessionAppendTurnRequest,
+    AgentModeListResponse, AgentModeProposalListResponse, AgentModeProposalResponse, AgentModeScope,
+    AgentModeTransitionPolicy, CreateSessionRequest, CreateSessionResponse,
+    DecideAgentModeProposalRequest, SessionAgentModeResponse,
+    SessionCodeBindingResponse, SetSessionAgentModeRequest, SetSessionCodeBindingRequest,
+    SessionAppendTurnRequest,
     SessionAppendTurnResponse, SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListRequest,
     SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameRequest,
     SessionSetDisplayNameResponse,
@@ -170,6 +174,105 @@ pub async fn set_session_display_name(
         session_id,
         display_name,
     }))
+}
+
+pub async fn get_session_agent_mode(
+    AxumPath(session_id): AxumPath<String>,
+) -> Result<Json<SessionAgentModeResponse>, (StatusCode, String)> {
+    crate::agent_mode_state::get_session_mode(&session_id)
+        .map(Json)
+        .map_err(|err| (StatusCode::BAD_REQUEST, err))
+}
+
+pub async fn list_agent_modes() -> Json<AgentModeListResponse> {
+    Json(crate::agent_runtime::list_agent_modes())
+}
+
+pub async fn get_agent_mode_transition_policy() -> Json<AgentModeTransitionPolicy> {
+    Json(crate::agent_mode_state::get_transition_policy())
+}
+
+pub async fn set_agent_mode_transition_policy(
+    Json(policy): Json<AgentModeTransitionPolicy>,
+) -> Result<Json<AgentModeTransitionPolicy>, (StatusCode, String)> {
+    crate::agent_mode_state::set_transition_policy(policy)
+        .map(Json)
+        .map_err(|err| (StatusCode::BAD_REQUEST, err))
+}
+
+pub async fn set_session_agent_mode(
+    AxumPath(session_id): AxumPath<String>,
+    Json(request): Json<SetSessionAgentModeRequest>,
+) -> Result<Json<SessionAgentModeResponse>, (StatusCode, String)> {
+    crate::agent_mode_state::set_session_mode(&session_id, request)
+        .map(Json)
+        .map_err(|err| (StatusCode::BAD_REQUEST, err))
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct ClearSessionAgentModeQuery {
+    #[serde(default)]
+    scope: AgentModeScope,
+}
+
+pub async fn clear_session_agent_mode(
+    AxumPath(session_id): AxumPath<String>,
+    Query(query): Query<ClearSessionAgentModeQuery>,
+) -> Result<Json<SessionAgentModeResponse>, (StatusCode, String)> {
+    crate::agent_mode_state::clear_session_mode(&session_id, query.scope)
+        .map(Json)
+        .map_err(|err| (StatusCode::BAD_REQUEST, err))
+}
+
+pub async fn get_session_code_binding(
+    AxumPath(session_id): AxumPath<String>,
+) -> Result<Json<SessionCodeBindingResponse>, (StatusCode, String)> {
+    crate::agent_mode_state::get_session_code_binding(&session_id)
+        .map(Json)
+        .map_err(|err| (StatusCode::BAD_REQUEST, err))
+}
+
+pub async fn set_session_code_binding(
+    State(state): State<crate::daemon::state::AppState>,
+    AxumPath(session_id): AxumPath<String>,
+    Json(request): Json<SetSessionCodeBindingRequest>,
+) -> Result<Json<SessionCodeBindingResponse>, (StatusCode, String)> {
+    let work_id = request.work_id.trim();
+    if work_id.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "work_id is required".to_string()));
+    }
+    state
+        .forge
+        .load(&medousa_forge::model::WorkId::from(work_id.to_string()))
+        .map_err(|err| (StatusCode::BAD_REQUEST, format!("cannot bind undertaking: {err}")))?;
+    crate::agent_mode_state::set_session_code_binding(&session_id, work_id)
+        .map(Json)
+        .map_err(|err| (StatusCode::BAD_REQUEST, err))
+}
+
+pub async fn clear_session_code_binding(
+    AxumPath(session_id): AxumPath<String>,
+) -> Result<Json<SessionCodeBindingResponse>, (StatusCode, String)> {
+    crate::agent_mode_state::clear_session_code_binding(&session_id)
+        .map(Json)
+        .map_err(|err| (StatusCode::BAD_REQUEST, err))
+}
+
+pub async fn list_session_agent_mode_proposals(
+    AxumPath(session_id): AxumPath<String>,
+) -> Result<Json<AgentModeProposalListResponse>, (StatusCode, String)> {
+    crate::agent_mode_state::list_mode_proposals(&session_id)
+        .map(Json)
+        .map_err(|err| (StatusCode::BAD_REQUEST, err))
+}
+
+pub async fn decide_session_agent_mode_proposal(
+    AxumPath((session_id, proposal_id)): AxumPath<(String, String)>,
+    Json(request): Json<DecideAgentModeProposalRequest>,
+) -> Result<Json<AgentModeProposalResponse>, (StatusCode, String)> {
+    crate::agent_mode_state::decide_mode_proposal(&session_id, &proposal_id, request.accept)
+        .map(Json)
+        .map_err(|err| (StatusCode::BAD_REQUEST, err))
 }
 
 pub async fn delete_session(

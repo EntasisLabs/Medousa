@@ -757,6 +757,9 @@ mod tests {
         let request = InteractiveTurnRequest {
             session_id: "sess-1".to_string(),
             prompt: "hi".to_string(),
+            agent_mode: None,
+            code_context: None,
+            code_project_setup_authorized: false,
             persist_user_turn: true,
             response_depth_mode: "standard".to_string(),
             reasoning_effort: crate::reasoning_effort::REASONING_EFFORT_DEFAULT.to_string(),

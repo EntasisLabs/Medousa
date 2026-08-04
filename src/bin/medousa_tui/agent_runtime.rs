@@ -7,23 +7,23 @@ use tokio::sync::mpsc;
 
 use medousa::{
     InteractiveTurnRequest, InteractiveTurnStreamEvent, TuiRuntime,
-    turn_continuation::TurnContinuationScope,
     agent_runtime::{
         prompt_prep,
         stream_sink::AgentStreamSink,
         turn_orchestrator::{
-            self, LocalTurnExecutionParams, PrepareTurnPromptParams, DEFAULT_ACTIVATION_DIRECT_PROMPT_CHARS,
-            DEFAULT_ACTIVATION_LONG_SESSION_PROMPT_CHARS, DEFAULT_ACTIVATION_LONG_SESSION_TURN_THRESHOLD,
-            DEFAULT_COLD_WINDOW_TURNS, DEFAULT_HOT_WINDOW_TURNS, DEFAULT_RETRY_RUNTIME_MAX_RETRIES,
-            DEFAULT_RETRY_RUNTIME_MAX_ROUNDS, MAX_COLD_WINDOW_TURNS, MAX_HOT_WINDOW_TURNS,
-            MIN_COLD_WINDOW_TURNS, MIN_HOT_WINDOW_TURNS,
+            self, DEFAULT_ACTIVATION_DIRECT_PROMPT_CHARS,
+            DEFAULT_ACTIVATION_LONG_SESSION_PROMPT_CHARS,
+            DEFAULT_ACTIVATION_LONG_SESSION_TURN_THRESHOLD, DEFAULT_COLD_WINDOW_TURNS,
+            DEFAULT_HOT_WINDOW_TURNS, DEFAULT_RETRY_RUNTIME_MAX_RETRIES,
+            DEFAULT_RETRY_RUNTIME_MAX_ROUNDS, LocalTurnExecutionParams, MAX_COLD_WINDOW_TURNS,
+            MAX_HOT_WINDOW_TURNS, MIN_COLD_WINDOW_TURNS, MIN_HOT_WINDOW_TURNS,
+            PrepareTurnPromptParams,
         },
-        turn_services::{
-            self, IntentContextLimits, PriorMessageLimits,
-        },
+        turn_services::{self, IntentContextLimits, PriorMessageLimits},
     },
     events::TuiEvent,
     payload_receipt::ArtifactReceiptMeta,
+    turn_continuation::TurnContinuationScope,
 };
 use serde_json::Value;
 
@@ -41,10 +41,7 @@ struct TuiStreamSink {
 #[async_trait]
 impl AgentStreamSink for TuiStreamSink {
     async fn content_chunk(&self, turn_id: u64, delta: String) {
-        let _ = self
-            .tx
-            .send(TuiEvent::AgentChunk { turn_id, delta })
-            .await;
+        let _ = self.tx.send(TuiEvent::AgentChunk { turn_id, delta }).await;
     }
 
     async fn reasoning_chunk(&self, turn_id: u64, delta: String) {
@@ -215,10 +212,7 @@ impl AgentStreamSink for TuiStreamSink {
     }
 
     async fn scratch_reset(&self, turn_id: u64) {
-        let _ = self
-            .tx
-            .send(TuiEvent::AgentScratchReset { turn_id })
-            .await;
+        let _ = self.tx.send(TuiEvent::AgentScratchReset { turn_id }).await;
     }
 
     async fn turn_budget_approval_required(
@@ -361,7 +355,12 @@ pub(crate) async fn start_prompt_run(
     let tui_surface = medousa::TurnSurfaceContext::tui();
     let identity_user_id =
         medousa::identity_memory::resolve_tool_identity_user_id(&state.session_id, false);
+    let agent_mode =
+        medousa::agent_runtime::resolve_agent_mode(medousa::daemon_api::AgentModeId::General)
+            .expect("General agent mode is always available");
     let prepared = turn_orchestrator::prepare_turn_prompt(PrepareTurnPromptParams {
+        agent_mode,
+        mode_context_appendix: None,
         session_id: &state.session_id,
         prompt: &prompt,
         selected_context_pack_query: state.selected_context_pack_query.as_deref(),
@@ -388,9 +387,17 @@ pub(crate) async fn start_prompt_run(
             format!(
                 "◈ cheap_recall retrieved={} path={} fallback={} fallback_reason={} keys={} snippets={}",
                 prepared.recall_probe.retrieved,
-                prepared.recall_probe.retrieval_path.as_deref().unwrap_or("n/a"),
+                prepared
+                    .recall_probe
+                    .retrieval_path
+                    .as_deref()
+                    .unwrap_or("n/a"),
                 prepared.recall_probe.fallback_triggered,
-                prepared.recall_probe.fallback_reason.as_deref().unwrap_or("none"),
+                prepared
+                    .recall_probe
+                    .fallback_reason
+                    .as_deref()
+                    .unwrap_or("none"),
                 prepared.recall_probe.node_sync_keys.len(),
                 prepared.recall_probe.snippets.len(),
             ),
@@ -410,7 +417,10 @@ pub(crate) async fn start_prompt_run(
     }
 
     state.pending_response_verified = prepared.verification_state;
-    super::push_obs(state, format!("◈ {}", prepared.compiler_output.compiler_summary));
+    super::push_obs(
+        state,
+        format!("◈ {}", prepared.compiler_output.compiler_summary),
+    );
 
     if let Some(note) = &prepared.pack_note {
         super::push_obs(state, note.clone());
@@ -440,7 +450,8 @@ pub(crate) async fn start_prompt_run(
     let pipeline = pipeline_selection.pipeline;
     let tx = event_tx.clone();
     let prompt_preview: String = resolved_prompt.chars().take(48).collect();
-    let configured_tool_call_mode = turn_services::parse_tool_call_mode(&state.settings.tool_call_mode);
+    let configured_tool_call_mode =
+        turn_services::parse_tool_call_mode(&state.settings.tool_call_mode);
     let turn_loop_settings =
         medousa::agent_runtime::TurnLoopSettings::from_runtime_settings(&state.settings);
     let activation = turn_services::decide_turn_activation(
@@ -536,8 +547,8 @@ pub(crate) async fn start_prompt_run(
             activation.max_tool_rounds,
         )
     };
-    let current_turn_user_message = medousa::media_vision::TurnMediaVisionPlan::empty()
-        .build_user_message(&prompt_for_request);
+    let current_turn_user_message =
+        medousa::media_vision::TurnMediaVisionPlan::empty().build_user_message(&prompt_for_request);
     let retry_max_retries = medousa::tui::settings::parse_usize_with_bounds(
         &state.settings.retry_runtime_max_retries,
         DEFAULT_RETRY_RUNTIME_MAX_RETRIES,
@@ -582,16 +593,16 @@ pub(crate) async fn start_prompt_run(
     let worker_scheduler = tui_rt.worker_scheduler.clone();
     let tool_registry = tui_rt.tool_registry.clone();
     let client_registry = tui_rt.client_registry.clone();
-    let identity_memory_store = Some(
-        tui_rt.identity_memory_store.clone()
-            as std::sync::Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>,
-    );
+    let identity_memory_store = Some(tui_rt.identity_memory_store.clone()
+        as std::sync::Arc<
+            dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore,
+        >);
     let session_id = state.session_id.clone();
     let backend = state.settings.backend.clone();
     let provider = state.settings.provider.clone();
     let model = state.settings.model.clone();
-    let base_url = (!state.settings.base_url.trim().is_empty())
-        .then(|| state.settings.base_url.clone());
+    let base_url =
+        (!state.settings.base_url.trim().is_empty()).then(|| state.settings.base_url.clone());
     let response_depth_mode = state.response_depth_mode.clone();
     let reasoning_effort = state.reasoning_effort.clone();
     let handle = tokio::spawn(async move {
@@ -612,6 +623,7 @@ pub(crate) async fn start_prompt_run(
         turn_orchestrator::execute_local_turn(
             sink,
             LocalTurnExecutionParams {
+                agent_mode,
                 turn_id,
                 session_id,
                 backend,
@@ -647,6 +659,9 @@ pub(crate) async fn start_prompt_run(
                 inference_profile_kind: medousa::inference_profiles::InferenceProfileKind::Main,
                 supports_ui_artifacts: false,
                 supports_browser_host: false,
+                round_context_provider: None,
+                evidence_undertaking_id: None,
+                compact_evidence_receipt_sink: None,
             },
         )
         .await;
@@ -665,6 +680,9 @@ async fn attempt_daemon_interactive_turn(
     let request = InteractiveTurnRequest {
         session_id: state.session_id.clone(),
         prompt: prompt.to_string(),
+        agent_mode: None,
+        code_context: None,
+        code_project_setup_authorized: false,
         persist_user_turn,
         response_depth_mode: state.response_depth_mode.clone(),
         reasoning_effort: state.reasoning_effort.clone(),
@@ -885,7 +903,9 @@ async fn dispatch_daemon_stream_event(
                     .send(TuiEvent::ToolRunFinished {
                         tool_run_id: run_id,
                         tool_name,
-                        status: payload.tool_status.unwrap_or_else(|| "succeeded".to_string()),
+                        status: payload
+                            .tool_status
+                            .unwrap_or_else(|| "succeeded".to_string()),
                         input_summary: payload.tool_input_summary.unwrap_or_default(),
                         output_summary: payload.tool_output_summary,
                         tool_round: payload.tool_round.unwrap_or(1),
@@ -1009,19 +1029,14 @@ async fn dispatch_daemon_stream_event(
                 })
                 .unwrap_or_else(|| "(empty daemon final response)".to_string());
             let tool_names = payload.tool_names.unwrap_or_default();
-            let handoff_phase = payload.phase == "worker_ack"
-                || payload.phase == "workshop_ack";
+            let handoff_phase = payload.phase == "worker_ack" || payload.phase == "workshop_ack";
             event_tx
                 .send(TuiEvent::AgentResponse {
                     turn_id,
                     text,
                     tool_names,
                     terminal: payload.terminal,
-                    work_id: if handoff_phase {
-                        payload.work_id
-                    } else {
-                        None
-                    },
+                    work_id: if handoff_phase { payload.work_id } else { None },
                 })
                 .await
                 .map_err(|err| err.to_string())?;

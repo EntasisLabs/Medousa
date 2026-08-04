@@ -37,6 +37,35 @@ with the next turn.
 Editor context is attached to the turn as structured metadata. It remains
 available for follow-up questions without appearing as text in the transcript.
 
+The controls above the composer show the conversation's Medousa mode and
+bound Forge undertaking. These are daemon-owned: opening the same conversation
+in Medousa preserves the same General/Coder selection and project binding.
+Choose **Coder** at any time. If the conversation has no project yet, the
+project control lets you continue ready work, create a blank codebase, or let
+Medousa choose or create the project from your message. New codebases are
+initialized and provisioned on the connected workshop, then VS Code offers to
+open the governed worktree locally. On a remote workshop, the daemon remains
+filesystem authority and VS Code sends editor context only as a bounded
+observation.
+
+When Coder starts working, Medousa moves execution into a private attempt
+worktree and refreshes the bound undertaking after the turn. If that path is
+local, opening the refreshed governed worktree shows the exact files Coder is
+editing. Interrupted turns keep that workspace and its unfinished edits for the
+next turn; the original staging worktree is not silently mutated.
+Multiple conversations can work on the same undertaking at once. Each agent
+receives its own branch and worktree, so starting a second agent does not share
+the first agent's mutation directory.
+
+Medousa also coordinates what those agents are touching. Overlapping ordinary
+code changes remain possible in their private worktrees and appear in Coder's
+ambient context. Shared-risk operations such as lockfile regeneration,
+migrations, ports, or deployment are serialized; if another agent holds the
+resource, Coder receives who holds it, why, and when it can safely retry.
+
+Mode suggestions appear inline with **Switch** and **Not now** actions. Their
+expiry and auto-accept behavior use the policy configured in Medousa.
+
 - **Enter** sends.
 - **Shift+Enter** adds a line.
 - **Ctrl/Cmd+Enter** also sends.

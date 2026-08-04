@@ -1,8 +1,19 @@
 import type {
+  AgentModeId,
+  AgentModeAvailability,
+  AgentModeListResponse,
+  AgentModeProposalListResponse,
+  AgentModeProposalResponse,
+  AgentModeScope,
+  CodeIntentContext,
   InteractiveTurnRequest,
   InteractiveTurnResponse,
   InteractiveTurnStreamEvent,
   HostTurnContext,
+  SessionAgentModeResponse,
+  SessionCodeBindingResponse,
+  SessionCodeProjectResponse,
+  StartSessionCodeProjectRequest,
 } from "./generated/daemon_api.js";
 
 export type {
@@ -10,6 +21,17 @@ export type {
   InteractiveTurnResponse,
   InteractiveTurnStreamEvent,
   HostTurnContext,
+  AgentModeId,
+  AgentModeAvailability,
+  AgentModeListResponse,
+  AgentModeProposalListResponse,
+  AgentModeProposalResponse,
+  AgentModeScope,
+  CodeIntentContext,
+  SessionAgentModeResponse,
+  SessionCodeBindingResponse,
+  SessionCodeProjectResponse,
+  StartSessionCodeProjectRequest,
 };
 
 export type MedousaSurface = "vscode" | "neovim" | "obsidian" | "browser";
@@ -153,6 +175,34 @@ export interface SessionTurn {
 export interface SessionHistoryResponse {
   session_id: string;
   turns: SessionTurn[];
+}
+
+export interface ForgeUndertaking {
+  id: string;
+  title: string;
+  brief: string;
+  state: string;
+  human_phase: string;
+  environment?: {
+    worktree: string;
+    branch: string;
+    baseline_oid: string;
+    generation: number;
+  } | null;
+  attempts?: Array<{
+    id: string;
+    seq: number;
+    state: string;
+    environment?: {
+      worktree: string;
+      branch: string;
+      baseline_oid: string;
+      generation: number;
+    } | null;
+  }>;
+  active_attempt?: string | null;
+  active_attempts?: string[];
+  allowed_actions?: Record<string, { allowed: boolean; reason?: string | null }>;
 }
 
 export interface RuntimeDefaults {

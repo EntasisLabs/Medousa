@@ -39,6 +39,13 @@ Chat and Terminal show the same compact project context. Open the context chip
 to move between the project, Review, Terminal, and a coding agent without
 rebuilding context. It shows the current stage and collaborator.
 
+Coder mode does not require choosing a project first. In chat, switch to
+**Coder**, then use **Choose or create project** to continue ready work or
+initialize a blank codebase. **Let Medousa choose or create it** sends the
+current message through a restricted setup phase: it can list, bind, or create
+a project, but receives no repository mutation or command authority until the
+following bound turn.
+
 If repository or tree APIs return 404, Medousa reports that the workshop daemon
 is older than the project tools — rebuild and restart `medousa_daemon` from this
 checkout rather than showing a fake-ready empty editor. If the project has no

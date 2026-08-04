@@ -9,6 +9,7 @@
   import ComposerSkillSlashMenu from "$lib/components/chat/ComposerSkillSlashMenu.svelte";
   import ComposerTurnControls from "$lib/components/chat/ComposerTurnControls.svelte";
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
+  import ModeProposalBar from "$lib/components/chat/ModeProposalBar.svelte";
   import AgentPermissionBar from "$lib/components/chat/AgentPermissionBar.svelte";
   import AgentBrowserPanel from "$lib/components/chat/AgentBrowserPanel.svelte";
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
@@ -34,6 +35,8 @@
     cancelAgentSession,
     createAgentSession,
     createTurnTicket,
+    getSessionAgentMode,
+    getSessionCodeBinding,
     promptAgentSession,
     steerBoundWorkshop,
   } from "$lib/daemon";
@@ -87,6 +90,7 @@
   import OfflineChatGate from "$lib/components/chat/OfflineChatGate.svelte";
   import LiquidCardDetailSheet from "$lib/components/chat/LiquidCardDetailSheet.svelte";
   import ChatRuntimePicker from "$lib/components/chat/ChatRuntimePicker.svelte";
+  import ChatAgentModePicker from "$lib/components/chat/ChatAgentModePicker.svelte";
   import { pendingMediaLabels } from "$lib/utils/chatMediaUpload";
   import { hasVisionMediaRefs } from "$lib/types/media";
   import { visionProfileReady } from "$lib/types/inferenceProfiles";
@@ -194,8 +198,19 @@
   let draftCursor = $state(0);
   let slashHighlight = $state(0);
   let slashAnchor = $state<SlashMenuAnchor | null>(null);
-  let composerFormEl = $state<HTMLElement | null>(null);
+  let composerFormEl = $state<HTMLFormElement | null>(null);
   let composerTextareaEl = $state<HTMLTextAreaElement | null>(null);
+  let allowUnboundCoderSend = false;
+
+  $effect(() => {
+    if (mobile) return;
+    const sendToSetup = () => {
+      allowUnboundCoderSend = true;
+      composerFormEl?.requestSubmit();
+    };
+    window.addEventListener("medousa-code-project-agent-setup", sendToSetup);
+    return () => window.removeEventListener("medousa-code-project-agent-setup", sendToSetup);
+  });
 
   const slashToken = $derived(composerSlashToken(chat.draft, draftCursor));
   const slashItems = $derived(
@@ -665,7 +680,12 @@
     return null;
   }
 
-  async function submitTurn(userContent: string, prompt: string, mode: "interactive" | "background") {
+  async function submitTurn(
+    userContent: string,
+    prompt: string,
+    mode: "interactive" | "background",
+    codeProjectSetupAuthorized = false,
+  ) {
     const runtime = getSessionAgentRuntime(chat.sessionId);
     if (runtime !== "medousa" && mode === "interactive") {
       let agentSessionId = getSessionAgentSessionId(chat.sessionId);
@@ -743,10 +763,13 @@
     const opts = buildInteractiveTurnOptions();
     const mediaRefs = [...chat.pendingMediaRefs];
     const voice = voicePresets.turnVoiceFields();
+    const codeContext = activeCodeContext(chat.sessionId);
     const accepted = await createTurnTicket({
       sessionId: chat.sessionId,
       prompt,
       mode,
+      codeContext,
+      codeProjectSetupAuthorized,
       provider: opts.provider,
       model: opts.model,
         responseDepthMode: opts.responseDepthMode,
@@ -796,6 +819,7 @@
     display: string;
     prompt: string;
     mode: "interactive" | "background";
+    codeProjectSetupAuthorized: boolean;
   };
   /** Last turn that threw — kept so the error banner can offer Retry. */
   let lastFailedSend = $state<FailedSend | null>(null);
@@ -806,7 +830,12 @@
     lastFailedSend = null;
     chat.clearStreamError(panelSessionId);
     try {
-      await submitTurn(payload.display, payload.prompt, payload.mode);
+      await submitTurn(
+        payload.display,
+        payload.prompt,
+        payload.mode,
+        payload.codeProjectSetupAuthorized,
+      );
     } catch (err) {
       lastFailedSend = payload;
       chat.setError(err instanceof Error ? err.message : String(err));
@@ -838,6 +867,18 @@
         return;
       }
     }
+    if (!allowUnboundCoderSend && !activeCodeContext(chat.sessionId)) {
+      const [agentMode, binding] = await Promise.all([
+        getSessionAgentMode(chat.sessionId),
+        getSessionCodeBinding(chat.sessionId),
+      ]);
+      if (agentMode.effective_mode === "coder" && !binding.work_id) {
+        window.dispatchEvent(new CustomEvent("medousa-open-code-project-chooser"));
+        return;
+      }
+    }
+    const codeProjectSetupAuthorized = allowUnboundCoderSend;
+    allowUnboundCoderSend = false;
     if (mobile) haptic("medium");
 
     const askPrompt = parseDaemonAskPrompt(prompt);
@@ -889,8 +930,8 @@
       const display =
         prompt ||
         (hasAttachments ? `[${pendingMediaLabels(chat.pendingMediaRefs)}]` : "");
-      pendingSend = { display, prompt, mode };
-      await submitTurn(display, prompt, mode);
+      pendingSend = { display, prompt, mode, codeProjectSetupAuthorized };
+      await submitTurn(display, prompt, mode, codeProjectSetupAuthorized);
     } catch (err) {
       lastFailedSend = pendingSend;
       chat.setError(err instanceof Error ? err.message : String(err));
@@ -1050,7 +1091,12 @@
       lastFailedSend = null;
       await submitTurn(fullPrompt, fullPrompt, mode);
     } catch (err) {
-      lastFailedSend = { display: fullPrompt, prompt: fullPrompt, mode };
+      lastFailedSend = {
+        display: fullPrompt,
+        prompt: fullPrompt,
+        mode,
+        codeProjectSetupAuthorized: false,
+      };
       chat.setError(err instanceof Error ? err.message : String(err));
     }
   }
@@ -1447,9 +1493,12 @@
         if (pending) void workspace.selectCard(pending.workCardId);
       }}
     />
+    <ModeProposalBar
+      sessionId={panelSessionId}
+    />
     <AgentPermissionBar />
     <div class="mx-4 mb-1 flex flex-wrap gap-2">
-      <UndertakingContextChip />
+      <UndertakingContextChip chatOnly />
     </div>
     <AgentBrowserPanel />
     {/if}
@@ -1501,6 +1550,12 @@
             disabled={connection.offline || chat.composerBlocked}
             onChange={onRuntimeChange}
           />
+          {#if sessionRuntime === "medousa"}
+            <ChatAgentModePicker
+              sessionId={panelSessionId}
+              disabled={connection.offline || chat.composerBlocked}
+            />
+          {/if}
           <ComposerTurnControls
             disabled={connection.offline || chat.composerBlocked}
           />

@@ -31,6 +31,14 @@ Stasis dashboard mounted at `/dashboard` (HTML UI).
 
 ## Interactive chat (two-step)
 
+`GET /v1/agent-modes` returns the registered modes and their runtime-derived
+availability. Clients should disable unavailable modes and show the returned
+reason instead of assuming that a protocol enum is ready to enter.
+
+`GET`/`PUT /v1/agent-modes/policy` reads or updates the user's proposal policy.
+`proposal_ttl_seconds` accepts 5–86,400 seconds. `auto_accept` is `never`,
+`task`, or `all`; the default is `never` with a 30-second timeout.
+
 | Method | Path | Types | SDK |
 |--------|------|-------|-----|
 | POST | `/v1/interactive/turn` | `InteractiveTurnRequest` → `InteractiveTurnResponse` (includes `stream_url`) | `interactive().start_turn` |
@@ -45,6 +53,21 @@ page snapshot separately from `prompt`. The daemon persists the human prompt as
 written, stores host context as structured turn metadata, and projects that
 metadata into model context. Clients must not append prompt wrappers. Host
 context is advisory and never grants filesystem or vault authority.
+
+`InteractiveTurnRequest.agent_mode` is a per-turn behavioral override,
+independent of interactive/background ticket delivery. When omitted, the
+daemon checks the active task lease, then the session selection, then defaults
+to `general`. `coder` additionally requires an active Forge undertaking and
+its turn-scoped authority for file, shell, and engineering tools; without a
+binding it enters the restricted project-setup phase. Resolution is
+deterministic and does not require an additional model call.
+
+`InteractiveTurnRequest.code_project_setup_authorized` (also accepted by
+`POST /v1/turns`) records that the principal explicitly selected a surface
+action allowing unbound Coder to choose, bind, or create a project. The daemon
+honors it only during Coder setup, projects it separately into runtime context,
+and keeps the persisted human prompt unchanged. Omit it or send `false` for
+ordinary turns.
 
 ### Registered client tools
 
@@ -65,6 +88,15 @@ for the protocol and surface-scoping rules.
 | GET | `/v1/sessions` | `SessionHistoryListResponse` | `sessions().list` |
 | GET | `/v1/sessions/{session_id}/history` | `SessionHistoryResponse` | `sessions().history` |
 | PUT | `/v1/sessions/{session_id}/name` | `SessionSetDisplayNameRequest` | `sessions().set_display_name` |
+| GET | `/v1/sessions/{session_id}/agent-mode` | Effective selection and source | `sessions().agent_mode` |
+| PUT | `/v1/sessions/{session_id}/agent-mode` | `SetSessionAgentModeRequest` | `sessions().set_agent_mode` |
+| DELETE | `/v1/sessions/{session_id}/agent-mode?scope=session\|task` | Clear selection or lease | `sessions().clear_agent_mode` |
+| GET | `/v1/sessions/{session_id}/agent-mode/proposals` | `AgentModeProposalListResponse` | `sessions().agent_mode_proposals` |
+| PUT | `/v1/sessions/{session_id}/agent-mode/proposals/{proposal_id}` | `DecideAgentModeProposalRequest` | `sessions().decide_agent_mode_proposal` |
+| GET | `/v1/sessions/{session_id}/code-binding` | Shared Forge undertaking binding | `sessions().code_binding` |
+| PUT | `/v1/sessions/{session_id}/code-binding` | `SetSessionCodeBindingRequest` | `sessions().set_code_binding` |
+| DELETE | `/v1/sessions/{session_id}/code-binding` | Clear shared undertaking binding | `sessions().clear_code_binding` |
+| POST | `/v1/sessions/{session_id}/code-project` | `StartSessionCodeProjectRequest` → create, provision, and bind | `sessions().start_code_project` |
 | DELETE | `/v1/sessions/{session_id}` | — | `http().delete` |
 | POST | `/v1/sessions/{session_id}/turns` | `SessionAppendTurnRequest` | `sessions().append_turn` |
 | GET | `/v1/sessions/{session_id}/turns` | turn list | `http().get` |
@@ -214,6 +246,15 @@ cursor/selection, open files, diagnostics, and last verification). The daemon
 formats this for the selected ACP provider; clients should not construct
 provider-specific prompt wrappers.
 
+Native interactive turn and turn-ticket requests also accept `code_context`.
+For Coder mode it is advisory editor state only: the daemon re-resolves the
+undertaking, worktree, branch, baseline, dirty paths, and repository
+instructions from Forge. UI-provided paths cannot select or escape the
+governed worktree. Coder requires an active Forge undertaking. Each Coder turn
+acquires a fenced Forge attempt, exposes only its mode-scoped coding tools,
+records compact command receipts, interrupts turn-owned shell work on exit,
+and releases the attempt without discarding worktree changes.
+
 See [ADR-008](../architecture/decisions/adr-008-hot-swappable-agent-runtime.md) and [acp-external-agents](../cookbook/acp-external-agents.md).
 
 ---
@@ -264,7 +305,9 @@ Custody of intentional work episodes over a git target (vault or any repo). Dist
 | GET | `/v1/forge/items` | List |
 | GET | `/v1/forge/items/{id}` | Get |
 | POST | `/v1/forge/items/{id}/provision` | Provision env |
-| POST | `/v1/forge/items/{id}/attempts` | Begin attempt → lease |
+| POST | `/v1/forge/items/{id}/attempts` | Begin isolated attempt → lease plus exact `attempt_id`, `worktree`, and `branch` |
+| GET | `/v1/forge/items/{id}/review?attempt_id=…` | Review all sealed candidates or select one exact attempt |
+| GET | `/v1/forge/items/{id}/review/file?path=…&attempt_id=…` | Compare one file from the selected sealed attempt |
 | POST | `/v1/forge/items/{id}/handoff` | Release the current executor while preserving its worktree |
 | GET, POST | `/v1/forge/items/{id}/provider` | Discover or perform external repository review handoff |
 | PUT | `/v1/forge/items/{id}/provider/context` | Attach HTTPS issue, PR, or ticket context |
@@ -292,6 +335,9 @@ Custody of intentional work episodes over a git target (vault or any repo). Dist
 | POST | `/v1/forge/items/{id}/review/file` | Reopen and restore one baseline text file while preserving reviewed evidence |
 | GET | `/v1/forge/items/{id}/tasks` | Detect project commands |
 | POST | `/v1/forge/items/{id}/tasks/{task_id}/run` | Run a detected command and record its result |
+| GET | `/v1/forge/evidence/{evidence_id}/patch` | Read a bounded page of the sealed patch |
+| GET | `/v1/forge/evidence/{evidence_id}/commands` | Read a bounded page of the sealed command log |
+| GET | `/v1/forge/evidence/{evidence_id}/receipts` | Read typed compact evidence provenance; raw payloads are excluded |
 
 Guide: [forge.md](forge.md).
 

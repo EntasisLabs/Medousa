@@ -1,8 +1,11 @@
 <script lang="ts">
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
+  import ModeProposalBar from "$lib/components/chat/ModeProposalBar.svelte";
   import AgentPermissionBar from "$lib/components/chat/AgentPermissionBar.svelte";
   import AgentBrowserPanel from "$lib/components/chat/AgentBrowserPanel.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
+  import ChatAgentModePicker from "$lib/components/chat/ChatAgentModePicker.svelte";
+  import UndertakingContextChip from "$lib/components/work/UndertakingContextChip.svelte";
   import VaultChatContextChip from "$lib/components/vault/VaultChatContextChip.svelte";
   import { applyActiveAgentPrompt } from "$lib/utils/activeAgentPrompt";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
@@ -13,7 +16,7 @@
   import { voicePresets } from "$lib/stores/voicePresets.svelte";
   import { switchMobileTab } from "$lib/mobileNavigation";
   import { workspace } from "$lib/stores/workspace.svelte";
-  import { createTurnTicket } from "$lib/daemon";
+  import { createTurnTicket, getSessionAgentMode, getSessionCodeBinding } from "$lib/daemon";
   import { pendingMediaLabels } from "$lib/utils/chatMediaUpload";
   import { hasVisionMediaRefs } from "$lib/types/media";
   import { visionProfileReady } from "$lib/types/inferenceProfiles";
@@ -23,8 +26,20 @@
   } from "$lib/utils/runSlashCommand";
   import { setMobileComposerFocus } from "$lib/utils/mobileKeyboardViewport";
   import { ensureVaultSelectionInPrompt } from "$lib/utils/vaultNoteBridge";
+  import { activeCodeContext } from "$lib/utils/undertakingWorkspace";
 
   let composerBlurTimer: ReturnType<typeof setTimeout> | undefined;
+  let formEl = $state<HTMLFormElement | null>(null);
+  let allowUnboundCoderSend = false;
+
+  $effect(() => {
+    const sendToSetup = () => {
+      allowUnboundCoderSend = true;
+      formEl?.requestSubmit();
+    };
+    window.addEventListener("medousa-code-project-agent-setup", sendToSetup);
+    return () => window.removeEventListener("medousa-code-project-agent-setup", sendToSetup);
+  });
 
   function parseDaemonAskPrompt(value: string): string | null {
     const slash = parseChatSlashInput(value);
@@ -36,14 +51,18 @@
     userContent: string,
     prompt: string,
     mode: "interactive" | "background",
+    codeProjectSetupAuthorized = false,
   ) {
     const opts = buildInteractiveTurnOptions();
     const mediaRefs = [...chat.pendingMediaRefs];
     const voice = voicePresets.turnVoiceFields();
+    const codeContext = activeCodeContext(chat.sessionId);
     const accepted = await createTurnTicket({
       sessionId: chat.sessionId,
       prompt,
       mode,
+      codeContext,
+      codeProjectSetupAuthorized,
       provider: opts.provider,
       model: opts.model,
       responseDepthMode: opts.responseDepthMode,
@@ -89,6 +108,18 @@
       );
       return;
     }
+    if (!allowUnboundCoderSend && !activeCodeContext(chat.sessionId)) {
+      const [agentMode, binding] = await Promise.all([
+        getSessionAgentMode(chat.sessionId),
+        getSessionCodeBinding(chat.sessionId),
+      ]);
+      if (agentMode.effective_mode === "coder" && !binding.work_id) {
+        window.dispatchEvent(new CustomEvent("medousa-open-code-project-chooser"));
+        return;
+      }
+    }
+    const codeProjectSetupAuthorized = allowUnboundCoderSend;
+    allowUnboundCoderSend = false;
     haptic("medium");
 
     const askPrompt = parseDaemonAskPrompt(prompt);
@@ -123,7 +154,7 @@
       const display =
         prompt ||
         (hasAttachments ? `[${pendingMediaLabels(chat.pendingMediaRefs)}]` : "");
-      await submitTurn(display, prompt, mode);
+      await submitTurn(display, prompt, mode, codeProjectSetupAuthorized);
     } catch (err) {
       chat.setError(err instanceof Error ? err.message : String(err));
     }
@@ -154,7 +185,7 @@
   }
 </script>
 
-<form class="mobile-chat-composer" onsubmit={submit}>
+<form bind:this={formEl} class="mobile-chat-composer" onsubmit={submit}>
   {#if chat.hasWorkshopHandoff()}
     <p class="mb-1.5 px-1 text-[11px] font-medium text-primary-300/90">
       Steering handoff — your next message continues the worker
@@ -174,8 +205,19 @@
       if (pending) void workspace.selectCard(pending.workCardId);
     }}
   />
+  <ModeProposalBar
+    mobile
+    sessionId={chat.focusedSessionId}
+  />
   <AgentPermissionBar mobile />
   <AgentBrowserPanel mobile />
+  <div class="mb-1 flex items-center px-1">
+    <ChatAgentModePicker
+      sessionId={chat.focusedSessionId}
+      disabled={connection.offline || chat.composerBlocked || runtime.savingControls}
+    />
+    <div class="ml-1 min-w-0"><UndertakingContextChip chatOnly /></div>
+  </div>
   <ChatComposerBar
     mobile
     disabled={connection.offline}

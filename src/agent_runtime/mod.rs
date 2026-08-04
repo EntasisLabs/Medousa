@@ -32,12 +32,22 @@ pub mod engine {
 pub mod turn_delivery;
 pub mod heartbeat_turn;
 pub mod host_context;
+pub mod coder_activity;
+pub mod coder_claims;
+pub mod coder_evidence;
+pub mod coder_mode;
+pub mod coder_pointers;
+pub mod coder_setup_tools;
+pub mod coder_tools;
+pub mod modes;
 pub mod context_usage;
 pub mod continuation;
 pub mod presentation;
+pub mod perception_governor;
 pub mod prompt_prep;
 pub mod runtime;
 pub mod settings;
+pub mod sttp;
 pub mod system_prompt;
 pub mod tool_stream;
 pub mod turn_budget;
@@ -90,6 +100,19 @@ pub use heartbeat_turn::{
     HeartbeatRuntimeSnapshot, build_heartbeat_turn_prompt, heartbeat_agent_turn_enabled,
     heartbeat_policy_doc_path, load_heartbeat_policy_doc, run_heartbeat_agent_turn,
 };
+pub use modes::{
+    AgentModeUnavailable, CoderRuntimePhase, ModeExecutionLane, ResolvedAgentMode, list_agent_modes, resolve_agent_mode,
+    system_prompt_for_mode,
+};
+pub use coder_activity::{
+    CoderActivityStore, CoderAgentIdentity, CoderEngineeringDelta, CoderSharedSpaceSnapshot,
+    coder_activity_store, engineering_delta_prompt_appendix, shared_space_prompt_appendix,
+};
+pub use coder_claims::{CoderClaimMode, CoderClaimScope};
+pub use coder_mode::{CoderEntryContext, CoderEntryError, compile_coder_entry};
+pub use coder_pointers::{CoderEngineeringPointer, CoderPointerDetail, CoderPointerKind};
+pub use coder_tools::{CoderBoundToolRegistry, CoderTurnLease};
+pub use sttp::{SttpValidationError, validate_canonical_sttp_node};
 pub use daemon_interactive_turn::{
     InteractiveTurnDeliveryContext, InteractiveTurnSessionHooks, run_agent_turn,
     run_daemon_interactive_turn,
@@ -126,7 +149,8 @@ pub use turn_loop_settings::{
     ROUND_LIMIT_MIN,
 };
 pub use turn_context::{
-    HostTurnContext, ToolLaneState, TurnScratchPhase, TurnScratchpad, WorkerHandoffCapsule,
+    HostTurnContext, ToolLaneState, ToolRoundContextProvider, TurnScratchPhase, TurnScratchpad,
+    WorkerHandoffCapsule,
     publish_host_handoff_snapshot, push_turn_scratch_message,
     push_turn_scratch_message_with_budget,
     scratch_digest_hash, tool_output_ok, tool_results_from_invocations, SCRATCH_PREFIX,

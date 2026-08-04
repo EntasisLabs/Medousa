@@ -3,8 +3,9 @@
 //! merge-base games for evidence), and explicit checkpoint identity via env
 //! vars (Forge never impersonates the user).
 
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::io::Write as _;
+use std::path::{Component, Path, PathBuf};
+use std::process::{Command, Stdio};
 
 use crate::error::{ForgeError, Result};
 use crate::model::{GitOid, RepoId, RepoIdentity, SubmodulePin};
@@ -114,6 +115,40 @@ impl GitEngine {
             )));
         }
         Ok(output.stdout)
+    }
+
+    fn run_with_stdin(&self, cwd: &Path, args: &[&str], stdin: &[u8]) -> Result<()> {
+        let mut child = self
+            .command()
+            .args(args)
+            .current_dir(cwd)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| ForgeError::Git(format!("failed to spawn git {}: {e}", args.join(" "))))?;
+        child
+            .stdin
+            .as_mut()
+            .ok_or_else(|| ForgeError::Git("git stdin was unavailable".into()))?
+            .write_all(stdin)?;
+        let output = child.wait_with_output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(ForgeError::Git(format!(
+                "git {} failed: {}",
+                args.join(" "),
+                if stderr.is_empty() {
+                    output.status.to_string()
+                } else {
+                    stderr
+                }
+            )));
+        }
+        Ok(())
     }
 
     /// True when `path` is inside a Git repository.
@@ -272,6 +307,69 @@ impl GitEngine {
                 baseline.as_str(),
             ],
         )?;
+        Ok(())
+    }
+
+    /// Fork a new worktree from `source` while preserving its tracked and
+    /// untracked dirty starting state. The source is never mutated.
+    pub fn worktree_add_from_worktree(
+        &self,
+        repo_cwd: &Path,
+        source: &Path,
+        destination: &Path,
+        branch: &str,
+    ) -> Result<GitOid> {
+        let source_root = self.worktree_root(source)?;
+        let source_root = std::fs::canonicalize(source_root)?;
+        let requested_source = std::fs::canonicalize(source)?;
+        if source_root != requested_source {
+            return Err(ForgeError::EnvironmentDrift(
+                "attempt source must be the root of its governed worktree".into(),
+            ));
+        }
+        let head = self.head_oid(&source_root)?;
+        self.worktree_add(repo_cwd, destination, branch, &head)?;
+        let copied = self.copy_worktree_state(&source_root, destination, &head);
+        if let Err(err) = copied {
+            let _ = self.worktree_remove(repo_cwd, destination);
+            let _ = self.branch_delete(repo_cwd, branch);
+            return Err(err);
+        }
+        Ok(head)
+    }
+
+    fn copy_worktree_state(
+        &self,
+        source: &Path,
+        destination: &Path,
+        head: &GitOid,
+    ) -> Result<()> {
+        let patch = self.diff_binary_worktree(source, head)?;
+        if !patch.is_empty() {
+            self.run_with_stdin(destination, &["apply", "--binary", "-"], &patch)?;
+        }
+        for entry in self.status_porcelain(source)? {
+            if entry.kind != PorcelainKind::Untracked {
+                continue;
+            }
+            let relative = safe_worktree_relative_path(&entry.path)?;
+            let source_path = source.join(&relative);
+            let metadata = std::fs::symlink_metadata(&source_path)?;
+            if metadata.file_type().is_symlink() || !metadata.is_file() {
+                return Err(ForgeError::EnvironmentDrift(format!(
+                    "untracked attempt input must be a regular file: {}",
+                    relative.display()
+                )));
+            }
+            let destination_path = destination.join(&relative);
+            let parent = destination_path.parent().ok_or_else(|| {
+                ForgeError::EnvironmentDrift("untracked attempt path has no parent".into())
+            })?;
+            require_safe_worktree_parent(destination, parent)?;
+            std::fs::create_dir_all(parent)?;
+            require_safe_worktree_parent(destination, parent)?;
+            std::fs::copy(source_path, destination_path)?;
+        }
         Ok(())
     }
 
@@ -561,6 +659,47 @@ impl GitEngine {
     }
 }
 
+fn safe_worktree_relative_path(value: &str) -> Result<PathBuf> {
+    let path = Path::new(value);
+    if value.is_empty()
+        || path.is_absolute()
+        || path
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        return Err(ForgeError::EnvironmentDrift(format!(
+            "unsafe attempt worktree path: {value}"
+        )));
+    }
+    Ok(path.to_path_buf())
+}
+
+fn require_safe_worktree_parent(root: &Path, parent: &Path) -> Result<()> {
+    let relative = parent.strip_prefix(root).map_err(|_| {
+        ForgeError::EnvironmentDrift("attempt copy destination escaped its worktree".into())
+    })?;
+    let mut cursor = root.to_path_buf();
+    for component in relative.components() {
+        cursor.push(component.as_os_str());
+        match std::fs::symlink_metadata(&cursor) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(ForgeError::EnvironmentDrift(format!(
+                    "attempt copy destination crosses a symlink: {}",
+                    cursor.display()
+                )));
+            }
+            Ok(metadata) if !metadata.is_dir() => {
+                return Err(ForgeError::EnvironmentDrift(format!(
+                    "attempt copy destination parent is not a directory: {}",
+                    cursor.display()
+                )));
+            }
+            Ok(_) | Err(_) => {}
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NameStatus {
     pub status: char,
@@ -833,6 +972,62 @@ mod tests {
         assert!(!wt.exists());
         git.branch_delete(tmp.path(), "medousa/work/test").unwrap();
         assert!(!git.branch_exists(tmp.path(), "medousa/work/test"));
+    }
+
+    #[test]
+    fn worktree_fork_preserves_dirty_state_without_mutating_source() {
+        let (tmp, git, _base) = init_repo();
+        let source = tmp.path();
+        fs::write(source.join("hello.txt"), "changed\n").unwrap();
+        fs::write(source.join("delete-me.txt"), "delete\n").unwrap();
+        git.run(source, &["add", "delete-me.txt"]).unwrap();
+        git.run(source, &["commit", "-m", "add delete target"])
+            .unwrap();
+        let source_head = git.head_oid(source).unwrap();
+        fs::remove_file(source.join("delete-me.txt")).unwrap();
+        fs::create_dir_all(source.join("nested")).unwrap();
+        fs::write(source.join("nested/new.txt"), "untracked\n").unwrap();
+        fs::write(source.join("binary.bin"), [0, 1, 2, 255]).unwrap();
+
+        let destination_root = TempDir::new().unwrap();
+        let destination = destination_root.path().join("attempt-wt");
+        let fork_head = git
+            .worktree_add_from_worktree(
+                source,
+                source,
+                &destination,
+                "medousa/work/attempt-fork",
+            )
+            .unwrap();
+        assert_eq!(fork_head, source_head);
+        assert_eq!(fs::read_to_string(destination.join("hello.txt")).unwrap(), "changed\n");
+        assert!(!destination.join("delete-me.txt").exists());
+        assert_eq!(
+            fs::read_to_string(destination.join("nested/new.txt")).unwrap(),
+            "untracked\n"
+        );
+        assert_eq!(fs::read(destination.join("binary.bin")).unwrap(), [0, 1, 2, 255]);
+        assert_eq!(fs::read_to_string(source.join("hello.txt")).unwrap(), "changed\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn worktree_fork_rejects_untracked_symlinks_and_cleans_partial_fork() {
+        use std::os::unix::fs::symlink;
+
+        let (tmp, git, _) = init_repo();
+        symlink("hello.txt", tmp.path().join("link.txt")).unwrap();
+        let destination_root = TempDir::new().unwrap();
+        let destination = destination_root.path().join("attempt-wt");
+        let branch = "medousa/work/rejected-attempt-fork";
+
+        let error = git
+            .worktree_add_from_worktree(tmp.path(), tmp.path(), &destination, branch)
+            .unwrap_err();
+        assert!(error.to_string().contains("regular file"));
+        assert!(!destination.exists());
+        assert!(!git.branch_exists(tmp.path(), branch));
+        assert!(tmp.path().join("link.txt").is_symlink());
     }
 
     #[test]

@@ -51,6 +51,7 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | GET | `/v1/forge/items/{id}/search?query=…` | Fixed-string tracked-source search (bounded to 500 hits) |
 | GET, PUT | `/v1/forge/items/{id}/workspace-state` | Restore/preserve open files, editor groups, positions, and bounded dirty drafts |
 | GET | `/v1/forge/items/{id}/review` | Structured outcome, risk, verification, attribution, timeline, and changed-file summary |
+| GET | `/v1/forge/evidence/{evidence_id}/receipts` | Sealed compact Coder evidence provenance (never raw payloads) |
 | GET | `/v1/forge/items/{id}/tasks` | Manifest-derived checks, tests, builds, and run commands |
 | POST | `/v1/forge/items/{id}/tasks/{task_id}/runs` | Start a named, cancellable project run |
 | GET/DELETE | `/v1/forge/items/{id}/task-runs/{run_id}` | Poll or cancel a project run |
@@ -74,6 +75,68 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | POST | `/v1/forge/items/{id}/discard` | Discard env (worktree then branch) |
 | POST | `/v1/forge/items/{id}/run-script` | Reference script executor (`argv`) |
 | POST | `/v1/forge/items/{id}/export` | Portable bundle to `destination` |
+
+Forge records a canonical `active_attempts` set and resolves every lease
+mutation against its addressed attempt. The legacy singular `active_attempt`
+projection remains serialized for snapshot/client compatibility during the
+Slice 5 migration. `Ready` and `Executing` work can admit another executor;
+every active attempt has a distinct private worktree and branch.
+
+Forge uses isolated attempts. The first isolated attempt forks a private branch
+and worktree from the undertaking staging worktree, reproducing its
+tracked, staged, deleted, binary, and regular untracked dirty state without
+mutating the staging directory. Unsafe paths and untracked symlinks fail the
+fork and remove its partial branch/worktree. The attempt owns that environment;
+seal captures it, interruption preserves it, reconciliation recognizes it, and
+discard reclaims it. A restarted turn reuses that preserved workspace after
+verifying its Git root and branch, so unfinished edits survive without creating
+one worktree per turn. When peers run concurrently, each new peer receives a
+fresh isolated worktree rather than reusing an active environment.
+
+`POST /v1/forge/items/{id}/attempts` returns the full fenced lease plus top-level
+`attempt_id`, `worktree`, and `branch` fields. Forge item projections expose the
+current lease-owned workspace through `environment`; the durable item still
+retains its original staging anchor internally.
+
+Sealing, interruption, and failure are peer-safe. Ending one attempt leaves the
+item `Executing` while any healthy lease remains. After the last active attempt
+ends, sealed evidence yields `AwaitingReview`; otherwise the item returns to
+`Ready`. Seal journal entries carry `attempt_id`, allowing restart recovery to
+complete or interrupt exactly the affected attempt.
+
+`GET /v1/forge/items/{id}/review` returns `candidates` for every sealed attempt.
+Pass `attempt_id` to that endpoint and to `/review/file` to select the exact
+manifest, branch, worktree, and diff. Decisions already bind to the selected
+attempt, evidence digest, baseline, and reviewed head.
+
+### Concurrent Coder claims
+
+Private attempt worktrees prevent direct filesystem races, but agents can still
+touch the same logical code or external resource. Before every Coder tool call,
+the runtime infers `read`, `write`, or `verify` claims from the governed tool and
+its targets. A model's required `intent` explains the operation; it cannot
+choose, weaken, or omit the inferred claims.
+
+Worktree-absolute editor and LSP paths are canonicalized to undertaking-relative
+file identities. Ordinary file overlaps remain admissible across isolated
+attempts and are surfaced to every affected agent through the shared ambient
+frame, causal activity events, and ranked pointers. Source mutations retain
+their existing digest checks, while integration remains bound to exact evidence
+and Git baselines.
+
+Hazardous resources are serialized before the underlying tool runs. These
+include dependency lockfiles, migration ordering, generated artifact sets,
+shared Git references and indexes, databases, ports/services, deployments, and
+publishing operations inferred from file paths or shell commands. A conflicting
+call returns a structured `coder_claim_conflict` result with the holder's agent,
+attempt, tool, intent, and claim expiry plus an actionable retry decision.
+
+Write claims remain active while the Coder turn keeps heartbeating; read and
+verify claims release when the call finishes. Long-running calls renew claims
+every 30 seconds. Claims expire after two minutes without renewal and are
+released immediately when an agent leaves. The activity index bounds active
+claims and historical events; it stores coordination metadata, never source or
+command-output payload bodies.
 
 Export writes on the daemon/workshop filesystem. `destination` must be absent
 or an empty directory; a non-empty destination returns `409` and is never
@@ -202,12 +265,12 @@ An external agent chat session can opt in to Forge custody by setting
 
 - The work item must exist, be `Ready`, have no active attempt, and have a
   provisioned environment with a live worktree. Violations return `409`.
-- The ACP session's `cwd` is forced to the item's governed worktree,
+- The ACP session's `cwd` is forced to the attempt's private governed worktree,
   overriding any client-supplied `cwd`.
-- The lease begins on the session's first prompt (not at create), so empty
-  sessions never leave a work item `Executing`. Executor kind is
-  `acp-cursor` / `acp-codex` with `agent_session_id`, `acp_session_id` (ACP
-  wire id), and `chat_session_id` recorded in the executor detail.
+- The lease begins before provider session creation so the provider process can
+  never start in the staging anchor. Provider creation and stream-registration
+  failures release custody. Executor kind is `acp-cursor` / `acp-codex` with
+  `agent_session_id` and `chat_session_id` recorded in the executor detail.
 - During the prompt pump the daemon heartbeats the lease every ~15s and
   stages prompt/tool lines into `attempts/{seq}/evidence/commands.jsonl`
   via lease-fenced `append_command_log` (so seal digests real executor
@@ -226,6 +289,88 @@ An external agent chat session can opt in to Forge custody by setting
   the adapter reports beside the stream, never instead of it.
 
 Plain chat sessions (no `work_id`) are unaffected and never touch Forge.
+
+## Storage accounting and cache governance
+
+Forge custody, governed worktrees, repository-group build caches, Detamu,
+artifacts, and Coder evidence are reported separately by the workshop daemon:
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/v1/maintenance/storage` | Physical-byte and file-count report plus current policy |
+| PUT | `/v1/maintenance/storage` | Replace cache caps, free-disk floor, inactivity age, and automatic-cleanup setting |
+| POST | `/v1/maintenance/storage` | Preview (`{"dry_run":true}`) or execute (`false`) pressure-aware cache cleanup |
+
+The settings payload uses bytes:
+
+```json
+{
+  "enabled": true,
+  "repository_cache_max_bytes": 10737418240,
+  "global_cache_max_bytes": 32212254720,
+  "free_disk_floor_bytes": 10737418240,
+  "min_inactive_age_hours": 24
+}
+```
+
+A zero repository/global cap or free-disk floor disables that individual
+boundary. Automatic maintenance runs at most every six hours. Cap-based cleanup
+waits for the configured inactivity age; free-disk pressure may reclaim an
+inactive cache sooner. Turning automatic maintenance off does not disable
+manual preview or cleanup.
+
+Only explicit repository-group `.cache` roots beneath Forge worktrees are
+eligible. A repository cache is protected while any undertaking for that group
+is non-terminal, including Ready, Executing, sealing, and review states. The
+governor rechecks protection immediately before deletion, selects eligible
+caches oldest-first, and never deletes worktrees, Forge event/evidence custody,
+Detamu, artifacts, or Coder evidence. Deleted build caches are regenerable.
+
+### Ephemeral Coder evidence
+
+When a Forge-bound Coder tool produces an oversized log, diagnostic, trace, or
+event payload that has no cheaper authoritative query or existing artifact
+reference, the model-facing bounded observation may include an ephemeral
+evidence receipt. Source reads, Detamu results, and other requeryable payloads
+are not copied.
+
+Before persistence, Medousa redacts sensitive JSON fields and common textual
+credential forms, serializes canonical JSON, identifies it globally by
+SHA-256, and gzip-compresses the object. Identical redacted payloads share one
+blob even across undertakings. Receipts expose a
+`coder-evidence:sha256:<digest>` reference, never a daemon filesystem path.
+`cognition_coder_evidence_read` can read at most 32 KiB at a time and rejects a
+reference that is not attached to the active Forge undertaking.
+
+The initial policy is deliberately hard-bounded:
+
+| Boundary | Limit |
+|----------|-------|
+| Logical or physical bytes per object | 8 MiB |
+| Referenced physical bytes per undertaking | 64 MiB |
+| Global physical bytes, including index size | 512 MiB |
+| Successful/reproducible TTL | 6 hours |
+| Failed/non-reproducible TTL | 72 hours |
+
+Reading an object refreshes its class TTL, but never overrides the global cap.
+Under pressure, successful/reproducible objects leave before failed evidence,
+then oldest access wins. The daemon's six-hour storage pass removes expired
+objects and safe orphan blobs. This object store remains ephemeral.
+
+When the undertaking seals, Forge validates the narrow receipt records staged
+by the Coder perception governor and writes accepted metadata to the canonical
+evidence bundle as `receipts.json`. `manifest.json` binds that file with
+`compact_receipts_digest`, `compact_receipt_count`, and
+`compact_receipt_rejections`. The review projection exposes the same counts,
+and `GET /v1/forge/evidence/{evidence_id}/receipts` returns the typed sealed
+receipts. Source tool and call identifiers remain distinct even when multiple
+agents observed the same content-addressed object.
+
+Sealing never copies the gzip object or raw tool output. Every accepted receipt
+has `raw_evidence: "ephemeral_only"`; a command-log record that claims raw
+promotion is rejected and counted. Durable raw retention requires a future
+explicit user pin or a separately defined narrow review policy—it is not an
+implicit consequence of a tool returning data.
 
 Home uses `/v1/forge/items/{id}/handoff` before moving from a human editing
 lease to Codex or Cursor. The request includes `lease_id`, `generation`, and

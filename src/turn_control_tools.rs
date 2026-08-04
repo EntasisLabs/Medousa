@@ -35,6 +35,11 @@ pub const COGNITION_TURN_UPDATE_USER: &str = "cognition_turn_update_user";
 
 pub const COGNITION_TURN_UPDATE_USER_DOTTED: &str = "cognition.turn.update_user";
 
+/// Propose a mode transition for the current chat. Runtime policy decides whether it waits.
+pub const COGNITION_TURN_PROPOSE_MODE: &str = "cognition_turn_propose_mode";
+
+pub const COGNITION_TURN_PROPOSE_MODE_DOTTED: &str = "cognition.turn.propose_mode";
+
 /// Principal-facing body when the model ends with prose after tools without `cognition_turn_finish`.
 pub const PROSE_REQUIRES_FINISH_STUB: &str =
     "I finished the tool work but didn't commit a final answer. Reply to continue and I'll \
@@ -88,6 +93,14 @@ pub fn is_update_user_tool_name(name: &str) -> bool {
     trimmed == COGNITION_TURN_UPDATE_USER
         || trimmed == COGNITION_TURN_UPDATE_USER_DOTTED
         || crate::tool_aliases::sanitize_tool_advertised_name(trimmed) == COGNITION_TURN_UPDATE_USER
+}
+
+pub fn is_propose_mode_tool_name(name: &str) -> bool {
+    let trimmed = name.trim();
+    trimmed == COGNITION_TURN_PROPOSE_MODE
+        || trimmed == COGNITION_TURN_PROPOSE_MODE_DOTTED
+        || crate::tool_aliases::sanitize_tool_advertised_name(trimmed)
+            == COGNITION_TURN_PROPOSE_MODE
 }
 
 /// Extract the latest successful user-update line from a tool batch.
@@ -437,6 +450,106 @@ impl StasisTool for CognitionTurnUpdateUserTool {
     }
 }
 
+pub struct CognitionTurnProposeModeTool {
+    bootstrap_session_id: String,
+    turn_scope: std::sync::Arc<tokio::sync::RwLock<Option<crate::turn_continuation::TurnContinuationScope>>>,
+}
+
+impl CognitionTurnProposeModeTool {
+    pub fn new(
+        bootstrap_session_id: String,
+        turn_scope: std::sync::Arc<tokio::sync::RwLock<Option<crate::turn_continuation::TurnContinuationScope>>>,
+    ) -> Self {
+        Self {
+            bootstrap_session_id,
+            turn_scope,
+        }
+    }
+}
+
+#[async_trait]
+impl StasisTool for CognitionTurnProposeModeTool {
+    fn name(&self) -> &'static str {
+        COGNITION_TURN_PROPOSE_MODE
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some(
+            "Propose switching Medousa's mode for the current chat. Use Coder only when repository inspection, edits, commands, or tests would materially help; programming explanations stay in General. The runtime applies the user's auto-accept/expiry policy and never expands authority from this tool alone.",
+        )
+    }
+
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({
+            "type": "object",
+            "required": ["mode", "reason"],
+            "properties": {
+                "mode": { "type": "string", "enum": ["general", "coder"] },
+                "scope": { "type": "string", "enum": ["session", "task"], "default": "session" },
+                "task_id": { "type": "string", "description": "Required for task scope; use the active undertaking/work id when relevant" },
+                "reason": { "type": "string", "description": "Short user-facing reason this mode better fits the work" }
+            }
+        }))
+    }
+
+    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
+        let mode = match input.get("mode").and_then(Value::as_str) {
+            Some("general") => crate::daemon_api::AgentModeId::General,
+            Some("coder") => crate::daemon_api::AgentModeId::Coder,
+            _ => {
+                return Ok(json!({
+                    "ok": false,
+                    "error": "mode must be general or coder",
+                }));
+            }
+        };
+        let scope = match input.get("scope").and_then(Value::as_str).unwrap_or("session") {
+            "session" => crate::daemon_api::AgentModeScope::Session,
+            "task" => crate::daemon_api::AgentModeScope::Task,
+            _ => {
+                return Ok(json!({
+                    "ok": false,
+                    "error": "scope must be session or task",
+                }));
+            }
+        };
+        let reason = input
+            .get("reason")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let Some(reason) = reason else {
+            return Ok(json!({ "ok": false, "error": "reason is required" }));
+        };
+        let session_id = crate::runtime_session::resolve_active_chat_session_id_async(
+            &self.turn_scope,
+            &self.bootstrap_session_id,
+        )
+        .await;
+        let proposal = crate::agent_mode_state::propose_mode_transition(
+            &session_id,
+            mode,
+            scope,
+            input.get("task_id").and_then(Value::as_str),
+            reason,
+        )
+        .map_err(stasis::domain::errors::StasisError::PortFailure)?;
+        serde_json::to_value(&proposal)
+            .map_err(|err| stasis::domain::errors::StasisError::PortFailure(err.to_string()))
+            .map(|value| {
+                json!({
+                    "ok": true,
+                    "mode_proposal": value,
+                    "message": if proposal.resolution == Some(crate::daemon_api::AgentModeProposalResolution::AutoAccepted) {
+                        "Mode switched automatically under the user's policy; it applies on the next turn."
+                    } else {
+                        "Mode change proposed to the user; continue in the current mode for this turn."
+                    },
+                })
+            })
+    }
+}
+
 /// Signal that the **next** assistant message (text-only) should be the user-facing final answer.
 pub struct CognitionTurnPrepareFinalTool;
 
@@ -708,6 +821,13 @@ mod tests {
         assert!(is_update_user_tool_name("cognition_turn_update_user"));
         assert!(is_update_user_tool_name("cognition.turn.update_user"));
         assert!(!is_update_user_tool_name("cognition_turn_begin_work"));
+    }
+
+    #[test]
+    fn recognizes_propose_mode_names() {
+        assert!(is_propose_mode_tool_name("cognition_turn_propose_mode"));
+        assert!(is_propose_mode_tool_name("cognition.turn.propose_mode"));
+        assert!(!is_propose_mode_tool_name("cognition_turn_finish"));
     }
 
     #[test]

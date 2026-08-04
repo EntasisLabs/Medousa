@@ -34,7 +34,7 @@ pub mod workspace_card;
 
 use crate::daemon::sse::stream_sse_json_workshop;
 use crate::daemon::types::{
-    DEFAULT_DAEMON_URL, DaemonHealth, EnvironmentStreamEvent, InteractiveTurnAccepted,
+    AgentModeId, DEFAULT_DAEMON_URL, DaemonHealth, EnvironmentStreamEvent, InteractiveTurnAccepted,
     InteractiveTurnRequest, InteractiveTurnStreamEvent, StageRoutingMatrix, TurnSurfaceContext,
     WorkspaceStreamEvent,
 };
@@ -392,6 +392,8 @@ pub async fn interactive_turn_send(
     model: Option<String>,
     response_depth_mode: Option<String>,
     reasoning_effort: Option<String>,
+    agent_mode: Option<AgentModeId>,
+    code_context: Option<crate::daemon::types::CodeIntentContext>,
     stage_routing: Option<StageRoutingMatrix>,
     channel_surface: Option<String>,
 ) -> Result<InteractiveTurnAccepted, String> {
@@ -437,6 +439,9 @@ pub async fn interactive_turn_send(
     let request = InteractiveTurnRequest {
         session_id: session_id.clone(),
         prompt,
+        agent_mode,
+        code_context,
+        code_project_setup_authorized: false,
         persist_user_turn: true,
         response_depth_mode,
         reasoning_effort,

@@ -138,7 +138,23 @@ pub async fn create_agent_session(
         config.args = args;
     }
 
-    // Forge undertaking binding: validate + force governed cwd before spawn.
+    // Fail before taking Forge custody when the provider cannot start.
+    let probe = runtime_auth_probe(kind);
+    if probe.binary_present && matches!(probe.status, RuntimeAuthStatus::SignedOut) {
+        let hint = probe
+            .detail
+            .unwrap_or_else(|| "vendor CLI not signed in".into());
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            format!("{hint} — sign in from Settings → Connections"),
+        ));
+    }
+
+    let agent_session_id = format!("agent-{}", Uuid::new_v4());
+    let mut forge_lease = None;
+
+    // Forge undertaking binding: acquire the isolated lease before provider
+    // creation so the provider process starts in the lease-owned worktree.
     let forge_work_id = if let Some(work_id_raw) = body.work_id.clone() {
         let work_id = WorkId::from(work_id_raw.trim().to_string());
         if work_id.as_str().is_empty() {
@@ -150,28 +166,56 @@ pub async fn create_agent_session(
                 format!("forge work '{work_id_raw}' not found: {e}"),
             )
         })?;
-        if !matches!(item.state, medousa_forge::model::WorkState::Ready) {
+        if !matches!(
+            item.state,
+            medousa_forge::model::WorkState::Ready | medousa_forge::model::WorkState::Executing
+        ) {
             return Err((
                 StatusCode::CONFLICT,
                 format!(
-                    "forge work '{work_id_raw}' is {} — provision and wait for Ready",
+                    "forge work '{work_id_raw}' is {} — provision it before starting an agent",
                     item.state
                 ),
             ));
         }
-        if item.active_attempt.is_some() {
-            return Err((
-                StatusCode::CONFLICT,
-                format!("forge work '{work_id_raw}' already has an active attempt"),
-            ));
-        }
-        let env = item.environment.clone().ok_or_else(|| {
-            (
-                StatusCode::CONFLICT,
-                format!("forge work '{work_id_raw}' has no provisioned environment"),
+        let executor = medousa_forge::model::ExecutorDescriptor {
+            kind: format!("acp-{}", kind.as_str()),
+            detail: json!({
+                "agent_session_id": agent_session_id,
+                "chat_session_id": session_id,
+                "runtime": kind.as_str(),
+                "phase": "provider_starting",
+            }),
+        };
+        let (item, lease) = state
+            .forge
+            .begin_isolated_attempt(
+                &work_id,
+                executor,
+                None,
+                &medousa_forge::forge::Forge::system_actor(),
             )
-        })?;
+            .map_err(|error| (StatusCode::CONFLICT, error.to_string()))?;
+        let env = match item.environment_for_attempt(&lease.attempt_id).cloned() {
+            Some(environment) => environment,
+            None => {
+                let _ = state.forge.interrupt_attempt(
+                    &lease,
+                    medousa_forge::model::RecoveryDisposition::RestartAllowed,
+                    &medousa_forge::forge::Forge::system_actor(),
+                );
+                return Err((
+                    StatusCode::CONFLICT,
+                    format!("forge attempt for '{work_id_raw}' has no isolated environment"),
+                ));
+            }
+        };
         if !env.worktree.exists() {
+            let _ = state.forge.interrupt_attempt(
+                &lease,
+                medousa_forge::model::RecoveryDisposition::RestartAllowed,
+                &medousa_forge::forge::Forge::system_actor(),
+            );
             return Err((
                 StatusCode::CONFLICT,
                 format!(
@@ -181,6 +225,7 @@ pub async fn create_agent_session(
             ));
         }
         config.cwd = Some(env.worktree.to_string_lossy().into_owned());
+        forge_lease = Some(lease);
         Some(work_id)
     } else {
         None
@@ -204,23 +249,17 @@ pub async fn create_agent_session(
         }
     };
 
-    // Fail loudly on auth problems instead of looking "healthy" on the stub
-    // bridge — the Connections UI keys off these distinct states.
-    let probe = runtime_auth_probe(kind);
-    if probe.binary_present && matches!(probe.status, RuntimeAuthStatus::SignedOut) {
-        let hint = probe
-            .detail
-            .unwrap_or_else(|| "vendor CLI not signed in".into());
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            format!("{hint} — sign in from Settings → Connections"),
-        ));
-    }
-
     let (acp_session, acp_wire_session_id, resumed) = ACP_CLIENT
         .create_or_resume_session(&config, resume_token.as_deref())
         .await
         .map_err(|e| {
+            if let Some(lease) = forge_lease.as_ref() {
+                let _ = state.forge.fail_attempt(
+                    lease,
+                    "ACP provider session could not start",
+                    &medousa_forge::forge::Forge::system_actor(),
+                );
+            }
             let message = e.to_string();
             let lower = message.to_lowercase();
             if lower.contains("auth")
@@ -242,9 +281,15 @@ pub async fn create_agent_session(
             )
         })?;
 
-    let agent_session_id = format!("agent-{}", Uuid::new_v4());
     let adapter = TurnStreamRegistryPortAdapter::new(state.interactive_turn_streams.clone());
     if !adapter.register_stream(&agent_session_id).await {
+        if let Some(lease) = forge_lease.as_ref() {
+            let _ = state.forge.interrupt_attempt(
+                lease,
+                medousa_forge::model::RecoveryDisposition::RestartAllowed,
+                &medousa_forge::forge::Forge::system_actor(),
+            );
+        }
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             "failed to register agent stream".into(),
@@ -259,7 +304,7 @@ pub async fn create_agent_session(
         acp_wire_session_id: acp_wire_session_id.clone(),
         cancelled: Arc::new(Mutex::new(false)),
         forge_work_id: forge_work_id.clone(),
-        forge_lease: None,
+        forge_lease,
     };
 
     {

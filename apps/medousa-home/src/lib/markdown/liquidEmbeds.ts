@@ -1299,6 +1299,108 @@ function parseDecisionBody(body: string): LiquidDecisionProps | null {
 }
 
 const BRIEF_TONES = new Set(["research", "brief", "memo"]);
+const BRIEF_SECTION_SEPARATOR = /^[ \t]*---[ \t]*$/m;
+const BRIEF_SOURCE_SEPARATOR = BRIEF_SECTION_SEPARATOR;
+const BRIEF_SOURCE_SPLITTER = /^[ \t]*===[ \t]*$/m;
+
+type BriefFieldLine = {
+  key: string;
+  value: string;
+  indent: number;
+};
+
+/** Parse a brief field without stripping Markdown list markers from body text. */
+function parseBriefFieldLine(raw: string, allowListMarker = true): BriefFieldLine | null {
+  const indent = raw.match(/^[ \t]*/)?.[0].length ?? 0;
+  let line = raw.slice(indent);
+  if (allowListMarker) {
+    line = line.replace(/^[-*+]\s+/, "").replace(/^\d+\.\s+/, "");
+  }
+  const match = line.match(/^([a-zA-Z][a-zA-Z0-9_-]*)\s*:(.*)$/);
+  if (!match) return null;
+  return {
+    key: match[1].toLowerCase(),
+    value: match[2].trim(),
+    indent,
+  };
+}
+
+/** Remove the common indentation models add inside a multiline brief field. */
+function dedentBriefLines(lines: string[]): string {
+  const indents = lines
+    .filter((line) => line.trim())
+    .map((line) => line.match(/^[ \t]*/)?.[0].length ?? 0);
+  const commonIndent = indents.length > 0 ? Math.min(...indents) : 0;
+  return lines
+    .map((line) => {
+      if (!line.trim()) return "";
+      return line.slice(Math.min(commonIndent, line.match(/^[ \t]*/)?.[0].length ?? 0));
+    })
+    .join("\n")
+    .trim();
+}
+
+/**
+ * Parse brief records whose content fields may continue as Markdown.
+ *
+ * Briefs are intentionally YAML-ish rather than full YAML. Keep the parser
+ * narrow, but let `body:` / `quote:` consume multiline Markdown and tolerate
+ * the indentation models commonly add around generated fences.
+ */
+function parseBriefRecordBlock(
+  block: string,
+  allowedKeys: ReadonlySet<string>,
+  contentKeys: ReadonlySet<string>,
+): Record<string, string> {
+  const fields: Record<string, string> = {};
+  const lines = block.replace(/\r\n/g, "\n").split("\n");
+  let activeKey: string | null = null;
+  let activeValue = "";
+  let activeContinuation: string[] = [];
+  let recordIndent: number | null = null;
+
+  const flush = () => {
+    if (!activeKey) return;
+    if (contentKeys.has(activeKey)) {
+      const continuation = dedentBriefLines(activeContinuation);
+      if (YAML_BLOCK_SCALAR.test(activeValue)) {
+        if (continuation) fields[activeKey] = continuation;
+      } else if (continuation) {
+        fields[activeKey] = activeValue
+          ? `${activeValue}\n\n${continuation}`.trim()
+          : continuation;
+      } else if (activeValue) {
+        fields[activeKey] = activeValue;
+      }
+    } else if (activeValue) {
+      fields[activeKey] = activeValue;
+    }
+    activeKey = null;
+    activeValue = "";
+    activeContinuation = [];
+  };
+
+  for (const raw of lines) {
+    const field = parseBriefFieldLine(raw, activeKey == null);
+    const isRecordField =
+      field &&
+      allowedKeys.has(field.key) &&
+      (recordIndent === null || field.indent <= recordIndent);
+    if (isRecordField) {
+      if (recordIndent === null) recordIndent = field.indent;
+      flush();
+      activeKey = field.key;
+      activeValue = field.value;
+      continue;
+    }
+
+    if (activeKey && contentKeys.has(activeKey)) {
+      activeContinuation.push(raw);
+    }
+  }
+  flush();
+  return fields;
+}
 
 function stripAtxHeading(line: string): string | null {
   const m = line.trim().match(/^#{1,6}\s+(.+?)(?:\s+#*)?$/);
@@ -1359,18 +1461,23 @@ function parseBriefSectionBlock(
   index: number,
 ): LiquidBriefSection | null {
   const seenIds = new Map<string, number>();
-  const normalized = block.replace(/\r\n/g, "\n").trim();
-  if (!normalized) return null;
+  const normalized = block.replace(/\r\n/g, "\n").trimEnd();
+  if (!normalized.trim()) return null;
 
   // Prefer explicit heading:/title: + body: (or nested --- prose)
-  const sep = normalized.search(/^---[ \t]*$/m);
+  const sep = normalized.search(BRIEF_SECTION_SEPARATOR);
   let header = normalized;
   let proseBody: string | undefined;
   if (sep >= 0) {
     header = normalized.slice(0, sep);
-    proseBody = normalized.slice(sep).replace(/^---[ \t]*\n?/, "").trim() || undefined;
+    proseBody =
+      normalized.slice(sep).replace(BRIEF_SECTION_SEPARATOR, "").trim() || undefined;
   }
-  const fields = parseDecisionOptionFields(header);
+  const fields = parseBriefRecordBlock(
+    header,
+    new Set(["heading", "title", "body"]),
+    new Set(["body"]),
+  );
   const heading = (fields.heading ?? fields.title)?.trim();
   if (heading) {
     const body = (fields.body ?? proseBody)?.trim();
@@ -1397,7 +1504,11 @@ function parseBriefSourceBlock(
   index: number,
 ): LiquidBriefSource | null {
   const seenIds = new Map<string, number>();
-  const fields = parseDecisionOptionFields(block);
+  const fields = parseBriefRecordBlock(
+    block,
+    new Set(["title", "label", "url", "quote", "body", "source"]),
+    new Set(["quote", "body"]),
+  );
   const title = (fields.title ?? fields.label)?.trim();
   if (!title) return null;
   const src: LiquidBriefSource = {
@@ -1415,11 +1526,11 @@ function parseBriefBody(body: string): LiquidBriefProps | null {
   const normalized = body.replace(/\r\n/g, "\n").trim();
   if (!normalized) return null;
 
-  const eqSplit = normalized.split(/^===[ \t]*$/m);
+  const eqSplit = normalized.split(BRIEF_SOURCE_SPLITTER);
   const mainPart = (eqSplit[0] ?? "").trim();
   const sourcesPart = eqSplit.length > 1 ? (eqSplit.slice(1).join("\n===\n") ?? "").trim() : "";
 
-  const parts = mainPart.split(/^---[ \t]*$/m);
+  const parts = mainPart.split(BRIEF_SECTION_SEPARATOR);
   const preamble = parts[0] ?? "";
   const sectionBlocks = parts.slice(1);
 
@@ -1429,7 +1540,7 @@ function parseBriefBody(body: string): LiquidBriefProps | null {
 
   for (const block of sectionBlocks) {
     // Multi-heading markdown blob in one --- slice (## A … ## B …)
-    if (/^#{1,6}\s+\S/m.test(block)) {
+    if (/^[ \t]*#{1,6}\s+\S/m.test(block)) {
       const atxMany = parseAtxBriefSections(block, sections.length);
       if (atxMany.length >= 1) {
         sections.push(...atxMany);
@@ -1445,7 +1556,11 @@ function parseBriefBody(body: string): LiquidBriefProps | null {
       continue;
     }
 
-    const blockFields = parseDecisionOptionFields(block);
+    const blockFields = parseBriefRecordBlock(
+      block,
+      new Set(["heading", "title", "body"]),
+      new Set(["body"]),
+    );
     const headingOnly = (blockFields.heading ?? blockFields.title)?.trim();
     if (headingOnly && !blockFields.body) {
       pendingHeading = headingOnly;
@@ -1467,7 +1582,7 @@ function parseBriefBody(body: string): LiquidBriefProps | null {
 
   // No --- sections: whole body may be ATX markdown (with optional title chrome in preamble)
   if (sections.length < 1) {
-    if (sectionBlocks.length === 0 && /^#{1,6}\s+\S/m.test(mainPart)) {
+    if (sectionBlocks.length === 0 && /^[ \t]*#{1,6}\s+\S/m.test(mainPart)) {
       // Strip KV chrome lines from the top before ATX split when preamble has title:
       const atxSource =
         fields.title || fields.subtitle || fields.tone
@@ -1485,7 +1600,9 @@ function parseBriefBody(body: string): LiquidBriefProps | null {
       // Had --- but KV/ATX per-block failed: try ATX on joined remainder, else one Overview
       const rest = sectionBlocks.map((b) => b.trim()).filter(Boolean).join("\n\n");
       if (rest) {
-        const atx = /^#{1,6}\s+\S/m.test(rest) ? parseAtxBriefSections(rest, 0) : [];
+        const atx = /^[ \t]*#{1,6}\s+\S/m.test(rest)
+          ? parseAtxBriefSections(rest, 0)
+          : [];
         if (atx.length) {
           sections.push(...atx);
         } else {
@@ -1504,7 +1621,9 @@ function parseBriefBody(body: string): LiquidBriefProps | null {
 
   const sources: LiquidBriefSource[] = [];
   if (sourcesPart) {
-    const sourceBlocks = sourcesPart.split(/^---[ \t]*$/m).filter((b) => b.trim());
+    const sourceBlocks = sourcesPart
+      .split(BRIEF_SOURCE_SEPARATOR)
+      .filter((b) => b.trim());
     for (const block of sourceBlocks) {
       const src = parseBriefSourceBlock(block, sources.length);
       if (src) sources.push(src);

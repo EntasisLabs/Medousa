@@ -75,6 +75,20 @@ pub fn select_pipeline_for_turn_with_allowlist(
     settings: &RuntimeSettings,
     tool_allowlist: Option<std::collections::HashSet<String>>,
 ) -> SelectedTurnPipeline {
+    select_pipeline_for_turn_with_registry_and_allowlist(
+        tui_rt.tool_registry.clone(),
+        final_route,
+        settings,
+        tool_allowlist,
+    )
+}
+
+pub fn select_pipeline_for_turn_with_registry_and_allowlist(
+    tool_registry: Arc<dyn stasis::application::orchestration::tool_registry::ToolRegistry>,
+    final_route: Option<&StageRoute>,
+    settings: &RuntimeSettings,
+    tool_allowlist: Option<std::collections::HashSet<String>>,
+) -> SelectedTurnPipeline {
     use std::sync::Arc;
 
     use stasis::application::orchestration::tool_registry::ToolRegistry;
@@ -84,10 +98,10 @@ pub fn select_pipeline_for_turn_with_allowlist(
 
     let registry: Arc<dyn ToolRegistry> = match tool_allowlist {
         Some(allowlist) => Arc::new(AllowlistToolRegistry::new(
-            tui_rt.tool_registry.clone(),
+            tool_registry.clone(),
             allowlist,
         )),
-        None => tui_rt.tool_registry.clone(),
+        None => tool_registry,
     };
 
     if let Some(route) = final_route {
