@@ -1413,12 +1413,15 @@ async fn run_agent_turn_inner(
             crate::inference_profiles::InferenceProfileKind::Main
         },
         surface: request.surface.clone(),
-        round_context_provider: coder_registry.clone().map(|registry| {
-            registry as Arc<dyn super::turn_context::ToolRoundContextProvider>
-        }),
+        round_context_provider: coder_registry
+            .clone()
+            .map(|registry| registry as Arc<dyn super::turn_context::ToolRoundContextProvider>),
         evidence_undertaking_id: coder_registry
             .as_ref()
             .map(|registry| registry.undertaking_id().to_string()),
+        compact_evidence_receipt_sink: coder_registry
+            .clone()
+            .map(|registry| registry as Arc<dyn super::coder_evidence::CompactEvidenceReceiptSink>),
     });
 
     if let Some(route_notice) = assembled.pipeline_selection.route_dispatch_notice {

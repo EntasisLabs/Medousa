@@ -5,8 +5,8 @@
 //! current tool loop, and never persists payloads.
 
 use std::collections::HashMap;
-use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, LazyLock};
 
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
@@ -39,12 +39,13 @@ const PRIORITY_FIELDS: &[&str] = &[
     "next",
 ];
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct ToolPerceptionGovernor {
     failure_occurrences: HashMap<String, usize>,
     round_metrics: PerceptionMetricsSnapshot,
     evidence_undertaking_id: Option<String>,
     evidence_store: Option<super::coder_evidence::CoderEvidenceStore>,
+    compact_receipt_sink: Option<Arc<dyn super::coder_evidence::CompactEvidenceReceiptSink>>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -60,6 +61,7 @@ pub struct PerceptionMetricsSnapshot {
     pub stored_evidence_results: u64,
     pub stored_evidence_logical_bytes: u64,
     pub evidence_store_failures: u64,
+    pub evidence_receipt_stage_failures: u64,
     pub failure_clusters: u64,
     pub bounded_round_contexts: u64,
     pub omitted_context_chars: u64,
@@ -72,7 +74,7 @@ impl PerceptionMetricsSnapshot {
 
     pub fn telemetry_line(&self, round: usize) -> String {
         format!(
-            "◈ perception_governor round={round} observed={} raw_chars={} model_chars={} bounded={} requeryable={} replayable={} would_spool={} would_spool_bytes={} stored_evidence={} stored_evidence_bytes={} evidence_store_failures={} failure_clusters={} bounded_contexts={} omitted_context_chars={}",
+            "◈ perception_governor round={round} observed={} raw_chars={} model_chars={} bounded={} requeryable={} replayable={} would_spool={} would_spool_bytes={} stored_evidence={} stored_evidence_bytes={} evidence_store_failures={} evidence_receipt_stage_failures={} failure_clusters={} bounded_contexts={} omitted_context_chars={}",
             self.observed_results,
             self.raw_result_chars,
             self.model_result_chars,
@@ -84,6 +86,7 @@ impl PerceptionMetricsSnapshot {
             self.stored_evidence_results,
             self.stored_evidence_logical_bytes,
             self.evidence_store_failures,
+            self.evidence_receipt_stage_failures,
             self.failure_clusters,
             self.bounded_round_contexts,
             self.omitted_context_chars,
@@ -104,6 +107,7 @@ struct PerceptionMetrics {
     stored_evidence_results: AtomicU64,
     stored_evidence_logical_bytes: AtomicU64,
     evidence_store_failures: AtomicU64,
+    evidence_receipt_stage_failures: AtomicU64,
     failure_clusters: AtomicU64,
     bounded_round_contexts: AtomicU64,
     omitted_context_chars: AtomicU64,
@@ -138,6 +142,9 @@ pub fn perception_metrics_snapshot() -> PerceptionMetricsSnapshot {
         evidence_store_failures: PERCEPTION_METRICS
             .evidence_store_failures
             .load(Ordering::Relaxed),
+        evidence_receipt_stage_failures: PERCEPTION_METRICS
+            .evidence_receipt_stage_failures
+            .load(Ordering::Relaxed),
         failure_clusters: PERCEPTION_METRICS.failure_clusters.load(Ordering::Relaxed),
         bounded_round_contexts: PERCEPTION_METRICS
             .bounded_round_contexts
@@ -164,7 +171,10 @@ enum ObservationKind {
 }
 
 impl ToolPerceptionGovernor {
-    pub fn for_coder_undertaking(undertaking_id: Option<String>) -> Self {
+    pub fn for_coder_undertaking(
+        undertaking_id: Option<String>,
+        compact_receipt_sink: Option<Arc<dyn super::coder_evidence::CompactEvidenceReceiptSink>>,
+    ) -> Self {
         let evidence_store = undertaking_id.as_ref().map(|_| {
             super::coder_evidence::CoderEvidenceStore::for_data_root(
                 &crate::paths::medousa_data_dir(),
@@ -173,6 +183,7 @@ impl ToolPerceptionGovernor {
         Self {
             evidence_undertaking_id: undertaking_id,
             evidence_store,
+            compact_receipt_sink,
             ..Default::default()
         }
     }
@@ -187,6 +198,16 @@ impl ToolPerceptionGovernor {
     /// Compile one authoritative tool output into its ephemeral model-facing
     /// observation. The input value is never mutated or retained.
     pub fn observe(&mut self, tool_name: &str, output: &Value, max_chars: usize) -> Value {
+        self.observe_for_call(tool_name, None, output, max_chars)
+    }
+
+    pub fn observe_for_call(
+        &mut self,
+        tool_name: &str,
+        source_call_id: Option<&str>,
+        output: &Value,
+        max_chars: usize,
+    ) -> Value {
         let rendered = output.to_string();
         let raw_chars = rendered.chars().count();
         if max_chars < MIN_ACTIONABLE_RESULT_CHARS {
@@ -236,7 +257,7 @@ impl ToolPerceptionGovernor {
             return observed;
         }
         let raw_bytes = rendered.len();
-        let evidence = self.persist_evidence(tool_name, output);
+        let evidence = self.persist_evidence(tool_name, source_call_id, output);
         let observed =
             fit_bounded_observation(tool_name, output, rendered, max_chars, evidence.as_ref());
         self.record_result(
@@ -250,7 +271,12 @@ impl ToolPerceptionGovernor {
         observed
     }
 
-    fn persist_evidence(&mut self, tool_name: &str, output: &Value) -> Option<Value> {
+    fn persist_evidence(
+        &mut self,
+        tool_name: &str,
+        source_call_id: Option<&str>,
+        output: &Value,
+    ) -> Option<Value> {
         if evidence_class(tool_name, output) != EvidenceClass::NonReplayable
             || !is_evidence_payload(output)
         {
@@ -270,6 +296,20 @@ impl ToolPerceptionGovernor {
             super::coder_tools::COGNITION_CODER_EVIDENCE_READ,
         ) {
             Ok(receipt) => {
+                let durable_receipt_staged = self.compact_receipt_sink.as_ref().is_some_and(|sink| {
+                    match sink.stage_compact_receipt(tool_name, source_call_id, &receipt) {
+                        Ok(()) => true,
+                        Err(err) => {
+                            add_metric(
+                                &mut self.round_metrics.evidence_receipt_stage_failures,
+                                &PERCEPTION_METRICS.evidence_receipt_stage_failures,
+                                1,
+                            );
+                            tracing::warn!(tool = tool_name, error = %err, "Coder compact evidence receipt was not staged");
+                            false
+                        }
+                    }
+                });
                 add_metric(
                     &mut self.round_metrics.stored_evidence_results,
                     &PERCEPTION_METRICS.stored_evidence_results,
@@ -283,6 +323,7 @@ impl ToolPerceptionGovernor {
                 Some(json!({
                     "status": "stored",
                     "receipt": receipt,
+                    "durable_receipt_staged": durable_receipt_staged,
                     "next_decision": "Read only the byte range needed with the receipt's read_tool and reference; this evidence is redacted, scoped, and ephemeral.",
                 }))
             }
@@ -655,6 +696,27 @@ fn take_last_chars(value: &str, max_chars: usize) -> String {
 mod tests {
     use super::*;
 
+    #[derive(Default)]
+    struct RecordingReceiptSink {
+        receipts: std::sync::Mutex<Vec<(String, String, String)>>,
+    }
+
+    impl super::super::coder_evidence::CompactEvidenceReceiptSink for RecordingReceiptSink {
+        fn stage_compact_receipt(
+            &self,
+            source_tool: &str,
+            source_call_id: Option<&str>,
+            receipt: &super::super::coder_evidence::CoderEvidenceReceipt,
+        ) -> Result<(), String> {
+            self.receipts.lock().unwrap().push((
+                source_tool.to_owned(),
+                source_call_id.unwrap_or_default().to_owned(),
+                receipt.digest.clone(),
+            ));
+            Ok(())
+        }
+    }
+
     #[test]
     fn small_observation_is_unchanged() {
         let input = json!({"ok": true, "content": "small"});
@@ -796,16 +858,19 @@ mod tests {
     #[test]
     fn coder_non_replayable_observation_gets_followable_ephemeral_receipt() {
         let temp = tempfile::TempDir::new().unwrap();
+        let receipt_sink = Arc::new(RecordingReceiptSink::default());
         let mut governor = ToolPerceptionGovernor {
             evidence_undertaking_id: Some("work-test".into()),
             evidence_store: Some(super::super::coder_evidence::CoderEvidenceStore::new(
                 temp.path().join("coder-evidence"),
                 super::super::coder_evidence::EvidencePolicy::default(),
             )),
+            compact_receipt_sink: Some(receipt_sink.clone()),
             ..Default::default()
         };
-        let observed = governor.observe(
+        let observed = governor.observe_for_call(
             "cognition_shell_session_run",
+            Some("model-call-7"),
             &json!({
                 "ok": false,
                 "headers": {"authorization": "Bearer secret"},
@@ -816,6 +881,10 @@ mod tests {
         let receipt = &observed["ephemeral_evidence"]["receipt"];
         assert_eq!(observed["perception_status"], "bounded");
         assert_eq!(observed["ephemeral_evidence"]["status"], "stored");
+        assert_eq!(
+            observed["ephemeral_evidence"]["durable_receipt_staged"],
+            true
+        );
         assert_eq!(receipt["redacted"], true);
         assert_eq!(
             receipt["read_tool"],
@@ -839,6 +908,12 @@ mod tests {
             .unwrap();
         assert!(stored.content.contains("[REDACTED]"));
         assert!(!stored.content.contains("Bearer secret"));
+        let staged = receipt_sink.receipts.lock().unwrap();
+        assert_eq!(staged.len(), 1);
+        assert_eq!(staged[0].0, "cognition_shell_session_run");
+        assert_eq!(staged[0].1, "model-call-7");
+        assert_eq!(staged[0].2, receipt["digest"].as_str().unwrap());
+        drop(staged);
         let metrics = governor.take_round_metrics();
         assert_eq!(metrics.stored_evidence_results, 1);
         assert!(metrics.stored_evidence_logical_bytes > 20_000);

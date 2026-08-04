@@ -17,9 +17,9 @@ use medousa_forge::error::ForgeError;
 use medousa_forge::forge::{Forge, SealOptions};
 use medousa_forge::git::{CheckpointAuthor, GitEngine};
 use medousa_forge::model::{
-    ActorKind, ActorRef, EvidenceId, ExecutionLease, ExecutorDescriptor, GitOid,
-    IntegrationStrategy, LeaseId, RecoveryDisposition, ReviewDecision, ReviewDecisionId, WorkId,
-    WorkItem, WorkPolicy, WorkState, WorkTarget,
+    ActorKind, ActorRef, CompactEvidenceReceipt, EvidenceId, ExecutionLease, ExecutorDescriptor,
+    GitOid, IntegrationStrategy, LeaseId, RecoveryDisposition, ReviewDecision, ReviewDecisionId,
+    WorkId, WorkItem, WorkPolicy, WorkState, WorkTarget,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -128,6 +128,10 @@ pub fn forge_router(state: AppState) -> Router {
         .route(
             "/v1/forge/evidence/{evidence_id}/commands",
             get(evidence_commands),
+        )
+        .route(
+            "/v1/forge/evidence/{evidence_id}/receipts",
+            get(evidence_receipts),
         )
         .route("/v1/forge/stream", get(forge_stream))
         .route(
@@ -4182,6 +4186,12 @@ struct EvidencePage {
     lines: Vec<String>,
 }
 
+#[derive(Debug, Serialize)]
+struct EvidenceReceiptsResponse {
+    evidence_id: String,
+    receipts: Vec<CompactEvidenceReceipt>,
+}
+
 async fn evidence_patch(
     State(state): State<AppState>,
     Path(evidence_id): Path<String>,
@@ -4237,6 +4247,41 @@ async fn evidence_commands(
         total_lines: total,
         truncated,
         lines,
+    }))
+}
+
+async fn evidence_receipts(
+    State(state): State<AppState>,
+    Path(evidence_id): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<EvidencePageQuery>,
+) -> ApiResult<Json<EvidenceReceiptsResponse>> {
+    let eid = EvidenceId::from(evidence_id);
+    let (_item, dir) = find_evidence_dir(forge(&state).as_ref(), &eid, q.work_id.as_deref())?;
+    let bytes = match std::fs::read(dir.join("receipts.json")) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => b"[]".to_vec(),
+        Err(err) => {
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorBody {
+                    error: err.to_string(),
+                    kind: Some("store"),
+                }),
+            ));
+        }
+    };
+    let receipts = serde_json::from_slice(&bytes).map_err(|err| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorBody {
+                error: err.to_string(),
+                kind: Some("store"),
+            }),
+        )
+    })?;
+    Ok(Json(EvidenceReceiptsResponse {
+        evidence_id: eid.as_str().to_owned(),
+        receipts,
     }))
 }
 

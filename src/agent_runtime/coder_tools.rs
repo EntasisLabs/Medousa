@@ -673,6 +673,38 @@ impl CoderBoundToolRegistry {
     }
 }
 
+impl super::coder_evidence::CompactEvidenceReceiptSink for CoderBoundToolRegistry {
+    fn stage_compact_receipt(
+        &self,
+        source_tool: &str,
+        source_call_id: Option<&str>,
+        receipt: &super::coder_evidence::CoderEvidenceReceipt,
+    ) -> std::result::Result<(), String> {
+        let authority = self.authority().map_err(|err| err.to_string())?;
+        let line = json!({
+            "kind": "medousa_coder_ephemeral_evidence_receipt",
+            "schema_version": 1,
+            "work_id": self.entry.work_id,
+            "source_tool": source_tool,
+            "source_call_id": source_call_id,
+            "digest": receipt.digest,
+            "ephemeral_reference": receipt.reference,
+            "content_type": receipt.content_type,
+            "logical_bytes": receipt.logical_bytes,
+            "physical_bytes": receipt.physical_bytes,
+            "retention": receipt.retention,
+            "expires_at_unix_seconds": receipt.expires_at_unix_seconds,
+            "redacted": receipt.redacted,
+            "raw_promoted": false,
+            "recorded_at": chrono::Utc::now(),
+        });
+        authority
+            .forge
+            .append_command_log(authority.lease(), &line)
+            .map_err(|err| format!("failed to stage compact evidence receipt: {err}"))
+    }
+}
+
 #[async_trait]
 impl ToolRegistry for CoderBoundToolRegistry {
     async fn list_tools(&self) -> Result<Vec<Tool>> {

@@ -333,6 +333,9 @@ Custody of intentional work episodes over a git target (vault or any repo). Dist
 | POST | `/v1/forge/items/{id}/review/file` | Reopen and restore one baseline text file while preserving reviewed evidence |
 | GET | `/v1/forge/items/{id}/tasks` | Detect project commands |
 | POST | `/v1/forge/items/{id}/tasks/{task_id}/run` | Run a detected command and record its result |
+| GET | `/v1/forge/evidence/{evidence_id}/patch` | Read a bounded page of the sealed patch |
+| GET | `/v1/forge/evidence/{evidence_id}/commands` | Read a bounded page of the sealed command log |
+| GET | `/v1/forge/evidence/{evidence_id}/receipts` | Read typed compact evidence provenance; raw payloads are excluded |
 
 Guide: [forge.md](forge.md).
 

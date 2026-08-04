@@ -4,26 +4,28 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use serde_json::{Value, json};
-use stasis::application::orchestration::tool_loop_pipeline::ToolLoopExecutionRequest;
 use stasis::application::orchestration::prompt_pipeline::PromptExecutionContext;
+use stasis::application::orchestration::tool_loop_pipeline::ToolLoopExecutionRequest;
 use tokio::sync::RwLock;
 
 use crate::agent_runtime::stream_sink::SharedAgentStreamSink;
+use crate::agent_runtime::system_prompt::DEFAULT_SYSTEM_PROMPT;
 use crate::agent_runtime::turn_completion::ToolLoopCompletionGate;
 use crate::agent_runtime::turn_ledger::append_tool_loop_policy;
+use crate::agent_runtime::turn_ledger::{
+    TurnLedgerEventKind, TurnLedgerRecord, persist_ledger_record,
+};
 use crate::agent_runtime::turn_loop_settings::TurnLoopSettings;
-use crate::agent_runtime::turn_ledger::{TurnLedgerEventKind, TurnLedgerRecord, persist_ledger_record};
 use crate::agent_runtime::turn_services;
 use crate::agent_runtime::{
     MAX_REQUEST_PROMPT_CHARS, prompt_prep::truncate_text_for_budget,
     settings::runtime_settings_for_interactive_turn,
 };
+use crate::channel_delivery::ChannelDeliveryTarget;
 use crate::daemon_api::InteractiveTurnRequest;
 use crate::stage_routing::StageRoutingMatrix;
-use crate::agent_runtime::system_prompt::DEFAULT_SYSTEM_PROMPT;
-use crate::channel_delivery::ChannelDeliveryTarget;
-use crate::turn_continuation::TurnContinuationScope;
 use crate::tui::settings::RuntimeSettings;
+use crate::turn_continuation::TurnContinuationScope;
 use stasis::application::orchestration::prompt_pipeline::{
     PromptExecutionPipeline, PromptExecutionRequest,
 };
@@ -43,10 +45,15 @@ use super::prompts::{
     synthesis_user_prompt, synthesis_user_prompt_with_handoff, worker_failure_user_prompt,
     worker_system_prompt,
 };
-use super::registry::{AllowlistToolRegistry, SessionBootstrapToolRegistry, WorkerSessionToolRegistry};
-use crate::tool_bootstrap::{ToolSurfaceLane, handoff_implies_resolved_execution, unlock_session_domains, worker_should_unlock_vault};
+use super::registry::{
+    AllowlistToolRegistry, SessionBootstrapToolRegistry, WorkerSessionToolRegistry,
+};
 use super::store::{
     TurnWorkDisposition, TurnWorkRecord, TurnWorkStatus, TurnWorkerStore, turn_worker_store,
+};
+use crate::tool_bootstrap::{
+    ToolSurfaceLane, handoff_implies_resolved_execution, unlock_session_domains,
+    worker_should_unlock_vault,
 };
 
 fn worker_canvas_lane_enabled(is_bound_workshop: bool, record: &TurnWorkRecord) -> bool {
@@ -65,7 +72,10 @@ async fn establish_worker_canvas_turn_scope(
             .unwrap_or_else(|| format!("work-{}", record.work_id)),
         session_id: record.session_id.clone(),
         original_prompt: record.task_prompt.clone(),
-        delivery_target: record.delivery_target.as_ref().map(ChannelDeliveryTarget::from),
+        delivery_target: record
+            .delivery_target
+            .as_ref()
+            .map(ChannelDeliveryTarget::from),
         provider: record.provider.clone(),
         model: record.model.clone(),
         response_depth_mode: record.response_depth_mode.clone(),
@@ -95,7 +105,8 @@ pub struct ActiveWorkerBusSession {
     pub parent_turn_correlation_id: Option<String>,
     pub delivery_target: Option<crate::turn_continuation::StoredDeliveryTarget>,
     pub host_handoff_slot: Arc<tokio::sync::RwLock<Option<WorkerHandoffCapsule>>>,
-    pub host_continuity_bundle: Option<crate::agent_runtime::worker_continuity::HostContinuityBundle>,
+    pub host_continuity_bundle:
+        Option<crate::agent_runtime::worker_continuity::HostContinuityBundle>,
     /// Operator `max_tool_rounds` from the delegating host turn (not a separate worker cap).
     pub configured_max_tool_rounds: usize,
     /// Home client advertised HTML/canvas support when the host delegated this work.
@@ -108,7 +119,9 @@ pub struct ActiveWorkerBusSession {
 pub struct WorkerRuntimeContext {
     pub tool_registry: Arc<dyn ToolRegistry>,
     pub client_registry: crate::client_tools::ClientRegistry,
-    pub identity_memory_store: Option<Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>>,
+    pub identity_memory_store: Option<
+        Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>,
+    >,
     pub provider: String,
     pub model: String,
     pub base_url: Option<String>,
@@ -190,16 +203,11 @@ impl TurnWorkerScheduler {
         stage_role: Option<&str>,
         model_hint: Option<&str>,
     ) -> stasis::prelude::Result<Value> {
-        let bus = self
-            .bus_session
-            .read()
-            .await
-            .clone()
-            .ok_or_else(|| {
-                stasis::domain::errors::StasisError::PortFailure(
-                    "cognition_spawn_turn_worker: no active host turn session".to_string(),
-                )
-            })?;
+        let bus = self.bus_session.read().await.clone().ok_or_else(|| {
+            stasis::domain::errors::StasisError::PortFailure(
+                "cognition_spawn_turn_worker: no active host turn session".to_string(),
+            )
+        })?;
 
         let runtime_ctx = self.runtime_ctx.read().await.clone().ok_or_else(|| {
             stasis::domain::errors::StasisError::PortFailure(
@@ -219,18 +227,18 @@ impl TurnWorkerScheduler {
             .await
             .take()
             .unwrap_or_else(|| {
-            WorkerHandoffCapsule::from_host_context(
-                &bus.session_id,
-                bus.stream_turn_id,
-                parent_turn_correlation_id.clone(),
-                parent_user_prompt
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or(bus.parent_user_prompt.as_str()),
-                &crate::agent_runtime::turn_context::TurnScratchpad::from_user_prompt(task),
-                None,
-                None,
-                bus.host_continuity_bundle.clone(),
-            )
+                WorkerHandoffCapsule::from_host_context(
+                    &bus.session_id,
+                    bus.stream_turn_id,
+                    parent_turn_correlation_id.clone(),
+                    parent_user_prompt
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or(bus.parent_user_prompt.as_str()),
+                    &crate::agent_runtime::turn_context::TurnScratchpad::from_user_prompt(task),
+                    None,
+                    None,
+                    bus.host_continuity_bundle.clone(),
+                )
             });
         if handoff.host_continuity.is_none() {
             handoff.host_continuity = bus.host_continuity_bundle.clone();
@@ -238,16 +246,17 @@ impl TurnWorkerScheduler {
         if let Some(ref manuscript_ctx) = manuscript {
             handoff.manuscript = Some(manuscript_ctx.into());
             if let Some(bundle) = handoff.host_continuity.as_mut()
-                && let Some(store) = runtime_ctx.identity_memory_store.as_ref() {
-                    bundle.identity_summary = Some(
-                        crate::identity_manuscript::compile_manuscript_identity_summary(
-                            store,
-                            manuscript_ctx,
-                            Some(task),
-                        )
-                        .await,
-                    );
-                }
+                && let Some(store) = runtime_ctx.identity_memory_store.as_ref()
+            {
+                bundle.identity_summary = Some(
+                    crate::identity_manuscript::compile_manuscript_identity_summary(
+                        store,
+                        manuscript_ctx,
+                        Some(task),
+                    )
+                    .await,
+                );
+            }
         }
         handoff.apply_spawn(intent.as_str(), task, &work_id);
         crate::turn_slice::enrich_handoff_tool_history(
@@ -417,22 +426,13 @@ impl TurnWorkerScheduler {
         goal: &str,
         intent: TurnWorkerIntent,
     ) -> stasis::prelude::Result<Value> {
-        let bus = self
-            .bus_session
-            .read()
-            .await
-            .clone()
-            .ok_or_else(|| {
-                stasis::domain::errors::StasisError::PortFailure(
-                    "cognition_turn_begin_work: no active host turn session".to_string(),
-                )
-            })?;
+        let bus = self.bus_session.read().await.clone().ok_or_else(|| {
+            stasis::domain::errors::StasisError::PortFailure(
+                "cognition_turn_begin_work: no active host turn session".to_string(),
+            )
+        })?;
 
-        if self
-            .store
-            .active_bound_workshop(&bus.session_id)
-            .is_some()
-        {
+        if self.store.active_bound_workshop(&bus.session_id).is_some() {
             return Ok(json!({
                 "ok": false,
                 "workshop_entered": false,
@@ -508,13 +508,8 @@ impl TurnWorkerScheduler {
         let delegation_parent_turn = handoff.parent_turn_correlation_id.clone();
 
         let max_tool_rounds = bus.configured_max_tool_rounds.max(1);
-        let (provider, model) = resolve_worker_llm_target(
-            &bus.provider,
-            &bus.model,
-            intent,
-            None,
-            None,
-        );
+        let (provider, model) =
+            resolve_worker_llm_target(&bus.provider, &bus.model, intent, None, None);
 
         let record = TurnWorkRecord {
             work_id: work_id.clone(),
@@ -608,7 +603,6 @@ impl TurnWorkerScheduler {
             "scratch_digest": scratch_digest,
         }))
     }
-
 }
 
 fn record_stage_role_for_response(stage_role: Option<&str>) -> Option<String> {
@@ -626,7 +620,12 @@ impl Clone for TurnWorkerScheduler {
     }
 }
 
-fn ledger_bus_event(session_id: &str, stream_turn_id: u64, kind: TurnLedgerEventKind, detail: String) {
+fn ledger_bus_event(
+    session_id: &str,
+    stream_turn_id: u64,
+    kind: TurnLedgerEventKind,
+    detail: String,
+) {
     let record = TurnLedgerRecord {
         timestamp: Utc::now(),
         stream_turn_id,
@@ -659,10 +658,9 @@ pub async fn run_worker_turn(
         .await;
 
     let is_bound_workshop = record.disposition == TurnWorkDisposition::Bound;
-    if is_bound_workshop
-        && let Some(started) = store.get(&work_id) {
-            crate::feed_adapters::publish_workshop_started(&started).await;
-        }
+    if is_bound_workshop && let Some(started) = store.get(&work_id) {
+        crate::feed_adapters::publish_workshop_started(&started).await;
+    }
 
     let intent = TurnWorkerIntent::parse(&record.intent).unwrap_or(TurnWorkerIntent::General);
     let manuscript_tools = record
@@ -806,6 +804,7 @@ pub async fn run_worker_turn(
         steer_poll_work_id: is_bound_workshop.then_some(work_id.clone()),
         round_context_provider: None,
         evidence_undertaking_id: None,
+        compact_evidence_receipt_sink: None,
     };
 
     if store.is_work_cancelled(&work_id) {
@@ -842,28 +841,27 @@ pub async fn run_worker_turn(
                 sink.notice(format!("◈ work_cancelled work_id={work_id}"))
                     .await;
             } else {
-            let tool_names: Vec<String> = response
-                .tool_invocations
-                .iter()
-                .map(|i| i.tool_name.clone())
-                .collect();
-            store.update(&work_id, |r| {
-                r.status = TurnWorkStatus::Completed;
-                r.result_text = Some(response.text.clone());
-                r.tool_names = tool_names;
-                r.termination_reason = Some(response.termination_reason.clone());
-                r.worker_scratch = worker_scratch.clone();
-            });
-            ledger_bus_event(
-                &record.session_id,
-                stream_turn_id,
-                TurnLedgerEventKind::WorkCompleted,
-                format!("work_id={work_id}"),
-            );
-            sink.notice(format!("◈ work_completed work_id={work_id}"))
-                .await;
-            if is_bound_workshop
-                && let Some(updated) = store.get(&work_id) {
+                let tool_names: Vec<String> = response
+                    .tool_invocations
+                    .iter()
+                    .map(|i| i.tool_name.clone())
+                    .collect();
+                store.update(&work_id, |r| {
+                    r.status = TurnWorkStatus::Completed;
+                    r.result_text = Some(response.text.clone());
+                    r.tool_names = tool_names;
+                    r.termination_reason = Some(response.termination_reason.clone());
+                    r.worker_scratch = worker_scratch.clone();
+                });
+                ledger_bus_event(
+                    &record.session_id,
+                    stream_turn_id,
+                    TurnLedgerEventKind::WorkCompleted,
+                    format!("work_id={work_id}"),
+                );
+                sink.notice(format!("◈ work_completed work_id={work_id}"))
+                    .await;
+                if is_bound_workshop && let Some(updated) = store.get(&work_id) {
                     crate::feed_adapters::publish_workshop_working(
                         &updated,
                         updated.tool_names.len() as u32,
@@ -871,9 +869,9 @@ pub async fn run_worker_turn(
                     )
                     .await;
                 }
-            if let Some(updated) = store.get(&work_id) {
-                run_synthesis_turn(&ctx, updated, sink, stream_turn_id).await;
-            }
+                if let Some(updated) = store.get(&work_id) {
+                    run_synthesis_turn(&ctx, updated, sink, stream_turn_id).await;
+                }
             }
         }
         Err(err) => {
@@ -890,15 +888,14 @@ pub async fn run_worker_turn(
             );
             sink.notice(format!("◈ work_failed work_id={work_id} error={message}"))
                 .await;
-            if is_bound_workshop
-                && let Some(failed) = store.get(&work_id) {
-                    crate::feed_adapters::publish_workshop_terminal(
-                        &failed,
-                        "failed",
-                        failed.error.as_deref(),
-                    )
-                    .await;
-                }
+            if is_bound_workshop && let Some(failed) = store.get(&work_id) {
+                crate::feed_adapters::publish_workshop_terminal(
+                    &failed,
+                    "failed",
+                    failed.error.as_deref(),
+                )
+                .await;
+            }
             if let Some(failed) = store.get(&work_id) {
                 run_worker_failure_notify(&ctx, failed, sink, stream_turn_id).await;
             }
@@ -943,23 +940,18 @@ async fn run_worker_failure_notify(
     ))
     .await;
 
-    let prompt = worker_failure_user_prompt(
-        &parent_prompt,
-        &record.work_id,
-        &record.intent,
-        &error,
-    );
+    let prompt =
+        worker_failure_user_prompt(&parent_prompt, &record.work_id, &record.intent, &error);
 
     let resolved_provider = crate::resolve_llm_provider(Some(record.provider.as_str()));
     let resolved_model = crate::resolve_llm_model(Some(record.model.as_str()));
     let resolved_base_url =
         crate::resolve_llm_base_url(Some(&resolved_provider), ctx.base_url.as_deref());
-    let chat_client: Arc<dyn AiChatClient> =
-        Arc::new(crate::build_genai_chat_client(
-            &resolved_provider,
-            &resolved_model,
-            resolved_base_url.as_deref(),
-        ));
+    let chat_client: Arc<dyn AiChatClient> = Arc::new(crate::build_genai_chat_client(
+        &resolved_provider,
+        &resolved_model,
+        resolved_base_url.as_deref(),
+    ));
     let pipeline = PromptExecutionPipeline::new(chat_client);
     let request = PromptExecutionRequest::from_user_prompt(truncate_text_for_budget(
         &prompt,
@@ -976,8 +968,12 @@ async fn run_worker_failure_notify(
         ),
     };
 
-    sink.agent_response(notify_turn_id, text, vec!["turn_worker.failure".to_string()])
-        .await;
+    sink.agent_response(
+        notify_turn_id,
+        text,
+        vec!["turn_worker.failure".to_string()],
+    )
+    .await;
 }
 
 async fn run_synthesis_turn(
@@ -1048,19 +1044,17 @@ async fn run_synthesis_turn(
     let resolved_model = crate::resolve_llm_model(Some(record.model.as_str()));
     let resolved_base_url =
         crate::resolve_llm_base_url(Some(&resolved_provider), ctx.base_url.as_deref());
-    let chat_client: Arc<dyn AiChatClient> =
-        Arc::new(crate::build_genai_chat_client(
-            &resolved_provider,
-            &resolved_model,
-            resolved_base_url.as_deref(),
-        ));
+    let chat_client: Arc<dyn AiChatClient> = Arc::new(crate::build_genai_chat_client(
+        &resolved_provider,
+        &resolved_model,
+        resolved_base_url.as_deref(),
+    ));
     let pipeline = PromptExecutionPipeline::new(chat_client);
-    let mut request =
-        PromptExecutionRequest::from_user_prompt(truncate_text_for_budget(
-            &synthesis_prompt,
-            MAX_REQUEST_PROMPT_CHARS,
-        ))
-        .with_context(PromptExecutionContext::default());
+    let mut request = PromptExecutionRequest::from_user_prompt(truncate_text_for_budget(
+        &synthesis_prompt,
+        MAX_REQUEST_PROMPT_CHARS,
+    ))
+    .with_context(PromptExecutionContext::default());
     request = request.with_system_prompt(DEFAULT_SYSTEM_PROMPT.to_string());
     let response = match pipeline.execute(request).await {
         Ok(response) => response,
@@ -1068,11 +1062,8 @@ async fn run_synthesis_turn(
             turn_worker_store().update(&record.work_id, |worker| {
                 worker.synthesis_delivered = true;
             });
-            sink.agent_error(
-                synthesis_turn_id,
-                format!("Worker synthesis failed: {err}"),
-            )
-            .await;
+            sink.agent_error(synthesis_turn_id, format!("Worker synthesis failed: {err}"))
+                .await;
             return;
         }
     };
@@ -1101,12 +1092,8 @@ async fn deliver_synthesis_response(
     sink.reset_streamed_markdown().await;
     sink.agent_response(synthesis_turn_id, text.clone(), tool_names.clone())
         .await;
-    crate::turn_worker_notify::publish_worker_synthesis_to_parent_turn(
-        record,
-        &text,
-        &tool_names,
-    )
-    .await;
+    crate::turn_worker_notify::publish_worker_synthesis_to_parent_turn(record, &text, &tool_names)
+        .await;
     turn_worker_store().update(&record.work_id, |worker| {
         worker.synthesis_delivered = true;
         worker.result_text = Some(text.clone());
@@ -1168,25 +1155,29 @@ pub fn pipeline_for_turn_profile(
 ) -> crate::medousa_tool_loop::MedousaToolLoopPipeline {
     if host_bus {
         let allowlist = super::policy::host_bus_tool_names();
-        let filtered: Arc<dyn ToolRegistry> = if let Some(session_id) = session_id.filter(|id| !id.trim().is_empty()) {
-            Arc::new(SessionBootstrapToolRegistry::host(
-                tool_registry,
-                session_id,
-                allowlist,
-                supports_ui_artifacts,
-                supports_browser_host,
-                channel_surface.map(str::to_string),
-                client_registry,
-            ))
-        } else {
-            Arc::new(AllowlistToolRegistry::new(tool_registry, allowlist))
-        };
+        let filtered: Arc<dyn ToolRegistry> =
+            if let Some(session_id) = session_id.filter(|id| !id.trim().is_empty()) {
+                Arc::new(SessionBootstrapToolRegistry::host(
+                    tool_registry,
+                    session_id,
+                    allowlist,
+                    supports_ui_artifacts,
+                    supports_browser_host,
+                    channel_surface.map(str::to_string),
+                    client_registry,
+                ))
+            } else {
+                Arc::new(AllowlistToolRegistry::new(tool_registry, allowlist))
+            };
         crate::tui::runtime_services::build_tool_loop_pipeline_for_target(
             provider, model, base_url, filtered,
         )
     } else {
         crate::tui::runtime_services::build_tool_loop_pipeline_for_target(
-            provider, model, base_url, tool_registry,
+            provider,
+            model,
+            base_url,
+            tool_registry,
         )
     }
 }
@@ -1200,7 +1191,10 @@ mod tests {
     use super::*;
     use crate::agent_runtime::turn_worker::store::{TurnWorkRecord, TurnWorkStatus};
 
-    fn sample_record(termination_reason: Option<&str>, result_text: Option<&str>) -> TurnWorkRecord {
+    fn sample_record(
+        termination_reason: Option<&str>,
+        result_text: Option<&str>,
+    ) -> TurnWorkRecord {
         TurnWorkRecord {
             work_id: "w1".to_string(),
             session_id: "s1".to_string(),
@@ -1257,6 +1251,9 @@ mod tests {
             Some("cognition_turn_finish"),
             Some("   ")
         )));
-        assert!(!worker_synthesis_pass_through(&sample_record(None, Some("done"))));
+        assert!(!worker_synthesis_pass_through(&sample_record(
+            None,
+            Some("done")
+        )));
     }
 }

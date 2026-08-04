@@ -408,9 +408,19 @@ pub struct PolicyReport {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CaptureRisk {
-    OversizeFile { path: String, bytes: u64, limit: u64 },
-    OversizeTotal { bytes: u64, limit: u64 },
-    SecretPattern { path: String, pattern: String },
+    OversizeFile {
+        path: String,
+        bytes: u64,
+        limit: u64,
+    },
+    OversizeTotal {
+        bytes: u64,
+        limit: u64,
+    },
+    SecretPattern {
+        path: String,
+        pattern: String,
+    },
 }
 
 impl PolicyReport {
@@ -451,6 +461,41 @@ pub struct SubmodulePin {
     pub changed: bool,
 }
 
+/// Durable provenance for a redacted ephemeral Coder object. The raw object is
+/// deliberately absent: sealing promotes identity and lifecycle metadata only.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompactEvidenceReceipt {
+    pub schema_version: u32,
+    pub work_id: String,
+    pub source_tool: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_call_id: Option<String>,
+    pub digest: String,
+    pub ephemeral_reference: String,
+    pub content_type: String,
+    pub logical_bytes: u64,
+    pub physical_bytes: u64,
+    pub retention: CompactEvidenceRetention,
+    pub expires_at_unix_seconds: u64,
+    pub redacted: bool,
+    pub raw_evidence: RawEvidenceDisposition,
+    pub recorded_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompactEvidenceRetention {
+    SuccessfulOrReproducible,
+    FailedOrNonReproducible,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RawEvidenceDisposition {
+    /// Raw bytes remain in the bounded TTL store and are never copied by seal.
+    EphemeralOnly,
+}
+
 /// Canonical evidence manifest. The `bundle_digest` is computed over the
 /// canonical serialization of this manifest *without* the digest field —
 /// deterministic field ordering, normalized paths, stable list ordering,
@@ -467,6 +512,12 @@ pub struct EvidenceManifest {
     pub patch_digest: Digest,
     pub command_log_digest: Digest,
     pub policy_report_digest: Digest,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compact_receipts_digest: Option<Digest>,
+    #[serde(default)]
+    pub compact_receipt_count: u64,
+    #[serde(default)]
+    pub compact_receipt_rejections: u64,
     pub changed_files: Vec<ChangedFile>,
     #[serde(default)]
     pub submodule_state: Vec<SubmodulePin>,
@@ -529,7 +580,12 @@ pub struct WorkItem {
 }
 
 impl WorkItem {
-    pub fn new(title: impl Into<String>, brief: impl Into<String>, target: WorkTarget, owner: impl Into<String>) -> Self {
+    pub fn new(
+        title: impl Into<String>,
+        brief: impl Into<String>,
+        target: WorkTarget,
+        owner: impl Into<String>,
+    ) -> Self {
         let now = Utc::now();
         Self {
             schema_version: MODEL_SCHEMA_VERSION,

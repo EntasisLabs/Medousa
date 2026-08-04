@@ -1,6 +1,6 @@
 # Coder cognitive runtime
 
-> Status: Approved direction; slices 1–4C complete
+> Status: Approved direction; slices 1–4D complete
 > Parent: [Agent runtime modes](agent-runtime-modes-plan.md)
 
 ## Product decision
@@ -297,11 +297,25 @@ Implemented:
 - Requeryable Code/Detamu observations and already-referenced artifacts remain
   at their existing authorities and are never copied into this store.
 
-#### Slice 4D — durable promotion
+#### Slice 4D — durable promotion (complete)
 
-- Promote compact receipts into Forge at seal.
-- Retain raw evidence durably only through explicit user pinning or a narrow
-  review policy; never promote raw output merely because a tool returned it.
+Implemented:
+
+- The perception governor stages a narrow receipt into the active Forge
+  command log after an oversized non-requeryable payload enters the ephemeral
+  store. The source tool and model call id remain attached, so concurrent
+  agents can distinguish why identical evidence was observed.
+- Seal validates those staged records against the undertaking, digest/reference
+  shape, size limits, retention class, redaction flag, and raw-retention policy.
+  Valid metadata is promoted into canonical `receipts.json`; malformed records
+  are rejected and counted without blocking the rest of the seal.
+- The evidence manifest binds the compact receipt file by digest and records
+  accepted/rejected counts. Review projections and the evidence receipts API
+  expose that provenance without coupling callers to the ephemeral store.
+- Raw objects remain in the bounded TTL store. The default seal path cannot
+  copy them, and a staged record claiming raw promotion is rejected. Durable
+  raw retention remains reserved for a future explicit user pin or narrowly
+  defined review policy.
 
 Acceptance for 4A:
 

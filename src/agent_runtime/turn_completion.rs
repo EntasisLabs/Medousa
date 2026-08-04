@@ -14,8 +14,8 @@ use std::sync::Arc;
 
 use super::turn_context::{ToolRoundContextProvider, TurnScratchpad, WorkerHandoffCapsule};
 use super::worker_continuity::HostContinuityBundle;
-use stasis::ports::outbound::memory::memory_models::MemoryAvecState;
 use crate::turn_text_heuristics::looks_like_interim_status;
+use stasis::ports::outbound::memory::memory_models::MemoryAvecState;
 
 /// Host context for completion gatekeeper calls from the tool loop.
 pub struct ToolLoopCompletionGate<'a> {
@@ -60,6 +60,9 @@ pub struct ToolLoopCompletionGate<'a> {
     pub round_context_provider: Option<Arc<dyn ToolRoundContextProvider>>,
     /// Forge undertaking allowed to own ephemeral non-replayable evidence.
     pub evidence_undertaking_id: Option<String>,
+    /// Stages compact ephemeral-evidence provenance into the Forge command log.
+    pub compact_evidence_receipt_sink:
+        Option<Arc<dyn super::coder_evidence::CompactEvidenceReceiptSink>>,
 }
 
 impl ToolLoopCompletionGate<'_> {
@@ -99,6 +102,7 @@ impl ToolLoopCompletionGate<'_> {
             steer_poll_work_id: None,
             round_context_provider: None,
             evidence_undertaking_id: None,
+            compact_evidence_receipt_sink: None,
         }
     }
 }
@@ -196,7 +200,10 @@ fn tool_was_invoked(invocations: &[ToolInvocation], needles: &[&str]) -> bool {
 }
 
 /// Code-only checklist for AVEC + calibrate flows.
-pub fn missing_ritual_tools_for_avec(user_prompt: &str, invocations: &[ToolInvocation]) -> Vec<String> {
+pub fn missing_ritual_tools_for_avec(
+    user_prompt: &str,
+    invocations: &[ToolInvocation],
+) -> Vec<String> {
     if !user_prompt_has_avec_ritual_intent(user_prompt) {
         return Vec::new();
     }
@@ -213,13 +220,18 @@ pub fn missing_ritual_tools_for_avec(user_prompt: &str, invocations: &[ToolInvoc
                 "cognition_memory_context",
                 "memory_context",
             ],
-        ) {
-            missing.push("cognition_memory_moods".to_string());
-        }
+        )
+    {
+        missing.push("cognition_memory_moods".to_string());
+    }
 
     if !tool_was_invoked(
         invocations,
-        &["cognition_memory_calibrate", "memory_calibrate", "calibrate"],
+        &[
+            "cognition_memory_calibrate",
+            "memory_calibrate",
+            "calibrate",
+        ],
     ) {
         missing.push("cognition_memory_calibrate".to_string());
     }
@@ -340,7 +352,8 @@ pub fn receipt_checklist_verdict(docket: &TurnCompletionDocket) -> Option<TurnCo
         return Some(TurnCompletionVerdict {
             decision: TurnCompletionDecision::Continue,
             confidence: 0.9,
-            reason: "prepare_final called but draft still looks like in-progress status".to_string(),
+            reason: "prepare_final called but draft still looks like in-progress status"
+                .to_string(),
             source: "receipt_checklist",
             missing_tools: Vec::new(),
         });
@@ -489,10 +502,10 @@ pub async fn resolve_turn_completion(
         if let Some(verdict) = classify_turn_completion_with_gatekeeper(pipeline, docket).await
             && (verdict.confidence >= GATEKEEPER_CONFIDENCE_MIN
                 || verdict.decision == TurnCompletionDecision::Continue)
-            {
-                emit_gatekeeper_notice(sink, &verdict).await;
-                return verdict;
-            }
+        {
+            emit_gatekeeper_notice(sink, &verdict).await;
+            return verdict;
+        }
         if let Some(sink) = sink {
             sink.notice(
                 "◈ completion gatekeeper skipped: low confidence; using heuristic".to_string(),
@@ -502,10 +515,10 @@ pub async fn resolve_turn_completion(
     }
 
     TurnCompletionVerdict {
-        decision: if (docket.workshop_lane && docket.pending_final_answer
+        decision: if (docket.workshop_lane
+            && docket.pending_final_answer
             && !docket.draft_text.trim().is_empty())
-            || (docket.heuristic_would_finalize
-                && !looks_like_interim_status(&docket.draft_text))
+            || (docket.heuristic_would_finalize && !looks_like_interim_status(&docket.draft_text))
         {
             TurnCompletionDecision::EndTurn
         } else {
@@ -518,7 +531,10 @@ pub async fn resolve_turn_completion(
     }
 }
 
-async fn emit_gatekeeper_notice(sink: Option<&SharedAgentStreamSink>, verdict: &TurnCompletionVerdict) {
+async fn emit_gatekeeper_notice(
+    sink: Option<&SharedAgentStreamSink>,
+    verdict: &TurnCompletionVerdict,
+) {
     let Some(sink) = sink else {
         return;
     };
@@ -544,7 +560,8 @@ mod tests {
             tool_input: Value::Null,
             tool_output: Value::Null,
         }];
-        let missing = missing_ritual_tools_for_avec("pull focused AVEC and calibrate", &invocations);
+        let missing =
+            missing_ritual_tools_for_avec("pull focused AVEC and calibrate", &invocations);
         assert!(missing.iter().any(|t| t.contains("calibrate")));
     }
 

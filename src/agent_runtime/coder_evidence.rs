@@ -17,6 +17,17 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+/// Narrow boundary used by the perception governor to stage a compact receipt
+/// for Forge. Implementations must never serialize the underlying payload.
+pub trait CompactEvidenceReceiptSink: Send + Sync {
+    fn stage_compact_receipt(
+        &self,
+        source_tool: &str,
+        source_call_id: Option<&str>,
+        receipt: &CoderEvidenceReceipt,
+    ) -> Result<(), String>;
+}
+
 const INDEX_VERSION: u32 = 1;
 const INDEX_FILE: &str = "index.json";
 const OBJECTS_DIR: &str = "objects";

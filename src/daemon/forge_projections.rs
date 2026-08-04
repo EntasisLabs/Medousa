@@ -201,6 +201,10 @@ pub struct ReviewProjection {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub policy: Option<serde_json::Value>,
     pub command_log_lines: usize,
+    pub compact_receipt_count: u64,
+    pub compact_receipt_rejections: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compact_receipts_digest: Option<String>,
     pub patch_byte_size: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub decision: Option<serde_json::Value>,
@@ -249,6 +253,9 @@ pub fn build_review(forge: &Forge, item: &WorkItem) -> ReviewProjection {
     let mut policy = None;
     let mut command_log_lines = 0usize;
     let mut patch_byte_size = 0u64;
+    let mut compact_receipt_count = 0u64;
+    let mut compact_receipt_rejections = 0u64;
+    let mut compact_receipts_digest = None;
     let mut verification = None;
 
     if let Some(eid) = evidence_id.as_ref()
@@ -262,6 +269,12 @@ pub fn build_review(forge: &Forge, item: &WorkItem) -> ReviewProjection {
                 .as_ref()
                 .map(|d| d.as_str().to_owned());
             sealed_head = Some(manifest.sealed_head_oid.as_str().to_owned());
+            compact_receipt_count = manifest.compact_receipt_count;
+            compact_receipt_rejections = manifest.compact_receipt_rejections;
+            compact_receipts_digest = manifest
+                .compact_receipts_digest
+                .as_ref()
+                .map(|digest| digest.as_str().to_owned());
             changed_files = manifest
                 .changed_files
                 .iter()
@@ -325,6 +338,12 @@ pub fn build_review(forge: &Forge, item: &WorkItem) -> ReviewProjection {
     if truncated {
         unresolved_issues
             .push("Some evidence was shortened by the configured capture limits.".into());
+    }
+    if compact_receipt_rejections > 0 {
+        unresolved_issues.push(format!(
+            "{compact_receipt_rejections} compact evidence receipt{} could not be validated at seal.",
+            if compact_receipt_rejections == 1 { "" } else { "s" }
+        ));
     }
     if policy_issues > 0 {
         unresolved_issues.push(format!(
@@ -463,6 +482,9 @@ pub fn build_review(forge: &Forge, item: &WorkItem) -> ReviewProjection {
         base_advanced,
         policy,
         command_log_lines,
+        compact_receipt_count,
+        compact_receipt_rejections,
+        compact_receipts_digest,
         patch_byte_size,
         decision: item
             .review_decisions

@@ -1,51 +1,56 @@
 use std::sync::Arc;
 
+use crate::medousa_tool_loop::MedousaToolLoopPipeline;
 use genai::chat::{ChatMessage, ChatRequest};
 use serde_json::Value;
 use stasis::application::orchestration::prompt_pipeline::{
     PromptExecutionContext, PromptExecutionPipeline,
 };
-use crate::medousa_tool_loop::MedousaToolLoopPipeline;
-use stasis::application::orchestration::tool_loop_pipeline::{ToolCallMode, ToolInvocation, ToolLoopExecutionRequest};
+use stasis::application::orchestration::tool_loop_pipeline::{
+    ToolCallMode, ToolInvocation, ToolLoopExecutionRequest,
+};
 use stasis::ports::outbound::ai_chat_client::StreamDelta;
 
 use crate::channel_delivery;
-use crate::engine_context::{EngineExecutionLane, RecallReadiness};
-use stasis::ports::outbound::memory::memory_models::MemoryAvecState;
-use crate::session::ConversationTurn;
 use crate::daemon_api::TurnSurfaceContext;
+use crate::engine_context::{EngineExecutionLane, RecallReadiness};
+use crate::session::ConversationTurn;
 use crate::stage_routing::StageRoute;
 use crate::tools::TuiRuntime;
 use crate::tui::settings::{
-    RuntimeSettings, OPERATOR_RETRY_LIMIT_MAX, OPERATOR_RETRY_LIMIT_MIN, OPERATOR_ROUND_LIMIT_MAX,
-    OPERATOR_ROUND_LIMIT_MIN, parse_usize_with_bounds,
+    OPERATOR_RETRY_LIMIT_MAX, OPERATOR_RETRY_LIMIT_MIN, OPERATOR_ROUND_LIMIT_MAX,
+    OPERATOR_ROUND_LIMIT_MIN, RuntimeSettings, parse_usize_with_bounds,
 };
+use stasis::ports::outbound::memory::memory_models::MemoryAvecState;
 
 use super::continuation::{
     build_continuation_prior_messages, build_continuation_prompt, collect_tool_names,
     should_run_continuation,
 };
 use super::prompt_prep::{
-    CheapRecallProbe, IdentityContextProbe, append_identity_context_hint,
+    CheapRecallProbe, IdentityContextProbe, MAX_REQUEST_PROMPT_CHARS, append_identity_context_hint,
     append_manuscript_hint, append_memory_recall_hint, append_suggested_capabilities_hint,
-    append_voice_preset_hint,
-    cheap_memory_recall_probe,
-    compile_interactive_context_prompt,
-    channel_policy_probe, derive_recall_readiness, identity_context_probe,
-    resolve_prompt_with_context_pack,
-    truncate_text_for_budget, verifier_policy_from_settings_and_route, MAX_REQUEST_PROMPT_CHARS,
+    append_voice_preset_hint, channel_policy_probe, cheap_memory_recall_probe,
+    compile_interactive_context_prompt, derive_recall_readiness, identity_context_probe,
+    resolve_prompt_with_context_pack, truncate_text_for_budget,
+    verifier_policy_from_settings_and_route,
 };
 use super::stream_sink::SharedAgentStreamSink;
 use super::system_prompt::DEFAULT_SYSTEM_PROMPT;
 use super::turn_budget::{
-    emit_orchestration_summary, try_consume_classifier_budget, try_consume_continuation_budget,
-    try_consume_prompt_only_budget, try_consume_retry_budget, try_consume_tool_loop_budget,
-    turn_budget_for_lane, TurnOrchestrationState,
+    TurnOrchestrationState, emit_orchestration_summary, try_consume_classifier_budget,
+    try_consume_continuation_budget, try_consume_prompt_only_budget, try_consume_retry_budget,
+    try_consume_tool_loop_budget, turn_budget_for_lane,
 };
 use super::turn_completion::ToolLoopCompletionGate;
-use super::turn_ledger::append_tool_loop_policy;
 use super::turn_context::TurnScratchpad;
+use super::turn_context::scratch_seed_for_tool_loop;
+use super::turn_ledger::append_tool_loop_policy;
 use super::turn_loop_settings::TurnLoopSettings;
+use super::turn_services::{
+    self, IntentContextLimits, PriorMessageBuild, PriorMessageLimits, SelectedTurnPipeline,
+    TurnActivationDecision,
+};
 use super::turn_worker::{
     ActiveWorkerBusSession, WorkerRuntimeContext, apply_host_profile_to_activation,
     host_route_notice, pipeline_for_turn_profile, resolve_host_turn_profile,
@@ -53,11 +58,6 @@ use super::turn_worker::{
 };
 use crate::turn_continuation::StoredDeliveryTarget;
 use crate::turn_slice::session_scratch_seed_from_history;
-use super::turn_context::scratch_seed_for_tool_loop;
-use super::turn_services::{
-    self, IntentContextLimits, PriorMessageBuild, PriorMessageLimits, SelectedTurnPipeline,
-    TurnActivationDecision,
-};
 
 pub const MAX_PRIOR_TOTAL_CHARS: usize = 24_000;
 pub const MAX_SINGLE_PRIOR_MESSAGE_CHARS: usize = 4_000;
@@ -146,7 +146,9 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
         .and_then(|id| crate::identity_manuscript::build_manuscript_context(id).ok());
     let identity_probe = identity_context_probe(
         params.tui_rt,
-        params.final_route.map(|route| route.policy_profile.as_str()),
+        params
+            .final_route
+            .map(|route| route.policy_profile.as_str()),
         Some(params.prompt),
         manuscript_ctx.as_ref(),
         params.identity_user_id,
@@ -154,7 +156,9 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
     .await;
     let channel_policy = channel_policy_probe(
         params.tui_rt,
-        params.final_route.map(|route| route.policy_profile.as_str()),
+        params
+            .final_route
+            .map(|route| route.policy_profile.as_str()),
         params.identity_user_id,
     )
     .await;
@@ -184,11 +188,10 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
         params.voice_appendix,
     );
     resolved_prompt = append_identity_context_hint(&resolved_prompt, &identity_probe);
-    resolved_prompt =
-        crate::agent_runtime::turn_worker::append_active_workers_hint(
-            &resolved_prompt,
-            params.session_id,
-        );
+    resolved_prompt = crate::agent_runtime::turn_worker::append_active_workers_hint(
+        &resolved_prompt,
+        params.session_id,
+    );
     let recall_readiness = derive_recall_readiness(
         verification_state,
         recall_probe.attempted,
@@ -209,7 +212,8 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
             channel_policy: Some(&channel_policy),
         },
     );
-    let environment_extras = super::ambient_context::build_environment_ambient_extras(params.session_id).await;
+    let environment_extras =
+        super::ambient_context::build_environment_ambient_extras(params.session_id).await;
     let ambient_appendix = if environment_extras.is_empty() {
         ambient_block.appendix.clone()
     } else {
@@ -256,9 +260,11 @@ pub struct LocalTurnExecutionParams {
     pub worker_scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
     pub tool_registry: Arc<dyn stasis::application::orchestration::tool_registry::ToolRegistry>,
     pub client_registry: crate::client_tools::ClientRegistry,
-    pub identity_memory_store:
-        Option<Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>>,
-    pub turn_scope: Arc<tokio::sync::RwLock<Option<crate::turn_continuation::TurnContinuationScope>>>,
+    pub identity_memory_store: Option<
+        Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>,
+    >,
+    pub turn_scope:
+        Arc<tokio::sync::RwLock<Option<crate::turn_continuation::TurnContinuationScope>>>,
     pub activation: TurnActivationDecision,
     pub pipeline: MedousaToolLoopPipeline,
     pub no_tools_pipeline: PromptExecutionPipeline,
@@ -283,6 +289,8 @@ pub struct LocalTurnExecutionParams {
     pub supports_browser_host: bool,
     pub round_context_provider: Option<Arc<dyn super::turn_context::ToolRoundContextProvider>>,
     pub evidence_undertaking_id: Option<String>,
+    pub compact_evidence_receipt_sink:
+        Option<Arc<dyn super::coder_evidence::CompactEvidenceReceiptSink>>,
 }
 
 pub struct AssembleLocalTurnParams<'a> {
@@ -294,9 +302,8 @@ pub struct AssembleLocalTurnParams<'a> {
     pub prepared: &'a PreparedTurnPrompt,
     pub resolved_prompt: String,
     pub tui_rt: &'a TuiRuntime,
-    pub tool_registry_override: Option<
-        Arc<dyn stasis::application::orchestration::tool_registry::ToolRegistry>,
-    >,
+    pub tool_registry_override:
+        Option<Arc<dyn stasis::application::orchestration::tool_registry::ToolRegistry>>,
     pub final_route: Option<&'a StageRoute>,
     pub response_depth_mode: &'a str,
     pub reasoning_effort: &'a str,
@@ -308,6 +315,8 @@ pub struct AssembleLocalTurnParams<'a> {
     pub surface: Option<crate::daemon_api::TurnSurfaceContext>,
     pub round_context_provider: Option<Arc<dyn super::turn_context::ToolRoundContextProvider>>,
     pub evidence_undertaking_id: Option<String>,
+    pub compact_evidence_receipt_sink:
+        Option<Arc<dyn super::coder_evidence::CompactEvidenceReceiptSink>>,
 }
 
 pub struct AssembledLocalTurn {
@@ -318,7 +327,8 @@ pub struct AssembledLocalTurn {
 }
 
 pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLocalTurn {
-    let configured_tool_call_mode = turn_services::parse_tool_call_mode(&params.settings.tool_call_mode);
+    let configured_tool_call_mode =
+        turn_services::parse_tool_call_mode(&params.settings.tool_call_mode);
     let turn_loop_settings = TurnLoopSettings::from_runtime_settings(params.settings);
     let activation = turn_services::decide_turn_activation(
         params.prompt,
@@ -395,9 +405,7 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
     } else {
         append_tool_loop_policy(&params.resolved_prompt, activation.max_tool_rounds)
     };
-    let current_turn_user_message = params
-        .vision_plan
-        .build_user_message(&prompt_for_request);
+    let current_turn_user_message = params.vision_plan.build_user_message(&prompt_for_request);
 
     let effective_tool_registry = params
         .tool_registry_override
@@ -425,10 +433,10 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
             worker_scheduler: params.tui_rt.worker_scheduler.clone(),
             tool_registry: effective_tool_registry,
             client_registry: params.tui_rt.client_registry.clone(),
-            identity_memory_store: Some(
-                params.tui_rt.identity_memory_store.clone()
-                    as Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>,
-            ),
+            identity_memory_store: Some(params.tui_rt.identity_memory_store.clone()
+                as Arc<
+                    dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore,
+                >),
             turn_scope: params.tui_rt.turn_scope.clone(),
             activation: activation.clone(),
             pipeline: pipeline_selection.pipeline.clone(),
@@ -487,6 +495,7 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
             ),
             round_context_provider: params.round_context_provider.clone(),
             evidence_undertaking_id: params.evidence_undertaking_id.clone(),
+            compact_evidence_receipt_sink: params.compact_evidence_receipt_sink.clone(),
         },
         pipeline_selection,
         activation: activation.clone(),
@@ -682,14 +691,12 @@ pub async fn emit_tool_payload_events(
     }
 }
 
-async fn stage_scratch_for_persist(
-    sink: &SharedAgentStreamSink,
-    scratch: &Option<TurnScratchpad>,
-) {
+async fn stage_scratch_for_persist(sink: &SharedAgentStreamSink, scratch: &Option<TurnScratchpad>) {
     if let Some(scratch) = scratch.clone()
-        && let Ok(value) = serde_json::to_value(scratch) {
-            sink.stage_persist_scratch(value).await;
-        }
+        && let Ok(value) = serde_json::to_value(scratch)
+    {
+        sink.stage_persist_scratch(value).await;
+    }
 }
 
 fn host_tool_round_budget_ceiling(settings: &TurnLoopSettings, loop_max_rounds: usize) -> usize {
@@ -748,15 +755,15 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         supports_browser_host: _,
         round_context_provider,
         evidence_undertaking_id,
+        compact_evidence_receipt_sink,
     } = params;
 
-    let capability_required = if inference_profile_kind
-        == crate::inference_profiles::InferenceProfileKind::Vision
-    {
-        crate::inference_router::CapabilityRequirement::Vision
-    } else {
-        crate::inference_router::CapabilityRequirement::None
-    };
+    let capability_required =
+        if inference_profile_kind == crate::inference_profiles::InferenceProfileKind::Vision {
+            crate::inference_router::CapabilityRequirement::Vision
+        } else {
+            crate::inference_router::CapabilityRequirement::None
+        };
 
     let prompt_ctx =
         crate::reasoning_effort::prompt_execution_context(&model, Some(&reasoning_effort));
@@ -807,11 +814,8 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         bundle.parent_turn_correlation_id = scope_snapshot
             .as_ref()
             .map(|scope| scope.turn_correlation_id.clone());
-        sink.notice(format!(
-            "◈ worker_continuity {}",
-            bundle.log_summary()
-        ))
-        .await;
+        sink.notice(format!("◈ worker_continuity {}", bundle.log_summary()))
+            .await;
     }
     let handoff_continuity_bundle = host_continuity_bundle.clone();
     let host_handoff_slot = Arc::new(tokio::sync::RwLock::new(None));
@@ -899,8 +903,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 .await;
             } else {
                 sink.notice(
-                    "◈ intent classifier skipped: no parseable result; using heuristic"
-                        .to_string(),
+                    "◈ intent classifier skipped: no parseable result; using heuristic".to_string(),
                 )
                 .await;
             }
@@ -948,10 +951,8 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         }
         orchestration_state.final_mode = "prompt_only".to_string();
 
-        sink.notice(
-            "◈ fallback_mode=prompt_only retry_count=0 retry_reason=none".to_string(),
-        )
-        .await;
+        sink.notice("◈ fallback_mode=prompt_only retry_count=0 retry_reason=none".to_string())
+            .await;
 
         match no_tools_pipeline
             .complete_chat_stream(
@@ -1021,7 +1022,12 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         .map(|scope| scope.turn_correlation_id.clone());
     let origin_channel = scope_snapshot
         .as_ref()
-        .and_then(|scope| scope.delivery_target.as_ref().map(|target| target.channel.clone()))
+        .and_then(|scope| {
+            scope
+                .delivery_target
+                .as_ref()
+                .map(|target| target.channel.clone())
+        })
         .or_else(|| Some("interactive".to_string()));
     let origin_delivery_target = scope_snapshot
         .as_ref()
@@ -1072,10 +1078,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             tool_registry.clone(),
             &target.provider,
             &target.model,
-            target
-                .base_url
-                .as_deref()
-                .or(base_url.as_deref()),
+            target.base_url.as_deref().or(base_url.as_deref()),
             host_bus,
             Some(session_id.as_str()),
             params.supports_ui_artifacts,
@@ -1119,6 +1122,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 steer_poll_work_id: None,
                 round_context_provider: round_context_provider.clone(),
                 evidence_undertaking_id: evidence_undertaking_id.clone(),
+                compact_evidence_receipt_sink: compact_evidence_receipt_sink.clone(),
             };
 
             match attempt_pipeline
@@ -1174,18 +1178,17 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
 
     match first_attempt {
         Some(Ok(response)) => {
-            sink.notice(
-                "◈ fallback_mode=tool_loop retry_count=0 retry_reason=none".to_string(),
-            )
-            .await;
+            sink.notice("◈ fallback_mode=tool_loop retry_count=0 retry_reason=none".to_string())
+                .await;
             let mut combined_invocations = response.tool_invocations.clone();
             let mut final_text = response.text;
             if response.termination_reason == "worker_spawned" {
                 let tool_names = collect_tool_names(&combined_invocations);
-                let work_id = crate::agent_runtime::turn_worker_tools::worker_spawn_from_invocations(
-                    &combined_invocations,
-                )
-                .map(|(id, _)| id);
+                let work_id =
+                    crate::agent_runtime::turn_worker_tools::worker_spawn_from_invocations(
+                        &combined_invocations,
+                    )
+                    .map(|(id, _)| id);
                 stage_scratch_for_persist(&sink, &last_tool_scratch).await;
                 sink.agent_worker_ack(turn_id, final_text, tool_names, work_id)
                     .await;
@@ -1216,10 +1219,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 .await;
                 stage_scratch_for_persist(&sink, &last_tool_scratch).await;
                 super::turn_delivery::deliver_agent_turn_checkpoint(
-                    &sink,
-                    turn_id,
-                    final_text,
-                    tool_names,
+                    &sink, turn_id, final_text, tool_names,
                 )
                 .await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
@@ -1227,129 +1227,126 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             }
             if should_run_continuation(&combined_invocations)
                 && !crate::channel_delivery::is_principal_interactive_channel(
-                    origin_channel.as_deref().unwrap_or(channel_delivery::CHANNEL_INTERACTIVE),
+                    origin_channel
+                        .as_deref()
+                        .unwrap_or(channel_delivery::CHANNEL_INTERACTIVE),
                 )
-                && let Some(continuation_prompt) = build_continuation_prompt(
-                    &original_prompt,
-                    &final_text,
-                    &combined_invocations,
-                ) {
-                    let continuation_compiler_output = compile_interactive_context_prompt(
-                        &continuation_prompt,
-                        &continuation_response_depth_mode,
-                        continuation_stage_route.as_ref(),
-                        continuation_recall_readiness,
-                    );
-                    let continuation_compiled_prompt = truncate_text_for_budget(
-                        &continuation_compiler_output.compiled_prompt,
-                        MAX_REQUEST_PROMPT_CHARS,
-                    );
-                    sink.notice(
-                        "◈ continuation synthesis: refining draft with chunked tool context"
-                            .to_string(),
-                    )
-                    .await;
-                    sink.notice(format!(
-                        "◈ {}",
-                        continuation_compiler_output.compiler_summary
-                    ))
-                    .await;
+                && let Some(continuation_prompt) =
+                    build_continuation_prompt(&original_prompt, &final_text, &combined_invocations)
+            {
+                let continuation_compiler_output = compile_interactive_context_prompt(
+                    &continuation_prompt,
+                    &continuation_response_depth_mode,
+                    continuation_stage_route.as_ref(),
+                    continuation_recall_readiness,
+                );
+                let continuation_compiled_prompt = truncate_text_for_budget(
+                    &continuation_compiler_output.compiled_prompt,
+                    MAX_REQUEST_PROMPT_CHARS,
+                );
+                sink.notice(
+                    "◈ continuation synthesis: refining draft with chunked tool context"
+                        .to_string(),
+                )
+                .await;
+                sink.notice(format!(
+                    "◈ {}",
+                    continuation_compiler_output.compiler_summary
+                ))
+                .await;
 
-                    sink.tool_invoked(
-                        "llm.chat".to_string(),
-                        "continuation synthesis".to_string(),
-                    )
+                sink.tool_invoked("llm.chat".to_string(), "continuation synthesis".to_string())
                     .await;
 
-                    let continuation_request = ToolLoopExecutionRequest {
-                        user_prompt: continuation_compiled_prompt,
-                        system_prompt: Some(DEFAULT_SYSTEM_PROMPT.to_string()),
-                        context: prompt_ctx.clone(),
-                        tool_name: String::new(),
-                        tool_input: Value::Null,
-                        tool_call_mode: ToolCallMode::Auto,
-                    };
-                    let continuation_prior_messages =
-                        build_continuation_prior_messages(&original_prompt, &final_text);
+                let continuation_request = ToolLoopExecutionRequest {
+                    user_prompt: continuation_compiled_prompt,
+                    system_prompt: Some(DEFAULT_SYSTEM_PROMPT.to_string()),
+                    context: prompt_ctx.clone(),
+                    tool_name: String::new(),
+                    tool_input: Value::Null,
+                    tool_call_mode: ToolCallMode::Auto,
+                };
+                let continuation_prior_messages =
+                    build_continuation_prior_messages(&original_prompt, &final_text);
 
-                    if try_consume_continuation_budget(&sink, &mut orchestration_state, &turn_budget)
-                        .await
-                    {
-                        orchestration_state.final_mode = "tool_loop_with_continuation".to_string();
+                if try_consume_continuation_budget(&sink, &mut orchestration_state, &turn_budget)
+                    .await
+                {
+                    orchestration_state.final_mode = "tool_loop_with_continuation".to_string();
 
-                        let continuation_result = {
-                            let continuation_max_rounds = activation
-                                .max_tool_rounds
-                                .min(turn_loop_settings.continuation_max_tool_rounds)
-                                .max(1);
-                            let initial_worker_scratch = scratch_seed_for_tool_loop(
-                                &session_scratch_seed,
-                                last_tool_scratch.as_ref(),
-                            );
-                            let mut continuation_gate = ToolLoopCompletionGate {
-                                stream_turn_id: turn_id,
-                                session_id: ledger_session_id.clone(),
-                                sink: Some(sink.clone()),
-                                orchestration: Some(&mut orchestration_state),
-                                budget: Some(&turn_budget),
-                                max_tool_rounds: continuation_max_rounds,
-                                max_text_only_stuck_continues: turn_loop_settings
-                                    .max_text_only_stuck_continues,
-                                scratch_out: Some(&mut last_tool_scratch),
-                                host_handoff_slot: Some(host_handoff_slot.clone()),
-                                parent_turn_correlation_id: parent_turn_correlation_id.clone(),
-                                initial_worker_scratch: Some(initial_worker_scratch),
-                                handoff_parent_user_prompt: Some(original_prompt.clone()),
-                                handoff_vibe_signature: Some(handoff_vibe_signature.clone()),
-                                handoff_model_avec: Some(handoff_model_avec),
-                                handoff_continuity_bundle: handoff_continuity_bundle.clone(),
-                                skip_avec_ritual_check: false,
-                                channel: origin_channel.clone(),
-                                delivery_target: origin_delivery_target.clone(),
-                                tool_round_budget_ceiling: host_tool_round_budget_ceiling(
-                                    &turn_loop_settings,
-                                    continuation_max_rounds,
-                                ),
-                                require_operator_budget_gate: require_operator_budget_gate(),
-                                host_scheduler_lane: true,
-                                cancel_poll_work_id: None,
-                                steer_poll_work_id: None,
-                                round_context_provider: round_context_provider.clone(),
-                                evidence_undertaking_id: evidence_undertaking_id.clone(),
-                            };
-                            pipeline
-                                .execute_with_stream_prior_messages_max_rounds(
-                                    continuation_request,
-                                    continuation_prior_messages,
-                                    Some(&chunk_tx),
-                                    continuation_max_rounds,
-                                    Some(&mut continuation_gate),
-                                    None,
-                                )
-                                .await
+                    let continuation_result = {
+                        let continuation_max_rounds = activation
+                            .max_tool_rounds
+                            .min(turn_loop_settings.continuation_max_tool_rounds)
+                            .max(1);
+                        let initial_worker_scratch = scratch_seed_for_tool_loop(
+                            &session_scratch_seed,
+                            last_tool_scratch.as_ref(),
+                        );
+                        let mut continuation_gate = ToolLoopCompletionGate {
+                            stream_turn_id: turn_id,
+                            session_id: ledger_session_id.clone(),
+                            sink: Some(sink.clone()),
+                            orchestration: Some(&mut orchestration_state),
+                            budget: Some(&turn_budget),
+                            max_tool_rounds: continuation_max_rounds,
+                            max_text_only_stuck_continues: turn_loop_settings
+                                .max_text_only_stuck_continues,
+                            scratch_out: Some(&mut last_tool_scratch),
+                            host_handoff_slot: Some(host_handoff_slot.clone()),
+                            parent_turn_correlation_id: parent_turn_correlation_id.clone(),
+                            initial_worker_scratch: Some(initial_worker_scratch),
+                            handoff_parent_user_prompt: Some(original_prompt.clone()),
+                            handoff_vibe_signature: Some(handoff_vibe_signature.clone()),
+                            handoff_model_avec: Some(handoff_model_avec),
+                            handoff_continuity_bundle: handoff_continuity_bundle.clone(),
+                            skip_avec_ritual_check: false,
+                            channel: origin_channel.clone(),
+                            delivery_target: origin_delivery_target.clone(),
+                            tool_round_budget_ceiling: host_tool_round_budget_ceiling(
+                                &turn_loop_settings,
+                                continuation_max_rounds,
+                            ),
+                            require_operator_budget_gate: require_operator_budget_gate(),
+                            host_scheduler_lane: true,
+                            cancel_poll_work_id: None,
+                            steer_poll_work_id: None,
+                            round_context_provider: round_context_provider.clone(),
+                            evidence_undertaking_id: evidence_undertaking_id.clone(),
+                            compact_evidence_receipt_sink: compact_evidence_receipt_sink.clone(),
                         };
+                        pipeline
+                            .execute_with_stream_prior_messages_max_rounds(
+                                continuation_request,
+                                continuation_prior_messages,
+                                Some(&chunk_tx),
+                                continuation_max_rounds,
+                                Some(&mut continuation_gate),
+                                None,
+                            )
+                            .await
+                    };
 
-                        match continuation_result
-                        {
-                            Ok(continuation_response) => {
-                                final_text = continuation_response.text;
-                                combined_invocations.extend(continuation_response.tool_invocations);
-                            }
-                            Err(err) => {
-                                sink.notice(format!("⚠ continuation synthesis skipped: {err}"))
-                                    .await;
-                            }
+                    match continuation_result {
+                        Ok(continuation_response) => {
+                            final_text = continuation_response.text;
+                            combined_invocations.extend(continuation_response.tool_invocations);
                         }
-                    } else {
-                        sink.notice(
-                            "◈ continuation synthesis skipped: turn budget limit".to_string(),
-                        )
-                        .await;
+                        Err(err) => {
+                            sink.notice(format!("⚠ continuation synthesis skipped: {err}"))
+                                .await;
+                        }
                     }
+                } else {
+                    sink.notice("◈ continuation synthesis skipped: turn budget limit".to_string())
+                        .await;
                 }
+            }
 
             let profile = super::presentation::presentation_profile_for_channel(
-                origin_channel.as_deref().unwrap_or(channel_delivery::CHANNEL_INTERACTIVE),
+                origin_channel
+                    .as_deref()
+                    .unwrap_or(channel_delivery::CHANNEL_INTERACTIVE),
             );
             super::presentation::maybe_append_tools_to_canonical_body(
                 &mut final_text,
@@ -1359,10 +1356,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             let tool_names = collect_tool_names(&combined_invocations);
             sink.tool_invoked(
                 "llm.chat".to_string(),
-                format!(
-                    "done  {} token(s)",
-                    final_text.split_whitespace().count()
-                ),
+                format!("done  {} token(s)", final_text.split_whitespace().count()),
             )
             .await;
             stage_scratch_for_persist(&sink, &last_tool_scratch).await;
@@ -1400,12 +1394,10 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     if !try_consume_retry_budget(&sink, &mut orchestration_state, &turn_budget)
                         .await
                     {
-                        orchestration_state.final_mode = "tool_loop_retry_budget_denied".to_string();
-                        sink.agent_error(
-                            turn_id,
-                            "turn budget exhausted before retry".to_string(),
-                        )
-                        .await;
+                        orchestration_state.final_mode =
+                            "tool_loop_retry_budget_denied".to_string();
+                        sink.agent_error(turn_id, "turn budget exhausted before retry".to_string())
+                            .await;
                         emit_orchestration_summary(&sink, &orchestration_state).await;
                         return;
                     }
@@ -1446,6 +1438,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                             steer_poll_work_id: None,
                             round_context_provider: round_context_provider.clone(),
                             evidence_undertaking_id: evidence_undertaking_id.clone(),
+                            compact_evidence_receipt_sink: compact_evidence_receipt_sink.clone(),
                         };
                         pipeline
                             .execute_with_stream_prior_messages_max_rounds(
@@ -1459,8 +1452,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                             .await
                     };
 
-                    match retry_result
-                    {
+                    match retry_result {
                         Ok(response) => {
                             let tool_names = collect_tool_names(&response.tool_invocations);
                             stage_scratch_for_persist(&sink, &last_tool_scratch).await;
@@ -1493,18 +1485,10 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 .await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
             } else {
-                sink.notice(
-                    "◈ retry_policy retry_count=0 retry_reason=not_runtime".to_string(),
-                )
-                .await;
+                sink.notice("◈ retry_policy retry_count=0 retry_reason=not_runtime".to_string())
+                    .await;
                 orchestration_state.final_mode = "tool_loop_error_non_retryable".to_string();
-                deliver_turn_failure(
-                    &sink,
-                    turn_id,
-                    &err_text,
-                    &mut orchestration_state,
-                )
-                .await;
+                deliver_turn_failure(&sink, turn_id, &err_text, &mut orchestration_state).await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
             }
         }

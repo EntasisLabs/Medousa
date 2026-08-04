@@ -13,12 +13,109 @@ use crate::events::{EventPayload, OperationKind, SideEffect, TransitionEvent};
 use crate::git::{CheckpointAuthor, GitEngine};
 use crate::model::{
     AcceptedDisposition, ActorKind, ActorRef, Attempt, AttemptState, CaptureRisk, ChangeStatus,
-    ChangedFile, Digest, EvidenceId, EvidenceManifest, ExecutionLease, ExecutorDescriptor,
-    GitWorkTarget, GovernedEnv, IntegrationStrategy, LeaseId, OperationId, PolicyReport,
-    PolicyViolation, RecoveryDisposition, ReviewDecision, ReviewDecisionId, WorkId, WorkItem,
-    WorkPolicy, WorkState, WorkTarget, MODEL_SCHEMA_VERSION,
+    ChangedFile, CompactEvidenceReceipt, CompactEvidenceRetention, Digest, EvidenceId,
+    EvidenceManifest, ExecutionLease, ExecutorDescriptor, GitWorkTarget, GovernedEnv,
+    IntegrationStrategy, LeaseId, MODEL_SCHEMA_VERSION, OperationId, PolicyReport, PolicyViolation,
+    RawEvidenceDisposition, RecoveryDisposition, ReviewDecision, ReviewDecisionId, WorkId,
+    WorkItem, WorkPolicy, WorkState, WorkTarget,
 };
 use crate::store::FsWorkStore;
+
+const MAX_COMPACT_EVIDENCE_RECEIPTS: usize = 512;
+const MAX_COMPACT_EVIDENCE_OBJECT_BYTES: u64 = 8 * 1024 * 1024;
+
+fn compact_evidence_receipts(
+    commands: &[u8],
+    work_id: &WorkId,
+) -> (Vec<CompactEvidenceReceipt>, u64, bool) {
+    let mut receipts = Vec::new();
+    let mut rejections = 0u64;
+    let mut truncated = false;
+    for line in String::from_utf8_lossy(commands).lines() {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if value.get("kind").and_then(serde_json::Value::as_str)
+            != Some("medousa_coder_ephemeral_evidence_receipt")
+        {
+            continue;
+        }
+        if receipts.len() >= MAX_COMPACT_EVIDENCE_RECEIPTS {
+            rejections = rejections.saturating_add(1);
+            truncated = true;
+            continue;
+        }
+        match parse_compact_evidence_receipt(&value, work_id) {
+            Some(receipt) => receipts.push(receipt),
+            None => rejections = rejections.saturating_add(1),
+        }
+    }
+    (receipts, rejections, truncated)
+}
+
+fn parse_compact_evidence_receipt(
+    value: &serde_json::Value,
+    expected_work_id: &WorkId,
+) -> Option<CompactEvidenceReceipt> {
+    let schema_version = value.get("schema_version")?.as_u64()?;
+    if schema_version != 1 || value.get("work_id")?.as_str()? != expected_work_id.as_str() {
+        return None;
+    }
+    let source_tool = bounded_receipt_text(value.get("source_tool")?.as_str()?, 128)?;
+    let source_call_id = match value.get("source_call_id") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(value) => Some(bounded_receipt_text(value.as_str()?, 200)?),
+    };
+    let digest = value.get("digest")?.as_str()?;
+    let hex = digest.strip_prefix("sha256:")?;
+    if hex.len() != 64
+        || !hex
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return None;
+    }
+    let reference = value.get("ephemeral_reference")?.as_str()?;
+    if reference != format!("coder-evidence:sha256:{hex}") {
+        return None;
+    }
+    let content_type = bounded_receipt_text(value.get("content_type")?.as_str()?, 128)?;
+    let logical_bytes = value.get("logical_bytes")?.as_u64()?;
+    let physical_bytes = value.get("physical_bytes")?.as_u64()?;
+    if logical_bytes > MAX_COMPACT_EVIDENCE_OBJECT_BYTES
+        || physical_bytes > MAX_COMPACT_EVIDENCE_OBJECT_BYTES
+        || !value.get("redacted")?.as_bool()?
+        || value.get("raw_promoted")?.as_bool()?
+    {
+        return None;
+    }
+    let retention = match value.get("retention")?.as_str()? {
+        "successful_or_reproducible" => CompactEvidenceRetention::SuccessfulOrReproducible,
+        "failed_or_non_reproducible" => CompactEvidenceRetention::FailedOrNonReproducible,
+        _ => return None,
+    };
+    Some(CompactEvidenceReceipt {
+        schema_version: 1,
+        work_id: expected_work_id.as_str().to_owned(),
+        source_tool,
+        source_call_id,
+        digest: digest.to_owned(),
+        ephemeral_reference: reference.to_owned(),
+        content_type,
+        logical_bytes,
+        physical_bytes,
+        retention,
+        expires_at_unix_seconds: value.get("expires_at_unix_seconds")?.as_u64()?,
+        redacted: true,
+        raw_evidence: RawEvidenceDisposition::EphemeralOnly,
+        recorded_at: serde_json::from_value(value.get("recorded_at")?.clone()).ok()?,
+    })
+}
+
+fn bounded_receipt_text(value: &str, max_chars: usize) -> Option<String> {
+    let value = value.trim();
+    (!value.is_empty() && value.chars().count() <= max_chars).then(|| value.to_owned())
+}
 
 /// Per-seal options: risk acknowledgment and checkpoint authorship.
 #[derive(Debug, Clone, Default)]
@@ -260,7 +357,11 @@ impl Forge {
         let baseline_oid = self
             .git
             .resolve_base_oid(&target.repo_path, &target.base_ref)?;
-        let generation = item.environment.as_ref().map(|e| e.generation + 1).unwrap_or(1);
+        let generation = item
+            .environment
+            .as_ref()
+            .map(|e| e.generation + 1)
+            .unwrap_or(1);
         let worktree = self.worktree_path(&repo.repo_id, &item.id, generation);
         let branch = format!("medousa/work/{}", item.id.as_str());
         self.git
@@ -289,9 +390,7 @@ impl Forge {
         self.store.append(
             &item.id,
             actor,
-            EventPayload::EnvironmentProvisioned {
-                env: Box::new(env),
-            },
+            EventPayload::EnvironmentProvisioned { env: Box::new(env) },
         )?;
         Ok(())
     }
@@ -436,8 +535,7 @@ impl Forge {
     pub fn latest_resume_token(&self, work_id: &WorkId) -> Result<Option<String>> {
         let item = self.load(work_id)?;
         for attempt in item.attempts.iter().rev() {
-            if let Some(RecoveryDisposition::ResumeSupported { provider_token }) =
-                &attempt.recovery
+            if let Some(RecoveryDisposition::ResumeSupported { provider_token }) = &attempt.recovery
                 && !provider_token.trim().is_empty()
             {
                 return Ok(Some(provider_token.clone()));
@@ -461,7 +559,13 @@ impl Forge {
         expect_state(&item, WorkState::Executing, "interrupt attempt")?;
         self.fence(&item, lease)?;
         let attempt_id = lease.attempt_id.clone();
-        self.end_attempt(&mut item, &attempt_id, AttemptState::Interrupted, recovery, actor)?;
+        self.end_attempt(
+            &mut item,
+            &attempt_id,
+            AttemptState::Interrupted,
+            recovery,
+            actor,
+        )?;
         self.transition(&mut item, WorkState::Ready, None, actor)?;
         Ok(item)
     }
@@ -717,6 +821,10 @@ impl Forge {
             std::fs::write(&commands_path, b"")?;
         }
         let commands = std::fs::read(&commands_path)?;
+        let (compact_receipts, compact_receipt_rejections, receipts_truncated) =
+            compact_evidence_receipts(&commands, &item.id);
+        let compact_receipts_json = serde_json::to_vec_pretty(&compact_receipts)?;
+        std::fs::write(evidence_dir.join("receipts.json"), &compact_receipts_json)?;
 
         let (symlinks, nested_repos) = crate::policy::scan_worktree(&env.worktree)?;
         let submodule_state = self
@@ -735,9 +843,9 @@ impl Forge {
         std::fs::write(evidence_dir.join("policy.json"), &policy_json)?;
 
         // Post-commit committed view: exact baseline → sealed head.
-        let name_status = self
-            .git
-            .diff_name_status(&env.worktree, &env.baseline_oid, sealed_head)?;
+        let name_status =
+            self.git
+                .diff_name_status(&env.worktree, &env.baseline_oid, sealed_head)?;
         let changed_files: Vec<ChangedFile> = name_status
             .into_iter()
             .map(|ns| {
@@ -774,9 +882,12 @@ impl Forge {
             patch_digest: Digest::sha256_hex(&patch),
             command_log_digest: Digest::sha256_hex(&commands),
             policy_report_digest: Digest::sha256_hex(&policy_json),
+            compact_receipts_digest: Some(Digest::sha256_hex(&compact_receipts_json)),
+            compact_receipt_count: u64::try_from(compact_receipts.len()).unwrap_or(u64::MAX),
+            compact_receipt_rejections,
             changed_files,
             submodule_state,
-            truncated: false,
+            truncated: receipts_truncated,
             sealed_at: Utc::now(),
             bundle_digest: None,
         };
@@ -874,8 +985,7 @@ impl Forge {
                         );
                         // Base advanced or conflict: back to review, approval
                         // did not leak.
-                        let _ =
-                            self.transition(&mut item, WorkState::AwaitingReview, None, actor);
+                        let _ = self.transition(&mut item, WorkState::AwaitingReview, None, actor);
                         return Err(err);
                     }
                 }
@@ -892,8 +1002,7 @@ impl Forge {
                                 reason: err.to_string(),
                             },
                         );
-                        let _ =
-                            self.transition(&mut item, WorkState::AwaitingReview, None, actor);
+                        let _ = self.transition(&mut item, WorkState::AwaitingReview, None, actor);
                         return Err(err);
                     }
                 }
@@ -904,7 +1013,10 @@ impl Forge {
         self.store.append(
             work_id,
             actor,
-            EventPayload::DispositionApplied { disposition, detail },
+            EventPayload::DispositionApplied {
+                disposition,
+                detail,
+            },
         )?;
         self.store.append(
             work_id,
@@ -945,10 +1057,11 @@ impl Forge {
             });
         }
         // The reviewed head must strictly descend from the base.
-        if !self
-            .git
-            .is_ancestor(&target.repo_path, &current_base, &decision.reviewed_head_oid)?
-        {
+        if !self.git.is_ancestor(
+            &target.repo_path,
+            &current_base,
+            &decision.reviewed_head_oid,
+        )? {
             return Err(ForgeError::DecisionInvalid {
                 reason: "reviewed head does not descend from base — not fast-forwardable".into(),
             });
@@ -1007,9 +1120,7 @@ impl Forge {
         let _ = env; // environment is retained after fast-forward
         Ok(format!(
             "{} fast-forwarded {} → {}",
-            ref_name,
-            decision.expected_base_oid,
-            decision.reviewed_head_oid
+            ref_name, decision.expected_base_oid, decision.reviewed_head_oid
         ))
     }
 
@@ -1068,7 +1179,7 @@ impl Forge {
                     work_id: work_id.clone(),
                     state,
                     action: "discard",
-                })
+                });
             }
         }
 
@@ -1168,12 +1279,7 @@ impl Forge {
                 },
             )?;
         }
-        self.transition(
-            &mut item,
-            WorkState::Ready,
-            Some(reason.to_string()),
-            actor,
-        )?;
+        self.transition(&mut item, WorkState::Ready, Some(reason.to_string()), actor)?;
         Ok(item)
     }
 
@@ -1210,11 +1316,12 @@ impl Forge {
             ));
         }
         let manifest = self.read_evidence_manifest(item, decision)?;
-        let stored = manifest.bundle_digest.clone().ok_or_else(|| {
-            ForgeError::DecisionInvalid {
+        let stored = manifest
+            .bundle_digest
+            .clone()
+            .ok_or_else(|| ForgeError::DecisionInvalid {
                 reason: "evidence manifest has no digest".into(),
-            }
-        })?;
+            })?;
         if stored != decision.evidence_digest {
             return Err(ForgeError::EvidenceMismatch {
                 expected: decision.evidence_digest.clone(),
@@ -1233,8 +1340,7 @@ impl Forge {
             .join(attempt.seq.to_string())
             .join("evidence")
             .join("policy.json");
-        let report: PolicyReport =
-            serde_json::from_str(&std::fs::read_to_string(&policy_path)?)?;
+        let report: PolicyReport = serde_json::from_str(&std::fs::read_to_string(&policy_path)?)?;
         for violation in &report.violations {
             if !decision.acknowledged_violations.contains(&violation.id) {
                 return Err(ForgeError::PolicyViolation(format!(
@@ -1272,7 +1378,8 @@ impl Forge {
     /// Stable lock key for a repository path: hash of the canonicalized path,
     /// so all work items targeting the same repo share one lock.
     fn repo_lock_key(&self, repo_path: &Path) -> Result<String> {
-        let canonical = std::fs::canonicalize(repo_path).unwrap_or_else(|_| repo_path.to_path_buf());
+        let canonical =
+            std::fs::canonicalize(repo_path).unwrap_or_else(|_| repo_path.to_path_buf());
         let digest = Digest::sha256_hex(canonical.to_string_lossy().as_bytes());
         Ok(digest.as_str()[..16].to_string())
     }
@@ -1280,7 +1387,8 @@ impl Forge {
     /// Next fencing generation for a work item: one more than the number of
     /// leases ever acquired (the event log is the source of truth, so this
     /// survives restarts).
-    fn next_lease_generation(&self, work_id: &WorkId) -> Result<u64> {        let events = self.store.replay(work_id)?;
+    fn next_lease_generation(&self, work_id: &WorkId) -> Result<u64> {
+        let events = self.store.replay(work_id)?;
         let acquired = events
             .iter()
             .filter(|e| matches!(e.payload, EventPayload::LeaseAcquired { .. }))
@@ -1290,7 +1398,8 @@ impl Forge {
 
     /// Fencing: the presented lease must be the active lease of the active
     /// attempt. A stale adapter cannot write into a newer attempt.
-    fn fence(&self, item: &WorkItem, presented: &ExecutionLease) -> Result<()> {        let active_id = item
+    fn fence(&self, item: &WorkItem, presented: &ExecutionLease) -> Result<()> {
+        let active_id = item
             .active_attempt
             .as_ref()
             .ok_or_else(|| ForgeError::InvalidState {
@@ -1368,14 +1477,24 @@ impl Forge {
             actor,
             EventPayload::StateChanged { from, to, reason },
         )?;
-        let seq = self.store.replay(&item.id)?.last().map(|e| e.seq).unwrap_or(0);
+        let seq = self
+            .store
+            .replay(&item.id)?
+            .last()
+            .map(|e| e.seq)
+            .unwrap_or(0);
         self.persist(item, seq)?;
         Ok(())
     }
 
     fn persist_fresh(&self, item: &mut WorkItem) -> Result<()> {
         item.updated_at = Utc::now();
-        let seq = self.store.replay(&item.id)?.last().map(|e| e.seq).unwrap_or(0);
+        let seq = self
+            .store
+            .replay(&item.id)?
+            .last()
+            .map(|e| e.seq)
+            .unwrap_or(0);
         self.persist(item, seq)
     }
 
@@ -1411,7 +1530,7 @@ pub fn fold(events: &[TransitionEvent]) -> Result<WorkItem> {
         _ => {
             return Err(ForgeError::Store(
                 "event log does not start with item_registered".into(),
-            ))
+            ));
         }
     };
     for event in iter {
@@ -1547,7 +1666,14 @@ mod tests {
 
         // Register
         let item = forge
-            .register("Fix app", "make app v2", &fx.repo, "main", "user-1", &actor())
+            .register(
+                "Fix app",
+                "make app v2",
+                &fx.repo,
+                "main",
+                "user-1",
+                &actor(),
+            )
             .unwrap();
         assert_eq!(item.state, WorkState::Draft);
         let work_id = item.id.clone();
@@ -1574,7 +1700,9 @@ mod tests {
         fs::write(env.worktree.join("notes.md"), "# notes\n").unwrap();
 
         // Complete → seal
-        let item = forge.complete_attempt(&lease, &SealOptions::default(), &actor()).unwrap();
+        let item = forge
+            .complete_attempt(&lease, &SealOptions::default(), &actor())
+            .unwrap();
         assert_eq!(item.state, WorkState::AwaitingReview);
         assert!(item.active_attempt.is_none());
         let attempt = item.attempt(&attempt_id).unwrap();
@@ -1585,14 +1713,14 @@ mod tests {
         let sealed_head = fx.git.head_oid(&env.worktree).unwrap();
         assert_ne!(sealed_head, fx.baseline);
         assert!(fx.git.is_clean(&env.worktree).unwrap());
-        let log = fx.git.run(&env.worktree, &["log", "-1", "--format=%s"]).unwrap();
+        let log = fx
+            .git
+            .run(&env.worktree, &["log", "-1", "--format=%s"])
+            .unwrap();
         assert!(log.contains("forge: checkpoint"));
 
         // Evidence on disk, digests defined.
-        let evidence_dir = forge
-            .store()
-            .item_dir(&work_id)
-            .join("attempts/1/evidence");
+        let evidence_dir = forge.store().item_dir(&work_id).join("attempts/1/evidence");
         let manifest_raw = fs::read_to_string(evidence_dir.join("manifest.json")).unwrap();
         let manifest: EvidenceManifest = serde_json::from_str(&manifest_raw).unwrap();
         assert_eq!(manifest.evidence_id, evidence_id);
@@ -1627,7 +1755,9 @@ mod tests {
         assert_eq!(item.review_decisions.len(), 1);
 
         // Apply → accepted, base untouched, branch preserved.
-        let item = forge.apply_decision(&work_id, &decision_id, &actor()).unwrap();
+        let item = forge
+            .apply_decision(&work_id, &decision_id, &actor())
+            .unwrap();
         assert_eq!(item.state, WorkState::Accepted);
         assert_eq!(item.disposition, Some(AcceptedDisposition::BranchPreserved));
         assert_eq!(
@@ -1641,7 +1771,10 @@ mod tests {
         let forge2 = Forge::open(&fx.forge_root).unwrap();
         let reopened = forge2.load(&work_id).unwrap();
         assert_eq!(reopened.state, WorkState::Accepted);
-        assert_eq!(reopened.disposition, Some(AcceptedDisposition::BranchPreserved));
+        assert_eq!(
+            reopened.disposition,
+            Some(AcceptedDisposition::BranchPreserved)
+        );
         assert!(env.worktree.join("notes.md").is_file());
         let patch = fx
             .git
@@ -1653,11 +1786,114 @@ mod tests {
     }
 
     #[test]
+    fn seal_promotes_only_valid_compact_receipt_metadata() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let item = forge
+            .register("t", "b", &fx.repo, "main", "user-1", &actor())
+            .unwrap();
+        forge.provision(&item.id, &actor()).unwrap();
+        let (item, lease) = forge
+            .begin_attempt(&item.id, script_executor(), None, &actor())
+            .unwrap();
+        let env = item.environment.clone().unwrap();
+        fs::write(env.worktree.join("app.txt"), "v2\n").unwrap();
+        let digest = format!("sha256:{}", "a".repeat(64));
+        for call_id in ["agent-a-call", "agent-b-call"] {
+            forge
+                .append_command_log(
+                    &lease,
+                    &serde_json::json!({
+                        "kind": "medousa_coder_ephemeral_evidence_receipt",
+                        "schema_version": 1,
+                        "work_id": item.id.as_str(),
+                        "source_tool": "cognition_shell_session_run",
+                        "source_call_id": call_id,
+                        "digest": digest,
+                        "ephemeral_reference": format!("coder-evidence:sha256:{}", "a".repeat(64)),
+                        "content_type": "application/json",
+                        "logical_bytes": 4096,
+                        "physical_bytes": 1024,
+                        "retention": "successful_or_reproducible",
+                        "expires_at_unix_seconds": 9_999_999_999u64,
+                        "redacted": true,
+                        "raw_promoted": false,
+                        "recorded_at": Utc::now(),
+                    }),
+                )
+                .unwrap();
+        }
+        forge
+            .append_command_log(
+                &lease,
+                &serde_json::json!({
+                    "kind": "medousa_coder_ephemeral_evidence_receipt",
+                    "schema_version": 1,
+                    "work_id": item.id.as_str(),
+                    "source_tool": "cognition_shell_session_run",
+                    "digest": digest,
+                    "ephemeral_reference": format!("coder-evidence:sha256:{}", "a".repeat(64)),
+                    "content_type": "application/json",
+                    "logical_bytes": 4096,
+                    "physical_bytes": 1024,
+                    "retention": "failed_or_non_reproducible",
+                    "expires_at_unix_seconds": 9_999_999_999u64,
+                    "redacted": true,
+                    "raw_promoted": true,
+                    "recorded_at": Utc::now(),
+                }),
+            )
+            .unwrap();
+
+        let item = forge
+            .complete_attempt(&lease, &SealOptions::default(), &actor())
+            .unwrap();
+        let evidence_dir = forge.store().item_dir(&item.id).join("attempts/1/evidence");
+        let receipts_bytes = fs::read(evidence_dir.join("receipts.json")).unwrap();
+        let receipts: Vec<CompactEvidenceReceipt> =
+            serde_json::from_slice(&receipts_bytes).unwrap();
+        assert_eq!(receipts.len(), 2);
+        assert_eq!(receipts[0].source_call_id.as_deref(), Some("agent-a-call"));
+        assert_eq!(receipts[1].source_call_id.as_deref(), Some("agent-b-call"));
+        assert!(
+            receipts
+                .iter()
+                .all(|receipt| receipt.raw_evidence == RawEvidenceDisposition::EphemeralOnly)
+        );
+        let rendered = String::from_utf8(receipts_bytes.clone()).unwrap();
+        assert!(!rendered.contains("payload"));
+        assert!(!rendered.contains("coder-evidence/objects"));
+
+        let manifest: EvidenceManifest =
+            serde_json::from_slice(&fs::read(evidence_dir.join("manifest.json")).unwrap()).unwrap();
+        assert_eq!(manifest.compact_receipt_count, 2);
+        assert_eq!(manifest.compact_receipt_rejections, 1);
+        assert_eq!(
+            manifest.compact_receipts_digest,
+            Some(Digest::sha256_hex(&receipts_bytes))
+        );
+        assert!(!manifest.truncated);
+        assert!(
+            fs::read_dir(&evidence_dir)
+                .unwrap()
+                .flatten()
+                .all(|entry| entry.path().extension().and_then(|ext| ext.to_str()) != Some("gz"))
+        );
+    }
+
+    #[test]
     fn reviewed_work_can_reopen_without_losing_its_checkpoint() {
         let fx = fixture();
         let forge = Forge::open(&fx.forge_root).unwrap();
         let item = forge
-            .register("Revise app", "make app v2", &fx.repo, "main", "user-1", &actor())
+            .register(
+                "Revise app",
+                "make app v2",
+                &fx.repo,
+                "main",
+                "user-1",
+                &actor(),
+            )
             .unwrap();
         let item = forge.provision(&item.id, &actor()).unwrap();
         let worktree = item.environment.as_ref().unwrap().worktree.clone();
@@ -1695,17 +1931,23 @@ mod tests {
         // A forged lease with the wrong generation must be rejected.
         let mut stale = lease.clone();
         stale.generation = 99;
-        let err = forge.complete_attempt(&stale, &SealOptions::default(), &actor()).unwrap_err();
+        let err = forge
+            .complete_attempt(&stale, &SealOptions::default(), &actor())
+            .unwrap_err();
         assert!(matches!(err, ForgeError::StaleLease { .. }));
 
         // A lease pointing at a different attempt must be rejected.
         let mut alien = lease.clone();
         alien.attempt_id = AttemptId::new();
-        let err = forge.complete_attempt(&alien, &SealOptions::default(), &actor()).unwrap_err();
+        let err = forge
+            .complete_attempt(&alien, &SealOptions::default(), &actor())
+            .unwrap_err();
         assert!(matches!(err, ForgeError::AttemptNotFound(_)));
 
         // The real lease still works.
-        forge.complete_attempt(&lease, &SealOptions::default(), &actor()).unwrap();
+        forge
+            .complete_attempt(&lease, &SealOptions::default(), &actor())
+            .unwrap();
     }
 
     #[test]
@@ -1741,7 +1983,9 @@ mod tests {
             .unwrap();
         let env = item.environment.clone().unwrap();
         fs::write(env.worktree.join("a.txt"), "a\n").unwrap();
-        let item = forge.complete_attempt(&lease, &SealOptions::default(), &actor()).unwrap();
+        let item = forge
+            .complete_attempt(&lease, &SealOptions::default(), &actor())
+            .unwrap();
         let attempt = item.attempt(&lease.attempt_id).unwrap();
         let sealed_head = fx.git.head_oid(&env.worktree).unwrap();
         let manifest: EvidenceManifest = serde_json::from_str(
@@ -1786,7 +2030,10 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, ForgeError::EnvironmentDrift(_)));
         // The item stays in AwaitingReview — approval did not leak.
-        assert_eq!(forge.load(&item.id).unwrap().state, WorkState::AwaitingReview);
+        assert_eq!(
+            forge.load(&item.id).unwrap().state,
+            WorkState::AwaitingReview
+        );
     }
 
     #[test]
@@ -1806,10 +2053,7 @@ mod tests {
         forge.heartbeat(&lease).unwrap();
 
         // Heartbeats never touch the JSONL log.
-        assert_eq!(
-            forge.store().replay(&item.id).unwrap().len(),
-            events_before
-        );
+        assert_eq!(forge.store().replay(&item.id).unwrap().len(), events_before);
         // But the lease record (snapshot) reflects them.
         let loaded = forge.load(&item.id).unwrap();
         let hb = loaded
@@ -1836,16 +2080,10 @@ mod tests {
         let seq = item.attempt(&lease.attempt_id).unwrap().seq;
 
         forge
-            .append_command_log(
-                &lease,
-                &serde_json::json!({"kind": "prompt", "chars": 12}),
-            )
+            .append_command_log(&lease, &serde_json::json!({"kind": "prompt", "chars": 12}))
             .unwrap();
         forge
-            .append_command_log(
-                &lease,
-                &serde_json::json!({"kind": "tool", "name": "read"}),
-            )
+            .append_command_log(&lease, &serde_json::json!({"kind": "tool", "name": "read"}))
             .unwrap();
 
         let path = forge
@@ -1865,9 +2103,11 @@ mod tests {
             generation: lease.generation + 99,
             ..lease.clone()
         };
-        assert!(forge
-            .append_command_log(&stale, &serde_json::json!({"kind": "x"}))
-            .is_err());
+        assert!(
+            forge
+                .append_command_log(&stale, &serde_json::json!({"kind": "x"}))
+                .is_err()
+        );
     }
 
     #[test]
@@ -1965,12 +2205,16 @@ mod tests {
             "fencing tokens must be monotonic across attempts"
         );
         // The old lease is fenced out.
-        let err = forge.complete_attempt(&lease, &SealOptions::default(), &actor()).unwrap_err();
+        let err = forge
+            .complete_attempt(&lease, &SealOptions::default(), &actor())
+            .unwrap_err();
         assert!(matches!(
             err,
             ForgeError::StaleLease { .. } | ForgeError::AttemptNotFound(_)
         ));
-        forge.complete_attempt(&lease2, &SealOptions::default(), &actor()).unwrap();
+        forge
+            .complete_attempt(&lease2, &SealOptions::default(), &actor())
+            .unwrap();
     }
 
     #[test]
@@ -1984,7 +2228,9 @@ mod tests {
         let (_item, lease) = forge
             .begin_attempt(&item.id, script_executor(), None, &actor())
             .unwrap();
-        let item = forge.fail_attempt(&lease, "adapter exploded", &actor()).unwrap();
+        let item = forge
+            .fail_attempt(&lease, "adapter exploded", &actor())
+            .unwrap();
         assert_eq!(item.state, WorkState::Ready);
         let attempt = item.attempt(&lease.attempt_id).unwrap();
         assert_eq!(attempt.state, AttemptState::Failed);
@@ -2106,7 +2352,11 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
-        let paths: Vec<&str> = manifest.changed_files.iter().map(|f| f.path.as_str()).collect();
+        let paths: Vec<&str> = manifest
+            .changed_files
+            .iter()
+            .map(|f| f.path.as_str())
+            .collect();
         assert!(paths.contains(&"keep.txt"));
         assert!(!paths.iter().any(|p| p.starts_with("logs/")));
         let patch = fs::read(
@@ -2158,7 +2408,12 @@ mod tests {
     fn to_awaiting_review(
         fx: &Fixture,
         forge: &Forge,
-    ) -> (WorkItem, crate::model::GovernedEnv, crate::model::GitOid, EvidenceManifest) {
+    ) -> (
+        WorkItem,
+        crate::model::GovernedEnv,
+        crate::model::GitOid,
+        EvidenceManifest,
+    ) {
         let item = forge
             .register("t", "b", &fx.repo, "main", "user-1", &actor())
             .unwrap();
@@ -2226,10 +2481,15 @@ mod tests {
         );
         let decision_id = decision.id.clone();
         forge.decide(&item.id, decision, &actor()).unwrap();
-        let item = forge.apply_decision(&item.id, &decision_id, &actor()).unwrap();
+        let item = forge
+            .apply_decision(&item.id, &decision_id, &actor())
+            .unwrap();
 
         assert_eq!(item.state, WorkState::Accepted);
-        assert_eq!(item.disposition, Some(AcceptedDisposition::BaseFastForwarded));
+        assert_eq!(
+            item.disposition,
+            Some(AcceptedDisposition::BaseFastForwarded)
+        );
         assert_eq!(fx.git.ref_oid(&fx.repo, "main").unwrap(), sealed_head);
         // Checked-out-base safety: the main checkout was synced to the moved ref.
         assert_eq!(
@@ -2267,7 +2527,10 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, ForgeError::BaseAdvanced { .. }));
         // Approval did not leak; the item is back at review.
-        assert_eq!(forge.load(&item.id).unwrap().state, WorkState::AwaitingReview);
+        assert_eq!(
+            forge.load(&item.id).unwrap().state,
+            WorkState::AwaitingReview
+        );
         // The forge branch still points at its sealed head.
         let env = forge.load(&item.id).unwrap().environment.unwrap();
         assert_eq!(fx.git.head_oid(&env.worktree).unwrap(), sealed_head);
@@ -2287,7 +2550,9 @@ mod tests {
         );
         let decision_id = decision.id.clone();
         forge.decide(&item.id, decision, &actor()).unwrap();
-        let item = forge.apply_decision(&item.id, &decision_id, &actor()).unwrap();
+        let item = forge
+            .apply_decision(&item.id, &decision_id, &actor())
+            .unwrap();
 
         assert_eq!(item.disposition, Some(AcceptedDisposition::PatchExported));
         let dispositions = forge.store().item_dir(&item.id).join("dispositions");

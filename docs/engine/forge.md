@@ -51,6 +51,7 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | GET | `/v1/forge/items/{id}/search?query=…` | Fixed-string tracked-source search (bounded to 500 hits) |
 | GET, PUT | `/v1/forge/items/{id}/workspace-state` | Restore/preserve open files, editor groups, positions, and bounded dirty drafts |
 | GET | `/v1/forge/items/{id}/review` | Structured outcome, risk, verification, attribution, timeline, and changed-file summary |
+| GET | `/v1/forge/evidence/{evidence_id}/receipts` | Sealed compact Coder evidence provenance (never raw payloads) |
 | GET | `/v1/forge/items/{id}/tasks` | Manifest-derived checks, tests, builds, and run commands |
 | POST | `/v1/forge/items/{id}/tasks/{task_id}/runs` | Start a named, cancellable project run |
 | GET/DELETE | `/v1/forge/items/{id}/task-runs/{run_id}` | Poll or cancel a project run |
@@ -292,8 +293,22 @@ The initial policy is deliberately hard-bounded:
 Reading an object refreshes its class TTL, but never overrides the global cap.
 Under pressure, successful/reproducible objects leave before failed evidence,
 then oldest access wins. The daemon's six-hour storage pass removes expired
-objects and safe orphan blobs. This store remains ephemeral: durable Forge
-promotion is a separate explicit policy boundary.
+objects and safe orphan blobs. This object store remains ephemeral.
+
+When the undertaking seals, Forge validates the narrow receipt records staged
+by the Coder perception governor and writes accepted metadata to the canonical
+evidence bundle as `receipts.json`. `manifest.json` binds that file with
+`compact_receipts_digest`, `compact_receipt_count`, and
+`compact_receipt_rejections`. The review projection exposes the same counts,
+and `GET /v1/forge/evidence/{evidence_id}/receipts` returns the typed sealed
+receipts. Source tool and call identifiers remain distinct even when multiple
+agents observed the same content-addressed object.
+
+Sealing never copies the gzip object or raw tool output. Every accepted receipt
+has `raw_evidence: "ephemeral_only"`; a command-log record that claims raw
+promotion is rejected and counted. Durable raw retention requires a future
+explicit user pin or a separately defined narrow review policy—it is not an
+implicit consequence of a tool returning data.
 
 Home uses `/v1/forge/items/{id}/handoff` before moving from a human editing
 lease to Codex or Cursor. The request includes `lease_id`, `generation`, and
