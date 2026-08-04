@@ -32,6 +32,8 @@ import type {
   SessionHistoryResponse,
   SessionAgentModeResponse,
   SessionCodeBindingResponse,
+  SessionCodeProjectResponse,
+  StartSessionCodeProjectRequest,
   StreamOptions,
 } from "./types.js";
 
@@ -235,6 +237,21 @@ export class MedousaClient {
     return this.request<SessionCodeBindingResponse>(
       `/v1/sessions/${encodeURIComponent(sessionId)}/code-binding`,
       { method: "DELETE", signal: options?.signal },
+    );
+  }
+
+  async startSessionCodeProject(
+    sessionId: string,
+    request: StartSessionCodeProjectRequest,
+    options?: ClientRequestOptions,
+  ): Promise<SessionCodeProjectResponse> {
+    return this.request<SessionCodeProjectResponse>(
+      `/v1/sessions/${encodeURIComponent(sessionId)}/code-project`,
+      {
+        method: "POST",
+        body: JSON.stringify(request),
+        signal: options?.signal,
+      },
     );
   }
 

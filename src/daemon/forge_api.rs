@@ -24,6 +24,10 @@ use medousa_forge::model::{
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::daemon_api::{
+    CodeProjectSource, SessionCodeProjectResponse, StartSessionCodeProjectRequest,
+};
+
 use crate::daemon::forge_projections::{
     ItemProjection, ReviewProjection, build_review, evidence_dir, project_item, project_items,
     read_lines_page,
@@ -45,6 +49,10 @@ pub fn forge_router(state: AppState) -> Router {
     Router::new()
         .route("/v1/forge/items", get(list_items).post(register_item))
         .route("/v1/forge/items/start", post(start_item))
+        .route(
+            "/v1/sessions/{session_id}/code-project",
+            post(start_session_code_project),
+        )
         .route("/v1/forge/repositories/inspect", post(inspect_repository))
         .route(
             "/v1/forge/repositories/provider",
@@ -1017,12 +1025,16 @@ async fn start_item(
     State(state): State<AppState>,
     Json(body): Json<RegisterRequest>,
 ) -> ApiResult<Json<ItemProjection>> {
+    start_item_from_request(&state, body).map(|item| ok_item(&state, item, "started"))
+}
+
+fn start_item_from_request(state: &AppState, body: RegisterRequest) -> ApiResult<WorkItem> {
     let repository_path = body.repo_path.clone();
-    let actor = actor_from_state(&state);
+    let actor = actor_from_state(state);
     let owner = body
         .owner
         .unwrap_or_else(|| state.workshop_identity_user_id());
-    let forge = forge(&state);
+    let forge = forge(state);
     let registered = if let Some(policy) = body.policy {
         forge.register_with_policy(
             body.title,
@@ -1045,7 +1057,7 @@ async fn start_item(
     }
     .map_err(map_err)?;
     touch_repository(&repository_path, None)?;
-    publish_item(&state, &registered, "registered");
+    publish_item(state, &registered, "registered");
     let item = forge.provision(&registered.id, &actor).map_err(map_err)?;
     if let Some(env) = item.environment.as_ref() {
         crate::daemon::detamu_host::spawn_index_forge_item(
@@ -1056,7 +1068,234 @@ async fn start_item(
             crate::daemon::detamu_host::BindingKind::Baseline,
         );
     }
-    Ok(ok_item(&state, item, "started"))
+    Ok(item)
+}
+
+async fn start_session_code_project(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+    Json(body): Json<StartSessionCodeProjectRequest>,
+) -> ApiResult<Json<SessionCodeProjectResponse>> {
+    start_code_project_for_session_inner(&state, &session_id, body).map(Json)
+}
+
+pub(crate) fn start_code_project_for_session(
+    state: &AppState,
+    session_id: &str,
+    body: StartSessionCodeProjectRequest,
+) -> Result<SessionCodeProjectResponse, String> {
+    start_code_project_for_session_inner(state, session_id, body)
+        .map_err(|(_, Json(error))| error.error)
+}
+
+fn start_code_project_for_session_inner(
+    state: &AppState,
+    session_id: &str,
+    body: StartSessionCodeProjectRequest,
+) -> ApiResult<SessionCodeProjectResponse> {
+    let session_id = session_id.trim();
+    let title = body.title.trim();
+    let brief = body.brief.trim();
+    if session_id.is_empty() || title.is_empty() || brief.is_empty() {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "session_id, title, and brief are required",
+        ));
+    }
+
+    let base_ref = body
+        .base_ref
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("main")
+        .to_string();
+    let (repo_path, created_repository) = match body.source {
+        CodeProjectSource::Blank => (create_blank_repository(title, &base_ref)?, true),
+        CodeProjectSource::Repository => {
+            let path = body
+                .repo_path
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    request_error(
+                        StatusCode::BAD_REQUEST,
+                        "repo_path is required for an existing repository",
+                    )
+                })?;
+            (PathBuf::from(path), false)
+        }
+    };
+
+    let item = match start_item_from_request(
+        state,
+        RegisterRequest {
+            title: title.to_string(),
+            brief: brief.to_string(),
+            repo_path: repo_path.clone(),
+            base_ref: base_ref.clone(),
+            owner: None,
+            policy: None,
+        },
+    ) {
+        Ok(item) => item,
+        Err(err) => {
+            if created_repository {
+                let _ = std::fs::remove_dir_all(&repo_path);
+            }
+            return Err(err);
+        }
+    };
+    let worktree = match item.environment.as_ref() {
+        Some(environment) => environment.worktree.to_string_lossy().into_owned(),
+        None => {
+            let _ = state.forge.discard(&item.id, &actor_from_state(state));
+            if created_repository {
+                let _ = std::fs::remove_dir_all(&repo_path);
+            }
+            return Err(request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Forge did not provision a governed worktree",
+            ));
+        }
+    };
+    if let Err(err) =
+        crate::agent_mode_state::set_session_code_binding(session_id, item.id.as_str())
+    {
+        let _ = state.forge.discard(&item.id, &actor_from_state(state));
+        if created_repository {
+            let _ = std::fs::remove_dir_all(&repo_path);
+        }
+        return Err(request_error(StatusCode::INTERNAL_SERVER_ERROR, err));
+    }
+
+    let WorkTarget::Git(target) = &item.target;
+    let response = SessionCodeProjectResponse {
+        session_id: session_id.to_string(),
+        work_id: item.id.to_string(),
+        title: item.title,
+        brief: item.brief,
+        state: item.state.to_string(),
+        human_phase: crate::daemon::forge_projections::human_phase(item.state).to_string(),
+        repo_path: target.repo_path.to_string_lossy().into_owned(),
+        worktree,
+        base_ref: target.base_ref.clone(),
+        created_repository,
+    };
+    Ok(response)
+}
+
+fn create_blank_repository(title: &str, base_ref: &str) -> ApiResult<PathBuf> {
+    let root = crate::paths::medousa_data_dir().join("projects");
+    std::fs::create_dir_all(&root).map_err(|err| {
+        request_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Could not create the Medousa projects folder: {err}"),
+        )
+    })?;
+    let slug = project_slug(title);
+    let mut destination = root.join(&slug);
+    for suffix in 2..=999 {
+        if !destination.exists() {
+            break;
+        }
+        destination = root.join(format!("{slug}-{suffix}"));
+    }
+    if destination.exists() {
+        return Err(request_error(
+            StatusCode::CONFLICT,
+            "Could not choose an available project folder",
+        ));
+    }
+    std::fs::create_dir(&destination).map_err(|err| {
+        request_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Could not create the project folder: {err}"),
+        )
+    })?;
+
+    if let Err(err) = initialize_blank_repository(&destination, title, base_ref) {
+        let _ = std::fs::remove_dir_all(&destination);
+        return Err(request_error(StatusCode::INTERNAL_SERVER_ERROR, err));
+    }
+    Ok(destination)
+}
+
+fn initialize_blank_repository(
+    destination: &FsPath,
+    title: &str,
+    base_ref: &str,
+) -> Result<(), String> {
+    let init = background_command("git")
+        .args(["init", "-b", base_ref])
+        .current_dir(destination)
+        .output()
+        .map_err(|err| format!("Could not start Git: {err}"))?;
+    if !init.status.success() {
+        return Err(format!(
+            "Could not initialize Git: {}",
+            String::from_utf8_lossy(&init.stderr).trim()
+        ));
+    }
+    std::fs::write(
+        destination.join("README.md"),
+        format!("# {title}\n\nCreated with Medousa.\n"),
+    )
+    .map_err(|err| format!("Could not create README.md: {err}"))?;
+    let add = background_command("git")
+        .args(["add", "README.md"])
+        .current_dir(destination)
+        .output()
+        .map_err(|err| format!("Could not stage the initial project: {err}"))?;
+    if !add.status.success() {
+        return Err(format!(
+            "Could not stage the initial project: {}",
+            String::from_utf8_lossy(&add.stderr).trim()
+        ));
+    }
+    let commit = background_command("git")
+        .args([
+            "-c",
+            "user.name=Medousa",
+            "-c",
+            "user.email=medousa@local",
+            "commit",
+            "-m",
+            "Initial commit",
+        ])
+        .current_dir(destination)
+        .output()
+        .map_err(|err| format!("Could not create the initial commit: {err}"))?;
+    if !commit.status.success() {
+        return Err(format!(
+            "Could not create the initial commit: {}",
+            String::from_utf8_lossy(&commit.stderr).trim()
+        ));
+    }
+    Ok(())
+}
+
+fn project_slug(title: &str) -> String {
+    let mut slug = String::new();
+    let mut separator = false;
+    for character in title.chars().flat_map(char::to_lowercase) {
+        if character.is_ascii_alphanumeric() {
+            slug.push(character);
+            separator = false;
+        } else if !slug.is_empty() && !separator {
+            slug.push('-');
+            separator = true;
+        }
+    }
+    while slug.ends_with('-') {
+        slug.pop();
+    }
+    if slug.is_empty() {
+        "new-project".to_string()
+    } else {
+        slug.chars().take(64).collect()
+    }
 }
 
 async fn list_items(State(state): State<AppState>) -> ApiResult<Json<Vec<ItemProjection>>> {
@@ -4282,5 +4521,23 @@ mod source_tests {
         assert!(normalize_provider_repository("lonely-project").is_none());
         assert!(provider_repository("ssh://example.com/team/service.git").is_none());
         assert!(provider_repository("https://evilgithub.com/team/service.git").is_none());
+    }
+
+    #[test]
+    fn blank_project_names_are_safe_and_initialize_a_commit() {
+        assert_eq!(
+            project_slug(" Personal Finance / Dashboard "),
+            "personal-finance-dashboard"
+        );
+        assert_eq!(project_slug("!!!"), "new-project");
+        let root = tempfile::tempdir().unwrap();
+        initialize_blank_repository(root.path(), "Finance Dashboard", "main").unwrap();
+        assert!(root.path().join("README.md").is_file());
+        let head = background_command("git")
+            .args(["rev-parse", "--verify", "HEAD"])
+            .current_dir(root.path())
+            .output()
+            .unwrap();
+        assert!(head.status.success());
     }
 }

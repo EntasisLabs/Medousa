@@ -35,6 +35,8 @@
     cancelAgentSession,
     createAgentSession,
     createTurnTicket,
+    getSessionAgentMode,
+    getSessionCodeBinding,
     promptAgentSession,
     steerBoundWorkshop,
   } from "$lib/daemon";
@@ -153,7 +155,6 @@
 
   /** Stable principal — ignores temporary session swaps during background SSE. */
   const panelSessionId = $derived(chat.focusedSessionId);
-  const coderContextAvailable = $derived(activeCodeContext(panelSessionId) !== null);
   const panelMessages = $derived(chat.messagesFor(panelSessionId));
   const chatMessages = $derived(panelMessages.filter((message) => isChatLaneMessage(message)));
   const askThreads = $derived(groupAskThreads(panelMessages));
@@ -197,8 +198,19 @@
   let draftCursor = $state(0);
   let slashHighlight = $state(0);
   let slashAnchor = $state<SlashMenuAnchor | null>(null);
-  let composerFormEl = $state<HTMLElement | null>(null);
+  let composerFormEl = $state<HTMLFormElement | null>(null);
   let composerTextareaEl = $state<HTMLTextAreaElement | null>(null);
+  let allowUnboundCoderSend = false;
+
+  $effect(() => {
+    if (mobile) return;
+    const sendToSetup = () => {
+      allowUnboundCoderSend = true;
+      composerFormEl?.requestSubmit();
+    };
+    window.addEventListener("medousa-code-project-agent-setup", sendToSetup);
+    return () => window.removeEventListener("medousa-code-project-agent-setup", sendToSetup);
+  });
 
   const slashToken = $derived(composerSlashToken(chat.draft, draftCursor));
   const slashItems = $derived(
@@ -843,6 +855,17 @@
         return;
       }
     }
+    if (!allowUnboundCoderSend && !activeCodeContext(chat.sessionId)) {
+      const [agentMode, binding] = await Promise.all([
+        getSessionAgentMode(chat.sessionId),
+        getSessionCodeBinding(chat.sessionId),
+      ]);
+      if (agentMode.effective_mode === "coder" && !binding.work_id) {
+        window.dispatchEvent(new CustomEvent("medousa-open-code-project-chooser"));
+        return;
+      }
+    }
+    allowUnboundCoderSend = false;
     if (mobile) haptic("medium");
 
     const askPrompt = parseDaemonAskPrompt(prompt);
@@ -1454,11 +1477,10 @@
     />
     <ModeProposalBar
       sessionId={panelSessionId}
-      {coderContextAvailable}
     />
     <AgentPermissionBar />
     <div class="mx-4 mb-1 flex flex-wrap gap-2">
-      <UndertakingContextChip />
+      <UndertakingContextChip chatOnly />
     </div>
     <AgentBrowserPanel />
     {/if}
@@ -1513,7 +1535,6 @@
           {#if sessionRuntime === "medousa"}
             <ChatAgentModePicker
               sessionId={panelSessionId}
-              {coderContextAvailable}
               disabled={connection.offline || chat.composerBlocked}
             />
           {/if}

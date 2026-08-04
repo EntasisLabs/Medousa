@@ -66,10 +66,11 @@ window does not throw away an accepted job.
 
 The mode control beside the composer shows how Medousa will approach this
 conversation. **General** is the everyday life, planning, and research mode.
-**Coder** is available for chats bound to an active Forge undertaking. It works
-inside that undertaking's governed worktree with a turn-scoped lease and a
-restricted coding tool surface; it cannot use Coder authority against an
-unbound chat. Your selection follows the conversation across restarts.
+**Coder** can be selected before a project is bound. Chat then offers ready
+projects, blank project creation, or a least-authority setup turn where Medousa
+can choose or create the project from an explicit request. Once bound, Coder
+works inside the governed worktree with a turn-scoped lease and a restricted
+coding tool surface. Your selection follows the conversation across restarts.
 
 Medousa can also suggest a mode when another approach would materially help.
 The suggestion appears above the composer and expires without changing the

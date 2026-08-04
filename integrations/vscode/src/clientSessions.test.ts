@@ -89,4 +89,29 @@ describe("Medousa session client", () => {
     }));
     expect(requests[2]?.init?.body).toBe(JSON.stringify({ accept: true }));
   });
+
+  it("creates and binds a blank project through one session operation", async () => {
+    let request: { url: string; init?: RequestInit } | undefined;
+    const client = new MedousaClient({
+      baseUrl: "http://127.0.0.1:7419",
+      fetch: async (input, init) => {
+        request = { url: String(input), init };
+        return Response.json({ session_id: "session-one", work_id: "work-1" });
+      },
+    });
+
+    await client.startSessionCodeProject("session-one", {
+      title: "Finance dashboard",
+      brief: "Track monthly cash flow",
+      source: "blank",
+    });
+
+    expect(request?.url).toBe("http://127.0.0.1:7419/v1/sessions/session-one/code-project");
+    expect(request?.init?.method).toBe("POST");
+    expect(request?.init?.body).toBe(JSON.stringify({
+      title: "Finance dashboard",
+      brief: "Track monthly cash flow",
+      source: "blank",
+    }));
+  });
 });

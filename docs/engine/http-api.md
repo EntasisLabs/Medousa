@@ -88,6 +88,7 @@ for the protocol and surface-scoping rules.
 | GET | `/v1/sessions/{session_id}/code-binding` | Shared Forge undertaking binding | `sessions().code_binding` |
 | PUT | `/v1/sessions/{session_id}/code-binding` | `SetSessionCodeBindingRequest` | `sessions().set_code_binding` |
 | DELETE | `/v1/sessions/{session_id}/code-binding` | Clear shared undertaking binding | `sessions().clear_code_binding` |
+| POST | `/v1/sessions/{session_id}/code-project` | `StartSessionCodeProjectRequest` → create, provision, and bind | `sessions().start_code_project` |
 | DELETE | `/v1/sessions/{session_id}` | — | `http().delete` |
 | POST | `/v1/sessions/{session_id}/turns` | `SessionAppendTurnRequest` | `sessions().append_turn` |
 | GET | `/v1/sessions/{session_id}/turns` | turn list | `http().get` |

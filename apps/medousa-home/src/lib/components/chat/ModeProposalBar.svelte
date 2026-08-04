@@ -2,24 +2,21 @@
   import { haptic } from "$lib/haptics";
   import {
     decideSessionAgentModeProposal,
-    getSessionCodeBinding,
     listSessionAgentModeProposals,
   } from "$lib/daemon";
   import type { AgentModeProposalResponse } from "$lib/types/generated/daemon_api";
 
   interface Props {
     sessionId: string;
-    coderContextAvailable?: boolean;
     mobile?: boolean;
   }
 
-  let { sessionId, coderContextAvailable = false, mobile = false }: Props = $props();
+  let { sessionId, mobile = false }: Props = $props();
   let proposals = $state<AgentModeProposalResponse[]>([]);
   let busy = $state(false);
   let feedback = $state<string | null>(null);
   let now = $state(Date.now());
   let initialized = false;
-  let daemonCodeBindingAvailable = $state(false);
   const seenResolved = new Set<string>();
 
   const pending = $derived(
@@ -30,9 +27,6 @@
       ? Math.max(0, Math.ceil((Date.parse(pending.expires_at_utc) - now) / 1000))
       : 0,
   );
-  const acceptBlocked = $derived(
-    pending?.to_mode === "coder" && !coderContextAvailable && !daemonCodeBindingAvailable,
-  );
 
   async function refresh(expectedSessionId: string) {
     if (!expectedSessionId) {
@@ -40,13 +34,9 @@
       return;
     }
     try {
-      const [response, binding] = await Promise.all([
-        listSessionAgentModeProposals(expectedSessionId),
-        getSessionCodeBinding(expectedSessionId),
-      ]);
+      const response = await listSessionAgentModeProposals(expectedSessionId);
       if (expectedSessionId !== sessionId.trim()) return;
       proposals = response.proposals;
-      daemonCodeBindingAvailable = Boolean(binding.work_id);
       if (initialized) {
         const newlyApplied = response.proposals.some(
           (proposal) =>
@@ -71,7 +61,7 @@
   }
 
   async function decide(accept: boolean) {
-    if (!pending || busy || (accept && acceptBlocked)) return;
+    if (!pending || busy) return;
     busy = true;
     feedback = null;
     try {
@@ -120,11 +110,7 @@
         </p>
         <p class="mt-0.5 text-sm text-surface-100">{pending.reason}</p>
         <p class="workshop-faint mt-1 text-xs">
-          {#if acceptBlocked}
-            Bind this chat to a Forge undertaking to accept.
-          {:else}
-            Expires in {remainingSeconds}s · applies next turn
-          {/if}
+          Expires in {remainingSeconds}s · applies next turn
         </p>
         {#if feedback}
           <p class="mt-1 text-xs text-surface-400">{feedback}</p>
@@ -134,7 +120,7 @@
         <button
           type="button"
           class="btn btn-sm variant-filled-primary"
-          disabled={busy || acceptBlocked}
+          disabled={busy}
           onclick={() => void decide(true)}
         >
           Accept

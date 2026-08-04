@@ -33,6 +33,7 @@ pub mod turn_delivery;
 pub mod heartbeat_turn;
 pub mod host_context;
 pub mod coder_mode;
+pub mod coder_setup_tools;
 pub mod coder_tools;
 pub mod modes;
 pub mod context_usage;
@@ -95,7 +96,7 @@ pub use heartbeat_turn::{
     heartbeat_policy_doc_path, load_heartbeat_policy_doc, run_heartbeat_agent_turn,
 };
 pub use modes::{
-    AgentModeUnavailable, ModeExecutionLane, ResolvedAgentMode, list_agent_modes, resolve_agent_mode,
+    AgentModeUnavailable, CoderRuntimePhase, ModeExecutionLane, ResolvedAgentMode, list_agent_modes, resolve_agent_mode,
     system_prompt_for_mode,
 };
 pub use coder_mode::{CoderEntryContext, CoderEntryError, compile_coder_entry};

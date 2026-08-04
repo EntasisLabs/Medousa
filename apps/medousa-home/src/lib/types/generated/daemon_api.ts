@@ -274,6 +274,29 @@ export interface SessionCodeBindingResponse {
   work_id?: string | null;
 }
 
+export type CodeProjectSource = "blank" | "repository";
+
+export interface StartSessionCodeProjectRequest {
+  base_ref?: string | null;
+  brief: string;
+  repo_path?: string | null;
+  source?: CodeProjectSource;
+  title: string;
+}
+
+export interface SessionCodeProjectResponse {
+  base_ref: string;
+  brief: string;
+  created_repository: boolean;
+  human_phase: string;
+  repo_path: string;
+  session_id: string;
+  state: string;
+  title: string;
+  work_id: string;
+  worktree: string;
+}
+
 export type TurnTicketMode = "interactive" | "background";
 
 export type TurnTicketPhase = "accepted" | "streaming" | "worker_handoff" | "workshop_handoff" | "budget_blocked" | "done" | "error" | "cancelled";

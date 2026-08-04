@@ -658,6 +658,7 @@ pub fn run() {
             daemon::session::session_get_code_binding,
             daemon::session::session_set_code_binding,
             daemon::session::session_clear_code_binding,
+            daemon::session::session_start_code_project,
             daemon::session::session_delete,
             daemon::session::session_get_history,
             daemon::session::session_get_active_turn,

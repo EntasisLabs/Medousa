@@ -1,6 +1,6 @@
 # Agent runtime modes
 
-> Status: Core mode roadmap and VS Code continuity bridge complete; Neovim next
+> Status: Core modes, unbound Coder setup, and VS Code continuity complete; Neovim next
 > First modes: **General** and **Coder**
 
 ## Product decision
@@ -146,6 +146,10 @@ continues in the current mode rather than abandoning the request.
    and Forge undertaking binding while moving between Home and native editor
    surfaces. VS Code is the reference implementation; Neovim follows the same
    contract without duplicating the runtime or filesystem authority.
+8. **Unbound Coder entry** — mode selection is independent from project
+   authority. Chat can bind ready work, atomically initialize/provision/bind a
+   blank project, or enter a restricted project-setup turn. Full coding tools
+   remain unavailable until the next immutable turn has Forge authority.
 
 ## First-slice acceptance criteria
 

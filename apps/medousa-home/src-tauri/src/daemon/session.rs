@@ -3,6 +3,7 @@ use crate::daemon::types::{
     AgentModeProposalResponse, AgentModeScope, AgentModeTransitionPolicy,
     CancelActiveSessionTurnResponse, CodeIntentContext, MediaRef, SessionAgentModeResponse,
     SessionCodeBindingResponse, SessionDeleteQuery, SessionDeleteResponse,
+    SessionCodeProjectResponse, StartSessionCodeProjectRequest,
     SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameResponse,
     SetSessionAgentModeRequest, StageRoutingMatrix, TurnSurfaceContext,
 };
@@ -253,6 +254,19 @@ pub async fn session_clear_code_binding(
     client(&state)
         .sessions()
         .clear_code_binding(session_id.trim())
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn session_start_code_project(
+    state: State<'_, DaemonState>,
+    session_id: String,
+    request: StartSessionCodeProjectRequest,
+) -> Result<SessionCodeProjectResponse, String> {
+    client(&state)
+        .sessions()
+        .start_code_project(session_id.trim(), &request)
         .await
         .map_err(sdk_error)
 }

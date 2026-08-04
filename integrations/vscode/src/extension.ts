@@ -242,12 +242,11 @@ class MedousaChatView implements vscode.WebviewViewProvider {
       { placeHolder: "How should Medousa work in this conversation?" },
     );
     if (!picked || !picked.mode.available) return;
-    if (picked.mode.mode === "coder" && !(await this.ensureCoderBinding())) return;
     await client.setSessionAgentMode(sessionId, picked.mode.mode);
     await this.refreshRuntimeState();
   }
 
-  async selectUndertaking(): Promise<boolean> {
+  async selectUndertaking(allowAgentSetup = false): Promise<boolean> {
     if (!this.client || !this.sessionId) await this.refresh();
     const client = this.client;
     const sessionId = this.sessionId;
@@ -256,40 +255,53 @@ class MedousaChatView implements vscode.WebviewViewProvider {
     const ready = this.undertakings.filter(
       (item) => item.state.toLowerCase() === "ready" && Boolean(item.environment?.worktree),
     );
-    const choices = [
+    const choices: Array<{
+      label: string;
+      description: string | undefined;
+      detail: string;
+      action: "bind" | "create" | "agent" | "detach";
+      item?: ForgeUndertaking;
+    }> = [
       ...ready.map((item) => ({
         label: `$(repo) ${item.title}`,
         description: item.id === this.boundUndertaking?.id ? "Bound" : item.human_phase,
         detail: item.brief,
+        action: "bind" as const,
         item,
       })),
+      {
+        label: "$(new-folder) Create a new project",
+        description: "New governed codebase",
+        detail: "Medousa initializes Git, provisions a Forge worktree, and binds this conversation.",
+        action: "create",
+      },
+      ...(allowAgentSetup ? [{
+        label: "$(sparkle) Let Medousa choose or create it",
+        description: "Use this message as the project brief",
+        detail: "Coder setup can list, bind, or create a project before full coding begins.",
+        action: "agent" as const,
+      }] : []),
       ...(this.boundUndertaking ? [{
         label: "$(close) Stop following this undertaking",
         description: "Return this conversation to an unbound state",
-        detail: "Coder mode will be changed to General first.",
-        item: null,
+        detail: "Coder stays active and returns to project setup.",
+        action: "detach" as const,
       }] : []),
     ];
-    if (!choices.length) {
-      const action = await vscode.window.showInformationMessage(
-        "No ready Forge undertakings are available on this workshop.",
-        "Open Medousa",
-      );
-      if (action === "Open Medousa") await vscode.env.openExternal(vscode.Uri.parse("medousa://work"));
-      return false;
-    }
     const picked = await vscode.window.showQuickPick(choices, {
       placeHolder: "Choose the governed project for this conversation",
     });
     if (!picked) return false;
-    if (!picked.item) {
-      if (this.activeMode === "coder") await client.setSessionAgentMode(sessionId, "general");
+    if (picked.action === "create") return this.createProject();
+    if (picked.action === "agent") return true;
+    if (picked.action === "detach") {
       await client.clearSessionCodeBinding(sessionId);
       this.boundWorkId = null;
       this.boundUndertaking = null;
       await this.refreshRuntimeState();
       return false;
     }
+    if (!picked.item) return false;
     await client.setSessionCodeBinding(sessionId, picked.item.id);
     this.boundWorkId = picked.item.id;
     this.boundUndertaking = picked.item;
@@ -298,12 +310,48 @@ class MedousaChatView implements vscode.WebviewViewProvider {
     return true;
   }
 
+  private async createProject(): Promise<boolean> {
+    const client = this.client;
+    const sessionId = this.sessionId;
+    if (!client || !sessionId) return false;
+    const title = await vscode.window.showInputBox({
+      title: "Create a Medousa project",
+      prompt: "Project name",
+      placeHolder: "Personal finance dashboard",
+      validateInput: (value) => value.trim() ? undefined : "Enter a project name",
+    });
+    if (!title?.trim()) return false;
+    const brief = await vscode.window.showInputBox({
+      title: `Create “${title.trim()}”`,
+      prompt: "What should Medousa build?",
+      placeHolder: "Describe the outcome (optional)",
+    });
+    if (brief === undefined) return false;
+    const created = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Creating ${title.trim()}…`,
+        cancellable: false,
+      },
+      () => client.startSessionCodeProject(sessionId, {
+        title: title.trim(),
+        brief: brief.trim() || title.trim(),
+        source: "blank",
+      }),
+    );
+    this.boundWorkId = created.work_id;
+    this.boundUndertaking = await client.forgeUndertaking(created.work_id);
+    this.postRuntimeState();
+    await this.offerOpenWorktree(this.boundUndertaking);
+    return true;
+  }
+
   private async ensureCoderBinding(): Promise<boolean> {
     if (
       this.boundUndertaking?.state.toLowerCase() === "ready"
       && this.boundUndertaking.environment?.worktree
     ) return true;
-    return this.selectUndertaking();
+    return this.selectUndertaking(true);
   }
 
   private async offerOpenWorktree(undertaking: ForgeUndertaking): Promise<void> {
@@ -704,10 +752,6 @@ class MedousaChatView implements vscode.WebviewViewProvider {
             ? this.pendingProposal
             : null;
           if (!proposal) break;
-          if (message.approve && proposal.to_mode === "coder" && !(await this.ensureCoderBinding())) {
-            this.post({ type: "toast", text: "Choose an undertaking before entering Coder" });
-            break;
-          }
           await this.client.decideAgentModeProposal(
             this.sessionId,
             message.requestId,

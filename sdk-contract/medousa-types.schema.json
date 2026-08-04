@@ -2342,6 +2342,15 @@
       }
     }
   },
+  "CodeProjectSource": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CodeProjectSource",
+    "type": "string",
+    "enum": [
+      "blank",
+      "repository"
+    ]
+  },
   "ComponentRuntimeEventsQuery": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "ComponentRuntimeEventsQuery",
@@ -14082,6 +14091,55 @@
       }
     }
   },
+  "SessionCodeProjectResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SessionCodeProjectResponse",
+    "type": "object",
+    "required": [
+      "base_ref",
+      "brief",
+      "created_repository",
+      "human_phase",
+      "repo_path",
+      "session_id",
+      "state",
+      "title",
+      "work_id",
+      "worktree"
+    ],
+    "properties": {
+      "base_ref": {
+        "type": "string"
+      },
+      "brief": {
+        "type": "string"
+      },
+      "created_repository": {
+        "type": "boolean"
+      },
+      "human_phase": {
+        "type": "string"
+      },
+      "repo_path": {
+        "type": "string"
+      },
+      "session_id": {
+        "type": "string"
+      },
+      "state": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      },
+      "work_id": {
+        "type": "string"
+      },
+      "worktree": {
+        "type": "string"
+      }
+    }
+  },
   "SessionDeleteResponse": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "SessionDeleteResponse",
@@ -15190,6 +15248,52 @@
             "$ref": "#/definitions/StageRoute"
           }
         }
+      }
+    }
+  },
+  "StartSessionCodeProjectRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "StartSessionCodeProjectRequest",
+    "type": "object",
+    "required": [
+      "brief",
+      "title"
+    ],
+    "properties": {
+      "base_ref": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "brief": {
+        "type": "string"
+      },
+      "repo_path": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "source": {
+        "default": "blank",
+        "allOf": [
+          {
+            "$ref": "#/definitions/CodeProjectSource"
+          }
+        ]
+      },
+      "title": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "CodeProjectSource": {
+        "type": "string",
+        "enum": [
+          "blank",
+          "repository"
+        ]
       }
     }
   },

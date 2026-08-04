@@ -5,31 +5,29 @@ use std::time::Instant;
 use async_trait::async_trait;
 
 use crate::daemon::bounded_set::BoundedDedupSet;
+use crate::daemon::turn_event_channel::TurnEventChannel;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
-use crate::daemon::turn_event_channel::TurnEventChannel;
 use tokio::sync::RwLock;
 use tracing::Instrument;
 
-use crate::channel_delivery::{
-    ChannelDeliveryTarget, JobDeliveryRecord, JobDeliveryState,
-};
+use crate::channel_delivery::{ChannelDeliveryTarget, JobDeliveryRecord, JobDeliveryState};
 use crate::daemon_api::{InteractiveTurnRequest, InteractiveTurnStreamEvent};
 use crate::interactive_turn_runtime;
+use crate::media_store::{merge_media_refs_into_prompt, validate_media_refs};
+use crate::media_vision;
 use crate::payload_receipt::ArtifactReceiptMeta;
 use crate::session::load_history;
 use crate::session_active_turn::{self, TurnTicketRegistry};
-use crate::media_store::{merge_media_refs_into_prompt, validate_media_refs};
-use crate::media_vision;
 use crate::turn_parts::{
-    artifact_refs_from_stream, user_conversation_turn,
-    user_conversation_turn_with_context_media_and_speaker, TurnPartsAccumulator,
+    TurnPartsAccumulator, artifact_refs_from_stream, user_conversation_turn,
+    user_conversation_turn_with_context_media_and_speaker,
 };
 use crate::workspace::ask_job_store::{self, AskJobStore};
 
 use crate::turn_continuation::{TurnContinuationScope, TurnOutcome, turn_continuation_store};
 
-use super::prompt_prep::{truncate_text_for_budget, MAX_REQUEST_PROMPT_CHARS};
+use super::prompt_prep::{MAX_REQUEST_PROMPT_CHARS, truncate_text_for_budget};
 use super::settings::{runtime_settings_for_interactive_turn, stage_routing_for_interactive_turn};
 use super::stream_sink::AgentStreamSink;
 use super::stream_sink::SharedAgentStreamSink;
@@ -294,7 +292,9 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         let assistant_turn = self
             .parts
             .lock()
-            .map(|mut parts| parts.finalize_worker_ack_turn(text.clone(), tool_names.clone(), work_id.clone()))
+            .map(|mut parts| {
+                parts.finalize_worker_ack_turn(text.clone(), tool_names.clone(), work_id.clone())
+            })
             .unwrap_or_else(|_| user_conversation_turn(text.clone()));
 
         let wire = interactive_turn_runtime::worker_ack_stream_event_with_tools(
@@ -324,7 +324,9 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         let assistant_turn = self
             .parts
             .lock()
-            .map(|mut parts| parts.finalize_worker_ack_turn(text.clone(), tool_names.clone(), work_id.clone()))
+            .map(|mut parts| {
+                parts.finalize_worker_ack_turn(text.clone(), tool_names.clone(), work_id.clone())
+            })
             .unwrap_or_else(|_| user_conversation_turn(text.clone()));
 
         let wire = interactive_turn_runtime::workshop_ack_stream_event_with_tools(
@@ -350,9 +352,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         let assistant_turn = self
             .parts
             .lock()
-            .map(|mut parts| {
-                parts.finalize_assistant_turn(body.clone(), tool_names.clone(), None)
-            })
+            .map(|mut parts| parts.finalize_assistant_turn(body.clone(), tool_names.clone(), None))
             .unwrap_or_else(|_| {
                 crate::turn_parts::conversation_turn_from_parts(
                     "assistant",
@@ -370,8 +370,11 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         // final_text when the local bubble is empty — e.g. after a scratch_reset cleared
         // the draft — so a turn that finished mid-reloop self-heals instead of going blank
         // until the user navigates away and back.
-        let final_event =
-            interactive_turn_runtime::final_stream_event_with_tools(&self.turn_id, &body, tool_names.clone());
+        let final_event = interactive_turn_runtime::final_stream_event_with_tools(
+            &self.turn_id,
+            &body,
+            tool_names.clone(),
+        );
         let event = super::turn_event::TurnEvent::final_response_from_turn(&assistant_turn);
         self.publish_tracked_with_journal(final_event, Some(event.clone()))
             .await;
@@ -505,7 +508,12 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         .await;
     }
 
-    async fn agent_pack_hold(&self, _turn_id: u64, fragments: Vec<String>, tool_names: Vec<String>) {
+    async fn agent_pack_hold(
+        &self,
+        _turn_id: u64,
+        fragments: Vec<String>,
+        tool_names: Vec<String>,
+    ) {
         if self.emit_cancelled_if_needed().await {
             return;
         }
@@ -527,7 +535,8 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             &failure,
         ))
         .await;
-        self.sync_ask_job_failed(failure.debug_message.clone()).await;
+        self.sync_ask_job_failed(failure.debug_message.clone())
+            .await;
 
         if let Some(delivery) = &self.delivery {
             delivery
@@ -538,9 +547,10 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
 
     async fn stage_persist_scratch(&self, scratch: serde_json::Value) {
         if let Ok(scratch) = serde_json::from_value::<TurnScratchpad>(scratch)
-            && let Ok(mut slot) = self.pending_slice_scratch.lock() {
-                *slot = Some(scratch);
-            }
+            && let Ok(mut slot) = self.pending_slice_scratch.lock()
+        {
+            *slot = Some(scratch);
+        }
     }
 
     async fn notice(&self, message: String) {
@@ -567,8 +577,10 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                 .await;
         }
         self.clear_streamed_markdown();
-        self.publish_tracked(interactive_turn_runtime::scratch_reset_stream_event(&self.turn_id))
-            .await;
+        self.publish_tracked(interactive_turn_runtime::scratch_reset_stream_event(
+            &self.turn_id,
+        ))
+        .await;
     }
 
     async fn reset_streamed_markdown(&self) {
@@ -724,82 +736,89 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             );
             if (tool_name == crate::ui_present_tools::COGNITION_UI_PRESENT
                 || tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE)
-                && let Some(ui_artifact) = super::tool_stream::ui_artifact_from_tool_output(&tool_output) {
-                    if tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE
-                        && tool_output
-                            .get("previous_artifact_id")
-                            .and_then(|value| value.as_str())
-                            .is_some_and(|value| !value.trim().is_empty())
-                    {
-                        let previous = tool_output
-                            .get("previous_artifact_id")
-                            .and_then(|value| value.as_str())
-                            .unwrap_or_default();
-                        parts.replace_attachment_ref(
-                            previous,
-                            &ui_artifact.artifact_id,
-                            &ui_artifact.mime,
-                            &ui_artifact.label,
-                            ui_artifact.byte_size,
-                            Some(ui_artifact.presentation.clone()),
-                            ui_artifact.height_px,
-                        );
-                    } else {
-                        parts.push_attachment_ref(
-                            &ui_artifact.artifact_id,
-                            &ui_artifact.mime,
-                            &ui_artifact.label,
-                            ui_artifact.byte_size,
-                            Some(ui_artifact.presentation.clone()),
-                            ui_artifact.height_px,
-                        );
-                    }
+                && let Some(ui_artifact) =
+                    super::tool_stream::ui_artifact_from_tool_output(&tool_output)
+            {
+                if tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE
+                    && tool_output
+                        .get("previous_artifact_id")
+                        .and_then(|value| value.as_str())
+                        .is_some_and(|value| !value.trim().is_empty())
+                {
+                    let previous = tool_output
+                        .get("previous_artifact_id")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or_default();
+                    parts.replace_attachment_ref(
+                        previous,
+                        &ui_artifact.artifact_id,
+                        &ui_artifact.mime,
+                        &ui_artifact.label,
+                        ui_artifact.byte_size,
+                        Some(ui_artifact.presentation.clone()),
+                        ui_artifact.height_px,
+                    );
+                } else {
+                    parts.push_attachment_ref(
+                        &ui_artifact.artifact_id,
+                        &ui_artifact.mime,
+                        &ui_artifact.label,
+                        ui_artifact.byte_size,
+                        Some(ui_artifact.presentation.clone()),
+                        ui_artifact.height_px,
+                    );
                 }
+            }
         }
         if tool_name == crate::ui_present_tools::COGNITION_UI_PRESENT
-            && let Some(ui_artifact) = super::tool_stream::ui_artifact_from_tool_output(&tool_output) {
+            && let Some(ui_artifact) =
+                super::tool_stream::ui_artifact_from_tool_output(&tool_output)
+        {
+            self.publish_tracked(interactive_turn_runtime::artifact_presented_stream_event(
+                &self.turn_id,
+                ui_artifact,
+            ))
+            .await;
+        }
+        if crate::ui_build_tools::is_ui_scene_stream_tool(&tool_name)
+            && let Some(scene) = super::tool_stream::scene_ops_from_tool_output(&tool_output)
+        {
+            self.publish_tracked(interactive_turn_runtime::scene_ops_stream_event(
+                &self.turn_id,
+                scene,
+            ))
+            .await;
+        }
+        if tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE
+            && let Some(ui_artifact) =
+                super::tool_stream::ui_artifact_from_tool_output(&tool_output)
+        {
+            if let Some(previous) = tool_output
+                .get("previous_artifact_id")
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                let root = tool_output
+                    .get("root_artifact_id")
+                    .and_then(|value| value.as_str())
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty());
+                self.publish_tracked(interactive_turn_runtime::artifact_updated_stream_event(
+                    &self.turn_id,
+                    previous,
+                    ui_artifact,
+                    root,
+                ))
+                .await;
+            } else {
                 self.publish_tracked(interactive_turn_runtime::artifact_presented_stream_event(
                     &self.turn_id,
                     ui_artifact,
                 ))
                 .await;
             }
-        if crate::ui_build_tools::is_ui_scene_stream_tool(&tool_name)
-            && let Some(scene) = super::tool_stream::scene_ops_from_tool_output(&tool_output) {
-                self.publish_tracked(interactive_turn_runtime::scene_ops_stream_event(
-                    &self.turn_id,
-                    scene,
-                ))
-                .await;
-            }
-        if tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE
-            && let Some(ui_artifact) = super::tool_stream::ui_artifact_from_tool_output(&tool_output) {
-                if let Some(previous) = tool_output
-                    .get("previous_artifact_id")
-                    .and_then(|value| value.as_str())
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                {
-                    let root = tool_output
-                        .get("root_artifact_id")
-                        .and_then(|value| value.as_str())
-                        .map(str::trim)
-                        .filter(|value| !value.is_empty());
-                    self.publish_tracked(interactive_turn_runtime::artifact_updated_stream_event(
-                        &self.turn_id,
-                        previous,
-                        ui_artifact,
-                        root,
-                    ))
-                    .await;
-                } else {
-                    self.publish_tracked(interactive_turn_runtime::artifact_presented_stream_event(
-                        &self.turn_id,
-                        ui_artifact,
-                    ))
-                    .await;
-                }
-            }
+        }
         self.publish_tracked(interactive_turn_runtime::tool_finished_stream_event(
             &self.turn_id,
             &tool_run_id,
@@ -845,7 +864,7 @@ pub async fn run_daemon_interactive_turn(
     request: InteractiveTurnRequest,
     backend: &str,
     agent_rt: &super::runtime::MedousaAgentRuntime,
-    forge: Arc<medousa_forge::forge::Forge>,
+    project_state: crate::daemon::state::AppState,
     stream: crate::daemon::turn_stream_registry::TurnStreamEntry,
     delivery: Option<InteractiveTurnDeliveryContext>,
     continuation_scope: Option<TurnContinuationScope>,
@@ -892,7 +911,7 @@ pub async fn run_daemon_interactive_turn(
             sink,
             continuation_scope,
             Some(interactive_sink),
-            Some(forge),
+            Some(project_state),
         )
         .await;
     }
@@ -910,7 +929,7 @@ pub async fn run_agent_turn(
     sink: SharedAgentStreamSink,
     continuation_scope: Option<TurnContinuationScope>,
     context_telemetry: Option<Arc<InteractiveTurnStreamSink>>,
-    forge: Option<Arc<medousa_forge::forge::Forge>>,
+    project_state: Option<crate::daemon::state::AppState>,
 ) {
     let previous_scope = agent_rt.turn_scope.read().await.clone();
     let turn_correlation_id = continuation_scope
@@ -957,15 +976,12 @@ pub async fn run_agent_turn(
         agent_rt,
         tracking_sink,
         context_telemetry,
-        forge,
+        project_state,
     )
     .await;
 
     if let Some(correlation_id) = turn_correlation_id {
-        let final_outcome = outcome
-            .read()
-            .await
-            .unwrap_or(TurnOutcome::Error);
+        let final_outcome = outcome.read().await.unwrap_or(TurnOutcome::Error);
         tracing::info!(
             target: "medousa::turn",
             turn_id = %turn_id,
@@ -989,9 +1005,8 @@ async fn run_agent_turn_inner(
     agent_rt: &super::runtime::MedousaAgentRuntime,
     sink: SharedAgentStreamSink,
     context_telemetry: Option<Arc<InteractiveTurnStreamSink>>,
-    forge: Option<Arc<medousa_forge::forge::Forge>>,
+    project_state: Option<crate::daemon::state::AppState>,
 ) {
-
     let session_id = request.session_id.trim().to_string();
     let prompt = request.prompt.trim().to_string();
     let host_context = request
@@ -1007,7 +1022,7 @@ async fn run_agent_turn_inner(
     }
 
     let mode_selection = crate::agent_mode_state::resolve_for_turn(&session_id, request.agent_mode);
-    let agent_mode = match super::modes::resolve_agent_mode(mode_selection.mode) {
+    let mut agent_mode = match super::modes::resolve_agent_mode(mode_selection.mode) {
         Ok(mode) => mode,
         Err(err) => {
             sink.agent_error(1, err.to_string()).await;
@@ -1023,6 +1038,7 @@ async fn run_agent_turn_inner(
     {
         resolved_code_context.work_id = binding.work_id;
     }
+    let forge = project_state.as_ref().map(|state| state.forge.clone());
     let (coder_authority, coder_registry, mode_context_appendix, tool_registry_override) =
         if agent_mode.id == crate::daemon_api::AgentModeId::Coder {
             let Some(forge) = forge else {
@@ -1034,69 +1050,89 @@ async fn run_agent_turn_inner(
                 return;
             };
             if resolved_code_context.work_id.is_none() {
-                sink.agent_error(
-                    1,
-                    "Coder mode requires an active Forge undertaking".to_string(),
-                )
-                .await;
-                return;
-            }
-            let entry = match super::coder_mode::compile_coder_entry(&forge, &resolved_code_context)
-            {
-                Ok(entry) => Arc::new(entry),
-                Err(err) => {
-                    sink.agent_error(1, err.to_string()).await;
+                let Some(state) = project_state.clone() else {
+                    sink.agent_error(
+                        1,
+                        "Coder project setup requires daemon-hosted Forge authority".to_string(),
+                    )
+                    .await;
+                    return;
+                };
+                let registry = match super::coder_setup_tools::CoderSetupToolRegistry::new(
+                    agent_rt.tool_registry.clone(),
+                    state,
+                    session_id.clone(),
+                ) {
+                    Ok(registry) => Arc::new(registry),
+                    Err(err) => {
+                        sink.agent_error(1, format!("cannot prepare Coder project setup: {err}"))
+                            .await;
+                        return;
+                    }
+                };
+                let registry_override: Arc<
+                    dyn stasis::application::orchestration::tool_registry::ToolRegistry,
+                > = registry;
+                (None, None, None, Some(registry_override))
+            } else {
+                agent_mode.coder_phase = Some(super::modes::CoderRuntimePhase::Work);
+                let entry =
+                    match super::coder_mode::compile_coder_entry(&forge, &resolved_code_context) {
+                        Ok(entry) => Arc::new(entry),
+                        Err(err) => {
+                            sink.agent_error(1, err.to_string()).await;
+                            return;
+                        }
+                    };
+                if let Err(err) =
+                    crate::agent_mode_state::set_session_code_binding(&session_id, &entry.work_id)
+                {
+                    sink.agent_error(
+                        1,
+                        format!("cannot preserve Coder undertaking binding: {err}"),
+                    )
+                    .await;
                     return;
                 }
-            };
-            if let Err(err) =
-                crate::agent_mode_state::set_session_code_binding(&session_id, &entry.work_id)
-            {
-                sink.agent_error(
-                    1,
-                    format!("cannot preserve Coder undertaking binding: {err}"),
+                let work_id = medousa_forge::model::WorkId::from(entry.work_id.clone());
+                let executor = medousa_forge::model::ExecutorDescriptor {
+                    kind: "medousa-coder".into(),
+                    detail: serde_json::json!({
+                        "session_id": session_id.clone(),
+                        "turn_id": turn_id,
+                        "contract_revision": agent_mode.contract_revision,
+                    }),
+                };
+                let (item, lease) = match forge.begin_attempt(
+                    &work_id,
+                    executor,
+                    Some(std::process::id()),
+                    &medousa_forge::forge::Forge::system_actor(),
+                ) {
+                    Ok(value) => value,
+                    Err(err) => {
+                        sink.agent_error(1, format!("cannot acquire Coder authority: {err}"))
+                            .await;
+                        return;
+                    }
+                };
+                let authority = Arc::new(super::coder_tools::CoderTurnLease::new(forge, lease));
+                let registry = Arc::new(super::coder_tools::CoderBoundToolRegistry::new(
+                    agent_rt.tool_registry.clone(),
+                    &authority,
+                    entry.clone(),
+                    item.policy,
+                ));
+                let registry_override: Arc<
+                    dyn stasis::application::orchestration::tool_registry::ToolRegistry,
+                > = registry.clone();
+                (
+                    Some(authority),
+                    Some(registry),
+                    Some(entry.prompt_appendix()),
+                    Some(registry_override),
                 )
-                .await;
-                return;
             }
-            let work_id = medousa_forge::model::WorkId::from(entry.work_id.clone());
-            let executor = medousa_forge::model::ExecutorDescriptor {
-                kind: "medousa-coder".into(),
-                detail: serde_json::json!({
-                    "session_id": session_id.clone(),
-                    "turn_id": turn_id,
-                    "contract_revision": agent_mode.contract_revision,
-                }),
-            };
-            let (item, lease) = match forge.begin_attempt(
-                &work_id,
-                executor,
-                Some(std::process::id()),
-                &medousa_forge::forge::Forge::system_actor(),
-            ) {
-                Ok(value) => value,
-                Err(err) => {
-                    sink.agent_error(1, format!("cannot acquire Coder authority: {err}"))
-                        .await;
-                    return;
-                }
-            };
-            let authority = Arc::new(super::coder_tools::CoderTurnLease::new(forge, lease));
-            let registry = Arc::new(super::coder_tools::CoderBoundToolRegistry::new(
-                agent_rt.tool_registry.clone(),
-                &authority,
-                entry.clone(),
-                item.policy,
-            ));
-            let registry_override: Arc<
-                dyn stasis::application::orchestration::tool_registry::ToolRegistry,
-            > = registry.clone();
-            (
-                Some(authority),
-                Some(registry),
-                Some(entry.prompt_appendix()),
-                Some(registry_override),
-            )
         } else {
             (None, None, None, None)
         };
@@ -1109,11 +1145,10 @@ async fn run_agent_turn_inner(
     ))
     .await;
 
-    if has_media
-        && let Err(err) = validate_media_refs(&session_id, &request.media_refs) {
-            sink.agent_error(1, err).await;
-            return;
-        }
+    if has_media && let Err(err) = validate_media_refs(&session_id, &request.media_refs) {
+        sink.agent_error(1, err).await;
+        return;
+    }
 
     let saved_defaults = crate::session::load_tui_defaults();
     let settings = runtime_settings_for_interactive_turn(backend, &request);
@@ -1165,9 +1200,9 @@ async fn run_agent_turn_inner(
     if has_vision_media
         && let Some(notice) =
             vision_plan.stream_notice(&vision_target.provider, &vision_target.model)
-        {
-            sink.notice(notice).await;
-        }
+    {
+        sink.notice(notice).await;
+    }
 
     let stage_routing = stage_routing_for_interactive_turn(&request);
     let final_route = stage_routing.get("final_response").cloned();
@@ -1184,10 +1219,9 @@ async fn run_agent_turn_inner(
         .await;
     }
 
-    let speaker_profile_id =
-        crate::user_profiles::resolve_workshop_identity_user_id_for_turn(
-            request.identity_user_id.as_deref(),
-        );
+    let speaker_profile_id = crate::user_profiles::resolve_workshop_identity_user_id_for_turn(
+        request.identity_user_id.as_deref(),
+    );
 
     let mut conversation = load_history(&session_id);
     if request.persist_user_turn {
@@ -1224,13 +1258,17 @@ async fn run_agent_turn_inner(
             manuscript_id.and_then(|id| {
                 crate::identity_manuscript::build_manuscript_context(id)
                     .ok()
-                    .map(|ctx| crate::identity_manuscript::scheduled_tool_allowlist_for_manuscript(&ctx))
+                    .map(|ctx| {
+                        crate::identity_manuscript::scheduled_tool_allowlist_for_manuscript(&ctx)
+                    })
             })
         });
 
     if let Some(manuscript_id) = manuscript_id {
-        sink.notice(format!("◈ manuscript_load id={manuscript_id} lane=scheduled"))
-            .await;
+        sink.notice(format!(
+            "◈ manuscript_load id={manuscript_id} lane=scheduled"
+        ))
+        .await;
         if let Some(allowlist) = scheduled_tool_allowlist.as_ref() {
             sink.notice(format!(
                 "◈ manuscript_tools allowed={} lane=scheduled",
@@ -1311,7 +1349,8 @@ async fn run_agent_turn_inner(
         sink.notice(note.clone()).await;
     }
 
-    let resolved_prompt = truncate_text_for_budget(&prepared.resolved_prompt, MAX_REQUEST_PROMPT_CHARS);
+    let resolved_prompt =
+        truncate_text_for_budget(&prepared.resolved_prompt, MAX_REQUEST_PROMPT_CHARS);
     let resolved_prompt_chars = resolved_prompt.chars().count();
     let assembled = turn_orchestrator::assemble_local_turn(AssembleLocalTurnParams {
         session_id: &session_id,
@@ -1397,8 +1436,7 @@ async fn run_agent_turn_inner(
             context_limit_tokens,
         },
     );
-    let context_summary =
-        crate::agent_runtime::context_usage::operator_summary(&context_report);
+    let context_summary = crate::agent_runtime::context_usage::operator_summary(&context_report);
     tracing::info!(
         target: "medousa::context_usage",
         turn_id = %turn_id,
@@ -1410,17 +1448,17 @@ async fn run_agent_turn_inner(
         turn_id,
         &context_report,
         &context_summary,
-    )
-        && let Some(stream_sink) = context_telemetry {
-            if let Some(cache) = &stream_sink.session_hooks.context_usage_by_session {
-                let session_id = stream_sink.session_id.clone();
-                cache
-                    .write()
-                    .await
-                    .insert(session_id, context_report.clone());
-            }
-            stream_sink.publish_tracked(Ok(event)).await;
+    ) && let Some(stream_sink) = context_telemetry
+    {
+        if let Some(cache) = &stream_sink.session_hooks.context_usage_by_session {
+            let session_id = stream_sink.session_id.clone();
+            cache
+                .write()
+                .await
+                .insert(session_id, context_report.clone());
         }
+        stream_sink.publish_tracked(Ok(event)).await;
+    }
 
     turn_orchestrator::execute_local_turn(sink, assembled.execution).await;
     if let Some(registry) = coder_registry {
@@ -1475,19 +1513,27 @@ impl AgentStreamSink for TurnOutcomeTrackingSink {
 
     async fn agent_needs_input(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
         *self.outcome.write().await = Some(TurnOutcome::Success);
-        self.inner.agent_needs_input(turn_id, text, tool_names).await;
+        self.inner
+            .agent_needs_input(turn_id, text, tool_names)
+            .await;
     }
 
     async fn agent_final_pending(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
-        self.inner.agent_final_pending(turn_id, text, tool_names).await;
+        self.inner
+            .agent_final_pending(turn_id, text, tool_names)
+            .await;
     }
 
     async fn agent_turn_progress(&self, turn_id: u64, message: String, tool_names: Vec<String>) {
-        self.inner.agent_turn_progress(turn_id, message, tool_names).await;
+        self.inner
+            .agent_turn_progress(turn_id, message, tool_names)
+            .await;
     }
 
     async fn agent_pack_hold(&self, turn_id: u64, fragments: Vec<String>, tool_names: Vec<String>) {
-        self.inner.agent_pack_hold(turn_id, fragments, tool_names).await;
+        self.inner
+            .agent_pack_hold(turn_id, fragments, tool_names)
+            .await;
     }
 
     async fn agent_turn_checkpoint(&self, turn_id: u64, message: String, tool_names: Vec<String>) {

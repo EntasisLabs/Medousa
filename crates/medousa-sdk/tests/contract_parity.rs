@@ -36,6 +36,7 @@ pub const PARITY_ROUTES: &[(&str, &str, &str, &str)] = &[
     ("sessions", "code_binding", "GET", "/v1/sessions/{id}/code-binding"),
     ("sessions", "set_code_binding", "PUT", "/v1/sessions/{id}/code-binding"),
     ("sessions", "clear_code_binding", "DELETE", "/v1/sessions/{id}/code-binding"),
+    ("sessions", "start_code_project", "POST", "/v1/sessions/{id}/code-project"),
     ("sessions", "append_turn", "POST", "/v1/sessions/{id}/turns"),
     ("sessions", "delete", "DELETE", "/v1/sessions/{id}"),
     ("sessions", "list_turns", "GET", "/v1/sessions/{id}/turns"),

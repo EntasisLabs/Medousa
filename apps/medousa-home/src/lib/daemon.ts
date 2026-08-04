@@ -23,6 +23,8 @@ import type {
   AgentModeTransitionPolicy,
   SessionAgentModeResponse,
   SessionCodeBindingResponse,
+  SessionCodeProjectResponse,
+  StartSessionCodeProjectRequest,
 } from "$lib/types/generated/daemon_api";
 import type { ArtifactCommandResponse } from "$lib/types/artifact";
 import type {
@@ -312,6 +314,16 @@ export async function clearSessionCodeBinding(
   sessionId: string,
 ): Promise<SessionCodeBindingResponse> {
   return invoke<SessionCodeBindingResponse>("session_clear_code_binding", { sessionId });
+}
+
+export async function startSessionCodeProject(
+  sessionId: string,
+  request: StartSessionCodeProjectRequest,
+): Promise<SessionCodeProjectResponse> {
+  return invoke<SessionCodeProjectResponse>("session_start_code_project", {
+    sessionId,
+    request: invokePlain(request),
+  });
 }
 
 export async function deleteSession(

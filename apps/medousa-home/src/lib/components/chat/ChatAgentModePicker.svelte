@@ -4,7 +4,6 @@
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import {
     getSessionAgentMode,
-    getSessionCodeBinding,
     listAgentModes,
     setSessionAgentMode,
   } from "$lib/daemon";
@@ -16,10 +15,9 @@
   interface Props {
     sessionId: string;
     disabled?: boolean;
-    coderContextAvailable?: boolean;
   }
 
-  let { sessionId, disabled = false, coderContextAvailable = false }: Props = $props();
+  let { sessionId, disabled = false }: Props = $props();
 
   const FALLBACK_MODES: AgentModeAvailability[] = [
     {
@@ -31,8 +29,8 @@
     {
       mode: "coder",
       label: "Coder",
-      available: false,
-      unavailable_reason: "Coder readiness could not be verified",
+      available: true,
+      contract_revision: "coder-v2",
     },
   ];
 
@@ -42,7 +40,6 @@
   let loading = $state(false);
   let error = $state<string | null>(null);
   let loadRevision = 0;
-  let daemonCodeBindingAvailable = $state(false);
   let triggerEl = $state<HTMLButtonElement | null>(null);
   let menuEl = $state<HTMLDivElement | null>(null);
 
@@ -50,16 +47,13 @@
   const label = $derived(active?.label ?? "General");
 
   function isAvailable(mode: AgentModeAvailability): boolean {
-    return mode.available && (
-      mode.mode !== "coder" || coderContextAvailable || daemonCodeBindingAvailable
-    );
+    return mode.available;
   }
 
   $effect(() => {
     const nextSessionId = sessionId.trim();
     const revision = ++loadRevision;
     value = "general";
-    daemonCodeBindingAvailable = false;
     error = null;
     if (!nextSessionId) return;
     void refresh(nextSessionId, revision);
@@ -78,15 +72,13 @@
 
   async function refresh(nextSessionId: string, revision: number) {
     try {
-      const [registry, state, binding] = await Promise.all([
+      const [registry, state] = await Promise.all([
         listAgentModes(),
         getSessionAgentMode(nextSessionId),
-        getSessionCodeBinding(nextSessionId),
       ]);
       if (revision !== loadRevision) return;
       modes = registry.modes.length > 0 ? registry.modes : FALLBACK_MODES;
       value = state.effective_mode;
-      daemonCodeBindingAvailable = Boolean(binding.work_id);
     } catch (err) {
       if (revision !== loadRevision) return;
       modes = FALLBACK_MODES;
@@ -104,6 +96,9 @@
     try {
       const state = await setSessionAgentMode(sessionId, mode.mode);
       value = state.effective_mode;
+      window.dispatchEvent(new CustomEvent("medousa-agent-mode-changed", {
+        detail: { sessionId: sessionId.trim() },
+      }));
       open = false;
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);

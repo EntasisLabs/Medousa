@@ -218,7 +218,7 @@ pub async fn spawn_turn_ticket(
     };
 
     let turn_id_for_task = turn_id.clone();
-    let forge = state.forge.clone();
+    let project_state = state.clone();
     let envelope = TurnEnvelope::new(turn_id_for_task.clone(), Principal::operator())
         .with_correlation_id(turn_id_for_task.clone());
     let lifecycle_ports = TurnLifecyclePorts {
@@ -234,7 +234,7 @@ pub async fn spawn_turn_ticket(
                 interactive_request,
                 &backend,
                 agent_runtime.as_ref(),
-                forge,
+                project_state,
                 stream_entry,
                 Some(delivery),
                 Some(continuation_scope),

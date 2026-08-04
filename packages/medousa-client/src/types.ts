@@ -12,6 +12,8 @@ import type {
   HostTurnContext,
   SessionAgentModeResponse,
   SessionCodeBindingResponse,
+  SessionCodeProjectResponse,
+  StartSessionCodeProjectRequest,
 } from "./generated/daemon_api.js";
 
 export type {
@@ -28,6 +30,8 @@ export type {
   CodeIntentContext,
   SessionAgentModeResponse,
   SessionCodeBindingResponse,
+  SessionCodeProjectResponse,
+  StartSessionCodeProjectRequest,
 };
 
 export type MedousaSurface = "vscode" | "neovim" | "obsidian" | "browser";

@@ -49,6 +49,9 @@ fn main() {
     export_type!(schemas, DecideAgentModeProposalRequest, "DecideAgentModeProposalRequest");
     export_type!(schemas, SessionCodeBindingResponse, "SessionCodeBindingResponse");
     export_type!(schemas, SetSessionCodeBindingRequest, "SetSessionCodeBindingRequest");
+    export_type!(schemas, CodeProjectSource, "CodeProjectSource");
+    export_type!(schemas, StartSessionCodeProjectRequest, "StartSessionCodeProjectRequest");
+    export_type!(schemas, SessionCodeProjectResponse, "SessionCodeProjectResponse");
     export_type!(schemas, SetSessionAgentModeRequest, "SetSessionAgentModeRequest");
     export_type!(schemas, SessionAgentModeResponse, "SessionAgentModeResponse");
     export_type!(schemas, AgentModeListResponse, "AgentModeListResponse");

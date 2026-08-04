@@ -4,14 +4,17 @@
     ChevronDown,
     CircleDot,
     ExternalLink,
+    FolderPlus,
     GitPullRequestArrow,
     Link2Off,
     SquareTerminal,
   } from "@lucide/svelte";
   import {
     clearSessionCodeBinding,
+    getSessionAgentMode,
     getSessionCodeBinding,
-    setSessionAgentMode,
+    setSessionCodeBinding,
+    startSessionCodeProject,
   } from "$lib/daemon";
   import {
     getUndertaking,
@@ -19,6 +22,7 @@
     humanPhaseGuidance,
     humanPhaseLabel,
     humanizeForgeMessage,
+    type ItemProjection,
   } from "$lib/forge";
   import { undertakings } from "$lib/stores/undertakings.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
@@ -28,15 +32,33 @@
     startTrackedAgent,
   } from "$lib/utils/undertakingWorkspace";
 
-  const active = $derived(undertakings.active);
+  interface Props {
+    chatOnly?: boolean;
+  }
+
+  let { chatOnly = false }: Props = $props();
+  const active = $derived(
+    chatOnly && !undertakings.active?.boundChatSessionIds.includes(chat.sessionId)
+      ? null
+      : undertakings.active,
+  );
   let busy = $state(false);
   let error = $state<string | null>(null);
+  let activeMode = $state<"general" | "coder">("general");
+  let chooserOpen = $state(false);
+  let creating = $state(false);
+  let newTitle = $state("");
+  let newBrief = $state("");
 
   async function hydrateSharedBinding(sessionId: string) {
     if (!sessionId) return;
     try {
-      const binding = await getSessionCodeBinding(sessionId);
+      const [binding, mode] = await Promise.all([
+        getSessionCodeBinding(sessionId),
+        getSessionAgentMode(sessionId),
+      ]);
       if (chat.sessionId !== sessionId) return;
+      activeMode = mode.effective_mode;
       if (!binding.work_id) {
         undertakings.detachChat(sessionId);
         return;
@@ -55,10 +77,29 @@
   }
 
   $effect(() => {
+    if (!chatOnly) return;
     const sessionId = chat.sessionId;
+    activeMode = "general";
+    chooserOpen = false;
+    creating = false;
     void hydrateSharedBinding(sessionId);
     const interval = window.setInterval(() => void hydrateSharedBinding(sessionId), 2_000);
     return () => window.clearInterval(interval);
+  });
+
+  $effect(() => {
+    if (!chatOnly) return;
+    const open = () => {
+      chooserOpen = true;
+      void undertakings.refreshList();
+    };
+    window.addEventListener("medousa-open-code-project-chooser", open);
+    const refreshMode = () => void hydrateSharedBinding(chat.sessionId);
+    window.addEventListener("medousa-agent-mode-changed", refreshMode);
+    return () => {
+      window.removeEventListener("medousa-open-code-project-chooser", open);
+      window.removeEventListener("medousa-agent-mode-changed", refreshMode);
+    };
   });
 
   function goDetail() {
@@ -86,17 +127,57 @@
     if (chat.sessionId) {
       undertakings.detachChat(chat.sessionId);
       try {
-        await setSessionAgentMode(chat.sessionId, "general");
-      } catch {
-        // Local detachment remains available while a workshop reconnects.
-      }
-      try {
         await clearSessionCodeBinding(chat.sessionId);
       } catch {
         // Clearing the binding is independent from changing the active mode.
       }
     }
     undertakings.clearActive();
+  }
+
+  async function openChooser() {
+    chooserOpen = !chooserOpen;
+    if (chooserOpen) await undertakings.refreshList();
+  }
+
+  async function bindProject(item: ItemProjection) {
+    if (!chat.sessionId || busy) return;
+    busy = true;
+    error = null;
+    try {
+      await setSessionCodeBinding(chat.sessionId, item.id);
+      undertakings.setActiveFromItem(item);
+      undertakings.bindChat(chat.sessionId);
+      chooserOpen = false;
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function createProject() {
+    if (!chat.sessionId || !newTitle.trim() || busy) return;
+    busy = true;
+    error = null;
+    try {
+      const created = await startSessionCodeProject(chat.sessionId, {
+        title: newTitle.trim(),
+        brief: newBrief.trim() || newTitle.trim(),
+        source: "blank",
+      });
+      const item = await getUndertaking(created.work_id);
+      undertakings.setActiveFromItem(item);
+      undertakings.bindChat(chat.sessionId);
+      newTitle = "";
+      newBrief = "";
+      creating = false;
+      chooserOpen = false;
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      busy = false;
+    }
   }
 </script>
 
@@ -188,6 +269,61 @@
       {/if}
     </div>
   </details>
+{:else if activeMode === "coder"}
+  <div class="relative max-w-full">
+    <button
+      type="button"
+      class="flex max-w-full items-center gap-1.5 rounded-full border border-primary-500/45 bg-primary-950/55 px-2.5 py-1 text-[11px] text-primary-100 transition hover:border-primary-400/70"
+      onclick={() => void openChooser()}
+    >
+      <FolderPlus size={12} aria-hidden="true" />
+      <span>Choose or create project</span>
+      <ChevronDown size={12} class={chooserOpen ? "rotate-180" : ""} aria-hidden="true" />
+    </button>
+    {#if chooserOpen}
+      <div class="absolute left-0 top-full z-50 mt-1.5 w-72 rounded-xl border border-surface-500/40 bg-surface-900/95 p-2 text-xs shadow-2xl backdrop-blur">
+        <p class="px-1.5 pb-1.5 text-[10px] font-medium uppercase tracking-wide text-surface-500">Continue a project</p>
+        {#each undertakings.items.filter((item) => item.state === "ready" && item.environment?.worktree).slice(0, 6) as item (item.id)}
+          <button type="button" class="context-action" disabled={busy} onclick={() => void bindProject(item)}>
+            <CircleDot size={13} />
+            <span class="truncate">{item.title}</span>
+          </button>
+        {:else}
+          <p class="px-1.5 py-2 text-surface-500">No ready projects yet.</p>
+        {/each}
+        <div class="my-1 border-t border-surface-500/25"></div>
+        {#if creating}
+          <form class="space-y-1.5 p-1" onsubmit={(event) => { event.preventDefault(); void createProject(); }}>
+            <input class="w-full rounded-md border border-surface-500/40 bg-surface-950 px-2 py-1.5 text-surface-100" placeholder="Project name" bind:value={newTitle} />
+            <textarea class="w-full resize-none rounded-md border border-surface-500/40 bg-surface-950 px-2 py-1.5 text-surface-100" rows="2" placeholder="What should Medousa build?" bind:value={newBrief}></textarea>
+            <div class="flex justify-end gap-1.5">
+              <button type="button" class="btn btn-sm variant-ghost-surface" onclick={() => (creating = false)}>Cancel</button>
+              <button type="submit" class="btn btn-sm variant-filled-primary" disabled={busy || !newTitle.trim()}>Create and bind</button>
+            </div>
+          </form>
+        {:else}
+          <button type="button" class="context-action" onclick={() => (creating = true)}>
+            <FolderPlus size={14} />
+            Create a new project
+          </button>
+          <button
+            type="button"
+            class="context-action text-primary-200"
+            onclick={() => {
+              chooserOpen = false;
+              window.dispatchEvent(new CustomEvent("medousa-code-project-agent-setup"));
+            }}
+          >
+            <Bot size={14} />
+            Let Medousa choose or create it
+          </button>
+        {/if}
+        {#if error}
+          <p class="m-1.5 rounded-md bg-amber-950/60 px-2 py-1.5 text-[10px] text-amber-100">{humanizeForgeMessage(error)}</p>
+        {/if}
+      </div>
+    {/if}
+  </div>
 {/if}
 
 <style>

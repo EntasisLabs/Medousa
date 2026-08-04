@@ -1316,6 +1316,43 @@ pub struct SetSessionCodeBindingRequest {
     pub work_id: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum CodeProjectSource {
+    #[default]
+    Blank,
+    Repository,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct StartSessionCodeProjectRequest {
+    pub title: String,
+    pub brief: String,
+    #[serde(default)]
+    pub source: CodeProjectSource,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_ref: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct SessionCodeProjectResponse {
+    pub session_id: String,
+    pub work_id: String,
+    pub title: String,
+    pub brief: String,
+    pub state: String,
+    pub human_phase: String,
+    pub repo_path: String,
+    pub worktree: String,
+    pub base_ref: String,
+    pub created_repository: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct DecideAgentModeProposalRequest {

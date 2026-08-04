@@ -30,6 +30,25 @@ const CODER_SYSTEM_OVERLAY: &str = r#"
 } ⟩
 ⍉⟨ ⏣0{ rho: 0.98, kappa: 0.98, psi: 2.94, compression_avec: { stability: 0.92, friction: 0.18, logic: 0.98, autonomy: 0.86, psi: 2.94 } } ⟩"#;
 
+const CODER_SETUP_SYSTEM_OVERLAY: &str = r#"
+⊕⟨ ⏣0{ trigger: seed, response_format: temporal_node, origin_session: "medousa-coder-setup-policy", compression_depth: 1, parent_node: ref:⏣0, prime: { attractor_config: { stability: 0.94, friction: 0.16, logic: 0.98, autonomy: 0.82 }, context_summary: "Coder setup policy: establish an explicit Forge project boundary before engineering execution begins.", relevant_tier: raw, retrieval_budget: 10 } } ⟩
+⦿⟨ ⏣0{ timestamp: "2026-08-03T00:00:00Z", tier: raw, session_id: "medousa-coder-setup", schema_version: "sttp-1.0", user_avec: { stability: 0.92, friction: 0.18, logic: 0.96, autonomy: 0.82, psi: 2.88 }, model_avec: { stability: 0.94, friction: 0.16, logic: 0.98, autonomy: 0.82, psi: 2.90 } } ⟩
+◈⟨ ⏣0{
+    role(.99): "Coder mode setup — same Medousa collaborator, preparing one explicit governed project before repository mutation or command execution.",
+    setup_world_model(.99): {
+        discover(.99): "Use cognition_project_list when the principal wants to continue existing work.",
+        bind(.99): "Use cognition_project_bind only for the project the principal selected or named unambiguously.",
+        create(.99): "Use cognition_project_create only when the principal explicitly asks to create a project; infer a concise title and concrete brief from their request.",
+        clarify(.98): "Ask one sharp question when project identity, repository path, or creation intent is materially ambiguous."
+    },
+    authority_model(.99): {
+        no_workspace_authority(.99): "No Forge worktree or coding lease exists in this turn; do not claim files were inspected, changed, or validated.",
+        transition_boundary(.99): "A successful bind or create applies full Coder tools on the next turn so the immutable live-turn contract never drifts.",
+        explicit_creation(.99): "Project creation requires an explicit principal request; inferred coding intent alone is not filesystem-creation authority."
+    }
+} ⟩
+⍉⟨ ⏣0{ rho: 0.99, kappa: 0.98, psi: 2.90, compression_avec: { stability: 0.94, friction: 0.16, logic: 0.98, autonomy: 0.82, psi: 2.90 } } ⟩"#;
+
 /// Versioned, immutable mode contract resolved at the beginning of a turn.
 ///
 /// Later slices will add compiled context, tool-surface, lane, and completion
@@ -40,6 +59,13 @@ pub struct ResolvedAgentMode {
     pub id: AgentModeId,
     pub contract_revision: &'static str,
     pub execution_lane: ModeExecutionLane,
+    pub coder_phase: Option<CoderRuntimePhase>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoderRuntimePhase {
+    Setup,
+    Work,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,11 +105,13 @@ pub fn resolve_agent_mode(
             id: AgentModeId::General,
             contract_revision: "general-v1",
             execution_lane: ModeExecutionLane::HostOrchestrated,
+            coder_phase: None,
         }),
         AgentModeId::Coder => Ok(ResolvedAgentMode {
             id: AgentModeId::Coder,
-            contract_revision: "coder-v1",
+            contract_revision: "coder-v2",
             execution_lane: ModeExecutionLane::ForegroundWorkshop,
+            coder_phase: Some(CoderRuntimePhase::Setup),
         }),
     }
 }
@@ -102,7 +130,7 @@ pub fn list_agent_modes() -> AgentModeListResponse {
                 mode: AgentModeId::Coder,
                 label: "Coder".to_string(),
                 available: true,
-                contract_revision: Some("coder-v1".to_string()),
+                contract_revision: Some("coder-v2".to_string()),
                 unavailable_reason: None,
             },
         ],
@@ -116,7 +144,13 @@ pub fn list_agent_modes() -> AgentModeListResponse {
 pub fn system_prompt_for_mode<'a>(base: &'a str, mode: &ResolvedAgentMode) -> Cow<'a, str> {
     match mode.id {
         AgentModeId::General => Cow::Borrowed(base),
-        AgentModeId::Coder => Cow::Owned(format!("{base}{CODER_SYSTEM_OVERLAY}")),
+        AgentModeId::Coder => Cow::Owned(format!(
+            "{base}{}",
+            match mode.coder_phase {
+                Some(CoderRuntimePhase::Work) => CODER_SYSTEM_OVERLAY,
+                _ => CODER_SETUP_SYSTEM_OVERLAY,
+            }
+        )),
     }
 }
 
@@ -152,8 +186,9 @@ mod tests {
     #[test]
     fn coder_resolves_to_foreground_contract() {
         let mode = resolve_agent_mode(AgentModeId::Coder).expect("coder mode");
-        assert_eq!(mode.contract_revision, "coder-v1");
+        assert_eq!(mode.contract_revision, "coder-v2");
         assert_eq!(mode.execution_lane, ModeExecutionLane::ForegroundWorkshop);
+        assert_eq!(mode.coder_phase, Some(CoderRuntimePhase::Setup));
     }
 
     #[test]
@@ -180,8 +215,9 @@ mod tests {
     fn coder_overlay_encodes_the_engineering_world_model() {
         let mode = ResolvedAgentMode {
             id: AgentModeId::Coder,
-            contract_revision: "coder-v1",
+            contract_revision: "coder-v2",
             execution_lane: ModeExecutionLane::ForegroundWorkshop,
+            coder_phase: Some(CoderRuntimePhase::Work),
         };
         let prompt = system_prompt_for_mode("core", &mode);
         assert!(prompt.contains("engineering_world_model(.99)"));
@@ -194,5 +230,7 @@ mod tests {
         crate::agent_runtime::sttp::validate_canonical_sttp_node(CODER_SYSTEM_OVERLAY)
             .expect("Coder overlay must remain canonical STTP");
         assert!(CODER_SYSTEM_OVERLAY.contains("parent_node: ref:⏣0"));
+        crate::agent_runtime::sttp::validate_canonical_sttp_node(CODER_SETUP_SYSTEM_OVERLAY)
+            .expect("Coder setup overlay must remain canonical STTP");
     }
 }

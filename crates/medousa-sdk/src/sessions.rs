@@ -2,8 +2,9 @@
 use medousa_types::{
     ActiveSessionTurnResponse, AgentModeProposalListResponse, AgentModeProposalResponse,
     AgentModeScope, CancelActiveSessionTurnResponse, DecideAgentModeProposalRequest,
-    SessionCodeBindingResponse, SetSessionCodeBindingRequest,
-    SessionAgentModeResponse, SetSessionAgentModeRequest, SessionAppendTurnRequest,
+    SessionAgentModeResponse, SessionCodeBindingResponse, SessionCodeProjectResponse,
+    SetSessionAgentModeRequest, SetSessionCodeBindingRequest, StartSessionCodeProjectRequest,
+    SessionAppendTurnRequest,
     SessionAppendTurnResponse, SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListResponse,
     SessionHistoryResponse, SessionSetDisplayNameRequest, SessionSetDisplayNameResponse,
     SessionActiveTurnsResponse,
@@ -180,6 +181,22 @@ impl SessionsApi<'_> {
             .client
             .transport()
             .delete_json(self.client.base_url(), &path)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn start_code_project(
+        &self,
+        session_id: &str,
+        request: &StartSessionCodeProjectRequest,
+    ) -> Result<SessionCodeProjectResponse, crate::SdkError> {
+        let body = serde_json::to_value(request)
+            .map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let path = format!("/v1/sessions/{session_id}/code-project");
+        let value = self
+            .client
+            .transport()
+            .post_json(self.client.base_url(), &path, body)
             .await?;
         decode(value).await
     }

@@ -2,8 +2,8 @@
 use medousa_types::{
     ActiveSessionTurnResponse, AgentModeListResponse, AgentModeProposalListResponse,
     AgentModeProposalResponse, AgentModeScope, AgentModeTransitionPolicy, ArchiveAskJobRequest,
-    ArchiveAskJobResponse, SessionCodeBindingResponse, SetSessionCodeBindingRequest,
-    ArtifactCommandRequest, ArtifactCommandResponse, ArtifactDeleteRequest, ArtifactDeleteResponse,
+    ArchiveAskJobResponse, ArtifactCommandRequest, ArtifactCommandResponse, ArtifactDeleteRequest,
+    ArtifactDeleteResponse,
     ArtifactFetchRequest, ArtifactFetchResponse, ArtifactListUiRequest, ArtifactListUiResponse,
     ArtifactWriteRequest, ArtifactWriteResponse, AskJobCompleteActionsRequest,
     AskJobCompleteActionsResponse, CancelActiveSessionTurnResponse, CapabilityListResponse,
@@ -16,8 +16,10 @@ use medousa_types::{
     RecurringRunsQuery, RecurringRunsResponse, RegisterRecurringPromptRequest,
     RegisterRecurringResponse, RuntimeConfigCommandRequest, RuntimeConfigCommandResponse,
     SessionActiveTurnsResponse, SessionAppendTurnRequest, SessionAppendTurnResponse,
-    SessionAgentModeResponse, SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListResponse,
-    SessionHistoryResponse, SessionSetDisplayNameRequest, SessionSetDisplayNameResponse,
+    SessionAgentModeResponse, SessionCodeBindingResponse, SessionCodeProjectResponse,
+    SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListResponse, SessionHistoryResponse,
+    SessionSetDisplayNameRequest, SessionSetDisplayNameResponse, SetSessionCodeBindingRequest,
+    StartSessionCodeProjectRequest,
     DecideAgentModeProposalRequest, SetSessionAgentModeRequest, StageRouteCommandRequest,
     StageRouteCommandResponse, TurnBudgetApproveRequest, TurnBudgetDenyRequest,
     TurnBudgetRequestListResponse, TurnBudgetRequestRecord, TurnBudgetRequestResponse,
@@ -525,6 +527,17 @@ impl BlockingSessionsApi<'_> {
     ) -> Result<SessionCodeBindingResponse, SdkError> {
         self.http
             .delete(&format!("/v1/sessions/{session_id}/code-binding"))
+    }
+
+    pub fn start_code_project(
+        &self,
+        session_id: &str,
+        request: &StartSessionCodeProjectRequest,
+    ) -> Result<SessionCodeProjectResponse, SdkError> {
+        self.http.post(
+            &format!("/v1/sessions/{session_id}/code-project"),
+            request,
+        )
     }
 
     pub fn append_turn(

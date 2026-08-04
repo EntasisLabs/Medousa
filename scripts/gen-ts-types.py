@@ -26,6 +26,8 @@ EXPORTED_TYPES = [
     "AgentModeProposalListResponse",
     "AgentModeProposalResponse",
     "SessionCodeBindingResponse",
+    "StartSessionCodeProjectRequest",
+    "SessionCodeProjectResponse",
     "TurnTicketRecord",
 ]
 
