@@ -354,6 +354,15 @@ Acceptance for 4A:
   allowing one executor to mutate another executor's directory.
 - Reclaim or preserve attempt worktrees according to explicit lifecycle state.
 
+In progress:
+
+- Forge can fork a new Git worktree from a governed staging worktree while
+  preserving tracked modifications, staged changes, deletions, binary patches,
+  and regular untracked files without mutating the source.
+- Fork input rejects unsafe relative paths and untracked symlinks. A failed copy
+  removes the partial worktree and branch, so preparation cannot strand active
+  mutation custody.
+
 #### Slice 5C — integration binding
 
 - Bind native Coder tools, ACP providers, Home, VS Code, and Neovim to the
