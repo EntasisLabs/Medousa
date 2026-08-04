@@ -423,6 +423,35 @@ impl Forge {
         pid: Option<u32>,
         actor: &ActorRef,
     ) -> Result<(WorkItem, ExecutionLease)> {
+        self.begin_attempt_inner(work_id, executor, pid, actor, false)
+    }
+
+    /// Begin an attempt with a private worktree that preserves the staging
+    /// worktree's current dirty state. Integrations migrate to this entry point
+    /// in Slice 5C.
+    pub fn begin_isolated_attempt(
+        &self,
+        work_id: &WorkId,
+        executor: ExecutorDescriptor,
+        pid: Option<u32>,
+        actor: &ActorRef,
+    ) -> Result<(WorkItem, ExecutionLease)> {
+        self.begin_attempt_inner(work_id, executor, pid, actor, true)
+    }
+
+    fn begin_attempt_inner(
+        &self,
+        work_id: &WorkId,
+        executor: ExecutorDescriptor,
+        pid: Option<u32>,
+        actor: &ActorRef,
+        isolated: bool,
+    ) -> Result<(WorkItem, ExecutionLease)> {
+        let probe = self.load(work_id)?;
+        let target = git_target(&probe)?;
+        let _repo_lock = self
+            .store
+            .lock_repo(&self.repo_lock_key(&target.repo_path)?)?;
         let _item_lock = self.store.lock_item(work_id)?;
         let mut item = self.load(work_id)?;
         expect_state(&item, WorkState::Ready, "begin attempt")?;
@@ -430,6 +459,17 @@ impl Forge {
             return Err(ForgeError::AttemptAlreadyRunning(work_id.clone()));
         }
         let attempt_id = crate::model::AttemptId::new();
+        let attempt_seq = item.next_attempt_seq();
+        let attempt_environment = if isolated {
+            Some(self.create_attempt_environment(
+                &item,
+                &target,
+                &attempt_id,
+                attempt_seq,
+            )?)
+        } else {
+            None
+        };
         let lease = ExecutionLease {
             lease_id: LeaseId::new(),
             // Fencing tokens are monotonic across the whole work item, derived
@@ -446,9 +486,10 @@ impl Forge {
         };
         let attempt = Attempt {
             id: attempt_id.clone(),
-            seq: item.next_attempt_seq(),
+            seq: attempt_seq,
             executor,
             state: AttemptState::Running,
+            environment: attempt_environment,
             lease: Some(lease.clone()),
             recovery: None,
             evidence_id: None,
@@ -476,6 +517,56 @@ impl Forge {
         )?;
         self.transition(&mut item, WorkState::Executing, None, actor)?;
         Ok((item, lease))
+    }
+
+    fn create_attempt_environment(
+        &self,
+        item: &WorkItem,
+        target: &GitWorkTarget,
+        attempt_id: &crate::model::AttemptId,
+        attempt_seq: u32,
+    ) -> Result<GovernedEnv> {
+        let staging = item
+            .environment
+            .as_ref()
+            .ok_or_else(|| ForgeError::EnvironmentDrift("no staging environment".into()))?;
+        let digest = Digest::sha256_hex(staging.repo.repo_id.as_str().as_bytes());
+        let repo_short = &digest.as_str()[..12];
+        let attempt_short = attempt_id
+            .as_str()
+            .rsplit('-')
+            .next()
+            .unwrap_or(attempt_id.as_str());
+        let attempt_short = &attempt_short[..attempt_short.len().min(12)];
+        let worktree = self
+            .store
+            .root()
+            .join("worktrees")
+            .join(repo_short)
+            .join(format!(
+                "{}-gen{}-attempt{attempt_seq}-{attempt_short}",
+                item.id.as_str(),
+                staging.generation
+            ));
+        let branch = format!(
+            "medousa/attempt/{}/{}-{attempt_short}",
+            item.id.as_str(),
+            attempt_seq
+        );
+        self.git.worktree_add_from_worktree(
+            &target.repo_path,
+            &staging.worktree,
+            &worktree,
+            &branch,
+        )?;
+        Ok(GovernedEnv {
+            kind: crate::model::EnvironmentKind::GitWorktree,
+            repo: staging.repo.clone(),
+            worktree,
+            branch,
+            baseline_oid: staging.baseline_oid.clone(),
+            generation: staging.generation,
+        })
     }
 
     /// Liveness signal from the executor. Updates the lease record in the
@@ -672,8 +763,8 @@ impl Forge {
         actor: &ActorRef,
     ) -> Result<()> {
         let env = item
-            .environment
-            .clone()
+            .environment_for_attempt(&lease.attempt_id)
+            .cloned()
             .ok_or_else(|| ForgeError::EnvironmentDrift("no environment".into()))?;
         let attempt = item
             .attempt(&lease.attempt_id)
@@ -1192,8 +1283,18 @@ impl Forge {
                 kind: OperationKind::Discard,
             },
         )?;
-        if let Some(env) = item.environment.clone() {
-            let target = git_target(&item)?;
+        let target = git_target(&item)?;
+        let mut environments: Vec<GovernedEnv> = item
+            .attempts
+            .iter()
+            .filter_map(|attempt| attempt.environment.clone())
+            .collect();
+        if let Some(environment) = item.environment.clone() {
+            environments.push(environment);
+        }
+        environments.sort_by(|left, right| left.worktree.cmp(&right.worktree));
+        environments.dedup_by(|left, right| left.worktree == right.worktree);
+        for env in environments {
             if env.worktree.exists() {
                 self.git.worktree_remove(&target.repo_path, &env.worktree)?;
             }
@@ -1872,6 +1973,62 @@ mod tests {
                 .flatten()
                 .all(|entry| entry.path().extension().and_then(|ext| ext.to_str()) != Some("gz"))
         );
+    }
+
+    #[test]
+    fn isolated_attempt_seals_its_private_dirty_state_and_discard_reclaims_it() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let item = forge
+            .register("t", "b", &fx.repo, "main", "user-1", &actor())
+            .unwrap();
+        let item = forge.provision(&item.id, &actor()).unwrap();
+        let staging = item.environment.clone().unwrap();
+        fs::write(staging.worktree.join("app.txt"), "staging dirty\n").unwrap();
+        fs::write(staging.worktree.join("notes.txt"), "untracked input\n").unwrap();
+
+        let (item, lease) = forge
+            .begin_isolated_attempt(&item.id, script_executor(), None, &actor())
+            .unwrap();
+        let attempt_environment = item
+            .environment_for_attempt(&lease.attempt_id)
+            .unwrap()
+            .clone();
+        assert_ne!(attempt_environment.worktree, staging.worktree);
+        assert_ne!(attempt_environment.branch, staging.branch);
+        assert_eq!(
+            fs::read_to_string(attempt_environment.worktree.join("app.txt")).unwrap(),
+            "staging dirty\n"
+        );
+        assert_eq!(
+            fs::read_to_string(attempt_environment.worktree.join("notes.txt")).unwrap(),
+            "untracked input\n"
+        );
+
+        fs::write(
+            attempt_environment.worktree.join("app.txt"),
+            "attempt-only result\n",
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(staging.worktree.join("app.txt")).unwrap(),
+            "staging dirty\n"
+        );
+
+        let item = forge
+            .complete_attempt(&lease, &SealOptions::default(), &actor())
+            .unwrap();
+        let sealed = fx.git.head_oid(&attempt_environment.worktree).unwrap();
+        assert_ne!(sealed, fx.git.head_oid(&staging.worktree).unwrap());
+        assert!(item.attempt(&lease.attempt_id).unwrap().evidence_id.is_some());
+
+        let attempt_branch = attempt_environment.branch.clone();
+        let staging_branch = staging.branch.clone();
+        forge.discard(&item.id, &actor()).unwrap();
+        assert!(!attempt_environment.worktree.exists());
+        assert!(!staging.worktree.exists());
+        assert!(!fx.git.branch_exists(&fx.repo, &attempt_branch));
+        assert!(!fx.git.branch_exists(&fx.repo, &staging_branch));
     }
 
     #[test]

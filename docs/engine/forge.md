@@ -83,6 +83,15 @@ Slice 5 migration. Admission intentionally remains limited to one running
 attempt until attempt-scoped worktrees are available; this prevents a second
 lease from sharing the first executor's mutation directory.
 
+Forge core also supports isolated attempts. An isolated attempt forks a unique
+branch and worktree from the undertaking staging worktree, reproducing its
+tracked, staged, deleted, binary, and regular untracked dirty state without
+mutating the staging directory. Unsafe paths and untracked symlinks fail the
+fork and remove its partial branch/worktree. The attempt owns that environment;
+seal captures it, interruption preserves it, reconciliation recognizes it, and
+discard reclaims it. Runtime and editor entry points remain on singular
+admission until their Slice 5C lease-to-worktree binding is complete.
+
 Export writes on the daemon/workshop filesystem. `destination` must be absent
 or an empty directory; a non-empty destination returns `409` and is never
 overwritten.

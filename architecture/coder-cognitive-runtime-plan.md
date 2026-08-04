@@ -1,6 +1,6 @@
 # Coder cognitive runtime
 
-> Status: Approved direction; slices 1–5A complete
+> Status: Approved direction; slices 1–5B complete
 > Parent: [Agent runtime modes](agent-runtime-modes-plan.md)
 
 ## Product decision
@@ -347,14 +347,14 @@ Acceptance for 4A:
 - Keep admission at one running attempt until attempt worktrees are isolated;
   state-model concurrency must not expose shared-directory mutation.
 
-#### Slice 5B — attempt-scoped worktrees
+#### Slice 5B — attempt-scoped worktrees (complete)
 
 - Fork one governed Git worktree and branch per admitted attempt.
 - Preserve the undertaking baseline and user-owned dirty starting state without
   allowing one executor to mutate another executor's directory.
 - Reclaim or preserve attempt worktrees according to explicit lifecycle state.
 
-In progress:
+Implemented:
 
 - Forge can fork a new Git worktree from a governed staging worktree while
   preserving tracked modifications, staged changes, deletions, binary patches,
@@ -362,6 +362,10 @@ In progress:
 - Fork input rejects unsafe relative paths and untracked symlinks. A failed copy
   removes the partial worktree and branch, so preparation cannot strand active
   mutation custody.
+- `begin_isolated_attempt` records the private environment on the attempt;
+  sealing reads that environment rather than the undertaking staging worktree.
+  Interrupt/failure preserves it for recovery, whole-item discard reclaims all
+  attempt worktrees and branches, and reconciliation treats them as owned.
 
 #### Slice 5C — integration binding
 

@@ -554,8 +554,17 @@ impl Forge {
             .list_item_ids()?
             .iter()
             .filter_map(|id| self.load(id).ok())
-            .filter_map(|item| item.environment)
-            .map(|env| env.worktree.to_string_lossy().into_owned())
+            .flat_map(|item| {
+                item.environment
+                    .into_iter()
+                    .chain(
+                        item.attempts
+                            .into_iter()
+                            .filter_map(|attempt| attempt.environment),
+                    )
+                    .map(|env| env.worktree.to_string_lossy().into_owned())
+                    .collect::<Vec<_>>()
+            })
             .collect();
         for repo_dir in std::fs::read_dir(&root)? {
             let repo_dir = repo_dir?;

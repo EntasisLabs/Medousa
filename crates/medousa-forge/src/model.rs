@@ -305,6 +305,10 @@ pub struct Attempt {
     pub seq: u32,
     pub executor: ExecutorDescriptor,
     pub state: AttemptState,
+    /// Isolated mutation environment owned by this attempt. Older/shared
+    /// attempts omit it and fall back to the undertaking environment.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment: Option<GovernedEnv>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lease: Option<ExecutionLease>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -644,6 +648,12 @@ impl WorkItem {
             .max_by_key(|attempt| attempt.seq)
     }
 
+    pub fn environment_for_attempt(&self, id: &AttemptId) -> Option<&GovernedEnv> {
+        self.attempt(id)
+            .and_then(|attempt| attempt.environment.as_ref())
+            .or(self.environment.as_ref())
+    }
+
     pub fn activate_attempt(&mut self, id: AttemptId) {
         if !self.active_attempts.contains(&id) {
             self.active_attempts.push(id.clone());
@@ -737,6 +747,7 @@ mod tests {
                 detail: serde_json::json!({"argv": ["echo", "hi"]}),
             },
             state: AttemptState::Running,
+            environment: None,
             lease: Some(lease),
             recovery: None,
             evidence_id: None,
