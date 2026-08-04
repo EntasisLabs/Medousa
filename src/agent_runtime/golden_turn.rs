@@ -163,6 +163,24 @@ impl StasisTool for DataProbeTool {
     }
 }
 
+struct LargeDataProbeTool;
+
+#[async_trait]
+impl StasisTool for LargeDataProbeTool {
+    fn name(&self) -> &'static str {
+        "large_data_probe"
+    }
+
+    async fn invoke(&self, _input: Value) -> StasisResult<Value> {
+        Ok(json!({
+            "ok": true,
+            "path": "large.log",
+            "orientation": {"next": "query a narrower diagnostic range"},
+            "content": "x".repeat(100_000),
+        }))
+    }
+}
+
 struct OneShotRoundContext {
     emitted: AtomicBool,
 }
@@ -460,6 +478,49 @@ async fn golden_round_context_is_injected_before_the_next_inference() {
             .first_text()
             .is_some_and(|text| text.contains("[TEST_ENGINEERING_DELTA]"))
     }));
+}
+
+#[tokio::test]
+async fn golden_large_tool_output_is_bounded_for_model_but_preserved_in_receipt() {
+    let registry = InMemoryToolRegistry::default();
+    registry.register_tool(LargeDataProbeTool).unwrap();
+    registry.register_tool(CognitionTurnFinishTool).unwrap();
+    let client = Arc::new(ScriptedClient::new(vec![
+        tool_response(vec![tool_call("large_data_probe", json!({}))]),
+        tool_response(vec![tool_call(
+            "cognition_turn_finish",
+            json!({ "message": "Done after the focused observation." }),
+        )]),
+    ]));
+    let pipeline = MedousaToolLoopPipeline::new(
+        PromptExecutionPipeline::new(client.clone()),
+        Arc::new(registry),
+    );
+    let request = ToolLoopExecutionRequest {
+        user_prompt: "inspect the large probe".to_string(),
+        system_prompt: None,
+        context: PromptExecutionContext::default(),
+        tool_name: String::new(),
+        tool_input: Value::Null,
+        tool_call_mode: ToolCallMode::Auto,
+    };
+
+    let response = pipeline
+        .execute_with_stream_prior_messages_max_rounds(request, Vec::new(), None, 4, None, None)
+        .await
+        .expect("tool loop");
+    assert_eq!(
+        response.tool_invocations[0].tool_output["content"]
+            .as_str()
+            .map(str::len),
+        Some(100_000)
+    );
+    let requests = client.requests();
+    let second_request = format!("{:?}", requests[1].messages);
+    assert!(second_request.contains("perception_status"));
+    assert!(second_request.contains("bounded"));
+    assert!(second_request.contains("query a narrower diagnostic range"));
+    assert!(!second_request.contains(&"x".repeat(60_000)));
 }
 
 #[tokio::test]

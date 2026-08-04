@@ -41,6 +41,7 @@ pub mod modes;
 pub mod context_usage;
 pub mod continuation;
 pub mod presentation;
+pub mod perception_governor;
 pub mod prompt_prep;
 pub mod runtime;
 pub mod settings;

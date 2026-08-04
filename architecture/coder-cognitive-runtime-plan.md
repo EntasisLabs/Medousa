@@ -230,6 +230,19 @@ the exact next ranged/search call shapes available to the model.
 
 #### Slice 4A — perception governor, zero new persistence
 
+Implemented verticals:
+
+- Whole-file-first reads with actionable bounded line/byte orientation.
+- Replayable Code and Detamu payloads remain at their authoritative source
+  instead of being duplicated into artifact storage.
+- The shared tool loop applies a deterministic 96 Ki-character perception
+  envelope per round: 24 Ki for the refreshed mode context and 72 Ki divided
+  equally across tool results, with a 48 Ki per-result ceiling.
+- Oversized model-facing results preserve priority recovery metadata and
+  head/tail orientation while raw invocation receipts remain unchanged.
+- Repeated identical failures become an ephemeral causal cluster with a stable
+  signature, occurrence count, preserved error/hint, and a change-course cue.
+
 - Keep whole-file reads as the default when the file fits the response budget.
 - For oversized files, return size, available digest/line metadata, bounded
   head/tail or focused orientation, and suggested line/byte range calls rather

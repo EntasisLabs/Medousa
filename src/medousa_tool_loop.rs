@@ -17,6 +17,7 @@ use stasis::domain::errors::{Result, StasisError};
 use stasis::ports::outbound::ai_chat_client::StreamDelta;
 
 use crate::agent_runtime::turn_completion::{ToolLoopCompletionGate, collect_tool_names};
+use crate::agent_runtime::perception_governor::ToolPerceptionGovernor;
 use crate::agent_runtime::turn_completion_fsm::{
     decide_after_tools_text_round, decide_no_tool_debt_text_round, resolve_interim_continue_cap,
     AfterToolsRoundContext, ContinueReason, NoToolDebtRoundContext, TurnRoundAction,
@@ -232,6 +233,7 @@ impl MedousaToolLoopPipeline {
         let mut interim_continues_used = 0usize;
         let mut empty_after_tools_continues_used = 0usize;
         let mut pack_hold: Option<AssistantPackHold> = None;
+        let mut perception_governor = ToolPerceptionGovernor::default();
 
         if !tools.is_empty() {
             while rounds_executed < effective_max_tool_rounds {
@@ -572,6 +574,8 @@ impl MedousaToolLoopPipeline {
                     .collect();
 
                 let use_parallel = parallel_tool_batch_allowed(&batch, &parallel_settings).is_ok();
+                let model_result_budget =
+                    perception_governor.result_budget_for_batch(tool_calls.len());
 
                 let mut prepare_final_in_batch = false;
                 let round_tool_names: Vec<String> = tool_calls
@@ -619,7 +623,9 @@ impl MedousaToolLoopPipeline {
                             }
                         };
                         let tool_output = tool_output_from_invoke(output);
-                        let tool_output_text = tool_output.to_string();
+                        let tool_output_text = perception_governor
+                            .observe(&call.fn_name, &tool_output, model_result_budget)
+                            .to_string();
                         turn_ctx.tool_lane.messages.push(ChatMessage::from(ToolResponse::new(
                             call.call_id,
                             tool_output_text,
@@ -680,7 +686,9 @@ impl MedousaToolLoopPipeline {
                             prepare_final_in_batch = true;
                         }
 
-                        let tool_output_text = tool_output.to_string();
+                        let tool_output_text = perception_governor
+                            .observe(&call.fn_name, &tool_output, model_result_budget)
+                            .to_string();
                         turn_ctx.tool_lane.messages.push(ChatMessage::from(ToolResponse::new(
                             call.call_id,
                             tool_output_text,
@@ -726,6 +734,7 @@ impl MedousaToolLoopPipeline {
                     .and_then(|gate| gate.round_context_provider.as_ref())
                     && let Some(context) = provider.context_for_next_round()?
                 {
+                    let context = perception_governor.observe_round_context(&context);
                     turn_ctx
                         .tool_lane
                         .messages
