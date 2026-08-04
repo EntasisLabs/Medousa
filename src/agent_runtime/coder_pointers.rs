@@ -87,6 +87,7 @@ pub fn rank_engineering_pointers(
         if !matches!(
             event.kind,
             CoderActivityKind::ToolPlanned
+                | CoderActivityKind::ToolBlocked
                 | CoderActivityKind::ToolCompleted
                 | CoderActivityKind::ToolFailed
         ) {
@@ -113,6 +114,7 @@ pub fn rank_engineering_pointers(
             let age_hours = (now - event.occurred_at_utc).num_seconds().max(0) as f32 / 3_600.0;
             let recency = 1.0 / (1.0 + age_hours / 6.0);
             let status = match event.kind {
+                CoderActivityKind::ToolBlocked => 0.48,
                 CoderActivityKind::ToolFailed => 0.42,
                 CoderActivityKind::ToolPlanned => 0.30,
                 CoderActivityKind::ToolCompleted => 0.12,
@@ -360,6 +362,8 @@ mod tests {
             tool: Some(tool.to_string()),
             intent: Some("Run focused tests for the changed parser".to_string()),
             targets: vec!["file://src/parser.rs".to_string()],
+            claims: Vec::new(),
+            overlaps: Vec::new(),
             detail: Some("ok".to_string()),
         }
     }
@@ -389,6 +393,20 @@ mod tests {
         let detail = follow_engineering_pointer(&events, &pointers[0].pointer_id).expect("follow");
         assert_eq!(detail.causal_events.len(), 2);
         assert_eq!(detail.primary.revision, 2);
+    }
+
+    #[test]
+    fn blocked_claim_becomes_a_ranked_unresolved_pointer() {
+        let mut blocked = event(
+            1,
+            CoderActivityKind::ToolBlocked,
+            "cognition_code_apply_patch",
+        );
+        blocked.detail = Some("hazardous shared resource is already claimed".into());
+        let pointers = rank_engineering_pointers(&[blocked], "agent-b", &[], 4);
+        assert_eq!(pointers.len(), 1);
+        assert_eq!(pointers[0].status, CoderActivityKind::ToolBlocked);
+        assert_eq!(pointers[0].kind, CoderPointerKind::ChangeSet);
     }
 
     #[test]

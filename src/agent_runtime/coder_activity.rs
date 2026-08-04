@@ -11,14 +11,19 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+use super::coder_claims::{CoderClaimMode, CoderClaimScope};
+
 const ACTIVE_AGENT_TTL: Duration = Duration::minutes(5);
+const ACTIVE_CLAIM_TTL: Duration = Duration::minutes(2);
 const MAX_AGENTS_PER_WORK: usize = 32;
 const MAX_EVENTS_PER_WORK: usize = 400;
+const MAX_ACTIVE_CLAIMS_PER_WORK: usize = 256;
 const MAX_AMBIENT_OTHER_AGENTS: usize = 6;
 const MAX_AMBIENT_EVENTS: usize = 8;
 const MAX_DELTA_EVENTS: usize = 16;
 const MAX_INTENT_CHARS: usize = 320;
 const MAX_DETAIL_CHARS: usize = 500;
+const MAX_AMBIENT_OVERLAPS: usize = 12;
 
 static CODER_ACTIVITY_STORE: Lazy<Arc<CoderActivityStore>> = Lazy::new(|| {
     Arc::new(CoderActivityStore::open(
@@ -51,6 +56,7 @@ impl CoderAgentIdentity {
 pub enum CoderActivityKind {
     AgentJoined,
     ToolPlanned,
+    ToolBlocked,
     ToolCompleted,
     ToolFailed,
     AgentLeft,
@@ -73,6 +79,10 @@ pub struct CoderActivityEvent {
     pub intent: Option<String>,
     #[serde(default)]
     pub targets: Vec<String>,
+    #[serde(default)]
+    pub claims: Vec<CoderClaimScope>,
+    #[serde(default)]
+    pub overlaps: Vec<CoderClaimOverlap>,
     pub detail: Option<String>,
 }
 
@@ -89,6 +99,8 @@ pub struct CoderAgentPresence {
     pub current_intent: Option<String>,
     #[serde(default)]
     pub current_targets: Vec<String>,
+    #[serde(default)]
+    pub current_claims: Vec<CoderClaimScope>,
     pub last_tool: Option<String>,
     pub last_intent: Option<String>,
     #[serde(default)]
@@ -103,6 +115,60 @@ struct CoderWorkActivity {
     agents: HashMap<String, CoderAgentPresence>,
     #[serde(default)]
     events: Vec<CoderActivityEvent>,
+    #[serde(default)]
+    active_claims: HashMap<String, CoderActiveClaim>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CoderActiveClaim {
+    pub claim_id: String,
+    pub call_id: String,
+    pub agent_id: String,
+    pub session_id: String,
+    pub turn_id: String,
+    pub attempt_id: String,
+    pub tool: String,
+    pub intent: String,
+    pub scope: CoderClaimScope,
+    pub acquired_at_utc: DateTime<Utc>,
+    pub heartbeat_at_utc: DateTime<Utc>,
+    pub expires_at_utc: DateTime<Utc>,
+    #[serde(default)]
+    pub retained_after_call: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CoderClaimOverlap {
+    pub target: String,
+    pub requested_mode: CoderClaimMode,
+    pub held_mode: CoderClaimMode,
+    pub hazardous: bool,
+    pub blocked: bool,
+    pub holder_agent_id: String,
+    pub holder_attempt_id: String,
+    pub holder_tool: String,
+    pub holder_intent: String,
+    pub holder_expires_at_utc: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CoderToolActivityAdmission {
+    pub call_id: String,
+    pub claims: Vec<CoderClaimScope>,
+    pub overlaps: Vec<CoderClaimOverlap>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CoderClaimConflictResult {
+    pub ok: bool,
+    pub code: &'static str,
+    pub error: &'static str,
+    pub work_id: String,
+    pub call_id: String,
+    pub requested_claims: Vec<CoderClaimScope>,
+    pub conflicts: Vec<CoderClaimOverlap>,
+    pub retry_after_utc: Option<DateTime<Utc>>,
+    pub next_decision: &'static str,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -119,6 +185,8 @@ pub struct CoderSharedSpaceSnapshot {
     pub concurrent_agent_count: usize,
     pub other_agents: Vec<CoderAgentPresence>,
     pub recent_events: Vec<CoderActivityEvent>,
+    pub active_claims: Vec<CoderActiveClaim>,
+    pub overlaps: Vec<CoderClaimOverlap>,
     pub revision: u64,
 }
 
@@ -133,6 +201,8 @@ pub struct CoderEngineeringDelta {
     pub active_agent_count: usize,
     pub concurrent_agent_count: usize,
     pub other_agents: Vec<CoderAgentPresence>,
+    pub active_claims: Vec<CoderActiveClaim>,
+    pub overlaps: Vec<CoderClaimOverlap>,
     pub latest_activity_age: Option<String>,
 }
 
@@ -169,6 +239,7 @@ impl CoderActivityStore {
                     current_tool: None,
                     current_intent: None,
                     current_targets: Vec::new(),
+                    current_claims: Vec::new(),
                     last_tool: None,
                     last_intent: None,
                     observed_revision: 0,
@@ -189,32 +260,158 @@ impl CoderActivityStore {
         tool: &str,
         intent: &str,
         targets: Vec<String>,
-    ) -> Result<String, String> {
+        claims: Vec<CoderClaimScope>,
+    ) -> Result<CoderToolActivityAdmission, String> {
         let intent = validate_intent(intent)?;
         let call_id = format!("call-{}", Uuid::new_v4());
-        self.mutate(|index, now| {
-            let work = index.work.entry(work_id.to_string()).or_default();
-            let presence = work
-                .agents
-                .entry(identity.agent_id.clone())
-                .or_insert_with(|| presence_from_identity(identity, now));
-            presence.active = true;
-            presence.heartbeat_at_utc = now;
-            presence.current_tool = Some(tool.to_string());
-            presence.current_intent = Some(intent.clone());
-            presence.current_targets = targets.clone();
-            presence.last_tool = Some(tool.to_string());
-            presence.last_intent = Some(intent.clone());
+        let _guard = self.lock.lock().map_err(|err| err.to_string())?;
+        let mut index = self.read_index();
+        let now = Utc::now();
+        let work = index.work.entry(work_id.to_string()).or_default();
+        prune_work(work, now);
+        let overlaps = claim_overlaps(work, &identity.agent_id, &claims);
+        let blocked = overlaps.iter().any(|overlap| overlap.blocked);
+        if blocked {
+            let mut event = event(work_id, identity, CoderActivityKind::ToolBlocked);
+            event.call_id = Some(call_id.clone());
+            event.tool = Some(tool.to_string());
+            event.intent = Some(intent);
+            event.targets = targets;
+            event.claims = claims.clone();
+            event.overlaps = overlaps.clone();
+            event.detail = Some("hazardous shared resource is already claimed".into());
+            append_event(work, event);
+            let conflict = CoderClaimConflictResult {
+                ok: false,
+                code: "coder_claim_conflict",
+                error: "Hazardous shared resource is already claimed by another agent.",
+                work_id: work_id.to_string(),
+                call_id,
+                requested_claims: claims,
+                retry_after_utc: overlaps
+                    .iter()
+                    .filter(|overlap| overlap.blocked)
+                    .map(|overlap| overlap.holder_expires_at_utc)
+                    .max(),
+                conflicts: overlaps,
+                next_decision: "Inspect the conflicting agent intent in the ambient frame, choose a different non-overlapping action, or retry after the claim expires.",
+            };
+            self.write_index(&index)?;
+            return Err(serde_json::to_string(&conflict).map_err(|err| err.to_string())?);
+        }
 
-            let mut planned = event(work_id, identity, CoderActivityKind::ToolPlanned);
-            planned.call_id = Some(call_id.clone());
-            planned.tool = Some(tool.to_string());
-            planned.intent = Some(intent.clone());
-            planned.targets = targets;
-            append_event(work, planned);
+        let replacements = work
+            .active_claims
+            .values()
+            .filter(|active| {
+                active.agent_id == identity.agent_id
+                    && claims.iter().any(|claim| {
+                        claim.target == active.scope.target && claim.mode == active.scope.mode
+                    })
+            })
+            .count();
+        if work
+            .active_claims
+            .len()
+            .saturating_sub(replacements)
+            .saturating_add(claims.len())
+            > MAX_ACTIVE_CLAIMS_PER_WORK
+        {
+            let mut event = event(work_id, identity, CoderActivityKind::ToolBlocked);
+            event.call_id = Some(call_id.clone());
+            event.tool = Some(tool.to_string());
+            event.intent = Some(intent);
+            event.targets = targets;
+            event.claims = claims;
+            event.detail = Some("active coordination claim capacity reached".into());
+            append_event(work, event);
+            self.write_index(&index)?;
+            return Err(json!({
+                "ok": false,
+                "code": "coder_claim_capacity",
+                "error": "The bounded active coordination claim capacity has been reached.",
+                "work_id": work_id,
+                "call_id": call_id,
+                "max_active_claims": MAX_ACTIVE_CLAIMS_PER_WORK,
+                "next_decision": "Finish or release an active agent, or retry after its short claim TTL expires."
+            })
+            .to_string());
+        }
+        work.active_claims.retain(|_, active| {
+            active.agent_id != identity.agent_id
+                || !claims.iter().any(|claim| {
+                    claim.target == active.scope.target && claim.mode == active.scope.mode
+                })
+        });
+
+        let presence = work
+            .agents
+            .entry(identity.agent_id.clone())
+            .or_insert_with(|| presence_from_identity(identity, now));
+        presence.active = true;
+        presence.heartbeat_at_utc = now;
+        presence.current_tool = Some(tool.to_string());
+        presence.current_intent = Some(intent.clone());
+        presence.current_targets = targets.clone();
+        presence.current_claims = claims.clone();
+        presence.last_tool = Some(tool.to_string());
+        presence.last_intent = Some(intent.clone());
+        refresh_agent_claims(work, &identity.agent_id, now);
+
+        for (index, scope) in claims.iter().cloned().enumerate() {
+            let claim_id = format!("{call_id}:{index}");
+            work.active_claims.insert(
+                claim_id.clone(),
+                CoderActiveClaim {
+                    claim_id,
+                    call_id: call_id.clone(),
+                    agent_id: identity.agent_id.clone(),
+                    session_id: identity.session_id.clone(),
+                    turn_id: identity.turn_id.clone(),
+                    attempt_id: identity.attempt_id.clone(),
+                    tool: tool.to_string(),
+                    intent: intent.clone(),
+                    retained_after_call: scope.mode == CoderClaimMode::Write,
+                    scope,
+                    acquired_at_utc: now,
+                    heartbeat_at_utc: now,
+                    expires_at_utc: now + ACTIVE_CLAIM_TTL,
+                },
+            );
+        }
+
+        let mut planned = event(work_id, identity, CoderActivityKind::ToolPlanned);
+        planned.call_id = Some(call_id.clone());
+        planned.tool = Some(tool.to_string());
+        planned.intent = Some(intent);
+        planned.targets = targets;
+        planned.claims = claims.clone();
+        planned.overlaps = overlaps.clone();
+        append_event(work, planned);
+        self.write_index(&index)?;
+        Ok(CoderToolActivityAdmission {
+            call_id,
+            claims,
+            overlaps,
+        })
+    }
+
+    pub fn heartbeat_claims(
+        &self,
+        work_id: &str,
+        agent_id: &str,
+        _call_id: &str,
+    ) -> Result<(), String> {
+        self.mutate(|index, now| {
+            let Some(work) = index.work.get_mut(work_id) else {
+                return;
+            };
+            if let Some(presence) = work.agents.get_mut(agent_id) {
+                presence.heartbeat_at_utc = now;
+            }
+            refresh_agent_claims(work, agent_id, now);
             prune_work(work, now);
-        })?;
-        Ok(call_id)
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -240,6 +437,7 @@ impl CoderActivityStore {
             presence.current_tool = None;
             presence.current_intent = None;
             presence.current_targets.clear();
+            presence.current_claims.clear();
             presence.last_tool = Some(tool.to_string());
             presence.last_intent = Some(intent.clone());
 
@@ -253,11 +451,21 @@ impl CoderActivityStore {
             completed.tool = Some(tool.to_string());
             completed.intent = Some(intent.clone());
             completed.targets = targets;
+            let completed_claims = work
+                .active_claims
+                .values()
+                .filter(|claim| claim.call_id == call_id)
+                .map(|claim| claim.scope.clone())
+                .collect::<Vec<_>>();
+            completed.claims = completed_claims;
             completed.detail = Some(match result {
                 Ok(output) => effect_summary(output),
                 Err(error) => truncate(error, MAX_DETAIL_CHARS),
             });
             append_event(work, completed);
+            work.active_claims.retain(|_, claim| {
+                claim.call_id != call_id || (result.is_ok() && claim.retained_after_call)
+            });
             prune_work(work, now);
         })
     }
@@ -271,7 +479,10 @@ impl CoderActivityStore {
                 presence.current_tool = None;
                 presence.current_intent = None;
                 presence.current_targets.clear();
+                presence.current_claims.clear();
             }
+            work.active_claims
+                .retain(|_, claim| claim.agent_id != identity.agent_id);
             append_event(work, event(work_id, identity, CoderActivityKind::AgentLeft));
             prune_work(work, now);
         })
@@ -372,6 +583,7 @@ impl CoderActivityStore {
             presence.observed_revision = to_revision;
             presence.heartbeat_at_utc = now;
         }
+        refresh_agent_claims(work, self_agent_id, now);
         let delta = CoderEngineeringDelta {
             work_id: work_id.to_string(),
             self_agent_id: self_agent_id.to_string(),
@@ -382,6 +594,8 @@ impl CoderActivityStore {
             active_agent_count,
             concurrent_agent_count,
             other_agents,
+            active_claims: active_claims(work, now),
+            overlaps: active_overlaps(work, now),
             latest_activity_age,
         };
         self.write_index(&index)?;
@@ -510,6 +724,7 @@ fn presence_from_identity(identity: &CoderAgentIdentity, now: DateTime<Utc>) -> 
         current_tool: None,
         current_intent: None,
         current_targets: Vec::new(),
+        current_claims: Vec::new(),
         last_tool: None,
         last_intent: None,
         observed_revision: 0,
@@ -535,6 +750,8 @@ fn event(
         tool: None,
         intent: None,
         targets: Vec::new(),
+        claims: Vec::new(),
+        overlaps: Vec::new(),
         detail: None,
     }
 }
@@ -556,7 +773,37 @@ fn prune_work(work: &mut CoderWorkActivity, now: DateTime<Utc>) {
             presence.current_tool = None;
             presence.current_intent = None;
             presence.current_targets.clear();
+            presence.current_claims.clear();
         }
+    }
+    work.active_claims.retain(|_, claim| {
+        claim.expires_at_utc > now
+            && work.agents.get(&claim.agent_id).is_some_and(|presence| {
+                presence.active && now - presence.heartbeat_at_utc <= ACTIVE_AGENT_TTL
+            })
+    });
+    if work.active_claims.len() > MAX_ACTIVE_CLAIMS_PER_WORK {
+        let mut claims = work
+            .active_claims
+            .values()
+            .map(|claim| {
+                (
+                    claim.claim_id.clone(),
+                    claim.scope.hazardous,
+                    claim.heartbeat_at_utc,
+                )
+            })
+            .collect::<Vec<_>>();
+        claims.sort_by_key(|(_, hazardous, heartbeat)| {
+            (std::cmp::Reverse(*hazardous), std::cmp::Reverse(*heartbeat))
+        });
+        let keep = claims
+            .into_iter()
+            .take(MAX_ACTIVE_CLAIMS_PER_WORK)
+            .map(|(claim_id, _, _)| claim_id)
+            .collect::<std::collections::HashSet<_>>();
+        work.active_claims
+            .retain(|claim_id, _| keep.contains(claim_id));
     }
     if work.agents.len() > MAX_AGENTS_PER_WORK {
         let mut agents: Vec<_> = work
@@ -588,6 +835,8 @@ fn snapshot_from_index(
             concurrent_agent_count: 0,
             other_agents: Vec::new(),
             recent_events: Vec::new(),
+            active_claims: Vec::new(),
+            overlaps: Vec::new(),
             revision: 0,
         };
     };
@@ -608,8 +857,111 @@ fn snapshot_from_index(
         concurrent_agent_count,
         other_agents,
         recent_events,
+        active_claims: active_claims(work, now),
+        overlaps: active_overlaps(work, now),
         revision: work.revision,
     }
+}
+
+fn active_claims(work: &CoderWorkActivity, now: DateTime<Utc>) -> Vec<CoderActiveClaim> {
+    let mut claims = work
+        .active_claims
+        .values()
+        .filter(|claim| claim.expires_at_utc > now)
+        .cloned()
+        .collect::<Vec<_>>();
+    claims.sort_by_key(|claim| std::cmp::Reverse(claim.heartbeat_at_utc));
+    claims.truncate(MAX_AMBIENT_OVERLAPS * 2);
+    claims
+}
+
+fn refresh_agent_claims(work: &mut CoderWorkActivity, agent_id: &str, now: DateTime<Utc>) {
+    for claim in work
+        .active_claims
+        .values_mut()
+        .filter(|claim| claim.agent_id == agent_id)
+    {
+        claim.heartbeat_at_utc = now;
+        claim.expires_at_utc = now + ACTIVE_CLAIM_TTL;
+    }
+}
+
+fn active_overlaps(work: &CoderWorkActivity, now: DateTime<Utc>) -> Vec<CoderClaimOverlap> {
+    let claims = active_claims(work, now);
+    let mut overlaps = Vec::new();
+    for (index, left) in claims.iter().enumerate() {
+        for right in claims.iter().skip(index + 1) {
+            if left.agent_id == right.agent_id
+                || !left.scope.mode.conflicts_with(right.scope.mode)
+                || !targets_overlap(&left.scope.target, &right.scope.target)
+            {
+                continue;
+            }
+            overlaps.push(CoderClaimOverlap {
+                target: left.scope.target.clone(),
+                requested_mode: left.scope.mode,
+                held_mode: right.scope.mode,
+                hazardous: left.scope.hazardous || right.scope.hazardous,
+                blocked: false,
+                holder_agent_id: right.agent_id.clone(),
+                holder_attempt_id: right.attempt_id.clone(),
+                holder_tool: right.tool.clone(),
+                holder_intent: right.intent.clone(),
+                holder_expires_at_utc: right.expires_at_utc,
+            });
+            if overlaps.len() >= MAX_AMBIENT_OVERLAPS {
+                return overlaps;
+            }
+        }
+    }
+    overlaps
+}
+
+fn claim_overlaps(
+    work: &CoderWorkActivity,
+    requesting_agent_id: &str,
+    requested: &[CoderClaimScope],
+) -> Vec<CoderClaimOverlap> {
+    let mut overlaps = Vec::new();
+    for request in requested {
+        for held in work.active_claims.values() {
+            if held.agent_id == requesting_agent_id
+                || !request.mode.conflicts_with(held.scope.mode)
+                || !targets_overlap(&request.target, &held.scope.target)
+            {
+                continue;
+            }
+            let hazardous = request.hazardous || held.scope.hazardous;
+            overlaps.push(CoderClaimOverlap {
+                target: request.target.clone(),
+                requested_mode: request.mode,
+                held_mode: held.scope.mode,
+                hazardous,
+                blocked: hazardous,
+                holder_agent_id: held.agent_id.clone(),
+                holder_attempt_id: held.attempt_id.clone(),
+                holder_tool: held.tool.clone(),
+                holder_intent: held.intent.clone(),
+                holder_expires_at_utc: held.expires_at_utc,
+            });
+            if overlaps.len() >= MAX_AMBIENT_OVERLAPS {
+                return overlaps;
+            }
+        }
+    }
+    overlaps
+}
+
+fn targets_overlap(left: &str, right: &str) -> bool {
+    if left == right {
+        return true;
+    }
+    let prefix_overlap = |ancestor: &str, descendant: &str| {
+        descendant
+            .strip_prefix(ancestor)
+            .is_some_and(|suffix| suffix.starts_with('/'))
+    };
+    prefix_overlap(left, right) || prefix_overlap(right, left)
 }
 
 fn active_agents(
@@ -694,6 +1046,15 @@ mod tests {
         CoderAgentIdentity::for_turn(name, turn_id, &format!("attempt-{name}"))
     }
 
+    fn claim(target: &str, mode: CoderClaimMode, hazardous: bool) -> CoderClaimScope {
+        CoderClaimScope {
+            target: target.into(),
+            mode,
+            hazardous,
+            reason: "test claim".into(),
+        }
+    }
+
     #[test]
     fn intent_is_required_bounded_and_normalized() {
         assert!(validate_intent("  ").is_err());
@@ -719,8 +1080,15 @@ mod tests {
                 "cognition_code_read",
                 "Inspect the changed symbol before editing",
                 vec!["file://src/lib.rs".into()],
+                vec![CoderClaimScope {
+                    target: "file://src/lib.rs".into(),
+                    mode: CoderClaimMode::Read,
+                    hazardous: false,
+                    reason: "test".into(),
+                }],
             )
-            .expect("begin tool");
+            .expect("begin tool")
+            .call_id;
         store
             .finish_tool(
                 "work-1",
@@ -823,8 +1191,15 @@ mod tests {
                 "cognition_code_apply_patch",
                 "Update the focused implementation without changing its contract",
                 vec!["file://src/lib.rs".into()],
+                vec![CoderClaimScope {
+                    target: "file://src/lib.rs".into(),
+                    mode: CoderClaimMode::Write,
+                    hazardous: false,
+                    reason: "test".into(),
+                }],
             )
-            .expect("begin");
+            .expect("begin")
+            .call_id;
         store
             .finish_tool(
                 "work-1",
@@ -872,5 +1247,172 @@ mod tests {
         );
         super::super::sttp::validate_canonical_sttp_node(&appendix).expect("canonical STTP");
         assert!(appendix.contains("sha256:new"));
+    }
+
+    #[test]
+    fn ordinary_write_overlap_is_visible_but_does_not_block_isolated_agents() {
+        let temp = TempDir::new().expect("temp");
+        let store = store(&temp);
+        let a = identity("session-a", 1);
+        let b = identity("session-b", 2);
+        store.register_agent("work-1", &a).expect("register a");
+        store.register_agent("work-1", &b).expect("register b");
+        let file_claim = claim("file://src/lib.rs", CoderClaimMode::Write, false);
+        let first = store
+            .begin_tool(
+                "work-1",
+                &a,
+                "cognition_code_apply_patch",
+                "Refactor the parser entry point",
+                vec!["file://src/lib.rs".into()],
+                vec![file_claim.clone()],
+            )
+            .expect("first admission");
+        store
+            .finish_tool(
+                "work-1",
+                &a,
+                &first.call_id,
+                "cognition_code_apply_patch",
+                "Refactor the parser entry point",
+                vec!["file://src/lib.rs".into()],
+                Ok(&json!({ "ok": true })),
+            )
+            .expect("finish first");
+
+        let second = store
+            .begin_tool(
+                "work-1",
+                &b,
+                "cognition_code_apply_patch",
+                "Update the same parser for the new protocol",
+                vec!["file://src/lib.rs".into()],
+                vec![file_claim],
+            )
+            .expect("isolated overlap remains admissible");
+        assert_eq!(second.overlaps.len(), 1);
+        assert!(!second.overlaps[0].blocked);
+        assert_eq!(second.overlaps[0].holder_agent_id, a.agent_id);
+
+        let snapshot = store.snapshot("work-1", &a.agent_id).expect("snapshot");
+        assert!(
+            snapshot
+                .overlaps
+                .iter()
+                .any(|overlap| { overlap.target == "file://src/lib.rs" && !overlap.blocked })
+        );
+    }
+
+    #[test]
+    fn hazardous_claim_conflict_is_structured_and_visible_to_both_agents() {
+        let temp = TempDir::new().expect("temp");
+        let store = store(&temp);
+        let a = identity("session-a", 1);
+        let b = identity("session-b", 2);
+        store.register_agent("work-1", &a).expect("register a");
+        store.register_agent("work-1", &b).expect("register b");
+        store
+            .observe_initial("work-1", &a.agent_id)
+            .expect("initial a");
+        let lock_claim = claim(
+            "resource://lockfile/cargo.lock",
+            CoderClaimMode::Write,
+            true,
+        );
+        let first = store
+            .begin_tool(
+                "work-1",
+                &a,
+                "cognition_code_apply_patch",
+                "Update the dependency lockfile",
+                vec!["file://Cargo.lock".into()],
+                vec![lock_claim.clone()],
+            )
+            .expect("first admission");
+        store
+            .finish_tool(
+                "work-1",
+                &a,
+                &first.call_id,
+                "cognition_code_apply_patch",
+                "Update the dependency lockfile",
+                vec!["file://Cargo.lock".into()],
+                Ok(&json!({ "ok": true })),
+            )
+            .expect("finish first");
+
+        let error = store
+            .begin_tool(
+                "work-1",
+                &b,
+                "cognition_code_apply_patch",
+                "Regenerate the dependency lockfile",
+                vec!["file://Cargo.lock".into()],
+                vec![lock_claim],
+            )
+            .expect_err("hazard must serialize");
+        let conflict: serde_json::Value = serde_json::from_str(&error).expect("structured error");
+        assert_eq!(conflict["code"], "coder_claim_conflict");
+        assert_eq!(conflict["conflicts"][0]["holder_agent_id"], a.agent_id);
+        assert!(conflict["retry_after_utc"].is_string());
+
+        let a_delta = store
+            .observe_delta("work-1", &a.agent_id)
+            .expect("delta")
+            .expect("new blocked event");
+        assert!(a_delta.events.iter().any(|event| {
+            event.kind == CoderActivityKind::ToolBlocked
+                && event.agent_id == b.agent_id
+                && event.overlaps.iter().any(|overlap| overlap.blocked)
+        }));
+        let b_snapshot = store.snapshot("work-1", &b.agent_id).expect("snapshot b");
+        assert!(b_snapshot.recent_events.iter().any(|event| {
+            event.kind == CoderActivityKind::ToolCompleted && event.agent_id == a.agent_id
+        }));
+    }
+
+    #[test]
+    fn expired_hazardous_claim_releases_serialization_slot() {
+        let temp = TempDir::new().expect("temp");
+        let store = store(&temp);
+        let a = identity("session-a", 1);
+        let b = identity("session-b", 2);
+        store.register_agent("work-1", &a).expect("register a");
+        store.register_agent("work-1", &b).expect("register b");
+        let deployment = claim("resource://deployment/default", CoderClaimMode::Write, true);
+        let first = store
+            .begin_tool(
+                "work-1",
+                &a,
+                "cognition_shell_session_run",
+                "Deploy the candidate build",
+                vec!["attempt://a".into()],
+                vec![deployment.clone()],
+            )
+            .expect("first admission");
+        store
+            .mutate(|index, now| {
+                let work = index.work.get_mut("work-1").expect("work");
+                for active in work
+                    .active_claims
+                    .values_mut()
+                    .filter(|active| active.call_id == first.call_id)
+                {
+                    active.expires_at_utc = now - Duration::seconds(1);
+                }
+            })
+            .expect("expire claim");
+
+        let second = store
+            .begin_tool(
+                "work-1",
+                &b,
+                "cognition_shell_session_run",
+                "Deploy after the prior claim expired",
+                vec!["attempt://b".into()],
+                vec![deployment],
+            )
+            .expect("expired claim should not block");
+        assert!(second.overlaps.is_empty());
     }
 }

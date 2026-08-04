@@ -57,6 +57,12 @@ Multiple conversations can work on the same undertaking at once. Each agent
 receives its own branch and worktree, so starting a second agent does not share
 the first agent's mutation directory.
 
+Medousa also coordinates what those agents are touching. Overlapping ordinary
+code changes remain possible in their private worktrees and appear in Coder's
+ambient context. Shared-risk operations such as lockfile regeneration,
+migrations, ports, or deployment are serialized; if another agent holds the
+resource, Coder receives who holds it, why, and when it can safely retry.
+
 Mode suggestions appear inline with **Switch** and **Not now** actions. Their
 expiry and auto-accept behavior use the policy configured in Medousa.
 

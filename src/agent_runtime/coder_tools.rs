@@ -17,7 +17,8 @@ use stasis::domain::errors::StasisError;
 use stasis::prelude::Result;
 use tokio::sync::Mutex;
 
-use super::coder_activity::{CoderActivityStore, CoderAgentIdentity};
+use super::coder_activity::{CoderActivityStore, CoderAgentIdentity, CoderToolActivityAdmission};
+use super::coder_claims::CoderClaimScope;
 use super::coder_mode::CoderEntryContext;
 
 const TURN_CONTROL_TOOLS: &[&str] = &[
@@ -119,7 +120,8 @@ impl CoderTurnLease {
         tool_name: &str,
         intent: &str,
         targets: Vec<String>,
-    ) -> Result<String> {
+        claims: Vec<CoderClaimScope>,
+    ) -> std::result::Result<CoderToolActivityAdmission, String> {
         self.activity
             .begin_tool(
                 &self.lease.work_id.to_string(),
@@ -127,9 +129,14 @@ impl CoderTurnLease {
                 tool_name,
                 intent,
                 targets,
+                claims,
             )
             .map_err(|err| {
-                StasisError::PortFailure(format!("cannot record Coder tool intent: {err}"))
+                if serde_json::from_str::<Value>(&err).is_ok() {
+                    err
+                } else {
+                    format!("cannot record Coder tool intent: {err}")
+                }
             })
     }
 
@@ -157,6 +164,38 @@ impl CoderTurnLease {
         ) {
             tracing::warn!(error = %err, tool = tool_name, "failed to finish Coder activity");
         }
+    }
+}
+
+struct ClaimHeartbeatGuard {
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl ClaimHeartbeatGuard {
+    fn start(authority: &CoderTurnLease, call_id: &str) -> Self {
+        let activity = authority.activity.clone();
+        let work_id = authority.lease.work_id.to_string();
+        let agent_id = authority.identity.agent_id.clone();
+        let call_id = call_id.to_string();
+        let task = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+            loop {
+                interval.tick().await;
+                if activity
+                    .heartbeat_claims(&work_id, &agent_id, &call_id)
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
+        Self { task }
+    }
+}
+
+impl Drop for ClaimHeartbeatGuard {
+    fn drop(&mut self) {
+        self.task.abort();
     }
 }
 
@@ -742,7 +781,32 @@ impl ToolRegistry for CoderBoundToolRegistry {
         authority.heartbeat()?;
         let (intent, input) = take_coder_intent(input)?;
         let targets = tool_targets(tool_name, &input, authority.lease());
-        let call_id = authority.begin_tool_activity(tool_name, &intent, targets.clone())?;
+        let claims = super::coder_claims::infer_tool_claims(
+            tool_name,
+            &input,
+            authority.lease(),
+            &self.entry.worktree,
+        );
+        let admission =
+            match authority.begin_tool_activity(tool_name, &intent, targets.clone(), claims) {
+                Ok(admission) => admission,
+                Err(error) => {
+                    if let Ok(conflict) = serde_json::from_str::<Value>(&error) {
+                        authority.append_receipt(json!({
+                            "kind": "medousa_coder_tool",
+                            "call_id": conflict.get("call_id"),
+                            "tool": tool_name,
+                            "intent": intent,
+                            "ok": false,
+                            "detail": conflict,
+                        }));
+                        return Ok(conflict);
+                    }
+                    return Err(StasisError::PortFailure(error));
+                }
+            };
+        let call_id = admission.call_id;
+        let _claim_heartbeat = ClaimHeartbeatGuard::start(&authority, &call_id);
         if !visible {
             let err = StasisError::PortFailure(format!(
                 "Coder tool is authorized but not visible; unlock its domain with {COGNITION_CODER_TOOLS_DISCOVER}: {tool_name}"
@@ -1148,6 +1212,10 @@ mod tests {
     }
 
     fn authority(fixture: &Fixture) -> Arc<CoderTurnLease> {
+        authority_named(fixture, "test-session", 1)
+    }
+
+    fn authority_named(fixture: &Fixture, session_id: &str, turn_id: u64) -> Arc<CoderTurnLease> {
         let (_, lease) = fixture
             .forge
             .begin_attempt(
@@ -1161,7 +1229,7 @@ mod tests {
             )
             .expect("begin attempt");
         let identity =
-            CoderAgentIdentity::for_turn("test-session", 1, &lease.attempt_id.to_string());
+            CoderAgentIdentity::for_turn(session_id, turn_id, &lease.attempt_id.to_string());
         Arc::new(
             CoderTurnLease::new(
                 fixture.forge.clone(),
@@ -1171,6 +1239,60 @@ mod tests {
             )
             .expect("Coder authority"),
         )
+    }
+
+    #[tokio::test]
+    async fn hazardous_inferred_claim_blocks_peer_before_domain_tool_invocation() {
+        let fixture = fixture();
+        let authority_a = authority_named(&fixture, "session-a", 1);
+        let authority_b = authority_named(&fixture, "session-b", 2);
+        let inner_a = Arc::new(RecordingRegistry::default());
+        let inner_b = Arc::new(RecordingRegistry::default());
+        let registry_a = CoderBoundToolRegistry::new(
+            inner_a.clone(),
+            &authority_a,
+            fixture.entry.clone(),
+            fixture.policy.clone(),
+        );
+        let registry_b = CoderBoundToolRegistry::new(
+            inner_b.clone(),
+            &authority_b,
+            fixture.entry.clone(),
+            fixture.policy.clone(),
+        );
+
+        registry_a
+            .invoke_tool(
+                crate::coding_tools::COGNITION_CODE_APPLY_PATCH,
+                json!({
+                    "intent": "Regenerate the Rust dependency lockfile",
+                    "path": "Cargo.lock",
+                    "expected_sha256": "missing",
+                    "content": "version = 4\n"
+                }),
+            )
+            .await
+            .expect("first lockfile claim");
+        let conflict = registry_b
+            .invoke_tool(
+                crate::coding_tools::COGNITION_CODE_APPLY_PATCH,
+                json!({
+                    "intent": "Update the same dependency lockfile",
+                    "path": "Cargo.lock",
+                    "expected_sha256": "missing",
+                    "content": "version = 4\n"
+                }),
+            )
+            .await
+            .expect("structured hazardous conflict receipt");
+        assert_eq!(conflict["ok"], false);
+        assert_eq!(conflict["code"], "coder_claim_conflict");
+        assert!(conflict.to_string().contains("session-a"));
+        assert!(inner_b.invoked_tools.lock().expect("tools lock").is_empty());
+        assert_eq!(
+            inner_a.invoked_tools.lock().expect("tools lock").as_slice(),
+            [crate::coding_tools::COGNITION_CODE_APPLY_PATCH]
+        );
     }
 
     #[tokio::test]

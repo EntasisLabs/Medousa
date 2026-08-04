@@ -33,6 +33,7 @@ pub mod turn_delivery;
 pub mod heartbeat_turn;
 pub mod host_context;
 pub mod coder_activity;
+pub mod coder_claims;
 pub mod coder_evidence;
 pub mod coder_mode;
 pub mod coder_pointers;
@@ -107,6 +108,7 @@ pub use coder_activity::{
     CoderActivityStore, CoderAgentIdentity, CoderEngineeringDelta, CoderSharedSpaceSnapshot,
     coder_activity_store, engineering_delta_prompt_appendix, shared_space_prompt_appendix,
 };
+pub use coder_claims::{CoderClaimMode, CoderClaimScope};
 pub use coder_mode::{CoderEntryContext, CoderEntryError, compile_coder_entry};
 pub use coder_pointers::{CoderEngineeringPointer, CoderPointerDetail, CoderPointerKind};
 pub use coder_tools::{CoderBoundToolRegistry, CoderTurnLease};

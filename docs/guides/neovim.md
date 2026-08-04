@@ -110,6 +110,11 @@ worktree.
 Separate conversations may run agents against the same project concurrently;
 each lease owns a different worktree and branch.
 
+Coder still sees logical overlap across those private worktrees. Normal file
+overlap is reported as coordination context, while shared-risk operations such
+as lockfiles, migrations, ports, and deployment are serialized with an
+actionable conflict result instead of racing silently.
+
 Mode changes proposed by Medousa appear as a Switch/Not now picker after the
 turn. The workshop's configured expiry and auto-accept policy remains
 authoritative.

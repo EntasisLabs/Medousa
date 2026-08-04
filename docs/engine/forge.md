@@ -109,6 +109,35 @@ Pass `attempt_id` to that endpoint and to `/review/file` to select the exact
 manifest, branch, worktree, and diff. Decisions already bind to the selected
 attempt, evidence digest, baseline, and reviewed head.
 
+### Concurrent Coder claims
+
+Private attempt worktrees prevent direct filesystem races, but agents can still
+touch the same logical code or external resource. Before every Coder tool call,
+the runtime infers `read`, `write`, or `verify` claims from the governed tool and
+its targets. A model's required `intent` explains the operation; it cannot
+choose, weaken, or omit the inferred claims.
+
+Worktree-absolute editor and LSP paths are canonicalized to undertaking-relative
+file identities. Ordinary file overlaps remain admissible across isolated
+attempts and are surfaced to every affected agent through the shared ambient
+frame, causal activity events, and ranked pointers. Source mutations retain
+their existing digest checks, while integration remains bound to exact evidence
+and Git baselines.
+
+Hazardous resources are serialized before the underlying tool runs. These
+include dependency lockfiles, migration ordering, generated artifact sets,
+shared Git references and indexes, databases, ports/services, deployments, and
+publishing operations inferred from file paths or shell commands. A conflicting
+call returns a structured `coder_claim_conflict` result with the holder's agent,
+attempt, tool, intent, and claim expiry plus an actionable retry decision.
+
+Write claims remain active while the Coder turn keeps heartbeating; read and
+verify claims release when the call finishes. Long-running calls renew claims
+every 30 seconds. Claims expire after two minutes without renewal and are
+released immediately when an agent leaves. The activity index bounds active
+claims and historical events; it stores coordination metadata, never source or
+command-output payload bodies.
+
 Export writes on the daemon/workshop filesystem. `destination` must be absent
 or an empty directory; a non-empty destination returns `409` and is never
 overwritten.

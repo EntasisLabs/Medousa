@@ -1,6 +1,6 @@
 # Coder cognitive runtime
 
-> Status: Approved direction; slices 1–5 complete
+> Status: Approved direction; slices 1–6 complete
 > Parent: [Agent runtime modes](agent-runtime-modes-plan.md)
 
 ## Product decision
@@ -417,13 +417,35 @@ Implemented:
   recovery. Boot reconciliation interrupts or fails only stale/missing peers and
   leaves healthy leases fenced and heartbeat-capable.
 
-### Slice 6 — claims and collision handling
+### Slice 6 — claims and collision handling (complete)
 
 - Infer object and resource claims from tool targets.
 - Add read/write/verify modes, TTL heartbeat, and structured conflict results.
 - Serialize hazardous resources and retain optimistic revision checks.
 - Surface overlap and conflict pointers in every affected agent's ambient
   frame.
+
+Implemented:
+
+- The runtime derives bounded object and resource claims from the governed tool
+  name and validated targets. Models provide operational intent but cannot
+  declare their own authority or suppress a claim.
+- Claims use `read`, `write`, and `verify` modes. Absolute paths from private
+  worktrees canonicalize to undertaking-relative identities so peer worktrees
+  still recognize the same logical file.
+- Ordinary file overlap remains admissible because mutation is isolated, but it
+  is projected into both agents' shared-space and delta frames. Existing digest
+  and Git baseline fences remain the stale-write boundary.
+- Lockfiles, migration sequences, generated artifact sets, Git-wide mutations,
+  deployments, databases, services, and ports are hazardous resources. Their
+  incompatible claims are serialized atomically before the domain tool runs.
+- Rejections return a structured conflict with holder attempt, tool, intent,
+  expiry, and an actionable next decision. Blocked events become ranked
+  engineering pointers visible to every affected agent.
+- Successful write claims remain while the active turn keeps heartbeating; read
+  and verify claims release after the call. In-flight claims heartbeat every 30
+  seconds, expire after two minutes without renewal, disappear when the agent
+  leaves, and are bounded to prevent unbounded activity-index growth.
 
 ### Slice 7 — engineering notebook and experiments
 
