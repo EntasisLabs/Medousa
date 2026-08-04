@@ -929,6 +929,58 @@ describe("preprocessLiquidEmbeds", () => {
     expect(props?.sources?.[0].url).toBe("https://example.com/tokyo");
   });
 
+  it("accepts indented brief delimiters and preserves multiline Markdown bodies", () => {
+    const src = [
+      "```brief",
+      " title: Rust stack",
+      " subtitle: Practical recommendation",
+      " tone: practical",
+      " ---",
+      " heading: Recommendation",
+      " body: Start with ESP-IDF for the first connected milestone.",
+      "",
+      "   Keep the control loop behind a safety-focused module.",
+      " ---",
+      " heading: Sensors and display",
+      " body: |",
+      "   - **BME280:** use the documented I2C driver.",
+      "   - **OLED:** pair SSD1306 with embedded-graphics.",
+      " ---",
+      " heading: Next step",
+      " body: Pin compatible versions from the generated template.",
+      "===",
+      " title: ESP-IDF Rust docs",
+      " url: https://docs.espressif.com/projects/rust/",
+      " quote: Official Rust-on-ESP documentation.",
+      " source: Espressif",
+      " ---",
+      " title: esp-idf-svc docs",
+      " url: https://docs.rs/esp-idf-svc/latest",
+      " quote: Safe wrappers for ESP-IDF services.",
+      " source: docs.rs",
+      "```",
+    ].join("\n");
+
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="brief"');
+    expect(out).not.toContain("```brief");
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      title?: string;
+      sections: { heading: string; body: string }[];
+      sources?: { title: string; url?: string; quote?: string }[];
+    }>(match![1]);
+    expect(props?.title).toBe("Rust stack");
+    expect(props?.sections).toHaveLength(3);
+    expect(props?.sections[0].body).toContain("safety-focused module");
+    expect(props?.sections[1].body).toContain("- **BME280:**");
+    expect(props?.sections[1].body).toContain("- **OLED:**");
+    expect(props?.sections[1].body).not.toBe("|");
+    expect(props?.sources).toHaveLength(2);
+    expect(props?.sources?.[0].title).toBe("ESP-IDF Rust docs");
+    expect(props?.sources?.[1].url).toContain("esp-idf-svc");
+  });
+
   it("accepts brief with nested --- body and title alias", () => {
     const src = [
       "```brief",
