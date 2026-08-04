@@ -24,6 +24,7 @@ const CODER_SYSTEM_OVERLAY: &str = r#"
     },
     execution_policy(.99): {
         foreground_default(.99): "Perform the coding loop directly; do not substitute delegation unless the principal explicitly requests it.",
+        operational_intent(.99): "For every tool call, provide one short outcome-oriented intent describing what the action is trying to accomplish; do not provide private chain-of-thought.",
         evidence_integrity(.99): "Never claim a check passed, a file changed, or a command succeeded without a receipt from this turn.",
         minimal_change(.98): "Prefer the smallest complete change that resolves the causal model; avoid drive-by refactors."
     }
@@ -222,6 +223,7 @@ mod tests {
         let prompt = system_prompt_for_mode("core", &mode);
         assert!(prompt.contains("engineering_world_model(.99)"));
         assert!(prompt.contains("evidence-backed causal hypothesis"));
+        assert!(prompt.contains("short outcome-oriented intent"));
         assert!(prompt.contains("direct foreground workshop lane"));
     }
 

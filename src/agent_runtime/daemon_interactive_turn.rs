@@ -1116,7 +1116,31 @@ async fn run_agent_turn_inner(
                         return;
                     }
                 };
-                let authority = Arc::new(super::coder_tools::CoderTurnLease::new(forge, lease));
+                let identity = super::coder_activity::CoderAgentIdentity::for_turn(
+                    &session_id,
+                    turn_id,
+                    &lease.attempt_id.to_string(),
+                );
+                let authority = match super::coder_tools::CoderTurnLease::new(
+                    forge,
+                    lease,
+                    super::coder_activity::coder_activity_store(),
+                    identity,
+                ) {
+                    Ok(authority) => Arc::new(authority),
+                    Err(err) => {
+                        sink.agent_error(1, format!("cannot enter Coder shared space: {err}"))
+                            .await;
+                        return;
+                    }
+                };
+                let shared_space_appendix = match authority.shared_space_prompt_appendix() {
+                    Ok(appendix) => appendix,
+                    Err(err) => {
+                        sink.agent_error(1, err.to_string()).await;
+                        return;
+                    }
+                };
                 let registry = Arc::new(super::coder_tools::CoderBoundToolRegistry::new(
                     agent_rt.tool_registry.clone(),
                     &authority,
@@ -1129,7 +1153,11 @@ async fn run_agent_turn_inner(
                 (
                     Some(authority),
                     Some(registry),
-                    Some(entry.prompt_appendix()),
+                    Some(format!(
+                        "{}\n\n{}",
+                        entry.prompt_appendix(),
+                        shared_space_appendix
+                    )),
                     Some(registry_override),
                 )
             }

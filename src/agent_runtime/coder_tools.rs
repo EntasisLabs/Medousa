@@ -17,6 +17,7 @@ use stasis::domain::errors::StasisError;
 use stasis::prelude::Result;
 use tokio::sync::Mutex;
 
+use super::coder_activity::{CoderActivityStore, CoderAgentIdentity};
 use super::coder_mode::CoderEntryContext;
 
 const TURN_CONTROL_TOOLS: &[&str] = &[
@@ -32,15 +33,35 @@ pub struct CoderTurnLease {
     forge: Arc<Forge>,
     lease: ExecutionLease,
     actor: ActorRef,
+    activity: Arc<CoderActivityStore>,
+    identity: CoderAgentIdentity,
 }
 
 impl CoderTurnLease {
-    pub fn new(forge: Arc<Forge>, lease: ExecutionLease) -> Self {
-        Self {
+    pub fn new(
+        forge: Arc<Forge>,
+        lease: ExecutionLease,
+        activity: Arc<CoderActivityStore>,
+        identity: CoderAgentIdentity,
+    ) -> Result<Self> {
+        if let Err(err) = activity.register_agent(&lease.work_id.to_string(), &identity) {
+            let actor = Forge::system_actor();
+            if let Err(release_err) =
+                forge.interrupt_attempt(&lease, RecoveryDisposition::RestartAllowed, &actor)
+            {
+                tracing::warn!(error = %release_err, "failed to release Coder lease after activity registration failure");
+            }
+            return Err(StasisError::PortFailure(format!(
+                "cannot register Coder activity: {err}"
+            )));
+        }
+        Ok(Self {
             forge,
             lease,
             actor: Forge::system_actor(),
-        }
+            activity,
+            identity,
+        })
     }
 
     pub fn lease(&self) -> &ExecutionLease {
@@ -58,10 +79,73 @@ impl CoderTurnLease {
             tracing::warn!(error = %err, "failed to append Coder tool receipt");
         }
     }
+
+    pub fn shared_space_prompt_appendix(&self) -> Result<String> {
+        let snapshot = self
+            .activity
+            .snapshot(&self.lease.work_id.to_string(), &self.identity.agent_id)
+            .map_err(|err| {
+                StasisError::PortFailure(format!("cannot compile Coder shared space: {err}"))
+            })?;
+        Ok(super::coder_activity::shared_space_prompt_appendix(
+            &snapshot,
+        ))
+    }
+
+    fn begin_tool_activity(
+        &self,
+        tool_name: &str,
+        intent: &str,
+        targets: Vec<String>,
+    ) -> Result<String> {
+        self.activity
+            .begin_tool(
+                &self.lease.work_id.to_string(),
+                &self.identity,
+                tool_name,
+                intent,
+                targets,
+            )
+            .map_err(|err| {
+                StasisError::PortFailure(format!("cannot record Coder tool intent: {err}"))
+            })
+    }
+
+    fn finish_tool_activity(
+        &self,
+        call_id: &str,
+        tool_name: &str,
+        intent: &str,
+        targets: Vec<String>,
+        result: std::result::Result<&Value, &StasisError>,
+    ) {
+        let mapped = result.map_err(|err| err.to_string());
+        let activity_result = mapped
+            .as_ref()
+            .map(|output| *output)
+            .map_err(String::as_str);
+        if let Err(err) = self.activity.finish_tool(
+            &self.lease.work_id.to_string(),
+            &self.identity,
+            call_id,
+            tool_name,
+            intent,
+            targets,
+            activity_result,
+        ) {
+            tracing::warn!(error = %err, tool = tool_name, "failed to finish Coder activity");
+        }
+    }
 }
 
 impl Drop for CoderTurnLease {
     fn drop(&mut self) {
+        if let Err(err) = self
+            .activity
+            .leave_agent(&self.lease.work_id.to_string(), &self.identity)
+        {
+            tracing::warn!(error = %err, work_id = %self.lease.work_id, "failed to release Coder activity presence");
+        }
         if let Err(err) = self.forge.interrupt_attempt(
             &self.lease,
             RecoveryDisposition::RestartAllowed,
@@ -203,6 +287,8 @@ impl CoderBoundToolRegistry {
             if let Ok(authority) = self.authority() {
                 authority.append_receipt(tool_receipt(
                     crate::coding_tools::COGNITION_SHELL_SESSION_INTERRUPT,
+                    "Release the governed shell session before ending the Coder turn",
+                    "runtime-cleanup",
                     &input,
                     result.as_ref(),
                 ));
@@ -300,6 +386,7 @@ impl ToolRegistry for CoderBoundToolRegistry {
         Ok(tools
             .into_iter()
             .filter(|tool| self.allowed_tools.contains(tool.name.as_str()))
+            .map(with_required_coder_intent)
             .collect())
     }
 
@@ -311,15 +398,130 @@ impl ToolRegistry for CoderBoundToolRegistry {
         }
         let authority = self.authority()?;
         authority.heartbeat()?;
-        let input = self.bind_input(tool_name, input)?;
-        self.validate_shell_session(tool_name, &input).await?;
+        let (intent, input) = take_coder_intent(input)?;
+        let targets = tool_targets(tool_name, &input, authority.lease());
+        let call_id = authority.begin_tool_activity(tool_name, &intent, targets.clone())?;
+        let input = match self.bind_input(tool_name, input) {
+            Ok(input) => input,
+            Err(err) => {
+                authority.finish_tool_activity(&call_id, tool_name, &intent, targets, Err(&err));
+                authority.append_receipt(tool_receipt(
+                    tool_name,
+                    &intent,
+                    &call_id,
+                    &Value::Null,
+                    Err(&err),
+                ));
+                return Err(err);
+            }
+        };
+        if let Err(err) = self.validate_shell_session(tool_name, &input).await {
+            authority.finish_tool_activity(&call_id, tool_name, &intent, targets, Err(&err));
+            authority.append_receipt(tool_receipt(
+                tool_name,
+                &intent,
+                &call_id,
+                &input,
+                Err(&err),
+            ));
+            return Err(err);
+        }
         let result = self.inner.invoke_tool(tool_name, input.clone()).await;
         if let Ok(output) = &result {
             self.record_shell_session(tool_name, output).await;
         }
-        authority.append_receipt(tool_receipt(tool_name, &input, result.as_ref()));
+        authority.finish_tool_activity(&call_id, tool_name, &intent, targets, result.as_ref());
+        authority.append_receipt(tool_receipt(
+            tool_name,
+            &intent,
+            &call_id,
+            &input,
+            result.as_ref(),
+        ));
         result
     }
+}
+
+fn with_required_coder_intent(mut tool: Tool) -> Tool {
+    let schema = tool.schema.get_or_insert_with(|| {
+        json!({
+            "type": "object",
+            "properties": {},
+            "required": []
+        })
+    });
+    if !schema.is_object() {
+        *schema = json!({ "type": "object", "properties": {}, "required": [] });
+    }
+    let object = schema.as_object_mut().expect("Coder tool schema object");
+    object
+        .entry("type")
+        .or_insert_with(|| Value::String("object".into()));
+    let properties = object
+        .entry("properties")
+        .or_insert_with(|| Value::Object(Default::default()));
+    if !properties.is_object() {
+        *properties = Value::Object(Default::default());
+    }
+    properties
+        .as_object_mut()
+        .expect("Coder tool properties")
+        .insert(
+            "intent".into(),
+            json!({
+                "type": "string",
+                "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+                "maxLength": 320
+            }),
+        );
+    let required = object
+        .entry("required")
+        .or_insert_with(|| Value::Array(Vec::new()));
+    if !required.is_array() {
+        *required = Value::Array(Vec::new());
+    }
+    let required = required.as_array_mut().expect("Coder required fields");
+    if !required
+        .iter()
+        .any(|field| field.as_str() == Some("intent"))
+    {
+        required.push(Value::String("intent".into()));
+    }
+    tool
+}
+
+fn take_coder_intent(mut input: Value) -> Result<(String, Value)> {
+    let map = input
+        .as_object_mut()
+        .ok_or_else(|| StasisError::PortFailure("Coder tools require an object input".into()))?;
+    let raw = map
+        .remove("intent")
+        .and_then(|value| value.as_str().map(str::to_string))
+        .ok_or_else(|| StasisError::PortFailure("Coder tool intent is required".into()))?;
+    let intent = super::coder_activity::validate_intent(&raw).map_err(StasisError::PortFailure)?;
+    Ok((intent, input))
+}
+
+fn tool_targets(tool_name: &str, input: &Value, lease: &ExecutionLease) -> Vec<String> {
+    let mut targets = Vec::new();
+    if let Some(path) = input.get("path").and_then(Value::as_str) {
+        targets.push(format!("file://{}", path.trim()));
+    }
+    if let Some(uri) = input.get("uri").and_then(Value::as_str) {
+        targets.push(uri.trim().to_string());
+    }
+    if let Some(session_id) = input.get("session_id").and_then(Value::as_str) {
+        targets.push(format!("shell://{session_id}"));
+    } else if tool_name.starts_with("cognition_shell_") {
+        targets.push(format!("attempt://{}", lease.attempt_id));
+    }
+    if tool_name.starts_with("cognition_detamu_") {
+        targets.push(format!("work://{}", lease.work_id));
+    }
+    targets.sort();
+    targets.dedup();
+    targets.truncate(8);
+    targets
 }
 
 fn reject_mismatched_string(value: Option<&Value>, expected: &str, field: &str) -> Result<()> {
@@ -356,6 +558,8 @@ fn normalize_relative_path(value: &str) -> Result<String> {
 
 fn tool_receipt(
     tool_name: &str,
+    intent: &str,
+    call_id: &str,
     input: &Value,
     result: std::result::Result<&Value, &StasisError>,
 ) -> Value {
@@ -376,7 +580,9 @@ fn tool_receipt(
     };
     json!({
         "kind": "medousa_coder_tool",
+        "call_id": call_id,
         "tool": tool_name,
+        "intent": intent,
         "ok": ok,
         "path": input.get("path"),
         "expected_sha256": input.get("expected_sha256"),
@@ -437,6 +643,7 @@ mod tests {
         forge: Arc<Forge>,
         entry: Arc<CoderEntryContext>,
         policy: WorkPolicy,
+        activity: Arc<CoderActivityStore>,
     }
 
     fn fixture() -> Fixture {
@@ -485,12 +692,16 @@ mod tests {
             )
             .expect("entry"),
         );
+        let activity = Arc::new(CoderActivityStore::open(
+            forge_root.path().join("coder-activity.json"),
+        ));
         Fixture {
             _repo: repo,
             _forge_root: forge_root,
             forge,
             entry,
             policy,
+            activity,
         }
     }
 
@@ -507,7 +718,17 @@ mod tests {
                 &Forge::system_actor(),
             )
             .expect("begin attempt");
-        Arc::new(CoderTurnLease::new(fixture.forge.clone(), lease))
+        let identity =
+            CoderAgentIdentity::for_turn("test-session", 1, &lease.attempt_id.to_string());
+        Arc::new(
+            CoderTurnLease::new(
+                fixture.forge.clone(),
+                lease,
+                fixture.activity.clone(),
+                identity,
+            )
+            .expect("Coder authority"),
+        )
     }
 
     #[tokio::test]
@@ -531,11 +752,24 @@ mod tests {
         assert!(tools.iter().any(|tool| {
             tool.name.as_str() == crate::coding_tools::COGNITION_SHELL_SESSION_STATUS
         }));
+        for tool in &tools {
+            let schema = tool.schema.as_ref().expect("Coder schema");
+            assert!(
+                schema["required"]
+                    .as_array()
+                    .expect("required fields")
+                    .iter()
+                    .any(|field| field.as_str() == Some("intent"))
+            );
+        }
 
         registry
             .invoke_tool(
                 crate::coding_tools::COGNITION_CODE_READ,
-                json!({ "path": "src/lib.rs" }),
+                json!({
+                    "intent": "Inspect the source before making a change",
+                    "path": "src/lib.rs"
+                }),
             )
             .await
             .expect("bound read");
@@ -549,11 +783,15 @@ mod tests {
             input["root"],
             fixture.entry.worktree.to_string_lossy().as_ref()
         );
+        assert!(input.get("intent").is_none());
 
         registry
             .invoke_tool(
                 crate::coding_tools::COGNITION_SHELL_SESSION_STATUS,
-                json!({ "create": true }),
+                json!({
+                    "intent": "Open a governed shell for focused verification",
+                    "create": true
+                }),
             )
             .await
             .expect("bound shell");
@@ -606,7 +844,11 @@ mod tests {
             registry
                 .invoke_tool(
                     crate::coding_tools::COGNITION_CODE_READ,
-                    json!({ "path": "src/lib.rs", "root": "/tmp/other" }),
+                    json!({
+                        "intent": "Inspect source outside the claimed root",
+                        "path": "src/lib.rs",
+                        "root": "/tmp/other"
+                    }),
                 )
                 .await
                 .is_err()
@@ -615,11 +857,24 @@ mod tests {
             registry
                 .invoke_tool(
                     crate::coding_tools::COGNITION_CODE_APPLY_PATCH,
-                    json!({ "path": "README.md", "expected_sha256": "missing", "content": "x" }),
+                    json!({
+                        "intent": "Change a path outside the allowed policy",
+                        "path": "README.md",
+                        "expected_sha256": "missing",
+                        "content": "x"
+                    }),
                 )
                 .await
                 .is_err()
         );
+        let activity = fixture
+            .activity
+            .snapshot(&fixture.entry.work_id, "observer")
+            .expect("activity snapshot");
+        assert!(activity.recent_events.iter().any(|event| {
+            event.kind == super::super::coder_activity::CoderActivityKind::ToolFailed
+                && event.intent.as_deref() == Some("Change a path outside the allowed policy")
+        }));
 
         drop(authority);
         let item = fixture
@@ -639,5 +894,28 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+
+    #[tokio::test]
+    async fn surface_requires_intent_before_invoking_domain_tool() {
+        let fixture = fixture();
+        let authority = authority(&fixture);
+        let inner = Arc::new(RecordingRegistry::default());
+        let registry = CoderBoundToolRegistry::new(
+            inner.clone(),
+            &authority,
+            fixture.entry.clone(),
+            fixture.policy.clone(),
+        );
+
+        let error = registry
+            .invoke_tool(
+                crate::coding_tools::COGNITION_CODE_READ,
+                json!({ "path": "src/lib.rs" }),
+            )
+            .await
+            .expect_err("missing intent");
+        assert!(error.to_string().contains("intent is required"));
+        assert!(inner.invoked_tools.lock().expect("tools lock").is_empty());
     }
 }

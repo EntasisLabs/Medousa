@@ -3,6 +3,10 @@
 > Status: Core modes, unbound Coder setup, and Home/VS Code/Neovim continuity complete
 > First modes: **General** and **Coder**
 
+Coder's post-foundation ambient world model, tool intent, shared undertaking,
+and multi-agent concurrency roadmap lives in
+[Coder cognitive runtime](coder-cognitive-runtime-plan.md).
+
 ## Product decision
 
 Medousa remains one continuous collaborator. A mode changes how Medousa works

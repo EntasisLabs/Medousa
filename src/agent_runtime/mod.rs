@@ -32,6 +32,7 @@ pub mod engine {
 pub mod turn_delivery;
 pub mod heartbeat_turn;
 pub mod host_context;
+pub mod coder_activity;
 pub mod coder_mode;
 pub mod coder_setup_tools;
 pub mod coder_tools;
@@ -98,6 +99,10 @@ pub use heartbeat_turn::{
 pub use modes::{
     AgentModeUnavailable, CoderRuntimePhase, ModeExecutionLane, ResolvedAgentMode, list_agent_modes, resolve_agent_mode,
     system_prompt_for_mode,
+};
+pub use coder_activity::{
+    CoderActivityStore, CoderAgentIdentity, CoderSharedSpaceSnapshot, coder_activity_store,
+    shared_space_prompt_appendix,
 };
 pub use coder_mode::{CoderEntryContext, CoderEntryError, compile_coder_entry};
 pub use coder_tools::{CoderBoundToolRegistry, CoderTurnLease};
