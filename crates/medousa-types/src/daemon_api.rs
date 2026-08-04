@@ -1935,6 +1935,84 @@ pub struct UpdateArtifactRetentionResponse {
     pub next_run_at_utc: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct StorageGovernorSettingsResponse {
+    pub enabled: bool,
+    pub repository_cache_max_bytes: u64,
+    pub global_cache_max_bytes: u64,
+    pub free_disk_floor_bytes: u64,
+    pub min_inactive_age_hours: u64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct StorageCategoryUsageResponse {
+    pub physical_bytes: u64,
+    pub file_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ForgeCacheUsageResponse {
+    pub repository_key: String,
+    pub physical_bytes: u64,
+    pub file_count: u64,
+    pub last_used_unix_seconds: u64,
+    pub protected: bool,
+    pub protection_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct StorageUsageReportResponse {
+    pub settings: StorageGovernorSettingsResponse,
+    pub data_root: String,
+    pub available_disk_bytes: Option<u64>,
+    pub total_managed_bytes: u64,
+    pub forge_metadata: StorageCategoryUsageResponse,
+    pub forge_worktrees: StorageCategoryUsageResponse,
+    pub build_caches: StorageCategoryUsageResponse,
+    pub detamu: StorageCategoryUsageResponse,
+    pub artifacts: StorageCategoryUsageResponse,
+    pub coder_evidence: StorageCategoryUsageResponse,
+    pub forge_caches: Vec<ForgeCacheUsageResponse>,
+    pub scan_warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct StorageEvictionActionResponse {
+    pub repository_key: String,
+    pub physical_bytes: u64,
+    pub reason: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct StorageMaintenanceReportResponse {
+    pub enabled: bool,
+    pub dry_run: bool,
+    pub before: StorageUsageReportResponse,
+    pub after: StorageUsageReportResponse,
+    pub selected_bytes: u64,
+    pub reclaimed_bytes: u64,
+    pub actions: Vec<StorageEvictionActionResponse>,
+    pub pressure_remaining: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct StorageMaintenanceRequest {
+    #[serde(default = "default_storage_maintenance_dry_run")]
+    pub dry_run: bool,
+}
+
+fn default_storage_maintenance_dry_run() -> bool {
+    true
+}
+
 // ── Ingester types ────────────────────────────────────────────────────────────
 
 /// Optional attachment forwarded by a channel adapter.

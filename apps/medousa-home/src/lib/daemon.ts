@@ -1790,6 +1790,77 @@ export async function updateArtifactRetention(request: {
   return invoke("artifact_retention_update", { request });
 }
 
+export interface StorageGovernorSettings {
+  enabled: boolean;
+  repository_cache_max_bytes: number;
+  global_cache_max_bytes: number;
+  free_disk_floor_bytes: number;
+  min_inactive_age_hours: number;
+}
+
+export interface StorageCategoryUsage {
+  physical_bytes: number;
+  file_count: number;
+}
+
+export interface ForgeCacheUsage {
+  repository_key: string;
+  physical_bytes: number;
+  file_count: number;
+  last_used_unix_seconds: number;
+  protected: boolean;
+  protection_reason: string | null;
+}
+
+export interface StorageUsageReport {
+  settings: StorageGovernorSettings;
+  data_root: string;
+  available_disk_bytes: number | null;
+  total_managed_bytes: number;
+  forge_metadata: StorageCategoryUsage;
+  forge_worktrees: StorageCategoryUsage;
+  build_caches: StorageCategoryUsage;
+  detamu: StorageCategoryUsage;
+  artifacts: StorageCategoryUsage;
+  coder_evidence: StorageCategoryUsage;
+  forge_caches: ForgeCacheUsage[];
+  scan_warnings: string[];
+}
+
+export interface StorageMaintenanceReport {
+  enabled: boolean;
+  dry_run: boolean;
+  before: StorageUsageReport;
+  after: StorageUsageReport;
+  selected_bytes: number;
+  reclaimed_bytes: number;
+  actions: Array<{
+    repository_key: string;
+    physical_bytes: number;
+    reason: string;
+    status: string;
+  }>;
+  pressure_remaining: boolean;
+}
+
+export async function getStorageStatus(): Promise<StorageUsageReport> {
+  return invoke<StorageUsageReport>("storage_status");
+}
+
+export async function updateStorageSettings(
+  request: StorageGovernorSettings,
+): Promise<StorageUsageReport> {
+  return invoke<StorageUsageReport>("storage_settings_update", { request });
+}
+
+export async function runStorageMaintenance(
+  dryRun: boolean,
+): Promise<StorageMaintenanceReport> {
+  return invoke<StorageMaintenanceReport>("storage_maintenance_run", {
+    request: { dry_run: dryRun },
+  });
+}
+
 export async function registerRecurringPrompt(request: {
   prompt: string;
   cron_expr: string;

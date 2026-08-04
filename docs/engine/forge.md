@@ -227,6 +227,42 @@ An external agent chat session can opt in to Forge custody by setting
 
 Plain chat sessions (no `work_id`) are unaffected and never touch Forge.
 
+## Storage accounting and cache governance
+
+Forge custody, governed worktrees, repository-group build caches, Detamu,
+artifacts, and Coder evidence are reported separately by the workshop daemon:
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/v1/maintenance/storage` | Physical-byte and file-count report plus current policy |
+| PUT | `/v1/maintenance/storage` | Replace cache caps, free-disk floor, inactivity age, and automatic-cleanup setting |
+| POST | `/v1/maintenance/storage` | Preview (`{"dry_run":true}`) or execute (`false`) pressure-aware cache cleanup |
+
+The settings payload uses bytes:
+
+```json
+{
+  "enabled": true,
+  "repository_cache_max_bytes": 10737418240,
+  "global_cache_max_bytes": 32212254720,
+  "free_disk_floor_bytes": 10737418240,
+  "min_inactive_age_hours": 24
+}
+```
+
+A zero repository/global cap or free-disk floor disables that individual
+boundary. Automatic maintenance runs at most every six hours. Cap-based cleanup
+waits for the configured inactivity age; free-disk pressure may reclaim an
+inactive cache sooner. Turning automatic maintenance off does not disable
+manual preview or cleanup.
+
+Only explicit repository-group `.cache` roots beneath Forge worktrees are
+eligible. A repository cache is protected while any undertaking for that group
+is non-terminal, including Ready, Executing, sealing, and review states. The
+governor rechecks protection immediately before deletion, selects eligible
+caches oldest-first, and never deletes worktrees, Forge event/evidence custody,
+Detamu, artifacts, or Coder evidence. Deleted build caches are regenerable.
+
 Home uses `/v1/forge/items/{id}/handoff` before moving from a human editing
 lease to Codex or Cursor. The request includes `lease_id`, `generation`, and
 `to_executor`. Forge records the transition, interrupts the current attempt,

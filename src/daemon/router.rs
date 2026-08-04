@@ -525,6 +525,12 @@ pub fn build_core_router(state: AppState) -> Router {
             "/v1/maintenance/artifacts",
             get(get_artifact_retention_status).put(update_artifact_retention),
         )
+        .route(
+            "/v1/maintenance/storage",
+            get(crate::daemon::storage_governor::get_storage_status)
+                .put(crate::daemon::storage_governor::put_storage_settings)
+                .post(crate::daemon::storage_governor::post_storage_maintenance),
+        )
         .route("/v1/runtime/config/command", post(runtime_config_command))
         .route("/v1/runtime/stage-route/command", post(stage_route_command))
         .route("/v1/identity/context", post(identity_get_context))

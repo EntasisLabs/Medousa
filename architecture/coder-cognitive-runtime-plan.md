@@ -1,6 +1,6 @@
 # Coder cognitive runtime
 
-> Status: Approved direction; slices 1–4A complete
+> Status: Approved direction; slices 1–4B complete
 > Parent: [Agent runtime modes](agent-runtime-modes-plan.md)
 
 ## Product decision
@@ -258,13 +258,23 @@ Implemented verticals:
   deterministic per-result and per-round model-context budgets.
 - Measure payloads that would require spooling before adding a disk store.
 
-#### Slice 4B — storage accounting and execution-cache governance
+#### Slice 4B — storage accounting and execution-cache governance (complete)
 
-- Report physical bytes by Forge worktrees, build caches, Detamu, artifacts,
-  and Coder evidence.
-- Give regenerable build caches separate configurable repository/global caps
-  and a free-disk floor; do not confuse them with cognitive evidence.
-- Evict inactive regenerable caches by pressure-aware LRU.
+Implemented:
+
+- Physical allocated-byte and file-count accounting separately reports Forge
+  custody, governed worktrees, repository-group build caches, Detamu,
+  artifacts, and Coder evidence.
+- User-configurable per-repository/global cache caps, free-disk floor, minimum
+  inactivity age, and automatic-maintenance switch live at the workshop
+  authority and are available in Medousa Settings.
+- Preview and execute maintenance share the same pressure plan. Execution can
+  delete only explicit Forge repository-group `.cache` roots.
+- Non-terminal undertakings protect their repository cache; protection is
+  rechecked before deletion. Eligible caches are selected oldest-first.
+- The daemon runs the same governor at most every six hours. Worktrees, Forge
+  evidence/events, Detamu, artifacts, and Coder evidence are never eviction
+  candidates.
 
 #### Slice 4C — ephemeral content-addressed evidence
 

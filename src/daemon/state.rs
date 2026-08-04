@@ -89,6 +89,8 @@ pub struct AppState {
     /// `last_retention_at` because the in-memory prune runs regardless of the
     /// (env-gated) durable retention config.
     pub last_mem_prune_at: Arc<RwLock<Option<DateTime<Utc>>>>,
+    /// Last pressure-aware Forge cache maintenance pass.
+    pub last_storage_maintenance_at: Arc<RwLock<Option<DateTime<Utc>>>>,
     /// Latest turn-start context budget per session (from `context_usage` stream events).
     pub last_context_usage_by_session: Arc<RwLock<HashMap<String, ContextUsageReport>>>,
     pub client_registry: ClientRegistry,

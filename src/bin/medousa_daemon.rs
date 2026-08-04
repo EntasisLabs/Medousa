@@ -37,6 +37,7 @@ use tokio::sync::{RwLock, watch};
 /// (env-gated, 6h) durable retention pass so memory stays bounded on every
 /// deployment even when durable retention is disabled.
 const MEM_PRUNE_INTERVAL: Duration = Duration::from_secs(5 * 60);
+const STORAGE_MAINTENANCE_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 
 /// Drop terminal `agent_turn_jobs` records (which hold full response text) once
 /// they are older than this. Comfortably outlives normal result polling.
@@ -96,6 +97,47 @@ impl DaemonSchedulerSideEffects {
             "in-memory state prune completed"
         );
     }
+
+    async fn govern_storage_if_due(&self, now_utc: DateTime<Utc>) {
+        let should_run = {
+            let last = *self.state.last_storage_maintenance_at.read().await;
+            last.is_none_or(|at| {
+                now_utc
+                    .signed_duration_since(at)
+                    .to_std()
+                    .unwrap_or(STORAGE_MAINTENANCE_INTERVAL)
+                    >= STORAGE_MAINTENANCE_INTERVAL
+            })
+        };
+        if !should_run {
+            return;
+        }
+        let forge = self.state.forge.clone();
+        let data_root = medousa::paths::medousa_data_dir();
+        let settings = medousa::daemon::storage_governor::load_settings(&data_root);
+        if !settings.enabled {
+            return;
+        }
+        *self.state.last_storage_maintenance_at.write().await = Some(now_utc);
+        let report = tokio::task::spawn_blocking(move || {
+            medousa::daemon::storage_governor::maintain_storage(&data_root, &forge, settings, false)
+        })
+        .await;
+        match report {
+            Ok(Ok(report)) if !report.actions.is_empty() || report.pressure_remaining => {
+                tracing::info!(
+                    selected_bytes = report.selected_bytes,
+                    reclaimed_bytes = report.reclaimed_bytes,
+                    actions = report.actions.len(),
+                    pressure_remaining = report.pressure_remaining,
+                    "Forge cache maintenance completed"
+                );
+            }
+            Ok(Ok(_)) => {}
+            Ok(Err(err)) => tracing::warn!(error = %err, "Forge cache maintenance failed"),
+            Err(err) => tracing::warn!(error = %err, "Forge cache maintenance task failed"),
+        }
+    }
 }
 
 #[async_trait]
@@ -117,6 +159,7 @@ impl SchedulerTickSideEffects for DaemonSchedulerSideEffects {
         // Bound in-memory state on every deployment, independent of the
         // (env-gated) durable retention config below.
         self.prune_in_memory_state_if_due(now_utc).await;
+        self.govern_storage_if_due(now_utc).await;
 
         if !self.state.retention_config.enabled() {
             return;
@@ -397,6 +440,7 @@ async fn main() -> Result<()> {
         retention_config,
         last_retention_at: Arc::new(RwLock::new(None)),
         last_mem_prune_at: Arc::new(RwLock::new(None)),
+        last_storage_maintenance_at: Arc::new(RwLock::new(None)),
         last_context_usage_by_session: Arc::new(RwLock::new(HashMap::new())),
         client_registry: platform.client_registry(),
         forge,

@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import SettingsCharterSaveBar from "$lib/components/settings/SettingsCharterSaveBar.svelte";
   import SettingsPresentationRetention from "$lib/components/settings/SettingsPresentationRetention.svelte";
+  import SettingsStorageGovernance from "$lib/components/settings/SettingsStorageGovernance.svelte";
   import ModelsSettingsTab from "$lib/components/settings/ModelsSettingsTab.svelte";
   import ModelsStagesTab from "$lib/components/settings/ModelsStagesTab.svelte";
   import ProvidersSettingsTab from "$lib/components/settings/ProvidersSettingsTab.svelte";
@@ -103,6 +104,7 @@
   let memoryBudgetsOpen = $state(false);
   let voicesOpen = $state(false);
   let presentationsOpen = $state(false);
+  let storageOpen = $state(false);
   let modeTransitionsOpen = $state(false);
   let modePolicy = $state<AgentModeTransitionPolicy>({
     proposal_ttl_seconds: 30,
@@ -759,6 +761,16 @@
     </summary>
     <div class="prefs-more-body">
       <SettingsPresentationRetention {mobile} />
+    </div>
+  </details>
+
+  <details class="prefs-more" bind:open={storageOpen}>
+    <summary class="prefs-more-summary">
+      <span>Workshop storage</span>
+      <ChevronDown size={14} strokeWidth={2} class="prefs-more-chevron" aria-hidden="true" />
+    </summary>
+    <div class="prefs-more-body">
+      <SettingsStorageGovernance {mobile} />
     </div>
   </details>
 
