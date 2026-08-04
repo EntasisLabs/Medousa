@@ -300,6 +300,7 @@ pub fn persist_and_enrich_artifact_refs(
 pub fn tool_payload_is_requeryable(tool_name: &str) -> bool {
     crate::code_intelligence_tools::is_code_cognition_tool(tool_name)
         || crate::detamu_tools::is_detamu_cognition_tool(tool_name)
+        || tool_name == crate::coding_tools::COGNITION_SHELL_SESSION_STATUS
 }
 
 pub fn ui_artifact_from_tool_output(
@@ -503,6 +504,9 @@ mod tests {
         assert!(tool_payload_is_requeryable("cognition_code_read"));
         assert!(tool_payload_is_requeryable("cognition_code_diagnostics"));
         assert!(tool_payload_is_requeryable("cognition_detamu_impact"));
+        assert!(tool_payload_is_requeryable(
+            "cognition_shell_session_status"
+        ));
         assert!(!tool_payload_is_requeryable("cognition_shell_session_run"));
     }
 }

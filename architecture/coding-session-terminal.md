@@ -97,6 +97,12 @@ fixed 96 Ki-character observation envelope, priority metadata and actionable
 orientation survive truncation, and repeated identical failures collapse into
 an occurrence-counted cluster so retries must change course.
 
+The governor also emits compact debug telemetry and process-level counters for
+bounded re-queryable, reference-replayable, and non-replayable observations.
+Only oversized non-replayable results contribute to `would_spool` counts and
+byte volume. These measurements retain no tool payload, path, or content and
+therefore do not create a disk-growth path.
+
 One-shot `cognition_shell_run` remains for non-coding probes; coding mode
 prefers the shared session. Default interactive palette is unchanged.
 

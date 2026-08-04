@@ -5,6 +5,8 @@
 //! current tool loop, and never persists payloads.
 
 use std::collections::HashMap;
+use std::sync::LazyLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
@@ -40,6 +42,105 @@ const PRIORITY_FIELDS: &[&str] = &[
 #[derive(Debug, Default)]
 pub struct ToolPerceptionGovernor {
     failure_occurrences: HashMap<String, usize>,
+    round_metrics: PerceptionMetricsSnapshot,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PerceptionMetricsSnapshot {
+    pub observed_results: u64,
+    pub raw_result_chars: u64,
+    pub model_result_chars: u64,
+    pub bounded_results: u64,
+    pub bounded_requeryable_results: u64,
+    pub bounded_replayable_results: u64,
+    pub would_spool_results: u64,
+    pub would_spool_bytes: u64,
+    pub failure_clusters: u64,
+    pub bounded_round_contexts: u64,
+    pub omitted_context_chars: u64,
+}
+
+impl PerceptionMetricsSnapshot {
+    pub fn has_governor_activity(&self) -> bool {
+        self.bounded_results > 0 || self.failure_clusters > 0 || self.bounded_round_contexts > 0
+    }
+
+    pub fn telemetry_line(&self, round: usize) -> String {
+        format!(
+            "◈ perception_governor round={round} observed={} raw_chars={} model_chars={} bounded={} requeryable={} replayable={} would_spool={} would_spool_bytes={} failure_clusters={} bounded_contexts={} omitted_context_chars={}",
+            self.observed_results,
+            self.raw_result_chars,
+            self.model_result_chars,
+            self.bounded_results,
+            self.bounded_requeryable_results,
+            self.bounded_replayable_results,
+            self.would_spool_results,
+            self.would_spool_bytes,
+            self.failure_clusters,
+            self.bounded_round_contexts,
+            self.omitted_context_chars,
+        )
+    }
+}
+
+#[derive(Debug, Default)]
+struct PerceptionMetrics {
+    observed_results: AtomicU64,
+    raw_result_chars: AtomicU64,
+    model_result_chars: AtomicU64,
+    bounded_results: AtomicU64,
+    bounded_requeryable_results: AtomicU64,
+    bounded_replayable_results: AtomicU64,
+    would_spool_results: AtomicU64,
+    would_spool_bytes: AtomicU64,
+    failure_clusters: AtomicU64,
+    bounded_round_contexts: AtomicU64,
+    omitted_context_chars: AtomicU64,
+}
+
+static PERCEPTION_METRICS: LazyLock<PerceptionMetrics> = LazyLock::new(PerceptionMetrics::default);
+
+pub fn perception_metrics_snapshot() -> PerceptionMetricsSnapshot {
+    PerceptionMetricsSnapshot {
+        observed_results: PERCEPTION_METRICS.observed_results.load(Ordering::Relaxed),
+        raw_result_chars: PERCEPTION_METRICS.raw_result_chars.load(Ordering::Relaxed),
+        model_result_chars: PERCEPTION_METRICS
+            .model_result_chars
+            .load(Ordering::Relaxed),
+        bounded_results: PERCEPTION_METRICS.bounded_results.load(Ordering::Relaxed),
+        bounded_requeryable_results: PERCEPTION_METRICS
+            .bounded_requeryable_results
+            .load(Ordering::Relaxed),
+        bounded_replayable_results: PERCEPTION_METRICS
+            .bounded_replayable_results
+            .load(Ordering::Relaxed),
+        would_spool_results: PERCEPTION_METRICS
+            .would_spool_results
+            .load(Ordering::Relaxed),
+        would_spool_bytes: PERCEPTION_METRICS.would_spool_bytes.load(Ordering::Relaxed),
+        failure_clusters: PERCEPTION_METRICS.failure_clusters.load(Ordering::Relaxed),
+        bounded_round_contexts: PERCEPTION_METRICS
+            .bounded_round_contexts
+            .load(Ordering::Relaxed),
+        omitted_context_chars: PERCEPTION_METRICS
+            .omitted_context_chars
+            .load(Ordering::Relaxed),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EvidenceClass {
+    Requeryable,
+    Replayable,
+    NonReplayable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ObservationKind {
+    Passthrough,
+    BoundedPayload,
+    FailureCluster,
+    BatchTooWide,
 }
 
 impl ToolPerceptionGovernor {
@@ -53,8 +154,19 @@ impl ToolPerceptionGovernor {
     /// Compile one authoritative tool output into its ephemeral model-facing
     /// observation. The input value is never mutated or retained.
     pub fn observe(&mut self, tool_name: &str, output: &Value, max_chars: usize) -> Value {
+        let rendered = output.to_string();
+        let raw_chars = rendered.chars().count();
         if max_chars < MIN_ACTIONABLE_RESULT_CHARS {
-            return minimal_observation(tool_name, output, max_chars);
+            let observed = minimal_observation(tool_name, output, max_chars);
+            self.record_result(
+                tool_name,
+                output,
+                raw_chars,
+                rendered.len(),
+                &observed,
+                ObservationKind::BatchTooWide,
+            );
+            return observed;
         }
         if is_failure(output) {
             let signature = failure_signature(tool_name, output);
@@ -64,21 +176,49 @@ impl ToolPerceptionGovernor {
                 .or_insert(0);
             *occurrences = occurrences.saturating_add(1);
             if *occurrences > 1 {
-                return fit_failure_cluster(tool_name, output, &signature, *occurrences, max_chars);
+                let observed =
+                    fit_failure_cluster(tool_name, output, &signature, *occurrences, max_chars);
+                self.record_result(
+                    tool_name,
+                    output,
+                    raw_chars,
+                    rendered.len(),
+                    &observed,
+                    ObservationKind::FailureCluster,
+                );
+                return observed;
             }
         }
 
-        let rendered = output.to_string();
-        if rendered.chars().count() <= max_chars {
-            return output.clone();
+        if raw_chars <= max_chars {
+            let observed = output.clone();
+            self.record_result(
+                tool_name,
+                output,
+                raw_chars,
+                rendered.len(),
+                &observed,
+                ObservationKind::Passthrough,
+            );
+            return observed;
         }
-        fit_bounded_observation(tool_name, output, rendered, max_chars)
+        let raw_bytes = rendered.len();
+        let observed = fit_bounded_observation(tool_name, output, rendered, max_chars);
+        self.record_result(
+            tool_name,
+            output,
+            raw_chars,
+            raw_bytes,
+            &observed,
+            ObservationKind::BoundedPayload,
+        );
+        observed
     }
 
     /// Hard backstop for mode-owned world refreshes. Providers are expected to
     /// compile focused context themselves; this only prevents an anomalous
     /// refresh from escaping the global round envelope.
-    pub fn observe_round_context(&self, context: &str) -> String {
+    pub fn observe_round_context(&mut self, context: &str) -> String {
         let original_chars = context.chars().count();
         if original_chars <= PERCEPTION_CONTEXT_RESERVE_CHARS {
             return context.to_string();
@@ -96,11 +236,118 @@ impl ToolPerceptionGovernor {
             })
             .to_string();
             if bounded.chars().count() <= PERCEPTION_CONTEXT_RESERVE_CHARS {
+                let omitted = original_chars.saturating_sub(bounded.chars().count());
+                self.round_metrics.bounded_round_contexts =
+                    self.round_metrics.bounded_round_contexts.saturating_add(1);
+                self.round_metrics.omitted_context_chars = self
+                    .round_metrics
+                    .omitted_context_chars
+                    .saturating_add(to_u64(omitted));
+                PERCEPTION_METRICS
+                    .bounded_round_contexts
+                    .fetch_add(1, Ordering::Relaxed);
+                PERCEPTION_METRICS
+                    .omitted_context_chars
+                    .fetch_add(to_u64(omitted), Ordering::Relaxed);
                 return bounded;
             }
             preview_chars /= 2;
         }
     }
+
+    pub fn take_round_metrics(&mut self) -> PerceptionMetricsSnapshot {
+        std::mem::take(&mut self.round_metrics)
+    }
+
+    fn record_result(
+        &mut self,
+        tool_name: &str,
+        output: &Value,
+        raw_chars: usize,
+        raw_bytes: usize,
+        observed: &Value,
+        kind: ObservationKind,
+    ) {
+        let observed_chars = observed.to_string().chars().count();
+        add_metric(
+            &mut self.round_metrics.observed_results,
+            &PERCEPTION_METRICS.observed_results,
+            1,
+        );
+        add_metric(
+            &mut self.round_metrics.raw_result_chars,
+            &PERCEPTION_METRICS.raw_result_chars,
+            to_u64(raw_chars),
+        );
+        add_metric(
+            &mut self.round_metrics.model_result_chars,
+            &PERCEPTION_METRICS.model_result_chars,
+            to_u64(observed_chars),
+        );
+
+        if kind == ObservationKind::FailureCluster {
+            add_metric(
+                &mut self.round_metrics.failure_clusters,
+                &PERCEPTION_METRICS.failure_clusters,
+                1,
+            );
+        }
+        if kind != ObservationKind::BoundedPayload {
+            return;
+        }
+
+        add_metric(
+            &mut self.round_metrics.bounded_results,
+            &PERCEPTION_METRICS.bounded_results,
+            1,
+        );
+        match evidence_class(tool_name, output) {
+            EvidenceClass::Requeryable => add_metric(
+                &mut self.round_metrics.bounded_requeryable_results,
+                &PERCEPTION_METRICS.bounded_requeryable_results,
+                1,
+            ),
+            EvidenceClass::Replayable => add_metric(
+                &mut self.round_metrics.bounded_replayable_results,
+                &PERCEPTION_METRICS.bounded_replayable_results,
+                1,
+            ),
+            EvidenceClass::NonReplayable => {
+                add_metric(
+                    &mut self.round_metrics.would_spool_results,
+                    &PERCEPTION_METRICS.would_spool_results,
+                    1,
+                );
+                add_metric(
+                    &mut self.round_metrics.would_spool_bytes,
+                    &PERCEPTION_METRICS.would_spool_bytes,
+                    to_u64(raw_bytes),
+                );
+            }
+        }
+    }
+}
+
+fn evidence_class(tool_name: &str, output: &Value) -> EvidenceClass {
+    if super::tool_stream::tool_payload_is_requeryable(tool_name) {
+        EvidenceClass::Requeryable
+    } else if ["artifact_id", "reference", "blob_ref", "resource_uri"]
+        .iter()
+        .any(|key| output.get(*key).is_some_and(|value| !value.is_null()))
+    {
+        EvidenceClass::Replayable
+    } else {
+        EvidenceClass::NonReplayable
+    }
+}
+
+fn add_metric(round: &mut u64, global: &AtomicU64, value: u64) {
+    *round = round.saturating_add(value);
+    global.fetch_add(value, Ordering::Relaxed);
+}
+
+fn to_u64(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 fn minimal_observation(tool_name: &str, output: &Value, max_chars: usize) -> Value {
@@ -357,6 +604,9 @@ mod tests {
                 .as_str()
                 .is_some_and(|value| value.starts_with("sha256:"))
         );
+        let metrics = governor.take_round_metrics();
+        assert_eq!(metrics.observed_results, 2);
+        assert_eq!(metrics.failure_clusters, 1);
     }
 
     #[test]
@@ -378,7 +628,7 @@ mod tests {
 
     #[test]
     fn anomalous_mode_context_is_bounded_with_next_step_guidance() {
-        let governor = ToolPerceptionGovernor::default();
+        let mut governor = ToolPerceptionGovernor::default();
         let context = format!(
             "head-pointer\n{}\ntail-pointer",
             "\"escaped\\context\"".repeat(4_000)
@@ -398,5 +648,41 @@ mod tests {
                 .is_some_and(|text| text.ends_with("tail-pointer"))
         );
         assert!(value["next_decision"].as_str().is_some());
+        let metrics = governor.take_round_metrics();
+        assert_eq!(metrics.bounded_round_contexts, 1);
+        assert!(metrics.omitted_context_chars > 0);
+    }
+
+    #[test]
+    fn would_spool_metrics_count_only_non_replayable_bounded_payloads() {
+        let payload = "x".repeat(20_000);
+        let mut governor = ToolPerceptionGovernor::default();
+        governor.observe(
+            "cognition_code_read",
+            &json!({"ok": true, "content": payload}),
+            4_096,
+        );
+        governor.observe(
+            "cognition_ui_present",
+            &json!({"ok": true, "artifact_id": "artifact-1", "content": payload}),
+            4_096,
+        );
+        governor.observe(
+            "cognition_shell_session_run",
+            &json!({"ok": true, "stdout": payload}),
+            4_096,
+        );
+
+        let metrics = governor.take_round_metrics();
+        assert_eq!(metrics.observed_results, 3);
+        assert_eq!(metrics.bounded_results, 3);
+        assert_eq!(metrics.bounded_requeryable_results, 1);
+        assert_eq!(metrics.bounded_replayable_results, 1);
+        assert_eq!(metrics.would_spool_results, 1);
+        assert!(metrics.would_spool_bytes >= 20_000);
+        let line = metrics.telemetry_line(4);
+        assert!(line.starts_with("◈ perception_governor round=4"));
+        assert!(line.contains("would_spool=1"));
+        assert!(!line.contains(&"x".repeat(100)));
     }
 }

@@ -740,6 +740,14 @@ impl MedousaToolLoopPipeline {
                         .messages
                         .push(ChatMessage::system(context));
                 }
+                let perception_metrics = perception_governor.take_round_metrics();
+                if perception_metrics.has_governor_activity()
+                    && let Some(gate) = completion_gate.as_ref()
+                    && let Some(sink) = gate.sink.as_ref()
+                {
+                    sink.notice(perception_metrics.telemetry_line(rounds_executed))
+                        .await;
+                }
                 // A mode-owned registry may reveal a narrower or wider model-visible
                 // subset between rounds, but it cannot change its authority superset.
                 if !has_selected_tool {

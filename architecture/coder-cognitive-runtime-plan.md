@@ -1,6 +1,6 @@
 # Coder cognitive runtime
 
-> Status: Approved direction; slices 1–3 complete; slice 4A in progress
+> Status: Approved direction; slices 1–4A complete
 > Parent: [Agent runtime modes](agent-runtime-modes-plan.md)
 
 ## Product decision
@@ -228,7 +228,7 @@ complete payload must return a successful structured observation explaining
 why it was bounded, what was observed, which dimensions remain unknown, and
 the exact next ranged/search call shapes available to the model.
 
-#### Slice 4A — perception governor, zero new persistence
+#### Slice 4A — perception governor, zero new persistence (complete)
 
 Implemented verticals:
 
@@ -242,6 +242,9 @@ Implemented verticals:
   head/tail orientation while raw invocation receipts remain unchanged.
 - Repeated identical failures become an ephemeral causal cluster with a stable
   signature, occurrence count, preserved error/hint, and a change-course cue.
+- Process-level and per-round counters measure bounded re-queryable,
+  reference-replayable, and non-replayable observations. Only the last class
+  contributes to `would_spool` object/byte totals; telemetry stores no payload.
 
 - Keep whole-file reads as the default when the file fits the response budget.
 - For oversized files, return size, available digest/line metadata, bounded
@@ -288,6 +291,10 @@ Acceptance for 4A:
 - A ranged request returns bounded content plus exact coverage and continuation
   metadata.
 - No source, diagnostic, log, or trace payload is newly persisted by 4A.
+- Raw invocation receipts remain unchanged while the next inference receives a
+  bounded observation.
+- Diagnostic telemetry reports would-spool counts and byte volume without
+  retaining payload bodies, paths, or content.
 
 ### Slice 5 — isolated concurrent attempts
 
