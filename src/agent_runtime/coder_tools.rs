@@ -36,6 +36,18 @@ pub const COGNITION_ENGINEERING_POINTER_FOLLOW: &str = "cognition_engineering_po
 pub const COGNITION_ENGINEERING_HISTORY: &str = "cognition_engineering_history";
 pub const COGNITION_CODER_EVIDENCE_READ: &str = "cognition_coder_evidence_read";
 
+const GENERAL_MODE_RUNTIME_TOOLS: &[&str] = &[
+    "cognition_job_enqueue",
+    "cognition_grapheme_promote_to_job",
+    "cognition_grapheme_promote_to_recurring",
+    "cognition_grapheme_promote_last_run_to_recurring",
+    "cognition_mcp_promote_to_job",
+    "cognition_spawn_turn_worker",
+    "cognition_turn_worker_status",
+    "cognition_turn_worker_cancel",
+    "cognition_workshop_steer",
+];
+
 const CODER_RUNTIME_TOOLS: &[&str] = &[
     COGNITION_CODER_TOOLS_DISCOVER,
     COGNITION_ENGINEERING_POINTERS,
@@ -43,6 +55,25 @@ const CODER_RUNTIME_TOOLS: &[&str] = &[
     COGNITION_ENGINEERING_HISTORY,
     COGNITION_CODER_EVIDENCE_READ,
 ];
+
+fn coder_tool_allowed(tool_name: &str, policy: &WorkPolicy) -> bool {
+    let restricted_shell = (!policy.allowed_paths.is_empty() || !policy.denied_paths.is_empty())
+        && matches!(
+            tool_name,
+            crate::coding_tools::COGNITION_SHELL_SESSION_STATUS
+                | crate::coding_tools::COGNITION_SHELL_SESSION_RUN
+                | crate::coding_tools::COGNITION_SHELL_SESSION_INTERRUPT
+        );
+    !restricted_shell
+        && !tool_name.starts_with("cognition_runtime_")
+        && !GENERAL_MODE_RUNTIME_TOOLS.contains(&tool_name)
+}
+
+fn requires_coder_discovery(tool_name: &str) -> bool {
+    crate::code_intelligence_tools::is_code_cognition_tool(tool_name)
+        || crate::detamu_tools::is_detamu_cognition_tool(tool_name)
+        || tool_name == COGNITION_ENGINEERING_HISTORY
+}
 
 pub struct CoderTurnLease {
     forge: Arc<Forge>,
@@ -277,7 +308,6 @@ pub struct CoderBoundToolRegistry {
     authority: Weak<CoderTurnLease>,
     entry: Arc<CoderEntryContext>,
     policy: WorkPolicy,
-    allowed_tools: HashSet<String>,
     visible_tools: Arc<StdMutex<HashSet<String>>>,
     shell_sessions: Arc<Mutex<HashSet<String>>>,
 }
@@ -289,19 +319,6 @@ impl CoderBoundToolRegistry {
         entry: Arc<CoderEntryContext>,
         policy: WorkPolicy,
     ) -> Self {
-        let mut allowed_tools: HashSet<String> = crate::coding_tools::CODING_COGNITION_TOOLS
-            .iter()
-            .chain(crate::code_intelligence_tools::CODE_COGNITION_TOOLS.iter())
-            .chain(crate::detamu_tools::DETAMU_COGNITION_TOOLS.iter())
-            .map(|name| (*name).to_string())
-            .collect();
-        allowed_tools.extend(TURN_CONTROL_TOOLS.iter().map(|name| (*name).to_string()));
-        allowed_tools.extend(CODER_RUNTIME_TOOLS.iter().map(|name| (*name).to_string()));
-        if !policy.allowed_paths.is_empty() || !policy.denied_paths.is_empty() {
-            allowed_tools.remove(crate::coding_tools::COGNITION_SHELL_SESSION_STATUS);
-            allowed_tools.remove(crate::coding_tools::COGNITION_SHELL_SESSION_RUN);
-            allowed_tools.remove(crate::coding_tools::COGNITION_SHELL_SESSION_INTERRUPT);
-        }
         let mut visible_tools = crate::coding_tools::CODING_COGNITION_TOOLS
             .iter()
             .chain(TURN_CONTROL_TOOLS.iter())
@@ -315,7 +332,7 @@ impl CoderBoundToolRegistry {
                 .iter(),
             )
             .map(|name| (*name).to_string())
-            .filter(|name| allowed_tools.contains(name))
+            .filter(|name| coder_tool_allowed(name, &policy))
             .collect::<HashSet<_>>();
         if entry.editor.active_path.is_some() || entry.editor.containing_symbol.is_some() {
             visible_tools.extend(
@@ -329,7 +346,6 @@ impl CoderBoundToolRegistry {
             authority: Arc::downgrade(authority),
             entry,
             policy,
-            allowed_tools,
             visible_tools: Arc::new(StdMutex::new(visible_tools)),
             shell_sessions: Arc::new(Mutex::new(HashSet::new())),
         }
@@ -409,7 +425,7 @@ impl CoderBoundToolRegistry {
         })?;
         let mut unlocked = Vec::new();
         for name in names {
-            if self.allowed_tools.contains(name) && visible.insert(name.to_string()) {
+            if coder_tool_allowed(name, &self.policy) && visible.insert(name.to_string()) {
                 unlocked.push(name.to_string());
             }
         }
@@ -759,24 +775,29 @@ impl ToolRegistry for CoderBoundToolRegistry {
         tools.extend(coder_runtime_tool_definitions());
         Ok(tools
             .into_iter()
-            .filter(|tool| visible.contains(tool.name.as_str()))
+            .filter(|tool| {
+                coder_tool_allowed(tool.name.as_str(), &self.policy)
+                    && (!requires_coder_discovery(tool.name.as_str())
+                        || visible.contains(tool.name.as_str()))
+            })
             .map(with_required_coder_intent)
             .collect())
     }
 
     async fn invoke_tool(&self, tool_name: &str, input: Value) -> Result<Value> {
-        if !self.allowed_tools.contains(tool_name) {
+        if !coder_tool_allowed(tool_name, &self.policy) {
             return Err(StasisError::PortFailure(format!(
                 "tool is outside the Coder mode contract: {tool_name}"
             )));
         }
-        let visible = self
-            .visible_tools
-            .lock()
-            .map_err(|err| {
-                StasisError::PortFailure(format!("Coder visible tool lock poisoned: {err}"))
-            })?
-            .contains(tool_name);
+        let visible = !requires_coder_discovery(tool_name)
+            || self
+                .visible_tools
+                .lock()
+                .map_err(|err| {
+                    StasisError::PortFailure(format!("Coder visible tool lock poisoned: {err}"))
+                })?
+                .contains(tool_name);
         let authority = self.authority()?;
         authority.heartbeat()?;
         let (intent, input) = take_coder_intent(input)?;
@@ -1126,6 +1147,13 @@ mod tests {
                 Tool::new(crate::code_intelligence_tools::COGNITION_CODE_DIAGNOSTICS),
                 Tool::new(crate::detamu_tools::COGNITION_DETAMU_STATUS),
                 Tool::new("cognition_vault_write"),
+                Tool::new("cognition_memory_recall"),
+                Tool::new("cognition_memory_store"),
+                Tool::new("cognition_web_search"),
+                Tool::new("cognition_mcp_discover"),
+                Tool::new("cognition_mcp_invoke"),
+                Tool::new("cognition_runtime_jobs_cancel"),
+                Tool::new("cognition_spawn_turn_worker"),
             ])
         }
 
@@ -1296,7 +1324,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn surface_hides_non_coder_tools_and_injects_forge_root() {
+    async fn surface_inherits_existing_tools_except_runtime_controls() {
         let fixture = fixture();
         let authority = authority(&fixture);
         let inner = Arc::new(RecordingRegistry::default());
@@ -1307,7 +1335,6 @@ mod tests {
             fixture.policy.clone(),
         );
         let tools = registry.list_tools().await.expect("list");
-        assert_eq!(tools.len(), 6);
         assert!(
             tools
                 .iter()
@@ -1326,11 +1353,30 @@ mod tests {
                 .iter()
                 .any(|tool| tool.name.as_str() == COGNITION_CODER_EVIDENCE_READ)
         );
-        assert!(
-            tools
-                .iter()
-                .all(|tool| tool.name.as_str() != "cognition_vault_write")
-        );
+        for inherited in [
+            "cognition_vault_write",
+            "cognition_memory_recall",
+            "cognition_memory_store",
+            "cognition_web_search",
+            "cognition_mcp_discover",
+            "cognition_mcp_invoke",
+        ] {
+            assert!(
+                tools.iter().any(|tool| tool.name.as_str() == inherited),
+                "missing inherited Coder tool {inherited}"
+            );
+        }
+        for runtime_control in [
+            "cognition_runtime_jobs_cancel",
+            "cognition_spawn_turn_worker",
+        ] {
+            assert!(
+                tools
+                    .iter()
+                    .all(|tool| tool.name.as_str() != runtime_control),
+                "runtime control leaked into Coder: {runtime_control}"
+            );
+        }
         for tool in &tools {
             let schema = tool.schema.as_ref().expect("Coder schema");
             assert!(
@@ -1363,6 +1409,38 @@ mod tests {
             fixture.entry.worktree.to_string_lossy().as_ref()
         );
         assert!(input.get("intent").is_none());
+
+        registry
+            .invoke_tool(
+                "cognition_memory_recall",
+                json!({
+                    "intent": "Recall the user's established implementation preferences",
+                    "query": "implementation preferences"
+                }),
+            )
+            .await
+            .expect("inherited memory tool");
+        let input = inner
+            .last_input
+            .lock()
+            .expect("input lock")
+            .clone()
+            .expect("recorded memory input");
+        assert_eq!(input["query"], "implementation preferences");
+        assert!(input.get("intent").is_none());
+
+        let denied = registry
+            .invoke_tool(
+                "cognition_runtime_jobs_cancel",
+                json!({ "intent": "Cancel a durable runtime job", "job_id": "job-1" }),
+            )
+            .await
+            .expect_err("runtime control denied");
+        assert!(
+            denied
+                .to_string()
+                .contains("outside the Coder mode contract")
+        );
 
         registry
             .invoke_tool(
@@ -1619,9 +1697,14 @@ mod tests {
             tool.name.as_str() == crate::code_intelligence_tools::COGNITION_CODE_DIAGNOSTICS
         }));
         assert!(
-            !after
+            after
                 .iter()
-                .any(|tool| tool.name.as_str() == "cognition_vault_write")
+                .any(|tool| tool.name.as_str() == "cognition_memory_recall")
+        );
+        assert!(
+            after
+                .iter()
+                .all(|tool| tool.name.as_str() != "cognition_runtime_jobs_cancel")
         );
     }
 
