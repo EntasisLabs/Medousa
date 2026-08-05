@@ -2713,6 +2713,18 @@ export function preprocessLiquidEmbeds(source: string): string {
   return result.join("\n");
 }
 
+const PORTABLE_CHART_SHELL_PATTERN = /<div class="liquid-chart-shell" data-edit-chart-index="\d+"><div class="liquid-chart-toolbar"><button type="button" class="liquid-chart-configure">Configure<\/button><\/div>(<div class="liquid-md-embed" data-liquid-embed="chart" data-liquid-props="[A-Za-z0-9+/=]+"><\/div>)<\/div>/g;
+
+/** Remove Home's chart-editing toolbar while retaining its inert chart placeholder. */
+export function stripLiquidChartEditorChrome(source: string): string {
+  return source.replace(PORTABLE_CHART_SHELL_PATTERN, "$1");
+}
+
+/** Preprocess Liquid Markdown for hosts that do not implement Home's chart editor. */
+export function preprocessPortableLiquidEmbeds(source: string): string {
+  return stripLiquidChartEditorChrome(preprocessLiquidEmbeds(source));
+}
+
 interface TopLevelFence {
   openLine: number;
   closeLine: number;

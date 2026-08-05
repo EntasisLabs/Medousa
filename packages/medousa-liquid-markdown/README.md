@@ -19,3 +19,6 @@ Markdown pass. The options provide host-owned behavior such as nested Markdown
 rendering, link navigation, action handling, media URL resolution, clipboard
 access, and live-feed loading. The returned handle exposes `ready` and `destroy()`
 for async rendering and lifecycle cleanup.
+
+Portable hosts should start with `preprocessPortableLiquidEmbeds(markdown)`. It
+keeps the shared chart payload while omitting Home's chart-editing toolbar.

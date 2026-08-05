@@ -1,4 +1,4 @@
-import { preprocessLiquidEmbeds } from "@medousa/liquid-markdown";
+import { preprocessPortableLiquidEmbeds } from "@medousa/liquid-markdown";
 import {
   hydrateLiquidMarkdown,
   type LiquidBrowserHydrateOptions,
@@ -12,7 +12,6 @@ export interface MedousaLiquidWebviewApi {
 
 type TrustedFragment = { token: string; html: string; block: boolean };
 
-const CHART_SHELL_PATTERN = /<div class="liquid-chart-shell" data-edit-chart-index="\d+"><div class="liquid-chart-toolbar"><button type="button" class="liquid-chart-configure">Configure<\/button><\/div>(<div class="liquid-md-embed" data-liquid-embed="chart" data-liquid-props="[A-Za-z0-9+/=]+"><\/div>)<\/div>/g;
 const EMBED_PATTERN = /<div class="liquid-md-embed" data-liquid-embed="[a-z_]+" data-liquid-props="[A-Za-z0-9+/=]+"><\/div>/g;
 const ICON_PATTERN = /<span class="liquid-md-icon" data-liquid-icon="[a-z0-9-]+" aria-hidden="true"><\/span>/g;
 const KANBAN_PATTERN = /<div class="liquid-mini-kanban" data-liquid-static="kanban"><p class="liquid-mini-kanban__label">Board<\/p><div class="liquid-mini-kanban__board">(?:<div class="liquid-mini-kanban__column"><p class="liquid-mini-kanban__column-title">[^<>]*<\/p><div class="liquid-mini-kanban__cards">(?:<div class="liquid-mini-kanban__card">[^<>]*<\/div>)*<\/div><\/div>)*<\/div><\/div>/g;
@@ -41,7 +40,7 @@ function extractTrustedLiquid(markdown: string): {
   fragments: TrustedFragment[];
   tokenPrefix: string;
 } {
-  let source = preprocessLiquidEmbeds(markdown).replace(CHART_SHELL_PATTERN, "$1");
+  let source = preprocessPortableLiquidEmbeds(markdown);
   let tokenPrefix = "\uE000MEDOUSA_LIQUID_";
   while (source.includes(tokenPrefix)) tokenPrefix += "_";
   const fragments: TrustedFragment[] = [];

@@ -8,6 +8,7 @@ import {
 } from "../dist/browser/index.js";
 import {
   decodeLiquidProps,
+  preprocessPortableLiquidEmbeds,
   preprocessLiquidEmbeds,
 } from "../dist/index.js";
 
@@ -97,6 +98,21 @@ test("renders interactive semantics and dependency-free SVG charts", () => {
   });
   assert.match(chart, /<svg/);
   assert.match(chart, /<polyline/);
+});
+
+test("portable preprocessing strips Home-only chart editor chrome", () => {
+  const output = preprocessPortableLiquidEmbeds([
+    "```chart",
+    "type: bar",
+    "| Month | Visits |",
+    "| ----- | ------ |",
+    "| Jan | 12 |",
+    "| Feb | 18 |",
+    "```",
+  ].join("\n"));
+  assert.match(output, /data-liquid-embed="chart"/);
+  assert.doesNotMatch(output, /liquid-chart-configure/);
+  assert.doesNotMatch(output, /liquid-chart-shell/);
 });
 
 test("ships icon and static kanban styling with the browser entrypoint", () => {
