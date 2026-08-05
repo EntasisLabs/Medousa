@@ -12,16 +12,17 @@
   },
   "scripts": {
     "dev": "node esbuild.config.mjs",
-    "prebuild": "tsc -p ../../packages/medousa-client/tsconfig.json",
-    "pretest": "tsc -p ../../packages/medousa-client/tsconfig.json",
+    "build:dependencies": "tsc -p ../../packages/medousa-client/tsconfig.json && tsc -p ../../packages/medousa-liquid-markdown/tsconfig.json",
+    "prebuild": "npm run build:dependencies",
+    "precheck": "npm run build:dependencies",
+    "pretest": "npm run build:dependencies",
     "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
     "check": "tsc --noEmit --skipLibCheck",
     "test": "vitest run"
   },
-  "dependencies": {
-    "@medousa/client": "file:../../packages/medousa-client"
-  },
   "devDependencies": {
+    "@medousa/client": "file:../../packages/medousa-client",
+    "@medousa/liquid-markdown": "file:../../packages/medousa-liquid-markdown",
     "@types/node": "^22.15.17",
     "esbuild": "0.25.5",
     "obsidian": "^1.13.1",

@@ -1,8 +1,10 @@
 import {
   App,
+  Component,
   Editor,
   ItemView,
   MarkdownFileInfo,
+  MarkdownRenderer,
   MarkdownView,
   Modal,
   Notice,
@@ -24,7 +26,16 @@ import {
   type VaultNoteContentResponse,
   type VaultSearchResponse,
 } from "@medousa/client";
+import {
+  hydrateLiquidMarkdown,
+  LIQUID_MARKDOWN_STYLES,
+  type LiquidHydrationHandle,
+} from "@medousa/liquid-markdown/browser";
 import { captureObsidianContext, type ObsidianContextSnapshot } from "./context";
+import {
+  normalizeLiquidMediaSource,
+  prepareObsidianLiquidMarkdown,
+} from "./liquidMarkdown";
 import {
   createProjectionState,
   projectStreamEvent,
@@ -55,6 +66,16 @@ interface TurnCallbacks {
 }
 
 type StatusTone = "connected" | "checking" | "working" | "error" | "idle";
+
+interface MarkdownBodyState {
+  source: string;
+  version: number;
+  scheduled: boolean;
+  rendering: boolean;
+  frame: number | null;
+  component: Component | null;
+  hydration: LiquidHydrationHandle | null;
+}
 
 export default class MedousaPlugin extends Plugin {
   settings!: MedousaSettings;
@@ -557,6 +578,8 @@ class MedousaChatView extends ItemView {
   private pendingWorkshopHistory: SessionHistoryResponse | null = null;
   private currentContext: ObsidianContextSnapshot | null = null;
   private refreshPromise: Promise<void> | null = null;
+  private readonly markdownBodies = new Map<HTMLElement, MarkdownBodyState>();
+  private liquidStyleEl: HTMLStyleElement | null = null;
 
   constructor(leaf: WorkspaceLeaf, private readonly plugin: MedousaPlugin) {
     super(leaf);
@@ -582,6 +605,9 @@ class MedousaChatView extends ItemView {
   }
 
   async onClose(): Promise<void> {
+    this.clearMarkdownBodies();
+    this.liquidStyleEl?.remove();
+    this.liquidStyleEl = null;
     this.root?.replaceChildren();
     this.root = null;
   }
@@ -635,6 +661,7 @@ class MedousaChatView extends ItemView {
   showHistory(history: SessionHistoryResponse): void {
     if (!this.transcriptEl) return;
     this.setSessionTitle(this.plugin.sessionTitle());
+    this.clearMarkdownBodies();
     this.transcriptEl.replaceChildren();
     this.assistantBody = null;
     this.assistantActionsEl = null;
@@ -703,9 +730,16 @@ class MedousaChatView extends ItemView {
   }
 
   private renderShell(): void {
+    this.clearMarkdownBodies();
+    this.liquidStyleEl?.remove();
     this.containerEl.replaceChildren();
     this.containerEl.classList.add("medousa-chat-view");
     this.root = this.containerEl;
+    this.liquidStyleEl = this.containerEl.ownerDocument.createElement("style");
+    this.liquidStyleEl.dataset.medousaLiquidMarkdown = "obsidian";
+    this.liquidStyleEl.textContent = LIQUID_MARKDOWN_STYLES;
+    (this.containerEl.ownerDocument.head ?? this.containerEl.ownerDocument.documentElement)
+      .appendChild(this.liquidStyleEl);
 
     const header = this.el("header", "medousa-header");
     const identity = this.el("div", "medousa-identity");
@@ -862,16 +896,21 @@ class MedousaChatView extends ItemView {
     this.transcriptEl.querySelector(".medousa-empty")?.remove();
     const message = this.el("article", `medousa-message medousa-message-${role}`);
     message.createEl("div", { text: role === "user" ? "You" : "Medousa", cls: "medousa-message-label" });
-    const body = message.createEl("div", { text: content });
-    if (role === "assistant") this.assistantBody = body;
+    const body = message.createEl("div", { cls: role === "assistant" ? "medousa-markdown" : undefined });
+    if (role === "assistant") {
+      this.assistantBody = body;
+    } else {
+      body.setText(content);
+    }
     this.transcriptEl.appendChild(message);
+    if (role === "assistant") this.scheduleMarkdownBody(body, content);
   }
 
   private startAssistant(): void {
     this.transcriptEl.querySelector(".medousa-empty")?.remove();
     const message = this.el("article", "medousa-message medousa-message-assistant");
     message.createEl("div", { text: "Medousa", cls: "medousa-message-label" });
-    this.assistantBody = message.createEl("div");
+    this.assistantBody = message.createEl("div", { cls: "medousa-markdown" });
     this.assistantActionsEl = null;
     this.assistantText = "";
     this.lastAnswerText = "";
@@ -882,14 +921,141 @@ class MedousaChatView extends ItemView {
     if (!this.assistantBody) this.startAssistant();
     this.assistantText += text;
     this.lastAnswerText = this.assistantText;
-    this.assistantBody?.setText(this.assistantText);
+    if (this.assistantBody) this.scheduleMarkdownBody(this.assistantBody, this.assistantText);
   }
 
   private replaceAssistant(text: string): void {
     if (!this.assistantBody) this.startAssistant();
     this.assistantText = text;
     this.lastAnswerText = text;
-    this.assistantBody?.setText(text);
+    if (this.assistantBody) this.scheduleMarkdownBody(this.assistantBody, text);
+  }
+
+  private scheduleMarkdownBody(target: HTMLElement, source: string): void {
+    let state = this.markdownBodies.get(target);
+    if (!state) {
+      state = {
+        source,
+        version: 0,
+        scheduled: false,
+        rendering: false,
+        frame: null,
+        component: null,
+        hydration: null,
+      };
+      this.markdownBodies.set(target, state);
+    }
+    state.source = source;
+    state.version += 1;
+    this.queueMarkdownBody(target, state);
+  }
+
+  private queueMarkdownBody(target: HTMLElement, state: MarkdownBodyState): void {
+    if (state.scheduled || state.rendering || this.markdownBodies.get(target) !== state) return;
+    state.scheduled = true;
+    const run = (): void => {
+      state.scheduled = false;
+      state.frame = null;
+      void this.flushMarkdownBody(target, state);
+    };
+    const view = target.ownerDocument.defaultView;
+    if (view) state.frame = view.requestAnimationFrame(run);
+    else queueMicrotask(run);
+  }
+
+  private async flushMarkdownBody(target: HTMLElement, state: MarkdownBodyState): Promise<void> {
+    if (state.rendering || this.markdownBodies.get(target) !== state) return;
+    state.rendering = true;
+    const version = state.version;
+    const source = state.source;
+    const sourcePath = this.currentContext?.file?.path ?? "";
+    state.hydration?.destroy();
+    state.hydration = null;
+    state.component?.unload();
+    state.component = null;
+    target.replaceChildren();
+
+    const component = new Component();
+    state.component = component;
+    try {
+      component.load();
+      await MarkdownRenderer.render(
+        this.app,
+        prepareObsidianLiquidMarkdown(source),
+        target,
+        sourcePath,
+        component,
+      );
+      if (this.markdownBodies.get(target) !== state || state.version !== version) return;
+
+      const hydration = hydrateLiquidMarkdown(target, {
+        installStyles: false,
+        renderMarkdown: async (nestedSource, nestedTarget) => {
+          await MarkdownRenderer.render(
+            this.app,
+            prepareObsidianLiquidMarkdown(nestedSource),
+            nestedTarget,
+            sourcePath,
+            component,
+          );
+        },
+        resolveMediaUrl: (mediaSource) => this.resolveLiquidMediaUrl(mediaSource, sourcePath),
+        onAction: async ({ intent, label }) => {
+          const prompt = intent.trim() || label.trim();
+          if (!prompt) return;
+          if (this.busy) {
+            this.inputEl.value = prompt;
+            this.inputEl.focus();
+            new Notice("Suggested action added to the composer.");
+            return;
+          }
+          await this.sendPrompt(prompt);
+        },
+        openLink: (url) => {
+          window.open(url, "_blank", "noopener,noreferrer");
+        },
+        copyText: async (value) => {
+          if (!navigator.clipboard) throw new Error("Clipboard is unavailable");
+          await navigator.clipboard.writeText(value);
+          new Notice("Copied.");
+        },
+        onError: (error, context) => {
+          console.warn(`[medousa-liquid] ${context}`, error);
+        },
+      });
+      state.hydration = hydration;
+      await hydration.ready;
+      if (state.version === version) this.scrollToLatest();
+    } catch (error) {
+      if (this.markdownBodies.get(target) === state && state.version === version) {
+        target.setText(source);
+        console.warn("[medousa-liquid] Markdown render failed", error);
+      }
+    } finally {
+      state.rendering = false;
+      if (this.markdownBodies.get(target) === state && state.version !== version) {
+        this.queueMarkdownBody(target, state);
+      }
+    }
+  }
+
+  private resolveLiquidMediaUrl(source: string, sourcePath: string): string | null {
+    const normalized = normalizeLiquidMediaSource(source);
+    if (/^(?:https?|blob|app):/i.test(normalized) || /^data:image\//i.test(normalized)) {
+      return normalized;
+    }
+    if (/^[a-z][a-z\d+.-]*:/i.test(normalized)) return null;
+    const file = this.app.metadataCache.getFirstLinkpathDest(normalized, sourcePath);
+    return file ? this.app.vault.getResourcePath(file) : null;
+  }
+
+  private clearMarkdownBodies(): void {
+    for (const [target, state] of this.markdownBodies) {
+      if (state.frame != null) target.ownerDocument.defaultView?.cancelAnimationFrame(state.frame);
+      state.hydration?.destroy();
+      state.component?.unload();
+    }
+    this.markdownBodies.clear();
   }
 
   private showError(message: string): void {
@@ -900,6 +1066,7 @@ class MedousaChatView extends ItemView {
   }
 
   private showConnectionError(error: unknown): void {
+    this.clearMarkdownBodies();
     this.transcriptEl.replaceChildren();
     this.assistantBody = null;
     this.assistantActionsEl = null;

@@ -230,6 +230,19 @@
   padding-right: 4px;
 }
 
+.medousa-message-assistant .medousa-markdown {
+  min-width: 0;
+  white-space: normal;
+}
+
+.medousa-message-assistant .medousa-markdown > :first-child {
+  margin-top: 0;
+}
+
+.medousa-message-assistant .medousa-markdown > :last-child {
+  margin-bottom: 0;
+}
+
 .medousa-message-error {
   padding: 10px 12px;
   border: 1px solid var(--background-modifier-error);
