@@ -21,6 +21,7 @@ apps/**/src-tauri/binaries/
 apps/**/dist/
 apps/**/build/
 packages/**/dist/
+packages/**/node_modules/
 integrations/**/node_modules/
 integrations/vscode/*.vsix
 apps/**/.svelte-kit/
@@ -31,6 +32,7 @@ package-lock.json
 !integrations/vscode/package-lock.json
 !integrations/obsidian/package-lock.json
 !integrations/browser/package-lock.json
+!packages/medousa-liquid-markdown/package-lock.json
 .grapheme-examples/
 /data%
 /docs/internal/

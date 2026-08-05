@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
+    "prebuild": "tsc -p ../../packages/medousa-liquid-markdown/tsconfig.json",
     "build": "vite build",
     "prepare:sidecar": "node scripts/prepare-engine-sidecar-runner.mjs",
     "tauri:build": "npm run prepare:sidecar && node scripts/tauri-build-runner.mjs",
@@ -12,8 +13,10 @@
     "build:full": "node scripts/build-full-package-runner.mjs",
     "build:full:ios": "node scripts/build-full-package-runner.mjs -- --ios",
     "preview": "vite preview",
+    "precheck": "tsc -p ../../packages/medousa-liquid-markdown/tsconfig.json",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "pretest": "tsc -p ../../packages/medousa-liquid-markdown/tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "guide:generate": "node scripts/generate-guide-appendix.mjs && vite-node src/lib/guide/generateLiquidCatalog.ts",
@@ -30,6 +33,7 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@medousa/liquid-markdown": "file:../../packages/medousa-liquid-markdown",
     "@codemirror/autocomplete": "^6.20.3",
     "@codemirror/commands": "^6.10.3",
     "@codemirror/lang-json": "^6.0.2",
