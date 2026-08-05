@@ -17,6 +17,44 @@ const LOCAL_PORT_START: u16 = 7419;
 const LOCAL_PORT_END: u16 = 7499;
 static LOCAL_BRAIN_START_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 
+/// Desktop-only process helpers (`medousa-host` is not linked on iOS/Android).
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+mod host_proc {
+    pub use medousa_host::{
+        force_process_stop_by_pid, is_process_alive, probe_local_worker,
+        request_process_stop_by_pid, stop_local_worker, stop_workshop_sidecars,
+    };
+}
+
+#[cfg(any(target_os = "ios", target_os = "android"))]
+mod host_proc {
+    use std::time::Duration;
+
+    use medousa_types::local::LocalWorkerStatus;
+
+    pub fn is_process_alive(_pid: u32) -> bool {
+        false
+    }
+
+    pub fn request_process_stop_by_pid(_pid: u32) -> bool {
+        false
+    }
+
+    pub fn force_process_stop_by_pid(_pid: u32) -> bool {
+        false
+    }
+
+    pub fn stop_workshop_sidecars() {}
+
+    pub fn probe_local_worker(_bind: &str) -> Result<LocalWorkerStatus, String> {
+        Err("local worker process control is desktop-only".to_string())
+    }
+
+    pub async fn stop_local_worker(_bind: &str, _timeout: Duration) -> Result<bool, String> {
+        Err("local worker process control is desktop-only".to_string())
+    }
+}
+
 pub(crate) struct ComponentCommand {
     pub program: String,
     pub pre_args: Vec<String>,
@@ -464,11 +502,11 @@ fn read_daemon_pid(workshop_id: &str) -> Option<u32> {
 pub fn stop_local_engine(workshop_id: &str) {
     stop_local_brain(workshop_id);
     if let Some(pid) = read_daemon_pid(workshop_id) {
-        let _ = medousa_host::request_process_stop_by_pid(pid);
+        let _ = host_proc::request_process_stop_by_pid(pid);
     }
     // Lazy workshop sidecars are separate listeners. Stop them with the daemon
     // so package/API upgrades cannot reuse a stale compatible-looking process.
-    medousa_host::stop_workshop_sidecars();
+    host_proc::stop_workshop_sidecars();
     clear_daemon_pid(workshop_id);
     if workshop_id == PERSONAL_WORKSHOP_ID {
         let _ = fs::remove_file(legacy_daemon_pid_path());
@@ -570,17 +608,17 @@ pub fn stop_local_brain(workshop_id: &str) {
 /// App shutdown cannot wait for confirmation; retaining the PID prevents a
 /// surviving worker from becoming an untracked orphan on the next launch.
 pub fn request_local_brain_stop(workshop_id: &str) -> bool {
-    read_local_brain_pid(workshop_id).is_some_and(medousa_host::request_process_stop_by_pid)
+    read_local_brain_pid(workshop_id).is_some_and(host_proc::request_process_stop_by_pid)
 }
 
 pub async fn stop_local_brain_bounded(workshop_id: &str) -> Result<bool, String> {
     let tracked_pid = read_local_brain_pid(workshop_id);
-    if let Ok(worker) = medousa_host::probe_local_worker(DEFAULT_LOCAL_BRAIN_BIND) {
+    if let Ok(worker) = host_proc::probe_local_worker(DEFAULT_LOCAL_BRAIN_BIND) {
         if tracked_pid != Some(worker.pid) {
             return Err("Refusing to stop an untracked local worker generation".to_string());
         }
         let stopped =
-            medousa_host::stop_local_worker(DEFAULT_LOCAL_BRAIN_BIND, Duration::from_secs(10))
+            host_proc::stop_local_worker(DEFAULT_LOCAL_BRAIN_BIND, Duration::from_secs(10))
                 .await?;
         clear_local_brain_pid(workshop_id);
         return Ok(stopped);
@@ -593,22 +631,22 @@ pub async fn stop_local_brain_bounded(workshop_id: &str) -> Result<bool, String>
     let Some(pid) = tracked_pid else {
         return Ok(false);
     };
-    if !medousa_host::is_process_alive(pid) {
+    if !host_proc::is_process_alive(pid) {
         clear_local_brain_pid(workshop_id);
         return Ok(false);
     }
-    let _ = medousa_host::request_process_stop_by_pid(pid);
+    let _ = host_proc::request_process_stop_by_pid(pid);
     let started = Instant::now();
     while started.elapsed() < Duration::from_secs(10) {
-        if !medousa_host::is_process_alive(pid) {
+        if !host_proc::is_process_alive(pid) {
             clear_local_brain_pid(workshop_id);
             return Ok(true);
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    let _ = medousa_host::force_process_stop_by_pid(pid);
+    let _ = host_proc::force_process_stop_by_pid(pid);
     tokio::time::sleep(Duration::from_millis(100)).await;
-    if medousa_host::is_process_alive(pid) {
+    if host_proc::is_process_alive(pid) {
         return Err(format!(
             "Local worker pid {pid} survived forced termination"
         ));
@@ -621,7 +659,7 @@ pub fn local_brain_process_alive(workshop_id: &str) -> bool {
     let Some(pid) = read_local_brain_pid(workshop_id) else {
         return false;
     };
-    if medousa_host::is_process_alive(pid) {
+    if host_proc::is_process_alive(pid) {
         true
     } else {
         clear_local_brain_pid(workshop_id);
@@ -634,7 +672,7 @@ pub fn spawn_local_brain(
     data_dir: &Path,
     model_id: Option<&str>,
 ) -> Result<(u32, PathBuf), String> {
-    if let Ok(worker) = medousa_host::probe_local_worker(DEFAULT_LOCAL_BRAIN_BIND) {
+    if let Ok(worker) = host_proc::probe_local_worker(DEFAULT_LOCAL_BRAIN_BIND) {
         let tracked_pid = read_local_brain_pid(workshop_id);
         let requested_matches = model_id
             .map(str::trim)
@@ -698,7 +736,7 @@ fn local_brain_http_ready(
     workshop_id: &str,
     model_id: Option<&str>,
 ) -> Option<medousa_types::local::LocalWorkerStatus> {
-    let worker = medousa_host::probe_local_worker(DEFAULT_LOCAL_BRAIN_BIND).ok()?;
+    let worker = host_proc::probe_local_worker(DEFAULT_LOCAL_BRAIN_BIND).ok()?;
     if read_local_brain_pid(workshop_id) != Some(worker.pid) {
         return None;
     }
@@ -959,7 +997,7 @@ pub async fn diagnose_local_engine(workshop: &WorkshopServer) -> EngineDiagnosis
     let lock_display = lock_path.as_ref().map(|path| path.display().to_string());
 
     let pid = read_daemon_pid(&workshop.id);
-    let pid_alive = pid.is_some_and(medousa_host::is_process_alive);
+    let pid_alive = pid.is_some_and(host_proc::is_process_alive);
     let bind_up = is_bind_reachable(&bind);
 
     if lock_exists && !pid_alive {
@@ -1032,7 +1070,7 @@ pub fn clear_stale_engine_lock(workshop: &WorkshopServer) -> Result<(), String> 
         return Ok(());
     }
     let pid = read_daemon_pid(&workshop.id);
-    if pid.is_some_and(medousa_host::is_process_alive) {
+    if pid.is_some_and(host_proc::is_process_alive) {
         return Err("Medousa is still running — stop it before clearing the lock".to_string());
     }
     fs::remove_file(&lock_path).map_err(|err| {

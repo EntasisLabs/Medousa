@@ -68,10 +68,13 @@ pub fn infer_tool_claims(
             reason: "repository search".into(),
         });
     }
-    if tool_name == crate::coding_tools::COGNITION_SHELL_SESSION_RUN {
+    if tool_name == crate::coding_tools::COGNITION_SHELL_SESSION_RUN
+        || tool_name == crate::coding_tools::COGNITION_CODER_SHELL_RUN
+    {
         infer_shell_claims(input, lease, &mut claims);
     } else if tool_name == crate::coding_tools::COGNITION_SHELL_SESSION_STATUS
         || tool_name == crate::coding_tools::COGNITION_SHELL_SESSION_INTERRUPT
+        || tool_name == crate::coding_tools::COGNITION_CODER_SHELL_STATUS
     {
         let session = input
             .get("session_id")
@@ -113,7 +116,9 @@ fn tool_mode(tool_name: &str, input: &Value) -> CoderClaimMode {
         || tool_name == crate::coding_tools::COGNITION_SHELL_SESSION_INTERRUPT
     {
         CoderClaimMode::Write
-    } else if tool_name == crate::coding_tools::COGNITION_SHELL_SESSION_RUN {
+    } else if tool_name == crate::coding_tools::COGNITION_SHELL_SESSION_RUN
+        || tool_name == crate::coding_tools::COGNITION_CODER_SHELL_RUN
+    {
         let command = shell_input(input).to_ascii_lowercase();
         if is_verification_command(&command) {
             CoderClaimMode::Verify

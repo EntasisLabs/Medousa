@@ -42,10 +42,13 @@ const GENERAL_MODE_RUNTIME_TOOLS: &[&str] = &[
     "cognition_grapheme_promote_to_recurring",
     "cognition_grapheme_promote_last_run_to_recurring",
     "cognition_mcp_promote_to_job",
+    "cognition_workshop_steer",
+];
+
+const CODER_PEER_SPAWN_TOOLS: &[&str] = &[
     "cognition_spawn_turn_worker",
     "cognition_turn_worker_status",
     "cognition_turn_worker_cancel",
-    "cognition_workshop_steer",
 ];
 
 const CODER_RUNTIME_TOOLS: &[&str] = &[
@@ -57,14 +60,21 @@ const CODER_RUNTIME_TOOLS: &[&str] = &[
 ];
 
 fn coder_tool_allowed(tool_name: &str, policy: &WorkPolicy) -> bool {
+    let os_shell = matches!(
+        tool_name,
+        crate::shell_tools::COGNITION_SHELL_RUN | crate::shell_tools::COGNITION_SHELL_STATUS
+    );
     let restricted_shell = (!policy.allowed_paths.is_empty() || !policy.denied_paths.is_empty())
         && matches!(
             tool_name,
             crate::coding_tools::COGNITION_SHELL_SESSION_STATUS
                 | crate::coding_tools::COGNITION_SHELL_SESSION_RUN
                 | crate::coding_tools::COGNITION_SHELL_SESSION_INTERRUPT
+                | crate::coding_tools::COGNITION_CODER_SHELL_RUN
+                | crate::coding_tools::COGNITION_CODER_SHELL_STATUS
         );
-    !restricted_shell
+    !os_shell
+        && !restricted_shell
         && !tool_name.starts_with("cognition_runtime_")
         && !GENERAL_MODE_RUNTIME_TOOLS.contains(&tool_name)
 }
@@ -322,6 +332,7 @@ impl CoderBoundToolRegistry {
         let mut visible_tools = crate::coding_tools::CODING_COGNITION_TOOLS
             .iter()
             .chain(TURN_CONTROL_TOOLS.iter())
+            .chain(CODER_PEER_SPAWN_TOOLS.iter())
             .chain(
                 [
                     COGNITION_CODER_TOOLS_DISCOVER,
@@ -587,6 +598,10 @@ impl CoderBoundToolRegistry {
                         self.bind_work_and_lease(map)?;
                     }
                 }
+                crate::coding_tools::COGNITION_CODER_SHELL_STATUS
+                | crate::coding_tools::COGNITION_CODER_SHELL_RUN => {
+                    self.bind_work_and_lease(map)?;
+                }
                 crate::coding_tools::COGNITION_SHELL_SESSION_INTERRUPT => {}
                 _ => {}
             }
@@ -699,6 +714,7 @@ impl CoderBoundToolRegistry {
             tool_name,
             crate::coding_tools::COGNITION_SHELL_SESSION_RUN
                 | crate::coding_tools::COGNITION_SHELL_SESSION_INTERRUPT
+                | crate::coding_tools::COGNITION_CODER_SHELL_RUN
         ) {
             return Ok(());
         }
@@ -718,12 +734,33 @@ impl CoderBoundToolRegistry {
             tool_name,
             crate::coding_tools::COGNITION_SHELL_SESSION_STATUS
                 | crate::coding_tools::COGNITION_SHELL_SESSION_RUN
+                | crate::coding_tools::COGNITION_CODER_SHELL_RUN
+                | crate::coding_tools::COGNITION_CODER_SHELL_STATUS
         ) && let Some(session_id) = output.get("session_id").and_then(Value::as_str)
         {
             self.shell_sessions
                 .lock()
                 .await
                 .insert(session_id.to_string());
+        }
+    }
+
+    async fn prefer_turn_shell_session(&self, tool_name: &str, input: &mut Value) {
+        if tool_name != crate::coding_tools::COGNITION_CODER_SHELL_RUN {
+            return;
+        }
+        if input
+            .get("session_id")
+            .and_then(Value::as_str)
+            .is_some_and(|s| !s.trim().is_empty())
+        {
+            return;
+        }
+        let Some(session_id) = self.shell_sessions.lock().await.iter().next().cloned() else {
+            return;
+        };
+        if let Some(map) = input.as_object_mut() {
+            map.insert("session_id".into(), Value::String(session_id));
         }
     }
 }
@@ -780,7 +817,7 @@ impl ToolRegistry for CoderBoundToolRegistry {
                     && (!requires_coder_discovery(tool.name.as_str())
                         || visible.contains(tool.name.as_str()))
             })
-            .map(with_required_coder_intent)
+            .map(|tool| with_coder_tool_advertisement(with_required_coder_intent(tool)))
             .collect())
     }
 
@@ -800,6 +837,10 @@ impl ToolRegistry for CoderBoundToolRegistry {
                 .contains(tool_name);
         let authority = self.authority()?;
         authority.heartbeat()?;
+        let spawn_intent_hint = input
+            .get("intent")
+            .and_then(Value::as_str)
+            .and_then(crate::agent_runtime::turn_worker::TurnWorkerIntent::parse);
         let (intent, input) = take_coder_intent(input)?;
         let targets = tool_targets(tool_name, &input, authority.lease());
         let claims = super::coder_claims::infer_tool_claims(
@@ -856,6 +897,8 @@ impl ToolRegistry for CoderBoundToolRegistry {
                 return Err(err);
             }
         };
+        let mut input = input;
+        self.prefer_turn_shell_session(tool_name, &mut input).await;
         if let Err(err) = self.validate_shell_session(tool_name, &input).await {
             authority.finish_tool_activity(&call_id, tool_name, &intent, targets, Err(&err));
             authority.append_receipt(tool_receipt(
@@ -869,6 +912,24 @@ impl ToolRegistry for CoderBoundToolRegistry {
         }
         let result = if CODER_RUNTIME_TOOLS.contains(&tool_name) {
             self.invoke_runtime_tool(tool_name, &input)
+        } else if crate::turn_control_tools::is_begin_work_tool_name(tool_name) {
+            match remap_begin_work_to_spawn_input(&input, spawn_intent_hint) {
+                Ok(spawn_input) => {
+                    self.inner
+                        .invoke_tool(
+                            crate::agent_runtime::turn_worker_tools::COGNITION_SPAWN_TURN_WORKER,
+                            spawn_input,
+                        )
+                        .await
+                }
+                Err(err) => Err(err),
+            }
+        } else if tool_name
+            == crate::agent_runtime::turn_worker_tools::COGNITION_SPAWN_TURN_WORKER
+        {
+            let mut spawn_input = input.clone();
+            ensure_spawn_worker_intent(&mut spawn_input, spawn_intent_hint);
+            self.inner.invoke_tool(tool_name, spawn_input).await
         } else {
             self.inner.invoke_tool(tool_name, input.clone()).await
         };
@@ -1004,6 +1065,98 @@ fn with_required_coder_intent(mut tool: Tool) -> Tool {
         required.push(Value::String("intent".into()));
     }
     tool
+}
+
+fn with_coder_tool_advertisement(tool: Tool) -> Tool {
+    match tool.name.as_str() {
+        name if crate::turn_control_tools::is_begin_work_tool_name(name) => tool.with_description(
+            "Spawn a peer sub-agent for parallel work on this undertaking; does not leave Coder / does not enter Chat workshop.",
+        ),
+        "cognition_spawn_turn_worker" => tool.with_description(
+            "Spawn a peer sub-agent for parallel research or side tasks while Coder stays on the Forge lease.",
+        ),
+        "cognition_turn_worker_status" => {
+            tool.with_description("Check status of peer sub-agents spawned from this Coder turn.")
+        }
+        "cognition_turn_worker_cancel" => {
+            tool.with_description("Cancel a peer sub-agent spawned from this Coder turn.")
+        }
+        _ => tool,
+    }
+}
+
+/// Map Coder `cognition_turn_begin_work` args onto `cognition_spawn_turn_worker`.
+pub(crate) fn remap_begin_work_to_spawn_input(
+    input: &Value,
+    worker_intent_hint: Option<crate::agent_runtime::turn_worker::TurnWorkerIntent>,
+) -> Result<Value> {
+    let goal = input
+        .get("goal")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let message = input
+        .get("message")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let (task, user_ack) = match (goal, message) {
+        (Some(goal), Some(message)) => (goal.to_string(), message.to_string()),
+        (Some(goal), None) => (goal.to_string(), goal.to_string()),
+        (None, Some(message)) => (message.to_string(), message.to_string()),
+        (None, None) => {
+            return Err(StasisError::PortFailure(
+                "cognition_turn_begin_work: goal or message is required to spawn a peer sub-agent"
+                    .into(),
+            ));
+        }
+    };
+    let intent = worker_intent_hint
+        .map(|value| value.as_str().to_string())
+        .unwrap_or_else(|| default_peer_spawn_intent(&task, &user_ack));
+    let mut out = json!({
+        "task": task,
+        "user_ack": user_ack,
+        "intent": intent,
+    });
+    let map = out.as_object_mut().expect("spawn remap object");
+    for key in ["manuscript_id", "stage_role", "model_hint"] {
+        if let Some(value) = input.get(key).cloned() {
+            if !value.is_null() {
+                map.insert(key.to_string(), value);
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn default_peer_spawn_intent(task: &str, user_ack: &str) -> String {
+    let hay = format!("{task}\n{user_ack}").to_ascii_lowercase();
+    if hay.contains("research") || hay.contains("investigate") || hay.contains("survey") {
+        "research".into()
+    } else {
+        "general".into()
+    }
+}
+
+fn ensure_spawn_worker_intent(
+    input: &mut Value,
+    hint: Option<crate::agent_runtime::turn_worker::TurnWorkerIntent>,
+) {
+    let task = input
+        .get("task")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let user_ack = input
+        .get("user_ack")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let intent = hint
+        .map(|value| value.as_str().to_string())
+        .unwrap_or_else(|| default_peer_spawn_intent(task, user_ack));
+    if let Some(map) = input.as_object_mut() {
+        map.insert("intent".into(), Value::String(intent));
+    }
 }
 
 fn take_coder_intent(mut input: Value) -> Result<(String, Value)> {
@@ -1144,6 +1297,8 @@ mod tests {
             Ok(vec![
                 Tool::new(crate::coding_tools::COGNITION_CODE_READ),
                 Tool::new(crate::coding_tools::COGNITION_SHELL_SESSION_STATUS),
+                Tool::new(crate::coding_tools::COGNITION_CODER_SHELL_RUN),
+                Tool::new(crate::coding_tools::COGNITION_CODER_SHELL_STATUS),
                 Tool::new(crate::code_intelligence_tools::COGNITION_CODE_DIAGNOSTICS),
                 Tool::new(crate::detamu_tools::COGNITION_DETAMU_STATUS),
                 Tool::new("cognition_vault_write"),
@@ -1153,7 +1308,13 @@ mod tests {
                 Tool::new("cognition_mcp_discover"),
                 Tool::new("cognition_mcp_invoke"),
                 Tool::new("cognition_runtime_jobs_cancel"),
-                Tool::new("cognition_spawn_turn_worker"),
+                Tool::new("cognition_spawn_turn_worker")
+                    .with_description("Host spawn worker"),
+                Tool::new("cognition_turn_begin_work")
+                    .with_description("Enter bound Workshop"),
+                Tool::new("cognition_turn_worker_status"),
+                Tool::new("cognition_shell_run"),
+                Tool::new("cognition_shell_status"),
             ])
         }
 
@@ -1163,8 +1324,17 @@ mod tests {
                 .lock()
                 .expect("tools lock")
                 .push(tool_name.to_string());
-            if tool_name == crate::coding_tools::COGNITION_SHELL_SESSION_STATUS {
+            if tool_name == crate::coding_tools::COGNITION_SHELL_SESSION_STATUS
+                || tool_name == crate::coding_tools::COGNITION_CODER_SHELL_RUN
+                || tool_name == crate::coding_tools::COGNITION_CODER_SHELL_STATUS
+            {
                 Ok(json!({ "ok": true, "session_id": "shell-1", "input": input }))
+            } else if tool_name == "cognition_spawn_turn_worker" {
+                Ok(json!({
+                    "ok": true,
+                    "worker_spawned": true,
+                    "input": input
+                }))
             } else {
                 Ok(json!({ "ok": true, "input": input }))
             }
@@ -1366,10 +1536,7 @@ mod tests {
                 "missing inherited Coder tool {inherited}"
             );
         }
-        for runtime_control in [
-            "cognition_runtime_jobs_cancel",
-            "cognition_spawn_turn_worker",
-        ] {
+        for runtime_control in ["cognition_runtime_jobs_cancel", "cognition_shell_run"] {
             assert!(
                 tools
                     .iter()
@@ -1377,6 +1544,24 @@ mod tests {
                 "runtime control leaked into Coder: {runtime_control}"
             );
         }
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.name.as_str() == "cognition_spawn_turn_worker"),
+            "peer spawn should be visible in Coder"
+        );
+        let begin_work = tools
+            .iter()
+            .find(|tool| tool.name.as_str() == "cognition_turn_begin_work")
+            .expect("begin_work visible");
+        assert!(
+            begin_work
+                .description
+                .as_deref()
+                .unwrap_or_default()
+                .contains("peer sub-agent"),
+            "Coder begin_work should advertise peer spawn"
+        );
         for tool in &tools {
             let schema = tool.schema.as_ref().expect("Coder schema");
             assert!(
@@ -1755,5 +1940,193 @@ mod tests {
                 .iter()
                 .all(|event| event["tool"] == crate::coding_tools::COGNITION_CODE_READ)
         }));
+    }
+
+    #[test]
+    fn coder_tool_allowed_denies_os_shell_and_allows_coder_shell() {
+        let policy = WorkPolicy::default();
+        assert!(!coder_tool_allowed(
+            crate::shell_tools::COGNITION_SHELL_RUN,
+            &policy
+        ));
+        assert!(!coder_tool_allowed(
+            crate::shell_tools::COGNITION_SHELL_STATUS,
+            &policy
+        ));
+        assert!(coder_tool_allowed(
+            crate::coding_tools::COGNITION_CODER_SHELL_RUN,
+            &policy
+        ));
+        assert!(coder_tool_allowed(
+            crate::coding_tools::COGNITION_CODER_SHELL_STATUS,
+            &policy
+        ));
+        assert!(coder_tool_allowed("cognition_spawn_turn_worker", &policy));
+        assert!(!coder_tool_allowed("cognition_workshop_steer", &policy));
+    }
+
+    #[test]
+    fn begin_work_remap_builds_spawn_args() {
+        let mapped = remap_begin_work_to_spawn_input(
+            &json!({
+                "goal": "Survey related crates for the bug",
+                "message": "Researching dependency graph"
+            }),
+            None,
+        )
+        .expect("remap");
+        assert_eq!(mapped["task"], "Survey related crates for the bug");
+        assert_eq!(mapped["user_ack"], "Researching dependency graph");
+        assert_eq!(mapped["intent"], "research");
+
+        let goal_only = remap_begin_work_to_spawn_input(
+            &json!({ "goal": "Write a focused unit test" }),
+            None,
+        )
+        .expect("goal only");
+        assert_eq!(goal_only["task"], "Write a focused unit test");
+        assert_eq!(goal_only["user_ack"], "Write a focused unit test");
+        assert_eq!(goal_only["intent"], "general");
+
+        let hinted = remap_begin_work_to_spawn_input(
+            &json!({ "message": "Dig into memory nodes" }),
+            Some(crate::agent_runtime::turn_worker::TurnWorkerIntent::MemoryContext),
+        )
+        .expect("hinted");
+        assert_eq!(hinted["intent"], "memory.context");
+        assert_eq!(hinted["task"], "Dig into memory nodes");
+    }
+
+    #[tokio::test]
+    async fn begin_work_invokes_spawn_worker() {
+        let fixture = fixture();
+        let authority = authority(&fixture);
+        let inner = Arc::new(RecordingRegistry::default());
+        let registry = CoderBoundToolRegistry::new(
+            inner.clone(),
+            &authority,
+            fixture.entry.clone(),
+            fixture.policy.clone(),
+        );
+        let out = registry
+            .invoke_tool(
+                "cognition_turn_begin_work",
+                json!({
+                    "intent": "Delegate parallel research",
+                    "goal": "Investigate failing CI flakes",
+                    "message": "Spinning a research peer"
+                }),
+            )
+            .await
+            .expect("begin_work remapped");
+        assert_eq!(out["worker_spawned"], true);
+        assert_eq!(
+            inner.invoked_tools.lock().expect("tools").as_slice(),
+            ["cognition_spawn_turn_worker"]
+        );
+        let input = inner.last_input.lock().expect("input").clone().expect("input");
+        assert_eq!(input["task"], "Investigate failing CI flakes");
+        assert_eq!(input["user_ack"], "Spinning a research peer");
+        assert_eq!(input["intent"], "research");
+    }
+
+    #[tokio::test]
+    async fn coder_shell_bind_forces_work_and_lease() {
+        let fixture = fixture();
+        let authority = authority(&fixture);
+        let inner = Arc::new(RecordingRegistry::default());
+        let registry = CoderBoundToolRegistry::new(
+            inner.clone(),
+            &authority,
+            fixture.entry.clone(),
+            fixture.policy.clone(),
+        );
+        registry
+            .invoke_tool(
+                crate::coding_tools::COGNITION_CODER_SHELL_RUN,
+                json!({
+                    "intent": "Run a quick check in the undertaking Terminal",
+                    "command": "pwd"
+                }),
+            )
+            .await
+            .expect("coder shell");
+        let input = inner.last_input.lock().expect("input").clone().expect("input");
+        assert_eq!(input["work_id"], fixture.entry.work_id);
+        assert_eq!(
+            input["lease_id"],
+            authority.lease().lease_id.to_string()
+        );
+        assert_eq!(input["attempt_id"], authority.lease().attempt_id.to_string());
+
+        let err = registry
+            .bind_input(
+                crate::coding_tools::COGNITION_CODER_SHELL_RUN,
+                json!({
+                    "command": "pwd",
+                    "work_id": "work-not-this-one"
+                }),
+            )
+            .expect_err("mismatched work_id");
+        assert!(err.to_string().contains("work_id"));
+    }
+
+    #[tokio::test]
+    async fn coder_shell_reuses_turn_owned_session() {
+        let fixture = fixture();
+        let authority = authority(&fixture);
+        let inner = Arc::new(RecordingRegistry::default());
+        let registry = CoderBoundToolRegistry::new(
+            inner.clone(),
+            &authority,
+            fixture.entry.clone(),
+            fixture.policy.clone(),
+        );
+        registry
+            .invoke_tool(
+                crate::coding_tools::COGNITION_CODER_SHELL_RUN,
+                json!({
+                    "intent": "First one-shot creates a session",
+                    "command": "echo one"
+                }),
+            )
+            .await
+            .expect("first shell");
+        registry
+            .invoke_tool(
+                crate::coding_tools::COGNITION_CODER_SHELL_RUN,
+                json!({
+                    "intent": "Second one-shot reuses the session",
+                    "command": "echo two"
+                }),
+            )
+            .await
+            .expect("second shell");
+        let input = inner.last_input.lock().expect("input").clone().expect("input");
+        assert_eq!(input["session_id"], "shell-1");
+        assert_eq!(input["command"], "echo two");
+    }
+
+    #[tokio::test]
+    async fn os_shell_is_rejected_in_coder() {
+        let fixture = fixture();
+        let authority = authority(&fixture);
+        let registry = CoderBoundToolRegistry::new(
+            Arc::new(RecordingRegistry::default()),
+            &authority,
+            fixture.entry.clone(),
+            fixture.policy.clone(),
+        );
+        let err = registry
+            .invoke_tool(
+                crate::shell_tools::COGNITION_SHELL_RUN,
+                json!({
+                    "intent": "Try unbound OS shell",
+                    "command": "pwd"
+                }),
+            )
+            .await
+            .expect_err("os shell denied");
+        assert!(err.to_string().contains("outside the Coder mode contract"));
     }
 }
