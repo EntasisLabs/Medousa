@@ -91,19 +91,21 @@
     }
   },
   "scripts": {
-    "prebuild": "tsc -p ../../packages/medousa-client/tsconfig.json",
-    "pretest": "tsc -p ../../packages/medousa-client/tsconfig.json",
+    "build:dependencies": "tsc -p ../../packages/medousa-client/tsconfig.json && tsc -p ../../packages/medousa-liquid-markdown/tsconfig.json",
+    "precheck": "npm run build:dependencies",
+    "pretest": "npm run build:dependencies",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "bundle": "esbuild src/extension.ts --bundle --platform=node --format=esm --external:vscode --outfile=dist/extension.js --sourcemap",
+    "bundle:extension": "esbuild src/extension.ts --bundle --platform=node --format=esm --external:vscode --outfile=dist/extension.js --sourcemap",
+    "bundle:webview": "esbuild src/liquidWebview.ts --bundle --platform=browser --format=iife --outfile=dist/liquidWebview.js --sourcemap",
+    "bundle": "npm run bundle:extension && npm run bundle:webview",
     "build": "npm run check && npm run bundle",
     "watch": "tsc -p tsconfig.json --watch",
     "package": "npm run build && vsce package"
   },
-  "dependencies": {
-    "@medousa/client": "file:../../packages/medousa-client"
-  },
   "devDependencies": {
+    "@medousa/client": "file:../../packages/medousa-client",
+    "@medousa/liquid-markdown": "file:../../packages/medousa-liquid-markdown",
     "@vscode/vsce": "^3.2.2",
     "@types/node": "^22.0.0",
     "@types/vscode": "^1.85.0",

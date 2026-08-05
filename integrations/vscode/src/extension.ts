@@ -83,8 +83,15 @@ class MedousaChatView implements vscode.WebviewViewProvider {
 
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view;
-    view.webview.options = { enableScripts: true };
-    view.webview.html = chatHtml(createNonce());
+    const distRoot = vscode.Uri.joinPath(this.context.extensionUri, "dist");
+    view.webview.options = { enableScripts: true, localResourceRoots: [distRoot] };
+    const liquidScriptUri = view.webview.asWebviewUri(
+      vscode.Uri.joinPath(distRoot, "liquidWebview.js"),
+    ).toString();
+    view.webview.html = chatHtml(createNonce(), {
+      liquidScriptUri,
+      cspSource: view.webview.cspSource,
+    });
     view.webview.onDidReceiveMessage(
       (message: unknown) => this.handleMessage(message),
       null,

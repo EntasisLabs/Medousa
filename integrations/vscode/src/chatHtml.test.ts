@@ -2,11 +2,16 @@ import { describe, expect, it } from "vitest";
 import { chatHtml } from "./chatHtml.js";
 
 describe("VS Code chat webview", () => {
-  const html = chatHtml("test-nonce");
+  const html = chatHtml("test-nonce", {
+    liquidScriptUri: "vscode-webview://test/dist/liquidWebview.js",
+    cspSource: "vscode-webview://test",
+  });
 
   it("uses a nonce-bound script policy", () => {
     expect(html).toContain("script-src 'nonce-test-nonce'");
     expect(html).toContain('<script nonce="test-nonce">');
+    expect(html).toContain('src="vscode-webview://test/dist/liquidWebview.js"');
+    expect(html).toContain("img-src vscode-webview://test https: data: blob:");
     expect(html).not.toContain("script-src 'unsafe-inline'");
   });
 
@@ -61,5 +66,13 @@ describe("VS Code chat webview", () => {
     expect(html).toContain("escapeHtml(value)");
     expect(html).toContain("safeUrl(href)");
     expect(html).toContain('["http:","https:","medousa:"]');
+  });
+
+  it("hydrates shared Liquid Markdown after normal and streaming renders", () => {
+    expect(html).toContain("window.medousaLiquidMarkdown");
+    expect(html).toContain("function hydrateAssistantMarkdown(bubble)");
+    expect(html).toContain("liquid.hydrate(bubble");
+    expect(html).toContain("hydrateAssistantMarkdown(assistant.bubble)");
+    expect(html).toContain('type: "openLink", href: url');
   });
 });

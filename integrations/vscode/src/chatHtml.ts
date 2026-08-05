@@ -1,9 +1,22 @@
-export function chatHtml(nonce: string): string {
+export interface ChatHtmlAssets {
+  liquidScriptUri?: string;
+  cspSource?: string;
+}
+
+function escapeAttribute(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+export function chatHtml(nonce: string, assets: ChatHtmlAssets = {}): string {
+  const liquidScript = assets.liquidScriptUri
+    ? `<script nonce="${escapeAttribute(nonce)}" src="${escapeAttribute(assets.liquidScriptUri)}"></script>`
+    : "";
+  const imageSources = [assets.cspSource, "https:", "data:", "blob:"].filter(Boolean).join(" ");
   return String.raw`<!doctype html>
 <html lang="en"><head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${imageSources}; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
   <style>
     :root { color-scheme: light dark; --gap: 10px; }
     * { box-sizing: border-box; }
@@ -151,6 +164,7 @@ export function chatHtml(nonce: string): string {
   </aside>
 </div>
 <div id="toast" class="toast" role="status" hidden></div>
+${liquidScript}
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
   const persisted = vscode.getState() || { messages: [], drafts: {}, scrollPositions: {}, activeSessionId: null };
@@ -209,15 +223,17 @@ export function chatHtml(nonce: string): string {
       else { closeList(); if (line.trim()) html += "<p>" + line + "</p>"; }
     }); closeList(); return html;
   }
-  function renderMarkdown(value) {
+  function renderLegacyMarkdown(value) {
     let html = ""; let cursor = 0; const pattern = /\`\`\`([\w+-]*)\n([\s\S]*?)\`\`\`/g; let match;
     while ((match = pattern.exec(value))) { html += renderProse(value.slice(cursor, match.index)); const language = match[1] || "code"; const encoded = encodeURIComponent(match[2]); html += '<div class="code-block"><div class="code-head"><span>' + escapeHtml(language) + '</span><div class="code-actions"><button data-copy-code="' + encoded + '">Copy</button><button data-insert-code="' + encoded + '">Insert</button></div></div><pre><code>' + escapeHtml(match[2]) + '</code></pre></div>'; cursor = pattern.lastIndex; }
     html += renderProse(value.slice(cursor)); return html;
   }
+  function renderMarkdown(value) { const liquid = window.medousaLiquidMarkdown; return liquid ? liquid.renderMarkdown(value) : renderLegacyMarkdown(value); }
+  function hydrateAssistantMarkdown(bubble) { const liquid = window.medousaLiquidMarkdown; if (!liquid) return; try { liquid.hydrate(bubble, { renderMarkdown: function(source, target) { target.innerHTML = liquid.renderMarkdown(source); }, onAction: function(action) { submit(action.intent || action.label); }, openLink: function(url) { vscode.postMessage({ type: "openLink", href: url }); }, copyText: function(text) { vscode.postMessage({ type: "copyText", text: text }); }, onError: function(error, context) { console.warn("[medousa-liquid] " + context, error); } }); } catch (error) { console.warn("[medousa-liquid] hydration failed", error); } }
   function showEmpty() { empty.hidden = messages.children.length > 0; }
-  function addTurn(role, content, settled) { const wasBottom = atBottom(); const turn = document.createElement("section"); turn.className = "turn " + role + (role === "assistant" && settled === false ? " streaming" : ""); turn.dataset.role = role; turn.dataset.raw = content; const bubble = document.createElement("div"); bubble.className = "bubble"; if (role === "assistant") bubble.innerHTML = renderMarkdown(content); else bubble.textContent = content; turn.appendChild(bubble); if (role === "assistant") { const actions = document.createElement("div"); actions.className = "turn-actions"; actions.innerHTML = '<button class="turn-action" data-turn-action="copy" title="Copy reply">Copy</button><button class="turn-action" data-turn-action="share" title="Share reply">Share</button><button class="turn-action" data-turn-action="library" title="Save to Library">Library</button>'; turn.appendChild(actions); } messages.appendChild(turn); showEmpty(); pin(wasBottom); persist(); return { turn: turn, bubble: bubble }; }
-  function appendAssistant(text) { const wasBottom = atBottom(); if (!assistant) { const created = addTurn("assistant", "", false); assistant = created; assistantRaw = ""; } assistantRaw += text; assistant.turn.dataset.raw = assistantRaw; assistant.bubble.innerHTML = renderMarkdown(assistantRaw); pin(wasBottom); persist(); }
-  function replaceAssistant(text) { if (!assistant) assistant = addTurn("assistant", "", false); assistantRaw = text; assistant.turn.dataset.raw = text; assistant.bubble.innerHTML = renderMarkdown(text); persist(); pin(true); }
+  function addTurn(role, content, settled) { const wasBottom = atBottom(); const turn = document.createElement("section"); turn.className = "turn " + role + (role === "assistant" && settled === false ? " streaming" : ""); turn.dataset.role = role; turn.dataset.raw = content; const bubble = document.createElement("div"); bubble.className = "bubble"; if (role === "assistant") bubble.innerHTML = renderMarkdown(content); else bubble.textContent = content; turn.appendChild(bubble); if (role === "assistant") { const actions = document.createElement("div"); actions.className = "turn-actions"; actions.innerHTML = '<button class="turn-action" data-turn-action="copy" title="Copy reply">Copy</button><button class="turn-action" data-turn-action="share" title="Share reply">Share</button><button class="turn-action" data-turn-action="library" title="Save to Library">Library</button>'; turn.appendChild(actions); } messages.appendChild(turn); if (role === "assistant") hydrateAssistantMarkdown(bubble); showEmpty(); pin(wasBottom); persist(); return { turn: turn, bubble: bubble }; }
+  function appendAssistant(text) { const wasBottom = atBottom(); if (!assistant) { const created = addTurn("assistant", "", false); assistant = created; assistantRaw = ""; } assistantRaw += text; assistant.turn.dataset.raw = assistantRaw; assistant.bubble.innerHTML = renderMarkdown(assistantRaw); hydrateAssistantMarkdown(assistant.bubble); pin(wasBottom); persist(); }
+  function replaceAssistant(text) { if (!assistant) assistant = addTurn("assistant", "", false); assistantRaw = text; assistant.turn.dataset.raw = text; assistant.bubble.innerHTML = renderMarkdown(text); hydrateAssistantMarkdown(assistant.bubble); persist(); pin(true); }
   function setStatus(text, working) { const wasBottom = atBottom(); if (!statusNode) { statusNode = document.createElement("div"); statusNode.className = "status-line"; statusNode.setAttribute("role", "status"); messages.appendChild(statusNode); } statusNode.innerHTML = (working ? '<span class="spinner"></span>' : "") + '<span>' + escapeHtml(text) + '</span>'; pin(wasBottom); }
   function clearStatus() { if (statusNode) statusNode.remove(); statusNode = null; }
   function setBusy(value) { busy = value; send.textContent = value ? "Stop" : "Send"; send.classList.toggle("secondary", value); prompt.disabled = value; updateComposerState(); }
