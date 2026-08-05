@@ -35,6 +35,8 @@ checks the exact endpoint and token before saving.
   and new conversations;
 - bounded active-note, selection, and outgoing-link context;
 - streaming responses with sequence-aware reconnects;
+- Obsidian-native Markdown with shared Liquid cards, charts, reports, tabs,
+  slides, actions, and the rest of the portable embed catalog;
 - visible tool/recovery status and explicit budget/permission prompts;
 - settled-answer actions for copy, save-as-note, and append-to-note;
 - daemon-backed vault search and backlinks with open-note and insert-link
@@ -48,6 +50,13 @@ editor remains the host-native place for inserting a wikilink, while note
 creation and append operations show their target and content before applying.
 An `If-Match` conflict leaves the note untouched and asks the user to refresh
 the preview.
+
+The adapter advertises `supports_liquid_markdown` but not
+`supports_ui_artifacts`. Assistant replies first pass through Obsidian's native
+Markdown renderer and then the shared `@medousa/liquid-markdown` hydrator.
+Vault-relative Liquid media resolves through Obsidian's metadata cache; action
+prompts, links, and clipboard requests stay host-managed. Home-only
+chart-editing controls and live feed loading are not available here.
 
 ## Commands and interactions
 
