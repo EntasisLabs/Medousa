@@ -31,6 +31,7 @@
     openTrackedTerminal,
     startTrackedAgent,
   } from "$lib/utils/undertakingWorkspace";
+  import DiffSummaryCard from "$lib/components/diff/DiffSummaryCard.svelte";
 
   interface Props {
     chatOnly?: boolean;
@@ -41,6 +42,12 @@
     chatOnly && !undertakings.active?.boundChatSessionIds.includes(chat.sessionId)
       ? null
       : undertakings.active,
+  );
+  const review = $derived(
+    active && undertakings.review?.work_id === active.workId ? undertakings.review : null,
+  );
+  const reviewCardPaths = $derived(
+    (review?.changed_files ?? []).map((file) => ({ path: file.path })),
   );
   let busy = $state(false);
   let error = $state<string | null>(null);
@@ -104,8 +111,23 @@
 
   function goDetail() {
     if (!active) return;
+    if (active.humanPhase === "review") {
+      void lmeWorkspace.openCodeReview(active.workId, `Review · ${active.title}`);
+      return;
+    }
     void lmeWorkspace.openCodeWorkspace(active.workId, active.title);
   }
+
+  function openReviewTab() {
+    if (!active) return;
+    void lmeWorkspace.openCodeReview(active.workId, `Review · ${active.title}`);
+  }
+
+  $effect(() => {
+    if (!active || active.humanPhase !== "review") return;
+    if (undertakings.review?.work_id === active.workId) return;
+    void undertakings.select(active.workId);
+  });
 
   async function withItem(action: "terminal" | "codex" | "cursor") {
     if (!active || busy) return;
@@ -182,6 +204,7 @@
 </script>
 
 {#if active}
+  <div class="flex max-w-full flex-col gap-1.5">
   <details class="group relative max-w-full">
     <summary
       class="flex max-w-full cursor-pointer list-none items-center gap-1.5 rounded-full border border-surface-500/35 bg-surface-900/75 px-2.5 py-1 text-[11px] text-surface-200 transition hover:border-surface-400/60 hover:bg-surface-800/90 [&::-webkit-details-marker]:hidden"
@@ -195,6 +218,11 @@
       <span class="truncate font-medium text-surface-100">{active.title}</span>
       <span class="shrink-0 text-surface-500">·</span>
       <span class="shrink-0 text-surface-400">{humanPhaseLabel(active.humanPhase)}</span>
+      {#if review && review.candidates.length > 1}
+        <span class="hidden shrink-0 text-amber-300/90 sm:inline"
+          >{review.candidates.length} candidates</span
+        >
+      {/if}
       {#if active.executorKind}
         <span class="hidden shrink-0 text-surface-500 sm:inline">{humanExecutorLabel(active.executorKind)}</span>
       {/if}
@@ -269,6 +297,16 @@
       {/if}
     </div>
   </details>
+  {#if review && review.changed_files.length > 0}
+    <DiffSummaryCard
+      fileCount={review.changed_files.length}
+      additions={0}
+      deletions={0}
+      paths={reviewCardPaths}
+      onViewAll={openReviewTab}
+    />
+  {/if}
+  </div>
 {:else if activeMode === "coder"}
   <div class="relative max-w-full">
     <button

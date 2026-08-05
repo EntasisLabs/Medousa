@@ -11,7 +11,7 @@
   import { indentWithTab } from "@codemirror/commands";
   import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
   import { forEachDiagnostic } from "@codemirror/lint";
-  import { indentUnit } from "@codemirror/language";
+  import { foldGutter, indentUnit } from "@codemirror/language";
   import { jumpToDefinition, type LSPClient } from "@codemirror/lsp-client";
   import {
     buildCodeEditorLanguageExtensions,
@@ -21,6 +21,8 @@
   } from "$lib/code/codeEditorLanguageRegistry";
   import { observeGraphemeHovers } from "$lib/grapheme/graphemeHoverEnhance";
   import {
+    readCodeEditorFontSize,
+    readCodeEditorIndentGuides,
     readCodeEditorLineNumbers,
     readCodeEditorTabSize,
     readCodeEditorWordWrap,
@@ -43,6 +45,7 @@
         overflow: "auto",
         maxWidth: "100%",
         fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+        fontSize: "var(--code-editor-font-size, 13px)",
         lineHeight: "1.55",
       },
       ".cm-content": {
@@ -293,9 +296,12 @@
   }
 
   function buildExtensions(): Extension[] {
+    const showIndentGuides = readCodeEditorIndentGuides();
     return [
       basicSetup,
       codeEditorChromeTheme,
+      foldGutter(),
+      EditorState.allowMultipleSelections.of(true),
       languageCompartment.of(buildCodeEditorLanguageExtensions(resolvedLanguage)),
       keymap.of([...searchKeymap, indentWithTab]),
       highlightSelectionMatches(),
@@ -309,6 +315,16 @@
           : EditorView.theme({ ".cm-lineNumbers": { display: "none" } }),
       ),
       reviewCompartment.of(reviewExtensions()),
+      showIndentGuides
+        ? EditorView.theme({
+            ".cm-line": {
+              backgroundImage:
+                "repeating-linear-gradient(to right, transparent 0, transparent calc(1ch - 1px), rgb(var(--color-surface-500) / 0.12) calc(1ch - 1px), rgb(var(--color-surface-500) / 0.12) 1ch)",
+              backgroundSize: "2ch 100%",
+              backgroundPosition: "0 0",
+            },
+          })
+        : [],
       EditorView.domEventHandlers({
         contextmenu(event) {
           if (!onContextMenuRef) return false;
@@ -580,6 +596,7 @@
 <div
   bind:this={host}
   class="grapheme-codemirror-host code-codemirror-host h-full min-h-0 min-w-0 flex-1 overflow-hidden"
+  style={`--code-editor-font-size: ${readCodeEditorFontSize()}px`}
   role="textbox"
   tabindex="0"
   aria-label="Code editor"

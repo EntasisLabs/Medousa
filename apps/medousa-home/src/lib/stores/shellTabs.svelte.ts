@@ -1450,6 +1450,24 @@ export class ShellTabsStore {
     if (next) void this.activate(next.id);
   }
 
+  /** Cycle Code file LME tabs in the focused pane (Ctrl+Tab muscle memory). */
+  cycleCodeSourceTabsInActiveGroup(delta = 1) {
+    const tabs = this.tabsForGroup(this.activeGroupId).filter((tab) => {
+      if (tab.kind !== "lme") return false;
+      const lme = lmeWorkspace.tabs.find((entry) => entry.tabId === tab.lmeTabId);
+      return lme?.kind === "code" && lme.resource.kind === "file";
+    });
+    if (tabs.length < 2) {
+      if (delta > 0) this.nextTabInActiveGroup();
+      else this.prevTabInActiveGroup();
+      return;
+    }
+    const idx = tabs.findIndex((tab) => tab.id === this.activeTabId);
+    const start = idx < 0 ? 0 : idx;
+    const next = tabs[(start + delta + tabs.length) % tabs.length];
+    if (next) void this.activate(next.id);
+  }
+
   flashTabs(groupId?: string) {
     this.forceShowTabsGroupId = groupId ?? this.activeGroupId;
     this.forceShowTabsUntil = Date.now() + 2000;

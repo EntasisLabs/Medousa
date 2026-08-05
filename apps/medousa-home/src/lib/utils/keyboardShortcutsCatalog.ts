@@ -1,6 +1,6 @@
 import { formatShortcut, modKeyLabel, usesMetaModKey } from "$lib/platform";
 
-export type ShortcutCatalogGroupId = "global" | "panes" | "vault" | "chat";
+export type ShortcutCatalogGroupId = "global" | "panes" | "code" | "vault" | "chat";
 
 export type ShortcutCatalogEntry = {
   id: string;
@@ -63,6 +63,25 @@ export const KEYBOARD_SHORTCUTS_CATALOG: ShortcutCatalogGroup[] = [
         action: "Switch virtual desktop",
       },
       { id: "drag-tab", keys: "literal:Drag tab", action: "Move tab to another pane" },
+    ],
+  },
+  {
+    id: "code",
+    title: "Code",
+    entries: [
+      { id: "code-quick-open", keys: "mod:P", action: "Quick Open file / symbol / line" },
+      { id: "code-save", keys: "mod:S", action: "Save focused file" },
+      { id: "code-save-all", keys: "mod:Shift+S", action: "Save all modified files" },
+      { id: "code-find", keys: "mod:F", action: "Find in file" },
+      { id: "code-structure", keys: "mod:Shift+O", action: "Structure (symbols)" },
+      { id: "code-reopen", keys: "mod:Shift+T", action: "Reopen last closed file" },
+      { id: "code-terminal", keys: "mod:`", action: "Toggle Terminal dock" },
+      { id: "code-rename", keys: "literal:F2", action: "Rename symbol" },
+      {
+        id: "code-cycle-tabs",
+        keys: "literal:Ctrl+Tab",
+        action: "Cycle Code file tabs in focused pane",
+      },
     ],
   },
   {
@@ -134,6 +153,7 @@ export function catalogGroup(
 export const CHEAT_SHEET_GROUP_IDS: ShortcutCatalogGroupId[] = [
   "global",
   "panes",
+  "code",
   "vault",
   "chat",
 ];

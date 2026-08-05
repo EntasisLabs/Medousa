@@ -7,6 +7,7 @@
     FileCode2,
     ListTree,
     LoaderCircle,
+    Pencil,
     RotateCcw,
     Save,
     SquareTerminal,
@@ -14,11 +15,14 @@
     Orbit,
     Play,
     Sparkles,
+    UserRound,
     X,
     Search,
   } from "@lucide/svelte";
   import CodeMirrorHost from "$lib/components/code/CodeMirrorHost.svelte";
   import CodeBreadcrumbs from "$lib/components/code/CodeBreadcrumbs.svelte";
+  import DiffStack from "$lib/components/diff/DiffStack.svelte";
+  import { buildTextDiff } from "$lib/diff/buildTextDiff";
   import CodeEditorContextMenu, {
     type CodeEditorMenuAction,
   } from "$lib/components/code/CodeEditorContextMenu.svelte";
@@ -67,10 +71,17 @@
   import { isCoLocatedWorkshop } from "$lib/utils/workshopLocality";
   import { formatShortcut } from "$lib/platform";
   import {
+    readCodeEditorFontSize,
+    readCodeEditorIndentGuides,
     readCodeEditorLineNumbers,
+    readCodeEditorTabSize,
     readCodeEditorWordWrap,
+    writeCodeEditorFontSize,
+    writeCodeEditorIndentGuides,
     writeCodeEditorLineNumbers,
+    writeCodeEditorTabSize,
     writeCodeEditorWordWrap,
+    type CodeEditorFontSize,
   } from "$lib/config/codeEditorPreferences";
   import { codeEditorFind } from "$lib/stores/codeEditorFind.svelte";
   import { codeEditorStatus } from "$lib/stores/codeEditorStatus.svelte";
@@ -115,6 +126,10 @@
   let surfaceError = $state<string | null>(null);
   let wordWrap = $state(readCodeEditorWordWrap());
   let showLineNumbers = $state(readCodeEditorLineNumbers());
+  let indentGuides = $state(readCodeEditorIndentGuides());
+  let fontSize = $state<CodeEditorFontSize>(readCodeEditorFontSize());
+  let tabSizePref = $state(readCodeEditorTabSize());
+  let editorPrefsEpoch = $state(0);
   let findOpenByTabId = $state<Record<string, boolean>>({});
   let terminalDockOpen = $state(false);
   let dockSessionId = $state<string | null>(null);
@@ -203,6 +218,16 @@
   const agentHasControl = $derived(
     Boolean(context?.executorKind && context.executorKind !== "human"),
   );
+  const canBeginEdit = $derived(
+    Boolean(
+      interactive &&
+        !agentHasControl &&
+        detail?.allowed_actions.begin_attempt.allowed,
+    ),
+  );
+  /** Soft lease: typing is allowed when a human attempt can begin. */
+  const bufferInteractive = $derived(editable || canBeginEdit);
+  let beginEditPromise = $state<Promise<void> | null>(null);
   const statusControlLabel = $derived.by(() => {
     if (agentHasControl) {
       return context?.executorKind === "cursor" ? "Cursor working" : "Codex working";
@@ -254,12 +279,14 @@
     projectTasks.find((task) => task.id === selectedTaskId) ?? projectTasks[0] ?? null,
   );
   const workspaceProblemRows = $derived(
-    problems.map((problem) => ({
-      path: activeTab?.path ?? "Current file",
-      line: problem.line,
-      message: problem.message,
-      severity: problem.severity === "error" ? 1 : 2,
-    })),
+    [...problems]
+      .map((problem) => ({
+        path: activeTab?.path ?? "Current file",
+        line: problem.line,
+        message: problem.message,
+        severity: problem.severity === "error" ? 1 : 2,
+      }))
+      .sort((a, b) => a.severity - b.severity || a.line - b.line),
   );
   const canReference = $derived(Boolean(languageCapabilities.referencesProvider));
   const canRename = $derived(Boolean(languageCapabilities.renameProvider));
@@ -375,6 +402,28 @@
   function toggleLineNumbers() {
     showLineNumbers = !showLineNumbers;
     writeCodeEditorLineNumbers(showLineNumbers);
+  }
+
+  function toggleIndentGuides() {
+    indentGuides = !indentGuides;
+    writeCodeEditorIndentGuides(indentGuides);
+    editorPrefsEpoch += 1;
+  }
+
+  function cycleFontSize() {
+    const order: CodeEditorFontSize[] = [12, 13, 14, 15, 16];
+    const next = order[(order.indexOf(fontSize) + 1) % order.length] ?? 13;
+    fontSize = next;
+    writeCodeEditorFontSize(next);
+    editorPrefsEpoch += 1;
+  }
+
+  function cycleTabSize() {
+    const order = [2, 4, 8] as const;
+    const next = order[(order.indexOf(tabSizePref as 2 | 4 | 8) + 1) % order.length] ?? 2;
+    tabSizePref = next;
+    writeCodeEditorTabSize(next);
+    editorPrefsEpoch += 1;
   }
 
   function handleCursorChanged(
@@ -611,9 +660,13 @@
 
   async function startEditing() {
     if (!detail || !detail.allowed_actions.begin_attempt.allowed) return;
+    if (beginEditPromise) {
+      await beginEditPromise;
+      return;
+    }
     saving = true;
     surfaceError = null;
-    try {
+    beginEditPromise = (async () => {
       const begun = await beginHumanAttempt(detail.id);
       undertakings.setActiveFromItem(begun.item, {
         leaseId: begun.lease.lease_id,
@@ -621,10 +674,21 @@
         executorKind: "human",
       });
       await undertakings.refreshDetail();
+    })();
+    try {
+      await beginEditPromise;
     } catch (err) {
       surfaceError = err instanceof Error ? err.message : String(err);
     } finally {
+      beginEditPromise = null;
       saving = false;
+    }
+  }
+
+  async function onDraftChanged(tabIdValue: string, value: string) {
+    codeWorkspace.updateDraft(tabIdValue, value);
+    if (!editable && canBeginEdit) {
+      await startEditing();
     }
   }
 
@@ -1330,6 +1394,18 @@
               <span>Line numbers</span>
               <span class="text-surface-500">{showLineNumbers ? "On" : "Off"}</span>
             </button>
+            <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-surface-300 hover:bg-surface-800" onclick={toggleIndentGuides}>
+              <span>Indent guides</span>
+              <span class="text-surface-500">{indentGuides ? "On" : "Off"}</span>
+            </button>
+            <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-surface-300 hover:bg-surface-800" onclick={cycleFontSize}>
+              <span>Font size</span>
+              <span class="text-surface-500">{fontSize}px</span>
+            </button>
+            <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-surface-300 hover:bg-surface-800" onclick={cycleTabSize}>
+              <span>Tab size</span>
+              <span class="text-surface-500">{tabSizePref}</span>
+            </button>
             {#if projectTasks.length > 1}
               <label class="block border-t border-surface-500/20 px-2 pb-1.5 pt-1">
                 <span class="text-[9px] uppercase tracking-wider text-surface-500">Project command</span>
@@ -1372,17 +1448,17 @@
             disabled={saving}
             onclick={() => void reclaimHuman()}
             aria-label="Resume editing"
-            title="Resume editing"
-          ><Save size={14} strokeWidth={1.75} /></button>
-        {:else if !editable && detail?.allowed_actions.begin_attempt.allowed}
+            title="Resume editing — take the file back from the agent"
+          ><UserRound size={14} strokeWidth={1.75} /></button>
+        {:else if !editable && canBeginEdit}
           <button
             type="button"
             class="scripts-workbench-toolbar-btn scripts-workbench-toolbar-btn-primary"
             disabled={saving}
             onclick={() => void startEditing()}
             aria-label="Edit file"
-            title="Start editing"
-          ><Save size={14} strokeWidth={1.75} /></button>
+            title="Start editing (or just type)"
+          ><Pencil size={14} strokeWidth={1.75} /></button>
         {:else}
           <button
             type="button"
@@ -1431,7 +1507,7 @@
         {/if}
         {#if !activeTab.loading && activeTab.digest}
           {@const editorTab = activeTab}
-          {#key editorTab.tabId}
+          {#key `${editorTab.tabId}:${editorPrefsEpoch}`}
             <CodeMirrorHost
               bind:this={editor}
               value={editorTab.draft}
@@ -1439,14 +1515,14 @@
               {documentUri}
               lspLanguageId={editorTab.language}
               client={lspClient}
-              readOnly={!editable}
+              readOnly={!bufferInteractive}
               contentSyncKey={editorTab.syncKey}
               changedLines={reviewChangedLines}
               conventionIndentStyle={editorConventions.indent_style ?? null}
               conventionTabSize={Number.parseInt(editorConventions.indent_size ?? editorConventions.tab_width ?? "", 10) || null}
               {wordWrap}
               {showLineNumbers}
-              onchange={(value) => codeWorkspace.updateDraft(editorTab.tabId, value)}
+              onchange={(value) => void onDraftChanged(editorTab.tabId, value)}
               onCursorChanged={(cursor) => handleCursorChanged(editorTab, cursor)}
               onSelectionChanged={(selection) => (editorSelection = selection.text ? selection : null)}
               onProblemsChanged={syncProblems}
@@ -1707,18 +1783,29 @@
   {@const conflictTab = tabs.find((tab) => tab.tabId === comparingTabId)}
   {@const projectVersion = externalVersions[comparingTabId]}
   {#if conflictTab && projectVersion}
+    {@const conflictFiles = [{
+      path: conflictTab.path,
+      status: "changed",
+      hunks: buildTextDiff(projectVersion.content, conflictTab.draft),
+    }]}
     <div class="fixed inset-0 z-[125] flex items-center justify-center p-4">
       <button type="button" class="absolute inset-0 bg-black/55" aria-label="Close comparison" onclick={() => (comparingTabId = null)}></button>
       <div class="relative flex max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-surface-500/50 bg-surface-950 shadow-2xl" role="dialog" aria-modal="true" aria-label="Compare file versions" tabindex="-1">
         <header class="flex items-center justify-between border-b border-surface-500/30 px-3 py-2">
-          <div><p class="text-xs font-medium text-surface-100">Choose the version to continue with</p><p class="font-mono text-[9px] text-surface-500">{conflictTab.path}</p></div>
+          <div>
+            <p class="text-xs font-medium text-surface-100">Choose the version to continue with</p>
+            <p class="font-mono text-[9px] text-surface-500">{conflictTab.path}</p>
+            <p class="mt-0.5 text-[10px] text-surface-500">Draft vs project — same comparison chrome as Review.</p>
+          </div>
           <button type="button" class="rounded p-1 text-surface-500 hover:text-surface-100" aria-label="Close comparison" onclick={() => (comparingTabId = null)}><X size={13} /></button>
         </header>
-        <div class="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-2">
-          <section class="flex min-h-48 flex-col border-b border-surface-500/30 md:border-b-0 md:border-r"><p class="border-b border-surface-500/25 px-3 py-1.5 text-[10px] font-medium text-surface-300">My draft</p><pre class="min-h-0 flex-1 overflow-auto p-3 text-[10px] leading-relaxed text-surface-300">{conflictTab.draft}</pre></section>
-          <section class="flex min-h-48 flex-col"><p class="border-b border-surface-500/25 px-3 py-1.5 text-[10px] font-medium text-surface-300">Project version</p><pre class="min-h-0 flex-1 overflow-auto p-3 text-[10px] leading-relaxed text-surface-300">{projectVersion.content}</pre></section>
+        <div class="min-h-0 flex-1 overflow-auto px-3 py-2">
+          <DiffStack files={conflictFiles} mode="side" showJumpList={false} />
         </div>
-        <footer class="flex justify-end gap-2 border-t border-surface-500/30 px-3 py-2"><button type="button" class="rounded px-2 py-1 text-[10px] text-surface-300 hover:bg-surface-800" onclick={() => useProjectVersion(conflictTab)}>Use project version</button><button type="button" class="rounded bg-primary-500/80 px-2 py-1 text-[10px] font-medium text-white" onclick={() => keepDraft(conflictTab)}>Keep my draft</button></footer>
+        <footer class="flex justify-end gap-2 border-t border-surface-500/30 px-3 py-2">
+          <button type="button" class="rounded px-2 py-1 text-[10px] text-surface-300 hover:bg-surface-800" onclick={() => useProjectVersion(conflictTab)}>Use project version</button>
+          <button type="button" class="rounded bg-primary-500/80 px-2 py-1 text-[10px] font-medium text-white" onclick={() => keepDraft(conflictTab)}>Keep my draft</button>
+        </footer>
       </div>
     </div>
   {/if}

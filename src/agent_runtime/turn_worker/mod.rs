@@ -10,7 +10,7 @@ mod status;
 mod store;
 
 pub use model_routing::{
-    default_stage_role_for_intent, resolve_worker_llm_target,
+    default_stage_role_for_intent, resolve_worker_llm_target, resolve_worker_llm_target_with_matrix,
 };
 pub use policy::{
     TurnWorkerIntent, allowed_tool_names_for_intent, host_bus_tool_names, max_worker_tool_rounds,

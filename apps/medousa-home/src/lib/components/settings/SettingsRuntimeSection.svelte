@@ -5,6 +5,7 @@
   import { workshop } from "$lib/stores/workshop.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
+  import { isTauri } from "$lib/window";
   import {
     HOST_BUS_CHARTER_OPTIONS,
     TOOL_CALL_CHARTER_OPTIONS,
@@ -288,16 +289,41 @@
       shellAllowedBinaries: parseMultilineList(binariesText),
       shellWritableRoots: parseMultilineList(writableRootsText),
     };
+    // Keep the draft→textarea effect from rewriting mid-edit.
+    syncedFrom = JSON.stringify([
+      workshopDefaults.draft.shellAllowedBinaries ?? [],
+      workshopDefaults.draft.shellWritableRoots ?? [],
+    ]);
   }
 
-  function beforeSave(): boolean {
+  function onBinariesInput(event: Event) {
+    binariesText = (event.currentTarget as HTMLTextAreaElement).value;
     syncListsIntoDraft();
-    if (agentToolsOn && binariesEmpty) {
-      return window.confirm(
-        "Agent shell tools are on with an empty binary allowlist. Any command basename inside the jail can run. Save anyway?",
-      );
+  }
+
+  function onWritableRootsInput(event: Event) {
+    writableRootsText = (event.currentTarget as HTMLTextAreaElement).value;
+    syncListsIntoDraft();
+  }
+
+  async function beforeSave(): Promise<boolean> {
+    syncListsIntoDraft();
+    if (!(agentToolsOn && binariesEmpty)) return true;
+    const warning =
+      "Agent shell tools are on with an empty binary allowlist. Any command basename inside the jail can run. Save anyway?";
+    // Prefer plugin `ask` (`dialog|message`). Do not use `window.confirm` in
+    // Tauri — it routes to a removed `dialog.confirm` command and aborts save.
+    if (!isTauri()) return window.confirm(warning);
+    try {
+      const { ask } = await import("@tauri-apps/plugin-dialog");
+      return await ask(warning, { title: "Shell allowlist", kind: "warning" });
+    } catch (err) {
+      workshopDefaults.message =
+        err instanceof Error
+          ? err.message
+          : "Could not confirm empty shell allowlist — save cancelled.";
+      return false;
     }
-    return true;
   }
 </script>
 
@@ -640,7 +666,8 @@
           <textarea
             class="rt-mono-input mt-2"
             rows="4"
-            bind:value={binariesText}
+            value={binariesText}
+            oninput={onBinariesInput}
             placeholder={"git\nls\nrg"}
             readonly={readOnly}
             disabled={readOnly}
@@ -653,7 +680,8 @@
           <textarea
             class="rt-mono-input mt-2"
             rows="3"
-            bind:value={writableRootsText}
+            value={writableRootsText}
+            oninput={onWritableRootsInput}
             placeholder="/Users/you/projects"
             readonly={readOnly}
             disabled={readOnly}

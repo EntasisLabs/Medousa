@@ -889,22 +889,10 @@ pub fn resolve_api_model_routing(
     model_hint: Option<&str>,
     defaults: &session_mapping::IngestSessionRuntimeConfig,
 ) -> (String, String) {
-    let hint = model_hint.map(str::trim).filter(|value| !value.is_empty());
-    if let Some(hint) = hint {
-        if let Some((provider, model)) = hint.split_once(':') {
-            let provider = provider.trim();
-            let model = model.trim();
-            if !provider.is_empty() && !model.is_empty() {
-                return (
-                    crate::resolve_llm_provider(Some(provider)),
-                    crate::resolve_llm_model(Some(model)),
-                );
-            }
-        }
-        return (
-            defaults.draft_provider.clone(),
-            crate::resolve_llm_model(Some(hint)),
-        );
+    if let Some((provider, model)) =
+        crate::model_route::resolve_model_hint(model_hint, &defaults.draft_provider)
+    {
+        return (provider, model);
     }
 
     (

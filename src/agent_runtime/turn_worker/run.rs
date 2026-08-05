@@ -710,10 +710,18 @@ pub async fn run_worker_turn(
     } else {
         None
     };
+    // Genai reads env vars; keys live in keyring/file first — inject for the
+    // *worker* provider (may differ from the host turn).
+    crate::workshop_env::apply_provider_llm_env(&record.provider);
     let worker_pipeline = crate::tui::runtime_services::build_tool_loop_pipeline_for_target(
         &record.provider,
         &record.model,
-        ctx.base_url.as_deref(),
+        crate::model_route::resolve_route_base_url(
+            &record.provider,
+            &ctx.provider,
+            ctx.base_url.as_deref(),
+        )
+        .as_deref(),
         filtered_registry,
     );
 
@@ -943,10 +951,16 @@ async fn run_worker_failure_notify(
     let prompt =
         worker_failure_user_prompt(&parent_prompt, &record.work_id, &record.intent, &error);
 
-    let resolved_provider = crate::resolve_llm_provider(Some(record.provider.as_str()));
-    let resolved_model = crate::resolve_llm_model(Some(record.model.as_str()));
-    let resolved_base_url =
-        crate::resolve_llm_base_url(Some(&resolved_provider), ctx.base_url.as_deref());
+    // Prefer the host turn's credentials for the user-visible failure note —
+    // the worker provider may be the reason the turn failed (missing key, etc.).
+    crate::workshop_env::apply_provider_llm_env(&ctx.provider);
+    let resolved_provider = crate::resolve_llm_provider(Some(ctx.provider.as_str()));
+    let resolved_model = crate::resolve_llm_model(Some(ctx.model.as_str()));
+    let resolved_base_url = crate::model_route::resolve_route_base_url(
+        &resolved_provider,
+        &ctx.provider,
+        ctx.base_url.as_deref(),
+    );
     let chat_client: Arc<dyn AiChatClient> = Arc::new(crate::build_genai_chat_client(
         &resolved_provider,
         &resolved_model,
@@ -1040,10 +1054,14 @@ async fn run_synthesis_turn(
     ))
     .await;
 
+    crate::workshop_env::apply_provider_llm_env(&record.provider);
     let resolved_provider = crate::resolve_llm_provider(Some(record.provider.as_str()));
     let resolved_model = crate::resolve_llm_model(Some(record.model.as_str()));
-    let resolved_base_url =
-        crate::resolve_llm_base_url(Some(&resolved_provider), ctx.base_url.as_deref());
+    let resolved_base_url = crate::model_route::resolve_route_base_url(
+        &resolved_provider,
+        &ctx.provider,
+        ctx.base_url.as_deref(),
+    );
     let chat_client: Arc<dyn AiChatClient> = Arc::new(crate::build_genai_chat_client(
         &resolved_provider,
         &resolved_model,

@@ -34,11 +34,16 @@
       title="Save this section to the engine"
       disabled={workshopDefaults.saving || workshopDefaults.loading || !dirty}
       onclick={async () => {
-        const proceed = await beforeSave?.();
-        if (proceed === false) return;
-        await workshopDefaults.save();
-        if (workshopDefaults.message?.toLowerCase().includes("saved")) {
-          await onSaved?.();
+        try {
+          const proceed = await beforeSave?.();
+          if (proceed === false) return;
+          await workshopDefaults.save();
+          if (workshopDefaults.message?.toLowerCase().includes("saved")) {
+            await onSaved?.();
+          }
+        } catch (err) {
+          workshopDefaults.message =
+            err instanceof Error ? err.message : String(err);
         }
       }}
     >

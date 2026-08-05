@@ -70,6 +70,10 @@ impl StasisTool for CognitionSpawnTurnWorkerTool {
              Optional manuscript_id loads a YAML specialty (voice, tool allowlist, identity pins, OpenShell/skill tools). \
              Manuscript spec.worker.stage_role selects a StageRoutingMatrix route (extractor, verifier, …); \
              spec.worker.model_hint overrides provider/model. Spawn-time stage_role/model_hint win over manuscript defaults. \
+             Prefer omitting model_hint (or set model_hint=auto) so workshop StageRoutingMatrix / host \
+             preferences choose provider+model. Only pass provider:model when the user explicitly asked \
+             for that combo. Bare model ids infer the provider when unambiguous; otherwise they inherit \
+             the host turn provider — never the process default. \
              Use manuscript_id=echo-skill or openshell-researcher for sandbox script execution. \
              Put resolved capability/module/op and any host evidence into task — workers do not see parent chat.",
         )
@@ -101,7 +105,7 @@ impl StasisTool for CognitionSpawnTurnWorkerTool {
                 },
                 "model_hint": {
                     "type": "string",
-                    "description": "Optional model override (provider:model or bare model id)"
+                    "description": "Optional. Prefer omit or 'auto' to use user stage-routing / host prefs. Only set provider:model when explicitly requested (e.g. deepseek:deepseek-v4-flash)."
                 }
             },
             "required": ["task", "user_ack"]
