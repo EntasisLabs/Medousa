@@ -137,6 +137,8 @@ pub struct TurnContinuationScope {
     pub response_depth_mode: String,
     /// Copied from `TurnSurfaceContext.supports_ui_artifacts` for the active turn.
     pub supports_ui_artifacts: bool,
+    /// Copied from `TurnSurfaceContext.supports_liquid_markdown` for the active turn.
+    pub supports_liquid_markdown: bool,
     /// Copied from `TurnSurfaceContext.supports_browser_host` for the active turn.
     pub supports_browser_host: bool,
     /// Channel surface label (home-desktop, home-ios, telegram, …).

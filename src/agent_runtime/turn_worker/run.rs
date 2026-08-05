@@ -80,10 +80,14 @@ async fn establish_worker_canvas_turn_scope(
         model: record.model.clone(),
         response_depth_mode: record.response_depth_mode.clone(),
         supports_ui_artifacts: true,
+        supports_liquid_markdown: record.supports_liquid_markdown,
         supports_browser_host: record.supports_browser_host,
         channel_surface: Some("workshop-canvas".to_string()),
     });
     next.supports_ui_artifacts = true;
+    if record.supports_liquid_markdown {
+        next.supports_liquid_markdown = true;
+    }
     if record.supports_browser_host {
         next.supports_browser_host = true;
     }
@@ -111,6 +115,8 @@ pub struct ActiveWorkerBusSession {
     pub configured_max_tool_rounds: usize,
     /// Home client advertised HTML/canvas support when the host delegated this work.
     pub supports_ui_artifacts: bool,
+    /// Host client advertised Liquid Markdown hydration support.
+    pub supports_liquid_markdown: bool,
     pub supports_browser_host: bool,
 }
 
@@ -343,6 +349,7 @@ impl TurnWorkerScheduler {
             disposition: TurnWorkDisposition::Parallel,
             steer_messages: Vec::new(),
             supports_ui_artifacts: bus.supports_ui_artifacts,
+            supports_liquid_markdown: bus.supports_liquid_markdown,
             supports_browser_host: bus.supports_browser_host,
             created_at: now,
             updated_at: now,
@@ -543,6 +550,7 @@ impl TurnWorkerScheduler {
             disposition: TurnWorkDisposition::Bound,
             steer_messages: Vec::new(),
             supports_ui_artifacts: true,
+            supports_liquid_markdown: bus.supports_liquid_markdown,
             supports_browser_host: bus.supports_browser_host,
             created_at: now,
             updated_at: now,
@@ -763,6 +771,7 @@ pub async fn run_worker_turn(
                 .as_ref()
                 .and_then(|capsule| capsule.manuscript.as_ref()),
             record.supports_ui_artifacts,
+            record.supports_liquid_markdown,
         )),
         context: PromptExecutionContext::default(),
         tool_name: String::new(),
@@ -1201,7 +1210,7 @@ pub fn pipeline_for_turn_profile(
 }
 
 pub fn system_prompt_for_host_bus(base: &str, host_bus: bool) -> String {
-    super::prompts::system_prompt_for_host_profile(base, host_bus, false, None)
+    super::prompts::system_prompt_for_host_profile(base, host_bus, false, false, None)
 }
 
 #[cfg(test)]
@@ -1245,6 +1254,7 @@ mod tests {
             disposition: TurnWorkDisposition::Parallel,
             steer_messages: Vec::new(),
             supports_ui_artifacts: false,
+            supports_liquid_markdown: false,
             supports_browser_host: false,
             created_at: Utc::now(),
             updated_at: Utc::now(),

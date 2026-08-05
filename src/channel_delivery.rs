@@ -771,6 +771,7 @@ mod tests {
                 channel_id: None,
                 user_id: None,
                 supports_ui_artifacts: true,
+                supports_liquid_markdown: true,
                 supports_browser_host: true,
             }),
             host_context: None,

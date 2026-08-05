@@ -1015,6 +1015,7 @@ async fn spawn_continuation_agent_turn(
         model: record.model.clone(),
         response_depth_mode: record.response_depth_mode.clone(),
         supports_ui_artifacts: false,
+        supports_liquid_markdown: false,
         supports_browser_host: false,
         channel_surface: interactive_request
             .surface
@@ -1123,6 +1124,7 @@ pub async fn spawn_daemon_api_agent_turn(
         model: model.clone(),
         response_depth_mode: response_depth_mode.clone(),
         supports_ui_artifacts: false,
+        supports_liquid_markdown: false,
         supports_browser_host: false,
         channel_surface: Some("api".to_string()),
     };
@@ -1902,6 +1904,10 @@ async fn start_ingest_ask_stream(
         supports_ui_artifacts: crate::ui_present_tools::surface_supports_ui_artifacts(
             interactive_request.surface.as_ref(),
         ),
+        supports_liquid_markdown: interactive_request
+            .surface
+            .as_ref()
+            .is_some_and(|surface| surface.supports_liquid_markdown),
         supports_browser_host: crate::browser_tools::surface_supports_browser_host(
             interactive_request.surface.as_ref(),
         ),

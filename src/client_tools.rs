@@ -604,6 +604,7 @@ mod tests {
             model: "test".to_string(),
             response_depth_mode: "balanced".to_string(),
             supports_ui_artifacts: false,
+            supports_liquid_markdown: false,
             supports_browser_host: false,
             channel_surface: Some("browser".to_string()),
         })));

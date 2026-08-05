@@ -1154,6 +1154,10 @@ pub struct TurnSurfaceContext {
     /// Channel adapters and clients set this — the daemon does not infer it from channel name.
     #[serde(default)]
     pub supports_ui_artifacts: bool,
+    /// When true, the connected client can parse and hydrate Medousa Liquid Markdown embeds.
+    /// This does not imply support for HTML artifacts, scenes, canvas, or UI authoring tools.
+    #[serde(default)]
+    pub supports_liquid_markdown: bool,
     /// When true, the connected client can run Agent Browser (local BrowserHost or client WebView).
     /// Telegram/TUI/ingest leave this false; Home desktop/iOS set true when browser is available.
     #[serde(default)]
@@ -1167,6 +1171,7 @@ impl TurnSurfaceContext {
             channel_id: Some(channel_id.trim().to_string()),
             user_id: Some(user_id.trim().to_string()),
             supports_ui_artifacts: false,
+            supports_liquid_markdown: false,
             supports_browser_host: false,
         }
     }
@@ -1177,12 +1182,18 @@ impl TurnSurfaceContext {
             channel_id: None,
             user_id: None,
             supports_ui_artifacts: false,
+            supports_liquid_markdown: false,
             supports_browser_host: false,
         }
     }
 
     pub fn with_ui_artifacts(mut self, enabled: bool) -> Self {
         self.supports_ui_artifacts = enabled;
+        self
+    }
+
+    pub fn with_liquid_markdown(mut self, enabled: bool) -> Self {
+        self.supports_liquid_markdown = enabled;
         self
     }
 

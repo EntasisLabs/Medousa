@@ -19,7 +19,9 @@ Supported langs: `card`, `carousel`, `actions`, `callout`, `section`, `chips`, `
 
 **Lucide glyphs:** use inline `{{icon:sparkles}}` in prose, or fence `icon: plane` (same allowlist) on timeline / plan / card / shortlist / dashboard / tabs / steps / accordion / actions. Prefer `icon:` over `emoji:` when both are set.
 
-Agents on UI-capable clients get recipes from `[MEDOUSA_PRESENTATION]` and `cognition_environment_wiki(topic=ui_scene|scene_vs_html)`.
+Agents on clients advertising `supports_liquid_markdown` get recipes from
+`[MEDOUSA_PRESENTATION]`. HTML/scene tools remain separately gated by
+`supports_ui_artifacts`.
 
 ## Chart schema
 

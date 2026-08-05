@@ -41,11 +41,10 @@ Routing:
 - Never target builtin surfaces (home, chat, settings, runtime) for agent-owned components — only kind=custom surfaces.
 - Operator approves agent proposals in Settings → Canvas."#;
 
-/// Capability-gated presentation nudge. Appended ONLY when the connected client
-/// declares `supports_ui_artifacts` — non-UI channels (cli/tui/telegram) never see it.
-pub const PRESENTATION_APPENDIX: &str = r#"
+/// Capability-gated Liquid Markdown guidance. This is independent from HTML/canvas tools.
+pub const LIQUID_MARKDOWN_APPENDIX: &str = r#"
 [MEDOUSA_PRESENTATION]
-This client can render UI (supports_ui_artifacts) — prefer enriched markdown for structured chat answers.
+This client can render Liquid Markdown (supports_liquid_markdown) — prefer enriched markdown for structured chat answers.
 - In your final answer, use Liquid markdown embeds (runtime hydrates them — do NOT invent HTML/CSS):
   - ```card … ``` for one summary card (title/subtitle/body/emoji; optional expandable detail: meta: / summary: / chips: + point: label | body | emoji — tap opens a detail sheet). For long drafts (posts, briefs), keep `body:` to a one-line teaser and put the full text after `---` or in `summary:` / multiline `body: |-` so expand shows everything.
   - ```carousel … ``` for a horizontal strip of cards (legacy one line: title: … | body: … | emoji: …; or --- item blocks with the same expandable detail fields for “where it stands” facets)
@@ -91,6 +90,12 @@ This client can render UI (supports_ui_artifacts) — prefer enriched markdown f
   - Diagrams / flows → ```mermaid``` fences (already hydrate)
 - Do NOT paste reasoning/scratch into the final answer (no `> [!abstract] Reasoning` callouts). Thinking streams separately.
 - Style tables with normal GFM — the client paints them as soft cards.
+"#;
+
+/// Capability-gated authoring guidance for clients that support HTML/canvas artifacts.
+pub const UI_ARTIFACT_APPENDIX: &str = r#"
+[MEDOUSA_UI_ARTIFACTS]
+This client supports HTML/canvas UI artifacts (supports_ui_artifacts).
 - Interactive / streaming scene sessions → cognition_ui_build (begin → set_prose/add_section/add_card/add_actions → done) when markdown embeds are not enough.
 - Pixel-exact one-off or MedousaStore/feed artifact runtime → cognition_ui_present.
 - Durable widget on a custom surface → Workshop/Studio.
@@ -230,17 +235,21 @@ pub fn worker_system_prompt(
     intent: TurnWorkerIntent,
     manuscript: Option<&crate::identity_manuscript::WorkerManuscriptHandoff>,
     supports_ui_artifacts: bool,
+    supports_liquid_markdown: bool,
 ) -> String {
     let manuscript_block = manuscript
         .map(crate::identity_manuscript::format_worker_manuscript_block)
         .map(|block| format!("\n{block}\n"))
         .unwrap_or_default();
-    // Capability-gated: only UI-capable workshops get presentation guidance.
-    let presentation_block = if supports_ui_artifacts {
-        format!("\n\n{PRESENTATION_APPENDIX}")
-    } else {
-        String::new()
-    };
+    let mut presentation_block = String::new();
+    if supports_liquid_markdown {
+        presentation_block.push_str("\n\n");
+        presentation_block.push_str(LIQUID_MARKDOWN_APPENDIX);
+    }
+    if supports_ui_artifacts {
+        presentation_block.push_str("\n\n");
+        presentation_block.push_str(UI_ARTIFACT_APPENDIX);
+    }
     format!(
         "{WORKER_STTP_POLICY}{manuscript_block}\n\n\
          [MEDOUSA_COLLABORATOR_VOICE]\n{MEDOUSA_COLLABORATOR_VOICE}\n\n\
@@ -275,6 +284,7 @@ pub fn system_prompt_for_host_profile(
     base: &str,
     host_bus_active: bool,
     supports_ui_artifacts: bool,
+    supports_liquid_markdown: bool,
     worker_intent: Option<&str>,
 ) -> String {
     if !host_bus_active {
@@ -283,10 +293,13 @@ pub fn system_prompt_for_host_profile(
     let mut out = format!(
         "{base}\n\n[MEDOUSA_COLLABORATOR_VOICE]\n{MEDOUSA_COLLABORATOR_VOICE}\n\n{HOST_BUS_TURN_APPENDIX}\n\n{HOST_CANVAS_APPENDIX}\n\n{TURN_RUNTIME_BOUNDARY_APPENDIX}\n\n{TURN_SCRATCH_APPENDIX}"
     );
-    // Capability-gated: only UI-capable clients (Home) get presentation guidance.
+    if supports_liquid_markdown {
+        out.push_str("\n\n");
+        out.push_str(LIQUID_MARKDOWN_APPENDIX);
+    }
     if supports_ui_artifacts {
         out.push_str("\n\n");
-        out.push_str(PRESENTATION_APPENDIX);
+        out.push_str(UI_ARTIFACT_APPENDIX);
     }
     if let Some(intent) = worker_intent {
         out.push('\n');
@@ -374,7 +387,7 @@ mod tests {
 
     #[test]
     fn research_worker_prompt_includes_grapheme_discovery() {
-        let prompt = worker_system_prompt("sess-1", TurnWorkerIntent::Research, None, false);
+        let prompt = worker_system_prompt("sess-1", TurnWorkerIntent::Research, None, false, false);
         assert!(prompt.contains("MEDOUSA_WORKER_DISCIPLINE"));
         assert!(prompt.contains("HOST_TOOL_DIGESTS"));
         assert!(prompt.contains("cognition_grapheme_modules"));
@@ -384,66 +397,81 @@ mod tests {
 
     #[test]
     fn memory_worker_prompt_includes_calibrate_ritual() {
-        let prompt =
-            worker_system_prompt("sess-1", TurnWorkerIntent::MemoryAvecCalibrate, None, false);
+        let prompt = worker_system_prompt(
+            "sess-1",
+            TurnWorkerIntent::MemoryAvecCalibrate,
+            None,
+            false,
+            false,
+        );
         assert!(prompt.contains("cognition_memory_calibrate"));
         assert!(!prompt.contains("[MEDOUSA_WORKER_GRAPHEME]"));
     }
 
     #[test]
     fn host_and_worker_prompts_share_collaborator_voice() {
-        let worker = worker_system_prompt("sess-1", TurnWorkerIntent::General, None, false);
+        let worker = worker_system_prompt("sess-1", TurnWorkerIntent::General, None, false, false);
         assert!(worker.contains("[MEDOUSA_COLLABORATOR_VOICE]"));
         assert!(worker.contains("cognition_turn_finish"));
         assert!(!worker.contains("background specialist"));
 
-        let host = system_prompt_for_host_profile("base-sttp", true, false, None);
+        let host = system_prompt_for_host_profile("base-sttp", true, false, false, None);
         assert!(host.contains("[MEDOUSA_COLLABORATOR_VOICE]"));
         assert!(host.contains("[MEDOUSA_HOST_BUS]"));
         assert!(host.contains("Chat (host)"));
     }
 
     #[test]
-    fn presentation_appendix_is_capability_gated() {
-        // Host lane: only UI-capable clients see the presentation nudge.
-        let ui = system_prompt_for_host_profile("base-sttp", true, true, None);
-        assert!(ui.contains("[MEDOUSA_PRESENTATION]"));
-        assert!(ui.contains("```card"));
-        assert!(ui.contains("point:"));
-        assert!(ui.contains("summary:"));
-        assert!(ui.contains("```callout"));
-        assert!(ui.contains("```cite"));
-        assert!(ui.contains("```compare"));
-        assert!(ui.contains("```plan"));
-        assert!(ui.contains("```timeline"));
-        assert!(ui.contains("```shortlist"));
-        assert!(ui.contains("```decision"));
-        assert!(ui.contains("```brief"));
-        assert!(ui.contains("```dashboard"));
-        assert!(ui.contains("feed:"));
-        assert!(ui.contains("```chart"));
-        assert!(ui.contains("```report"));
-        assert!(ui.contains("```tabs"));
-        assert!(ui.contains("```steps"));
-        assert!(ui.contains("```accordion"));
-        assert!(ui.contains("```tree"));
-        assert!(ui.contains("scatter"));
-        assert!(ui.contains("dual Y"));
-        assert!(ui.contains("```mermaid"));
-        assert!(ui.contains("CURATE"));
-        assert!(ui.contains("cognition_ui_build"));
+    fn liquid_and_ui_appendices_are_independently_capability_gated() {
+        let liquid_only = system_prompt_for_host_profile("base-sttp", true, false, true, None);
+        assert!(liquid_only.contains("[MEDOUSA_PRESENTATION]"));
+        assert!(liquid_only.contains("```card"));
+        assert!(liquid_only.contains("point:"));
+        assert!(liquid_only.contains("summary:"));
+        assert!(liquid_only.contains("```callout"));
+        assert!(liquid_only.contains("```cite"));
+        assert!(liquid_only.contains("```compare"));
+        assert!(liquid_only.contains("```plan"));
+        assert!(liquid_only.contains("```timeline"));
+        assert!(liquid_only.contains("```shortlist"));
+        assert!(liquid_only.contains("```decision"));
+        assert!(liquid_only.contains("```brief"));
+        assert!(liquid_only.contains("```dashboard"));
+        assert!(liquid_only.contains("feed:"));
+        assert!(liquid_only.contains("```chart"));
+        assert!(liquid_only.contains("```report"));
+        assert!(liquid_only.contains("```tabs"));
+        assert!(liquid_only.contains("```steps"));
+        assert!(liquid_only.contains("```accordion"));
+        assert!(liquid_only.contains("```tree"));
+        assert!(liquid_only.contains("scatter"));
+        assert!(liquid_only.contains("dual Y"));
+        assert!(liquid_only.contains("```mermaid"));
+        assert!(liquid_only.contains("CURATE"));
+        assert!(!liquid_only.contains("cognition_ui_build"));
+        assert!(!liquid_only.contains("[MEDOUSA_UI_ARTIFACTS]"));
 
-        let non_ui = system_prompt_for_host_profile("base-sttp", true, false, None);
-        assert!(!non_ui.contains("[MEDOUSA_PRESENTATION]"));
+        let ui_only = system_prompt_for_host_profile("base-sttp", true, true, false, None);
+        assert!(!ui_only.contains("[MEDOUSA_PRESENTATION]"));
+        assert!(ui_only.contains("[MEDOUSA_UI_ARTIFACTS]"));
+        assert!(ui_only.contains("cognition_ui_build"));
+
+        let neither = system_prompt_for_host_profile("base-sttp", true, false, false, None);
+        assert!(!neither.contains("[MEDOUSA_PRESENTATION]"));
+        assert!(!neither.contains("[MEDOUSA_UI_ARTIFACTS]"));
 
         // host_bus_active=false returns the bare base regardless of capability.
-        let bare = system_prompt_for_host_profile("base-sttp", false, true, None);
+        let bare = system_prompt_for_host_profile("base-sttp", false, true, true, None);
         assert_eq!(bare, "base-sttp");
 
         // Worker lane mirrors the gate.
-        let worker_ui = worker_system_prompt("sess-1", TurnWorkerIntent::General, None, true);
-        assert!(worker_ui.contains("[MEDOUSA_PRESENTATION]"));
-        let worker_non_ui = worker_system_prompt("sess-1", TurnWorkerIntent::General, None, false);
-        assert!(!worker_non_ui.contains("[MEDOUSA_PRESENTATION]"));
+        let worker_liquid =
+            worker_system_prompt("sess-1", TurnWorkerIntent::General, None, false, true);
+        assert!(worker_liquid.contains("[MEDOUSA_PRESENTATION]"));
+        assert!(!worker_liquid.contains("[MEDOUSA_UI_ARTIFACTS]"));
+        let worker_ui =
+            worker_system_prompt("sess-1", TurnWorkerIntent::General, None, true, false);
+        assert!(worker_ui.contains("[MEDOUSA_UI_ARTIFACTS]"));
+        assert!(!worker_ui.contains("[MEDOUSA_PRESENTATION]"));
     }
 }

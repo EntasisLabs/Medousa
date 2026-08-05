@@ -559,6 +559,7 @@ async function sendPrompt(value?: string): Promise<void> {
       surface: {
         channel_surface: "browser",
         supports_browser_host: false,
+        supports_liquid_markdown: false,
         supports_ui_artifacts: false,
       },
     };

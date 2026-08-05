@@ -201,6 +201,10 @@ pub async fn spawn_turn_ticket(
         supports_ui_artifacts: crate::ui_present_tools::surface_supports_ui_artifacts(
             interactive_request.surface.as_ref(),
         ),
+        supports_liquid_markdown: interactive_request
+            .surface
+            .as_ref()
+            .is_some_and(|surface| surface.supports_liquid_markdown),
         supports_browser_host: crate::browser_tools::surface_supports_browser_host(
             interactive_request.surface.as_ref(),
         ),

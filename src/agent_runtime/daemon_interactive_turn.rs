@@ -937,6 +937,10 @@ pub async fn run_agent_turn(
         .map(|scope| scope.turn_correlation_id.clone());
     let supports_ui_artifacts =
         crate::ui_present_tools::surface_supports_ui_artifacts(request.surface.as_ref());
+    let supports_liquid_markdown = request
+        .surface
+        .as_ref()
+        .is_some_and(|surface| surface.supports_liquid_markdown);
     let supports_browser_host =
         crate::browser_tools::surface_supports_browser_host(request.surface.as_ref());
     let channel_surface = request
@@ -952,10 +956,12 @@ pub async fn run_agent_turn(
         model: request.model.clone(),
         response_depth_mode: request.response_depth_mode.clone(),
         supports_ui_artifacts,
+        supports_liquid_markdown,
         supports_browser_host,
         channel_surface: channel_surface.clone(),
     });
     effective_scope.supports_ui_artifacts = supports_ui_artifacts;
+    effective_scope.supports_liquid_markdown = supports_liquid_markdown;
     effective_scope.supports_browser_host = supports_browser_host;
     effective_scope.channel_surface = channel_surface;
     *agent_rt.turn_scope.write().await = Some(effective_scope);
@@ -1476,6 +1482,10 @@ async fn run_agent_turn_inner(
         super::DEFAULT_SYSTEM_PROMPT,
         true,
         crate::ui_present_tools::surface_supports_ui_artifacts(request.surface.as_ref()),
+        request
+            .surface
+            .as_ref()
+            .is_some_and(|surface| surface.supports_liquid_markdown),
         None,
     );
     let (tool_count, tool_schema_chars) =

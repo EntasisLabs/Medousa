@@ -168,6 +168,7 @@ export interface TurnSurfaceContext {
   channel_id?: string | null;
   channel_surface?: string | null;
   supports_browser_host?: boolean;
+  supports_liquid_markdown?: boolean;
   supports_ui_artifacts?: boolean;
   user_id?: string | null;
 }

@@ -423,6 +423,7 @@ class MedousaChatView implements vscode.WebviewViewProvider {
         surface: {
           channel_surface: "vscode",
           supports_browser_host: false,
+          supports_liquid_markdown: true,
           supports_ui_artifacts: false,
         },
       };

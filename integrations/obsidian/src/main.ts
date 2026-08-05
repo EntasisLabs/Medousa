@@ -338,6 +338,7 @@ export default class MedousaPlugin extends Plugin {
       surface: {
         channel_surface: "obsidian",
         supports_browser_host: false,
+        supports_liquid_markdown: true,
         supports_ui_artifacts: false,
       },
     };

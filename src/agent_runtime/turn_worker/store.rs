@@ -110,6 +110,8 @@ pub struct TurnWorkRecord {
     #[serde(default)]
     pub supports_ui_artifacts: bool,
     #[serde(default)]
+    pub supports_liquid_markdown: bool,
+    #[serde(default)]
     pub supports_browser_host: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
