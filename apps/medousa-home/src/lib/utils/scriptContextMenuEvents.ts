@@ -1,4 +1,6 @@
 import { scriptContextMenu } from "$lib/stores/scriptContextMenu.svelte";
+import { scriptLibrarySelection } from "$lib/stores/scriptLibrarySelection.svelte";
+import { workshop } from "$lib/stores/workshop.svelte";
 import { shouldUseMobileShell } from "$lib/platform";
 
 const LONG_PRESS_MS = 520;
@@ -12,6 +14,10 @@ function markContextMenuOpened() {
   suppressContextMenuClickUntil = Date.now() + 350;
 }
 
+function resolveScriptName(scriptId: string, fallback: string): string {
+  return workshop.scripts.find((entry) => entry.id === scriptId)?.name ?? fallback;
+}
+
 export function openScriptContextMenu(
   scriptId: string,
   name: string,
@@ -19,7 +25,12 @@ export function openScriptContextMenu(
   clientY: number,
 ) {
   markContextMenuOpened();
-  scriptContextMenu.showAt(clientX, clientY, { scriptId, name });
+  const scriptIds = scriptLibrarySelection.prepareContextMenu(scriptId);
+  scriptContextMenu.showAt(clientX, clientY, {
+    scriptId,
+    name: resolveScriptName(scriptId, name),
+    scriptIds: scriptIds.length > 1 ? scriptIds : undefined,
+  });
 }
 
 export function handleScriptContextMenuEvent(

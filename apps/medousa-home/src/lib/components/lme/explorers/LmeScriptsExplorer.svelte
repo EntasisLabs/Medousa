@@ -18,6 +18,7 @@
   import { renameScriptById } from "$lib/grapheme/scriptWorkbenchActions";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
+  import { scriptLibrarySelection } from "$lib/stores/scriptLibrarySelection.svelte";
   import { scriptRenameUi } from "$lib/stores/scriptRenameUi.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
   import { portLmeDock } from "$lib/utils/lmeDockHost";
@@ -154,6 +155,7 @@
       );
     }),
   );
+  const filteredScriptIds = $derived(filteredScripts.map((entry) => entry.id));
 
   const filteredRecipes = $derived(
     GRAPHEME_STARTER_RECIPES.filter((recipe) => {
@@ -175,8 +177,11 @@
       : workshop.lifecycleEvents,
   );
 
-  async function openScript(entry: GraphemeScriptEntry) {
+  async function openScript(entry: GraphemeScriptEntry, event?: MouseEvent) {
     if (shouldSuppressScriptContextMenuClick()) return;
+    if (!scriptLibrarySelection.applySelection(entry.id, event, filteredScriptIds)) {
+      return;
+    }
     await lmeWorkspace.openScriptById(entry.id);
   }
 
@@ -276,15 +281,16 @@
               </div>
             {:else}
               <div
-                class="lme-script-row group flex w-full items-stretch transition hover:bg-surface-800/70 {graphemeScriptEditor.activeTab?.scriptId ===
-                entry.id
+                class="lme-script-row group flex w-full items-stretch transition hover:bg-surface-800/70 {scriptLibrarySelection.isSelected(
+                  entry.id,
+                ) || graphemeScriptEditor.activeTab?.scriptId === entry.id
                   ? 'workshop-list-row-active'
                   : ''}"
               >
                 <button
                   type="button"
                   class="flex min-w-0 flex-1 flex-col px-3 py-2 text-left"
-                  onclick={() => void openScript(entry)}
+                  onclick={(event) => void openScript(entry, event)}
                   oncontextmenu={(event) =>
                     handleScriptContextMenuEvent(entry.id, entry.name, event)}
                   use:bindScriptLongPress={() => ({ scriptId: entry.id, name: entry.name })}

@@ -20,6 +20,59 @@ const SCRIPTS_DIR: &str = "scripts";
 
 static STORE: Lazy<GraphemeScriptStore> = Lazy::new(GraphemeScriptStore::new);
 
+#[cfg(test)]
+mod test_override {
+    use std::cell::RefCell;
+    use std::path::PathBuf;
+
+    thread_local! {
+        static OVERRIDE: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+    }
+
+    pub fn set(path: Option<PathBuf>) {
+        OVERRIDE.with(|cell| *cell.borrow_mut() = path);
+    }
+
+    pub fn get() -> Option<PathBuf> {
+        OVERRIDE.with(|cell| cell.borrow().clone())
+    }
+}
+
+/// Test-only redirect for [`GraphemeScriptStore::root_dir`]. Does not touch product config.
+#[cfg(test)]
+pub fn set_test_grapheme_script_root_override(path: Option<PathBuf>) {
+    test_override::set(path);
+}
+
+/// Run grapheme-script work against an isolated temp root (not the live library).
+#[cfg(test)]
+pub fn with_temp_grapheme_scripts<T>(f: impl FnOnce() -> T) -> T {
+    use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
+    use std::sync::{Mutex, OnceLock};
+
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    let _lock = LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    let base = std::env::temp_dir().join(format!(
+        "medousa-grapheme-scripts-test-{}",
+        uuid::Uuid::new_v4().simple()
+    ));
+    fs::create_dir_all(base.join(SCRIPTS_DIR)).expect("temp grapheme scripts root");
+    set_test_grapheme_script_root_override(Some(base.clone()));
+    grapheme_script_store().reload_from_disk();
+    let result = catch_unwind(AssertUnwindSafe(f));
+    set_test_grapheme_script_root_override(None);
+    grapheme_script_store().reload_from_disk();
+    let _ = fs::remove_dir_all(&base);
+    match result {
+        Ok(value) => value,
+        Err(payload) => resume_unwind(payload),
+    }
+}
+
 pub fn grapheme_script_store() -> &'static GraphemeScriptStore {
     &STORE
 }
@@ -38,6 +91,10 @@ impl GraphemeScriptStore {
     }
 
     pub fn root_dir() -> PathBuf {
+        #[cfg(test)]
+        if let Some(path) = test_override::get() {
+            return path;
+        }
         session::medousa_data_dir().join("grapheme-scripts")
     }
 
