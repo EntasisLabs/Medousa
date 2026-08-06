@@ -5,7 +5,7 @@
   import { contextShell } from "$lib/stores/contextShell.svelte";
   import { contextThreads } from "$lib/stores/contextThreads.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
-  import type { VaultNote } from "$lib/types/vault";
+  import type { VaultNoteSummary } from "$lib/types/vault";
   import { hasKnownChatSession } from "$lib/utils/contextCrossLinks";
   import type { ContextMapNode } from "$lib/utils/contextMap";
 
@@ -18,7 +18,7 @@
   const search = $derived(contextShell.search);
   const selectedMapNodeId = $derived(contextShell.selectedMapNodeId);
 
-  let vaultNotes = $state<VaultNote[]>([]);
+  let vaultNotes = $state<VaultNoteSummary[]>([]);
   let vaultError = $state<string | null>(null);
 
   const sessionLabels = $derived(

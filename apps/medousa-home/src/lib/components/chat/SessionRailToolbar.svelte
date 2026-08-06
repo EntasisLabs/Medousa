@@ -18,13 +18,21 @@
     void sharedMode.load();
   });
 
-  let searchOpen = $state(false);
+  let searchExpanded = $state(false);
   let searchInputEl = $state<HTMLInputElement | null>(null);
 
   let query = $state(chat.sessionListQuery);
 
+  const searching = $derived(query.trim().length > 0);
+
   $effect(() => {
-    if (!searchOpen) query = chat.sessionListQuery;
+    if (searching && !searchExpanded) {
+      searchExpanded = true;
+    }
+  });
+
+  $effect(() => {
+    if (!searchExpanded) query = chat.sessionListQuery;
   });
 
   $effect(() => {
@@ -35,14 +43,21 @@
   async function openSearch() {
     await ensureRailPopoverOpen();
     query = chat.sessionListQuery;
-    searchOpen = true;
+    searchExpanded = true;
     await tick();
     searchInputEl?.focus();
   }
 
   function closeSearch() {
-    searchOpen = false;
+    searchExpanded = false;
     query = "";
+  }
+
+  function handleSearchKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeSearch();
+    }
   }
 
   async function createSession() {
@@ -60,8 +75,8 @@
   }
 </script>
 
-{#if searchOpen}
-  <div class="lme-dock-search-expand flex min-w-0 flex-1 items-center gap-1">
+{#if searchExpanded}
+  <div class="lme-dock-search-expand flex-1">
     <Search size={14} strokeWidth={1.75} class="shrink-0 text-content-quiet" aria-hidden="true" />
     <input
       bind:this={searchInputEl}
@@ -69,6 +84,7 @@
       type="search"
       placeholder="Search titles…"
       bind:value={query}
+      onkeydown={handleSearchKeydown}
     />
     <button
       type="button"
@@ -81,6 +97,8 @@
     </button>
   </div>
 {:else}
+  <div class="lme-dock-leading-ghost min-w-0 flex-1" aria-hidden="true"></div>
+
   <button
     type="button"
     class="vault-dock-icon-btn"
@@ -103,7 +121,7 @@
   {/if}
   <button
     type="button"
-    class="vault-dock-icon-btn"
+    class="vault-dock-icon-btn {searching ? 'vault-dock-icon-btn-active' : ''}"
     title="Search sessions"
     aria-label="Search sessions"
     onclick={() => void openSearch()}

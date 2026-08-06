@@ -234,6 +234,16 @@ pub fn get_transition_policy() -> AgentModeTransitionPolicy {
     read_index().transition_policy
 }
 
+pub fn session_ids_with_code_binding() -> Vec<String> {
+    let _guard = MODE_STATE_LOCK.lock().unwrap();
+    read_index()
+        .sessions
+        .iter()
+        .filter(|(_, state)| state.bound_work_id.is_some())
+        .map(|(session_id, _)| session_id.clone())
+        .collect()
+}
+
 pub fn get_session_code_binding(session_id: &str) -> Result<SessionCodeBindingResponse, String> {
     let session_id = session_id.trim();
     if session_id.is_empty() {
@@ -262,11 +272,14 @@ pub fn set_session_code_binding(
     let mut index = read_index();
     let state = index.sessions.entry(session_id.to_string()).or_default();
     if state.bound_work_id.as_deref() == Some(work_id) {
-        return Ok(SessionCodeBindingResponse {
+        let response = SessionCodeBindingResponse {
             session_id: session_id.to_string(),
             work_id: state.bound_work_id.clone(),
             updated_at_utc: state.code_binding_updated_at_utc,
-        });
+        };
+        drop(_guard);
+        crate::session_catalog::mark_has_code_work(session_id);
+        return Ok(response);
     }
     let now = Utc::now();
     state.bound_work_id = Some(work_id.to_string());
@@ -274,6 +287,8 @@ pub fn set_session_code_binding(
     state.revision = state.revision.saturating_add(1);
     state.updated_at_utc = Some(now);
     write_index(&index)?;
+    drop(_guard);
+    crate::session_catalog::mark_has_code_work(session_id);
     Ok(SessionCodeBindingResponse {
         session_id: session_id.to_string(),
         work_id: Some(work_id.to_string()),

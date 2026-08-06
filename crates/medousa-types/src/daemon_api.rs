@@ -2460,12 +2460,14 @@ pub struct VaultNoteSummary {
     pub modified_at_utc: DateTime<Utc>,
     #[serde(default)]
     pub kind: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct VaultNotesListResponse {
-    pub notes: Vec<VaultNote>,
+    pub notes: Vec<VaultNoteSummary>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

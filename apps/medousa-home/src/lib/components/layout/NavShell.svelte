@@ -617,7 +617,14 @@
               />
             </div>
           {:else if viewSurface === "chat"}
-            <SessionSidebar open={true} variant="inline" />
+            <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div class="lme-side-rail-dock">
+                <SessionRailToolbar variant="rail-row" onCreated={() => onSelect("chat")} />
+              </div>
+              <div class="min-h-0 flex-1 overflow-hidden">
+                <SessionSidebar open={true} variant="inline" chrome="rail-list" />
+              </div>
+            </div>
           {:else if viewSurface === "library" ||
             viewSurface === "notes" ||
             viewSurface === "files" ||

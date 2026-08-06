@@ -1,5 +1,5 @@
 import type { LocusAvecSnapshot, LocusNodeSummary } from "$lib/types/locus";
-import type { VaultNote } from "$lib/types/vault";
+import type { MapVaultNote } from "$lib/utils/contextMapNotes";
 import { humanMomentTitle, sessionMapLabel } from "$lib/utils/contextHuman";
 import {
   buildNoteGraphSlice,
@@ -437,7 +437,7 @@ export function buildContextMapGraph(
     density?: ContextMapDensity;
     /** Preserve settled coords across expand/search rebuilds. */
     priorPositions?: Map<string, { x: number; y: number }>;
-    vaultNotes?: VaultNote[];
+    vaultNotes?: MapVaultNote[];
     /** Per-dimension AVEC minimums (0 = off). */
     avecMins?: MapAvecMins | null;
   },
@@ -459,9 +459,10 @@ export function buildContextMapGraph(
   const noteRevealSessions = new Set<string>();
   if (needle && vaultNotes.length > 0) {
     for (const note of vaultNotes) {
-      const hay = [note.title, note.path, ...note.tags].join(" ").toLowerCase();
+      const tags = note.tags ?? [];
+      const hay = [note.title, note.path, ...tags].join(" ").toLowerCase();
       if (!hay.includes(needle)) continue;
-      const linked = sessionIdForNoteChatTag(note.tags, allBucketSessionIds);
+      const linked = sessionIdForNoteChatTag(tags, allBucketSessionIds);
       if (linked) noteRevealSessions.add(linked);
     }
   }
