@@ -113,17 +113,18 @@ a private Code IDE chrome.
 - New file, rename, and delete are available in the repository explorer. All
   three begin or reuse the editing session and remain inside the working copy;
   rename/delete refuse unsaved open drafts and use change-conflict protection.
-- Repository status and open files reconcile while Code is visible. Clean files
-  changed by an agent or Terminal refresh in place; a dirty human draft is
-  preserved and receives an explicit external-change warning.
+- Repository status refreshes with the tree. When Home regains focus, the
+  active clean file refreshes if an agent or Terminal changed it; a dirty human
+  draft is preserved and receives an explicit external-change warning. Live
+  reconciliation for every open file is still in progress.
 - When an installed language server is available, Code attaches it to the
-  project repository root. Diagnostics, completion, hover, and navigation
-  come from the real server; unavailable servers degrade honestly to basic
+  governed project working-copy root. Diagnostics, completion, hover, and
+  navigation come from the real server; unavailable servers degrade honestly to basic
   editing. `Cmd/Ctrl+Shift+O` opens **Structure**. Right-click in the editor
   for Go to Definition, Find Uses, Rename, Format, Organize Imports, copy
-  path, and Reveal in Explorer. `F2` opens inline rename. Issues places the
-  current file before other project diagnostics. `Cmd/Ctrl+F` opens find with
-  the shared editor chrome.
+  path, and Reveal in Explorer. `F2` opens inline rename. Issues currently shows
+  diagnostics for the active file; project-wide Problems is in progress.
+  `Cmd/Ctrl+F` opens find with the shared editor chrome.
 - Find uses, rename, formatting, and import organization appear only when the
   active language server supports them. Multi-file renames are digest-checked
   and applied as one governed edit; a conflict leaves every file unchanged.
@@ -154,8 +155,10 @@ development processes at the same time, including in mixed repositories.
 - Completed checks are written into Forge command evidence. Review uses the
   latest completed result to say whether verification passed; cancelled runs
   are preserved as activity but do not pretend the revision failed.
-- Long-running development commands are project runs, while Terminal remains
-  the interactive escape hatch and keeps its own named, stoppable sessions.
+- Long-running development commands are cancellable project runs. Their
+  completed output is retained as Forge evidence; live output and attachment
+  to named Terminal sessions are still in progress. Terminal remains the
+  interactive escape hatch and keeps its own named, stoppable sessions.
 
 ## What each surface does
 
