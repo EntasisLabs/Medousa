@@ -27,12 +27,21 @@
 
   const buckets = $derived.by((): DayBucket[] => {
     const { from, to } = calendar.rangeForView();
+    const query = calendar.railQuery.trim().toLowerCase();
     const out: DayBucket[] = [];
     let cursor = startOfDay(from);
     const end = startOfDay(to);
     while (cursor < end) {
-      const events = calendar.eventsForDay(cursor);
-      const reminders = calendar.remindersForDay(cursor);
+      let events = calendar.eventsForDay(cursor);
+      let reminders = calendar.remindersForDay(cursor);
+      if (query) {
+        events = events.filter((event) =>
+          (event.summary || "").toLowerCase().includes(query),
+        );
+        reminders = reminders.filter((item) =>
+          (item.title || "").toLowerCase().includes(query),
+        );
+      }
       if (events.length > 0 || reminders.length > 0) {
         out.push({
           day: cursor,
@@ -136,11 +145,15 @@
   {#if buckets.length === 0}
     <div class="flex flex-1 flex-col items-center justify-center gap-2 px-3 py-6 text-center">
       <CalendarDays size={22} strokeWidth={1.5} class="text-content-quiet" />
-      <p class="text-sm text-content-secondary">No events in this range</p>
-      <button type="button" class="btn btn-sm btn-primary" onclick={create}>
-        <Plus size={14} strokeWidth={2} />
-        New
-      </button>
+      <p class="text-sm text-content-secondary">
+        {calendar.railQuery.trim() ? "No events match." : "No events in this range"}
+      </p>
+      {#if !calendar.railQuery.trim()}
+        <button type="button" class="btn btn-sm btn-primary" onclick={create}>
+          <Plus size={14} strokeWidth={2} />
+          New
+        </button>
+      {/if}
     </div>
   {:else}
     <div class="min-h-0 flex-1 overflow-y-auto px-1.5 py-1.5">
@@ -226,15 +239,21 @@
   }
 
   .cal-mini-day-today {
-    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-400) / 0.7);
+    background: rgb(var(--color-primary-500));
+    color: rgb(var(--on-primary));
+    font-weight: 650;
   }
 
   .cal-mini-day-selected {
     background: rgb(var(--color-primary-500));
-    color: rgb(var(--color-surface-50));
+    color: rgb(var(--on-primary));
   }
 
-  .cal-mini-day-busy:not(.cal-mini-day-selected) {
+  .cal-mini-day-today.cal-mini-day-selected {
+    box-shadow: inset 0 0 0 1.5px rgb(var(--on-primary) / 0.55);
+  }
+
+  .cal-mini-day-busy:not(.cal-mini-day-selected):not(.cal-mini-day-today) {
     font-weight: 700;
     color: rgb(var(--color-primary-200));
   }

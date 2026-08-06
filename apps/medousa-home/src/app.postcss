@@ -22,9 +22,16 @@
   html {
     --mobile-keyboard-inset: 0px;
     --mobile-bottom-chrome-height: 5.5rem;
+    /* Lucide stroke weight — slightly heavier than the old 1.5–1.75 chrome default. */
+    --icon-stroke: 2.15;
     /* Legacy font multipliers stay at 1; real UI zoom is Tauri webview setZoom
        (see contentZoom.ts). Never put CSS zoom on individual scroll hosts. */
     --content-zoom: 1;
+  }
+
+  /* App-wide Lucide weight. Overrides per-icon stroke-width attrs (charts stay untouched). */
+  svg.lucide {
+    stroke-width: var(--icon-stroke);
   }
 
   /* iOS WKWebView auto-zooms focused inputs below 16px — enforce minimum app-wide. */
@@ -1646,9 +1653,9 @@
     @apply bg-transparent text-surface-100;
   }
 
-  /* Side-rail dock footers (h-8 matches workshop status bar height). */
+  /* Side-rail action rows (h-8 matches workshop status bar height). */
   .lme-side-rail-dock {
-    @apply relative flex h-8 shrink-0 items-center gap-0.5 overflow-visible border-t border-surface-500/25 px-1;
+    @apply relative flex h-8 shrink-0 items-center gap-0.5 overflow-visible border-b border-surface-500/25 px-1;
   }
 
   /* Keep secondary chrome in a single row (avoids stacked buttons overflowing the bar). */

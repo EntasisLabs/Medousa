@@ -31,6 +31,8 @@
 
 {#if variant === "popover"}
   <div class="lme-dock-leading-ghost min-w-0 flex-1" aria-hidden="true"></div>
+{:else}
+  <div class="min-w-0 flex-1" aria-hidden="true"></div>
 {/if}
 
 <button

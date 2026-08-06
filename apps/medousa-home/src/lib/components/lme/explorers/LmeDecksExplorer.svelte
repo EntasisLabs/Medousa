@@ -49,22 +49,7 @@
     <p class="shrink-0 px-3 py-2 text-sm text-content-error">{artifacts.error}</p>
   {/if}
 
-  <div class="min-h-0 flex-1 overflow-hidden">
-    {#if artifacts.loading && artifacts.artifacts.length === 0}
-      <p class="workshop-muted px-3 py-2 text-sm">Loading…</p>
-    {:else}
-      <ArtifactLibraryList
-        artifacts={artifacts.filteredArtifacts}
-        selectedArtifactId={artifacts.selectedArtifactId}
-        onSelect={(artifactId) => {
-          const entry = artifacts.artifacts.find((row) => row.artifact_id === artifactId);
-          lmeWorkspace.openDeck(artifactId, entry?.label);
-        }}
-      />
-    {/if}
-  </div>
-
-  <footer class="lme-side-rail-dock" use:portLmeDock>
+  <header class="lme-side-rail-dock" use:portLmeDock>
     {#if searchExpanded}
       <div class="lme-dock-search-expand flex min-w-0 flex-1 items-center gap-1">
         <Search size={14} strokeWidth={1.75} class="shrink-0 text-content-quiet" aria-hidden="true" />
@@ -88,6 +73,9 @@
         </button>
       </div>
     {:else}
+      <!-- Push action cluster to the right (matches Automations). -->
+      <div class="lme-dock-leading-ghost min-w-0 flex-1" aria-hidden="true"></div>
+
       <div class="lme-dock-chrome-secondary shrink-0">
         <button
           type="button"
@@ -111,5 +99,20 @@
         <Search size={15} strokeWidth={1.75} />
       </button>
     {/if}
-  </footer>
+  </header>
+  <div class="min-h-0 flex-1 overflow-hidden">
+    {#if artifacts.loading && artifacts.artifacts.length === 0}
+      <p class="workshop-muted px-3 py-2 text-sm">Loading…</p>
+    {:else}
+      <ArtifactLibraryList
+        artifacts={artifacts.filteredArtifacts}
+        selectedArtifactId={artifacts.selectedArtifactId}
+        onSelect={(artifactId) => {
+          const entry = artifacts.artifacts.find((row) => row.artifact_id === artifactId);
+          lmeWorkspace.openDeck(artifactId, entry?.label);
+        }}
+      />
+    {/if}
+  </div>
+
 </aside>
