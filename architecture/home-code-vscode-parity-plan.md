@@ -218,8 +218,8 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 |---|---|---|
 | HCP-0 | Authoritative plan, truthful roadmap/docs, verification inventory | ✅ |
 | HCP-1A | `MedousaCodeWorkspace` file/URI/view model with focused tests | ✅ |
-| HCP-1B | Cross-file definition/declaration/type/implementation navigation and history | 🔄 |
-| HCP-1C | Complete text/resource workspace edits plus governed refactor preview | ⬜ |
+| HCP-1B | Cross-file definition/declaration/type/implementation navigation and history | ✅ |
+| HCP-1C | Complete text/resource workspace edits plus governed refactor preview | 🔄 |
 | HCP-2A | Real workspace Problems model and diagnostics navigation | ⬜ |
 | HCP-2B | Per-document language-root resolution and nested-project sessions | ⬜ |
 | HCP-2C | LSP lifecycle, restart/reconnect, progress, logs, and configuration | ⬜ |
@@ -257,6 +257,12 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
   Compatibility: direct Grapheme callers retain the package default workspace;
   Code leases opt into the adapter. Rollback: revert this commit; no persisted
   data or daemon contract changes are involved.
+- **HCP-1B — `e78c65f2`.** Added safe workshop file-URI conversion, live editor
+  view registration, definition/declaration/type-definition/implementation
+  requests, unopened-file presentation, and precise Back/Forward history.
+  Migration: none. Compatibility: unsupported language methods remain
+  capability-gated and existing in-file navigation stays available. Rollback:
+  revert this commit; no persisted data or daemon contract changes are involved.
 
 ### Slice rules
 

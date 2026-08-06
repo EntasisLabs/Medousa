@@ -130,8 +130,13 @@ a private Code IDE chrome.
   shows diagnostics for the active file; project-wide Problems is in progress.
   `Cmd/Ctrl+F` opens find with the shared editor chrome.
 - Find uses, rename, formatting, and import organization appear only when the
-  active language server supports them. Multi-file renames are digest-checked
-  and applied as one governed edit; a conflict leaves every file unchanged.
+  active language server supports them. Multi-file rename opens **Review
+  refactor** first, including text changes and any proposed create, rename, or
+  delete operations. Apply verifies the previewed digest or absence of every
+  path and commits the ordered edit as one governed transaction; a conflict or
+  write failure leaves every file unchanged. An older connected daemon can
+  still apply text-only refactors, while resource operations explain that the
+  workshop must be updated instead of partially applying the rename.
 - Repository `.editorconfig` rules feed indentation before Medousa falls back
   to the file’s existing style and language defaults. An explicit user
   preference still wins.
@@ -273,6 +278,8 @@ See `apps/medousa-home/src/lib/forge.ts` and daemon routes:
   and `POST /v1/forge/items/start` for inferred project setup
 - `GET|POST|PUT|PATCH|DELETE /v1/forge/items/{id}/source` for bounded,
   governed source editing
+- `PUT /v1/forge/items/{id}/source/workspace-edit` for previewed, atomic
+  multi-file text and resource refactors
 - `GET|PUT /v1/forge/items/{id}/workspace-state` for durable editor recovery
 - `GET /v1/forge/items/{id}/review[/file]` for synthesis and exact per-file
   comparisons; `POST …/review/file` for checkpoint-preserving restoration

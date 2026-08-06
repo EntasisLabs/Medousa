@@ -290,6 +290,16 @@ export type ForgeSourceFile = {
   byte_size: number;
 };
 
+export type ForgeSourceWorkspacePrecondition =
+  | { kind: "existing"; path: string; expected_digest: string }
+  | { kind: "missing"; path: string };
+
+export type ForgeSourceWorkspaceOperation =
+  | { kind: "write"; path: string; content: string }
+  | { kind: "create"; path: string; content: string }
+  | { kind: "rename"; path: string; destination: string }
+  | { kind: "delete"; path: string };
+
 export type ForgeSourceTree = {
   work_id: string;
   files: Array<{ path: string; byte_size: number; status?: string | null }>;
@@ -497,6 +507,25 @@ export async function saveUndertakingSources(
 ): Promise<ForgeSourceFile[]> {
   return forgeFetch(
     `/v1/forge/items/${encodeURIComponent(workId)}/source/batch`,
+    {
+      method: "PUT",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+/** Apply one optimistic, all-or-nothing text and resource workspace edit. */
+export async function applyUndertakingSourceWorkspaceEdit(
+  workId: string,
+  input: {
+    preconditions: ForgeSourceWorkspacePrecondition[];
+    operations: ForgeSourceWorkspaceOperation[];
+    lease_id: string;
+    generation: number;
+  },
+): Promise<ForgeSourceFile[]> {
+  return forgeFetch(
+    `/v1/forge/items/${encodeURIComponent(workId)}/source/workspace-edit`,
     {
       method: "PUT",
       body: JSON.stringify(input),

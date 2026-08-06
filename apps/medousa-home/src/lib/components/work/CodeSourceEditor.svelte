@@ -39,6 +39,10 @@
     pathToFileUri,
     workspaceRelativePathFromUri,
   } from "$lib/code/codeDocumentUri";
+  import {
+    buildCodeWorkspaceEditPlan,
+    type CodeWorkspaceEditPlan,
+  } from "$lib/code/codeWorkspaceEdit";
   import { codeEditorViewRegistry } from "$lib/code/codeEditorViewRegistry";
   import type { CodeLanguageNavigationKind } from "$lib/code/codeLanguageNavigation";
   import { containingSymbolTrail } from "$lib/code/codeDocumentSymbols";
@@ -48,9 +52,11 @@
   } from "$lib/code/codeEditorLanguageRegistry";
   import {
     beginHumanAttempt,
+    applyUndertakingSourceWorkspaceEdit,
     getUndertakingSource,
     heartbeatLease,
     humanizeForgeMessage,
+    isMissingForgeRoute,
     saveUndertakingSource,
     saveUndertakingSources,
     getUndertakingSourceTree,
@@ -186,6 +192,12 @@
   let renameOpen = $state(false);
   let renameDraft = $state("");
   let renameInput = $state<HTMLInputElement | null>(null);
+  let refactorPreview = $state<{
+    workId: string;
+    plan: CodeWorkspaceEditPlan;
+  } | null>(null);
+  let refactorApplying = $state(false);
+  let refactorDiffMode = $state<"inline" | "side">("side");
   const statusOwnerId = `code-editor-${Math.random().toString(36).slice(2)}`;
 
   const context = $derived(undertakings.active);
@@ -319,6 +331,20 @@
     if (!activeTab || !context?.worktree) return activeTab?.path ?? "";
     return `${context.worktree.replace(/[\\/]$/, "")}/${activeTab.path}`;
   });
+  const refactorDiffFiles = $derived(
+    (refactorPreview?.plan.files ?? []).map((file) => ({
+      id: file.id,
+      path: file.path,
+      oldPath: file.oldPath,
+      status:
+        file.status === "created"
+          ? "added"
+          : file.status === "modified"
+            ? "changed"
+            : file.status,
+      hunks: buildTextDiff(file.before, file.after),
+    })),
+  );
 
   async function runDetectedTask(test?: ProjectTest) {
     if (!selectedTask || runningTask) {
@@ -916,64 +942,245 @@
       : [];
   }
 
-  function applyTextEdits(
-    content: string,
-    edits: Array<{ newText?: string; range?: { start?: { line?: number; character?: number }; end?: { line?: number; character?: number } } }>,
-  ): string {
-    const lines = content.split("\n");
-    const offset = (position: { line?: number; character?: number } | undefined) => {
-      const line = Math.max(0, Math.min(position?.line ?? 0, lines.length - 1));
-      let total = 0;
-      for (let index = 0; index < line; index += 1) total += lines[index].length + 1;
-      return Math.min(content.length, total + Math.max(0, position?.character ?? 0));
-    };
-    let next = content;
-    const changes = edits.map((edit) => ({
-      from: offset(edit.range?.start),
-      to: offset(edit.range?.end),
-      text: edit.newText ?? "",
-    })).sort((a, b) => b.from - a.from);
-    for (const change of changes) {
-      next = `${next.slice(0, change.from)}${change.text}${next.slice(change.to)}`;
-    }
-    return next;
+  function sourceWasNotFound(err: unknown): boolean {
+    const status = (err as { status?: number } | null)?.status;
+    const message = err instanceof Error ? err.message : String(err ?? "");
+    return status === 404 || /HTTP\s+404\b/i.test(message);
   }
 
-  async function applyWorkspaceEdit(result: unknown): Promise<boolean> {
-    if (!result || typeof result !== "object" || !context?.leaseId || context.leaseGeneration == null) return false;
-    const edit = (result as { edit?: unknown }).edit ?? result;
-    const workspaceEdit = edit as {
-      changes?: Record<string, unknown>;
-      documentChanges?: Array<{ textDocument?: { uri?: string }; edits?: unknown }>;
-    };
-    const entries = workspaceEdit.changes
-      ? Object.entries(workspaceEdit.changes)
-      : (workspaceEdit.documentChanges ?? [])
-          .filter((change) => change.textDocument?.uri && Array.isArray(change.edits))
-          .map((change) => [change.textDocument!.uri!, change.edits] as const);
-    if (entries.length === 0) return false;
-    const files = [];
-    for (const [uri, rawEdits] of entries) {
-      const path = pathFromUri(uri);
-      if (!path || !Array.isArray(rawEdits)) return false;
-      const source = await getUndertakingSource(workId, path);
-      files.push({
-        path,
-        expected_digest: source.digest,
-        content: applyTextEdits(source.content, rawEdits),
+  async function reviewWorkspaceEdit(result: unknown): Promise<boolean> {
+    const root = workspaceRoot;
+    if (!root) throw new Error("The project workspace root is unavailable.");
+    const plan = await buildCodeWorkspaceEditPlan(result, {
+      workspaceRoot: root,
+      loadSource: async (path) => {
+        try {
+          return await getUndertakingSource(workId, path);
+        } catch (err) {
+          if (sourceWasNotFound(err)) return null;
+          throw err;
+        }
+      },
+    });
+    if (plan.operations.length === 0) return false;
+    refactorDiffMode = "side";
+    refactorPreview = { workId, plan };
+    return true;
+  }
+
+  async function applyTextOnlyRefactorFallback(
+    plan: CodeWorkspaceEditPlan,
+    lease: { leaseId: string; generation: number },
+  ): Promise<ForgeSourceFile[]> {
+    if (plan.operations.some((operation) => operation.kind !== "write")) {
+      throw new Error(
+        "This workshop needs a newer Medousa daemon to apply refactors that create, rename, or delete files.",
+      );
+    }
+    const digests = new Map(
+      plan.preconditions
+        .filter((precondition) => precondition.kind === "existing")
+        .map((precondition) => [precondition.path, precondition.expected_digest]),
+    );
+    const finalContent = new Map<string, string>();
+    for (const operation of plan.operations) {
+      if (operation.kind === "write") finalContent.set(operation.path, operation.content);
+    }
+    const files = [...finalContent].map(([path, content]) => {
+      const expectedDigest = digests.get(path);
+      if (!expectedDigest) {
+        throw new Error(`The refactor is missing a source snapshot for ${path}.`);
+      }
+      return { path, content, expected_digest: expectedDigest };
+    });
+    return saveUndertakingSources(workId, {
+      files,
+      lease_id: lease.leaseId,
+      generation: lease.generation,
+    });
+  }
+
+  function notifyLanguageServerOfRefactor(plan: CodeWorkspaceEditPlan) {
+    const client = lspClient;
+    const root = workspaceRoot;
+    if (!client || !root) return;
+    const fileUri = (path: string) =>
+      pathToFileUri(`${root.replace(/[\\/]$/, "")}/${path}`);
+    // Notify the server about the net filesystem result, not intermediate
+    // transaction paths. This avoids reporting an overwrite destination as
+    // deleted after a source identity has already moved into that same path.
+    const deletedPaths = new Set(
+      plan.files.filter((file) => file.status === "deleted").map((file) => file.path),
+    );
+    const finalPaths = new Set(
+      plan.files
+        .filter((file) => file.status !== "deleted")
+        .map((file) => file.path),
+    );
+    const replacedPaths = new Set(
+      [...deletedPaths].filter((path) =>
+        plan.files.some((file) => file.status === "created" && file.path === path),
+      ),
+    );
+    const created = plan.files
+      .filter((file) => file.status === "created" && !replacedPaths.has(file.path))
+      .map((file) => ({ uri: fileUri(file.path) }));
+    const renamed = plan.files
+      .filter((file) => file.status === "renamed" && file.oldPath)
+      .map((file) => ({
+        oldUri: fileUri(file.oldPath!),
+        newUri: fileUri(file.path),
+      }));
+    const deleted = [...deletedPaths]
+      .filter((path) => !finalPaths.has(path))
+      .map((path) => ({ uri: fileUri(path) }));
+    if (created.length) client.notification("workspace/didCreateFiles", { files: created });
+    if (renamed.length) client.notification("workspace/didRenameFiles", { files: renamed });
+    if (deleted.length) client.notification("workspace/didDeleteFiles", { files: deleted });
+    const watchedChanges = plan.files.flatMap((file) => {
+      if (file.status === "modified" || replacedPaths.has(file.path)) {
+        return [{ uri: fileUri(file.path), type: 2 }];
+      }
+      if (file.status === "created") return [{ uri: fileUri(file.path), type: 1 }];
+      if (file.status === "deleted" && !finalPaths.has(file.path)) {
+        return [{ uri: fileUri(file.path), type: 3 }];
+      }
+      if (file.status === "renamed" && file.oldPath) {
+        return [
+          { uri: fileUri(file.oldPath), type: 3 },
+          { uri: fileUri(file.path), type: 1 },
+        ];
+      }
+      return [];
+    });
+    const watchedByUri = new Map(watchedChanges.map((change) => [change.uri, change]));
+    if (watchedByUri.size) {
+      client.notification("workspace/didChangeWatchedFiles", {
+        changes: [...watchedByUri.values()],
       });
     }
-    if (files.length === 0) return false;
-    const saved = await saveUndertakingSources(workId, {
-      files,
-      lease_id: context.leaseId,
-      generation: context.leaseGeneration,
-    });
+  }
+
+  async function reconcileAppliedRefactor(
+    plan: CodeWorkspaceEditPlan,
+    saved: ForgeSourceFile[],
+  ) {
+    const initiallyActivePath = activeTabPath;
+    const openTabs = [...tabs];
+    const openByPath = new Map(openTabs.map((tab) => [tab.path, tab]));
+    const savedByPath = new Map(saved.map((source) => [source.path, source]));
+    const affectedTabIds = new Set(openTabs
+      .filter((tab) => plan.preconditions.some((entry) => entry.path === tab.path))
+      .map((tab) => tab.tabId));
+
+    // An overwrite rename may delete an open destination before moving the
+    // source identity into that same path, so close replaced identities first.
+    for (const file of plan.files.filter((entry) => entry.status === "deleted")) {
+      if (!openByPath.has(file.path)) continue;
+      codeWorkspace.removePath(workId, file.path);
+      await lmeWorkspace.closeCodeFile(workId, file.path);
+    }
+    await tick();
+    for (const file of plan.files.filter((entry) => entry.status === "deleted")) {
+      const presentationStillOpen = lmeWorkspace.tabs.some(
+        (tab) =>
+          tab.kind === "code" &&
+          tab.workId === workId &&
+          tab.resource.kind === "file" &&
+          tab.resource.path === file.path,
+      );
+      if (presentationStillOpen) await lmeWorkspace.closeCodeFile(workId, file.path);
+    }
+
+    for (const file of plan.files) {
+      const oldPath = file.oldPath;
+      if (file.status !== "renamed" || !oldPath) continue;
+      const oldTab = openByPath.get(oldPath);
+      const source = savedByPath.get(file.path);
+      if (!oldTab || !source) continue;
+      codeWorkspace.replacePath(workId, oldPath, source);
+      await lmeWorkspace.replaceCodeFile(
+        workId,
+        oldPath,
+        file.path,
+        oldTab.line ?? 1,
+        { activate: initiallyActivePath === oldPath },
+      );
+      if (initiallyActivePath === oldPath) {
+        undertakings.setSelection({ path: file.path, line: oldTab.line, entityId: null });
+      }
+    }
+
+    if (
+      plan.files.some(
+        (file) => file.status === "deleted" && file.path === initiallyActivePath,
+      ) &&
+      !plan.files.some(
+        (file) => file.status === "renamed" && file.oldPath === initiallyActivePath,
+      )
+    ) {
+      undertakings.setSelection({ path: null, line: null, entityId: null });
+    }
+
     for (const source of saved) {
-      const tab = tabs.find((entry) => entry.path === source.path);
+      const tab = codeWorkspace.tabs.find(
+        (entry) => entry.work_id === workId && entry.path === source.path,
+      );
       if (tab) codeWorkspace.acceptSaved(tab.tabId, source);
     }
-    return true;
+    const nextExternal = { ...externalVersions };
+    for (const tabId of affectedTabIds) delete nextExternal[tabId];
+    externalVersions = nextExternal;
+    notifyLanguageServerOfRefactor(plan);
+    clientSyncAfterRefactor();
+    try {
+      quickFiles = (await getUndertakingSourceTree(workId)).files;
+    } catch {
+      // The applied transaction is authoritative; the normal tree refresh can retry.
+    }
+    await undertakings.refreshDetail();
+  }
+
+  function clientSyncAfterRefactor() {
+    void tick().then(() => lspClient?.sync());
+  }
+
+  async function applyRefactorPreview() {
+    const preview = refactorPreview;
+    const active = context;
+    if (!preview || preview.workId !== workId || refactorApplying) return;
+    if (!active?.leaseId || active.leaseGeneration == null) {
+      surfaceError = "Editing control changed. Reopen the rename preview and try again.";
+      return;
+    }
+    refactorApplying = true;
+    surfaceError = null;
+    try {
+      let saved: ForgeSourceFile[];
+      try {
+        saved = await applyUndertakingSourceWorkspaceEdit(workId, {
+          preconditions: preview.plan.preconditions,
+          operations: preview.plan.operations,
+          lease_id: active.leaseId,
+          generation: active.leaseGeneration,
+        });
+      } catch (err) {
+        if (!isMissingForgeRoute(err)) throw err;
+        saved = await applyTextOnlyRefactorFallback(preview.plan, {
+          leaseId: active.leaseId,
+          generation: active.leaseGeneration,
+        });
+      }
+      await reconcileAppliedRefactor(preview.plan, saved);
+      refactorPreview = null;
+      saveWhisper = "Refactor applied";
+      if (saveWhisperTimer) clearTimeout(saveWhisperTimer);
+      saveWhisperTimer = setTimeout(() => (saveWhisper = null), 1800);
+    } catch (err) {
+      surfaceError = err instanceof Error ? err.message : String(err);
+    } finally {
+      refactorApplying = false;
+    }
   }
 
   async function runLanguageAction(
@@ -1023,7 +1230,7 @@
         contextPanel = "references";
         return;
       }
-      if (action === "rename" && await applyWorkspaceEdit(result)) return;
+      if (action === "rename" && await reviewWorkspaceEdit(result)) return;
       const edits = activeLanguageEdits(result);
       if (edits.length) {
         editor?.applyLanguageEdits(edits);
@@ -1898,6 +2105,87 @@
   {/if}
 {/if}
 
+{#if refactorPreview?.workId === workId}
+  {@const refactorPlan = refactorPreview.plan}
+  {@const resourceOperationCount = refactorPlan.operations.filter((operation) => operation.kind !== "write").length}
+  <div class="fixed inset-0 z-[128] flex items-center justify-center p-4">
+    <button
+      type="button"
+      class="absolute inset-0 bg-black/60"
+      aria-label="Cancel refactor"
+      disabled={refactorApplying}
+      onclick={() => {
+        if (!refactorApplying) refactorPreview = null;
+      }}
+    ></button>
+    <div
+      class="relative flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-surface-500/50 bg-surface-950 shadow-2xl"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Review refactor"
+      aria-busy={refactorApplying}
+      tabindex="-1"
+    >
+      <header class="flex items-start justify-between gap-3 border-b border-surface-500/30 px-4 py-3">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-surface-100">Review refactor</p>
+          <p class="mt-0.5 text-[10px] leading-relaxed text-content-quiet">
+            Nothing changes until you apply this preview. The workshop verifies every file snapshot and commits the complete edit atomically.
+          </p>
+          <div class="mt-2 flex flex-wrap items-center gap-1.5 text-[9px] text-content-tertiary">
+            <span class="rounded bg-surface-800 px-1.5 py-0.5">{refactorPlan.operations.length} {refactorPlan.operations.length === 1 ? "operation" : "operations"}</span>
+            {#if resourceOperationCount > 0}
+              <span class="rounded bg-primary-950/60 px-1.5 py-0.5 text-primary-200">{resourceOperationCount} file {resourceOperationCount === 1 ? "operation" : "operations"}</span>
+            {/if}
+            {#each refactorPlan.annotationLabels as label (label)}
+              <span class="rounded bg-amber-950/55 px-1.5 py-0.5 text-amber-200">{label}</span>
+            {/each}
+          </div>
+        </div>
+        <button
+          type="button"
+          class="rounded p-1 text-content-quiet hover:bg-surface-800 hover:text-surface-100 disabled:opacity-40"
+          aria-label="Cancel refactor"
+          disabled={refactorApplying}
+          onclick={() => (refactorPreview = null)}
+        ><X size={14} /></button>
+      </header>
+      {#if surfaceError}
+        <p class="shrink-0 border-b border-amber-500/30 bg-amber-950/25 px-4 py-2 text-[10px] text-amber-100">
+          {humanizeForgeMessage(surfaceError)}
+        </p>
+      {/if}
+      <div class="min-h-0 flex-1 overflow-auto px-4 py-3">
+        <DiffStack
+          files={refactorDiffFiles}
+          bind:mode={refactorDiffMode}
+          showJumpList={true}
+          busy={refactorApplying}
+          title="Proposed project changes"
+          subtitle="Create, rename, and delete operations are included in the same guarded transaction as text edits."
+        />
+      </div>
+      <footer class="flex items-center justify-between gap-3 border-t border-surface-500/30 px-4 py-3">
+        <p class="text-[9px] text-content-quiet">If any file changed since this preview was built, Apply stops without changing the project.</p>
+        <div class="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            class="rounded px-2.5 py-1.5 text-[10px] text-content-tertiary hover:bg-surface-800 disabled:opacity-40"
+            disabled={refactorApplying}
+            onclick={() => (refactorPreview = null)}
+          >Cancel</button>
+          <button
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded bg-primary-500/80 px-2.5 py-1.5 text-[10px] font-medium text-white hover:bg-primary-500 disabled:opacity-40"
+            disabled={refactorApplying}
+            onclick={() => void applyRefactorPreview()}
+          >{#if refactorApplying}<LoaderCircle size={11} class="animate-spin" />Applying…{:else}Apply refactor{/if}</button>
+        </div>
+      </footer>
+    </div>
+  </div>
+{/if}
+
 <CodeEditorContextMenu
   open={editorMenuOpen}
   x={editorMenuX}
@@ -1956,6 +2244,13 @@
   }}
   onkeydown={(event) => {
     if (!interactive) return;
+    if (refactorPreview) {
+      if (event.key === "Escape" && !refactorApplying) {
+        event.preventDefault();
+        refactorPreview = null;
+      }
+      return;
+    }
     onWindowKeydown(event);
     if (event.defaultPrevented) return;
     if (renameOpen || quickOpen || editorMenuOpen) return;

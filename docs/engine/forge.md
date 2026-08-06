@@ -45,6 +45,8 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | GET | `/v1/forge/items/{id}/source?path=…` | Read bounded UTF-8 source from the governed worktree |
 | POST | `/v1/forge/items/{id}/source` | Lease-fenced source-file creation |
 | PUT | `/v1/forge/items/{id}/source` | Lease-fenced source save with digest conflict detection |
+| PUT | `/v1/forge/items/{id}/source/batch` | Atomic digest-fenced writes to existing text files |
+| PUT | `/v1/forge/items/{id}/source/workspace-edit` | Atomic ordered text/create/rename/delete workspace edit with digest-or-absence preconditions |
 | PATCH | `/v1/forge/items/{id}/source` | Lease-fenced source rename with digest conflict detection |
 | DELETE | `/v1/forge/items/{id}/source` | Lease-fenced source deletion with digest conflict detection |
 | GET | `/v1/forge/items/{id}/tree` | List tracked and unignored repository files (bounded to 20,000) |
@@ -233,6 +235,17 @@ Create, rename, and delete use the same lease fence. Rename and delete also
 require the digest last read by the client. New files use exclusive creation;
 existing files are never replaced. Repository metadata, missing/outside parent
 directories, and symlink escapes are rejected.
+
+Complete editor refactors use `PUT …/source/workspace-edit`. Its body contains
+`lease_id`, `generation`, an ordered `operations` array, and `preconditions` for
+every path named by an operation. An existing path precondition carries
+`expected_digest`; a missing path precondition records expected absence.
+Supported operation kinds are `write`, `create`, `rename`, and `delete`.
+Before touching disk, Forge validates all paths, preconditions, sizes, and the
+entire virtual existence sequence. It then applies at most 512 operations and
+8 MiB of combined text as one transaction. Any failure restores all original
+files, while a stale digest or unexpected path returns a conflict without
+changing the worktree.
 
 Code workspace state is stored under Forge's data root, outside the governed
 worktree. Clean tab/group state does not require a lease. Persisting a dirty
