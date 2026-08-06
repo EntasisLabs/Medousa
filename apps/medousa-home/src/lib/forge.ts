@@ -289,6 +289,12 @@ export type ForgeSourceFile = {
   content: string;
   digest: string;
   byte_size: number;
+  /** `utf-8`, `utf-8-lossy`, or `binary` when the workshop reports it. */
+  encoding?: string | null;
+  /** True when content is a bounded preview (large/binary/lossy), not editable. */
+  preview?: boolean;
+  /** True when a text preview was truncated to the editor byte limit. */
+  truncated?: boolean;
 };
 
 export type ForgeSourceWorkspacePrecondition =

@@ -217,8 +217,8 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 | HCP-5B | Contextual Code layout preset with group-local visible tabs and optional regions | ✅ |
 | HCP-5C | Shared command registry, VS Code aliases, context keys, and keybinding editor | ✅ |
 | HCP-6A | Full repository search API/UI and cancellable pagination | ✅ |
-| HCP-6B | Previewed repository replace and complete file/folder operations | 🔄 |
-| HCP-6C | Large-file, encoding, binary-preview, and fuzzy Quick Open fallbacks | ⬜ |
+| HCP-6B | Previewed repository replace and complete file/folder operations | ✅ |
+| HCP-6C | Large-file, encoding, binary-preview, and fuzzy Quick Open fallbacks | 🔄 |
 | HCP-7A | Streaming execution protocol and bounded output replay | ⬜ |
 | HCP-7B | Named task terminals, background readiness, configured tasks, and problem matchers | ⬜ |
 | HCP-7C | Terminal search, profiles, groups, shell integration, file links, and run selection | ⬜ |
@@ -325,6 +325,11 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
   Mod+Shift+F. Migration: none. Compatibility: older Homes ignore new query
   params and `next_cursor`. Rollback: revert this commit; additive search
   surface.
+- **HCP-6B — `2314d228`.** Digest-fenced Search replace preview/apply, New
+  folder (`kind=directory`), nested parent creation, and guarded folder
+  rename/delete via workspace-edit. Migration: none. Compatibility: older Homes
+  ignore replace/directory fields. Rollback: revert this commit; additive
+  routes and UI.
 
 ### Product-fit boundary (post-HCP-8)
 

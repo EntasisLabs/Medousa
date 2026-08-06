@@ -29,6 +29,7 @@
   import CodeTerminalDock from "$lib/components/work/CodeTerminalDock.svelte";
   import CodeWorkspaceSearch from "$lib/components/code/CodeWorkspaceSearch.svelte";
   import { openTrackedTerminal } from "$lib/utils/undertakingWorkspace";
+  import { fuzzyMatchPaths } from "$lib/utils/pathFuzzyMatch";
   import type { LSPClient } from "@codemirror/lsp-client";
   import {
     CODE_LSP_MAX_RECONNECT_ATTEMPTS,
@@ -289,9 +290,11 @@
   const activeLspLanguage = $derived(codeEditorLspLanguageId(activeTabLanguage));
   const activeTabLine = $derived(activeTab?.line ?? null);
   const dirty = $derived(Boolean(activeTab && codeWorkspace.isDirty(activeTab)));
+  const previewOnly = $derived(Boolean(activeTab?.preview));
   const editable = $derived(
     Boolean(
       interactive &&
+      !previewOnly &&
       context?.workId === workId &&
       context.leaseId &&
       context.leaseGeneration != null,
@@ -303,12 +306,13 @@
   const canBeginEdit = $derived(
     Boolean(
       interactive &&
+        !previewOnly &&
         !agentHasControl &&
         detail?.allowed_actions.begin_attempt.allowed,
     ),
   );
   /** Soft lease: typing is allowed when a human attempt can begin. */
-  const bufferInteractive = $derived(editable || canBeginEdit);
+  const bufferInteractive = $derived((editable || canBeginEdit) && !previewOnly);
   let beginEditPromise = $state<Promise<void> | null>(null);
   const statusControlLabel = $derived.by(() => {
     if (agentHasControl) {
@@ -339,14 +343,8 @@
     );
   });
   const quickResults = $derived.by(() => {
-    const needle = quickQuery.trim().replace(/^>/, "").toLowerCase();
-    const scored = quickFiles.map((file, index) => {
-      const path = file.path.toLowerCase();
-      const name = path.split("/").pop() ?? path;
-      const score = !needle ? index : name.startsWith(needle) ? 0 : name.includes(needle) ? 1 : path.includes(needle) ? 2 : 99;
-      return { file, score };
-    });
-    return scored.filter((row) => row.score < 99).sort((a, b) => a.score - b.score).slice(0, 80).map((row) => row.file);
+    const needle = quickQuery.trim().replace(/^>/, "");
+    return fuzzyMatchPaths(quickFiles, needle, 80);
   });
   const quickMode = $derived(
     quickQuery.startsWith("@") ? "symbol" : quickQuery.startsWith(":") ? "line" : "file",
@@ -1168,6 +1166,10 @@
   }
 
   async function saveTab(tab: CodeDocumentTab | null): Promise<boolean> {
+    if (tab?.preview) {
+      surfaceError = "This file is open as a preview and cannot be saved from Code.";
+      return false;
+    }
     if (tab?.tabId === activeTabId && editor) {
       const liveDraft = editor.getValue();
       if (liveDraft !== tab.draft) {
@@ -2484,6 +2486,17 @@
         {humanizeForgeMessage(surfaceError || activeTab.error || codeWorkspace.workspaceErrorByWorkId[workId] || "")}
       </p>
     {/if}
+    {#if activeTab.preview}
+      <div class="flex shrink-0 items-center gap-2 border-b border-sky-500/25 bg-sky-950/20 px-2.5 py-1.5 text-[10px] text-sky-100/90" role="status">
+        {#if activeTab.encoding === "binary"}
+          <span>Binary preview · {activeTab.byte_size.toLocaleString()} bytes · read-only</span>
+        {:else if activeTab.truncated}
+          <span>Large file preview (first 2 MiB of {activeTab.byte_size.toLocaleString()} bytes) · read-only</span>
+        {:else}
+          <span>Lossy text preview ({activeTab.encoding ?? "unknown"} encoding) · read-only</span>
+        {/if}
+      </div>
+    {/if}
     {#if externalVersions[activeTab.tabId]}
       <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-500/30 bg-amber-950/20 px-2.5 py-1.5 text-[10px] text-amber-100">
         <span class="min-w-40 flex-1">This file changed elsewhere. Your draft is safe.</span>
@@ -2518,11 +2531,11 @@
             <CodeMirrorHost
               bind:this={editor}
               value={editorTab.draft}
-              languageId={editorTab.language}
+              languageId={editorTab.encoding === "binary" ? "plaintext" : editorTab.language}
               {documentUri}
-              lspLanguageId={codeEditorLspLanguageId(editorTab.language)}
-              client={lspClient}
-              readOnly={!bufferInteractive}
+              lspLanguageId={editorTab.preview ? null : codeEditorLspLanguageId(editorTab.language)}
+              client={editorTab.preview ? null : lspClient}
+              readOnly={!bufferInteractive || editorTab.preview}
               contentSyncKey={editorTab.syncKey}
               changedLines={reviewChangedLines}
               conventionIndentStyle={editorConventions.indent_style ?? null}
@@ -2539,7 +2552,7 @@
           {/key}
         {:else if !activeTab.loading}
           <div class="flex h-full min-h-48 items-center justify-center p-6 text-xs text-content-quiet">
-            This file is not plain text, so Medousa cannot edit it here.
+            This file could not be opened.
           </div>
         {/if}
       </div>
@@ -2901,7 +2914,7 @@
     <div class="relative w-full max-w-xl overflow-hidden rounded-lg border border-surface-500/50 bg-surface-950 shadow-2xl" role="dialog" aria-modal="true" aria-label="Open a file" tabindex="-1">
       <div class="flex items-center gap-2 border-b border-surface-500/30 px-3">
         <Search size={14} class="text-content-quiet" />
-        <input bind:this={quickInput} class="min-w-0 flex-1 bg-transparent py-2.5 text-sm text-surface-100 outline-none" placeholder="File, @symbol, or :line" bind:value={quickQuery} oninput={() => { quickIndex = 0; void refreshQuickSymbols(); }} onkeydown={(event) => {
+        <input bind:this={quickInput} class="min-w-0 flex-1 bg-transparent py-2.5 text-sm text-surface-100 outline-none" placeholder="Fuzzy file, @symbol, or :line" bind:value={quickQuery} oninput={() => { quickIndex = 0; void refreshQuickSymbols(); }} onkeydown={(event) => {
           if (event.key === "ArrowDown") { event.preventDefault(); quickIndex = Math.min(quickIndex + 1, quickResultCount - 1); }
           if (event.key === "ArrowUp") { event.preventDefault(); quickIndex = Math.max(quickIndex - 1, 0); }
           if (event.key === "Enter") { event.preventDefault(); chooseQuickResult(); }

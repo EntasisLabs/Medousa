@@ -147,6 +147,7 @@ class CodeWorkspaceStore {
 
 
   isDirty(tab: CodeDocumentTab): boolean {
+    if (tab.preview) return false;
     return tab.draft !== tab.content;
   }
 

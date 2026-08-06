@@ -276,6 +276,8 @@ fn request_error(status: StatusCode, message: impl Into<String>) -> ApiError {
 }
 
 const MAX_SOURCE_BYTES: usize = 2 * 1024 * 1024;
+const MAX_BINARY_PREVIEW_BYTES: usize = 4 * 1024;
+const BINARY_SCAN_BYTES: usize = 8 * 1024;
 
 fn source_digest(bytes: &[u8]) -> String {
     format!("sha256:{:x}", Sha256::digest(bytes))
@@ -1435,6 +1437,15 @@ struct SourceResponse {
     content: String,
     digest: String,
     byte_size: usize,
+    /// `utf-8`, `utf-8-lossy`, or `binary`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    encoding: Option<String>,
+    /// True when `content` is a bounded preview rather than the full editable body.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    preview: bool,
+    /// True when a text preview was truncated to the editor byte limit.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    truncated: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2202,34 +2213,118 @@ fn repository_statuses(root: &FsPath) -> std::collections::HashMap<String, Strin
         .collect()
 }
 
+fn looks_like_binary(bytes: &[u8]) -> bool {
+    let sample = &bytes[..bytes.len().min(BINARY_SCAN_BYTES)];
+    if sample.contains(&0) {
+        return true;
+    }
+    if std::str::from_utf8(sample).is_ok() {
+        return false;
+    }
+    let non_text = sample
+        .iter()
+        .filter(|byte| {
+            let value = **byte;
+            !(value == b'\n'
+                || value == b'\r'
+                || value == b'\t'
+                || (0x20..0x7f).contains(&value)
+                || value >= 0x80)
+        })
+        .count();
+    non_text * 10 > sample.len()
+}
+
+fn format_binary_preview(bytes: &[u8], byte_size: usize, digest: &str) -> String {
+    let sample = &bytes[..bytes.len().min(MAX_BINARY_PREVIEW_BYTES)];
+    let mut out = format!(
+        "Binary file · {byte_size} bytes · {digest}\nPreview (first {} bytes):\n",
+        sample.len()
+    );
+    for (row, chunk) in sample.chunks(16).enumerate() {
+        let offset = row * 16;
+        let hex = chunk
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let ascii = chunk
+            .iter()
+            .map(|byte| {
+                if (0x20..0x7f).contains(byte) {
+                    *byte as char
+                } else {
+                    '.'
+                }
+            })
+            .collect::<String>();
+        out.push_str(&format!("{offset:08x}  {hex:<47}  |{ascii}|\n"));
+    }
+    out
+}
+
 fn read_source_response(work_id: &WorkId, root: &FsPath, raw: &str) -> ApiResult<SourceResponse> {
+    use std::io::Read;
+
     let (path, relative) = resolve_source_path(root, raw)?;
-    let bytes = std::fs::read(&path).map_err(|err| {
+    let mut file = std::fs::File::open(&path).map_err(|err| {
         request_error(
             StatusCode::NOT_FOUND,
             format!("could not read source file: {err}"),
         )
     })?;
-    if bytes.len() > MAX_SOURCE_BYTES {
-        return Err(request_error(
-            StatusCode::PAYLOAD_TOO_LARGE,
-            format!("source file exceeds the {MAX_SOURCE_BYTES} byte editor limit"),
-        ));
+    let mut hasher = Sha256::new();
+    let mut prefix = Vec::new();
+    let mut buffer = [0u8; 64 * 1024];
+    let mut byte_size = 0usize;
+    loop {
+        let read = file.read(&mut buffer).map_err(|err| {
+            request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not read source file: {err}"),
+            )
+        })?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+        if prefix.len() < MAX_SOURCE_BYTES {
+            let take = (MAX_SOURCE_BYTES - prefix.len()).min(read);
+            prefix.extend_from_slice(&buffer[..take]);
+        }
+        byte_size = byte_size.saturating_add(read);
     }
-    let digest = source_digest(&bytes);
-    let byte_size = bytes.len();
-    let content = String::from_utf8(bytes).map_err(|_| {
-        request_error(
-            StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            "binary files cannot be opened in the source editor",
-        )
-    })?;
+    let digest = format!("sha256:{:x}", hasher.finalize());
+    if looks_like_binary(&prefix) {
+        return Ok(SourceResponse {
+            work_id: work_id.as_str().to_owned(),
+            path: relative,
+            content: format_binary_preview(&prefix, byte_size, &digest),
+            digest,
+            byte_size,
+            encoding: Some("binary".into()),
+            preview: true,
+            truncated: byte_size > MAX_BINARY_PREVIEW_BYTES,
+        });
+    }
+    let truncated = byte_size > prefix.len();
+    let (content, encoding, lossy) = match String::from_utf8(prefix) {
+        Ok(text) => (text, "utf-8", false),
+        Err(err) => (
+            String::from_utf8_lossy(&err.into_bytes()).into_owned(),
+            "utf-8-lossy",
+            true,
+        ),
+    };
     Ok(SourceResponse {
         work_id: work_id.as_str().to_owned(),
         path: relative,
         content,
         digest,
         byte_size,
+        encoding: Some(encoding.into()),
+        preview: truncated || lossy,
+        truncated,
     })
 }
 
@@ -5731,6 +5826,38 @@ mod source_tests {
         assert!(resolve_new_source_path(root.path(), ".git/hooks/new-hook").is_err());
         std::fs::write(root.path().join("src/existing.rs"), "fn existing() {}\n").unwrap();
         assert!(resolve_new_source_path(root.path(), "src/existing.rs").is_err());
+    }
+
+    #[test]
+    fn source_reads_preview_binary_and_large_text() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("ok.rs"), "fn ok() {}\n").unwrap();
+        let ok = read_source_response(&WorkId::from("work-1".to_string()), root.path(), "ok.rs")
+            .unwrap();
+        assert_eq!(ok.encoding.as_deref(), Some("utf-8"));
+        assert!(!ok.preview);
+        assert!(!ok.truncated);
+        assert!(ok.content.contains("fn ok"));
+
+        std::fs::write(root.path().join("blob.bin"), [0u8, 1, 2, 255, b'A']).unwrap();
+        let binary =
+            read_source_response(&WorkId::from("work-1".to_string()), root.path(), "blob.bin")
+                .unwrap();
+        assert_eq!(binary.encoding.as_deref(), Some("binary"));
+        assert!(binary.preview);
+        assert!(binary.content.contains("Binary file"));
+        assert!(binary.content.contains("00000000"));
+
+        let large = "x".repeat(MAX_SOURCE_BYTES + 64);
+        std::fs::write(root.path().join("huge.txt"), &large).unwrap();
+        let preview =
+            read_source_response(&WorkId::from("work-1".to_string()), root.path(), "huge.txt")
+                .unwrap();
+        assert!(preview.truncated);
+        assert!(preview.preview);
+        assert_eq!(preview.byte_size, large.len());
+        assert_eq!(preview.content.len(), MAX_SOURCE_BYTES);
+        assert_eq!(preview.encoding.as_deref(), Some("utf-8"));
     }
 
     #[test]

@@ -42,7 +42,7 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | GET, POST | `/v1/forge/repositories/provider` | Discover optional GitHub/GitLab CLI adapters or clone into a daemon-scoped workshop folder |
 | GET | `/v1/forge/items` | List items |
 | GET | `/v1/forge/items/{id}` | Load item |
-| GET | `/v1/forge/items/{id}/source?path=…` | Read bounded UTF-8 source from the governed worktree |
+| GET | `/v1/forge/items/{id}/source?path=…` | Read governed source; UTF-8 edits return full content, while binary/large/lossy files return a read-only preview with `encoding`/`preview`/`truncated` |
 | POST | `/v1/forge/items/{id}/source` | Lease-fenced source-file or directory creation (`kind=directory` seeds `.gitkeep`) |
 | PUT | `/v1/forge/items/{id}/source` | Lease-fenced source save with digest conflict detection |
 | PUT | `/v1/forge/items/{id}/source/batch` | Atomic digest-fenced writes to existing text files |
@@ -252,9 +252,11 @@ must present the same `generation`. Stale adapters get `409`.
 
 Source saves are also lease-fenced. The body includes `path`, `content`,
 `lease_id`, `generation`, and `expected_digest`. `path` is repository-relative;
-absolute paths, traversal, symlink escapes, directories, binary content, and
-files over 2 MiB are rejected. `expected_digest` is the `sha256:…` value from
-the preceding GET. If the on-disk content no longer matches, PUT returns `409`
+absolute paths, traversal, symlink escapes, and directories are rejected. Text
+bodies over 2 MiB are rejected. GET opens binary or oversized files as a
+read-only preview (`encoding`, `preview`, `truncated`) rather than refusing the
+read. `expected_digest` is the `sha256:…` of the full on-disk bytes from the
+preceding GET. If the on-disk content no longer matches, PUT returns `409`
 instead of overwriting concurrent work.
 
 Create, rename, and delete use the same lease fence. Rename and delete also
