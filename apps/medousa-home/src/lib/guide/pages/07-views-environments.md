@@ -25,7 +25,7 @@ Views appear like built-in surfaces. Pop one out via view pop-out for a second m
 
 ## Widgets and tiling
 
-**Widget catalog** — target a view; tabs such as **Presentations**, **Spotify / Apple**, **Vault notes**. **Add widget** opens the picker.
+**Widget catalog** — target a view; tabs such as **Artifacts**, **Spotify / Apple**, **Vault notes**. **Add widget** opens the picker.
 
 **Edit layout** toolbar: Cancel / Done · Split / Stack / Merge · Add widget · Remove. Desktop: drag by handle. Mobile: long-press to move (editor may not auto-open on phone).
 

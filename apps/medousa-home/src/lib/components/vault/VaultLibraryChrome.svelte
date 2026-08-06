@@ -111,13 +111,13 @@
         <button
           type="button"
           role="tab"
-          aria-selected={externalDesk.sidebarMode === "presentations"}
-          class="vault-sidebar-tab {externalDesk.sidebarMode === 'presentations'
+          aria-selected={externalDesk.sidebarMode === "artifacts"}
+          class="vault-sidebar-tab {externalDesk.sidebarMode === 'artifacts'
             ? 'vault-sidebar-tab-active'
             : ''}"
-          onclick={() => externalDesk.setSidebarMode("presentations")}
+          onclick={() => externalDesk.setSidebarMode("artifacts")}
         >
-          Presentations
+          Artifacts
         </button>
       </div>
       <button

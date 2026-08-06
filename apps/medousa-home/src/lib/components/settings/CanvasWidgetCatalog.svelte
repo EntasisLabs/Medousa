@@ -151,7 +151,7 @@
     <div>
       <h3 class="canvas-widget-catalog-title">Widget catalog</h3>
       <p class="workshop-faint text-xs">
-        Add HTML presentations, vault notes, or native Spotify / Apple embeds.
+        Add HTML artifacts, vault notes, or native Spotify / Apple embeds.
       </p>
     </div>
     <label class="canvas-target-field">
@@ -177,7 +177,7 @@
       class:canvas-widget-tab-active={tab === "artifacts"}
       onclick={() => (tab = "artifacts")}
     >
-      Presentations
+      Artifacts
     </button>
     <button
       type="button"
@@ -206,7 +206,7 @@
       <input
         type="search"
         bind:value={query}
-        placeholder="Search presentations…"
+        placeholder="Search artifacts…"
         onkeydown={(event) => {
           if (event.key === "Enter") void refreshArtifacts();
         }}
@@ -222,7 +222,7 @@
       <p class="workshop-faint text-xs">Loading library…</p>
     {:else if artifacts.length === 0}
       <p class="workshop-faint text-xs">
-        No presentations in your library yet — ask Medousa to build a widget, then pin it here.
+        No artifacts in your library yet — ask Medousa to build a widget, then pin it here.
       </p>
     {:else}
       <ul class="canvas-picker-list">

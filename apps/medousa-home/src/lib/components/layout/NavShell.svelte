@@ -105,6 +105,9 @@
   );
   const viewTitle = $derived(
     viewSurface === "library" ||
+      viewSurface === "notes" ||
+      viewSurface === "files" ||
+      viewSurface === "artifacts" ||
       viewSurface === "automations" ||
       viewSurface === "code"
       ? labelForLmeExplorerMode(lmeWorkspace.explorerMode)
@@ -314,6 +317,9 @@
   const railPopoverUsesLmeDock = $derived(
     railPopover?.kind === "lme" ||
       railPopover?.surfaceId === "library" ||
+      railPopover?.surfaceId === "notes" ||
+      railPopover?.surfaceId === "files" ||
+      railPopover?.surfaceId === "artifacts" ||
       railPopover?.surfaceId === "automations" ||
       railPopover?.surfaceId === "code",
   );
@@ -353,12 +359,26 @@
     return `workshop-rail-btn relative ${tierClass} ${activeClass}`;
   }
 
-  function libraryIsActive(): boolean {
-    if (surfacePopoverOpen("library")) return true;
-    if (railPopover?.kind === "lme" && isLmeLibraryMode(railPopover.mode)) return true;
-    if (showView && viewSurface === "library") return true;
-    if (active !== "library" && active !== "automations") return false;
-    return isLmeLibraryMode(lmeWorkspace.explorerMode);
+  const LIBRARY_DOOR_MODES: Record<string, LmeExplorerMode> = {
+    notes: "notes",
+    files: "files",
+    artifacts: "artifacts",
+  };
+
+  function libraryDoorIsActive(surfaceId: string): boolean {
+    const mode = LIBRARY_DOOR_MODES[surfaceId];
+    if (!mode) return false;
+    if (surfacePopoverOpen(surfaceId)) return true;
+    if (railPopover?.kind === "lme" && railPopover.mode === mode) return true;
+    if (showView && viewSurface === surfaceId) return true;
+    if (showView && viewSurface === "library" && lmeWorkspace.explorerMode === mode) {
+      return true;
+    }
+    // Main content is the shared library host — highlight only the matching mode door.
+    if (active === "library" || active === surfaceId) {
+      return lmeWorkspace.explorerMode === mode;
+    }
+    return false;
   }
 
   function automationsIsActive(): boolean {
@@ -370,6 +390,11 @@
   }
 
   function ensureFamilyForSurface(surfaceId: string) {
+    const doorMode = LIBRARY_DOOR_MODES[surfaceId];
+    if (doorMode) {
+      lmeWorkspace.setExplorerMode(doorMode);
+      return;
+    }
     if (surfaceId === "code") {
       lmeWorkspace.setExplorerMode(defaultModeForLmeFamily("code"));
     } else if (surfaceId === "library" && !isLmeLibraryMode(lmeWorkspace.explorerMode)) {
@@ -384,7 +409,16 @@
 
   function lmeFamilyForSurface(surfaceId: string): LmeExplorerFamily {
     if (surfaceId === "code") return "code";
-    return surfaceId === "automations" ? "automations" : "library";
+    if (surfaceId === "automations") return "automations";
+    if (
+      surfaceId === "library" ||
+      surfaceId === "notes" ||
+      surfaceId === "files" ||
+      surfaceId === "artifacts"
+    ) {
+      return "library";
+    }
+    return "library";
   }
 
   function surfacePopoverOpen(surfaceId: string): boolean {
@@ -541,7 +575,15 @@
       lmeWorkspace.setExplorerMode(mode);
       closeRailPopover();
       layout.openShellSidebarView(
-        mode === "code" ? "code" : isLmeAutomationsMode(mode) ? "automations" : "library",
+        mode === "code"
+          ? "code"
+          : isLmeAutomationsMode(mode)
+            ? "automations"
+            : mode === "files"
+              ? "files"
+              : mode === "artifacts"
+                ? "artifacts"
+                : "notes",
       );
       return;
     }
@@ -595,6 +637,9 @@
           {:else if viewSurface === "chat"}
             <SessionSidebar open={true} variant="inline" />
           {:else if viewSurface === "library" ||
+            viewSurface === "notes" ||
+            viewSurface === "files" ||
+            viewSurface === "artifacts" ||
             viewSurface === "automations" ||
             viewSurface === "code"}
             <LmeSidePanel {onOpenChat} family={lmeFamilyForSurface(viewSurface)} />
@@ -698,10 +743,13 @@
               {@const Icon = environmentIcon(surface.icon)}
               {@const badge = activityFor(surface.id)}
               {@const feedBadge = feedBadgeForSurface(surface)}
-              {@const isLibrary = surface.id === "library"}
+              {@const isLibraryDoor =
+                surface.id === "notes" ||
+                surface.id === "files" ||
+                surface.id === "artifacts"}
               {@const isAutomations = surface.id === "automations"}
-              {@const doorActive = isLibrary
-                ? libraryIsActive()
+              {@const doorActive = isLibraryDoor
+                ? libraryDoorIsActive(surface.id)
                 : isAutomations
                   ? automationsIsActive()
                   : active === surface.id || surfacePopoverOpen(surface.id)}
@@ -746,7 +794,7 @@
                       quietActive: true,
                       active: doorActive,
                     })} workshop-rail-dest-btn"
-                    class:workshop-rail-library-btn={isLibrary || isAutomations}
+                    class:workshop-rail-library-btn={isLibraryDoor || isAutomations}
                     title={navTitle(surface)}
                     aria-label={badge > 0 ? `${navTitle(surface)} (${badge} active)` : navTitle(surface)}
                     aria-current={doorActive ? "page" : undefined}
@@ -971,6 +1019,9 @@
       {#if popover.kind === "lme"}
         <!-- LME dock icons portal into the popover dock slot. -->
       {:else if popover.surfaceId === "library" ||
+        popover.surfaceId === "notes" ||
+        popover.surfaceId === "files" ||
+        popover.surfaceId === "artifacts" ||
         popover.surfaceId === "automations" ||
         popover.surfaceId === "code"}
         <!-- LME dock icons portal into the popover dock slot. -->
@@ -1005,6 +1056,9 @@
             : "library"}
       />
     {:else if popover.surfaceId === "library" ||
+      popover.surfaceId === "notes" ||
+      popover.surfaceId === "files" ||
+      popover.surfaceId === "artifacts" ||
       popover.surfaceId === "automations" ||
       popover.surfaceId === "code"}
       <LmeSidePanel {onOpenChat} family={lmeFamilyForSurface(popover.surfaceId)} />

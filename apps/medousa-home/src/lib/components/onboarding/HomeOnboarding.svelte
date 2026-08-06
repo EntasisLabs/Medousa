@@ -375,7 +375,7 @@
             <div class="home-layout-preview home-layout-{draft.layout}" aria-label={`${draft.layout} layout preview`}>
               {#each workspaceSurfaces.slice(0, 4) as surfaceId, index (surfaceId)}
                 <div class="home-layout-pane">
-                  <span>{surfaceId === "library" ? "Notes" : surfaceId === "messaging" ? "Messages" : surfaceId}</span>
+                  <span>{surfaceId === "messaging" ? "Messages" : surfaceId === "artifacts" ? "Artifacts" : surfaceId === "files" ? "Files" : surfaceId === "notes" || surfaceId === "library" ? "Notes" : surfaceId}</span>
                   <small>{index === 0 ? "Primary" : "Nearby"}</small>
                 </div>
               {/each}

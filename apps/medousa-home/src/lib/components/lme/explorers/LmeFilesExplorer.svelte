@@ -79,7 +79,7 @@
   }
 </script>
 
-<aside class="lme-files-explorer flex h-full min-h-0 w-full flex-col" aria-label="Local Files">
+<aside class="lme-files-explorer flex h-full min-h-0 w-full flex-col" aria-label="Files">
   <div class="min-h-0 flex-1 overflow-hidden">
     {#if searching}
       <div class="flex h-full min-h-0 flex-col overflow-y-auto px-1.5 py-1">

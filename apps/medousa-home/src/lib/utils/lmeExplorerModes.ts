@@ -7,7 +7,7 @@ import {
   Files,
   GitBranch,
   History,
-  Presentation,
+  Sparkles,
 } from "@lucide/svelte";
 import type { LmeExplorerMode } from "$lib/stores/lmeWorkspace.svelte";
 
@@ -21,8 +21,8 @@ export type LmeExplorerFamily = "library" | "code" | "automations";
 
 export const LME_LIBRARY_MODES: LmeExplorerModeDef[] = [
   { id: "notes", label: "Notes", icon: BookOpen },
-  { id: "files", label: "Local Files", icon: Files },
-  { id: "presentations", label: "Presentations", icon: Presentation },
+  { id: "files", label: "Files", icon: Files },
+  { id: "artifacts", label: "Artifacts", icon: Sparkles },
 ];
 
 export const LME_CODE_MODES: LmeExplorerModeDef[] = [

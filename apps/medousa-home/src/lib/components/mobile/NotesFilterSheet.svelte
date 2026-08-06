@@ -7,7 +7,7 @@
   import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
   import type { Component } from "svelte";
 
-  export type NotesLibrarySection = "notes" | "presentations";
+  export type NotesLibrarySection = "notes" | "artifacts";
 
   interface Props {
     open: boolean;
@@ -105,13 +105,13 @@
             </button>
             <button
               type="button"
-              class="mobile-notes-filter-seg {librarySection === 'presentations'
+              class="mobile-notes-filter-seg {librarySection === 'artifacts'
                 ? 'mobile-notes-filter-seg-active'
                 : ''}"
-              aria-pressed={librarySection === "presentations"}
-              onclick={() => selectSection("presentations")}
+              aria-pressed={librarySection === "artifacts"}
+              onclick={() => selectSection("artifacts")}
             >
-              Presentations
+              Artifacts
             </button>
           </div>
         </section>

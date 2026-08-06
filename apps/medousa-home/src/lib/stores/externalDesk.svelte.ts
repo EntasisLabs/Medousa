@@ -30,7 +30,8 @@ function loadSidebarMode(): LibrarySidebarMode {
   if (typeof localStorage === "undefined") return "vault";
   const stored = localStorage.getItem(SIDEBAR_MODE_KEY);
   if (stored === "files") return "files";
-  if (stored === "presentations") return "presentations";
+  // Legacy Library tab id — Presentations was renamed to Artifacts.
+  if (stored === "presentations" || stored === "artifacts") return "artifacts";
   return "vault";
 }
 
@@ -78,7 +79,7 @@ export class ExternalDeskStore {
     if (mode === "files" && this.pinnedRoots.length > 0) {
       void this.refreshAllRoots();
     }
-    if (mode === "presentations") {
+    if (mode === "artifacts") {
       void import("$lib/stores/artifacts.svelte").then(({ artifacts }) => artifacts.refresh());
     }
     if (previous === "files" && mode !== "files") {

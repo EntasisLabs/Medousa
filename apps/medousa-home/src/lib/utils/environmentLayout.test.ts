@@ -79,28 +79,28 @@ describe("environmentLayout reorder", () => {
   it("reorders a destination before another (or to the end)", () => {
     const spec = defaultEnvironmentSpec();
     const before = activePresetSurfaceIds(spec);
-    expect(before.indexOf("library")).toBeGreaterThan(before.indexOf("chat"));
+    expect(before.indexOf("notes")).toBeGreaterThan(before.indexOf("chat"));
 
-    reorderSurfaceInActivePreset(spec, "library", "chat");
+    reorderSurfaceInActivePreset(spec, "notes", "chat");
     const after = activePresetSurfaceIds(spec);
-    expect(after.indexOf("library")).toBeLessThan(after.indexOf("chat"));
+    expect(after.indexOf("notes")).toBeLessThan(after.indexOf("chat"));
     expect(after).toContain("settings");
     expect(after).toContain("runtime");
 
-    reorderSurfaceInActivePreset(spec, "library", null);
+    reorderSurfaceInActivePreset(spec, "notes", null);
     const atEnd = activePresetSurfaceIds(spec);
-    const libraryAt = atEnd.indexOf("library");
+    const notesAt = atEnd.indexOf("notes");
     const settingsAt = atEnd.indexOf("settings");
-    expect(libraryAt).toBeGreaterThan(-1);
-    expect(libraryAt).toBeLessThan(settingsAt);
+    expect(notesAt).toBeGreaterThan(-1);
+    expect(notesAt).toBeLessThan(settingsAt);
   });
 
-  it("lets Automations reorder independently of Library", () => {
+  it("lets Automations reorder independently of Notes", () => {
     const spec = defaultEnvironmentSpec();
     reorderSurfaceInActivePreset(spec, "automations", "chat");
     const ids = activePresetSurfaceIds(spec);
     expect(ids.indexOf("automations")).toBeLessThan(ids.indexOf("chat"));
-    expect(ids.indexOf("automations")).not.toBe(ids.indexOf("library") + 1);
+    expect(ids.indexOf("automations")).not.toBe(ids.indexOf("notes") + 1);
   });
 
   it("reorders by primary-rail index without collapsing dock surfaces", () => {
@@ -113,7 +113,9 @@ describe("environmentLayout reorder", () => {
       "peers",
       "map",
       "work",
-      "library",
+      "notes",
+      "files",
+      "artifacts",
       "automations",
       "settings",
       "runtime",
@@ -125,7 +127,9 @@ describe("environmentLayout reorder", () => {
       "chat",
       "peers",
       "map",
-      "library",
+      "notes",
+      "files",
+      "artifacts",
       "automations",
     ]);
     expect(activePresetSurfaceIds(spec).indexOf("map")).toBeGreaterThan(
@@ -137,8 +141,10 @@ describe("environmentLayout reorder", () => {
       "chat",
       "peers",
       "map",
-      "library",
+      "notes",
       "work",
+      "files",
+      "artifacts",
       "automations",
     ]);
   });

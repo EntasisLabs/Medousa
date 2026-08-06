@@ -7,8 +7,8 @@ import type { LifeRailItem } from "$lib/utils/lifeRailItems";
 
 /**
  * Jobs rail — open doors, not a table of contents.
- * Library and Automations are independent destinations (order follows the preset).
- * You is a dock door at the bottom (not nested).
+ * Notes / Files / Artifacts and Automations are independent destinations
+ * (order follows the preset). You is a dock door at the bottom (not nested).
  */
 export type LifeRailLayout = {
   primary: LifeRailItem[];
@@ -16,8 +16,6 @@ export type LifeRailLayout = {
   focusStartIndex: number;
   /** First custom surface index in `primary`; -1 if none. */
   customStartIndex: number;
-  /** Library is present in the primary strip. */
-  showLibrary: boolean;
   /** Automations is present in the primary strip. */
   showAutomations: boolean;
   you: LifeRailItem;
@@ -41,6 +39,7 @@ export const RAIL_PRIMARY_SKIP_IDS = new Set([
   "workshop",
   "home",
   "context", // retired — stripped from specs; keep skip for stale ids
+  "library", // host surface — Notes/Files/Artifacts are the rail doors
   "profiles",
   "messaging",
   SAFETY_SURFACE_SETTINGS,
@@ -50,20 +49,6 @@ export const RAIL_PRIMARY_SKIP_IDS = new Set([
 /** Preset surface ids that render in the primary rail strip. */
 export function primaryRailSurfaceIds(surfaceIds: readonly string[]): string[] {
   return surfaceIds.filter((id) => !RAIL_PRIMARY_SKIP_IDS.has(id));
-}
-
-/** Synthetic Library row — vault modes switch inside the surface, not on the rail. */
-export function libraryRailSurface(): SurfaceDef {
-  return {
-    id: "library",
-    label: "Library",
-    icon: "book-open",
-    kind: "builtin",
-    builtinId: "library",
-    layout: "single",
-    slots: [],
-    mobileTab: null,
-  };
 }
 
 /** Synthetic Automations row — run modes switch inside the surface, not on the rail. */
@@ -100,17 +85,11 @@ export function profilesRailSurface(): SurfaceDef {
 export function buildLifeRailLayout(surfaces: SurfaceDef[]): LifeRailLayout {
   const byId = new Map(surfaces.map((surface) => [surface.id, surface]));
   const primary: LifeRailItem[] = [];
-  let sawLibrary = false;
   let sawAutomations = false;
 
   for (const surface of surfaces) {
     if (RAIL_PRIMARY_SKIP_IDS.has(surface.id)) continue;
 
-    if (surface.id === "library") {
-      sawLibrary = true;
-      primary.push({ kind: "surface", id: "library", surface: libraryRailSurface() });
-      continue;
-    }
     if (surface.id === "automations") {
       sawAutomations = true;
       primary.push({
@@ -145,7 +124,6 @@ export function buildLifeRailLayout(surfaces: SurfaceDef[]): LifeRailLayout {
     primary,
     focusStartIndex,
     customStartIndex,
-    showLibrary: sawLibrary,
     showAutomations: sawAutomations,
     you,
   };
@@ -161,7 +139,9 @@ export function buildLifeRailSections(surfaces: SurfaceDef[]): {
   const talk = layout.primary.filter(
     (item) =>
       !FOCUS_IDS.has(item.id) &&
-      item.id !== "library" &&
+      item.id !== "notes" &&
+      item.id !== "files" &&
+      item.id !== "artifacts" &&
       item.id !== "automations" &&
       !(item.kind === "surface" && item.surface.kind === "custom"),
   );
@@ -172,15 +152,16 @@ export function buildLifeRailSections(surfaces: SurfaceDef[]): {
   const sections: { id: RailSectionId; label: string; items: LifeRailItem[] }[] = [];
   if (talk.length) sections.push({ id: "channels", label: "Channels", items: talk });
   if (focus.length) sections.push({ id: "focus", label: "Focus", items: focus });
-  if (layout.showLibrary || layout.showAutomations) {
-    const items = layout.primary.filter(
-      (item) => item.id === "library" || item.id === "automations",
-    );
-    sections.push({
-      id: layout.showLibrary ? "library" : "automations",
-      label: layout.showLibrary ? "Library" : "Automations",
-      items,
-    });
+  const libraryItems = layout.primary.filter(
+    (item) =>
+      item.id === "notes" || item.id === "files" || item.id === "artifacts",
+  );
+  if (libraryItems.length) {
+    sections.push({ id: "library", label: "Library", items: libraryItems });
+  }
+  if (layout.showAutomations) {
+    const items = layout.primary.filter((item) => item.id === "automations");
+    sections.push({ id: "automations", label: "Automations", items });
   }
   sections.push({ id: "memory", label: "Memory", items: [layout.you] });
   if (custom.length) sections.push({ id: "custom", label: "Custom", items: custom });
@@ -188,7 +169,15 @@ export function buildLifeRailSections(surfaces: SurfaceDef[]): {
 }
 
 export function railSectionForItemId(itemId: string): RailSectionId | null {
-  if (itemId === "library" || itemId.startsWith("lme:")) return "library";
+  if (
+    itemId === "library" ||
+    itemId === "notes" ||
+    itemId === "files" ||
+    itemId === "artifacts" ||
+    itemId.startsWith("lme:")
+  ) {
+    return "library";
+  }
   if (itemId === "automations") return "automations";
   if (itemId === "chat" || itemId === "peers" || itemId === "messaging") {
     return "channels";

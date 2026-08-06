@@ -1,14 +1,14 @@
 # Vault and notes
 
-The vault is the workshop’s library on disk — notes, boards, sheets, and richer artifacts. Browse it from **Library** (Notes / Local Files / Presentations). Recovery lives in [Vault trash and versions](guide:vault-recovery). Interactive fences: [Liquid reference](guide:liquid-reference).
+The vault is the workshop’s library on disk — notes, boards, sheets, and richer artifacts. Browse it from the **Notes**, **Files**, and **Artifacts** rail doors. Recovery lives in [Vault trash and versions](guide:vault-recovery). Interactive fences: [Liquid reference](guide:liquid-reference).
 
-## Library chrome
+## Notes / Files / Artifacts
 
 | Mode | For |
 |------|-----|
 | **Notes** | Vault tree — Recent, Folders, Tags, Kind |
-| **Local Files** | **Your files** — pinned host folders (**+ Pin folder**) |
-| **Presentations** | Deck artifacts |
+| **Files** | Pinned host folders (**+ Pin folder**) |
+| **Artifacts** | HTML decks and agent widgets |
 
 Pinned folders stay on this Mac; remote workshops show that Your files are local-only. Prefer vault paths for anything the agent should own.
 

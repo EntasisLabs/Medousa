@@ -4,7 +4,7 @@ import { MOBILE_TABS, type MobileTab } from "$lib/types/mobile";
 
 const TAB_REQUIRED_SURFACE: Record<Exclude<MobileTab, "more" | "home">, string> = {
   chat: "chat",
-  notes: "library",
+  notes: "notes",
   web: "web",
 };
 

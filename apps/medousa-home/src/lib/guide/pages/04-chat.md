@@ -149,14 +149,14 @@ Use panes or pop-outs when two threads need to stay visible — [Navigation and 
 ## Artifacts and Liquid chat
 
 - Turns can produce an **artifact strip** — inline, panel, or fullscreen presentation.
-- Cleanup: Settings → Medousa Agent → **Presentations cleanup** (keep-for days, max per session).
+- Cleanup: Settings → Medousa Agent → **Artifacts cleanup** (keep-for days, max per session).
 - Experimental **Liquid chat** (scene renderer): Settings → Preferences → **Liquid chat**.
 
 ## Related settings
 
 | Topic | Where |
 |-------|--------|
-| Models, stance, presentations | Settings → Medousa Agent |
+| Models, stance, artifacts | Settings → Medousa Agent |
 | Model picker visibility, Liquid chat | Settings → Preferences |
 | Tool posture, shell, allowlists | Settings → Runtime Controls — [Permissions chapter](guide:permissions-budgets) |
 | Themes | [Themes and customization](guide:themes-customization) |

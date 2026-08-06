@@ -41,6 +41,7 @@ pub const ALLOWED_SURFACE_ICONS: &[&str] = &[
     "mic",
     "moon",
     "music",
+    "notebook-text",
     "orbit",
     "paintbrush",
     "palette",

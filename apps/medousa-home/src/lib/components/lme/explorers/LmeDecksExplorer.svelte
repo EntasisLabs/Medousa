@@ -7,12 +7,6 @@
   import { portLmeDock } from "$lib/utils/lmeDockHost";
   import { ensureRailPopoverOpen } from "$lib/utils/railPopoverChrome";
 
-  interface Props {
-    onOpenChat: () => void;
-  }
-
-  let { onOpenChat }: Props = $props();
-
   let searchExpanded = $state(false);
   let searchInputEl = $state<HTMLInputElement | null>(null);
 
@@ -50,7 +44,7 @@
   }
 </script>
 
-<aside class="lme-decks-explorer flex h-full min-h-0 w-full flex-col" aria-label="Presentations">
+<aside class="lme-decks-explorer flex h-full min-h-0 w-full flex-col" aria-label="Artifacts">
   {#if artifacts.error}
     <p class="shrink-0 px-3 py-2 text-sm text-content-error">{artifacts.error}</p>
   {/if}
@@ -62,14 +56,9 @@
       <ArtifactLibraryList
         artifacts={artifacts.filteredArtifacts}
         selectedArtifactId={artifacts.selectedArtifactId}
-        sessionTitle={(sessionId) => artifacts.sessionTitle(sessionId)}
         onSelect={(artifactId) => {
           const entry = artifacts.artifacts.find((row) => row.artifact_id === artifactId);
           lmeWorkspace.openDeck(artifactId, entry?.label);
-        }}
-        onOpenChat={(artifact) => {
-          void artifact;
-          onOpenChat();
         }}
       />
     {/if}
@@ -83,7 +72,7 @@
           bind:this={searchInputEl}
           class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-content-quiet focus:outline-none focus:ring-0"
           type="search"
-          placeholder="Search presentations…"
+          placeholder="Search artifacts…"
           value={query}
           oninput={(event) => artifacts.setSearchQuery(event.currentTarget.value)}
           onkeydown={handleSearchKeydown}
@@ -103,7 +92,7 @@
         <button
           type="button"
           class="vault-dock-icon-btn"
-          aria-label="Refresh presentations"
+          aria-label="Refresh artifacts"
           title="Refresh"
           disabled={refreshing}
           onclick={() => void artifacts.refresh()}
@@ -115,7 +104,7 @@
       <button
         type="button"
         class="vault-dock-icon-btn"
-        aria-label="Search presentations"
+        aria-label="Search artifacts"
         title="Search"
         onclick={() => void openSearch()}
       >

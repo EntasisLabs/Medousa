@@ -49,7 +49,7 @@ Bootstrap domain **documents** groups vault + artifact edit tools — see [agent
 
 ## App integration
 
-- Desktop Library: vault tree + files + **Presentations** tab (`ArtifactLibraryPanel`)
-- Mobile: Notes / Presentations tabs in `MobileLibraryPanel`
+- Desktop: Notes / Files / Artifacts rail doors (`ArtifactLibraryPanel` for artifacts)
+- Mobile: Notes / Artifacts tabs in `MobileLibraryPanel`
 
 Cookbook: [vault-and-library.md](../cookbook/vault-and-library.md)

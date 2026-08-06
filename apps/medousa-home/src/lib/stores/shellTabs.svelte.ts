@@ -987,7 +987,15 @@ export class ShellTabsStore {
   ): string | null {
     let next = surfaceId === "home" ? "chat" : surfaceId;
     if (next === "context") next = "map";
-    if (next === "automations" || next === "workshop") next = "library";
+    if (
+      next === "automations" ||
+      next === "workshop" ||
+      next === "notes" ||
+      next === "files" ||
+      next === "artifacts"
+    ) {
+      next = "library";
+    }
     const groupId = options?.groupId ?? this.activeGroupId;
     if (next === "chat") {
       const focusedSessionChat = this.tabs.find(

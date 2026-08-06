@@ -33,7 +33,7 @@ async function waitForPaint(): Promise<void> {
 async function loadArtifact(sessionId: string, artifactId: string) {
   const response = await fetchArtifact(sessionId, artifactId);
   if (!response.mime.includes("html")) {
-    throw new Error("Only HTML presentations can be exported.");
+    throw new Error("Only HTML artifacts can be exported.");
   }
   return response;
 }

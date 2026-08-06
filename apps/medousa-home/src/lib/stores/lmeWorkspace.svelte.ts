@@ -16,7 +16,7 @@ export type LmeExplorerMode =
   | "notes"
   | "files"
   | "code"
-  | "presentations"
+  | "artifacts"
   | "scripts"
   | "agents"
   | "flows"
@@ -128,11 +128,13 @@ function isRestorableTab(value: unknown): value is LmeTab {
 function loadExplorerMode(): LmeExplorerMode {
   if (typeof localStorage === "undefined") return "notes";
   const raw = localStorage.getItem(EXPLORER_MODE_KEY);
+  // Legacy Library tab id — Presentations was renamed to Artifacts.
+  if (raw === "presentations") return "artifacts";
   if (
     raw === "notes" ||
     raw === "files" ||
     raw === "code" ||
-    raw === "presentations" ||
+    raw === "artifacts" ||
     raw === "scripts" ||
     raw === "agents" ||
     raw === "flows" ||
@@ -246,8 +248,8 @@ export class LmeWorkspaceStore {
       externalDesk.setSidebarMode("vault");
     } else if (mode === "files") {
       externalDesk.setSidebarMode("files");
-    } else if (mode === "presentations") {
-      externalDesk.setSidebarMode("presentations");
+    } else if (mode === "artifacts") {
+      externalDesk.setSidebarMode("artifacts");
     }
   }
 
@@ -544,7 +546,7 @@ export class LmeWorkspaceStore {
   }
 
   openDeck(artifactId: string, title?: string) {
-    this.setExplorerMode("presentations");
+    this.setExplorerMode("artifacts");
     const existing = this.tabs.find(
       (tab) => tab.kind === "deck" && tab.artifactId === artifactId,
     );

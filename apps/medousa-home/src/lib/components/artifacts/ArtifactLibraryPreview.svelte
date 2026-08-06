@@ -44,7 +44,7 @@
 <div class="artifact-library-preview flex h-full min-h-0 min-w-0 flex-1 flex-col">
   {#if !artifact || !uiArtifact}
     <div class="flex flex-1 items-center justify-center p-6 text-sm text-content-quiet">
-      Select a presentation to preview.
+      Select an artifact to preview.
     </div>
   {:else}
     <header class="artifact-library-preview-header">
