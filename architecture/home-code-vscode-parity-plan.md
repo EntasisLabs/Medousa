@@ -217,8 +217,8 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 | Slice | Deliverable | Status |
 |---|---|---|
 | HCP-0 | Authoritative plan, truthful roadmap/docs, verification inventory | ✅ |
-| HCP-1A | `MedousaCodeWorkspace` file/URI/view model with focused tests | ⬜ |
-| HCP-1B | Cross-file definition/declaration/type/implementation navigation and history | ⬜ |
+| HCP-1A | `MedousaCodeWorkspace` file/URI/view model with focused tests | ✅ |
+| HCP-1B | Cross-file definition/declaration/type/implementation navigation and history | 🔄 |
 | HCP-1C | Complete text/resource workspace edits plus governed refactor preview | ⬜ |
 | HCP-2A | Real workspace Problems model and diagnostics navigation | ⬜ |
 | HCP-2B | Per-document language-root resolution and nested-project sessions | ⬜ |
@@ -248,6 +248,15 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 | HCP-11A | Versioned contribution registry and first-party language/tool packs | ⬜ |
 | HCP-11B | Settings/keybinding/profile persistence and useful VS Code config import | ⬜ |
 | HCP-11C | Multi-root/environment adapters and full remote-parity audit | ⬜ |
+
+### Verified implementation ledger
+
+- **HCP-1A — `83c31264`.** Added the pooled `MedousaCodeWorkspace`, canonical
+  URI/file/view ownership, multi-view synchronization with explicit divergent
+  draft refusal, headless reference loading, and focused tests. Migration: none.
+  Compatibility: direct Grapheme callers retain the package default workspace;
+  Code leases opt into the adapter. Rollback: revert this commit; no persisted
+  data or daemon contract changes are involved.
 
 ### Slice rules
 

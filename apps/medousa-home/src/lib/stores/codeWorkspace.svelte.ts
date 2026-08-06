@@ -263,6 +263,15 @@ class CodeWorkspaceStore {
     };
   }
 
+  recordNavigationLocation(
+    workId: string,
+    path: string,
+    line: number | null,
+  ) {
+    if (!workId || !path) return;
+    this.recordNavigation(workId, path, line);
+  }
+
   canNavigate(workId: string, direction: -1 | 1): boolean {
     const entries = this.navigationByWorkId[workId] ?? [];
     const index = this.navigationIndexByWorkId[workId] ?? entries.length - 1;
@@ -276,7 +285,16 @@ class CodeWorkspaceStore {
     const index = current + direction;
     const location = entries[index];
     this.navigationIndexByWorkId = { ...this.navigationIndexByWorkId, [workId]: index };
-    return this.open(workId, location.path, location.line, { recordNavigation: false });
+    const opened = await this.open(workId, location.path, location.line, {
+      recordNavigation: false,
+    });
+    if (!opened) {
+      this.navigationIndexByWorkId = {
+        ...this.navigationIndexByWorkId,
+        [workId]: current,
+      };
+    }
+    return opened;
   }
 
 

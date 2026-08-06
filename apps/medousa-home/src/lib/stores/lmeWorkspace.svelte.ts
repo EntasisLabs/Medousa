@@ -431,6 +431,7 @@ export class LmeWorkspaceStore {
       line?: number | null;
       projectTitle?: string;
       activate?: boolean;
+      recordNavigation?: boolean;
     },
   ) {
     const id = workId.trim();
@@ -440,7 +441,9 @@ export class LmeWorkspaceStore {
     const line =
       options?.line && options.line > 0 ? Math.floor(options.line) : null;
     const { codeWorkspace } = await import("$lib/stores/codeWorkspace.svelte");
-    const source = await codeWorkspace.open(id, normalizedPath, line);
+    const source = await codeWorkspace.open(id, normalizedPath, line, {
+      recordNavigation: options?.recordNavigation,
+    });
     if (!source) return null;
 
     const resource: CodeWorkspaceResource = {

@@ -1,7 +1,12 @@
 <script lang="ts">
   import { onDestroy, onMount, untrack } from "svelte";
   import { basicSetup } from "codemirror";
-  import { Compartment, EditorState, type Extension } from "@codemirror/state";
+  import {
+    Compartment,
+    EditorState,
+    Prec,
+    type Extension,
+  } from "@codemirror/state";
   import {
     EditorView,
     GutterMarker,
@@ -12,7 +17,13 @@
   import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
   import { forEachDiagnostic } from "@codemirror/lint";
   import { foldGutter, indentUnit } from "@codemirror/language";
-  import { jumpToDefinition, type LSPClient } from "@codemirror/lsp-client";
+  import type { LSPClient } from "@codemirror/lsp-client";
+  import {
+    navigateToCodeLanguageLocation,
+    type CodeLanguageNavigationKind,
+    type CodeLanguageNavigationResult,
+  } from "$lib/code/codeLanguageNavigation";
+  import { codeEditorViewRegistry } from "$lib/code/codeEditorViewRegistry";
   import {
     buildCodeEditorLanguageExtensions,
     languageSupportsLsp,
@@ -138,6 +149,8 @@
     onProblemsChanged?: () => void;
     /** Editor right-click — parent shows Medousa context menu. */
     onContextMenu?: (event: MouseEvent) => void;
+    /** Lets the workbench own history while this host owns LSP coordinates. */
+    onLanguageNavigationRequested?: (kind: CodeLanguageNavigationKind) => void;
     /** Baseline-to-reviewed lines shown as quiet source-control markers. */
     changedLines?: Array<{ line: number; kind: string }>;
     conventionIndentStyle?: "space" | "tab" | null;
@@ -159,6 +172,7 @@
     onSelectionChanged,
     onProblemsChanged,
     onContextMenu,
+    onLanguageNavigationRequested,
     changedLines = [],
     conventionIndentStyle = null,
     conventionTabSize = null,
@@ -176,6 +190,7 @@
   let onSelectionChangedRef: Props["onSelectionChanged"];
   let onProblemsChangedRef: Props["onProblemsChanged"];
   let onContextMenuRef: ((event: MouseEvent) => void) | undefined;
+  let onLanguageNavigationRequestedRef: Props["onLanguageNavigationRequested"];
   let changeTimer: ReturnType<typeof setTimeout> | undefined;
   let pendingChangeCallback: ((value: string) => void) | undefined;
   let telemetryFrame: number | undefined;
@@ -205,7 +220,18 @@
 
   $effect(() => {
     onContextMenuRef = onContextMenu;
+    onLanguageNavigationRequestedRef = onLanguageNavigationRequested;
   });
+
+  function requestLanguageNavigation(kind: CodeLanguageNavigationKind): boolean {
+    if (onLanguageNavigationRequestedRef) {
+      onLanguageNavigationRequestedRef(kind);
+      return true;
+    }
+    if (!view) return false;
+    void navigateToCodeLanguageLocation(view, kind);
+    return true;
+  }
 
   function scheduleChange() {
     if (applyingExternal) return;
@@ -302,6 +328,11 @@
       EditorState.allowMultipleSelections.of(true),
       languageCompartment.of(buildCodeEditorLanguageExtensions(resolvedLanguage)),
       keymap.of([...searchKeymap, indentWithTab]),
+      Prec.highest(keymap.of([
+        { key: "F12", run: () => requestLanguageNavigation("definition") },
+        { key: "Ctrl-F12", run: () => requestLanguageNavigation("implementation") },
+        { key: "Cmd-F12", run: () => requestLanguageNavigation("implementation") },
+      ])),
       highlightSelectionMatches(),
       indentationCompartment.of(indentationExtensions(value)),
       readOnlyCompartment.of(EditorState.readOnly.of(readOnly)),
@@ -377,6 +408,13 @@
     view = undefined;
   });
 
+  $effect(() => {
+    const uri = documentUri;
+    const editorView = view;
+    if (!uri || !editorView) return;
+    return codeEditorViewRegistry.register(uri, editorView);
+  });
+
   export function insertText(text: string) {
     if (!view || !text) return;
     const { from, to } = view.state.selection.main;
@@ -424,9 +462,16 @@
     return view;
   }
 
-  export function goToDefinition(): boolean {
-    if (!view) return false;
-    return jumpToDefinition(view);
+  export function goToLanguageLocation(
+    kind: CodeLanguageNavigationKind,
+  ): Promise<CodeLanguageNavigationResult | null> {
+    return view
+      ? navigateToCodeLanguageLocation(view, kind)
+      : Promise.resolve(null);
+  }
+
+  export function goToDefinition(): Promise<CodeLanguageNavigationResult | null> {
+    return goToLanguageLocation("definition");
   }
 
   export function openFind() {

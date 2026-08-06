@@ -3,6 +3,9 @@
 
   export type CodeEditorMenuAction =
     | "definition"
+    | "declaration"
+    | "type_definition"
+    | "implementation"
     | "references"
     | "rename"
     | "format"
@@ -16,6 +19,9 @@
     x: number;
     y: number;
     canDefinition?: boolean;
+    canDeclaration?: boolean;
+    canTypeDefinition?: boolean;
+    canImplementation?: boolean;
     canReference?: boolean;
     canRename?: boolean;
     canFormat?: boolean;
@@ -30,6 +36,9 @@
     x,
     y,
     canDefinition = false,
+    canDeclaration = false,
+    canTypeDefinition = false,
+    canImplementation = false,
     canReference = false,
     canRename = false,
     canFormat = false,
@@ -44,7 +53,7 @@
   function clampPosition(px: number, py: number): { x: number; y: number } {
     if (typeof window === "undefined") return { x: px, y: py };
     const width = menuEl?.offsetWidth ?? 200;
-    const height = menuEl?.offsetHeight ?? 220;
+    const height = menuEl?.offsetHeight ?? 300;
     const margin = 8;
     return {
       x: Math.min(Math.max(margin, px), window.innerWidth - width - margin),
@@ -88,6 +97,9 @@
     style:top="{position.y}px"
   >
     <button type="button" class="vault-context-menu-item" role="menuitem" disabled={!canDefinition} onclick={() => run("definition")}>Go to Definition</button>
+    <button type="button" class="vault-context-menu-item" role="menuitem" disabled={!canDeclaration} onclick={() => run("declaration")}>Go to Declaration</button>
+    <button type="button" class="vault-context-menu-item" role="menuitem" disabled={!canTypeDefinition} onclick={() => run("type_definition")}>Go to Type Definition</button>
+    <button type="button" class="vault-context-menu-item" role="menuitem" disabled={!canImplementation} onclick={() => run("implementation")}>Go to Implementations</button>
     <button type="button" class="vault-context-menu-item" role="menuitem" disabled={!canReference} onclick={() => run("references")}>Find Uses</button>
     <button type="button" class="vault-context-menu-item" role="menuitem" disabled={!canRename || !editable} onclick={() => run("rename")}>Rename Symbol…</button>
     <div class="vault-context-menu-sep" aria-hidden="true"></div>
