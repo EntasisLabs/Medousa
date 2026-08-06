@@ -293,6 +293,7 @@ pub fn coding_engine_router(state: AppState) -> Router {
         .route("/v1/code/capabilities", get(code_capabilities))
         .route("/v1/code/conventions", get(code_conventions))
         .route("/v1/code/language-root", get(code_language_root))
+        .route("/v1/code/language-sessions", get(code_language_sessions))
         .route("/v1/code/request", post(code_request))
         .with_state(state)
 }
@@ -493,6 +494,13 @@ pub async fn code_language_root(
     Query(q): Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
     proxy_agent_get(&state, "/v1/code/language-root", &q).await
+}
+
+pub async fn code_language_sessions(
+    State(state): State<AppState>,
+    Query(q): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    proxy_agent_get(&state, "/v1/code/language-sessions", &q).await
 }
 
 pub async fn code_request(

@@ -30,11 +30,16 @@
   import { openTrackedTerminal } from "$lib/utils/undertakingWorkspace";
   import type { LSPClient } from "@codemirror/lsp-client";
   import {
+    CODE_LSP_MAX_RECONNECT_ATTEMPTS,
     acquireCodeWorkspaceLspClient,
+    codeLspReconnectDelay,
     getAllCodeWorkspaceDiagnostics,
     getCodeEditorConventions,
+    getCodeLanguageSessions,
     type CodeDocumentSymbol,
+    type CodeLanguageSessionSnapshot,
     type CodeWorkspaceSymbol,
+    type CodeWorkspaceLspStatus,
   } from "$lib/code/codingEngineClient";
   import {
     countCodeProblems,
@@ -158,7 +163,7 @@
   let lspClient = $state<LSPClient | null>(null);
   let lspError = $state<string | null>(null);
   let lspConnecting = $state(false);
-  let contextPanel = $state<"problems" | "outline" | "references" | null>(null);
+  let contextPanel = $state<"problems" | "outline" | "references" | "language" | null>(null);
   let problems = $state<ReturnType<CodeMirrorHost["getProblems"]>>([]);
   let workspaceProblems = $state<CodeProblem[]>([]);
   let workspaceProblemsScope = $state("");
@@ -195,6 +200,17 @@
   let languageActionRunning = $state(false);
   let repairingLanguage = $state(false);
   let lspRetry = $state(0);
+  let lspReconnectAttempt = $state(0);
+  let lspStatus = $state<CodeWorkspaceLspStatus>({
+    phase: "stopped",
+    detail: "Language service is not running",
+    progress: null,
+  });
+  let languageSessions = $state<CodeLanguageSessionSnapshot[]>([]);
+  let languageSessionsLoading = $state(false);
+  let languageSessionsError = $state<string | null>(null);
+  let activeLspRestart: (() => void) | null = null;
+  let lspConnectionScope = "";
   let cursorLine = $state(1);
   let cursorTotalLines = $state(1);
   let cursorColumn = $state(1);
@@ -375,6 +391,17 @@
   );
   const workspaceProblemCounts = $derived(
     countCodeProblems(effectiveWorkspaceProblems),
+  );
+  const latestLanguageSession = $derived(
+    languageSessions.find((session) => session.kind === "editor") ?? languageSessions[0] ?? null,
+  );
+  const languageSessionLogs = $derived.by(() =>
+    languageSessions
+      .flatMap((session) =>
+        session.logs.map((entry) => ({ ...entry, sessionId: session.id })),
+      )
+      .sort((a, b) => a.timestamp_ms - b.timestamp_ms || a.sequence - b.sequence)
+      .slice(-500),
   );
   const canReference = $derived(Boolean(languageCapabilities.referencesProvider));
   const canRename = $derived(Boolean(languageCapabilities.renameProvider));
@@ -733,6 +760,49 @@
     settingsNav.openSection("packages");
     shellTabs.openDestination("settings");
     layout.openShellSidebarView("settings");
+  }
+
+  async function refreshLanguageSessions(options?: { quiet?: boolean }) {
+    if (!workId || !documentUri || !languageSupportsLsp(activeTabLanguage)) {
+      languageSessions = [];
+      languageSessionsError = null;
+      return;
+    }
+    if (!options?.quiet) languageSessionsLoading = true;
+    try {
+      const snapshot = await getCodeLanguageSessions({
+        workId,
+        uri: documentUri,
+        language: activeTabLanguage,
+      });
+      languageSessions = snapshot.sessions;
+      languageSessionsError = null;
+    } catch (err) {
+      languageSessionsError = err instanceof Error ? err.message : String(err);
+    } finally {
+      languageSessionsLoading = false;
+    }
+  }
+
+  async function showLanguageLogs() {
+    contextPanel = contextPanel === "language" ? null : "language";
+    if (contextPanel === "language") await refreshLanguageSessions();
+  }
+
+  function formatLanguageLogTime(timestamp: number): string {
+    return new Date(timestamp).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+  }
+
+  function restartLanguageServer() {
+    lspError = null;
+    lspReconnectAttempt = 0;
+    if (activeLspRestart) activeLspRestart();
+    else lspRetry += 1;
   }
 
   async function repairLanguageSupport() {
@@ -1552,6 +1622,7 @@
     void lspRetry;
     const root = workspaceRoot;
     const uri = documentUri;
+    const scope = `${workId}:${activeTabLanguage}:${uri ?? ""}`;
     if (
       !interactive ||
       !activeTabId ||
@@ -1562,14 +1633,67 @@
       lspClient = null;
       lspError = null;
       lspConnecting = false;
+      lspReconnectAttempt = 0;
+      lspStatus = {
+        phase: "stopped",
+        detail: "Language service is not running",
+        progress: null,
+      };
+      activeLspRestart = null;
       return;
+    }
+    if (lspConnectionScope !== scope) {
+      lspConnectionScope = scope;
+      lspReconnectAttempt = 0;
+      languageSessions = [];
+      languageSessionsError = null;
     }
     let cancelled = false;
     let release = () => {};
     let unregisterWorkspaceBridge = () => {};
+    let unsubscribeStatus = () => {};
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let restartForLease: (() => void) | null = null;
+    const scheduleReconnect = (detail: string, immediate = false) => {
+      if (cancelled || reconnectTimer) return;
+      const attempt = lspReconnectAttempt + 1;
+      const delay = immediate ? 0 : codeLspReconnectDelay(attempt);
+      if (delay == null) {
+        lspConnecting = false;
+        lspError = detail || "Language server could not be restarted";
+        lspStatus = {
+          phase: "failed",
+          detail: lspError,
+          progress: null,
+        };
+        return;
+      }
+      lspReconnectAttempt = attempt;
+      lspClient = null;
+      lspError = null;
+      lspConnecting = true;
+      lspStatus = {
+        phase: "reconnecting",
+        detail: `${detail} · retry ${attempt}/${CODE_LSP_MAX_RECONNECT_ATTEMPTS}`,
+        progress: null,
+      };
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        if (!cancelled) lspRetry += 1;
+      }, delay);
+    };
     lspClient = null;
     lspError = null;
     lspConnecting = true;
+    const reconnectAttempt = untrack(() => lspReconnectAttempt);
+    lspStatus = {
+      phase: reconnectAttempt > 0 ? "reconnecting" : "connecting",
+      detail:
+        reconnectAttempt > 0
+          ? `Restarting ${activeTabLanguage} language server`
+          : `Starting ${activeTabLanguage} language server`,
+      progress: null,
+    };
     const cancelDeferred = deferCodeWorkspaceWork(() => {
       void (async () => {
         try {
@@ -1584,6 +1708,28 @@
             return;
           }
           release = lease.release;
+          restartForLease = lease.restart;
+          activeLspRestart = restartForLease;
+          unsubscribeStatus = lease.subscribeStatus((status) => {
+            if (cancelled) return;
+            lspStatus = status;
+            if (status.phase === "ready") {
+              lspReconnectAttempt = 0;
+              lspConnecting = false;
+              lspError = null;
+              return;
+            }
+            if (status.phase === "connecting") {
+              lspConnecting = true;
+              return;
+            }
+            if (status.phase === "reconnecting" || status.phase === "failed") {
+              scheduleReconnect(
+                status.detail,
+                status.detail === "Restarting language server",
+              );
+            }
+          });
           unregisterWorkspaceBridge = lease.workspaceBridge.register({
             handlesUri: (candidateUri) => Boolean(pathFromUri(candidateUri, root)),
             requestFile: async (candidateUri) => {
@@ -1612,17 +1758,20 @@
           release();
           unregisterWorkspaceBridge = () => {};
           release = () => {};
-          if (!cancelled) lspError = err instanceof Error ? err.message : String(err);
-        } finally {
-          if (!cancelled) lspConnecting = false;
+          if (!cancelled) {
+            scheduleReconnect(err instanceof Error ? err.message : String(err));
+          }
         }
       })();
     });
     return () => {
       cancelled = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       cancelDeferred();
+      unsubscribeStatus();
       unregisterWorkspaceBridge();
       release();
+      if (activeLspRestart === restartForLease) activeLspRestart = null;
     };
   });
 
@@ -1676,6 +1825,18 @@
       clearTimeout(refreshTimer);
       clearInterval(pollingTimer);
     };
+  });
+
+  $effect(() => {
+    const showingLanguage = contextPanel === "language";
+    const scope = `${workId}:${activeTabLanguage}:${documentUri ?? ""}`;
+    void scope;
+    if (!showingLanguage || !workId || !documentUri) return;
+    const timer = setInterval(
+      () => untrack(() => void refreshLanguageSessions({ quiet: true })),
+      1_500,
+    );
+    return () => clearInterval(timer);
   });
 
   $effect(() => {
@@ -1893,6 +2054,10 @@
             {#if canCodeAction && editable}
               <button type="button" class="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-content-secondary hover:bg-surface-800 disabled:opacity-40" disabled={languageActionRunning} onclick={() => void runLanguageAction("organize_imports")}>Organize imports</button>
             {/if}
+            {#if languageSupportsLsp(activeTabLanguage)}
+              <button type="button" class="flex w-full items-center rounded border-t border-surface-500/20 px-2 py-1.5 text-left text-[10px] text-content-secondary hover:bg-surface-800" onclick={restartLanguageServer}>Restart language server</button>
+              <button type="button" class="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-content-secondary hover:bg-surface-800" onclick={() => void showLanguageLogs()}>Show language server logs</button>
+            {/if}
             {#if lspError}
               <button type="button" class="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-content-warning hover:bg-surface-800 disabled:opacity-40" disabled={repairingLanguage} onclick={() => void repairLanguageSupport()}>{repairingLanguage ? "Repairing…" : "Repair language support"}</button>
             {/if}
@@ -1936,6 +2101,23 @@
         {/if}
       </div>
     </header>
+
+    {#if lspStatus.phase === "reconnecting" || lspStatus.phase === "failed"}
+      <div class="flex shrink-0 flex-wrap items-center gap-2 border-b {lspStatus.phase === 'failed' ? 'border-rose-500/30 bg-rose-950/25 text-rose-100' : 'border-amber-500/30 bg-amber-950/20 text-amber-100'} px-2.5 py-1.5 text-[10px]" role="status">
+        <span class="min-w-40 flex-1">{lspStatus.detail}</span>
+        <button type="button" class="rounded px-1.5 py-0.5 hover:bg-white/10" onclick={restartLanguageServer}>Restart now</button>
+        <button type="button" class="rounded px-1.5 py-0.5 hover:bg-white/10" onclick={() => void showLanguageLogs()}>Logs</button>
+        {#if lspStatus.phase === "failed"}
+          <button type="button" class="rounded bg-white/10 px-1.5 py-0.5" disabled={repairingLanguage} onclick={() => void repairLanguageSupport()}>{repairingLanguage ? "Repairing…" : "Repair"}</button>
+        {/if}
+      </div>
+    {:else if lspStatus.progress}
+      <div class="flex shrink-0 items-center gap-2 border-b border-sky-500/20 bg-sky-950/15 px-2.5 py-1 text-[10px] text-sky-100/85" role="status">
+        <LoaderCircle size={11} class="shrink-0 animate-spin" />
+        <span class="min-w-0 flex-1 truncate">{lspStatus.progress.title}{lspStatus.progress.message ? ` · ${lspStatus.progress.message}` : ""}</span>
+        {#if lspStatus.progress.percentage != null}<span>{Math.round(lspStatus.progress.percentage)}%</span>{/if}
+      </div>
+    {/if}
 
     {#if surfaceError || activeTab.error || codeWorkspace.workspaceErrorByWorkId[workId]}
       <p class="shrink-0 border-b border-amber-500/30 bg-amber-950/25 px-2.5 py-1.5 text-[10px] text-amber-100">
@@ -2004,11 +2186,11 @@
     </div>
 
     {#if contextPanel}
-      <div class="{contextPanel === 'problems' ? 'max-h-72' : 'max-h-44'} shrink-0 overflow-y-auto border-t border-surface-500/30 bg-surface-950/80">
+      <div class="{contextPanel === 'problems' || contextPanel === 'language' ? 'max-h-72' : 'max-h-44'} shrink-0 overflow-y-auto border-t border-surface-500/30 bg-surface-950/80">
         <div class="sticky top-0 z-10 flex items-center justify-between border-b border-surface-500/25 bg-surface-950 px-2 py-1">
           <div class="flex min-w-0 items-center gap-2">
             <span class="text-[9px] font-medium uppercase tracking-wider text-content-tertiary">
-              {contextPanel === "problems" ? "Problems" : contextPanel === "references" ? "Uses" : "Structure"}
+              {contextPanel === "problems" ? "Problems" : contextPanel === "references" ? "Uses" : contextPanel === "language" ? "Language server" : "Structure"}
             </span>
             {#if contextPanel === "problems"}
               <span class="text-[9px] text-rose-300" title="Errors">{workspaceProblemCounts.errors}</span>
@@ -2026,6 +2208,15 @@
                 disabled={workspaceProblemsLoading}
                 onclick={() => void refreshWorkspaceProblems()}
               ><RotateCcw size={11} class={workspaceProblemsLoading ? "animate-spin" : ""} /></button>
+            {:else if contextPanel === "language"}
+              <button
+                type="button"
+                class="rounded p-0.5 text-content-quiet hover:bg-surface-800 hover:text-surface-200 disabled:opacity-50"
+                aria-label="Refresh language server logs"
+                title="Refresh language server logs"
+                disabled={languageSessionsLoading}
+                onclick={() => void refreshLanguageSessions()}
+              ><RotateCcw size={11} class={languageSessionsLoading ? "animate-spin" : ""} /></button>
             {/if}
             <button type="button" class="rounded p-0.5 text-content-quiet hover:text-surface-200" aria-label="Close context panel" onclick={() => (contextPanel = null)}><X size={11} /></button>
           </div>
@@ -2103,6 +2294,47 @@
                 </button>
               {/each}
             {/each}
+          {/if}
+        {:else if contextPanel === "language"}
+          <div class="flex flex-wrap items-center gap-2 border-b border-surface-500/20 bg-surface-900/55 px-3 py-2 text-[10px] text-content-secondary">
+            <span class="font-medium">{activeTabLanguage}</span>
+            {#if latestLanguageSession}
+              <span class="rounded bg-surface-800 px-1.5 py-0.5 text-[9px] {latestLanguageSession.phase === 'failed' ? 'text-rose-200' : latestLanguageSession.phase === 'ready' ? 'text-emerald-200' : 'text-amber-200'}">{latestLanguageSession.phase}</span>
+              <span class="min-w-0 flex-1 truncate font-mono text-[9px] text-content-quiet" title={latestLanguageSession.language_root}>{latestLanguageSession.relative_root || "."}</span>
+            {:else}
+              <span class="min-w-0 flex-1 text-content-quiet">No workshop session snapshot yet</span>
+            {/if}
+            <button type="button" class="rounded bg-surface-800 px-1.5 py-0.5 text-[9px] hover:bg-surface-700" onclick={restartLanguageServer}>Restart</button>
+          </div>
+          {#if latestLanguageSession?.progress.some((progress) => !progress.done)}
+            {#each latestLanguageSession.progress.filter((progress) => !progress.done) as progress (progress.token)}
+              <div class="flex items-center gap-2 border-b border-sky-500/15 bg-sky-950/10 px-3 py-1.5 text-[9px] text-sky-100/80">
+                <LoaderCircle size={10} class="animate-spin" />
+                <span class="min-w-0 flex-1 truncate">{progress.title || "Language service"}{progress.message ? ` · ${progress.message}` : ""}</span>
+                {#if progress.percentage != null}<span>{Math.round(progress.percentage)}%</span>{/if}
+              </div>
+            {/each}
+          {/if}
+          {#if languageSessionsError}
+            <div class="flex items-start justify-between gap-3 border-b border-rose-400/20 bg-rose-500/5 px-3 py-2 text-[10px] text-rose-200">
+              <span>Could not read workshop language logs: {languageSessionsError}</span>
+              <button type="button" class="shrink-0 underline underline-offset-2" onclick={() => void refreshLanguageSessions()}>Retry</button>
+            </div>
+          {/if}
+          {#if languageSessionsLoading && languageSessions.length === 0}
+            <p class="flex items-center px-3 py-3 text-[10px] text-content-quiet"><LoaderCircle size={11} class="mr-1.5 animate-spin" />Reading workshop logs…</p>
+          {:else if languageSessionLogs.length === 0}
+            <p class="px-3 py-3 text-[10px] text-content-quiet">No language server output has been recorded.</p>
+          {:else}
+            <div class="font-mono text-[9px]" aria-label="Language server output">
+              {#each languageSessionLogs as entry (`${entry.sessionId}:${entry.sequence}`)}
+                <div class="grid grid-cols-[4.8rem_3.5rem_minmax(0,1fr)] gap-2 border-b border-surface-500/10 px-3 py-1 {entry.level === 'error' ? 'text-rose-200' : entry.level === 'warning' ? 'text-amber-200' : 'text-content-tertiary'}">
+                  <span class="text-content-faint">{formatLanguageLogTime(entry.timestamp_ms)}</span>
+                  <span class="truncate text-content-quiet">{entry.source}</span>
+                  <span class="whitespace-pre-wrap break-words">{entry.message}</span>
+                </div>
+              {/each}
+            </div>
           {/if}
         {:else if contextPanel === "references"}
           {#if references.length === 0}

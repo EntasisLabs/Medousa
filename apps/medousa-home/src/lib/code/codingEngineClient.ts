@@ -31,22 +31,119 @@ import type { GraphemeLspWorkspaceResponse } from "$lib/types/grapheme";
 type CloseableTransport = {
   transport: Transport;
   close: () => void;
+  closed: Promise<CodeLspSocketClose>;
 };
 
-function createCloseableWebSocketTransport(uri: string): Promise<CloseableTransport> {
+export type CodeLspSocketClose = {
+  expected: boolean;
+  code: number;
+  reason: string;
+  clean: boolean;
+};
+
+export type CodeLanguageServerEvent =
+  | {
+      kind: "progress";
+      token: string;
+      progressKind: "begin" | "report" | "end";
+      title: string;
+      message: string;
+      percentage: number | null;
+    }
+  | {
+      kind: "log";
+      level: "error" | "warning" | "info" | "log";
+      message: string;
+    };
+
+export function codeLanguageServerEventFromMessage(
+  raw: string,
+): CodeLanguageServerEvent | null {
+  let value: Record<string, unknown>;
+  try {
+    value = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const params = value.params as Record<string, unknown> | undefined;
+  if (value.method === "$/progress" && params) {
+    const progress = params.value as Record<string, unknown> | undefined;
+    if (!progress) return null;
+    const progressKind = progress.kind;
+    if (progressKind !== "begin" && progressKind !== "report" && progressKind !== "end") {
+      return null;
+    }
+    const percentage =
+      typeof progress.percentage === "number"
+        ? Math.max(0, Math.min(100, progress.percentage))
+        : null;
+    return {
+      kind: "progress",
+      token:
+        typeof params.token === "string"
+          ? params.token
+          : JSON.stringify(params.token ?? null),
+      progressKind,
+      title: typeof progress.title === "string" ? progress.title : "",
+      message: typeof progress.message === "string" ? progress.message : "",
+      percentage,
+    };
+  }
+  if (
+    (value.method === "window/logMessage" || value.method === "window/showMessage") &&
+    params &&
+    typeof params.message === "string"
+  ) {
+    const level =
+      params.type === 1
+        ? "error"
+        : params.type === 2
+          ? "warning"
+          : params.type === 3
+            ? "info"
+            : "log";
+    return { kind: "log", level, message: params.message };
+  }
+  return null;
+}
+
+function createCloseableWebSocketTransport(
+  uri: string,
+  onServerEvent?: (event: CodeLanguageServerEvent) => void,
+): Promise<CloseableTransport> {
   const handlers: Array<(value: string) => void> = [];
   const socket = new WebSocket(uri);
+  let expectedClose = false;
+  let opened = false;
+  let connectionSettled = false;
+  let closeSettled = false;
+  let resolveClosed!: (value: CodeLspSocketClose) => void;
+  const closed = new Promise<CodeLspSocketClose>((resolve) => {
+    resolveClosed = resolve;
+  });
+  const settleClosed = (value: CodeLspSocketClose) => {
+    if (closeSettled) return;
+    closeSettled = true;
+    resolveClosed(value);
+  };
   socket.onmessage = (event) => {
     const payload =
       typeof event.data === "string" ? event.data : event.data.toString();
+    const serverEvent = codeLanguageServerEventFromMessage(payload);
+    if (serverEvent) onServerEvent?.(serverEvent);
     for (const handler of handlers) {
       handler(payload);
     }
   };
   return new Promise((resolve, reject) => {
     socket.onopen = () => {
+      opened = true;
+      connectionSettled = true;
       const transport: Transport = {
         send(message: string) {
+          if (socket.readyState !== WebSocket.OPEN) {
+            throw new Error("LSP websocket is closed");
+          }
           socket.send(message);
         },
         subscribe(handler: (value: string) => void) {
@@ -59,16 +156,45 @@ function createCloseableWebSocketTransport(uri: string): Promise<CloseableTransp
       };
       resolve({
         transport,
+        closed,
         close() {
+          expectedClose = true;
           handlers.length = 0;
           socket.onmessage = null;
           if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN) {
             socket.close(1000, "workspace released");
+          } else {
+            settleClosed({ expected: true, code: 1000, reason: "workspace released", clean: true });
           }
         },
       });
     };
-    socket.onerror = () => reject(new Error("LSP websocket failed"));
+    socket.onerror = () => {
+      if (!opened && !connectionSettled) {
+        connectionSettled = true;
+        reject(new Error("LSP websocket failed"));
+      } else if (opened) {
+        settleClosed({
+          expected: expectedClose,
+          code: 1006,
+          reason: "LSP websocket failed",
+          clean: false,
+        });
+      }
+    };
+    socket.onclose = (event) => {
+      handlers.length = 0;
+      settleClosed({
+        expected: expectedClose,
+        code: event.code,
+        reason: event.reason,
+        clean: event.wasClean,
+      });
+      if (!opened && !connectionSettled) {
+        connectionSettled = true;
+        reject(new Error(event.reason || "LSP websocket closed before connecting"));
+      }
+    };
   });
 }
 
@@ -95,6 +221,7 @@ export type ConnectOrchestratorLspOptions = {
   workspaceRoot?: string;
   languageRootUri?: string;
   workspaceBridge?: MedousaCodeWorkspaceBridge;
+  onServerEvent?: (event: CodeLanguageServerEvent) => void;
 };
 
 export async function connectOrchestratorLspClient(options?: ConnectOrchestratorLspOptions): Promise<{
@@ -102,6 +229,7 @@ export async function connectOrchestratorLspClient(options?: ConnectOrchestrator
   workspace: GraphemeLspWorkspaceResponse;
   via: "orchestrator" | "grapheme";
   close: () => void;
+  closed: Promise<CodeLspSocketClose>;
   ready: Promise<null>;
 }> {
   const language = (options?.language ?? "grapheme").trim() || "grapheme";
@@ -115,7 +243,10 @@ export async function connectOrchestratorLspClient(options?: ConnectOrchestrator
       if (options?.documentUri) query.set("document_uri", options.documentUri);
       const path = `${info.daemon_lsp_path || "/v1/code/lsp"}?${query}`;
       const wsUrl = await daemonWebSocketUrl(path);
-      const connection = await createCloseableWebSocketTransport(wsUrl);
+      const connection = await createCloseableWebSocketTransport(
+        wsUrl,
+        options?.onServerEvent,
+      );
       const rootUri = options?.languageRootUri
         ? canonicalCodeDocumentUri(options.languageRootUri)
         : options?.workspaceRoot
@@ -124,7 +255,18 @@ export async function connectOrchestratorLspClient(options?: ConnectOrchestrator
       const client = new LSPClient({
         rootUri,
         timeout: 30_000,
-        extensions: languageServerExtensions(),
+        extensions: [
+          ...languageServerExtensions(),
+          {
+            clientCapabilities: {
+              workspace: {
+                configuration: true,
+                workspaceFolders: true,
+              },
+              window: { workDoneProgress: true },
+            },
+          },
+        ],
         workspace: options?.workspaceBridge
           ? (client) => new MedousaCodeWorkspace(client, options.workspaceBridge!)
           : undefined,
@@ -143,6 +285,7 @@ export async function connectOrchestratorLspClient(options?: ConnectOrchestrator
         },
         via: "orchestrator",
         close: connection.close,
+        closed: connection.closed,
         ready,
       };
     }
@@ -154,7 +297,10 @@ export async function connectOrchestratorLspClient(options?: ConnectOrchestrator
   }
 
   const wsUrl = await daemonWebSocketUrl("/v1/grapheme/lsp");
-  const connection = await createCloseableWebSocketTransport(wsUrl);
+  const connection = await createCloseableWebSocketTransport(
+    wsUrl,
+    options?.onServerEvent,
+  );
   const client = new LSPClient({
     rootUri: graphemeWorkspace.root_uri,
     timeout: 30_000,
@@ -173,9 +319,23 @@ export async function connectOrchestratorLspClient(options?: ConnectOrchestrator
     workspace: graphemeWorkspace,
     via: "grapheme",
     close: connection.close,
+    closed: connection.closed,
     ready,
   };
 }
+
+export type CodeWorkspaceLspProgress = {
+  token: string;
+  title: string;
+  message: string;
+  percentage: number | null;
+};
+
+export type CodeWorkspaceLspStatus = {
+  phase: "connecting" | "ready" | "reconnecting" | "failed" | "stopped";
+  detail: string;
+  progress: CodeWorkspaceLspProgress | null;
+};
 
 type WorkspaceClientEntry = {
   connection: ReturnType<typeof connectOrchestratorLspClient>;
@@ -183,16 +343,30 @@ type WorkspaceClientEntry = {
   workspaceBridge: MedousaCodeWorkspaceBridge;
   references: number;
   releaseTimer: ReturnType<typeof setTimeout> | null;
+  status: CodeWorkspaceLspStatus;
+  listeners: Set<(status: CodeWorkspaceLspStatus) => void>;
+  expectedClose: boolean;
+  disconnected: boolean;
 };
 
 export type CodeWorkspaceLspLease = {
   client: Promise<LSPClient>;
   workspaceBridge: MedousaCodeWorkspaceBridge;
+  subscribeStatus: (listener: (status: CodeWorkspaceLspStatus) => void) => () => void;
+  restart: () => void;
   release: () => void;
 };
 
 const WORKSPACE_CLIENT_RELEASE_DELAY_MS = 1_000;
+export const CODE_LSP_MAX_RECONNECT_ATTEMPTS = 3;
 const workspaceClients = new Map<string, WorkspaceClientEntry>();
+
+export function codeLspReconnectDelay(attempt: number): number | null {
+  if (!Number.isInteger(attempt) || attempt < 1 || attempt > CODE_LSP_MAX_RECONNECT_ATTEMPTS) {
+    return null;
+  }
+  return [250, 750, 1_500][attempt - 1] ?? null;
+}
 
 export function codeWorkspaceLspPoolKey(
   workId: string,
@@ -205,6 +379,125 @@ export function codeWorkspaceLspPoolKey(
 function closeWorkspaceClient(key: string, entry: WorkspaceClientEntry) {
   if (workspaceClients.get(key) !== entry || entry.references > 0) return;
   workspaceClients.delete(key);
+  entry.expectedClose = true;
+  entry.disconnected = true;
+  publishWorkspaceClientStatus(entry, {
+    phase: "stopped",
+    detail: "Language session released",
+    progress: null,
+  });
+  void entry.connection.then(({ client, close }) => {
+    client.disconnect();
+    close();
+  }).catch(() => {});
+}
+
+function publishWorkspaceClientStatus(
+  entry: WorkspaceClientEntry,
+  status: CodeWorkspaceLspStatus,
+) {
+  entry.status = status;
+  for (const listener of entry.listeners) listener(status);
+}
+
+function applyWorkspaceServerEvent(
+  entry: WorkspaceClientEntry,
+  event: CodeLanguageServerEvent,
+) {
+  if (event.kind !== "progress") return;
+  publishWorkspaceClientStatus(entry, {
+    ...entry.status,
+    progress:
+      event.progressKind === "end"
+        ? null
+        : {
+            token: event.token,
+            title: event.title || entry.status.progress?.title || "Language service",
+            message: event.message,
+            percentage: event.percentage,
+          },
+  });
+}
+
+function createWorkspaceClientEntry(
+  key: string,
+  options: {
+    workId: string;
+    workspaceRoot: string;
+    language: string;
+    documentUri: string;
+    languageRootUri: string;
+  },
+): WorkspaceClientEntry {
+  const workspaceBridge = new MedousaCodeWorkspaceBridge();
+  let entry!: WorkspaceClientEntry;
+  const connection = connectOrchestratorLspClient({
+    ...options,
+    workspaceBridge,
+    onServerEvent: (event) => applyWorkspaceServerEvent(entry, event),
+  });
+  const client = connection.then(async (result) => {
+    await result.ready;
+    if (entry.disconnected) throw new Error("Language server disconnected while starting");
+    publishWorkspaceClientStatus(entry, {
+      phase: "ready",
+      detail: `${options.language} language server ready`,
+      progress: entry.status.progress,
+    });
+    return result.client;
+  });
+  entry = {
+    connection,
+    client,
+    workspaceBridge,
+    references: 0,
+    releaseTimer: null,
+    status: {
+      phase: "connecting",
+      detail: `Starting ${options.language} language server`,
+      progress: null,
+    },
+    listeners: new Set(),
+    expectedClose: false,
+    disconnected: false,
+  };
+  void connection.then((result) => {
+    void result.closed.then((closed) => {
+      if (entry.expectedClose || closed.expected) return;
+      entry.disconnected = true;
+      if (workspaceClients.get(key) === entry) workspaceClients.delete(key);
+      result.client.disconnect();
+      result.close();
+      const detail = closed.reason || `Language server connection closed (${closed.code || 1006})`;
+      publishWorkspaceClientStatus(entry, {
+        phase: "reconnecting",
+        detail,
+        progress: null,
+      });
+    });
+  });
+  void client.catch((err) => {
+    if (entry.expectedClose || entry.status.phase === "reconnecting") return;
+    entry.disconnected = true;
+    if (workspaceClients.get(key) === entry) workspaceClients.delete(key);
+    publishWorkspaceClientStatus(entry, {
+      phase: "failed",
+      detail: err instanceof Error ? err.message : String(err),
+      progress: null,
+    });
+  });
+  return entry;
+}
+
+function restartWorkspaceClient(key: string, entry: WorkspaceClientEntry) {
+  if (workspaceClients.get(key) === entry) workspaceClients.delete(key);
+  entry.expectedClose = true;
+  entry.disconnected = true;
+  publishWorkspaceClientStatus(entry, {
+    phase: "reconnecting",
+    detail: "Restarting language server",
+    progress: null,
+  });
   void entry.connection.then(({ client, close }) => {
     client.disconnect();
     close();
@@ -238,34 +531,13 @@ export async function acquireCodeWorkspaceLspClient(options: {
   );
   let entry = workspaceClients.get(key);
   if (!entry) {
-    const workspaceBridge = new MedousaCodeWorkspaceBridge();
-    const connection = connectOrchestratorLspClient({
-      ...options,
+    entry = createWorkspaceClientEntry(key, {
+      workId: options.workId,
       workspaceRoot,
+      language: options.language,
+      documentUri: options.documentUri,
       languageRootUri,
-      workspaceBridge,
-    }).catch((err) => {
-      if (workspaceClients.get(key)?.connection === connection) {
-        workspaceClients.delete(key);
-      }
-      throw err;
     });
-    const client = connection
-      .then(async (result) => {
-        await result.ready;
-        return result.client;
-      })
-      .catch((err) => {
-        workspaceClients.delete(key);
-        throw err;
-      });
-    entry = {
-      connection,
-      client,
-      workspaceBridge,
-      references: 0,
-      releaseTimer: null,
-    };
     workspaceClients.set(key, entry);
   }
   if (entry.releaseTimer) {
@@ -277,6 +549,14 @@ export async function acquireCodeWorkspaceLspClient(options: {
   return {
     client: entry.client,
     workspaceBridge: entry.workspaceBridge,
+    subscribeStatus(listener) {
+      entry.listeners.add(listener);
+      listener(entry.status);
+      return () => entry.listeners.delete(listener);
+    },
+    restart() {
+      restartWorkspaceClient(key, entry);
+    },
     release() {
       if (released) return;
       released = true;
@@ -359,6 +639,63 @@ export async function getCodeLanguageRoot(options: {
     language: response.language ?? options.language,
     root_uri: response.root_uri,
     relative_root: response.relative_root ?? "",
+  };
+}
+
+export type CodeLanguageSessionLogEntry = {
+  sequence: number;
+  timestamp_ms: number;
+  level: string;
+  source: string;
+  message: string;
+};
+
+export type CodeLanguageSessionProgress = {
+  token: string;
+  title: string;
+  message: string;
+  percentage?: number | null;
+  done: boolean;
+};
+
+export type CodeLanguageSessionSnapshot = {
+  id: string;
+  kind: "editor" | "agent";
+  language: string;
+  project_root: string;
+  language_root: string;
+  relative_root: string;
+  phase: "starting" | "initializing" | "ready" | "stopped" | "failed";
+  detail: string;
+  started_at_ms: number;
+  updated_at_ms: number;
+  progress: CodeLanguageSessionProgress[];
+  logs: CodeLanguageSessionLogEntry[];
+};
+
+export async function getCodeLanguageSessions(options: {
+  workId: string;
+  uri: string;
+  language: string;
+}): Promise<{
+  language: string;
+  rootUri: string;
+  sessions: CodeLanguageSessionSnapshot[];
+}> {
+  const response = await codeAgentGet<{
+    ok: boolean;
+    language?: string;
+    root_uri?: string;
+    sessions?: CodeLanguageSessionSnapshot[];
+  }>("/v1/code/language-sessions", {
+    work_id: options.workId,
+    uri: options.uri,
+    language: options.language,
+  });
+  return {
+    language: response.language ?? options.language,
+    rootUri: response.root_uri ?? "",
+    sessions: Array.isArray(response.sessions) ? response.sessions : [],
   };
 }
 

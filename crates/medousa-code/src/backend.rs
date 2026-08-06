@@ -9,6 +9,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::Mutex;
 
+use crate::language_session::LanguageSessionLog;
 use crate::registry::{ServerKind, ServerLaunchSpec};
 
 #[derive(Debug, thiserror::Error)]
@@ -32,14 +33,21 @@ pub trait LanguageServerBackend: Send + Sync {
 pub async fn spawn_backend(
     spec: &ServerLaunchSpec,
     workspace_root: &std::path::Path,
+    logs: Arc<LanguageSessionLog>,
 ) -> Result<Arc<dyn LanguageServerBackend>, BackendError> {
     match &spec.kind {
-        ServerKind::Grapheme => Ok(Arc::new(GraphemeBackend::spawn())),
-        ServerKind::Stdio { command } => {
-            Ok(Arc::new(
-                StdioBackend::spawn(command, &spec.args, workspace_root).await?,
-            ))
+        ServerKind::Grapheme => {
+            logs.push(
+                "info",
+                "process",
+                "Starting in-process Grapheme language server",
+            )
+            .await;
+            Ok(Arc::new(GraphemeBackend::spawn()))
         }
+        ServerKind::Stdio { command } => Ok(Arc::new(
+            StdioBackend::spawn(command, &spec.args, workspace_root, logs).await?,
+        )),
     }
 }
 
@@ -153,6 +161,7 @@ pub struct StdioBackend {
     child: Mutex<Child>,
     stdin: Mutex<ChildStdin>,
     stdout: Mutex<BufReader<tokio::process::ChildStdout>>,
+    stderr_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 impl StdioBackend {
@@ -160,14 +169,30 @@ impl StdioBackend {
         command: &str,
         args: &[String],
         workspace_root: &std::path::Path,
+        logs: Arc<LanguageSessionLog>,
     ) -> Result<Self, BackendError> {
         let resolved = resolve_command(command);
+        logs.push(
+            "info",
+            "process",
+            format!(
+                "Starting {}{} in {}",
+                resolved.display(),
+                if args.is_empty() {
+                    String::new()
+                } else {
+                    format!(" {}", args.join(" "))
+                },
+                workspace_root.display()
+            ),
+        )
+        .await;
         let mut child = Command::new(&resolved)
             .args(args)
             .current_dir(workspace_root)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .kill_on_drop(true)
             .spawn()
             .map_err(|e| BackendError::Spawn(format!("{}: {e}", resolved.display())))?;
@@ -179,10 +204,29 @@ impl StdioBackend {
             .stdout
             .take()
             .ok_or_else(|| BackendError::Spawn("missing stdout".into()))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| BackendError::Spawn("missing stderr".into()))?;
+        let stderr_task = tokio::spawn(async move {
+            let mut lines = BufReader::new(stderr).lines();
+            loop {
+                match lines.next_line().await {
+                    Ok(Some(line)) => logs.push("log", "stderr", line).await,
+                    Ok(None) => break,
+                    Err(err) => {
+                        logs.push("error", "stderr", format!("stderr read failed: {err}"))
+                            .await;
+                        break;
+                    }
+                }
+            }
+        });
         Ok(Self {
             child: Mutex::new(child),
             stdin: Mutex::new(stdin),
             stdout: Mutex::new(BufReader::new(stdout)),
+            stderr_task: Mutex::new(Some(stderr_task)),
         })
     }
 }
@@ -202,5 +246,8 @@ impl LanguageServerBackend for StdioBackend {
     async fn shutdown(&self) {
         let mut child = self.child.lock().await;
         let _ = child.kill().await;
+        if let Some(stderr_task) = self.stderr_task.lock().await.take() {
+            stderr_task.abort();
+        }
     }
 }

@@ -134,6 +134,13 @@ a private Code IDE chrome.
   by file, filters by severity or text, and opens the exact location even when
   the file is not already open. `Cmd/Ctrl+F` opens find with the shared editor
   chrome.
+- If a language server stops, Code keeps the file editable, shows the degraded
+  state, and makes three short reconnect attempts. Use **Restart language
+  server** to retry immediately or **Show language server logs** to inspect the
+  resolved package root, recent progress, LSP messages, and captured workshop
+  process output. **Repair language support** remains the package path after
+  bounded recovery is exhausted; remote repair still belongs to the connected
+  workshop.
 - Find uses, rename, formatting, and import organization appear only when the
   active language server supports them. Multi-file rename opens **Review
   refactor** first, including text changes and any proposed create, rename, or

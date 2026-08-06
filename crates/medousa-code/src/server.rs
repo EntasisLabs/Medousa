@@ -17,12 +17,15 @@ use serde_json::{Value, json};
 use tower_http::cors::CorsLayer;
 use url::Url;
 
-use crate::backend::spawn_backend;
+use crate::backend::{LanguageServerBackend, spawn_backend};
 use crate::detamu::{DetamuDocumentSnapshot, DetamuServerHandle};
 use crate::diagnostics::WorkspaceDiagnosticStore;
 use crate::document::DocumentStore;
+use crate::language_session::{LanguageSessionIdentity, LanguageSessionKind, LanguageSessionStore};
 use crate::registry::{LanguageId, ServerRegistry};
-use crate::session::{SessionPool, initialization_options};
+use crate::session::{
+    SessionPool, initialization_options, workspace_configuration_response, workspace_settings,
+};
 use crate::{ENGINE_API_REVISION, ENGINE_NAME, ENGINE_VERSION};
 
 #[derive(Clone)]
@@ -39,17 +42,20 @@ pub struct OrchestratorState {
     pub pool: Arc<SessionPool>,
     pub documents: Arc<DocumentStore>,
     pub workspace_diagnostics: Arc<WorkspaceDiagnosticStore>,
+    pub language_sessions: Arc<LanguageSessionStore>,
     pub editor_sessions: Arc<AtomicUsize>,
     pub started: Instant,
 }
 
 impl OrchestratorState {
     pub fn new(config: OrchestratorConfig, registry: ServerRegistry) -> Self {
+        let language_sessions = LanguageSessionStore::new();
         Self {
             config: config.clone(),
-            pool: SessionPool::new(registry),
+            pool: SessionPool::new(registry, Arc::clone(&language_sessions)),
             documents: DocumentStore::new(),
             workspace_diagnostics: WorkspaceDiagnosticStore::new(),
+            language_sessions,
             editor_sessions: Arc::new(AtomicUsize::new(0)),
             started: Instant::now(),
         }
@@ -147,6 +153,7 @@ pub fn app(state: OrchestratorState) -> Router {
         .route("/v1/code/capabilities", get(agent_capabilities))
         .route("/v1/code/conventions", get(agent_conventions))
         .route("/v1/code/language-root", get(language_root))
+        .route("/v1/code/language-sessions", get(language_sessions))
         .route("/v1/code/request", post(agent_request))
         .route("/v1/detamu/snapshot", get(detamu_snapshot))
         .route("/v1/detamu/handles", get(detamu_handles))
@@ -279,6 +286,26 @@ fn resolve_language_root(
         .resolve_root(language, &document, project_root))
 }
 
+fn advertise_editor_client_capabilities(capabilities: &mut serde_json::Map<String, Value>) {
+    // CodeMirror's built-in client omits these. Advertise them here so servers
+    // send configuration / progress / folder requests that this boundary answers.
+    let workspace = capabilities
+        .entry("workspace".to_string())
+        .or_insert_with(|| json!({}))
+        .as_object_mut();
+    if let Some(workspace) = workspace {
+        workspace.insert("configuration".to_string(), Value::Bool(true));
+        workspace.insert("workspaceFolders".to_string(), Value::Bool(true));
+    }
+    let window = capabilities
+        .entry("window".to_string())
+        .or_insert_with(|| json!({}))
+        .as_object_mut();
+    if let Some(window) = window {
+        window.insert("workDoneProgress".to_string(), Value::Bool(true));
+    }
+}
+
 fn rewrite_initialize_params(
     params: &mut serde_json::Map<String, Value>,
     language: &LanguageId,
@@ -297,18 +324,99 @@ fn rewrite_initialize_params(
         "rootPath".to_string(),
         Value::String(language_root.to_string_lossy().into_owned()),
     );
-    if params.contains_key("workspaceFolders") {
-        params.insert(
-            "workspaceFolders".to_string(),
-            json!([{
-                "uri": language_root_uri,
-                "name": language_root
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or("workspace")
-            }]),
-        );
+    params.insert(
+        "workspaceFolders".to_string(),
+        json!([{
+            "uri": language_root_uri,
+            "name": language_root
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("workspace")
+        }]),
+    );
+    match params
+        .entry("capabilities".to_string())
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+    {
+        Some(capabilities) => advertise_editor_client_capabilities(capabilities),
+        None => {
+            params.insert(
+                "capabilities".to_string(),
+                json!({
+                    "workspace": {
+                        "configuration": true,
+                        "workspaceFolders": true
+                    },
+                    "window": { "workDoneProgress": true }
+                }),
+            );
+        }
     }
+}
+
+fn language_server_response(id: Value, result: Value) -> String {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "result": result,
+    })
+    .to_string()
+}
+
+async fn handle_language_server_request(
+    backend: &Arc<dyn LanguageServerBackend>,
+    lifecycle: &crate::language_session::LanguageSessionHandle,
+    language: &LanguageId,
+    language_root: &Path,
+    value: &Value,
+) -> Result<bool, crate::backend::BackendError> {
+    let Some(method) = value.get("method").and_then(Value::as_str) else {
+        return Ok(false);
+    };
+    let Some(id) = value.get("id").cloned() else {
+        return Ok(false);
+    };
+    let result = match method {
+        "workspace/configuration" => {
+            workspace_configuration_response(language, value.get("params").unwrap_or(&Value::Null))
+        }
+        "workspace/workspaceFolders" => json!([{
+            "uri": path_to_file_uri(language_root),
+            "name": language_root
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("workspace"),
+        }]),
+        "window/workDoneProgress/create" => {
+            if let Some(token) = value.pointer("/params/token") {
+                lifecycle.create_progress(token).await;
+            }
+            Value::Null
+        }
+        "client/registerCapability" | "client/unregisterCapability" => Value::Null,
+        _ => return Ok(false),
+    };
+    backend
+        .write_message(&language_server_response(id, result))
+        .await?;
+    Ok(true)
+}
+
+async fn send_workspace_configuration(
+    backend: &Arc<dyn LanguageServerBackend>,
+    language: &LanguageId,
+) -> Result<(), crate::backend::BackendError> {
+    backend
+        .write_message(
+            &json!({
+                "jsonrpc": "2.0",
+                "method": "workspace/didChangeConfiguration",
+                "params": { "settings": workspace_settings(language) },
+            })
+            .to_string(),
+        )
+        .await
 }
 
 async fn handle_client(
@@ -341,17 +449,35 @@ async fn handle_client(
             return;
         }
     };
+    let lifecycle = state
+        .language_sessions
+        .begin(LanguageSessionIdentity {
+            kind: LanguageSessionKind::Editor,
+            project_root: project_root.clone(),
+            language_root: language_root.clone(),
+            language: language.to_string(),
+        })
+        .await;
+    lifecycle
+        .starting(format!("Starting {language} language server"))
+        .await;
     // Editor connections are transparent one-client/one-server channels.
     // Sharing the agent session here would require JSON-RPC id translation and
     // initialize virtualization; blindly forwarding multiple clients corrupts
     // the protocol and lets their request ids collide.
-    let backend = match spawn_backend(&spec, &language_root).await {
+    let backend = match spawn_backend(&spec, &language_root, lifecycle.logs()).await {
         Ok(backend) => backend,
         Err(err) => {
             tracing::warn!(error = %err, %language, "failed to spawn language session");
+            lifecycle
+                .failed(format!("Failed to start {language}: {err}"))
+                .await;
             return;
         }
     };
+    lifecycle
+        .initializing(format!("Initializing {language}"))
+        .await;
     state.editor_sessions.fetch_add(1, Ordering::Relaxed);
     let diagnostic_session_id = state
         .workspace_diagnostics
@@ -365,45 +491,137 @@ async fn handle_client(
         "started editor language server"
     );
     let (mut ws_tx, mut ws_rx) = socket.split();
-
-    let reader = Arc::clone(&backend);
-    let workspace_diagnostics = Arc::clone(&state.workspace_diagnostics);
-    let fanout = tokio::spawn(async move {
-        while let Ok(msg) = reader.read_message().await {
-            workspace_diagnostics
-                .record_message(diagnostic_session_id, &msg)
-                .await;
-            if ws_tx.send(Message::Text(msg.into())).await.is_err() {
+    // LSP framing reads are not cancellation-safe after a header or body has
+    // been partially consumed. Keep one dedicated reader alive and select on
+    // completed frames instead of selecting directly on `read_message`.
+    let (server_tx, mut server_rx) = tokio::sync::mpsc::channel(64);
+    let reader_backend = Arc::clone(&backend);
+    let reader_task = tokio::spawn(async move {
+        loop {
+            let message = reader_backend.read_message().await;
+            let failed = message.is_err();
+            if server_tx.send(message).await.is_err() || failed {
                 break;
             }
         }
     });
-
-    while let Some(Ok(msg)) = ws_rx.next().await {
-        let text = match msg {
-            Message::Text(t) => t.to_string(),
-            Message::Binary(b) => String::from_utf8_lossy(&b).into_owned(),
-            Message::Close(_) => break,
-            _ => continue,
-        };
-        let mut outbound = text;
-        if let Ok(mut value) = serde_json::from_str::<Value>(&outbound) {
-            track_document(&state, &value).await;
-            if value.get("method").and_then(Value::as_str) == Some("initialize") {
-                if let Some(params) = value.get_mut("params").and_then(Value::as_object_mut) {
-                    rewrite_initialize_params(params, &language, &language_root);
+    let mut client_disconnected = false;
+    loop {
+        tokio::select! {
+            server_message = server_rx.recv() => {
+                let message = match server_message {
+                    Some(Ok(message)) => message,
+                    Some(Err(err)) => {
+                        tracing::warn!(error = %err, %language, "editor language server stopped");
+                        lifecycle
+                            .failed(format!("{language} language server stopped: {err}"))
+                            .await;
+                        break;
+                    }
+                    None => {
+                        lifecycle
+                            .failed(format!("{language} language server reader stopped"))
+                            .await;
+                        break;
+                    }
+                };
+                lifecycle.record_lsp_message(&message).await;
+                if let Ok(value) = serde_json::from_str::<Value>(&message) {
+                    match handle_language_server_request(
+                        &backend,
+                        &lifecycle,
+                        &language,
+                        &language_root,
+                        &value,
+                    )
+                    .await
+                    {
+                        Ok(true) => continue,
+                        Ok(false) => {}
+                        Err(err) => {
+                            lifecycle
+                                .failed(format!("Could not answer {language} language server: {err}"))
+                                .await;
+                            break;
+                        }
+                    }
                 }
-                outbound = value.to_string();
+                state
+                    .workspace_diagnostics
+                    .record_message(diagnostic_session_id, &message)
+                    .await;
+                if ws_tx.send(Message::Text(message.into())).await.is_err() {
+                    client_disconnected = true;
+                    break;
+                }
             }
-        }
-        if let Err(err) = backend.write_message(&outbound).await {
-            tracing::warn!(error = %err, "backend write failed");
-            break;
+            client_message = ws_rx.next() => {
+                let message = match client_message {
+                    Some(Ok(message)) => message,
+                    Some(Err(err)) => {
+                        tracing::debug!(error = %err, %language, "editor LSP client disconnected");
+                        client_disconnected = true;
+                        break;
+                    }
+                    None => {
+                        client_disconnected = true;
+                        break;
+                    }
+                };
+                let text = match message {
+                    Message::Text(text) => text.to_string(),
+                    Message::Binary(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+                    Message::Close(_) => {
+                        client_disconnected = true;
+                        break;
+                    }
+                    _ => continue,
+                };
+                let mut outbound = text;
+                let mut initialized = false;
+                if let Ok(mut value) = serde_json::from_str::<Value>(&outbound) {
+                    track_document(&state, &value).await;
+                    let initializing = value.get("method").and_then(Value::as_str)
+                        == Some("initialize");
+                    initialized = value.get("method").and_then(Value::as_str)
+                        == Some("initialized");
+                    if initializing {
+                        if let Some(params) = value.get_mut("params").and_then(Value::as_object_mut) {
+                            rewrite_initialize_params(params, &language, &language_root);
+                        }
+                        outbound = value.to_string();
+                    }
+                }
+                if let Err(err) = backend.write_message(&outbound).await {
+                    tracing::warn!(error = %err, %language, "backend write failed");
+                    lifecycle
+                        .failed(format!("Could not write to {language} language server: {err}"))
+                        .await;
+                    break;
+                }
+                if initialized {
+                    if let Err(err) = send_workspace_configuration(&backend, &language).await {
+                        lifecycle
+                            .failed(format!("Could not configure {language} language server: {err}"))
+                            .await;
+                        break;
+                    }
+                    lifecycle
+                        .ready(format!("{language} language server ready"))
+                        .await;
+                }
+            }
         }
     }
 
-    fanout.abort();
+    let _ = ws_tx.close().await;
+    reader_task.abort();
     backend.shutdown().await;
+    if client_disconnected {
+        lifecycle.stopped("Editor connection closed").await;
+    } else {
+        lifecycle.stopped("Language session stopped").await;
+    }
     state
         .workspace_diagnostics
         .end_session(diagnostic_session_id)
@@ -552,6 +770,27 @@ async fn language_root(
         "language": language,
         "root_uri": path_to_file_uri(&root),
         "relative_root": relative_root,
+    })))
+}
+
+async fn language_sessions(
+    State(state): State<Arc<OrchestratorState>>,
+    Query(q): Query<AgentDocQuery>,
+) -> Result<Json<Value>, (axum::http::StatusCode, String)> {
+    let language = language_for_uri(&q.uri, q.language.as_deref());
+    let project_root = requested_workspace_root(&state, q.workspace_root)
+        .map_err(|err| (axum::http::StatusCode::BAD_REQUEST, err.to_string()))?;
+    let language_root = resolve_language_root(&state, &project_root, &language, Some(&q.uri))
+        .map_err(|err| (axum::http::StatusCode::BAD_REQUEST, err.to_string()))?;
+    let sessions = state
+        .language_sessions
+        .snapshots(&project_root, Some(language.as_str()), Some(&language_root))
+        .await;
+    Ok(Json(json!({
+        "ok": true,
+        "language": language,
+        "root_uri": path_to_file_uri(&language_root),
+        "sessions": sessions,
     })))
 }
 
@@ -1007,9 +1246,10 @@ async fn detamu_handles(State(state): State<Arc<OrchestratorState>>) -> Json<Val
 mod tests {
     use super::{
         AgentDocQuery, OrchestratorConfig, OrchestratorState, apply_editorconfig,
-        document_path_for_project, language_root, path_to_file_uri, resolve_language_root,
-        rewrite_initialize_params,
+        document_path_for_project, language_root, language_sessions, path_to_file_uri,
+        resolve_language_root, rewrite_initialize_params,
     };
+    use crate::language_session::{LanguageSessionIdentity, LanguageSessionKind};
     use crate::registry::{LanguageId, ServerRegistry};
     use serde_json::{Map, Value};
 
@@ -1101,7 +1341,10 @@ mod tests {
         let mut params = serde_json::json!({
             "rootUri": "file:///wrong",
             "rootPath": "/wrong",
-            "workspaceFolders": [{ "uri": "file:///wrong", "name": "wrong" }]
+            "capabilities": {
+                "textDocument": { "hover": {} },
+                "window": { "showMessage": {} }
+            }
         })
         .as_object()
         .unwrap()
@@ -1116,6 +1359,14 @@ mod tests {
             path_to_file_uri(&root)
         );
         assert_eq!(params["workspaceFolders"][0]["name"], "app");
+        assert_eq!(params["capabilities"]["workspace"]["configuration"], true);
+        assert_eq!(
+            params["capabilities"]["workspace"]["workspaceFolders"],
+            true
+        );
+        assert_eq!(params["capabilities"]["window"]["workDoneProgress"], true);
+        assert_eq!(params["capabilities"]["window"]["showMessage"], serde_json::json!({}));
+        assert_eq!(params["capabilities"]["textDocument"]["hover"], serde_json::json!({}));
     }
 
     #[tokio::test]
@@ -1156,5 +1407,54 @@ mod tests {
             response["root_uri"],
             path_to_file_uri(&package.canonicalize().unwrap())
         );
+    }
+
+    #[tokio::test]
+    async fn language_sessions_route_returns_only_the_resolved_root_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        let package = project.join("packages/app");
+        std::fs::create_dir_all(package.join("src")).unwrap();
+        std::fs::write(package.join("package.json"), "{}").unwrap();
+        let file = package.join("src/main.ts");
+        std::fs::write(&file, "export {};").unwrap();
+        let project = project.canonicalize().unwrap();
+        let package = package.canonicalize().unwrap();
+        let state = std::sync::Arc::new(OrchestratorState::new(
+            OrchestratorConfig {
+                bind: "127.0.0.1:0".parse().unwrap(),
+                workspace_root: project.clone(),
+                allowed_roots: vec![project.clone()],
+            },
+            ServerRegistry::with_defaults(),
+        ));
+        let session = state
+            .language_sessions
+            .begin(LanguageSessionIdentity {
+                kind: LanguageSessionKind::Editor,
+                project_root: project.clone(),
+                language_root: package.clone(),
+                language: "typescript".into(),
+            })
+            .await;
+        session.ready("Ready").await;
+
+        let response = language_sessions(
+            axum::extract::State(state),
+            axum::extract::Query(AgentDocQuery {
+                uri: path_to_file_uri(&file),
+                line: None,
+                character: None,
+                language: Some("typescript".into()),
+                workspace_root: Some(project),
+            }),
+        )
+        .await
+        .unwrap()
+        .0;
+
+        assert_eq!(response["root_uri"], path_to_file_uri(&package));
+        assert_eq!(response["sessions"][0]["phase"], "ready");
+        assert_eq!(response["sessions"][0]["relative_root"], "packages/app");
     }
 }
