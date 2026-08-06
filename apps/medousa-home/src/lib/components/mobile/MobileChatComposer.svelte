@@ -187,7 +187,7 @@
 
 <form bind:this={formEl} class="mobile-chat-composer" onsubmit={submit}>
   {#if chat.hasWorkshopHandoff()}
-    <p class="mb-1.5 px-1 text-[11px] font-medium text-primary-300/90">
+    <p class="mb-1.5 px-1 text-[11px] font-medium text-content-link/90">
       Steering handoff — your next message continues the worker
     </p>
   {/if}
@@ -195,7 +195,7 @@
     <VaultChatContextChip compact class="mb-2" />
   {/if}
   {#if chat.streamError}
-    <p class="mb-2 px-1 text-xs text-error-400" role="alert">{chat.streamError}</p>
+    <p class="mb-2 px-1 text-xs text-content-error" role="alert">{chat.streamError}</p>
   {/if}
   <BudgetApprovalBar
     mobile

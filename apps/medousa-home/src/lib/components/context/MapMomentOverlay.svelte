@@ -107,7 +107,7 @@
     border: 0;
     border-radius: 999px;
     background: transparent;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     cursor: pointer;
   }
 
@@ -121,7 +121,7 @@
     padding-right: 1.75rem;
     font-size: 11px;
     letter-spacing: 0.02em;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .map-moment-card-headline {
@@ -143,7 +143,7 @@
     overflow: hidden;
     font-size: 0.8125rem;
     line-height: 1.45;
-    color: rgb(var(--color-surface-300) / 0.92);
+    color: rgb(var(--theme-text-secondary) / 0.92);
   }
 
   .map-moment-pulse {
@@ -164,7 +164,7 @@
     font-size: 10px;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .map-moment-pulse-track {
@@ -187,15 +187,15 @@
     background: transparent;
     padding: 0;
     font-size: 12px;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     cursor: pointer;
     text-decoration: underline;
     text-underline-offset: 0.18em;
-    text-decoration-color: rgb(var(--color-surface-600));
+    text-decoration-color: rgb(var(--theme-text-faint));
   }
 
   .map-moment-card-chat:hover {
     color: rgb(var(--color-surface-100));
-    text-decoration-color: rgb(var(--color-surface-400));
+    text-decoration-color: rgb(var(--theme-text-tertiary));
   }
 </style>

@@ -20,7 +20,7 @@
 }
 
 .flow-liquid-name::placeholder {
-  color: rgb(var(--color-surface-500));
+  color: rgb(var(--theme-text-quiet));
   font-weight: 450;
 }
 
@@ -32,7 +32,7 @@
   font-size: 0.7rem;
   letter-spacing: 0.03em;
   text-transform: uppercase;
-  color: rgb(var(--color-surface-500));
+  color: rgb(var(--theme-text-quiet));
 }
 
 /* Vertical spine — quiet step flow */
@@ -102,7 +102,7 @@
   align-items: center;
   justify-content: center;
   border-radius: 0.25rem;
-  color: rgb(var(--color-surface-500));
+  color: rgb(var(--theme-text-quiet));
   opacity: 0;
   transition:
     opacity 120ms ease,
@@ -118,14 +118,14 @@
 
 .flow-spine-remove:hover {
   background: rgb(var(--color-surface-800) / 0.8);
-  color: rgb(var(--color-error-400));
+  color: rgb(var(--theme-error));
 }
 
 .flow-spine-empty {
   margin-top: 0.75rem;
   padding: 0.65rem 0.05rem;
   font-size: 0.875rem;
-  color: rgb(var(--color-surface-500));
+  color: rgb(var(--theme-text-quiet));
 }
 
 /* Add-step kind picker — compact rows, not card stacks */
@@ -171,14 +171,14 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.7rem;
   line-height: 1.45;
-  color: rgb(var(--color-surface-300));
+  color: rgb(var(--theme-text-secondary));
   white-space: pre;
 }
 
 .flow-prompt-preview {
   font-size: 0.75rem;
   line-height: 1.45;
-  color: rgb(var(--color-surface-300));
+  color: rgb(var(--theme-text-secondary));
   white-space: pre-wrap;
 }
 
@@ -206,7 +206,7 @@
   background: rgb(var(--color-surface-900) / 0.8);
   padding: 0.2rem 0.4rem;
   font-size: 0.65rem;
-  color: rgb(var(--color-surface-300));
+  color: rgb(var(--theme-text-secondary));
 }
 
 .flow-script-editor,

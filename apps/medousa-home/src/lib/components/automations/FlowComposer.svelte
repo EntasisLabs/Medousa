@@ -152,7 +152,7 @@
                       <p class="text-sm font-medium text-surface-50">
                         {flowStepSequenceLabel(index, step)}
                       </p>
-                      <p class="mt-0.5 text-[11px] text-surface-500">{flowStepSubtitle(step)}</p>
+                      <p class="mt-0.5 text-[11px] text-content-quiet">{flowStepSubtitle(step)}</p>
                     </div>
                     <button
                       type="button"
@@ -256,7 +256,7 @@
                         {#if step.source.trim()}
                           <pre class="flow-script-preview-code">{scriptPreview(step.source)}</pre>
                         {:else}
-                          <span class="text-[11px] text-surface-500">No script — click to edit</span>
+                          <span class="text-[11px] text-content-quiet">No script — click to edit</span>
                         {/if}
                       </button>
                     {/if}
@@ -332,7 +332,7 @@
       </div>
 
       {#if flows.actionMessage}
-        <p class="text-xs text-primary-300">{flows.actionMessage}</p>
+        <p class="text-xs text-content-link">{flows.actionMessage}</p>
       {/if}
     </div>
   </div>

@@ -60,7 +60,7 @@
     {/if}
   </h2>
 
-  <p class="wizard-beat mt-3 max-w-md text-base leading-relaxed text-surface-300">
+  <p class="wizard-beat mt-3 max-w-md text-base leading-relaxed text-content-secondary">
     {#if isTauriMobilePlatform()}
       Open chat when you're linked to your computer.
     {:else if workspaceOnly}
@@ -69,7 +69,7 @@
       {:else}
         Go write something. The desk is yours.
       {/if}
-      <span class="mt-2 block text-sm text-surface-500">
+      <span class="mt-2 block text-sm text-content-quiet">
         Add a brain later in Settings if you want.
       </span>
     {:else if principal}
@@ -80,9 +80,9 @@
   </p>
 
   {#if showBrainStatus}
-    <div class="wizard-beat mt-6 max-w-md text-sm text-surface-400" role="status">
+    <div class="wizard-beat mt-6 max-w-md text-sm text-content-tertiary" role="status">
       {#if wizard.brainDownloadError}
-        <p class="text-warning-200">{brainStatusLabel}</p>
+        <p class="text-content-warning">{brainStatusLabel}</p>
         <button
           type="button"
           class="workshop-text-action mt-2 text-xs"
@@ -95,7 +95,7 @@
           <LoaderCircle class="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
           {brainStatusLabel}
         </p>
-        <p class="mt-1 text-xs text-surface-500">
+        <p class="mt-1 text-xs text-content-quiet">
           You can open your desk — the download finishes in the background.
         </p>
       {/if}

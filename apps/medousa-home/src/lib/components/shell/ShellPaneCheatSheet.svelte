@@ -39,7 +39,7 @@
   <div class="space-y-4">
     {#each groups as group (group.id)}
       <section>
-        <h3 class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-surface-500">
+        <h3 class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-content-quiet">
           {group.title}
         </h3>
         <ul class="space-y-1.5">
@@ -48,14 +48,14 @@
               <kbd class="shrink-0 rounded bg-surface-800 px-1.5 py-0.5 font-mono text-surface-200">
                 {formatCatalogKeys(row.keys)}
               </kbd>
-              <span class="text-right text-surface-400">{row.action}</span>
+              <span class="text-right text-content-tertiary">{row.action}</span>
             </li>
           {/each}
         </ul>
       </section>
     {/each}
   </div>
-  <p class="mt-3 text-[11px] text-surface-500">
+  <p class="mt-3 text-[11px] text-content-quiet">
     Up to 4 live chats. Also in Spotlight — search “keyboard shortcuts”.
   </p>
 </div>

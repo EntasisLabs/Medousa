@@ -102,7 +102,7 @@
     justify-content: center;
     border: 0;
     background: transparent;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     transition:
       background-color 120ms ease,
       color 120ms ease;

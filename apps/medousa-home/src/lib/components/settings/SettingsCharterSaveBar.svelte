@@ -24,7 +24,7 @@
 {:else if mobileReadOnly}
   <p class="workshop-faint rounded-container-token border border-surface-500/35 bg-surface-900/40 px-3 py-2 text-xs leading-relaxed">
     {workshopConfigOnHostHint()} See
-    <span class="font-mono text-surface-400">tui_defaults.json</span> in Workshop → Files & diagnostics.
+    <span class="font-mono text-content-tertiary">tui_defaults.json</span> in Workshop → Files & diagnostics.
   </p>
 {:else}
   <div class="settings-save-bar">
@@ -55,8 +55,8 @@
     {#if workshopDefaults.message}
       <p
         class="text-xs {workshopDefaults.message.toLowerCase().includes('saved')
-          ? 'text-success-400'
-          : 'text-warning-400'}"
+          ? 'text-content-success'
+          : 'text-content-warning'}"
       >
         {workshopDefaults.message}
       </p>

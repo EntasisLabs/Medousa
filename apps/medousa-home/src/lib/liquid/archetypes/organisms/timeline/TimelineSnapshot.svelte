@@ -241,7 +241,7 @@
     margin: 0.35rem 0 0;
     font-size: 0.8rem;
     line-height: 1.45;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .liquid-timeline-snapshot-track-wrap {
@@ -310,7 +310,7 @@
     font-weight: 650;
     letter-spacing: 0.03em;
     text-transform: uppercase;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     white-space: nowrap;
   }
 
@@ -464,7 +464,7 @@
     font-weight: 650;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .liquid-timeline-snapshot-card-title {
@@ -487,6 +487,6 @@
     margin: 0;
     font-size: 0.78rem;
     line-height: 1.45;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
   }
 </style>

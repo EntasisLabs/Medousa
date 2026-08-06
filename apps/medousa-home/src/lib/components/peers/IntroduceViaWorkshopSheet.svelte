@@ -319,7 +319,7 @@
     margin: 0.55rem 0 0.85rem;
     font-size: 0.75rem;
     line-height: 1.45;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .intro-muted code {
@@ -335,7 +335,7 @@
   }
 
   .intro-field span {
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .intro-field select,
@@ -359,7 +359,7 @@
     font-weight: 600;
     letter-spacing: 0.03em;
     text-transform: uppercase;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
   }
 
   .intro-card {
@@ -378,7 +378,7 @@
   .intro-card-note {
     margin: 0.25rem 0 0;
     font-size: 0.7rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .intro-card-actions,
@@ -395,6 +395,6 @@
 
   .intro-waiting {
     font-size: 0.7rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 </style>

@@ -14,7 +14,7 @@
 
 <div class="external-file-library-preview flex h-full min-h-0 min-w-0 flex-1 flex-col">
   {#if !attachment}
-    <div class="flex flex-1 items-center justify-center p-6 text-sm text-surface-500">
+    <div class="flex flex-1 items-center justify-center p-6 text-sm text-content-quiet">
       Select a file to preview.
     </div>
   {:else}
@@ -23,7 +23,7 @@
         <h2 class="truncate text-sm font-semibold text-surface-100">
           {attachment.label || attachmentFileName(attachment)}
         </h2>
-        <p class="truncate text-xs text-surface-500">{attachment.path}</p>
+        <p class="truncate text-xs text-content-quiet">{attachment.path}</p>
       </div>
       <div class="flex shrink-0 items-center gap-2">
         <button

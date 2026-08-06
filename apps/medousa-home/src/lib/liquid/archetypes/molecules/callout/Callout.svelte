@@ -41,7 +41,7 @@
   {#if detail}
     <details class="liquid-callout-details group/err-detail">
       <summary
-        class="mt-1.5 flex cursor-pointer list-none items-center gap-1 text-[10px] font-medium text-surface-400 marker:content-none hover:text-surface-200"
+        class="mt-1.5 flex cursor-pointer list-none items-center gap-1 text-[10px] font-medium text-content-tertiary marker:content-none hover:text-surface-200"
       >
         <span>View details</span>
         <ChevronDown
@@ -51,7 +51,7 @@
         />
       </summary>
       <pre
-        class="liquid-callout-detail-body mt-1.5 max-h-40 overflow-auto whitespace-pre-wrap break-words font-mono text-[10px] leading-relaxed text-surface-300"
+        class="liquid-callout-detail-body mt-1.5 max-h-40 overflow-auto whitespace-pre-wrap break-words font-mono text-[10px] leading-relaxed text-content-secondary"
       >{detail}</pre>
     </details>
   {/if}

@@ -83,7 +83,7 @@
           Continue agent
         </button>
         {#if feedback}
-          <p class="text-xs text-surface-400">{feedback}</p>
+          <p class="text-xs text-content-tertiary">{feedback}</p>
         {/if}
       </div>
     </div>

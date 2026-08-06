@@ -99,7 +99,7 @@
       <div class="agent-editor-popover-head">
         <div class="min-w-0">
           <p class="text-[11px] font-semibold tracking-[-0.01em] text-surface-100">Plan with AI</p>
-          <p class="mt-0.5 text-[10px] text-surface-500">Generate steps from a goal</p>
+          <p class="mt-0.5 text-[10px] text-content-quiet">Generate steps from a goal</p>
         </div>
       </div>
 

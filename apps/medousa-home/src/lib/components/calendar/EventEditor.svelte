@@ -304,29 +304,42 @@
           placeholder="New Event"
           maxlength={200}
         />
-        <button
-          type="button"
-          class="cal-pop-switch"
-          class:cal-pop-switch-on={allDay}
-          aria-pressed={allDay}
-          title="All day"
-          onclick={() => (allDay = !allDay)}
-        >
-          <span class="cal-pop-switch-knob"></span>
-        </button>
+        <div class="cal-pop-all-day">
+          <span class="cal-pop-switch-label">All day</span>
+          <button
+            type="button"
+            class="cal-pop-switch"
+            class:cal-pop-switch-on={allDay}
+            aria-label="All day"
+            aria-pressed={allDay}
+            onclick={() => (allDay = !allDay)}
+          >
+            <span class="cal-pop-switch-knob"></span>
+          </button>
+        </div>
       </div>
 
       <div class="cal-pop-card">
         <div class="cal-pop-when-summary">{whenSummary}</div>
         <div class="cal-pop-when-edit">
-          <input class="cal-pop-field" type="date" bind:value={date} aria-label="Date" />
+          <label class="cal-pop-field-group cal-pop-field-group-date">
+            <span>Date</span>
+            <input class="cal-pop-field" type="date" bind:value={date} />
+          </label>
           {#if !allDay}
-            <input class="cal-pop-field" type="time" bind:value={startTime} aria-label="Starts" />
-            <span class="cal-pop-dash">–</span>
-            <input class="cal-pop-field" type="time" bind:value={endTime} aria-label="Ends" />
+            <label class="cal-pop-field-group">
+              <span>Starts</span>
+              <input class="cal-pop-field" type="time" bind:value={startTime} />
+            </label>
+            <label class="cal-pop-field-group">
+              <span>Ends</span>
+              <input class="cal-pop-field" type="time" bind:value={endTime} />
+            </label>
           {/if}
         </div>
-        <p class="cal-pop-hint">{allDay ? "All-day event" : "Toggle the switch for all day"}</p>
+        <p class="cal-pop-hint">
+          {allDay ? "This event uses the whole day." : "Times use your current time zone."}
+        </p>
       </div>
 
       <div class="cal-pop-card cal-pop-row">
@@ -534,15 +547,41 @@
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding-bottom: 0.35rem;
+    padding-bottom: 1rem;
   }
 
   .cal-pop-mobile .cal-pop-foot {
+    position: relative;
+    z-index: 2;
     flex-shrink: 0;
     margin: 0 -0.7rem;
-    padding: 0.55rem 0.85rem 0.75rem;
+    padding: 0.55rem 0.85rem max(0.75rem, env(safe-area-inset-bottom, 0px));
     border-top: 1px solid rgb(var(--shell-border) / 0.55);
-    background: color-mix(in srgb, rgb(var(--shell-pane-bg)) 92%, transparent);
+    background: rgb(var(--shell-pane-bg));
+    box-shadow: 0 -8px 24px rgb(var(--theme-shadow) / 0.16);
+  }
+
+  .cal-pop-mobile .cal-pop-x,
+  .cal-pop-mobile .cal-pop-text,
+  .cal-pop-mobile .cal-pop-text-danger,
+  .cal-pop-mobile .cal-pop-save {
+    min-height: 2.75rem;
+  }
+
+  .cal-pop-mobile .cal-pop-x {
+    width: 2.75rem;
+  }
+
+  .cal-pop-mobile .cal-pop-text,
+  .cal-pop-mobile .cal-pop-text-danger,
+  .cal-pop-mobile .cal-pop-save {
+    padding-inline: 0.85rem;
+    font-size: 0.875rem;
+  }
+
+  .cal-pop-mobile .cal-pop-field {
+    min-height: 2.75rem;
+    font-size: 1rem;
   }
 
   @keyframes cal-pop-in {
@@ -600,13 +639,13 @@
     font-size: 0.6875rem;
     font-weight: 650;
     letter-spacing: 0.01em;
-    color: rgb(var(--color-surface-50));
+    color: rgb(var(--on-primary));
   }
 
   .cal-pop-x {
     display: inline-flex;
-    height: 1.6rem;
-    width: 1.6rem;
+    height: 2rem;
+    width: 2rem;
     align-items: center;
     justify-content: center;
     border-radius: 9999px;
@@ -644,13 +683,13 @@
     font-size: 1.05rem;
     font-weight: 560;
     letter-spacing: -0.02em;
-    color: rgb(var(--color-surface-50));
+    color: rgb(var(--theme-text));
     outline: none;
     box-shadow: none;
   }
 
   .cal-pop-title::placeholder {
-    color: rgb(var(--shell-muted));
+    color: rgb(var(--theme-placeholder));
     font-weight: 450;
   }
 
@@ -659,26 +698,50 @@
     box-shadow: none;
   }
 
+  .cal-pop-all-day {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .cal-pop-switch-label {
+    font-size: 0.8125rem;
+    font-weight: 550;
+    color: rgb(var(--theme-text-secondary));
+  }
+
   .cal-pop-switch {
     position: relative;
-    width: 2.35rem;
-    height: 1.3rem;
+    width: 3.25rem;
+    height: 2.75rem;
     flex-shrink: 0;
+    border-radius: 9999px;
+    background: transparent;
+  }
+
+  .cal-pop-switch::before {
+    content: "";
+    position: absolute;
+    left: 0.3rem;
+    top: 0.625rem;
+    width: 2.65rem;
+    height: 1.5rem;
     border-radius: 9999px;
     background: rgb(var(--color-surface-700) / 0.85);
     transition: background 160ms ease;
   }
 
-  .cal-pop-switch-on {
+  .cal-pop-switch-on::before {
     background: rgb(var(--color-primary-500));
   }
 
   .cal-pop-switch-knob {
     position: absolute;
-    top: 0.14rem;
-    left: 0.14rem;
-    width: 1.02rem;
-    height: 1.02rem;
+    top: 0.77rem;
+    left: 0.45rem;
+    width: 1.2rem;
+    height: 1.2rem;
     border-radius: 9999px;
     background: rgb(var(--color-surface-50));
     box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
@@ -686,49 +749,59 @@
   }
 
   .cal-pop-switch-on .cal-pop-switch-knob {
-    transform: translateX(1.05rem);
+    transform: translateX(1.15rem);
   }
 
   .cal-pop-when-summary {
     font-size: 0.8125rem;
     font-weight: 550;
     letter-spacing: -0.01em;
-    color: rgb(var(--color-surface-100));
+    color: rgb(var(--theme-text));
   }
 
   .cal-pop-when-edit {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
+    display: grid;
+    grid-template-columns: minmax(8.5rem, 1.2fr) repeat(2, minmax(5.75rem, 0.8fr));
+    align-items: end;
     gap: 0.35rem;
     margin-top: 0.5rem;
   }
 
+  .cal-pop-field-group {
+    display: grid;
+    min-width: 0;
+    gap: 0.25rem;
+  }
+
+  .cal-pop-field-group > span {
+    font-size: 0.75rem;
+    font-weight: 550;
+    color: rgb(var(--theme-text-tertiary));
+  }
+
   .cal-pop-field {
-    min-height: 1.7rem;
+    width: 100%;
+    min-height: 2.25rem;
     border: 0;
     border-radius: 0.4rem;
     background: rgb(var(--color-surface-800) / 0.55);
     padding: 0.2rem 0.45rem;
     font-size: 0.75rem;
     font-variant-numeric: tabular-nums;
-    color: rgb(var(--color-surface-100));
+    color: rgb(var(--theme-text));
     outline: none;
   }
 
   .cal-pop-field:focus {
     background: rgb(var(--color-surface-700) / 0.65);
-  }
-
-  .cal-pop-dash {
-    color: rgb(var(--shell-muted));
-    font-size: 0.75rem;
+    box-shadow: 0 0 0 2px rgb(var(--theme-focus) / 0.42);
   }
 
   .cal-pop-hint {
     margin: 0.4rem 0 0;
-    font-size: 0.6875rem;
-    color: rgb(var(--shell-muted));
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .cal-pop-row {
@@ -751,12 +824,12 @@
     background: transparent;
     padding: 0;
     font-size: 0.875rem;
-    color: rgb(var(--color-surface-100));
+    color: rgb(var(--theme-text));
     outline: none;
   }
 
   .cal-pop-inline::placeholder {
-    color: rgb(var(--shell-muted));
+    color: rgb(var(--theme-placeholder));
   }
 
   .cal-pop-select {
@@ -821,7 +894,7 @@
     padding: 0;
     font-size: 0.8125rem;
     font-weight: 550;
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
   }
 
   .cal-pop-notes {
@@ -833,18 +906,18 @@
     padding: 0.1rem 0;
     font-size: 0.875rem;
     line-height: 1.45;
-    color: rgb(var(--color-surface-100));
+    color: rgb(var(--theme-text));
     outline: none;
   }
 
   .cal-pop-notes::placeholder {
-    color: rgb(var(--shell-muted));
+    color: rgb(var(--theme-placeholder));
   }
 
   .cal-pop-error {
     margin: 0 0.2rem 0.45rem;
     font-size: 0.75rem;
-    color: rgb(var(--color-error-400));
+    color: rgb(var(--theme-error));
   }
 
   .cal-pop-foot {
@@ -875,18 +948,18 @@
   }
 
   .cal-pop-text-danger {
-    color: rgb(var(--color-error-400));
+    color: rgb(var(--theme-error));
   }
 
   .cal-pop-save {
-    min-height: 1.7rem;
+    min-height: 2.25rem;
     border: 0;
     border-radius: 0.5rem;
     background: rgb(var(--color-primary-500));
     padding: 0.3rem 0.85rem;
     font-size: 0.8125rem;
     font-weight: 650;
-    color: rgb(var(--color-surface-50));
+    color: rgb(var(--on-primary));
     box-shadow: 0 1px 0 rgb(255 255 255 / 0.08) inset;
     transition:
       background 140ms ease,
@@ -903,5 +976,25 @@
 
   .cal-pop-save:disabled {
     opacity: 0.55;
+  }
+
+  @media (max-width: 28rem) {
+    .cal-pop-when-edit {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .cal-pop-field-group-date {
+      grid-column: 1 / -1;
+    }
+
+    .cal-pop-card-title {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .cal-pop-all-day {
+      width: 100%;
+      justify-content: space-between;
+    }
   }
 </style>

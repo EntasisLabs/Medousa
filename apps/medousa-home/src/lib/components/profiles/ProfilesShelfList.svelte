@@ -18,10 +18,10 @@
   {#if loading && entries.length === 0}
     <p class="workshop-muted px-2 py-4 text-sm">Loading who she knows you as…</p>
   {:else if error}
-    <p class="px-2 py-4 text-sm text-warning-400">{error}</p>
+    <p class="px-2 py-4 text-sm text-content-warning">{error}</p>
   {:else if entries.length === 0}
     <div class="px-2 py-6">
-      <p class="text-sm leading-relaxed text-surface-300">
+      <p class="text-sm leading-relaxed text-content-secondary">
         She's still getting to know you.
       </p>
       <p class="workshop-faint mt-2 text-sm leading-relaxed">

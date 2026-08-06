@@ -186,7 +186,7 @@
     flex-shrink: 0;
     align-items: center;
     justify-content: center;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
   }
 
   .you-create-menu-item-label {

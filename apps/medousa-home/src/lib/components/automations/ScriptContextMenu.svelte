@@ -91,7 +91,7 @@
           Delete <span class="font-medium">{target.name}</span>? This cannot be undone.
         </p>
         {#if error}
-          <p class="mt-1.5 text-[11px] text-error-400">{error}</p>
+          <p class="mt-1.5 text-[11px] text-content-error">{error}</p>
         {/if}
         <div class="mt-2.5 flex items-center justify-end gap-1.5">
           <button
@@ -107,7 +107,7 @@
           </button>
           <button
             type="button"
-            class="vault-context-menu-item !inline-flex !w-auto px-2 py-1 text-error-300"
+            class="vault-context-menu-item !inline-flex !w-auto px-2 py-1 text-content-error"
             disabled={busy}
             onclick={() => void confirmDelete()}
           >

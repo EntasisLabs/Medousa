@@ -62,7 +62,7 @@
       <MessageSquarePlus size={16} strokeWidth={1.75} />
       <span class="min-w-0 flex-1 text-left">
         <span class="block font-medium">New chat</span>
-        <span class="block text-[11px] text-surface-400">Start fresh with this script in scope</span>
+        <span class="block text-[11px] text-content-tertiary">Start fresh with this script in scope</span>
       </span>
     </button>
 
@@ -81,7 +81,7 @@
               <span class="min-w-0 flex-1 truncate text-left font-medium">
                 {formatSessionLabel(session)}
               </span>
-              <span class="shrink-0 text-[11px] text-surface-500">
+              <span class="shrink-0 text-[11px] text-content-quiet">
                 {formatWhen(session.last_timestamp)}
               </span>
             </button>

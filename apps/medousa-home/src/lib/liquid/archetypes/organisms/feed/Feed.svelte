@@ -200,7 +200,7 @@
     flex-wrap: wrap;
     gap: 0.5rem;
     font-size: 0.72rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .liquid-feed__id {
@@ -230,7 +230,7 @@
   .liquid-feed__placeholder {
     margin: 0;
     font-size: 0.82rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .liquid-feed__placeholder--error {

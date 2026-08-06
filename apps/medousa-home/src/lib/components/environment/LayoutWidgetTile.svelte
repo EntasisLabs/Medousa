@@ -174,13 +174,13 @@
     width: 1.25rem;
     height: 1.25rem;
     border-radius: 0.35rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     background: transparent;
     cursor: pointer;
   }
 
   .layout-widget-tile-remove:hover {
-    color: rgb(var(--color-error-300));
+    color: rgb(var(--theme-error));
     background: color-mix(in srgb, var(--color-error-500) 18%, transparent);
   }
 

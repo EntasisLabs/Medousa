@@ -363,7 +363,7 @@
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .models-active-title {
@@ -375,7 +375,7 @@
   .models-active-meta {
     font-size: 0.7rem;
     line-height: 1.35;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .models-active-action {
@@ -435,7 +435,7 @@
   .models-choice-hint {
     font-size: 0.68rem;
     line-height: 1.3;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .models-more {
@@ -454,7 +454,7 @@
     padding: var(--models-pad);
     font-size: 0.75rem;
     font-weight: 600;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     cursor: pointer;
     list-style: none;
   }
@@ -474,7 +474,7 @@
   .models-more-summary-meta {
     font-size: 0.68rem;
     font-weight: 500;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   :global(.models-more-chevron) {
@@ -496,6 +496,6 @@
     font-weight: 650;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 </style>

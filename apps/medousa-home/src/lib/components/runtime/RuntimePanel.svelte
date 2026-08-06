@@ -109,7 +109,7 @@
 
     <p
       class="mt-2 min-h-[1.25rem] text-[11px] leading-snug {runtime.error
-        ? 'text-warning-400'
+        ? 'text-content-warning'
         : 'text-transparent'}"
       title={runtime.errorDetail ?? runtime.error ?? undefined}
       aria-live="polite"
@@ -149,14 +149,14 @@
             <p class="workshop-faint mt-0.5">{streamingStatusLine}</p>
           {/if}
           {#if streamingMessage.tools?.length}
-            <p class="mt-1 font-mono text-[10px] text-surface-500">
+            <p class="mt-1 font-mono text-[10px] text-content-quiet">
               {streamingMessage.tools.map((tool) => formatToolName(tool)).join(" · ")}
             </p>
           {/if}
         {:else if chat.liveStreamActive}
-          <p class="text-sm text-surface-300">Starting turn…</p>
+          <p class="text-sm text-content-secondary">Starting turn…</p>
         {:else if chat.backgroundActivity > 0}
-          <p class="text-sm text-surface-300">
+          <p class="text-sm text-content-secondary">
             {chat.backgroundActivity === 1
               ? "1 turn in background"
               : `${chat.backgroundActivity} turns in background`}
@@ -203,29 +203,29 @@
             <dl class="mt-3 space-y-2 text-xs">
               <div class="grid grid-cols-[8rem_1fr] gap-2">
                 <dt class="workshop-label">Endpoint</dt>
-                <dd class="font-mono text-surface-300">{runtime.delivery.endpoint_id}</dd>
+                <dd class="font-mono text-content-secondary">{runtime.delivery.endpoint_id}</dd>
               </div>
               <div class="grid grid-cols-[8rem_1fr] gap-2">
                 <dt class="workshop-label">Target</dt>
-                <dd class="break-all font-mono text-surface-300">
+                <dd class="break-all font-mono text-content-secondary">
                   {runtime.delivery.endpoint_target || "—"}
                 </dd>
               </div>
               <div class="grid grid-cols-[8rem_1fr] gap-2">
                 <dt class="workshop-label">Pending</dt>
-                <dd class="font-mono text-surface-300">
+                <dd class="font-mono text-content-secondary">
                   {runtime.delivery.pending_job_deliveries}
                 </dd>
               </div>
               <div class="grid grid-cols-[8rem_1fr] gap-2">
                 <dt class="workshop-label">Auth configured</dt>
-                <dd class="text-surface-300">
+                <dd class="text-content-secondary">
                   {runtime.delivery.deliver_webhook_auth_configured ? "yes" : "no"}
                 </dd>
               </div>
               <div class="grid grid-cols-[8rem_1fr] gap-2">
                 <dt class="workshop-label">Last delivery</dt>
-                <dd class="font-mono text-surface-300">
+                <dd class="font-mono text-content-secondary">
                   {formatTimestamp(runtime.delivery.last_delivery_at_utc)}
                 </dd>
               </div>
@@ -290,10 +290,10 @@
               {#each runtime.stageRoutes() as route (route.role)}
                 <tr class="border-b border-surface-500/10">
                   <td class="py-2.5 pr-3 font-medium text-surface-200">{route.role}</td>
-                  <td class="py-2.5 pr-3 font-mono text-surface-300">
+                  <td class="py-2.5 pr-3 font-mono text-content-secondary">
                     {route.provider}:{route.model}
                   </td>
-                  <td class="py-2.5 pr-3 text-surface-300">{route.policy_profile}</td>
+                  <td class="py-2.5 pr-3 text-content-secondary">{route.policy_profile}</td>
                   <td class="workshop-faint py-2.5">{route.fallback_chain.join(", ")}</td>
                 </tr>
               {/each}

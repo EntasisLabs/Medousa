@@ -90,7 +90,7 @@
             <dt>Schedule</dt>
             <dd class="font-mono text-[12px]">
               {entry.cron_expr}
-              <span class="text-surface-500"> · {entry.timezone}</span>
+              <span class="text-content-quiet"> · {entry.timezone}</span>
             </dd>
           </div>
           {#if entry.enabled}
@@ -114,7 +114,7 @@
           </div>
           <div class="schedule-detail-meta-wide">
             <dt>Id</dt>
-            <dd class="font-mono text-[11px] text-surface-500">{entry.recurring_id}</dd>
+            <dd class="font-mono text-[11px] text-content-quiet">{entry.recurring_id}</dd>
           </div>
         </dl>
       </details>
@@ -157,7 +157,7 @@
     font-size: 0.95rem;
     line-height: 1.4;
     letter-spacing: -0.015em;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .schedule-detail-hero-line-ok {
@@ -165,7 +165,7 @@
   }
 
   .schedule-detail-hero-line-warn {
-    color: rgb(var(--color-warning-400) / 0.95);
+    color: rgb(var(--theme-warning) / 0.95);
   }
 
   .schedule-detail-when {
@@ -185,7 +185,7 @@
     margin: 0.4rem 0 0;
     font-size: 0.8rem;
     letter-spacing: -0.01em;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .schedule-detail-prompt {
@@ -214,7 +214,7 @@
     list-style: none;
     font-size: 0.75rem;
     letter-spacing: 0.02em;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     user-select: none;
   }
 
@@ -223,12 +223,12 @@
   }
 
   .schedule-detail-more summary:hover {
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
   }
 
   .schedule-detail-more[open] summary {
     margin-bottom: 0.85rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .schedule-detail-meta {
@@ -247,17 +247,17 @@
     font-size: 0.6rem;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: rgb(var(--color-surface-600));
+    color: rgb(var(--theme-text-faint));
   }
 
   .schedule-detail-meta dd {
     margin: 0.2rem 0 0;
     font-size: 0.78rem;
     line-height: 1.4;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .schedule-detail-fail {
-    color: rgb(var(--color-warning-400) / 0.9);
+    color: rgb(var(--theme-warning) / 0.9);
   }
 </style>

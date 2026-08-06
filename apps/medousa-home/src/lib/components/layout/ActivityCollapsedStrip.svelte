@@ -16,9 +16,9 @@
   data-debug-label="activity-collapsed-strip"
   onclick={onExpand}
 >
-  <Activity size={16} strokeWidth={1.75} class="text-surface-400" />
+  <Activity size={16} strokeWidth={1.75} class="text-content-tertiary" />
   <span
-    class="text-[9px] font-medium uppercase tracking-widest text-surface-500"
+    class="text-[9px] font-medium uppercase tracking-widest text-content-quiet"
     style="writing-mode: vertical-rl"
   >
     Now

@@ -45,7 +45,7 @@
   }
 
   .liquid-status-pill[data-quiet="true"][data-state="loading"] {
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .liquid-status-pill[data-quiet="true"][data-state="warn"] {
@@ -64,19 +64,19 @@
   }
 
   .liquid-status-pill[data-state="ok"] {
-    color: rgb(var(--color-success-200));
+    color: rgb(var(--theme-success));
     background: color-mix(in srgb, var(--color-success-500) 16%, transparent);
     border-color: color-mix(in srgb, var(--color-success-500) 40%, transparent);
   }
 
   .liquid-status-pill[data-state="warn"]:not([data-quiet="true"]) {
-    color: rgb(var(--color-warning-200));
+    color: rgb(var(--theme-warning));
     background: color-mix(in srgb, var(--color-warning-500) 16%, transparent);
     border-color: color-mix(in srgb, var(--color-warning-500) 40%, transparent);
   }
 
   .liquid-status-pill[data-state="error"] {
-    color: rgb(var(--color-error-200));
+    color: rgb(var(--theme-error));
     background: color-mix(in srgb, var(--color-error-500) 16%, transparent);
     border-color: color-mix(in srgb, var(--color-error-500) 40%, transparent);
   }

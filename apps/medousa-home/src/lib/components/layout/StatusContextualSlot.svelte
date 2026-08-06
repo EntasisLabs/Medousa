@@ -95,9 +95,9 @@
 
   const scriptToneClass = $derived.by(() => {
     if (!scriptAction) return "";
-    if (scriptAction.tone === "error") return "text-error-400";
-    if (scriptAction.tone === "warn") return "text-warning-400";
-    return "text-surface-300";
+    if (scriptAction.tone === "error") return "text-content-error";
+    if (scriptAction.tone === "warn") return "text-content-warning";
+    return "text-content-secondary";
   });
 
   const hasScriptChrome = $derived(
@@ -121,7 +121,7 @@
     <span class="status-contextual-sep" aria-hidden="true">·</span>
     <span
       class="status-contextual-item"
-      class:text-warning-400={codeReview.synthesis.risk !== "low"}
+      class:text-content-warning={codeReview.synthesis.risk !== "low"}
     >
       {codeReview.synthesis.risk === "low"
         ? "Low risk"
@@ -131,8 +131,8 @@
       <span class="status-contextual-sep" aria-hidden="true">·</span>
       <span
         class="status-contextual-item"
-        class:text-success-400={codeReview.synthesis.verification.success}
-        class:text-error-400={!codeReview.synthesis.verification.success}
+        class:text-content-success={codeReview.synthesis.verification.success}
+        class:text-content-error={!codeReview.synthesis.verification.success}
       >
         {codeReview.synthesis.verification.success ? "Checks passed" : "Checks failed"}
       </span>
@@ -151,7 +151,7 @@
     <button
       type="button"
       class="status-contextual-action"
-      class:text-warning-400={codeStatus.issueCount > 0}
+      class:text-content-warning={codeStatus.issueCount > 0}
       title="Show issues"
       onclick={showCodeProblems}
     >
@@ -171,7 +171,7 @@
       <span class="status-contextual-sep" aria-hidden="true">·</span>
       <span
         class="status-contextual-item"
-        class:text-warning-400={codeStatus.languageState === "editing-only"}
+        class:text-content-warning={codeStatus.languageState === "editing-only"}
       >
         {codeStatus.languageState === "connecting"
           ? "Language starting…"
@@ -186,7 +186,7 @@
       <span class="status-contextual-sep" aria-hidden="true">·</span>
       <button
         type="button"
-        class="status-contextual-action truncate text-warning-400/85"
+        class="status-contextual-action truncate text-content-warning/85"
         title="Open Versions"
         onclick={() => vaultVersions.openPanel()}
       >
@@ -220,7 +220,7 @@
       {#if scriptDirty || scriptAction}
         <span class="status-contextual-sep" aria-hidden="true">·</span>
       {/if}
-      <span class="status-contextual-item truncate text-error-400">{scriptError}</span>
+      <span class="status-contextual-item truncate text-content-error">{scriptError}</span>
     {/if}
   </div>
 {/if}
@@ -234,7 +234,7 @@
     align-items: center;
     justify-content: flex-end;
     gap: 0.35rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     overflow: hidden;
     text-align: right;
   }
@@ -269,6 +269,6 @@
 
   .status-contextual-whisper {
     flex-shrink: 0;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 </style>

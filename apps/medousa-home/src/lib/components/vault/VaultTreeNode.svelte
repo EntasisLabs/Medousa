@@ -216,14 +216,14 @@
     tabindex="0"
     class="vault-tree-row flex w-full items-center gap-1.5 rounded-container-token px-2 py-1 text-left text-sm outline-none hover:bg-surface-700/80 focus-visible:ring-1 focus-visible:ring-primary-400/50 {node.path ===
     selectedPath
-      ? 'bg-primary-500/15 text-primary-300'
+      ? 'bg-primary-500/15 text-content-link'
       : spaceActive
         ? 'bg-primary-500/10 font-medium text-primary-200'
         : node.spaceId
           ? 'font-medium text-surface-100'
           : isPathFolder
             ? 'vault-tree-row--folder text-surface-100'
-            : 'vault-tree-row--note text-surface-300'} {expanded && isPathFolder
+            : 'vault-tree-row--note text-content-secondary'} {expanded && isPathFolder
       ? 'vault-tree-row--folder-open'
       : ''} {isDropTarget ? 'vault-tree-drop-target' : ''} cursor-pointer"
     style="padding-left: {8 + depth * 12}px"

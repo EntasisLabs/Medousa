@@ -253,7 +253,7 @@
           <span class="block text-sm font-medium text-surface-100">Choose a provider</span>
           <div class="relative mt-2">
             <Search
-              class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-500"
+              class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-content-quiet"
               aria-hidden="true"
             />
             <input
@@ -389,7 +389,7 @@
         {#if modelRecords.length > 3}
           <div class="relative mt-2">
             <Search
-              class="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-surface-500"
+              class="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-content-quiet"
               aria-hidden="true"
             />
             <input
@@ -448,7 +448,7 @@
         {#if modelRecords.length > 0 && !showManualModel}
           <button
             type="button"
-            class="mt-1.5 text-xs text-primary-300 hover:text-primary-200"
+            class="mt-1.5 text-xs text-content-link hover:text-primary-200"
             disabled={disabled}
             onclick={() => (showManualModel = true)}
           >
@@ -492,7 +492,7 @@
             <LoaderCircle class="mr-2 inline h-4 w-4 animate-spin" aria-hidden="true" />
             Checking…
           {:else if validatedOk === true}
-            <Check class="mr-2 inline h-4 w-4 text-success-400" aria-hidden="true" />
+            <Check class="mr-2 inline h-4 w-4 text-content-success" aria-hidden="true" />
             Verified
           {:else}
             Test connection
@@ -528,7 +528,7 @@
   .provider-choice-summary small {
     margin-top: 0.15rem;
     overflow: hidden;
-    color: rgb(var(--theme-text-muted, var(--color-surface-400)));
+    color: rgb(var(--theme-text-tertiary));
     font-size: 0.72rem;
     line-height: 1.35;
     text-overflow: ellipsis;

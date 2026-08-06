@@ -227,7 +227,7 @@
     margin: 0.55rem 0 0.85rem;
     font-size: 0.75rem;
     line-height: 1.45;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .share-peer-lead strong {
@@ -242,7 +242,7 @@
   }
 
   .share-peer-field span {
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .share-peer-field select {

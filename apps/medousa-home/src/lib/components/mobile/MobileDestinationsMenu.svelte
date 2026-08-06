@@ -160,7 +160,9 @@
                   <span class="min-w-0 flex-1 text-left">
                     <span class="block text-[15px] font-medium text-surface-50">{item.label}</span>
                     {#if item.hint}
-                      <span class="block truncate text-[11px] text-surface-500">{item.hint}</span>
+                      <span class="text-content-quiet mt-0.5 block line-clamp-2 text-[11px] leading-snug"
+                        >{item.hint}</span
+                      >
                     {/if}
                   </span>
                 </button>
@@ -198,7 +200,9 @@
                   <span class="min-w-0 flex-1 text-left">
                     <span class="block text-[15px] font-medium text-surface-50">{item.label}</span>
                     {#if item.hint}
-                      <span class="block truncate text-[11px] text-surface-500">{item.hint}</span>
+                      <span class="text-content-quiet mt-0.5 block line-clamp-2 text-[11px] leading-snug"
+                        >{item.hint}</span
+                      >
                     {/if}
                   </span>
                 </button>
@@ -220,7 +224,7 @@
                   {settingsItem.label}
                 </span>
                 {#if settingsItem.hint}
-                  <span class="block truncate text-[11px] text-surface-500">
+                  <span class="text-content-quiet mt-0.5 block line-clamp-2 text-[11px] leading-snug">
                     {settingsItem.hint}
                   </span>
                 {/if}

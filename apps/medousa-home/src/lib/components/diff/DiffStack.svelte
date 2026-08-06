@@ -140,22 +140,22 @@
   .diff-stack-summary {
     margin-top: 0.15rem;
     font-size: 0.6875rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .diff-stack-subtitle {
     margin-top: 0.2rem;
     font-size: 0.625rem;
     line-height: 1.45;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .diff-add {
-    color: rgb(var(--color-success-300));
+    color: rgb(var(--theme-success));
   }
 
   .diff-del {
-    color: rgb(var(--color-error-300));
+    color: rgb(var(--theme-error));
     margin-left: 0.25rem;
   }
 
@@ -178,7 +178,7 @@
     border: 0;
     border-radius: 0.3rem;
     background: transparent;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .diff-mode button:hover,
@@ -201,7 +201,7 @@
     border-radius: 999px;
     background: rgb(var(--color-surface-900) / 0.4);
     padding: 0.15rem 0.55rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     font-size: 0.5625rem;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -231,7 +231,7 @@
     border: 1px solid rgb(var(--color-surface-500) / 0.2);
     border-radius: 0.65rem;
     background: rgb(var(--color-surface-950) / 0.15);
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     font-size: 0.6875rem;
   }
 </style>

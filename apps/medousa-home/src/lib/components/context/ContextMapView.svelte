@@ -259,7 +259,7 @@
 
   <div bind:this={stageEl} class="context-map-stage">
     {#if error}
-      <p class="absolute inset-0 flex items-center justify-center px-4 text-sm text-warning-400">
+      <p class="absolute inset-0 flex items-center justify-center px-4 text-sm text-content-warning">
         {error}
       </p>
     {:else if !isEmpty}

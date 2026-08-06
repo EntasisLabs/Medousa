@@ -77,7 +77,7 @@
     margin: 0;
     font-size: 0.6875rem;
     line-height: 1.45;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
   }
 
   .chat-async-tools-hint-actions {

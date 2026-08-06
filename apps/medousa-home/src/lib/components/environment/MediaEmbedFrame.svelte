@@ -114,6 +114,6 @@
     margin: 0;
     padding: 0.75rem 1rem;
     font-size: 0.75rem;
-    color: rgb(var(--color-error-300));
+    color: rgb(var(--theme-error));
   }
 </style>

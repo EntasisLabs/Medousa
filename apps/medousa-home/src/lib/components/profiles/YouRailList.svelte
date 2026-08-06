@@ -48,7 +48,7 @@
             class="rounded-md px-2 py-1 text-[11px] font-medium transition {profile.profile_id ===
             userProfiles.activeProfileId
               ? 'bg-surface-800 text-surface-50'
-              : 'text-surface-400 hover:bg-surface-800/60 hover:text-surface-200'}"
+              : 'text-content-tertiary hover:bg-surface-800/60 hover:text-surface-200'}"
             disabled={userProfiles.saving}
             onclick={() => void switchProfile(profile.profile_id)}
           >
@@ -60,13 +60,13 @@
   {/if}
 
   {#if identity.loading && entries.length === 0}
-    <p class="px-3 py-4 text-[12px] text-surface-500">Loading…</p>
+    <p class="px-3 py-4 text-[12px] text-content-quiet">Loading…</p>
   {:else if identity.error && entries.length === 0}
-    <p class="px-3 py-4 text-[12px] text-warning-400">{identity.error}</p>
+    <p class="px-3 py-4 text-[12px] text-content-warning">{identity.error}</p>
   {:else if entries.length === 0}
     <div class="flex flex-1 flex-col items-center justify-center gap-2 px-3 py-6 text-center">
-      <Brain size={22} strokeWidth={1.5} class="text-surface-500" />
-      <p class="text-sm text-surface-300">Nothing remembered yet</p>
+      <Brain size={22} strokeWidth={1.5} class="text-content-quiet" />
+      <p class="text-sm text-content-secondary">Nothing remembered yet</p>
       <button
         type="button"
         class="btn btn-sm btn-primary"
@@ -94,11 +94,11 @@
               <span class="block truncate text-[13px] font-medium text-surface-100">
                 {entry.title}
               </span>
-              <span class="block truncate text-[11px] text-surface-500">
+              <span class="block truncate text-[11px] text-content-quiet">
                 {entry.subtitle}
               </span>
             </span>
-            <span class="mt-0.5 shrink-0 text-[10px] uppercase tracking-wide text-surface-500">
+            <span class="mt-0.5 shrink-0 text-[10px] uppercase tracking-wide text-content-quiet">
               {profileKindLabel(entry.kind)}
             </span>
           </button>

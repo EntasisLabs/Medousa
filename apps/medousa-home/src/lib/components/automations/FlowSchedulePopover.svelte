@@ -110,7 +110,7 @@
       <div class="agent-editor-popover-head">
         <div class="min-w-0">
           <p class="text-[11px] font-semibold tracking-[-0.01em] text-surface-100">Schedule</p>
-          <p class="mt-0.5 text-[10px] text-surface-500">Optional recurring runs</p>
+          <p class="mt-0.5 text-[10px] text-content-quiet">Optional recurring runs</p>
         </div>
       </div>
 

@@ -91,14 +91,14 @@
           <p class="truncate text-sm font-medium text-surface-50">
             {tabDisplayLabel(tab.title, tab.url)}
           </p>
-          <p class="truncate text-[11px] text-surface-400">
+          <p class="truncate text-[11px] text-content-tertiary">
             {tab.url === "about:blank" ? "Blank tab" : tab.url}
           </p>
         </button>
         {#if humanBrowser.tabs.length > 1}
           <button
             type="button"
-            class="btn btn-icon btn-sm shrink-0 text-surface-400"
+            class="btn btn-icon btn-sm shrink-0 text-content-tertiary"
             aria-label="Close tab"
             onclick={(event) => handleClose(tab.id, event)}
           >

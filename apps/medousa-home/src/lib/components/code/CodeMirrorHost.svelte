@@ -677,7 +677,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   :global(.code-codemirror-host .cm-panel.cm-search .cm-textfield) {

@@ -269,7 +269,7 @@
   .cal-pop-error {
     margin: 0 0.2rem 0.45rem;
     font-size: 0.75rem;
-    color: rgb(var(--color-error-400));
+    color: rgb(var(--theme-error));
   }
 
   .cal-pop-foot {

@@ -84,29 +84,29 @@
 
 <div class="flex min-h-0 flex-1 flex-col">
   {#if externalDesk.error}
-    <p class="border-b border-error-500/30 bg-error-500/10 px-3 py-2 text-xs text-error-300">
+    <p class="border-b border-error-500/30 bg-error-500/10 px-3 py-2 text-xs text-content-error">
       {externalDesk.error}
     </p>
   {/if}
 
   {#if !coLocated}
     <div class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-      <FolderOpen size={28} strokeWidth={1.5} class="text-surface-500" />
+      <FolderOpen size={28} strokeWidth={1.5} class="text-content-quiet" />
       <div class="max-w-xs space-y-1">
         <p class="text-sm font-medium text-surface-100">Your files stay {onThisHostPhrase()}</p>
-        <p class="text-xs leading-relaxed text-surface-500">
+        <p class="text-xs leading-relaxed text-content-quiet">
           {vaultPinFolderRemoteHint()}
         </p>
       </div>
     </div>
   {:else if externalDesk.pinnedRoots.length === 0}
     <div class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-      <FolderOpen size={28} strokeWidth={1.5} class="text-surface-500" />
+      <FolderOpen size={28} strokeWidth={1.5} class="text-content-quiet" />
       <div class="max-w-xs space-y-1">
         <p class="text-sm font-medium text-surface-100">
           Add folders from {hostComputerPhrase()}
         </p>
-        <p class="text-xs leading-relaxed text-surface-500">
+        <p class="text-xs leading-relaxed text-content-quiet">
           Folders you add show up here. Open a file, or link it into a note.
         </p>
       </div>
@@ -128,12 +128,12 @@
               <span class="workshop-faint w-4 shrink-0 text-center text-[10px]">
                 {expanded ? "▾" : "▸"}
               </span>
-              <FolderOpen size={14} strokeWidth={1.75} class="shrink-0 text-surface-400" />
+              <FolderOpen size={14} strokeWidth={1.75} class="shrink-0 text-content-tertiary" />
               <span class="min-w-0 flex-1 truncate text-sm font-medium text-surface-100">
                 {root.label}
               </span>
               {#if total > 0}
-                <span class="shrink-0 tabular-nums text-[10px] text-surface-500">{total}</span>
+                <span class="shrink-0 tabular-nums text-[10px] text-content-quiet">{total}</span>
               {/if}
             </button>
             <button
@@ -161,13 +161,13 @@
 
           {#if expanded}
             {#if externalDesk.loadingRoot === root.path}
-              <p class="px-6 py-2 text-xs text-surface-500">Scanning…</p>
+              <p class="px-6 py-2 text-xs text-content-quiet">Scanning…</p>
             {:else if total === 0}
-              <p class="px-6 py-2 text-xs text-surface-500">No files in this folder.</p>
+              <p class="px-6 py-2 text-xs text-content-quiet">No files in this folder.</p>
             {:else}
               <ul class="mt-0.5 space-y-0.5 pl-3">
                 {#if !showAll(root.id) && total > RECENT_PEEK}
-                  <li class="px-2 py-1 text-[10px] text-surface-500">
+                  <li class="px-2 py-1 text-[10px] text-content-quiet">
                     Recent · {RECENT_PEEK} of {total}
                   </li>
                 {/if}
@@ -186,7 +186,7 @@
                   <li class="px-1 pt-0.5">
                     <button
                       type="button"
-                      class="w-full rounded-md px-2 py-1.5 text-left text-xs text-primary-300 hover:bg-surface-800/60 hover:text-primary-200"
+                      class="w-full rounded-md px-2 py-1.5 text-left text-xs text-content-link hover:bg-surface-800/60 hover:text-primary-200"
                       onclick={() => setShowAll(root.id, true)}
                     >
                       Show all {total} files…
@@ -196,7 +196,7 @@
                   <li class="px-1 pt-0.5">
                     <button
                       type="button"
-                      class="w-full rounded-md px-2 py-1.5 text-left text-xs text-surface-500 hover:bg-surface-800/60 hover:text-surface-300"
+                      class="w-full rounded-md px-2 py-1.5 text-left text-xs text-content-quiet hover:bg-surface-800/60 hover:text-content-secondary"
                       onclick={() => setShowAll(root.id, false)}
                     >
                       Show recent only

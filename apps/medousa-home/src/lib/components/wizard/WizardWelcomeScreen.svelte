@@ -338,12 +338,12 @@
   <h1 id="product-wizard-title" class="mt-4 text-2xl font-semibold text-surface-50">
     Give this desk a brain
   </h1>
-  <p class="mt-2 text-sm text-surface-400">
+  <p class="mt-2 text-sm text-content-tertiary">
     Private on {hostPhrase}, or your own key. Skip anytime — your desk still opens.
   </p>
 
   {#if probing || localLoading}
-    <div class="mt-6 flex items-center gap-2 text-sm text-surface-400">
+    <div class="mt-6 flex items-center gap-2 text-sm text-content-tertiary">
       <LoaderCircle class="h-4 w-4 animate-spin" aria-hidden="true" />
       Checking hardware…
     </div>
@@ -363,10 +363,10 @@
       onclick={() => selectPath("offline")}
     >
       <div class="flex items-start gap-3">
-        <Sparkles class="mt-0.5 h-5 w-5 shrink-0 text-primary-300" aria-hidden="true" />
+        <Sparkles class="mt-0.5 h-5 w-5 shrink-0 text-content-link" aria-hidden="true" />
         <div class="min-w-0 flex-1">
           <p class="font-semibold text-surface-50">Recommended — private</p>
-          <p class="mt-1 text-sm text-surface-300">
+          <p class="mt-1 text-sm text-content-secondary">
             {#if localLoading}
               Finding the right local model for your hardware…
             {:else if localHardware && recommendedOfflineModel}
@@ -489,10 +489,10 @@
         onclick={() => selectPath("byok")}
       >
         <div class="flex items-start gap-3">
-          <Brain class="mt-0.5 h-5 w-5 shrink-0 text-primary-300" aria-hidden="true" />
+          <Brain class="mt-0.5 h-5 w-5 shrink-0 text-content-link" aria-hidden="true" />
           <div class="min-w-0">
             <p class="font-semibold text-surface-50">Connect a model provider</p>
-            <p class="mt-1 text-sm text-surface-300">
+            <p class="mt-1 text-sm text-content-secondary">
               OpenAI, Anthropic, Ollama, or another provider. Credentials stay on this device.
             </p>
           </div>
@@ -522,7 +522,7 @@
   {/if}
 
   {#if statusMessage}
-    <p class="mt-4 text-sm text-warning-200">{statusMessage}</p>
+    <p class="mt-4 text-sm text-content-warning">{statusMessage}</p>
   {/if}
 
   {#if wizard.existingProvider && !selectedPath}

@@ -350,14 +350,14 @@
       <div
         class="flex h-44 w-44 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-surface-500/45 bg-surface-950/50"
       >
-        <LoaderCircle class="h-8 w-8 animate-spin text-surface-400" aria-hidden="true" />
-        <span class="text-xs text-surface-400">Generating QR…</span>
+        <LoaderCircle class="h-8 w-8 animate-spin text-content-tertiary" aria-hidden="true" />
+        <span class="text-xs text-content-tertiary">Generating QR…</span>
       </div>
     {:else}
       <div
         class="flex h-44 w-44 items-center justify-center rounded-2xl border border-dashed border-surface-500/45 bg-surface-950/50"
       >
-        <Smartphone class="h-10 w-10 text-surface-500" aria-hidden="true" />
+        <Smartphone class="h-10 w-10 text-content-quiet" aria-hidden="true" />
       </div>
     {/if}
 
@@ -369,12 +369,12 @@
     {/if}
 
     {#if countdown > 0}
-      <p class="mt-4 text-sm text-surface-300">
+      <p class="mt-4 text-sm text-content-secondary">
         Refreshes in <span class="font-mono text-primary-200">{formatCountdown(countdown)}</span>
       </p>
     {/if}
 
-    <p class="mt-4 max-w-sm text-center text-sm leading-relaxed text-surface-400">
+    <p class="mt-4 max-w-sm text-center text-sm leading-relaxed text-content-tertiary">
       Open Medousa on your phone on the same Wi‑Fi and scan this code — or enter the short code
       manually. Off-LAN? Use Full link and paste in the app.
     </p>
@@ -406,21 +406,21 @@
 
 <div class="phone-pair-panel">
   {#if loading}
-    <div class="flex items-center gap-2 text-sm text-surface-400">
+    <div class="flex items-center gap-2 text-sm text-content-tertiary">
       <LoaderCircle class="h-4 w-4 animate-spin" aria-hidden="true" />
       Preparing phone pairing…
     </div>
   {:else if !coreOnline}
-    <div class="rounded-xl border border-warning-500/35 bg-warning-500/10 px-4 py-4 text-sm text-warning-100">
+    <div class="rounded-xl border border-warning-500/35 bg-warning-500/10 px-4 py-4 text-sm text-content-warning">
       Medousa isn't running. Finish setup or open Settings → Connection before pairing your phone.
     </div>
   {:else if connectedDevice && !settingsMode}
     <div
       class="flex flex-col items-center rounded-xl border border-success-500/35 bg-success-500/10 px-6 py-8 text-center"
     >
-      <CheckCircle2 class="h-10 w-10 text-success-300" aria-hidden="true" />
+      <CheckCircle2 class="h-10 w-10 text-content-success" aria-hidden="true" />
       <p class="mt-4 text-lg font-semibold text-surface-50">{connectedDevice.phoneName} connected</p>
-      <p class="mt-2 text-sm text-surface-300">
+      <p class="mt-2 text-sm text-content-secondary">
         Your phone can reach this brain on your home network.
       </p>
       <p class="workshop-faint mt-2 font-mono text-xs">{connectedDevice.phoneId}</p>
@@ -428,7 +428,7 @@
   {:else if showInlineQr}
     {@render qrBody()}
     {#if error && !loading && !refreshing}
-      <p class="mt-4 text-sm text-warning-200">{error}</p>
+      <p class="mt-4 text-sm text-content-warning">{error}</p>
     {/if}
     <div class="mt-5">
       <button
@@ -458,7 +458,7 @@
     </div>
     {#if showDiagnostics}
       <div
-        class="mt-4 rounded-xl border border-surface-500/35 bg-surface-950/60 px-4 py-4 text-sm leading-relaxed text-surface-300"
+        class="mt-4 rounded-xl border border-surface-500/35 bg-surface-950/60 px-4 py-4 text-sm leading-relaxed text-content-secondary"
       >
         <ul class="list-disc space-y-2 pl-5 text-xs">
           <li>Phone and computer must be on the same Wi‑Fi (guest networks often block LAN discovery).</li>
@@ -577,7 +577,7 @@
       </details>
 
       {#if error && !loading && !refreshing && !sheetOpen}
-        <p class="text-sm text-warning-200">{error}</p>
+        <p class="text-sm text-content-warning">{error}</p>
       {/if}
     </div>
   {/if}
@@ -617,7 +617,7 @@
       <div class="pair-sheet-body">
         {@render qrBody()}
         {#if error}
-          <p class="mt-4 text-center text-sm text-warning-200">{error}</p>
+          <p class="mt-4 text-center text-sm text-content-warning">{error}</p>
         {/if}
         <div class="mt-5 flex flex-wrap items-center justify-center gap-2">
           <button
@@ -691,7 +691,7 @@
   .pair-tile-meta {
     font-size: 0.68rem;
     line-height: 1.3;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .pair-tile-cta {
@@ -701,19 +701,19 @@
     padding: 0;
     font-size: 0.72rem;
     font-weight: 600;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     cursor: pointer;
   }
 
   .pair-tile-cta-danger {
-    color: rgb(var(--color-error-300) / 0.9);
+    color: rgb(var(--theme-error) / 0.9);
   }
 
   .pair-empty {
     margin: 0;
     padding: 0.15rem 0.15rem 0;
     font-size: 0.72rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .pair-more {
@@ -731,7 +731,7 @@
     padding: 0.55rem 0.75rem;
     font-size: 0.75rem;
     font-weight: 600;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     cursor: pointer;
     list-style: none;
   }
@@ -757,7 +757,7 @@
     margin: 0.55rem 0 0;
     font-size: 0.7rem;
     line-height: 1.4;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .pair-help-list {
@@ -765,7 +765,7 @@
     padding-left: 1.1rem;
     font-size: 0.7rem;
     line-height: 1.45;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .pair-sheet-backdrop {
@@ -810,7 +810,7 @@
   .pair-sheet-meta {
     margin: 0.2rem 0 0;
     font-size: 0.72rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .pair-sheet-close {
@@ -822,7 +822,7 @@
     border: 0;
     border-radius: 0.45rem;
     background: transparent;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     cursor: pointer;
   }
 

@@ -220,9 +220,9 @@
   </div>
 
   {#if workspace.askError}
-    <p class="text-xs text-error-400">{workspace.askError}</p>
+    <p class="text-xs text-content-error">{workspace.askError}</p>
   {:else if workspace.askMessage}
-    <p class="text-xs text-surface-400">{workspace.askMessage}</p>
+    <p class="text-xs text-content-tertiary">{workspace.askMessage}</p>
   {/if}
 
   <ComposerSkillSlashMenu

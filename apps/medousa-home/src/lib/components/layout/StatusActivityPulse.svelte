@@ -120,7 +120,7 @@
     background: transparent;
     padding: 0.15rem 0.3rem;
     margin: 0;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     font: inherit;
     line-height: 1.2;
     text-align: left;

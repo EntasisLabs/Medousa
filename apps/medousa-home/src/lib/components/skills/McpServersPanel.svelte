@@ -250,12 +250,12 @@
 
   function statusLabel(server: McpServerRuntime): { text: string; className: string } {
     if (server.connected) {
-      return { text: "Connected", className: "text-success-400" };
+      return { text: "Connected", className: "text-content-success" };
     }
     if (server.enabled) {
-      return { text: "Offline", className: "text-warning-400" };
+      return { text: "Offline", className: "text-content-warning" };
     }
-    return { text: "Disabled", className: "text-surface-500" };
+    return { text: "Disabled", className: "text-content-quiet" };
   }
 </script>
 
@@ -265,7 +265,7 @@
       Connect MCP servers from the Medousa desktop app.
     </p>
   {:else if loading}
-    <div class="flex items-center gap-2 text-sm text-surface-400">
+    <div class="flex items-center gap-2 text-sm text-content-tertiary">
       <LoaderCircle class="h-4 w-4 animate-spin" aria-hidden="true" />
       Loading connected services…
     </div>
@@ -503,7 +503,7 @@
               <span class="min-w-0 flex-1">
                 <span class="flex flex-wrap items-center gap-2">
                   <span class="text-sm font-medium text-surface-100">{server.title}</span>
-                  <span class="font-mono text-[11px] text-surface-500">{server.serverId}</span>
+                  <span class="font-mono text-[11px] text-content-quiet">{server.serverId}</span>
                   <span class="text-[10px] font-medium uppercase tracking-wide {status.className}">
                     {status.text}
                   </span>
@@ -513,7 +513,7 @@
                 </span>
               </span>
               <div class="flex shrink-0 items-center gap-2">
-                <label class="inline-flex items-center gap-2 text-xs text-surface-300">
+                <label class="inline-flex items-center gap-2 text-xs text-content-secondary">
                   <input
                     type="checkbox"
                     class="checkbox"
@@ -533,7 +533,7 @@
                 </button>
                 <button
                   type="button"
-                  class="workshop-text-action text-xs text-error-300"
+                  class="workshop-text-action text-xs text-content-error"
                   disabled={busy}
                   aria-label="Remove {server.title}"
                   onclick={() => void deleteServer(server)}
@@ -569,10 +569,10 @@
   {/if}
 
   {#if statusMessage && !error}
-    <p class="mt-4 text-sm text-surface-300">{statusMessage}</p>
+    <p class="mt-4 text-sm text-content-secondary">{statusMessage}</p>
   {/if}
   {#if error}
-    <p class="mt-4 text-sm text-warning-200">{error}</p>
+    <p class="mt-4 text-sm text-content-warning">{error}</p>
   {/if}
 </div>
 

@@ -56,12 +56,12 @@
   >
     <header class="flex items-center justify-between gap-2 border-b border-surface-500/30 px-3 py-2">
       <div class="flex min-w-0 items-center gap-2">
-        <Trash2 class="h-4 w-4 text-surface-300" />
+        <Trash2 class="h-4 w-4 text-content-secondary" />
         <h2 class="text-sm font-semibold text-surface-50">Trash</h2>
       </div>
       <button
         type="button"
-        class="rounded p-1 text-surface-300 hover:bg-surface-800"
+        class="rounded p-1 text-content-secondary hover:bg-surface-800"
         aria-label="Close trash"
         onclick={() => onClose?.()}
       >

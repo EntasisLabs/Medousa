@@ -27,7 +27,7 @@
       </span>
       <button
         type="button"
-        class="inline-flex h-6 w-6 items-center justify-center rounded-full text-surface-500 hover:bg-surface-700 hover:text-surface-200"
+        class="inline-flex h-6 w-6 items-center justify-center rounded-full text-content-quiet hover:bg-surface-700 hover:text-surface-200"
         aria-label="Remove attachment"
         {disabled}
         onclick={() => chat.removePendingMedia(attachment.media_id)}

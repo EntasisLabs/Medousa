@@ -96,7 +96,7 @@
     width: 2rem;
     height: 2rem;
     border-radius: 0.45rem;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     cursor: pointer;
   }
 

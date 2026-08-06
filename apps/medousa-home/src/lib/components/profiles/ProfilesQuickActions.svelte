@@ -85,6 +85,6 @@
     </button>
   </div>
   {#if timezoneMessage}
-    <p class="mt-2 text-xs text-warning-400">{timezoneMessage}</p>
+    <p class="mt-2 text-xs text-content-warning">{timezoneMessage}</p>
   {/if}
 {/if}

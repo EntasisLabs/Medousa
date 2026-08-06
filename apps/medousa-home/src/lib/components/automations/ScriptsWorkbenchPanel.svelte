@@ -288,7 +288,7 @@
         {#if workshop.loading && workshop.modules.length === 0}
           <p class="workshop-muted px-3 py-2 text-sm">Loading…</p>
         {:else if workshop.error}
-          <p class="px-3 py-2 text-sm text-error-400">{workshop.error}</p>
+          <p class="px-3 py-2 text-sm text-content-error">{workshop.error}</p>
         {:else if railSection === "templates"}
           <p class="workshop-faint px-3 pb-2 text-[11px] leading-relaxed">
             Starter scripts — click to load in the editor.
@@ -416,9 +416,9 @@
               {workshop.moduleLoadBusy ? "Loading…" : "Load WASM"}
             </button>
             {#if workshop.moduleLoadError}
-              <p class="text-xs text-error-400">{workshop.moduleLoadError}</p>
+              <p class="text-xs text-content-error">{workshop.moduleLoadError}</p>
             {:else if workshop.moduleLoadResult}
-              <p class="text-xs text-surface-300">
+              <p class="text-xs text-content-secondary">
                 gen {workshop.moduleLoadResult.generation_id} · {workshop.moduleLoadResult.version}
               </p>
             {/if}
@@ -434,7 +434,7 @@
                 Refresh
               </button>
               {#if workshop.lifecycleError}
-                <p class="mt-2 text-xs text-error-400">{workshop.lifecycleError}</p>
+                <p class="mt-2 text-xs text-content-error">{workshop.lifecycleError}</p>
               {:else if wasmLifecycleEvents.length === 0}
                 <p class="workshop-faint mt-2 text-[10px]">No events yet.</p>
               {:else}
@@ -524,7 +524,7 @@
             <div
               class="scripts-workbench-mobile-empty pointer-events-none absolute inset-x-0 top-8 flex justify-center px-6"
             >
-              <p class="rounded-lg border border-surface-500/30 bg-surface-900/90 px-3 py-2 text-center text-[11px] text-surface-400">
+              <p class="rounded-lg border border-surface-500/30 bg-surface-900/90 px-3 py-2 text-center text-[11px] text-content-tertiary">
                 Open Script tools in the top bar for templates, or start typing
               </p>
             </div>

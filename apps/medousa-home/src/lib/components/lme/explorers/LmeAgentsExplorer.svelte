@@ -117,7 +117,7 @@
 
 <aside class="lme-agents-explorer flex h-full min-h-0 w-full flex-col" aria-label="Agents">
   {#if catalog.error}
-    <p class="shrink-0 px-3 py-2 text-sm text-error-400">{catalog.error}</p>
+    <p class="shrink-0 px-3 py-2 text-sm text-content-error">{catalog.error}</p>
   {/if}
 
   <div class="min-h-0 flex-1 overflow-y-auto">
@@ -134,7 +134,7 @@
         <section class="mb-2">
           <p class="workshop-faint px-3 pb-1 pt-1 text-[10px]">
             {group.label}
-            <span class="text-surface-600">· {group.entries.length}</span>
+            <span class="text-content-faint">· {group.entries.length}</span>
           </p>
           <ul class="divide-y divide-surface-500/35 border-y border-surface-500/35">
             {#each group.entries as entry (entry.id)}
@@ -173,7 +173,7 @@
                     {/if}
                     <button
                       type="button"
-                      class="workshop-text-action text-[10px] text-surface-500"
+                      class="workshop-text-action text-[10px] text-content-quiet"
                       onclick={() => scheduleAgent(entry)}
                     >
                       Schedule
@@ -278,7 +278,7 @@
             />
           </div>
 
-          <p class="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-surface-500">
+          <p class="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-content-quiet">
             Show
           </p>
           {#each SKILL_FILTER_CHIPS as chip (chip.id)}
@@ -293,7 +293,7 @@
             >
               <span>{chip.label}</span>
               {#if skillFilter === chip.id}
-                <Check size={14} strokeWidth={2} class="text-primary-300" />
+                <Check size={14} strokeWidth={2} class="text-content-link" />
               {/if}
             </button>
           {/each}
@@ -302,7 +302,7 @@
           <button
             type="button"
             role="menuitem"
-            class="vault-menu-item text-surface-400"
+            class="vault-menu-item text-content-tertiary"
             onclick={() => void catalog.refresh()}
           >
             Refresh
@@ -312,7 +312,7 @@
             <button
               type="button"
               role="menuitem"
-              class="vault-menu-item text-surface-400"
+              class="vault-menu-item text-content-tertiary"
               onclick={clearFilters}
             >
               Clear filters
@@ -340,7 +340,7 @@
     >
       <div>
         <h2 class="text-sm font-semibold text-surface-50">New agent</h2>
-        <p class="mt-1 text-xs text-surface-400">Name and optional description.</p>
+        <p class="mt-1 text-xs text-content-tertiary">Name and optional description.</p>
       </div>
       <label class="block text-xs">
         <span class="workshop-label">Name</span>
@@ -362,7 +362,7 @@
         ></textarea>
       </label>
       {#if createError}
-        <p class="text-xs text-warning-400">{createError}</p>
+        <p class="text-xs text-content-warning">{createError}</p>
       {/if}
       <div class="flex justify-end gap-2">
         <button

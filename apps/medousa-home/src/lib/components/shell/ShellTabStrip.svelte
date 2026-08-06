@@ -245,11 +245,11 @@
 
   .shell-tab-strip--titlebar .shell-tab-chip--idle {
     background: transparent;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .shell-tab-chip--idle {
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .shell-tab-chip--idle:hover {
@@ -277,7 +277,7 @@
     align-items: center;
     justify-content: center;
     border-radius: 0.25rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     transition:
       color 120ms ease,
       background 120ms ease;

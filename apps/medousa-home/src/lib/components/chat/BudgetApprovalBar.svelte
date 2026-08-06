@@ -80,7 +80,7 @@
   >
     <div class="flex flex-wrap items-start justify-between gap-2">
       <div class="min-w-0 flex-1">
-        <p class="text-xs font-medium text-warning-200">Needs your approval</p>
+        <p class="text-xs font-medium text-content-warning">Needs your approval</p>
         <p class="mt-0.5 text-sm text-surface-100">
           {pending.message}
         </p>
@@ -92,7 +92,7 @@
           </p>
         {/if}
         {#if feedback}
-          <p class="mt-1 text-xs text-surface-400">{feedback}</p>
+          <p class="mt-1 text-xs text-content-tertiary">{feedback}</p>
         {/if}
       </div>
       <div class="flex shrink-0 flex-wrap gap-1.5">

@@ -424,7 +424,7 @@
       {#if automations.loading && automations.definitions.length === 0}
         <p class="workshop-muted">Loading schedules…</p>
       {:else if automations.error}
-        <p class="text-sm text-warning-400">{automations.error}</p>
+        <p class="text-sm text-content-warning">{automations.error}</p>
       {:else if filtered.length === 0}
         <p class="workshop-muted">
           {search.trim()
@@ -449,8 +449,8 @@
                 <p
                   class="truncate text-[11px] {entry.enabled &&
                   entry.last_run_status === 'failed'
-                    ? 'text-warning-400/90'
-                    : 'text-surface-500'}"
+                    ? 'text-content-warning/90'
+                    : 'text-content-quiet'}"
                 >
                   {automations.healthLineFor(entry)}
                 </p>
@@ -461,7 +461,7 @@
       {/if}
 
       {#if automations.registerMessage}
-        <p class="mt-4 text-xs text-primary-300">{automations.registerMessage}</p>
+        <p class="mt-4 text-xs text-content-link">{automations.registerMessage}</p>
       {/if}
     </div>
 
@@ -551,7 +551,7 @@
               <button
                 type="button"
                 role="menuitem"
-                class="vault-menu-item text-surface-400"
+                class="vault-menu-item text-content-tertiary"
                 onclick={() => {
                   search = "";
                 }}

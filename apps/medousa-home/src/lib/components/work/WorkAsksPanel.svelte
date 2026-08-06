@@ -81,7 +81,7 @@
       {/if}
       <div class="min-w-0">
         <h1 class="text-sm font-semibold text-surface-50">Asks</h1>
-        <p class="mt-0.5 text-[11px] text-surface-500">
+        <p class="mt-0.5 text-[11px] text-content-quiet">
           Scoped background work — separate from Chat
         </p>
       </div>
@@ -98,8 +98,8 @@
   <div bind:this={scrollEl} class="work-asks-scroll min-h-0 flex-1 overflow-y-auto">
     {#if askThreads.length === 0}
       <div class="work-asks-empty">
-        <p class="text-sm text-surface-400">No asks yet</p>
-        <p class="mt-1 text-[12px] text-surface-500">
+        <p class="text-sm text-content-tertiary">No asks yet</p>
+        <p class="mt-1 text-[12px] text-content-quiet">
           Start one from the dock (New ask), or use /ask in Chat.
         </p>
         <button
@@ -119,7 +119,7 @@
                 <p class="truncate text-sm font-medium text-surface-100">
                   {thread.promptPreview}
                 </p>
-                <p class="mt-0.5 text-[10px] text-surface-500">
+                <p class="mt-0.5 text-[10px] text-content-quiet">
                   {#if thread.active}
                     In progress
                   {:else}

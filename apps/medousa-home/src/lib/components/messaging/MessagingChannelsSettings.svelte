@@ -192,7 +192,7 @@
   {#if messaging.loading && !messaging.summary}
     <p class="workshop-faint text-sm">Loading channels…</p>
   {:else if messaging.error}
-    <p class="text-sm text-warning-400">{messaging.error}</p>
+    <p class="text-sm text-content-warning">{messaging.error}</p>
   {:else}
     <ul class="msg-calm-list">
       {#each MESSAGING_CHANNELS as channel (channel.id)}
@@ -300,7 +300,7 @@
   .msg-calm-lead {
     margin: 0;
     font-size: 0.72rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .msg-calm-list {
@@ -351,7 +351,7 @@
   .msg-calm-desc {
     font-size: 0.7rem;
     line-height: 1.35;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .msg-calm-status {
@@ -367,13 +367,13 @@
     font-weight: 600;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .msg-calm-action {
     font-size: 0.72rem;
     font-weight: 600;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .msg-sheet-backdrop {
@@ -418,7 +418,7 @@
   .msg-sheet-meta {
     margin: 0.2rem 0 0;
     font-size: 0.72rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .msg-sheet-close {
@@ -430,7 +430,7 @@
     border: 0;
     border-radius: 0.45rem;
     background: transparent;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     cursor: pointer;
   }
 

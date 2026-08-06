@@ -55,12 +55,12 @@
       {formatCardTitle(card)}
     </p>
     {#if groupCount > 1}
-      <span class="shrink-0 font-mono text-[10px] tabular-nums text-surface-500">
+      <span class="shrink-0 font-mono text-[10px] tabular-nums text-content-quiet">
         ×{groupCount}
       </span>
     {/if}
   </div>
-  <p class="mt-1 truncate text-[11px] text-surface-500">
+  <p class="mt-1 truncate text-[11px] text-content-quiet">
     {formatCardSubtitle(card)}
   </p>
 

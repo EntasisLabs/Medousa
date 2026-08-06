@@ -89,10 +89,10 @@
       <h2 class="mt-1 text-2xl font-semibold leading-tight tracking-tight text-surface-50">
         {nextAction.title}
       </h2>
-      <p class="mt-1 text-sm text-surface-400">{nextAction.label}</p>
+      <p class="mt-1 text-sm text-content-tertiary">{nextAction.label}</p>
     {:else}
       <p class="workshop-display mt-1 text-3xl">—</p>
-      <p class="mt-1 text-lg text-surface-300">Start a conversation</p>
+      <p class="mt-1 text-lg text-content-secondary">Start a conversation</p>
     {/if}
 
     <div class="mt-5 flex items-center gap-4">

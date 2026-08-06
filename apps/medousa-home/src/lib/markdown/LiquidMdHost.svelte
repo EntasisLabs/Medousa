@@ -718,14 +718,14 @@
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .liquid-md-host-icon {
     display: inline-flex;
     vertical-align: -0.15em;
     margin-right: 0.2rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .liquid-md-enter {

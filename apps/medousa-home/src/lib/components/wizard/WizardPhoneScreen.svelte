@@ -20,11 +20,11 @@
     ← Back
   </button>
 
-  <p class="mt-4 text-[11px] font-semibold uppercase tracking-wide text-primary-300">
+  <p class="mt-4 text-[11px] font-semibold uppercase tracking-wide text-content-link">
     Add your phone
   </p>
   <h2 class="mt-2 text-2xl font-semibold text-surface-50">Optional — link a mobile device</h2>
-  <p class="mt-3 text-sm leading-relaxed text-surface-300">
+  <p class="mt-3 text-sm leading-relaxed text-content-secondary">
     Scan this code from Medousa on your phone to talk from anywhere on your home network. You can
     skip and do this later in Settings → Sharing.
   </p>

@@ -916,7 +916,7 @@
 
   .harness-note {
     font-size: 0.75rem;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     margin: 0;
   }
 
@@ -963,7 +963,7 @@
     margin: 0 0 0.4rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .harness-log ul {
@@ -981,6 +981,6 @@
 
   .harness-log-empty {
     margin: 0;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 </style>

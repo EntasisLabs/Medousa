@@ -23,7 +23,7 @@
   <p class="wizard-beat mt-4 max-w-sm text-lg leading-snug text-surface-200">
     Your permanent workspace on {hostPhrase}.
   </p>
-  <p class="wizard-beat mt-2 max-w-sm text-sm leading-relaxed text-surface-500">
+  <p class="wizard-beat mt-2 max-w-sm text-sm leading-relaxed text-content-quiet">
     Notes and files stay here. No account.
   </p>
 

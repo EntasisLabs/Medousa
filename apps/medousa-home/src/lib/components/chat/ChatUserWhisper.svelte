@@ -168,7 +168,7 @@
     padding: 0.15rem 0.1rem;
     border: 0;
     background: transparent;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     cursor: pointer;
     text-align: right;
     font-size: 0.6875rem;
@@ -177,7 +177,7 @@
 
   .chat-user-whisper-summary:hover,
   .chat-user-whisper-summary:focus-visible {
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
   }
 
   .chat-user-whisper-label {
@@ -195,7 +195,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .chat-user-whisper-body {
@@ -248,7 +248,7 @@
     overflow: hidden;
     border: 1px solid rgb(var(--color-surface-600) / 0.42);
     border-radius: 999px;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 0.625rem;

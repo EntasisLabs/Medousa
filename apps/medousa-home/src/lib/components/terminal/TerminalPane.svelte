@@ -496,23 +496,23 @@
   <div
     class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-white/10 px-3 py-1.5"
   >
-    <div class="min-w-0 flex flex-wrap items-center gap-2 text-xs text-white/60">
+    <div class="min-w-0 flex flex-wrap items-center gap-2 text-xs text-white">
       {#if !compact}
         <span class="truncate">{title}</span>
         <UndertakingContextChip />
       {:else}
-        <span class="truncate text-[10px] text-white/40">Shared with agents in this project</span>
+        <span class="truncate text-[10px] text-white">Shared with agents in this project</span>
       {/if}
     </div>
     <div class="flex items-center gap-1">
       {#if !compact}
         <details class="relative">
-          <summary class="cursor-pointer list-none rounded px-2 py-0.5 text-[10px] text-white/55 hover:bg-white/10 hover:text-white [&::-webkit-details-marker]:hidden">Sessions</summary>
+          <summary class="cursor-pointer list-none rounded px-2 py-0.5 text-[10px] text-white hover:bg-white/10 hover:text-white [&::-webkit-details-marker]:hidden">Sessions</summary>
           <div class="absolute right-0 top-full z-30 mt-1 w-56 rounded border border-white/15 bg-[#171312] p-1 shadow-xl">
             {#each sessions as session (session.session_id)}
               <button
                 type="button"
-                class="block w-full truncate rounded px-2 py-1 text-left text-[10px] text-white/60 hover:bg-white/10 hover:text-white"
+                class="block w-full truncate rounded px-2 py-1 text-left text-[10px] text-white hover:bg-white/10 hover:text-white"
                 title={session.cwd}
                 onclick={() => void switchSession(session.session_id)}
               >
@@ -520,14 +520,14 @@
               </button>
             {/each}
             {#if sessions.length === 0}
-              <p class="px-2 py-1 text-[10px] text-white/35">No other sessions</p>
+              <p class="px-2 py-1 text-[10px] text-white">No other sessions</p>
             {/if}
-            <p class="mt-1 border-t border-white/10 px-2 pt-1 font-mono text-[8px] text-white/25">Current {boundSessionId.slice(0, 8)}</p>
+            <p class="mt-1 border-t border-white/10 px-2 pt-1 font-mono text-[8px] text-white">Current {boundSessionId.slice(0, 8)}</p>
           </div>
         </details>
         <button
           type="button"
-          class="rounded px-2 py-0.5 text-[11px] text-white/60 hover:bg-white/10 hover:text-white"
+          class="rounded px-2 py-0.5 text-[11px] text-white hover:bg-white/10 hover:text-white"
           onclick={() => void openDiagnosticSession()}
           title="Open a shell outside the current project"
         >
@@ -536,7 +536,7 @@
       {/if}
       <button
         type="button"
-        class="rounded px-2 py-0.5 text-[11px] text-white/60 hover:bg-white/10 hover:text-white"
+        class="rounded px-2 py-0.5 text-[11px] text-white hover:bg-white/10 hover:text-white"
         onclick={interrupt}
         title="Stop the running command"
       >
@@ -554,7 +554,7 @@
     ></div>
 
     {#if connecting}
-      <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-[#0c0a09]/80 text-xs text-white/50">
+      <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-[#0c0a09]/80 text-xs text-white">
         Connecting to workshop session…
       </div>
     {:else if !sessionHostAvailable}
@@ -582,12 +582,12 @@
   </div>
 
   <div
-    class="flex shrink-0 items-center gap-2 border-t border-white/10 px-3 py-1 text-[10px] text-white/40"
+    class="flex shrink-0 items-center gap-2 border-t border-white/10 px-3 py-1 text-[10px] text-white"
   >
-    <span class={connected ? "text-emerald-300/60" : "text-white/30"}>
+    <span class={connected ? "text-emerald-300/60" : "text-white"}>
       {connected ? "Connected" : connecting ? "Connecting" : "Disconnected"}
     </span>
-    <span class="text-white/25">Shared with agents working in this project</span>
+    <span class="text-white">Shared with agents working in this project</span>
     <details class="ml-auto">
       <summary class="cursor-pointer">Technical details</summary>
       <span

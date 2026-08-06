@@ -45,7 +45,7 @@
     data-session-id={trimmed}
   >
     <div class="flex items-center gap-2 border-b border-surface-500/30 px-3 py-2">
-      <MessageSquare size={14} strokeWidth={1.75} class="text-surface-500" />
+      <MessageSquare size={14} strokeWidth={1.75} class="text-content-quiet" />
       <p class="workshop-faint text-[11px]">
         Live transcript — focus this pane to type
       </p>
@@ -53,7 +53,7 @@
     <div class="mobile-you-scroll min-h-0 flex-1 overflow-y-auto px-3 py-3">
       {#if loading && messages.length === 0}
         <div class="flex min-h-[120px] items-center justify-center">
-          <LoaderCircle size={20} class="animate-spin text-surface-500/80" aria-label="Loading" />
+          <LoaderCircle size={20} class="animate-spin text-content-quiet/80" aria-label="Loading" />
         </div>
       {:else if messages.length === 0}
         <p class="workshop-faint px-2 py-8 text-center text-xs">No messages yet.</p>
@@ -65,7 +65,7 @@
         />
       {/if}
       {#if error}
-        <p class="mt-2 px-2 text-xs text-error-400">{error}</p>
+        <p class="mt-2 px-2 text-xs text-content-error">{error}</p>
       {/if}
     </div>
   </div>

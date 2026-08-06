@@ -61,7 +61,7 @@
 
 <div class="mobile-activity-feed flex flex-col" aria-label="Recent activity">
   {#if error}
-    <p class="mobile-activity-banner text-error-300">{error}</p>
+    <p class="mobile-activity-banner text-content-error">{error}</p>
   {/if}
 
   {#if showActions && (feed.length > 0 || activityView.hiddenIds.size > 0)}

@@ -27,7 +27,7 @@
       {/if}
       <button
         type="button"
-        class="inline-flex size-7 items-center justify-center rounded-md text-surface-400 transition hover:bg-surface-800/80 hover:text-surface-100"
+        class="inline-flex size-7 items-center justify-center rounded-md text-content-tertiary transition hover:bg-surface-800/80 hover:text-surface-100"
         title="Add peer"
         aria-label="Add peer"
         onclick={() => peersShell.requestAddPeer()}

@@ -751,6 +751,6 @@
   }
 
   .presentation-frame-error {
-    color: rgb(var(--color-warning-300));
+    color: rgb(var(--theme-warning));
   }
 </style>

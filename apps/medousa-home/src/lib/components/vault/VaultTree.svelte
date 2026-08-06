@@ -72,7 +72,7 @@
     />
   {:else}
     {#if scopedRecent.length === 0}
-      <p class="px-2 py-4 text-sm text-surface-400">No notes in vault yet.</p>
+      <p class="px-2 py-4 text-sm text-content-tertiary">No notes in vault yet.</p>
     {/if}
   {/each}
 </nav>

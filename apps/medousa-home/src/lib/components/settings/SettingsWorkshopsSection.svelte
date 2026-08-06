@@ -357,7 +357,7 @@
                     Layout theme is set in Preferences while this workshop is active.
                   </p>
                   {#if brandingError}
-                    <p class="mt-2 text-xs text-warning-300">{brandingError}</p>
+                    <p class="mt-2 text-xs text-content-warning">{brandingError}</p>
                   {/if}
                   <div class="ws-actions mt-3">
                     <button
@@ -387,7 +387,7 @@
     </div>
 
     {#if workshops.error}
-      <p class="mt-2 text-xs text-warning-300">{workshops.error}</p>
+      <p class="mt-2 text-xs text-content-warning">{workshops.error}</p>
     {/if}
   </div>
 {/if}
@@ -408,11 +408,11 @@
         </p>
       </header>
       <label class="block space-y-1 text-sm">
-        <span class="text-surface-400">Name</span>
+        <span class="text-content-tertiary">Name</span>
         <input class="input w-full" placeholder="Work" bind:value={localLabelDraft} />
       </label>
       <div class="space-y-1">
-        <span class="text-sm text-surface-400">Engine data folder</span>
+        <span class="text-sm text-content-tertiary">Engine data folder</span>
         <div class="flex gap-2">
           <input
             class="input min-w-0 flex-1 font-mono text-xs"
@@ -430,7 +430,7 @@
         </div>
       </div>
       {#if addLocalError}
-        <p class="text-sm text-warning-300">{addLocalError}</p>
+        <p class="text-sm text-content-warning">{addLocalError}</p>
       {/if}
       <div class="flex justify-end gap-2">
         <button
@@ -508,7 +508,7 @@
     border: 1px solid rgb(var(--color-surface-500) / 0.32);
     border-radius: 0.5rem;
     background: rgb(var(--color-surface-900) / 0.28);
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     cursor: pointer;
     transition:
       border-color 120ms ease,
@@ -529,7 +529,7 @@
 
   .ws-icon-btn-active {
     border-color: rgb(var(--color-primary-500) / 0.45);
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
   }
 
   .ws-stack {
@@ -566,7 +566,7 @@
     justify-content: center;
     border-radius: 0.45rem;
     background: rgb(var(--color-surface-800) / 0.7);
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
   }
 
   .ws-copy {
@@ -586,7 +586,7 @@
   .ws-meta {
     font-size: 0.68rem;
     line-height: 1.3;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .ws-cta {
@@ -596,7 +596,7 @@
     padding: 0;
     font-size: 0.72rem;
     font-weight: 600;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     cursor: pointer;
   }
 
@@ -606,14 +606,14 @@
   }
 
   .ws-cta-danger {
-    color: rgb(var(--color-error-300) / 0.9);
+    color: rgb(var(--theme-error) / 0.9);
   }
 
   .ws-pill {
     flex-shrink: 0;
     font-size: 0.65rem;
     font-weight: 600;
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
   }
 
   .ws-edit {
@@ -633,6 +633,6 @@
     margin: 0;
     font-size: 0.7rem;
     line-height: 1.4;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 </style>

@@ -145,7 +145,7 @@
     {#if identity.loading}
       <p class="workshop-muted">Loading recall context…</p>
     {:else if identity.error}
-      <p class="text-xs text-error-400">{identity.error}</p>
+      <p class="text-xs text-content-error">{identity.error}</p>
     {:else if !identity.context}
       <p class="workshop-muted">No identity context available.</p>
     {:else}
@@ -211,7 +211,7 @@
             <dt class="workshop-label">
               Relationships · {identity.context.relationships.length}
             </dt>
-            <ul class="mt-2 space-y-1 text-surface-300">
+            <ul class="mt-2 space-y-1 text-content-secondary">
               {#each identity.context.relationships.slice(0, 5) as rel (rel.relationship_id)}
                 <li>
                   {relationshipKind(rel.relationship_kind)} · trust

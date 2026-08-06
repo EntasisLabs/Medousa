@@ -310,7 +310,7 @@
   .guide-subtitle {
     margin: 0.1rem 0 0;
     font-size: 0.68rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .guide-icon-btn {
@@ -323,7 +323,7 @@
     border: 0;
     border-radius: 0.4rem;
     background: transparent;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     cursor: pointer;
   }
 
@@ -373,7 +373,7 @@
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: rgb(var(--color-surface-600));
+    color: rgb(var(--theme-text-faint));
   }
 
   .guide-toc-list {
@@ -391,7 +391,7 @@
     padding: 0.35rem 0.45rem;
     text-align: left;
     font-size: 0.78rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     cursor: pointer;
   }
 

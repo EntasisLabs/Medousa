@@ -298,7 +298,7 @@
 </div>
 
 {#if flowError}
-  <p class="shrink-0 border-b border-surface-500/35 px-3 py-1 text-[10px] text-error-400">
+  <p class="shrink-0 border-b border-surface-500/35 px-3 py-1 text-[10px] text-content-error">
     {flowError}
   </p>
 {/if}

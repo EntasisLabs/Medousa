@@ -34,7 +34,7 @@
         {label}
       </span>
     {/if}
-    <span class="min-w-0 truncate {whisper ? 'text-[11px] text-surface-400' : 'font-medium'}">
+    <span class="min-w-0 truncate {whisper ? 'text-[11px] text-content-tertiary' : 'font-medium'}">
       {#if whisper}
         {hasPassage ? `Passage in “${scope.title}”` : `On “${scope.title}”`}
       {:else if hasPassage}
@@ -50,7 +50,7 @@
     <button
       type="button"
       class="ml-auto shrink-0 rounded p-0.5 transition {whisper
-        ? 'text-surface-500 hover:bg-surface-800 hover:text-surface-200'
+        ? 'text-content-quiet hover:bg-surface-800 hover:text-surface-200'
         : 'text-primary-200/80 hover:bg-primary-500/20 hover:text-primary-50'}"
       aria-label={hasPassage ? "Clear passage context" : "Clear note context"}
       onclick={() => chat.clearVaultNoteContext()}

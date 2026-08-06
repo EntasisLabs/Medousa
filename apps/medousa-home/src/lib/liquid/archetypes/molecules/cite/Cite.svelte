@@ -81,7 +81,7 @@
   .liquid-cite-title {
     font-size: 0.72rem;
     font-weight: 600;
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
     text-decoration: none;
   }
 
@@ -97,6 +97,6 @@
     font-size: 0.65rem;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 </style>

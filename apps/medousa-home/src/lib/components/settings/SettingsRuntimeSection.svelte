@@ -509,7 +509,7 @@
       <div class="prefs-more-body">
         <p class="prefs-footnote mb-2">
           Module names she can call (for example
-          <span class="font-mono text-surface-300">websearch.search</span>).
+          <span class="font-mono text-content-secondary">websearch.search</span>).
         </p>
         <textarea
           class="rt-mono-input"
@@ -646,7 +646,7 @@
       </p>
     {/if}
     {#if workshop.allowlistError}
-      <p class="mt-2 text-xs text-warning-400">{workshop.allowlistError}</p>
+      <p class="mt-2 text-xs text-content-warning">{workshop.allowlistError}</p>
     {/if}
 
     <details class="prefs-more" bind:open={allowlistsOpen}>
@@ -878,7 +878,7 @@
       </summary>
       <div class="prefs-more-body">
         <p class="prefs-footnote mb-2">
-          <span class="font-mono text-surface-300">KEY=value</span> per line, applied when a turn
+          <span class="font-mono text-content-secondary">KEY=value</span> per line, applied when a turn
           starts.
         </p>
         <textarea
@@ -992,7 +992,7 @@
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .rt-active-title {
@@ -1004,7 +1004,7 @@
   .rt-active-meta {
     font-size: 0.7rem;
     line-height: 1.35;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .rt-active-action {
@@ -1052,7 +1052,7 @@
   .prefs-choice-hint {
     font-size: 0.68rem;
     line-height: 1.3;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .prefs-tile {
@@ -1087,7 +1087,7 @@
   .prefs-tile-meta {
     font-size: 0.68rem;
     line-height: 1.3;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .prefs-metric {
@@ -1118,7 +1118,7 @@
 
   .prefs-metric-unit {
     font-size: 0.68rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .prefs-switch {
@@ -1182,7 +1182,7 @@
     padding: var(--prefs-tile-pad);
     font-size: 0.75rem;
     font-weight: 600;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     cursor: pointer;
     list-style: none;
   }
@@ -1202,7 +1202,7 @@
   .prefs-more-summary-meta {
     font-size: 0.68rem;
     font-weight: 500;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   :global(.prefs-more-chevron) {
@@ -1221,7 +1221,7 @@
   .prefs-footnote {
     margin: 0.45rem 0 0;
     font-size: 0.7rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .rt-mono-input {
@@ -1240,7 +1240,7 @@
   }
 
   .rt-mono-input::placeholder {
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .rt-mono-input:focus {

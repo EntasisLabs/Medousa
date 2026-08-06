@@ -107,7 +107,7 @@
   .artifact-modal-subtitle {
     margin: 0.2rem 0 0;
     font-size: 0.75rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .artifact-modal-actions {

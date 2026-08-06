@@ -792,8 +792,8 @@
         {#if saveWhisper}
           <span
             class="vault-save-whisper text-xs {saveWhisper === 'Saved'
-              ? 'text-success-400'
-              : 'text-surface-400'}"
+              ? 'text-content-success'
+              : 'text-content-tertiary'}"
           >
             {saveWhisper}
           </span>
@@ -1047,7 +1047,7 @@
   {/if}
 
   {#if bound && vault.error}
-    <p class="border-b border-error-500/30 bg-error-500/10 px-4 py-2 text-xs text-error-300">
+    <p class="border-b border-error-500/30 bg-error-500/10 px-4 py-2 text-xs text-content-error">
       {vault.error}
     </p>
   {/if}
@@ -1059,10 +1059,10 @@
 
   {#if bound && showLinksToggle && !layout.vaultLinksPanelOpen && !mobile}
     <div class="flex shrink-0 items-center gap-2 border-b border-surface-500/30 px-4 py-1.5 text-xs">
-      <span class="text-surface-500">{linkCount} linked note{linkCount === 1 ? "" : "s"}</span>
+      <span class="text-content-quiet">{linkCount} linked note{linkCount === 1 ? "" : "s"}</span>
       <button
         type="button"
-        class="text-primary-300 hover:text-primary-200"
+        class="text-content-link hover:text-primary-200"
         onclick={() => layout.setVaultLinksPanelOpen(true)}
       >
         Show links
@@ -1076,7 +1076,7 @@
     <div class="relative flex min-h-0 min-w-0 max-w-full flex-1 overflow-hidden">
       {#if displayLoading}
         <div
-          class="absolute inset-0 z-10 flex items-center justify-center bg-surface-950/50 text-sm text-surface-400"
+          class="absolute inset-0 z-10 flex items-center justify-center bg-surface-950/50 text-sm text-content-tertiary"
         >
           Loading note…
         </div>
@@ -1094,7 +1094,7 @@
     <div class="relative flex min-h-0 min-w-0 max-w-full flex-1 overflow-hidden">
       {#if displayLoading}
         <div
-          class="absolute inset-0 z-10 flex items-center justify-center bg-surface-950/50 text-sm text-surface-400"
+          class="absolute inset-0 z-10 flex items-center justify-center bg-surface-950/50 text-sm text-content-tertiary"
         >
           Loading note…
         </div>

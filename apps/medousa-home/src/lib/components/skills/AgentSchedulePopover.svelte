@@ -121,22 +121,22 @@
       <div class="agent-editor-popover-head">
         <div class="min-w-0">
           <p class="text-[11px] font-semibold tracking-[-0.01em] text-surface-100">Schedule</p>
-          <p class="mt-0.5 text-[10px] text-surface-500">Optional recurring runs</p>
+          <p class="mt-0.5 text-[10px] text-content-quiet">Optional recurring runs</p>
         </div>
       </div>
 
       <div class="agent-editor-popover-body overflow-y-auto p-3">
         <div class="rounded-lg border border-surface-500/25 bg-surface-950/30 px-3 py-2.5 text-xs">
           <div class="flex flex-wrap items-center gap-2">
-            <span class="text-surface-400">Schedule readiness</span>
+            <span class="text-content-tertiary">Schedule readiness</span>
             {#if scheduleReady}
-              <span class="text-[10px] tracking-wide text-primary-300 uppercase">Ready</span>
+              <span class="text-[10px] tracking-wide text-content-link uppercase">Ready</span>
             {:else}
-              <span class="text-[10px] tracking-wide text-warning-400 uppercase">Needs a step</span>
+              <span class="text-[10px] tracking-wide text-content-warning uppercase">Needs a step</span>
             {/if}
           </div>
           {#if scheduleErrorHuman}
-            <p class="mt-1 text-warning-400/90">{scheduleErrorHuman}</p>
+            <p class="mt-1 text-content-warning/90">{scheduleErrorHuman}</p>
             {#if /tool/i.test(scheduleErrorHuman) && onChooseTools}
               <button
                 type="button"
@@ -206,8 +206,8 @@
                     <span class="font-mono text-surface-200">{row.tool}</span>
                     <span
                       class="text-[10px] tracking-wide uppercase {row.allowed_on_schedule
-                        ? 'text-primary-300'
-                        : 'text-warning-400/80'}"
+                        ? 'text-content-link'
+                        : 'text-content-warning/80'}"
                     >
                       {row.allowed_on_schedule ? "schedule ok" : "interactive only"}
                     </span>

@@ -17,7 +17,7 @@
   onclick={() => shellTabs.focusGroup(groupId)}
 >
   <span
-    class="inline-flex size-9 items-center justify-center rounded-lg bg-surface-800/70 text-surface-400"
+    class="inline-flex size-9 items-center justify-center rounded-lg bg-surface-800/70 text-content-tertiary"
     aria-hidden="true"
   >
     <MessageSquare size={16} strokeWidth={1.75} />

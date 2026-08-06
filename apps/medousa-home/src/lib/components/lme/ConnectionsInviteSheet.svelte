@@ -130,13 +130,13 @@
           <h2 id="connections-invite-title" class="text-lg font-semibold text-surface-50">
             Reach you elsewhere?
           </h2>
-          <p class="mt-1 text-sm text-surface-400">
+          <p class="mt-1 text-sm text-content-tertiary">
             Optional — Discord, Telegram, WhatsApp in Packages, or MCP tools in Settings → MCP.
           </p>
         </div>
         <button
           type="button"
-          class="rounded-lg p-1.5 text-surface-400 hover:bg-surface-800 hover:text-surface-100"
+          class="rounded-lg p-1.5 text-content-tertiary hover:bg-surface-800 hover:text-surface-100"
           aria-label="Dismiss"
           disabled={installing}
           onclick={close}
@@ -156,7 +156,7 @@
               class="flex w-full items-start gap-3 rounded-xl border px-3 py-3 text-left transition {isSelected &&
               !row.installed
                 ? 'border-primary-500/55 bg-primary-500/10'
-                : 'border-surface-500/35 bg-surface-950/40'} {row.installed ? 'opacity-80' : ''}"
+                : 'border-surface-500/35 bg-surface-950/40'}"
               disabled={installing || row.installed}
               onclick={() => toggle(row)}
             >
@@ -175,10 +175,10 @@
                 <span class="flex items-center gap-2">
                   <span class="text-sm font-semibold text-surface-50">{row.displayName}</span>
                   {#if row.installed}
-                    <span class="text-[11px] text-success-400">Ready</span>
+                    <span class="text-[11px] text-content-success">Ready</span>
                   {/if}
                 </span>
-                <span class="mt-0.5 block text-xs text-surface-400">
+                <span class="mt-0.5 block text-xs text-content-tertiary">
                   {row.hint}
                   {#if sizeLabel}
                     · ~{sizeLabel}
@@ -199,7 +199,7 @@
       </ul>
 
       {#if statusLine}
-        <p class="px-5 pt-3 text-sm text-warning-200">{statusLine}</p>
+        <p class="px-5 pt-3 text-sm text-content-warning">{statusLine}</p>
       {/if}
 
       <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-5">

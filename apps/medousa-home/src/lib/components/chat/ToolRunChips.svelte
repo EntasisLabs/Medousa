@@ -61,7 +61,7 @@
 </script>
 
 {#snippet segmentDetail(run: ToolRunState)}
-  <div class="space-y-1 text-[11px] leading-relaxed text-surface-400">
+  <div class="space-y-1 text-[11px] leading-relaxed text-content-tertiary">
     {#if run.inputSummary?.trim()}
       <p class="break-words">
         <span class="text-primary-400/50">in</span>
@@ -69,13 +69,13 @@
       </p>
     {/if}
     {#if run.outputSummary?.trim()}
-      <p class="break-words text-surface-300">
+      <p class="break-words text-content-secondary">
         <span class="text-primary-400/50">out</span>
         {run.outputSummary}
       </p>
     {/if}
     {#if run.artifactRefs && run.artifactRefs.length > 0}
-      <p class="text-surface-500">
+      <p class="text-content-quiet">
         {run.artifactRefs.length} receipt{run.artifactRefs.length === 1 ? "" : "s"}
       </p>
     {/if}
@@ -130,7 +130,7 @@
                   {parts.name}
                 </span>
                 {#if parts.count}
-                  <span class="font-mono text-[10px] text-primary-300/90">{parts.count}</span>
+                  <span class="font-mono text-[10px] text-content-link/90">{parts.count}</span>
                 {/if}
               </summary>
               <div class="mt-1.5 space-y-1.5 border-l border-primary-500/15 pl-2.5">
@@ -140,7 +140,7 @@
                   {#each segment.runs as run, runIndex (run.runId)}
                     <div>
                       {#if segment.count > 1}
-                        <p class="mb-0.5 font-mono text-[10px] text-surface-500">
+                        <p class="mb-0.5 font-mono text-[10px] text-content-quiet">
                           {runIndex + 1}/{segment.count}
                         </p>
                       {/if}
@@ -149,12 +149,12 @@
                   {/each}
                 {:else}
                   <div>
-                    <p class="mb-0.5 font-mono text-[10px] text-surface-500">1/{segment.count}</p>
+                    <p class="mb-0.5 font-mono text-[10px] text-content-quiet">1/{segment.count}</p>
                     {@render segmentDetail(segment.runs[0])}
                   </div>
-                  <p class="text-surface-500">… {segment.count - 2} more …</p>
+                  <p class="text-content-quiet">… {segment.count - 2} more …</p>
                   <div>
-                    <p class="mb-0.5 font-mono text-[10px] text-surface-500">
+                    <p class="mb-0.5 font-mono text-[10px] text-content-quiet">
                       {segment.count}/{segment.count}
                     </p>
                     {@render segmentDetail(segment.runs[segment.runs.length - 1])}
@@ -166,7 +166,7 @@
             <p class="flex items-baseline gap-1 tracking-tight">
               <span class={segmentLabelClass(segment.toolName)}>{parts.name}</span>
               {#if parts.count}
-                <span class="font-mono text-[10px] text-primary-300/90">{parts.count}</span>
+                <span class="font-mono text-[10px] text-content-link/90">{parts.count}</span>
               {/if}
             </p>
           {/if}
@@ -188,7 +188,7 @@
     >
       <summary
         class="flex cursor-pointer list-none items-center gap-2 marker:content-none {footnote
-          ? 'py-0.5 text-[10px] text-surface-600 hover:text-surface-400'
+          ? 'py-0.5 text-[10px] text-content-faint hover:text-content-tertiary'
           : 'px-2.5 py-1.5'}"
       >
         {#if !footnote}
@@ -206,7 +206,7 @@
           {collapsed.primary}
         </span>
         <ChevronDown
-          class="h-3 w-3 shrink-0 text-surface-600 transition-transform duration-200 group-open/inspector:rotate-180"
+          class="h-3 w-3 shrink-0 text-content-faint transition-transform duration-200 group-open/inspector:rotate-180"
           strokeWidth={2}
           aria-hidden="true"
         />

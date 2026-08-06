@@ -591,7 +591,7 @@
   .nearby-tile-meta {
     font-size: 0.68rem;
     line-height: 1.3;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .nearby-tile-cta {
@@ -601,7 +601,7 @@
     padding: 0;
     font-size: 0.72rem;
     font-weight: 600;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     cursor: pointer;
   }
 
@@ -611,21 +611,21 @@
   }
 
   .nearby-tile-cta-danger {
-    color: rgb(var(--color-error-300) / 0.9);
+    color: rgb(var(--theme-error) / 0.9);
   }
 
   .nearby-empty {
     margin: 0;
     padding: 0.1rem 0.15rem 0;
     font-size: 0.72rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .nearby-footnote {
     margin: 0;
     font-size: 0.7rem;
     line-height: 1.4;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .nearby-more {
@@ -643,7 +643,7 @@
     padding: 0.55rem 0.75rem;
     font-size: 0.75rem;
     font-weight: 600;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     cursor: pointer;
     list-style: none;
   }
@@ -663,7 +663,7 @@
   .nearby-more-summary-meta {
     font-size: 0.68rem;
     font-weight: 500;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   :global(.nearby-more-chevron) {
@@ -759,7 +759,7 @@
   .nearby-choice-hint {
     font-size: 0.68rem;
     line-height: 1.3;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .nearby-actions {
@@ -772,7 +772,7 @@
   .nearby-ready-pill {
     font-size: 0.6875rem;
     font-weight: 600;
-    color: rgb(var(--color-success-300));
+    color: rgb(var(--theme-success));
     padding: 0.2rem 0.5rem;
     border-radius: 999px;
     background: rgb(var(--color-success-500) / 0.12);
@@ -784,10 +784,10 @@
   }
 
   .nearby-feedback-error {
-    color: rgb(var(--color-error-300));
+    color: rgb(var(--theme-error));
   }
 
   .nearby-feedback-ok {
-    color: rgb(var(--color-success-300));
+    color: rgb(var(--theme-success));
   }
 </style>

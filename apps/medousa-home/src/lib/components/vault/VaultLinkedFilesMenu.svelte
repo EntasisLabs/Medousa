@@ -103,13 +103,13 @@
       onkeydown={handleMenuKeydown}
     >
       {#if count === 0}
-        <p class="px-3 py-2 text-xs leading-relaxed text-surface-500">
+        <p class="px-3 py-2 text-xs leading-relaxed text-content-quiet">
           Link files from your desk without leaving this note.
         </p>
       {/if}
 
       {#if spreadsheet}
-        <p class="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-surface-500">
+        <p class="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-content-quiet">
           {isLedger ? "Source" : "Spreadsheet"}
         </p>
         <div
@@ -139,7 +139,7 @@
 
       {#if others.length > 0}
         {#if spreadsheet}
-          <p class="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-surface-500">
+          <p class="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-content-quiet">
             Files
           </p>
         {/if}

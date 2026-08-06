@@ -87,7 +87,7 @@
   <div class="flex h-full min-h-[12rem] flex-col justify-center px-2">
     {#if digestLines.length > 0}
       <p class="workshop-label">Continuity slice</p>
-      <ul class="mt-3 space-y-2 text-sm leading-relaxed text-surface-300">
+      <ul class="mt-3 space-y-2 text-sm leading-relaxed text-content-secondary">
         {#each digestLines.slice(0, 6) as line, index (index)}
           <li class="workshop-inset px-3 py-2">{line}</li>
         {/each}
@@ -123,7 +123,7 @@
         class="context-related-memory mt-6 flex w-full items-center gap-2 text-left"
         onclick={() => onOpenChat()}
       >
-        <MessageCircle size={16} class="shrink-0 text-primary-300" aria-hidden="true" />
+        <MessageCircle size={16} class="shrink-0 text-content-link" aria-hidden="true" />
         <span>
           <span class="context-related-memory-title block">Talk about this in chat</span>
           <span class="context-related-memory-meta">She learns best in conversation</span>
@@ -163,7 +163,7 @@
           </div>
         </div>
         {#if correctionMessage}
-          <p class="mt-2 text-xs text-success-400">{correctionMessage}</p>
+          <p class="mt-2 text-xs text-content-success">{correctionMessage}</p>
         {/if}
       </section>
     {/if}
@@ -189,7 +189,7 @@
           {#each Object.entries(entry.meta ?? {}) as [key, value] (key)}
             <div>
               <dt class="workshop-label">{key}</dt>
-              <dd class="mt-0.5 break-all font-mono text-surface-300">{value}</dd>
+              <dd class="mt-0.5 break-all font-mono text-content-secondary">{value}</dd>
             </div>
           {/each}
         </dl>

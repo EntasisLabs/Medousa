@@ -28,17 +28,17 @@
 
 <div class="lme-schedule-editor flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
   {#if !active}
-    <p class="px-5 py-5 text-sm text-surface-500 sm:px-7 sm:py-6">
+    <p class="px-5 py-5 text-sm text-content-quiet sm:px-7 sm:py-6">
       Select a schedule from the side panel.
     </p>
   {:else if !entry}
     <div class="px-5 py-5 sm:px-7 sm:py-6">
       {#if automations.loading}
-        <p class="text-sm text-surface-500">Loading schedule…</p>
+        <p class="text-sm text-content-quiet">Loading schedule…</p>
       {:else}
-        <p class="text-sm text-surface-500">
+        <p class="text-sm text-content-quiet">
           Schedule
-          <span class="font-mono text-surface-300">{active.recurringId}</span>
+          <span class="font-mono text-content-secondary">{active.recurringId}</span>
           not found.
         </p>
         <button

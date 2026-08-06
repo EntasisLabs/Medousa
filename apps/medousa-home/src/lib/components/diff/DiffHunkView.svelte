@@ -199,7 +199,7 @@
     align-items: center;
     justify-content: center;
     padding: 1.25rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     font-size: 0.6875rem;
   }
 
@@ -209,18 +209,18 @@
     z-index: 1;
     padding: 0.1rem 0.65rem;
     background: rgb(var(--color-surface-800) / 0.96);
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .diff-line {
     display: grid;
     grid-template-columns: 2.25rem 2.25rem minmax(0, 1fr);
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .diff-gutter {
     padding-right: 0.4rem;
-    color: rgb(var(--color-surface-600));
+    color: rgb(var(--theme-text-faint));
     text-align: right;
     user-select: none;
   }
@@ -233,13 +233,13 @@
   .diff-line--addition,
   .diff-side-new {
     background: rgb(var(--color-success-950) / 0.32);
-    color: rgb(var(--color-success-100));
+    color: rgb(var(--theme-success));
   }
 
   .diff-line--deletion,
   .diff-side-old {
     background: rgb(var(--color-error-950) / 0.32);
-    color: rgb(var(--color-error-100));
+    color: rgb(var(--theme-error));
   }
 
   .diff-gap {
@@ -252,7 +252,7 @@
     border-bottom: 1px solid rgb(var(--color-surface-500) / 0.12);
     background: rgb(var(--color-surface-900) / 0.55);
     padding: 0.2rem 0.65rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     font-family: inherit;
     font-size: 0.5625rem;
     cursor: pointer;
@@ -260,7 +260,7 @@
 
   .diff-gap:hover {
     background: rgb(var(--color-surface-800) / 0.65);
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
   }
 
   .diff-gap--expanded {
@@ -269,7 +269,7 @@
   }
 
   .diff-gap-expanded {
-    color: rgb(var(--color-surface-600));
+    color: rgb(var(--theme-text-faint));
     font-style: italic;
   }
 
@@ -285,7 +285,7 @@
     z-index: 1;
     border-bottom: 1px solid rgb(var(--color-surface-500) / 0.2);
     background: rgb(var(--color-surface-900) / 0.98);
-    color: rgb(var(--color-surface-600));
+    color: rgb(var(--theme-text-faint));
     font-size: 0.5625rem;
     text-transform: uppercase;
   }

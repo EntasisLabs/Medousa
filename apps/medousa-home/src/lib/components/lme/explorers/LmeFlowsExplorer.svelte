@@ -94,7 +94,7 @@
 
 <aside class="lme-flows-explorer flex h-full min-h-0 w-full flex-col" aria-label="Flows">
   {#if flows.error}
-    <p class="shrink-0 px-3 py-2 text-sm text-error-400">{flows.error}</p>
+    <p class="shrink-0 px-3 py-2 text-sm text-content-error">{flows.error}</p>
   {/if}
 
   <div class="min-h-0 flex-1 overflow-y-auto">
@@ -231,7 +231,7 @@
           <button
             type="button"
             role="menuitem"
-            class="vault-menu-item text-surface-400"
+            class="vault-menu-item text-content-tertiary"
             onclick={() => void flows.refresh()}
           >
             Refresh
@@ -240,7 +240,7 @@
             <button
               type="button"
               role="menuitem"
-              class="vault-menu-item text-surface-400"
+              class="vault-menu-item text-content-tertiary"
               onclick={() => {
                 search = "";
               }}

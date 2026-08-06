@@ -138,14 +138,14 @@
     <h2 id="offline-chat-title" class="text-lg font-semibold text-surface-50">
       {title}
     </h2>
-    <p id="offline-chat-body" class="text-sm leading-relaxed text-surface-300">
+    <p id="offline-chat-body" class="text-sm leading-relaxed text-content-secondary">
       {body}
     </p>
     {#if connection.health?.message && !connection.health.ok && !diagnosis}
-      <p class="text-xs text-surface-500">{connection.health.message}</p>
+      <p class="text-xs text-content-quiet">{connection.health.message}</p>
     {/if}
     {#if actionMessage}
-      <p class="text-xs text-surface-400" role="status">{actionMessage}</p>
+      <p class="text-xs text-content-tertiary" role="status">{actionMessage}</p>
     {/if}
     <div class="flex flex-col gap-2 pt-2 sm:flex-row sm:justify-center">
       {#if showDesktopRecover}
@@ -173,14 +173,14 @@
     {#if diagnosis?.logPath && isTauri() && !isTauriMobilePlatform()}
       <button
         type="button"
-        class="text-xs text-surface-500 underline-offset-2 hover:text-surface-300 hover:underline"
+        class="text-xs text-content-quiet underline-offset-2 hover:text-content-secondary hover:underline"
         onclick={() => void openEngineLog(diagnosis?.logPath)}
       >
         Open engine log
       </button>
     {/if}
     {#if diagnosis?.issue === "binary_missing"}
-      <p class="text-xs text-surface-500">
+      <p class="text-xs text-content-quiet">
         If this keeps happening, reinstall Medousa from the installer.
       </p>
     {/if}

@@ -43,16 +43,16 @@
 
 <div class="artifact-library-preview flex h-full min-h-0 min-w-0 flex-1 flex-col">
   {#if !artifact || !uiArtifact}
-    <div class="flex flex-1 items-center justify-center p-6 text-sm text-surface-500">
+    <div class="flex flex-1 items-center justify-center p-6 text-sm text-content-quiet">
       Select a presentation to preview.
     </div>
   {:else}
     <header class="artifact-library-preview-header">
       <div class="min-w-0">
         <h2 class="truncate text-sm font-semibold text-surface-100">{artifact.label}</h2>
-        <p class="truncate text-xs text-surface-500">
+        <p class="truncate text-xs text-content-quiet">
           {#if exportStatus}
-            <span class="text-primary-300">{exportStatus}</span>
+            <span class="text-content-link">{exportStatus}</span>
           {:else}
             {sessionTitle}
           {/if}

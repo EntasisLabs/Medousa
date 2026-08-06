@@ -386,7 +386,7 @@
         <button
           type="button"
           class="mobile-chrome-icon"
-          class:text-primary-300={action === "noteChat" ||
+          class:text-content-link={action === "noteChat" ||
             (action === "noteEdit" && vault.editorMode === "edit") ||
             (action === "notesFilter" && notesFilterActive)}
           aria-label={labelFor(action)}

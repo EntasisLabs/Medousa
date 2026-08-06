@@ -141,7 +141,7 @@
 
   .liquid-code-title {
     font-size: 0.72rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -187,13 +187,13 @@
   .liquid-code-add {
     display: block;
     background: color-mix(in srgb, var(--color-success-500) 14%, transparent);
-    color: rgb(var(--color-success-200));
+    color: rgb(var(--theme-success));
   }
 
   .liquid-code-del {
     display: block;
     background: color-mix(in srgb, var(--color-error-500) 14%, transparent);
-    color: rgb(var(--color-error-300));
+    color: rgb(var(--theme-error));
   }
 
   .liquid-code-ctx {

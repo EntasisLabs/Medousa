@@ -61,7 +61,7 @@
 
   .liquid-action-row:hover :global(.liquid-action-chevron) {
     transform: translateX(0.15rem);
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
   }
 
   .liquid-action-emoji {
@@ -78,7 +78,7 @@
 
   .liquid-action-row :global(.liquid-action-chevron) {
     flex-shrink: 0;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     transition:
       transform 0.15s ease,
       color 0.15s ease;

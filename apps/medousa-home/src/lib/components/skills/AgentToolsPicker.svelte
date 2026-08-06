@@ -35,8 +35,8 @@
 
 <div class="agent-tools-picker flex min-h-0 flex-1 flex-col {fill ? 'h-full' : ''}">
   <div class="flex shrink-0 items-center justify-between gap-2 px-0.5">
-    <p class="text-xs text-surface-400">Modules → tools</p>
-    <span class="text-[11px] tabular-nums text-surface-500">{selectedCount} selected</span>
+    <p class="text-xs text-content-tertiary">Modules → tools</p>
+    <span class="text-[11px] tabular-nums text-content-quiet">{selectedCount} selected</span>
   </div>
 
   <input
@@ -48,7 +48,7 @@
   />
 
   {#if categories.length === 0}
-    <p class="mt-4 text-xs text-surface-500">No tools match.</p>
+    <p class="mt-4 text-xs text-content-quiet">No tools match.</p>
   {:else}
     <div
       class="agent-tools-split mt-3 flex min-h-[14rem] flex-1 overflow-hidden rounded-xl border border-surface-500/30 bg-surface-950/40 {fill
@@ -69,13 +69,13 @@
               class="flex w-full items-center gap-2 px-3 py-2 text-left transition {selectedModuleId ===
               category.moduleId
                 ? 'bg-surface-800/90 text-surface-50'
-                : 'text-surface-400 hover:bg-surface-800/50 hover:text-surface-200'}"
+                : 'text-content-tertiary hover:bg-surface-800/50 hover:text-surface-200'}"
               onclick={() => (selectedModuleId = category.moduleId)}
             >
               <span class="min-w-0 flex-1 truncate text-[12px] font-medium">{category.label}</span>
-              <span class="shrink-0 text-[10px] tabular-nums text-surface-500">
+              <span class="shrink-0 text-[10px] tabular-nums text-content-quiet">
                 {#if category.selectedCount > 0}
-                  <span class="text-primary-300">{category.selectedCount}</span
+                  <span class="text-content-link">{category.selectedCount}</span
                   >/{category.tools.length}
                 {:else}
                   {category.tools.length}
@@ -88,7 +88,7 @@
 
       <div class="min-h-0 min-w-0 flex-1 overflow-y-auto p-2" role="group" aria-label="Tools in module">
         {#if activeCategory}
-          <p class="px-1.5 pb-2 text-[11px] text-surface-500">
+          <p class="px-1.5 pb-2 text-[11px] text-content-quiet">
             {activeCategory.label}
           </p>
           <ul class="space-y-1">
@@ -115,7 +115,7 @@
                     <span class="block text-[12px] font-medium text-surface-100"
                       >{tool.actionLabel}</span
                     >
-                    <span class="mt-0.5 block truncate font-mono text-[10px] text-surface-500"
+                    <span class="mt-0.5 block truncate font-mono text-[10px] text-content-quiet"
                       >{tool.id}</span
                     >
                   </span>

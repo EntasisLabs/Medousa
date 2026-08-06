@@ -201,7 +201,7 @@
 <section class="flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
   {#if view === "reader" && libraryTab === "notes"}
     {#if saveWhisper}
-      <p class="px-4 py-1 text-xs text-surface-400">{saveWhisper}</p>
+      <p class="px-4 py-1 text-xs text-content-tertiary">{saveWhisper}</p>
     {/if}
     <VaultEditor visible={true} mobile={true} />
   {:else}
@@ -312,13 +312,13 @@
       <div class="flex min-h-0 flex-1 flex-col">
         {#if artifacts.error}
           <p
-            class="mx-3 mt-3 rounded-container-token border border-error-500/30 bg-error-500/10 px-3 py-2 text-xs text-error-300"
+            class="mx-3 mt-3 rounded-container-token border border-error-500/30 bg-error-500/10 px-3 py-2 text-xs text-content-error"
           >
             {artifacts.error}
           </p>
         {/if}
         {#if artifacts.loading}
-          <p class="px-3 py-4 text-sm text-surface-500">Loading presentations…</p>
+          <p class="px-3 py-4 text-sm text-content-quiet">Loading presentations…</p>
         {:else}
           <ArtifactLibraryList
             artifacts={artifacts.filteredArtifacts}

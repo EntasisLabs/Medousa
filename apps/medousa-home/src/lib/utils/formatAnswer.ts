@@ -44,14 +44,14 @@ export function answerStateBadgeClass(tone: AnswerStateTone): string {
 export function answerStateTextClass(tone: AnswerStateTone): string {
   switch (tone) {
     case "success":
-      return "text-success-400";
+      return "text-content-success";
     case "error":
-      return "text-error-400";
+      return "text-content-error";
     case "warning":
-      return "text-warning-400";
+      return "text-content-warning";
     case "primary":
-      return "text-primary-300";
+      return "text-content-link";
     default:
-      return "text-surface-500";
+      return "text-content-quiet";
   }
 }

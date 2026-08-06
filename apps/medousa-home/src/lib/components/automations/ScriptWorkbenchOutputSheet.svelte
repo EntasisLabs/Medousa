@@ -59,14 +59,14 @@
       </header>
       <div class="mobile-you-scroll min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-2">
         {#if workshop.runBusy}
-          <p class="mb-3 text-xs text-surface-400">Running…</p>
+          <p class="mb-3 text-xs text-content-tertiary">Running…</p>
         {:else if graphemeScriptEditor.compileBusy}
-          <p class="mb-3 text-xs text-surface-400">Compiling…</p>
+          <p class="mb-3 text-xs text-content-tertiary">Compiling…</p>
         {/if}
         {#if graphemeScriptEditor.compileError}
-          <p class="text-xs text-error-400">{graphemeScriptEditor.compileError}</p>
+          <p class="text-xs text-content-error">{graphemeScriptEditor.compileError}</p>
         {:else if graphemeScriptEditor.compileResult}
-          <div class="space-y-1 text-[11px] text-surface-300">
+          <div class="space-y-1 text-[11px] text-content-secondary">
             <p class="font-medium text-surface-100">
               {graphemeScriptEditor.compileResult.mode} ·
               {graphemeScriptEditor.compileResult.validated ? "valid" : "invalid"}
@@ -75,7 +75,7 @@
               <p>{hint}</p>
             {/each}
             {#each graphemeScriptEditor.compileResult.lint_warnings as warning (warning)}
-              <p class="text-warning-400">{warning}</p>
+              <p class="text-content-warning">{warning}</p>
             {/each}
           </div>
         {/if}

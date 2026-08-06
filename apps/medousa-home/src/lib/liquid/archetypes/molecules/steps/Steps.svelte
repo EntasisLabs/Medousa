@@ -130,7 +130,7 @@
   .liquid-steps-subtitle {
     margin: 0.3rem 0 0;
     font-size: 0.78rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .liquid-steps-rail {
@@ -223,6 +223,6 @@
   .liquid-steps-body {
     font-size: 0.78rem;
     line-height: 1.5;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
   }
 </style>

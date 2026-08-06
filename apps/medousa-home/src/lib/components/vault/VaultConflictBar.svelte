@@ -21,7 +21,7 @@
     class="vault-conflict-bar flex flex-wrap items-center justify-between gap-3 border-b border-warning-500/35 bg-warning-500/10 px-4 py-2"
     role="alert"
   >
-    <p class="text-sm text-warning-200">
+    <p class="text-sm text-content-warning">
       {vault.conflictMessage ?? "This note changed elsewhere while you were editing."}
     </p>
     <div class="flex shrink-0 flex-wrap gap-2">

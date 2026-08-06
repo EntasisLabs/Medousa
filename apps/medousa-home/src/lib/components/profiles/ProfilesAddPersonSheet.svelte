@@ -123,7 +123,7 @@
       </p>
 
       {#if message}
-        <p class="text-xs {ok ? 'text-success-400' : 'text-warning-400'}" role="status">
+        <p class="text-xs {ok ? 'text-content-success' : 'text-content-warning'}" role="status">
           {message}
         </p>
       {/if}

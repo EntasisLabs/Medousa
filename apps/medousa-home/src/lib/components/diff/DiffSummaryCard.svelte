@@ -95,13 +95,13 @@
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .diff-summary-stats {
     font-size: 0.625rem;
     font-variant-numeric: tabular-nums;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .diff-summary-paths {
@@ -139,14 +139,14 @@
 
   .diff-summary-more {
     font-size: 0.625rem;
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
   }
 
   .diff-add {
-    color: rgb(var(--color-success-300));
+    color: rgb(var(--theme-success));
   }
 
   .diff-del {
-    color: rgb(var(--color-error-300));
+    color: rgb(var(--theme-error));
   }
 </style>

@@ -277,7 +277,7 @@
   .medousa-draw-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding: .55rem .65rem; border-bottom: 1px solid rgb(var(--color-surface-500) / .3); background: rgb(var(--color-surface-900) / .9); }
   .medousa-draw-tool-group { display: flex; align-items: center; gap: .2rem; padding-right: .5rem; border-right: 1px solid rgb(var(--color-surface-500) / .25); }
   .medousa-draw-history { margin-left: auto; padding-right: 0; border-right: 0; }
-  .medousa-draw-toolbar button { min-width: 2rem; height: 1.85rem; padding: 0 .55rem; border-radius: .45rem; color: rgb(var(--color-surface-300)); font-size: .72rem; }
+  .medousa-draw-toolbar button { min-width: 2rem; height: 1.85rem; padding: 0 .55rem; border-radius: .45rem; color: rgb(var(--theme-text-secondary)); font-size: .72rem; }
   .medousa-draw-toolbar button:hover:not(:disabled), .medousa-draw-toolbar button.active { color: rgb(var(--color-surface-50)); background: rgb(var(--color-surface-500) / .3); }
   .medousa-draw-toolbar button:disabled { opacity: .35; }
   .medousa-draw-color { min-width: 1.45rem; width: 1.45rem; height: 1.45rem; padding: 0; border: 2px solid transparent; border-radius: 999px; background: var(--draw-color); box-shadow: inset 0 0 0 1px rgb(0 0 0 / .25); }

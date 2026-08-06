@@ -115,7 +115,7 @@
       <div class="agent-editor-popover-head">
         <div class="min-w-0">
           <p class="text-[11px] font-semibold tracking-[-0.01em] text-surface-100">Tools</p>
-          <p class="mt-0.5 text-[10px] text-surface-500">
+          <p class="mt-0.5 text-[10px] text-content-quiet">
             {#if selected.length > 0}
               {selected.length} selected
             {:else}
@@ -138,11 +138,11 @@
               class="flex w-full items-center justify-between px-3 py-2 text-left text-xs"
               onclick={() => (showOpenshell = !showOpenshell)}
             >
-              <span class="text-surface-300">OpenShell sandbox</span>
-              <span class="text-surface-500">{showOpenshell ? "−" : "+"}</span>
+              <span class="text-content-secondary">OpenShell sandbox</span>
+              <span class="text-content-quiet">{showOpenshell ? "−" : "+"}</span>
             </button>
             {#if showOpenshell}
-              <div class="border-t border-surface-500/25 px-3 py-2.5 text-xs text-surface-300">
+              <div class="border-t border-surface-500/25 px-3 py-2.5 text-xs text-content-secondary">
                 <p>
                   Default path:
                   <span class="text-surface-200">{openshellDefaultPath}</span>
@@ -163,11 +163,11 @@
         {#if scripts.length > 0}
           <div class="shrink-0">
             <p class="agent-liquid-whisper">Scripts</p>
-            <ul class="mt-2 max-h-24 space-y-1 overflow-y-auto text-[11px] text-surface-300">
+            <ul class="mt-2 max-h-24 space-y-1 overflow-y-auto text-[11px] text-content-secondary">
               {#each scripts as script (script.relative_path)}
                 <li class="font-mono">
                   {script.relative_path}
-                  <span class="text-surface-500">({script.risk_class})</span>
+                  <span class="text-content-quiet">({script.risk_class})</span>
                 </li>
               {/each}
             </ul>

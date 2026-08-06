@@ -71,7 +71,7 @@
 >
   {#if previewError}
     <div class="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-      <p class="text-sm text-surface-400">{previewError}</p>
+      <p class="text-sm text-content-tertiary">{previewError}</p>
       <button
         type="button"
         class="btn btn-sm variant-soft-primary"
@@ -97,7 +97,7 @@
       />
     </div>
   {:else}
-    <div class="flex h-full flex-1 items-center justify-center p-6 text-sm text-surface-400">
+    <div class="flex h-full flex-1 items-center justify-center p-6 text-sm text-content-tertiary">
       Loading preview…
     </div>
   {/if}

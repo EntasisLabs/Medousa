@@ -131,7 +131,7 @@
       </div>
     </div>
     {#if error}
-      <p class="mt-2 text-xs text-error-400">{error}</p>
+      <p class="mt-2 text-xs text-content-error">{error}</p>
     {/if}
   </header>
 

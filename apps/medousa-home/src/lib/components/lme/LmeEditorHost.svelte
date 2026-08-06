@@ -135,7 +135,7 @@
           <ShellSidebarExpandButton label="Show workspace browser" />
         </div>
       {/if}
-      <div class="flex flex-1 items-center justify-center p-8 text-sm text-surface-500">
+      <div class="flex flex-1 items-center justify-center p-8 text-sm text-content-quiet">
         {emptyMessage}
       </div>
     </div>
@@ -169,7 +169,7 @@
     {:else if active.kind === "file"}
       <div class="external-file-library-preview relative z-10 flex h-full min-h-0 min-w-0 flex-1 flex-col">
         {#if !fileAttachment}
-          <div class="flex flex-1 items-center justify-center p-6 text-sm text-surface-500">
+          <div class="flex flex-1 items-center justify-center p-6 text-sm text-content-quiet">
             Select a file to preview.
           </div>
         {:else}
@@ -178,7 +178,7 @@
               <h2 class="truncate text-sm font-semibold text-surface-100">
                 {fileAttachment.label || attachmentFileName(fileAttachment)}
               </h2>
-              <p class="truncate text-xs text-surface-500">{fileAttachment.path}</p>
+              <p class="truncate text-xs text-content-quiet">{fileAttachment.path}</p>
             </div>
             <div class="flex shrink-0 items-center gap-2">
               <button

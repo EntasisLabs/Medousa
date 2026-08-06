@@ -93,7 +93,7 @@
   >
     {#if shellContextMenu.pickingDesktop}
       {#if otherDesktops.length === 0 && !canCreateDesktop}
-        <div class="px-3 py-2 text-[12px] text-surface-400">No other workspaces</div>
+        <div class="px-3 py-2 text-[12px] text-content-tertiary">No other workspaces</div>
       {:else}
         {#each otherDesktops as desktop (desktop.id)}
           <button

@@ -376,7 +376,7 @@
     width: 3.5rem;
     height: 3.5rem;
     border-radius: 999px;
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
     background: color-mix(in srgb, var(--color-primary-500) 12%, transparent);
   }
 
@@ -392,7 +392,7 @@
     max-width: 22rem;
     font-size: 0.8125rem;
     line-height: 1.5;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .environment-renderer-empty-room-cta {

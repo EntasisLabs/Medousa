@@ -111,19 +111,19 @@
   {#if cards.length === 0}
     <div class="flex flex-1 flex-col items-center justify-center gap-2 px-3 py-6 text-center">
       {#if filter === "living"}
-        <Zap size={22} strokeWidth={1.5} class="text-surface-500" />
+        <Zap size={22} strokeWidth={1.5} class="text-content-quiet" />
       {:else if filter === "settled"}
-        <CheckCircle2 size={22} strokeWidth={1.5} class="text-surface-500" />
+        <CheckCircle2 size={22} strokeWidth={1.5} class="text-content-quiet" />
       {:else if filter === "failed"}
-        <AlertTriangle size={22} strokeWidth={1.5} class="text-surface-500" />
+        <AlertTriangle size={22} strokeWidth={1.5} class="text-content-quiet" />
       {:else if filter === "stopped"}
-        <CircleOff size={22} strokeWidth={1.5} class="text-surface-500" />
+        <CircleOff size={22} strokeWidth={1.5} class="text-content-quiet" />
       {:else}
-        <span class="text-lg font-bold text-surface-500">!</span>
+        <span class="text-lg font-bold text-content-quiet">!</span>
       {/if}
-      <p class="text-sm text-surface-300">{emptyCopy.title}</p>
+      <p class="text-sm text-content-secondary">{emptyCopy.title}</p>
       {#if emptyCopy.hint}
-        <p class="text-[11px] text-surface-500">{emptyCopy.hint}</p>
+        <p class="text-[11px] text-content-quiet">{emptyCopy.hint}</p>
       {/if}
       {#if filter === "living"}
         <button
@@ -156,7 +156,7 @@
               <span class="block truncate text-[13px] font-medium text-surface-100">
                 {card.title || "Untitled"}
               </span>
-              <span class="block truncate text-[11px] text-surface-500">
+              <span class="block truncate text-[11px] text-content-quiet">
                 {card.status_label || card.column}
               </span>
             </span>
@@ -213,13 +213,13 @@
           Hide stuck
         </button>
         {#if blockedDisplay.overflow > 0}
-          <span class="text-[10px] text-surface-500">
+          <span class="text-[10px] text-content-quiet">
             +{blockedDisplay.overflow} more grouped
           </span>
         {/if}
       {/if}
       {#if workspace.cardActionMessage}
-        <p class="w-full text-[10px] text-surface-500">{workspace.cardActionMessage}</p>
+        <p class="w-full text-[10px] text-content-quiet">{workspace.cardActionMessage}</p>
       {/if}
     </footer>
   {/if}

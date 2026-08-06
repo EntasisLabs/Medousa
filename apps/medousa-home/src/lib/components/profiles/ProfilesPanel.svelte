@@ -201,7 +201,7 @@
       {/if}
 
       {#if shelfNotice}
-        <p class="mt-2 text-xs text-warning-400" role="status">{shelfNotice}</p>
+        <p class="mt-2 text-xs text-content-warning" role="status">{shelfNotice}</p>
       {/if}
     </header>
   {:else}

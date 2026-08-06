@@ -216,19 +216,19 @@
         aria-hidden="true"
       />
       <span class="truncate font-medium text-surface-100">{active.title}</span>
-      <span class="shrink-0 text-surface-500">·</span>
-      <span class="shrink-0 text-surface-400">{humanPhaseLabel(active.humanPhase)}</span>
+      <span class="shrink-0 text-content-quiet">·</span>
+      <span class="shrink-0 text-content-tertiary">{humanPhaseLabel(active.humanPhase)}</span>
       {#if review && review.candidates.length > 1}
         <span class="hidden shrink-0 text-amber-300/90 sm:inline"
           >{review.candidates.length} candidates</span
         >
       {/if}
       {#if active.executorKind}
-        <span class="hidden shrink-0 text-surface-500 sm:inline">{humanExecutorLabel(active.executorKind)}</span>
+        <span class="hidden shrink-0 text-content-quiet sm:inline">{humanExecutorLabel(active.executorKind)}</span>
       {/if}
       <ChevronDown
         size={12}
-        class="shrink-0 text-surface-500 transition group-open:rotate-180"
+        class="shrink-0 text-content-quiet transition group-open:rotate-180"
         aria-hidden="true"
       />
     </summary>
@@ -238,7 +238,7 @@
     >
       <div class="px-2 py-1.5">
         <p class="truncate font-medium text-surface-100">{active.title}</p>
-        <p class="mt-0.5 text-[10px] text-surface-500">
+        <p class="mt-0.5 text-[10px] text-content-quiet">
           {humanPhaseGuidance(active.humanPhase)}
         </p>
       </div>
@@ -285,7 +285,7 @@
       {/if}
 
       <div class="my-1 border-t border-surface-500/25"></div>
-      <button type="button" class="context-action text-surface-400" onclick={() => void detach()}>
+      <button type="button" class="context-action text-content-tertiary" onclick={() => void detach()}>
         <Link2Off size={14} />
         Stop following this project
       </button>
@@ -320,14 +320,14 @@
     </button>
     {#if chooserOpen}
       <div class="absolute left-0 top-full z-50 mt-1.5 w-72 rounded-xl border border-surface-500/40 bg-surface-900/95 p-2 text-xs shadow-2xl backdrop-blur">
-        <p class="px-1.5 pb-1.5 text-[10px] font-medium uppercase tracking-wide text-surface-500">Continue a project</p>
+        <p class="px-1.5 pb-1.5 text-[10px] font-medium uppercase tracking-wide text-content-quiet">Continue a project</p>
         {#each undertakings.items.filter((item) => ["ready", "executing"].includes(item.state) && item.environment?.worktree).slice(0, 6) as item (item.id)}
           <button type="button" class="context-action" disabled={busy} onclick={() => void bindProject(item)}>
             <CircleDot size={13} />
             <span class="truncate">{item.title}</span>
           </button>
         {:else}
-          <p class="px-1.5 py-2 text-surface-500">No ready projects yet.</p>
+          <p class="px-1.5 py-2 text-content-quiet">No ready projects yet.</p>
         {/each}
         <div class="my-1 border-t border-surface-500/25"></div>
         {#if creating}

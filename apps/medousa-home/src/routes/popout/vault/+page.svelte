@@ -163,8 +163,8 @@
       {#if saveWhisper}
         <p
           class="truncate text-[10px] leading-tight {saveWhisper === 'Saved'
-            ? 'text-success-400/90'
-            : 'text-surface-500'}"
+            ? 'text-content-success/90'
+            : 'text-content-quiet'}"
         >
           {saveWhisper}
         </p>
@@ -266,12 +266,12 @@
 
   <div class="relative flex min-h-0 flex-1 flex-col">
     {#if loadingPath}
-      <p class="px-4 py-6 text-sm text-surface-500">Opening note…</p>
+      <p class="px-4 py-6 text-sm text-content-quiet">Opening note…</p>
     {:else if missingPath && !vault.selectedPath}
       <div class="flex flex-1 flex-col items-start justify-center gap-3 px-4 py-6">
         <div>
           <p class="text-sm font-medium text-surface-200">No note open</p>
-          <p class="mt-1 text-xs text-surface-500">
+          <p class="mt-1 text-xs text-content-quiet">
             Find an existing note or start a new one.
           </p>
         </div>

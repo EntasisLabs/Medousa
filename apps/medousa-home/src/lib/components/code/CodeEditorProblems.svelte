@@ -26,12 +26,12 @@
   aria-label="Problems"
 >
   <div
-    class="flex items-center justify-between border-b border-surface-500/30 px-2 py-1 text-[11px] text-surface-300"
+    class="flex items-center justify-between border-b border-surface-500/30 px-2 py-1 text-[11px] text-content-secondary"
   >
     <span>
       Problems
       {#if problems.length}
-        <span class="text-surface-500">
+        <span class="text-content-quiet">
           · {errors} error{errors === 1 ? "" : "s"}, {warnings} warning{warnings === 1
             ? ""
             : "s"}
@@ -41,7 +41,7 @@
     {#if onClose}
       <button
         type="button"
-        class="rounded px-1 text-surface-400 hover:bg-surface-700/60"
+        class="rounded px-1 text-content-tertiary hover:bg-surface-700/60"
         onclick={() => onClose?.()}
       >
         Hide
@@ -50,7 +50,7 @@
   </div>
   <ul class="min-h-0 flex-1 overflow-y-auto text-[12px]">
     {#if problems.length === 0}
-      <li class="px-3 py-2 text-surface-400">No problems</li>
+      <li class="px-3 py-2 text-content-tertiary">No problems</li>
     {:else}
       {#each problems as p, i (i + p.message + p.line)}
         <li>
@@ -61,15 +61,15 @@
           >
             <span
               class="shrink-0 uppercase {p.severity === 'error'
-                ? 'text-error-400'
+                ? 'text-content-error'
                 : p.severity === 'warning'
-                  ? 'text-warning-400'
-                  : 'text-surface-400'}"
+                  ? 'text-content-warning'
+                  : 'text-content-tertiary'}"
             >
               {p.severity}
             </span>
             <span class="min-w-0 flex-1 truncate text-surface-100">{p.message}</span>
-            <span class="shrink-0 text-surface-500">:{p.line}</span>
+            <span class="shrink-0 text-content-quiet">:{p.line}</span>
           </button>
         </li>
       {/each}

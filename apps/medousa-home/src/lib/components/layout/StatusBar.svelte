@@ -76,12 +76,12 @@
 
   const connectionToneClass = $derived(
     connectionOk
-      ? "text-surface-500"
+      ? "text-content-quiet"
       : health
         ? quiet
-          ? "text-warning-400/80"
-          : "text-warning-400/90"
-        : "text-surface-500",
+          ? "text-content-warning/80"
+          : "text-content-warning/90"
+        : "text-content-quiet",
   );
 
   const showMotion = $derived(inMotionCount > 0 && Boolean(onSelectMotion));
@@ -183,7 +183,7 @@
   <!-- Keeps connection/activity left and contextual + desktops + ⌘K pinned right. -->
   <div class="status-bar-mid min-w-0 flex-1" aria-hidden="true"></div>
 
-  <div class="status-bar-trailing flex min-w-0 shrink-0 items-center gap-3 text-surface-500">
+  <div class="status-bar-trailing text-content-quiet flex min-w-0 shrink-0 items-center gap-3">
     <StatusContextualSlot />
 
     {#if showMotion}
@@ -228,7 +228,7 @@
         {/if}
       </div>
     {:else if !quiet && needsAttentionCount > 0}
-      <span class="text-warning-400/85">{needsAttentionCount} need attention</span>
+      <span class="text-content-warning/85">{needsAttentionCount} need attention</span>
     {/if}
 
     {#if !quiet}

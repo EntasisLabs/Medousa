@@ -131,10 +131,10 @@
             </button>
           </li>
         {:else}
-          <li class="px-4 py-8 text-center text-sm text-surface-500">No matching notes</li>
+          <li class="px-4 py-8 text-center text-sm text-content-quiet">No matching notes</li>
         {/each}
       </ul>
-      <p class="border-t border-surface-800 px-4 py-2 text-[11px] text-surface-500">
+      <p class="border-t border-surface-800 px-4 py-2 text-[11px] text-content-quiet">
         ↑↓ navigate · Enter open · Esc close · <kbd class="vault-kbd">{formatShortcut("O")}</kbd> toggle
       </p>
     </div>

@@ -920,7 +920,7 @@
   .companion-bubble span {
     display: -webkit-box;
     overflow: hidden;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     font-size: 0.72rem;
     line-height: 1.35;
     -webkit-box-orient: vertical;
@@ -994,7 +994,7 @@
 
   .companion-heading span {
     overflow: hidden;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     font-size: 0.68rem;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1009,7 +1009,7 @@
     border: 0;
     border-radius: 0.65rem;
     background: transparent;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     cursor: pointer;
   }
 
@@ -1019,7 +1019,7 @@
   }
 
   .companion-icon-btn--quiet {
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .companion-status {
@@ -1101,7 +1101,7 @@
     display: -webkit-box;
     margin: 0.15rem 0 0;
     overflow: hidden;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     font-size: 0.66rem;
     line-height: 1.35;
     -webkit-box-orient: vertical;
@@ -1156,7 +1156,7 @@
     border: 1px solid transparent;
     border-radius: 0.52rem;
     background: transparent;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     font-size: 0.68rem;
     font-weight: 650;
     cursor: pointer;
@@ -1196,7 +1196,7 @@
     display: -webkit-box;
     margin: 0;
     overflow: hidden;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     font-size: 0.69rem;
     line-height: 1.4;
     -webkit-box-orient: vertical;
@@ -1213,7 +1213,7 @@
   }
 
   .companion-composer label {
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     font-size: 0.7rem;
     font-weight: 650;
   }
@@ -1231,7 +1231,7 @@
     border-radius: 0.55rem;
     background: rgb(var(--color-surface-900) / 0.54);
     padding: 0.34rem 0.5rem;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     font-size: 0.64rem;
     cursor: pointer;
   }
@@ -1262,7 +1262,7 @@
   }
 
   .companion-composer textarea::placeholder {
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .companion-composer-footer {
@@ -1278,7 +1278,7 @@
     border: 0;
     outline: 0;
     background: transparent;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     font-size: 0.66rem;
     text-overflow: ellipsis;
   }
@@ -1287,7 +1287,7 @@
     min-width: 0;
     flex: 1;
     overflow: hidden;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     font-size: 0.66rem;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1335,7 +1335,7 @@
     border: 1px solid transparent;
     border-radius: 0.75rem;
     background: transparent;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     cursor: pointer;
   }
 
@@ -1370,7 +1370,7 @@
   .companion-views p {
     margin: 0;
     padding: 0.55rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     font-size: 0.68rem;
     text-align: center;
   }
@@ -1384,7 +1384,7 @@
     border-radius: 0.55rem;
     background: transparent;
     padding: 0.48rem 0.55rem;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     font-size: 0.7rem;
     text-align: left;
     cursor: pointer;

@@ -447,7 +447,7 @@
 
   .msg-story-link {
     margin-left: 0.2rem;
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
     text-decoration: none;
     white-space: nowrap;
   }
@@ -560,10 +560,10 @@
   }
 
   .msg-story-footer-note.is-ok {
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
   }
 
   .msg-story-footer-note.is-warn {
-    color: rgb(var(--color-warning-400));
+    color: rgb(var(--theme-warning));
   }
 </style>

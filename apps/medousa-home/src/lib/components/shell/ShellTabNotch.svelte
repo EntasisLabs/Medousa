@@ -414,7 +414,7 @@
   }
 
   .shell-tab-notch-body :global(.shell-tab-chip--idle) {
-    color: rgb(var(--color-surface-450, var(--color-surface-500)));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .shell-tab-notch-open-label {
@@ -478,13 +478,13 @@
   }
 
   .shell-tab-notch-open-meta {
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     font-weight: 450;
   }
 
   .shell-tab-notch-empty {
     padding: 0 0.25rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     font-size: 0.6875rem;
     white-space: nowrap;
   }
@@ -495,7 +495,7 @@
     flex: 1 1 auto;
     align-items: center;
     gap: 0.35rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .shell-tab-notch-search-input {
@@ -520,7 +520,7 @@
   }
 
   .shell-tab-notch-search-input::placeholder {
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     font-weight: 450;
   }
 
@@ -557,7 +557,7 @@
     border: 0;
     border-radius: 0.35rem;
     background: transparent;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     transition:
       background-color 120ms ease,
       color 120ms ease;

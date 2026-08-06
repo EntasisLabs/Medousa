@@ -162,7 +162,7 @@
   .liquid-tabs-subtitle {
     margin: 0.3rem 0 0;
     font-size: 0.78rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .liquid-tabs-list {
@@ -183,7 +183,7 @@
     border: 0;
     border-radius: 0.45rem;
     background: transparent;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     font-size: 0.78rem;
     font-weight: 550;
     cursor: pointer;
@@ -224,6 +224,6 @@
     font-weight: 650;
     letter-spacing: 0.03em;
     text-transform: uppercase;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 </style>

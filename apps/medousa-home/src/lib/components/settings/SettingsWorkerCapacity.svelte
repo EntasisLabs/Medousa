@@ -225,7 +225,7 @@
     background: rgb(var(--color-primary-500) / 0.12);
     padding: 0.25rem 0.55rem;
     font-size: 0.68rem;
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
   }
 
   .capacity-grid {
@@ -266,7 +266,7 @@
   .capacity-status,
   .capacity-dirty {
     font-size: 0.68rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   input {
@@ -311,11 +311,11 @@
   }
 
   .capacity-error {
-    color: rgb(var(--color-warning-400));
+    color: rgb(var(--theme-warning));
   }
 
   .capacity-success {
-    color: rgb(var(--color-success-400));
+    color: rgb(var(--theme-success));
   }
 
   @media (max-width: 620px) {

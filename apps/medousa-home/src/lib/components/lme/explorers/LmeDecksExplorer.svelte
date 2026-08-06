@@ -52,7 +52,7 @@
 
 <aside class="lme-decks-explorer flex h-full min-h-0 w-full flex-col" aria-label="Presentations">
   {#if artifacts.error}
-    <p class="shrink-0 px-3 py-2 text-sm text-error-400">{artifacts.error}</p>
+    <p class="shrink-0 px-3 py-2 text-sm text-content-error">{artifacts.error}</p>
   {/if}
 
   <div class="min-h-0 flex-1 overflow-hidden">
@@ -78,10 +78,10 @@
   <footer class="lme-side-rail-dock" use:portLmeDock>
     {#if searchExpanded}
       <div class="lme-dock-search-expand flex min-w-0 flex-1 items-center gap-1">
-        <Search size={14} strokeWidth={1.75} class="shrink-0 text-surface-500" aria-hidden="true" />
+        <Search size={14} strokeWidth={1.75} class="shrink-0 text-content-quiet" aria-hidden="true" />
         <input
           bind:this={searchInputEl}
-          class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-surface-500 focus:outline-none focus:ring-0"
+          class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-content-quiet focus:outline-none focus:ring-0"
           type="search"
           placeholder="Search presentations…"
           value={query}

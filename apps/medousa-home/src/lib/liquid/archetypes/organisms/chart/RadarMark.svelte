@@ -201,7 +201,7 @@
     padding: 2rem 0.75rem;
     text-align: center;
     font-size: 0.8rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .liquid-chart-radar-wrap {

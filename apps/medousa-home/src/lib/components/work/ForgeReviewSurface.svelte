@@ -172,7 +172,7 @@
     justify-content: space-between;
     gap: 0.75rem;
     margin-bottom: 0.65rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     font-size: 0.6875rem;
   }
 
@@ -209,7 +209,7 @@
     margin-top: 0.2rem;
     font-size: 0.75rem;
     line-height: 1.5;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .review-signals {
@@ -225,7 +225,7 @@
     padding: 0.15rem 0.5rem;
     font-size: 0.5625rem;
     font-weight: 500;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
   }
 
   .review-signal--high {
@@ -255,7 +255,7 @@
     border: 1px solid rgb(var(--color-surface-500) / 0.25);
     padding: 0.15rem 0.5rem;
     font-size: 0.5625rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .review-attribution-chip--human {
@@ -277,7 +277,7 @@
     align-items: flex-start;
     gap: 0.35rem;
     padding: 1.25rem 0.5rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     font-size: 0.75rem;
   }
 

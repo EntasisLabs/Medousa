@@ -305,7 +305,7 @@
         {#if externalDesk.pinnedRoots.length > 0}
           <button
             type="button"
-            class="workshop-text-action text-xs text-surface-500"
+            class="workshop-text-action text-xs text-content-quiet"
             disabled={Boolean(externalDesk.loadingRoot)}
             onclick={() => void externalDesk.refreshAllRoots()}
           >

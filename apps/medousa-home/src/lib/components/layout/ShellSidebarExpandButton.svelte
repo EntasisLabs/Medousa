@@ -43,7 +43,7 @@
     align-items: center;
     justify-content: center;
     border-radius: 0.375rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     animation: shell-sidebar-expand-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
     transition:
       color 120ms ease,

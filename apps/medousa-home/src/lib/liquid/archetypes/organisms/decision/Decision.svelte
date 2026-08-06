@@ -178,7 +178,7 @@
     margin: 0.35rem 0 0;
     font-size: 0.8rem;
     line-height: 1.45;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .liquid-decision-factors {
@@ -195,7 +195,7 @@
     text-transform: uppercase;
     padding: 0.15rem 0.45rem;
     border-radius: 999px;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     border: 1px solid color-mix(in srgb, var(--color-surface-500) 35%, transparent);
     background: color-mix(in srgb, var(--color-surface-800) 55%, transparent);
   }
@@ -267,7 +267,7 @@
     font-weight: 700;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
   }
 
   .liquid-decision-option-score {
@@ -275,13 +275,13 @@
     font-size: 0.85rem;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
   }
 
   .liquid-decision-option-summary {
     font-size: 0.75rem;
     line-height: 1.4;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
   }
 
   .liquid-decision-tradeoffs {
@@ -307,11 +307,11 @@
   }
 
   .liquid-decision-pros .liquid-decision-col-label {
-    color: rgb(var(--color-success-300));
+    color: rgb(var(--theme-success));
   }
 
   .liquid-decision-cons .liquid-decision-col-label {
-    color: rgb(var(--color-warning-300));
+    color: rgb(var(--theme-warning));
   }
 
   .liquid-decision-col ul {

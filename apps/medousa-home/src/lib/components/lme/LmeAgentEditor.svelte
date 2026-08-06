@@ -47,18 +47,18 @@
   class="lme-agent-editor flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
 >
   {#if !active}
-    <p class="px-5 py-5 text-sm text-surface-500 sm:px-7 sm:py-6">
+    <p class="px-5 py-5 text-sm text-content-quiet sm:px-7 sm:py-6">
       Select an agent from the side panel.
     </p>
   {:else if !entry}
     <div class="px-5 py-5 sm:px-7 sm:py-6">
       {#if catalog.manuscriptDetailLoading}
-        <p class="text-sm text-surface-500">Loading agent…</p>
+        <p class="text-sm text-content-quiet">Loading agent…</p>
       {:else if catalog.manuscriptDetailError}
-        <p class="text-sm text-warning-400">{catalog.manuscriptDetailError}</p>
+        <p class="text-sm text-content-warning">{catalog.manuscriptDetailError}</p>
       {:else}
-        <p class="text-sm text-surface-500">
-          Agent <span class="font-mono text-surface-300">{active.manuscriptId}</span> not found in
+        <p class="text-sm text-content-quiet">
+          Agent <span class="font-mono text-content-secondary">{active.manuscriptId}</span> not found in
           catalog.
         </p>
         <button

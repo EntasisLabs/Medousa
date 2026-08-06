@@ -191,7 +191,7 @@
     margin: 0;
     padding: 0.45rem 0.85rem;
     font-size: 0.6875rem;
-    color: rgb(var(--color-error-400));
+    color: rgb(var(--theme-error));
   }
 
   .activity-history-scroll {

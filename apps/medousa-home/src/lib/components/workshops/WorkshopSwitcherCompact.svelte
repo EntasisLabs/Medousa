@@ -358,7 +358,7 @@
         {#if workshops.loading && workshops.workshops.length === 0}
           <p class="workshop-faint px-2 text-sm">Loading…</p>
         {:else if workshops.error}
-          <p class="px-2 text-sm text-error-400">{workshops.error}</p>
+          <p class="px-2 text-sm text-content-error">{workshops.error}</p>
           <button
             type="button"
             class="btn btn-sm variant-ghost-surface mx-2 mt-3"

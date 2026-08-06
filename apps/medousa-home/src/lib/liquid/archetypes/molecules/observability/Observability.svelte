@@ -43,7 +43,7 @@
     align-items: center;
     gap: 0.35rem;
     padding: 0.15rem 0;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     font-size: 0.625rem;
     letter-spacing: 0.02em;
     user-select: none;
@@ -54,7 +54,7 @@
   }
 
   .liquid-obs-summary:hover {
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
   }
 
   .liquid-obs-label {
@@ -63,7 +63,7 @@
   }
 
   .liquid-obs-chevron {
-    color: rgb(var(--color-surface-600));
+    color: rgb(var(--theme-text-faint));
     font-size: 0.7rem;
     line-height: 1;
     transition: transform 0.15s ease;

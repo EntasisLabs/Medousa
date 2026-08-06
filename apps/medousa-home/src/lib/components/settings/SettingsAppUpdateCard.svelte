@@ -162,7 +162,7 @@
   .app-update-status {
     font-size: 0.68rem;
     line-height: 1.3;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .app-update-action {
@@ -175,7 +175,7 @@
     padding: 0.2rem 0;
     font-size: 0.72rem;
     font-weight: 600;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     cursor: pointer;
   }
 
@@ -195,12 +195,12 @@
     background: transparent;
     padding: 0;
     font-size: 0.68rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     cursor: pointer;
   }
 
   .app-update-secondary:hover:not(:disabled) {
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
   }
 
   .app-update-secondary:disabled {
@@ -211,6 +211,6 @@
   .app-update-error {
     margin: 0.45rem 0 0;
     font-size: 0.68rem;
-    color: rgb(var(--color-error-400));
+    color: rgb(var(--theme-error));
   }
 </style>

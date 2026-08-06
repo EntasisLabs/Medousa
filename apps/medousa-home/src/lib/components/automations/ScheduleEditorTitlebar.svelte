@@ -91,7 +91,7 @@
     {#if confirmDelete}
       <button
         type="button"
-        class="scripts-workbench-toolbar-btn text-error-400 hover:text-error-300"
+        class="scripts-workbench-toolbar-btn text-content-error/85 hover:text-content-error"
         title="Confirm delete"
         aria-label="Confirm delete schedule"
         disabled={automations.deletingId === entry.recurring_id}
@@ -101,7 +101,7 @@
       </button>
       <button
         type="button"
-        class="px-1.5 text-[10px] text-surface-500 hover:text-surface-300"
+        class="px-1.5 text-[10px] text-content-quiet hover:text-content-secondary"
         onclick={() => (confirmDelete = false)}
       >
         Cancel

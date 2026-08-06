@@ -82,7 +82,7 @@
 
       <div class="mobile-you-scroll space-y-4 px-4 pb-6 pt-3">
         {#if workshops.atWorkshopLimit}
-          <p class="rounded-lg border border-warning-500/35 bg-warning-500/10 px-3 py-2 text-xs text-warning-100">
+          <p class="rounded-lg border border-warning-500/35 bg-warning-500/10 px-3 py-2 text-xs text-content-warning">
             You have {workshops.workshops.length} workshops saved. Remove one in Settings before
             adding another.
           </p>
@@ -117,13 +117,13 @@
         </label>
 
         {#if parsedPreview}
-          <p class="text-xs text-surface-300">
+          <p class="text-xs text-content-secondary">
             Joining <span class="font-medium text-surface-100">{parsedPreview.peerName}</span>
           </p>
         {/if}
 
         {#if workshops.joinError}
-          <p class="text-sm text-error-400">{workshops.joinError}</p>
+          <p class="text-sm text-content-error">{workshops.joinError}</p>
         {/if}
 
         <button

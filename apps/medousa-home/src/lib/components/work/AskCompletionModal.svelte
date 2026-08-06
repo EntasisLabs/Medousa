@@ -104,8 +104,8 @@
       <h2 id="ask-completion-title" class="text-base font-semibold text-surface-50">
         Ask finished
       </h2>
-      <p class="mt-1 text-sm text-surface-300">{pending.title}</p>
-      <p class="mt-2 text-xs text-surface-500">
+      <p class="mt-1 text-sm text-content-secondary">{pending.title}</p>
+      <p class="mt-2 text-xs text-content-quiet">
         Result is saved on this machine. Choose where to send it, or dismiss and read it in Work.
       </p>
 
@@ -135,7 +135,7 @@
             {/each}
           </select>
           {#if notifyOptions.length <= 1}
-            <span class="mt-1 block text-xs text-surface-500">
+            <span class="mt-1 block text-xs text-content-quiet">
               Set heartbeat chat IDs in Messaging to enable channel notify.
             </span>
           {/if}
@@ -143,9 +143,9 @@
       </div>
 
       {#if error}
-        <p class="mt-3 text-xs text-error-400">{error}</p>
+        <p class="mt-3 text-xs text-content-error">{error}</p>
       {:else if message}
-        <p class="mt-3 text-xs text-primary-300">{message}</p>
+        <p class="mt-3 text-xs text-content-link">{message}</p>
       {/if}
 
       <div class="mt-5 flex flex-wrap justify-end gap-2">

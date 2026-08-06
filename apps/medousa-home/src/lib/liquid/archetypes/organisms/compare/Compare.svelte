@@ -226,7 +226,7 @@
     margin: 0.3rem 0 0;
     font-size: 0.78rem;
     line-height: 1.4;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .liquid-compare-rec-banner {
@@ -291,7 +291,7 @@
     font-weight: 650;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     border-bottom: 1px solid rgb(var(--color-surface-500) / 0.14);
     border-right: 1px solid rgb(var(--color-surface-500) / 0.12);
     white-space: nowrap;
@@ -481,7 +481,7 @@
     font-weight: 650;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .liquid-compare-card__value {

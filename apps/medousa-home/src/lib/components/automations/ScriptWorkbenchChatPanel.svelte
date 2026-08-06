@@ -83,7 +83,7 @@
         {scope?.name ?? "Script chat"}
       </p>
       {#if hint}
-        <p class="truncate text-[10px] text-surface-400">{hint}</p>
+        <p class="truncate text-[10px] text-content-tertiary">{hint}</p>
       {/if}
     </div>
     <div class="relative shrink-0">

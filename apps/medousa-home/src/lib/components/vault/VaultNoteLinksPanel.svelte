@@ -18,20 +18,20 @@
   aria-label="Note links"
 >
   <div class="border-b border-surface-500/35 px-3 py-2">
-    <h3 class="text-[11px] font-semibold uppercase tracking-wide text-surface-400">
+    <h3 class="text-[11px] font-semibold uppercase tracking-wide text-content-tertiary">
       Links
     </h3>
   </div>
 
   <div class="min-h-0 flex-1 overflow-y-auto px-3 py-2 text-sm">
     {#if !hasLinks}
-      <p class="text-xs leading-relaxed text-surface-500">
+      <p class="text-xs leading-relaxed text-content-quiet">
         No wikilinks or backlinks yet. Use <code class="vault-kbd">[[note]]</code> to link notes.
       </p>
     {:else}
       {#if wikilinksOut.length > 0}
         <section class="mb-4">
-          <p class="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-surface-500">
+          <p class="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-content-quiet">
             Out
           </p>
           <ul class="space-y-1">
@@ -52,7 +52,7 @@
 
       {#if backlinks.length > 0}
         <section>
-          <p class="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-surface-500">
+          <p class="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-content-quiet">
             Back
           </p>
           <ul class="space-y-1">

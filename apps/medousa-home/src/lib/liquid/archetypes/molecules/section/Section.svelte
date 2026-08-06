@@ -43,7 +43,7 @@
   .liquid-section-sub {
     margin: 0;
     font-size: 0.8rem;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
   }
 
   .liquid-section-content {

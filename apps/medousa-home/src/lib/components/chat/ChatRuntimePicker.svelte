@@ -183,9 +183,9 @@
                 </span>
               </span>
               {#if locked}
-                <LogIn size={13} strokeWidth={2} class="shrink-0 text-primary-300" />
+                <LogIn size={13} strokeWidth={2} class="shrink-0 text-content-link" />
               {:else if value === option.id}
-                <Check size={14} strokeWidth={2} class="shrink-0 text-primary-300" />
+                <Check size={14} strokeWidth={2} class="shrink-0 text-content-link" />
               {/if}
             </button>
           {/each}

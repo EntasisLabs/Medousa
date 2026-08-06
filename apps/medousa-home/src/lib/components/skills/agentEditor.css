@@ -48,7 +48,7 @@
 }
 
 .agent-liquid-name::placeholder {
-  color: rgb(var(--color-surface-500));
+  color: rgb(var(--theme-text-quiet));
   font-weight: 450;
 }
 
@@ -61,7 +61,7 @@
   font-size: 0.7rem;
   letter-spacing: 0.03em;
   text-transform: uppercase;
-  color: rgb(var(--color-surface-500));
+  color: rgb(var(--theme-text-quiet));
 }
 
 .agent-liquid-input,
@@ -84,7 +84,7 @@
 
 .agent-liquid-input::placeholder,
 .agent-liquid-textarea::placeholder {
-  color: rgb(var(--color-surface-500));
+  color: rgb(var(--theme-text-quiet));
 }
 
 .agent-liquid-input:focus,
@@ -109,7 +109,7 @@
   font-size: 0.7rem;
   font-weight: 500;
   letter-spacing: -0.01em;
-  color: rgb(var(--color-surface-500));
+  color: rgb(var(--theme-text-quiet));
 }
 
 .schedule-create-liquid {
@@ -123,7 +123,7 @@
   font-weight: 450;
   letter-spacing: -0.01em;
   text-transform: none;
-  color: rgb(var(--color-surface-500) / 0.85);
+  color: rgb(var(--theme-text-quiet) / 0.85);
 }
 
 .schedule-create-liquid .agent-liquid-name,
@@ -162,7 +162,7 @@
 .schedule-create-liquid .agent-liquid-textarea {
   color: rgb(var(--color-surface-250, var(--color-surface-200)));
   font-size: 0.84rem;
-  caret-color: rgb(var(--color-surface-300));
+  caret-color: rgb(var(--theme-text-secondary));
 }
 
 .schedule-create-liquid .agent-liquid-textarea {
@@ -187,7 +187,7 @@
   flex-shrink: 0;
   font-size: 0.72rem;
   letter-spacing: -0.01em;
-  color: rgb(var(--color-surface-500) / 0.9);
+  color: rgb(var(--theme-text-quiet) / 0.9);
 }
 
 .schedule-deliver-select {
@@ -202,7 +202,7 @@
   font-size: 0.72rem;
   font-weight: 480;
   letter-spacing: -0.015em;
-  color: rgb(var(--color-surface-300));
+  color: rgb(var(--theme-text-secondary));
   outline: none;
   cursor: pointer;
   appearance: none;
@@ -238,7 +238,7 @@
   font-weight: 450;
   letter-spacing: -0.02em;
   line-height: 1.3;
-  color: rgb(var(--color-surface-300));
+  color: rgb(var(--theme-text-secondary));
   transition: color 140ms ease;
 }
 
@@ -249,7 +249,7 @@
 .schedule-disclose-chevron {
   flex-shrink: 0;
   font-size: 0.65rem;
-  color: rgb(var(--color-surface-500) / 0.75);
+  color: rgb(var(--theme-text-quiet) / 0.75);
 }
 
 .schedule-disclose-panel {
@@ -272,7 +272,7 @@
   margin: 0 0 0.35rem;
   font-size: 0.68rem;
   letter-spacing: -0.01em;
-  color: rgb(var(--color-surface-500) / 0.85);
+  color: rgb(var(--theme-text-quiet) / 0.85);
 }
 
 .schedule-disclose-choices {
@@ -297,7 +297,7 @@
   font-size: 0.82rem;
   font-weight: 450;
   letter-spacing: -0.015em;
-  color: rgb(var(--color-surface-400));
+  color: rgb(var(--theme-text-tertiary));
   cursor: pointer;
   transition:
     color 140ms ease,
@@ -367,7 +367,7 @@
   background: transparent;
   font-size: 1rem;
   line-height: 1;
-  color: rgb(var(--color-surface-500));
+  color: rgb(var(--theme-text-quiet));
   cursor: pointer;
 }
 
@@ -390,12 +390,12 @@
   background: transparent;
   font-size: 0.68rem;
   letter-spacing: -0.01em;
-  color: rgb(var(--color-surface-500));
+  color: rgb(var(--theme-text-quiet));
   cursor: pointer;
 }
 
 .schedule-disclose-preset:hover {
-  color: rgb(var(--color-surface-300));
+  color: rgb(var(--theme-text-secondary));
 }
 
 .schedule-disclose-preset-active {
@@ -415,7 +415,7 @@
   color: rgb(var(--color-surface-200));
   outline: none;
   box-shadow: none;
-  caret-color: rgb(var(--color-surface-300));
+  caret-color: rgb(var(--theme-text-secondary));
 }
 
 .schedule-disclose-plain:focus {
@@ -431,7 +431,7 @@
   font-size: 0.72rem;
   font-weight: 500;
   letter-spacing: -0.015em;
-  color: rgb(var(--color-surface-300));
+  color: rgb(var(--theme-text-secondary));
   cursor: pointer;
 }
 
@@ -447,13 +447,13 @@
   font-size: 0.78rem;
   font-weight: 450;
   letter-spacing: -0.015em;
-  color: rgb(var(--color-surface-500));
+  color: rgb(var(--theme-text-quiet));
   cursor: pointer;
   transition: color 140ms ease;
 }
 
 .schedule-create-act:hover:not(:disabled) {
-  color: rgb(var(--color-surface-300));
+  color: rgb(var(--theme-text-secondary));
 }
 
 .schedule-create-act-primary {
@@ -527,7 +527,7 @@
   min-width: 0;
   font-size: 0.72rem;
   letter-spacing: -0.01em;
-  color: rgb(var(--color-surface-500));
+  color: rgb(var(--theme-text-quiet));
 }
 
 .schedule-popover-status {
@@ -540,7 +540,7 @@
 }
 
 .schedule-popover-status-warn {
-  color: rgb(var(--color-warning-400) / 0.95);
+  color: rgb(var(--theme-warning) / 0.95);
 }
 
 .schedule-popover-excerpt {
@@ -548,7 +548,7 @@
   font-size: 0.75rem;
   line-height: 1.35;
   letter-spacing: -0.01em;
-  color: rgb(var(--color-surface-400));
+  color: rgb(var(--theme-text-tertiary));
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -560,11 +560,11 @@
   padding: 1rem 0.85rem;
   font-size: 0.8rem;
   line-height: 1.4;
-  color: rgb(var(--color-surface-500));
+  color: rgb(var(--theme-text-quiet));
 }
 
 .schedule-popover-empty-warn {
-  color: rgb(var(--color-warning-400) / 0.95);
+  color: rgb(var(--theme-warning) / 0.95);
 }
 
 .agent-editor-popover-head {
@@ -595,30 +595,30 @@
   font-size: 0.55rem;
   font-weight: 600;
   line-height: 0.9rem;
-  color: rgb(var(--color-surface-50));
+  color: rgb(var(--on-primary));
   text-align: center;
 }
 
 /* Whisper count on toolbar icons — almost a DM speck */
 .toolbar-dm-badge {
   position: absolute;
-  top: -0.05rem;
-  right: -0.08rem;
+  top: -0.3rem;
+  right: -0.3rem;
   z-index: 1;
   display: inline-flex;
-  min-width: 0.65rem;
-  height: 0.65rem;
+  min-width: 1rem;
+  height: 1rem;
   align-items: center;
   justify-content: center;
   border-radius: 9999px;
   border: 1px solid rgb(var(--color-surface-900) / 0.92);
-  background: rgb(var(--color-primary-400) / 0.92);
-  padding: 0 0.12rem;
+  background: rgb(var(--theme-action));
+  padding: 0 0.2rem;
   font-size: 0.42rem;
   font-weight: 700;
   line-height: 1;
   letter-spacing: -0.03em;
-  color: rgb(var(--color-surface-950) / 0.92);
+  color: rgb(var(--on-primary));
   pointer-events: none;
 }
 

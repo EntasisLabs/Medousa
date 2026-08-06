@@ -351,10 +351,10 @@
   }
 
   .context-usage-root[data-pressure="warm"] .context-usage-trigger-label {
-    color: rgb(var(--color-warning-300));
+    color: rgb(var(--theme-warning));
   }
 
   .context-usage-root[data-pressure="hot"] .context-usage-trigger-label {
-    color: rgb(var(--color-error-300));
+    color: rgb(var(--theme-error));
   }
 </style>

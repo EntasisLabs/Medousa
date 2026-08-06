@@ -173,7 +173,7 @@
     min-width: 0;
     align-items: flex-start;
     gap: 0.55rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .diff-file-icon {
@@ -198,7 +198,7 @@
     display: block;
     overflow: hidden;
     font-size: 0.5625rem;
-    color: rgb(var(--color-surface-600));
+    color: rgb(var(--theme-text-faint));
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -210,7 +210,7 @@
     gap: 0.45rem;
     margin-top: 0.15rem;
     font-size: 0.5625rem;
-    color: rgb(var(--color-surface-600));
+    color: rgb(var(--theme-text-faint));
   }
 
   .diff-file-stats {
@@ -220,11 +220,11 @@
   }
 
   .diff-add {
-    color: rgb(var(--color-success-300));
+    color: rgb(var(--theme-success));
   }
 
   .diff-del {
-    color: rgb(var(--color-error-300));
+    color: rgb(var(--theme-error));
   }
 
   .diff-file-actions {
@@ -244,24 +244,24 @@
     border-radius: 0.3rem;
     background: transparent;
     padding: 0.3rem 0.5rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     font-size: 0.625rem;
   }
 
   .diff-open-code:hover {
     background: rgb(var(--color-primary-500) / 0.1);
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
   }
 
   .diff-binary {
     display: grid;
     gap: 0.75rem;
     padding: 1.25rem 0.9rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .diff-binary-icon {
-    color: rgb(var(--color-surface-600));
+    color: rgb(var(--theme-text-faint));
   }
 
   .diff-binary-title {
@@ -274,7 +274,7 @@
     margin-top: 0.2rem;
     font-size: 0.6875rem;
     line-height: 1.45;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .diff-binary-facts {
@@ -284,13 +284,13 @@
 
   .diff-binary-facts dt {
     font-size: 0.5625rem;
-    color: rgb(var(--color-surface-600));
+    color: rgb(var(--theme-text-faint));
   }
 
   .diff-binary-facts dd {
     margin-top: 0.1rem;
     font-size: 0.6875rem;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
   }
 
   .diff-file-empty {
@@ -299,7 +299,7 @@
     align-items: center;
     justify-content: center;
     padding: 1.5rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     font-size: 0.6875rem;
   }
 
@@ -314,16 +314,16 @@
 
   .diff-file-footer p {
     font-size: 0.5625rem;
-    color: rgb(var(--color-surface-600));
+    color: rgb(var(--theme-text-faint));
   }
 
   .diff-restore {
-    color: rgb(var(--color-warning-400));
+    color: rgb(var(--theme-warning));
   }
 
   .diff-restore:hover:not(:disabled) {
     background: rgb(var(--color-warning-500) / 0.08);
-    color: rgb(var(--color-warning-300));
+    color: rgb(var(--theme-warning));
   }
 
   .diff-restore:disabled {

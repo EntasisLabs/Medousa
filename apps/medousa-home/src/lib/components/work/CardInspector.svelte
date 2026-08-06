@@ -331,7 +331,7 @@
           {detail.card.id} · {columnLabel(detail.card.column)} · {detail.kind}
         </p>
       {:else if detail}
-        <p class="mt-1 text-[11px] text-surface-500">
+        <p class="mt-1 text-[11px] text-content-quiet">
           {formatManifestStatusChip(detail.card).label}
         </p>
       {/if}
@@ -431,7 +431,7 @@
   </header>
 
   {#if workspace.cardDetailError}
-    <p class="border-b border-error-500/30 bg-error-500/10 px-4 py-2 text-xs text-error-300">
+    <p class="border-b border-error-500/30 bg-error-500/10 px-4 py-2 text-xs text-content-error">
       {workspace.cardDetailError}
     </p>
   {/if}
@@ -502,7 +502,7 @@
             ? 'border-warning-500/30 bg-warning-500/10 animate-pulse'
             : 'border-surface-600/30 bg-surface-800/30'}"
         >
-          <p class="text-[11px] font-medium text-warning-200">Finishing up</p>
+          <p class="text-[11px] font-medium text-content-warning">Finishing up</p>
           <ul class="mt-2 space-y-1 text-sm text-surface-200">
             {#each detail.wrapping_up_reasons as reason (reason)}
               <li>{reason}</li>
@@ -513,17 +513,17 @@
 
       {#if detail.error}
         <div class="mt-4 rounded-lg border border-error-500/30 bg-error-500/10 p-3">
-          <p class="text-[11px] font-medium text-error-300">Something went wrong</p>
-          <p class="mt-2 text-sm leading-relaxed text-error-100">{detail.error}</p>
+          <p class="text-[11px] font-medium text-content-error">Something went wrong</p>
+          <p class="mt-2 text-sm leading-relaxed text-content-error">{detail.error}</p>
         </div>
       {/if}
 
       {#if detail.job_id && (jobResultLoading || jobResult?.output_text || jobResultError)}
         <div class="manifest-result mt-4">
           {#if jobResultLoading}
-            <p class="text-sm text-surface-500">Loading result…</p>
+            <p class="text-sm text-content-quiet">Loading result…</p>
           {:else if jobResultError}
-            <p class="text-sm text-warning-400">{jobResultError}</p>
+            <p class="text-sm text-content-warning">{jobResultError}</p>
           {:else if jobResult?.output_text || jobResult?.interim_text}
             <MarkdownContent
               content={jobResult.output_text ?? jobResult.interim_text ?? ""}
@@ -541,8 +541,8 @@
       </div>
 
       <details class="manifest-details mt-6">
-        <summary class="cursor-pointer text-[11px] text-surface-500">Details</summary>
-        <div class="mt-3 grid gap-2 text-[11px] text-surface-400">
+        <summary class="cursor-pointer text-[11px] text-content-quiet">Details</summary>
+        <div class="mt-3 grid gap-2 text-[11px] text-content-tertiary">
           <p>Status · {formatStatusLabel(detail.card.status_label)}</p>
           {#if detail.session_id}
             <p class="break-all">Session · {detail.session_id}</p>
@@ -561,7 +561,7 @@
       <div class="grid min-w-0 gap-3 sm:grid-cols-2">
         <div class="workshop-inset min-w-0 p-3">
           <p class="workshop-label">Status</p>
-          <p class="mt-1 font-medium {wrappingUp ? 'text-warning-300' : ''}">
+          <p class="mt-1 font-medium {wrappingUp ? 'text-content-warning' : ''}">
             {formatStatusLabel(detail.card.status_label)}
           </p>
         </div>
@@ -609,10 +609,10 @@
             ? 'animate-pulse'
             : ''}"
         >
-          <p class="text-xs font-semibold uppercase tracking-wide text-warning-300">
+          <p class="text-xs font-semibold uppercase tracking-wide text-content-warning">
             Wrapping up
           </p>
-          <ul class="mt-2 list-disc space-y-1 pl-4 text-warning-100">
+          <ul class="mt-2 list-disc space-y-1 pl-4 text-content-warning">
             {#each detail.wrapping_up_reasons as reason (reason)}
               <li>{reason}</li>
             {/each}
@@ -624,7 +624,7 @@
         <div class="workshop-inset min-w-0 p-4">
           <p class="workshop-label">Worker timeline</p>
           {#if detail.tool_names?.length}
-            <p class="mt-2 break-all font-mono text-[10px] text-surface-500">
+            <p class="mt-2 break-all font-mono text-[10px] text-content-quiet">
               {detail.tool_names.map((tool) => formatToolName(tool)).join(" · ")}
             </p>
           {/if}
@@ -632,7 +632,7 @@
             <ul class="mt-3 space-y-2">
               {#each timeline as event (event.id)}
                 <li class="border-l border-surface-500/30 pl-3">
-                  <p class="break-words text-xs text-surface-300">{event.summary}</p>
+                  <p class="break-words text-xs text-content-secondary">{event.summary}</p>
                   <p class="workshop-faint mt-0.5">
                     {formatWorkspaceEventKind(event.kind)} ·
                     {formatTimestamp(event.timestamp_utc)}
@@ -671,12 +671,12 @@
           {#if jobResultLoading}
             <p class="workshop-faint mt-2">Loading job output…</p>
           {:else if jobResultError}
-            <p class="mt-2 text-xs text-warning-400">{jobResultError}</p>
+            <p class="mt-2 text-xs text-content-warning">{jobResultError}</p>
           {:else if jobResult?.interim_text || jobResult?.output_text}
             {#if jobResult.interim_text && jobResult.output_text && jobResult.interim_text.trim() !== jobResult.output_text.trim()}
               <p class="workshop-faint mt-2 text-xs">Follow-up</p>
               <pre
-                class="mt-1 max-h-40 overflow-x-hidden overflow-y-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-surface-300"
+                class="mt-1 max-h-40 overflow-x-hidden overflow-y-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-content-secondary"
               >{jobResult.interim_text}</pre>
               <p class="workshop-faint mt-3 text-xs">Result</p>
             {/if}
@@ -703,8 +703,8 @@
 
       {#if detail.error}
         <div class="min-w-0 rounded-container-token border border-error-500/30 bg-error-500/10 p-4">
-          <p class="text-xs text-error-300">Error</p>
-          <p class="mt-2 break-words text-sm leading-relaxed text-error-100">{detail.error}</p>
+          <p class="text-xs text-content-error">Error</p>
+          <p class="mt-2 break-words text-sm leading-relaxed text-content-error">{detail.error}</p>
         </div>
       {/if}
 
@@ -719,12 +719,12 @@
             <ul class="mt-3 space-y-3">
               {#each artifactPreviews as preview (preview.artifact_id)}
                 <li class="rounded-container-token border border-surface-500/15 p-3">
-                  <p class="break-all font-mono text-[11px] text-primary-300">{preview.artifact_id}</p>
+                  <p class="break-all font-mono text-[11px] text-content-link">{preview.artifact_id}</p>
                   {#if preview.error}
-                    <p class="mt-1 text-xs text-warning-400">{preview.error}</p>
+                    <p class="mt-1 text-xs text-content-warning">{preview.error}</p>
                   {:else}
                     <pre
-                      class="mt-2 max-h-48 overflow-x-hidden overflow-y-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-surface-300"
+                      class="mt-2 max-h-48 overflow-x-hidden overflow-y-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-content-secondary"
                     >{preview.rendered_output}</pre>
                   {/if}
                 </li>
