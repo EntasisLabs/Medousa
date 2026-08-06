@@ -6,6 +6,7 @@
 
 pub mod backend;
 pub mod detamu;
+pub mod diagnostics;
 pub mod document;
 pub mod registry;
 pub mod server;

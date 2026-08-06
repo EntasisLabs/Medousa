@@ -126,9 +126,11 @@ a private Code IDE chrome.
   server advertises them. Use `Alt+Left` / `Alt+Right` or the editor arrows to
   move through precise code locations. `Cmd/Ctrl+Shift+O` opens **Structure**.
   The editor menu also includes Find Uses, Rename, Format, Organize Imports,
-  copy path, and Reveal in Explorer. `F2` opens inline rename. Issues currently
-  shows diagnostics for the active file; project-wide Problems is in progress.
-  `Cmd/Ctrl+F` opens find with the shared editor chrome.
+  copy path, and Reveal in Explorer. `F2` opens inline rename. **Problems**
+  collects diagnostics from every active project-language session, groups them
+  by file, filters by severity or text, and opens the exact location even when
+  the file is not already open. `Cmd/Ctrl+F` opens find with the shared editor
+  chrome.
 - Find uses, rename, formatting, and import organization appear only when the
   active language server supports them. Multi-file rename opens **Review
   refactor** first, including text changes and any proposed create, rename, or

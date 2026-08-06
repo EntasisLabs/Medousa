@@ -350,25 +350,98 @@ export async function getCodeWorkspaceSymbols(options: {
 
 export type CodeWorkspaceDiagnostic = {
   uri?: string;
+  language?: string;
+  version?: number;
   diagnostics?: Array<{
     message?: string;
     severity?: number;
-    range?: { start?: { line?: number; character?: number } };
+    source?: string;
+    code?: string | number | { value?: string | number; target?: string };
+    tags?: number[];
+    range?: {
+      start?: { line?: number; character?: number };
+      end?: { line?: number; character?: number };
+    };
+    relatedInformation?: Array<{
+      location?: {
+        uri?: string;
+        range?: {
+          start?: { line?: number; character?: number };
+          end?: { line?: number; character?: number };
+        };
+      };
+      message?: string;
+    }>;
   }>;
+};
+
+export type CodeWorkspaceDiagnosticsSnapshot = {
+  scope?: "active_sessions" | "language" | "language_fallback" | string;
+  languages: string[];
+  documents: CodeWorkspaceDiagnostic[];
+  unavailableLanguages?: string[];
 };
 
 export async function getCodeWorkspaceDiagnostics(options: {
   workId: string;
-  language: string;
-}): Promise<CodeWorkspaceDiagnostic[]> {
+  language?: string;
+}): Promise<CodeWorkspaceDiagnosticsSnapshot> {
+  const query: Record<string, string> = { work_id: options.workId };
+  if (options.language?.trim()) query.language = options.language.trim();
   const response = await codeAgentGet<{
     ok: boolean;
+    scope?: string;
+    languages?: string[];
     documents?: CodeWorkspaceDiagnostic[];
-  }>("/v1/code/workspace-diagnostics", {
-    work_id: options.workId,
-    language: options.language,
-  });
-  return Array.isArray(response.documents) ? response.documents : [];
+  }>("/v1/code/workspace-diagnostics", query);
+  return {
+    scope: response.scope,
+    languages: Array.isArray(response.languages)
+      ? response.languages.filter((language): language is string => typeof language === "string")
+      : options.language
+        ? [options.language]
+        : [],
+    documents: Array.isArray(response.documents) ? response.documents : [],
+  };
+}
+
+/** New engines aggregate active sessions; older engines are queried per open language. */
+export async function getAllCodeWorkspaceDiagnostics(options: {
+  workId: string;
+  languages: string[];
+}): Promise<CodeWorkspaceDiagnosticsSnapshot> {
+  let aggregateError: unknown = null;
+  try {
+    const aggregate = await getCodeWorkspaceDiagnostics({ workId: options.workId });
+    if (aggregate.scope === "active_sessions") return aggregate;
+  } catch (err) {
+    aggregateError = err;
+  }
+  const languages = [...new Set(options.languages.map((language) => language.trim()).filter(Boolean))];
+  const settled = await Promise.allSettled(
+    languages.map((language) =>
+      getCodeWorkspaceDiagnostics({ workId: options.workId, language }),
+    ),
+  );
+  const snapshots = settled.flatMap((result) =>
+    result.status === "fulfilled" ? [result.value] : [],
+  );
+  if (snapshots.length === 0 && aggregateError) throw aggregateError;
+  const documents = new Map<string, CodeWorkspaceDiagnostic>();
+  for (const snapshot of snapshots) {
+    for (const document of snapshot.documents) {
+      const key = `${document.language ?? ""}:${document.uri ?? ""}`;
+      documents.set(key, document);
+    }
+  }
+  return {
+    scope: "language_fallback",
+    languages,
+    documents: [...documents.values()],
+    unavailableLanguages: languages.filter(
+      (_, index) => settled[index]?.status === "rejected",
+    ),
+  };
 }
 
 export type CodeLanguageCapabilities = Record<string, unknown>;

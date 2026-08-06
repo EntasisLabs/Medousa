@@ -1,7 +1,8 @@
 # Coding engine integration
 
-`medousa-code` is Medousa's language-provider boundary. It owns one language
-server session per workshop repository and language. Home and agents reach it
+`medousa-code` is Medousa's language-provider boundary. Home's editor uses a
+transparent project-language channel, while HTTP agent operations use pooled
+project-language sessions. Both run on the workshop. Home and agents reach them
 through the daemon, so repository paths and Forge working copies always resolve
 on the workshop machine.
 
@@ -25,6 +26,23 @@ clients must not send workshop paths as authority.
 `format`, `code_actions`, and `organize_imports`. Results remain native LSP
 values so the caller can preserve provider-specific detail. Home checks the
 initialize capabilities before revealing an action.
+
+## Workspace diagnostics
+
+`GET /v1/code/workspace-diagnostics?work_id=…` returns the latest diagnostics
+known to every active editor and agent language session for that governed
+working copy. The response includes `scope: "active_sessions"`, the contributing
+language ids, and documents with their URI, language, optional version, and
+complete LSP diagnostic payload. An empty aggregate request does not start a
+placeholder language server.
+
+Supplying `language=…` preserves the earlier per-language behavior and may
+initialize that language's pooled agent session. This is also the rolling-
+upgrade fallback used by Home when an older coding engine does not advertise
+the aggregate scope. Home's Problems panel groups the result by project file,
+filters by severity or text, and can open an unopened diagnostic target. It
+refreshes while visible until the resumable project event stream replaces
+polling.
 
 ## Safe edits
 

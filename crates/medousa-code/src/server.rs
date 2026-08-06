@@ -18,6 +18,7 @@ use tower_http::cors::CorsLayer;
 
 use crate::backend::spawn_backend;
 use crate::detamu::{DetamuDocumentSnapshot, DetamuServerHandle};
+use crate::diagnostics::WorkspaceDiagnosticStore;
 use crate::document::DocumentStore;
 use crate::registry::{LanguageId, ServerRegistry};
 use crate::session::{SessionPool, initialization_options};
@@ -36,6 +37,7 @@ pub struct OrchestratorState {
     pub config: OrchestratorConfig,
     pub pool: Arc<SessionPool>,
     pub documents: Arc<DocumentStore>,
+    pub workspace_diagnostics: Arc<WorkspaceDiagnosticStore>,
     pub editor_sessions: Arc<AtomicUsize>,
     pub started: Instant,
 }
@@ -46,6 +48,7 @@ impl OrchestratorState {
             config: config.clone(),
             pool: SessionPool::new(registry),
             documents: DocumentStore::new(),
+            workspace_diagnostics: WorkspaceDiagnosticStore::new(),
             editor_sessions: Arc::new(AtomicUsize::new(0)),
             started: Instant::now(),
         }
@@ -253,6 +256,10 @@ async fn handle_client(
         }
     };
     state.editor_sessions.fetch_add(1, Ordering::Relaxed);
+    let diagnostic_session_id = state
+        .workspace_diagnostics
+        .begin_session(workspace_root.clone(), language.to_string())
+        .await;
     tracing::info!(
         %language,
         workspace_root = %workspace_root.display(),
@@ -262,8 +269,12 @@ async fn handle_client(
     let (mut ws_tx, mut ws_rx) = socket.split();
 
     let reader = Arc::clone(&backend);
+    let workspace_diagnostics = Arc::clone(&state.workspace_diagnostics);
     let fanout = tokio::spawn(async move {
         while let Ok(msg) = reader.read_message().await {
+            workspace_diagnostics
+                .record_message(diagnostic_session_id, &msg)
+                .await;
             if ws_tx.send(Message::Text(msg.into())).await.is_err() {
                 break;
             }
@@ -298,6 +309,10 @@ async fn handle_client(
 
     fanout.abort();
     backend.shutdown().await;
+    state
+        .workspace_diagnostics
+        .end_session(diagnostic_session_id)
+        .await;
     state.editor_sessions.fetch_sub(1, Ordering::Relaxed);
     tracing::info!(
         %language,
@@ -536,26 +551,56 @@ async fn workspace_diagnostics(
     State(state): State<Arc<OrchestratorState>>,
     Query(q): Query<AgentWorkspaceQuery>,
 ) -> Result<Json<Value>, (axum::http::StatusCode, String)> {
-    let language = LanguageId::new(q.language.as_deref().unwrap_or("plaintext"));
     let workspace_root = requested_workspace_root(&state, q.workspace_root)
         .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
-    let session = state
-        .pool
-        .get_or_spawn(workspace_root.clone(), language)
-        .await
-        .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
-    session
-        .ensure_initialized(&path_to_file_uri(&workspace_root))
-        .await
-        .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
-    let diagnostics = session
-        .diagnostics
-        .read()
-        .await
-        .values()
-        .cloned()
-        .collect::<Vec<_>>();
-    Ok(Json(json!({ "ok": true, "documents": diagnostics })))
+    let requested_language = q.language.filter(|language| !language.trim().is_empty());
+    let sessions = if let Some(language) = requested_language.as_deref() {
+        let session = state
+            .pool
+            .get_or_spawn(workspace_root.clone(), LanguageId::new(language))
+            .await
+            .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
+        session
+            .ensure_initialized(&path_to_file_uri(&workspace_root))
+            .await
+            .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
+        vec![session]
+    } else {
+        state.pool.existing_for_workspace(&workspace_root).await
+    };
+
+    let mut languages = std::collections::BTreeSet::new();
+    let mut documents = std::collections::BTreeMap::<(String, String), Value>::new();
+    for session in sessions {
+        let language = session.key.language.to_string();
+        languages.insert(language.clone());
+        for diagnostic in session.diagnostics.read().await.values() {
+            let Some(uri) = diagnostic.get("uri").and_then(Value::as_str) else {
+                continue;
+            };
+            let mut diagnostic = diagnostic.clone();
+            if let Some(object) = diagnostic.as_object_mut() {
+                object.insert("language".into(), Value::String(language.clone()));
+            }
+            documents.insert((language.clone(), uri.to_string()), diagnostic);
+        }
+    }
+
+    let editor_snapshot = state
+        .workspace_diagnostics
+        .snapshot(&workspace_root, requested_language.as_deref())
+        .await;
+    languages.extend(editor_snapshot.languages);
+    for diagnostic in editor_snapshot.documents {
+        let key = (diagnostic.language.clone(), diagnostic.uri.clone());
+        documents.insert(key, serde_json::to_value(diagnostic).unwrap_or(Value::Null));
+    }
+    Ok(Json(json!({
+        "ok": true,
+        "scope": if requested_language.is_some() { "language" } else { "active_sessions" },
+        "languages": languages,
+        "documents": documents.into_values().collect::<Vec<_>>(),
+    })))
 }
 
 async fn agent_symbols(

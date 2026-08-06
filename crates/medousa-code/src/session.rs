@@ -4,7 +4,7 @@
 //! notifications (diagnostics, etc.) to every subscribed WebSocket client.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -390,6 +390,19 @@ impl SessionPool {
                 session.touch();
                 Arc::clone(session)
             })
+    }
+
+    pub async fn existing_for_workspace(&self, workspace_root: &Path) -> Vec<Arc<LiveSession>> {
+        self.sessions
+            .read()
+            .await
+            .values()
+            .filter(|session| !session.is_closed() && session.key.workspace_root == workspace_root)
+            .map(|session| {
+                session.touch();
+                Arc::clone(session)
+            })
+            .collect()
     }
 
     pub async fn shutdown_idle(&self, max_idle: Duration) -> usize {
