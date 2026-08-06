@@ -25,6 +25,16 @@ Undertaking-bound agent operations use an Orchestrator session pool keyed by
 editor channels use the same bounded root resolution; Home pools those channels
 by the returned language-root URI so files in one nested package reuse a server.
 
+Each editor and agent session also has a bounded lifecycle record. The
+orchestrator captures process stderr, LSP log/show-message notifications,
+work-done progress, resolved roots, and terminal state. Home receives live
+progress on the editor channel and can inspect recent workshop-side records via
+the daemon without gaining direct process or filesystem authority. Editor
+`initialize` is rewritten to advertise configuration, workspace folders, and
+work-done progress; common server-to-client requests for those capabilities
+plus dynamic registration are answered at this boundary because the CodeMirror
+client does not implement them.
+
 ## Detamu bridge (M5 hooks)
 
 `medousa-code` exposes:

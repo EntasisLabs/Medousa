@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { codeWorkspaceLspPoolKey } from "./codingEngineClient";
+import {
+  CODE_LSP_MAX_RECONNECT_ATTEMPTS,
+  codeLanguageServerEventFromMessage,
+  codeLspReconnectDelay,
+  codeWorkspaceLspPoolKey,
+} from "./codingEngineClient";
 
 describe("coding-engine workspace client identity", () => {
   it("reuses a project-language client for equivalent root URIs", () => {
@@ -38,5 +43,53 @@ describe("coding-engine workspace client identity", () => {
         "file:///repo/packages/app",
       ),
     ).not.toBe(app);
+  });
+});
+
+describe("coding-engine lifecycle", () => {
+  it("uses a bounded reconnect schedule", () => {
+    expect(codeLspReconnectDelay(1)).toBe(250);
+    expect(codeLspReconnectDelay(2)).toBe(750);
+    expect(codeLspReconnectDelay(CODE_LSP_MAX_RECONNECT_ATTEMPTS)).toBe(1_500);
+    expect(codeLspReconnectDelay(CODE_LSP_MAX_RECONNECT_ATTEMPTS + 1)).toBeNull();
+  });
+
+  it("normalizes work-done progress and server log notifications", () => {
+    expect(
+      codeLanguageServerEventFromMessage(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          method: "$/progress",
+          params: {
+            token: "index",
+            value: {
+              kind: "report",
+              message: "Indexing",
+              percentage: 120,
+            },
+          },
+        }),
+      ),
+    ).toEqual({
+      kind: "progress",
+      token: "index",
+      progressKind: "report",
+      title: "",
+      message: "Indexing",
+      percentage: 100,
+    });
+    expect(
+      codeLanguageServerEventFromMessage(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          method: "window/logMessage",
+          params: { type: 2, message: "Project reload required" },
+        }),
+      ),
+    ).toEqual({
+      kind: "log",
+      level: "warning",
+      message: "Project reload required",
+    });
   });
 });

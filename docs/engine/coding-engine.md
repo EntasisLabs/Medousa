@@ -16,6 +16,7 @@ routes:
 - `GET /v1/code/symbols` and `/v1/code/workspace-symbols`
 - `GET /v1/code/conventions`
 - `GET /v1/code/language-root`
+- `GET /v1/code/language-sessions`
 - `GET /v1/code/hover` and `/v1/code/definition`
 - `POST /v1/code/request`
 
@@ -47,6 +48,33 @@ in that directory. Nested monorepo packages therefore get distinct sessions;
 files under the same language root reuse one Home client. With an older coding
 engine that lacks the discovery route, Home explicitly falls back to the whole
 project root for rolling-upgrade compatibility.
+
+## Session lifecycle and configuration
+
+Every editor and agent language process has a bounded workshop-side lifecycle
+record with its project root, resolved language root, phase, recent work-done
+progress, LSP messages, and captured process stderr. Home reads the matching
+history through
+`GET /v1/code/language-sessions?work_id=…&uri=…&language=…`; the daemon again
+derives the project path from `work_id`, and the coding engine revalidates the
+document before selecting records. Logs are memory-bounded diagnostic history,
+not an unbounded project file.
+
+The editor WebSocket terminates when the underlying language server exits or
+its protocol stream fails. Home removes the dead client, keeps the source
+buffer editable, and retries at 250 ms, 750 ms, and 1.5 seconds. A visible
+degraded banner then retains **Restart**, **Logs**, and package **Repair**
+actions. Manual restart replaces only the matching project/language-root client;
+it does not close the project or another nested package's server.
+
+On the editor channel the coding engine rewrites `initialize` to advertise
+workspace configuration, workspace folders, and work-done progress, then
+answers those common server-to-client requests itself, supplies bounded
+first-party settings, and sends `workspace/didChangeConfiguration` after
+initialization. This keeps servers that require configuration functional even
+though the embedded CodeMirror LSP client does not implement arbitrary server
+requests. Project/user settings are added later through the versioned
+contribution contract.
 
 ## Workspace diagnostics
 
@@ -85,6 +113,9 @@ atomic refactor across the older create/rename/delete endpoints.
 ## Degradation
 
 If `medousa-code` or a language server is unavailable, plain editing continues.
+Home shows starting, progress, reconnecting, and failed states rather than
+leaving a dead smart-editing client attached. Recent language output remains
+available from the editor menu for crash diagnosis.
 Co-located Home can install the optional `coding-engine` and `langservers`
 packages. Remote Home never installs binaries on the client while implying
 that it repaired the workshop.

@@ -221,8 +221,8 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 | HCP-1B | Cross-file definition/declaration/type/implementation navigation and history | ✅ |
 | HCP-1C | Complete text/resource workspace edits plus governed refactor preview | ✅ |
 | HCP-2A | Real workspace Problems model and diagnostics navigation | ✅ |
-| HCP-2B | Per-document language-root resolution and nested-project sessions | 🔄 |
-| HCP-2C | LSP lifecycle, restart/reconnect, progress, logs, and configuration | ⬜ |
+| HCP-2B | Per-document language-root resolution and nested-project sessions | ✅ |
+| HCP-2C | LSP lifecycle, restart/reconnect, progress, logs, and configuration | 🔄 |
 | HCP-3A | Svelte, JSX, and TSX grammar/LSP dogfood pack | ⬜ |
 | HCP-3B | Capability-derived language matrix and exact package repair | ⬜ |
 | HCP-3C | Remaining registered language grammar/package packs | ⬜ |
@@ -277,6 +277,13 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
   queried once per open language and partial gaps are shown. Rollback: revert
   this commit; the aggregate response fields are additive and older Home builds
   ignore them.
+- **HCP-2B — `2ef49079`.** Added canonical per-document language-root
+  discovery, closest-marker resolution inside the governed Forge working copy,
+  nested-root Home pooling, and daemon-side rejection of caller-supplied
+  workshop paths. Migration: none. Compatibility: Home falls back to the whole
+  project root when an older coding engine lacks discovery. Rollback: revert
+  this commit; the route and document query are additive, and the daemon remains
+  the outer path authority.
 
 ### Slice rules
 
