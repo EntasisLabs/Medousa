@@ -308,7 +308,7 @@ See `apps/medousa-home/src/lib/forge.ts` and daemon routes:
 - `POST …/decisions` with **review intent** (server builds the decision)
 - `GET /v1/forge/stream` for undertaking-list freshness
 - `GET /v1/forge/items/{id}/project-events?since=…` for resumable path-aware
-  source/Git events (Code buffer reconciliation)
+  source/Git events (Code reconciles every open buffer from this stream)
 - `GET /v1/world/bindings/{work_id}` for World status
 
 Repository inspection distinguishes a branch name from a usable commit. Empty

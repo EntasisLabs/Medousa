@@ -95,6 +95,11 @@ re-snapshot from the journal rather than inventing gaps. Events come from:
 - lease-fenced source create/save/batch/workspace-edit/rename/delete routes;
 - a debounced worktree filesystem watcher (ignores `.git/**`).
 
+Home's Code editor consumes this stream for all open buffers: clean tabs accept
+the project version, dirty tabs keep the draft and offer compare/rebase,
+renames/deletes recover tab identity, and the language client receives
+`workspace/didChangeWatchedFiles` (plus create/rename/delete file notifications).
+
 `GET /v1/forge/stream` remains the coarse undertaking list channel (work id,
 state, event kind). It does not carry paths or a replay cursor.
 

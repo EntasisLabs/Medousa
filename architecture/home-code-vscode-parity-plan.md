@@ -78,9 +78,6 @@ recovery where applicable.
 
 ### Trust gaps to close first
 
-- External-change reconciliation still checks only the focused file on window
-  focus; the workshop project-event stream exists, but Home does not yet
-  consume it for all open buffers (HCP-4B).
 - Project task output is buffered until exit. Long-running development tasks
   have no live logs or interactive named terminal despite the earlier roadmap
   claim.
@@ -217,8 +214,8 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 | HCP-3A | Svelte, JSX, and TSX grammar/LSP dogfood pack | ✅ |
 | HCP-3B | Capability-derived language matrix and exact package repair | ✅ |
 | HCP-3C | Remaining registered language grammar/package packs | ✅ |
-| HCP-4A | Cursor-based project source/Git event stream | 🔄 |
-| HCP-4B | All-open-buffer reconcile, rename/delete recovery, and watched-file LSP notifications | ⬜ |
+| HCP-4A | Cursor-based project source/Git event stream | ✅ |
+| HCP-4B | All-open-buffer reconcile, rename/delete recovery, and watched-file LSP notifications | 🔄 |
 | HCP-5A | Geometry-correct groups, split-with-retained-editor, and unified code history | ⬜ |
 | HCP-5B | Contextual Code layout preset with group-local visible tabs and optional regions | ⬜ |
 | HCP-5C | Shared command registry, VS Code aliases, context keys, and keybinding editor | ⬜ |
@@ -300,6 +297,12 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
   Migration: none. Compatibility: older Homes keep plaintext highlighting;
   Repair still explains PATH-only binaries without a package id. Rollback:
   revert this commit; grammar packages are additive.
+- **HCP-4A — `e5809d7c`.** Added sequenced `ForgeProjectEvent` journal,
+  debounced worktree watcher, path-aware publishes from source routes, and
+  `GET /v1/forge/items/{id}/project-events?since=` SSE replay. Migration: none.
+  Compatibility: older Homes ignore the route; `/v1/forge/stream` stays the
+  list-freshness channel. Rollback: revert this commit; the route and watcher
+  are additive.
 
 ### Slice rules
 
