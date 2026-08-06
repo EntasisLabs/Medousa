@@ -78,9 +78,8 @@ recovery where applicable.
 
 ### Trust gaps to close first
 
-- Several registered LSP languages still lack editor grammars, and package
-  repair still shares one `langservers` pack rather than exact per-language
-  installs (HCP-3B/3C).
+- Several registered LSP languages still lack editor grammars (HCP-3C). Package
+  repair now follows the language matrix package id when one exists.
 - External-change reconciliation checks only the focused file when Home regains
   focus instead of consuming workshop file events for all open files.
 - Project task output is buffered until exit. Long-running development tasks
@@ -216,8 +215,8 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 | HCP-2A | Real workspace Problems model and diagnostics navigation | ✅ |
 | HCP-2B | Per-document language-root resolution and nested-project sessions | ✅ |
 | HCP-2C | LSP lifecycle, restart/reconnect, progress, logs, and configuration | ✅ |
-| HCP-3A | Svelte, JSX, and TSX grammar/LSP dogfood pack | 🔄 |
-| HCP-3B | Capability-derived language matrix and exact package repair | ⬜ |
+| HCP-3A | Svelte, JSX, and TSX grammar/LSP dogfood pack | ✅ |
+| HCP-3B | Capability-derived language matrix and exact package repair | 🔄 |
 | HCP-3C | Remaining registered language grammar/package packs | ⬜ |
 | HCP-4A | Cursor-based project source/Git event stream | ⬜ |
 | HCP-4B | All-open-buffer reconcile, rename/delete recovery, and watched-file LSP notifications | ⬜ |
@@ -284,6 +283,12 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
   channel. Migration: none. Compatibility: older engines omit the sessions
   route; Home keeps editing and shows an explicit log-fetch failure. Rollback:
   revert this commit; the route and initialize capability rewrite are additive.
+- **HCP-3A — `45f679a5`.** Added Svelte grammar/LSP (`svelteserver`), JSX/TSX
+  CodeMirror modes, shared `langservers` packaging for Pyright/tsserver/Svelte,
+  and Repair that installs the language's package id. Migration: none.
+  Compatibility: older langservers tarballs without `svelteserver` still install
+  the other binaries; Home shows a missing-binary matrix/repair state. Rollback:
+  revert this commit; the registry and package catalog entries are additive.
 
 ### Slice rules
 

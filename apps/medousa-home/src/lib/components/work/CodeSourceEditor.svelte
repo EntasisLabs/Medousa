@@ -33,10 +33,13 @@
     CODE_LSP_MAX_RECONNECT_ATTEMPTS,
     acquireCodeWorkspaceLspClient,
     codeLspReconnectDelay,
+    findCodeLanguageMatrixEntry,
     getAllCodeWorkspaceDiagnostics,
     getCodeEditorConventions,
+    getCodeLanguageMatrix,
     getCodeLanguageSessions,
     type CodeDocumentSymbol,
+    type CodeLanguageMatrixEntry,
     type CodeLanguageSessionSnapshot,
     type CodeWorkspaceSymbol,
     type CodeWorkspaceLspStatus,
@@ -211,6 +214,8 @@
   let languageSessions = $state<CodeLanguageSessionSnapshot[]>([]);
   let languageSessionsLoading = $state(false);
   let languageSessionsError = $state<string | null>(null);
+  let languageMatrix = $state<CodeLanguageMatrixEntry[]>([]);
+  let languageMatrixError = $state<string | null>(null);
   let activeLspRestart: (() => void) | null = null;
   let lspConnectionScope = "";
   let cursorLine = $state(1);
@@ -811,6 +816,26 @@
     else lspRetry += 1;
   }
 
+  const activeLanguageMatrix = $derived(
+    findCodeLanguageMatrixEntry(languageMatrix, activeLspLanguage),
+  );
+
+  async function refreshLanguageMatrix(options?: { quiet?: boolean }) {
+    if (!languageSupportsLsp(activeTabLanguage)) {
+      languageMatrix = [];
+      languageMatrixError = null;
+      return;
+    }
+    try {
+      languageMatrix = await getCodeLanguageMatrix();
+      languageMatrixError = null;
+    } catch (err) {
+      if (!options?.quiet) {
+        languageMatrixError = err instanceof Error ? err.message : String(err);
+      }
+    }
+  }
+
   async function repairLanguageSupport() {
     if (!isCoLocatedWorkshop()) {
       openLanguagePackages();
@@ -819,16 +844,28 @@
     repairingLanguage = true;
     surfaceError = null;
     try {
+      await refreshLanguageMatrix({ quiet: true });
       const catalog = await fetchPackagesCatalog();
       if (!catalog) throw new Error("Package repair is unavailable here");
-      const languagePackage = languageRepairPackageId(activeTabLanguage);
-      const wanted = ["coding-engine", languagePackage ?? "langservers"].filter(
-        (id, index, list) => Boolean(id) && list.indexOf(id) === index,
+      const matrixPackage = activeLanguageMatrix?.packageId ?? null;
+      const languagePackage =
+        matrixPackage ?? languageRepairPackageId(activeTabLanguage);
+      if (!languagePackage) {
+        openLanguagePackages();
+        surfaceError = activeLanguageMatrix?.command
+          ? `Install ${activeLanguageMatrix.command} on this workshop, then restart the language server.`
+          : "This language has no Medousa package yet — install its language server on the workshop.";
+        return;
+      }
+      const wanted = ["coding-engine", languagePackage].filter(
+        (id, index, list) => list.indexOf(id) === index,
       );
       for (const packageId of wanted) {
-        const row = catalog?.packages.find((entry) => entry.id === packageId);
+        const row = catalog.packages.find((entry) => entry.id === packageId);
         if (row && !row.installed) await installPackage(packageId);
       }
+      await refreshLanguageMatrix({ quiet: true });
+      lspReconnectAttempt = 0;
       lspRetry += 1;
     } catch (err) {
       surfaceError = err instanceof Error ? err.message : String(err);
@@ -1706,6 +1743,30 @@
     const cancelDeferred = deferCodeWorkspaceWork(() => {
       void (async () => {
         try {
+          try {
+            const matrix = await getCodeLanguageMatrix();
+            if (cancelled) return;
+            languageMatrix = matrix;
+            languageMatrixError = null;
+            const entry = findCodeLanguageMatrixEntry(matrix, activeLspLanguage);
+            if (entry && !entry.usable) {
+              const missing = entry.command ?? activeLspLanguage;
+              lspConnecting = false;
+              lspError = entry.packageId
+                ? `${missing} is not installed on this workshop`
+                : `${missing} was not found on this workshop PATH`;
+              lspStatus = {
+                phase: "failed",
+                detail: lspError,
+                progress: null,
+              };
+              return;
+            }
+          } catch (err) {
+            // Older coding engines omit the matrix; keep attempting the LSP.
+            languageMatrixError =
+              err instanceof Error ? err.message : String(err);
+          }
           const lease = await acquireCodeWorkspaceLspClient({
             workId,
             workspaceRoot: root,
@@ -2307,6 +2368,15 @@
         {:else if contextPanel === "language"}
           <div class="flex flex-wrap items-center gap-2 border-b border-surface-500/20 bg-surface-900/55 px-3 py-2 text-[10px] text-content-secondary">
             <span class="font-medium">{activeTabLanguage}</span>
+            {#if activeLanguageMatrix}
+              <span class="rounded bg-surface-800 px-1.5 py-0.5 text-[9px] {activeLanguageMatrix.usable ? 'text-emerald-200' : 'text-rose-200'}">{activeLanguageMatrix.usable ? "usable" : "missing"}</span>
+              {#if activeLanguageMatrix.command}
+                <span class="font-mono text-[9px] text-content-quiet">{activeLanguageMatrix.command}</span>
+              {/if}
+              {#if activeLanguageMatrix.packageId}
+                <span class="rounded bg-surface-800 px-1.5 py-0.5 text-[9px] text-content-quiet">pkg:{activeLanguageMatrix.packageId}</span>
+              {/if}
+            {/if}
             {#if latestLanguageSession}
               <span class="rounded bg-surface-800 px-1.5 py-0.5 text-[9px] {latestLanguageSession.phase === 'failed' ? 'text-rose-200' : latestLanguageSession.phase === 'ready' ? 'text-emerald-200' : 'text-amber-200'}">{latestLanguageSession.phase}</span>
               <span class="min-w-0 flex-1 truncate font-mono text-[9px] text-content-quiet" title={latestLanguageSession.language_root}>{latestLanguageSession.relative_root || "."}</span>

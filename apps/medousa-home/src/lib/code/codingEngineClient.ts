@@ -699,6 +699,60 @@ export async function getCodeLanguageSessions(options: {
   };
 }
 
+export type CodeLanguageMatrixEntry = {
+  language: string;
+  command: string | null;
+  binaryAvailable: boolean;
+  usable: boolean;
+  packageId: string | null;
+  rootMarkers: string[];
+  extensions: string[];
+  args: string[];
+};
+
+export async function getCodeLanguageMatrix(): Promise<CodeLanguageMatrixEntry[]> {
+  const response = await codeAgentGet<{
+    ok: boolean;
+    languages?: Array<{
+      language?: string;
+      command?: string | null;
+      binary_available?: boolean;
+      usable?: boolean;
+      package_id?: string | null;
+      root_markers?: string[];
+      extensions?: string[];
+      args?: string[];
+    }>;
+  }>("/v1/code/language-matrix", {});
+  if (!Array.isArray(response.languages)) return [];
+  return response.languages
+    .filter((entry) => typeof entry.language === "string" && entry.language)
+    .map((entry) => ({
+      language: entry.language!,
+      command: typeof entry.command === "string" ? entry.command : null,
+      binaryAvailable: Boolean(entry.binary_available ?? entry.usable),
+      usable: Boolean(entry.usable ?? entry.binary_available),
+      packageId: typeof entry.package_id === "string" ? entry.package_id : null,
+      rootMarkers: Array.isArray(entry.root_markers)
+        ? entry.root_markers.filter((marker): marker is string => typeof marker === "string")
+        : [],
+      extensions: Array.isArray(entry.extensions)
+        ? entry.extensions.filter((ext): ext is string => typeof ext === "string")
+        : [],
+      args: Array.isArray(entry.args)
+        ? entry.args.filter((arg): arg is string => typeof arg === "string")
+        : [],
+    }));
+}
+
+export function findCodeLanguageMatrixEntry(
+  matrix: CodeLanguageMatrixEntry[],
+  language: string,
+): CodeLanguageMatrixEntry | null {
+  const key = language.trim().toLowerCase();
+  return matrix.find((entry) => entry.language.toLowerCase() === key) ?? null;
+}
+
 export type CodeDocumentSymbol = {
   name: string;
   kind?: number;

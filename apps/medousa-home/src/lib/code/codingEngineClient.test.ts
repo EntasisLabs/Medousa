@@ -93,3 +93,26 @@ describe("coding-engine lifecycle", () => {
     });
   });
 });
+
+describe("coding-engine language matrix helpers", () => {
+  it("finds matrix rows by language id", async () => {
+    const { findCodeLanguageMatrixEntry } = await import("./codingEngineClient");
+    const row = findCodeLanguageMatrixEntry(
+      [
+        {
+          language: "Svelte",
+          command: "svelteserver",
+          binaryAvailable: false,
+          usable: false,
+          packageId: "langservers",
+          rootMarkers: ["svelte.config.js"],
+          extensions: ["svelte"],
+          args: ["--stdio"],
+        },
+      ],
+      "svelte",
+    );
+    expect(row?.packageId).toBe("langservers");
+    expect(row?.usable).toBe(false);
+  });
+});

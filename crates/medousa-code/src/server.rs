@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 use tower_http::cors::CorsLayer;
 use url::Url;
 
-use crate::backend::{LanguageServerBackend, spawn_backend};
+use crate::backend::{LanguageServerBackend, command_available, spawn_backend};
 use crate::detamu::{DetamuDocumentSnapshot, DetamuServerHandle};
 use crate::diagnostics::WorkspaceDiagnosticStore;
 use crate::document::DocumentStore;
@@ -154,6 +154,7 @@ pub fn app(state: OrchestratorState) -> Router {
         .route("/v1/code/conventions", get(agent_conventions))
         .route("/v1/code/language-root", get(language_root))
         .route("/v1/code/language-sessions", get(language_sessions))
+        .route("/v1/code/language-matrix", get(language_matrix))
         .route("/v1/code/request", post(agent_request))
         .route("/v1/detamu/snapshot", get(detamu_snapshot))
         .route("/v1/detamu/handles", get(detamu_handles))
@@ -795,6 +796,38 @@ async fn language_sessions(
     })))
 }
 
+async fn language_matrix(
+    State(state): State<Arc<OrchestratorState>>,
+) -> Json<Value> {
+    let languages: Vec<Value> = state
+        .pool
+        .registry()
+        .specs()
+        .iter()
+        .map(|spec| {
+            let command = spec.kind.command_name().map(str::to_string);
+            let binary_available = match &spec.kind {
+                crate::registry::ServerKind::Grapheme => true,
+                crate::registry::ServerKind::Stdio { command } => command_available(command),
+            };
+            json!({
+                "language": spec.language,
+                "command": command,
+                "binary_available": binary_available,
+                "usable": binary_available,
+                "package_id": spec.package_id,
+                "root_markers": spec.root_markers,
+                "extensions": spec.extensions,
+                "args": spec.args,
+            })
+        })
+        .collect();
+    Json(json!({
+        "ok": true,
+        "languages": languages,
+    }))
+}
+
 async fn session_for_doc(
     state: &OrchestratorState,
     q: &AgentDocQuery,
@@ -1247,8 +1280,8 @@ async fn detamu_handles(State(state): State<Arc<OrchestratorState>>) -> Json<Val
 mod tests {
     use super::{
         AgentDocQuery, OrchestratorConfig, OrchestratorState, apply_editorconfig,
-        document_path_for_project, language_root, language_sessions, path_to_file_uri,
-        resolve_language_root, rewrite_initialize_params,
+        document_path_for_project, language_matrix, language_root, language_sessions,
+        path_to_file_uri, resolve_language_root, rewrite_initialize_params,
     };
     use crate::language_session::{LanguageSessionIdentity, LanguageSessionKind};
     use crate::registry::{LanguageId, ServerRegistry};
@@ -1457,5 +1490,43 @@ mod tests {
         assert_eq!(response["root_uri"], path_to_file_uri(&package));
         assert_eq!(response["sessions"][0]["phase"], "ready");
         assert_eq!(response["sessions"][0]["relative_root"], "packages/app");
+    }
+
+    #[tokio::test]
+    async fn language_matrix_reports_package_identity_without_claiming_usability() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().canonicalize().unwrap();
+        let state = std::sync::Arc::new(OrchestratorState::new(
+            OrchestratorConfig {
+                bind: "127.0.0.1:0".parse().unwrap(),
+                workspace_root: project.clone(),
+                allowed_roots: vec![project],
+            },
+            ServerRegistry::with_defaults(),
+        ));
+
+        let response = language_matrix(axum::extract::State(state)).await.0;
+        let languages = response["languages"].as_array().unwrap();
+        let svelte = languages
+            .iter()
+            .find(|entry| entry["language"] == "svelte")
+            .expect("svelte row");
+        assert_eq!(svelte["command"], "svelteserver");
+        assert_eq!(svelte["package_id"], "langservers");
+        assert!(svelte["extensions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|ext| ext == "svelte"));
+        // Registry membership alone is not usability — probe the binary.
+        assert!(svelte["usable"].is_boolean());
+        assert_eq!(svelte["usable"], svelte["binary_available"]);
+
+        let grapheme = languages
+            .iter()
+            .find(|entry| entry["language"] == "grapheme")
+            .expect("grapheme row");
+        assert_eq!(grapheme["usable"], true);
+        assert!(grapheme["command"].is_null());
     }
 }
