@@ -22,7 +22,6 @@
   import { observeGraphemeHovers } from "$lib/grapheme/graphemeHoverEnhance";
   import {
     readCodeEditorFontSize,
-    readCodeEditorIndentGuides,
     readCodeEditorLineNumbers,
     readCodeEditorTabSize,
     readCodeEditorWordWrap,
@@ -296,7 +295,6 @@
   }
 
   function buildExtensions(): Extension[] {
-    const showIndentGuides = readCodeEditorIndentGuides();
     return [
       basicSetup,
       codeEditorChromeTheme,
@@ -315,16 +313,6 @@
           : EditorView.theme({ ".cm-lineNumbers": { display: "none" } }),
       ),
       reviewCompartment.of(reviewExtensions()),
-      showIndentGuides
-        ? EditorView.theme({
-            ".cm-line": {
-              backgroundImage:
-                "repeating-linear-gradient(to right, transparent 0, transparent calc(1ch - 1px), rgb(var(--color-surface-500) / 0.12) calc(1ch - 1px), rgb(var(--color-surface-500) / 0.12) 1ch)",
-              backgroundSize: "2ch 100%",
-              backgroundPosition: "0 0",
-            },
-          })
-        : [],
       EditorView.domEventHandlers({
         contextmenu(event) {
           if (!onContextMenuRef) return false;

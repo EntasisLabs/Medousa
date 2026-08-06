@@ -4,7 +4,6 @@ const WORD_WRAP_KEY = "medousa-code-editor-word-wrap";
 const TAB_SIZE_KEY = "medousa-code-editor-tab-size";
 const LINE_NUMBERS_KEY = "medousa-code-editor-line-numbers";
 const FONT_SIZE_KEY = "medousa-code-editor-font-size";
-const INDENT_GUIDES_KEY = "medousa-code-editor-indent-guides";
 const OUTLINE_OPEN_KEY = "medousa-code-editor-outline-open";
 const PROBLEMS_OPEN_KEY = "medousa-code-editor-problems-open";
 
@@ -36,14 +35,6 @@ export function readCodeEditorLineNumbers(): boolean {
 
 export function writeCodeEditorLineNumbers(enabled: boolean): void {
   writeBool(LINE_NUMBERS_KEY, enabled);
-}
-
-export function readCodeEditorIndentGuides(): boolean {
-  return readBool(INDENT_GUIDES_KEY, true);
-}
-
-export function writeCodeEditorIndentGuides(enabled: boolean): void {
-  writeBool(INDENT_GUIDES_KEY, enabled);
 }
 
 export function readCodeEditorFontSize(): CodeEditorFontSize {
