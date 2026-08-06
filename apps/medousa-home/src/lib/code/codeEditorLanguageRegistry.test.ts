@@ -91,4 +91,16 @@ describe("codeEditorLanguageRegistry", () => {
       expect(buildCodeEditorLanguageExtensions(id).length).toBeGreaterThan(0);
     }
   });
+
+  it("supplies real grammars for every registered LSP language", () => {
+    const lspLanguages = Object.values(CODE_EDITOR_LANGUAGES)
+      .filter((def) => def.capabilities.lsp)
+      .map((def) => def.id);
+    for (const id of lspLanguages) {
+      const extensions = buildCodeEditorLanguageExtensions(id);
+      // Theme-only fallback is a single highlighting extension pair at most for
+      // plaintext; LSP languages must attach an actual language support.
+      expect(extensions.length).toBeGreaterThanOrEqual(2);
+    }
+  });
 });

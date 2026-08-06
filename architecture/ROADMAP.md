@@ -36,7 +36,7 @@ Home in every host. See [medousa-anywhere-plan.md](medousa-anywhere-plan.md).
 | `medousa-code` MVP + Grapheme backend | ✅ |
 | Home → Orchestrator via `/v1/code/lsp` | ✅ |
 | Daemon cognition tools (`cognition_code_*`) | ✅ |
-| External LSPs + Packages (`coding-engine`, `langservers`) | 🔄 Pyright + TypeScript packaged; exact per-language packs and repair are [active](home-code-vscode-parity-plan.md) |
+| External LSPs + Packages (`coding-engine`, `langservers`) | ✅ Svelte/TS/JS/Python dogfood + matrix-backed repair; remaining LSPs use PATH grammars — see [parity plan](home-code-vscode-parity-plan.md) |
 | Multi-client fan-out + doc versions | ✅ |
 | Forge worktree `--allow-root` | ✅ |
 | Detamu bridge hooks | ✅ stub (`/v1/detamu/*`) |

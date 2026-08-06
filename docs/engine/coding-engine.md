@@ -133,6 +133,12 @@ dogfood languages:
 | Svelte | `codemirror-lang-svelte` | `svelteserver` | `langservers` |
 | Python | CodeMirror Python | `pyright-langserver` | `langservers` |
 
+Every other registered LSP language also has an editor grammar (official
+CodeMirror packs for Go/C++/Java/PHP, legacy stream modes for C#/Kotlin/Ruby/
+Lua/Swift). Those servers still resolve from `{dataDir}/bin` or `PATH`; they do
+not yet ship as Medousa package ids, so Repair explains the missing binary
+instead of installing an unrelated pack.
+
 `.svelte` files resolve a language root from `svelte.config.*` or the nearest
 `package.json` inside the governed worktree. Editor **Repair language support**
 installs `coding-engine` plus the language's package (`langservers` for this
