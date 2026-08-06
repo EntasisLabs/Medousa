@@ -29,6 +29,15 @@ class CommandSpotlightStore {
     this.open = true;
   }
 
+  /** VS Code-style command palette — Spotlight seeded in `>` advanced mode. */
+  openCommandPalette() {
+    this.mode = "default";
+    this.promptStep = null;
+    this.pendingCommand = null;
+    this.seedQuery = ">";
+    this.open = true;
+  }
+
   /** Reopen with previous query/mode (Telescope resume). */
   resumeSpotlight() {
     this.mode = this.lastMode;

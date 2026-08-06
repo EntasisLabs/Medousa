@@ -62,6 +62,7 @@ describe("keyboardShortcutsCatalog", () => {
     );
     expect(snapshot).toEqual([
       "global:spotlight:mod:K:Open Spotlight",
+      "global:command-palette:mod:Shift+P:Show All Commands (Spotlight >)",
       "global:toggle-rail:mod:B:Toggle left rail",
       "global:summon-toolbar:mod:Shift+.:Summon view toolbar",
       "global:content-zoom:mod:+ / −:Zoom in / out",

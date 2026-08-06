@@ -2186,9 +2186,37 @@
   $effect(() => {
     if (!interactive) return;
     const onShowProblems = () => void showProblems();
+    const onCodeCommand = (event: Event) => {
+      const id = (event as CustomEvent<{ id?: string }>).detail?.id;
+      if (!id) return;
+      switch (id) {
+        case "workbench.action.quickOpen":
+          void showQuickOpen();
+          break;
+        case "workbench.action.navigateBack":
+          void navigate(-1);
+          break;
+        case "workbench.action.navigateForward":
+          void navigate(1);
+          break;
+        case "workbench.actions.view.problems":
+          void showProblems();
+          break;
+        case "workbench.action.terminal.toggleTerminal":
+          void toggleTerminalDock();
+          break;
+        case "workbench.view.testing":
+          void toggleTests();
+          break;
+        default:
+          break;
+      }
+    };
     window.addEventListener("medousa-code-show-problems", onShowProblems);
+    window.addEventListener("medousa-code-command", onCodeCommand);
     return () => {
       window.removeEventListener("medousa-code-show-problems", onShowProblems);
+      window.removeEventListener("medousa-code-command", onCodeCommand);
     };
   });
 

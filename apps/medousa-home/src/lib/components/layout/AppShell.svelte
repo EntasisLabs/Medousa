@@ -137,6 +137,24 @@
         commandSpotlight.toggleSpotlight();
         return;
       }
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.shiftKey &&
+        event.key.toLowerCase() === "p"
+      ) {
+        const target = event.target as HTMLElement | null;
+        const typing =
+          target &&
+          (target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            target.isContentEditable);
+        if (typing) return;
+        // Vault PDF keeps Mod+Shift+P while a note editor is focused.
+        if (target?.closest?.("[data-vault-editor]")) return;
+        event.preventDefault();
+        commandSpotlight.openCommandPalette();
+        return;
+      }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "o") {
         const target = event.target as HTMLElement | null;
         const typing =

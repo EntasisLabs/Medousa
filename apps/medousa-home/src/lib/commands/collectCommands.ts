@@ -10,6 +10,7 @@ import {
   buildTuneCommands,
   buildWorkspaceCommands,
 } from "./registry";
+import { buildCodeCommands } from "./codeCommands";
 import { buildSuggestedCommands, buildBudgetListCommand } from "./contextCommands";
 import { buildDoCommands, buildScriptRunOpenCommands } from "./doCommands";
 import {
@@ -146,6 +147,7 @@ export function collectWorkshopCommands(
     ...buildGoCommands(),
     ...buildWorkspaceCommands(),
     ...doCommands,
+    ...buildCodeCommands(),
     ...buildAskCommands(),
     ...buildTuneCommands(),
     ...buildBrowserCommands(),
