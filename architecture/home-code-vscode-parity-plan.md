@@ -219,8 +219,8 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 | HCP-0 | Authoritative plan, truthful roadmap/docs, verification inventory | ✅ |
 | HCP-1A | `MedousaCodeWorkspace` file/URI/view model with focused tests | ✅ |
 | HCP-1B | Cross-file definition/declaration/type/implementation navigation and history | ✅ |
-| HCP-1C | Complete text/resource workspace edits plus governed refactor preview | 🔄 |
-| HCP-2A | Real workspace Problems model and diagnostics navigation | ⬜ |
+| HCP-1C | Complete text/resource workspace edits plus governed refactor preview | ✅ |
+| HCP-2A | Real workspace Problems model and diagnostics navigation | 🔄 |
 | HCP-2B | Per-document language-root resolution and nested-project sessions | ⬜ |
 | HCP-2C | LSP lifecycle, restart/reconnect, progress, logs, and configuration | ⬜ |
 | HCP-3A | Svelte, JSX, and TSX grammar/LSP dogfood pack | ⬜ |
@@ -263,6 +263,13 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
   Migration: none. Compatibility: unsupported language methods remain
   capability-gated and existing in-file navigation stays available. Rollback:
   revert this commit; no persisted data or daemon contract changes are involved.
+- **HCP-1C — `ca1a815b`.** Added complete LSP workspace-edit parsing, a
+  before/after Review Refactor surface, and one digest-fenced Forge transaction
+  for ordered text, create, rename, and delete operations with rollback.
+  Migration: none. Compatibility: older daemons retain the text-only batch
+  fallback; resource operations require an updated workshop and are never
+  partially applied. Rollback: revert this commit; the additive daemon route is
+  harmless if Home is rolled back first.
 
 ### Slice rules
 

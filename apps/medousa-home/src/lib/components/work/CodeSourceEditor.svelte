@@ -31,10 +31,19 @@
   import type { LSPClient } from "@codemirror/lsp-client";
   import {
     acquireCodeWorkspaceLspClient,
+    getAllCodeWorkspaceDiagnostics,
     getCodeEditorConventions,
     type CodeDocumentSymbol,
     type CodeWorkspaceSymbol,
   } from "$lib/code/codingEngineClient";
+  import {
+    countCodeProblems,
+    filterCodeProblems,
+    groupCodeProblems,
+    normalizeCodeWorkspaceProblems,
+    type CodeProblem,
+    type CodeProblemSeverityFilter,
+  } from "$lib/code/codeProblems";
   import {
     pathToFileUri,
     workspaceRelativePathFromUri,
@@ -151,6 +160,15 @@
   let lspConnecting = $state(false);
   let contextPanel = $state<"problems" | "outline" | "references" | null>(null);
   let problems = $state<ReturnType<CodeMirrorHost["getProblems"]>>([]);
+  let workspaceProblems = $state<CodeProblem[]>([]);
+  let workspaceProblemsScope = $state("");
+  let workspaceProblemsLoaded = $state(false);
+  let workspaceProblemsLoading = $state(false);
+  let workspaceProblemsError = $state<string | null>(null);
+  let workspaceProblemsUnavailableLanguages = $state<string[]>([]);
+  let problemQuery = $state("");
+  let problemSeverity = $state<CodeProblemSeverityFilter>("all");
+  let problemsRequestEpoch = 0;
   let symbols = $state<CodeDocumentSymbol[]>([]);
   let symbolsLoading = $state(false);
   let quickOpen = $state(false);
@@ -199,6 +217,15 @@
   let refactorApplying = $state(false);
   let refactorDiffMode = $state<"inline" | "side">("side");
   const statusOwnerId = `code-editor-${Math.random().toString(36).slice(2)}`;
+  const problemSeverityOptions: Array<{
+    value: CodeProblemSeverityFilter;
+    label: string;
+  }> = [
+    { value: "all", label: "All" },
+    { value: "error", label: "Errors" },
+    { value: "warning", label: "Warnings" },
+    { value: "information", label: "Info" },
+  ];
 
   const context = $derived(undertakings.active);
   const detail = $derived(undertakings.detail);
@@ -295,15 +322,59 @@
   const selectedTask = $derived(
     projectTasks.find((task) => task.id === selectedTaskId) ?? projectTasks[0] ?? null,
   );
-  const workspaceProblemRows = $derived(
-    [...problems]
-      .map((problem) => ({
-        path: activeTab?.path ?? "Current file",
-        line: problem.line,
-        message: problem.message,
-        severity: problem.severity === "error" ? 1 : 2,
-      }))
-      .sort((a, b) => a.severity - b.severity || a.line - b.line),
+  const workspaceProblemScopeKey = $derived(
+    workId && workspaceRoot ? `${workId}\u0000${workspaceRoot}` : "",
+  );
+  const workspaceProblemLanguages = $derived(
+    [...new Set(
+      tabs
+        .map((tab) => tab.language)
+        .filter((language) => languageSupportsLsp(language)),
+    )].sort(),
+  );
+  const currentDocumentProblemFallback = $derived.by(() => {
+    if (!activeTab || !documentUri || !workspaceRoot) return [];
+    return normalizeCodeWorkspaceProblems(
+      [{
+        uri: documentUri,
+        language: activeTab.language,
+        diagnostics: problems.map((problem) => {
+          const severity = problem.severity === "error"
+            ? 1
+            : problem.severity === "warning"
+              ? 2
+              : problem.severity === "info"
+                ? 3
+                : 4;
+          return {
+            message: problem.message,
+            severity,
+            range: {
+              start: { line: Math.max(0, problem.line - 1), character: 0 },
+              end: { line: Math.max(0, problem.line - 1), character: 0 },
+            },
+          };
+        }),
+      }],
+      workspaceRoot,
+    );
+  });
+  const effectiveWorkspaceProblems = $derived(
+    workspaceProblemsLoaded && workspaceProblemsScope === workspaceProblemScopeKey
+      ? workspaceProblems
+      : currentDocumentProblemFallback,
+  );
+  const filteredWorkspaceProblems = $derived(
+    filterCodeProblems(effectiveWorkspaceProblems, {
+      query: problemQuery,
+      severity: problemSeverity,
+    }),
+  );
+  const workspaceProblemGroups = $derived(
+    groupCodeProblems(filteredWorkspaceProblems),
+  );
+  const workspaceProblemCounts = $derived(
+    countCodeProblems(effectiveWorkspaceProblems),
   );
   const canReference = $derived(Boolean(languageCapabilities.referencesProvider));
   const canRename = $derived(Boolean(languageCapabilities.renameProvider));
@@ -481,8 +552,8 @@
     });
     setActiveCodeInsights(workId, {
       containing_symbol: containingSymbol(),
-      diagnostics: problems.slice(0, 20).map((problem) =>
-        `${activeTab.path}:${problem.line} ${problem.message}`
+      diagnostics: effectiveWorkspaceProblems.slice(0, 20).map((problem) =>
+        `${problem.path}:${problem.line}:${problem.character} ${problem.message}`
       ),
       last_verification: taskResult
         ? `${taskResult.task.label}: ${taskResult.success ? "passed" : "failed"}${taskResult.exit_code != null ? ` (exit ${taskResult.exit_code})` : ""}`
@@ -873,6 +944,70 @@
     });
   }
 
+  async function refreshWorkspaceProblems(options?: { quiet?: boolean }) {
+    const requestWorkId = workId;
+    const requestRoot = workspaceRoot;
+    const requestScope = requestWorkId && requestRoot
+      ? `${requestWorkId}\u0000${requestRoot}`
+      : "";
+    const requestLanguages = [...workspaceProblemLanguages];
+    const requestEpoch = ++problemsRequestEpoch;
+    if (!requestScope || !requestRoot) {
+      workspaceProblems = [];
+      workspaceProblemsScope = "";
+      workspaceProblemsLoaded = false;
+      workspaceProblemsLoading = false;
+      workspaceProblemsError = null;
+      workspaceProblemsUnavailableLanguages = [];
+      return;
+    }
+    if (workspaceProblemsScope !== requestScope) {
+      workspaceProblems = [];
+      workspaceProblemsScope = requestScope;
+      workspaceProblemsLoaded = false;
+      workspaceProblemsUnavailableLanguages = [];
+    }
+    if (!options?.quiet || !workspaceProblemsLoaded) workspaceProblemsLoading = true;
+    workspaceProblemsError = null;
+    try {
+      const snapshot = await getAllCodeWorkspaceDiagnostics({
+        workId: requestWorkId,
+        languages: requestLanguages,
+      });
+      if (requestEpoch !== problemsRequestEpoch || workspaceProblemScopeKey !== requestScope) {
+        return;
+      }
+      workspaceProblems = normalizeCodeWorkspaceProblems(snapshot.documents, requestRoot);
+      workspaceProblemsUnavailableLanguages = snapshot.unavailableLanguages ?? [];
+      workspaceProblemsLoaded = true;
+    } catch (err) {
+      if (requestEpoch !== problemsRequestEpoch || workspaceProblemScopeKey !== requestScope) {
+        return;
+      }
+      workspaceProblemsError = err instanceof Error ? err.message : String(err);
+    } finally {
+      if (requestEpoch === problemsRequestEpoch) workspaceProblemsLoading = false;
+    }
+  }
+
+  async function openWorkspaceProblem(problem: CodeProblem) {
+    surfaceError = null;
+    try {
+      const tab = await lmeWorkspace.openCodeFile(workId, problem.path, {
+        line: problem.line,
+      });
+      undertakings.setSelection({
+        path: problem.path,
+        line: problem.line,
+        entityId: null,
+      });
+      await tick();
+      if (tab) editor?.revealLine(problem.line);
+    } catch (err) {
+      surfaceError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
   async function showOutline() {
     contextPanel = contextPanel === "outline" ? null : "outline";
     if (contextPanel === "outline") await refreshSymbols();
@@ -903,8 +1038,8 @@
 
   async function showProblems() {
     contextPanel = contextPanel === "problems" ? null : "problems";
-    if (contextPanel !== "problems" || !activeTab || !lspClient) return;
-    lspClient.sync();
+    if (contextPanel !== "problems") return;
+    lspClient?.sync();
     syncProblems();
   }
 
@@ -1354,8 +1489,8 @@
     setActiveCodeInsights(workId, {
       // Cursor/symbol context is captured only at an explicit handoff boundary.
       containing_symbol: null,
-      diagnostics: problems.slice(0, 20).map((problem) =>
-        `${activeTabPath || "current file"}:${problem.line} ${problem.message}`
+      diagnostics: effectiveWorkspaceProblems.slice(0, 20).map((problem) =>
+        `${problem.path}:${problem.line}:${problem.character} ${problem.message}`
       ),
       last_verification: taskResult
         ? `${taskResult.task.label}: ${taskResult.success ? "passed" : "failed"}${taskResult.exit_code != null ? ` (exit ${taskResult.exit_code})` : ""}`
@@ -1508,6 +1643,33 @@
   });
 
   $effect(() => {
+    const scope = workspaceProblemScopeKey;
+    const languagesKey = workspaceProblemLanguages.join("\u0000");
+    const showingProblems = contextPanel === "problems";
+    void languagesKey;
+    void lspClient;
+    if (!interactive || !scope) {
+      untrack(() => {
+        if (workspaceProblemsScope) void refreshWorkspaceProblems({ quiet: true });
+      });
+      return;
+    }
+    const refreshTimer = setTimeout(
+      () => untrack(() => void refreshWorkspaceProblems({ quiet: !showingProblems })),
+      showingProblems ? 0 : 350,
+    );
+    if (!showingProblems) return () => clearTimeout(refreshTimer);
+    const pollingTimer = setInterval(
+      () => untrack(() => void refreshWorkspaceProblems({ quiet: true })),
+      2_000,
+    );
+    return () => {
+      clearTimeout(refreshTimer);
+      clearInterval(pollingTimer);
+    };
+  });
+
+  $effect(() => {
     const tabId = activeTabId;
     if (!interactive || !tabId) return;
     // The cleanup snapshots find state back into this map. Keep both the read
@@ -1528,6 +1690,7 @@
 
   $effect(() => {
     const tabId = activeTabId;
+    problems = [];
     const initialLine = untrack(() => activeTabLine);
     editorSelection = null;
     cursorLine = initialLine ?? 1;
@@ -1570,7 +1733,7 @@
       column: cursorColumn,
       language: activeTab.language,
       indentation: indentStatusLabel,
-      issueCount: Math.max(problems.length, workspaceProblemRows.length),
+      issueCount: workspaceProblemCounts.total,
       dirty,
       saving,
       saveWhisper,
@@ -1832,31 +1995,104 @@
     </div>
 
     {#if contextPanel}
-      <div class="max-h-44 shrink-0 overflow-y-auto border-t border-surface-500/30 bg-surface-950/80">
+      <div class="{contextPanel === 'problems' ? 'max-h-72' : 'max-h-44'} shrink-0 overflow-y-auto border-t border-surface-500/30 bg-surface-950/80">
         <div class="sticky top-0 z-10 flex items-center justify-between border-b border-surface-500/25 bg-surface-950 px-2 py-1">
-          <span class="text-[9px] font-medium uppercase tracking-wider text-content-tertiary">
-            {contextPanel === "problems" ? "Issues" : contextPanel === "references" ? "Uses" : "Structure"}
-          </span>
-          <button type="button" class="rounded p-0.5 text-content-quiet hover:text-surface-200" aria-label="Close context panel" onclick={() => (contextPanel = null)}><X size={11} /></button>
-        </div>
-        {#if contextPanel === "problems"}
-          {#if problems.length === 0 && workspaceProblemRows.length === 0}
-            <p class="px-3 py-3 text-[10px] text-content-quiet">No issues found in this project.</p>
-          {:else}
-            {#each workspaceProblemRows as problem, index (`${problem.path}:${problem.line}:${problem.message}:${index}`)}
+          <div class="flex min-w-0 items-center gap-2">
+            <span class="text-[9px] font-medium uppercase tracking-wider text-content-tertiary">
+              {contextPanel === "problems" ? "Problems" : contextPanel === "references" ? "Uses" : "Structure"}
+            </span>
+            {#if contextPanel === "problems"}
+              <span class="text-[9px] text-rose-300" title="Errors">{workspaceProblemCounts.errors}</span>
+              <span class="text-[9px] text-amber-300" title="Warnings">{workspaceProblemCounts.warnings}</span>
+              <span class="text-[9px] text-content-quiet" title="Information and hints">{workspaceProblemCounts.information + workspaceProblemCounts.hints}</span>
+            {/if}
+          </div>
+          <div class="flex items-center gap-0.5">
+            {#if contextPanel === "problems"}
               <button
                 type="button"
-                class="flex w-full items-start gap-2 border-b border-surface-500/15 px-3 py-1.5 text-left hover:bg-surface-800/60"
-                onclick={() => {
-                  const file = quickFiles.find((entry) => entry.path === problem.path);
-                  if (file) void chooseQuickFile(file).then(() => editor?.revealLine(problem.line));
-                  else if (problem.path === activeTab?.path) editor?.revealLine(problem.line);
-                }}
-              >
-                <CircleAlert size={11} class={problem.severity === 1 ? "mt-0.5 shrink-0 text-rose-300" : "mt-0.5 shrink-0 text-amber-300"} />
-                <span class="min-w-0 flex-1 text-[10px] text-content-secondary"><span class="text-content-quiet">{problem.path} · </span>{problem.message}</span>
-                <span class="shrink-0 font-mono text-[9px] text-content-quiet">{problem.line}</span>
-              </button>
+                class="rounded p-0.5 text-content-quiet hover:bg-surface-800 hover:text-surface-200 disabled:opacity-50"
+                aria-label="Refresh project problems"
+                title="Refresh project problems"
+                disabled={workspaceProblemsLoading}
+                onclick={() => void refreshWorkspaceProblems()}
+              ><RotateCcw size={11} class={workspaceProblemsLoading ? "animate-spin" : ""} /></button>
+            {/if}
+            <button type="button" class="rounded p-0.5 text-content-quiet hover:text-surface-200" aria-label="Close context panel" onclick={() => (contextPanel = null)}><X size={11} /></button>
+          </div>
+        </div>
+        {#if contextPanel === "problems"}
+          <div class="flex items-center gap-1.5 border-b border-surface-500/20 px-2 py-1.5">
+            <label class="flex min-w-28 flex-1 items-center gap-1.5 rounded border border-surface-500/35 bg-surface-900/70 px-1.5 py-1 focus-within:border-primary-400/60">
+              <Search size={11} class="shrink-0 text-content-quiet" />
+              <input
+                class="min-w-0 flex-1 bg-transparent text-[10px] text-content-secondary outline-none placeholder:text-content-faint"
+                aria-label="Filter project problems"
+                placeholder="Filter problems"
+                bind:value={problemQuery}
+              />
+            </label>
+            <div class="flex items-center gap-0.5" aria-label="Problem severity filter">
+              {#each problemSeverityOptions as option (option.value)}
+                <button
+                  type="button"
+                  class="rounded px-1.5 py-1 text-[9px] {problemSeverity === option.value ? 'bg-primary-500/20 text-primary-100' : 'text-content-quiet hover:bg-surface-800 hover:text-content-secondary'}"
+                  aria-pressed={problemSeverity === option.value}
+                  onclick={() => (problemSeverity = option.value)}
+                >{option.label}</button>
+              {/each}
+            </div>
+          </div>
+          {#if workspaceProblemsError}
+            <div class="flex items-start justify-between gap-3 border-b border-rose-400/20 bg-rose-500/5 px-3 py-2 text-[10px] text-rose-200">
+              <span>Could not refresh project problems: {workspaceProblemsError}</span>
+              <button type="button" class="shrink-0 underline underline-offset-2" onclick={() => void refreshWorkspaceProblems()}>Retry</button>
+            </div>
+          {/if}
+          {#if workspaceProblemsUnavailableLanguages.length > 0}
+            <p class="border-b border-amber-400/20 bg-amber-500/5 px-3 py-1.5 text-[10px] text-amber-200">
+              Results are incomplete for {workspaceProblemsUnavailableLanguages.join(", ")}.
+            </p>
+          {/if}
+          {#if workspaceProblemsLoading && !workspaceProblemsLoaded}
+            <p class="flex items-center px-3 py-3 text-[10px] text-content-quiet"><LoaderCircle size={11} class="mr-1.5 animate-spin" />Loading project problems…</p>
+          {:else if workspaceProblemCounts.total === 0}
+            <p class="px-3 py-3 text-[10px] text-content-quiet">No problems found in this project.</p>
+          {:else if workspaceProblemGroups.length === 0}
+            <p class="px-3 py-3 text-[10px] text-content-quiet">No problems match the current filters.</p>
+          {:else}
+            {#each workspaceProblemGroups as group (group.path)}
+              <div class="flex items-center gap-2 border-b border-surface-500/20 bg-surface-900/70 px-3 py-1 text-[9px] text-content-tertiary">
+                <FileCode2 size={10} class="shrink-0 text-content-link/70" />
+                <span class="min-w-0 flex-1 truncate font-mono">{group.path}</span>
+                {#if group.counts.errors > 0}<span class="text-rose-300">{group.counts.errors}E</span>{/if}
+                {#if group.counts.warnings > 0}<span class="text-amber-300">{group.counts.warnings}W</span>{/if}
+                {#if group.counts.information + group.counts.hints > 0}<span>{group.counts.information + group.counts.hints}I</span>{/if}
+              </div>
+              {#each group.problems as problem (problem.id)}
+                <button
+                  type="button"
+                  class="flex w-full items-start gap-2 border-b border-surface-500/15 px-3 py-1.5 text-left hover:bg-surface-800/60"
+                  title={`${problem.path}:${problem.line}:${problem.character}`}
+                  onclick={() => void openWorkspaceProblem(problem)}
+                >
+                  <CircleAlert
+                    size={11}
+                    class={problem.severity === "error"
+                      ? "mt-0.5 shrink-0 text-rose-300"
+                      : problem.severity === "warning"
+                        ? "mt-0.5 shrink-0 text-amber-300"
+                        : "mt-0.5 shrink-0 text-sky-300"}
+                  />
+                  <span class="min-w-0 flex-1 text-[10px] text-content-secondary">
+                    <span class="break-words">{problem.message}</span>
+                    {#if problem.source || problem.code}
+                      <span class="ml-1 text-[9px] text-content-faint">{[problem.source, problem.code].filter(Boolean).join(" · ")}</span>
+                    {/if}
+                  </span>
+                  <span class="shrink-0 font-mono text-[9px] text-content-quiet">{problem.line}:{problem.character}</span>
+                </button>
+              {/each}
             {/each}
           {/if}
         {:else if contextPanel === "references"}
