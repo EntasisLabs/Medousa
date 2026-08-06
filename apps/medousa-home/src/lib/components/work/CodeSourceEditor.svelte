@@ -72,12 +72,10 @@
   import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
   import {
     readCodeEditorFontSize,
-    readCodeEditorIndentGuides,
     readCodeEditorLineNumbers,
     readCodeEditorTabSize,
     readCodeEditorWordWrap,
     writeCodeEditorFontSize,
-    writeCodeEditorIndentGuides,
     writeCodeEditorLineNumbers,
     writeCodeEditorTabSize,
     writeCodeEditorWordWrap,
@@ -126,7 +124,6 @@
   let surfaceError = $state<string | null>(null);
   let wordWrap = $state(readCodeEditorWordWrap());
   let showLineNumbers = $state(readCodeEditorLineNumbers());
-  let indentGuides = $state(readCodeEditorIndentGuides());
   let fontSize = $state<CodeEditorFontSize>(readCodeEditorFontSize());
   let tabSizePref = $state(readCodeEditorTabSize());
   let editorPrefsEpoch = $state(0);
@@ -402,12 +399,6 @@
   function toggleLineNumbers() {
     showLineNumbers = !showLineNumbers;
     writeCodeEditorLineNumbers(showLineNumbers);
-  }
-
-  function toggleIndentGuides() {
-    indentGuides = !indentGuides;
-    writeCodeEditorIndentGuides(indentGuides);
-    editorPrefsEpoch += 1;
   }
 
   function cycleFontSize() {
@@ -1393,10 +1384,6 @@
             <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-content-secondary hover:bg-surface-800" onclick={toggleLineNumbers}>
               <span>Line numbers</span>
               <span class="text-content-quiet">{showLineNumbers ? "On" : "Off"}</span>
-            </button>
-            <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-content-secondary hover:bg-surface-800" onclick={toggleIndentGuides}>
-              <span>Indent guides</span>
-              <span class="text-content-quiet">{indentGuides ? "On" : "Off"}</span>
             </button>
             <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-content-secondary hover:bg-surface-800" onclick={cycleFontSize}>
               <span>Font size</span>
