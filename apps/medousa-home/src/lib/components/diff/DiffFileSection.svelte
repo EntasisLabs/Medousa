@@ -9,6 +9,7 @@
     busy?: boolean;
     onOpenFile?: (path: string, line?: number) => void;
     onRestore?: () => void;
+    onRevertHunk?: (hunkIndex: number) => void;
     /** Footer copy when restore is available. */
     restoreHint?: string;
     restoreLabel?: string;
@@ -20,6 +21,7 @@
     busy = false,
     onOpenFile,
     onRestore,
+    onRevertHunk,
     restoreHint = "The reviewed revision remains available as a recovery point.",
     restoreLabel = "Restore before this change…",
   }: Props = $props();
@@ -152,6 +154,8 @@
       {mode}
       beforeText={file.beforeText}
       afterText={file.afterText}
+      onRevertHunk={onRevertHunk}
+      revertBusy={busy}
     />
   {/if}
 

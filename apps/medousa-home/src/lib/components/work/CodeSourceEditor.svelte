@@ -107,6 +107,15 @@
     getForgeChanges,
     getChangesFile,
     restoreChangesFile,
+    fetchChanges,
+    pullChanges,
+    pushChanges,
+    syncChanges,
+    checkpointChanges,
+    getChangesHistory,
+    getChangesBlame,
+    resolveChangesConflict,
+    revertChangesHunk,
     startProjectTaskRun,
     getProjectTaskRun,
     cancelProjectTaskRun,
@@ -117,6 +126,8 @@
     type ProjectTest,
     type ForgeChanges,
     type ChangesFileDiff,
+    type ChangesHistoryEntry,
+    type ChangesBlameHunk,
     type ForgeSourceFile,
   } from "$lib/forge";
   import { codeWorkspace, type CodeDocumentTab } from "$lib/stores/codeWorkspace.svelte";
@@ -243,6 +254,12 @@
   let changeFileLoading = $state(false);
   let changeFileError = $state<string | null>(null);
   let changeRestoreBusy = $state(false);
+  let changeSyncBusy = $state(false);
+  let changeSyncMessage = $state<string | null>(null);
+  let changesHistory = $state<ChangesHistoryEntry[]>([]);
+  let changesHistoryOpen = $state(false);
+  let changesBlameOpen = $state(false);
+  let changesBlameHunks = $state<ChangesBlameHunk[] | null>(null);
   let externalVersions = $state<Record<string, ForgeSourceFile>>({});
   let comparingTabId = $state<string | null>(null);
   let reviewChangedLines = $state<Array<{ line: number; kind: string }>>([]);
@@ -800,6 +817,8 @@
 
   async function selectChangePath(path: string) {
     selectedChangePath = path;
+    changesBlameOpen = false;
+    changesBlameHunks = null;
     await loadChangeFileDiff(path);
   }
 
@@ -844,6 +863,132 @@
       surfaceError = err instanceof Error ? err.message : String(err);
     } finally {
       changeRestoreBusy = false;
+    }
+  }
+
+  async function revertChangeHunk(diff: ChangesFileDiff, hunkIndex: number) {
+    if (!workId || !diff.working_digest) return;
+    changeRestoreBusy = true;
+    try {
+      const lease = await ensureHumanLease();
+      await revertChangesHunk(workId, {
+        path: diff.path,
+        hunk_index: hunkIndex,
+        expected_working_digest: diff.working_digest,
+        lease_id: lease.leaseId,
+        generation: lease.generation,
+      });
+      await refreshForgeChanges();
+      reconcileOpenFiles();
+    } catch (err) {
+      surfaceError = err instanceof Error ? err.message : String(err);
+    } finally {
+      changeRestoreBusy = false;
+    }
+  }
+
+  async function resolveChangeConflict(
+    diff: ChangesFileDiff,
+    resolution: "ours" | "theirs" | "baseline",
+  ) {
+    if (!workId) return;
+    changeRestoreBusy = true;
+    try {
+      const lease = await ensureHumanLease();
+      const result = await resolveChangesConflict(workId, {
+        path: diff.path,
+        resolution,
+        expected_working_digest: diff.working_digest,
+        lease_id: lease.leaseId,
+        generation: lease.generation,
+      });
+      forgeChanges = result.changes;
+      await loadChangeFileDiff(diff.path);
+      reconcileOpenFiles();
+      changeSyncMessage = `Conflict resolved (${resolution})`;
+    } catch (err) {
+      surfaceError = err instanceof Error ? err.message : String(err);
+    } finally {
+      changeRestoreBusy = false;
+    }
+  }
+
+  async function runChangesSync(
+    action: "fetch" | "pull" | "push" | "sync",
+  ) {
+    if (!workId) return;
+    changeSyncBusy = true;
+    changeSyncMessage = null;
+    try {
+      const lease = await ensureHumanLease();
+      const body = {
+        lease_id: lease.leaseId,
+        generation: lease.generation,
+      };
+      const result =
+        action === "fetch"
+          ? await fetchChanges(workId, body)
+          : action === "pull"
+            ? await pullChanges(workId, body)
+            : action === "push"
+              ? await pushChanges(workId, body)
+              : await syncChanges(workId, body);
+      forgeChanges = result.changes;
+      changeSyncMessage = result.message;
+      if (selectedChangePath) await loadChangeFileDiff(selectedChangePath);
+      reconcileOpenFiles();
+    } catch (err) {
+      surfaceError = err instanceof Error ? err.message : String(err);
+    } finally {
+      changeSyncBusy = false;
+    }
+  }
+
+  async function sealChangesForReview() {
+    if (!workId) return;
+    changeSyncBusy = true;
+    try {
+      const lease = await ensureHumanLease();
+      await checkpointChanges(workId, {
+        lease_id: lease.leaseId,
+        generation: lease.generation,
+      });
+      await undertakings.refreshDetail();
+      await lmeWorkspace.openCodeReview(workId, `Review · ${detail?.title ?? "project"}`);
+      changeSyncMessage = "Sealed for Review";
+      await refreshForgeChanges();
+    } catch (err) {
+      surfaceError = err instanceof Error ? err.message : String(err);
+    } finally {
+      changeSyncBusy = false;
+    }
+  }
+
+  async function toggleChangesHistory() {
+    changesHistoryOpen = !changesHistoryOpen;
+    if (!changesHistoryOpen || !workId) return;
+    try {
+      const result = await getChangesHistory(workId, 40);
+      changesHistory = result.commits;
+    } catch (err) {
+      surfaceError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  async function toggleChangesBlame() {
+    changesBlameOpen = !changesBlameOpen;
+    if (!changesBlameOpen) {
+      changesBlameHunks = null;
+      return;
+    }
+    if (!workId || !selectedChangePath) return;
+    changesBlameHunks = null;
+    try {
+      const result = await getChangesBlame(workId, selectedChangePath);
+      changesBlameHunks = result.hunks;
+    } catch (err) {
+      surfaceError = err instanceof Error ? err.message : String(err);
+      changesBlameOpen = false;
     }
   }
 
@@ -2583,6 +2728,29 @@
         case "workbench.view.scm":
           void toggleChanges(true);
           break;
+        case "git.fetch":
+          void toggleChanges(true).then(() => runChangesSync("fetch"));
+          break;
+        case "git.pull":
+          void toggleChanges(true).then(() => runChangesSync("pull"));
+          break;
+        case "git.push":
+          void toggleChanges(true).then(() => runChangesSync("push"));
+          break;
+        case "git.sync":
+          void toggleChanges(true).then(() => runChangesSync("sync"));
+          break;
+        case "medousa.forge.checkpoint":
+          void toggleChanges(true).then(() => sealChangesForReview());
+          break;
+        case "git.viewHistory":
+          void toggleChanges(true).then(() => {
+            if (!changesHistoryOpen) void toggleChangesHistory();
+          });
+          break;
+        case "git.blame.toggle":
+          void toggleChanges(true).then(() => toggleChangesBlame());
+          break;
         case "workbench.action.output.toggleOutput":
           toggleOutput();
           break;
@@ -3219,9 +3387,24 @@
         fileLoading={changeFileLoading}
         fileError={changeFileError}
         restoreBusy={changeRestoreBusy}
+        syncBusy={changeSyncBusy}
+        syncMessage={changeSyncMessage}
+        history={changesHistory}
+        historyOpen={changesHistoryOpen}
+        blameHunks={changesBlameHunks}
+        blameOpen={changesBlameOpen}
         onSelectPath={(path) => void selectChangePath(path)}
         onOpenPath={(path, line) => void openTaskLocation(path, line ?? 1)}
         onRestorePath={(diff) => void restoreChangeFile(diff)}
+        onRevertHunk={(diff, hunkIndex) => void revertChangeHunk(diff, hunkIndex)}
+        onResolveConflict={(diff, resolution) => void resolveChangeConflict(diff, resolution)}
+        onFetch={() => void runChangesSync("fetch")}
+        onPull={() => void runChangesSync("pull")}
+        onPush={() => void runChangesSync("push")}
+        onSync={() => void runChangesSync("sync")}
+        onCheckpoint={() => void sealChangesForReview()}
+        onToggleHistory={() => void toggleChangesHistory()}
+        onToggleBlame={() => void toggleChangesBlame()}
         onClose={() => void toggleChanges(false)}
         onRefresh={() => void refreshForgeChanges()}
       />

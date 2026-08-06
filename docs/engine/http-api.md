@@ -324,6 +324,15 @@ Custody of intentional work episodes over a git target (vault or any repo). Dist
 | GET | `/v1/forge/items/{id}/tree` | Browse governed source tree |
 | GET | `/v1/forge/items/{id}/changes` | Working-copy Changes (branch, upstream, conflict, file statuses) |
 | GET, POST | `/v1/forge/items/{id}/changes/file` | Per-file working-copy vs baseline diff, or lease-fenced restore to baseline |
+| POST | `/v1/forge/items/{id}/changes/file/hunk` | Lease-fenced single-hunk revert |
+| POST | `/v1/forge/items/{id}/changes/fetch` | Fetch remotes |
+| POST | `/v1/forge/items/{id}/changes/pull` | Fast-forward-only pull |
+| POST | `/v1/forge/items/{id}/changes/push` | Non-force push of the Forge branch |
+| POST | `/v1/forge/items/{id}/changes/sync` | Fetch → ff-only pull when behind → push when ahead |
+| POST | `/v1/forge/items/{id}/changes/checkpoint` | Seal active lease for Review |
+| GET | `/v1/forge/items/{id}/changes/history` | Commit history since baseline |
+| GET | `/v1/forge/items/{id}/changes/blame` | Blame hunks for a path |
+| POST | `/v1/forge/items/{id}/changes/conflict` | Resolve unmerged path (`ours`/`theirs`/`baseline`) |
 | GET | `/v1/forge/items/{id}/search` | Repository search (`query`, optional `mode`, `case_sensitive`, `whole_word`, `include`, `exclude`, `include_ignored`, `scope`, `limit`, `cursor`; response may include `next_cursor`) |
 | POST | `/v1/forge/items/{id}/search/replace` | Preview or apply digest-fenced repository replace (`dry_run`, `replacement`, search options, optional `paths`/`preconditions`/`lease_id`/`generation`) |
 | GET | `/v1/forge/items/{id}/source?path=…` | Read governed source (full UTF-8, or read-only preview for binary/large/lossy with `encoding`/`preview`/`truncated`) |

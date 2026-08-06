@@ -114,9 +114,13 @@ a private Code IDE chrome.
   digest-fenced edits; uncheck files to skip them, then Apply writes the rest
   atomically. **Changes** shows the governed working copy’s branch, upstream
   ahead/behind when known, conflict state, and changed-file list. Select a file
-  for a baseline comparison with real context expansion and **Restore baseline**.
-  Conflicted paths open with a banner; full 3-way merge UI arrives later. Review
-  remains the finish/decision surface.
+  for a baseline comparison with real context expansion, **Revert hunk**, and
+  **Restore baseline**. Conflicted paths offer Keep ours / Take theirs / Use
+  baseline (clears unmerged state). **Fetch / Pull / Push / Sync** are
+  lease-guarded (fast-forward pull only; Forge branch push; never force).
+  **Seal for Review** checkpoints into Review; Share still happens from Review
+  after finish. History and Blame are available on the Changes panel.
+  Review remains the finish/decision surface.
 - New file and New folder are available in the repository explorer. Nested
   parents are created as needed. Rename and delete work on the selected file or
   folder (folder ops apply one guarded multi-file transaction).

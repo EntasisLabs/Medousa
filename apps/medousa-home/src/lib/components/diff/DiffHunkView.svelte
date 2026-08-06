@@ -9,9 +9,18 @@
     beforeText?: string | null;
     /** Full after-file text for real gap expansion. */
     afterText?: string | null;
+    onRevertHunk?: (hunkIndex: number) => void;
+    revertBusy?: boolean;
   }
 
-  let { hunks, mode = "inline", beforeText = null, afterText = null }: Props = $props();
+  let {
+    hunks,
+    mode = "inline",
+    beforeText = null,
+    afterText = null,
+    onRevertHunk,
+    revertBusy = false,
+  }: Props = $props();
 
   /** Expanded gap keys: "lead" | "between:i" */
   let expanded = $state<Record<string, boolean>>({});
@@ -194,7 +203,20 @@
         {/if}
       {/if}
 
-      <div class="diff-hunk-meta">−{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count}</div>
+      <div class="diff-hunk-meta">
+        <span>−{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count}</span>
+        {#if onRevertHunk}
+          <button
+            type="button"
+            class="diff-hunk-revert"
+            disabled={revertBusy}
+            onclick={(event) => {
+              event.stopPropagation();
+              onRevertHunk(hi);
+            }}
+          >Revert hunk</button>
+        {/if}
+      </div>
       {#each hunk.lines as line, index (`${line.old_line ?? ""}:${line.new_line ?? ""}:${index}`)}
         <div class="diff-line diff-line--{line.kind}">
           <span class="diff-gutter">{line.old_line ?? ""}</span>
@@ -283,6 +305,18 @@
         {/if}
       {/if}
 
+      {#if onRevertHunk}
+        <div class="diff-hunk-meta diff-hunk-meta--side">
+          <span>−{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count}</span>
+          <button
+            type="button"
+            class="diff-hunk-revert"
+            disabled={revertBusy}
+            onclick={() => onRevertHunk(hi)}
+          >Revert hunk</button>
+        </div>
+      {/if}
+
       {#each sideRowsForHunk(hunk) as row (row.key)}
         <div class="diff-side-row">
           <div class:diff-side-old={row.kind === "deletion" || row.kind === "replacement"}>
@@ -321,9 +355,37 @@
     position: sticky;
     top: 0;
     z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
     padding: 0.1rem 0.65rem;
     background: rgb(var(--color-surface-800) / 0.96);
     color: rgb(var(--theme-text-quiet));
+  }
+
+  .diff-hunk-meta--side {
+    grid-column: 1 / -1;
+  }
+
+  .diff-hunk-revert {
+    border: 0;
+    border-radius: 0.25rem;
+    background: transparent;
+    padding: 0.1rem 0.35rem;
+    color: rgb(var(--theme-warning));
+    font-family: inherit;
+    font-size: 0.5625rem;
+    cursor: pointer;
+  }
+
+  .diff-hunk-revert:hover:not(:disabled) {
+    background: rgb(var(--color-warning-500) / 0.1);
+  }
+
+  .diff-hunk-revert:disabled {
+    opacity: 0.4;
+    cursor: default;
   }
 
   .diff-line {

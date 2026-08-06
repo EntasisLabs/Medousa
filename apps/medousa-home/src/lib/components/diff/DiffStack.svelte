@@ -12,6 +12,7 @@
     subtitle?: string;
     onOpenFile?: (path: string, line?: number) => void;
     onRestoreFile?: (path: string) => void;
+    onRevertHunk?: (path: string, hunkIndex: number) => void;
     restoreHint?: string;
     restoreLabel?: string;
   }
@@ -25,6 +26,7 @@
     subtitle,
     onOpenFile,
     onRestoreFile,
+    onRevertHunk,
     restoreHint,
     restoreLabel,
   }: Props = $props();
@@ -109,6 +111,9 @@
             {restoreHint}
             {restoreLabel}
             onRestore={onRestoreFile ? () => onRestoreFile(file.path) : undefined}
+            onRevertHunk={
+              onRevertHunk ? (hunkIndex) => onRevertHunk(file.path, hunkIndex) : undefined
+            }
           />
         </div>
       {/each}
