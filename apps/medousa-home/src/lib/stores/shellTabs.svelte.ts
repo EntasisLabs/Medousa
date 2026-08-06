@@ -1331,16 +1331,78 @@ export class ShellTabsStore {
     this.groups = [...this.groups, { id: newGroupId, tabIds: [], activeTabId: null }];
 
     if (seed) {
-      // Move the focused tab into the new pane — do not clone. Shared LME/web
-      // identities meant closing one shell tab tore down both views.
-      this.moveTab(seed.id, newGroupId);
-      void this.activate(seed.id);
+      // Retain the current editor in both groups (VS Code Split Editor).
+      // Moving a tab into a new pane remains moveTab / splitGroupWithTab.
+      const retained = this.retainTabInGroup(seed, newGroupId);
+      this.activeGroupId = newGroupId;
+      if (retained) {
+        this.patchGroup(newGroupId, { activeTabId: retained });
+        void this.activate(retained);
+      }
     } else {
       this.activeGroupId = newGroupId;
       this.openSurface("library", { activate: true, groupId: newGroupId });
     }
     this.persist();
     return true;
+  }
+
+  /**
+   * Split and move the active tab into the new pane (drag-to-split semantics).
+   * Prefer `splitActive` when the editor should stay visible in both groups.
+   */
+  moveActiveToNewSplit(direction: SplitDirection): boolean {
+    if (countLeaves(this.splitRoot) >= MAX_SHELL_PANES) {
+      return false;
+    }
+    const fromGroupId = this.activeGroupId;
+    const seed = this.activeTab;
+    if (!seed) return this.splitActive(direction);
+    const newGroupId = newSplitId("group");
+    const result = splitLeaf(this.splitRoot, fromGroupId, direction, newGroupId);
+    if (!result) return false;
+
+    this.splitRoot = result.root;
+    this.groups = [...this.groups, { id: newGroupId, tabIds: [], activeTabId: null }];
+    this.moveTab(seed.id, newGroupId);
+    void this.activate(seed.id);
+    this.persist();
+    return true;
+  }
+
+  /** Clone `seed` into `groupId` while leaving the original tab where it is. */
+  private retainTabInGroup(seed: ShellTab, groupId: string): string | null {
+    switch (seed.kind) {
+      case "lme":
+        return this.openLme(seed.lmeTabId, {
+          activate: false,
+          title: seed.title,
+          groupId,
+        });
+      case "chat":
+        return this.openChat(seed.sessionId, {
+          activate: false,
+          title: seed.title,
+          groupId,
+        });
+      case "web":
+        return this.openWeb(seed.browserTabId, {
+          activate: false,
+          title: seed.title,
+          groupId,
+        });
+      case "surface":
+        return this.openSurface(seed.surfaceId, { activate: false, groupId });
+      case "terminal":
+        return this.openTerminal(seed.sessionId, {
+          activate: false,
+          title: seed.title,
+          groupId,
+          workId: seed.workId,
+        });
+      default:
+        return null;
+    }
   }
 
   /** Split `hostGroupId` toward `edge` and move `tabId` into the new pane. */

@@ -83,9 +83,6 @@ recovery where applicable.
   claim.
 - Repository search is tracked-file, fixed-string `git grep`; there is no
   workspace replace flow.
-- Pane splitting moves the active shell tab instead of retaining the current
-  editor in both groups, and directional focus uses flat leaf order rather than
-  geometry.
 - Debugging is absent. Source-control operations, test state, terminal shell
   integration, keybinding customization, and editor contribution points are
   substantially below the daily-driver baseline.
@@ -215,8 +212,8 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 | HCP-3B | Capability-derived language matrix and exact package repair | ✅ |
 | HCP-3C | Remaining registered language grammar/package packs | ✅ |
 | HCP-4A | Cursor-based project source/Git event stream | ✅ |
-| HCP-4B | All-open-buffer reconcile, rename/delete recovery, and watched-file LSP notifications | 🔄 |
-| HCP-5A | Geometry-correct groups, split-with-retained-editor, and unified code history | ⬜ |
+| HCP-4B | All-open-buffer reconcile, rename/delete recovery, and watched-file LSP notifications | ✅ |
+| HCP-5A | Geometry-correct groups, split-with-retained-editor, and unified code history | 🔄 |
 | HCP-5B | Contextual Code layout preset with group-local visible tabs and optional regions | ⬜ |
 | HCP-5C | Shared command registry, VS Code aliases, context keys, and keybinding editor | ⬜ |
 | HCP-6A | Full repository search API/UI and cancellable pagination | ⬜ |
@@ -303,6 +300,11 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
   Compatibility: older Homes ignore the route; `/v1/forge/stream` stays the
   list-freshness channel. Rollback: revert this commit; the route and watcher
   are additive.
+- **HCP-4B — `e5a86d54`.** Home consumes project-events with `?since=` reconnect,
+  reconciles every open buffer, recovers rename/delete, keeps dirty drafts with
+  compare/rebase, and notifies LSP via `workspace/didChangeWatchedFiles`.
+  Migration: none. Compatibility: older daemons omit the stream; focus-based
+  reconcile remains. Rollback: revert this commit; additive client surface.
 
 ### Slice rules
 

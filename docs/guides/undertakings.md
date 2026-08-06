@@ -94,8 +94,10 @@ a private Code IDE chrome.
 - `Cmd/Ctrl+S` saves the focused editor; `Cmd/Ctrl+Shift+S` saves all modified
   open files for the project. `Cmd/Ctrl+Shift+T` reopens the last closed file.
   Close and cycle tabs with Workshop shell controls (`Ctrl+;` then `n` / `p`,
-  or close from the tab strip). Split panes with Workshop (`Ctrl+;` then `%` /
-  `"`) to put Chat, a file, and Review side by side.
+  or close from the tab strip). Split Editor (`Ctrl+;` then `%` / `"`) keeps the
+  current file visible in both panes; drag a tab to a pane edge to move it.
+  Directional pane focus (`Ctrl+;` then hjkl) follows on-screen geometry.
+  Code Back/Forward restores the remembered pane when that group still exists.
 - The Code explorer lists tracked and unignored repository files. `Cmd/Ctrl+P`
   opens Quick Open: type a file name, `@` plus a name for project symbols, or
   `:` plus a number to jump to a line.

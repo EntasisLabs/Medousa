@@ -709,8 +709,15 @@
   }
 
   async function navigate(direction: -1 | 1) {
-    const tab = await codeWorkspace.navigate(workId, direction);
-    if (!tab) return;
+    const result = await codeWorkspace.navigate(workId, direction);
+    if (!result) return;
+    const { tab, entry } = result;
+    if (
+      entry.groupId &&
+      shellTabs.groups.some((group) => group.id === entry.groupId)
+    ) {
+      shellTabs.focusGroup(entry.groupId);
+    }
     await lmeWorkspace.openCodeFile(workId, tab.path, {
       line: tab.line,
       recordNavigation: false,
@@ -738,8 +745,14 @@
         workId,
         sourceTab.path,
         sourceCursor.line + 1,
+        shellTabs.activeGroupId,
       );
-      codeWorkspace.recordNavigationLocation(workId, targetPath, target.line);
+      codeWorkspace.recordNavigationLocation(
+        workId,
+        targetPath,
+        target.line,
+        shellTabs.activeGroupId,
+      );
       const targetTab = codeWorkspace.tabs.find(
         (tab) => tab.work_id === workId && tab.path === targetPath,
       );
