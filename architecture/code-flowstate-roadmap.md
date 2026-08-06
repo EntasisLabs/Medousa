@@ -99,7 +99,14 @@ attention, and what can safely happen next.
 
 ## Milestone 4 — Project-wide intelligence
 
-Status: complete (2026-07-29).
+Status: reopened for parity completion (2026-08-06).
+
+The first pass shipped document intelligence, Quick Open, symbols, references,
+rename, formatting, and editor conventions. The
+[Home Code workbench parity plan](home-code-vscode-parity-plan.md) tracks the
+remaining correctness work: unopened cross-file navigation, real workspace
+Problems, per-document language roots, complete language packs, service
+lifecycle, and all-open-buffer file events.
 
 ### Goal
 
@@ -123,7 +130,13 @@ editable and understandable at the best supported layer.
 
 ## Milestone 5 — Interactive run and test loop
 
-Status: complete (2026-07-29).
+Status: reopened for parity completion (2026-08-06).
+
+The first pass shipped detected commands, cancellation, bounded completed
+results, test discovery, clickable locations, and Forge evidence. The
+[Home Code workbench parity plan](home-code-vscode-parity-plan.md) tracks live
+output, named interactive task terminals, background readiness, configurable
+tasks/problem matchers, adapter-backed tests, coverage, and debug handoff.
 
 ### Goal
 
@@ -166,14 +179,22 @@ providers the center of the Medousa workspace.
 Completed work can leave Medousa cleanly, while project custody and the user’s
 mental model remain provider-independent.
 
-## Explicit non-goals
+## Boundary carried into the parity plan
 
-- A full source-control staging client or branch graph.
-- An extension marketplace.
-- Permanent Terminal, Problems, Tests, or Agent panels.
-- Multi-root configuration before demonstrated user need.
-- A full debugger workbench before the simpler run/test loop earns it.
-- AI controls on every line or settings for machinery Medousa can infer.
+The [Home Code workbench parity plan](home-code-vscode-parity-plan.md) now owns
+the next depth. It keeps the original product boundary while revising earlier
+deferrals that the shipped run/test loop and daily-driver goal have earned:
+
+- Forge Review remains the decision surface; contextual Changes capabilities
+  do not make SCM the center of Medousa.
+- Medousa provides a bounded contribution registry rather than an arbitrary
+  VSIX extension host or marketplace clone.
+- Terminal, Problems, Tests, Debug, Changes, and Agent regions are contextual,
+  optional, and restorable rather than permanent across Home.
+- Multi-root/environment adapters and a workshop-owned debugger are now planned
+  after trustworthy editing and the streaming execution loop.
+- AI controls do not appear on every line, and inferred machinery stays quiet
+  until it needs attention.
 
 ## Delivery order
 

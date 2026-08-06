@@ -5,6 +5,13 @@
 
 First-run UX, Home shell milestones, turn-loop FSM, user profiles (Phases 0–6), **centralized agent runtime**, **0.5.0 Vault / Versions / Liquid**, **0.6.0 Shared / Peer mesh / Dynamic + Home polish**, and **0.7.0 Accounts / Liquid depth / Browser act + Languages** are **shipped**. See [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md), [ADR-002](../docs/architecture/decisions/adr-002-user-profiles.md), [v0.5.0-vault-versions-plan.md](v0.5.0-vault-versions-plan.md), [v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md), [v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md), [v0.7.0-plan.md](v0.7.0-plan.md).
 
+**Next focus:** [Home Code workbench parity](home-code-vscode-parity-plan.md)
+closes the trustworthy-editing, daily-driver, IDE, and contribution gaps while
+preserving the broader Medousa shell. Undertakings flowstate residual polish
+(empty states, F3–F5) and the proposed [Medousa Anywhere plan](medousa-anywhere-plan.md)
+continue alongside it.
+
+Full plans: **[home-code-vscode-parity-plan.md](home-code-vscode-parity-plan.md)** · **[v0.7.0-forge-plan.md](v0.7.0-forge-plan.md)** · **[detamu-medousa-fit.md](detamu-medousa-fit.md)** · **[coding-engine-orchestrator.md](coding-engine-orchestrator.md)** · **[coding-session-terminal.md](coding-session-terminal.md)** · **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md)** · **[home-messaging-matrix.md](home-messaging-matrix.md)** · [ADR-011](../docs/architecture/decisions/adr-011-shared-mode-portal-and-mesh.md) · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)** · **[operators-guide-docs-epic.md](operators-guide-docs-epic.md)**
 **Next focus:** Undertakings flowstate residual polish (empty states, F3–F5) on ForgeLens / World coverage UX, alongside the proposed [Medousa Anywhere plan](medousa-anywhere-plan.md) for VS Code, Neovim, and Obsidian surfaces. Coding / Detamu / shared-shell / ACP transcript / Forge Home contracts landed. Proposed sibling-shell work: [TUI ↔ Home workspace parity](tui-home-workspace-parity-plan.md) (tmux panes + notes/code/review/chat — not Anywhere plugins).
 
 Full plans: **[v0.7.0-forge-plan.md](v0.7.0-forge-plan.md)** · **[detamu-medousa-fit.md](detamu-medousa-fit.md)** · **[coding-engine-orchestrator.md](coding-engine-orchestrator.md)** · **[coding-session-terminal.md](coding-session-terminal.md)** · **[tui-home-workspace-parity-plan.md](tui-home-workspace-parity-plan.md)** · **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md)** · **[home-messaging-matrix.md](home-messaging-matrix.md)** · [ADR-011](../docs/architecture/decisions/adr-011-shared-mode-portal-and-mesh.md) · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)** · **[operators-guide-docs-epic.md](operators-guide-docs-epic.md)**
@@ -31,12 +38,12 @@ workspace parity is tracked separately in
 
 | Slice | Status |
 |-------|--------|
-| Home CM feel (find/prefs/outline/problems) | ✅ |
-| Language highlight packs (python/ts/rust/yaml) | ✅ |
+| Home CM feel (find/prefs/outline/problems) | 🔄 File editing shipped; cross-file navigation and real workspace Problems are [active](home-code-vscode-parity-plan.md) |
+| Language highlight packs (python/ts/rust/yaml) | 🔄 Core packs shipped; Svelte/JSX and the registered-language matrix are [active](home-code-vscode-parity-plan.md) |
 | `medousa-code` MVP + Grapheme backend | ✅ |
 | Home → Orchestrator via `/v1/code/lsp` | ✅ |
 | Daemon cognition tools (`cognition_code_*`) | ✅ |
-| External LSPs + Packages (`coding-engine`, `langservers`) | ✅ |
+| External LSPs + Packages (`coding-engine`, `langservers`) | 🔄 Pyright + TypeScript packaged; exact per-language packs and repair are [active](home-code-vscode-parity-plan.md) |
 | Multi-client fan-out + doc versions | ✅ |
 | Forge worktree `--allow-root` | ✅ |
 | Detamu bridge hooks | ✅ stub (`/v1/detamu/*`) |
@@ -59,14 +66,14 @@ workspace parity is tracked separately in
 
 ## Coding session terminal (Home as WM)
 
-> Architecture: [coding-session-terminal.md](coding-session-terminal.md). Workshop owns one PTY per session; Home is the window manager; agents are peers. VT parse in Tauri via `vte` (libghostty-vt pivot — Zig toolchain constraint).
+> Architecture: [coding-session-terminal.md](coding-session-terminal.md). Workshop owns one PTY per session; Home is the window manager; agents are peers. Home renders VT state with xterm.js while Tauri transports workshop-owned session I/O.
 
 | Slice | Status |
 |-------|--------|
 | `medousa-session` sidecar + daemon spawn/proxy (`/v1/sessions/shell*`) | ✅ |
 | Coding domain tools (read/search/patch + `shell_session_*`, opt-in) | ✅ |
 | Forge `work_id` → worktree cwd + command-log staging | ✅ |
-| Home `terminal` tab kind + Tauri VT bridge + splits = sessions | ✅ |
+| Home `terminal` tab kind + xterm.js + splits = sessions | ✅ raw PTY/session; 🔄 task streaming and shell integration [active](home-code-vscode-parity-plan.md) |
 | Packages entry `shell-session` | ✅ |
 
 ## 0.7.0 Forge core (shipped)

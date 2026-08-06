@@ -1,0 +1,387 @@
+# Home Code workbench parity plan
+
+> **Status:** Active (started 2026-08-06)
+>
+> **Scope:** Desktop Medousa shell, Code, Review, Terminal, Forge, and workshop
+> coding services
+>
+> **Baseline:** Current Visual Studio Code behavioral workflows, not a visual
+> clone
+>
+> **Related:** [Code flow-state roadmap](code-flowstate-roadmap.md),
+> [Code surface bridge](code-surface-bridge-plan.md),
+> [Coding engine orchestrator](coding-engine-orchestrator.md), and
+> [Coding session terminal](coding-session-terminal.md)
+
+## Objective
+
+An engineer who is fluent in VS Code should be able to enter Code in Medousa
+and keep their existing coding instincts:
+
+- commands finish the operation their labels promise;
+- files, locations, diagnostics, changes, tasks, tests, and debug state remain
+  visible and navigable;
+- keyboard-first workflows have familiar defaults and can be remapped;
+- local and remote workshops behave the same because the workshop daemon owns
+  files, tools, language servers, terminals, tasks, tests, and debuggers;
+- leaving Code returns to the broader Medousa workshop without discarding
+  coding state.
+
+This is behavioral parity. Medousa remains a user-domain workspace whose peers
+include Chat, Notes, Browser, Code, Review, Terminal, and Projects. Code does
+not become the product's organizing metaphor.
+
+## Product invariants
+
+1. Filesystem authority follows the connected workshop daemon. Remote Code
+   never uses a Home-device picker, upload flow, `convertFileSrc`, or local
+   Reveal action.
+2. Forge retains custody of coding work. Human, agent, Terminal, task, test,
+   and debugger changes meet in the same governed working copy and Review.
+3. Familiar UI is not allowed to overstate capability. An unavailable command
+   is disabled with a repair path; an enabled command completes across files,
+   panes, and remote boundaries.
+4. Code-specific chrome is contextual and restorable. Permanent IDE panels are
+   optional, not imposed on Chat, Notes, Browser, or other Home surfaces.
+5. Language, task, test, debug, and terminal processes run on the workshop.
+   Home presents and controls them through versioned daemon contracts.
+6. Every slice is independently testable and committed. A major checkpoint
+   must be revertible without taking later unrelated behavior with it.
+
+## Completion definition
+
+The bridge is complete only when all acceptance journeys at the end of this
+document pass on a co-located workshop and a remote workshop, the status matrix
+contains no required incomplete row, user-facing docs describe the shipped
+behavior, and the repository CI-parity gates pass.
+
+Passing a component test or exposing a button is not completion evidence for a
+workflow. Evidence must exercise the operation through its authoritative
+boundary: Home UI, daemon API or stream, workshop process, persisted state, and
+recovery where applicable.
+
+## Current baseline
+
+### Strengths to preserve
+
+- Daemon-owned local/remote repository discovery, recent and pinned
+  repositories, provider-backed clone, and explicit dirty/trust explanation.
+- Digest-fenced writes, durable drafts, conflict preservation, and controlled
+  human/agent handoff.
+- CodeMirror editing with folding, multiple selections, find, completion,
+  hover, signature help, diagnostics, rename, formatting, references, and
+  workspace symbols when their providers are usable.
+- Shared shell tabs, binary split trees, virtual desktops, and daemon-owned PTY
+  sessions.
+- Forge Review synthesis, provenance, attempts, risk, verification, provider
+  handoff, and explicit finish decisions.
+
+### Trust gaps to close first
+
+- Go to Definition cannot display an unopened cross-file target because the
+  CodeMirror LSP client has no Medousa workspace adapter.
+- The Code Problems surface labels current-document diagnostics as project
+  diagnostics; the existing workspace-diagnostics endpoint is not consumed.
+- Svelte is plaintext, JSX/TSX parsing is incomplete, several registered LSP
+  languages have no editor grammar, and package repair only provides Pyright
+  and TypeScript Language Server.
+- Language-server root markers are registered but editor sessions launch at
+  the whole Forge worktree root.
+- LSP WebSocket loss has no visible reconnect, restart, or log path.
+- External-change reconciliation checks only the focused file when Home regains
+  focus instead of consuming workshop file events for all open files.
+- Project task output is buffered until exit. Long-running development tasks
+  have no live logs or interactive named terminal despite the earlier roadmap
+  claim.
+- Repository search is tracked-file, fixed-string `git grep`; there is no
+  workspace replace flow.
+- Pane splitting moves the active shell tab instead of retaining the current
+  editor in both groups, and directional focus uses flat leaf order rather than
+  geometry.
+- Debugging is absent. Source-control operations, test state, terminal shell
+  integration, keybinding customization, and editor contribution points are
+  substantially below the daily-driver baseline.
+
+## Target architecture
+
+### Home workbench
+
+`CodeWorkbenchState` owns the contextual Code posture:
+
+- editor groups and group-local visible tabs;
+- active and most-recently-used editors;
+- one global code-location history;
+- optional Explorer, Search, Changes, Problems, Output, Terminal, Tests, and
+  Debug regions;
+- a project-scoped layout restored independently of the broader Home desktop;
+- commands, menus, context keys, and user keybindings.
+
+It composes with `shellTabs`; it does not create a second window manager. A
+Code resource can still sit beside Chat, Browser, Review, or Terminal in a Home
+split.
+
+### Editor workspace adapter
+
+`MedousaCodeWorkspace` implements the CodeMirror LSP workspace contract and is
+the sole bridge between LSP URIs and governed source buffers. It must:
+
+- request unopened files through the daemon-backed Code workspace;
+- open or focus the target editor and return its `EditorView`;
+- retain multiple views of one document without duplicate `didOpen` traffic;
+- apply text edits and create/rename/delete resource operations through
+  digest-fenced Forge batch APIs;
+- preview multi-file refactors before application when requested;
+- keep URI, document version, and source digest mappings explicit;
+- expose navigation completion/failure instead of silently dropping a target.
+
+### Workshop project intelligence
+
+The coding engine owns one recoverable project-language session per resolved
+language root. A session contract includes:
+
+- root resolution from the document through registered markers;
+- lifecycle state, health, restart, logs, progress, and server configuration;
+- workspace diagnostics and symbols;
+- file-operation and watched-file notifications;
+- semantic capabilities advertised to Home only when usable;
+- package identity and an exact repair/install action.
+
+Language packs bind a language id, extensions, grammar, LSP binary, default
+configuration, formatter, task/test/debug contributions, and package source.
+Home never calls a language “supported” from a server registry entry alone.
+
+### Workshop events and search
+
+The daemon exposes bounded, resumable project event streams for source create,
+change, rename, delete, Git status, diagnostics, task/test/debug state, and
+service health. Events carry a sequence/cursor so reconnect can reconcile from
+an authoritative snapshot.
+
+Repository search is daemon-owned and supports literal/regex, case, whole word,
+multiline, include/exclude globs, ignored-file policy, changed-files scope,
+tracked and untracked files, cancellation, pagination, previews, and
+digest-fenced replace plans.
+
+### Execution, tests, and debugging
+
+`ProjectExecutionService` unifies detected and configured tasks with shared
+terminal sessions. Output is streamed once, parsed incrementally by registered
+problem matchers, retained with bounded replay, and summarized into Forge
+evidence when the run completes.
+
+`ProjectTestService` owns adapter discovery, stable test ids, hierarchy, state,
+results, messages, coverage, run profiles, cancellation, watch mode, and debug
+handoff.
+
+`ProjectDebugService` proxies Debug Adapter Protocol sessions running on the
+workshop. Home owns breakpoint presentation, launch selection, toolbar, stack,
+variables, watch, console, and source navigation. Debug processes and paths
+never move to the Home device for a remote workshop.
+
+### Changes and Review
+
+Forge Review remains the decision surface. A contextual Changes view supplies
+the missing inner-loop operations:
+
+- branch, base, upstream, ahead/behind, and conflict state;
+- working changes grouped by provenance;
+- syntax-aware inline/side diff, word changes, real context expansion, and
+  file/hunk revert;
+- a Forge-native “include in candidate” operation where staging semantics are
+  needed;
+- guarded fetch/pull/push/sync, commit/checkpoint, conflict resolution, blame,
+  timeline, and arbitrary comparison through capability-gated commands.
+
+### Contribution registry
+
+Medousa does not embed the VS Code extension host. A bounded, versioned
+workshop contribution contract supplies:
+
+- commands, menus, context keys, and keybindings;
+- languages, grammars, snippets, language servers, formatters, and save
+  actions;
+- task providers and problem matchers;
+- test adapters and run profiles;
+- debug adapters and launch providers;
+- editor themes, icons, and project recommendations.
+
+Packages install contributions into `{dataDir}/bin` and workshop-owned package
+directories. Home reads resolved capabilities from the daemon. A useful subset
+of `.vscode/settings.json`, `tasks.json`, `launch.json`, and extension
+recommendations may be imported without promising VSIX compatibility.
+
+## Delivery and commit slices
+
+The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ blocked`.
+
+| Slice | Deliverable | Status |
+|---|---|---|
+| HCP-0 | Authoritative plan, truthful roadmap/docs, verification inventory | ✅ |
+| HCP-1A | `MedousaCodeWorkspace` file/URI/view model with focused tests | ⬜ |
+| HCP-1B | Cross-file definition/declaration/type/implementation navigation and history | ⬜ |
+| HCP-1C | Complete text/resource workspace edits plus governed refactor preview | ⬜ |
+| HCP-2A | Real workspace Problems model and diagnostics navigation | ⬜ |
+| HCP-2B | Per-document language-root resolution and nested-project sessions | ⬜ |
+| HCP-2C | LSP lifecycle, restart/reconnect, progress, logs, and configuration | ⬜ |
+| HCP-3A | Svelte, JSX, and TSX grammar/LSP dogfood pack | ⬜ |
+| HCP-3B | Capability-derived language matrix and exact package repair | ⬜ |
+| HCP-3C | Remaining registered language grammar/package packs | ⬜ |
+| HCP-4A | Cursor-based project source/Git event stream | ⬜ |
+| HCP-4B | All-open-buffer reconcile, rename/delete recovery, and watched-file LSP notifications | ⬜ |
+| HCP-5A | Geometry-correct groups, split-with-retained-editor, and unified code history | ⬜ |
+| HCP-5B | Contextual Code layout preset with group-local visible tabs and optional regions | ⬜ |
+| HCP-5C | Shared command registry, VS Code aliases, context keys, and keybinding editor | ⬜ |
+| HCP-6A | Full repository search API/UI and cancellable pagination | ⬜ |
+| HCP-6B | Previewed repository replace and complete file/folder operations | ⬜ |
+| HCP-6C | Large-file, encoding, binary-preview, and fuzzy Quick Open fallbacks | ⬜ |
+| HCP-7A | Streaming execution protocol and bounded output replay | ⬜ |
+| HCP-7B | Named task terminals, background readiness, configured tasks, and problem matchers | ⬜ |
+| HCP-7C | Terminal search, profiles, groups, shell integration, file links, and run selection | ⬜ |
+| HCP-7D | Remote service detection/proxy and Browser preview handoff | ⬜ |
+| HCP-8A | Forge Changes model and branch/upstream/conflict status | ⬜ |
+| HCP-8B | High-fidelity diff, real context expansion, file/hunk actions, and conflict editor | ⬜ |
+| HCP-8C | Guarded Git sync/history/blame/checkpoint operations and provider continuity | ⬜ |
+| HCP-9A | Test adapter contract, discovery hierarchy, stable state, and results | ⬜ |
+| HCP-9B | Gutter/Explorer runs, watch, coverage, profiles, and Forge evidence | ⬜ |
+| HCP-10A | Workshop DAP proxy, launch configuration, sessions, and source mapping | ⬜ |
+| HCP-10B | Breakpoints, stepping, stack, variables, watch, console, and debug-test | ⬜ |
+| HCP-11A | Versioned contribution registry and first-party language/tool packs | ⬜ |
+| HCP-11B | Settings/keybinding/profile persistence and useful VS Code config import | ⬜ |
+| HCP-11C | Multi-root/environment adapters and full remote-parity audit | ⬜ |
+
+### Slice rules
+
+- One slice commit contains its production code, migrations/contracts, tests,
+  and documentation. Do not commit a status checkmark before its acceptance
+  evidence exists.
+- A slice starts from a green previous commit and ends with relevant focused
+  tests, `npm run check` for Home changes, and Rust formatting/tests for changed
+  crates.
+- Commit subjects use a narrow scope, for example
+  `feat(home-code): open cross-file language targets`.
+- A failing experiment is repaired in a follow-up commit or reverted as a
+  whole slice; unrelated cleanup is never folded into the revert.
+- At HCP-4, HCP-7, HCP-8, HCP-10, and final completion, record a checkpoint
+  summary with commit ids, migrations, compatibility behavior, and rollback
+  notes.
+- Daemon contracts remain backward-compatible for one Home release wherever a
+  rolling remote upgrade can mix versions. Home must degrade explicitly when
+  an older daemon lacks a new endpoint.
+
+## Slice acceptance requirements
+
+### HCP-1 through HCP-4: trustworthy editing
+
+- F12, declaration, type definition, and implementation open an unopened target
+  in the requested group and place a reversible location-history entry.
+- Multi-file edits either apply atomically through valid digests or leave every
+  file unchanged with a conflict preview.
+- Problems includes every diagnostic known to every active project-language
+  session, groups and filters it, and navigates to unopened files.
+- Opening `apps/medousa-home/src/**/*.svelte` supplies Svelte syntax,
+  completion, hover, navigation, diagnostics, formatting, and rename after one
+  exact package repair action.
+- Nested Cargo/npm/Go/etc. packages use the closest valid language root without
+  escaping the governed worktree.
+- Killing a language server produces visible degraded state, bounded reconnect,
+  restart/log actions, and successful recovery without closing the project.
+- A source change from an agent or Terminal updates every clean open buffer;
+  dirty buffers retain the draft and open a compare/reconcile path.
+
+### HCP-5 through HCP-8: daily-driver workbench
+
+- Split Editor retains the current source in both groups; moving a tab remains
+  a separate command. Directional focus follows rendered geometry.
+- `Cmd/Ctrl+Shift+P`, Quick Open, Back/Forward, Explorer, Search, Changes,
+  Problems, Output, Terminal, Tests, and Debug have familiar aliases and
+  remappable command identities.
+- Regex workspace search spans tracked and untracked files, honors scope and
+  excludes, streams/paginates results, and previews digest-fenced replacement.
+- A long-running development task displays live output in a named terminal,
+  reports background readiness, yields clickable locations and URLs, survives
+  pane changes, and stops cleanly.
+- A service bound on a remote workshop can open in the Home Browser through an
+  authenticated private proxy without exposing a public listener by default.
+- Changes shows authoritative branch/upstream/conflict state. Diff context
+  expansion reveals real lines. File/hunk revert and conflict resolution are
+  recoverable and visible in Forge provenance.
+
+### HCP-9 through HCP-11: IDE and ecosystem depth
+
+- Test adapters discover hierarchy without regex-only source scans; run,
+  cancel, rerun, watch, coverage, and debug state persist and navigate.
+- F5 launches or selects a workshop debugger. Breakpoints, stepping, stack,
+  variables, watch, console, source maps, restart, and stop work across remote
+  reconnects where the adapter permits it.
+- Installing a first-party pack contributes its grammar, language server,
+  formatter, commands, tasks, tests, debugger, settings, and exact health state
+  without a Home rebuild.
+- User and project keybindings/settings support context rules, conflicts,
+  reset, profiles, and workshop overrides.
+- Multi-root or environment-backed projects make authority and active root
+  visible and never mix local Home paths with workshop paths.
+
+## End-to-end acceptance journeys
+
+1. **Remote Svelte monorepo:** Open a remote repository, Quick Open a Svelte
+   file, navigate by F12 into an unopened nested package, go Back, rename across
+   files with preview, and inspect all project diagnostics.
+2. **Editor groups:** Split the current file, keep it visible on both sides,
+   open a comparison, move through groups geometrically, remap one shortcut,
+   close Home, and restore the layout and dirty drafts.
+3. **Search/refactor:** Regex-search tracked and untracked files with globs,
+   preview a repository replacement, reject selected replacements, apply the
+   rest atomically, and undo/review the governed change.
+4. **Run/web loop:** Start a remote development server, see live output and
+   readiness, open its private proxied URL beside Code, navigate a streamed
+   compiler error, then stop and rerun the task.
+5. **Test/debug loop:** Run one test from the gutter, inspect structured
+   failure output, rerun with coverage, debug it at a conditional breakpoint,
+   inspect stack/variables/watch, and evaluate in the Debug Console.
+6. **Concurrent change:** While a dirty human draft is open, let an agent change
+   the same file and Terminal rename another open file. Resolve the conflict,
+   retain the intended draft, and verify all LSP/file tabs recover.
+7. **Changes/finish:** Inspect branch and upstream state, review and revert a
+   hunk, resolve a merge conflict, see provenance and verification in Review,
+   finish through Forge, and open the resulting provider review.
+8. **Failure recovery:** Disconnect Home, kill LSP/task/debug processes, restart
+   the workshop, reconnect, and recover layout, drafts, terminals, task history,
+   test state, breakpoints, and explicit service health.
+
+## Verification gates
+
+Run focused tests for each changed package plus the relevant integration or
+end-to-end journey. Before a major checkpoint or final completion, run from the
+repository root:
+
+```bash
+cargo clippy --workspace --all-targets --exclude medousa-sdk-iroh -- -D warnings
+cargo test -p medousa --lib
+cd apps/medousa-home && npm ci && npm run check
+```
+
+Additional required suites will be added beside their contracts:
+
+- Code workspace/navigation browser tests with unopened and duplicate views;
+- daemon event-stream cursor/reconnect and compatibility tests;
+- LSP crash/root/package matrices;
+- search/replace property and digest-conflict tests;
+- PTY/task stream ordering, replay, cancellation, and background readiness;
+- remote service proxy authentication/isolation tests;
+- Git/Forge conflict and rollback matrices;
+- test-adapter and DAP conformance fixtures;
+- contribution manifest/schema and package lifecycle tests;
+- local and remote desktop acceptance smoke tests.
+
+## Explicit non-goals
+
+- Pixel-for-pixel VS Code chrome.
+- Making an Activity Bar or every IDE panel permanent across Home.
+- Running remote-project processes or reading remote-project files on the Home
+  device.
+- Replacing Forge custody with an unmanaged checkout-editing path.
+- Binary compatibility with arbitrary VSIX extensions or embedding the VS Code
+  extension host.
+- Requiring AI controls on every line.
+- Treating mobile as a full VS Code parity target; mobile must remain safe and
+  coherent, while the complete workbench target is desktop.
