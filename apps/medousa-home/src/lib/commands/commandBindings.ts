@@ -17,6 +17,7 @@ export const DEFAULT_COMMAND_CHORDS: Record<string, string> = {
   "workbench.actions.view.problems": "literal:—",
   "workbench.action.terminal.toggleTerminal": "mod:`",
   "workbench.view.testing": "literal:—",
+  "workbench.action.findInFiles": "mod:Shift+F",
 };
 
 export type RemappableCommandId = keyof typeof DEFAULT_COMMAND_CHORDS;

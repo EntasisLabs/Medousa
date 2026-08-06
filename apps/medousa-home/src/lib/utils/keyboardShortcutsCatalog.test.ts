@@ -80,6 +80,7 @@ describe("keyboardShortcutsCatalog", () => {
       "panes:switch-desktop:prefix:1–4:Switch virtual desktop",
       "panes:drag-tab:literal:Drag tab:Move tab to another pane",
       "code:code-quick-open:mod:P:Quick Open file / symbol / line",
+      "code:code-search:mod:Shift+F:Search in files",
       "code:code-save:mod:S:Save focused file",
       "code:code-save-all:mod:Shift+S:Save all modified files",
       "code:code-find:mod:F:Find in file",

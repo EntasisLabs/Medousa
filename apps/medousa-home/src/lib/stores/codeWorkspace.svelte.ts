@@ -554,6 +554,7 @@ class CodeWorkspaceStore {
             context_panel: layout.context_panel,
             terminal: layout.terminal,
             tests: layout.tests,
+            search: layout.search,
           },
         },
         lease,

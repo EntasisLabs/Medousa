@@ -19,6 +19,8 @@ describe("code command registry", () => {
     expect(ids.has("workbench.action.quickOpen")).toBe(true);
     expect(ids.has("workbench.actions.view.problems")).toBe(true);
     expect(ids.has("workbench.action.terminal.toggleTerminal")).toBe(true);
+    expect(ids.has("workbench.action.findInFiles")).toBe(true);
+    expect(effectiveChordFor("workbench.action.findInFiles")).toBe("mod:Shift+F");
 
     const problems = commands.find(
       (command) => command.id === "workbench.actions.view.problems",

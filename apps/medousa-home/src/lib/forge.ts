@@ -313,6 +313,20 @@ export type ForgeSourceSearch = {
   work_id: string;
   hits: Array<{ path: string; line: number; preview: string }>;
   truncated: boolean;
+  next_cursor?: string | null;
+};
+
+export type ForgeSourceSearchOptions = {
+  query: string;
+  mode?: "literal" | "regex";
+  caseSensitive?: boolean;
+  wholeWord?: boolean;
+  include?: string;
+  exclude?: string;
+  includeIgnored?: boolean;
+  scope?: "all" | "changed";
+  limit?: number;
+  cursor?: string | null;
 };
 
 export type ForgeCodeWorkspaceState = {
@@ -324,11 +338,12 @@ export type ForgeCodeWorkspaceState = {
   }>;
   active_path?: string | null;
   secondary_path?: string | null;
-  /** Contextual Code regions (Problems/Terminal/Tests); additive. */
+  /** Contextual Code regions (Problems/Terminal/Tests/Search); additive. */
   layout?: {
     context_panel?: "problems" | "outline" | "references" | "language" | null;
     terminal?: boolean;
     tests?: boolean;
+    search?: boolean;
   } | null;
   updated_at?: string | null;
 };
@@ -485,9 +500,29 @@ export async function getUndertakingSourceTree(
 
 export async function searchUndertakingSource(
   workId: string,
-  query: string,
+  queryOrOptions: string | ForgeSourceSearchOptions,
 ): Promise<ForgeSourceSearch> {
-  const params = new URLSearchParams({ query });
+  const options: ForgeSourceSearchOptions =
+    typeof queryOrOptions === "string"
+      ? { query: queryOrOptions }
+      : queryOrOptions;
+  const params = new URLSearchParams();
+  params.set("query", options.query);
+  if (options.mode) params.set("mode", options.mode);
+  if (options.caseSensitive != null) {
+    params.set("case_sensitive", String(options.caseSensitive));
+  }
+  if (options.wholeWord != null) {
+    params.set("whole_word", String(options.wholeWord));
+  }
+  if (options.include?.trim()) params.set("include", options.include.trim());
+  if (options.exclude?.trim()) params.set("exclude", options.exclude.trim());
+  if (options.includeIgnored != null) {
+    params.set("include_ignored", String(options.includeIgnored));
+  }
+  if (options.scope) params.set("scope", options.scope);
+  if (options.limit != null) params.set("limit", String(options.limit));
+  if (options.cursor) params.set("cursor", options.cursor);
   return forgeFetch(
     `/v1/forge/items/${encodeURIComponent(workId)}/search?${params}`,
   );

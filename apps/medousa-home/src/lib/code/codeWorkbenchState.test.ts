@@ -22,6 +22,7 @@ describe("codeWorkbenchState", () => {
       context_panel: null,
       terminal: false,
       tests: false,
+      search: false,
     });
     expect(
       normalizeCodeWorkbenchLayout({
@@ -34,6 +35,7 @@ describe("codeWorkbenchState", () => {
       context_panel: "problems",
       terminal: true,
       tests: false,
+      search: false,
     });
 
     codeWorkbenchState.applyLayout("work-1", {
@@ -44,9 +46,12 @@ describe("codeWorkbenchState", () => {
       context_panel: "outline",
       terminal: true,
       tests: false,
+      search: false,
     });
     codeWorkbenchState.setTestsOpen("work-1", true);
     expect(codeWorkbenchState.layoutFor("work-1").tests).toBe(true);
+    codeWorkbenchState.setSearchOpen("work-1", true);
+    expect(codeWorkbenchState.layoutFor("work-1").search).toBe(true);
   });
 
   it("lists group-local Code tabs by composing shell and LME identities", () => {
