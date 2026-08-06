@@ -78,16 +78,9 @@ recovery where applicable.
 
 ### Trust gaps to close first
 
-- Go to Definition cannot display an unopened cross-file target because the
-  CodeMirror LSP client has no Medousa workspace adapter.
-- The Code Problems surface labels current-document diagnostics as project
-  diagnostics; the existing workspace-diagnostics endpoint is not consumed.
-- Svelte is plaintext, JSX/TSX parsing is incomplete, several registered LSP
-  languages have no editor grammar, and package repair only provides Pyright
-  and TypeScript Language Server.
-- Language-server root markers are registered but editor sessions launch at
-  the whole Forge worktree root.
-- LSP WebSocket loss has no visible reconnect, restart, or log path.
+- Several registered LSP languages still lack editor grammars, and package
+  repair still shares one `langservers` pack rather than exact per-language
+  installs (HCP-3B/3C).
 - External-change reconciliation checks only the focused file when Home regains
   focus instead of consuming workshop file events for all open files.
 - Project task output is buffered until exit. Long-running development tasks
@@ -222,8 +215,8 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 | HCP-1C | Complete text/resource workspace edits plus governed refactor preview | ✅ |
 | HCP-2A | Real workspace Problems model and diagnostics navigation | ✅ |
 | HCP-2B | Per-document language-root resolution and nested-project sessions | ✅ |
-| HCP-2C | LSP lifecycle, restart/reconnect, progress, logs, and configuration | 🔄 |
-| HCP-3A | Svelte, JSX, and TSX grammar/LSP dogfood pack | ⬜ |
+| HCP-2C | LSP lifecycle, restart/reconnect, progress, logs, and configuration | ✅ |
+| HCP-3A | Svelte, JSX, and TSX grammar/LSP dogfood pack | 🔄 |
 | HCP-3B | Capability-derived language matrix and exact package repair | ⬜ |
 | HCP-3C | Remaining registered language grammar/package packs | ⬜ |
 | HCP-4A | Cursor-based project source/Git event stream | ⬜ |
@@ -284,6 +277,13 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
   project root when an older coding engine lacks discovery. Rollback: revert
   this commit; the route and document query are additive, and the daemon remains
   the outer path authority.
+- **HCP-2C — `c04d7fe1`.** Added workshop language-session lifecycle records,
+  stderr/LSP/progress capture, `GET /v1/code/language-sessions`, bounded Home
+  reconnect with Restart/Logs/Repair, and coding-engine answers for
+  configuration, workspace folders, and work-done progress on the editor
+  channel. Migration: none. Compatibility: older engines omit the sessions
+  route; Home keeps editing and shows an explicit log-fetch failure. Rollback:
+  revert this commit; the route and initialize capability rewrite are additive.
 
 ### Slice rules
 

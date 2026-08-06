@@ -735,6 +735,7 @@ fn language_for_uri(uri: &str, override_lang: Option<&str>) -> LanguageId {
         "py" => "python",
         "ts" | "tsx" => "typescript",
         "js" | "jsx" | "mjs" => "javascript",
+        "svelte" => "svelte",
         "rs" => "rust",
         "go" => "go",
         "c" | "h" => "c",

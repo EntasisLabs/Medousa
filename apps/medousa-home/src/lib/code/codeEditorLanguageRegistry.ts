@@ -9,6 +9,7 @@ import { xml } from "@codemirror/lang-xml";
 import { python } from "@codemirror/lang-python";
 import { rust } from "@codemirror/lang-rust";
 import { yaml } from "@codemirror/lang-yaml";
+import { svelte } from "codemirror-lang-svelte";
 import {
   graphemeEditorTheme,
   graphemeLanguageSupport,
@@ -27,8 +28,11 @@ export type CodeEditorLanguageId =
   | "shell"
   | "python"
   | "typescript"
+  | "tsx"
   | "rust"
   | "javascript"
+  | "jsx"
+  | "svelte"
   | "json"
   | "html"
   | "css"
@@ -61,6 +65,13 @@ export interface CodeEditorLanguageDefinition {
   /** File suffix hint for snippet tabs (no vault/git wiring). */
   fileExtension?: string;
   aliases?: string[];
+  /**
+   * Language id sent to the workshop coding engine / LSP.
+   * Defaults to `id` when omitted.
+   */
+  lspLanguageId?: string;
+  /** Optional package id that Repair installs for this language (HCP-3B). */
+  packageId?: string;
 }
 
 const FULL: CodeEditorLanguageCapabilities = {
@@ -138,6 +149,7 @@ export const CODE_EDITOR_LANGUAGES: Record<
     capabilities: HIGHLIGHT_LSP,
     fileExtension: "py",
     aliases: ["py"],
+    packageId: "langservers",
   },
   typescript: {
     id: "typescript",
@@ -145,7 +157,18 @@ export const CODE_EDITOR_LANGUAGES: Record<
     tier: "highlight",
     capabilities: HIGHLIGHT_LSP,
     fileExtension: "ts",
-    aliases: ["ts", "tsx"],
+    aliases: ["ts"],
+    packageId: "langservers",
+  },
+  tsx: {
+    id: "tsx",
+    label: "TSX",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
+    fileExtension: "tsx",
+    aliases: ["tsx"],
+    lspLanguageId: "typescript",
+    packageId: "langservers",
   },
   rust: {
     id: "rust",
@@ -161,7 +184,27 @@ export const CODE_EDITOR_LANGUAGES: Record<
     tier: "highlight",
     capabilities: HIGHLIGHT_LSP,
     fileExtension: "js",
-    aliases: ["js", "jsx", "mjs"],
+    aliases: ["js", "mjs"],
+    packageId: "langservers",
+  },
+  jsx: {
+    id: "jsx",
+    label: "JSX",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
+    fileExtension: "jsx",
+    aliases: ["jsx"],
+    lspLanguageId: "javascript",
+    packageId: "langservers",
+  },
+  svelte: {
+    id: "svelte",
+    label: "Svelte",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
+    fileExtension: "svelte",
+    aliases: ["svelte"],
+    packageId: "langservers",
   },
   go: {
     id: "go",
@@ -301,6 +344,14 @@ export function getCodeEditorLanguage(
   return CODE_EDITOR_LANGUAGES[resolved];
 }
 
+/** Language id used for workshop LSP sessions and didOpen payloads. */
+export function codeEditorLspLanguageId(
+  id: CodeEditorLanguageId | string | null | undefined,
+): string {
+  const def = getCodeEditorLanguage(id);
+  return def.lspLanguageId ?? def.id;
+}
+
 export function languageSupportsLsp(
   id: CodeEditorLanguageId | string | null | undefined,
 ): boolean {
@@ -317,6 +368,13 @@ export function languageSupportsRun(
   id: CodeEditorLanguageId | string | null | undefined,
 ): boolean {
   return getCodeEditorLanguage(id).capabilities.run;
+}
+
+/** Optional package Repair should install for this editor language. */
+export function languageRepairPackageId(
+  id: CodeEditorLanguageId | string | null | undefined,
+): string | null {
+  return getCodeEditorLanguage(id).packageId ?? null;
 }
 
 /** CodeMirror extensions for a language tier (never attaches fake LSP). */
@@ -337,12 +395,26 @@ export function buildCodeEditorLanguageExtensions(
       return [graphemeEditorTheme, shellLanguageSupport];
     case "javascript":
       return [graphemeEditorTheme, javascript(), medousaSyntaxHighlighting];
+    case "jsx":
+      return [
+        graphemeEditorTheme,
+        javascript({ jsx: true }),
+        medousaSyntaxHighlighting,
+      ];
     case "typescript":
       return [
         graphemeEditorTheme,
         javascript({ typescript: true }),
         medousaSyntaxHighlighting,
       ];
+    case "tsx":
+      return [
+        graphemeEditorTheme,
+        javascript({ typescript: true, jsx: true }),
+        medousaSyntaxHighlighting,
+      ];
+    case "svelte":
+      return [graphemeEditorTheme, svelte(), medousaSyntaxHighlighting];
     case "python":
       return [graphemeEditorTheme, python(), medousaSyntaxHighlighting];
     case "rust":

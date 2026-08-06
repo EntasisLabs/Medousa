@@ -54,7 +54,7 @@ bare `avec`.
 | Package id | Binaries |
 |------------|----------|
 | `coding-engine` | `medousa-code` → `{dataDir}/bin` |
-| `langservers` | `pyright-langserver`, `typescript-language-server` |
+| `langservers` | `pyright-langserver`, `typescript-language-server`, `svelteserver` |
 
 Install from Settings → Packages. Orchestrator resolves stdio servers from
 `{dataDir}/bin` first, then `PATH`.
