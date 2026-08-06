@@ -40,6 +40,7 @@
   import { workshop } from "$lib/stores/workshop.svelte";
   import type { LSPClient } from "@codemirror/lsp-client";
   import { formatShortcut } from "$lib/platform";
+  import { titleWithKeys } from "$lib/utils/keyboardShortcutsCatalog";
   import { forEachDiagnostic } from "@codemirror/lint";
   import { EditorView } from "@codemirror/view";
   import { EditorSelection } from "@codemirror/state";
@@ -304,7 +305,7 @@
           type="button"
           class="btn btn-sm variant-ghost-surface"
           onclick={() => codeMirror?.openFind()}
-          title={`Find (${formatShortcut("F")})`}
+          title={titleWithKeys("Find", "mod:F")}
         >
           Find
         </button>

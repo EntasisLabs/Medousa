@@ -4,6 +4,9 @@ import {
   KEYBOARD_SHORTCUTS_CATALOG,
   catalogGroup,
   formatCatalogKeys,
+  shortcutEntryById,
+  titleWithKeys,
+  titleWithShortcut,
 } from "./keyboardShortcutsCatalog";
 
 describe("keyboardShortcutsCatalog", () => {
@@ -11,23 +14,46 @@ describe("keyboardShortcutsCatalog", () => {
     expect(KEYBOARD_SHORTCUTS_CATALOG.map((g) => g.id)).toEqual([
       "global",
       "panes",
+      "code",
       "vault",
+      "browser",
       "chat",
     ]);
     const panes = catalogGroup("panes");
     expect(panes?.entries.map((e) => e.id)).toContain("split-right");
     expect(panes?.entries.map((e) => e.id)).toContain("zoom-pane");
-    expect(CHEAT_SHEET_GROUP_IDS).toEqual(["global", "panes", "vault", "chat"]);
+    expect(CHEAT_SHEET_GROUP_IDS).toEqual([
+      "global",
+      "panes",
+      "code",
+      "vault",
+      "browser",
+      "chat",
+    ]);
   });
 
   it("formats prefix chords as two-step sequences", () => {
     const prefix = formatCatalogKeys("prefix:?");
-    expect(prefix === "Ctrl+; then ?" || prefix.endsWith("; then ?")).toBe(true);
+    expect(prefix === "Ctrl+; + ?" || prefix.endsWith("; + ?")).toBe(true);
 
     const spotlight = formatCatalogKeys("mod:K");
     expect(spotlight === "Ctrl+K" || spotlight === "⌘K").toBe(true);
 
     expect(formatCatalogKeys("literal:Drag tab")).toBe("Drag tab");
+  });
+
+  it("looks up entries and builds button titles", () => {
+    expect(shortcutEntryById("toggle-rail")?.keys).toBe("mod:B");
+    expect(shortcutEntryById("missing")).toBeUndefined();
+
+    const rail = titleWithShortcut("Expand navigation rail", "toggle-rail");
+    expect(rail === "Expand navigation rail (⌘B)" || rail === "Expand navigation rail (Ctrl+B)").toBe(
+      true,
+    );
+    expect(titleWithShortcut("Nope", "does-not-exist")).toBe("Nope");
+
+    const replace = titleWithKeys("Replace", "mod:⌥F");
+    expect(replace === "Replace (⌘⌥F)" || replace === "Replace (Ctrl+Alt+F)").toBe(true);
   });
 
   it("keeps catalog actions aligned with real product binds", () => {
@@ -52,12 +78,30 @@ describe("keyboardShortcutsCatalog", () => {
       "panes:show-tabs:prefix:w:Show tabs",
       "panes:switch-desktop:prefix:1–4:Switch virtual desktop",
       "panes:drag-tab:literal:Drag tab:Move tab to another pane",
+      "code:code-quick-open:mod:P:Quick Open file / symbol / line",
+      "code:code-save:mod:S:Save focused file",
+      "code:code-save-all:mod:Shift+S:Save all modified files",
+      "code:code-find:mod:F:Find in file",
+      "code:code-structure:mod:Shift+O:Structure (symbols)",
+      "code:code-reopen:mod:Shift+T:Reopen last closed file",
+      "code:code-terminal:mod:`:Toggle Terminal dock",
+      "code:code-rename:literal:F2:Rename symbol",
+      "code:code-cycle-tabs:literal:Ctrl+Tab:Cycle Code file tabs in focused pane",
       "vault:vault-save:mod:S:Save note",
       "vault:vault-find:mod:F:Find in note",
       "vault:vault-new:mod:N:New note",
       "vault:vault-plane:mod:Shift+E:Toggle edit / preview plane",
       "vault:vault-pdf:mod:Shift+P:Export PDF",
       "vault:vault-board:mod:Shift+B:Toggle board",
+      "browser:browser-focus-url:mod:L:Focus URL bar",
+      "browser:browser-find:mod:F:Find in page",
+      "browser:browser-bookmarks:mod:Shift+B:Open bookmarks",
+      "browser:browser-new-tab:mod:T:New tab",
+      "browser:browser-reopen-tab:mod:Shift+T:Reopen closed tab",
+      "browser:browser-close-tab:mod:W:Close tab",
+      "browser:browser-reload:mod:R:Reload page",
+      "browser:browser-back:mod:[:Go back",
+      "browser:browser-forward:mod:]:Go forward",
       "chat:chat-spotlight:mod:K:Spotlight (commands & jumps)",
       "chat:chat-open-shortcuts:mod:/:Keyboard shortcuts sheet",
     ]);

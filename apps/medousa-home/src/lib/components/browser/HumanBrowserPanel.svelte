@@ -25,6 +25,7 @@
   import { layout } from "$lib/stores/layout.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { isTauri, shouldUseMobileShell } from "$lib/platform";
+  import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
 
   interface Props {
     visible?: boolean;
@@ -216,6 +217,7 @@
           type="button"
           class="browser-nav-btn"
           aria-label="Back"
+          title={titleWithShortcut("Back", "browser-back")}
           disabled={!humanBrowser.canGoBack}
           onclick={() => void humanBrowser.goBack()}
         >
@@ -225,6 +227,7 @@
           type="button"
           class="browser-nav-btn"
           aria-label="Forward"
+          title={titleWithShortcut("Forward", "browser-forward")}
           disabled={!humanBrowser.canGoForward}
           onclick={() => void humanBrowser.goForward()}
         >
@@ -235,6 +238,7 @@
             type="button"
             class="browser-nav-btn browser-nav-btn--stop"
             aria-label="Stop loading"
+            title="Stop loading"
             onclick={() => void humanBrowser.stop()}
           >
             <Square size={11} strokeWidth={2.25} />
@@ -244,6 +248,7 @@
             type="button"
             class="browser-nav-btn"
             aria-label="Reload"
+            title={titleWithShortcut("Reload", "browser-reload")}
             onclick={() => void humanBrowser.reload()}
           >
             <RefreshCw size={14} strokeWidth={1.75} />

@@ -14,6 +14,7 @@
   import { environment } from "$lib/stores/environment.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { titlebarMode, usesUnifiedTitlebar } from "$lib/platform";
+  import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
   import { isTauri, showBrowser, showChatPopout } from "$lib/window";
 
   const mode = $derived(titlebarMode());
@@ -101,7 +102,10 @@
       <button
         type="button"
         class="app-titlebar-btn"
-        title={railExpanded ? "Collapse navigation rail" : "Expand navigation rail"}
+        title={titleWithShortcut(
+          railExpanded ? "Collapse navigation rail" : "Expand navigation rail",
+          "toggle-rail",
+        )}
         aria-label={railExpanded ? "Collapse navigation rail" : "Expand navigation rail"}
         aria-pressed={railExpanded}
         onclick={toggleRail}

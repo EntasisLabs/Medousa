@@ -21,6 +21,7 @@
   import { normalizeBrowserUrl } from "$lib/utils/browserUrl";
   import { copyBrowserUrl, openUrlInDefaultBrowser } from "$lib/utils/browserActions";
   import { formatShortcut } from "$lib/platform";
+  import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
   import { toast } from "$lib/stores/toast.svelte";
   import {
     openSavedVaultNote,
@@ -390,7 +391,7 @@
       type="button"
       class="browser-chrome-btn"
       aria-label="Bookmarks"
-      title="Bookmarks ({formatShortcut('⇧B')})"
+      title={titleWithShortcut("Bookmarks", "browser-bookmarks")}
       data-browser-popover-trigger
       data-browser-saved-trigger
       aria-expanded={savedOpen}

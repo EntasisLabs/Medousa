@@ -69,7 +69,7 @@
   import { deferCodeWorkspaceWork } from "$lib/utils/codeWorkspaceTrace";
   import { fetchPackagesCatalog, installPackage } from "$lib/utils/packagesApi";
   import { isCoLocatedWorkshop } from "$lib/utils/workshopLocality";
-  import { formatShortcut } from "$lib/platform";
+  import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
   import {
     readCodeEditorFontSize,
     readCodeEditorIndentGuides,
@@ -1328,7 +1328,7 @@
         <button
           type="button"
           class="scripts-workbench-toolbar-btn {contextPanel === 'outline' ? 'scripts-workbench-toolbar-btn-active' : ''}"
-          title="Structure"
+          title={titleWithShortcut("Structure", "code-structure")}
           aria-label="Show file structure"
           aria-pressed={contextPanel === "outline"}
           disabled={!lspClient}
@@ -1350,7 +1350,7 @@
           <button
             type="button"
             class="scripts-workbench-toolbar-btn {terminalDockOpen ? 'scripts-workbench-toolbar-btn-active' : ''}"
-            title="Toggle terminal"
+            title={titleWithShortcut("Toggle terminal", "code-terminal")}
             aria-label="Toggle terminal"
             aria-pressed={terminalDockOpen}
             onclick={() => void toggleTerminalDock()}
@@ -1379,7 +1379,7 @@
         <button
           type="button"
           class="scripts-workbench-toolbar-btn"
-          title={`Find (${formatShortcut("F")})`}
+          title={titleWithShortcut("Find", "code-find")}
           aria-label="Find in file"
           onclick={() => editor?.openFind()}
         ><Search size={14} strokeWidth={1.75} /></button>
@@ -1466,7 +1466,7 @@
             disabled={!editable || !dirty || saving}
             onclick={() => void save()}
             aria-label="Save file"
-            title={saving ? "Saving…" : `Save (${formatShortcut("S")})`}
+            title={saving ? "Saving…" : titleWithShortcut("Save", "code-save")}
           ><Save size={14} strokeWidth={1.75} /></button>
         {/if}
       </div>

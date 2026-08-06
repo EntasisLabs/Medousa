@@ -53,7 +53,7 @@
   import { registerVaultLeaveFlush } from "$lib/stores/vaultLeaveFlush";
   import { vaultQuickSwitcher } from "$lib/stores/vaultQuickSwitcher.svelte";
   import { stripFrontmatter } from "$lib/utils/vaultFrontmatter";
-  import { formatShortcut } from "$lib/platform";
+  import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
   import { writeVaultStickyPath } from "$lib/utils/vaultSticky";
   import {
     isPlainTextEditingTarget,
@@ -930,7 +930,7 @@
         <button
           type="button"
           class="vault-editor-icon-btn"
-          title="Find note ({formatShortcut('O')})"
+          title={titleWithShortcut("Find note", "open-notes")}
           aria-label="Find note"
           onclick={() => vaultQuickSwitcher.openSwitcher()}
         >

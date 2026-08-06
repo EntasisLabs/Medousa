@@ -14,6 +14,7 @@
     popBrowserPopoverOverlay,
     pushBrowserPopoverOverlay,
   } from "$lib/utils/browserPopoverOverlay";
+  import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
   import { ChevronDown, Columns2, Rows2, Search, SquareX } from "@lucide/svelte";
   import { tick } from "svelte";
 
@@ -274,7 +275,7 @@
       <button
         type="button"
         class="shell-tab-notch-expand"
-        title="Split right"
+        title={titleWithShortcut("Split right", "split-right")}
         aria-label="Split pane right"
         disabled={!canSplit}
         onclick={() => shellTabs.splitActive("right")}
@@ -284,7 +285,7 @@
       <button
         type="button"
         class="shell-tab-notch-expand"
-        title="Split down"
+        title={titleWithShortcut("Split down", "split-down")}
         aria-label="Split pane down"
         disabled={!canSplit}
         onclick={() => shellTabs.splitActive("down")}
@@ -294,7 +295,7 @@
       <button
         type="button"
         class="shell-tab-notch-expand"
-        title="Close pane · merge tabs"
+        title={titleWithShortcut("Close pane · merge tabs", "close-pane")}
         aria-label="Close pane and merge tabs"
         disabled={!canMergePane}
         onclick={() => shellTabs.closeActiveGroup()}

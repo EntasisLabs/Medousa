@@ -5,6 +5,7 @@
     dispatchBrowserFocusUrl,
     dispatchBrowserOpenBookmarks,
   } from "$lib/utils/browserChromeEvents";
+  import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
 
   interface Props {
     onNavigated?: () => void;
@@ -54,7 +55,7 @@
 <button
   type="button"
   class="vault-dock-icon-btn"
-  title="New tab"
+  title={titleWithShortcut("New tab", "browser-new-tab")}
   aria-label="New tab"
   onclick={() => void newTab()}
 >
@@ -66,7 +67,7 @@
     <button
       type="button"
       class="vault-dock-icon-btn"
-      title="Focus URL"
+      title={titleWithShortcut("Focus URL", "browser-focus-url")}
       aria-label="Focus URL"
       onclick={focusUrl}
     >
@@ -75,7 +76,7 @@
     <button
       type="button"
       class="vault-dock-icon-btn"
-      title={loading ? "Stop" : "Reload"}
+      title={loading ? "Stop" : titleWithShortcut("Reload", "browser-reload")}
       aria-label={loading ? "Stop" : "Reload"}
       onclick={() => void reloadOrStop()}
     >
@@ -88,7 +89,7 @@
     <button
       type="button"
       class="vault-dock-icon-btn"
-      title="Bookmarks"
+      title={titleWithShortcut("Bookmarks", "browser-bookmarks")}
       aria-label="Bookmarks"
       onclick={openBookmarks}
     >
@@ -100,7 +101,7 @@
 <button
   type="button"
   class="vault-dock-icon-btn"
-  title="Find in page"
+  title={titleWithShortcut("Find in page", "browser-find")}
   aria-label="Find in page"
   onclick={openFind}
 >

@@ -19,7 +19,7 @@
     isPlainTextEditingTarget,
   } from "$lib/grapheme/scriptWorkbenchActions";
   import { compileGraphemeSource, saveGraphemeScript } from "$lib/daemon";
-  import { formatShortcut } from "$lib/platform";
+  import { titleWithKeys } from "$lib/utils/keyboardShortcutsCatalog";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { scriptRenameUi } from "$lib/stores/scriptRenameUi.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
@@ -227,7 +227,7 @@
     <button
       type="button"
       class="scripts-workbench-toolbar-btn scripts-workbench-toolbar-btn-primary"
-      title={graphemeScriptEditor.saveBusy ? "Saving…" : `Save (${formatShortcut("S")})`}
+      title={graphemeScriptEditor.saveBusy ? "Saving…" : titleWithKeys("Save", "mod:S")}
       aria-label="Save script"
       disabled={graphemeScriptEditor.saveBusy || !graphemeScriptEditor.activeTab}
       onclick={() => void saveActive()}
@@ -237,7 +237,7 @@
     <button
       type="button"
       class="scripts-workbench-toolbar-btn scripts-workbench-toolbar-btn-run"
-      title={workshop.runBusy ? "Running…" : `Run (${formatShortcut("Enter")})`}
+      title={workshop.runBusy ? "Running…" : titleWithKeys("Run", "mod:Enter")}
       aria-label="Run script"
       disabled={workshop.runBusy || !graphemeScriptEditor.activeTab?.body.trim()}
       onclick={() => void runActive()}
@@ -249,7 +249,7 @@
       class="scripts-workbench-toolbar-btn"
       title={graphemeScriptEditor.compileBusy
         ? "Compiling…"
-        : `Compile (${formatShortcut("B")})`}
+        : titleWithKeys("Compile", "mod:B")}
       aria-label="Compile script"
       disabled={graphemeScriptEditor.compileBusy || !graphemeScriptEditor.activeTab?.body.trim()}
       onclick={() => void compileActive("check")}
