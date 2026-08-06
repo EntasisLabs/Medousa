@@ -1121,10 +1121,10 @@ pub(crate) fn remap_begin_work_to_spawn_input(
     });
     let map = out.as_object_mut().expect("spawn remap object");
     for key in ["manuscript_id", "stage_role", "model_hint"] {
-        if let Some(value) = input.get(key).cloned() {
-            if !value.is_null() {
-                map.insert(key.to_string(), value);
-            }
+        if let Some(value) = input.get(key).cloned()
+            && !value.is_null()
+        {
+            map.insert(key.to_string(), value);
         }
     }
     Ok(out)
