@@ -192,9 +192,14 @@ development processes at the same time, including in mixed repositories.
 
 - Run, Test, and Build start named project runs. A running command becomes a
   **Stop** action and can be cancelled without closing the project or Terminal.
-- **Output** streams stdout/stderr while a check runs (bounded replay after exit).
-  Spotlight **Output** / the Output toolbar control toggles the panel; runs open
-  it automatically.
+- **Output** is the named task channel (`Task: …`). It streams stdout/stderr while
+  a check runs, shows **ready** for background/dev servers, and lists clickable
+  problem locations as they appear. Spotlight **Output** toggles the panel; runs
+  open it automatically.
+- Safe entries from `.vscode/tasks.json` (`npm` / `shell` / `process`) merge into
+  the project command list with optional problem-matcher patterns and background
+  readiness. Dependency graphs and the full VS Code matcher catalog are not
+  imported.
 - **Tests** progressively lists individual Rust, Python, JavaScript/TypeScript,
   and Go tests. Open one at its definition or run only that test.
 - The latest result stays beside Code with a one-click rerun. Compiler, test,
@@ -202,9 +207,9 @@ development processes at the same time, including in mixed repositories.
 - Completed checks are written into Forge command evidence. Review uses the
   latest completed result to say whether verification passed; cancelled runs
   are preserved as activity but do not pretend the revision failed.
-- Long-running development commands are cancellable project runs with live
-  Output. Attachment to named Terminal sessions and configured problem matchers
-  are still in progress (HCP-7B). Terminal remains the interactive escape hatch.
+- Attachment of task runs to interactive PTY Terminal sessions, configured task
+  groups, and richer matchers remain later work. Terminal stays the interactive
+  escape hatch.
 
 ## What each surface does
 

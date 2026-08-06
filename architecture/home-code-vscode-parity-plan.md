@@ -82,8 +82,8 @@ recovery where applicable.
   integration, and editor contribution points are substantially below the
   daily-driver baseline. Command identities and VS Code aliases exist for the
   Code journey; a full keybinding editor and context-key `when` clauses remain
-  deferred. Named task terminals, configured tasks, and problem matchers are
-  still ahead of live Output streaming (HCP-7B+).
+  deferred. Interactive PTY attachment for task runs, task groups, and remote
+  Browser handoff remain ahead (HCP-7C/7D).
 
 ## Target architecture
 
@@ -217,8 +217,8 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 | HCP-6A | Full repository search API/UI and cancellable pagination | ✅ |
 | HCP-6B | Previewed repository replace and complete file/folder operations | ✅ |
 | HCP-6C | Large-file, encoding, binary-preview, and fuzzy Quick Open fallbacks | ✅ |
-| HCP-7A | Streaming execution protocol and bounded output replay | 🔄 |
-| HCP-7B | Named task terminals, background readiness, configured tasks, and problem matchers | ⬜ |
+| HCP-7A | Streaming execution protocol and bounded output replay | ✅ |
+| HCP-7B | Named task terminals, background readiness, configured tasks, and problem matchers | 🔄 |
 | HCP-7C | Terminal search, profiles, groups, shell integration, file links, and run selection | ⬜ |
 | HCP-7D | Remote service detection/proxy and Browser preview handoff | ⬜ |
 | HCP-8A | Forge Changes model and branch/upstream/conflict status | ⬜ |
@@ -333,6 +333,10 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
   tabs read-only; Quick Open uses fuzzy path matching. Migration: none.
   Compatibility: older Homes ignore preview fields. Rollback: revert this
   commit; additive read metadata and UI.
+- **HCP-7A — `7fe7bef5`.** Streaming project task runs with SSE
+  `…/task-runs/{id}/events?since=`, bounded live stdout/stderr on poll, and a
+  Code Output panel. Migration: none. Compatibility: older Homes keep
+  poll-until-exit. Rollback: revert this commit; additive stream route/fields.
 
 ### Product-fit boundary (post-HCP-8)
 

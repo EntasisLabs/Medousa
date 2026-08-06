@@ -214,6 +214,9 @@
   let taskLiveStdout = $state("");
   let taskLiveStderr = $state("");
   let taskOutputTruncated = $state(false);
+  let taskLiveLocations = $state<
+    Array<{ path: string; line: number; column?: number | null; message: string }>
+  >([]);
   let taskRunEventStream: CodeTaskRunEventStream | null = null;
   let projectTests = $state<ProjectTest[]>([]);
   let testsOpen = $state(false);
@@ -483,6 +486,32 @@
     taskLiveStdout = run?.stdout ?? "";
     taskLiveStderr = run?.stderr ?? "";
     taskOutputTruncated = run?.output_truncated ?? false;
+    taskLiveLocations = run?.locations ?? [];
+  }
+
+  function mergeTaskLocations(
+    incoming:
+      | Array<{ path: string; line: number; column?: number | null; message: string }>
+      | null
+      | undefined,
+  ) {
+    if (!incoming?.length) return;
+    const next = [...taskLiveLocations];
+    for (const location of incoming) {
+      if (
+        next.some(
+          (existing) =>
+            existing.path === location.path &&
+            existing.line === location.line &&
+            (existing.column ?? null) === (location.column ?? null),
+        )
+      ) {
+        continue;
+      }
+      next.push(location);
+      if (next.length >= 100) break;
+    }
+    taskLiveLocations = next;
   }
 
   function applyTaskRunEvent(event: ProjectTaskOutputEvent) {
@@ -492,17 +521,20 @@
       } else {
         taskLiveStdout += event.text;
       }
+      mergeTaskLocations(event.locations);
       if (taskRun && event.run_id === taskRun.run_id) {
         taskRun = {
           ...taskRun,
           stdout: taskLiveStdout,
           stderr: taskLiveStderr,
+          locations: taskLiveLocations,
           next_seq: event.seq + 1,
         };
       }
       return;
     }
     if (event.kind === "state") {
+      mergeTaskLocations(event.locations);
       if (taskRun && event.run_id === taskRun.run_id) {
         taskRun = {
           ...taskRun,
@@ -512,6 +544,7 @@
           stderr: event.result?.stderr ?? taskLiveStderr,
           output_truncated:
             event.result?.truncated ?? taskOutputTruncated,
+          locations: event.result?.locations ?? taskLiveLocations,
           next_seq: event.seq + 1,
         };
       }
@@ -519,9 +552,9 @@
         taskLiveStdout = event.result.stdout;
         taskLiveStderr = event.result.stderr;
         taskOutputTruncated = event.result.truncated;
+        taskLiveLocations = event.result.locations ?? taskLiveLocations;
         taskResult = event.result;
       } else if (event.state) {
-        // Early cancel notice — keep streaming until final result.
         if (taskRun) taskRun = { ...taskRun, state: event.state };
       }
     }
@@ -564,7 +597,7 @@
   }
 
   function taskRunStillActive(run: ProjectTaskRun): boolean {
-    if (run.state === "running") return true;
+    if (run.state === "running" || run.state === "ready") return true;
     // Cancel flips state before the process exits and final result lands.
     if (run.state === "cancelled" && !run.result) return true;
     return false;
@@ -611,11 +644,13 @@
         if (snapshot.stdout) taskLiveStdout = snapshot.stdout;
         if (snapshot.stderr) taskLiveStderr = snapshot.stderr;
         taskOutputTruncated = snapshot.output_truncated ?? taskOutputTruncated;
+        if (snapshot.locations?.length) mergeTaskLocations(snapshot.locations);
         if (snapshot.result) {
           taskResult = snapshot.result;
           taskLiveStdout = snapshot.result.stdout;
           taskLiveStderr = snapshot.result.stderr;
           taskOutputTruncated = snapshot.result.truncated;
+          taskLiveLocations = snapshot.result.locations ?? taskLiveLocations;
         }
       }
       taskResult = taskRun.result ?? taskResult;
@@ -629,7 +664,7 @@
   }
 
   async function stopDetectedTask() {
-    if (!taskRun || taskRun.state !== "running") return;
+    if (!taskRun || (taskRun.state !== "running" && taskRun.state !== "ready")) return;
     try {
       taskRun = await cancelProjectTaskRun(workId, taskRun.run_id);
     } catch (err) {
@@ -2536,7 +2571,7 @@
                 <span class="text-[9px] uppercase tracking-wider text-content-quiet">Project command</span>
                 <select class="mt-1 w-full rounded bg-surface-800 px-1.5 py-1 text-[10px] text-content-secondary outline-none" aria-label="Project command" bind:value={selectedTaskId}>
                   {#each projectTasks as task (task.id)}
-                    <option value={task.id}>{task.label}</option>
+                    <option value={task.id}>{task.label}{#if task.long_running} · background{/if}{#if task.provider === "vscode-tasks"} · tasks.json{/if}</option>
                   {/each}
                 </select>
               </label>
@@ -2904,19 +2939,35 @@
     {/if}
 
     {#if outputOpen}
-      <div class="flex max-h-44 shrink-0 flex-col border-t border-surface-500/30 bg-surface-950/80">
+      <div class="flex max-h-52 shrink-0 flex-col border-t border-surface-500/30 bg-surface-950/80">
         <div class="flex items-center justify-between gap-2 border-b border-surface-500/20 px-2.5 py-1">
           <span class="text-[9px] font-medium uppercase tracking-[0.06em] text-content-quiet">
-            Output{#if taskRun} · {taskRun.task.label}{/if}
-            {#if runningTask}<span class="normal-case tracking-normal text-content-link"> · running</span>{/if}
+            {#if taskRun}Task: {taskRun.task.label}{:else}Output{/if}
+            {#if taskRun?.state === "ready"}<span class="normal-case tracking-normal text-emerald-300/90"> · ready</span>
+            {:else if runningTask}<span class="normal-case tracking-normal text-content-link"> · running</span>{/if}
             {#if taskOutputTruncated}<span class="normal-case tracking-normal text-amber-200/80"> · truncated</span>{/if}
           </span>
-          <button type="button" class="rounded px-1.5 py-0.5 text-[9px] text-content-quiet hover:bg-surface-800 hover:text-content-secondary" onclick={() => toggleOutput(false)}>Hide</button>
+          <div class="flex items-center gap-1">
+            {#if runningTask && (taskRun?.state === "running" || taskRun?.state === "ready")}
+              <button type="button" class="rounded px-1.5 py-0.5 text-[9px] text-rose-200/90 hover:bg-rose-500/10" onclick={() => void stopDetectedTask()}>Stop</button>
+            {/if}
+            <button type="button" class="rounded px-1.5 py-0.5 text-[9px] text-content-quiet hover:bg-surface-800 hover:text-content-secondary" onclick={() => toggleOutput(false)}>Hide</button>
+          </div>
         </div>
         {#if !taskLiveStdout && !taskLiveStderr && !runningTask && !taskRun}
           <p class="px-2.5 py-2 text-[10px] text-content-quiet">Run a project check to stream output here.</p>
         {:else}
           <pre class="min-h-0 flex-1 overflow-auto px-2.5 py-1.5 font-mono text-[9px] leading-relaxed text-content-tertiary whitespace-pre-wrap break-words" aria-label="Task output">{taskLiveStdout}{#if taskLiveStdout && taskLiveStderr}{"\n\n"}{/if}{#if taskLiveStderr}<span class="text-rose-200/90">{taskLiveStderr}</span>{/if}{#if !taskLiveStdout && !taskLiveStderr && runningTask}<span class="text-content-quiet">Waiting for output…</span>{/if}</pre>
+          {#if taskLiveLocations.length}
+            <div class="max-h-20 shrink-0 overflow-y-auto border-t border-surface-500/20">
+              {#each taskLiveLocations.slice(0, 8) as location (`${location.path}:${location.line}:${location.column}:${location.message}`)}
+                <button type="button" class="flex w-full items-center gap-2 border-b border-surface-500/10 px-2.5 py-1 text-left text-[9px] text-content-secondary hover:bg-surface-800/60" onclick={() => void openTaskLocation(location.path, location.line)}>
+                  <span class="min-w-0 flex-1 truncate">{location.message || location.path}</span>
+                  <span class="shrink-0 font-mono text-content-quiet">{location.path}:{location.line}</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
         {/if}
       </div>
     {/if}

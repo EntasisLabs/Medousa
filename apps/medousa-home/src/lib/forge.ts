@@ -788,6 +788,14 @@ export type ProjectTask = {
   argv: string[];
   provider: string;
   long_running?: boolean;
+  ready_pattern?: string | null;
+  problem_matcher?: {
+    regexp: string;
+    file: number;
+    line: number;
+    column?: number | null;
+    message?: number | null;
+  } | null;
 };
 
 export type ProjectTaskResult = {
@@ -801,10 +809,17 @@ export type ProjectTaskResult = {
   locations: Array<{ path: string; line: number; column?: number | null; message: string }>;
 };
 
+export type ProjectTaskLocation = {
+  path: string;
+  line: number;
+  column?: number | null;
+  message: string;
+};
+
 export type ProjectTaskRun = {
   run_id: string;
   work_id: string;
-  state: "running" | "passed" | "failed" | "cancelled" | string;
+  state: "running" | "ready" | "passed" | "failed" | "cancelled" | string;
   task: ProjectTask;
   result?: ProjectTaskResult | null;
   /** Bounded live stdout (also retained after exit for replay). */
@@ -812,6 +827,7 @@ export type ProjectTaskRun = {
   stderr?: string;
   output_truncated?: boolean;
   next_seq?: number;
+  locations?: ProjectTaskLocation[];
 };
 
 export type ProjectTaskOutputEvent = {
@@ -822,6 +838,7 @@ export type ProjectTaskOutputEvent = {
   text?: string | null;
   state?: string | null;
   result?: ProjectTaskResult | null;
+  locations?: ProjectTaskLocation[] | null;
 };
 
 export type ProjectTest = {
