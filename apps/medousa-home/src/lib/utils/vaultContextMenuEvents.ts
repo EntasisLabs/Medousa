@@ -3,6 +3,7 @@ import {
   type VaultContextTarget,
   type VaultEditorContextActions,
 } from "$lib/stores/vaultContextMenu.svelte";
+import { vault } from "$lib/stores/vault.svelte";
 import { shouldUseMobileShell } from "$lib/platform";
 
 const LONG_PRESS_MS = 520;
@@ -23,7 +24,8 @@ export function openVaultNoteContextMenu(
   selection?: { text: string; start?: number; end?: number } | null,
 ) {
   markContextMenuOpened();
-  vaultContextMenu.showNote(path, clientX, clientY, selection);
+  const paths = vault.prepareRailContextMenu(path);
+  vaultContextMenu.showNote(path, clientX, clientY, selection, paths);
 }
 
 export function openVaultFolderContextMenu(

@@ -39,7 +39,8 @@
     lmeHosted = false,
   }: Props = $props();
 
-  async function openNote(path: string) {
+  async function openNote(path: string, event?: MouseEvent) {
+    if (!vault.applyRailSelection(path, event)) return;
     if (lmeHosted) {
       await lmeWorkspace.openNote(path);
       return;

@@ -34,7 +34,7 @@
     /** When true, expand ancestors once when `selectedPath` changes (desktop reveal). */
     revealSelected?: boolean;
     depth?: number;
-    onSelect: (path: string) => void;
+    onSelect: (path: string, event?: MouseEvent) => void;
     onMoveNote?: (sourcePath: string, targetFolderPrefix: string) => void | Promise<void>;
   }
 
@@ -159,11 +159,14 @@
   });
 
   const nestInset = $derived(8 + depth * 12 + 8);
+  const rowSelected = $derived(
+    Boolean(node.path && vault.isRailPathSelected(node.path)),
+  );
 
-  function handleClick() {
+  function handleClick(event: MouseEvent) {
     if (shouldSuppressVaultTreeClick() || shouldSuppressVaultContextMenuClick()) return;
     if (node.path && !node.isFolder) {
-      onSelect(node.path);
+      onSelect(node.path, event);
       return;
     }
     vault.setTreeExpanded(expandKey, !expanded);
@@ -182,7 +185,11 @@
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      handleClick();
+      if (node.path && !node.isFolder) {
+        onSelect(node.path);
+        return;
+      }
+      vault.setTreeExpanded(expandKey, !expanded);
     }
   }
 
@@ -211,11 +218,10 @@
 >
   <div
     role="treeitem"
-    aria-selected={node.path === selectedPath}
+    aria-selected={rowSelected}
     aria-expanded={node.isFolder ? expanded : undefined}
     tabindex="0"
-    class="vault-tree-row flex w-full items-center gap-1.5 rounded-container-token px-2 py-1 text-left text-sm outline-none hover:bg-surface-700/80 focus-visible:ring-1 focus-visible:ring-primary-400/50 {node.path ===
-    selectedPath
+    class="vault-tree-row flex w-full items-center gap-1.5 rounded-container-token px-2 py-1 text-left text-sm outline-none hover:bg-surface-700/80 focus-visible:ring-1 focus-visible:ring-primary-400/50 {rowSelected
       ? 'bg-primary-500/15 text-content-link'
       : spaceActive
         ? 'bg-primary-500/10 font-medium text-primary-200'

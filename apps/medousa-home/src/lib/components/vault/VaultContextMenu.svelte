@@ -52,6 +52,8 @@
   let exportPreviewContent = $state("");
   let exportPreviewLabels = $state<Map<string, string>>(new Map());
   let exportPreviewPath = $state<string | null>(null);
+  let deleteBusy = $state(false);
+  let deleteError = $state<string | null>(null);
 
   const target = $derived(vaultContextMenu.target);
   const desktopTauri = $derived(isTauri());
@@ -62,6 +64,13 @@
       ? vaultFolderIcons.get(vaultContextMenu.iconPickerKey)
       : null,
   );
+  const noteDeletePaths = $derived.by(() => {
+    if (target?.kind !== "note") return [] as string[];
+    const multi = target.paths?.filter(Boolean) ?? [];
+    if (multi.length > 1) return multi;
+    return target.path ? [target.path] : [];
+  });
+  const multiNoteDelete = $derived(noteDeletePaths.length > 1);
 
   function wikilinkForPath(path: string): string {
     const label =
@@ -218,6 +227,28 @@
     if (target.kind === "note") {
       const path = target.path;
       const selection = target.selection;
+      const deletePaths = noteDeletePaths;
+      const multi = deletePaths.length > 1;
+      if (multi) {
+        return [
+          {
+            id: "copy-paths",
+            label: `Copy ${deletePaths.length} paths`,
+            onClick: async () => {
+              await copyTextToClipboard(deletePaths.join("\n"));
+            },
+          },
+          {
+            id: "delete",
+            label: `Delete ${deletePaths.length} notes…`,
+            separatorBefore: true,
+            onClick: () => {
+              deleteError = null;
+              vaultContextMenu.askDelete();
+            },
+          },
+        ];
+      }
       return [
         {
           id: "add-to-chat",
@@ -401,6 +432,15 @@
             }
           },
         },
+        {
+          id: "delete",
+          label: "Delete…",
+          separatorBefore: true,
+          onClick: () => {
+            deleteError = null;
+            vaultContextMenu.askDelete();
+          },
+        },
       ];
     }
 
@@ -462,7 +502,7 @@
 
   async function runItem(item: MenuItem) {
     if (item.disabled) return;
-    if (item.id === "change-icon") {
+    if (item.id === "change-icon" || item.id === "delete") {
       await item.onClick();
       return;
     }
@@ -482,6 +522,30 @@
       });
     } finally {
       vaultContextMenu.close();
+    }
+  }
+
+  async function confirmDeleteNotes() {
+    if (noteDeletePaths.length === 0) return;
+    deleteBusy = true;
+    deleteError = null;
+    try {
+      await vault.archiveNotes(noteDeletePaths);
+      if (vault.error) {
+        deleteError = vault.error;
+        return;
+      }
+      toast.show(
+        noteDeletePaths.length === 1
+          ? "Moved to trash"
+          : `Moved ${noteDeletePaths.length} notes to trash`,
+        { durationMs: 1800 },
+      );
+      vaultContextMenu.close();
+    } catch (err) {
+      deleteError = err instanceof Error ? err.message : String(err);
+    } finally {
+      deleteBusy = false;
     }
   }
 
@@ -592,6 +656,46 @@
             {/each}
           </div>
         </div>
+      {:else if vaultContextMenu.confirmDelete}
+        <div class="px-3 py-2.5">
+          <p class="text-[12px] leading-snug text-surface-100">
+            {#if multiNoteDelete}
+              Move <span class="font-medium">{noteDeletePaths.length} notes</span> to trash?
+            {:else}
+              Move
+              <span class="font-medium">
+                {vault.labelByPath().get(noteDeletePaths[0] ?? "") ??
+                  noteDeletePaths[0] ??
+                  "this note"}
+              </span>
+              to trash?
+            {/if}
+          </p>
+          {#if deleteError}
+            <p class="mt-1.5 text-[11px] text-content-error">{deleteError}</p>
+          {/if}
+          <div class="mt-2.5 flex items-center justify-end gap-1.5">
+            <button
+              type="button"
+              class="vault-context-menu-item !inline-flex !w-auto px-2 py-1"
+              disabled={deleteBusy}
+              onclick={() => {
+                vaultContextMenu.confirmDelete = false;
+                deleteError = null;
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="vault-context-menu-item !inline-flex !w-auto px-2 py-1 text-content-error"
+              disabled={deleteBusy}
+              onclick={() => void confirmDeleteNotes()}
+            >
+              {deleteBusy ? "Deleting…" : "Delete"}
+            </button>
+          </div>
+        </div>
       {:else}
         {#each visibleItems as item (item.id)}
           {#if item.separatorBefore}
@@ -601,6 +705,7 @@
             type="button"
             class="vault-context-menu-item"
             class:vault-context-menu-item--hint={item.disabled && item.id === "host-hint"}
+            class:text-content-error={item.id === "delete"}
             role="menuitem"
             disabled={item.disabled}
             onclick={() => void runItem(item)}

@@ -183,30 +183,29 @@ mod tests {
 
     #[test]
     fn vault_runtime_learning_ranking_finds_tagged_note() {
-        let _guard = crate::vault::service::vault_integration_test_lock();
-        let token = uuid::Uuid::new_v4().simple().to_string();
-        let path = format!("learnings/runtime-{token}.md");
-        let content = format!(
-            "---\ntags: [runtime-learning, workshop]\n---\n# Learning {token}\n\nPrefer web.duckduckgo before modules search for live facts.\n"
-        );
-        VaultService::write_note(
-            Some(&path),
-            &VaultWriteRequest {
-                path: Some(path.clone()),
-                content,
-                ..Default::default()
-            },
-            None,
-        )
-        .expect("write learning note");
+        crate::vault::service::with_temp_vault(|| {
+            let token = uuid::Uuid::new_v4().simple().to_string();
+            let path = format!("learnings/runtime-{token}.md");
+            let content = format!(
+                "---\ntags: [runtime-learning, workshop]\n---\n# Learning {token}\n\nPrefer web.duckduckgo before modules search for live facts.\n"
+            );
+            VaultService::write_note(
+                Some(&path),
+                &VaultWriteRequest {
+                    path: Some(path.clone()),
+                    content,
+                    ..Default::default()
+                },
+                None,
+            )
+            .expect("write learning note");
 
-        let hits = rank_runtime_learning_notes(&token, 5);
-        assert!(hits.iter().any(|hit| hit.path == path));
+            let hits = rank_runtime_learning_notes(&token, 5);
+            assert!(hits.iter().any(|hit| hit.path == path));
 
-        let block = build_runtime_learnings_block(&token, 800);
-        assert!(block.contains("[MEDOUSA_RUNTIME_LEARNINGS]"));
-        assert!(block.contains(&path));
-
-        let _ = VaultService::delete_note(&path);
+            let block = build_runtime_learnings_block(&token, 800);
+            assert!(block.contains("[MEDOUSA_RUNTIME_LEARNINGS]"));
+            assert!(block.contains(&path));
+        });
     }
 }

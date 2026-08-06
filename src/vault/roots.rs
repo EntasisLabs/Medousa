@@ -10,6 +10,30 @@ use crate::vault::store::vault_store;
 
 pub const DEFAULT_VAULT_ROOT_ID: &str = "personal";
 
+#[cfg(test)]
+mod test_override {
+    use std::cell::RefCell;
+    use std::path::PathBuf;
+
+    thread_local! {
+        static OVERRIDE: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+    }
+
+    pub fn set(path: Option<PathBuf>) {
+        OVERRIDE.with(|cell| *cell.borrow_mut() = path);
+    }
+
+    pub fn get() -> Option<PathBuf> {
+        OVERRIDE.with(|cell| cell.borrow().clone())
+    }
+}
+
+/// Test-only redirect for [`active_vault_root`]. Does not touch product config.
+#[cfg(test)]
+pub fn set_test_vault_root_override(path: Option<PathBuf>) {
+    test_override::set(path);
+}
+
 pub fn default_vault_roots() -> Vec<VaultRootEntry> {
     vec![VaultRootEntry {
         id: DEFAULT_VAULT_ROOT_ID.to_string(),
@@ -51,6 +75,10 @@ pub fn resolve_root_path(entry: &VaultRootEntry) -> PathBuf {
 }
 
 pub fn active_vault_root() -> PathBuf {
+    #[cfg(test)]
+    if let Some(path) = test_override::get() {
+        return path;
+    }
     let config = normalize_vault_config(&load_product_config().vault);
     let entry = config
         .roots

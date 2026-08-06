@@ -203,13 +203,23 @@
         selectedPath={vault.selectedPath}
         labelByPath={vault.labelByPathMap}
         activeSpaceFilter={vault.activeSpaceFilter}
-        onSelect={(path) => void lmeWorkspace.openNote(path)}
+        onSelect={(path, event) => {
+          if (vault.applyRailSelection(path, event)) {
+            void lmeWorkspace.openNote(path);
+          }
+        }}
         onMoveNote={(sourcePath, targetPrefix) => {
           void vault.moveNoteToFolder(sourcePath, targetPrefix);
         }}
       />
     {:else}
-      <VaultLibraryBrowseLists onSelect={(path) => void lmeWorkspace.openNote(path)} />
+      <VaultLibraryBrowseLists
+        onSelect={(path, event) => {
+          if (vault.applyRailSelection(path, event)) {
+            void lmeWorkspace.openNote(path);
+          }
+        }}
+      />
     {/if}
   </div>
 

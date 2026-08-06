@@ -145,8 +145,9 @@
     layout.setLibraryListScrollTop((event.currentTarget as HTMLDivElement).scrollTop);
   }
 
-  async function openNote(path: string) {
+  async function openNote(path: string, event?: MouseEvent) {
     if (shouldSuppressVaultContextMenuClick()) return;
+    if (!vault.applyRailSelection(path, event)) return;
     await vault.openNote(path);
     vault.enterPreviewMode();
     layout.setLibraryView("reader");
