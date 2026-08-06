@@ -2,14 +2,10 @@
   import {
     ArrowLeft,
     ArrowRight,
-    Columns2,
     ExternalLink,
     PanelLeft,
-    PanelLeftClose,
     PanelLeftOpen,
     Plus,
-    Rows2,
-    SquareX,
   } from "@lucide/svelte";
   import ShellTabNotch from "$lib/components/shell/ShellTabNotch.svelte";
   import NewTabMenu from "$lib/components/layout/NewTabMenu.svelte";
@@ -17,7 +13,6 @@
   import { layout } from "$lib/stores/layout.svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
-  import { MAX_SHELL_PANES } from "$lib/types/shellTabs";
   import { titlebarMode, usesUnifiedTitlebar } from "$lib/platform";
   import { isTauri, showBrowser, showChatPopout } from "$lib/window";
 
@@ -27,8 +22,6 @@
   const railWidth = $derived(layout.shellSidebarWidth);
   const canNavBack = $derived(layout.canGoRailViewBack);
   const canNavForward = $derived(layout.canGoRailViewForward);
-  const canSplit = $derived(shellTabs.paneCount < MAX_SHELL_PANES);
-  const canMergePane = $derived(shellTabs.paneCount > 1);
   const showChatPopoutBtn = $derived(
     isTauri() && shellTabs.activeTab?.kind === "chat",
   );
@@ -52,18 +45,6 @@
 
   function goNavForward() {
     layout.goRailViewForward();
-  }
-
-  function splitRight() {
-    shellTabs.splitActive("right");
-  }
-
-  function splitDown() {
-    shellTabs.splitActive("down");
-  }
-
-  function closePane() {
-    shellTabs.closeActiveGroup();
   }
 
   async function onDragDblClick(event: MouseEvent) {
@@ -153,6 +134,7 @@
       <NewTabMenu>
         <Plus size={16} />
       </NewTabMenu>
+      <!-- Always reserve the pop-out slot so the centered notch doesn't shift. -->
       {#if showChatPopoutBtn}
         <button
           type="button"
@@ -163,8 +145,7 @@
         >
           <ExternalLink size={16} />
         </button>
-      {/if}
-      {#if showWebPopoutBtn}
+      {:else if showWebPopoutBtn}
         <button
           type="button"
           class="app-titlebar-btn"
@@ -174,37 +155,9 @@
         >
           <ExternalLink size={16} />
         </button>
+      {:else}
+        <span class="app-titlebar-btn app-titlebar-btn--ghost" aria-hidden="true"></span>
       {/if}
-      <button
-        type="button"
-        class="app-titlebar-btn"
-        title="Split pane right"
-        aria-label="Split pane right"
-        disabled={!canSplit}
-        onclick={splitRight}
-      >
-        <Columns2 size={16} />
-      </button>
-      <button
-        type="button"
-        class="app-titlebar-btn"
-        title="Split pane down"
-        aria-label="Split pane down"
-        disabled={!canSplit}
-        onclick={splitDown}
-      >
-        <Rows2 size={16} />
-      </button>
-      <button
-        type="button"
-        class="app-titlebar-btn"
-        title="Close pane · merge tabs"
-        aria-label="Close pane and merge tabs"
-        disabled={!canMergePane}
-        onclick={closePane}
-      >
-        <SquareX size={16} />
-      </button>
     </div>
 
     <WindowControls />
@@ -215,17 +168,20 @@
   /*
    * y on trafficLightPosition moves lights DOWN (I had been lowering y — oops).
    * Bar height centers controls on light midline: y18 + 6 ≈ 24 → ~36–40px bar.
+   *
+   * --titlebar-system-chrome mirrors Mac traffic lights ↔ Win/Linux controls so
+   * the centered notch stays optically stable across platforms.
    */
   .app-titlebar {
     --titlebar-height: 40px;
-    --titlebar-left-inset: 0px;
+    --titlebar-system-chrome: 86px;
     display: flex;
     height: var(--titlebar-height);
     flex-shrink: 0;
     align-items: stretch;
     gap: 0;
     padding-left: 0;
-    padding-right: 6px;
+    padding-right: 0;
     border-bottom: 0;
     background: rgb(var(--color-surface-950));
     user-select: none;
@@ -237,21 +193,14 @@
     z-index: 146;
   }
 
-  .app-titlebar--mac {
-    --titlebar-left-inset: 80px;
-  }
-
-  .app-titlebar--winlinux {
-    padding-left: 0;
-  }
-
   .app-titlebar-rail-slot {
     display: flex;
     flex-shrink: 0;
     align-items: center;
     gap: 1px;
     box-sizing: border-box;
-    padding-left: max(6px, var(--titlebar-left-inset));
+    /* Same left footprint as WindowControls on the right (Mac lights / Win spacer). */
+    padding-left: var(--titlebar-system-chrome);
     padding-right: 4px;
     transition:
       background-color 160ms ease,
@@ -293,7 +242,14 @@
   .app-titlebar-actions {
     display: inline-flex;
     align-items: center;
-    gap: 0;
+    gap: 4px;
+    margin-right: 2px;
+    padding-left: 4px;
+  }
+
+  .app-titlebar-btn--ghost {
+    visibility: hidden;
+    pointer-events: none;
   }
 
   .app-titlebar-btn {

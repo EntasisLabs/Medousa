@@ -63,7 +63,7 @@
       aria-label="Minimize"
       onclick={() => void minimize()}
     >
-      <Minus size={12} strokeWidth={2} />
+      <Minus size={11} strokeWidth={2.25} />
     </button>
     <button
       type="button"
@@ -72,7 +72,7 @@
       aria-label={maximized ? "Restore" : "Maximize"}
       onclick={() => void toggleMaximize()}
     >
-      <Square size={10} strokeWidth={2} />
+      <Square size={9} strokeWidth={2.25} />
     </button>
     <button
       type="button"
@@ -81,26 +81,43 @@
       aria-label="Close"
       onclick={() => void close()}
     >
-      <X size={12} strokeWidth={2} />
+      <X size={11} strokeWidth={2.25} />
     </button>
   </div>
+{:else}
+  <!-- Mirror Mac traffic-light footprint so the notch stays optically centered. -->
+  <div class="window-controls window-controls--spacer" aria-hidden="true"></div>
 {/if}
 
 <style>
+  /*
+   * Match macOS traffic-light cluster width (~78–86px) so left/right system
+   * chrome balances across platforms and the centered notch doesn't jump.
+   */
   .window-controls {
     display: inline-flex;
     flex-shrink: 0;
-    align-items: stretch;
+    align-items: center;
+    justify-content: flex-end;
+    box-sizing: border-box;
+    width: var(--titlebar-system-chrome, 86px);
     height: 100%;
-    margin-left: 0.15rem;
+    padding-right: 2px;
+  }
+
+  .window-controls--spacer {
+    pointer-events: none;
   }
 
   .window-controls-btn {
     display: inline-flex;
-    width: 2.75rem;
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
     align-items: center;
     justify-content: center;
     border: 0;
+    border-radius: 5px;
     background: transparent;
     color: rgb(var(--theme-text-tertiary));
     transition:
