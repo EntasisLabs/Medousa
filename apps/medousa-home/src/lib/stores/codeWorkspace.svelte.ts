@@ -556,6 +556,7 @@ class CodeWorkspaceStore {
             terminal: layout.terminal,
             tests: layout.tests,
             search: layout.search,
+            changes: layout.changes,
           },
         },
         lease,

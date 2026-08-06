@@ -106,6 +106,7 @@ pub fn forge_router(state: AppState) -> Router {
                 .delete(delete_source),
         )
         .route("/v1/forge/items/{work_id}/tree", get(source_tree))
+        .route("/v1/forge/items/{work_id}/changes", get(get_changes))
         .route(
             "/v1/forge/items/{work_id}/source/batch",
             put(save_source_batch),
@@ -2106,6 +2107,8 @@ struct CodeWorkspaceLayout {
     tests: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     search: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    changes: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -3339,6 +3342,119 @@ async fn delete_source(
         path: relative,
         deleted: true,
     }))
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ForgeChangesFile {
+    path: String,
+    status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    old_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ForgeChangesResponse {
+    work_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    branch: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    detached: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    base_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    baseline_oid: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    upstream: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ahead: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    behind: Option<u64>,
+    conflict: bool,
+    files: Vec<ForgeChangesFile>,
+}
+
+fn porcelain_change_status(entry: &medousa_forge::git::PorcelainEntry) -> Option<&'static str> {
+    use medousa_forge::git::PorcelainKind;
+    match entry.kind {
+        PorcelainKind::Ignored => None,
+        PorcelainKind::Untracked => Some("untracked"),
+        PorcelainKind::Unmerged => Some("unmerged"),
+        PorcelainKind::RenameOrCopy => {
+            if entry.xy.as_deref().unwrap_or_default().starts_with('C') {
+                Some("copied")
+            } else {
+                Some("renamed")
+            }
+        }
+        PorcelainKind::Ordinary => {
+            let xy = entry.xy.as_deref().unwrap_or_default();
+            if xy.contains('A') {
+                Some("added")
+            } else if xy.contains('D') {
+                Some("deleted")
+            } else if xy.contains('T') {
+                Some("type_changed")
+            } else {
+                Some("modified")
+            }
+        }
+    }
+}
+
+fn build_changes_response(state: &AppState, work_id: &WorkId) -> ApiResult<ForgeChangesResponse> {
+    let forge = forge(state);
+    let item = forge.load(work_id).map_err(map_err)?;
+    let environment = item.workspace_environment().cloned().ok_or_else(|| {
+        request_error(
+            StatusCode::CONFLICT,
+            "prepare the governed workspace before reading changes",
+        )
+    })?;
+    let (tracking, entries) = forge
+        .git()
+        .status_porcelain_with_branch(&environment.worktree)
+        .map_err(map_err)?;
+    let mut files = Vec::new();
+    let mut conflict = false;
+    for entry in entries {
+        let Some(status) = porcelain_change_status(&entry) else {
+            continue;
+        };
+        let path = medousa_forge::policy::normalize_git_path(&entry.path);
+        if medousa_forge::policy::is_git_internal(&path) {
+            continue;
+        }
+        if status == "unmerged" {
+            conflict = true;
+        }
+        files.push(ForgeChangesFile {
+            path,
+            status: status.to_owned(),
+            old_path: entry.orig_path.map(|p| medousa_forge::policy::normalize_git_path(&p)),
+        });
+    }
+    files.sort_unstable_by(|left, right| left.path.cmp(&right.path));
+    let WorkTarget::Git(target) = &item.target;
+    Ok(ForgeChangesResponse {
+        work_id: work_id.as_str().to_owned(),
+        branch: tracking.head.or_else(|| Some(environment.branch.clone())),
+        detached: tracking.detached,
+        base_ref: Some(target.base_ref.clone()),
+        baseline_oid: Some(environment.baseline_oid.as_str().to_owned()),
+        upstream: tracking.upstream,
+        ahead: tracking.ahead,
+        behind: tracking.behind,
+        conflict,
+        files,
+    })
+}
+
+async fn get_changes(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+) -> ApiResult<Json<ForgeChangesResponse>> {
+    let id = parse_work_id(&work_id)?;
+    Ok(Json(build_changes_response(&state, &id)?))
 }
 
 async fn get_review(
@@ -6573,6 +6689,47 @@ mod source_tests {
     use super::*;
 
     #[test]
+    fn porcelain_change_status_maps_kinds() {
+        use medousa_forge::git::{PorcelainEntry, PorcelainKind};
+        assert_eq!(
+            porcelain_change_status(&PorcelainEntry {
+                path: "a.rs".into(),
+                kind: PorcelainKind::Unmerged,
+                orig_path: None,
+                xy: Some("UU".into()),
+            }),
+            Some("unmerged")
+        );
+        assert_eq!(
+            porcelain_change_status(&PorcelainEntry {
+                path: "b.rs".into(),
+                kind: PorcelainKind::Untracked,
+                orig_path: None,
+                xy: None,
+            }),
+            Some("untracked")
+        );
+        assert_eq!(
+            porcelain_change_status(&PorcelainEntry {
+                path: "c.rs".into(),
+                kind: PorcelainKind::Ordinary,
+                orig_path: None,
+                xy: Some(".M".into()),
+            }),
+            Some("modified")
+        );
+        assert_eq!(
+            porcelain_change_status(&PorcelainEntry {
+                path: "d.rs".into(),
+                kind: PorcelainKind::Ignored,
+                orig_path: None,
+                xy: None,
+            }),
+            None
+        );
+    }
+
+    #[test]
     fn task_output_is_bounded_and_marks_truncation() {
         let mut buf = String::new();
         let mut truncated = false;
@@ -7095,6 +7252,7 @@ mod source_tests {
                 terminal: true,
                 tests: false,
                 search: false,
+                changes: false,
             }),
             updated_at: None,
         };

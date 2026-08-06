@@ -456,6 +456,8 @@ pub enum ChangeStatus {
     Copied,
     TypeChanged,
     Untracked,
+    /// Unmerged / conflicted path (`git status` porcelain `u`).
+    Unmerged,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

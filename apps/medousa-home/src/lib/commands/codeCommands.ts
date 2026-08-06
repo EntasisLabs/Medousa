@@ -216,7 +216,7 @@ export function buildCodeCommands(): WorkshopCommand[] {
       id: "workbench.view.scm",
       section: "do",
       label: "Changes",
-      subtitle: "Forge Changes / Review arrives in a later Code slice",
+      subtitle: "Toggle Forge Changes (branch / upstream / conflicts)",
       keywords: "changes scm git source control vscode",
       aliases: [
         "workbench.view.scm",
@@ -224,10 +224,10 @@ export function buildCodeCommands(): WorkshopCommand[] {
         "Source Control",
         "View: Show Source Control",
       ],
+      verb: "toggle",
       run: (ctx) => {
-        ctx.notice(
-          "Changes lands with Forge Review depth — open Review from Code for now.",
-        );
+        ctx.navigate("code");
+        dispatchCodeCommand("workbench.view.scm");
         ctx.callbacks.close();
       },
     },

@@ -428,11 +428,28 @@ impl GitEngine {
 
     /// `git status --porcelain=v2 -z`, parsed. Includes untracked files.
     pub fn status_porcelain(&self, cwd: &Path) -> Result<Vec<PorcelainEntry>> {
+        Ok(self.status_porcelain_with_branch(cwd)?.1)
+    }
+
+    /// Porcelain status plus `# branch.*` tracking headers (`--branch`).
+    pub fn status_porcelain_with_branch(
+        &self,
+        cwd: &Path,
+    ) -> Result<(BranchTracking, Vec<PorcelainEntry>)> {
         let out = self.run_bytes(
             cwd,
-            &["status", "--porcelain=v2", "-z", "--untracked-files=all"],
+            &[
+                "status",
+                "--porcelain=v2",
+                "-z",
+                "--branch",
+                "--untracked-files=all",
+            ],
         )?;
-        Ok(parse_porcelain_v2_z(&out))
+        Ok((
+            parse_porcelain_v2_branch(&out),
+            parse_porcelain_v2_z(&out),
+        ))
     }
 
     pub fn is_clean(&self, cwd: &Path) -> Result<bool> {
@@ -758,6 +775,65 @@ pub enum PorcelainKind {
     Ignored,
 }
 
+/// Branch / upstream tracking from `git status --porcelain=v2 --branch`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct BranchTracking {
+    /// Checked-out branch name, or `None` when detached / unknown.
+    pub head: Option<String>,
+    pub oid: Option<String>,
+    pub upstream: Option<String>,
+    pub ahead: Option<u64>,
+    pub behind: Option<u64>,
+    pub detached: bool,
+}
+
+/// Parse `# branch.*` headers from porcelain v2 (with or without `-z`).
+pub fn parse_porcelain_v2_branch(data: &[u8]) -> BranchTracking {
+    let text = String::from_utf8_lossy(data);
+    let mut tracking = BranchTracking::default();
+    for record in text.split(|c| c == '\0' || c == '\n').filter(|s| !s.is_empty()) {
+        let Some(rest) = record.strip_prefix("# branch.") else {
+            continue;
+        };
+        let mut parts = rest.splitn(2, ' ');
+        let key = parts.next().unwrap_or_default();
+        let value = parts.next().unwrap_or_default().trim();
+        match key {
+            "oid" if value != "(initial)" && !value.is_empty() => {
+                tracking.oid = Some(value.to_string());
+            }
+            "head" => {
+                if value == "(detached)" {
+                    tracking.detached = true;
+                    tracking.head = None;
+                } else if !value.is_empty() {
+                    tracking.head = Some(value.to_string());
+                    tracking.detached = false;
+                }
+            }
+            "upstream" if !value.is_empty() => {
+                tracking.upstream = Some(value.to_string());
+            }
+            "ab" => {
+                // Format: +<ahead> -<behind>
+                let mut ahead = None;
+                let mut behind = None;
+                for token in value.split_whitespace() {
+                    if let Some(n) = token.strip_prefix('+') {
+                        ahead = n.parse().ok();
+                    } else if let Some(n) = token.strip_prefix('-') {
+                        behind = n.parse().ok();
+                    }
+                }
+                tracking.ahead = ahead;
+                tracking.behind = behind;
+            }
+            _ => {}
+        }
+    }
+    tracking
+}
+
 pub fn parse_porcelain_v2_z(data: &[u8]) -> Vec<PorcelainEntry> {
     let text = String::from_utf8_lossy(data);
     let mut records = text.split('\0').filter(|s| !s.is_empty());
@@ -937,6 +1013,33 @@ mod tests {
                 .iter()
                 .any(|e| e.path == "deep/nested.txt" && e.kind == PorcelainKind::Untracked)
         );
+    }
+
+    #[test]
+    fn porcelain_branch_headers_parse_ahead_behind() {
+        let raw = b"# branch.oid abcdef0123456789abcdef0123456789abcdef01\0\
+# branch.head feature\0\
+# branch.upstream origin/main\0\
+# branch.ab +2 -1\0\
+1 .M N... 100644 100644 100644 oid oid hello.txt\0";
+        let tracking = parse_porcelain_v2_branch(raw);
+        assert_eq!(tracking.head.as_deref(), Some("feature"));
+        assert_eq!(tracking.upstream.as_deref(), Some("origin/main"));
+        assert_eq!(tracking.ahead, Some(2));
+        assert_eq!(tracking.behind, Some(1));
+        assert!(!tracking.detached);
+        let entries = parse_porcelain_v2_z(raw);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].path, "hello.txt");
+    }
+
+    #[test]
+    fn porcelain_with_branch_reports_current_head() {
+        let (tmp, git, _) = init_repo();
+        let (tracking, _) = git.status_porcelain_with_branch(tmp.path()).unwrap();
+        assert_eq!(tracking.head.as_deref(), Some("main"));
+        assert!(!tracking.detached);
+        assert!(tracking.upstream.is_none());
     }
 
     #[test]

@@ -99,10 +99,10 @@ a private Code IDE chrome.
   current file visible in both panes; drag a tab to a pane edge to move it.
   Directional pane focus (`Ctrl+;` then hjkl) follows on-screen geometry.
   Code Back/Forward restores the remembered pane when that group still exists.
-  Problems, Structure, Search, Tests, and the Terminal dock restore with the project
+  Problems, Structure, Search, Changes, Tests, and the Terminal dock restore with the project
   (`workspace-state` layout); they are not permanent chrome across Chat or Notes.
   `Cmd/Ctrl+Shift+P` opens Spotlight in command mode (`>`). Code actions also
-  appear under familiar VS Code names (Quick Open, Search, Problems, Output, Terminal, Tests).
+  appear under familiar VS Code names (Quick Open, Search, Changes, Problems, Output, Terminal, Tests).
   A small allowlist of chords can be overridden in storage; a Settings keybinding
   editor is not shipped yet.
 - The Code explorer lists tracked and unignored repository files. `Cmd/Ctrl+P`
@@ -112,7 +112,9 @@ a private Code IDE chrome.
   tracked and untracked source (regex, case, whole word, include/exclude globs,
   changed-files scope, and load-more pagination). **Replace…** previews
   digest-fenced edits; uncheck files to skip them, then Apply writes the rest
-  atomically.
+  atomically. **Changes** shows the governed working copy’s branch, upstream
+  ahead/behind when known, conflict state, and changed-file list (diff/hunk
+  actions arrive in a later slice). Review remains the finish/decision surface.
 - New file and New folder are available in the repository explorer. Nested
   parents are created as needed. Rename and delete work on the selected file or
   folder (folder ops apply one guarded multi-file transaction).
