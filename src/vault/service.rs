@@ -274,6 +274,29 @@ pub(crate) fn vault_integration_test_lock() -> std::sync::MutexGuard<'static, ()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// Run vault integration work against an isolated temp root (not the live user vault).
+#[cfg(test)]
+pub(crate) fn with_temp_vault<T>(f: impl FnOnce() -> T) -> T {
+    use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
+
+    let _lock = vault_integration_test_lock();
+    let base = std::env::temp_dir().join(format!(
+        "medousa-vault-test-{}",
+        uuid::Uuid::new_v4().simple()
+    ));
+    fs::create_dir_all(&base).expect("temp vault root");
+    crate::vault::roots::set_test_vault_root_override(Some(base.clone()));
+    let _ = vault_store().refresh_from_disk();
+    let result = catch_unwind(AssertUnwindSafe(f));
+    crate::vault::roots::set_test_vault_root_override(None);
+    let _ = vault_store().refresh_from_disk();
+    let _ = fs::remove_dir_all(&base);
+    match result {
+        Ok(value) => value,
+        Err(payload) => resume_unwind(payload),
+    }
+}
+
 fn mime_guess_from_path(path: &std::path::Path) -> String {
     let ext = path
         .extension()
@@ -341,105 +364,104 @@ fn append_vault_feed_event(
 mod tests {
     use super::*;
 
-    fn vault_test_lock() -> std::sync::MutexGuard<'static, ()> {
-        vault_integration_test_lock()
-    }
-
     #[test]
     fn wikilink_resolves_and_backlinks() {
-        let _guard = vault_test_lock();
-        let suffix = uuid::Uuid::new_v4().simple();
-        let weekly = format!("journal/weekly-review-{suffix}.md");
-        let daily = format!("journal/daily-{suffix}.md");
-        VaultService::write_note(
-            Some(&weekly),
-            &VaultWriteRequest {
-                path: Some(weekly.clone()),
-                content: "# Weekly Review\n".to_string(),
-                ..Default::default()
-            },
-            None,
-        )
-        .expect("weekly");
-        VaultService::write_note(
-            Some(&daily),
-            &VaultWriteRequest {
-                path: Some(daily.clone()),
-                content: format!("# Daily\n\nSee [[weekly-review-{suffix}]]\n"),
-                ..Default::default()
-            },
-            None,
-        )
-        .expect("daily");
+        with_temp_vault(|| {
+            let suffix = uuid::Uuid::new_v4().simple();
+            let weekly = format!("journal/weekly-review-{suffix}.md");
+            let daily = format!("journal/daily-{suffix}.md");
+            VaultService::write_note(
+                Some(&weekly),
+                &VaultWriteRequest {
+                    path: Some(weekly.clone()),
+                    content: "# Weekly Review\n".to_string(),
+                    ..Default::default()
+                },
+                None,
+            )
+            .expect("weekly");
+            VaultService::write_note(
+                Some(&daily),
+                &VaultWriteRequest {
+                    path: Some(daily.clone()),
+                    content: format!("# Daily\n\nSee [[weekly-review-{suffix}]]\n"),
+                    ..Default::default()
+                },
+                None,
+            )
+            .expect("daily");
 
-        let read = VaultService::get_note(&daily).expect("read daily");
-        assert!(read.note.wikilinks_out.iter().any(|path| path == &weekly));
+            let read = VaultService::get_note(&daily).expect("read daily");
+            assert!(read.note.wikilinks_out.iter().any(|path| path == &weekly));
 
-        let backlinks = VaultService::backlinks(&weekly).expect("backlinks");
-        assert!(backlinks.backlinks.iter().any(|path| path == &daily));
+            let backlinks = VaultService::backlinks(&weekly).expect("backlinks");
+            assert!(backlinks.backlinks.iter().any(|path| path == &daily));
+        });
     }
 
     #[test]
     fn create_note_refuses_existing_path() {
-        let _guard = vault_test_lock();
-        let path = format!(
-            "journal/create-once-{}.md",
-            uuid::Uuid::new_v4().simple()
-        );
-        let request = VaultWriteRequest {
-            path: Some(path.clone()),
-            content: "# Keep me\n\nimportant body\n".to_string(),
-            ..Default::default()
-        };
-        let first = VaultService::create_note(&request).expect("first create");
-        assert!(first.created);
-        let clash = VaultWriteRequest {
-            path: Some(path.clone()),
-            content: "# Wiped\n\ntemplate\n".to_string(),
-            ..Default::default()
-        };
-        let err = VaultService::create_note(&clash).expect_err("second create must fail");
-        assert!(
-            err.to_string().contains("already exists"),
-            "unexpected error: {err}"
-        );
-        let read = VaultService::get_note(&path).expect("read after refused create");
-        assert!(read.content.contains("important body"));
-        assert!(!read.content.contains("template"));
-        let _ = VaultService::delete_note(&path);
+        with_temp_vault(|| {
+            let path = format!(
+                "journal/create-once-{}.md",
+                uuid::Uuid::new_v4().simple()
+            );
+            let request = VaultWriteRequest {
+                path: Some(path.clone()),
+                content: "# Keep me\n\nimportant body\n".to_string(),
+                ..Default::default()
+            };
+            let first = VaultService::create_note(&request).expect("first create");
+            assert!(first.created);
+            let clash = VaultWriteRequest {
+                path: Some(path.clone()),
+                content: "# Wiped\n\ntemplate\n".to_string(),
+                ..Default::default()
+            };
+            let err = VaultService::create_note(&clash).expect_err("second create must fail");
+            assert!(
+                err.to_string().contains("already exists"),
+                "unexpected error: {err}"
+            );
+            let read = VaultService::get_note(&path).expect("read after refused create");
+            assert!(read.content.contains("important body"));
+            assert!(!read.content.contains("template"));
+        });
     }
 
     #[test]
     fn round_trip_write_read_search_delete() {
-        let _guard = vault_test_lock();
-        let path = format!(
-            "journal/test-{}.md",
-            uuid::Uuid::new_v4().simple()
-        );
-        let token = uuid::Uuid::new_v4().simple().to_string();
-        let content = format!("# Vault Smoke\n\nmedousa vault token {token}\n");
-        let request = VaultWriteRequest {
-            path: Some(path.clone()),
-            content: content.clone(),
-            session_id: Some(format!("medousa-home-{token}")),
-            semantic_tags: Some(vec!["smoke-test".to_string()]),
-            auto_workshop_tags: true,
-        };
-        let skips_auto_tags = crate::vault::roots::active_root_skips_auto_workshop_tags();
-        let written = VaultService::write_note(Some(&path), &request, None).expect("write");
-        assert!(written.created);
-        assert_eq!(
-            written.note.tags.iter().any(|tag| tag == "vault"),
-            !skips_auto_tags
-        );
-        assert!(written.note.tags.iter().any(|tag| tag == "smoke-test"));
-        let read = VaultService::get_note(&path).expect("read");
-        assert!(read.content.contains("tags:"));
-        let search = VaultService::search(Some(&format!("token {token}")), 5, None).expect("search");
-        assert!(search.hits.iter().any(|hit| hit.note.path == path));
-        let by_tag = VaultService::list_notes(None, 10, Some("smoke-test"), None);
-        assert!(by_tag.notes.iter().any(|note| note.path == path));
-        let deleted = VaultService::delete_note(&path).expect("delete");
-        assert!(deleted.deleted);
+        with_temp_vault(|| {
+            let path = format!(
+                "journal/test-{}.md",
+                uuid::Uuid::new_v4().simple()
+            );
+            let token = uuid::Uuid::new_v4().simple().to_string();
+            let content = format!("# Vault Smoke\n\nmedousa vault token {token}\n");
+            let request = VaultWriteRequest {
+                path: Some(path.clone()),
+                content: content.clone(),
+                session_id: Some(format!("medousa-home-{token}")),
+                semantic_tags: Some(vec!["smoke-test".to_string()]),
+                auto_workshop_tags: true,
+            };
+            let skips_auto_tags = crate::vault::roots::active_root_skips_auto_workshop_tags();
+            let written = VaultService::write_note(Some(&path), &request, None).expect("write");
+            assert!(written.created);
+            assert_eq!(
+                written.note.tags.iter().any(|tag| tag == "vault"),
+                !skips_auto_tags
+            );
+            assert!(written.note.tags.iter().any(|tag| tag == "smoke-test"));
+            let read = VaultService::get_note(&path).expect("read");
+            assert!(read.content.contains("tags:"));
+            let search =
+                VaultService::search(Some(&format!("token {token}")), 5, None).expect("search");
+            assert!(search.hits.iter().any(|hit| hit.note.path == path));
+            let by_tag = VaultService::list_notes(None, 10, Some("smoke-test"), None);
+            assert!(by_tag.notes.iter().any(|note| note.path == path));
+            let deleted = VaultService::delete_note(&path).expect("delete");
+            assert!(deleted.deleted);
+        });
     }
 }

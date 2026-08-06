@@ -446,18 +446,20 @@ mod tests {
 
     #[test]
     fn link_vault_persists_association() {
-        let note_path = format!("journal/link-test-{}.md", uuid::Uuid::new_v4().simple());
-        let request = crate::daemon_api::VaultWriteRequest {
-            path: Some(note_path.clone()),
-            content: "# Link test\n".to_string(),
-            ..Default::default()
-        };
-        crate::vault::VaultService::write_note(Some(&note_path), &request, None).expect("seed");
+        crate::vault::service::with_temp_vault(|| {
+            let note_path = format!("journal/link-test-{}.md", uuid::Uuid::new_v4().simple());
+            let request = crate::daemon_api::VaultWriteRequest {
+                path: Some(note_path.clone()),
+                content: "# Link test\n".to_string(),
+                ..Default::default()
+            };
+            crate::vault::VaultService::write_note(Some(&note_path), &request, None).expect("seed");
 
-        let card_id = format!("card-link-{}", uuid::Uuid::new_v4().simple());
-        let response = link_vault_card(&card_id, &note_path).expect("link");
-        assert!(response.ok);
-        let assoc = workspace_store().associations(&card_id);
-        assert_eq!(assoc.vault_paths, vec![note_path]);
+            let card_id = format!("card-link-{}", uuid::Uuid::new_v4().simple());
+            let response = link_vault_card(&card_id, &note_path).expect("link");
+            assert!(response.ok);
+            let assoc = workspace_store().associations(&card_id);
+            assert_eq!(assoc.vault_paths, vec![note_path]);
+        });
     }
 }

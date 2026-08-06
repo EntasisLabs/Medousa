@@ -17,6 +17,8 @@ export type VaultContextTarget =
   | {
       kind: "note";
       path: string;
+      /** All selected rail paths when multi-select delete applies. */
+      paths?: string[];
       selection?: {
         text: string;
         start?: number;
@@ -49,6 +51,7 @@ export class VaultContextMenuStore {
   /** When set, the menu shows the icon picker for this folder key. */
   iconPickerKey = $state<string | null>(null);
   iconPickerLabel = $state<string>("");
+  confirmDelete = $state(false);
 
   showAt(clientX: number, clientY: number, target: VaultContextTarget) {
     this.x = clientX;
@@ -56,6 +59,7 @@ export class VaultContextMenuStore {
     this.target = target;
     this.iconPickerKey = null;
     this.iconPickerLabel = "";
+    this.confirmDelete = false;
     this.open = true;
   }
 
@@ -64,15 +68,22 @@ export class VaultContextMenuStore {
     clientX: number,
     clientY: number,
     selection?: { text: string; start?: number; end?: number } | null,
+    paths?: string[],
   ) {
     const trimmed = selection?.text.trim();
+    const multi = paths?.filter(Boolean) ?? [];
     this.showAt(clientX, clientY, {
       kind: "note",
       path,
+      paths: multi.length > 1 ? multi : undefined,
       selection: trimmed
         ? { text: trimmed, start: selection?.start, end: selection?.end }
         : undefined,
     });
+  }
+
+  askDelete() {
+    this.confirmDelete = true;
   }
 
   showEditor(
@@ -123,6 +134,7 @@ export class VaultContextMenuStore {
     this.target = null;
     this.iconPickerKey = null;
     this.iconPickerLabel = "";
+    this.confirmDelete = false;
   }
 }
 

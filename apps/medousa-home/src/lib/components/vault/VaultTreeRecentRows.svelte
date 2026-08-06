@@ -1,13 +1,14 @@
 <script lang="ts">
   import { vault } from "$lib/stores/vault.svelte";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
+  import { handleVaultNoteContextMenuEvent } from "$lib/utils/vaultContextMenuEvents";
 
   interface Props {
     paths: string[];
     depth: number;
     selectedPath: string | null;
     labelByPath: Map<string, string>;
-    onSelect: (path: string) => void;
+    onSelect: (path: string, event?: MouseEvent) => void;
   }
 
   let { paths, depth, selectedPath, labelByPath, onSelect }: Props = $props();
@@ -38,13 +39,15 @@
         {@const note = vault.notes.find((entry) => entry.path === path)}
         <button
           type="button"
-          class="vault-tree-row flex w-full items-center gap-1.5 rounded-container-token px-2 py-1 text-left text-sm outline-none hover:bg-surface-700/80 focus-visible:ring-1 focus-visible:ring-primary-400/50 {path ===
-          selectedPath
+          class="vault-tree-row flex w-full items-center gap-1.5 rounded-container-token px-2 py-1 text-left text-sm outline-none hover:bg-surface-700/80 focus-visible:ring-1 focus-visible:ring-primary-400/50 {vault.isRailPathSelected(
+            path,
+          )
             ? 'bg-primary-500/15 text-content-link'
             : 'text-content-secondary'}"
           style="padding-left: {8 + (depth + 1) * 12}px"
           title={path}
-          onclick={() => onSelect(path)}
+          onclick={(event) => onSelect(path, event)}
+          oncontextmenu={(event) => handleVaultNoteContextMenuEvent(path, event)}
         >
           <span class="w-4 shrink-0"></span>
           <span class="min-w-0 flex-1 truncate">
