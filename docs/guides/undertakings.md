@@ -102,7 +102,7 @@ a private Code IDE chrome.
   Problems, Structure, Search, Tests, and the Terminal dock restore with the project
   (`workspace-state` layout); they are not permanent chrome across Chat or Notes.
   `Cmd/Ctrl+Shift+P` opens Spotlight in command mode (`>`). Code actions also
-  appear under familiar VS Code names (Quick Open, Search, Problems, Terminal, Tests).
+  appear under familiar VS Code names (Quick Open, Search, Problems, Output, Terminal, Tests).
   A small allowlist of chords can be overridden in storage; a Settings keybinding
   editor is not shipped yet.
 - The Code explorer lists tracked and unignored repository files. `Cmd/Ctrl+P`
@@ -192,6 +192,9 @@ development processes at the same time, including in mixed repositories.
 
 - Run, Test, and Build start named project runs. A running command becomes a
   **Stop** action and can be cancelled without closing the project or Terminal.
+- **Output** streams stdout/stderr while a check runs (bounded replay after exit).
+  Spotlight **Output** / the Output toolbar control toggles the panel; runs open
+  it automatically.
 - **Tests** progressively lists individual Rust, Python, JavaScript/TypeScript,
   and Go tests. Open one at its definition or run only that test.
 - The latest result stays beside Code with a one-click rerun. Compiler, test,
@@ -199,10 +202,9 @@ development processes at the same time, including in mixed repositories.
 - Completed checks are written into Forge command evidence. Review uses the
   latest completed result to say whether verification passed; cancelled runs
   are preserved as activity but do not pretend the revision failed.
-- Long-running development commands are cancellable project runs. Their
-  completed output is retained as Forge evidence; live output and attachment
-  to named Terminal sessions are still in progress. Terminal remains the
-  interactive escape hatch and keeps its own named, stoppable sessions.
+- Long-running development commands are cancellable project runs with live
+  Output. Attachment to named Terminal sessions and configured problem matchers
+  are still in progress (HCP-7B). Terminal remains the interactive escape hatch.
 
 ## What each surface does
 
@@ -320,6 +322,9 @@ See `apps/medousa-home/src/lib/forge.ts` and daemon routes:
   comparisons; `POST …/review/file` for checkpoint-preserving restoration
 - `GET|POST /v1/forge/items/{id}/tasks[/…/run]` for detected checks, tests, and
   builds whose results become review evidence
+- `POST …/tasks/{task_id}/runs` plus `GET|DELETE …/task-runs/{run_id}` and
+  `GET …/task-runs/{run_id}/events?since=…` for cancellable runs with live
+  bounded output streaming
 - `GET|POST /v1/forge/items/{id}/provider`, plus `…/context` and `…/comments`,
   for optional external review handoff and follow-up intent
 - `POST …/decisions` with **review intent** (server builds the decision)

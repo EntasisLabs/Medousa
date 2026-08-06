@@ -146,6 +146,10 @@ pub fn forge_router(state: AppState) -> Router {
             "/v1/forge/items/{work_id}/task-runs/{run_id}",
             get(get_project_task_run).delete(cancel_project_task_run),
         )
+        .route(
+            "/v1/forge/items/{work_id}/task-runs/{run_id}/events",
+            get(project_task_run_events),
+        )
         .route("/v1/forge/items/{work_id}/tests", get(list_project_tests))
         .route("/v1/forge/items/{work_id}/provision", post(provision_item))
         .route("/v1/forge/items/{work_id}/attempts", post(begin_attempt))
@@ -3815,16 +3819,189 @@ struct ProjectTaskRun {
     state: String,
     task: ProjectTask,
     result: Option<ProjectTaskResult>,
+    /// Bounded live stdout retained while the run is active (and after for replay).
+    #[serde(default)]
+    stdout: String,
+    /// Bounded live stderr retained while the run is active (and after for replay).
+    #[serde(default)]
+    stderr: String,
+    #[serde(default)]
+    output_truncated: bool,
+    /// Next chunk sequence number for SSE `?since=` replay.
+    #[serde(default)]
+    next_seq: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ProjectTaskOutputEvent {
+    seq: u64,
+    run_id: String,
+    kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stream: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    state: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    result: Option<ProjectTaskResult>,
+}
+
+const TASK_OUTPUT_CAP: usize = 256 * 1024;
+const TASK_CHUNK_REPLAY_CAP: usize = 400;
+
+struct ProjectTaskRunStore {
+    run: ProjectTaskRun,
+    chunks: std::collections::VecDeque<ProjectTaskOutputEvent>,
+    tx: tokio::sync::broadcast::Sender<ProjectTaskOutputEvent>,
 }
 
 static PROJECT_TASK_RUNS: LazyLock<
-    tokio::sync::RwLock<std::collections::HashMap<String, ProjectTaskRun>>,
+    tokio::sync::RwLock<std::collections::HashMap<String, ProjectTaskRunStore>>,
 > = LazyLock::new(|| tokio::sync::RwLock::new(std::collections::HashMap::new()));
 static PROJECT_TASK_CHILDREN: LazyLock<
     tokio::sync::RwLock<
         std::collections::HashMap<String, Arc<tokio::sync::Mutex<tokio::process::Child>>>,
     >,
 > = LazyLock::new(|| tokio::sync::RwLock::new(std::collections::HashMap::new()));
+
+fn append_bounded_output(buf: &mut String, chunk: &str, truncated: &mut bool) {
+    if chunk.is_empty() {
+        return;
+    }
+    buf.push_str(chunk);
+    if buf.len() <= TASK_OUTPUT_CAP {
+        return;
+    }
+    *truncated = true;
+    let drain = buf.len() - TASK_OUTPUT_CAP;
+    let drain = buf
+        .char_indices()
+        .find(|(index, _)| *index >= drain)
+        .map(|(index, _)| index)
+        .unwrap_or(drain);
+    buf.drain(..drain);
+}
+
+fn task_run_is_terminal(run: &ProjectTaskRun) -> bool {
+    matches!(run.state.as_str(), "passed" | "failed")
+        || (run.state == "cancelled" && run.result.is_some())
+}
+
+fn task_output_event_is_terminal(event: &ProjectTaskOutputEvent) -> bool {
+    event.kind == "state" && event.result.is_some()
+}
+
+async fn publish_task_output(
+    run_id: &str,
+    stream: &str,
+    text: &str,
+) {
+    if text.is_empty() {
+        return;
+    }
+    let mut runs = PROJECT_TASK_RUNS.write().await;
+    let Some(store) = runs.get_mut(run_id) else {
+        return;
+    };
+    if stream == "stderr" {
+        append_bounded_output(&mut store.run.stderr, text, &mut store.run.output_truncated);
+    } else {
+        append_bounded_output(&mut store.run.stdout, text, &mut store.run.output_truncated);
+    }
+    let seq = store.run.next_seq;
+    store.run.next_seq = seq.saturating_add(1);
+    let event = ProjectTaskOutputEvent {
+        seq,
+        run_id: run_id.to_owned(),
+        kind: "output".into(),
+        stream: Some(stream.into()),
+        text: Some(text.to_owned()),
+        state: None,
+        result: None,
+    };
+    store.chunks.push_back(event.clone());
+    while store.chunks.len() > TASK_CHUNK_REPLAY_CAP {
+        store.chunks.pop_front();
+    }
+    let _ = store.tx.send(event);
+}
+
+async fn publish_task_state(
+    run_id: &str,
+    state: &str,
+    result: Option<ProjectTaskResult>,
+) {
+    let mut runs = PROJECT_TASK_RUNS.write().await;
+    let Some(store) = runs.get_mut(run_id) else {
+        return;
+    };
+    store.run.state = state.to_owned();
+    if let Some(result) = result.clone() {
+        // Prefer final captured result buffers when present.
+        if !result.stdout.is_empty() {
+            store.run.stdout = result.stdout.clone();
+        }
+        if !result.stderr.is_empty() {
+            store.run.stderr = result.stderr.clone();
+        }
+        store.run.output_truncated = store.run.output_truncated || result.truncated;
+        store.run.result = Some(result);
+    }
+    let seq = store.run.next_seq;
+    store.run.next_seq = seq.saturating_add(1);
+    let event = ProjectTaskOutputEvent {
+        seq,
+        run_id: run_id.to_owned(),
+        kind: "state".into(),
+        stream: None,
+        text: None,
+        state: Some(state.to_owned()),
+        result: store.run.result.clone(),
+    };
+    store.chunks.push_back(event.clone());
+    while store.chunks.len() > TASK_CHUNK_REPLAY_CAP {
+        store.chunks.pop_front();
+    }
+    let _ = store.tx.send(event);
+}
+
+async fn pump_task_stream(
+    run_id: String,
+    stream_name: &'static str,
+    mut reader: tokio::process::ChildStdout,
+) {
+    use tokio::io::AsyncReadExt;
+    let mut buf = [0u8; 4096];
+    loop {
+        match reader.read(&mut buf).await {
+            Ok(0) => break,
+            Ok(n) => {
+                let text = String::from_utf8_lossy(&buf[..n]).into_owned();
+                publish_task_output(&run_id, stream_name, &text).await;
+            }
+            Err(_) => break,
+        }
+    }
+}
+
+async fn pump_task_stderr(
+    run_id: String,
+    mut reader: tokio::process::ChildStderr,
+) {
+    use tokio::io::AsyncReadExt;
+    let mut buf = [0u8; 4096];
+    loop {
+        match reader.read(&mut buf).await {
+            Ok(0) => break,
+            Ok(n) => {
+                let text = String::from_utf8_lossy(&buf[..n]).into_owned();
+                publish_task_output(&run_id, "stderr", &text).await;
+            }
+            Err(_) => break,
+        }
+    }
+}
 
 #[derive(Debug, Deserialize)]
 struct RunProjectTaskRequest {
@@ -4151,6 +4328,10 @@ async fn start_project_task_run(
         state: "running".into(),
         task: task.clone(),
         result: None,
+        stdout: String::new(),
+        stderr: String::new(),
+        output_truncated: false,
+        next_seq: 0,
     };
     let mut child = background_tokio_command(&task.argv[0])
         .args(&task.argv[1..])
@@ -4165,28 +4346,23 @@ async fn start_project_task_run(
                 format!("Could not run {}: {err}", task.label),
             )
         })?;
-    PROJECT_TASK_RUNS
-        .write()
-        .await
-        .insert(run_id.clone(), run.clone());
-    let mut stdout_stream = child.stdout.take();
-    let mut stderr_stream = child.stderr.take();
-    let stdout_reader = tokio::spawn(async move {
-        use tokio::io::AsyncReadExt;
-        let mut bytes = Vec::new();
-        if let Some(ref mut stream) = stdout_stream {
-            let _ = stream.read_to_end(&mut bytes).await;
-        }
-        bytes
-    });
-    let stderr_reader = tokio::spawn(async move {
-        use tokio::io::AsyncReadExt;
-        let mut bytes = Vec::new();
-        if let Some(ref mut stream) = stderr_stream {
-            let _ = stream.read_to_end(&mut bytes).await;
-        }
-        bytes
-    });
+    let (tx, _) = tokio::sync::broadcast::channel(256);
+    PROJECT_TASK_RUNS.write().await.insert(
+        run_id.clone(),
+        ProjectTaskRunStore {
+            run: run.clone(),
+            chunks: std::collections::VecDeque::new(),
+            tx,
+        },
+    );
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    if let Some(stdout) = stdout {
+        tokio::spawn(pump_task_stream(run_id.clone(), "stdout", stdout));
+    }
+    if let Some(stderr) = stderr {
+        tokio::spawn(pump_task_stderr(run_id.clone(), stderr));
+    }
     let child = Arc::new(tokio::sync::Mutex::new(child));
     PROJECT_TASK_CHILDREN
         .write()
@@ -4199,14 +4375,20 @@ async fn start_project_task_run(
         loop {
             let status = { child.lock().await.try_wait().ok().flatten() };
             if let Some(status) = status {
-                let stdout_bytes = stdout_reader.await.unwrap_or_default();
-                let stderr_bytes = stderr_reader.await.unwrap_or_default();
-                const CAP: usize = 64 * 1024;
-                let truncated = stdout_bytes.len() > CAP || stderr_bytes.len() > CAP;
-                let stdout = String::from_utf8_lossy(&stdout_bytes[..stdout_bytes.len().min(CAP)])
-                    .into_owned();
-                let stderr = String::from_utf8_lossy(&stderr_bytes[..stderr_bytes.len().min(CAP)])
-                    .into_owned();
+                // Give stream pumps a moment to flush final bytes.
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                let (stdout, stderr, output_truncated) = {
+                    let runs = PROJECT_TASK_RUNS.read().await;
+                    runs.get(&run_id_for_task)
+                        .map(|store| {
+                            (
+                                store.run.stdout.clone(),
+                                store.run.stderr.clone(),
+                                store.run.output_truncated,
+                            )
+                        })
+                        .unwrap_or_default()
+                };
                 let locations = parse_output_locations(&root, &format!("{stdout}\n{stderr}"));
                 let result = ProjectTaskResult {
                     task: task.clone(),
@@ -4214,7 +4396,7 @@ async fn start_project_task_run(
                     exit_code: status.code(),
                     stdout,
                     stderr,
-                    truncated,
+                    truncated: output_truncated,
                     duration_ms: started.elapsed().as_millis(),
                     locations,
                 };
@@ -4222,14 +4404,16 @@ async fn start_project_task_run(
                     .read()
                     .await
                     .get(&run_id_for_task)
-                    .is_some_and(|run| run.state == "cancelled");
+                    .is_some_and(|store| store.run.state == "cancelled");
                 let _ = forge.append_command_log(&lease, &serde_json::json!({"kind":if cancelled {"project_task_cancelled"} else {"project_task"},"run_id":run_id_for_task,"task":result.task,"success":result.success,"exit_code":result.exit_code,"duration_ms":result.duration_ms,"stdout":result.stdout,"stderr":result.stderr,"truncated":result.truncated,"locations":result.locations}));
-                if let Some(stored) = PROJECT_TASK_RUNS.write().await.get_mut(&run_id_for_task) {
-                    if !cancelled {
-                        stored.state = if result.success { "passed" } else { "failed" }.into();
-                    }
-                    stored.result = Some(result);
-                }
+                let final_state = if cancelled {
+                    "cancelled"
+                } else if result.success {
+                    "passed"
+                } else {
+                    "failed"
+                };
+                publish_task_state(&run_id_for_task, final_state, Some(result)).await;
                 PROJECT_TASK_CHILDREN.write().await.remove(&run_id_for_task);
                 publish_item(&state_for_run, &item, "task_finished");
                 break;
@@ -4247,7 +4431,7 @@ async fn get_project_task_run(
         .read()
         .await
         .get(&run_id)
-        .cloned()
+        .map(|store| store.run.clone())
         .filter(|run| run.work_id == work_id)
         .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "Project run was not found"))?;
     Ok(Json(run))
@@ -4260,7 +4444,7 @@ async fn cancel_project_task_run(
         .read()
         .await
         .get(&run_id)
-        .is_none_or(|run| run.work_id != work_id)
+        .is_none_or(|store| store.run.work_id != work_id)
     {
         return Err(request_error(
             StatusCode::NOT_FOUND,
@@ -4279,13 +4463,105 @@ async fn cancel_project_task_run(
             format!("Could not stop project run: {err}"),
         )
     })?;
-    let mut runs = PROJECT_TASK_RUNS.write().await;
-    let run = runs
-        .get_mut(&run_id)
+    publish_task_state(&run_id, "cancelled", None).await;
+    let run = PROJECT_TASK_RUNS
+        .read()
+        .await
+        .get(&run_id)
+        .map(|store| store.run.clone())
         .filter(|run| run.work_id == work_id)
         .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "Project run was not found"))?;
-    run.state = "cancelled".into();
-    Ok(Json(run.clone()))
+    Ok(Json(run))
+}
+
+#[derive(Debug, Deserialize)]
+struct TaskRunEventsQuery {
+    #[serde(default)]
+    since: Option<u64>,
+}
+
+async fn project_task_run_events(
+    Path((work_id, run_id)): Path<(String, String)>,
+    Query(query): Query<TaskRunEventsQuery>,
+) -> ApiResult<
+    axum::response::Sse<
+        impl futures_util::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>
+            + Send,
+    >,
+> {
+    use axum::response::sse::{Event, KeepAlive, Sse};
+    use futures_util::stream::unfold;
+    use std::convert::Infallible;
+    use std::time::Duration;
+
+    let since = query.since.unwrap_or(0);
+    let (pending, rx, terminal) = {
+        let runs = PROJECT_TASK_RUNS.read().await;
+        let store = runs
+            .get(&run_id)
+            .filter(|store| store.run.work_id == work_id)
+            .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "Project run was not found"))?;
+        let pending = store
+            .chunks
+            .iter()
+            .filter(|event| event.seq >= since)
+            .cloned()
+            .collect::<std::collections::VecDeque<_>>();
+        // Cancel may flip state before the process exits and final result lands.
+        let terminal = task_run_is_terminal(&store.run);
+        (pending, store.tx.subscribe(), terminal)
+    };
+
+    struct StreamState {
+        pending: std::collections::VecDeque<ProjectTaskOutputEvent>,
+        rx: tokio::sync::broadcast::Receiver<ProjectTaskOutputEvent>,
+        last_seq: u64,
+        terminal: bool,
+    }
+
+    let initial = StreamState {
+        pending,
+        rx,
+        last_seq: since.saturating_sub(1),
+        terminal,
+    };
+
+    let stream = unfold(initial, |mut state| async move {
+        loop {
+            if let Some(event) = state.pending.pop_front() {
+                if event.seq <= state.last_seq {
+                    continue;
+                }
+                state.last_seq = event.seq;
+                let done = task_output_event_is_terminal(&event);
+                let data = serde_json::to_string(&event).unwrap_or_else(|_| "{}".into());
+                if done {
+                    state.terminal = true;
+                }
+                return Some((
+                    Ok::<_, Infallible>(Event::default().event("task").data(data)),
+                    state,
+                ));
+            }
+            if state.terminal {
+                return None;
+            }
+            match state.rx.recv().await {
+                Ok(event) => {
+                    if event.seq <= state.last_seq {
+                        continue;
+                    }
+                    state.pending.push_back(event);
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    state.terminal = true;
+                }
+            }
+        }
+    });
+
+    Ok(Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
 }
 
 async fn run_project_task(
@@ -5763,6 +6039,72 @@ async fn forge_project_event_stream(
 #[cfg(test)]
 mod source_tests {
     use super::*;
+
+    #[test]
+    fn task_output_is_bounded_and_marks_truncation() {
+        let mut buf = String::new();
+        let mut truncated = false;
+        append_bounded_output(&mut buf, &"a".repeat(TASK_OUTPUT_CAP), &mut truncated);
+        assert!(!truncated);
+        assert_eq!(buf.len(), TASK_OUTPUT_CAP);
+        append_bounded_output(&mut buf, "xyz", &mut truncated);
+        assert!(truncated);
+        assert_eq!(buf.len(), TASK_OUTPUT_CAP);
+        assert!(buf.ends_with("xyz"));
+    }
+
+    #[test]
+    fn task_run_terminal_requires_final_result_after_cancel() {
+        let task = ProjectTask {
+            id: "cargo-check".into(),
+            label: "Check".into(),
+            kind: "verify".into(),
+            argv: vec!["cargo".into(), "check".into()],
+            provider: "cargo".into(),
+            long_running: false,
+        };
+        let mut run = ProjectTaskRun {
+            run_id: "run-1".into(),
+            work_id: "work-1".into(),
+            state: "cancelled".into(),
+            task: task.clone(),
+            result: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            output_truncated: false,
+            next_seq: 1,
+        };
+        assert!(!task_run_is_terminal(&run));
+        run.result = Some(ProjectTaskResult {
+            task,
+            success: false,
+            exit_code: Some(1),
+            stdout: String::new(),
+            stderr: String::new(),
+            truncated: false,
+            duration_ms: 10,
+            locations: Vec::new(),
+        });
+        assert!(task_run_is_terminal(&run));
+        assert!(task_output_event_is_terminal(&ProjectTaskOutputEvent {
+            seq: 2,
+            run_id: "run-1".into(),
+            kind: "state".into(),
+            stream: None,
+            text: None,
+            state: Some("cancelled".into()),
+            result: run.result.clone(),
+        }));
+        assert!(!task_output_event_is_terminal(&ProjectTaskOutputEvent {
+            seq: 1,
+            run_id: "run-1".into(),
+            kind: "state".into(),
+            stream: None,
+            text: None,
+            state: Some("cancelled".into()),
+            result: None,
+        }));
+    }
 
     #[test]
     fn repository_readiness_errors_keep_domain_specific_statuses() {

@@ -201,15 +201,17 @@ export function buildCodeCommands(): WorkshopCommand[] {
       id: "workbench.action.output.toggleOutput",
       section: "do",
       label: "Output",
-      subtitle: "Task Output arrives with streaming execution",
+      subtitle: "Toggle live project task output",
       keywords: "output panel logs vscode",
       aliases: [
         "workbench.action.output.toggleOutput",
         "Output",
         "View: Toggle Output",
       ],
+      verb: "toggle",
       run: (ctx) => {
-        ctx.notice("Output arrives with live task streaming.");
+        ctx.navigate("code");
+        dispatchCodeCommand("workbench.action.output.toggleOutput");
         ctx.callbacks.close();
       },
     },

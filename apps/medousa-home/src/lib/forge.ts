@@ -807,6 +807,21 @@ export type ProjectTaskRun = {
   state: "running" | "passed" | "failed" | "cancelled" | string;
   task: ProjectTask;
   result?: ProjectTaskResult | null;
+  /** Bounded live stdout (also retained after exit for replay). */
+  stdout?: string;
+  stderr?: string;
+  output_truncated?: boolean;
+  next_seq?: number;
+};
+
+export type ProjectTaskOutputEvent = {
+  seq: number;
+  run_id: string;
+  kind: "output" | "state" | string;
+  stream?: string | null;
+  text?: string | null;
+  state?: string | null;
+  result?: ProjectTaskResult | null;
 };
 
 export type ProjectTest = {
@@ -851,6 +866,19 @@ export async function cancelProjectTaskRun(workId: string, runId: string): Promi
   return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/task-runs/${encodeURIComponent(runId)}`, {
     method: "DELETE",
   });
+}
+
+/** Resumable task-run output stream (`?since=` chunk replay). */
+export async function forgeTaskRunEventsUrl(
+  workId: string,
+  runId: string,
+  since = 0,
+): Promise<string> {
+  const path = streamPathWithSince(
+    `/v1/forge/items/${encodeURIComponent(workId)}/task-runs/${encodeURIComponent(runId)}/events`,
+    since,
+  );
+  return forgeUrl(path);
 }
 
 export async function getProjectTests(workId: string): Promise<ProjectTest[]> {

@@ -18,6 +18,7 @@
     UserRound,
     X,
     Search,
+    ScrollText,
   } from "@lucide/svelte";
   import CodeMirrorHost from "$lib/components/code/CodeMirrorHost.svelte";
   import CodeBreadcrumbs from "$lib/components/code/CodeBreadcrumbs.svelte";
@@ -68,6 +69,10 @@
     watchedFileChangesForProjectEvent,
     type ForgeProjectEvent,
   } from "$lib/code/codeProjectEvents";
+  import {
+    CodeTaskRunEventStream,
+    type ProjectTaskOutputEvent,
+  } from "$lib/code/codeTaskRunEvents";
   import {
     codeWorkbenchState,
     type CodeContextPanel,
@@ -205,6 +210,11 @@
   let runningTask = $state(false);
   let taskResult = $state<ProjectTaskResult | null>(null);
   let taskRun = $state<ProjectTaskRun | null>(null);
+  let outputOpen = $state(false);
+  let taskLiveStdout = $state("");
+  let taskLiveStderr = $state("");
+  let taskOutputTruncated = $state(false);
+  let taskRunEventStream: CodeTaskRunEventStream | null = null;
   let projectTests = $state<ProjectTest[]>([]);
   let testsOpen = $state(false);
   let searchOpen = $state(false);
@@ -464,6 +474,102 @@
     })),
   );
 
+  function toggleOutput(forceOpen?: boolean) {
+    outputOpen =
+      forceOpen === true ? true : forceOpen === false ? false : !outputOpen;
+  }
+
+  function resetTaskOutputBuffers(run?: ProjectTaskRun | null) {
+    taskLiveStdout = run?.stdout ?? "";
+    taskLiveStderr = run?.stderr ?? "";
+    taskOutputTruncated = run?.output_truncated ?? false;
+  }
+
+  function applyTaskRunEvent(event: ProjectTaskOutputEvent) {
+    if (event.kind === "output" && event.text) {
+      if (event.stream === "stderr") {
+        taskLiveStderr += event.text;
+      } else {
+        taskLiveStdout += event.text;
+      }
+      if (taskRun && event.run_id === taskRun.run_id) {
+        taskRun = {
+          ...taskRun,
+          stdout: taskLiveStdout,
+          stderr: taskLiveStderr,
+          next_seq: event.seq + 1,
+        };
+      }
+      return;
+    }
+    if (event.kind === "state") {
+      if (taskRun && event.run_id === taskRun.run_id) {
+        taskRun = {
+          ...taskRun,
+          state: event.state ?? taskRun.state,
+          result: event.result ?? taskRun.result,
+          stdout: event.result?.stdout ?? taskLiveStdout,
+          stderr: event.result?.stderr ?? taskLiveStderr,
+          output_truncated:
+            event.result?.truncated ?? taskOutputTruncated,
+          next_seq: event.seq + 1,
+        };
+      }
+      if (event.result) {
+        taskLiveStdout = event.result.stdout;
+        taskLiveStderr = event.result.stderr;
+        taskOutputTruncated = event.result.truncated;
+        taskResult = event.result;
+      } else if (event.state) {
+        // Early cancel notice — keep streaming until final result.
+        if (taskRun) taskRun = { ...taskRun, state: event.state };
+      }
+    }
+  }
+
+  function stopTaskRunEvents() {
+    taskRunEventStream?.teardown();
+    taskRunEventStream = null;
+  }
+
+  function startTaskRunEvents(workId: string, run: ProjectTaskRun) {
+    stopTaskRunEvents();
+    resetTaskOutputBuffers(run);
+    const stream = new CodeTaskRunEventStream({
+      onEvent: applyTaskRunEvent,
+      onUnavailable: () => {
+        /* polling fallback in runDetectedTask */
+      },
+      onTerminal: (result, state) => {
+        if (result) {
+          taskResult = result;
+          taskLiveStdout = result.stdout;
+          taskLiveStderr = result.stderr;
+          taskOutputTruncated = result.truncated;
+        }
+        if (taskRun) {
+          taskRun = {
+            ...taskRun,
+            state: state ?? taskRun.state,
+            result: result ?? taskRun.result,
+            stdout: result?.stdout ?? taskLiveStdout,
+            stderr: result?.stderr ?? taskLiveStderr,
+            output_truncated: result?.truncated ?? taskOutputTruncated,
+          };
+        }
+      },
+    });
+    taskRunEventStream = stream;
+    stream.start(workId, run.run_id, 0);
+  }
+
+  function taskRunStillActive(run: ProjectTaskRun): boolean {
+    if (run.state === "running") return true;
+    // Cancel flips state before the process exits and final result lands.
+    if (run.state === "cancelled" && !run.result) return true;
+    return false;
+  }
+
   async function runDetectedTask(test?: ProjectTest) {
     if (!selectedTask || runningTask) {
       onOpenTerminal?.();
@@ -471,6 +577,8 @@
     }
     runningTask = true;
     surfaceError = null;
+    taskResult = null;
+    outputOpen = true;
     try {
       let leaseId = context?.leaseId ?? null;
       let generation = context?.leaseGeneration ?? null;
@@ -490,15 +598,32 @@
         generation,
         test_id: test?.id,
       });
-      while (taskRun.state === "running") {
+      startTaskRunEvents(workId, taskRun);
+      while (taskRunStillActive(taskRun)) {
         await new Promise((resolve) => setTimeout(resolve, 350));
-        taskRun = await getProjectTaskRun(workId, taskRun.run_id);
+        // Prefer live SSE buffers; poll snapshot as reconnect fallback.
+        const snapshot = await getProjectTaskRun(workId, taskRun.run_id);
+        taskRun = {
+          ...snapshot,
+          stdout: snapshot.stdout || taskLiveStdout || snapshot.stdout,
+          stderr: snapshot.stderr || taskLiveStderr || snapshot.stderr,
+        };
+        if (snapshot.stdout) taskLiveStdout = snapshot.stdout;
+        if (snapshot.stderr) taskLiveStderr = snapshot.stderr;
+        taskOutputTruncated = snapshot.output_truncated ?? taskOutputTruncated;
+        if (snapshot.result) {
+          taskResult = snapshot.result;
+          taskLiveStdout = snapshot.result.stdout;
+          taskLiveStderr = snapshot.result.stderr;
+          taskOutputTruncated = snapshot.result.truncated;
+        }
       }
-      taskResult = taskRun.result ?? null;
+      taskResult = taskRun.result ?? taskResult;
       await undertakings.refreshDetail();
     } catch (err) {
       surfaceError = err instanceof Error ? err.message : String(err);
     } finally {
+      stopTaskRunEvents();
       runningTask = false;
     }
   }
@@ -2234,6 +2359,9 @@
         case "workbench.action.findInFiles":
           toggleSearch(true);
           break;
+        case "workbench.action.output.toggleOutput":
+          toggleOutput();
+          break;
         default:
           break;
       }
@@ -2281,6 +2409,7 @@
     if (treeRefreshTimer) clearTimeout(treeRefreshTimer);
     projectEventStream?.teardown();
     projectEventStream = null;
+    stopTaskRunEvents();
     codeEditorStatus.clear(statusOwnerId);
   });
 </script>
@@ -2317,6 +2446,14 @@
           aria-pressed={searchOpen}
           onclick={() => toggleSearch()}
         ><Search size={14} strokeWidth={1.75} /></button>
+        <button
+          type="button"
+          class="scripts-workbench-toolbar-btn {outputOpen ? 'scripts-workbench-toolbar-btn-active' : ''}"
+          title="Output"
+          aria-label="Toggle task output"
+          aria-pressed={outputOpen}
+          onclick={() => toggleOutput()}
+        ><ScrollText size={14} strokeWidth={1.75} /></button>
         <button
           type="button"
           class="scripts-workbench-toolbar-btn {contextPanel === 'outline' ? 'scripts-workbench-toolbar-btn-active' : ''}"
@@ -2766,6 +2903,23 @@
       </div>
     {/if}
 
+    {#if outputOpen}
+      <div class="flex max-h-44 shrink-0 flex-col border-t border-surface-500/30 bg-surface-950/80">
+        <div class="flex items-center justify-between gap-2 border-b border-surface-500/20 px-2.5 py-1">
+          <span class="text-[9px] font-medium uppercase tracking-[0.06em] text-content-quiet">
+            Output{#if taskRun} · {taskRun.task.label}{/if}
+            {#if runningTask}<span class="normal-case tracking-normal text-content-link"> · running</span>{/if}
+            {#if taskOutputTruncated}<span class="normal-case tracking-normal text-amber-200/80"> · truncated</span>{/if}
+          </span>
+          <button type="button" class="rounded px-1.5 py-0.5 text-[9px] text-content-quiet hover:bg-surface-800 hover:text-content-secondary" onclick={() => toggleOutput(false)}>Hide</button>
+        </div>
+        {#if !taskLiveStdout && !taskLiveStderr && !runningTask && !taskRun}
+          <p class="px-2.5 py-2 text-[10px] text-content-quiet">Run a project check to stream output here.</p>
+        {:else}
+          <pre class="min-h-0 flex-1 overflow-auto px-2.5 py-1.5 font-mono text-[9px] leading-relaxed text-content-tertiary whitespace-pre-wrap break-words" aria-label="Task output">{taskLiveStdout}{#if taskLiveStdout && taskLiveStderr}{"\n\n"}{/if}{#if taskLiveStderr}<span class="text-rose-200/90">{taskLiveStderr}</span>{/if}{#if !taskLiveStdout && !taskLiveStderr && runningTask}<span class="text-content-quiet">Waiting for output…</span>{/if}</pre>
+        {/if}
+      </div>
+    {/if}
     {#if taskResult}
       <div class="shrink-0 border-t {taskResult.success ? 'border-emerald-500/25 bg-emerald-950/20 text-emerald-200' : 'border-rose-500/30 bg-rose-950/25 text-rose-200'}">
       <button type="button" class="flex w-full items-center justify-between gap-2 px-2.5 py-1 text-left text-[9px]" title="Run this check again" onclick={() => void runDetectedTask()}>
