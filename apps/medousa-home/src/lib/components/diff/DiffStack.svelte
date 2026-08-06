@@ -32,12 +32,12 @@
     return path.split("/").at(-1) || path;
   }
 
-  function fileAnchorId(path: string): string {
-    return `diff-file-${encodeURIComponent(path)}`;
+  function fileAnchorId(file: DiffFileSectionType, index: number): string {
+    return `diff-file-${encodeURIComponent(file.id ?? `${file.path}:${index}`)}`;
   }
 
-  function jumpTo(path: string) {
-    const el = document.getElementById(fileAnchorId(path));
+  function jumpTo(file: DiffFileSectionType, index: number) {
+    const el = document.getElementById(fileAnchorId(file, index));
     el?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 </script>
@@ -81,8 +81,8 @@
 
   {#if jumpListVisible && files.length > 0}
     <nav class="diff-jump-list" aria-label="Changed files">
-      {#each files as file (file.path)}
-        <button type="button" class="diff-jump-chip" onclick={() => jumpTo(file.path)}>
+      {#each files as file, index (file.id ?? `${file.path}:${index}`)}
+        <button type="button" class="diff-jump-chip" onclick={() => jumpTo(file, index)}>
           {fileLabel(file.path)}
         </button>
       {/each}
@@ -95,8 +95,8 @@
     </div>
   {:else}
     <div class="diff-stack-body">
-      {#each files as file (file.path)}
-        <div id={fileAnchorId(file.path)} class="diff-stack-item">
+      {#each files as file, index (file.id ?? `${file.path}:${index}`)}
+        <div id={fileAnchorId(file, index)} class="diff-stack-item">
           <DiffFileSection
             {file}
             {mode}

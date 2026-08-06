@@ -543,8 +543,12 @@ export class LmeWorkspaceStore {
     oldPath: string,
     newPath: string,
     line = 1,
+    options?: { activate?: boolean },
   ) {
-    await this.openCodeFile(workId, newPath, { line });
+    await this.openCodeFile(workId, newPath, {
+      line,
+      activate: options?.activate,
+    });
     await this.closeCodeFile(workId, oldPath);
   }
 

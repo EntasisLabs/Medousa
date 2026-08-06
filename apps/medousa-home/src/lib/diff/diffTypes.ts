@@ -16,6 +16,8 @@ export type DiffHunk = {
 };
 
 export type DiffFileSection = {
+  /** Stable UI identity when multiple operations resolve to the same final path. */
+  id?: string;
   path: string;
   oldPath?: string | null;
   status?: string;

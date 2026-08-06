@@ -8,7 +8,7 @@ use std::path::{Component, Path as FsPath, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, LazyLock, Mutex};
 
-use axum::extract::{Path, Query, State};
+use axum::extract::{DefaultBodyLimit, Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
@@ -76,6 +76,11 @@ pub fn forge_router(state: AppState) -> Router {
         .route(
             "/v1/forge/items/{work_id}/source/batch",
             put(save_source_batch),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/source/workspace-edit",
+            put(apply_source_workspace_edit)
+                .layer(DefaultBodyLimit::max(MAX_SOURCE_WORKSPACE_EDIT_BODY_BYTES)),
         )
         .route("/v1/forge/items/{work_id}/search", get(search_source))
         .route(
@@ -1353,6 +1358,35 @@ struct SaveSourceBatchFile {
 }
 
 #[derive(Debug, Deserialize)]
+struct SourceWorkspaceEditRequest {
+    preconditions: Vec<SourceWorkspacePrecondition>,
+    operations: Vec<SourceWorkspaceOperation>,
+    lease_id: String,
+    generation: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum SourceWorkspacePrecondition {
+    Existing {
+        path: String,
+        expected_digest: String,
+    },
+    Missing {
+        path: String,
+    },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum SourceWorkspaceOperation {
+    Write { path: String, content: String },
+    Create { path: String, content: String },
+    Rename { path: String, destination: String },
+    Delete { path: String },
+}
+
+#[derive(Debug, Deserialize)]
 struct CreateSourceRequest {
     path: String,
     #[serde(default)]
@@ -2010,6 +2044,291 @@ async fn save_source_batch(
         .iter()
         .map(|(_, relative, _, _)| read_source_response(&id, &environment.worktree, relative))
         .collect::<Result<Vec<_>, _>>()?;
+    Ok(Json(responses))
+}
+
+const MAX_SOURCE_WORKSPACE_EDIT_OPERATIONS: usize = 512;
+const MAX_SOURCE_WORKSPACE_EDIT_BYTES: usize = 8 * 1024 * 1024;
+// JSON escaping can expand valid source text well beyond its decoded size.
+const MAX_SOURCE_WORKSPACE_EDIT_BODY_BYTES: usize = 64 * 1024 * 1024;
+
+#[derive(Debug)]
+struct SourceWorkspaceSnapshot {
+    path: PathBuf,
+    original: Option<Vec<u8>>,
+}
+
+#[derive(Debug)]
+enum PreparedSourceWorkspaceOperation {
+    Write { path: String, content: Vec<u8> },
+    Create { path: String, content: Vec<u8> },
+    Rename { path: String, destination: String },
+    Delete { path: String },
+}
+
+#[derive(Debug)]
+struct PreparedSourceWorkspaceEdit {
+    snapshots: std::collections::BTreeMap<String, SourceWorkspaceSnapshot>,
+    operations: Vec<PreparedSourceWorkspaceOperation>,
+    final_paths: std::collections::BTreeSet<String>,
+}
+
+fn prepare_source_workspace_edit(
+    root: &FsPath,
+    body: &SourceWorkspaceEditRequest,
+) -> ApiResult<PreparedSourceWorkspaceEdit> {
+    if body.operations.is_empty() {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "no workspace edit operations supplied",
+        ));
+    }
+    if body.operations.len() > MAX_SOURCE_WORKSPACE_EDIT_OPERATIONS
+        || body.preconditions.len() > MAX_SOURCE_WORKSPACE_EDIT_OPERATIONS * 2
+    {
+        return Err(request_error(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "workspace edit contains too many operations",
+        ));
+    }
+
+    let mut snapshots = std::collections::BTreeMap::new();
+    let mut absolute_paths = std::collections::HashSet::new();
+    let mut snapshot_bytes = 0usize;
+    for precondition in &body.preconditions {
+        let (path, clean, original) = match precondition {
+            SourceWorkspacePrecondition::Existing {
+                path,
+                expected_digest,
+            } => {
+                let (resolved, clean) = resolve_source_path(root, path)?;
+                let original = std::fs::read(&resolved).map_err(|err| {
+                    request_error(
+                        StatusCode::NOT_FOUND,
+                        format!("could not read {clean}: {err}"),
+                    )
+                })?;
+                if original.len() > MAX_SOURCE_BYTES {
+                    return Err(request_error(
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        format!("{clean} exceeds the source editor limit"),
+                    ));
+                }
+                snapshot_bytes = snapshot_bytes.saturating_add(original.len());
+                if snapshot_bytes > MAX_SOURCE_WORKSPACE_EDIT_BYTES {
+                    return Err(request_error(
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        "workspace edit snapshots exceed the combined source editor limit",
+                    ));
+                }
+                if source_digest(&original) != *expected_digest {
+                    return Err(request_error(
+                        StatusCode::CONFLICT,
+                        format!("{clean} changed; review the refactor again before applying"),
+                    ));
+                }
+                (resolved, clean, Some(original))
+            }
+            SourceWorkspacePrecondition::Missing { path } => {
+                let (resolved, clean) = resolve_new_source_path(root, path)?;
+                (resolved, clean, None)
+            }
+        };
+        if snapshots.contains_key(&clean) || !absolute_paths.insert(path.clone()) {
+            return Err(request_error(
+                StatusCode::BAD_REQUEST,
+                "duplicate workspace edit precondition",
+            ));
+        }
+        snapshots.insert(clean, SourceWorkspaceSnapshot { path, original });
+    }
+
+    let mut virtual_exists = snapshots
+        .iter()
+        .map(|(path, snapshot)| (path.clone(), snapshot.original.is_some()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut prepared = Vec::with_capacity(body.operations.len());
+    let mut touched = std::collections::BTreeSet::new();
+    let mut content_bytes = 0usize;
+    let normalize_known = |raw: &str| -> ApiResult<String> {
+        let (_, clean) = normalize_source_relative(raw)?;
+        if !snapshots.contains_key(&clean) {
+            return Err(request_error(
+                StatusCode::BAD_REQUEST,
+                format!("workspace edit is missing a precondition for {clean}"),
+            ));
+        }
+        Ok(clean)
+    };
+    let require_state =
+        |states: &std::collections::BTreeMap<String, bool>, path: &str, exists: bool| {
+            if states.get(path).copied() == Some(exists) {
+                Ok(())
+            } else {
+                Err(request_error(
+                    StatusCode::CONFLICT,
+                    format!(
+                        "workspace edit expected {path} to {}",
+                        if exists { "exist" } else { "be absent" }
+                    ),
+                ))
+            }
+        };
+
+    for operation in &body.operations {
+        match operation {
+            SourceWorkspaceOperation::Write { path, content } => {
+                let path = normalize_known(path)?;
+                require_state(&virtual_exists, &path, true)?;
+                if content.len() > MAX_SOURCE_BYTES {
+                    return Err(request_error(
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        format!("{path} exceeds the source editor limit"),
+                    ));
+                }
+                content_bytes = content_bytes.saturating_add(content.len());
+                touched.insert(path.clone());
+                prepared.push(PreparedSourceWorkspaceOperation::Write {
+                    path,
+                    content: content.as_bytes().to_vec(),
+                });
+            }
+            SourceWorkspaceOperation::Create { path, content } => {
+                let path = normalize_known(path)?;
+                require_state(&virtual_exists, &path, false)?;
+                if content.len() > MAX_SOURCE_BYTES {
+                    return Err(request_error(
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        format!("{path} exceeds the source editor limit"),
+                    ));
+                }
+                content_bytes = content_bytes.saturating_add(content.len());
+                virtual_exists.insert(path.clone(), true);
+                touched.insert(path.clone());
+                prepared.push(PreparedSourceWorkspaceOperation::Create {
+                    path,
+                    content: content.as_bytes().to_vec(),
+                });
+            }
+            SourceWorkspaceOperation::Rename { path, destination } => {
+                let path = normalize_known(path)?;
+                let destination = normalize_known(destination)?;
+                require_state(&virtual_exists, &path, true)?;
+                require_state(&virtual_exists, &destination, false)?;
+                virtual_exists.insert(path.clone(), false);
+                virtual_exists.insert(destination.clone(), true);
+                touched.insert(path.clone());
+                touched.insert(destination.clone());
+                prepared.push(PreparedSourceWorkspaceOperation::Rename { path, destination });
+            }
+            SourceWorkspaceOperation::Delete { path } => {
+                let path = normalize_known(path)?;
+                require_state(&virtual_exists, &path, true)?;
+                virtual_exists.insert(path.clone(), false);
+                touched.insert(path.clone());
+                prepared.push(PreparedSourceWorkspaceOperation::Delete { path });
+            }
+        }
+    }
+    if content_bytes > MAX_SOURCE_WORKSPACE_EDIT_BYTES {
+        return Err(request_error(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "workspace edit content exceeds the combined source editor limit",
+        ));
+    }
+    if snapshots.keys().any(|path| !touched.contains(path)) {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "workspace edit contains an unused precondition",
+        ));
+    }
+    let final_paths = virtual_exists
+        .into_iter()
+        .filter_map(|(path, exists)| (exists && touched.contains(&path)).then_some(path))
+        .collect();
+    Ok(PreparedSourceWorkspaceEdit {
+        snapshots,
+        operations: prepared,
+        final_paths,
+    })
+}
+
+fn rollback_source_workspace_edit(
+    snapshots: &std::collections::BTreeMap<String, SourceWorkspaceSnapshot>,
+) {
+    for snapshot in snapshots.values() {
+        if snapshot.path.is_file() {
+            let _ = std::fs::remove_file(&snapshot.path);
+        }
+    }
+    for snapshot in snapshots.values() {
+        if let Some(original) = snapshot.original.as_ref() {
+            let _ = crate::session::atomic_write(&snapshot.path, original);
+        }
+    }
+}
+
+fn execute_source_workspace_edit(
+    work_id: &WorkId,
+    root: &FsPath,
+    body: &SourceWorkspaceEditRequest,
+) -> ApiResult<Vec<SourceResponse>> {
+    let prepared = prepare_source_workspace_edit(root, body)?;
+    for operation in &prepared.operations {
+        let result = match operation {
+            PreparedSourceWorkspaceOperation::Write { path, content } => {
+                crate::session::atomic_write(&prepared.snapshots[path].path, content)
+            }
+            PreparedSourceWorkspaceOperation::Create { path, content } => {
+                use std::io::Write;
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&prepared.snapshots[path].path)
+                    .and_then(|mut file| file.write_all(content))
+            }
+            PreparedSourceWorkspaceOperation::Rename { path, destination } => std::fs::rename(
+                &prepared.snapshots[path].path,
+                &prepared.snapshots[destination].path,
+            ),
+            PreparedSourceWorkspaceOperation::Delete { path } => {
+                std::fs::remove_file(&prepared.snapshots[path].path)
+            }
+        };
+        if let Err(err) = result {
+            rollback_source_workspace_edit(&prepared.snapshots);
+            return Err(request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not apply workspace edit: {err}"),
+            ));
+        }
+    }
+
+    let mut responses = Vec::with_capacity(prepared.final_paths.len());
+    for path in &prepared.final_paths {
+        match read_source_response(work_id, root, path) {
+            Ok(response) => responses.push(response),
+            Err(err) => {
+                rollback_source_workspace_edit(&prepared.snapshots);
+                return Err(err);
+            }
+        }
+    }
+    Ok(responses)
+}
+
+async fn apply_source_workspace_edit(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<SourceWorkspaceEditRequest>,
+) -> ApiResult<Json<Vec<SourceResponse>>> {
+    let id = parse_work_id(&work_id)?;
+    let (item, lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+    let environment = item
+        .environment_for_attempt(&lease.attempt_id)
+        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
+    let responses = execute_source_workspace_edit(&id, &environment.worktree, &body)?;
+    publish_item(&state, &item, "source_workspace_edit_applied");
     Ok(Json(responses))
 }
 
@@ -4479,6 +4798,254 @@ mod source_tests {
         assert!(resolve_new_source_path(root.path(), ".git/hooks/new-hook").is_err());
         std::fs::write(root.path().join("src/existing.rs"), "fn existing() {}\n").unwrap();
         assert!(resolve_new_source_path(root.path(), "src/existing.rs").is_err());
+    }
+
+    #[test]
+    fn workspace_source_edits_apply_mixed_operations_atomically() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("modify.rs"), "old\n").unwrap();
+        std::fs::write(root.path().join("move.rs"), "moving\n").unwrap();
+        std::fs::write(root.path().join("delete.rs"), "gone\n").unwrap();
+        let request = SourceWorkspaceEditRequest {
+            preconditions: vec![
+                SourceWorkspacePrecondition::Existing {
+                    path: "modify.rs".into(),
+                    expected_digest: source_digest(b"old\n"),
+                },
+                SourceWorkspacePrecondition::Existing {
+                    path: "move.rs".into(),
+                    expected_digest: source_digest(b"moving\n"),
+                },
+                SourceWorkspacePrecondition::Existing {
+                    path: "delete.rs".into(),
+                    expected_digest: source_digest(b"gone\n"),
+                },
+                SourceWorkspacePrecondition::Missing {
+                    path: "created.rs".into(),
+                },
+                SourceWorkspacePrecondition::Missing {
+                    path: "moved.rs".into(),
+                },
+            ],
+            operations: vec![
+                SourceWorkspaceOperation::Write {
+                    path: "modify.rs".into(),
+                    content: "new\n".into(),
+                },
+                SourceWorkspaceOperation::Create {
+                    path: "created.rs".into(),
+                    content: "created\n".into(),
+                },
+                SourceWorkspaceOperation::Rename {
+                    path: "move.rs".into(),
+                    destination: "moved.rs".into(),
+                },
+                SourceWorkspaceOperation::Delete {
+                    path: "delete.rs".into(),
+                },
+            ],
+            lease_id: "lease-1".into(),
+            generation: 1,
+        };
+
+        let responses = execute_source_workspace_edit(
+            &WorkId::from("work-1".to_string()),
+            root.path(),
+            &request,
+        )
+        .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("modify.rs")).unwrap(),
+            "new\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("created.rs")).unwrap(),
+            "created\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("moved.rs")).unwrap(),
+            "moving\n"
+        );
+        assert!(!root.path().join("move.rs").exists());
+        assert!(!root.path().join("delete.rs").exists());
+        assert_eq!(
+            responses
+                .iter()
+                .map(|response| response.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["created.rs", "modify.rs", "moved.rs"]
+        );
+    }
+
+    #[test]
+    fn workspace_source_edits_support_create_edit_rename_order() {
+        let root = tempfile::tempdir().unwrap();
+        let request = SourceWorkspaceEditRequest {
+            preconditions: vec![
+                SourceWorkspacePrecondition::Missing {
+                    path: "temporary.ts".into(),
+                },
+                SourceWorkspacePrecondition::Missing {
+                    path: "final.ts".into(),
+                },
+            ],
+            operations: vec![
+                SourceWorkspaceOperation::Create {
+                    path: "temporary.ts".into(),
+                    content: String::new(),
+                },
+                SourceWorkspaceOperation::Write {
+                    path: "temporary.ts".into(),
+                    content: "export const ready = true;\n".into(),
+                },
+                SourceWorkspaceOperation::Rename {
+                    path: "temporary.ts".into(),
+                    destination: "final.ts".into(),
+                },
+            ],
+            lease_id: "lease-1".into(),
+            generation: 1,
+        };
+
+        execute_source_workspace_edit(&WorkId::from("work-1".to_string()), root.path(), &request)
+            .unwrap();
+
+        assert!(!root.path().join("temporary.ts").exists());
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("final.ts")).unwrap(),
+            "export const ready = true;\n"
+        );
+    }
+
+    #[test]
+    fn workspace_source_edit_validation_leaves_every_file_unchanged() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("keep.rs"), "original\n").unwrap();
+        let request = SourceWorkspaceEditRequest {
+            preconditions: vec![SourceWorkspacePrecondition::Existing {
+                path: "keep.rs".into(),
+                expected_digest: source_digest(b"original\n"),
+            }],
+            operations: vec![
+                SourceWorkspaceOperation::Write {
+                    path: "keep.rs".into(),
+                    content: "changed\n".into(),
+                },
+                SourceWorkspaceOperation::Delete {
+                    path: "keep.rs".into(),
+                },
+                SourceWorkspaceOperation::Delete {
+                    path: "keep.rs".into(),
+                },
+            ],
+            lease_id: "lease-1".into(),
+            generation: 1,
+        };
+
+        assert!(
+            execute_source_workspace_edit(
+                &WorkId::from("work-1".to_string()),
+                root.path(),
+                &request,
+            )
+            .is_err()
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("keep.rs")).unwrap(),
+            "original\n"
+        );
+    }
+
+    #[test]
+    fn workspace_source_edits_require_digest_or_absence_for_every_path() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("unfenced.rs"), "original\n").unwrap();
+        let request = SourceWorkspaceEditRequest {
+            preconditions: vec![],
+            operations: vec![SourceWorkspaceOperation::Write {
+                path: "unfenced.rs".into(),
+                content: "changed\n".into(),
+            }],
+            lease_id: "lease-1".into(),
+            generation: 1,
+        };
+
+        assert!(
+            execute_source_workspace_edit(
+                &WorkId::from("work-1".to_string()),
+                root.path(),
+                &request,
+            )
+            .is_err()
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("unfenced.rs")).unwrap(),
+            "original\n"
+        );
+    }
+
+    #[test]
+    fn workspace_source_edits_reject_stale_and_unused_preconditions() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("target.rs"), "current\n").unwrap();
+        std::fs::write(root.path().join("extra.rs"), "extra\n").unwrap();
+
+        let stale = SourceWorkspaceEditRequest {
+            preconditions: vec![SourceWorkspacePrecondition::Existing {
+                path: "target.rs".into(),
+                expected_digest: source_digest(b"stale\n"),
+            }],
+            operations: vec![SourceWorkspaceOperation::Write {
+                path: "target.rs".into(),
+                content: "changed\n".into(),
+            }],
+            lease_id: "lease-1".into(),
+            generation: 1,
+        };
+        assert!(
+            execute_source_workspace_edit(
+                &WorkId::from("work-1".to_string()),
+                root.path(),
+                &stale,
+            )
+            .is_err()
+        );
+
+        let unused = SourceWorkspaceEditRequest {
+            preconditions: vec![
+                SourceWorkspacePrecondition::Existing {
+                    path: "target.rs".into(),
+                    expected_digest: source_digest(b"current\n"),
+                },
+                SourceWorkspacePrecondition::Existing {
+                    path: "extra.rs".into(),
+                    expected_digest: source_digest(b"extra\n"),
+                },
+            ],
+            operations: vec![SourceWorkspaceOperation::Write {
+                path: "target.rs".into(),
+                content: "changed\n".into(),
+            }],
+            lease_id: "lease-1".into(),
+            generation: 1,
+        };
+        assert!(
+            execute_source_workspace_edit(
+                &WorkId::from("work-1".to_string()),
+                root.path(),
+                &unused,
+            )
+            .is_err()
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("target.rs")).unwrap(),
+            "current\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("extra.rs")).unwrap(),
+            "extra\n"
+        );
     }
 
     #[test]
