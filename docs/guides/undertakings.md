@@ -113,8 +113,10 @@ a private Code IDE chrome.
   changed-files scope, and load-more pagination). **Replace…** previews
   digest-fenced edits; uncheck files to skip them, then Apply writes the rest
   atomically. **Changes** shows the governed working copy’s branch, upstream
-  ahead/behind when known, conflict state, and changed-file list (diff/hunk
-  actions arrive in a later slice). Review remains the finish/decision surface.
+  ahead/behind when known, conflict state, and changed-file list. Select a file
+  for a baseline comparison with real context expansion and **Restore baseline**.
+  Conflicted paths open with a banner; full 3-way merge UI arrives later. Review
+  remains the finish/decision surface.
 - New file and New folder are available in the repository explorer. Nested
   parents are created as needed. Rename and delete work on the selected file or
   folder (folder ops apply one guarded multi-file transaction).

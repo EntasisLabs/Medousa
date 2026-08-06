@@ -117,6 +117,35 @@ impl GitEngine {
         Ok(output.stdout)
     }
 
+    /// Like `run_bytes`, but treats exit status 1 as success (git diff found
+    /// differences, especially with `--no-index`).
+    fn run_diff_bytes(&self, cwd: &Path, args: &[&str]) -> Result<Vec<u8>> {
+        let output = self
+            .command()
+            .args(args)
+            .current_dir(cwd)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .output()
+            .map_err(|e| ForgeError::Git(format!("failed to spawn git {}: {e}", args.join(" "))))?;
+        match output.status.code() {
+            Some(0) | Some(1) => Ok(output.stdout),
+            _ => {
+                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                Err(ForgeError::Git(format!(
+                    "git {} failed: {}",
+                    args.join(" "),
+                    if stderr.is_empty() {
+                        output.status.to_string()
+                    } else {
+                        stderr
+                    }
+                )))
+            }
+        }
+    }
+
     fn run_with_stdin(&self, cwd: &Path, args: &[&str], stdin: &[u8]) -> Result<()> {
         let mut child = self
             .command()
@@ -491,6 +520,46 @@ impl GitEngine {
                 from.as_str(),
                 to.as_str(),
                 "--",
+                path,
+            ],
+        )
+    }
+
+    /// Unified text diff for one path between an exact revision and the
+    /// *working tree* (includes unstaged edits). Exit status 1 (differences)
+    /// is treated as success and returns the patch bytes.
+    pub fn diff_path_worktree(
+        &self,
+        cwd: &Path,
+        from: &GitOid,
+        path: &str,
+    ) -> Result<Vec<u8>> {
+        self.run_diff_bytes(
+            cwd,
+            &[
+                "diff",
+                "--no-ext-diff",
+                "--no-color",
+                "--unified=3",
+                from.as_str(),
+                "--",
+                path,
+            ],
+        )
+    }
+
+    /// Diff an untracked worktree file against `/dev/null` (all additions).
+    pub fn diff_untracked_path(&self, cwd: &Path, path: &str) -> Result<Vec<u8>> {
+        self.run_diff_bytes(
+            cwd,
+            &[
+                "diff",
+                "--no-ext-diff",
+                "--no-color",
+                "--unified=3",
+                "--no-index",
+                "--",
+                "/dev/null",
                 path,
             ],
         )
@@ -1040,6 +1109,23 @@ mod tests {
         assert_eq!(tracking.head.as_deref(), Some("main"));
         assert!(!tracking.detached);
         assert!(tracking.upstream.is_none());
+    }
+
+    #[test]
+    fn diff_path_worktree_and_untracked() {
+        let (tmp, git, head) = init_repo();
+        fs::write(tmp.path().join("hello.txt"), "changed\n").unwrap();
+        let patch = git.diff_path_worktree(tmp.path(), &head, "hello.txt").unwrap();
+        let text = String::from_utf8_lossy(&patch);
+        assert!(text.contains("-hello") || text.contains("-hello\n"));
+        assert!(text.contains("+changed"));
+
+        fs::write(tmp.path().join("brand-new.txt"), "fresh\n").unwrap();
+        let untracked = git
+            .diff_untracked_path(tmp.path(), "brand-new.txt")
+            .unwrap();
+        let untracked_text = String::from_utf8_lossy(&untracked);
+        assert!(untracked_text.contains("+fresh"));
     }
 
     #[test]

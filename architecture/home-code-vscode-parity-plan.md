@@ -219,8 +219,8 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 | HCP-7B | Named task terminals, background readiness, configured tasks, and problem matchers | ✅ |
 | HCP-7C | Terminal search, profiles, groups, shell integration, file links, and run selection | ✅ |
 | HCP-7D | Remote service detection/proxy and Browser preview handoff | ✅ |
-| HCP-8A | Forge Changes model and branch/upstream/conflict status | 🔄 |
-| HCP-8B | High-fidelity diff, real context expansion, file/hunk actions, and conflict editor | ⬜ |
+| HCP-8A | Forge Changes model and branch/upstream/conflict status | ✅ |
+| HCP-8B | High-fidelity diff, real context expansion, file/hunk actions, and conflict editor | 🔄 |
 | HCP-8C | Guarded Git sync/history/blame/checkpoint operations and provider continuity | ⬜ |
 | HCP-9A | Test adapter contract, discovery hierarchy, stable state, and results | ⛔ |
 | HCP-9B | Gutter/Explorer runs, watch, coverage, profiles, and Forge evidence | ⛔ |
@@ -348,11 +348,17 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
   (co-located localhost or remote daemon proxy). Migration: none.
   Compatibility: older Homes ignore preview fields/routes. Rollback: revert
   this commit; additive preview mint/proxy.
-- **HCP-8A — (this commit).** `GET /v1/forge/items/{id}/changes` with branch,
+- **HCP-8A — `54cfbfb9`.** `GET /v1/forge/items/{id}/changes` with branch,
   upstream ahead/behind, conflict/`unmerged` paths, and changed-file statuses;
   Code Changes panel + `layout.changes` + Spotlight `workbench.view.scm`.
   Migration: none. Compatibility: older Homes omit the route; Review remains
   the decision surface. Rollback: revert this commit; additive Changes surface.
+- **HCP-8B — (this commit).** Working-copy per-file diff/restore
+  (`GET`/`POST …/changes/file`), DiffStack in Changes with real gap-line
+  expansion from baseline/working text, thin conflict banner, and file-level
+  Restore baseline. Migration: none. Compatibility: older Homes keep the list
+  panel; hunk stage and 3-way merge remain later. Rollback: revert this commit;
+  additive file-diff routes and UI.
 
 ### Product-fit boundary (post-HCP-8)
 

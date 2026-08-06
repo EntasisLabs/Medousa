@@ -36,6 +36,8 @@
       reviewedBytes: diff.reviewed.byte_size,
       baselineExists: diff.baseline.exists,
       reviewedExists: diff.reviewed.exists,
+      beforeText: diff.baseline.content ?? null,
+      afterText: diff.reviewed.content ?? null,
     };
   }
 

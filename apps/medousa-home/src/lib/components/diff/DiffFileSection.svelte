@@ -9,9 +9,20 @@
     busy?: boolean;
     onOpenFile?: (path: string, line?: number) => void;
     onRestore?: () => void;
+    /** Footer copy when restore is available. */
+    restoreHint?: string;
+    restoreLabel?: string;
   }
 
-  let { file, mode, busy = false, onOpenFile, onRestore }: Props = $props();
+  let {
+    file,
+    mode,
+    busy = false,
+    onOpenFile,
+    onRestore,
+    restoreHint = "The reviewed revision remains available as a recovery point.",
+    restoreLabel = "Restore before this change…",
+  }: Props = $props();
 
   const stats = $derived(
     typeof file.additions === "number" && typeof file.deletions === "number"
@@ -54,6 +65,8 @@
     if (status === "renamed") return "Renamed";
     if (status === "copied") return "Copied";
     if (status === "type_changed") return "Type changed";
+    if (status === "untracked") return "Untracked";
+    if (status === "unmerged") return "Conflict";
     return "Changed";
   }
 
@@ -134,18 +147,29 @@
       <p>No textual differences to show.</p>
     </div>
   {:else}
-    <DiffHunkView hunks={file.hunks} {mode} />
+    <DiffHunkView
+      hunks={file.hunks}
+      {mode}
+      beforeText={file.beforeText}
+      afterText={file.afterText}
+    />
   {/if}
 
   {#if onRestore && !file.binary}
     <footer class="diff-file-footer">
-      <p>The reviewed revision remains available as a recovery point.</p>
+      <p>
+        {#if file.conflict}
+          Resolve by restoring the project baseline, or edit markers in Code.
+        {:else}
+          {restoreHint}
+        {/if}
+      </p>
       <button
         type="button"
         class="diff-restore"
         disabled={busy}
         onclick={() => onRestore?.()}
-      ><RotateCcw size={12} />Restore before this change…</button>
+      ><RotateCcw size={12} />{restoreLabel}</button>
     </footer>
   {/if}
 </article>

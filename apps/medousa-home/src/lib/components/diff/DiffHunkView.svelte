@@ -1,15 +1,24 @@
 <script lang="ts">
   import type { DiffHunk, DiffLine } from "$lib/diff/diffTypes";
+  import { linesInRange, splitDiffFileLines } from "$lib/diff/diffTypes";
 
   interface Props {
     hunks: DiffHunk[];
     mode?: "inline" | "side";
+    /** Full before-file text for real gap expansion. */
+    beforeText?: string | null;
+    /** Full after-file text for real gap expansion. */
+    afterText?: string | null;
   }
 
-  let { hunks, mode = "inline" }: Props = $props();
+  let { hunks, mode = "inline", beforeText = null, afterText = null }: Props = $props();
 
-  /** Expanded gap keys: "lead" | "between:i" | "trail" — trail unused without total lines. */
+  /** Expanded gap keys: "lead" | "between:i" */
   let expanded = $state<Record<string, boolean>>({});
+
+  const beforeLines = $derived(splitDiffFileLines(beforeText));
+  const afterLines = $derived(splitDiffFileLines(afterText));
+  const canExpandReal = $derived(beforeLines.length > 0 || afterLines.length > 0);
 
   type SideRow = {
     key: string;
@@ -32,6 +41,41 @@
 
   function toggle(key: string) {
     expanded = { ...expanded, [key]: !expanded[key] };
+  }
+
+  function leadGapRows(hunk: DiffHunk): {
+    after: Array<{ line: number; content: string }>;
+    before: Array<{ line: number; content: string }>;
+  } {
+    const count = gapBefore(hunk);
+    if (count <= 0) return { after: [], before: [] };
+    const newStart = 1;
+    const newEnd = hunk.new_start - 1;
+    const oldStart = Math.max(1, hunk.old_start - count);
+    const oldEnd = Math.max(oldStart - 1, hunk.old_start - 1);
+    return {
+      after: linesInRange(afterLines, newStart, newEnd),
+      before: linesInRange(beforeLines, oldStart, oldEnd),
+    };
+  }
+
+  function betweenGapRows(
+    prev: DiffHunk,
+    next: DiffHunk,
+  ): {
+    after: Array<{ line: number; content: string }>;
+    before: Array<{ line: number; content: string }>;
+  } {
+    const count = gapBetween(prev, next);
+    if (count <= 0) return { after: [], before: [] };
+    const newStart = prev.new_start + prev.new_count;
+    const newEnd = next.new_start - 1;
+    const oldStart = prev.old_start + prev.old_count;
+    const oldEnd = next.old_start - 1;
+    return {
+      after: linesInRange(afterLines, newStart, newEnd),
+      before: linesInRange(beforeLines, oldStart, oldEnd),
+    };
   }
 
   function sideRowsForHunk(hunk: DiffHunk): SideRow[] {
@@ -95,7 +139,22 @@
             onclick={() => toggle("lead")}
           >
             {#if expanded["lead"]}
-              <span class="diff-gap-expanded">{lead} unmodified lines</span>
+              {#if canExpandReal}
+                {@const rows = leadGapRows(hunk)}
+                <span class="diff-gap-expanded-block">
+                  {#each rows.after as row (row.line)}
+                    <span class="diff-line diff-line--context">
+                      <span class="diff-gutter"></span>
+                      <span class="diff-gutter">{row.line}</span>
+                      <code> {row.content}</code>
+                    </span>
+                  {:else}
+                    <span class="diff-gap-expanded">{lead} unmodified lines</span>
+                  {/each}
+                </span>
+              {:else}
+                <span class="diff-gap-expanded">{lead} unmodified lines</span>
+              {/if}
             {:else}
               {lead} unmodified lines
             {/if}
@@ -112,7 +171,22 @@
             onclick={() => toggle(key)}
           >
             {#if expanded[key]}
-              <span class="diff-gap-expanded">{gap} unmodified lines</span>
+              {#if canExpandReal}
+                {@const rows = betweenGapRows(hunks[hi - 1]!, hunk)}
+                <span class="diff-gap-expanded-block">
+                  {#each rows.after as row (row.line)}
+                    <span class="diff-line diff-line--context">
+                      <span class="diff-gutter"></span>
+                      <span class="diff-gutter">{row.line}</span>
+                      <code> {row.content}</code>
+                    </span>
+                  {:else}
+                    <span class="diff-gap-expanded">{gap} unmodified lines</span>
+                  {/each}
+                </span>
+              {:else}
+                <span class="diff-gap-expanded">{gap} unmodified lines</span>
+              {/if}
             {:else}
               {gap} unmodified lines
             {/if}
@@ -144,7 +218,27 @@
             onclick={() => toggle("lead")}
           >
             {#if expanded["lead"]}
-              <span class="diff-gap-expanded">{lead} unmodified lines</span>
+              {#if canExpandReal}
+                {@const rows = leadGapRows(hunk)}
+                <span class="diff-gap-expanded-block diff-gap-expanded-block--side">
+                  {#each rows.after as row, i (row.line)}
+                    <span class="diff-side-row">
+                      <div>
+                        <span class="diff-gutter">{rows.before[i]?.line ?? ""}</span>
+                        <code>{rows.before[i]?.content ?? row.content}</code>
+                      </div>
+                      <div>
+                        <span class="diff-gutter">{row.line}</span>
+                        <code>{row.content}</code>
+                      </div>
+                    </span>
+                  {:else}
+                    <span class="diff-gap-expanded">{lead} unmodified lines</span>
+                  {/each}
+                </span>
+              {:else}
+                <span class="diff-gap-expanded">{lead} unmodified lines</span>
+              {/if}
             {:else}
               {lead} unmodified lines
             {/if}
@@ -161,7 +255,27 @@
             onclick={() => toggle(key)}
           >
             {#if expanded[key]}
-              <span class="diff-gap-expanded">{gap} unmodified lines</span>
+              {#if canExpandReal}
+                {@const rows = betweenGapRows(hunks[hi - 1]!, hunk)}
+                <span class="diff-gap-expanded-block diff-gap-expanded-block--side">
+                  {#each rows.after as row, i (row.line)}
+                    <span class="diff-side-row">
+                      <div>
+                        <span class="diff-gutter">{rows.before[i]?.line ?? ""}</span>
+                        <code>{rows.before[i]?.content ?? row.content}</code>
+                      </div>
+                      <div>
+                        <span class="diff-gutter">{row.line}</span>
+                        <code>{row.content}</code>
+                      </div>
+                    </span>
+                  {:else}
+                    <span class="diff-gap-expanded">{gap} unmodified lines</span>
+                  {/each}
+                </span>
+              {:else}
+                <span class="diff-gap-expanded">{gap} unmodified lines</span>
+              {/if}
             {:else}
               {gap} unmodified lines
             {/if}
@@ -266,11 +380,30 @@
   .diff-gap--expanded {
     min-height: 2.25rem;
     background: rgb(var(--color-surface-950) / 0.35);
+    align-items: stretch;
+    justify-content: stretch;
+    padding: 0;
   }
 
   .diff-gap-expanded {
     color: rgb(var(--theme-text-faint));
     font-style: italic;
+    padding: 0.2rem 0.65rem;
+  }
+
+  .diff-gap-expanded-block {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    text-align: left;
+  }
+
+  .diff-gap-expanded-block--side {
+    display: block;
+  }
+
+  .diff-gap-expanded-block .diff-line {
+    pointer-events: none;
   }
 
   .diff-side-labels,
