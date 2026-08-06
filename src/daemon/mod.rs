@@ -3,6 +3,7 @@ pub mod acp_forge_adapter;
 pub mod acp_turn_persist;
 pub mod forge_projections;
 pub mod forge_events;
+pub mod forge_watch;
 pub mod bounded_set;
 pub mod coding_engine_host;
 pub mod detamu_host;

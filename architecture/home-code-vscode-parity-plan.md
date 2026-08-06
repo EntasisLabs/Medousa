@@ -78,8 +78,9 @@ recovery where applicable.
 
 ### Trust gaps to close first
 
-- External-change reconciliation checks only the focused file when Home regains
-  focus instead of consuming workshop file events for all open files.
+- External-change reconciliation still checks only the focused file on window
+  focus; the workshop project-event stream exists, but Home does not yet
+  consume it for all open buffers (HCP-4B).
 - Project task output is buffered until exit. Long-running development tasks
   have no live logs or interactive named terminal despite the earlier roadmap
   claim.
@@ -215,8 +216,8 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 | HCP-2C | LSP lifecycle, restart/reconnect, progress, logs, and configuration | ✅ |
 | HCP-3A | Svelte, JSX, and TSX grammar/LSP dogfood pack | ✅ |
 | HCP-3B | Capability-derived language matrix and exact package repair | ✅ |
-| HCP-3C | Remaining registered language grammar/package packs | 🔄 |
-| HCP-4A | Cursor-based project source/Git event stream | ⬜ |
+| HCP-3C | Remaining registered language grammar/package packs | ✅ |
+| HCP-4A | Cursor-based project source/Git event stream | 🔄 |
 | HCP-4B | All-open-buffer reconcile, rename/delete recovery, and watched-file LSP notifications | ⬜ |
 | HCP-5A | Geometry-correct groups, split-with-retained-editor, and unified code history | ⬜ |
 | HCP-5B | Contextual Code layout preset with group-local visible tabs and optional regions | ⬜ |
@@ -293,6 +294,12 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
   binary). Migration: none. Compatibility: older engines omit the matrix and
   Home keeps attempting LSP with the previous reconnect/repair path. Rollback:
   revert this commit; the route is additive.
+- **HCP-3C — `72938652`.** Added CodeMirror grammars for the remaining
+  registered LSP languages (Go/C++/Java/PHP official packs; C#/Kotlin/Ruby/
+  Lua/Swift legacy modes) so those servers are no longer plaintext in Code.
+  Migration: none. Compatibility: older Homes keep plaintext highlighting;
+  Repair still explains PATH-only binaries without a package id. Rollback:
+  revert this commit; grammar packages are additive.
 
 ### Slice rules
 

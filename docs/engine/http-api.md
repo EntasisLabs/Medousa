@@ -328,6 +328,8 @@ Custody of intentional work episodes over a git target (vault or any repo). Dist
 | PUT | `/v1/forge/items/{id}/source` | Save with digest conflict fencing |
 | PATCH | `/v1/forge/items/{id}/source` | Rename with digest conflict fencing |
 | DELETE | `/v1/forge/items/{id}/source` | Delete with digest conflict fencing |
+| GET (SSE) | `/v1/forge/items/{id}/project-events?since=…` | Resumable path-aware source/Git events (`seq` cursor) |
+| GET (SSE) | `/v1/forge/stream` | Undertaking list freshness |
 | GET | `/v1/forge/items/{id}/workspace-state` | Restore editor tabs, drafts, and groups |
 | PUT | `/v1/forge/items/{id}/workspace-state` | Persist lease-bound editor recovery state |
 | GET | `/v1/forge/items/{id}/review` | Structured review synthesis, attribution, and timeline |
