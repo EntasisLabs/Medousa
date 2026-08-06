@@ -486,6 +486,7 @@ async fn main() -> Result<()> {
             }
         },
     };
+    medousa::daemon::forge_watch::spawn_forge_worktree_watcher(state.forge_events.clone());
 
     medousa::turn_worker_notify::register_ingest_channel_delivery_bridge(
         medousa::turn_worker_notify::IngestChannelDeliveryBridge::new(

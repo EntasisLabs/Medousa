@@ -32,12 +32,45 @@ use crate::daemon::forge_projections::{
     ItemProjection, ReviewProjection, build_review_for_attempt, evidence_dir, project_item,
     project_items, read_lines_page,
 };
+use crate::daemon::forge_events::ForgeProjectEventKind;
 use crate::daemon::state::AppState;
 
 fn publish_item(state: &AppState, item: &WorkItem, kind: &str) {
     state
         .forge_events
         .publish(item.id.as_str(), &item.state.to_string(), kind);
+}
+
+fn remember_worktree(state: &AppState, item: &WorkItem, worktree: &FsPath) {
+    state
+        .forge_events
+        .remember_worktree(item.id.as_str(), worktree.to_path_buf());
+}
+
+fn publish_project_change(
+    state: &AppState,
+    item: &WorkItem,
+    kind: ForgeProjectEventKind,
+    path: Option<String>,
+    old_path: Option<String>,
+    digest: Option<String>,
+) {
+    let event_kind = match kind {
+        ForgeProjectEventKind::Created => "source_created",
+        ForgeProjectEventKind::Changed => "source_saved",
+        ForgeProjectEventKind::Renamed => "source_renamed",
+        ForgeProjectEventKind::Deleted => "source_deleted",
+        ForgeProjectEventKind::GitStatus => "git_status",
+        ForgeProjectEventKind::Snapshot => "project_snapshot",
+    };
+    publish_item(state, item, event_kind);
+    state.forge_events.publish_project(
+        item.id.as_str(),
+        kind,
+        path,
+        old_path,
+        digest,
+    );
 }
 
 fn ok_item(state: &AppState, item: WorkItem, kind: &str) -> Json<ItemProjection> {
@@ -81,6 +114,10 @@ pub fn forge_router(state: AppState) -> Router {
             "/v1/forge/items/{work_id}/source/workspace-edit",
             put(apply_source_workspace_edit)
                 .layer(DefaultBodyLimit::max(MAX_SOURCE_WORKSPACE_EDIT_BODY_BYTES)),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/project-events",
+            get(forge_project_event_stream),
         )
         .route("/v1/forge/items/{work_id}/search", get(search_source))
         .route(
@@ -1677,7 +1714,15 @@ async fn create_source(
             format!("could not initialize source file: {err}"),
         ));
     }
-    publish_item(&state, &item, "source_created");
+    publish_project_change(
+        &state,
+        &item,
+        ForgeProjectEventKind::Created,
+        Some(body.path.clone()),
+        None,
+        Some(source_digest(body.content.as_bytes())),
+    );
+    remember_worktree(&state, &item, &environment.worktree);
     Ok(Json(read_source_response(
         &id,
         &environment.worktree,
@@ -1971,7 +2016,15 @@ async fn save_source(
             format!("could not save source file: {err}"),
         )
     })?;
-    publish_item(&state, &item, "source_saved");
+    publish_project_change(
+        &state,
+        &item,
+        ForgeProjectEventKind::Changed,
+        Some(body.path.clone()),
+        None,
+        Some(source_digest(body.content.as_bytes())),
+    );
+    remember_worktree(&state, &item, &environment.worktree);
     Ok(Json(read_source_response(
         &id,
         &environment.worktree,
@@ -2040,6 +2093,16 @@ async fn save_source_batch(
         }
     }
     publish_item(&state, &item, "source_batch_saved");
+    remember_worktree(&state, &item, &environment.worktree);
+    for (_, relative, _, content) in &prepared {
+        state.forge_events.publish_project(
+            item.id.as_str(),
+            ForgeProjectEventKind::Changed,
+            Some(relative.clone()),
+            None,
+            Some(source_digest(content)),
+        );
+    }
     let responses = prepared
         .iter()
         .map(|(_, relative, _, _)| read_source_response(&id, &environment.worktree, relative))
@@ -2329,6 +2392,16 @@ async fn apply_source_workspace_edit(
         .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
     let responses = execute_source_workspace_edit(&id, &environment.worktree, &body)?;
     publish_item(&state, &item, "source_workspace_edit_applied");
+    remember_worktree(&state, &item, &environment.worktree);
+    for response in &responses {
+        state.forge_events.publish_project(
+            item.id.as_str(),
+            ForgeProjectEventKind::Changed,
+            Some(response.path.clone()),
+            None,
+            Some(response.digest.clone()),
+        );
+    }
     Ok(Json(responses))
 }
 
@@ -2362,12 +2435,17 @@ async fn rename_source(
             format!("could not rename source file: {err}"),
         )
     })?;
-    publish_item(&state, &item, "source_renamed");
-    Ok(Json(read_source_response(
-        &id,
-        &environment.worktree,
-        &body.destination,
-    )?))
+    let response = read_source_response(&id, &environment.worktree, &body.destination)?;
+    publish_project_change(
+        &state,
+        &item,
+        ForgeProjectEventKind::Renamed,
+        Some(body.destination.clone()),
+        Some(body.path.clone()),
+        Some(response.digest.clone()),
+    );
+    remember_worktree(&state, &item, &environment.worktree);
+    Ok(Json(response))
 }
 
 async fn delete_source(
@@ -2399,7 +2477,15 @@ async fn delete_source(
             format!("could not delete source file: {err}"),
         )
     })?;
-    publish_item(&state, &item, "source_deleted");
+    publish_project_change(
+        &state,
+        &item,
+        ForgeProjectEventKind::Deleted,
+        Some(relative.clone()),
+        None,
+        None,
+    );
+    remember_worktree(&state, &item, &environment.worktree);
     Ok(Json(DeleteSourceResponse {
         work_id: id.as_str().to_owned(),
         path: relative,
@@ -4735,6 +4821,103 @@ async fn forge_stream(
         }
     });
     Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
+}
+
+#[derive(Debug, Deserialize)]
+struct ProjectEventStreamQuery {
+    #[serde(default)]
+    since: Option<u64>,
+}
+
+async fn forge_project_event_stream(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Query(query): Query<ProjectEventStreamQuery>,
+) -> ApiResult<
+    axum::response::Sse<
+        impl futures_util::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>
+            + use<>,
+    >,
+> {
+    use axum::response::sse::{Event, KeepAlive, Sse};
+    use futures_util::stream::unfold;
+    use std::collections::VecDeque;
+    use std::convert::Infallible;
+    use std::time::Duration;
+
+    let id = parse_work_id(&work_id)?;
+    let item = forge(&state).load(&id).map_err(map_err)?;
+    if let Some(env) = item
+        .attempts
+        .last()
+        .and_then(|attempt| item.environment_for_attempt(&attempt.id))
+    {
+        remember_worktree(&state, &item, &env.worktree);
+    }
+
+    let since = query.since.unwrap_or(0);
+    // Subscribe before snapshot so live events cannot slip between the two.
+    let receiver = state.forge_events.subscribe_project();
+    let pending: VecDeque<_> = state
+        .forge_events
+        .snapshot_project_since(id.as_str(), since)
+        .into();
+    let work_id = id.as_str().to_owned();
+
+    struct StreamState {
+        work_id: String,
+        receiver: tokio::sync::broadcast::Receiver<crate::daemon::forge_events::ForgeProjectEvent>,
+        pending: VecDeque<crate::daemon::forge_events::ForgeProjectEvent>,
+        last_seq: u64,
+        bus: crate::daemon::forge_events::ForgeEventBus,
+    }
+
+    let initial = StreamState {
+        work_id: work_id.clone(),
+        receiver,
+        pending,
+        last_seq: since,
+        bus: state.forge_events.clone(),
+    };
+
+    let stream = unfold(initial, |mut state| async move {
+        loop {
+            if let Some(event) = state.pending.pop_front() {
+                if event.seq <= state.last_seq {
+                    continue;
+                }
+                state.last_seq = event.seq;
+                let data = serde_json::to_string(&event).unwrap_or_else(|_| "{}".into());
+                return Some((
+                    Ok::<_, Infallible>(Event::default().event("project").data(data)),
+                    state,
+                ));
+            }
+            match state.receiver.recv().await {
+                Ok(event) => {
+                    if event.work_id != state.work_id || event.seq <= state.last_seq {
+                        continue;
+                    }
+                    state.last_seq = event.seq;
+                    let data = serde_json::to_string(&event).unwrap_or_else(|_| "{}".into());
+                    return Some((
+                        Ok::<_, Infallible>(Event::default().event("project").data(data)),
+                        state,
+                    ));
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    state.pending.extend(
+                        state
+                            .bus
+                            .snapshot_project_since(&state.work_id, state.last_seq),
+                    );
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+            }
+        }
+    });
+
+    Ok(Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
 }
 
 #[cfg(test)]

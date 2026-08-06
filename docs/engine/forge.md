@@ -49,6 +49,8 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | PUT | `/v1/forge/items/{id}/source/workspace-edit` | Atomic ordered text/create/rename/delete workspace edit with digest-or-absence preconditions |
 | PATCH | `/v1/forge/items/{id}/source` | Lease-fenced source rename with digest conflict detection |
 | DELETE | `/v1/forge/items/{id}/source` | Lease-fenced source deletion with digest conflict detection |
+| GET (SSE) | `/v1/forge/items/{id}/project-events?since=…` | Resumable path-aware source/Git project events for one work item |
+| GET (SSE) | `/v1/forge/stream` | Live undertaking list freshness (state/kind only; no path cursor) |
 | GET | `/v1/forge/items/{id}/tree` | List tracked and unignored repository files (bounded to 20,000) |
 | GET | `/v1/forge/items/{id}/search?query=…` | Fixed-string tracked-source search (bounded to 500 hits) |
 | GET, PUT | `/v1/forge/items/{id}/workspace-state` | Restore/preserve open files, editor groups, positions, and bounded dirty drafts |
@@ -77,6 +79,24 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | POST | `/v1/forge/items/{id}/discard` | Discard env (worktree then branch) |
 | POST | `/v1/forge/items/{id}/run-script` | Reference script executor (`argv`) |
 | POST | `/v1/forge/items/{id}/export` | Portable bundle to `destination` |
+
+### Project event stream
+
+`GET /v1/forge/items/{id}/project-events?since=<seq>` is the authoritative
+cursor for Code buffer reconciliation. Each SSE `project` payload is a
+`ForgeProjectEvent` with monotonic `seq`, `work_id`, `kind`
+(`created` / `changed` / `renamed` / `deleted` / `git_status` / `snapshot`),
+optional `path` / `old_path` / `digest`, and `updated_at`.
+
+Reconnect with `?since=<last_seq>` to replay the bounded in-memory journal
+(`seq > since` for that work item), then tail live events. Lagged subscribers
+re-snapshot from the journal rather than inventing gaps. Events come from:
+
+- lease-fenced source create/save/batch/workspace-edit/rename/delete routes;
+- a debounced worktree filesystem watcher (ignores `.git/**`).
+
+`GET /v1/forge/stream` remains the coarse undertaking list channel (work id,
+state, event kind). It does not carry paths or a replay cursor.
 
 Forge records a canonical `active_attempts` set and resolves every lease
 mutation against its addressed attempt. The legacy singular `active_attempt`
