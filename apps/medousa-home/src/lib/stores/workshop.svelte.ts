@@ -253,6 +253,12 @@ export class WorkshopStore {
     await deleteScriptById(scriptId);
   }
 
+  /** Hard-delete multiple saved scripts. */
+  async deleteScripts(scriptIds: string[]) {
+    const { deleteScriptsByIds } = await import("$lib/grapheme/scriptWorkbenchActions");
+    await deleteScriptsByIds(scriptIds);
+  }
+
   async compileEditorSource(mode: "check" | "aot" = "check") {
     this.compileBusy = true;
     this.compileError = null;

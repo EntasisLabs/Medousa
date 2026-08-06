@@ -1,6 +1,8 @@
 export type ScriptContextTarget = {
   scriptId: string;
   name: string;
+  /** All selected library scripts when multi-select delete applies. */
+  scriptIds?: string[];
 };
 
 export class ScriptContextMenuStore {

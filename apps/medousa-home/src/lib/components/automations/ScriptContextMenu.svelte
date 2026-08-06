@@ -3,6 +3,7 @@
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { scriptContextMenu } from "$lib/stores/scriptContextMenu.svelte";
+  import { scriptLibrarySelection } from "$lib/stores/scriptLibrarySelection.svelte";
   import { scriptRenameUi } from "$lib/stores/scriptRenameUi.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
 
@@ -11,6 +12,13 @@
   let error = $state<string | null>(null);
 
   const target = $derived(scriptContextMenu.target);
+  const deleteIds = $derived.by(() => {
+    if (!target) return [] as string[];
+    const multi = target.scriptIds?.filter(Boolean) ?? [];
+    if (multi.length > 1) return multi;
+    return target.scriptId ? [target.scriptId] : [];
+  });
+  const multiDelete = $derived(deleteIds.length > 1);
 
   function clampPosition(x: number, y: number): { x: number; y: number } {
     if (typeof window === "undefined") return { x, y };
@@ -36,18 +44,23 @@
   }
 
   function renameTarget() {
-    if (!target) return;
+    if (!target || multiDelete) return;
     const { scriptId } = target;
     scriptContextMenu.close();
     scriptRenameUi.startLibraryRename(scriptId);
   }
 
   async function confirmDelete() {
-    if (!target) return;
+    if (!target || deleteIds.length === 0) return;
     busy = true;
     error = null;
     try {
-      await workshop.deleteScript(target.scriptId);
+      if (deleteIds.length === 1) {
+        await workshop.deleteScript(deleteIds[0]!);
+      } else {
+        await workshop.deleteScripts(deleteIds);
+      }
+      scriptLibrarySelection.clear();
       scriptContextMenu.close();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -58,7 +71,15 @@
   }
 
   function onWindowKeydown(event: KeyboardEvent) {
-    if (event.key === "Escape") scriptContextMenu.close();
+    if (event.key === "Escape") {
+      if (scriptContextMenu.open) {
+        scriptContextMenu.close();
+        return;
+      }
+      if (scriptLibrarySelection.selectedIds.size > 0) {
+        scriptLibrarySelection.clear();
+      }
+    }
   }
 
   function onWindowClick(event: MouseEvent) {
@@ -88,7 +109,12 @@
     {#if scriptContextMenu.confirmDelete}
       <div class="px-3 py-2.5">
         <p class="text-[12px] leading-snug text-surface-100">
-          Delete <span class="font-medium">{target.name}</span>? This cannot be undone.
+          {#if multiDelete}
+            Delete <span class="font-medium">{deleteIds.length} scripts</span>? This cannot be
+            undone.
+          {:else}
+            Delete <span class="font-medium">{target.name}</span>? This cannot be undone.
+          {/if}
         </p>
         {#if error}
           <p class="mt-1.5 text-[11px] text-content-error">{error}</p>
@@ -115,6 +141,15 @@
           </button>
         </div>
       </div>
+    {:else if multiDelete}
+      <button
+        type="button"
+        class="vault-context-menu-item text-content-error"
+        role="menuitem"
+        onclick={() => scriptContextMenu.askDelete()}
+      >
+        Delete {deleteIds.length} scripts…
+      </button>
     {:else}
       <button
         type="button"
@@ -134,7 +169,7 @@
       </button>
       <button
         type="button"
-        class="vault-context-menu-item"
+        class="vault-context-menu-item text-content-error"
         role="menuitem"
         onclick={() => scriptContextMenu.askDelete()}
       >

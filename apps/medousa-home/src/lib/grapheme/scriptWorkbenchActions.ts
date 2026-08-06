@@ -80,6 +80,36 @@ export async function deleteScriptById(scriptId: string): Promise<void> {
   await workshop.refreshModulesAndScripts();
 }
 
+/** Hard-delete multiple saved scripts; refreshes the library once at the end. */
+export async function deleteScriptsByIds(scriptIds: string[]): Promise<void> {
+  const unique = [...new Set(scriptIds.map((id) => id.trim()).filter(Boolean))];
+  if (unique.length === 0) return;
+
+  for (const scriptId of unique) {
+    await deleteGraphemeScript(scriptId);
+
+    const editorTabIds = new Set(
+      graphemeScriptEditor.tabs
+        .filter((tab) => tab.scriptId === scriptId)
+        .map((tab) => tab.tabId),
+    );
+
+    for (const tab of [...lmeWorkspace.tabs]) {
+      if (tab.kind === "script" && editorTabIds.has(tab.scriptTabId)) {
+        await lmeWorkspace.closeTab(tab.tabId);
+      }
+    }
+
+    for (const tabId of editorTabIds) {
+      if (graphemeScriptEditor.tabs.some((tab) => tab.tabId === tabId)) {
+        graphemeScriptEditor.closeTab(tabId);
+      }
+    }
+  }
+
+  await workshop.refreshModulesAndScripts();
+}
+
 export async function closeActiveScriptTab(): Promise<void> {
   const lme = lmeWorkspace.activeTab;
   if (lme?.kind === "script") {
