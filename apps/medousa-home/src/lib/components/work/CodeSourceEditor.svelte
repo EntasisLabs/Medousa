@@ -32,6 +32,8 @@
   import { openTrackedTerminal } from "$lib/utils/undertakingWorkspace";
   import { fuzzyMatchPaths } from "$lib/utils/pathFuzzyMatch";
   import { writeToTerminal } from "$lib/terminal/terminalInputBridge";
+  import { resolveTaskPreviewOpenUrl } from "$lib/code/taskPreviewUrl";
+  import { openInBrowser } from "$lib/utils/openInBrowser";
   import type { LSPClient } from "@codemirror/lsp-client";
   import {
     CODE_LSP_MAX_RECONNECT_ATTEMPTS,
@@ -218,6 +220,8 @@
   let taskLiveLocations = $state<
     Array<{ path: string; line: number; column?: number | null; message: string }>
   >([]);
+  let taskReadyUrl = $state<string | null>(null);
+  let previewOpening = $state(false);
   let taskRunEventStream: CodeTaskRunEventStream | null = null;
   let projectTests = $state<ProjectTest[]>([]);
   let testsOpen = $state(false);
@@ -488,6 +492,7 @@
     taskLiveStderr = run?.stderr ?? "";
     taskOutputTruncated = run?.output_truncated ?? false;
     taskLiveLocations = run?.locations ?? [];
+    taskReadyUrl = run?.ready_url ?? null;
   }
 
   function mergeTaskLocations(
@@ -536,6 +541,7 @@
     }
     if (event.kind === "state") {
       mergeTaskLocations(event.locations);
+      if (event.ready_url) taskReadyUrl = event.ready_url;
       if (taskRun && event.run_id === taskRun.run_id) {
         taskRun = {
           ...taskRun,
@@ -546,6 +552,7 @@
           output_truncated:
             event.result?.truncated ?? taskOutputTruncated,
           locations: event.result?.locations ?? taskLiveLocations,
+          ready_url: event.ready_url ?? taskRun.ready_url ?? taskReadyUrl,
           next_seq: event.seq + 1,
         };
       }
@@ -646,6 +653,7 @@
         if (snapshot.stderr) taskLiveStderr = snapshot.stderr;
         taskOutputTruncated = snapshot.output_truncated ?? taskOutputTruncated;
         if (snapshot.locations?.length) mergeTaskLocations(snapshot.locations);
+        if (snapshot.ready_url) taskReadyUrl = snapshot.ready_url;
         if (snapshot.result) {
           taskResult = snapshot.result;
           taskLiveStdout = snapshot.result.stdout;
@@ -661,6 +669,28 @@
     } finally {
       stopTaskRunEvents();
       runningTask = false;
+    }
+  }
+
+  async function openTaskPreview() {
+    if (!(taskReadyUrl || taskRun?.ready_url) || previewOpening) return;
+    previewOpening = true;
+    surfaceError = null;
+    try {
+      if (!taskRun) throw new Error("No task run is available");
+      const { url } = await resolveTaskPreviewOpenUrl(workId, {
+        ...taskRun,
+        ready_url: taskReadyUrl ?? taskRun.ready_url,
+      });
+      await openInBrowser(url, {
+        openedBy: "user",
+        workCardId: workId,
+        title: taskRun.task.label,
+      });
+    } catch (err) {
+      surfaceError = err instanceof Error ? err.message : String(err);
+    } finally {
+      previewOpening = false;
     }
   }
 
@@ -2972,6 +3002,14 @@
             {#if taskOutputTruncated}<span class="normal-case tracking-normal text-amber-200/80"> · truncated</span>{/if}
           </span>
           <div class="flex items-center gap-1">
+            {#if (taskReadyUrl || taskRun?.ready_url) && (taskRun?.state === "ready" || runningTask)}
+              <button
+                type="button"
+                class="rounded px-1.5 py-0.5 text-[9px] text-emerald-200/90 hover:bg-emerald-500/10 disabled:opacity-40"
+                disabled={previewOpening}
+                onclick={() => void openTaskPreview()}
+              >{previewOpening ? "Opening…" : "Open in Browser"}</button>
+            {/if}
             {#if runningTask && (taskRun?.state === "running" || taskRun?.state === "ready")}
               <button type="button" class="rounded px-1.5 py-0.5 text-[9px] text-rose-200/90 hover:bg-rose-500/10" onclick={() => void stopDetectedTask()}>Stop</button>
             {/if}

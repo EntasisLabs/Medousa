@@ -828,6 +828,8 @@ export type ProjectTaskRun = {
   output_truncated?: boolean;
   next_seq?: number;
   locations?: ProjectTaskLocation[];
+  /** Loopback URL when a background task reports ready. */
+  ready_url?: string | null;
 };
 
 export type ProjectTaskOutputEvent = {
@@ -839,6 +841,16 @@ export type ProjectTaskOutputEvent = {
   state?: string | null;
   result?: ProjectTaskResult | null;
   locations?: ProjectTaskLocation[] | null;
+  ready_url?: string | null;
+};
+
+export type ProjectTaskRunPreview = {
+  work_id: string;
+  run_id: string;
+  ready_url: string;
+  port: number;
+  token: string;
+  preview_path: string;
 };
 
 export type ProjectTest = {
@@ -883,6 +895,17 @@ export async function cancelProjectTaskRun(workId: string, runId: string): Promi
   return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/task-runs/${encodeURIComponent(runId)}`, {
     method: "DELETE",
   });
+}
+
+/** Mint or reuse a tokenized workshop preview path for a ready task run. */
+export async function createProjectTaskRunPreview(
+  workId: string,
+  runId: string,
+): Promise<ProjectTaskRunPreview> {
+  return forgeFetch(
+    `/v1/forge/items/${encodeURIComponent(workId)}/task-runs/${encodeURIComponent(runId)}/preview`,
+    { method: "POST" },
+  );
 }
 
 /** Resumable task-run output stream (`?since=` chunk replay). */

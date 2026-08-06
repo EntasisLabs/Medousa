@@ -61,6 +61,8 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | POST | `/v1/forge/items/{id}/tasks/{task_id}/runs` | Start a named, cancellable project run |
 | GET/DELETE | `/v1/forge/items/{id}/task-runs/{run_id}` | Poll or cancel a project run (includes live bounded `stdout`/`stderr`, `locations`, readiness `state`) |
 | GET (SSE) | `/v1/forge/items/{id}/task-runs/{run_id}/events?since=…` | Stream task output chunks, incremental locations, readiness, and terminal state (`?since=` replay) |
+| POST | `/v1/forge/items/{id}/task-runs/{run_id}/preview` | Mint a tokenized private preview path for a ready run |
+| ANY | `/v1/forge/preview/{token}/…` | Reverse-proxy to workshop `127.0.0.1:{port}` (token-gated; no public app bind) |
 | GET | `/v1/forge/items/{id}/tests` | Discover addressable project tests |
 | GET | `/v1/forge/items/{id}/review/file?path=…` | Exact baseline-to-reviewed file comparison with structured hunks |
 | POST | `/v1/forge/items/{id}/review/file` | Reopen work and restore one text file to its baseline while retaining the reviewed checkpoint |
@@ -125,9 +127,17 @@ problem-matcher `pattern`, background `endsPattern`). Full VS Code matcher
 catalogs, `dependsOn`, and presentation panels are not supported.
 
 `GET …/task-runs/{run_id}` also returns bounded live `stdout`/`stderr`,
-`output_truncated`, `locations`, and `next_seq` while the process is still
-running (and after exit for replay). Output buffers cap at 256 KiB; chunk
-replay keeps the last ~400 events.
+`output_truncated`, `locations`, `ready_url` (when a background task becomes
+ready), and `next_seq` while the process is still running (and after exit for
+replay). Output buffers cap at 256 KiB; chunk replay keeps the last ~400 events.
+
+When readiness fires, the daemon may extract a loopback URL (`localhost` /
+`127.0.0.1` / `0.0.0.0`) into `ready_url` and mint a short-lived preview token.
+`POST …/task-runs/{run_id}/preview` returns `{ preview_path, token, ready_url,
+port }`. Home opens co-located previews at `ready_url` directly; remote Homes
+open `{daemon}/v1/forge/preview/{token}/…`, which reverse-proxies to
+`127.0.0.1:{port}` on the workshop without binding the app publicly. WebSocket
+HMR through the proxy is best-effort; prefer Stop/restart for broken live reload.
 
 Forge records a canonical `active_attempts` set and resolves every lease
 mutation against its addressed attempt. The legacy singular `active_attempt`

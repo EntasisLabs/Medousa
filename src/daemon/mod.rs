@@ -11,6 +11,7 @@ pub mod shell_session_host;
 pub mod continuations;
 pub mod core;
 pub mod forge_api;
+pub mod forge_preview;
 pub mod forge_host;
 pub mod heartbeat;
 pub mod http;

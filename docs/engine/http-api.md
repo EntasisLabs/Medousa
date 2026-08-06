@@ -341,6 +341,8 @@ Custody of intentional work episodes over a git target (vault or any repo). Dist
 | POST | `/v1/forge/items/{id}/tasks/{task_id}/runs` | Start a named, cancellable project run |
 | GET/DELETE | `/v1/forge/items/{id}/task-runs/{run_id}` | Poll or cancel a project run (live bounded output + locations) |
 | GET (SSE) | `/v1/forge/items/{id}/task-runs/{run_id}/events?since=…` | Stream task output, locations, readiness, and terminal state |
+| POST | `/v1/forge/items/{id}/task-runs/{run_id}/preview` | Mint tokenized private preview path |
+| ANY | `/v1/forge/preview/{token}/…` | Proxy to workshop loopback port |
 | GET | `/v1/forge/evidence/{evidence_id}/patch` | Read a bounded page of the sealed patch |
 | GET | `/v1/forge/evidence/{evidence_id}/commands` | Read a bounded page of the sealed command log |
 | GET | `/v1/forge/evidence/{evidence_id}/receipts` | Read typed compact evidence provenance; raw payloads are excluded |

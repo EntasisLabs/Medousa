@@ -150,6 +150,10 @@ pub fn forge_router(state: AppState) -> Router {
             "/v1/forge/items/{work_id}/task-runs/{run_id}/events",
             get(project_task_run_events),
         )
+        .route(
+            "/v1/forge/items/{work_id}/task-runs/{run_id}/preview",
+            post(create_task_run_preview),
+        )
         .route("/v1/forge/items/{work_id}/tests", get(list_project_tests))
         .route("/v1/forge/items/{work_id}/provision", post(provision_item))
         .route("/v1/forge/items/{work_id}/attempts", post(begin_attempt))
@@ -3851,6 +3855,9 @@ struct ProjectTaskRun {
     /// Incrementally matched problem locations (also on final result).
     #[serde(default)]
     locations: Vec<ProjectOutputLocation>,
+    /// Loopback URL detected when a long-running task became ready.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ready_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -3868,6 +3875,8 @@ struct ProjectTaskOutputEvent {
     result: Option<ProjectTaskResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
     locations: Option<Vec<ProjectOutputLocation>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ready_url: Option<String>,
 }
 
 const TASK_OUTPUT_CAP: usize = 256 * 1024;
@@ -4068,18 +4077,37 @@ async fn publish_task_output(run_id: &str, stream: &str, text: &str) {
                 state: None,
                 result: None,
                 locations: new_locations,
+                ready_url: None,
             },
         );
         let waiting_for_ready = store.run.task.long_running
             && matches!(store.run.state.as_str(), "running")
             && store.ready_re.is_some();
-        waiting_for_ready
+        let matched_ready = waiting_for_ready
             && store
                 .ready_re
                 .as_ref()
-                .is_some_and(|re| re.is_match(text))
+                .is_some_and(|re| re.is_match(text));
+        if matched_ready {
+            let haystack = format!("{}\n{}\n{}", store.run.stdout, store.run.stderr, text);
+            if let Some(url) = crate::daemon::forge_preview::extract_ready_url(&haystack) {
+                store.run.ready_url = Some(url);
+            } else if let Some(url) = crate::daemon::forge_preview::extract_ready_url(text) {
+                store.run.ready_url = Some(url);
+            }
+        }
+        matched_ready
     };
     if became_ready {
+        let (work_id, ready_url) = {
+            let runs = PROJECT_TASK_RUNS.read().await;
+            runs.get(run_id)
+                .map(|store| (store.run.work_id.clone(), store.run.ready_url.clone()))
+                .unwrap_or_default()
+        };
+        if let (true, Some(url)) = (!work_id.is_empty(), ready_url.as_ref()) {
+            let _ = crate::daemon::forge_preview::mint_preview_grant(&work_id, run_id, url).await;
+        }
         publish_task_state(run_id, "ready", None).await;
     }
 }
@@ -4128,6 +4156,7 @@ async fn publish_task_state(
             } else {
                 Some(store.run.locations.clone())
             },
+            ready_url: store.run.ready_url.clone(),
         },
     );
 }
@@ -4764,6 +4793,7 @@ async fn start_project_task_run(
         output_truncated: false,
         next_seq: 0,
         locations: Vec::new(),
+        ready_url: None,
     };
     let mut child = background_tokio_command(&task.argv[0])
         .args(&task.argv[1..])
@@ -4890,6 +4920,53 @@ async fn get_project_task_run(
         .filter(|run| run.work_id == work_id)
         .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "Project run was not found"))?;
     Ok(Json(run))
+}
+
+#[derive(Debug, Serialize)]
+struct TaskRunPreviewResponse {
+    work_id: String,
+    run_id: String,
+    ready_url: String,
+    port: u16,
+    token: String,
+    preview_path: String,
+}
+
+async fn create_task_run_preview(
+    Path((work_id, run_id)): Path<(String, String)>,
+) -> ApiResult<Json<TaskRunPreviewResponse>> {
+    let run = PROJECT_TASK_RUNS
+        .read()
+        .await
+        .get(&run_id)
+        .map(|store| store.run.clone())
+        .filter(|run| run.work_id == work_id)
+        .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "Project run was not found"))?;
+    let ready_url = run.ready_url.clone().ok_or_else(|| {
+        request_error(
+            StatusCode::CONFLICT,
+            "This run is not ready for Browser preview yet",
+        )
+    })?;
+    let port = crate::daemon::forge_preview::port_from_ready_url(&ready_url).ok_or_else(|| {
+        request_error(StatusCode::CONFLICT, "Could not determine the preview port")
+    })?;
+    let token = match crate::daemon::forge_preview::preview_token_for_run(&work_id, &run_id).await {
+        Some(token) => token,
+        None => crate::daemon::forge_preview::mint_preview_grant(&work_id, &run_id, &ready_url)
+            .await
+            .ok_or_else(|| {
+                request_error(StatusCode::CONFLICT, "Could not mint a preview grant")
+            })?,
+    };
+    Ok(Json(TaskRunPreviewResponse {
+        work_id,
+        run_id,
+        ready_url,
+        port,
+        preview_path: crate::daemon::forge_preview::preview_path_for_token(&token),
+        token,
+    }))
 }
 
 async fn cancel_project_task_run(
@@ -6531,6 +6608,7 @@ mod source_tests {
             output_truncated: false,
             next_seq: 1,
             locations: Vec::new(),
+            ready_url: None,
         };
         assert!(!task_run_is_terminal(&run));
         run.result = Some(ProjectTaskResult {
@@ -6553,6 +6631,7 @@ mod source_tests {
             state: Some("cancelled".into()),
             result: run.result.clone(),
             locations: None,
+            ready_url: None,
         }));
         assert!(!task_output_event_is_terminal(&ProjectTaskOutputEvent {
             seq: 1,
@@ -6563,6 +6642,7 @@ mod source_tests {
             state: Some("cancelled".into()),
             result: None,
             locations: None,
+            ready_url: None,
         }));
     }
 
