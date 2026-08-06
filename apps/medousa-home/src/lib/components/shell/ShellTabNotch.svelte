@@ -270,7 +270,7 @@
   </div>
 
   <div class="shell-tab-notch-trailing shrink-0">
-    {#if mode === "panes"}
+    <div class="shell-tab-notch-pane-actions">
       <button
         type="button"
         class="shell-tab-notch-expand"
@@ -301,10 +301,8 @@
       >
         <SquareX size={13} strokeWidth={1.85} />
       </button>
-      <span class="shell-tab-notch-rule" aria-hidden="true"></span>
-    {:else if mode === "closed"}
-      <span class="shell-tab-notch-rule" aria-hidden="true"></span>
-    {/if}
+    </div>
+    <span class="shell-tab-notch-rule" aria-hidden="true"></span>
     <button
       type="button"
       class="shell-tab-notch-expand"
@@ -362,10 +360,12 @@
 <style>
   .shell-tab-notch {
     display: flex;
+    box-sizing: border-box;
     width: min(38rem, 52vw);
     max-width: 100%;
+    min-width: 0;
     height: 32px;
-    flex: 0 1 auto;
+    flex: 0 0 auto;
     align-items: center;
     gap: 0.45rem;
     border: 1px solid rgb(var(--color-surface-500) / 0.16);
@@ -538,6 +538,13 @@
     align-items: center;
     gap: 0.15rem;
     padding-right: 0.05rem;
+  }
+
+  .shell-tab-notch-pane-actions {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.15rem;
   }
 
   .shell-tab-notch-rule {
