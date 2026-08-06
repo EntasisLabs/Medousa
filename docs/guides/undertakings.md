@@ -118,10 +118,13 @@ a private Code IDE chrome.
   draft is preserved and receives an explicit external-change warning. Live
   reconciliation for every open file is still in progress.
 - When an installed language server is available, Code attaches it to the
-  governed project working-copy root. Diagnostics, completion, hover, and
-  navigation come from the real server; unavailable servers degrade honestly
-  to basic editing. `F12` goes to a definition and `Ctrl/Cmd+F12` goes to an
-  implementation, opening an unopened project file as a shell tab when needed.
+  closest language root inside the governed working copy. In a monorepo, the
+  nearest `package.json`, `Cargo.toml`, `go.mod`, or other registered marker
+  scopes that file without letting discovery escape the project. Diagnostics,
+  completion, hover, and navigation come from the real server; unavailable
+  servers degrade honestly to basic editing. `F12` goes to a definition and
+  `Ctrl/Cmd+F12` goes to an implementation, opening an unopened project file as
+  a shell tab when needed.
   Right-click also offers declaration and type-definition navigation when the
   server advertises them. Use `Alt+Left` / `Alt+Right` or the editor arrows to
   move through precise code locations. `Cmd/Ctrl+Shift+O` opens **Structure**.

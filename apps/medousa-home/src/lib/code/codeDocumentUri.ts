@@ -79,3 +79,14 @@ export function workspaceRelativePathFromUri(
     return null;
   }
 }
+
+/** Accept a server-selected language root only when it stays in the project. */
+export function validatedCodeLanguageRootUri(
+  candidateUri: string,
+  workspaceRoot: string,
+): string | null {
+  const candidate = canonicalCodeDocumentUri(candidateUri);
+  const project = canonicalCodeDocumentUri(pathToFileUri(workspaceRoot));
+  if (candidate === project) return candidate;
+  return workspaceRelativePathFromUri(candidate, workspaceRoot) ? candidate : null;
+}

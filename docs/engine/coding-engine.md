@@ -15,6 +15,7 @@ routes:
 - `GET /v1/code/diagnostics` and `/v1/code/workspace-diagnostics`
 - `GET /v1/code/symbols` and `/v1/code/workspace-symbols`
 - `GET /v1/code/conventions`
+- `GET /v1/code/language-root`
 - `GET /v1/code/hover` and `/v1/code/definition`
 - `POST /v1/code/request`
 
@@ -26,6 +27,26 @@ clients must not send workshop paths as authority.
 `format`, `code_actions`, and `organize_imports`. Results remain native LSP
 values so the caller can preserve provider-specific detail. Home checks the
 initialize capabilities before revealing an action.
+
+## Project and language roots
+
+The daemon resolves `work_id` to the canonical governed working copy; that is
+the outer authority boundary. For a document-aware request, `medousa-code`
+decodes and canonicalizes the file URI, rejects other schemes, encoded path
+separators, symlink escapes, and paths outside that working copy, then walks
+upward only as far as the project root. The closest registered marker — such as
+`Cargo.toml`, `package.json`, `go.mod`, or `pyproject.toml` — becomes the
+language-server root. No marker above the Forge working copy can participate.
+
+`GET /v1/code/language-root?work_id=…&uri=…&language=…` reports that resolved
+root as a file URI and project-relative path. Home uses it as the LSP `rootUri`
+and pooling identity, while the daemon independently forwards the active
+document and authoritative project root to the coding engine. The coding engine
+revalidates both and rewrites initialize root fields before launching the server
+in that directory. Nested monorepo packages therefore get distinct sessions;
+files under the same language root reuse one Home client. With an older coding
+engine that lacks the discovery route, Home explicitly falls back to the whole
+project root for rolling-upgrade compatibility.
 
 ## Workspace diagnostics
 

@@ -20,8 +20,10 @@ On spawn, the daemon passes:
 - `--workspace` = Grapheme scripts library root
 - `--allow-root` for each Forge worktree under `{dataDir}/forge/worktrees/…`
 
-Undertaking-bound editing shares the same Orchestrator session pool keyed by
-`(workspace_root, language)`.
+Undertaking-bound agent operations use an Orchestrator session pool keyed by
+`(governed_project_root, resolved_language_root, language)`. Transparent Home
+editor channels use the same bounded root resolution; Home pools those channels
+by the returned language-root URI so files in one nested package reuse a server.
 
 ## Detamu bridge (M5 hooks)
 

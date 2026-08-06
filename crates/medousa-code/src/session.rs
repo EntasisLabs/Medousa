@@ -1,7 +1,8 @@
-//! Session pool: one language-server backend per (workspace_root, language).
+//! Session pool: one language-server backend per governed project, resolved
+//! language root, and language.
 //!
-//! Multi-client: Home + agents share one backend; outbound broadcast fans
-//! notifications (diagnostics, etc.) to every subscribed WebSocket client.
+//! HTTP agent callers share a backend; outbound broadcast fans notifications
+//! (diagnostics, etc.) to every subscribed internal request listener.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -17,7 +18,8 @@ use crate::registry::{LanguageId, ServerRegistry};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SessionKey {
-    pub workspace_root: PathBuf,
+    pub project_root: PathBuf,
+    pub language_root: PathBuf,
     pub language: LanguageId,
 }
 
@@ -312,11 +314,13 @@ impl SessionPool {
 
     pub async fn get_or_spawn(
         &self,
-        workspace_root: PathBuf,
+        project_root: PathBuf,
+        language_root: PathBuf,
         language: LanguageId,
     ) -> anyhow::Result<Arc<LiveSession>> {
         let key = SessionKey {
-            workspace_root: workspace_root.clone(),
+            project_root,
+            language_root: language_root.clone(),
             language: language.clone(),
         };
         {
@@ -337,7 +341,7 @@ impl SessionPool {
             .get(&language)
             .ok_or_else(|| anyhow::anyhow!("no language server registered for {language}"))?
             .clone();
-        let backend = spawn_backend(&spec, &workspace_root).await?;
+        let backend = spawn_backend(&spec, &language_root).await?;
         let (outbound, _) = broadcast::channel(256);
         let session = Arc::new(LiveSession {
             key: key.clone(),
@@ -374,11 +378,13 @@ impl SessionPool {
 
     pub async fn get_existing(
         &self,
-        workspace_root: PathBuf,
+        project_root: PathBuf,
+        language_root: PathBuf,
         language: LanguageId,
     ) -> Option<Arc<LiveSession>> {
         let key = SessionKey {
-            workspace_root,
+            project_root,
+            language_root,
             language,
         };
         self.sessions
@@ -392,12 +398,33 @@ impl SessionPool {
             })
     }
 
-    pub async fn existing_for_workspace(&self, workspace_root: &Path) -> Vec<Arc<LiveSession>> {
+    pub async fn existing_for_workspace(&self, project_root: &Path) -> Vec<Arc<LiveSession>> {
         self.sessions
             .read()
             .await
             .values()
-            .filter(|session| !session.is_closed() && session.key.workspace_root == workspace_root)
+            .filter(|session| !session.is_closed() && session.key.project_root == project_root)
+            .map(|session| {
+                session.touch();
+                Arc::clone(session)
+            })
+            .collect()
+    }
+
+    pub async fn existing_for_workspace_language(
+        &self,
+        project_root: &Path,
+        language: &LanguageId,
+    ) -> Vec<Arc<LiveSession>> {
+        self.sessions
+            .read()
+            .await
+            .values()
+            .filter(|session| {
+                !session.is_closed()
+                    && session.key.project_root == project_root
+                    && &session.key.language == language
+            })
             .map(|session| {
                 session.touch();
                 Arc::clone(session)
