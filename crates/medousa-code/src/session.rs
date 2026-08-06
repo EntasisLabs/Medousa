@@ -80,10 +80,19 @@ pub(crate) fn initialization_options(language: &LanguageId) -> Value {
 }
 
 pub(crate) fn workspace_settings(language: &LanguageId) -> Value {
-    if language.as_str() == "rust" {
-        return json!({ "rust-analyzer": initialization_options(language) });
+    match language.as_str() {
+        "rust" => json!({ "rust-analyzer": initialization_options(language) }),
+        "svelte" => json!({
+            "svelte": {
+                "plugin": {
+                    "typescript": { "enable": true },
+                    "css": { "enable": true },
+                    "html": { "enable": true }
+                }
+            }
+        }),
+        _ => json!({}),
     }
-    json!({})
 }
 
 pub(crate) fn workspace_configuration_response(language: &LanguageId, params: &Value) -> Value {

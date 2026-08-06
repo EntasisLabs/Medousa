@@ -61,6 +61,8 @@
   import type { CodeLanguageNavigationKind } from "$lib/code/codeLanguageNavigation";
   import { containingSymbolTrail } from "$lib/code/codeDocumentSymbols";
   import {
+    codeEditorLspLanguageId,
+    languageRepairPackageId,
     languageSupportsLsp,
     resolveCodeEditorLanguage,
   } from "$lib/code/codeEditorLanguageRegistry";
@@ -265,6 +267,7 @@
   const activeTabId = $derived(activeTab?.tabId ?? "");
   const activeTabPath = $derived(activeTab?.path ?? "");
   const activeTabLanguage = $derived(activeTab?.language ?? "");
+  const activeLspLanguage = $derived(codeEditorLspLanguageId(activeTabLanguage));
   const activeTabLine = $derived(activeTab?.line ?? null);
   const dirty = $derived(Boolean(activeTab && codeWorkspace.isDirty(activeTab)));
   const editable = $derived(
@@ -344,7 +347,7 @@
   const workspaceProblemLanguages = $derived(
     [...new Set(
       tabs
-        .map((tab) => tab.language)
+        .map((tab) => codeEditorLspLanguageId(tab.language))
         .filter((language) => languageSupportsLsp(language)),
     )].sort(),
   );
@@ -639,7 +642,10 @@
   function languageForWorkspacePath(path: string): string {
     const extension = path.split(".").pop()?.toLowerCase() ?? "";
     const resolved = resolveCodeEditorLanguage(extension);
-    return resolved === "plaintext" ? activeTabLanguage : resolved;
+    if (resolved === "plaintext") {
+      return codeEditorLspLanguageId(activeTabLanguage);
+    }
+    return codeEditorLspLanguageId(resolved);
   }
 
   async function refreshQuickSymbols() {
@@ -773,7 +779,7 @@
       const snapshot = await getCodeLanguageSessions({
         workId,
         uri: documentUri,
-        language: activeTabLanguage,
+        language: activeLspLanguage,
       });
       languageSessions = snapshot.sessions;
       languageSessionsError = null;
@@ -815,7 +821,10 @@
     try {
       const catalog = await fetchPackagesCatalog();
       if (!catalog) throw new Error("Package repair is unavailable here");
-      const wanted = ["coding-engine", "langservers"];
+      const languagePackage = languageRepairPackageId(activeTabLanguage);
+      const wanted = ["coding-engine", languagePackage ?? "langservers"].filter(
+        (id, index, list) => Boolean(id) && list.indexOf(id) === index,
+      );
       for (const packageId of wanted) {
         const row = catalog?.packages.find((entry) => entry.id === packageId);
         if (row && !row.installed) await installPackage(packageId);
@@ -1622,7 +1631,7 @@
     void lspRetry;
     const root = workspaceRoot;
     const uri = documentUri;
-    const scope = `${workId}:${activeTabLanguage}:${uri ?? ""}`;
+    const scope = `${workId}:${activeLspLanguage}:${uri ?? ""}`;
     if (
       !interactive ||
       !activeTabId ||
@@ -1700,7 +1709,7 @@
           const lease = await acquireCodeWorkspaceLspClient({
             workId,
             workspaceRoot: root,
-            language: activeTabLanguage,
+            language: activeLspLanguage,
             documentUri: uri,
           });
           if (cancelled) {
@@ -1791,7 +1800,7 @@
       const cancelDeferred = deferCodeWorkspaceWork(() => {
         void refreshSymbols();
         languageCapabilities = (client.serverCapabilities ?? {}) as Record<string, unknown>;
-        void getCodeEditorConventions({ workId, uri, language: activeTabLanguage })
+        void getCodeEditorConventions({ workId, uri, language: activeLspLanguage })
           .then((conventions) => (editorConventions = conventions))
           .catch(() => (editorConventions = {}));
       });
@@ -2160,7 +2169,7 @@
               value={editorTab.draft}
               languageId={editorTab.language}
               {documentUri}
-              lspLanguageId={editorTab.language}
+              lspLanguageId={codeEditorLspLanguageId(editorTab.language)}
               client={lspClient}
               readOnly={!bufferInteractive}
               contentSyncKey={editorTab.syncKey}

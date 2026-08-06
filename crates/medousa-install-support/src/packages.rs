@@ -255,7 +255,11 @@ pub fn package_catalog() -> Vec<PackageCatalogEntry> {
             "langservers",
             "Language servers",
             &["coding-engine"],
-            &["pyright-langserver", "typescript-language-server"],
+            &[
+                "pyright-langserver",
+                "typescript-language-server",
+                "svelteserver",
+            ],
             PackageCategory::Expansion,
             "Braces",
             &["developer"],
@@ -427,7 +431,9 @@ pub fn package_short_hint(package_id: &str) -> &'static str {
         "adapter-slack" => "Slack channel adapter.",
         "adapter-whatsapp" => "WhatsApp channel adapter.",
         "coding-engine" => "LSP Interoperability Orchestrator (medousa-code) for Scripts + agents.",
-        "langservers" => "Optional pyright + TypeScript language servers for the coding engine.",
+        "langservers" => {
+            "Optional Pyright, TypeScript, and Svelte language servers for the coding engine."
+        }
         "shell-session" => "Workshop shell session host (medousa-session) — shared PTY for Terminal tabs and coding agents.",
         _ => "Optional Medousa component.",
     }
@@ -443,7 +449,7 @@ pub fn resolve_package_alias(name: &str) -> Option<&'static str> {
         "slack" | "adapter-slack" => Some("adapter-slack"),
         "whatsapp" | "adapter-whatsapp" => Some("adapter-whatsapp"),
         "coding-engine" | "medousa-code" | "code" | "lsp" => Some("coding-engine"),
-        "langservers" | "pyright" | "tsserver" => Some("langservers"),
+        "langservers" | "pyright" | "tsserver" | "svelte" | "svelteserver" => Some("langservers"),
         "shell-session" | "medousa-session" | "session" | "terminal" => Some("shell-session"),
         "local-brain" | "brain" | "local_brain" => Some("local-brain"),
         "desktop" => Some("desktop"),

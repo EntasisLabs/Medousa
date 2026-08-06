@@ -95,6 +95,19 @@ impl ServerRegistry {
             args: vec!["--stdio".into()],
         });
         reg.register(ServerLaunchSpec {
+            language: LanguageId::new("svelte"),
+            kind: ServerKind::Stdio {
+                command: "svelteserver".into(),
+            },
+            root_markers: vec![
+                "svelte.config.js".into(),
+                "svelte.config.ts".into(),
+                "svelte.config.mjs".into(),
+                "package.json".into(),
+            ],
+            args: vec!["--stdio".into()],
+        });
+        reg.register(ServerLaunchSpec {
             language: LanguageId::new("rust"),
             kind: ServerKind::Stdio {
                 command: "rust-analyzer".into(),
@@ -102,6 +115,7 @@ impl ServerRegistry {
             root_markers: vec!["Cargo.toml".into()],
             args: vec![],
         });
+
         reg.register(ServerLaunchSpec {
             language: LanguageId::new("go"),
             kind: ServerKind::Stdio {
@@ -260,8 +274,30 @@ mod tests {
         let reg = ServerRegistry::with_defaults();
         assert!(reg.get(&LanguageId::new("grapheme")).is_some());
         assert!(reg.get(&LanguageId::new("python")).is_some());
+        assert!(reg.get(&LanguageId::new("svelte")).is_some());
         assert!(reg.get(&LanguageId::new("rust")).is_some());
     }
+
+    #[test]
+    fn resolve_root_prefers_svelte_config_over_outer_package() {
+        let dir = tempfile::tempdir().unwrap();
+        let package = dir.path().join("apps/medousa-home");
+        let source = package.join("src");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(dir.path().join("package.json"), "{}").unwrap();
+        std::fs::write(package.join("package.json"), "{}").unwrap();
+        std::fs::write(package.join("svelte.config.js"), "export default {};").unwrap();
+        let file = source.join("App.svelte");
+        std::fs::write(&file, "<script lang=\"ts\">export let name = \"Medousa\";</script>").unwrap();
+
+        let root = ServerRegistry::with_defaults().resolve_root(
+            &LanguageId::new("svelte"),
+            &file,
+            dir.path(),
+        );
+        assert_eq!(root, package.canonicalize().unwrap());
+    }
+
 
     #[test]
     fn resolve_root_finds_cargo_toml() {

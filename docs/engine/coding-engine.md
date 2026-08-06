@@ -36,8 +36,9 @@ the outer authority boundary. For a document-aware request, `medousa-code`
 decodes and canonicalizes the file URI, rejects other schemes, encoded path
 separators, symlink escapes, and paths outside that working copy, then walks
 upward only as far as the project root. The closest registered marker — such as
-`Cargo.toml`, `package.json`, `go.mod`, or `pyproject.toml` — becomes the
-language-server root. No marker above the Forge working copy can participate.
+`Cargo.toml`, `package.json`, `svelte.config.js`, `go.mod`, or `pyproject.toml`
+— becomes the language-server root. No marker above the Forge working copy can
+participate.
 
 `GET /v1/code/language-root?work_id=…&uri=…&language=…` reports that resolved
 root as a file URI and project-relative path. Home uses it as the LSP `rootUri`
@@ -109,6 +110,24 @@ For rolling upgrades, Home falls back to the older digest-fenced
 the connected daemon does not expose `source/workspace-edit`. Resource edits
 remain unapplied with an explicit daemon-upgrade message; Home never splits an
 atomic refactor across the older create/rename/delete endpoints.
+
+## Language dogfood pack
+
+Home grammar and workshop language servers stay paired for the first-party
+dogfood languages:
+
+| Editor language | Grammar | Workshop server | Package |
+|---|---|---|---|
+| TypeScript / TSX | CodeMirror JS with `typescript` / `jsx` | `typescript-language-server` | `langservers` |
+| JavaScript / JSX | CodeMirror JS with optional `jsx` | `typescript-language-server` | `langservers` |
+| Svelte | `codemirror-lang-svelte` | `svelteserver` | `langservers` |
+| Python | CodeMirror Python | `pyright-langserver` | `langservers` |
+
+`.svelte` files resolve a language root from `svelte.config.*` or the nearest
+`package.json` inside the governed worktree. Editor **Repair language support**
+installs `coding-engine` plus the language's package (`langservers` for this
+dogfood set) on a co-located workshop. Remote Home still opens Settings →
+Packages on the connected workshop instead of installing client-side binaries.
 
 ## Degradation
 

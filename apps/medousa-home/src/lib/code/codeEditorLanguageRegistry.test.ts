@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   CODE_EDITOR_LANGUAGES,
   buildCodeEditorLanguageExtensions,
+  codeEditorLspLanguageId,
   getCodeEditorLanguage,
+  languageRepairPackageId,
   languageSupportsLsp,
   resolveCodeEditorLanguage,
 } from "./codeEditorLanguageRegistry";
@@ -38,8 +40,16 @@ describe("codeEditorLanguageRegistry", () => {
     }
   });
 
-  it("registers python/typescript/rust/javascript as highlight with LSP capability", () => {
-    for (const id of ["python", "typescript", "rust", "javascript"] as const) {
+  it("registers python/typescript/tsx/javascript/jsx/svelte/rust with LSP", () => {
+    for (const id of [
+      "python",
+      "typescript",
+      "tsx",
+      "javascript",
+      "jsx",
+      "svelte",
+      "rust",
+    ] as const) {
       const def = getCodeEditorLanguage(id);
       expect(def.tier).toBe("highlight");
       expect(def.capabilities.lsp).toBe(true);
@@ -58,8 +68,17 @@ describe("codeEditorLanguageRegistry", () => {
     expect(resolveCodeEditorLanguage("bash")).toBe("shell");
     expect(resolveCodeEditorLanguage("txt")).toBe("plaintext");
     expect(resolveCodeEditorLanguage("py")).toBe("python");
-    expect(resolveCodeEditorLanguage("tsx")).toBe("typescript");
+    expect(resolveCodeEditorLanguage("tsx")).toBe("tsx");
+    expect(resolveCodeEditorLanguage("jsx")).toBe("jsx");
+    expect(resolveCodeEditorLanguage("svelte")).toBe("svelte");
     expect(resolveCodeEditorLanguage("yml")).toBe("yaml");
+  });
+
+  it("maps jsx/tsx editor languages onto the TypeScript language server", () => {
+    expect(codeEditorLspLanguageId("tsx")).toBe("typescript");
+    expect(codeEditorLspLanguageId("jsx")).toBe("javascript");
+    expect(codeEditorLspLanguageId("svelte")).toBe("svelte");
+    expect(languageRepairPackageId("svelte")).toBe("langservers");
   });
 
   it("falls back unknown aliases to plaintext", () => {
