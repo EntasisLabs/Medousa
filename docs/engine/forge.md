@@ -59,7 +59,8 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | GET | `/v1/forge/evidence/{evidence_id}/receipts` | Sealed compact Coder evidence provenance (never raw payloads) |
 | GET | `/v1/forge/items/{id}/tasks` | Manifest-derived checks, tests, builds, and run commands |
 | POST | `/v1/forge/items/{id}/tasks/{task_id}/runs` | Start a named, cancellable project run |
-| GET/DELETE | `/v1/forge/items/{id}/task-runs/{run_id}` | Poll or cancel a project run |
+| GET/DELETE | `/v1/forge/items/{id}/task-runs/{run_id}` | Poll or cancel a project run (includes live bounded `stdout`/`stderr`) |
+| GET (SSE) | `/v1/forge/items/{id}/task-runs/{run_id}/events?since=…` | Stream task output chunks + terminal state (`?since=` replay) |
 | GET | `/v1/forge/items/{id}/tests` | Discover addressable project tests |
 | GET | `/v1/forge/items/{id}/review/file?path=…` | Exact baseline-to-reviewed file comparison with structured hunks |
 | POST | `/v1/forge/items/{id}/review/file` | Reopen work and restore one text file to its baseline while retaining the reviewed checkpoint |
@@ -103,6 +104,21 @@ renames/deletes recover tab identity, and the language client receives
 
 `GET /v1/forge/stream` remains the coarse undertaking list channel (work id,
 state, event kind). It does not carry paths or a replay cursor.
+
+### Project task-run output stream
+
+`GET /v1/forge/items/{id}/task-runs/{run_id}/events?since=<seq>` streams live
+stdout/stderr for a named project run. Each SSE `task` payload is a
+`ProjectTaskOutputEvent` with monotonic `seq`, `run_id`, `kind`
+(`output` / `state`), optional `stream`/`text` for chunks, and optional
+`state`/`result` when status changes.
+
+`GET …/task-runs/{run_id}` also returns bounded live `stdout`/`stderr`,
+`output_truncated`, and `next_seq` while the process is still running (and after
+exit for replay). Output buffers cap at 256 KiB; chunk replay keeps the last
+~400 events. Cancel may emit an early `state=cancelled` without `result`; the
+stream stays open until the process exits and a terminal `state` event includes
+the final result.
 
 Forge records a canonical `active_attempts` set and resolves every lease
 mutation against its addressed attempt. The legacy singular `active_attempt`

@@ -78,14 +78,12 @@ recovery where applicable.
 
 ### Trust gaps to close first
 
-- Project task output is buffered until exit. Long-running development tasks
-  have no live logs or interactive named terminal despite the earlier roadmap
-  claim.
 - Debugging is absent. Source-control operations, test state, terminal shell
   integration, and editor contribution points are substantially below the
   daily-driver baseline. Command identities and VS Code aliases exist for the
   Code journey; a full keybinding editor and context-key `when` clauses remain
-  deferred.
+  deferred. Named task terminals, configured tasks, and problem matchers are
+  still ahead of live Output streaming (HCP-7B+).
 
 ## Target architecture
 
@@ -218,8 +216,8 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 | HCP-5C | Shared command registry, VS Code aliases, context keys, and keybinding editor | ✅ |
 | HCP-6A | Full repository search API/UI and cancellable pagination | ✅ |
 | HCP-6B | Previewed repository replace and complete file/folder operations | ✅ |
-| HCP-6C | Large-file, encoding, binary-preview, and fuzzy Quick Open fallbacks | 🔄 |
-| HCP-7A | Streaming execution protocol and bounded output replay | ⬜ |
+| HCP-6C | Large-file, encoding, binary-preview, and fuzzy Quick Open fallbacks | ✅ |
+| HCP-7A | Streaming execution protocol and bounded output replay | 🔄 |
 | HCP-7B | Named task terminals, background readiness, configured tasks, and problem matchers | ⬜ |
 | HCP-7C | Terminal search, profiles, groups, shell integration, file links, and run selection | ⬜ |
 | HCP-7D | Remote service detection/proxy and Browser preview handoff | ⬜ |
@@ -330,6 +328,11 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
   rename/delete via workspace-edit. Migration: none. Compatibility: older Homes
   ignore replace/directory fields. Rollback: revert this commit; additive
   routes and UI.
+- **HCP-6C — `f72799cf`.** Large/binary/lossy source reads return
+  `encoding`/`preview`/`truncated` with hex or truncated text; Code opens those
+  tabs read-only; Quick Open uses fuzzy path matching. Migration: none.
+  Compatibility: older Homes ignore preview fields. Rollback: revert this
+  commit; additive read metadata and UI.
 
 ### Product-fit boundary (post-HCP-8)
 
