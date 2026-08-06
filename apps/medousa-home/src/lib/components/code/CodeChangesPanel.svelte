@@ -1,11 +1,20 @@
 <script lang="ts">
-  import type { ForgeChanges } from "$lib/forge";
+  import DiffStack from "$lib/components/diff/DiffStack.svelte";
+  import { countDiffStats, type DiffFileSection } from "$lib/diff/diffTypes";
+  import type { ChangesFileDiff, ForgeChanges } from "$lib/forge";
 
   type Props = {
     changes: ForgeChanges | null;
     loading?: boolean;
     error?: string | null;
-    onOpenPath: (path: string) => void;
+    selectedPath?: string | null;
+    fileDiff?: ChangesFileDiff | null;
+    fileLoading?: boolean;
+    fileError?: string | null;
+    restoreBusy?: boolean;
+    onSelectPath: (path: string) => void;
+    onOpenPath: (path: string, line?: number) => void;
+    onRestorePath: (diff: ChangesFileDiff) => void;
     onClose: () => void;
     onRefresh: () => void;
   };
@@ -14,10 +23,19 @@
     changes,
     loading = false,
     error = null,
+    selectedPath = null,
+    fileDiff = null,
+    fileLoading = false,
+    fileError = null,
+    restoreBusy = false,
+    onSelectPath,
     onOpenPath,
+    onRestorePath,
     onClose,
     onRefresh,
   }: Props = $props();
+
+  let mode = $state<"inline" | "side">("inline");
 
   function statusLabel(status: string): string {
     switch (status) {
@@ -63,10 +81,32 @@
     }
     return parts.join(" · ") || "Working copy";
   }
+
+  function toStackFile(diff: ChangesFileDiff): DiffFileSection {
+    const stats = countDiffStats(diff.hunks);
+    return {
+      path: diff.path,
+      oldPath: diff.old_path,
+      status: diff.status,
+      binary: diff.binary,
+      conflict: diff.conflict,
+      additions: stats.additions,
+      deletions: stats.deletions,
+      hunks: diff.hunks,
+      baselineBytes: diff.baseline.byte_size,
+      reviewedBytes: diff.working.byte_size,
+      baselineExists: diff.baseline.exists,
+      reviewedExists: diff.working.exists,
+      beforeText: diff.baseline.content ?? null,
+      afterText: diff.working.content ?? null,
+    };
+  }
+
+  const stackFiles = $derived(fileDiff ? [toStackFile(fileDiff)] : []);
 </script>
 
-<div class="max-h-52 shrink-0 overflow-y-auto border-t border-surface-500/25 bg-surface-950/90">
-  <div class="sticky top-0 flex items-center justify-between gap-2 bg-surface-950 px-2.5 py-1 text-[9px] uppercase tracking-wider text-content-quiet">
+<div class="flex max-h-[28rem] shrink-0 flex-col border-t border-surface-500/25 bg-surface-950/90">
+  <div class="sticky top-0 z-10 flex items-center justify-between gap-2 bg-surface-950 px-2.5 py-1 text-[9px] uppercase tracking-wider text-content-quiet">
     <span>Changes</span>
     <div class="flex items-center gap-1 normal-case tracking-normal">
       <button
@@ -93,20 +133,52 @@
       {/if}
       <span class="text-content-quiet">{changes.files.length} file{changes.files.length === 1 ? "" : "s"}</span>
     </div>
-    {#if changes.files.length === 0}
-      <p class="px-2.5 py-2 text-[10px] text-content-quiet">Working tree is clean.</p>
-    {:else}
-      {#each changes.files as file (file.path)}
-        <button
-          type="button"
-          class="flex w-full items-center gap-2 border-b border-surface-500/10 px-2.5 py-1 text-left text-[10px] text-content-secondary hover:bg-surface-800/60 {file.status === 'unmerged' ? 'text-rose-200/90' : ''}"
-          onclick={() => onOpenPath(file.path)}
-        >
-          <span class="w-3 shrink-0 font-mono text-[9px] text-content-quiet" title={file.status}>{statusLabel(file.status)}</span>
-          <span class="min-w-0 flex-1 truncate font-mono">{file.path}{#if file.old_path}<span class="text-content-faint"> ← {file.old_path}</span>{/if}</span>
-        </button>
-      {/each}
-    {/if}
+    <div class="flex min-h-0 flex-1 overflow-hidden">
+      <div class="max-h-full w-44 shrink-0 overflow-y-auto border-r border-surface-500/15">
+        {#if changes.files.length === 0}
+          <p class="px-2.5 py-2 text-[10px] text-content-quiet">Working tree is clean.</p>
+        {:else}
+          {#each changes.files as file (file.path)}
+            <button
+              type="button"
+              class="flex w-full items-center gap-2 border-b border-surface-500/10 px-2 py-1 text-left text-[10px] hover:bg-surface-800/60 {selectedPath === file.path ? 'bg-surface-800/70 text-content-primary' : 'text-content-secondary'} {file.status === 'unmerged' ? 'text-rose-200/90' : ''}"
+              onclick={() => onSelectPath(file.path)}
+            >
+              <span class="w-3 shrink-0 font-mono text-[9px] text-content-quiet" title={file.status}>{statusLabel(file.status)}</span>
+              <span class="min-w-0 flex-1 truncate font-mono">{file.path}</span>
+            </button>
+          {/each}
+        {/if}
+      </div>
+      <div class="min-h-0 min-w-0 flex-1 overflow-y-auto px-2 py-1.5">
+        {#if !selectedPath}
+          <p class="px-1 py-2 text-[10px] text-content-quiet">Select a file to compare against the project baseline.</p>
+        {:else if fileLoading && !fileDiff}
+          <p class="px-1 py-2 text-[10px] text-content-quiet">Loading diff…</p>
+        {:else if fileError}
+          <p class="px-1 py-2 text-[10px] text-rose-200/90">{fileError}</p>
+        {:else if fileDiff}
+          {#if fileDiff.conflict}
+            <div class="mb-2 rounded border border-rose-500/30 bg-rose-950/30 px-2 py-1.5 text-[10px] text-rose-100/90">
+              Merge conflict on <span class="font-mono">{fileDiff.path}</span>. Open in Code to edit markers, or restore the baseline.
+            </div>
+          {/if}
+          {#if fileDiff.truncated}
+            <p class="mb-1 text-[9px] text-amber-200/80">Diff preview was truncated for size.</p>
+          {/if}
+          <DiffStack
+            files={stackFiles}
+            bind:mode
+            showJumpList={false}
+            busy={restoreBusy}
+            onOpenFile={(path, line) => onOpenPath(path, line)}
+            onRestoreFile={() => onRestorePath(fileDiff)}
+            restoreHint="Restore this path to the project baseline in the working copy."
+            restoreLabel="Restore baseline…"
+          />
+        {/if}
+      </div>
+    </div>
   {:else}
     <p class="px-2.5 py-2 text-[10px] text-content-quiet">Open Changes to load branch and file status.</p>
   {/if}

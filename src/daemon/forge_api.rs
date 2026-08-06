@@ -108,6 +108,10 @@ pub fn forge_router(state: AppState) -> Router {
         .route("/v1/forge/items/{work_id}/tree", get(source_tree))
         .route("/v1/forge/items/{work_id}/changes", get(get_changes))
         .route(
+            "/v1/forge/items/{work_id}/changes/file",
+            get(get_changes_file).post(restore_changes_file),
+        )
+        .route(
             "/v1/forge/items/{work_id}/source/batch",
             put(save_source_batch),
         )
@@ -3455,6 +3459,280 @@ async fn get_changes(
 ) -> ApiResult<Json<ForgeChangesResponse>> {
     let id = parse_work_id(&work_id)?;
     Ok(Json(build_changes_response(&state, &id)?))
+}
+
+#[derive(Debug, Deserialize)]
+struct ChangesFileQuery {
+    path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ChangesFileDiff {
+    work_id: String,
+    path: String,
+    status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    old_path: Option<String>,
+    baseline_oid: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    working_digest: Option<String>,
+    binary: bool,
+    conflict: bool,
+    baseline: ReviewFileVersion,
+    working: ReviewFileVersion,
+    hunks: Vec<ReviewDiffHunk>,
+    truncated: bool,
+}
+
+fn changes_file_diff(state: &AppState, id: &WorkId, raw_path: &str) -> ApiResult<ChangesFileDiff> {
+    const MAX_CHANGES_FILE_BYTES: usize = 1024 * 1024;
+    let (_, path) = normalize_source_relative(raw_path)?;
+    let forge = forge(state);
+    let item = forge.load(id).map_err(map_err)?;
+    let environment = item.workspace_environment().cloned().ok_or_else(|| {
+        request_error(
+            StatusCode::CONFLICT,
+            "prepare the governed workspace before reading changes",
+        )
+    })?;
+    let baseline_oid = environment.baseline_oid.clone();
+    let entries = forge
+        .git()
+        .status_porcelain(&environment.worktree)
+        .map_err(map_err)?;
+    let entry = entries.iter().find(|entry| {
+        medousa_forge::policy::normalize_git_path(&entry.path) == path
+            || entry
+                .orig_path
+                .as_ref()
+                .map(|old| medousa_forge::policy::normalize_git_path(old) == path)
+                .unwrap_or(false)
+    });
+    let status = entry
+        .and_then(porcelain_change_status)
+        .unwrap_or("modified")
+        .to_owned();
+    let old_path = entry.and_then(|e| {
+        e.orig_path
+            .as_ref()
+            .map(|p| medousa_forge::policy::normalize_git_path(p))
+    });
+    let conflict = matches!(status.as_str(), "unmerged");
+    let baseline_path = old_path.as_deref().unwrap_or(path.as_str());
+    let baseline_bytes = forge
+        .git()
+        .show_bytes(&environment.worktree, &baseline_oid, baseline_path)
+        .ok();
+    let work_abs = environment.worktree.join(&path);
+    let working_bytes = if work_abs.is_file() {
+        std::fs::read(&work_abs).ok()
+    } else {
+        None
+    };
+    let binary = baseline_bytes
+        .as_ref()
+        .is_some_and(|bytes| looks_like_binary(bytes))
+        || working_bytes
+            .as_ref()
+            .is_some_and(|bytes| looks_like_binary(bytes));
+    let truncated = baseline_bytes
+        .as_ref()
+        .is_some_and(|bytes| bytes.len() > MAX_CHANGES_FILE_BYTES)
+        || working_bytes
+            .as_ref()
+            .is_some_and(|bytes| bytes.len() > MAX_CHANGES_FILE_BYTES);
+    let version = |bytes: &Option<Vec<u8>>| ReviewFileVersion {
+        exists: bytes.is_some(),
+        binary,
+        byte_size: bytes.as_ref().map(|value| value.len() as u64).unwrap_or(0),
+        digest: bytes.as_ref().map(|value| source_digest(value)),
+        content: if binary || truncated {
+            None
+        } else {
+            bytes
+                .as_ref()
+                .and_then(|value| String::from_utf8(value.clone()).ok())
+        },
+    };
+    let patch = if binary {
+        Vec::new()
+    } else if status == "untracked" || (baseline_bytes.is_none() && working_bytes.is_some()) {
+        forge
+            .git()
+            .diff_untracked_path(&environment.worktree, &path)
+            .unwrap_or_default()
+    } else {
+        forge
+            .git()
+            .diff_path_worktree(&environment.worktree, &baseline_oid, &path)
+            .map_err(map_err)?
+    };
+    let hunks = parse_review_hunks(&String::from_utf8_lossy(&patch));
+    Ok(ChangesFileDiff {
+        work_id: id.as_str().to_owned(),
+        path,
+        status,
+        old_path,
+        baseline_oid: baseline_oid.as_str().to_owned(),
+        working_digest: working_bytes.as_ref().map(|value| source_digest(value)),
+        binary,
+        conflict,
+        baseline: version(&baseline_bytes),
+        working: version(&working_bytes),
+        hunks,
+        truncated,
+    })
+}
+
+async fn get_changes_file(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Query(query): Query<ChangesFileQuery>,
+) -> ApiResult<Json<ChangesFileDiff>> {
+    let id = parse_work_id(&work_id)?;
+    Ok(Json(changes_file_diff(&state, &id, &query.path)?))
+}
+
+#[derive(Debug, Deserialize)]
+struct RestoreChangesFileRequest {
+    path: String,
+    expected_working_digest: Option<String>,
+    lease_id: String,
+    generation: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct RestoreChangesFileResponse {
+    work_id: String,
+    path: String,
+    action: String,
+    digest: Option<String>,
+}
+
+async fn restore_changes_file(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<RestoreChangesFileRequest>,
+) -> ApiResult<Json<RestoreChangesFileResponse>> {
+    let id = parse_work_id(&work_id)?;
+    let comparison = changes_file_diff(&state, &id, &body.path)?;
+    if comparison.binary && comparison.baseline.exists {
+        return Err(request_error(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "binary recovery is preserved in Git but cannot yet be restored from Home",
+        ));
+    }
+    let expected = body
+        .expected_working_digest
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let current = comparison.working_digest.as_deref();
+    match (expected, current) {
+        (Some(want), Some(have)) if want != have => {
+            return Err(request_error(
+                StatusCode::CONFLICT,
+                "the working copy changed; refresh Changes before restoring",
+            ));
+        }
+        (Some(_), None) => {
+            return Err(request_error(
+                StatusCode::CONFLICT,
+                "the working copy changed; refresh Changes before restoring",
+            ));
+        }
+        (None, Some(_)) if comparison.working.exists => {
+            return Err(request_error(
+                StatusCode::CONFLICT,
+                "expected_working_digest is required to restore this file",
+            ));
+        }
+        _ => {}
+    }
+    let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+    let environment = item.workspace_environment().cloned().ok_or_else(|| {
+        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+    })?;
+    let restore_path = comparison
+        .old_path
+        .as_deref()
+        .unwrap_or(&comparison.path)
+        .to_owned();
+    if comparison.path != restore_path {
+        let (renamed, _) = resolve_source_path(&environment.worktree, &comparison.path)?;
+        if renamed.is_file() {
+            std::fs::remove_file(&renamed).map_err(|err| {
+                request_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("could not restore file: {err}"),
+                )
+            })?;
+        }
+    }
+    let (action, digest) = if comparison.baseline.exists {
+        let content = comparison.baseline.content.clone().ok_or_else(|| {
+            request_error(
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "baseline text is unavailable for restore",
+            )
+        })?;
+        let candidate = environment.worktree.join(&restore_path);
+        let (destination, relative) = if candidate.is_file() {
+            resolve_source_path(&environment.worktree, &restore_path)?
+        } else {
+            resolve_new_source_path(&environment.worktree, &restore_path)?
+        };
+        if let Some(parent) = destination.parent() {
+            std::fs::create_dir_all(parent).map_err(|err| {
+                request_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("could not restore file: {err}"),
+                )
+            })?;
+        }
+        std::fs::write(&destination, content.as_bytes()).map_err(|err| {
+            request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not restore file: {err}"),
+            )
+        })?;
+        let digest = source_digest(content.as_bytes());
+        publish_project_change(
+            &state,
+            &item,
+            ForgeProjectEventKind::Changed,
+            Some(relative.clone()),
+            None,
+            Some(digest.clone()),
+        );
+        ("restored".into(), Some(digest))
+    } else {
+        let (target, relative) = resolve_source_path(&environment.worktree, &comparison.path)?;
+        if target.is_file() {
+            std::fs::remove_file(&target).map_err(|err| {
+                request_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("could not restore file: {err}"),
+                )
+            })?;
+        }
+        publish_project_change(
+            &state,
+            &item,
+            ForgeProjectEventKind::Deleted,
+            Some(relative.clone()),
+            None,
+            None,
+        );
+        ("deleted".into(), None)
+    };
+    remember_worktree(&state, &item, &environment.worktree);
+    Ok(Json(RestoreChangesFileResponse {
+        work_id: id.as_str().to_owned(),
+        path: restore_path,
+        action,
+        digest,
+    }))
 }
 
 async fn get_review(

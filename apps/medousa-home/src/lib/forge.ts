@@ -881,6 +881,28 @@ export type ForgeChanges = {
   files: ForgeChangesFile[];
 };
 
+export type ChangesFileDiff = {
+  work_id: string;
+  path: string;
+  status: string;
+  old_path?: string | null;
+  baseline_oid: string;
+  working_digest?: string | null;
+  binary: boolean;
+  conflict: boolean;
+  baseline: ReviewFileVersion;
+  working: ReviewFileVersion;
+  hunks: ReviewDiffHunk[];
+  truncated: boolean;
+};
+
+export type RestoreChangesFileResponse = {
+  work_id: string;
+  path: string;
+  action: string;
+  digest?: string | null;
+};
+
 export async function getProjectTasks(workId: string): Promise<ProjectTask[]> {
   return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/tasks`);
 }
@@ -1133,6 +1155,31 @@ export async function getReview(workId: string, attemptId?: string): Promise<Rev
 
 export async function getForgeChanges(workId: string): Promise<ForgeChanges> {
   return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/changes`);
+}
+
+export async function getChangesFile(
+  workId: string,
+  path: string,
+): Promise<ChangesFileDiff> {
+  const query = new URLSearchParams({ path });
+  return forgeFetch(
+    `/v1/forge/items/${encodeURIComponent(workId)}/changes/file?${query.toString()}`,
+  );
+}
+
+export async function restoreChangesFile(
+  workId: string,
+  input: {
+    path: string;
+    expected_working_digest?: string | null;
+    lease_id: string;
+    generation: number;
+  },
+): Promise<RestoreChangesFileResponse> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/changes/file`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export async function getReviewFile(

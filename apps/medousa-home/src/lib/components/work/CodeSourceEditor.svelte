@@ -105,6 +105,8 @@
     getProjectTasks,
     getProjectTests,
     getForgeChanges,
+    getChangesFile,
+    restoreChangesFile,
     startProjectTaskRun,
     getProjectTaskRun,
     cancelProjectTaskRun,
@@ -114,6 +116,7 @@
     type ProjectTaskRun,
     type ProjectTest,
     type ForgeChanges,
+    type ChangesFileDiff,
     type ForgeSourceFile,
   } from "$lib/forge";
   import { codeWorkspace, type CodeDocumentTab } from "$lib/stores/codeWorkspace.svelte";
@@ -235,6 +238,11 @@
   let changesLoading = $state(false);
   let changesError = $state<string | null>(null);
   let changesRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  let selectedChangePath = $state<string | null>(null);
+  let changeFileDiff = $state<ChangesFileDiff | null>(null);
+  let changeFileLoading = $state(false);
+  let changeFileError = $state<string | null>(null);
+  let changeRestoreBusy = $state(false);
   let externalVersions = $state<Record<string, ForgeSourceFile>>({});
   let comparingTabId = $state<string | null>(null);
   let reviewChangedLines = $state<Array<{ line: number; kind: string }>>([]);
@@ -742,6 +750,16 @@
     changesError = null;
     try {
       forgeChanges = await getForgeChanges(workId);
+      if (
+        selectedChangePath &&
+        !forgeChanges.files.some((file) => file.path === selectedChangePath)
+      ) {
+        selectedChangePath = null;
+        changeFileDiff = null;
+        changeFileError = null;
+      } else if (selectedChangePath) {
+        await loadChangeFileDiff(selectedChangePath);
+      }
     } catch (err) {
       if (isMissingForgeRoute(err)) {
         changesError = "This workshop does not expose Changes yet — update the daemon.";
@@ -760,6 +778,73 @@
       changesRefreshTimer = null;
       void refreshForgeChanges();
     }, 200);
+  }
+
+  async function loadChangeFileDiff(path: string) {
+    if (!workId) return;
+    changeFileLoading = true;
+    changeFileError = null;
+    try {
+      changeFileDiff = await getChangesFile(workId, path);
+    } catch (err) {
+      changeFileDiff = null;
+      if (isMissingForgeRoute(err)) {
+        changeFileError = "This workshop does not expose Changes diffs yet — update the daemon.";
+      } else {
+        changeFileError = err instanceof Error ? err.message : String(err);
+      }
+    } finally {
+      changeFileLoading = false;
+    }
+  }
+
+  async function selectChangePath(path: string) {
+    selectedChangePath = path;
+    await loadChangeFileDiff(path);
+  }
+
+  async function ensureHumanLease(): Promise<{ leaseId: string; generation: number }> {
+    let leaseId = context?.leaseId ?? null;
+    let generation = context?.leaseGeneration ?? null;
+    if ((!leaseId || generation == null) && detail?.allowed_actions.begin_attempt.allowed) {
+      const begun = await beginHumanAttempt(detail.id);
+      leaseId = begun.lease.lease_id;
+      generation = begun.lease.generation;
+      undertakings.setActiveFromItem(begun.item, {
+        leaseId,
+        leaseGeneration: generation,
+        executorKind: "human",
+      });
+    }
+    if (!leaseId || generation == null) {
+      throw new Error("Begin an editing session before restoring Changes");
+    }
+    return { leaseId, generation };
+  }
+
+  async function restoreChangeFile(diff: ChangesFileDiff) {
+    if (!workId) return;
+    changeRestoreBusy = true;
+    try {
+      const lease = await ensureHumanLease();
+      await restoreChangesFile(workId, {
+        path: diff.path,
+        expected_working_digest: diff.working_digest,
+        lease_id: lease.leaseId,
+        generation: lease.generation,
+      });
+      await refreshForgeChanges();
+      reconcileOpenFiles();
+      try {
+        quickFiles = (await getUndertakingSourceTree(workId)).files;
+      } catch {
+        /* tree refresh can retry later */
+      }
+    } catch (err) {
+      surfaceError = err instanceof Error ? err.message : String(err);
+    } finally {
+      changeRestoreBusy = false;
+    }
   }
 
   async function toggleChanges(forceOpen?: boolean) {
@@ -3129,7 +3214,14 @@
         changes={forgeChanges}
         loading={changesLoading}
         error={changesError}
-        onOpenPath={(path) => void openTaskLocation(path, 1)}
+        selectedPath={selectedChangePath}
+        fileDiff={changeFileDiff}
+        fileLoading={changeFileLoading}
+        fileError={changeFileError}
+        restoreBusy={changeRestoreBusy}
+        onSelectPath={(path) => void selectChangePath(path)}
+        onOpenPath={(path, line) => void openTaskLocation(path, line ?? 1)}
+        onRestorePath={(diff) => void restoreChangeFile(diff)}
         onClose={() => void toggleChanges(false)}
         onRefresh={() => void refreshForgeChanges()}
       />

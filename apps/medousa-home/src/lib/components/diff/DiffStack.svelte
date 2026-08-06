@@ -12,6 +12,8 @@
     subtitle?: string;
     onOpenFile?: (path: string, line?: number) => void;
     onRestoreFile?: (path: string) => void;
+    restoreHint?: string;
+    restoreLabel?: string;
   }
 
   let {
@@ -23,6 +25,8 @@
     subtitle,
     onOpenFile,
     onRestoreFile,
+    restoreHint,
+    restoreLabel,
   }: Props = $props();
 
   const stats = $derived(countStackStats(files));
@@ -102,6 +106,8 @@
             {mode}
             {busy}
             {onOpenFile}
+            {restoreHint}
+            {restoreLabel}
             onRestore={onRestoreFile ? () => onRestoreFile(file.path) : undefined}
           />
         </div>
