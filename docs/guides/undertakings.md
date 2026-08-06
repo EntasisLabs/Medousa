@@ -100,6 +100,10 @@ a private Code IDE chrome.
   Code Back/Forward restores the remembered pane when that group still exists.
   Problems, Structure, Tests, and the Terminal dock restore with the project
   (`workspace-state` layout); they are not permanent chrome across Chat or Notes.
+  `Cmd/Ctrl+Shift+P` opens Spotlight in command mode (`>`). Code actions also
+  appear under familiar VS Code names (Quick Open, Problems, Terminal, Tests).
+  A small allowlist of chords can be overridden in storage; a Settings keybinding
+  editor is not shipped yet.
 - The Code explorer lists tracked and unignored repository files. `Cmd/Ctrl+P`
   opens Quick Open: type a file name, `@` plus a name for project symbols, or
   `:` plus a number to jump to a line.

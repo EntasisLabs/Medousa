@@ -84,8 +84,10 @@ recovery where applicable.
 - Repository search is tracked-file, fixed-string `git grep`; there is no
   workspace replace flow.
 - Debugging is absent. Source-control operations, test state, terminal shell
-  integration, keybinding customization, and editor contribution points are
-  substantially below the daily-driver baseline.
+  integration, and editor contribution points are substantially below the
+  daily-driver baseline. Command identities and VS Code aliases exist for the
+  Code journey; a full keybinding editor and context-key `when` clauses remain
+  deferred.
 
 ## Target architecture
 
@@ -214,8 +216,8 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 | HCP-4A | Cursor-based project source/Git event stream | ✅ |
 | HCP-4B | All-open-buffer reconcile, rename/delete recovery, and watched-file LSP notifications | ✅ |
 | HCP-5A | Geometry-correct groups, split-with-retained-editor, and unified code history | ✅ |
-| HCP-5B | Contextual Code layout preset with group-local visible tabs and optional regions | 🔄 |
-| HCP-5C | Shared command registry, VS Code aliases, context keys, and keybinding editor | ⬜ |
+| HCP-5B | Contextual Code layout preset with group-local visible tabs and optional regions | ✅ |
+| HCP-5C | Shared command registry, VS Code aliases, context keys, and keybinding editor | 🔄 |
 | HCP-6A | Full repository search API/UI and cancellable pagination | ⬜ |
 | HCP-6B | Previewed repository replace and complete file/folder operations | ⬜ |
 | HCP-6C | Large-file, encoding, binary-preview, and fuzzy Quick Open fallbacks | ⬜ |
@@ -310,6 +312,11 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
   unit-square geometry, and Code history records/restores shell `groupId`.
   Migration: none. Compatibility: existing shell layouts restore unchanged.
   Rollback: revert this commit; additive split/history behavior.
+- **HCP-5B — `7a43454a`.** Persisted contextual Code `layout` in workspace-state
+  (Problems/Terminal/Tests), group-targeted `openCodeFile` / mirror, and
+  `visibleCodeTabsInGroup` helpers composing shell strips. Migration: none.
+  Compatibility: older daemons ignore `layout`; Home keeps defaults. Rollback:
+  revert this commit; `layout` is additive.
 
 ### Slice rules
 

@@ -1,4 +1,5 @@
 import { formatShortcut, modKeyLabel, usesMetaModKey } from "$lib/platform";
+import { effectiveChordFor } from "$lib/commands/commandBindings";
 
 export type ShortcutCatalogGroupId =
   | "global"
@@ -23,7 +24,8 @@ export type ShortcutCatalogGroup = {
 
 /**
  * Single reference for binds that already exist in the app.
- * Drive cheat sheet / Spotlight labels / button hover titles from here — no remapping UI.
+ * Drive cheat sheet / Spotlight labels / button hover titles from here.
+ * A small allowlist can override chords via `commandBindings` (no Settings UI yet).
  */
 export const KEYBOARD_SHORTCUTS_CATALOG: ShortcutCatalogGroup[] = [
   {
@@ -31,6 +33,11 @@ export const KEYBOARD_SHORTCUTS_CATALOG: ShortcutCatalogGroup[] = [
     title: "Global",
     entries: [
       { id: "spotlight", keys: "mod:K", action: "Open Spotlight" },
+      {
+        id: "command-palette",
+        keys: "mod:Shift+P",
+        action: "Show All Commands (Spotlight >)",
+      },
       { id: "toggle-rail", keys: "mod:B", action: "Toggle left rail" },
       {
         id: "summon-toolbar",
@@ -181,11 +188,21 @@ export function shortcutEntryById(id: string): ShortcutCatalogEntry | undefined 
 
 /**
  * Native `title` hint: `Label (⌘B)`. Falls back to bare label if the id is unknown.
+ * Remappable workbench chords prefer the effective binding from commandBindings.
  */
+const CATALOG_COMMAND_IDS: Record<string, string> = {
+  "command-palette": "workbench.action.showCommands",
+  "code-quick-open": "workbench.action.quickOpen",
+  "code-terminal": "workbench.action.terminal.toggleTerminal",
+};
+
 export function titleWithShortcut(label: string, catalogId: string): string {
   const entry = shortcutEntryById(catalogId);
   if (!entry) return label;
-  return `${label} (${formatCatalogKeys(entry.keys)})`;
+  const commandId = CATALOG_COMMAND_IDS[catalogId];
+  const keys =
+    (commandId ? effectiveChordFor(commandId) : null) ?? entry.keys;
+  return `${label} (${formatCatalogKeys(keys)})`;
 }
 
 /**
