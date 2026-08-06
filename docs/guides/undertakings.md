@@ -89,8 +89,9 @@ a private Code IDE chrome.
 - Saves present the lease fence and the digest from the opened file. A stale
   lease or an externally changed file returns `409`; Medousa never silently
   overwrites it.
-- Absolute paths, parent traversal, symlink escapes, binary files, and text
-  files over 2 MiB are rejected by the workshop daemon.
+- Absolute paths, parent traversal, and symlink escapes are rejected by the
+  workshop daemon. Binary files and text over 2 MiB open as a read-only preview
+  (hex dump or truncated text) with encoding metadata instead of a hard refusal.
 - `Cmd/Ctrl+S` saves the focused editor; `Cmd/Ctrl+Shift+S` saves all modified
   open files for the project. `Cmd/Ctrl+Shift+T` reopens the last closed file.
   Close and cycle tabs with Workshop shell controls (`Ctrl+;` then `n` / `p`,
@@ -105,8 +106,9 @@ a private Code IDE chrome.
   A small allowlist of chords can be overridden in storage; a Settings keybinding
   editor is not shipped yet.
 - The Code explorer lists tracked and unignored repository files. `Cmd/Ctrl+P`
-  opens Quick Open: type a file name, `@` plus a name for project symbols, or
-  `:` plus a number to jump to a line. `Cmd/Ctrl+Shift+F` opens Search across
+  opens Quick Open with fuzzy path matching: type a file name, `@` plus a name
+  for project symbols, or `:` plus a number to jump to a line. `Cmd/Ctrl+Shift+F`
+  opens Search across
   tracked and untracked source (regex, case, whole word, include/exclude globs,
   changed-files scope, and load-more pagination). **Replace…** previews
   digest-fenced edits; uncheck files to skip them, then Apply writes the rest
