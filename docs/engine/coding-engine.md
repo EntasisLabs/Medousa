@@ -101,9 +101,11 @@ initialize that language's pooled agent session. This is also the rolling-
 upgrade fallback used by Home when an older coding engine does not advertise
 the aggregate scope. Home's Problems panel groups the result by project file,
 filters by severity or text, and can open an unopened diagnostic target. It
-refreshes while visible. The workshop already exposes resumable
-`GET /v1/forge/items/{work_id}/project-events`; Home still polls Problems until
-it consumes that stream for diagnostics and open-buffer reconcile.
+refreshes while visible and reconciles when resumable
+`GET /v1/forge/items/{work_id}/project-events` reports source changes. Home
+subscribes with `?since=` replay, updates every open buffer (dirty drafts keep
+compare/rebase), recovers rename/delete, and notifies the language server via
+`workspace/didChangeWatchedFiles`.
 
 ## Safe edits
 

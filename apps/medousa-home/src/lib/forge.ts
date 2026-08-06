@@ -2,6 +2,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { getDaemonUrl } from "$lib/daemon";
+import { streamPathWithSince } from "$lib/stream/reconnect";
 import { isTauri } from "$lib/window";
 
 export type ActionAffordance = {
@@ -333,6 +334,37 @@ async function forgeUrl(path: string): Promise<string> {
 
 export async function forgeStreamUrl(): Promise<string> {
   return forgeUrl("/v1/forge/stream");
+}
+
+export type ForgeProjectEventKind =
+  | "created"
+  | "changed"
+  | "renamed"
+  | "deleted"
+  | "git_status"
+  | "snapshot";
+
+/** Path-aware project event from GET …/project-events (SSE `project`). */
+export type ForgeProjectEvent = {
+  seq: number;
+  work_id: string;
+  kind: ForgeProjectEventKind;
+  path?: string | null;
+  old_path?: string | null;
+  digest?: string | null;
+  updated_at: string;
+};
+
+/** Resumable source/Git event stream for one undertaking (`?since=` replay). */
+export async function forgeProjectEventsUrl(
+  workId: string,
+  since = 0,
+): Promise<string> {
+  const path = streamPathWithSince(
+    `/v1/forge/items/${encodeURIComponent(workId)}/project-events`,
+    since,
+  );
+  return forgeUrl(path);
 }
 
 async function forgeFetch<T>(

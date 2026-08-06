@@ -60,6 +60,12 @@
     buildCodeWorkspaceEditPlan,
     type CodeWorkspaceEditPlan,
   } from "$lib/code/codeWorkspaceEdit";
+  import {
+    CodeProjectEventStream,
+    planOpenBufferAction,
+    watchedFileChangesForProjectEvent,
+    type ForgeProjectEvent,
+  } from "$lib/code/codeProjectEvents";
   import { codeEditorViewRegistry } from "$lib/code/codeEditorViewRegistry";
   import type { CodeLanguageNavigationKind } from "$lib/code/codeLanguageNavigation";
   import { containingSymbolTrail } from "$lib/code/codeDocumentSymbols";
@@ -227,6 +233,8 @@
     text: string;
   } | null>(null);
   let linePersistTimer: ReturnType<typeof setTimeout> | null = null;
+  let projectEventStream: CodeProjectEventStream | null = null;
+  let treeRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   let editorMenuOpen = $state(false);
   let editorMenuX = $state(0);
   let editorMenuY = $state(0);
@@ -900,14 +908,150 @@
       } else {
         codeWorkspace.acceptSaved(current.tabId, source);
       }
-    } catch {
+    } catch (err) {
+      const status = (err as { status?: number } | null)?.status;
+      if (status === 404) {
+        await reconcileExternalDelete(tab.work_id, tab.path);
+      }
       // Tree refresh and explicit reload surface durable errors. Polling stays quiet.
     }
   }
 
   function reconcileOpenFiles() {
-    const primary = activeTab;
-    void reconcileExternal(primary);
+    if (!workId) return;
+    for (const tab of codeWorkspace.tabsFor(workId)) {
+      void reconcileExternal(tab);
+    }
+  }
+
+  function scheduleTreeRefresh() {
+    if (!workId) return;
+    if (treeRefreshTimer) clearTimeout(treeRefreshTimer);
+    const id = workId;
+    treeRefreshTimer = setTimeout(() => {
+      treeRefreshTimer = null;
+      void getUndertakingSourceTree(id)
+        .then((tree) => {
+          if (workId === id) quickFiles = tree.files;
+        })
+        .catch(() => {
+          /* quiet */
+        });
+    }, 250);
+  }
+
+  function notifyLanguageServerOfProjectEvent(event: ForgeProjectEvent) {
+    const client = lspClient;
+    const root = workspaceRoot;
+    if (!client || !root) return;
+    const fileUri = (path: string) =>
+      pathToFileUri(`${root.replace(/[\\/]$/, "")}/${path}`);
+    if (event.kind === "created" && event.path) {
+      client.notification("workspace/didCreateFiles", {
+        files: [{ uri: fileUri(event.path) }],
+      });
+    } else if (event.kind === "renamed" && event.path && event.old_path) {
+      client.notification("workspace/didRenameFiles", {
+        files: [{ oldUri: fileUri(event.old_path), newUri: fileUri(event.path) }],
+      });
+    } else if (event.kind === "deleted" && event.path) {
+      client.notification("workspace/didDeleteFiles", {
+        files: [{ uri: fileUri(event.path) }],
+      });
+    }
+    const changes = watchedFileChangesForProjectEvent(event, fileUri);
+    if (changes.length) {
+      client.notification("workspace/didChangeWatchedFiles", { changes });
+      clientSyncAfterRefactor();
+    }
+  }
+
+  async function reconcileExternalRename(oldPath: string, newPath: string) {
+    if (!workId) return;
+    const tab = codeWorkspace.tabsFor(workId).find((entry) => entry.path === oldPath);
+    if (!tab) {
+      scheduleTreeRefresh();
+      return;
+    }
+    const dirty = codeWorkspace.isDirty(tab);
+    const draft = tab.draft;
+    const line = tab.line ?? 1;
+    const wasActive = activeTabPath === oldPath;
+    try {
+      const source = await getUndertakingSource(workId, newPath);
+      codeWorkspace.replacePath(workId, oldPath, source);
+      if (dirty) {
+        const next = codeWorkspace.tabsFor(workId).find((entry) => entry.path === newPath);
+        if (next) {
+          codeWorkspace.updateDraft(next.tabId, draft);
+          externalVersions = { ...externalVersions, [next.tabId]: source };
+          codeWorkspace.setError(
+            next.tabId,
+            "This file was renamed in the project. Your draft is safe.",
+          );
+        }
+      }
+      await lmeWorkspace.replaceCodeFile(workId, oldPath, newPath, line, {
+        activate: wasActive,
+      });
+      if (wasActive) {
+        undertakings.setSelection({ path: newPath, line, entityId: null });
+      }
+    } catch {
+      await reconcileExternalDelete(workId, oldPath);
+    }
+    scheduleTreeRefresh();
+  }
+
+  async function reconcileExternalDelete(targetWorkId: string, path: string) {
+    const tab = codeWorkspace.tabsFor(targetWorkId).find((entry) => entry.path === path);
+    if (!tab) {
+      scheduleTreeRefresh();
+      return;
+    }
+    if (codeWorkspace.isDirty(tab)) {
+      codeWorkspace.setError(
+        tab.tabId,
+        "This file was deleted in the project. Your draft is safe.",
+      );
+      scheduleTreeRefresh();
+      return;
+    }
+    const wasActive = activeTabPath === path;
+    codeWorkspace.removePath(targetWorkId, path);
+    await lmeWorkspace.closeCodeFile(targetWorkId, path);
+    if (wasActive) {
+      undertakings.setSelection({ path: null, line: null, entityId: null });
+    }
+    scheduleTreeRefresh();
+  }
+
+  async function handleProjectEvent(event: ForgeProjectEvent) {
+    if (!workId || event.work_id !== workId) return;
+    notifyLanguageServerOfProjectEvent(event);
+    const plan = planOpenBufferAction(event);
+    switch (plan.action) {
+      case "reconcile": {
+        const tab = codeWorkspace
+          .tabsFor(workId)
+          .find((entry) => entry.path === plan.path);
+        if (tab) void reconcileExternal(tab);
+        if (event.kind === "created") scheduleTreeRefresh();
+        break;
+      }
+      case "rename":
+        await reconcileExternalRename(plan.oldPath, plan.newPath);
+        break;
+      case "delete":
+        await reconcileExternalDelete(workId, plan.path);
+        break;
+      case "reconcile_all":
+        reconcileOpenFiles();
+        scheduleTreeRefresh();
+        break;
+      default:
+        break;
+    }
   }
 
   function useProjectVersion(tab: CodeDocumentTab) {
@@ -1995,8 +2139,25 @@
     };
   });
 
+  $effect(() => {
+    if (!interactive) {
+      projectEventStream?.stop();
+      return;
+    }
+    const id = workId;
+    if (!projectEventStream) {
+      projectEventStream = new CodeProjectEventStream({
+        onEvent: (event) => void handleProjectEvent(event),
+      });
+    }
+    projectEventStream.setWorkId(id || null);
+  });
+
   onDestroy(() => {
     if (linePersistTimer) clearTimeout(linePersistTimer);
+    if (treeRefreshTimer) clearTimeout(treeRefreshTimer);
+    projectEventStream?.teardown();
+    projectEventStream = null;
     codeEditorStatus.clear(statusOwnerId);
   });
 </script>
