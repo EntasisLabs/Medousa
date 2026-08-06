@@ -16,7 +16,6 @@
   import CalendarRailList from "$lib/components/calendar/CalendarRailList.svelte";
   import YouRailToolbar from "$lib/components/profiles/YouRailToolbar.svelte";
   import YouRailList from "$lib/components/profiles/YouRailList.svelte";
-  import YouCreateMenu from "$lib/components/profiles/YouCreateMenu.svelte";
   import WorkRailToolbar from "$lib/components/work/WorkRailToolbar.svelte";
   import WorkRailList from "$lib/components/work/WorkRailList.svelte";
   import CanvasAddViewForm from "$lib/components/settings/CanvasAddViewForm.svelte";
@@ -58,17 +57,12 @@
   } from "$lib/utils/railPopoverSummon";
   import { resolveSummonToolbarSurface } from "$lib/utils/resolveSummonToolbarSurface";
   import { toast } from "$lib/stores/toast.svelte";
-  import { Check, GripVertical, Minus, Pencil, Plus, Settings } from "@lucide/svelte";
+  import { Check, GripVertical, Minus, Pencil, Plus, Search, Settings } from "@lucide/svelte";
   import { SAFETY_SURFACE_SETTINGS } from "$lib/types/environment";
   import type { DaemonHealth } from "$lib/daemon";
   import { fade, fly } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
   import { onMount } from "svelte";
-  import {
-    railRowQuickCreateLabel,
-    runRailRowQuickCreate,
-    surfaceShowsRailQuickCreate,
-  } from "$lib/utils/railRowQuickCreate";
 
   type RailPopoverTarget =
     | { kind: "lme"; mode: LmeExplorerMode }
@@ -286,9 +280,9 @@
   }
 
   /** Quieter tree parents — closer to Cursor folder icons. */
-  const treeIconProps = { size: 14, strokeWidth: 1.5 };
-  const heroIconProps = { size: 17, strokeWidth: 1.85 };
-  const utilityIconProps = { size: 14, strokeWidth: 1.5 };
+  const treeIconProps = { size: 14, strokeWidth: 2 };
+  const heroIconProps = { size: 17, strokeWidth: 2.15 };
+  const utilityIconProps = { size: 14, strokeWidth: 2 };
   /** In-place flyout — replaces rail view-mode swaps for list surfaces. */
   let railPopover = $state<RailPopoverTarget | null>(null);
   let railPopoverTriggerEl = $state<HTMLElement | null>(null);
@@ -555,18 +549,6 @@
     layout.setShellSidebarMode("nav");
   }
 
-  async function onRailQuickCreate(surfaceId: string, event?: MouseEvent) {
-    event?.preventDefault();
-    event?.stopPropagation();
-    closeRailPopover();
-    const result = await runRailRowQuickCreate(surfaceId);
-    if (result.navigateTo) {
-      ensureFamilyForSurface(result.navigateTo);
-      onSelect(result.navigateTo);
-      layout.setShellSidebarMode("nav");
-    }
-  }
-
   /** Popover → full side-rail view only (no main-content / tab activation). */
   function dockPopoverToRail() {
     if (!railPopover) return;
@@ -645,18 +627,25 @@
             <LmeSidePanel {onOpenChat} family={lmeFamilyForSurface(viewSurface)} />
           {:else if viewSurface === "messaging"}
             <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <label class="block px-1.5 pb-1.5 pt-1">
-                <span class="sr-only">Search channels</span>
-                <input
-                  class="input w-full text-sm"
-                  type="search"
-                  placeholder="Search channels…"
-                  value={messagingShell.search}
-                  oninput={(event) => {
-                    messagingShell.search = (event.currentTarget as HTMLInputElement).value;
-                  }}
-                />
-              </label>
+              <header class="lme-side-rail-dock">
+                <div class="lme-dock-search-expand flex min-w-0 flex-1 items-center gap-1">
+                  <Search
+                    size={14}
+                    strokeWidth={1.75}
+                    class="shrink-0 text-content-quiet"
+                    aria-hidden="true"
+                  />
+                  <input
+                    class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-content-quiet focus:outline-none focus:ring-0"
+                    type="search"
+                    placeholder="Search channels…"
+                    value={messagingShell.search}
+                    oninput={(event) => {
+                      messagingShell.search = (event.currentTarget as HTMLInputElement).value;
+                    }}
+                  />
+                </div>
+              </header>
               <div class="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
                 <MessagingChannelList
                   search={messagingShell.search}
@@ -673,47 +662,47 @@
             <PeersShellList />
           {:else if viewSurface === "map"}
             <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <div class="min-h-0 flex-1 overflow-hidden">
-                <MapSidePanel onPick={() => onSelect("map")} />
-              </div>
               <div class="lme-side-rail-dock">
                 <MapRailToolbar onPick={() => onSelect("map")} />
+              </div>
+              <div class="min-h-0 flex-1 overflow-hidden">
+                <MapSidePanel onPick={() => onSelect("map")} />
               </div>
             </div>
           {:else if viewSurface === "web"}
             <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <div class="min-h-0 flex-1 overflow-hidden">
-                <WebRailList onPickTab={() => onSelect("web")} />
-              </div>
               <div class="lme-side-rail-dock">
                 <WebRailToolbar onNavigated={() => onSelect("web")} />
+              </div>
+              <div class="min-h-0 flex-1 overflow-hidden">
+                <WebRailList onPickTab={() => onSelect("web")} />
               </div>
             </div>
           {:else if viewSurface === "calendar"}
             <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <div class="min-h-0 flex-1 overflow-hidden">
-                <CalendarRailList onPickEvent={() => onSelect("calendar")} />
-              </div>
               <div class="lme-side-rail-dock">
                 <CalendarRailToolbar onAction={() => onSelect("calendar")} />
+              </div>
+              <div class="min-h-0 flex-1 overflow-hidden">
+                <CalendarRailList onPickEvent={() => onSelect("calendar")} />
               </div>
             </div>
           {:else if viewSurface === "work"}
             <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <div class="min-h-0 flex-1 overflow-hidden">
-                <WorkRailList onPickCard={() => onSelect("work")} />
-              </div>
               <div class="lme-side-rail-dock">
                 <WorkRailToolbar onAction={() => onSelect("work")} />
+              </div>
+              <div class="min-h-0 flex-1 overflow-hidden">
+                <WorkRailList onPickCard={() => onSelect("work")} />
               </div>
             </div>
           {:else if viewSurface === "profiles"}
             <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <div class="min-h-0 flex-1 overflow-hidden">
-                <YouRailList onPickProfile={() => onSelect("profiles")} />
-              </div>
               <div class="lme-side-rail-dock">
                 <YouRailToolbar onAction={() => onSelect("profiles")} />
+              </div>
+              <div class="min-h-0 flex-1 overflow-hidden">
+                <YouRailList onPickProfile={() => onSelect("profiles")} />
               </div>
             </div>
           {/if}
@@ -753,9 +742,6 @@
                 : isAutomations
                   ? automationsIsActive()
                   : active === surface.id || surfacePopoverOpen(surface.id)}
-              {@const showQuickCreate =
-                !railLayoutEditing &&
-                surfaceShowsRailQuickCreate(surface.id, surface.kind)}
               {@const canHide =
                 railLayoutEditing && isNavDestinationToggleable(surface.id)}
               {@const canEditCustom = canHide && surface.kind === "custom"}
@@ -861,18 +847,6 @@
                         <Minus size={14} strokeWidth={2} />
                       </button>
                     </div>
-                  {:else if showQuickCreate}
-                    <div class="workshop-rail-dest-actions">
-                      <button
-                        type="button"
-                        class="vault-dock-icon-btn workshop-rail-row-action"
-                        title={railRowQuickCreateLabel(surface.id)}
-                        aria-label={railRowQuickCreateLabel(surface.id)}
-                        onclick={(event) => void onRailQuickCreate(surface.id, event)}
-                      >
-                        <Plus size={14} strokeWidth={2} />
-                      </button>
-                    </div>
                   {/if}
                 </div>
               </div>
@@ -944,36 +918,24 @@
         <div class="workshop-rail-dock">
           {#if lifeRail.you.kind === "surface"}
             {@const YouIcon = environmentIcon(lifeRail.you.surface.icon)}
-            <div class="workshop-rail-dest-row workshop-rail-dock-row">
-              <button
-                type="button"
-                data-rail-surface="profiles"
-                class="{railBtnClass('profiles', 'utility', {
-                  quietActive: true,
-                  active: active === 'profiles' || surfacePopoverOpen('profiles'),
-                })} workshop-rail-dock-btn"
-                title="You — {activeProfileLabel}"
-                aria-label="You ({activeProfileLabel})"
-                aria-current={active === "profiles" ? "page" : undefined}
-                aria-expanded={showView && viewSurface === "profiles"}
-                onclick={(event) => selectDestination("profiles", event)}
-              >
-                <span class="workshop-rail-btn-icon" aria-hidden="true">
-                  <YouIcon {...utilityIconProps} />
-                </span>
-                <span class="workshop-rail-btn-label">You</span>
-              </button>
-              <div class="workshop-rail-dest-actions">
-                <YouCreateMenu
-                  onReady={async () => {
-                    closeRailPopover();
-                    ensureFamilyForSurface("profiles");
-                    onSelect("profiles");
-                    layout.openShellSidebarView("profiles");
-                  }}
-                />
-              </div>
-            </div>
+            <button
+              type="button"
+              data-rail-surface="profiles"
+              class="{railBtnClass('profiles', 'utility', {
+                quietActive: true,
+                active: active === 'profiles' || surfacePopoverOpen('profiles'),
+              })} workshop-rail-dock-btn"
+              title="You — {activeProfileLabel}"
+              aria-label="You ({activeProfileLabel})"
+              aria-current={active === "profiles" ? "page" : undefined}
+              aria-expanded={showView && viewSurface === "profiles"}
+              onclick={(event) => selectDestination("profiles", event)}
+            >
+              <span class="workshop-rail-btn-icon" aria-hidden="true">
+                <YouIcon {...utilityIconProps} />
+              </span>
+              <span class="workshop-rail-btn-label">You</span>
+            </button>
           {/if}
 
           <button

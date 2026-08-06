@@ -69,10 +69,9 @@
 
   function placeCreateMenu() {
     if (!createBtnEl) return;
-    // Prefer below when docked in the rail popover toolbar; above in the status bar.
-    const inPopover = Boolean(createBtnEl.closest(".nav-rail-view-popover-dock-slot"));
+    // Prefer below from the top action row; still below when hosted in the rail popover.
     createPlacement = placeDockPopover(createBtnEl, {
-      preferUp: !inPopover,
+      preferUp: false,
       width: 196,
       maxHeight: 320,
     });
@@ -162,68 +161,7 @@
     <p class="shrink-0 px-3 py-2 text-sm text-content-error">{vault.error}</p>
   {/if}
 
-  <div
-    class="min-h-0 flex-1 overflow-y-auto"
-    bind:this={listScrollEl}
-    onscroll={handleListScroll}
-  >
-    {#if searching}
-      {#if vault.searchHits.length === 0}
-        <p class="workshop-muted px-3 py-4 text-xs">No notes match.</p>
-      {:else}
-        <ul class="divide-y divide-surface-500/35 border-b border-surface-500/35">
-          {#each vault.searchHits as hit (hit.note.path)}
-            <li>
-              <button
-                type="button"
-                class="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-surface-800/70 {vault.selectedPath ===
-                hit.note.path
-                  ? 'workshop-list-row-active'
-                  : ''}"
-                onclick={() => void lmeWorkspace.openNote(hit.note.path)}
-              >
-                <span class="min-w-0 flex-1">
-                  <span class="block truncate text-sm font-medium text-surface-100">
-                    {vault.labelByPathMap.get(hit.note.path) ??
-                      vaultDisplayTitle(hit.note.title, hit.note.path)}
-                  </span>
-                  <span class="workshop-faint mt-0.5 block truncate font-mono text-[10px]">
-                    {hit.note.path}
-                  </span>
-                </span>
-                <VaultKindBadge kind={hit.note.kind} path={hit.note.path} compact />
-              </button>
-            </li>
-          {/each}
-        </ul>
-      {/if}
-    {:else if vault.libraryBrowseMode === "folders"}
-      <VaultTree
-        tree={vault.tree}
-        selectedPath={vault.selectedPath}
-        labelByPath={vault.labelByPathMap}
-        activeSpaceFilter={vault.activeSpaceFilter}
-        onSelect={(path, event) => {
-          if (vault.applyRailSelection(path, event)) {
-            void lmeWorkspace.openNote(path);
-          }
-        }}
-        onMoveNote={(sourcePath, targetPrefix) => {
-          void vault.moveNoteToFolder(sourcePath, targetPrefix);
-        }}
-      />
-    {:else}
-      <VaultLibraryBrowseLists
-        onSelect={(path, event) => {
-          if (vault.applyRailSelection(path, event)) {
-            void lmeWorkspace.openNote(path);
-          }
-        }}
-      />
-    {/if}
-  </div>
-
-  <footer class="lme-side-rail-dock" use:portLmeDock>
+  <header class="lme-side-rail-dock" use:portLmeDock>
     {#if searchExpanded}
       <div class="lme-dock-search-expand flex min-w-0 flex-1 items-center gap-1">
         <Search size={14} strokeWidth={1.75} class="shrink-0 text-content-quiet" aria-hidden="true" />
@@ -251,14 +189,14 @@
       <div
         class="lme-dock-chrome-secondary lme-dock-chrome-secondary--crumb flex min-w-0 items-center gap-0.5"
       >
-        <VaultRootPicker compact quiet dropUp />
+        <VaultRootPicker compact quiet dropUp={false} />
         <span
           class="nav-rail-dock-crumb-sep shrink-0 px-px text-[11px] font-medium leading-none text-content-quiet"
           aria-hidden="true"
         >
           /
         </span>
-        <VaultGroupPicker dropUp />
+        <VaultGroupPicker dropUp={false} />
       </div>
       <!-- Push action cluster toward `>` once the bar extends. -->
       <div
@@ -379,5 +317,66 @@
         <Search size={15} strokeWidth={1.75} />
       </button>
     {/if}
-  </footer>
+  </header>
+  <div
+    class="min-h-0 flex-1 overflow-y-auto"
+    bind:this={listScrollEl}
+    onscroll={handleListScroll}
+  >
+    {#if searching}
+      {#if vault.searchHits.length === 0}
+        <p class="workshop-muted px-3 py-4 text-xs">No notes match.</p>
+      {:else}
+        <ul class="divide-y divide-surface-500/35 border-b border-surface-500/35">
+          {#each vault.searchHits as hit (hit.note.path)}
+            <li>
+              <button
+                type="button"
+                class="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-surface-800/70 {vault.selectedPath ===
+                hit.note.path
+                  ? 'workshop-list-row-active'
+                  : ''}"
+                onclick={() => void lmeWorkspace.openNote(hit.note.path)}
+              >
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate text-sm font-medium text-surface-100">
+                    {vault.labelByPathMap.get(hit.note.path) ??
+                      vaultDisplayTitle(hit.note.title, hit.note.path)}
+                  </span>
+                  <span class="workshop-faint mt-0.5 block truncate font-mono text-[10px]">
+                    {hit.note.path}
+                  </span>
+                </span>
+                <VaultKindBadge kind={hit.note.kind} path={hit.note.path} compact />
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    {:else if vault.libraryBrowseMode === "folders"}
+      <VaultTree
+        tree={vault.tree}
+        selectedPath={vault.selectedPath}
+        labelByPath={vault.labelByPathMap}
+        activeSpaceFilter={vault.activeSpaceFilter}
+        onSelect={(path, event) => {
+          if (vault.applyRailSelection(path, event)) {
+            void lmeWorkspace.openNote(path);
+          }
+        }}
+        onMoveNote={(sourcePath, targetPrefix) => {
+          void vault.moveNoteToFolder(sourcePath, targetPrefix);
+        }}
+      />
+    {:else}
+      <VaultLibraryBrowseLists
+        onSelect={(path, event) => {
+          if (vault.applyRailSelection(path, event)) {
+            void lmeWorkspace.openNote(path);
+          }
+        }}
+      />
+    {/if}
+  </div>
+
 </aside>

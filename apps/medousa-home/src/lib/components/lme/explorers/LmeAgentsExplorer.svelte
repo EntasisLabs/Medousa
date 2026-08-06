@@ -120,6 +120,140 @@
     <p class="shrink-0 px-3 py-2 text-sm text-content-error">{catalog.error}</p>
   {/if}
 
+  <header class="lme-side-rail-dock" use:portLmeDock>
+    <div class="lme-dock-leading-ghost min-w-0 flex-1">
+      {#if filterActive}
+        <span class="workshop-faint truncate text-[11px]">Filtered</span>
+      {/if}
+    </div>
+
+    <div class="relative shrink-0">
+      <button
+        type="button"
+        class="vault-dock-icon-btn"
+        aria-haspopup="menu"
+        aria-expanded={createMenuOpen}
+        aria-label="New agent"
+        title="New"
+        onclick={(event) => {
+          event.stopPropagation();
+          filterOpen = false;
+          createMenuOpen = !createMenuOpen;
+        }}
+      >
+        <Plus size={16} strokeWidth={1.75} />
+      </button>
+      {#if createMenuOpen}
+        <div
+          class="absolute top-full right-0 z-30 mt-1 min-w-[11rem] rounded-lg border border-surface-500/50 bg-surface-900 py-1 shadow-xl"
+          role="menu"
+          tabindex="-1"
+          onclick={(event) => event.stopPropagation()}
+          onkeydown={handleMenuKeydown}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            class="vault-menu-item"
+            onclick={openCreate}
+          >
+            <Plus size={14} strokeWidth={2} />
+            New agent
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            class="vault-menu-item"
+            onclick={() => {
+              closeMenus();
+              importWizardOpen = true;
+            }}
+          >
+            <Upload size={14} strokeWidth={2} />
+            Import
+          </button>
+        </div>
+      {/if}
+    </div>
+
+    <div class="lme-dock-chrome-secondary relative shrink-0">
+      <button
+        type="button"
+        class="vault-dock-icon-btn {filterActive ? 'vault-dock-icon-btn-active' : ''}"
+        aria-haspopup="menu"
+        aria-expanded={filterOpen}
+        aria-label="Filter agents"
+        title="Filter"
+        onclick={(event) => {
+          event.stopPropagation();
+          createMenuOpen = false;
+          filterOpen = !filterOpen;
+        }}
+      >
+        <SlidersHorizontal size={15} strokeWidth={1.75} />
+      </button>
+      {#if filterOpen}
+        <div
+          class="vault-notes-filter-menu absolute top-full right-0 z-30 mt-1 w-[min(17.5rem,calc(100vw-2rem))] rounded-lg border border-surface-500/50 bg-surface-900 py-2 shadow-xl"
+          role="menu"
+          tabindex="-1"
+          onclick={(event) => event.stopPropagation()}
+          onkeydown={handleMenuKeydown}
+        >
+          <div class="px-2.5 pb-2">
+            <input
+              class="input w-full text-xs"
+              type="search"
+              placeholder="Search agents…"
+              bind:value={search}
+              onclick={(event) => event.stopPropagation()}
+            />
+          </div>
+
+          <p class="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-content-quiet">
+            Show
+          </p>
+          {#each SKILL_FILTER_CHIPS as chip (chip.id)}
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={skillFilter === chip.id}
+              class="vault-menu-item w-full justify-between {skillFilter === chip.id
+                ? 'text-primary-200'
+                : ''}"
+              onclick={() => (skillFilter = chip.id)}
+            >
+              <span>{chip.label}</span>
+              {#if skillFilter === chip.id}
+                <Check size={14} strokeWidth={2} class="text-content-link" />
+              {/if}
+            </button>
+          {/each}
+
+          <div class="my-1 border-t border-surface-500/35"></div>
+          <button
+            type="button"
+            role="menuitem"
+            class="vault-menu-item text-content-tertiary"
+            onclick={() => void catalog.refresh()}
+          >
+            Refresh
+          </button>
+
+          {#if filterActive}
+            <button
+              type="button"
+              role="menuitem"
+              class="vault-menu-item text-content-tertiary"
+              onclick={clearFilters}
+            >
+              Clear filters
+            </button>
+          {/if}
+        </div>
+      {/if}
+    </div>
+  </header>
   <div class="min-h-0 flex-1 overflow-y-auto">
     {#if catalog.loading && catalog.manuscripts.length === 0}
       <p class="workshop-muted px-3 py-2 text-sm">Loading…</p>
@@ -188,140 +322,6 @@
     {/if}
   </div>
 
-  <footer class="lme-side-rail-dock" use:portLmeDock>
-    <div class="lme-dock-leading-ghost min-w-0 flex-1">
-      {#if filterActive}
-        <span class="workshop-faint truncate text-[11px]">Filtered</span>
-      {/if}
-    </div>
-
-    <div class="relative shrink-0">
-      <button
-        type="button"
-        class="vault-dock-icon-btn"
-        aria-haspopup="menu"
-        aria-expanded={createMenuOpen}
-        aria-label="New agent"
-        title="New"
-        onclick={(event) => {
-          event.stopPropagation();
-          filterOpen = false;
-          createMenuOpen = !createMenuOpen;
-        }}
-      >
-        <Plus size={16} strokeWidth={1.75} />
-      </button>
-      {#if createMenuOpen}
-        <div
-          class="absolute bottom-full right-0 z-30 mb-1 min-w-[11rem] rounded-lg border border-surface-500/50 bg-surface-900 py-1 shadow-xl"
-          role="menu"
-          tabindex="-1"
-          onclick={(event) => event.stopPropagation()}
-          onkeydown={handleMenuKeydown}
-        >
-          <button
-            type="button"
-            role="menuitem"
-            class="vault-menu-item"
-            onclick={openCreate}
-          >
-            <Plus size={14} strokeWidth={2} />
-            New agent
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            class="vault-menu-item"
-            onclick={() => {
-              closeMenus();
-              importWizardOpen = true;
-            }}
-          >
-            <Upload size={14} strokeWidth={2} />
-            Import
-          </button>
-        </div>
-      {/if}
-    </div>
-
-    <div class="lme-dock-chrome-secondary relative shrink-0">
-      <button
-        type="button"
-        class="vault-dock-icon-btn {filterActive ? 'vault-dock-icon-btn-active' : ''}"
-        aria-haspopup="menu"
-        aria-expanded={filterOpen}
-        aria-label="Filter agents"
-        title="Filter"
-        onclick={(event) => {
-          event.stopPropagation();
-          createMenuOpen = false;
-          filterOpen = !filterOpen;
-        }}
-      >
-        <SlidersHorizontal size={15} strokeWidth={1.75} />
-      </button>
-      {#if filterOpen}
-        <div
-          class="vault-notes-filter-menu absolute bottom-full right-0 z-30 mb-1 w-[min(17.5rem,calc(100vw-2rem))] rounded-lg border border-surface-500/50 bg-surface-900 py-2 shadow-xl"
-          role="menu"
-          tabindex="-1"
-          onclick={(event) => event.stopPropagation()}
-          onkeydown={handleMenuKeydown}
-        >
-          <div class="px-2.5 pb-2">
-            <input
-              class="input w-full text-xs"
-              type="search"
-              placeholder="Search agents…"
-              bind:value={search}
-              onclick={(event) => event.stopPropagation()}
-            />
-          </div>
-
-          <p class="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-content-quiet">
-            Show
-          </p>
-          {#each SKILL_FILTER_CHIPS as chip (chip.id)}
-            <button
-              type="button"
-              role="menuitemradio"
-              aria-checked={skillFilter === chip.id}
-              class="vault-menu-item w-full justify-between {skillFilter === chip.id
-                ? 'text-primary-200'
-                : ''}"
-              onclick={() => (skillFilter = chip.id)}
-            >
-              <span>{chip.label}</span>
-              {#if skillFilter === chip.id}
-                <Check size={14} strokeWidth={2} class="text-content-link" />
-              {/if}
-            </button>
-          {/each}
-
-          <div class="my-1 border-t border-surface-500/35"></div>
-          <button
-            type="button"
-            role="menuitem"
-            class="vault-menu-item text-content-tertiary"
-            onclick={() => void catalog.refresh()}
-          >
-            Refresh
-          </button>
-
-          {#if filterActive}
-            <button
-              type="button"
-              role="menuitem"
-              class="vault-menu-item text-content-tertiary"
-              onclick={clearFilters}
-            >
-              Clear filters
-            </button>
-          {/if}
-        </div>
-      {/if}
-    </div>
-  </footer>
 </aside>
 
 {#if createOpen}

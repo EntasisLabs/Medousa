@@ -102,7 +102,7 @@
             disabled={!canNavBack}
             onclick={goNavBack}
           >
-            <ArrowLeft size={14} strokeWidth={1.85} />
+            <ArrowLeft size={16} />
           </button>
           <button
             type="button"
@@ -112,7 +112,7 @@
             disabled={!canNavForward}
             onclick={goNavForward}
           >
-            <ArrowRight size={14} strokeWidth={1.85} />
+            <ArrowRight size={16} />
           </button>
         </div>
       {/if}
@@ -126,9 +126,9 @@
         onclick={toggleRail}
       >
         {#if railExpanded}
-          <PanelLeft size={14} strokeWidth={1.75} />
+          <PanelLeft size={16} />
         {:else}
-          <PanelLeftOpen size={14} strokeWidth={1.75} />
+          <PanelLeftOpen size={16} />
         {/if}
       </button>
     </div>
@@ -151,7 +151,7 @@
 
     <div class="app-titlebar-actions shrink-0">
       <NewTabMenu>
-        <Plus size={14} strokeWidth={2} />
+        <Plus size={16} />
       </NewTabMenu>
       {#if showChatPopoutBtn}
         <button
@@ -161,7 +161,7 @@
           aria-label="Pop out chat"
           onclick={() => void showChatPopout()}
         >
-          <ExternalLink size={14} strokeWidth={1.75} />
+          <ExternalLink size={16} />
         </button>
       {/if}
       {#if showWebPopoutBtn}
@@ -172,7 +172,7 @@
           aria-label="Open web window"
           onclick={() => void showBrowser()}
         >
-          <ExternalLink size={14} strokeWidth={1.75} />
+          <ExternalLink size={16} />
         </button>
       {/if}
       <button
@@ -183,7 +183,7 @@
         disabled={!canSplit}
         onclick={splitRight}
       >
-        <Columns2 size={14} strokeWidth={1.75} />
+        <Columns2 size={16} />
       </button>
       <button
         type="button"
@@ -193,7 +193,7 @@
         disabled={!canSplit}
         onclick={splitDown}
       >
-        <Rows2 size={14} strokeWidth={1.75} />
+        <Rows2 size={16} />
       </button>
       <button
         type="button"
@@ -203,7 +203,7 @@
         disabled={!canMergePane}
         onclick={closePane}
       >
-        <SquareX size={14} strokeWidth={1.75} />
+        <SquareX size={16} />
       </button>
     </div>
 
@@ -226,7 +226,7 @@
     gap: 0;
     padding-left: 0;
     padding-right: 6px;
-    border-bottom: 1px solid rgb(var(--color-surface-500) / 0.18);
+    border-bottom: 0;
     background: rgb(var(--color-surface-950));
     user-select: none;
   }
@@ -298,8 +298,8 @@
 
   .app-titlebar-btn {
     display: inline-flex;
-    width: 24px;
-    height: 24px;
+    width: 26px;
+    height: 26px;
     flex-shrink: 0;
     align-items: center;
     justify-content: center;
@@ -310,6 +310,12 @@
     transition:
       background-color 120ms ease,
       color 120ms ease;
+  }
+
+  /* Slightly larger chrome glyphs than the old 13–14px set. */
+  .app-titlebar :global(svg.lucide) {
+    width: 16px;
+    height: 16px;
   }
 
   .app-titlebar-btn:hover:not(:disabled) {

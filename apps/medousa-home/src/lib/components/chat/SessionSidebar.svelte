@@ -286,40 +286,80 @@
 {#snippet sessionPanelBody()}
   <div class="flex min-h-0 flex-1 flex-col">
     {#if showBuiltInToolbar}
-      <div class="session-sidebar-toolbar {variant === 'sheet' ? 'session-sidebar-toolbar--sheet' : ''}">
-        <label class="session-sidebar-search">
-          <Search size={14} strokeWidth={1.75} class="session-sidebar-search-icon" aria-hidden="true" />
-          <input
-            bind:this={searchInputEl}
-            class="session-sidebar-search-input"
-            type="search"
-            placeholder="Search titles…"
-            bind:value={query}
-          />
-        </label>
-        <button
-          type="button"
-          class="session-sidebar-new"
-          title="New chat"
-          aria-label="New chat"
-          onclick={createSession}
-        >
-          <Plus size={15} strokeWidth={2} />
-          <span class="session-sidebar-new-label">New</span>
-        </button>
-        {#if sharedMode.isShared}
+      {#if variant === "inline"}
+        <header class="lme-side-rail-dock">
+          <div class="lme-dock-search-expand flex min-w-0 flex-1 items-center gap-1">
+            <Search
+              size={14}
+              strokeWidth={1.75}
+              class="shrink-0 text-content-quiet"
+              aria-hidden="true"
+            />
+            <input
+              bind:this={searchInputEl}
+              class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-content-quiet focus:outline-none focus:ring-0"
+              type="search"
+              placeholder="Search titles…"
+              bind:value={query}
+            />
+          </div>
+          <button
+            type="button"
+            class="vault-dock-icon-btn"
+            title="New chat"
+            aria-label="New chat"
+            onclick={createSession}
+          >
+            <Plus size={16} strokeWidth={1.75} />
+          </button>
+          {#if sharedMode.isShared}
+            <button
+              type="button"
+              class="vault-dock-icon-btn"
+              title="New shared room"
+              aria-label="New shared room"
+              onclick={() => void createSharedRoom()}
+            >
+              <Users size={15} strokeWidth={1.75} />
+            </button>
+          {/if}
+        </header>
+      {:else}
+        <div class="session-sidebar-toolbar {variant === 'sheet' ? 'session-sidebar-toolbar--sheet' : ''}">
+          <label class="session-sidebar-search">
+            <Search size={14} strokeWidth={1.75} class="session-sidebar-search-icon" aria-hidden="true" />
+            <input
+              bind:this={searchInputEl}
+              class="session-sidebar-search-input"
+              type="search"
+              placeholder="Search titles…"
+              bind:value={query}
+            />
+          </label>
           <button
             type="button"
             class="session-sidebar-new"
-            title="New shared room"
-            aria-label="New shared room"
-            onclick={() => void createSharedRoom()}
+            title="New chat"
+            aria-label="New chat"
+            onclick={createSession}
           >
-            <Users size={15} strokeWidth={2} />
-            <span class="session-sidebar-new-label">Room</span>
+            <Plus size={15} strokeWidth={2} />
+            <span class="session-sidebar-new-label">New</span>
           </button>
-        {/if}
-      </div>
+          {#if sharedMode.isShared}
+            <button
+              type="button"
+              class="session-sidebar-new"
+              title="New shared room"
+              aria-label="New shared room"
+              onclick={() => void createSharedRoom()}
+            >
+              <Users size={15} strokeWidth={2} />
+              <span class="session-sidebar-new-label">Room</span>
+            </button>
+          {/if}
+        </div>
+      {/if}
     {/if}
 
     {#if chat.sessionsError}

@@ -1,192 +1,174 @@
 <script lang="ts">
-  import {
-    CalendarDays,
-    ChevronLeft,
-    ChevronRight,
-    Download,
-    ListTodo,
-    Plus,
-    RefreshCw,
-    Upload,
-  } from "@lucide/svelte";
-  import { calendar, type CalendarViewMode } from "$lib/stores/calendar.svelte";
+  import { CalendarDays, ListTodo, Plus, RefreshCw, Search, X } from "@lucide/svelte";
+  import { calendar } from "$lib/stores/calendar.svelte";
+  import { ensureRailPopoverOpen } from "$lib/utils/railPopoverChrome";
+  import { tick } from "svelte";
 
   interface Props {
     onAction?: () => void;
-    /** popover = full seed+secondary; rail-row = two seed actions only. */
+    /** popover = New · Refresh · Search; rail-row = New · Search. */
     variant?: "popover" | "rail-row";
   }
 
   let { onAction, variant = "popover" }: Props = $props();
-  let importInput: HTMLInputElement | undefined = $state();
 
-  const modes: { id: CalendarViewMode; label: string }[] = [
-    { id: "day", label: "D" },
-    { id: "week", label: "W" },
-    { id: "month", label: "M" },
-  ];
+  let searchExpanded = $state(false);
+  let searchInputEl = $state<HTMLInputElement | null>(null);
+  let createMenuOpen = $state(false);
 
-  function newEvent() {
-    calendar.openCreate();
+  const searching = $derived(calendar.railQuery.trim().length > 0);
+
+  $effect(() => {
+    if (searching && !searchExpanded) {
+      searchExpanded = true;
+    }
+  });
+
+  function closeCreateMenu() {
+    createMenuOpen = false;
+  }
+
+  function toggleCreateMenu(event: MouseEvent) {
+    event.stopPropagation();
+    createMenuOpen = !createMenuOpen;
+  }
+
+  function createEvent() {
+    closeCreateMenu();
+    calendar.openCreate(calendar.selectedDay);
     onAction?.();
   }
 
-  function newReminder() {
-    calendar.openCreateReminder();
+  function createReminder() {
+    closeCreateMenu();
+    calendar.openCreateReminder(calendar.selectedDay);
     onAction?.();
   }
 
-  function goToday() {
-    calendar.goToday();
-    onAction?.();
+  function handleMenuKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeCreateMenu();
+    }
   }
 
-  function setMode(mode: CalendarViewMode) {
-    calendar.setViewMode(mode);
-    onAction?.();
+  async function openSearch() {
+    closeCreateMenu();
+    await ensureRailPopoverOpen();
+    searchExpanded = true;
+    await tick();
+    searchInputEl?.focus();
   }
 
-  function shift(delta: number) {
-    calendar.shift(delta);
-    onAction?.();
+  function closeSearch() {
+    searchExpanded = false;
+    calendar.setRailQuery("");
   }
 
-  async function onImportChange(event: Event) {
-    const input = event.currentTarget as HTMLInputElement;
-    const file = input.files?.[0];
-    input.value = "";
-    if (!file) return;
-    const text = await file.text();
-    await calendar.importIcs(text);
-    onAction?.();
-  }
-
-  async function exportIcs() {
-    const ics = await calendar.exportIcs();
-    const blob = new Blob([ics], { type: "text/calendar" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "calendar.ics";
-    a.click();
-    URL.revokeObjectURL(url);
+  function handleSearchKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeSearch();
+    }
   }
 </script>
 
-<input
-  bind:this={importInput}
-  type="file"
-  accept=".ics,text/calendar"
-  class="sr-only"
-  onchange={(event) => void onImportChange(event)}
-/>
+<svelte:window onclick={closeCreateMenu} />
 
-<!-- Seed rule of 3: New · Today · expand chevron (chevron lives on the popover). -->
-<button
-  type="button"
-  class="vault-dock-icon-btn"
-  title="New event"
-  aria-label="New event"
-  onclick={newEvent}
->
-  <Plus size={15} strokeWidth={1.75} />
-</button>
-
-<button
-  type="button"
-  class="vault-dock-icon-btn"
-  title="Today"
-  aria-label="Today"
-  onclick={(event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    goToday();
-  }}
->
-  <CalendarDays size={15} strokeWidth={1.75} />
-</button>
-
-{#if variant === "popover"}
-  <!-- Expanded chrome only (hidden in seed via .lme-dock-chrome-secondary). -->
-  <div class="lme-dock-chrome-secondary flex shrink-0 items-center gap-0.5">
+{#if searchExpanded}
+  <div class="lme-dock-search-expand flex min-w-0 flex-1 items-center gap-1">
+    <Search size={14} strokeWidth={1.75} class="shrink-0 text-content-quiet" aria-hidden="true" />
+    <input
+      bind:this={searchInputEl}
+      class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-content-quiet focus:outline-none focus:ring-0"
+      type="search"
+      placeholder="Search events…"
+      value={calendar.railQuery}
+      oninput={(event) =>
+        calendar.setRailQuery((event.currentTarget as HTMLInputElement).value)}
+      onkeydown={handleSearchKeydown}
+    />
     <button
       type="button"
       class="vault-dock-icon-btn"
-      title="New reminder"
-      aria-label="New reminder"
-      onclick={newReminder}
+      aria-label="Close search"
+      title="Close search"
+      onclick={closeSearch}
     >
-      <ListTodo size={15} strokeWidth={1.75} />
-    </button>
-    <button
-      type="button"
-      class="vault-dock-icon-btn"
-      title="Previous"
-      aria-label="Previous period"
-      onclick={() => shift(-1)}
-    >
-      <ChevronLeft size={15} strokeWidth={2} />
-    </button>
-    <button
-      type="button"
-      class="vault-dock-icon-btn"
-      title="Next"
-      aria-label="Next period"
-      onclick={() => shift(1)}
-    >
-      <ChevronRight size={15} strokeWidth={2} />
-    </button>
-    <div
-      class="inline-flex h-7 items-center rounded-md border border-surface-600/40 p-px"
-      role="group"
-      aria-label="View mode"
-    >
-      {#each modes as mode (mode.id)}
-        <button
-          type="button"
-          class="inline-flex h-6 min-w-6 items-center justify-center rounded px-1 text-[10px] font-semibold tracking-wide transition {calendar.viewMode ===
-          mode.id
-            ? 'bg-surface-700 text-surface-50'
-            : 'text-content-quiet hover:text-surface-200'}"
-          aria-pressed={calendar.viewMode === mode.id}
-          title={mode.id}
-          onclick={() => setMode(mode.id)}
-        >
-          {mode.label}
-        </button>
-      {/each}
-    </div>
-    <button
-      type="button"
-      class="vault-dock-icon-btn"
-      title="Import .ics"
-      aria-label="Import calendar"
-      onclick={() => importInput?.click()}
-    >
-      <Upload size={14} strokeWidth={1.75} />
-    </button>
-    <button
-      type="button"
-      class="vault-dock-icon-btn"
-      title="Export .ics"
-      aria-label="Export calendar"
-      onclick={() => void exportIcs()}
-    >
-      <Download size={14} strokeWidth={1.75} />
-    </button>
-    <button
-      type="button"
-      class="vault-dock-icon-btn"
-      title="Refresh"
-      aria-label="Refresh calendar"
-      disabled={calendar.loading}
-      onclick={() => void calendar.refresh()}
-    >
-      <RefreshCw
-        size={15}
-        strokeWidth={1.75}
-        class={calendar.loading ? "animate-spin" : ""}
-      />
+      <X size={14} strokeWidth={1.75} />
     </button>
   </div>
+{:else}
+  <div class="lme-dock-leading-ghost min-w-0 flex-1" aria-hidden="true"></div>
+
+  <div class="relative shrink-0">
+    <button
+      type="button"
+      class="vault-dock-icon-btn"
+      title="New"
+      aria-label="New"
+      aria-haspopup="menu"
+      aria-expanded={createMenuOpen}
+      onclick={toggleCreateMenu}
+    >
+      <Plus size={16} strokeWidth={1.75} />
+    </button>
+    {#if createMenuOpen}
+      <div
+        class="absolute top-full right-0 z-30 mt-1 min-w-[11rem] rounded-lg border border-surface-500/50 bg-surface-900 py-1 shadow-xl"
+        role="menu"
+        tabindex="-1"
+        onclick={(event) => event.stopPropagation()}
+        onkeydown={handleMenuKeydown}
+      >
+        <button
+          type="button"
+          role="menuitem"
+          class="vault-menu-item"
+          onclick={createEvent}
+        >
+          <CalendarDays size={14} strokeWidth={2} />
+          New event
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          class="vault-menu-item"
+          onclick={createReminder}
+        >
+          <ListTodo size={14} strokeWidth={2} />
+          New reminder
+        </button>
+      </div>
+    {/if}
+  </div>
+
+  {#if variant === "popover"}
+    <div class="lme-dock-chrome-secondary shrink-0">
+      <button
+        type="button"
+        class="vault-dock-icon-btn"
+        title="Refresh"
+        aria-label="Refresh calendar"
+        disabled={calendar.loading}
+        onclick={() => void calendar.refresh()}
+      >
+        <RefreshCw
+          size={15}
+          strokeWidth={1.75}
+          class={calendar.loading ? "animate-spin" : ""}
+        />
+      </button>
+    </div>
+  {/if}
+
+  <button
+    type="button"
+    class="vault-dock-icon-btn {searching ? 'vault-dock-icon-btn-active' : ''}"
+    title="Search events"
+    aria-label="Search events"
+    onclick={() => void openSearch()}
+  >
+    <Search size={15} strokeWidth={1.75} />
+  </button>
 {/if}

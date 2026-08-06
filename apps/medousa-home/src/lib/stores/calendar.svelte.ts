@@ -87,6 +87,8 @@ class CalendarStore {
   loading = $state(false);
   error = $state<string | null>(null);
   notice = $state<string | null>(null);
+  /** Side-rail list filter (toolbar search). */
+  railQuery = $state("");
   editorOpen = $state(false);
   editing = $state<CalendarEvent | null>(null);
   createKind = $state<CalendarCreateKind>("event");
@@ -162,6 +164,10 @@ class CalendarStore {
     this.anchor = today;
     this.selectedDay = today;
     void this.refresh();
+  }
+
+  setRailQuery(query: string) {
+    this.railQuery = query;
   }
 
   eventsForDay(date: Date): CalendarEvent[] {

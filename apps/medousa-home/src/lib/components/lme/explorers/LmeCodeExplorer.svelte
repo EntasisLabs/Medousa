@@ -253,28 +253,30 @@
 </script>
 
 <aside class="flex h-full min-h-0 w-full flex-col" aria-label="Code projects">
-  <div class="flex shrink-0 items-center justify-between border-b border-surface-500/30 px-2 py-1.5">
-    <span class="flex items-center gap-1.5 text-[11px] font-medium text-content-secondary">
-      <Code2 size={13} strokeWidth={1.8} />
-      Projects
-    </span>
-    <div class="flex items-center gap-0.5">
-      <button
-        type="button"
-        class="rounded p-1 text-content-tertiary hover:bg-surface-800 hover:text-surface-100"
-        aria-label="Refresh projects"
-        title="Refresh"
-        onclick={() => void undertakings.refreshList()}
-      ><RefreshCw size={13} /></button>
-      <button
-        type="button"
-        class="rounded p-1 text-content-tertiary hover:bg-surface-800 hover:text-surface-100"
-        aria-label="New code project"
-        title="New code project"
-      onclick={() => (creating = !creating)}
-      ><Plus size={14} /></button>
+  <header class="lme-side-rail-dock">
+    <div class="lme-dock-leading-ghost flex min-w-0 flex-1 items-center gap-1.5">
+      <Code2 size={13} strokeWidth={1.8} class="shrink-0 text-content-quiet" aria-hidden="true" />
+      <span class="truncate text-[11px] font-medium text-content-secondary">Projects</span>
     </div>
-  </div>
+    <button
+      type="button"
+      class="vault-dock-icon-btn"
+      aria-label="Refresh projects"
+      title="Refresh"
+      onclick={() => void undertakings.refreshList()}
+    >
+      <RefreshCw size={15} strokeWidth={1.75} />
+    </button>
+    <button
+      type="button"
+      class="vault-dock-icon-btn"
+      aria-label="New code project"
+      title="New code project"
+      onclick={() => (creating = !creating)}
+    >
+      <Plus size={16} strokeWidth={1.75} />
+    </button>
+  </header>
 
   {#if creating}
     <form

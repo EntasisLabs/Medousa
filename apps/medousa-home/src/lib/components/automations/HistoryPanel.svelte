@@ -314,6 +314,49 @@
     </div>
   {/if}
 
+  {#if embedded && !mobile}
+    <header
+      class="lme-side-rail-dock"
+      use:portLmeDock
+    >
+      {#if searchExpanded}
+        <div class="lme-dock-search-expand flex min-w-0 flex-1 items-center gap-1">
+          <Search size={14} strokeWidth={1.75} class="shrink-0 text-content-quiet" aria-hidden="true" />
+          <input
+            bind:this={searchInputEl}
+            class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-content-quiet focus:outline-none focus:ring-0"
+            type="search"
+            placeholder="Search history…"
+            bind:value={search}
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
+            onkeydown={handleDockSearchKeydown}
+          />
+          <button
+            type="button"
+            class="vault-dock-icon-btn"
+            aria-label="Close search"
+            title="Close search"
+            onclick={closeDockSearch}
+          >
+            <X size={14} strokeWidth={1.75} />
+          </button>
+        </div>
+      {:else}
+        <div class="lme-dock-leading-ghost min-w-0 flex-1"></div>
+        <button
+          type="button"
+          class="vault-dock-icon-btn"
+          aria-label="Search history"
+          title="Search"
+          onclick={() => void openDockSearch()}
+        >
+          <Search size={15} strokeWidth={1.75} />
+        </button>
+      {/if}
+    </header>
+  {/if}
   <div
     class="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto {embedded
       ? 'px-2 py-1'
@@ -429,49 +472,7 @@
     {/if}
   </div>
 
-  {#if embedded && !mobile}
-    <footer
-      class="lme-side-rail-dock"
-      use:portLmeDock
-    >
-      {#if searchExpanded}
-        <div class="lme-dock-search-expand flex min-w-0 flex-1 items-center gap-1">
-          <Search size={14} strokeWidth={1.75} class="shrink-0 text-content-quiet" aria-hidden="true" />
-          <input
-            bind:this={searchInputEl}
-            class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-content-quiet focus:outline-none focus:ring-0"
-            type="search"
-            placeholder="Search history…"
-            bind:value={search}
-            autocapitalize="off"
-            autocorrect="off"
-            spellcheck="false"
-            onkeydown={handleDockSearchKeydown}
-          />
-          <button
-            type="button"
-            class="vault-dock-icon-btn"
-            aria-label="Close search"
-            title="Close search"
-            onclick={closeDockSearch}
-          >
-            <X size={14} strokeWidth={1.75} />
-          </button>
-        </div>
-      {:else}
-        <div class="lme-dock-leading-ghost min-w-0 flex-1"></div>
-        <button
-          type="button"
-          class="vault-dock-icon-btn"
-          aria-label="Search history"
-          title="Search"
-          onclick={() => void openDockSearch()}
-        >
-          <Search size={15} strokeWidth={1.75} />
-        </button>
-      {/if}
-    </footer>
-  {/if}
+
 
   {#if selectedCount > 0}
     <div class="history-dock" role="region" aria-label="Save selection as flow">
