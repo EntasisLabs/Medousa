@@ -78,8 +78,6 @@ recovery where applicable.
 
 ### Trust gaps to close first
 
-- Several registered LSP languages still lack editor grammars (HCP-3C). Package
-  repair now follows the language matrix package id when one exists.
 - External-change reconciliation checks only the focused file when Home regains
   focus instead of consuming workshop file events for all open files.
 - Project task output is buffered until exit. Long-running development tasks
@@ -216,8 +214,8 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 | HCP-2B | Per-document language-root resolution and nested-project sessions | ✅ |
 | HCP-2C | LSP lifecycle, restart/reconnect, progress, logs, and configuration | ✅ |
 | HCP-3A | Svelte, JSX, and TSX grammar/LSP dogfood pack | ✅ |
-| HCP-3B | Capability-derived language matrix and exact package repair | 🔄 |
-| HCP-3C | Remaining registered language grammar/package packs | ⬜ |
+| HCP-3B | Capability-derived language matrix and exact package repair | ✅ |
+| HCP-3C | Remaining registered language grammar/package packs | 🔄 |
 | HCP-4A | Cursor-based project source/Git event stream | ⬜ |
 | HCP-4B | All-open-buffer reconcile, rename/delete recovery, and watched-file LSP notifications | ⬜ |
 | HCP-5A | Geometry-correct groups, split-with-retained-editor, and unified code history | ⬜ |
@@ -289,6 +287,12 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
   Compatibility: older langservers tarballs without `svelteserver` still install
   the other binaries; Home shows a missing-binary matrix/repair state. Rollback:
   revert this commit; the registry and package catalog entries are additive.
+- **HCP-3B — `683d9558`.** Added `GET /v1/code/language-matrix` with binary
+  probes, package ids, and extensions; Home consults usability before claiming
+  support and Repair installs the row's exact package id (or explains a PATH
+  binary). Migration: none. Compatibility: older engines omit the matrix and
+  Home keeps attempting LSP with the previous reconnect/repair path. Rollback:
+  revert this commit; the route is additive.
 
 ### Slice rules
 

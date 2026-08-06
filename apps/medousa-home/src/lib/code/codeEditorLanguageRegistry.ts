@@ -1,5 +1,5 @@
 import type { Extension } from "@codemirror/state";
-import { LanguageSupport } from "@codemirror/language";
+import { LanguageSupport, StreamLanguage } from "@codemirror/language";
 import { markdown } from "@codemirror/lang-markdown";
 import { javascript } from "@codemirror/lang-javascript";
 import { json } from "@codemirror/lang-json";
@@ -9,7 +9,18 @@ import { xml } from "@codemirror/lang-xml";
 import { python } from "@codemirror/lang-python";
 import { rust } from "@codemirror/lang-rust";
 import { yaml } from "@codemirror/lang-yaml";
+import { go } from "@codemirror/lang-go";
+import { cpp } from "@codemirror/lang-cpp";
+import { java } from "@codemirror/lang-java";
+import { php } from "@codemirror/lang-php";
 import { svelte } from "codemirror-lang-svelte";
+import {
+  csharp as csharpMode,
+  kotlin as kotlinMode,
+} from "@codemirror/legacy-modes/mode/clike";
+import { ruby as rubyMode } from "@codemirror/legacy-modes/mode/ruby";
+import { lua as luaMode } from "@codemirror/legacy-modes/mode/lua";
+import { swift as swiftMode } from "@codemirror/legacy-modes/mode/swift";
 import {
   graphemeEditorTheme,
   graphemeLanguageSupport,
@@ -102,6 +113,12 @@ const HIGHLIGHT_LSP: CodeEditorLanguageCapabilities = {
 const shellLanguageSupport = new LanguageSupport(shellLanguage, [
   medousaSyntaxHighlighting,
 ]);
+
+const csharpLanguageSupport = new LanguageSupport(StreamLanguage.define(csharpMode));
+const kotlinLanguageSupport = new LanguageSupport(StreamLanguage.define(kotlinMode));
+const rubyLanguageSupport = new LanguageSupport(StreamLanguage.define(rubyMode));
+const luaLanguageSupport = new LanguageSupport(StreamLanguage.define(luaMode));
+const swiftLanguageSupport = new LanguageSupport(StreamLanguage.define(swiftMode));
 
 const markdownLanguageSupport = markdown({
   codeLanguages: [],
@@ -419,6 +436,25 @@ export function buildCodeEditorLanguageExtensions(
       return [graphemeEditorTheme, python(), medousaSyntaxHighlighting];
     case "rust":
       return [graphemeEditorTheme, rust(), medousaSyntaxHighlighting];
+    case "go":
+      return [graphemeEditorTheme, go(), medousaSyntaxHighlighting];
+    case "c":
+    case "cpp":
+      return [graphemeEditorTheme, cpp(), medousaSyntaxHighlighting];
+    case "java":
+      return [graphemeEditorTheme, java(), medousaSyntaxHighlighting];
+    case "php":
+      return [graphemeEditorTheme, php(), medousaSyntaxHighlighting];
+    case "csharp":
+      return [graphemeEditorTheme, csharpLanguageSupport, medousaSyntaxHighlighting];
+    case "kotlin":
+      return [graphemeEditorTheme, kotlinLanguageSupport, medousaSyntaxHighlighting];
+    case "ruby":
+      return [graphemeEditorTheme, rubyLanguageSupport, medousaSyntaxHighlighting];
+    case "lua":
+      return [graphemeEditorTheme, luaLanguageSupport, medousaSyntaxHighlighting];
+    case "swift":
+      return [graphemeEditorTheme, swiftLanguageSupport, medousaSyntaxHighlighting];
     case "yaml":
       return [graphemeEditorTheme, yaml(), medousaSyntaxHighlighting];
     case "json":
