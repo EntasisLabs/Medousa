@@ -121,6 +121,10 @@ pub fn forge_router(state: AppState) -> Router {
         )
         .route("/v1/forge/items/{work_id}/search", get(search_source))
         .route(
+            "/v1/forge/items/{work_id}/search/replace",
+            post(replace_source),
+        )
+        .route(
             "/v1/forge/items/{work_id}/workspace-state",
             get(read_workspace_state).put(save_workspace_state),
         )
@@ -358,8 +362,17 @@ fn resolve_new_source_path(root: &FsPath, raw: &str) -> ApiResult<(PathBuf, Stri
             format!("governed workspace is unavailable: {err}"),
         )
     })?;
-    let parent = relative.parent().unwrap_or_else(|| FsPath::new(""));
-    let parent = std::fs::canonicalize(root.join(parent)).map_err(|err| {
+    let parent_rel = relative.parent().unwrap_or_else(|| FsPath::new(""));
+    let parent_joined = root.join(parent_rel);
+    if !parent_joined.as_os_str().is_empty() && !parent_joined.exists() {
+        std::fs::create_dir_all(&parent_joined).map_err(|err| {
+            request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not create source parent directory: {err}"),
+            )
+        })?;
+    }
+    let parent = std::fs::canonicalize(&parent_joined).map_err(|err| {
         request_error(
             StatusCode::NOT_FOUND,
             format!("source parent directory not found: {err}"),
@@ -379,6 +392,59 @@ fn resolve_new_source_path(root: &FsPath, raw: &str) -> ApiResult<(PathBuf, Stri
         return Err(request_error(
             StatusCode::CONFLICT,
             "a source file already exists at that path",
+        ));
+    }
+    Ok((candidate, clean))
+}
+
+/// Resolve a new directory path inside the worktree (creates nothing yet).
+fn resolve_new_directory_path(root: &FsPath, raw: &str) -> ApiResult<(PathBuf, String)> {
+    let trimmed = raw.trim().trim_end_matches('/');
+    let (relative, clean) = normalize_source_relative(trimmed)?;
+    let root = std::fs::canonicalize(root).map_err(|err| {
+        request_error(
+            StatusCode::CONFLICT,
+            format!("governed workspace is unavailable: {err}"),
+        )
+    })?;
+    let candidate = root.join(&relative);
+    if candidate.exists() {
+        return Err(request_error(
+            StatusCode::CONFLICT,
+            "a path already exists at that location",
+        ));
+    }
+    if let Some(parent) = relative.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+        let parent_joined = root.join(parent);
+        if !parent_joined.exists() {
+            std::fs::create_dir_all(&parent_joined).map_err(|err| {
+                request_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("could not create parent directory: {err}"),
+                )
+            })?;
+        }
+        let parent = std::fs::canonicalize(&parent_joined).map_err(|err| {
+            request_error(
+                StatusCode::NOT_FOUND,
+                format!("parent directory not found: {err}"),
+            )
+        })?;
+        if !parent.starts_with(&root) {
+            return Err(request_error(
+                StatusCode::BAD_REQUEST,
+                "directory path must stay inside the governed workspace",
+            ));
+        }
+    }
+    if !candidate.starts_with(&root)
+        && candidate
+            .parent()
+            .is_none_or(|parent| !parent.starts_with(&root))
+    {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "directory path must stay inside the governed workspace",
         ));
     }
     Ok((candidate, clean))
@@ -1428,6 +1494,9 @@ struct CreateSourceRequest {
     path: String,
     #[serde(default)]
     content: String,
+    /// `file` (default) or `directory`.
+    #[serde(default)]
+    kind: Option<String>,
     lease_id: String,
     generation: u64,
 }
@@ -1514,6 +1583,67 @@ struct SourceSearchResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     next_cursor: Option<String>,
 }
+
+#[derive(Debug, Deserialize)]
+struct SourceReplaceRequest {
+    query: String,
+    replacement: String,
+    #[serde(default)]
+    mode: Option<String>,
+    #[serde(default)]
+    case_sensitive: Option<bool>,
+    #[serde(default)]
+    whole_word: Option<bool>,
+    #[serde(default)]
+    include: Option<String>,
+    #[serde(default)]
+    exclude: Option<String>,
+    #[serde(default)]
+    include_ignored: Option<bool>,
+    #[serde(default)]
+    scope: Option<String>,
+    /// Cap on files included in the plan (default 50, max 100).
+    #[serde(default)]
+    limit: Option<u32>,
+    /// When true (default), return a preview plan without writing.
+    #[serde(default)]
+    dry_run: Option<bool>,
+    /// Optional subset of paths from a prior preview to apply or re-preview.
+    #[serde(default)]
+    paths: Option<Vec<String>>,
+    #[serde(default)]
+    preconditions: Option<Vec<SourceReplacePrecondition>>,
+    #[serde(default)]
+    lease_id: Option<String>,
+    #[serde(default)]
+    generation: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct SourceReplacePrecondition {
+    path: String,
+    expected_digest: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SourceReplaceFile {
+    path: String,
+    expected_digest: String,
+    match_count: u32,
+    before: String,
+    after: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SourceReplaceResponse {
+    work_id: String,
+    files: Vec<SourceReplaceFile>,
+    truncated: bool,
+    applied: bool,
+}
+
+const MAX_REPLACE_FILES: usize = 100;
+const DEFAULT_REPLACE_FILES: usize = 50;
 
 #[derive(Debug, Clone)]
 struct SourceSearchOptions {
@@ -1747,6 +1877,196 @@ fn run_repository_search(
     Ok((hits, truncated, next_cursor))
 }
 
+fn bool_opt(value: Option<bool>, default: bool) -> bool {
+    value.unwrap_or(default)
+}
+
+fn source_search_options_from_replace(
+    body: &SourceReplaceRequest,
+) -> ApiResult<SourceSearchOptions> {
+    let query = SourceSearchQuery {
+        query: body.query.clone(),
+        mode: body.mode.clone(),
+        case_sensitive: body.case_sensitive.map(|v| v.to_string()),
+        whole_word: body.whole_word.map(|v| v.to_string()),
+        include: body.include.clone(),
+        exclude: body.exclude.clone(),
+        include_ignored: body.include_ignored.map(|v| v.to_string()),
+        scope: body.scope.clone(),
+        // Collect a wide hit page so we can discover unique paths.
+        limit: Some(500),
+        cursor: None,
+    };
+    let mut options = source_search_options_from_query(&query)?;
+    options.case_sensitive = bool_opt(body.case_sensitive, true);
+    options.whole_word = bool_opt(body.whole_word, false);
+    options.include_ignored = bool_opt(body.include_ignored, false);
+    Ok(options)
+}
+
+fn build_replace_regex(options: &SourceSearchOptions) -> ApiResult<regex::Regex> {
+    let escaped = if options.regex {
+        options.needle.clone()
+    } else {
+        regex::escape(&options.needle)
+    };
+    let pattern = if options.whole_word {
+        format!(r"(?m)\b(?:{escaped})\b")
+    } else {
+        escaped
+    };
+    regex::RegexBuilder::new(&pattern)
+        .case_insensitive(!options.case_sensitive)
+        .dot_matches_new_line(false)
+        .build()
+        .map_err(|err| {
+            request_error(
+                StatusCode::BAD_REQUEST,
+                format!("invalid search pattern: {err}"),
+            )
+        })
+}
+
+fn apply_content_replace(
+    content: &str,
+    options: &SourceSearchOptions,
+    replacement: &str,
+) -> ApiResult<(String, u32)> {
+    let re = build_replace_regex(options)?;
+    let mut count = 0u32;
+    let after = re
+        .replace_all(content, |_: &regex::Captures| {
+            count = count.saturating_add(1);
+            replacement
+        })
+        .into_owned();
+    Ok((after, count))
+}
+
+fn run_repository_replace_plan(
+    root: &FsPath,
+    options: &SourceSearchOptions,
+    replacement: &str,
+    file_limit: usize,
+    path_filter: Option<&[String]>,
+) -> ApiResult<(Vec<SourceReplaceFile>, bool)> {
+    let search_opts = SourceSearchOptions {
+        limit: 500,
+        skip: 0,
+        ..options.clone()
+    };
+    let (hits, search_truncated, _) = run_repository_search(root, &search_opts)?;
+    let mut paths = Vec::new();
+    for hit in &hits {
+        if paths.iter().any(|path| path == &hit.path) {
+            continue;
+        }
+        if let Some(filter) = path_filter
+            && !filter.iter().any(|path| path == &hit.path)
+        {
+            continue;
+        }
+        paths.push(hit.path.clone());
+    }
+    paths.sort();
+    let mut files = Vec::new();
+    let mut truncated = search_truncated || paths.len() > file_limit;
+    for path in paths.into_iter().take(file_limit) {
+        let (resolved, clean) = resolve_source_path(root, &path)?;
+        let bytes = std::fs::read(&resolved).map_err(|err| {
+            request_error(
+                StatusCode::NOT_FOUND,
+                format!("could not read {clean}: {err}"),
+            )
+        })?;
+        if bytes.len() > MAX_SOURCE_BYTES {
+            truncated = true;
+            continue;
+        }
+        let before = String::from_utf8(bytes).map_err(|_| {
+            request_error(
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                format!("{clean} is not UTF-8 text and cannot be replaced"),
+            )
+        })?;
+        let digest = source_digest(before.as_bytes());
+        let (after, match_count) = apply_content_replace(&before, options, replacement)?;
+        if match_count == 0 || after == before {
+            continue;
+        }
+        files.push(SourceReplaceFile {
+            path: clean,
+            expected_digest: digest,
+            match_count,
+            before,
+            after,
+        });
+    }
+    Ok((files, truncated))
+}
+
+fn apply_repository_replace_plan(
+    root: &FsPath,
+    files: &[SourceReplaceFile],
+    preconditions: &[SourceReplacePrecondition],
+) -> ApiResult<()> {
+    if files.is_empty() {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "no replace edits to apply",
+        ));
+    }
+    let mut expected = std::collections::HashMap::new();
+    for precondition in preconditions {
+        expected.insert(
+            precondition.path.replace('\\', "/"),
+            precondition.expected_digest.clone(),
+        );
+    }
+    let mut snapshots = Vec::new();
+    for file in files {
+        let Some(want) = expected.get(&file.path) else {
+            return Err(request_error(
+                StatusCode::BAD_REQUEST,
+                format!("replace is missing a digest precondition for {}", file.path),
+            ));
+        };
+        if want != &file.expected_digest {
+            return Err(request_error(
+                StatusCode::CONFLICT,
+                format!("{} changed since the replace preview was built", file.path),
+            ));
+        }
+        let (resolved, _) = resolve_source_path(root, &file.path)?;
+        let current = std::fs::read(&resolved).map_err(|err| {
+            request_error(
+                StatusCode::NOT_FOUND,
+                format!("could not read {}: {err}", file.path),
+            )
+        })?;
+        if source_digest(&current) != file.expected_digest {
+            return Err(request_error(
+                StatusCode::CONFLICT,
+                format!("{} changed since the replace preview was built", file.path),
+            ));
+        }
+        snapshots.push((resolved, current));
+    }
+    for (index, file) in files.iter().enumerate() {
+        let path = &snapshots[index].0;
+        if let Err(err) = std::fs::write(path, file.after.as_bytes()) {
+            for (prior, bytes) in snapshots.iter().take(index) {
+                let _ = std::fs::write(prior, bytes);
+            }
+            return Err(request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not apply replace to {}: {err}", file.path),
+            ));
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CodeWorkspaceTabState {
     path: String,
@@ -1956,7 +2276,14 @@ async fn create_source(
     Json(body): Json<CreateSourceRequest>,
 ) -> ApiResult<Json<SourceResponse>> {
     let id = parse_work_id(&work_id)?;
-    if body.content.len() > MAX_SOURCE_BYTES {
+    let kind = body
+        .kind
+        .as_deref()
+        .unwrap_or("file")
+        .trim()
+        .to_ascii_lowercase();
+    let is_directory = matches!(kind.as_str(), "directory" | "dir" | "folder");
+    if !is_directory && body.content.len() > MAX_SOURCE_BYTES {
         return Err(request_error(
             StatusCode::PAYLOAD_TOO_LARGE,
             format!("source file exceeds the {MAX_SOURCE_BYTES} byte editor limit"),
@@ -1966,6 +2293,41 @@ async fn create_source(
     let environment = item
         .environment_for_attempt(&lease.attempt_id)
         .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
+    if is_directory {
+        let (path, clean) = resolve_new_directory_path(&environment.worktree, &body.path)?;
+        std::fs::create_dir_all(&path).map_err(|err| {
+            request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not create directory: {err}"),
+            )
+        })?;
+        // Seed an ignored placeholder so the folder appears in the file tree
+        // and remains durable under git until real files are added.
+        let keep = path.join(".gitkeep");
+        if !keep.exists() {
+            std::fs::write(&keep, b"").map_err(|err| {
+                request_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("could not initialize directory: {err}"),
+                )
+            })?;
+        }
+        let keep_path = format!("{clean}/.gitkeep");
+        publish_project_change(
+            &state,
+            &item,
+            ForgeProjectEventKind::Created,
+            Some(keep_path.clone()),
+            None,
+            Some(source_digest(b"")),
+        );
+        remember_worktree(&state, &item, &environment.worktree);
+        return Ok(Json(read_source_response(
+            &id,
+            &environment.worktree,
+            &keep_path,
+        )?));
+    }
     let (path, _) = resolve_new_source_path(&environment.worktree, &body.path)?;
     use std::io::Write;
     let mut file = std::fs::OpenOptions::new()
@@ -2060,6 +2422,146 @@ async fn search_source(
         hits,
         truncated,
         next_cursor,
+    }))
+}
+
+async fn replace_source(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<SourceReplaceRequest>,
+) -> ApiResult<Json<SourceReplaceResponse>> {
+    let id = parse_work_id(&work_id)?;
+    if body.replacement.len() > 8_000 {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "replacement text must be at most 8000 characters",
+        ));
+    }
+    let options = source_search_options_from_replace(&body)?;
+    let dry_run = body.dry_run.unwrap_or(true);
+    let file_limit = body
+        .limit
+        .unwrap_or(DEFAULT_REPLACE_FILES as u32)
+        .clamp(1, MAX_REPLACE_FILES as u32) as usize;
+    let path_filter = body.paths.as_ref().map(|paths| {
+        paths
+            .iter()
+            .map(|path| path.replace('\\', "/"))
+            .filter(|path| !path.is_empty())
+            .collect::<Vec<_>>()
+    });
+
+    if dry_run {
+        let item = forge(&state).load(&id).map_err(map_err)?;
+        let environment = item.workspace_environment().cloned().ok_or_else(|| {
+            request_error(
+                StatusCode::CONFLICT,
+                "prepare the governed workspace before replacing source files",
+            )
+        })?;
+        let root = std::fs::canonicalize(&environment.worktree).map_err(|err| {
+            request_error(
+                StatusCode::CONFLICT,
+                format!("governed workspace is unavailable: {err}"),
+            )
+        })?;
+        let replacement = body.replacement.clone();
+        let filter = path_filter.clone();
+        let (files, truncated) = tokio::task::spawn_blocking(move || {
+            run_repository_replace_plan(
+                &root,
+                &options,
+                &replacement,
+                file_limit,
+                filter.as_deref(),
+            )
+        })
+        .await
+        .map_err(|err| {
+            request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("repository replace worker failed: {err}"),
+            )
+        })??;
+        return Ok(Json(SourceReplaceResponse {
+            work_id: id.as_str().to_owned(),
+            files,
+            truncated,
+            applied: false,
+        }));
+    }
+
+    let lease_id = body.lease_id.as_deref().unwrap_or("").trim();
+    let generation = body.generation.ok_or_else(|| {
+        request_error(
+            StatusCode::BAD_REQUEST,
+            "generation is required when applying a replace",
+        )
+    })?;
+    if lease_id.is_empty() {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "lease_id is required when applying a replace",
+        ));
+    }
+    let preconditions = body.preconditions.clone().unwrap_or_default();
+    if preconditions.is_empty() {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "preconditions are required when applying a replace",
+        ));
+    }
+    let (item, lease) = require_work_lease(&state, &id, lease_id, generation)?;
+    let environment = item
+        .environment_for_attempt(&lease.attempt_id)
+        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?
+        .clone();
+    let root = std::fs::canonicalize(&environment.worktree).map_err(|err| {
+        request_error(
+            StatusCode::CONFLICT,
+            format!("governed workspace is unavailable: {err}"),
+        )
+    })?;
+    let replacement = body.replacement.clone();
+    let filter = path_filter.clone();
+    let (files, truncated) = tokio::task::spawn_blocking({
+        let root = root.clone();
+        let options = options.clone();
+        move || {
+            run_repository_replace_plan(
+                &root,
+                &options,
+                &replacement,
+                file_limit,
+                filter.as_deref(),
+            )
+        }
+    })
+    .await
+    .map_err(|err| {
+        request_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("repository replace worker failed: {err}"),
+        )
+    })??;
+    apply_repository_replace_plan(&root, &files, &preconditions)?;
+    for file in &files {
+        publish_project_change(
+            &state,
+            &item,
+            ForgeProjectEventKind::Changed,
+            Some(file.path.clone()),
+            None,
+            Some(source_digest(file.after.as_bytes())),
+        );
+    }
+    remember_worktree(&state, &item, &environment.worktree);
+    publish_item(&state, &item, "source_replace_applied");
+    Ok(Json(SourceReplaceResponse {
+        work_id: id.as_str().to_owned(),
+        files,
+        truncated,
+        applied: true,
     }))
 }
 
@@ -5207,7 +5709,7 @@ mod source_tests {
     }
 
     #[test]
-    fn new_source_paths_require_a_safe_existing_parent() {
+    fn new_source_paths_create_missing_parents_safely() {
         let root = tempfile::tempdir().unwrap();
         std::fs::create_dir(root.path().join("src")).unwrap();
 
@@ -5220,7 +5722,12 @@ mod source_tests {
                 .join("new.rs")
         );
 
-        assert!(resolve_new_source_path(root.path(), "missing/new.rs").is_err());
+        let (nested, nested_relative) =
+            resolve_new_source_path(root.path(), "missing/new.rs").unwrap();
+        assert_eq!(nested_relative, "missing/new.rs");
+        assert!(nested
+            .parent()
+            .is_some_and(|parent| parent.ends_with("missing")));
         assert!(resolve_new_source_path(root.path(), ".git/hooks/new-hook").is_err());
         std::fs::write(root.path().join("src/existing.rs"), "fn existing() {}\n").unwrap();
         assert!(resolve_new_source_path(root.path(), "src/existing.rs").is_err());
@@ -5634,6 +6141,59 @@ mod source_tests {
         .0;
         assert_eq!(include_hits.len(), 1);
         assert_eq!(include_hits[0].path, "fresh.rs");
+    }
+
+    #[test]
+    fn repository_replace_plans_and_applies_with_digest_fencing() {
+        let root = tempfile::tempdir().unwrap();
+        let git = |args: &[&str]| {
+            let status = std::process::Command::new("git")
+                .args(args)
+                .current_dir(root.path())
+                .status()
+                .unwrap();
+            assert!(status.success());
+        };
+        git(&["init", "-q"]);
+        std::fs::write(root.path().join("a.rs"), "fn alpha_hit() {}\n").unwrap();
+        std::fs::write(root.path().join("b.rs"), "fn alpha_hit() {}\n").unwrap();
+        git(&["add", "a.rs", "b.rs"]);
+
+        let options = SourceSearchOptions {
+            needle: "alpha_hit".into(),
+            regex: false,
+            case_sensitive: true,
+            whole_word: false,
+            include: Vec::new(),
+            exclude: Vec::new(),
+            include_ignored: false,
+            changed_only: false,
+            limit: 500,
+            skip: 0,
+        };
+        let (plan, truncated) =
+            run_repository_replace_plan(root.path(), &options, "beta_hit", 50, None).unwrap();
+        assert!(!truncated);
+        assert_eq!(plan.len(), 2);
+        assert!(plan.iter().all(|file| file.match_count == 1));
+        assert!(plan.iter().all(|file| file.after.contains("beta_hit")));
+
+        let preconditions: Vec<_> = plan
+            .iter()
+            .map(|file| SourceReplacePrecondition {
+                path: file.path.clone(),
+                expected_digest: file.expected_digest.clone(),
+            })
+            .collect();
+        apply_repository_replace_plan(root.path(), &plan, &preconditions).unwrap();
+        assert!(
+            std::fs::read_to_string(root.path().join("a.rs"))
+                .unwrap()
+                .contains("beta_hit")
+        );
+
+        let stale = apply_repository_replace_plan(root.path(), &plan, &preconditions);
+        assert!(stale.is_err());
     }
 
     #[test]

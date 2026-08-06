@@ -81,8 +81,6 @@ recovery where applicable.
 - Project task output is buffered until exit. Long-running development tasks
   have no live logs or interactive named terminal despite the earlier roadmap
   claim.
-- Repository search is tracked-file, fixed-string `git grep`; there is no
-  workspace replace flow.
 - Debugging is absent. Source-control operations, test state, terminal shell
   integration, and editor contribution points are substantially below the
   daily-driver baseline. Command identities and VS Code aliases exist for the
@@ -218,8 +216,8 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 | HCP-5A | Geometry-correct groups, split-with-retained-editor, and unified code history | ✅ |
 | HCP-5B | Contextual Code layout preset with group-local visible tabs and optional regions | ✅ |
 | HCP-5C | Shared command registry, VS Code aliases, context keys, and keybinding editor | ✅ |
-| HCP-6A | Full repository search API/UI and cancellable pagination | 🔄 |
-| HCP-6B | Previewed repository replace and complete file/folder operations | ⬜ |
+| HCP-6A | Full repository search API/UI and cancellable pagination | ✅ |
+| HCP-6B | Previewed repository replace and complete file/folder operations | 🔄 |
 | HCP-6C | Large-file, encoding, binary-preview, and fuzzy Quick Open fallbacks | ⬜ |
 | HCP-7A | Streaming execution protocol and bounded output replay | ⬜ |
 | HCP-7B | Named task terminals, background readiness, configured tasks, and problem matchers | ⬜ |
@@ -322,6 +320,11 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
   allowlist (`commandBindings`) without a Settings keybinding editor.
   Migration: none. Compatibility: catalog chords remain; overrides are local.
   Rollback: revert this commit; additive command surface.
+- **HCP-6A — `f6c8b3ec`.** Full repository Search (`git grep` options + cursor
+  pagination), Code Search panel with cancel/load-more, `layout.search`, and
+  Mod+Shift+F. Migration: none. Compatibility: older Homes ignore new query
+  params and `next_cursor`. Rollback: revert this commit; additive search
+  surface.
 
 ### Product-fit boundary (post-HCP-8)
 

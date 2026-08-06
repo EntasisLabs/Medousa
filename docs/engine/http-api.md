@@ -323,8 +323,9 @@ Custody of intentional work episodes over a git target (vault or any repo). Dist
 | POST | `/v1/forge/items/{id}/export` | Export bundle |
 | GET | `/v1/forge/items/{id}/tree` | Browse governed source tree |
 | GET | `/v1/forge/items/{id}/search` | Repository search (`query`, optional `mode`, `case_sensitive`, `whole_word`, `include`, `exclude`, `include_ignored`, `scope`, `limit`, `cursor`; response may include `next_cursor`) |
+| POST | `/v1/forge/items/{id}/search/replace` | Preview or apply digest-fenced repository replace (`dry_run`, `replacement`, search options, optional `paths`/`preconditions`/`lease_id`/`generation`) |
 | GET | `/v1/forge/items/{id}/source?path=…` | Read a governed source file |
-| POST | `/v1/forge/items/{id}/source` | Create a governed source file |
+| POST | `/v1/forge/items/{id}/source` | Create a governed source file or directory (`kind=directory` seeds `.gitkeep`) |
 | PUT | `/v1/forge/items/{id}/source` | Save with digest conflict fencing |
 | PATCH | `/v1/forge/items/{id}/source` | Rename with digest conflict fencing |
 | DELETE | `/v1/forge/items/{id}/source` | Delete with digest conflict fencing |

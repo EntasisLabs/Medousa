@@ -43,7 +43,7 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | GET | `/v1/forge/items` | List items |
 | GET | `/v1/forge/items/{id}` | Load item |
 | GET | `/v1/forge/items/{id}/source?path=…` | Read bounded UTF-8 source from the governed worktree |
-| POST | `/v1/forge/items/{id}/source` | Lease-fenced source-file creation |
+| POST | `/v1/forge/items/{id}/source` | Lease-fenced source-file or directory creation (`kind=directory` seeds `.gitkeep`) |
 | PUT | `/v1/forge/items/{id}/source` | Lease-fenced source save with digest conflict detection |
 | PUT | `/v1/forge/items/{id}/source/batch` | Atomic digest-fenced writes to existing text files |
 | PUT | `/v1/forge/items/{id}/source/workspace-edit` | Atomic ordered text/create/rename/delete workspace edit with digest-or-absence preconditions |
@@ -53,6 +53,7 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | GET (SSE) | `/v1/forge/stream` | Live undertaking list freshness (state/kind only; no path cursor) |
 | GET | `/v1/forge/items/{id}/tree` | List tracked and unignored repository files (bounded to 20,000) |
 | GET | `/v1/forge/items/{id}/search?query=…` | Repository search (`literal`/`regex`, case/whole-word, include/exclude globs, `scope=all\|changed`, `limit`, `cursor` pagination; bounded to 500 hits; includes untracked, honors ignore by default) |
+| POST | `/v1/forge/items/{id}/search/replace` | Preview (`dry_run=true`) or apply digest-fenced repository replace; optional `paths` subset and `preconditions` |
 | GET, PUT | `/v1/forge/items/{id}/workspace-state` | Restore/preserve open files, cursor positions, bounded dirty drafts, and contextual Code layout (Problems/Terminal/Tests/Search) |
 | GET | `/v1/forge/items/{id}/review` | Structured outcome, risk, verification, attribution, timeline, and changed-file summary |
 | GET | `/v1/forge/evidence/{evidence_id}/receipts` | Sealed compact Coder evidence provenance (never raw payloads) |
