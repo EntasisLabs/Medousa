@@ -3779,6 +3779,24 @@ struct ProjectTask {
     provider: String,
     #[serde(default)]
     long_running: bool,
+    /// Optional regex (unanchored) that marks a background task ready.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ready_pattern: Option<String>,
+    /// Optional VS Code-style problem matcher pattern for this task.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    problem_matcher: Option<ProjectProblemPattern>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ProjectProblemPattern {
+    regexp: String,
+    /// 1-based capture group indices (VS Code tasks.json convention).
+    file: u8,
+    line: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    column: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    message: Option<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3830,6 +3848,9 @@ struct ProjectTaskRun {
     /// Next chunk sequence number for SSE `?since=` replay.
     #[serde(default)]
     next_seq: u64,
+    /// Incrementally matched problem locations (also on final result).
+    #[serde(default)]
+    locations: Vec<ProjectOutputLocation>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -3845,13 +3866,19 @@ struct ProjectTaskOutputEvent {
     state: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     result: Option<ProjectTaskResult>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    locations: Option<Vec<ProjectOutputLocation>>,
 }
 
 const TASK_OUTPUT_CAP: usize = 256 * 1024;
 const TASK_CHUNK_REPLAY_CAP: usize = 400;
+const CONFIGURED_TASK_CAP: usize = 24;
 
 struct ProjectTaskRunStore {
     run: ProjectTaskRun,
+    root: PathBuf,
+    ready_re: Option<regex::Regex>,
+    problem_re: Option<(regex::Regex, ProjectProblemPattern)>,
     chunks: std::collections::VecDeque<ProjectTaskOutputEvent>,
     tx: tokio::sync::broadcast::Sender<ProjectTaskOutputEvent>,
 }
@@ -3892,39 +3919,169 @@ fn task_output_event_is_terminal(event: &ProjectTaskOutputEvent) -> bool {
     event.kind == "state" && event.result.is_some()
 }
 
-async fn publish_task_output(
-    run_id: &str,
-    stream: &str,
-    text: &str,
+fn default_ready_pattern() -> &'static str {
+    r"(?i)(listening on|local:\s*https?://|ready in\b|compiled successfully|started server|webpack compiled|vite.+ready|nest application successfully started|serving on\b)"
+}
+
+fn compile_ready_pattern(task: &ProjectTask) -> Option<regex::Regex> {
+    if !task.long_running {
+        return None;
+    }
+    let pattern = task
+        .ready_pattern
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| default_ready_pattern());
+    regex::Regex::new(pattern).ok()
+}
+
+fn compile_problem_pattern(
+    task: &ProjectTask,
+) -> Option<(regex::Regex, ProjectProblemPattern)> {
+    let pattern = task.problem_matcher.as_ref()?;
+    let re = regex::Regex::new(&pattern.regexp).ok()?;
+    Some((re, pattern.clone()))
+}
+
+fn merge_task_locations(
+    into: &mut Vec<ProjectOutputLocation>,
+    incoming: impl IntoIterator<Item = ProjectOutputLocation>,
 ) {
-    if text.is_empty() {
-        return;
+    for location in incoming {
+        if into.iter().any(|existing| {
+            existing.path == location.path
+                && existing.line == location.line
+                && existing.column == location.column
+        }) {
+            continue;
+        }
+        into.push(location);
+        if into.len() >= 100 {
+            break;
+        }
     }
-    let mut runs = PROJECT_TASK_RUNS.write().await;
-    let Some(store) = runs.get_mut(run_id) else {
-        return;
+}
+
+fn parse_output_locations_with_matcher(
+    root: &FsPath,
+    output: &str,
+    matcher: Option<&(regex::Regex, ProjectProblemPattern)>,
+) -> Vec<ProjectOutputLocation> {
+    let Some((re, pattern)) = matcher else {
+        return parse_output_locations(root, output);
     };
-    if stream == "stderr" {
-        append_bounded_output(&mut store.run.stderr, text, &mut store.run.output_truncated);
-    } else {
-        append_bounded_output(&mut store.run.stdout, text, &mut store.run.output_truncated);
+    let mut locations = Vec::new();
+    for line_text in output.lines() {
+        let Some(captures) = re.captures(line_text) else {
+            continue;
+        };
+        let file_idx = usize::from(pattern.file);
+        let line_idx = usize::from(pattern.line);
+        let Some(raw) = captures.get(file_idx).map(|m| m.as_str()) else {
+            continue;
+        };
+        let line = captures
+            .get(line_idx)
+            .and_then(|m| m.as_str().parse().ok())
+            .unwrap_or(1);
+        let column = pattern
+            .column
+            .and_then(|idx| captures.get(usize::from(idx)))
+            .and_then(|m| m.as_str().parse().ok());
+        let message = pattern
+            .message
+            .and_then(|idx| captures.get(usize::from(idx)))
+            .map(|m| m.as_str().chars().take(300).collect())
+            .unwrap_or_else(|| line_text.trim().chars().take(300).collect());
+        let path = std::path::Path::new(raw.trim());
+        let relative = if path.is_absolute() {
+            path.strip_prefix(root).ok()
+        } else {
+            Some(path)
+        };
+        let Some(relative) = relative else {
+            continue;
+        };
+        if relative
+            .components()
+            .any(|part| matches!(part, std::path::Component::ParentDir))
+        {
+            continue;
+        }
+        locations.push(ProjectOutputLocation {
+            path: relative.to_string_lossy().replace('\\', "/"),
+            line,
+            column,
+            message,
+        });
+        if locations.len() >= 100 {
+            break;
+        }
     }
-    let seq = store.run.next_seq;
-    store.run.next_seq = seq.saturating_add(1);
-    let event = ProjectTaskOutputEvent {
-        seq,
-        run_id: run_id.to_owned(),
-        kind: "output".into(),
-        stream: Some(stream.into()),
-        text: Some(text.to_owned()),
-        state: None,
-        result: None,
-    };
+    locations
+}
+
+fn push_task_event(store: &mut ProjectTaskRunStore, event: ProjectTaskOutputEvent) {
     store.chunks.push_back(event.clone());
     while store.chunks.len() > TASK_CHUNK_REPLAY_CAP {
         store.chunks.pop_front();
     }
     let _ = store.tx.send(event);
+}
+
+async fn publish_task_output(run_id: &str, stream: &str, text: &str) {
+    if text.is_empty() {
+        return;
+    }
+    let became_ready = {
+        let mut runs = PROJECT_TASK_RUNS.write().await;
+        let Some(store) = runs.get_mut(run_id) else {
+            return;
+        };
+        if stream == "stderr" {
+            append_bounded_output(&mut store.run.stderr, text, &mut store.run.output_truncated);
+        } else {
+            append_bounded_output(&mut store.run.stdout, text, &mut store.run.output_truncated);
+        }
+        let matched = parse_output_locations_with_matcher(
+            &store.root,
+            text,
+            store.problem_re.as_ref(),
+        );
+        let before = store.run.locations.len();
+        merge_task_locations(&mut store.run.locations, matched);
+        let new_locations = if store.run.locations.len() > before {
+            Some(store.run.locations[before..].to_vec())
+        } else {
+            None
+        };
+        let seq = store.run.next_seq;
+        store.run.next_seq = seq.saturating_add(1);
+        push_task_event(
+            store,
+            ProjectTaskOutputEvent {
+                seq,
+                run_id: run_id.to_owned(),
+                kind: "output".into(),
+                stream: Some(stream.into()),
+                text: Some(text.to_owned()),
+                state: None,
+                result: None,
+                locations: new_locations,
+            },
+        );
+        let waiting_for_ready = store.run.task.long_running
+            && matches!(store.run.state.as_str(), "running")
+            && store.ready_re.is_some();
+        waiting_for_ready
+            && store
+                .ready_re
+                .as_ref()
+                .is_some_and(|re| re.is_match(text))
+    };
+    if became_ready {
+        publish_task_state(run_id, "ready", None).await;
+    }
 }
 
 async fn publish_task_state(
@@ -3936,9 +4093,12 @@ async fn publish_task_state(
     let Some(store) = runs.get_mut(run_id) else {
         return;
     };
+    // Readiness must not clobber cancel/terminal states.
+    if state == "ready" && store.run.state != "running" {
+        return;
+    }
     store.run.state = state.to_owned();
     if let Some(result) = result.clone() {
-        // Prefer final captured result buffers when present.
         if !result.stdout.is_empty() {
             store.run.stdout = result.stdout.clone();
         }
@@ -3946,24 +4106,30 @@ async fn publish_task_state(
             store.run.stderr = result.stderr.clone();
         }
         store.run.output_truncated = store.run.output_truncated || result.truncated;
+        if !result.locations.is_empty() {
+            merge_task_locations(&mut store.run.locations, result.locations.clone());
+        }
         store.run.result = Some(result);
     }
     let seq = store.run.next_seq;
     store.run.next_seq = seq.saturating_add(1);
-    let event = ProjectTaskOutputEvent {
-        seq,
-        run_id: run_id.to_owned(),
-        kind: "state".into(),
-        stream: None,
-        text: None,
-        state: Some(state.to_owned()),
-        result: store.run.result.clone(),
-    };
-    store.chunks.push_back(event.clone());
-    while store.chunks.len() > TASK_CHUNK_REPLAY_CAP {
-        store.chunks.pop_front();
-    }
-    let _ = store.tx.send(event);
+    push_task_event(
+        store,
+        ProjectTaskOutputEvent {
+            seq,
+            run_id: run_id.to_owned(),
+            kind: "state".into(),
+            stream: None,
+            text: None,
+            state: Some(state.to_owned()),
+            result: store.run.result.clone(),
+            locations: if store.run.locations.is_empty() {
+                None
+            } else {
+                Some(store.run.locations.clone())
+            },
+        },
+    );
 }
 
 async fn pump_task_stream(
@@ -4051,6 +4217,8 @@ fn detected_project_tasks(root: &FsPath) -> Vec<ProjectTask> {
             argv: argv.iter().map(|part| (*part).to_string()).collect(),
             provider: argv.first().copied().unwrap_or("project").into(),
             long_running: kind == "run",
+            ready_pattern: None,
+            problem_matcher: None,
         });
     };
     if root.join("Cargo.toml").is_file() {
@@ -4126,6 +4294,267 @@ fn detected_project_tasks(root: &FsPath) -> Vec<ProjectTask> {
     tasks
 }
 
+fn strip_tasks_jsonc(raw: &str) -> String {
+    raw.lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn load_tasks_json_value(root: &FsPath) -> Option<serde_json::Value> {
+    let bytes = std::fs::read(root.join(".vscode").join("tasks.json")).ok()?;
+    if let Ok(value) = serde_json::from_slice(&bytes) {
+        return Some(value);
+    }
+    let text = String::from_utf8_lossy(&bytes);
+    serde_json::from_str(&strip_tasks_jsonc(&text)).ok()
+}
+
+fn sanitize_task_id_slug(label: &str) -> String {
+    let slug = label
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    let slug = slug.trim_matches('-').to_owned();
+    if slug.is_empty() {
+        "task".into()
+    } else {
+        slug.chars().take(48).collect()
+    }
+}
+
+fn npm_script_is_safe(script: &str) -> bool {
+    !script.is_empty()
+        && script.len() <= 64
+        && script
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | ':' | '.'))
+}
+
+fn infer_configured_task_kind(label: &str, script: Option<&str>, background: bool) -> &'static str {
+    if background {
+        return "run";
+    }
+    let hay = format!("{} {}", label, script.unwrap_or("")).to_ascii_lowercase();
+    if hay.contains("test") {
+        "test"
+    } else if hay.contains("build") || hay.contains("compile") {
+        "build"
+    } else {
+        "verify"
+    }
+}
+
+fn parse_problem_matcher_value(value: &serde_json::Value) -> Option<ProjectProblemPattern> {
+    let pattern = if value.is_object() && value.get("pattern").is_some() {
+        value.get("pattern")?
+    } else {
+        value
+    };
+    let regexp = pattern.get("regexp")?.as_str()?.to_owned();
+    if regexp.trim().is_empty() || regexp.len() > 512 {
+        return None;
+    }
+    let file = pattern.get("file")?.as_u64()? as u8;
+    let line = pattern.get("line")?.as_u64()? as u8;
+    if file == 0 || line == 0 {
+        return None;
+    }
+    Some(ProjectProblemPattern {
+        regexp,
+        file,
+        line,
+        column: pattern
+            .get("column")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u8)
+            .filter(|v| *v > 0),
+        message: pattern
+            .get("message")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u8)
+            .filter(|v| *v > 0),
+    })
+}
+
+fn first_problem_matcher(value: &serde_json::Value) -> Option<ProjectProblemPattern> {
+    match value {
+        serde_json::Value::Array(items) => items.iter().find_map(parse_problem_matcher_value),
+        other => parse_problem_matcher_value(other),
+    }
+}
+
+fn configured_task_ready_pattern(task: &serde_json::Value) -> Option<String> {
+    let matcher = task.get("problemMatcher")?;
+    let matchers = match matcher {
+        serde_json::Value::Array(items) => items.as_slice(),
+        other => std::slice::from_ref(other),
+    };
+    for entry in matchers {
+        if let Some(pattern) = entry
+            .get("background")
+            .and_then(|bg| bg.get("endsPattern"))
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty() && value.len() <= 512)
+        {
+            return Some(pattern.to_owned());
+        }
+        if let Some(pattern) = entry
+            .get("background")
+            .and_then(|bg| bg.get("beginsPattern"))
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty() && value.len() <= 512)
+        {
+            // Prefer endsPattern; beginsPattern alone is still a useful readiness hint.
+            return Some(pattern.to_owned());
+        }
+    }
+    None
+}
+
+fn configured_project_tasks(root: &FsPath) -> Vec<ProjectTask> {
+    let Some(document) = load_tasks_json_value(root) else {
+        return Vec::new();
+    };
+    let Some(items) = document.get("tasks").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    let mut tasks = Vec::new();
+    let mut used_ids = std::collections::HashSet::new();
+    for item in items.iter().take(CONFIGURED_TASK_CAP.saturating_mul(2)) {
+        if tasks.len() >= CONFIGURED_TASK_CAP {
+            break;
+        }
+        let label = item
+            .get("label")
+            .or_else(|| item.get("script"))
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("");
+        if label.is_empty() {
+            continue;
+        }
+        let task_type = item
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("shell")
+            .to_ascii_lowercase();
+        let background = item
+            .get("isBackground")
+            .or_else(|| item.get("is_background"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+            || item
+                .get("problemMatcher")
+                .map(|matcher| match matcher {
+                    serde_json::Value::Array(items) => items
+                        .iter()
+                        .any(|entry| entry.get("background").is_some()),
+                    other => other.get("background").is_some(),
+                })
+                .unwrap_or(false);
+        let (argv, script_name) = match task_type.as_str() {
+            "npm" => {
+                let script = item
+                    .get("script")
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .unwrap_or("");
+                if !npm_script_is_safe(script) {
+                    continue;
+                }
+                (
+                    vec!["npm".into(), "run".into(), script.to_owned()],
+                    Some(script.to_owned()),
+                )
+            }
+            "process" | "shell" => {
+                let Some(command) = item
+                    .get("command")
+                    .and_then(|v| {
+                        v.as_str().map(str::to_owned).or_else(|| {
+                            v.get("value")
+                                .and_then(|inner| inner.as_str())
+                                .map(str::to_owned)
+                        })
+                    })
+                    .map(|value| value.trim().to_owned())
+                    .filter(|value| !value.is_empty())
+                else {
+                    continue;
+                };
+                let args = item
+                    .get("args")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(str::to_owned))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                if args.is_empty() && command.contains(char::is_whitespace) && task_type == "shell"
+                {
+                    (vec!["sh".into(), "-c".into(), command], None)
+                } else {
+                    let mut argv = vec![command];
+                    argv.extend(args);
+                    (argv, None)
+                }
+            }
+            _ => continue,
+        };
+        if argv.is_empty() || argv.len() > 32 || argv.iter().any(|part| part.len() > 512) {
+            continue;
+        }
+        let mut id = format!("configured-{}", sanitize_task_id_slug(label));
+        let mut suffix = 2u32;
+        while !used_ids.insert(id.clone()) {
+            id = format!("configured-{}-{suffix}", sanitize_task_id_slug(label));
+            suffix = suffix.saturating_add(1);
+        }
+        let kind = infer_configured_task_kind(label, script_name.as_deref(), background);
+        tasks.push(ProjectTask {
+            id,
+            label: label.to_owned(),
+            kind: kind.into(),
+            argv,
+            provider: "vscode-tasks".into(),
+            long_running: background || kind == "run",
+            ready_pattern: configured_task_ready_pattern(item),
+            problem_matcher: item.get("problemMatcher").and_then(first_problem_matcher),
+        });
+    }
+    tasks
+}
+
+fn project_tasks(root: &FsPath) -> Vec<ProjectTask> {
+    let mut tasks = detected_project_tasks(root);
+    let mut seen_ids = tasks
+        .iter()
+        .map(|task| task.id.clone())
+        .collect::<std::collections::HashSet<_>>();
+    let seen_argv = tasks
+        .iter()
+        .map(|task| task.argv.clone())
+        .collect::<std::collections::HashSet<_>>();
+    for task in configured_project_tasks(root) {
+        if !seen_ids.insert(task.id.clone()) || seen_argv.contains(&task.argv) {
+            continue;
+        }
+        tasks.push(task);
+    }
+    tasks
+}
+
 fn parse_output_locations(root: &FsPath, output: &str) -> Vec<ProjectOutputLocation> {
     let mut locations = Vec::new();
     for line_text in output.lines() {
@@ -4197,7 +4626,7 @@ async fn list_project_tasks(
         })?
         .worktree
         .clone();
-    Ok(Json(detected_project_tasks(&root)))
+    Ok(Json(project_tasks(&root)))
 }
 
 fn discover_project_tests(root: &FsPath, tasks: &[ProjectTask]) -> Vec<ProjectTest> {
@@ -4289,7 +4718,7 @@ async fn list_project_tests(
         })?
         .worktree
         .clone();
-    let tasks = detected_project_tasks(&root);
+    let tasks = project_tasks(&root);
     Ok(Json(discover_project_tests(&root, &tasks)))
 }
 
@@ -4311,7 +4740,7 @@ async fn start_project_task_run(
         })?
         .worktree
         .clone();
-    let mut task = detected_project_tasks(&root)
+    let mut task = project_tasks(&root)
         .into_iter()
         .find(|task| task.id == task_id)
         .ok_or_else(|| {
@@ -4322,6 +4751,8 @@ async fn start_project_task_run(
         })?;
     target_project_test(&root, &mut task, body.test_id.as_deref())?;
     let run_id = format!("run-{}", uuid::Uuid::new_v4());
+    let ready_re = compile_ready_pattern(&task);
+    let problem_re = compile_problem_pattern(&task);
     let run = ProjectTaskRun {
         run_id: run_id.clone(),
         work_id: work_id.clone(),
@@ -4332,6 +4763,7 @@ async fn start_project_task_run(
         stderr: String::new(),
         output_truncated: false,
         next_seq: 0,
+        locations: Vec::new(),
     };
     let mut child = background_tokio_command(&task.argv[0])
         .args(&task.argv[1..])
@@ -4351,6 +4783,9 @@ async fn start_project_task_run(
         run_id.clone(),
         ProjectTaskRunStore {
             run: run.clone(),
+            root: root.clone(),
+            ready_re,
+            problem_re,
             chunks: std::collections::VecDeque::new(),
             tx,
         },
@@ -4377,7 +4812,7 @@ async fn start_project_task_run(
             if let Some(status) = status {
                 // Give stream pumps a moment to flush final bytes.
                 tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                let (stdout, stderr, output_truncated) = {
+                let (stdout, stderr, output_truncated, prior_locations, problem_re) = {
                     let runs = PROJECT_TASK_RUNS.read().await;
                     runs.get(&run_id_for_task)
                         .map(|store| {
@@ -4385,11 +4820,29 @@ async fn start_project_task_run(
                                 store.run.stdout.clone(),
                                 store.run.stderr.clone(),
                                 store.run.output_truncated,
+                                store.run.locations.clone(),
+                                store.problem_re.clone(),
                             )
                         })
-                        .unwrap_or_default()
+                        .unwrap_or_else(|| {
+                            (
+                                String::new(),
+                                String::new(),
+                                false,
+                                Vec::new(),
+                                None,
+                            )
+                        })
                 };
-                let locations = parse_output_locations(&root, &format!("{stdout}\n{stderr}"));
+                let mut locations = prior_locations;
+                merge_task_locations(
+                    &mut locations,
+                    parse_output_locations_with_matcher(
+                        &root,
+                        &format!("{stdout}\n{stderr}"),
+                        problem_re.as_ref(),
+                    ),
+                );
                 let result = ProjectTaskResult {
                     task: task.clone(),
                     success: status.success(),
@@ -4404,7 +4857,9 @@ async fn start_project_task_run(
                     .read()
                     .await
                     .get(&run_id_for_task)
-                    .is_some_and(|store| store.run.state == "cancelled");
+                    .is_some_and(|store| {
+                        matches!(store.run.state.as_str(), "cancelled")
+                    });
                 let _ = forge.append_command_log(&lease, &serde_json::json!({"kind":if cancelled {"project_task_cancelled"} else {"project_task"},"run_id":run_id_for_task,"task":result.task,"success":result.success,"exit_code":result.exit_code,"duration_ms":result.duration_ms,"stdout":result.stdout,"stderr":result.stderr,"truncated":result.truncated,"locations":result.locations}));
                 let final_state = if cancelled {
                     "cancelled"
@@ -4582,7 +5037,7 @@ async fn run_project_task(
         })?
         .worktree
         .clone();
-    let task = detected_project_tasks(&root)
+    let task = project_tasks(&root)
         .into_iter()
         .find(|task| task.id == task_id)
         .ok_or_else(|| {
@@ -6062,6 +6517,8 @@ mod source_tests {
             argv: vec!["cargo".into(), "check".into()],
             provider: "cargo".into(),
             long_running: false,
+            ready_pattern: None,
+            problem_matcher: None,
         };
         let mut run = ProjectTaskRun {
             run_id: "run-1".into(),
@@ -6073,6 +6530,7 @@ mod source_tests {
             stderr: String::new(),
             output_truncated: false,
             next_seq: 1,
+            locations: Vec::new(),
         };
         assert!(!task_run_is_terminal(&run));
         run.result = Some(ProjectTaskResult {
@@ -6094,6 +6552,7 @@ mod source_tests {
             text: None,
             state: Some("cancelled".into()),
             result: run.result.clone(),
+            locations: None,
         }));
         assert!(!task_output_event_is_terminal(&ProjectTaskOutputEvent {
             seq: 1,
@@ -6103,7 +6562,89 @@ mod source_tests {
             text: None,
             state: Some("cancelled".into()),
             result: None,
+            locations: None,
         }));
+    }
+
+    #[test]
+    fn configured_tasks_json_merges_safe_shell_and_npm_entries() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join(".vscode")).unwrap();
+        std::fs::write(
+            root.path().join(".vscode/tasks.json"),
+            r#"{
+              // project tasks
+              "version": "2.0.0",
+              "tasks": [
+                {
+                  "label": "Lint",
+                  "type": "npm",
+                  "script": "lint",
+                  "problemMatcher": {
+                    "pattern": {
+                      "regexp": "^(.*):(\\d+):(\\d+):\\s+(.*)$",
+                      "file": 1,
+                      "line": 2,
+                      "column": 3,
+                      "message": 4
+                    }
+                  }
+                },
+                {
+                  "label": "Dev server",
+                  "type": "shell",
+                  "command": "npm",
+                  "args": ["run", "dev"],
+                  "isBackground": true,
+                  "problemMatcher": {
+                    "background": { "endsPattern": "Local:" },
+                    "pattern": { "regexp": "^(.*):(\\d+):(\\d+):\\s+(.*)$", "file": 1, "line": 2, "column": 3, "message": 4 }
+                  }
+                },
+                { "label": "Danger", "type": "npm", "script": "rm -rf /" }
+              ]
+            }"#,
+        )
+        .unwrap();
+        let tasks = project_tasks(root.path());
+        let lint = tasks.iter().find(|task| task.id == "configured-lint").unwrap();
+        assert_eq!(lint.argv, vec!["npm", "run", "lint"]);
+        assert_eq!(lint.provider, "vscode-tasks");
+        assert!(lint.problem_matcher.is_some());
+        let dev = tasks
+            .iter()
+            .find(|task| task.id == "configured-dev-server")
+            .unwrap();
+        assert!(dev.long_running);
+        assert_eq!(dev.ready_pattern.as_deref(), Some("Local:"));
+        assert!(!tasks.iter().any(|task| task.label == "Danger"));
+    }
+
+    #[test]
+    fn readiness_and_matcher_patterns_parse_incremental_output() {
+        let root = PathBuf::from("/work/project");
+        let matcher = (
+            regex::Regex::new(r"^(.*):(\d+):(\d+):\s+(.*)$").unwrap(),
+            ProjectProblemPattern {
+                regexp: r"^(.*):(\d+):(\d+):\s+(.*)$".into(),
+                file: 1,
+                line: 2,
+                column: Some(3),
+                message: Some(4),
+            },
+        );
+        let locations = parse_output_locations_with_matcher(
+            &root,
+            "src/app.ts:10:2: Unexpected token",
+            Some(&matcher),
+        );
+        assert_eq!(locations[0].path, "src/app.ts");
+        assert_eq!(locations[0].line, 10);
+        assert_eq!(locations[0].column, Some(2));
+        assert_eq!(locations[0].message, "Unexpected token");
+        let ready = regex::Regex::new(default_ready_pattern()).unwrap();
+        assert!(ready.is_match("  ➜  Local:   http://localhost:5173/"));
+        assert!(!ready.is_match("compiling modules"));
     }
 
     #[test]
