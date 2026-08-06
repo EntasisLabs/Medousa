@@ -614,14 +614,14 @@
   {#if showBrowser}<header class="flex flex-wrap items-center justify-between gap-2 border-b border-surface-500/40 pb-2">
     <div>
       <h2 class="text-base font-semibold text-surface-50">Code projects</h2>
-      <p class="text-xs text-surface-400">
+      <p class="text-xs text-content-tertiary">
         One goal, its files, and everyone helping
       </p>
     </div>
     <div class="flex items-center gap-1.5">
       <button
         type="button"
-        class="rounded-md border border-surface-500/50 px-2 py-1 text-xs text-surface-300"
+        class="rounded-md border border-surface-500/50 px-2 py-1 text-xs text-content-secondary"
         onclick={() => void undertakings.refreshList()}
       >
         Refresh
@@ -652,7 +652,7 @@
             void onCreate();
           }}
         >
-          <p class="px-0.5 text-[10px] font-medium uppercase tracking-wide text-surface-400">
+          <p class="px-0.5 text-[10px] font-medium uppercase tracking-wide text-content-tertiary">
             New project
           </p>
         <input
@@ -691,15 +691,15 @@
         </form>
       {/if}
       {#if undertakings.loading && undertakings.items.length === 0}
-        <p class="text-xs text-surface-500">Loading…</p>
+        <p class="text-xs text-content-quiet">Loading…</p>
       {:else if undertakings.items.length === 0 && !creating}
-        <p class="px-1 py-3 text-xs leading-relaxed text-surface-500">
+        <p class="px-1 py-3 text-xs leading-relaxed text-content-quiet">
           No code projects yet. Start with a repository and the change you want to make.
         </p>
       {/if}
       <ul class="flex flex-col gap-1">
         {#if activeItems.length}
-          <li class="px-1 pt-1 text-[10px] uppercase tracking-wide text-surface-500">
+          <li class="px-1 pt-1 text-[10px] uppercase tracking-wide text-content-quiet">
             In progress
           </li>
           {#each activeItems as item (item.id)}
@@ -713,7 +713,7 @@
                 onclick={() => void selectProject(item.id)}
               >
                 <span class="block truncate font-medium text-surface-50">{item.title}</span>
-                <span class="text-[10px] text-surface-400">
+                <span class="text-[10px] text-content-tertiary">
                   {humanPhaseLabel(item.human_phase)}
                 </span>
               </button>
@@ -721,21 +721,21 @@
           {/each}
         {/if}
         {#if completedItems.length}
-          <li class="px-1 pt-2 text-[10px] uppercase tracking-wide text-surface-500">
+          <li class="px-1 pt-2 text-[10px] uppercase tracking-wide text-content-quiet">
             Finished
           </li>
           {#each completedItems as item (item.id)}
             <li>
               <button
                 type="button"
-                class="w-full rounded px-2 py-1.5 text-left text-xs opacity-70 hover:bg-surface-700/60 {undertakings.selectedId ===
+                class="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-surface-700/60 {undertakings.selectedId ===
                 item.id
-                  ? 'bg-surface-700/80 opacity-100'
+                  ? 'bg-surface-700/80'
                   : ''}"
                 onclick={() => void selectProject(item.id)}
               >
                 <span class="block truncate font-medium text-surface-50">{item.title}</span>
-                <span class="text-[10px] text-surface-400">
+                <span class="text-[10px] text-content-tertiary">
                   {humanPhaseLabel(item.human_phase)}
                 </span>
               </button>
@@ -749,8 +749,8 @@
       {#if !detail}
         <div class="flex min-h-48 flex-1 items-center justify-center px-1 py-2">
           <div class="max-w-sm text-center">
-            <p class="text-sm font-medium text-surface-300">Open or start a project</p>
-            <p class="mt-1 text-xs leading-relaxed text-surface-500">
+            <p class="text-sm font-medium text-content-secondary">Open or start a project</p>
+            <p class="mt-1 text-xs leading-relaxed text-content-quiet">
               Pick a project in the rail, or start one with the outcome you want.
             </p>
           </div>
@@ -760,15 +760,15 @@
           <div class="min-w-0 flex-1">
             <h3 class="truncate text-sm font-semibold text-surface-50" title={detail.brief || detail.title}>{detail.title}</h3>
             {#if detail.environment}
-              <p class="mt-0.5 text-[10px] text-surface-500">
+              <p class="mt-0.5 text-[10px] text-content-quiet">
                 {humanPhaseLabel(detail.human_phase)}
               </p>
             {:else}
               {#if detail.brief && detail.brief.trim() !== detail.title.trim()}
-                <p class="truncate text-[10px] text-surface-500" title={detail.brief}>{detail.brief}</p>
+                <p class="truncate text-[10px] text-content-quiet" title={detail.brief}>{detail.brief}</p>
               {/if}
-              <p class="mt-0.5 text-[10px] text-surface-500">
-                <span class="font-medium text-surface-300">{humanPhaseLabel(detail.human_phase)}</span>
+              <p class="mt-0.5 text-[10px] text-content-quiet">
+                <span class="font-medium text-content-secondary">{humanPhaseLabel(detail.human_phase)}</span>
                 · {humanPhaseGuidance(detail.human_phase)}
               </p>
             {/if}
@@ -865,8 +865,8 @@
                 {/if}
                 <div class="my-1 border-t border-surface-500/25"></div>
                 {#if detail.environment}
-                  <details class="px-2 py-1 text-[9px] text-surface-500">
-                    <summary class="cursor-pointer select-none hover:text-surface-300">Technical details</summary>
+                  <details class="px-2 py-1 text-[9px] text-content-quiet">
+                    <summary class="cursor-pointer select-none hover:text-content-secondary">Technical details</summary>
                     <p class="mt-1 break-all font-mono leading-relaxed">
                       Working copy: {detail.environment.worktree}<br />Starting revision:
                       {detail.environment.baseline_oid.slice(0, 12)} · internal state: {detail.state}
@@ -908,8 +908,8 @@
         {:else if !reviewCanvas && actions?.provision.allowed}
           <div class="flex min-h-48 flex-1 items-center justify-center p-6 text-center">
             <div class="max-w-sm">
-              <p class="text-xs font-medium text-surface-300">Set up this project</p>
-              <p class="mt-1 text-[10px] leading-relaxed text-surface-500">
+              <p class="text-xs font-medium text-content-secondary">Set up this project</p>
+              <p class="mt-1 text-[10px] leading-relaxed text-content-quiet">
                 Create the working copy so the tree and editor can open.
               </p>
               <button
@@ -924,7 +924,7 @@
           </div>
         {:else if !reviewCanvas && !actions?.provision.allowed}
           <div class="flex min-h-48 flex-1 items-center justify-center p-6 text-center">
-            <p class="max-w-sm text-xs text-surface-500">
+            <p class="max-w-sm text-xs text-content-quiet">
               {humanPhaseGuidance(detail.human_phase)}
             </p>
           </div>
@@ -1259,7 +1259,7 @@
           <div class="flex min-h-0 flex-1 items-center justify-center p-8 text-center">
             <div class="max-w-sm">
               <p class="text-sm font-medium text-surface-200">Nothing to review yet</p>
-              <p class="mt-1 text-xs leading-relaxed text-surface-500">
+              <p class="mt-1 text-xs leading-relaxed text-content-quiet">
                 Keep working in a source tab. Review will become available when the project has a sealed change set.
               </p>
             </div>
@@ -1320,14 +1320,14 @@
             <div class="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h4 class="text-sm font-semibold">Understand this code</h4>
-                <p class="text-[10px] text-surface-500">See relationships and possible impact without leaving your work</p>
+                <p class="text-[10px] text-content-quiet">See relationships and possible impact without leaving your work</p>
               </div>
               <div class="flex items-center gap-1 text-[10px]">
                 <button
                   type="button"
                   class="rounded px-2 py-0.5 {worldSnapshot === 'baseline'
                     ? 'bg-surface-700 text-surface-50'
-                    : 'text-surface-400'}"
+                    : 'text-content-tertiary'}"
                   onclick={() => {
                     worldSnapshot = "baseline";
                     void loadWorldOverview();
@@ -1339,7 +1339,7 @@
                   type="button"
                   class="rounded px-2 py-0.5 {worldSnapshot === 'sealed'
                     ? 'bg-surface-700 text-surface-50'
-                    : 'text-surface-400'}"
+                    : 'text-content-tertiary'}"
                   onclick={() => {
                     worldSnapshot = "sealed";
                     void loadWorldOverview();
@@ -1349,14 +1349,14 @@
                 </button>
                 <button
                   type="button"
-                  class="ml-1 rounded p-1 text-surface-500 hover:bg-surface-800 hover:text-surface-200"
+                  class="ml-1 rounded p-1 text-content-quiet hover:bg-surface-800 hover:text-surface-200"
                   aria-label="Close code understanding"
                   title="Close"
                   onclick={() => (worldMode = false)}
                 >×</button>
               </div>
             </div>
-            <p class="mt-1 text-[10px] text-surface-500">This view only explains the code; it never changes files.</p>
+            <p class="mt-1 text-[10px] text-content-quiet">This view only explains the code; it never changes files.</p>
             <div class="mt-2 flex flex-wrap gap-1">
               <button
                 type="button"
@@ -1378,8 +1378,8 @@
               </button>
             </div>
             {#if worldBinding}
-              <details class="mt-2 text-[10px] text-surface-500">
-                <summary class="w-fit cursor-pointer hover:text-surface-300">Technical details</summary>
+              <details class="mt-2 text-[10px] text-content-quiet">
+                <summary class="w-fit cursor-pointer hover:text-content-secondary">Technical details</summary>
                 <p class="mt-1">
                   Before: {worldBinding.baseline?.state ?? "not indexed"} · current:
                   {worldBinding.sealed?.state ?? "not indexed"}
@@ -1389,8 +1389,8 @@
                   {#each Object.entries(worldBinding.capabilities).filter(([key]) => key !== "note") as [capability, enabled]}
                     <span
                       class="rounded-full border border-surface-500/30 px-1.5 py-0.5 text-[9px] {enabled
-                        ? 'text-surface-300'
-                        : 'text-surface-600'}"
+                        ? 'text-content-secondary'
+                        : 'text-content-faint'}"
                     >{capability.replaceAll("_", " ")}{enabled ? "" : " · unavailable"}</span>
                   {/each}
                   </div>
@@ -1449,7 +1449,7 @@
             {#if worldFind}
               <div class="mt-2 max-h-44 overflow-auto rounded-md border border-surface-500/25">
                 {#if worldFind.entities.length === 0}
-                  <p class="p-2 text-[10px] text-surface-500">Nothing matched that name.</p>
+                  <p class="p-2 text-[10px] text-content-quiet">Nothing matched that name.</p>
                 {:else}
                   {#each worldFind.entities as entity (entity.id)}
                     <button
@@ -1465,9 +1465,9 @@
                     >
                       <span class="min-w-0">
                         <span class="block truncate text-[11px] text-surface-200">{entity.label}</span>
-                        <span class="block truncate font-mono text-[9px] text-surface-500">{entity.path}</span>
+                        <span class="block truncate font-mono text-[9px] text-content-quiet">{entity.path}</span>
                       </span>
-                      <span class="shrink-0 text-[9px] text-surface-500">{entity.kind}</span>
+                      <span class="shrink-0 text-[9px] text-content-quiet">{entity.kind}</span>
                     </button>
                   {/each}
                 {/if}
@@ -1480,11 +1480,11 @@
                   {worldImpact.transitive_dependents ?? 0} through other code
                 </p>
                 {#if worldImpact.message}
-                  <p class="mt-1 text-[10px] text-surface-500">{worldImpact.message}</p>
+                  <p class="mt-1 text-[10px] text-content-quiet">{worldImpact.message}</p>
                 {/if}
-                <ul class="mt-1 max-h-32 overflow-auto text-[10px] text-surface-400">
+                <ul class="mt-1 max-h-32 overflow-auto text-[10px] text-content-tertiary">
                   {#each worldImpact.nodes as node (node.id)}
-                    <li class="truncate py-0.5">{node.label} <span class="text-surface-600">· {node.path}</span></li>
+                    <li class="truncate py-0.5">{node.label} <span class="text-content-faint">· {node.path}</span></li>
                   {/each}
                 </ul>
               </div>
@@ -1495,25 +1495,25 @@
                   <p class="text-lg font-semibold text-surface-100">
                     {worldInsight.code_avec?.fully_scored_entities ?? 0}
                   </p>
-                  <p class="text-[9px] text-surface-500">fully understood</p>
+                  <p class="text-[9px] text-content-quiet">fully understood</p>
                 </div>
                 <div class="rounded-md bg-surface-900/60 p-2">
                   <p class="text-lg font-semibold text-surface-100">
                     {worldInsight.code_avec?.scoreable_entities ?? 0}
                   </p>
-                  <p class="text-[9px] text-surface-500">code elements found</p>
+                  <p class="text-[9px] text-content-quiet">code elements found</p>
                 </div>
                 <div class="rounded-md bg-surface-900/60 p-2">
                   <p class="text-lg font-semibold text-surface-100">
                     {worldInsight.code_avec?.gaps.length ?? 0}
                   </p>
-                  <p class="text-[9px] text-surface-500">still unclear</p>
+                  <p class="text-[9px] text-content-quiet">still unclear</p>
                 </div>
               </div>
             {/if}
             {#if worldFiles}
               <details class="mt-2">
-                <summary class="cursor-pointer text-[10px] text-surface-400">
+                <summary class="cursor-pointer text-[10px] text-content-tertiary">
                   Files in this view · {worldFiles.files.length}
                 </summary>
                 <ul class="mt-1 max-h-48 overflow-auto rounded-md border border-surface-500/25">
@@ -1521,7 +1521,7 @@
                     <li class="border-b border-surface-500/15 px-2 py-1 last:border-0">
                       <button
                         type="button"
-                        class="w-full truncate text-left font-mono text-[10px] text-surface-400 hover:text-surface-100"
+                        class="w-full truncate text-left font-mono text-[10px] text-content-tertiary hover:text-surface-100"
                         onclick={() =>
                           void revealLocation({ path: file.path, line: 1, entityId: file.id })}
                       >{file.path}</button>
@@ -1577,7 +1577,7 @@
     border-radius: 0.6rem;
     padding: 0.75rem;
     background: rgb(var(--color-warning-950) / 0.12);
-    color: rgb(var(--color-warning-300));
+    color: rgb(var(--theme-warning));
   }
 
   .review-policy p {
@@ -1589,7 +1589,7 @@
     margin-top: 0.3rem;
     font-size: 0.625rem;
     line-height: 1.5;
-    color: rgb(var(--color-warning-200) / 0.72);
+    color: rgb(var(--theme-warning) / 0.72);
   }
 
   .review-policy li span {
@@ -1602,7 +1602,7 @@
     gap: 0.45rem;
     margin-top: 0.55rem;
     font-size: 0.625rem;
-    color: rgb(var(--color-warning-100));
+    color: rgb(var(--theme-warning));
   }
 
   .review-context {
@@ -1618,7 +1618,7 @@
     border-radius: 0.35rem;
     background: transparent;
     padding: 0.3rem 0.4rem 0.3rem 0.1rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     text-align: left;
     transition: color 140ms ease, background-color 140ms ease;
   }
@@ -1638,7 +1638,7 @@
     margin-left: 0.25rem;
     font-size: 0.625rem;
     font-weight: 400;
-    color: rgb(var(--color-surface-600));
+    color: rgb(var(--theme-text-faint));
   }
 
   :global(.review-context-chevron),
@@ -1674,7 +1674,7 @@
     gap: 0.5rem;
     padding: 0.4rem 0.55rem;
     font-size: 0.625rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .review-context-loading-dot {
@@ -1733,7 +1733,7 @@
     justify-content: center;
     border-radius: 0.45rem;
     background: rgb(var(--color-surface-800) / 0.35);
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .review-context-copy {
@@ -1757,7 +1757,7 @@
     margin-top: 0.1rem;
     font-size: 0.625rem;
     line-height: 1.4;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -1771,7 +1771,7 @@
     background: transparent;
     padding: 0.35rem 0.5rem;
     font-size: 0.625rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .review-context-action:hover:not(:disabled) {
@@ -1810,13 +1810,13 @@
 
   .review-timeline p {
     font-size: 0.625rem;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
   }
 
   .review-timeline span,
   .review-timeline time {
     font-size: 0.5625rem;
-    color: rgb(var(--color-surface-600));
+    color: rgb(var(--theme-text-faint));
   }
 
   .review-context-subactions,
@@ -1834,13 +1834,13 @@
     background: transparent;
     padding: 0.15rem 0.3rem;
     font-size: 0.5625rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .review-context-subactions button:hover,
   .review-linked-items button:hover,
   .review-audit button:hover {
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
   }
 
   .review-linked-items button {
@@ -1861,7 +1861,7 @@
     border-radius: 0.45rem;
     padding: 0.3rem 0.4rem;
     background: rgb(var(--color-surface-800) / 0.28);
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .review-link-compose input {
@@ -1878,7 +1878,7 @@
   }
 
   .review-link-compose input::placeholder {
-    color: rgb(var(--color-surface-600));
+    color: rgb(var(--theme-text-faint));
   }
 
   .review-link-compose button {
@@ -1887,11 +1887,11 @@
     background: transparent;
     padding: 0.25rem 0.4rem;
     font-size: 0.625rem;
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
   }
 
   .review-link-compose button:disabled {
-    color: rgb(var(--color-surface-600));
+    color: rgb(var(--theme-text-faint));
   }
 
   .review-feedback {
@@ -1905,7 +1905,7 @@
   .review-feedback article {
     padding: 0.6rem;
     font-size: 0.625rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .review-feedback article + article {
@@ -1914,13 +1914,13 @@
 
   .review-feedback article span {
     font-size: 0.5625rem;
-    color: rgb(var(--color-surface-600));
+    color: rgb(var(--theme-text-faint));
   }
 
   .review-feedback article p {
     margin-top: 0.2rem;
     white-space: pre-wrap;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
   }
 
   .review-feedback article button {
@@ -1929,7 +1929,7 @@
     background: transparent;
     padding: 0;
     font-size: 0.5625rem;
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
   }
 
   .review-audit {
@@ -1941,7 +1941,7 @@
     margin-bottom: 0.35rem;
     font-family: var(--font-mono);
     font-size: 0.5625rem;
-    color: rgb(var(--color-surface-600));
+    color: rgb(var(--theme-text-faint));
   }
 
   .review-audit-label {
@@ -1961,13 +1961,13 @@
     font-family: var(--font-mono);
     font-size: 0.5625rem;
     line-height: 1.4;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .review-exported {
     margin: 0.4rem 0;
     font-size: 0.625rem;
-    color: rgb(var(--color-success-300));
+    color: rgb(var(--theme-success));
   }
 
   .review-exported span {
@@ -1999,7 +1999,7 @@
   }
 
   .review-note::placeholder {
-    color: rgb(var(--color-surface-600));
+    color: rgb(var(--theme-text-faint));
   }
 
   .review-decision-row {
@@ -2014,7 +2014,7 @@
     min-width: 0;
     align-items: center;
     gap: 0.45rem;
-    color: rgb(var(--color-warning-300));
+    color: rgb(var(--theme-warning));
   }
 
   .review-decision-guidance p {
@@ -2040,7 +2040,7 @@
     background: transparent;
     padding: 0.4rem 0.6rem;
     font-size: 0.6875rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .review-decision-btn:hover:not(:disabled) {
@@ -2102,7 +2102,7 @@
     justify-content: center;
     border-radius: 0.5rem;
     background: rgb(var(--color-primary-500) / 0.12);
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
   }
 
   .review-export-dialog h4 {
@@ -2115,7 +2115,7 @@
     margin-top: 0.2rem;
     font-size: 0.6875rem;
     line-height: 1.45;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .review-export-dialog label,
@@ -2129,7 +2129,7 @@
   .review-export-dialog label {
     margin-top: 0.35rem;
     font-size: 0.625rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .review-export-dialog input {
@@ -2146,13 +2146,13 @@
   }
 
   .review-export-dialog input::placeholder {
-    color: rgb(var(--color-surface-600));
+    color: rgb(var(--theme-text-faint));
   }
 
   .review-export-dialog small {
     margin-top: -0.45rem;
     font-size: 0.5625rem;
-    color: rgb(var(--color-surface-600));
+    color: rgb(var(--theme-text-faint));
   }
 
   .review-export-dialog .review-export-path {
@@ -2163,7 +2163,7 @@
     background: rgb(var(--color-surface-800) / 0.35);
     font-family: var(--font-mono);
     font-size: 0.625rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -2181,7 +2181,7 @@
     background: transparent;
     padding: 0.4rem 0.6rem;
     font-size: 0.6875rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .review-export-actions button:hover:not(:disabled) {

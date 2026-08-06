@@ -166,7 +166,7 @@
   .liquid-accordion-subtitle {
     margin: 0.3rem 0 0;
     font-size: 0.78rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .liquid-accordion-list {
@@ -217,7 +217,7 @@
   .liquid-accordion-chevron {
     flex: 0 0 auto;
     font-size: 0.7rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     transition: transform 0.18s ease;
   }
 
@@ -229,7 +229,7 @@
     padding: 0 0.7rem 0.65rem;
     font-size: 0.78rem;
     line-height: 1.5;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
   }
 
   .liquid-accordion-body :global(p) {

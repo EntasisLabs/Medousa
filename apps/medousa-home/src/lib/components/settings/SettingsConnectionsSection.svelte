@@ -147,7 +147,7 @@
     </p>
   {:else}
     {#if accountConnections.error}
-      <p class="mt-2 flex items-center gap-1.5 text-sm text-warning-300">
+      <p class="mt-2 flex items-center gap-1.5 text-sm text-content-warning">
         <CircleAlert size={14} strokeWidth={2} />
         {accountConnections.error}
       </p>
@@ -281,10 +281,10 @@
       <p class="connections-feedback mt-2 text-sm text-surface-200">{USE_HINT}</p>
     {/if}
     {#if actionNote}
-      <p class="connections-feedback mt-2 text-sm text-success-300">{actionNote}</p>
+      <p class="connections-feedback mt-2 text-sm text-content-success">{actionNote}</p>
     {/if}
     {#if actionError}
-      <p class="connections-feedback mt-2 text-sm text-warning-300">{actionError}</p>
+      <p class="connections-feedback mt-2 text-sm text-content-warning">{actionError}</p>
     {/if}
 
     <p class="workshop-faint mt-3 text-xs">
@@ -316,7 +316,7 @@
 
   .connections-steps em {
     font-style: normal;
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
   }
 
   .connections-cards {
@@ -375,22 +375,22 @@
     font-size: 0.68rem;
     font-weight: 600;
     background: rgb(var(--color-surface-500) / 0.22);
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
   }
 
   .connections-status--in {
     background: rgb(var(--color-success-500) / 0.18);
-    color: rgb(var(--color-success-300));
+    color: rgb(var(--theme-success));
   }
 
   .connections-status--out {
     background: rgb(var(--color-warning-500) / 0.16);
-    color: rgb(var(--color-warning-300));
+    color: rgb(var(--theme-warning));
   }
 
   .connections-status--wait {
     background: rgb(var(--color-primary-500) / 0.16);
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
   }
 
   .connections-note {
@@ -409,7 +409,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
     background: none;
     border: none;
     padding: 0;

@@ -575,6 +575,7 @@ pub async fn turn_create(
         channel_id: Some(trimmed_session.to_string()),
         user_id: None,
         supports_ui_artifacts: true,
+        supports_liquid_markdown: true,
         supports_browser_host,
     });
 

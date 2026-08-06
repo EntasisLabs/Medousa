@@ -71,7 +71,7 @@
           </p>
         {/if}
         {#if feedback}
-          <p class="mt-1 text-xs text-surface-400">{feedback}</p>
+          <p class="mt-1 text-xs text-content-tertiary">{feedback}</p>
         {/if}
       </div>
       <div class="flex shrink-0 flex-wrap gap-1.5">

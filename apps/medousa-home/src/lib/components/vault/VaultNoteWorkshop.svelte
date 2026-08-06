@@ -251,7 +251,7 @@
         <span class="vault-note-workshop-sheet-grip" aria-hidden="true"></span>
       </div>
       <header class="vault-note-workshop-sheet-header" aria-label="Note chat controls">
-        <p class="min-w-0 flex-1 truncate text-[11px] text-surface-400">
+        <p class="min-w-0 flex-1 truncate text-[11px] text-content-tertiary">
           {talkingAboutPassage ? "Working on this passage" : "Talk about this note"}
         </p>
         <div class="flex shrink-0 items-center gap-0.5">
@@ -325,11 +325,11 @@
         onpointerup={handleDragEnd}
         onpointercancel={handleDragEnd}
       >
-        <GripHorizontal size={16} strokeWidth={1.75} class="shrink-0 text-surface-500" />
+        <GripHorizontal size={16} strokeWidth={1.75} class="shrink-0 text-content-quiet" />
         <div class="min-w-0 flex-1">
           <p class="truncate text-sm font-medium text-surface-50">{title}</p>
           {#if scopeHint}
-            <p class="truncate text-[11px] text-surface-400">{scopeHint}</p>
+            <p class="truncate text-[11px] text-content-tertiary">{scopeHint}</p>
           {/if}
         </div>
         <div class="flex shrink-0 items-center gap-1">

@@ -6,8 +6,10 @@ Paste-first UI blocks for **chat** and **vault** notes. The client turns fenced 
 
 | Surface | Behavior |
 |---------|----------|
-| Chat | Hydrated via `MarkdownContent` |
-| Vault preview | Same hydrate pipeline (charts, cards, Mermaid, code) |
+| Medousa chat | Full Home renderer via `MarkdownContent`, including chart-editing controls |
+| Vault preview | Same Home hydrate pipeline (charts, cards, Mermaid, code) |
+| VS Code chat | Shared portable renderer for Liquid embeds, SVG charts, nested Markdown, actions, links, and copy controls |
+| Obsidian chat | Obsidian-native Markdown plus the shared portable renderer; vault-relative media resolves through the active vault |
 | Vault slash (`/`) | Insert starters for the full Liquid catalog: Callout, Card, Carousel, Actions, Section, Chips, Media, Citation, Compare, Plan, Timeline, Shortlist, Decision, Brief, Chart, Dashboard, Report, Slides, Tabs, Steps, Accordion, Code, File tree, Mini board — plus embed / TOC / query view / kanban board / table |
 | PDF export | Hydrates then captures (charts render as painted DOM) |
 
@@ -19,7 +21,16 @@ Supported langs: `card`, `carousel`, `actions`, `callout`, `section`, `chips`, `
 
 **Lucide glyphs:** use inline `{{icon:sparkles}}` in prose, or fence `icon: plane` (same allowlist) on timeline / plan / card / shortlist / dashboard / tabs / steps / accordion / actions. Prefer `icon:` over `emoji:` when both are set.
 
-Agents on UI-capable clients get recipes from `[MEDOUSA_PRESENTATION]` and `cognition_environment_wiki(topic=ui_scene|scene_vs_html)`.
+Agents on clients advertising `supports_liquid_markdown` get recipes from
+`[MEDOUSA_PRESENTATION]`. HTML/scene tools remain separately gated by
+`supports_ui_artifacts`.
+
+The grammar and inert placeholder contract live in
+`@medousa/liquid-markdown`; its browser entry point supplies the shared DOM/SVG
+renderer and hydrator. VS Code and Obsidian use that portable path, so they do
+not include Home-only chart-editing chrome or vault/PDF controls. Live `feed`
+blocks also require a host-provided loader and report themselves unavailable on
+hosts that do not supply one.
 
 ## Chart schema
 

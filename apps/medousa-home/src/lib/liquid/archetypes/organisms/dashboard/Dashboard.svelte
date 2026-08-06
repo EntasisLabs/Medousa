@@ -239,7 +239,7 @@
     margin: 0.35rem 0 0;
     font-size: 0.8rem;
     line-height: 1.45;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .liquid-dashboard-grid {
@@ -323,7 +323,7 @@
   .liquid-dashboard-label {
     font-size: 0.68rem;
     font-weight: 550;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -375,50 +375,50 @@
   }
 
   .liquid-dashboard-tile[data-tone="success"] .liquid-dashboard-value {
-    color: rgb(var(--color-success-200));
+    color: rgb(var(--theme-success));
   }
 
   .liquid-dashboard-tile[data-tone="warn"] .liquid-dashboard-value {
-    color: rgb(var(--color-warning-200));
+    color: rgb(var(--theme-warning));
   }
 
   .liquid-dashboard-tile[data-tone="error"] .liquid-dashboard-value {
-    color: rgb(var(--color-error-200));
+    color: rgb(var(--theme-error));
   }
 
   .liquid-dashboard-unit {
     font-size: 0.72rem;
     font-weight: 550;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .liquid-dashboard-delta {
     font-size: 0.68rem;
     font-weight: 550;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
   }
 
   .liquid-dashboard-tile[data-tone="success"] .liquid-dashboard-delta {
-    color: rgb(var(--color-success-300));
+    color: rgb(var(--theme-success));
   }
 
   .liquid-dashboard-tile[data-tone="warn"] .liquid-dashboard-delta {
-    color: rgb(var(--color-warning-300));
+    color: rgb(var(--theme-warning));
   }
 
   .liquid-dashboard-tile[data-tone="error"] .liquid-dashboard-delta {
-    color: rgb(var(--color-error-300));
+    color: rgb(var(--theme-error));
   }
 
   .liquid-dashboard-tile[data-tone="accent"] .liquid-dashboard-delta {
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
   }
 
   .liquid-dashboard-hint {
     margin-top: 0.15rem;
     font-size: 0.65rem;
     line-height: 1.35;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .sr-only {

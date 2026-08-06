@@ -57,7 +57,7 @@
       </div>
       <button
         type="button"
-        class="rounded p-1 text-surface-300 hover:bg-surface-800 hover:text-surface-50"
+        class="rounded p-1 text-content-secondary hover:bg-surface-800 hover:text-surface-50"
         aria-label="Close versions"
         onclick={() => vaultVersions.closePanel()}
       >
@@ -79,7 +79,7 @@
           Start versioning
         </button>
       {:else}
-        <label class="block text-xs text-surface-300">
+        <label class="block text-xs text-content-secondary">
           Version message
           <input
             class="mt-1 w-full rounded border border-surface-500/40 bg-surface-900 px-2 py-1.5 text-sm text-surface-50"
@@ -150,7 +150,7 @@
 
         <button
           type="button"
-          class="text-[11px] text-surface-400 underline-offset-2 hover:underline"
+          class="text-[11px] text-content-tertiary underline-offset-2 hover:underline"
           onclick={() => {
             showAdvanced = !showAdvanced;
             if (showAdvanced) void vaultVersions.loadWorktrees();
@@ -159,7 +159,7 @@
           {showAdvanced ? "Hide Advanced Git" : "Advanced Git"}
         </button>
         {#if showAdvanced}
-          <div class="rounded border border-surface-500/30 p-2 text-xs text-surface-300">
+          <div class="rounded border border-surface-500/30 p-2 text-xs text-content-secondary">
             <p>
               Branch: {vaultVersions.status.branch ?? "—"} · dirty
               {vaultVersions.status.dirtyCount}

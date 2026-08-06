@@ -43,19 +43,19 @@
       <span
         class="thinking-audio-mark shrink-0 {done
           ? 'text-surface-700'
-          : 'text-surface-400'}"
+          : 'text-content-tertiary'}"
       >
         <AudioLinesMark hot={!done} lit={!done} size={12} />
       </span>
       <span
         class="min-w-0 flex-1 truncate text-[10px] {done
-          ? 'font-normal text-surface-600'
-          : 'text-surface-400'}"
+          ? 'font-normal text-content-faint'
+          : 'text-content-tertiary'}"
       >
         Thinking
         {#if streaming && liveHook}
-          <span class="text-surface-600"> · </span>
-          <span class="text-surface-500">{liveHook}</span>
+          <span class="text-content-faint"> · </span>
+          <span class="text-content-quiet">{liveHook}</span>
         {/if}
       </span>
       <ChevronDown
@@ -68,7 +68,7 @@
       <p
         class="whitespace-pre-wrap leading-relaxed {compact
           ? 'text-[11px]'
-          : 'text-[11px]'} {done ? 'text-surface-600' : 'text-surface-500'}"
+          : 'text-[11px]'} {done ? 'text-content-faint' : 'text-content-quiet'}"
       >
         {trimmed}
       </p>

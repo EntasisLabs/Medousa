@@ -122,7 +122,7 @@
     margin: 0.3rem 0 0;
     font-size: 0.75rem;
     font-family: system-ui, sans-serif;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .liquid-tree-list {
@@ -168,7 +168,7 @@
   .liquid-tree-icon {
     flex: 0 0 auto;
     width: 0.85rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     font-size: 0.7rem;
   }
 

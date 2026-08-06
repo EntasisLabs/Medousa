@@ -111,7 +111,7 @@
 {#if catalog.manuscriptDetailLoading}
   <p class="workshop-muted mt-4 px-5 text-sm">Loading editor…</p>
 {:else if catalog.manuscriptDetailError}
-  <p class="mt-4 px-5 text-sm text-warning-400">{catalog.manuscriptDetailError}</p>
+  <p class="mt-4 px-5 text-sm text-content-warning">{catalog.manuscriptDetailError}</p>
 {:else if detail}
   <div class="agent-liquid flex h-full min-h-0 flex-col">
     <AgentEditorTitlebar
@@ -203,7 +203,7 @@
         </div>
 
         {#if catalog.manuscriptSaveMessage}
-          <p class="mt-5 text-xs text-surface-400">{catalog.manuscriptSaveMessage}</p>
+          <p class="mt-5 text-xs text-content-tertiary">{catalog.manuscriptSaveMessage}</p>
         {/if}
 
         <div class="agent-liquid-foot mt-8 flex flex-wrap gap-3">

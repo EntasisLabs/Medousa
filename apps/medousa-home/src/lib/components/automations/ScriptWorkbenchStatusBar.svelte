@@ -42,12 +42,12 @@
   });
 
   const centerClass = $derived.by(() => {
-    if (graphemeScriptEditor.compileError || workshop.runError) return "text-error-400";
-    if (workshop.runResult?.result?.succeeded === false) return "text-warning-400";
+    if (graphemeScriptEditor.compileError || workshop.runError) return "text-content-error";
+    if (workshop.runResult?.result?.succeeded === false) return "text-content-warning";
     if (centerLabel?.includes("valid") || centerLabel === "Run succeeded") {
-      return "text-success-400/90";
+      return "text-content-success/90";
     }
-    return "text-surface-400";
+    return "text-content-tertiary";
   });
 
   const rightLabel = $derived.by(() => {
@@ -59,7 +59,7 @@
   });
 
   const rightClass = $derived(
-    graphemeScriptEditor.saveError ? "text-error-400" : "text-surface-500",
+    graphemeScriptEditor.saveError ? "text-content-error" : "text-content-quiet",
   );
 </script>
 
@@ -78,7 +78,7 @@
   {:else}
     <button
       type="button"
-      class="scripts-workbench-status-item scripts-workbench-status-center text-surface-600"
+      class="scripts-workbench-status-item scripts-workbench-status-center text-content-faint"
       title="Show output"
       onclick={() => onToggleConsole?.()}
     >

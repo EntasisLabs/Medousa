@@ -199,7 +199,7 @@
     margin: 0.35rem 0 0;
     font-size: 0.8rem;
     line-height: 1.45;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .liquid-plan-grouping {
@@ -208,7 +208,7 @@
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .liquid-plan-scrubber {
@@ -233,7 +233,7 @@
     border: 0;
     border-radius: 0.5rem;
     background: transparent;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     cursor: pointer;
     position: relative;
   }
@@ -366,13 +366,13 @@
 
   .liquid-plan-card-sub {
     font-size: 0.72rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .liquid-plan-card-body {
     font-size: 0.75rem;
     line-height: 1.45;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     display: -webkit-box;
     -webkit-line-clamp: 3;
     line-clamp: 3;

@@ -1,6 +1,7 @@
 //! Resolve worker LLM target from matrix roles, hints, and intent defaults.
 
-use crate::stage_routing::{StageRoutingMatrix, normalize_role};
+use crate::model_route::{DelegatedLlmRoute, resolve_delegated_llm_route};
+use crate::stage_routing::StageRoutingMatrix;
 
 use super::policy::TurnWorkerIntent;
 
@@ -13,6 +14,9 @@ pub fn default_stage_role_for_intent(intent: TurnWorkerIntent) -> &'static str {
 }
 
 /// Resolve `(provider, model)` for a background worker.
+///
+/// Uses shared [`crate::model_route`] so bare model hints cannot silently attach
+/// to the process-default provider (the `openai::deepseek-*` failure mode).
 pub fn resolve_worker_llm_target(
     host_provider: &str,
     host_model: &str,
@@ -20,44 +24,35 @@ pub fn resolve_worker_llm_target(
     stage_role: Option<&str>,
     model_hint: Option<&str>,
 ) -> (String, String) {
-    if let Some((provider, model)) = resolve_explicit_model_hint(model_hint) {
-        return (provider, model);
-    }
-
-    let matrix = StageRoutingMatrix::default_for(host_provider, host_model);
-    let role = stage_role
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(normalize_role)
-        .or_else(|| Some(default_stage_role_for_intent(intent).to_string()))
-        .unwrap_or_else(|| default_stage_role_for_intent(intent).to_string());
-
-    if let Some(route) = matrix.get(&role) {
-        return (route.provider.clone(), route.model.clone());
-    }
-
-    (
-        crate::resolve_llm_provider(Some(host_provider)),
-        crate::resolve_llm_model(Some(host_model)),
+    resolve_worker_llm_target_with_matrix(
+        host_provider,
+        host_model,
+        intent,
+        stage_role,
+        model_hint,
+        None,
     )
 }
 
-fn resolve_explicit_model_hint(model_hint: Option<&str>) -> Option<(String, String)> {
-    let hint = model_hint.map(str::trim).filter(|value| !value.is_empty())?;
-    if let Some((provider, model)) = hint.split_once(':') {
-        let provider = provider.trim();
-        let model = model.trim();
-        if !provider.is_empty() && !model.is_empty() {
-            return Some((
-                crate::resolve_llm_provider(Some(provider)),
-                crate::resolve_llm_model(Some(model)),
-            ));
-        }
-    }
-    Some((
-        crate::resolve_llm_provider(None),
-        crate::resolve_llm_model(Some(hint)),
-    ))
+pub fn resolve_worker_llm_target_with_matrix(
+    host_provider: &str,
+    host_model: &str,
+    intent: TurnWorkerIntent,
+    stage_role: Option<&str>,
+    model_hint: Option<&str>,
+    stage_matrix: Option<&StageRoutingMatrix>,
+) -> (String, String) {
+    let role = stage_role
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| default_stage_role_for_intent(intent));
+    resolve_delegated_llm_route(DelegatedLlmRoute {
+        host_provider,
+        host_model,
+        model_hint,
+        stage_role: Some(role),
+        stage_matrix,
+    })
 }
 
 #[cfg(test)]
@@ -82,24 +77,69 @@ mod tests {
             Some("anthropic:claude-sonnet-4"),
         );
         assert_eq!(provider, crate::resolve_llm_provider(Some("anthropic")));
-        assert_eq!(
-            model,
-            crate::resolve_llm_model(Some("claude-sonnet-4"))
+        assert_eq!(model, crate::resolve_llm_model(Some("claude-sonnet-4")));
+    }
+
+    #[test]
+    fn auto_hint_uses_stage_matrix_not_guessed_model() {
+        let mut matrix = StageRoutingMatrix::default_for("openai", "gpt-5.6-luna");
+        matrix.summarizer.provider = "deepseek".to_string();
+        matrix.summarizer.model = "deepseek-v4-flash".to_string();
+        let (provider, model) = resolve_worker_llm_target_with_matrix(
+            "openai",
+            "gpt-5.6-luna",
+            TurnWorkerIntent::MemoryContext,
+            None,
+            Some("auto"),
+            Some(&matrix),
         );
+        assert_eq!(provider, "deepseek");
+        assert_eq!(model, "deepseek-v4-flash");
+    }
+
+    #[test]
+    fn bare_deepseek_hint_does_not_attach_to_openai() {
+        let (provider, model) = resolve_worker_llm_target(
+            "openai",
+            "gpt-5.6-luna",
+            TurnWorkerIntent::MemoryContext,
+            None,
+            Some("deepseek-v4-flash"),
+        );
+        assert_eq!(provider, "deepseek");
+        assert_eq!(model, "deepseek-v4-flash");
     }
 
     #[test]
     fn stage_role_selects_matrix_route() {
-        let (provider, model) = resolve_worker_llm_target(
+        let matrix = StageRoutingMatrix::default_for("openai", "gpt-4o-mini");
+        let (provider, model) = resolve_worker_llm_target_with_matrix(
             "openai",
             "gpt-4o-mini",
             TurnWorkerIntent::General,
             Some("verifier"),
             None,
+            Some(&matrix),
         );
         assert_eq!(provider, "openai");
         assert_eq!(model, "gpt-4o-mini");
-        let matrix = StageRoutingMatrix::default_for("openai", "gpt-4o-mini");
         assert_eq!(model, matrix.verifier.model);
+    }
+
+    #[test]
+    fn configured_matrix_can_route_worker_off_host_provider() {
+        let mut matrix = StageRoutingMatrix::default_for("openai", "gpt-5.6-luna");
+        matrix.summarizer.provider = "deepseek".to_string();
+        matrix.summarizer.model = "deepseek-v4-flash".to_string();
+        let (provider, model) = resolve_worker_llm_target_with_matrix(
+            "openai",
+            "gpt-5.6-luna",
+            TurnWorkerIntent::MemoryContext,
+            None, // intent → summarizer
+            None,
+            Some(&matrix),
+        );
+        assert_eq!(provider, "deepseek");
+        assert_eq!(model, "deepseek-v4-flash");
     }
 }

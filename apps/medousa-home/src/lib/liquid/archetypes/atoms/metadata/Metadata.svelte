@@ -26,7 +26,7 @@
     gap: 0.3rem;
     font-family: ui-monospace, monospace;
     font-size: 0.625rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .liquid-metadata-sep {

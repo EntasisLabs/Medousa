@@ -396,6 +396,11 @@ npx tauri icon static/brand/app-icons/png/medousa-icon-1024.png -o src-tauri/ico
 
 After changing icons, rebuild iOS (`npm run tauri:ios:build:testflight`) — `tauri ios dev` hot-reload does **not** refresh the home-screen icon.
 
+`tauri icon` composites iOS sizes over `--ios-color` but still writes RGBA, and the App Store
+rejects any alpha channel on app icons (`ITMS-90717`). `npm run ios:prepare` flattens
+`AppIcon.appiconset` to opaque RGB over `bg_color` from `app-icon.json` on every iOS dev/build,
+so no manual step is needed after `icons:generate`.
+
 ---
 
 ## 12. TestFlight install (first time)

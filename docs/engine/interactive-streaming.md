@@ -106,6 +106,16 @@ Runbook: [connection-reliability.md](../runbooks/connection-reliability.md)
 
 ## Surfaces
 
-Set `TurnSurfaceContext` in `InteractiveTurnRequest` so the runtime knows channel capabilities (e.g. `supports_ui_artifacts` for HTML presentations).
+Set `TurnSurfaceContext` in `InteractiveTurnRequest` so the runtime knows channel capabilities:
+
+| Flag | Promise made by the client |
+|------|----------------------------|
+| `supports_liquid_markdown` | Parses and hydrates Medousa Liquid Markdown embeds in replies. Enables Liquid authoring guidance only. |
+| `supports_ui_artifacts` | Presents sandboxed HTML/scenes and may expose UI-artifact tools. It is not required for Liquid Markdown. |
+| `supports_browser_host` | Can run Agent Browser through a local host or client WebView. |
+
+Capability flags are independent. In particular, Markdown-capable extensions should set
+`supports_liquid_markdown=true` while leaving `supports_ui_artifacts=false` unless they
+also implement the artifact runtime.
 
 App reference: `apps/medousa-home/src/lib/stores/chat.svelte.ts`

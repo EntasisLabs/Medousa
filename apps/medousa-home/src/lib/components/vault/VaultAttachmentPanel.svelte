@@ -85,7 +85,7 @@
               <h3 class="artifact-chrome-title">
                 {attachment.label || attachmentFileName(attachment)}
               </h3>
-              <p class="truncate text-[11px] text-surface-500">{attachment.path}</p>
+              <p class="truncate text-[11px] text-content-quiet">{attachment.path}</p>
             </div>
             <div class="artifact-chrome-actions">
               <button

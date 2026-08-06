@@ -48,7 +48,7 @@
 
 <div class="workbook-manifest flex min-h-0 flex-1 flex-col gap-4 px-8 py-7">
   <div class="flex flex-col gap-1">
-    <label class="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-surface-500" for="wb-title">
+    <label class="text-xs font-semibold uppercase tracking-[0.08em] text-content-quiet" for="wb-title">
       Workbook
     </label>
     <input
@@ -65,11 +65,11 @@
   </div>
 
   <div class="flex flex-col gap-2">
-    <div class="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-surface-500">
+    <div class="text-xs font-semibold uppercase tracking-[0.08em] text-content-quiet">
       Sheets
     </div>
     {#if manifest.sheets.length === 0}
-      <p class="text-sm text-surface-400">No sheets listed yet.</p>
+      <p class="text-sm text-content-tertiary">No sheets listed yet.</p>
     {:else}
       <ul class="workbook-manifest__sheets">
         {#each manifest.sheets as stem (stem)}
@@ -88,7 +88,7 @@
     {/if}
   </div>
 
-  <p class="text-xs text-surface-500">
+  <p class="text-xs text-content-quiet">
     Marker note for this folder. Use Raw to edit frontmatter; open a sheet to edit the grid.
   </p>
 </div>

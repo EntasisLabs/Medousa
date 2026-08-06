@@ -147,7 +147,7 @@
           class="inline-flex h-6 min-w-6 items-center justify-center rounded px-1 text-[10px] font-semibold tracking-wide transition {calendar.viewMode ===
           mode.id
             ? 'bg-surface-700 text-surface-50'
-            : 'text-surface-500 hover:text-surface-200'}"
+            : 'text-content-quiet hover:text-surface-200'}"
           aria-pressed={calendar.viewMode === mode.id}
           title={mode.id}
           onclick={() => setMode(mode.id)}

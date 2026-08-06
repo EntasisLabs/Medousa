@@ -40,11 +40,11 @@
 
 <div class="artifact-library-list flex min-h-0 flex-1 flex-col overflow-y-auto px-1.5 py-1">
   {#if artifacts.length === 0}
-    <p class="px-2 py-6 text-sm text-surface-500">No presentations yet.</p>
+    <p class="px-2 py-6 text-sm text-content-quiet">No presentations yet.</p>
   {:else}
     {#each grouped as [sessionId, items] (sessionId)}
       <div class="mb-3">
-        <p class="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-surface-500">
+        <p class="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-content-quiet">
           {sessionTitle(sessionId)}
         </p>
         <ul class="space-y-0.5">
@@ -108,7 +108,7 @@
     width: 2.5rem;
     height: 2.5rem;
     border-radius: 0.625rem;
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
     background: transparent;
     cursor: pointer;
     transition: background 140ms ease;
@@ -152,6 +152,6 @@
 
   .artifact-library-item-meta {
     font-size: 0.6875rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 </style>

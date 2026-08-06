@@ -34,7 +34,6 @@ function languageFor(path: string): string {
 class CodeWorkspaceStore {
   tabs = $state<CodeDocumentTab[]>([]);
   activeByWorkId = $state<Record<string, string | null>>({});
-  secondaryByWorkId = $state<Record<string, string | null>>({});
   workspaceErrorByWorkId = $state<Record<string, string | null>>({});
   leaseByWorkId = $state<
     Record<string, { lease_id: string; generation: number } | null>
@@ -61,7 +60,6 @@ class CodeWorkspaceStore {
     this.opening.clear();
     this.tabs = [];
     this.activeByWorkId = {};
-    this.secondaryByWorkId = {};
     this.workspaceErrorByWorkId = {};
     this.leaseByWorkId = {};
     this.navigationByWorkId = {};
@@ -92,20 +90,6 @@ class CodeWorkspaceStore {
     return this.tabsFor(workId);
   }
 
-  reorderTab(tabIdValue: string, toIndex: number) {
-    const tab = this.tabs.find((entry) => entry.tabId === tabIdValue);
-    if (!tab) return;
-    const current = this.tabsFor(tab.work_id);
-    const from = current.findIndex((entry) => entry.tabId === tabIdValue);
-    if (from < 0 || toIndex < 0 || toIndex >= current.length || from === toIndex) return;
-    const next = [...current];
-    const [moved] = next.splice(from, 1);
-    next.splice(toIndex, 0, moved);
-    this.tabOrderByWorkId = {
-      ...this.tabOrderByWorkId,
-      [tab.work_id]: next.map((entry) => entry.tabId),
-    };
-  }
 
   canReopenClosed(workId: string): boolean {
     return (this.closedByWorkId[workId]?.length ?? 0) > 0;
@@ -142,10 +126,6 @@ class CodeWorkspaceStore {
     return id ? (this.tabs.find((tab) => tab.tabId === id) ?? null) : null;
   }
 
-  secondaryFor(workId: string): CodeDocumentTab | null {
-    const id = this.secondaryByWorkId[workId];
-    return id ? (this.tabs.find((tab) => tab.tabId === id) ?? null) : null;
-  }
 
   isDirty(tab: CodeDocumentTab): boolean {
     return tab.draft !== tab.content;
@@ -169,10 +149,6 @@ class CodeWorkspaceStore {
   ) {
     const id = tabId(workId, path);
     const existing = this.tabs.find((tab) => tab.tabId === id);
-    const current = this.activeByWorkId[workId] ?? null;
-    if (this.secondaryByWorkId[workId] === id && current) {
-      this.secondaryByWorkId = { ...this.secondaryByWorkId, [workId]: current };
-    }
     if (this.activeByWorkId[workId] !== id) {
       this.activeByWorkId = { ...this.activeByWorkId, [workId]: id };
       this.markRecent(workId, id);
@@ -245,13 +221,6 @@ class CodeWorkspaceStore {
   activate(tabIdValue: string) {
     const tab = this.tabs.find((entry) => entry.tabId === tabIdValue);
     if (!tab) return;
-    const current = this.activeByWorkId[tab.work_id] ?? null;
-    if (this.secondaryByWorkId[tab.work_id] === tabIdValue && current) {
-      this.secondaryByWorkId = {
-        ...this.secondaryByWorkId,
-        [tab.work_id]: current,
-      };
-    }
     this.activeByWorkId = {
       ...this.activeByWorkId,
       [tab.work_id]: tabIdValue,
@@ -310,20 +279,6 @@ class CodeWorkspaceStore {
     return this.open(workId, location.path, location.line, { recordNavigation: false });
   }
 
-  openToSide(tabIdValue: string) {
-    const tab = this.tabs.find((entry) => entry.tabId === tabIdValue);
-    if (!tab || this.activeByWorkId[tab.work_id] === tabIdValue) return;
-    this.secondaryByWorkId = {
-      ...this.secondaryByWorkId,
-      [tab.work_id]: tabIdValue,
-    };
-    this.schedulePersist(tab.work_id);
-  }
-
-  closeSide(workId: string) {
-    this.secondaryByWorkId = { ...this.secondaryByWorkId, [workId]: null };
-    this.schedulePersist(workId);
-  }
 
   updateDraft(tabIdValue: string, draft: string) {
     const tab = this.tabs.find((entry) => entry.tabId === tabIdValue);
@@ -390,9 +345,6 @@ class CodeWorkspaceStore {
     if (this.activeByWorkId[workId] === oldId) {
       this.activeByWorkId = { ...this.activeByWorkId, [workId]: nextId };
     }
-    if (this.secondaryByWorkId[workId] === oldId) {
-      this.secondaryByWorkId = { ...this.secondaryByWorkId, [workId]: nextId };
-    }
     this.schedulePersist(workId);
   }
 
@@ -420,12 +372,6 @@ class CodeWorkspaceStore {
         [tab.work_id]: order.filter((id) => id !== tabIdValue),
       };
     }
-    if (this.secondaryByWorkId[tab.work_id] === tabIdValue) {
-      this.secondaryByWorkId = {
-        ...this.secondaryByWorkId,
-        [tab.work_id]: null,
-      };
-    }
     if (this.activeByWorkId[tab.work_id] !== tabIdValue) {
       this.schedulePersist(tab.work_id);
       return;
@@ -435,12 +381,6 @@ class CodeWorkspaceStore {
       ...this.activeByWorkId,
       [tab.work_id]: next?.tabId ?? null,
     };
-    if (next?.tabId === this.secondaryByWorkId[tab.work_id]) {
-      this.secondaryByWorkId = {
-        ...this.secondaryByWorkId,
-        [tab.work_id]: null,
-      };
-    }
     this.schedulePersist(tab.work_id);
   }
 
@@ -539,13 +479,6 @@ class CodeWorkspaceStore {
         [workId]: active.tabId,
       };
     }
-    const secondary = restored.find((tab) => tab?.path === state.secondary_path);
-    if (secondary && secondary.tabId !== active?.tabId) {
-      this.secondaryByWorkId = {
-        ...this.secondaryByWorkId,
-        [workId]: secondary.tabId,
-      };
-    }
   }
 
   private schedulePersist(workId: string, delay = 700) {
@@ -577,7 +510,7 @@ class CodeWorkspaceStore {
             line: tab.line,
           })),
           active_path: this.activeFor(workId)?.path ?? null,
-          secondary_path: this.secondaryFor(workId)?.path ?? null,
+          secondary_path: null,
         },
         lease,
       );

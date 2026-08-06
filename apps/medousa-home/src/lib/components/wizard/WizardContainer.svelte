@@ -54,7 +54,7 @@
     aria-labelledby="product-wizard-title"
   >
     {#if wizard.error}
-      <div class="border-b border-error-500/30 bg-error-500/10 px-5 py-3 text-sm text-error-200">
+      <div class="border-b border-error-500/30 bg-error-500/10 px-5 py-3 text-sm text-content-error">
         {wizard.error}
       </div>
     {/if}

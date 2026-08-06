@@ -168,7 +168,7 @@
   }
 
   .canvas-add-view-toggle:hover {
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
   }
 
   :global(html:not(.dark)) .canvas-add-view-toggle {
@@ -212,6 +212,6 @@
   .canvas-form-error {
     margin: 0;
     font-size: 0.75rem;
-    color: rgb(var(--color-error-300));
+    color: rgb(var(--theme-error));
   }
 </style>

@@ -128,8 +128,8 @@
     {/if}
 
     {#if manuscriptLabel}
-      <p class="mt-2 text-[11px] text-surface-500">
-        Then <span class="text-surface-400">{manuscriptLabel.name}</span>
+      <p class="mt-2 text-[11px] text-content-quiet">
+        Then <span class="text-content-tertiary">{manuscriptLabel.name}</span>
       </p>
     {/if}
 

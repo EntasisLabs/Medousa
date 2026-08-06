@@ -367,7 +367,7 @@
   }
 
   .canvas-target-field span {
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .canvas-target-field select,
@@ -397,7 +397,7 @@
     border-radius: 999px;
     padding: 0.2rem 0.55rem;
     font-size: 0.6875rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     background: transparent;
     cursor: pointer;
   }
@@ -475,7 +475,7 @@
     margin-top: 0.25rem;
     min-width: 0;
     font-size: 0.6875rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .canvas-picker-tile-meta :global(.badge) {
@@ -516,6 +516,6 @@
   .canvas-widget-error {
     margin: 0.5rem 0 0;
     font-size: 0.75rem;
-    color: rgb(var(--color-error-300));
+    color: rgb(var(--theme-error));
   }
 </style>

@@ -317,7 +317,7 @@
         <div class="flex items-start justify-between gap-2">
           <div class="flex min-w-0 items-start gap-2.5">
             <span
-              class="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface-800/70 text-surface-300"
+              class="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface-800/70 text-content-secondary"
               aria-hidden="true"
             >
               <FileText size={15} strokeWidth={1.75} />
@@ -333,7 +333,7 @@
           </div>
           <button
             type="button"
-            class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-surface-500 transition hover:bg-surface-800/80 hover:text-surface-200"
+            class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-content-quiet transition hover:bg-surface-800/80 hover:text-surface-200"
             onclick={clearFocus}
           >
             Clear
@@ -392,7 +392,7 @@
         <div class="flex items-start justify-between gap-2">
           <div class="flex min-w-0 items-start gap-2.5">
             <span
-              class="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface-800/70 text-surface-300"
+              class="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface-800/70 text-content-secondary"
               aria-hidden="true"
             >
               <MapIcon size={15} strokeWidth={1.75} />
@@ -406,7 +406,7 @@
           </div>
           <button
             type="button"
-            class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-surface-500 transition hover:bg-surface-800/80 hover:text-surface-200"
+            class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-content-quiet transition hover:bg-surface-800/80 hover:text-surface-200"
             onclick={clearFocus}
           >
             Clear
@@ -454,7 +454,7 @@
                   onclick={() => focusMapNodeId(row.id)}
                 >
                   <span
-                    class="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center text-surface-400"
+                    class="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center text-content-tertiary"
                     aria-hidden="true"
                   >
                     <Icon size={13} strokeWidth={1.75} />
@@ -484,7 +484,7 @@
                 onclick={() => focusMapNodeId(row.id)}
               >
                 <span
-                  class="inline-flex size-6 shrink-0 items-center justify-center text-surface-400"
+                  class="inline-flex size-6 shrink-0 items-center justify-center text-content-tertiary"
                   aria-hidden="true"
                 >
                   <Icon size={13} strokeWidth={1.75} />
@@ -512,7 +512,7 @@
     border: 0;
     border-radius: 999px;
     background: transparent;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     cursor: pointer;
   }
 
@@ -525,7 +525,7 @@
     margin: 0;
     font-size: 11px;
     letter-spacing: 0.02em;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .map-rail-moment-headline {
@@ -546,7 +546,7 @@
     overflow: hidden;
     font-size: 0.8125rem;
     line-height: 1.45;
-    color: rgb(var(--color-surface-300) / 0.92);
+    color: rgb(var(--theme-text-secondary) / 0.92);
   }
 
   .map-rail-moment-chat {
@@ -555,15 +555,15 @@
     background: transparent;
     padding: 0;
     font-size: 12px;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     cursor: pointer;
     text-decoration: underline;
     text-underline-offset: 0.18em;
-    text-decoration-color: rgb(var(--color-surface-600));
+    text-decoration-color: rgb(var(--theme-text-faint));
   }
 
   .map-rail-moment-chat:hover {
     color: rgb(var(--color-surface-100));
-    text-decoration-color: rgb(var(--color-surface-400));
+    text-decoration-color: rgb(var(--theme-text-tertiary));
   }
 </style>

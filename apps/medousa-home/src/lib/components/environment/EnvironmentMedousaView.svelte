@@ -123,7 +123,7 @@
     border-radius: 999px;
     padding: 0.2rem 0.45rem;
     font-size: 0.625rem;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     background: transparent;
     cursor: pointer;
   }
@@ -150,10 +150,10 @@
     margin: 0;
     padding: 1rem;
     font-size: 0.75rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .environment-medousa-view-error {
-    color: rgb(var(--color-warning-300));
+    color: rgb(var(--theme-warning));
   }
 </style>

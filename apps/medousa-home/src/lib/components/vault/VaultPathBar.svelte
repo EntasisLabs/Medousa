@@ -77,7 +77,7 @@
     display: inline-flex;
     flex-shrink: 0;
     align-items: center;
-    color: rgb(var(--color-surface-600));
+    color: rgb(var(--theme-text-faint));
     opacity: 0.85;
   }
 
@@ -103,7 +103,7 @@
     font-size: 0.6875rem;
     line-height: 1.2;
     letter-spacing: 0.01em;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .vault-path-crumb--folder {
@@ -117,7 +117,7 @@
   }
 
   .vault-path-crumb--file {
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     font-weight: 500;
   }
 </style>

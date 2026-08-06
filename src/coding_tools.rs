@@ -21,6 +21,9 @@ pub const COGNITION_CODE_APPLY_PATCH: &str = "cognition_code_apply_patch";
 pub const COGNITION_SHELL_SESSION_STATUS: &str = "cognition_shell_session_status";
 pub const COGNITION_SHELL_SESSION_RUN: &str = "cognition_shell_session_run";
 pub const COGNITION_SHELL_SESSION_INTERRUPT: &str = "cognition_shell_session_interrupt";
+/// One-shot shell for Coder — Forge-bound PTY facade (not OS `cognition_shell_run`).
+pub const COGNITION_CODER_SHELL_RUN: &str = "cognition_coder_shell_run";
+pub const COGNITION_CODER_SHELL_STATUS: &str = "cognition_coder_shell_status";
 
 pub const CODING_COGNITION_TOOLS: &[&str] = &[
     COGNITION_CODE_READ,
@@ -29,6 +32,8 @@ pub const CODING_COGNITION_TOOLS: &[&str] = &[
     COGNITION_SHELL_SESSION_STATUS,
     COGNITION_SHELL_SESSION_RUN,
     COGNITION_SHELL_SESSION_INTERRUPT,
+    COGNITION_CODER_SHELL_RUN,
+    COGNITION_CODER_SHELL_STATUS,
 ];
 
 const MAX_CODE_READ_BYTES: u64 = 128 * 1024;
@@ -41,6 +46,21 @@ const MAX_SHELL_OUTPUT_BYTES: usize = 1024 * 1024;
 
 pub fn is_coding_cognition_tool(name: &str) -> bool {
     CODING_COGNITION_TOOLS.contains(&name)
+}
+
+pub fn is_coder_shell_tool(name: &str) -> bool {
+    matches!(name, COGNITION_CODER_SHELL_RUN | COGNITION_CODER_SHELL_STATUS)
+}
+
+pub fn is_shell_session_tool(name: &str) -> bool {
+    matches!(
+        name,
+        COGNITION_SHELL_SESSION_STATUS
+            | COGNITION_SHELL_SESSION_RUN
+            | COGNITION_SHELL_SESSION_INTERRUPT
+            | COGNITION_CODER_SHELL_RUN
+            | COGNITION_CODER_SHELL_STATUS
+    )
 }
 
 fn daemon_base() -> String {
@@ -222,6 +242,8 @@ pub struct CognitionCodeApplyPatchTool;
 pub struct CognitionShellSessionStatusTool;
 pub struct CognitionShellSessionRunTool;
 pub struct CognitionShellSessionInterruptTool;
+pub struct CognitionCoderShellRunTool;
+pub struct CognitionCoderShellStatusTool;
 
 #[async_trait]
 impl StasisTool for CognitionCodeReadTool {
@@ -1113,6 +1135,157 @@ impl StasisTool for CognitionShellSessionInterruptTool {
     }
 }
 
+#[async_trait]
+impl StasisTool for CognitionCoderShellStatusTool {
+    fn name(&self) -> &'static str {
+        COGNITION_CODER_SHELL_STATUS
+    }
+    fn description(&self) -> Option<&'static str> {
+        Some(
+            "Coder-only: report Forge-bound Terminal shell readiness for this undertaking. \
+             Prefer cognition_coder_shell_run for one-shot commands.",
+        )
+    }
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({
+            "type": "object",
+            "properties": {
+                "work_id": { "type": "string" },
+                "lease_id": { "type": "string" },
+                "lease_generation": { "type": "integer" },
+                "attempt_id": { "type": "string" }
+            }
+        }))
+    }
+    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+        // Ensure a bound session exists so status reflects the undertaking Terminal.
+        let work_id = input
+            .get("work_id")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.trim().is_empty());
+        let lease_id = input
+            .get("lease_id")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.trim().is_empty());
+        let lease_generation = input.get("lease_generation").and_then(Value::as_u64);
+        let attempt_id = input.get("attempt_id").and_then(Value::as_str);
+        let created = daemon_post(
+            "/v1/sessions/shell",
+            json!({
+                "work_id": work_id,
+                "lease_id": lease_id,
+                "lease_generation": lease_generation,
+                "attempt_id": attempt_id,
+                "cwd": Value::Null
+            }),
+        )
+        .await?;
+        Ok(json!({
+            "ok": true,
+            "surface": "coder_pty",
+            "session_id": created.get("session_id"),
+            "session": created,
+        }))
+    }
+}
+
+#[async_trait]
+impl StasisTool for CognitionCoderShellRunTool {
+    fn name(&self) -> &'static str {
+        COGNITION_CODER_SHELL_RUN
+    }
+    fn description(&self) -> Option<&'static str> {
+        Some(
+            "Coder one-shot shell: run a command in the Forge-bound undertaking Terminal (PTY). \
+             Same ergonomics as a simple shell_run, but cwd/authority follow the active lease worktree. \
+             Do not use cognition_shell_run in Coder. For multi-step interactive Terminal work use cognition_shell_session_*.",
+        )
+    }
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({
+            "type": "object",
+            "required": ["command"],
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "Shell command line (newline appended)"
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Reuse a turn-owned session when provided by the runtime"
+                },
+                "work_id": { "type": "string" },
+                "lease_id": { "type": "string" },
+                "lease_generation": { "type": "integer" },
+                "attempt_id": { "type": "string" },
+                "wait_ms": {
+                    "type": "integer",
+                    "description": "How long to stream output (default 3000, max 15000)"
+                }
+            }
+        }))
+    }
+    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+        let command = input
+            .get("command")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| StasisError::PortFailure("command is required".into()))?;
+        let session_id = match input
+            .get("session_id")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.trim().is_empty())
+        {
+            Some(id) => id.to_string(),
+            None => {
+                let work_id = input
+                    .get("work_id")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.trim().is_empty());
+                let lease_id = input
+                    .get("lease_id")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.trim().is_empty());
+                let lease_generation = input.get("lease_generation").and_then(Value::as_u64);
+                let attempt_id = input.get("attempt_id").and_then(Value::as_str);
+                let created = daemon_post(
+                    "/v1/sessions/shell",
+                    json!({
+                        "work_id": work_id,
+                        "lease_id": lease_id,
+                        "lease_generation": lease_generation,
+                        "attempt_id": attempt_id,
+                        "cwd": Value::Null
+                    }),
+                )
+                .await?;
+                created
+                    .get("session_id")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)
+                    .ok_or_else(|| {
+                        StasisError::PortFailure("daemon did not return session_id".into())
+                    })?
+            }
+        };
+        let wait_ms = input
+            .get("wait_ms")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(3000)
+            .clamp(100, 15_000);
+        let output =
+            stream_session_input(&session_id, format!("{command}\n").as_bytes(), wait_ms).await?;
+        Ok(json!({
+            "ok": true,
+            "surface": "coder_pty",
+            "session_id": session_id,
+            "command": command,
+            "output": output,
+        }))
+    }
+}
+
 pub fn register_coding_tools(
     registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
 ) -> stasis::prelude::Result<()> {
@@ -1122,6 +1295,8 @@ pub fn register_coding_tools(
     registry.register_tool(CognitionShellSessionStatusTool)?;
     registry.register_tool(CognitionShellSessionRunTool)?;
     registry.register_tool(CognitionShellSessionInterruptTool)?;
+    registry.register_tool(CognitionCoderShellRunTool)?;
+    registry.register_tool(CognitionCoderShellStatusTool)?;
     Ok(())
 }
 

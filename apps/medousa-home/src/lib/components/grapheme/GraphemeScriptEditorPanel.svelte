@@ -401,7 +401,7 @@
 
   {#snippet toolbar()}
     {#if flowError}
-      <p class="mt-2 text-xs text-error-400">{flowError}</p>
+      <p class="mt-2 text-xs text-content-error">{flowError}</p>
     {/if}
 
     <div class="mt-3 px-1">
@@ -471,8 +471,8 @@
       <button
         type="button"
         class="rounded-md px-2 py-1 text-[11px] {graphemeScriptEditor.sidePane === 'info'
-          ? 'bg-surface-800 text-primary-300'
-          : 'text-surface-400'}"
+          ? 'bg-surface-800 text-content-link'
+          : 'text-content-tertiary'}"
         onclick={() => (graphemeScriptEditor.sidePane = "info")}
       >
         Info
@@ -480,8 +480,8 @@
       <button
         type="button"
         class="rounded-md px-2 py-1 text-[11px] {graphemeScriptEditor.sidePane === 'diagnostics'
-          ? 'bg-surface-800 text-primary-300'
-          : 'text-surface-400'}"
+          ? 'bg-surface-800 text-content-link'
+          : 'text-content-tertiary'}"
         onclick={() => (graphemeScriptEditor.sidePane = "diagnostics")}
       >
         Diagnostics
@@ -543,7 +543,7 @@
         {/if}
       {/if}
     {:else if graphemeScriptEditor.compileError}
-      <p class="mt-4 text-sm text-error-400">{graphemeScriptEditor.compileError}</p>
+      <p class="mt-4 text-sm text-content-error">{graphemeScriptEditor.compileError}</p>
     {:else if graphemeScriptEditor.compileResult}
       <div class="mt-4 space-y-2 text-xs">
         <p class="font-medium text-surface-100">
@@ -551,14 +551,14 @@
           {graphemeScriptEditor.compileResult.validated ? "valid" : "invalid"}
         </p>
         {#each graphemeScriptEditor.compileResult.compile_hints as hint (hint)}
-          <p class="text-surface-300">{hint}</p>
+          <p class="text-content-secondary">{hint}</p>
         {/each}
         {#each graphemeScriptEditor.compileResult.lint_warnings as warning (warning)}
-          <p class="text-warning-400">{warning}</p>
+          <p class="text-content-warning">{warning}</p>
         {/each}
       </div>
     {:else if canUseLsp && lspError}
-      <p class="mt-4 text-sm text-warning-400">Smart editing unavailable: {lspError}</p>
+      <p class="mt-4 text-sm text-content-warning">Smart editing unavailable: {lspError}</p>
     {:else if canUseLsp && graphemeScriptEditor.lspReady}
       <p class="workshop-muted mt-4 text-sm">
         Tips and completions appear as you type.
@@ -581,13 +581,13 @@
       />
     {/if}
     {#if graphemeScriptEditor.saveError}
-      <p class="mt-4 text-xs text-error-400">{graphemeScriptEditor.saveError}</p>
+      <p class="mt-4 text-xs text-content-error">{graphemeScriptEditor.saveError}</p>
     {/if}
   {/snippet}
 
   {#snippet statusBar()}
     <div class="flex flex-wrap items-center justify-between gap-2 text-[11px]">
-      <span class="text-surface-400">
+      <span class="text-content-tertiary">
         {#if activeTab}
           {activeTab.dirty ? "Modified · " : ""}
           {activeTab.body.split("\n").length} lines
@@ -599,7 +599,7 @@
           No active script
         {/if}
       </span>
-      <span class="text-surface-500">
+      <span class="text-content-quiet">
         <kbd class="vault-kbd">{formatShortcut("F")}</kbd> find
         {#if canSave}
           · <kbd class="vault-kbd">{formatShortcut("S")}</kbd> save

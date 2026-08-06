@@ -20,7 +20,7 @@
   function chipClass(active: boolean): string {
     return active
       ? "border-primary-500/50 bg-primary-500/15 text-primary-200"
-      : "border-surface-500/40 bg-surface-800/60 text-surface-300 hover:bg-surface-700/80";
+      : "border-surface-500/40 bg-surface-800/60 text-content-secondary hover:bg-surface-700/80";
   }
 
   function selectSpace(spaceId: string | null) {

@@ -45,7 +45,7 @@
         <div class="flex w-full items-center justify-between gap-2">
           <div class="min-w-0 flex-1">
             <p class="truncate text-sm font-semibold text-surface-50">Ask Medousa</p>
-            <p class="truncate text-[11px] text-surface-400">{browserWorkshop.scopeLabel}</p>
+            <p class="text-content-tertiary truncate text-[11px]">{browserWorkshop.scopeLabel}</p>
           </div>
           <BrowserControlHandoff compact={true} />
           <button type="button" class="btn btn-sm variant-ghost-surface shrink-0" onclick={dismiss}>

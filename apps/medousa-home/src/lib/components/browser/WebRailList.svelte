@@ -25,8 +25,8 @@
 <div class="flex h-full min-h-0 flex-col" data-chrome={chrome}>
   {#if humanBrowser.tabs.length === 0}
     <div class="flex flex-1 flex-col items-center justify-center gap-2 px-3 py-6 text-center">
-      <Globe size={22} strokeWidth={1.5} class="text-surface-500" />
-      <p class="text-sm text-surface-300">No open tabs</p>
+      <Globe size={22} strokeWidth={1.5} class="text-content-quiet" />
+      <p class="text-sm text-content-secondary">No open tabs</p>
       <button type="button" class="btn btn-sm btn-primary" onclick={() => void newTab()}>
         New tab
       </button>
@@ -51,14 +51,14 @@
                 class="size-4 shrink-0 rounded-sm"
               />
             {:else}
-              <Plus size={14} strokeWidth={1.75} class="shrink-0 text-surface-500" />
+              <Plus size={14} strokeWidth={1.75} class="shrink-0 text-content-quiet" />
             {/if}
             <span class="min-w-0 flex-1">
               <span class="block truncate text-[13px] font-medium">
                 {tabDisplayLabel(tab.title, tab.url)}
               </span>
               {#if host}
-                <span class="block truncate text-[11px] text-surface-500">{host}</span>
+                <span class="block truncate text-[11px] text-content-quiet">{host}</span>
               {/if}
             </span>
           </button>

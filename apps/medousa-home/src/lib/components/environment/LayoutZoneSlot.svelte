@@ -88,7 +88,7 @@
     border: 2px dashed color-mix(in srgb, var(--color-surface-500) 45%, transparent);
     border-radius: 1rem;
     background: color-mix(in srgb, var(--color-surface-800) 35%, transparent);
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     font-size: 0.8125rem;
     cursor: pointer;
     transition:
@@ -112,10 +112,10 @@
   }
 
   .layout-zone-slot-target {
-    border-color: rgb(var(--color-success-400));
+    border-color: rgb(var(--theme-success));
     background: color-mix(in srgb, var(--color-success-500) 14%, transparent);
     box-shadow: 0 0 0 1px rgb(var(--color-success-400) / 0.35);
-    color: rgb(var(--color-success-200));
+    color: rgb(var(--theme-success));
   }
 
   .layout-zone-slot-label {

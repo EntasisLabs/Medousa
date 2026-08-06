@@ -31,6 +31,7 @@
     openTrackedTerminal,
     startTrackedAgent,
   } from "$lib/utils/undertakingWorkspace";
+  import DiffSummaryCard from "$lib/components/diff/DiffSummaryCard.svelte";
 
   interface Props {
     chatOnly?: boolean;
@@ -41,6 +42,12 @@
     chatOnly && !undertakings.active?.boundChatSessionIds.includes(chat.sessionId)
       ? null
       : undertakings.active,
+  );
+  const review = $derived(
+    active && undertakings.review?.work_id === active.workId ? undertakings.review : null,
+  );
+  const reviewCardPaths = $derived(
+    (review?.changed_files ?? []).map((file) => ({ path: file.path })),
   );
   let busy = $state(false);
   let error = $state<string | null>(null);
@@ -104,8 +111,23 @@
 
   function goDetail() {
     if (!active) return;
+    if (active.humanPhase === "review") {
+      void lmeWorkspace.openCodeReview(active.workId, `Review · ${active.title}`);
+      return;
+    }
     void lmeWorkspace.openCodeWorkspace(active.workId, active.title);
   }
+
+  function openReviewTab() {
+    if (!active) return;
+    void lmeWorkspace.openCodeReview(active.workId, `Review · ${active.title}`);
+  }
+
+  $effect(() => {
+    if (!active || active.humanPhase !== "review") return;
+    if (undertakings.review?.work_id === active.workId) return;
+    void undertakings.select(active.workId);
+  });
 
   async function withItem(action: "terminal" | "codex" | "cursor") {
     if (!active || busy) return;
@@ -182,6 +204,7 @@
 </script>
 
 {#if active}
+  <div class="flex max-w-full flex-col gap-1.5">
   <details class="group relative max-w-full">
     <summary
       class="flex max-w-full cursor-pointer list-none items-center gap-1.5 rounded-full border border-surface-500/35 bg-surface-900/75 px-2.5 py-1 text-[11px] text-surface-200 transition hover:border-surface-400/60 hover:bg-surface-800/90 [&::-webkit-details-marker]:hidden"
@@ -193,14 +216,19 @@
         aria-hidden="true"
       />
       <span class="truncate font-medium text-surface-100">{active.title}</span>
-      <span class="shrink-0 text-surface-500">·</span>
-      <span class="shrink-0 text-surface-400">{humanPhaseLabel(active.humanPhase)}</span>
+      <span class="shrink-0 text-content-quiet">·</span>
+      <span class="shrink-0 text-content-tertiary">{humanPhaseLabel(active.humanPhase)}</span>
+      {#if review && review.candidates.length > 1}
+        <span class="hidden shrink-0 text-amber-300/90 sm:inline"
+          >{review.candidates.length} candidates</span
+        >
+      {/if}
       {#if active.executorKind}
-        <span class="hidden shrink-0 text-surface-500 sm:inline">{humanExecutorLabel(active.executorKind)}</span>
+        <span class="hidden shrink-0 text-content-quiet sm:inline">{humanExecutorLabel(active.executorKind)}</span>
       {/if}
       <ChevronDown
         size={12}
-        class="shrink-0 text-surface-500 transition group-open:rotate-180"
+        class="shrink-0 text-content-quiet transition group-open:rotate-180"
         aria-hidden="true"
       />
     </summary>
@@ -210,7 +238,7 @@
     >
       <div class="px-2 py-1.5">
         <p class="truncate font-medium text-surface-100">{active.title}</p>
-        <p class="mt-0.5 text-[10px] text-surface-500">
+        <p class="mt-0.5 text-[10px] text-content-quiet">
           {humanPhaseGuidance(active.humanPhase)}
         </p>
       </div>
@@ -257,7 +285,7 @@
       {/if}
 
       <div class="my-1 border-t border-surface-500/25"></div>
-      <button type="button" class="context-action text-surface-400" onclick={() => void detach()}>
+      <button type="button" class="context-action text-content-tertiary" onclick={() => void detach()}>
         <Link2Off size={14} />
         Stop following this project
       </button>
@@ -269,6 +297,16 @@
       {/if}
     </div>
   </details>
+  {#if review && review.changed_files.length > 0}
+    <DiffSummaryCard
+      fileCount={review.changed_files.length}
+      additions={0}
+      deletions={0}
+      paths={reviewCardPaths}
+      onViewAll={openReviewTab}
+    />
+  {/if}
+  </div>
 {:else if activeMode === "coder"}
   <div class="relative max-w-full">
     <button
@@ -282,14 +320,14 @@
     </button>
     {#if chooserOpen}
       <div class="absolute left-0 top-full z-50 mt-1.5 w-72 rounded-xl border border-surface-500/40 bg-surface-900/95 p-2 text-xs shadow-2xl backdrop-blur">
-        <p class="px-1.5 pb-1.5 text-[10px] font-medium uppercase tracking-wide text-surface-500">Continue a project</p>
+        <p class="px-1.5 pb-1.5 text-[10px] font-medium uppercase tracking-wide text-content-quiet">Continue a project</p>
         {#each undertakings.items.filter((item) => ["ready", "executing"].includes(item.state) && item.environment?.worktree).slice(0, 6) as item (item.id)}
           <button type="button" class="context-action" disabled={busy} onclick={() => void bindProject(item)}>
             <CircleDot size={13} />
             <span class="truncate">{item.title}</span>
           </button>
         {:else}
-          <p class="px-1.5 py-2 text-surface-500">No ready projects yet.</p>
+          <p class="px-1.5 py-2 text-content-quiet">No ready projects yet.</p>
         {/each}
         <div class="my-1 border-t border-surface-500/25"></div>
         {#if creating}

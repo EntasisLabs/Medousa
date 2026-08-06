@@ -29,7 +29,7 @@
   >
     <div>
       <h1 class="text-sm font-semibold">Medousa Chat</h1>
-      <p class="text-xs text-surface-400">Pop-out session</p>
+      <p class="text-xs text-content-tertiary">Pop-out session</p>
     </div>
     {#if isTauri()}
       <button

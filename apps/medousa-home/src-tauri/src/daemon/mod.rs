@@ -453,6 +453,7 @@ pub async fn interactive_turn_send(
             channel_id: Some(session_id.clone()),
             user_id: None,
             supports_ui_artifacts: true,
+            supports_liquid_markdown: true,
             supports_browser_host,
         }),
         host_context: None,

@@ -49,13 +49,13 @@
   }
 
   .liquid-chip[data-tone="success"] {
-    color: rgb(var(--color-success-200));
+    color: rgb(var(--theme-success));
     border-color: color-mix(in srgb, var(--color-success-500) 40%, transparent);
     background: color-mix(in srgb, var(--color-success-500) 14%, transparent);
   }
 
   .liquid-chip[data-tone="warn"] {
-    color: rgb(var(--color-warning-200));
+    color: rgb(var(--theme-warning));
     border-color: color-mix(in srgb, var(--color-warning-500) 40%, transparent);
     background: color-mix(in srgb, var(--color-warning-500) 14%, transparent);
   }

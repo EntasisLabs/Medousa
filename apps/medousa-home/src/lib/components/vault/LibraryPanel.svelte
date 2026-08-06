@@ -142,11 +142,11 @@
 
           {#if showFilesSearch}
             <div class="flex min-h-0 flex-1 flex-col overflow-y-auto p-2">
-              <p class="mb-2 px-1 text-[10px] font-semibold uppercase tracking-wide text-surface-500">
+              <p class="mb-2 px-1 text-[10px] font-semibold uppercase tracking-wide text-content-quiet">
                 Search results
               </p>
               {#if externalHits.length === 0}
-                <p class="px-2 py-4 text-sm text-surface-500">No matches in pinned folders.</p>
+                <p class="px-2 py-4 text-sm text-content-quiet">No matches in pinned folders.</p>
               {:else}
                 <ul class="space-y-0.5">
                   {#each externalHits as entry (entry.path)}
@@ -197,7 +197,7 @@
         />
 
         {#if vault.error}
-          <p class="mx-2 mb-2 rounded-container-token border border-error-500/30 bg-error-500/10 px-2 py-1.5 text-xs text-error-300">
+          <p class="mx-2 mb-2 rounded-container-token border border-error-500/30 bg-error-500/10 px-2 py-1.5 text-xs text-content-error">
             {vault.error}
           </p>
         {/if}

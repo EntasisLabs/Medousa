@@ -203,7 +203,7 @@
             <Check
               size={14}
               strokeWidth={2}
-              class="mt-0.5 shrink-0 {root.active ? 'text-primary-300' : 'opacity-0'}"
+              class="mt-0.5 shrink-0 {root.active ? 'text-content-link' : 'opacity-0'}"
             />
             <span class="min-w-0 flex-1">
               <span class="flex items-center gap-1.5">
@@ -345,7 +345,7 @@
               <Check
                 size={14}
                 strokeWidth={2}
-                class="mt-0.5 shrink-0 {root.active ? 'text-primary-300' : 'opacity-0'}"
+                class="mt-0.5 shrink-0 {root.active ? 'text-content-link' : 'opacity-0'}"
               />
               <span class="min-w-0">
                 <span class="flex items-center gap-1.5">
@@ -366,7 +366,7 @@
       {/if}
     </div>
     {#if vault.vaultRootsError}
-      <p class="mt-1 text-xs text-error-400">{vault.vaultRootsError}</p>
+      <p class="mt-1 text-xs text-content-error">{vault.vaultRootsError}</p>
     {/if}
   </div>
 {/if}
@@ -388,11 +388,11 @@
         </p>
       </header>
       <label class="block space-y-1 text-sm">
-        <span class="text-surface-400">Name</span>
+        <span class="text-content-tertiary">Name</span>
         <input class="input w-full" placeholder="Work notes" bind:value={labelDraft} />
       </label>
       <div class="space-y-1">
-        <span class="text-sm text-surface-400">Folder</span>
+        <span class="text-sm text-content-tertiary">Folder</span>
         <div class="flex gap-2">
           <input
             class="input min-w-0 flex-1 font-mono text-xs"
@@ -410,7 +410,7 @@
         </div>
       </div>
       {#if addError}
-        <p class="text-sm text-error-400">{addError}</p>
+        <p class="text-sm text-content-error">{addError}</p>
       {/if}
       <div class="flex justify-end gap-2">
         <button

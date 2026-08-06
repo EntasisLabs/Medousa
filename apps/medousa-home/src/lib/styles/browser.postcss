@@ -6,7 +6,7 @@
 @layer components {
   .human-browser-panel {
     background: rgb(var(--shell-canvas-bg, var(--color-surface-950)));
-    color: rgb(var(--color-surface-50));
+    color: rgb(var(--theme-text));
   }
 
   .human-browser-chrome {
@@ -342,7 +342,7 @@
     padding: 0.2rem 0.75rem;
     font-size: 0.8125rem;
     line-height: 1.35;
-    color: rgb(var(--color-surface-100));
+    color: rgb(var(--theme-text));
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.02);
     transition:
       border-color 120ms ease,
@@ -351,10 +351,10 @@
   }
 
   .browser-url-bar-input:focus {
-    border-color: color-mix(in srgb, rgb(var(--color-primary-400)) 42%, transparent);
+    border-color: rgb(var(--theme-focus) / 0.42);
     background: rgb(var(--color-surface-900));
     outline: none;
-    box-shadow: 0 0 0 3px color-mix(in srgb, rgb(var(--color-primary-500)) 14%, transparent);
+    box-shadow: 0 0 0 3px rgb(var(--theme-focus) / 0.14);
   }
 
   .browser-url-suggestions {
@@ -397,7 +397,7 @@
     white-space: nowrap;
     font-size: 0.8125rem;
     font-weight: 550;
-    color: rgb(var(--color-surface-50));
+    color: rgb(var(--theme-text));
   }
 
   .browser-url-suggestion-host {
@@ -405,7 +405,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 0.6875rem;
-    color: rgb(var(--shell-muted, var(--color-surface-400)));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .browser-tab-bar {
@@ -582,7 +582,7 @@
     font-weight: 650;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .browser-popover-row {

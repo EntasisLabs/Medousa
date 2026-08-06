@@ -59,12 +59,12 @@
   >
     <div class="min-w-0">
       <h1 class="truncate text-sm font-semibold">{title}</h1>
-      <p class="text-xs text-surface-400">Custom view</p>
+      <p class="text-xs text-content-tertiary">Custom view</p>
     </div>
     {#if isTauri()}
       <button
         type="button"
-        class="inline-flex size-8 items-center justify-center rounded-md text-surface-400 transition hover:bg-surface-800/80 hover:text-surface-100"
+        class="inline-flex size-8 items-center justify-center rounded-md text-content-tertiary transition hover:bg-surface-800/80 hover:text-surface-100"
         aria-label="Close view window"
         onclick={() => void handleClose()}
       >
@@ -78,13 +78,13 @@
       <EnvironmentRenderer {surfaceId} />
     {:else if surfaceId}
       <div class="flex h-full items-center justify-center px-6 text-center">
-        <p class="text-sm text-surface-400">
+        <p class="text-sm text-content-tertiary">
           View “{surfaceId}” isn’t in the active layout.
         </p>
       </div>
     {:else}
       <div class="flex h-full items-center justify-center px-6 text-center">
-        <p class="text-sm text-surface-400">Pick a custom view from the desktop toolbar.</p>
+        <p class="text-sm text-content-tertiary">Pick a custom view from the desktop toolbar.</p>
       </div>
     {/if}
   </div>

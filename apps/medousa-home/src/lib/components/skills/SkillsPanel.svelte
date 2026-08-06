@@ -237,8 +237,8 @@
             <button
               type="button"
               class="rounded-md px-2 py-1 text-[11px] transition {skillFilter === chip.id
-                ? 'bg-surface-700 text-primary-300 ring-1 ring-inset ring-primary-500/35'
-                : 'text-surface-400 hover:bg-surface-800 hover:text-surface-200'}"
+                ? 'bg-surface-700 text-content-link ring-1 ring-inset ring-primary-500/35'
+                : 'text-content-tertiary hover:bg-surface-800 hover:text-surface-200'}"
               onclick={() => (skillFilter = chip.id)}
             >
               {chip.label}
@@ -258,7 +258,7 @@
       {#if catalog.loading && catalog.manuscripts.length === 0 && catalog.capabilities.length === 0}
         <p class="workshop-muted">Loading catalog…</p>
       {:else if catalog.error}
-        <p class="text-sm text-error-400">{catalog.error}</p>
+        <p class="text-sm text-content-error">{catalog.error}</p>
       {:else}
         {#if filteredSkills.length === 0}
           {#if search.trim() || skillFilter !== "all"}
@@ -303,12 +303,12 @@
                           {entry.name}
                         </span>
                         {#if entry.openshell_enabled}
-                          <span class="text-[10px] uppercase tracking-wide text-surface-500">
+                          <span class="text-[10px] uppercase tracking-wide text-content-quiet">
                             sandbox
                           </span>
                         {/if}
                         {#if entry.has_scripts}
-                          <span class="text-[10px] uppercase tracking-wide text-surface-500">
+                          <span class="text-[10px] uppercase tracking-wide text-content-quiet">
                             scripts
                           </span>
                         {/if}

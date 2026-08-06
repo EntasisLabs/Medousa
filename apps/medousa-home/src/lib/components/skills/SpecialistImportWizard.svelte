@@ -90,7 +90,7 @@
     >
       <div class="flex items-start justify-between gap-3 border-b border-surface-500/35 px-5 py-4">
         <div>
-          <p class="text-[11px] font-semibold uppercase tracking-wide text-primary-300">
+          <p class="text-[11px] font-semibold uppercase tracking-wide text-content-link">
             Step {step} of 3
           </p>
           <h2 id="specialist-import-title" class="mt-1 text-lg font-semibold text-surface-50">
@@ -108,7 +108,7 @@
 
       <div class="mobile-you-scroll flex-1 overflow-y-auto px-5 py-4">
         {#if step === 1}
-          <p class="text-sm leading-relaxed text-surface-300">
+          <p class="text-sm leading-relaxed text-content-secondary">
             Import a folder with <span class="font-mono text-surface-200">SKILL.md</span> or pull
             from a library you already use elsewhere.
           </p>
@@ -129,11 +129,11 @@
             {#if sourceMode === "folder"}
               <div class="rounded-lg border border-surface-500/35 px-3 py-3">
                 {#if !isTauri()}
-                  <p class="text-xs text-warning-400">
+                  <p class="text-xs text-content-warning">
                     Folder import needs the Medousa desktop app.
                   </p>
                 {:else if folderPath}
-                  <p class="break-all font-mono text-[11px] text-surface-300">{folderPath}</p>
+                  <p class="break-all font-mono text-[11px] text-content-secondary">{folderPath}</p>
                 {:else}
                   <p class="workshop-faint text-xs">No folder selected yet.</p>
                 {/if}
@@ -173,20 +173,20 @@
             </select>
           </label>
 
-          <label class="mt-4 flex items-center gap-2 text-sm text-surface-300">
+          <label class="mt-4 flex items-center gap-2 text-sm text-content-secondary">
             <input type="checkbox" class="checkbox" bind:checked={force} />
             Replace existing specialists with the same id
           </label>
 
           {#if catalog.importError}
-            <p class="mt-4 text-xs text-error-400">{catalog.importError}</p>
+            <p class="mt-4 text-xs text-content-error">{catalog.importError}</p>
           {/if}
         {:else}
           <p class="text-sm text-surface-200">
             Imported {resultNames.length} specialist{resultNames.length === 1 ? "" : "s"}.
           </p>
           {#if resultNames.length > 0}
-            <ul class="mt-3 space-y-1 text-sm text-surface-300">
+            <ul class="mt-3 space-y-1 text-sm text-content-secondary">
               {#each resultNames as name (name)}
                 <li>{name}</li>
               {/each}

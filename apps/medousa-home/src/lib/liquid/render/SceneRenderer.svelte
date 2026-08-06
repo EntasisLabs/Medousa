@@ -39,7 +39,7 @@
     padding: 0.5rem 0.75rem;
     border-radius: 0.5rem;
     border: 1px dashed color-mix(in srgb, var(--color-warning-500) 55%, transparent);
-    color: rgb(var(--color-warning-200));
+    color: rgb(var(--theme-warning));
     font-size: 0.75rem;
   }
 

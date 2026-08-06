@@ -182,7 +182,7 @@
     justify-content: center;
     gap: 0.5rem;
     padding: 1rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     font-size: 0.8125rem;
     text-align: center;
   }

@@ -115,12 +115,12 @@
           <p class="text-[11px] font-semibold tracking-[-0.01em] text-surface-100">
             Deliveries
           </p>
-          <p class="mt-0.5 text-[10px] text-surface-500">Where results go</p>
+          <p class="mt-0.5 text-[10px] text-content-quiet">Where results go</p>
         </div>
       </div>
       <div class="agent-editor-popover-body p-3">
         <p class="text-[13px] font-medium tracking-tight text-surface-100">{destination}</p>
-        <p class="mt-1 text-[11px] leading-relaxed text-surface-500">{destinationNote}</p>
+        <p class="mt-1 text-[11px] leading-relaxed text-content-quiet">{destinationNote}</p>
       </div>
     </div>
   {/if}

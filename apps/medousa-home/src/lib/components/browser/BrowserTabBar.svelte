@@ -13,7 +13,7 @@
       type="button"
       class="group flex max-w-[220px] min-w-[120px] items-center gap-1 rounded-t-md border px-2 py-1.5 text-left text-xs {tab.active
         ? 'border-surface-600 border-b-transparent bg-surface-900 text-surface-50'
-        : 'border-transparent bg-surface-900/40 text-surface-300 hover:bg-surface-900/70'}"
+        : 'border-transparent bg-surface-900/40 text-content-secondary hover:bg-surface-900/70'}"
       onclick={() => void browser.activateTab(tab.id)}
       title={tab.url}
     >
@@ -28,7 +28,7 @@
         <span
           role="button"
           tabindex="0"
-          class="ml-auto shrink-0 rounded p-0.5 text-surface-500 opacity-0 group-hover:opacity-100 hover:bg-surface-800 hover:text-surface-100"
+          class="ml-auto shrink-0 rounded p-0.5 text-content-quiet opacity-0 group-hover:opacity-100 hover:bg-surface-800 hover:text-surface-100"
           aria-label="Close tab"
           onclick={(event) => {
             event.stopPropagation();
@@ -48,7 +48,7 @@
   {/each}
   <button
     type="button"
-    class="mb-1 rounded-md p-1.5 text-surface-400 hover:bg-surface-800 hover:text-surface-100"
+    class="mb-1 rounded-md p-1.5 text-content-tertiary hover:bg-surface-800 hover:text-surface-100"
     aria-label="New tab"
     title="New tab"
     onclick={handleNewTab}

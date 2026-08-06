@@ -109,7 +109,7 @@
     {/if}
 
     {#if cardError}
-      <p class="mt-2 text-xs text-error-400">{cardError}</p>
+      <p class="mt-2 text-xs text-content-error">{cardError}</p>
     {/if}
 
     {#if notePath}

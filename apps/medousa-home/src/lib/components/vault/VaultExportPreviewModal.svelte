@@ -599,7 +599,7 @@
     border: 1px solid rgb(var(--color-surface-500) / 0.4);
     border-radius: 0.35rem;
     background: transparent;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     font-size: 0.72rem;
     font-weight: 600;
     padding: 0.35rem 0.4rem;
@@ -658,11 +658,11 @@
   }
 
   .vault-export-preview-status {
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .vault-export-preview-error {
-    color: rgb(var(--color-error-300));
+    color: rgb(var(--theme-error));
   }
 
   .vault-export-docx-ready__title {
@@ -673,7 +673,7 @@
 
   .vault-export-docx-ready__hint {
     margin: 0;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     line-height: 1.45;
   }
 

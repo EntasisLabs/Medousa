@@ -20,10 +20,10 @@
     {#each lines as line, index (index)}
       <p
         class="truncate {line.kind === 'add'
-          ? 'text-success-300'
+          ? 'text-content-success'
           : line.kind === 'remove'
-            ? 'text-error-300 line-through'
-            : 'text-surface-300'}"
+            ? 'text-content-error line-through'
+            : 'text-content-secondary'}"
       >
         {line.kind === "add" ? "+ " : line.kind === "remove" ? "- " : "~ "}{line.text}
       </p>

@@ -189,11 +189,11 @@
       <div class="grapheme-module-library-head">
         <div class="min-w-0">
           <p class="text-[11px] font-semibold tracking-[-0.01em] text-surface-100">Modules</p>
-          <p class="mt-0.5 truncate text-[10px] text-surface-500">{triggerLabel}</p>
+          <p class="mt-0.5 truncate text-[10px] text-content-quiet">{triggerLabel}</p>
         </div>
         <button
           type="button"
-          class="workshop-text-action inline-flex items-center gap-0.5 text-[10px] text-surface-500"
+          class="workshop-text-action inline-flex items-center gap-0.5 text-[10px] text-content-quiet"
           onclick={() => (showAllModules = !showAllModules)}
         >
           {showAllModules ? "Common" : "View more"}
@@ -208,9 +208,9 @@
       <div class="grapheme-module-library-body">
         <div class="grapheme-module-library-modules" role="listbox" aria-label="Modules">
           {#if workshop.loading && workshop.modules.length === 0}
-            <p class="px-2 py-3 text-[11px] text-surface-500">Loading…</p>
+            <p class="px-2 py-3 text-[11px] text-content-quiet">Loading…</p>
           {:else if visibleModules.length === 0}
-            <p class="px-2 py-3 text-[11px] text-surface-500">No modules.</p>
+            <p class="px-2 py-3 text-[11px] text-content-quiet">No modules.</p>
           {:else}
             {#each visibleModules as entry (entry.module_id)}
               <button
@@ -226,14 +226,14 @@
                   <span class="block truncate text-[11px] font-medium text-surface-100">
                     {moduleJobLabel(entry.module_id)}
                   </span>
-                  <span class="mt-0.5 block truncate font-mono text-[9px] text-surface-600">
+                  <span class="mt-0.5 block truncate font-mono text-[9px] text-content-faint">
                     {entry.module_id}
                   </span>
                 </span>
                 {#if selectedModuleId === entry.module_id}
-                  <Check size={12} strokeWidth={2.5} class="shrink-0 text-primary-300" />
+                  <Check size={12} strokeWidth={2.5} class="shrink-0 text-content-link" />
                 {:else}
-                  <span class="shrink-0 text-[9px] tabular-nums text-surface-600">
+                  <span class="shrink-0 text-[9px] tabular-nums text-content-faint">
                     {entry.op_count}
                   </span>
                 {/if}
@@ -253,7 +253,7 @@
 
         <div class="grapheme-module-library-ops">
           <div class="grapheme-module-library-search">
-            <Search size={13} class="shrink-0 text-surface-500" />
+            <Search size={13} class="shrink-0 text-content-quiet" />
             <input
               class="grapheme-module-library-search-input"
               type="search"
@@ -270,11 +270,11 @@
 
           <ul class="grapheme-module-library-op-list" role="listbox" aria-label="Actions">
             {#if workshop.moduleDetailLoading && !moduleDetail}
-              <li class="px-2 py-3 text-[11px] text-surface-500">Loading…</li>
+              <li class="px-2 py-3 text-[11px] text-content-quiet">Loading…</li>
             {:else if workshop.moduleDetailError}
-              <li class="px-2 py-3 text-[11px] text-warning-400">{workshop.moduleDetailError}</li>
+              <li class="px-2 py-3 text-[11px] text-content-warning">{workshop.moduleDetailError}</li>
             {:else if filteredOps.length === 0}
-              <li class="px-2 py-3 text-[11px] text-surface-500">
+              <li class="px-2 py-3 text-[11px] text-content-quiet">
                 {opSearch.trim() ? "No matches." : "No actions."}
               </li>
             {:else}
@@ -291,7 +291,7 @@
                       <span class="block truncate text-[12px] font-medium tracking-[-0.01em] text-surface-50">
                         {opHumanTitle(op.op)}
                       </span>
-                      <span class="mt-0.5 block truncate font-mono text-[10px] text-surface-600">
+                      <span class="mt-0.5 block truncate font-mono text-[10px] text-content-faint">
                         {op.op}() → {op.output_type}
                       </span>
                     </span>
@@ -318,11 +318,11 @@
 
       {#if allowlistOpen}
         <div class="grapheme-module-library-allowlist">
-          <p class="px-3 pb-1.5 text-[10px] text-surface-500">
+          <p class="px-3 pb-1.5 text-[10px] text-content-quiet">
             Restrict which modules scripts may use at runtime.
           </p>
           {#if workshop.allowlistError}
-            <p class="px-3 pb-1.5 text-[10px] text-error-400">{workshop.allowlistError}</p>
+            <p class="px-3 pb-1.5 text-[10px] text-content-error">{workshop.allowlistError}</p>
           {/if}
           <ul class="max-h-36 space-y-1 overflow-y-auto px-3 pb-2">
             {#each workshop.modules as entry (entry.module_id)}
@@ -340,7 +340,7 @@
                 />
                 <label for="gml-allow-{entry.module_id}" class="min-w-0 truncate">
                   <span class="text-surface-200">{moduleJobLabel(entry.module_id)}</span>
-                  <span class="ml-1 font-mono text-[10px] text-surface-600">{entry.module_id}</span>
+                  <span class="ml-1 font-mono text-[10px] text-content-faint">{entry.module_id}</span>
                 </label>
               </li>
             {/each}

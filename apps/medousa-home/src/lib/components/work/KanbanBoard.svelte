@@ -55,7 +55,7 @@
       <p class="workshop-header-line mt-0.5">Cards in motion across the workshop</p>
     </div>
     <div class="flex flex-wrap items-center gap-2">
-      <label class="flex items-center gap-2 text-xs text-surface-300">
+      <label class="flex items-center gap-2 text-xs text-content-secondary">
         <span>Swimlanes</span>
         <select
           class="select text-xs"
@@ -67,7 +67,7 @@
           {/each}
         </select>
       </label>
-      <label class="flex items-center gap-2 text-xs text-surface-300">
+      <label class="flex items-center gap-2 text-xs text-content-secondary">
         <input
           type="checkbox"
           class="checkbox"
@@ -114,12 +114,12 @@
             <h2 class="text-xs font-medium capitalize text-surface-200">
               {columnLabel(column.column)}
               {#if column.column === "in_flight"}
-                <span class="ml-1 font-normal text-surface-500" title="Drag a card to the cancel zone">
+                <span class="ml-1 font-normal text-content-quiet" title="Drag a card to the cancel zone">
                   · drag to cancel
                 </span>
               {/if}
             </h2>
-            <span class="ml-auto text-xs tabular-nums text-surface-500">
+            <span class="ml-auto text-xs tabular-nums text-content-quiet">
               {column.column === "blocked"
                 ? blockedDisplay.total
                 : column.cards.length}
@@ -138,11 +138,11 @@
               />
             {:else}
               {#if blockedDisplay.total === 0}
-                <p class="px-2 py-6 text-center text-xs text-surface-500">Empty</p>
+                <p class="px-2 py-6 text-center text-xs text-content-quiet">Empty</p>
               {/if}
             {/each}
             {#if blockedDisplay.overflow > 0}
-              <p class="px-2 py-3 text-center text-xs text-surface-400">
+              <p class="px-2 py-3 text-center text-xs text-content-tertiary">
                 +{blockedDisplay.overflow} more blocked
               </p>
             {/if}
@@ -154,12 +154,12 @@
                 onSelect={onSelectCard}
               />
             {:else}
-              <p class="px-2 py-6 text-center text-xs text-surface-500">Empty</p>
+              <p class="px-2 py-6 text-center text-xs text-content-quiet">Empty</p>
             {/each}
           {:else}
             {#each column.lanes as lane (lane.key)}
               <div class="space-y-2">
-                <p class="px-1 text-xs font-medium uppercase tracking-wide text-surface-400">
+                <p class="px-1 text-xs font-medium uppercase tracking-wide text-content-tertiary">
                   {lane.label}
                 </p>
                 {#each lane.cards as card (card.id)}
@@ -171,7 +171,7 @@
                 {/each}
               </div>
             {:else}
-              <p class="px-2 py-6 text-center text-xs text-surface-500">Empty</p>
+              <p class="px-2 py-6 text-center text-xs text-content-quiet">Empty</p>
             {/each}
           {/if}
         </div>

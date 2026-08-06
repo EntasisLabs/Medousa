@@ -11,7 +11,7 @@
     {#if toast.action}
       <button
         type="button"
-        class="text-primary-300 hover:text-primary-200"
+        class="text-content-link hover:text-primary-200"
         onclick={() => {
           toast.action?.onAction();
           toast.dismiss();

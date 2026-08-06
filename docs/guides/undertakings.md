@@ -78,28 +78,31 @@ filesystem as if it belonged to the workshop.
 Code is a view inside Medousa’s permanent workspace, not a replacement shell
 for the whole product. The source editor uses the same polished editor and
 language-support foundation as Scripts, while Scripts remains its own
-automation surface.
+automation surface. Open files and Review are **Workshop shell tabs** (LME
+Code resources); pane splits and tab cycling belong to the Workshop shell, not
+a private Code IDE chrome.
 
 - File paths are always relative to the project’s safe working copy.
-- Files open read-only until **Edit** starts an editing session.
+- Files open read-only until **Edit** starts an editing session (or the first
+  keystroke begins one when the project is ready).
 - Medousa keeps that editing session available while the file surface is open.
 - Saves present the lease fence and the digest from the opened file. A stale
   lease or an externally changed file returns `409`; Medousa never silently
   overwrites it.
 - Absolute paths, parent traversal, symlink escapes, binary files, and text
   files over 2 MiB are rejected by the workshop daemon.
-- `Cmd/Ctrl+S` saves the focused editor, `Cmd/Ctrl+Shift+S` saves all modified
-  tabs, and `Cmd/Ctrl+W` closes the active tab with a discard guard.
-  `Cmd/Ctrl+Shift+T` reopens the last closed tab. Middle-click a tab to close
-  it; right-click a tab for Close / Close Others / Close to the Right / Open to
-  the Side / Copy Path. Drag tabs to reorder them for the current session.
+- `Cmd/Ctrl+S` saves the focused editor; `Cmd/Ctrl+Shift+S` saves all modified
+  open files for the project. `Cmd/Ctrl+Shift+T` reopens the last closed file.
+  Close and cycle tabs with Workshop shell controls (`Ctrl+;` then `n` / `p`,
+  or close from the tab strip). Split panes with Workshop (`Ctrl+;` then `%` /
+  `"`) to put Chat, a file, and Review side by side.
 - The Code explorer lists tracked and unignored repository files. `Cmd/Ctrl+P`
   opens Quick Open: type a file name, `@` plus a name for project symbols, or
   `:` plus a number to jump to a line.
-- Open files become project-scoped editor tabs with independent unsaved drafts.
-  Tabs, cursor targets, a secondary editor group, and protected draft
-  draft recovery survive view changes and app restarts. If the file changed
-  outside Medousa, the recovered draft remains visible with a conflict warning.
+- Open files become project-scoped shell tabs with independent unsaved drafts.
+  Cursor targets and protected draft recovery survive view changes and app
+  restarts. If the file changed outside Medousa, the recovered draft remains
+  visible with a conflict warning.
 - The editor header shows clickable path breadcrumbs and, when symbols are
   known, the containing type/function trail. Folder crumbs focus that path in
   the explorer; symbol crumbs jump to the definition line. A slim operator
@@ -107,9 +110,6 @@ automation surface.
   status bar shows find/save/open hints, `Ln`/`Col`, indentation, language id,
   and session ownership. **View** toggles word wrap and line numbers. Saves
   whisper `Saving…` / timed `Saved`.
-- Use **Split** or **Open to side** to compare two source files. The editors sit
-  side by side when space permits and stack on narrow screens; `Cmd/Ctrl+\\`
-  toggles the secondary group and `Ctrl+Tab` cycles source tabs.
 - New file, rename, and delete are available in the repository explorer. All
   three begin or reuse the editing session and remain inside the working copy;
   rename/delete refuse unsaved open drafts and use change-conflict protection.
@@ -134,10 +134,9 @@ automation surface.
   A remote client links to Packages instead, because installation belongs on
   the connected workshop machine.
 
-Terminal, Understand, and Review remain contextual tools around the editor:
-Terminal executes, Understand explains, and Review helps the user decide what
-to keep. They do not become permanent chrome when they have nothing relevant to
-say.
+Terminal and Understand remain contextual tools around the editor. **Review**
+opens as its own project tab — the same canvas for human, agent, and Terminal
+changes — so decide/approve/finish never forks by author.
 
 ## Run and test
 
@@ -184,10 +183,16 @@ impact.”
 
 Review starts by answering four questions: whether the intended outcome was
 reached, what risk deserves attention, what verification ran, and what should
-happen next. Choose any changed file for an inline or side-by-side comparison
-between the exact starting and reviewed revisions. Binary changes show honest
-file metadata instead of an unreadable patch. Raw patch and command records
-remain available under supporting detail.
+happen next. It opens as a **separate Workshop tab** for the project. Human
+edits, coding-agent attempts, and Terminal work all land on that same Review —
+there is no separate “user commit” center. Provenance labels who contributed;
+the surface does not change.
+
+Changed files stack in one scroll by default (with jump links for large sets),
+with unmodified spans collapsed until expanded. Inline comparison is the
+default; side-by-side remains available. Binary changes show honest file
+metadata instead of an unreadable patch. Raw patch and command records remain
+available under supporting detail.
 
 Code marks lines changed by the reviewed revision with quiet gutter indicators.
 **Who contributed** distinguishes human, coding-agent, Terminal, and verification

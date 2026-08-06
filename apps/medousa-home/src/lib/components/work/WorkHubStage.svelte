@@ -42,7 +42,7 @@
       <ShellSidebarExpandButton label="Show rail" />
       <div class="min-w-0">
         <h1 class="text-sm font-semibold text-surface-50">Work</h1>
-        <p class="mt-0.5 text-[11px] text-surface-500">
+        <p class="mt-0.5 text-[11px] text-content-quiet">
           {#if living.length === 1}
             1 in motion
           {:else if living.length > 1}

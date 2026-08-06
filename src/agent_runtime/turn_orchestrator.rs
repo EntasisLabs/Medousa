@@ -286,6 +286,7 @@ pub struct LocalTurnExecutionParams {
     pub current_turn_user_message: ChatMessage,
     pub inference_profile_kind: crate::inference_profiles::InferenceProfileKind,
     pub supports_ui_artifacts: bool,
+    pub supports_liquid_markdown: bool,
     pub supports_browser_host: bool,
     pub round_context_provider: Option<Arc<dyn super::turn_context::ToolRoundContextProvider>>,
     pub evidence_undertaking_id: Option<String>,
@@ -490,6 +491,10 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
             supports_ui_artifacts: crate::ui_present_tools::surface_supports_ui_artifacts(
                 params.surface.as_ref(),
             ),
+            supports_liquid_markdown: params
+                .surface
+                .as_ref()
+                .is_some_and(|surface| surface.supports_liquid_markdown),
             supports_browser_host: crate::browser_tools::surface_supports_browser_host(
                 params.surface.as_ref(),
             ),
@@ -752,6 +757,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         current_turn_user_message,
         inference_profile_kind,
         supports_ui_artifacts: _,
+        supports_liquid_markdown: _,
         supports_browser_host: _,
         round_context_provider,
         evidence_undertaking_id,
@@ -840,6 +846,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             host_continuity_bundle,
             configured_max_tool_rounds: turn_loop_settings.configured_max_tool_rounds,
             supports_ui_artifacts: params.supports_ui_artifacts,
+            supports_liquid_markdown: params.supports_liquid_markdown,
             supports_browser_host: params.supports_browser_host,
         })
         .await;
@@ -934,6 +941,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             &super::modes::system_prompt_for_mode(DEFAULT_SYSTEM_PROMPT, &agent_mode),
             host_bus,
             params.supports_ui_artifacts,
+            params.supports_liquid_markdown,
             suggested_intent,
         )));
         messages.extend(prior_messages);
@@ -998,6 +1006,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             &super::modes::system_prompt_for_mode(DEFAULT_SYSTEM_PROMPT, &agent_mode),
             host_bus,
             params.supports_ui_artifacts,
+            params.supports_liquid_markdown,
             suggested_intent,
         )),
         context: prompt_ctx.clone(),

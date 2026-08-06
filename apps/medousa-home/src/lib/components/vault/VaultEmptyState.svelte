@@ -52,17 +52,17 @@
 
 <div class="vault-empty-state flex flex-1 flex-col items-center justify-center gap-8 p-8">
   <div class="max-w-lg space-y-3 text-center">
-    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary-500/12 text-primary-300">
+    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary-500/12 text-content-link">
       <Sparkles size={22} strokeWidth={2} />
     </div>
     <h2 class="text-xl font-semibold tracking-tight text-surface-50">Bring your mess</h2>
-    <p class="text-sm leading-relaxed text-surface-400">
+    <p class="text-sm leading-relaxed text-content-tertiary">
       Pick up where you left off — notes, files, and chat stay connected without switching apps.
     </p>
   </div>
 
   <div class="w-full max-w-xl">
-    <p class="mb-3 text-center text-[11px] font-semibold uppercase tracking-wide text-surface-500">
+    <p class="mb-3 text-center text-[11px] font-semibold uppercase tracking-wide text-content-quiet">
       What belongs here
     </p>
     <ul class="grid gap-2 sm:grid-cols-2">
@@ -70,10 +70,10 @@
         {@const Icon = space.icon}
         <li class="rounded-lg border border-surface-500/35 bg-surface-900/40 px-4 py-3 text-left">
           <div class="flex items-center gap-2">
-            <Icon size={15} strokeWidth={2} class="text-primary-300" />
+            <Icon size={15} strokeWidth={2} class="text-content-link" />
             <span class="text-sm font-medium text-surface-100">{space.label}</span>
           </div>
-          <p class="mt-1 text-xs text-surface-500">{space.hint}</p>
+          <p class="mt-1 text-xs text-content-quiet">{space.hint}</p>
         </li>
       {/each}
     </ul>

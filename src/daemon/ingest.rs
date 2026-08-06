@@ -889,22 +889,10 @@ pub fn resolve_api_model_routing(
     model_hint: Option<&str>,
     defaults: &session_mapping::IngestSessionRuntimeConfig,
 ) -> (String, String) {
-    let hint = model_hint.map(str::trim).filter(|value| !value.is_empty());
-    if let Some(hint) = hint {
-        if let Some((provider, model)) = hint.split_once(':') {
-            let provider = provider.trim();
-            let model = model.trim();
-            if !provider.is_empty() && !model.is_empty() {
-                return (
-                    crate::resolve_llm_provider(Some(provider)),
-                    crate::resolve_llm_model(Some(model)),
-                );
-            }
-        }
-        return (
-            defaults.draft_provider.clone(),
-            crate::resolve_llm_model(Some(hint)),
-        );
+    if let Some((provider, model)) =
+        crate::model_route::resolve_model_hint(model_hint, &defaults.draft_provider)
+    {
+        return (provider, model);
     }
 
     (
@@ -1027,6 +1015,7 @@ async fn spawn_continuation_agent_turn(
         model: record.model.clone(),
         response_depth_mode: record.response_depth_mode.clone(),
         supports_ui_artifacts: false,
+        supports_liquid_markdown: false,
         supports_browser_host: false,
         channel_surface: interactive_request
             .surface
@@ -1135,6 +1124,7 @@ pub async fn spawn_daemon_api_agent_turn(
         model: model.clone(),
         response_depth_mode: response_depth_mode.clone(),
         supports_ui_artifacts: false,
+        supports_liquid_markdown: false,
         supports_browser_host: false,
         channel_surface: Some("api".to_string()),
     };
@@ -1914,6 +1904,10 @@ async fn start_ingest_ask_stream(
         supports_ui_artifacts: crate::ui_present_tools::surface_supports_ui_artifacts(
             interactive_request.surface.as_ref(),
         ),
+        supports_liquid_markdown: interactive_request
+            .surface
+            .as_ref()
+            .is_some_and(|surface| surface.supports_liquid_markdown),
         supports_browser_host: crate::browser_tools::surface_supports_browser_host(
             interactive_request.surface.as_ref(),
         ),

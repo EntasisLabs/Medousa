@@ -176,7 +176,7 @@
     {/if}
 
     {#if packageError}
-      <p class="mt-2 text-xs text-warning-300">{packageError}</p>
+      <p class="mt-2 text-xs text-content-warning">{packageError}</p>
     {/if}
 
     <div class="prefs-band">
@@ -240,7 +240,7 @@
   .prefs-tile-meta {
     font-size: 0.68rem;
     line-height: 1.3;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .prefs-tile-cta {
@@ -250,7 +250,7 @@
     padding: 0;
     font-size: 0.72rem;
     font-weight: 600;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     cursor: pointer;
   }
 
@@ -261,6 +261,6 @@
 
   .prefs-tile-cta-static {
     cursor: default;
-    color: rgb(var(--color-success-400));
+    color: rgb(var(--theme-success));
   }
 </style>

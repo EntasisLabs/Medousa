@@ -163,7 +163,7 @@
             </span>
             <div class="flex shrink-0 flex-col items-end gap-1">
               {#if row.installed && !row.updateAvailable}
-                <span class="text-xs text-success-400">Installed</span>
+                <span class="text-xs text-content-success">Installed</span>
                 {#if row.optional}
                   <button
                     type="button"
@@ -207,7 +207,7 @@
     {/if}
 
     {#if error}
-      <p class="mt-4 text-xs text-warning-400">{error}</p>
+      <p class="mt-4 text-xs text-content-warning">{error}</p>
     {/if}
   </div>
 {/if}

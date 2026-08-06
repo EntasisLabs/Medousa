@@ -159,7 +159,7 @@
       {#if recurring.loading && recurring.definitions.length === 0}
         <p class="workshop-muted">Loading schedules…</p>
       {:else if recurring.error}
-        <p class="text-sm text-warning-400">{recurring.error}</p>
+        <p class="text-sm text-content-warning">{recurring.error}</p>
       {:else if filtered.length === 0}
         <p class="workshop-muted">
           {search.trim()
@@ -195,7 +195,7 @@
                     <p class="workshop-faint mt-1 truncate">{entry.prompt_excerpt}</p>
                   {/if}
                 </div>
-                <div class="shrink-0 text-right text-[11px] text-surface-400">
+                <div class="shrink-0 text-right text-[11px] text-content-tertiary">
                   <p>Next {recurring.formatNextRun(entry.next_run_at_utc)}</p>
                   <p class="mt-0.5">
                     Last {entry.last_run_at_utc
@@ -210,7 +210,7 @@
       {/if}
 
       {#if recurring.registerMessage}
-        <p class="mt-4 text-xs text-primary-300">{recurring.registerMessage}</p>
+        <p class="mt-4 text-xs text-content-link">{recurring.registerMessage}</p>
       {/if}
     </div>
 
@@ -288,7 +288,7 @@
           {#if selected.prompt_excerpt}
             <div>
               <dt class="workshop-label">Prompt</dt>
-              <dd class="mt-0.5 text-surface-300">{selected.prompt_excerpt}</dd>
+              <dd class="mt-0.5 text-content-secondary">{selected.prompt_excerpt}</dd>
             </div>
           {/if}
         </dl>
@@ -326,7 +326,7 @@
           {:else}
             <button
               type="button"
-              class="btn btn-sm variant-ghost-surface text-error-400"
+              class="btn btn-sm variant-ghost-surface text-content-error"
               onclick={() => (confirmDeleteId = selected.recurring_id)}
             >
               Delete…

@@ -156,7 +156,7 @@
     <span class="max-w-[5.5rem] truncate text-xs font-medium text-surface-200">
       {userProfiles.activeDisplayName}
     </span>
-    <ChevronDown size={14} class="shrink-0 text-surface-500" strokeWidth={2} />
+    <ChevronDown size={14} class="shrink-0 text-content-quiet" strokeWidth={2} />
   </button>
 {/if}
 
@@ -178,7 +178,7 @@
       {#if userProfiles.loading && userProfiles.profiles.length === 0}
         <p class="workshop-faint text-sm">Loading profiles…</p>
       {:else if userProfiles.error}
-        <p class="text-sm text-error-400">{userProfiles.error}</p>
+        <p class="text-sm text-content-error">{userProfiles.error}</p>
         <button
           type="button"
           class="btn btn-sm variant-ghost-surface mt-3"

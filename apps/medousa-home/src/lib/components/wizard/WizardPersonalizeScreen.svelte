@@ -103,13 +103,13 @@
   </button>
 
   <div class="wizard-stagger flex min-h-0 flex-1 flex-col items-center justify-center px-2 text-center">
-    <p class="wizard-beat text-[11px] font-semibold uppercase tracking-[0.16em] text-primary-300/90">
+    <p class="wizard-beat text-[11px] font-semibold uppercase tracking-[0.16em] text-content-link/90">
       Your space
     </p>
     <h1 id="product-wizard-title" class="wizard-beat mt-2 text-2xl font-semibold tracking-tight text-surface-50">
       Make it yours
     </h1>
-    <p class="wizard-beat mt-2 max-w-sm text-sm text-surface-400">
+    <p class="wizard-beat mt-2 max-w-sm text-sm text-content-tertiary">
       Add a name and pick your theme.
     </p>
 
@@ -135,7 +135,7 @@
       />
     </div>
 
-    <p class="wizard-beat mt-7 text-xs font-medium uppercase tracking-wide text-surface-500">
+    <p class="wizard-beat mt-7 text-xs font-medium uppercase tracking-wide text-content-quiet">
       {themeLabel}
     </p>
     <div class="wizard-beat mt-3 flex flex-wrap justify-center gap-2.5">
@@ -216,12 +216,12 @@
     background: transparent;
     padding: 0.4rem;
     font-size: 0.875rem;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     outline: none;
   }
 
   .your-name-input::placeholder {
-    color: rgb(var(--color-surface-600));
+    color: rgb(var(--theme-text-faint));
   }
 
   .theme-swatch {

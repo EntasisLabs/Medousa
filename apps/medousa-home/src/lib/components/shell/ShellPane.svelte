@@ -252,7 +252,7 @@
     {:else if activeTab?.kind === "web"}
       <WebPaneIdle {groupId} />
     {:else}
-      <div class="flex h-full items-center justify-center p-8 text-sm text-surface-500">
+      <div class="flex h-full items-center justify-center p-8 text-sm text-content-quiet">
         Open something from the rail.
       </div>
     {/if}

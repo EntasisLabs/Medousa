@@ -296,18 +296,18 @@
   .brain-meta {
     font-size: 0.68rem;
     line-height: 1.3;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .brain-pill {
     flex-shrink: 0;
     font-size: 0.65rem;
     font-weight: 600;
-    color: rgb(var(--color-warning-400));
+    color: rgb(var(--theme-warning));
   }
 
   .brain-pill-ok {
-    color: rgb(var(--color-success-400));
+    color: rgb(var(--theme-success));
   }
 
   .brain-actions {
@@ -326,7 +326,7 @@
     border: 1px solid rgb(var(--color-surface-500) / 0.32);
     border-radius: 0.5rem;
     background: rgb(var(--color-surface-900) / 0.28);
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     cursor: pointer;
     transition:
       border-color 120ms ease,
@@ -355,7 +355,7 @@
     padding: 0;
     font-size: 0.72rem;
     font-weight: 600;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     cursor: pointer;
   }
 
@@ -365,7 +365,7 @@
   }
 
   .brain-cta-danger {
-    color: rgb(var(--color-error-300) / 0.9);
+    color: rgb(var(--theme-error) / 0.9);
   }
 
   .brain-progress-track {
@@ -387,11 +387,11 @@
     padding: 0 0.15rem;
     font-size: 0.7rem;
     line-height: 1.4;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .brain-footnote-status {
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   :global(.brain-spin) {

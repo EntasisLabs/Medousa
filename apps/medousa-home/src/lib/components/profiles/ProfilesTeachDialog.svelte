@@ -127,7 +127,7 @@
       </p>
 
       {#if flash}
-        <p class="text-xs {flashOk ? 'text-success-400' : 'text-warning-400'}" role="status">
+        <p class="text-xs {flashOk ? 'text-content-success' : 'text-content-warning'}" role="status">
           {flash}
         </p>
       {/if}

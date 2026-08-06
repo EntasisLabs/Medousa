@@ -137,7 +137,7 @@
     padding: 0.28rem 0.35rem;
     font-size: 0.75rem;
     font-weight: 500;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     cursor: pointer;
     transition: color 140ms ease;
   }
@@ -247,7 +247,7 @@
   }
 
   .layout-edit-secondary-btn-danger:hover:not(:disabled) {
-    color: rgb(var(--color-error-200));
+    color: rgb(var(--theme-error));
     border-color: color-mix(in srgb, var(--color-error-500) 40%, transparent);
     background: color-mix(in srgb, var(--color-error-600) 12%, transparent);
   }
@@ -256,12 +256,12 @@
     margin: 0;
     font-size: 0.6875rem;
     line-height: 1.4;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .layout-edit-error {
     margin: 0;
     font-size: 0.6875rem;
-    color: rgb(var(--color-error-300));
+    color: rgb(var(--theme-error));
   }
 </style>

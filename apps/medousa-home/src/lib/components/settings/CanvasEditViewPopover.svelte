@@ -381,12 +381,12 @@
     width: 1.85rem;
     height: 2rem;
     border-radius: 0.45rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     background: transparent;
   }
 
   .canvas-edit-popover-trash:hover:not(:disabled) {
-    color: rgb(var(--color-error-300));
+    color: rgb(var(--theme-error));
     background: rgb(var(--color-error-500) / 0.12);
   }
 
@@ -407,7 +407,7 @@
     font-weight: 650;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .canvas-edit-popover-icon-group:first-child {
@@ -422,7 +422,7 @@
     aspect-ratio: 1;
     border: 0;
     border-radius: 0.35rem;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     background: transparent;
     cursor: pointer;
   }
@@ -458,13 +458,13 @@
     border-radius: 0.4rem;
     font-size: 0.75rem;
     font-weight: 650;
-    color: rgb(var(--color-error-100));
+    color: rgb(var(--theme-error));
     background: rgb(var(--color-error-500) / 0.3);
   }
 
   .canvas-edit-popover-error {
     margin: 0 0.15rem;
     font-size: 0.6875rem;
-    color: rgb(var(--color-error-300));
+    color: rgb(var(--theme-error));
   }
 </style>

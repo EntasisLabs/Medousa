@@ -311,6 +311,10 @@ class TurnSurfaceContext(MedousaModel):
         False,
         description='When true, the connected client can run Agent Browser (local BrowserHost or client WebView). Telegram/TUI/ingest leave this false; Home desktop/iOS set true when browser is available.',
     )
+    supports_liquid_markdown: bool | None = Field(
+        False,
+        description='When true, the connected client can parse and hydrate Medousa Liquid Markdown embeds. This does not imply support for HTML artifacts, scenes, canvas, or UI authoring tools.',
+    )
     supports_ui_artifacts: bool | None = Field(
         False,
         description='When true, the connected client can render sandboxed HTML UI artifacts (`cognition_ui_present`). Channel adapters and clients set this — the daemon does not infer it from channel name.',

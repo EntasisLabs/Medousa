@@ -67,9 +67,9 @@ export function statusClass(status: ChannelStatus): string {
   switch (status) {
     case "connected":
     case "ready":
-      return "text-primary-300";
+      return "text-content-link";
     default:
-      return "text-surface-500";
+      return "text-content-quiet";
   }
 }
 

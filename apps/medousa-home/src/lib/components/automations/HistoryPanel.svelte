@@ -322,7 +322,7 @@
     {#if toolHistory.loading && toolHistory.runs.length === 0}
       <p class="workshop-muted">Gathering recent moments…</p>
     {:else if toolHistory.error}
-      <p class="text-sm text-warning-400">{toolHistory.error}</p>
+      <p class="text-sm text-content-warning">{toolHistory.error}</p>
     {:else if !hasRuns}
       <p class="history-empty-line">
         {embedded
@@ -425,7 +425,7 @@
     {/if}
 
     {#if toolHistory.actionMessage}
-      <p class="mt-4 text-xs text-primary-300">{toolHistory.actionMessage}</p>
+      <p class="mt-4 text-xs text-content-link">{toolHistory.actionMessage}</p>
     {/if}
   </div>
 
@@ -436,10 +436,10 @@
     >
       {#if searchExpanded}
         <div class="lme-dock-search-expand flex min-w-0 flex-1 items-center gap-1">
-          <Search size={14} strokeWidth={1.75} class="shrink-0 text-surface-500" aria-hidden="true" />
+          <Search size={14} strokeWidth={1.75} class="shrink-0 text-content-quiet" aria-hidden="true" />
           <input
             bind:this={searchInputEl}
-            class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-surface-500 focus:outline-none focus:ring-0"
+            class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-content-quiet focus:outline-none focus:ring-0"
             type="search"
             placeholder="Search history…"
             bind:value={search}
@@ -768,7 +768,7 @@
   }
 
   .history-beat-failed {
-    color: rgb(var(--color-warning-400) / 0.9);
+    color: rgb(var(--theme-warning) / 0.9);
   }
 
   .history-beat-actions {

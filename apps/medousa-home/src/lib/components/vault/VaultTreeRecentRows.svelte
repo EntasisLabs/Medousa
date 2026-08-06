@@ -21,7 +21,7 @@
   <div>
     <button
       type="button"
-      class="vault-tree-row flex w-full items-center gap-1.5 rounded-container-token px-2 py-1 text-left text-xs text-surface-400 outline-none hover:bg-surface-700/60 hover:text-surface-200"
+      class="vault-tree-row flex w-full items-center gap-1.5 rounded-container-token px-2 py-1 text-left text-xs text-content-tertiary outline-none hover:bg-surface-700/60 hover:text-surface-200"
       style="padding-left: {8 + depth * 12}px"
       aria-expanded={expanded}
       onclick={() => (expanded = !expanded)}
@@ -30,7 +30,7 @@
         {expanded ? "▾" : "▸"}
       </span>
       <span class="min-w-0 flex-1 truncate">Recent</span>
-      <span class="tabular-nums text-surface-500">{visible.length}</span>
+      <span class="tabular-nums text-content-quiet">{visible.length}</span>
     </button>
 
     {#if expanded}
@@ -40,8 +40,8 @@
           type="button"
           class="vault-tree-row flex w-full items-center gap-1.5 rounded-container-token px-2 py-1 text-left text-sm outline-none hover:bg-surface-700/80 focus-visible:ring-1 focus-visible:ring-primary-400/50 {path ===
           selectedPath
-            ? 'bg-primary-500/15 text-primary-300'
-            : 'text-surface-300'}"
+            ? 'bg-primary-500/15 text-content-link'
+            : 'text-content-secondary'}"
           style="padding-left: {8 + (depth + 1) * 12}px"
           title={path}
           onclick={() => onSelect(path)}

@@ -169,12 +169,12 @@
     <h1 id="product-wizard-title" class="wizard-beat text-2xl font-semibold tracking-tight text-surface-50">
       Who else should reach you?
     </h1>
-    <p class="wizard-beat mt-2 text-sm leading-relaxed text-surface-400">
+    <p class="wizard-beat mt-2 text-sm leading-relaxed text-content-tertiary">
       Optional. Pick what you want now — or skip and open your desk.
     </p>
 
     {#if loading}
-      <p class="wizard-beat mt-8 text-sm text-surface-500">Loading…</p>
+      <p class="wizard-beat mt-8 text-sm text-content-quiet">Loading…</p>
     {:else}
       <ul class="wizard-beat mt-7 space-y-3">
         {#each offerRows as row (row.id)}
@@ -187,7 +187,7 @@
               class="wizard-path-card flex w-full items-start gap-3 text-left {isSelected &&
               !row.installed
                 ? 'wizard-path-card-active'
-                : ''} {row.installed ? 'opacity-80' : ''}"
+                : ''}"
               disabled={wizard.busy || installing || row.installed}
               onclick={() => toggle(row)}
             >
@@ -206,10 +206,10 @@
                 <span class="flex items-center gap-2">
                   <span class="text-sm font-semibold text-surface-50">{row.displayName}</span>
                   {#if row.installed}
-                    <span class="text-[11px] text-success-400">Ready</span>
+                    <span class="text-[11px] text-content-success">Ready</span>
                   {/if}
                 </span>
-                <span class="mt-0.5 block text-xs leading-relaxed text-surface-400">
+                <span class="mt-0.5 block text-xs leading-relaxed text-content-tertiary">
                   {row.hint}
                   {#if sizeLabel}
                     · ~{sizeLabel}
@@ -223,7 +223,7 @@
                         style={`width: ${Math.max(2, Math.min(100, progress.percent))}%`}
                       ></span>
                     </span>
-                    <span class="mt-1 block text-[11px] text-surface-500">
+                    <span class="mt-1 block text-[11px] text-content-quiet">
                       {progress.phaseLabel}
                     </span>
                   </span>
@@ -236,11 +236,11 @@
     {/if}
 
     {#if statusLine}
-      <p class="wizard-beat mt-4 text-sm text-warning-200">{statusLine}</p>
+      <p class="wizard-beat mt-4 text-sm text-content-warning">{statusLine}</p>
     {/if}
 
     {#if !isTauri()}
-      <p class="wizard-beat mt-4 text-xs text-surface-500">
+      <p class="wizard-beat mt-4 text-xs text-content-quiet">
         Installs run in the desktop app — skip for now.
       </p>
     {/if}

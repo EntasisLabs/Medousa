@@ -63,7 +63,7 @@
       {#if toolHistory.loading && runs.length === 0}
         <li class="activity-receipts-empty">Loading…</li>
       {:else if toolHistory.error && runs.length === 0}
-        <li class="activity-receipts-empty text-warning-400">{toolHistory.error}</li>
+        <li class="activity-receipts-empty text-content-warning">{toolHistory.error}</li>
       {:else}
         {#each runs as entry (entry.entry_id)}
           <li class="activity-receipts-row">

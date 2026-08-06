@@ -620,7 +620,7 @@
   }
 
   .nav-rail-view-popover-dock-slot :global(.nav-rail-dock-crumb-sep) {
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .nav-rail-view-popover-actions :global(.vault-dock-icon-btn),
@@ -643,7 +643,7 @@
     align-items: center;
     justify-content: center;
     border-radius: 0.4rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     transition:
       background-color 120ms ease,
       color 120ms ease;

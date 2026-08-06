@@ -109,7 +109,7 @@
               {#if vaultVersions.detect.available}
                 Found {vaultVersions.detect.version ?? "Git"}
                 {#if vaultVersions.detect.path}
-                  <span class="block truncate font-mono text-[0.65rem] opacity-80">
+                  <span class="block truncate font-mono text-xs">
                     {vaultVersions.detect.path}
                   </span>
                 {/if}
@@ -231,7 +231,7 @@
   .versions-tile-meta {
     font-size: 0.68rem;
     line-height: 1.3;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .versions-switch {
@@ -304,7 +304,7 @@
 
   :global(.versions-more-chevron) {
     flex-shrink: 0;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     transition: transform 140ms ease;
   }
 
@@ -320,11 +320,11 @@
     margin: 0;
     font-size: 0.7rem;
     line-height: 1.4;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .versions-footnote-warn {
-    color: rgb(var(--color-warning-300) / 0.95);
+    color: rgb(var(--theme-warning) / 0.95);
   }
 
   .versions-actions {

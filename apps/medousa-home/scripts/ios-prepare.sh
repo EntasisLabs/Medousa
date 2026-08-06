@@ -342,6 +342,120 @@ fi
 # xcodegen rewrites widget Info.plist defaults (1.0) — re-stamp after sync.
 sync_ios_versions
 
+# App Store rejects any alpha channel on iOS app icons (ITMS-90717). `tauri icon` composites
+# over --ios-color but still writes RGBA, so flatten the asset catalog to opaque RGB.
+ICONSET="$GEN/Assets.xcassets/AppIcon.appiconset"
+if [[ -d "$ICONSET" ]]; then
+  ICONSET="$ICONSET" APP_ICON_JSON="$ROOT/app-icon.json" python3 - <<'PY'
+from pathlib import Path
+import json
+import os
+import struct
+import zlib
+
+iconset = Path(os.environ["ICONSET"])
+icon_config = Path(os.environ["APP_ICON_JSON"])
+
+background = "#0a0a0b"
+if icon_config.is_file():
+    background = (json.loads(icon_config.read_text()).get("bg_color") or background).strip()
+background = background.lstrip("#")
+bg = tuple(int(background[i : i + 2], 16) for i in (0, 2, 4))
+
+
+def read_chunks(data):
+    header, pos = data[:8], 8
+    chunks = []
+    while pos < len(data):
+        length = struct.unpack(">I", data[pos : pos + 4])[0]
+        kind = data[pos + 4 : pos + 8]
+        chunks.append((kind, data[pos + 8 : pos + 8 + length]))
+        pos += 12 + length
+    return header, chunks
+
+
+def unfilter(raw, width, height, bpp):
+    stride = width * bpp
+    prev = bytearray(stride)
+    rows = []
+    pos = 0
+    for _ in range(height):
+        filter_type = raw[pos]
+        pos += 1
+        line = bytearray(raw[pos : pos + stride])
+        pos += stride
+        if filter_type == 1:
+            for x in range(bpp, stride):
+                line[x] = (line[x] + line[x - bpp]) & 255
+        elif filter_type == 2:
+            for x in range(stride):
+                line[x] = (line[x] + prev[x]) & 255
+        elif filter_type == 3:
+            for x in range(stride):
+                left = line[x - bpp] if x >= bpp else 0
+                line[x] = (line[x] + ((left + prev[x]) >> 1)) & 255
+        elif filter_type == 4:
+            for x in range(stride):
+                a = line[x - bpp] if x >= bpp else 0
+                b = prev[x]
+                c = prev[x - bpp] if x >= bpp else 0
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                pr = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
+                line[x] = (line[x] + pr) & 255
+        rows.append(line)
+        prev = line
+    return rows
+
+
+def chunk(kind, payload):
+    return (
+        struct.pack(">I", len(payload))
+        + kind
+        + payload
+        + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+    )
+
+
+flattened = []
+for path in sorted(iconset.glob("*.png")):
+    data = path.read_bytes()
+    header, chunks = read_chunks(data)
+    ihdr = next((payload for kind, payload in chunks if kind == b"IHDR"), None)
+    if ihdr is None:
+        continue
+    width, height, depth, color_type, _, _, interlace = struct.unpack(">IIBBBBB", ihdr)
+    # Already opaque RGB, or a layout this flattener does not decode — leave untouched.
+    if color_type != 6 or depth != 8 or interlace != 0:
+        continue
+
+    raw = zlib.decompress(b"".join(p for k, p in chunks if k == b"IDAT"))
+    out = bytearray()
+    for line in unfilter(raw, width, height, 4):
+        out.append(0)
+        for x in range(0, len(line), 4):
+            alpha = line[x + 3]
+            if alpha == 255:
+                out += line[x : x + 3]
+            else:
+                out += bytes(
+                    (line[x + i] * alpha + bg[i] * (255 - alpha) + 127) // 255
+                    for i in range(3)
+                )
+
+    path.write_bytes(
+        header
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(bytes(out), 9))
+        + chunk(b"IEND", b"")
+    )
+    flattened.append(path.name)
+
+if flattened:
+    print(f"[ios-prepare] flattened {len(flattened)} app icon(s) to opaque RGB (#{background})")
+PY
+fi
+
 # xcodegen can reintroduce libapp.a in Copy Bundle Resources — remove it.
 PBXPROJ="$GEN/medousa-home.xcodeproj/project.pbxproj"
 if [[ -f "$PBXPROJ" ]]; then

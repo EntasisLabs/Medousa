@@ -3,8 +3,12 @@
 const WORD_WRAP_KEY = "medousa-code-editor-word-wrap";
 const TAB_SIZE_KEY = "medousa-code-editor-tab-size";
 const LINE_NUMBERS_KEY = "medousa-code-editor-line-numbers";
+const FONT_SIZE_KEY = "medousa-code-editor-font-size";
+const INDENT_GUIDES_KEY = "medousa-code-editor-indent-guides";
 const OUTLINE_OPEN_KEY = "medousa-code-editor-outline-open";
 const PROBLEMS_OPEN_KEY = "medousa-code-editor-problems-open";
+
+export type CodeEditorFontSize = 12 | 13 | 14 | 15 | 16;
 
 function readBool(key: string, defaultValue: boolean): boolean {
   if (typeof localStorage === "undefined") return defaultValue;
@@ -32,6 +36,28 @@ export function readCodeEditorLineNumbers(): boolean {
 
 export function writeCodeEditorLineNumbers(enabled: boolean): void {
   writeBool(LINE_NUMBERS_KEY, enabled);
+}
+
+export function readCodeEditorIndentGuides(): boolean {
+  return readBool(INDENT_GUIDES_KEY, true);
+}
+
+export function writeCodeEditorIndentGuides(enabled: boolean): void {
+  writeBool(INDENT_GUIDES_KEY, enabled);
+}
+
+export function readCodeEditorFontSize(): CodeEditorFontSize {
+  if (typeof localStorage === "undefined") return 13;
+  const raw = localStorage.getItem(FONT_SIZE_KEY);
+  const n = raw ? Number.parseInt(raw, 10) : 13;
+  return n === 12 || n === 14 || n === 15 || n === 16 ? n : 13;
+}
+
+export function writeCodeEditorFontSize(size: number): void {
+  if (typeof localStorage === "undefined") return;
+  const next: CodeEditorFontSize =
+    size === 12 || size === 14 || size === 15 || size === 16 ? size : 13;
+  localStorage.setItem(FONT_SIZE_KEY, String(next));
 }
 
 export function readCodeEditorTabSize(): number {

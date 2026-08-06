@@ -256,7 +256,7 @@
       {#if flows.loading && flows.workflows.length === 0}
         <p class="workshop-muted">Loading flows…</p>
       {:else if flows.error}
-        <p class="text-sm text-warning-400">{flows.error}</p>
+        <p class="text-sm text-content-warning">{flows.error}</p>
       {:else if filtered.length === 0}
         <div class="space-y-4">
           <p class="text-sm text-surface-200">
@@ -313,7 +313,7 @@
                     </p>
                   {/if}
                 </div>
-                <div class="shrink-0 text-right text-[11px] text-surface-400">
+                <div class="shrink-0 text-right text-[11px] text-content-tertiary">
                   <p>{flows.statusLabel(entry.status)}</p>
                   <p class="mt-0.5">{flows.formatTimestamp(entry.created_at_utc)}</p>
                 </div>
@@ -324,7 +324,7 @@
       {/if}
 
       {#if flows.actionMessage && !flows.composerOpen}
-        <p class="mt-4 text-xs text-primary-300">{flows.actionMessage}</p>
+        <p class="mt-4 text-xs text-content-link">{flows.actionMessage}</p>
       {/if}
     </div>
 
@@ -379,7 +379,7 @@
           {#if flows.detailLoadingId === selected.workflow_id}
             <p class="workshop-muted mt-4 text-sm">Loading flow detail…</p>
           {:else if flows.detailErrorById[selected.workflow_id]}
-            <p class="mt-4 text-sm text-warning-400">
+            <p class="mt-4 text-sm text-content-warning">
               {flows.detailErrorById[selected.workflow_id]}
             </p>
           {:else if selectedDetail}
@@ -425,7 +425,7 @@
                   {#if selectedDetail.step_results.length > 0}
                     {@const result = selectedDetail.step_results.find((row) => row.id === step.id)}
                     {#if result}
-                      <p class="mt-1 text-primary-300">
+                      <p class="mt-1 text-content-link">
                         {flows.statusLabel(result.status)}
                         {#if result.error}
                           · {result.error}
@@ -442,7 +442,7 @@
             {#if flows.runsLoadingId === selected.workflow_id}
               <p class="workshop-muted text-sm">Loading run history…</p>
             {:else if flows.runsErrorById[selected.workflow_id]}
-              <p class="text-sm text-warning-400">
+              <p class="text-sm text-content-warning">
                 {flows.runsErrorById[selected.workflow_id]}
               </p>
             {:else if selectedRuns.length === 0}

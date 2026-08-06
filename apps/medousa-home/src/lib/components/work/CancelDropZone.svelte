@@ -45,10 +45,10 @@
   class="mx-4 text-center text-[11px] transition-all {active || busy
     ? 'mb-2 border-b border-dashed px-2 py-1.5'
     : 'mb-0 h-0 overflow-hidden border-0 py-0 opacity-0'} {active
-    ? 'border-error-500/60 bg-error-500/5 text-error-300'
+    ? 'border-error-500/60 bg-error-500/5 text-content-error'
     : busy
-      ? 'border-surface-500/30 text-surface-400'
-      : 'border-surface-500/30 text-surface-500'}"
+      ? 'border-surface-500/30 text-content-tertiary'
+      : 'border-surface-500/30 text-content-quiet'}"
   role="region"
   aria-label="Cancel work drop zone"
   aria-hidden={!active && !busy}
@@ -64,6 +64,6 @@
     Drag an in-flight card here to cancel
   {/if}
   {#if lastMessage}
-    <p class="mt-1 text-xs text-surface-500">{lastMessage}</p>
+    <p class="mt-1 text-xs text-content-quiet">{lastMessage}</p>
   {/if}
 </div>

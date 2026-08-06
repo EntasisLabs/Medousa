@@ -10,7 +10,7 @@
 
 <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
   <div class="shrink-0 border-b border-surface-500/35 px-4 py-2">
-    <p class="text-xs text-surface-400">
+    <p class="text-xs text-content-tertiary">
       {#if data.sheetName}
         Sheet: {data.sheetName}
       {:else}
@@ -22,12 +22,12 @@
 
   <div class="min-h-0 flex-1 overflow-auto p-4">
     {#if data.rows.length === 0 && data.totalRows === 0}
-      <p class="text-sm text-surface-500">This sheet is empty.</p>
+      <p class="text-sm text-content-quiet">This sheet is empty.</p>
     {:else}
       <table class="w-full min-w-[520px] border-collapse text-sm">
         <thead>
           <tr
-            class="sticky top-0 z-10 border-b border-surface-500/50 bg-surface-950/95 text-left text-xs uppercase tracking-wide text-surface-400"
+            class="sticky top-0 z-10 border-b border-surface-500/50 bg-surface-950/95 text-left text-xs uppercase tracking-wide text-content-tertiary"
           >
             {#each data.headers as header, colIndex (header + colIndex)}
               <th class="px-2 py-2 font-medium">{header}</th>
@@ -49,7 +49,7 @@
     {/if}
 
     {#if data.truncated}
-      <p class="mt-3 text-xs text-surface-500">
+      <p class="mt-3 text-xs text-content-quiet">
         Showing first {data.rows.length} of {data.totalRows} rows.
       </p>
     {/if}

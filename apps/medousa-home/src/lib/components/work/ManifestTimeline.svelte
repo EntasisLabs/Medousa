@@ -34,7 +34,7 @@
 
 <section class="manifest-timeline" aria-label="Manifestation timeline">
   <div class="mb-3 flex items-center justify-between gap-2">
-    <h2 class="text-[11px] font-medium uppercase tracking-wide text-surface-500">
+    <h2 class="text-[11px] font-medium uppercase tracking-wide text-content-quiet">
       Timeline
     </h2>
     {#if allTools.length > 0}
@@ -50,13 +50,13 @@
   </div>
 
   {#if toolsOpen && allTools.length > 0}
-    <p class="mb-3 text-[10px] leading-relaxed text-surface-500">
+    <p class="mb-3 text-[10px] leading-relaxed text-content-quiet">
       {allTools.map((tool) => formatToolName(tool)).join(" · ")}
     </p>
   {/if}
 
   {#if events.length === 0}
-    <p class="text-sm text-surface-500">No events yet — work is just starting.</p>
+    <p class="text-sm text-content-quiet">No events yet — work is just starting.</p>
   {:else}
     <ol class="manifest-timeline-list">
       {#each events as event, index (event.id)}
@@ -67,14 +67,14 @@
           <span class="manifest-timeline-dot" aria-hidden="true"></span>
           <div class="min-w-0 flex-1 pb-4">
             <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-              <span class="text-[10px] font-medium uppercase tracking-wide text-primary-300/80">
+              <span class="text-[10px] font-medium uppercase tracking-wide text-content-link/80">
                 {formatWorkspaceEventKind(event.kind)}
               </span>
-              <span class="text-[10px] text-surface-600">{formatTime(event.timestamp_utc)}</span>
+              <span class="text-[10px] text-content-faint">{formatTime(event.timestamp_utc)}</span>
             </div>
             <p class="mt-1 text-sm leading-relaxed text-surface-200">{event.summary}</p>
             {#if event.detail_line?.trim()}
-              <p class="mt-1 text-[11px] text-surface-500">{event.detail_line}</p>
+              <p class="mt-1 text-[11px] text-content-quiet">{event.detail_line}</p>
             {/if}
             {#if vaultPath && onOpenNote}
               <button
@@ -86,7 +86,7 @@
               </button>
             {/if}
             {#if eventTools.length > 0}
-              <p class="mt-1 font-mono text-[10px] text-surface-600">
+              <p class="mt-1 font-mono text-[10px] text-content-faint">
                 {eventTools.map((tool) => formatToolName(tool)).join(" · ")}
               </p>
             {/if}

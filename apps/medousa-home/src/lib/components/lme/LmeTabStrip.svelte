@@ -117,8 +117,8 @@
       <div
         class="group flex max-w-[200px] shrink-0 items-center gap-1 rounded-t-md border border-b-0 px-2 py-1 text-[11px]
           {active
-          ? 'border-surface-500/55 bg-surface-900 text-primary-300'
-          : 'border-transparent text-surface-400 hover:bg-surface-800/70'}"
+          ? 'border-surface-500/55 bg-surface-900 text-content-link'
+          : 'border-transparent text-content-tertiary hover:bg-surface-800/70'}"
         role="presentation"
       >
         {#if renamingTabId === tab.tabId && tab.kind === "script"}

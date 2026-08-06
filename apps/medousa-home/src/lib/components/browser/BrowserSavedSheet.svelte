@@ -80,9 +80,9 @@
   backdrop={true}
 >
   {#if loading}
-    <p class="px-3 py-4 text-sm text-surface-400">Loading…</p>
+    <p class="px-3 py-4 text-sm text-content-tertiary">Loading…</p>
   {:else if quick.length === 0 && library.length === 0 && historyEntries.length === 0}
-    <p class="px-4 py-6 text-center text-sm text-surface-400">
+    <p class="px-4 py-6 text-center text-sm text-content-tertiary">
       Star pages or save to Library to see them here.
     </p>
   {:else}
@@ -94,12 +94,12 @@
           class="browser-popover-row"
           onclick={() => navigate(entry.url)}
         >
-          <History size={15} class="shrink-0 text-surface-400" />
+          <History size={15} class="shrink-0 text-content-tertiary" />
           <span class="min-w-0 flex-1">
             <span class="block truncate text-sm text-surface-50">{entry.title || entry.url}</span>
-            <span class="block truncate text-[11px] text-surface-400">{entry.url}</span>
+            <span class="block truncate text-[11px] text-content-tertiary">{entry.url}</span>
           </span>
-          <ExternalLink size={12} class="shrink-0 text-surface-500" />
+          <ExternalLink size={12} class="shrink-0 text-content-quiet" />
         </button>
       {/each}
     {/if}
@@ -115,9 +115,9 @@
           <Star size={15} class="shrink-0 text-amber-400" />
           <span class="min-w-0 flex-1">
             <span class="block truncate text-sm text-surface-50">{entry.title}</span>
-            <span class="block truncate text-[11px] text-surface-400">{entry.url}</span>
+            <span class="block truncate text-[11px] text-content-tertiary">{entry.url}</span>
           </span>
-          <ExternalLink size={12} class="shrink-0 text-surface-500" />
+          <ExternalLink size={12} class="shrink-0 text-content-quiet" />
         </button>
       {/each}
     {/if}
@@ -127,10 +127,10 @@
       {#each library as entry (entry.path)}
         <div class="browser-popover-row-group">
           <button type="button" class="browser-popover-row flex-1" onclick={() => navigate(entry.url)}>
-            <FileText size={15} class="shrink-0 text-surface-400" />
+            <FileText size={15} class="shrink-0 text-content-tertiary" />
             <span class="min-w-0 flex-1">
               <span class="block truncate text-sm text-surface-50">{entry.title}</span>
-              <span class="block truncate text-[11px] text-surface-400">{entry.url}</span>
+              <span class="block truncate text-[11px] text-content-tertiary">{entry.url}</span>
             </span>
           </button>
           <button

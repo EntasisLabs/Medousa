@@ -181,7 +181,7 @@
     margin: 0.4rem 0 0;
     font-size: 0.82rem;
     line-height: 1.45;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .liquid-brief-tone {
@@ -190,7 +190,7 @@
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .liquid-brief-sections {
@@ -256,7 +256,7 @@
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .liquid-brief-source-list {
@@ -277,7 +277,7 @@
     padding: 0;
     border: 0;
     background: transparent;
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
     font: inherit;
     text-align: left;
     text-decoration: none;
@@ -296,7 +296,7 @@
   .liquid-brief-source-index {
     font-size: 0.7rem;
     font-variant-numeric: tabular-nums;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     flex-shrink: 0;
   }
 
@@ -311,6 +311,6 @@
     font-size: 0.7rem;
     font-style: italic;
     line-height: 1.4;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 </style>

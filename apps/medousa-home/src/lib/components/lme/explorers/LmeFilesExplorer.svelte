@@ -84,7 +84,7 @@
     {#if searching}
       <div class="flex h-full min-h-0 flex-col overflow-y-auto px-1.5 py-1">
         {#if externalHits.length === 0}
-          <p class="px-2 py-4 text-sm text-surface-500">No files match.</p>
+          <p class="px-2 py-4 text-sm text-content-quiet">No files match.</p>
         {:else}
           <ul class="space-y-0.5">
             {#each externalHits as entry (entry.path)}
@@ -112,10 +112,10 @@
   >
     {#if searchExpanded}
       <div class="lme-dock-search-expand flex min-w-0 flex-1 items-center gap-1">
-        <Search size={14} strokeWidth={1.75} class="shrink-0 text-surface-500" aria-hidden="true" />
+        <Search size={14} strokeWidth={1.75} class="shrink-0 text-content-quiet" aria-hidden="true" />
         <input
           bind:this={searchInputEl}
-          class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-surface-500 focus:outline-none focus:ring-0"
+          class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-content-quiet focus:outline-none focus:ring-0"
           type="search"
           placeholder="Search files…"
           value={query}

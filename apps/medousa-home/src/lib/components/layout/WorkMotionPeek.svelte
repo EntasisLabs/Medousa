@@ -30,7 +30,7 @@
           <p class="mt-0.5 line-clamp-2 text-left text-sm leading-snug text-surface-100">
             {formatCardTitle(card)}
           </p>
-          <p class="mt-1 truncate font-mono text-[10px] text-surface-500">
+          <p class="mt-1 truncate font-mono text-[10px] text-content-quiet">
             {formatStatusLabel(card.status_label)}
           </p>
         </button>

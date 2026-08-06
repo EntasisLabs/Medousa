@@ -7,6 +7,7 @@
     FileCode2,
     ListTree,
     LoaderCircle,
+    Pencil,
     RotateCcw,
     Save,
     SquareTerminal,
@@ -14,11 +15,14 @@
     Orbit,
     Play,
     Sparkles,
+    UserRound,
     X,
     Search,
   } from "@lucide/svelte";
   import CodeMirrorHost from "$lib/components/code/CodeMirrorHost.svelte";
   import CodeBreadcrumbs from "$lib/components/code/CodeBreadcrumbs.svelte";
+  import DiffStack from "$lib/components/diff/DiffStack.svelte";
+  import { buildTextDiff } from "$lib/diff/buildTextDiff";
   import CodeEditorContextMenu, {
     type CodeEditorMenuAction,
   } from "$lib/components/code/CodeEditorContextMenu.svelte";
@@ -67,10 +71,17 @@
   import { isCoLocatedWorkshop } from "$lib/utils/workshopLocality";
   import { formatShortcut } from "$lib/platform";
   import {
+    readCodeEditorFontSize,
+    readCodeEditorIndentGuides,
     readCodeEditorLineNumbers,
+    readCodeEditorTabSize,
     readCodeEditorWordWrap,
+    writeCodeEditorFontSize,
+    writeCodeEditorIndentGuides,
     writeCodeEditorLineNumbers,
+    writeCodeEditorTabSize,
     writeCodeEditorWordWrap,
+    type CodeEditorFontSize,
   } from "$lib/config/codeEditorPreferences";
   import { codeEditorFind } from "$lib/stores/codeEditorFind.svelte";
   import { codeEditorStatus } from "$lib/stores/codeEditorStatus.svelte";
@@ -115,6 +126,10 @@
   let surfaceError = $state<string | null>(null);
   let wordWrap = $state(readCodeEditorWordWrap());
   let showLineNumbers = $state(readCodeEditorLineNumbers());
+  let indentGuides = $state(readCodeEditorIndentGuides());
+  let fontSize = $state<CodeEditorFontSize>(readCodeEditorFontSize());
+  let tabSizePref = $state(readCodeEditorTabSize());
+  let editorPrefsEpoch = $state(0);
   let findOpenByTabId = $state<Record<string, boolean>>({});
   let terminalDockOpen = $state(false);
   let dockSessionId = $state<string | null>(null);
@@ -203,6 +218,16 @@
   const agentHasControl = $derived(
     Boolean(context?.executorKind && context.executorKind !== "human"),
   );
+  const canBeginEdit = $derived(
+    Boolean(
+      interactive &&
+        !agentHasControl &&
+        detail?.allowed_actions.begin_attempt.allowed,
+    ),
+  );
+  /** Soft lease: typing is allowed when a human attempt can begin. */
+  const bufferInteractive = $derived(editable || canBeginEdit);
+  let beginEditPromise = $state<Promise<void> | null>(null);
   const statusControlLabel = $derived.by(() => {
     if (agentHasControl) {
       return context?.executorKind === "cursor" ? "Cursor working" : "Codex working";
@@ -254,12 +279,14 @@
     projectTasks.find((task) => task.id === selectedTaskId) ?? projectTasks[0] ?? null,
   );
   const workspaceProblemRows = $derived(
-    problems.map((problem) => ({
-      path: activeTab?.path ?? "Current file",
-      line: problem.line,
-      message: problem.message,
-      severity: problem.severity === "error" ? 1 : 2,
-    })),
+    [...problems]
+      .map((problem) => ({
+        path: activeTab?.path ?? "Current file",
+        line: problem.line,
+        message: problem.message,
+        severity: problem.severity === "error" ? 1 : 2,
+      }))
+      .sort((a, b) => a.severity - b.severity || a.line - b.line),
   );
   const canReference = $derived(Boolean(languageCapabilities.referencesProvider));
   const canRename = $derived(Boolean(languageCapabilities.renameProvider));
@@ -375,6 +402,28 @@
   function toggleLineNumbers() {
     showLineNumbers = !showLineNumbers;
     writeCodeEditorLineNumbers(showLineNumbers);
+  }
+
+  function toggleIndentGuides() {
+    indentGuides = !indentGuides;
+    writeCodeEditorIndentGuides(indentGuides);
+    editorPrefsEpoch += 1;
+  }
+
+  function cycleFontSize() {
+    const order: CodeEditorFontSize[] = [12, 13, 14, 15, 16];
+    const next = order[(order.indexOf(fontSize) + 1) % order.length] ?? 13;
+    fontSize = next;
+    writeCodeEditorFontSize(next);
+    editorPrefsEpoch += 1;
+  }
+
+  function cycleTabSize() {
+    const order = [2, 4, 8] as const;
+    const next = order[(order.indexOf(tabSizePref as 2 | 4 | 8) + 1) % order.length] ?? 2;
+    tabSizePref = next;
+    writeCodeEditorTabSize(next);
+    editorPrefsEpoch += 1;
   }
 
   function handleCursorChanged(
@@ -611,9 +660,13 @@
 
   async function startEditing() {
     if (!detail || !detail.allowed_actions.begin_attempt.allowed) return;
+    if (beginEditPromise) {
+      await beginEditPromise;
+      return;
+    }
     saving = true;
     surfaceError = null;
-    try {
+    beginEditPromise = (async () => {
       const begun = await beginHumanAttempt(detail.id);
       undertakings.setActiveFromItem(begun.item, {
         leaseId: begun.lease.lease_id,
@@ -621,10 +674,21 @@
         executorKind: "human",
       });
       await undertakings.refreshDetail();
+    })();
+    try {
+      await beginEditPromise;
     } catch (err) {
       surfaceError = err instanceof Error ? err.message : String(err);
     } finally {
+      beginEditPromise = null;
       saving = false;
+    }
+  }
+
+  async function onDraftChanged(tabIdValue: string, value: string) {
+    codeWorkspace.updateDraft(tabIdValue, value);
+    if (!editable && canBeginEdit) {
+      await startEditing();
     }
   }
 
@@ -1322,18 +1386,30 @@
         <details class="relative">
           <summary class="scripts-workbench-toolbar-btn cursor-pointer list-none [&::-webkit-details-marker]:hidden" title="Editor options" aria-label="Editor options">•••</summary>
           <div class="absolute right-0 top-full z-30 mt-1 w-44 rounded-md border border-surface-500/40 bg-surface-900 p-1 shadow-xl">
-            <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-surface-300 hover:bg-surface-800" onclick={toggleWordWrap}>
+            <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-content-secondary hover:bg-surface-800" onclick={toggleWordWrap}>
               <span>Word wrap</span>
-              <span class="text-surface-500">{wordWrap ? "On" : "Off"}</span>
+              <span class="text-content-quiet">{wordWrap ? "On" : "Off"}</span>
             </button>
-            <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-surface-300 hover:bg-surface-800" onclick={toggleLineNumbers}>
+            <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-content-secondary hover:bg-surface-800" onclick={toggleLineNumbers}>
               <span>Line numbers</span>
-              <span class="text-surface-500">{showLineNumbers ? "On" : "Off"}</span>
+              <span class="text-content-quiet">{showLineNumbers ? "On" : "Off"}</span>
+            </button>
+            <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-content-secondary hover:bg-surface-800" onclick={toggleIndentGuides}>
+              <span>Indent guides</span>
+              <span class="text-content-quiet">{indentGuides ? "On" : "Off"}</span>
+            </button>
+            <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-content-secondary hover:bg-surface-800" onclick={cycleFontSize}>
+              <span>Font size</span>
+              <span class="text-content-quiet">{fontSize}px</span>
+            </button>
+            <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-content-secondary hover:bg-surface-800" onclick={cycleTabSize}>
+              <span>Tab size</span>
+              <span class="text-content-quiet">{tabSizePref}</span>
             </button>
             {#if projectTasks.length > 1}
               <label class="block border-t border-surface-500/20 px-2 pb-1.5 pt-1">
-                <span class="text-[9px] uppercase tracking-wider text-surface-500">Project command</span>
-                <select class="mt-1 w-full rounded bg-surface-800 px-1.5 py-1 text-[10px] text-surface-300 outline-none" aria-label="Project command" bind:value={selectedTaskId}>
+                <span class="text-[9px] uppercase tracking-wider text-content-quiet">Project command</span>
+                <select class="mt-1 w-full rounded bg-surface-800 px-1.5 py-1 text-[10px] text-content-secondary outline-none" aria-label="Project command" bind:value={selectedTaskId}>
                   {#each projectTasks as task (task.id)}
                     <option value={task.id}>{task.label}</option>
                   {/each}
@@ -1341,19 +1417,19 @@
               </label>
             {/if}
             {#if projectTasks.some((task) => task.kind === "test")}
-              <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-surface-300 hover:bg-surface-800" onclick={() => void toggleTests()}>
+              <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-content-secondary hover:bg-surface-800" onclick={() => void toggleTests()}>
                 <span>Discovered tests</span>
-                <span class="text-surface-500">{testsOpen ? "Hide" : "Show"}</span>
+                <span class="text-content-quiet">{testsOpen ? "Hide" : "Show"}</span>
               </button>
             {/if}
             {#if canFormat && editable}
-              <button type="button" class="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-surface-300 hover:bg-surface-800 disabled:opacity-40" disabled={languageActionRunning} onclick={() => void runLanguageAction("format")}>Format document</button>
+              <button type="button" class="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-content-secondary hover:bg-surface-800 disabled:opacity-40" disabled={languageActionRunning} onclick={() => void runLanguageAction("format")}>Format document</button>
             {/if}
             {#if canCodeAction && editable}
-              <button type="button" class="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-surface-300 hover:bg-surface-800 disabled:opacity-40" disabled={languageActionRunning} onclick={() => void runLanguageAction("organize_imports")}>Organize imports</button>
+              <button type="button" class="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-content-secondary hover:bg-surface-800 disabled:opacity-40" disabled={languageActionRunning} onclick={() => void runLanguageAction("organize_imports")}>Organize imports</button>
             {/if}
             {#if lspError}
-              <button type="button" class="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-warning-400 hover:bg-surface-800 disabled:opacity-40" disabled={repairingLanguage} onclick={() => void repairLanguageSupport()}>{repairingLanguage ? "Repairing…" : "Repair language support"}</button>
+              <button type="button" class="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-content-warning hover:bg-surface-800 disabled:opacity-40" disabled={repairingLanguage} onclick={() => void repairLanguageSupport()}>{repairingLanguage ? "Repairing…" : "Repair language support"}</button>
             {/if}
           </div>
         </details>
@@ -1372,17 +1448,17 @@
             disabled={saving}
             onclick={() => void reclaimHuman()}
             aria-label="Resume editing"
-            title="Resume editing"
-          ><Save size={14} strokeWidth={1.75} /></button>
-        {:else if !editable && detail?.allowed_actions.begin_attempt.allowed}
+            title="Resume editing — take the file back from the agent"
+          ><UserRound size={14} strokeWidth={1.75} /></button>
+        {:else if !editable && canBeginEdit}
           <button
             type="button"
             class="scripts-workbench-toolbar-btn scripts-workbench-toolbar-btn-primary"
             disabled={saving}
             onclick={() => void startEditing()}
             aria-label="Edit file"
-            title="Start editing"
-          ><Save size={14} strokeWidth={1.75} /></button>
+            title="Start editing (or just type)"
+          ><Pencil size={14} strokeWidth={1.75} /></button>
         {:else}
           <button
             type="button"
@@ -1425,13 +1501,13 @@
           </div>
         {/if}
         {#if activeTab.loading}
-          <div class="absolute inset-0 z-10 flex items-center justify-center bg-surface-950/70 text-xs text-surface-400">
+          <div class="absolute inset-0 z-10 flex items-center justify-center bg-surface-950/70 text-xs text-content-tertiary">
             <LoaderCircle size={14} class="mr-2 animate-spin" />Opening source…
           </div>
         {/if}
         {#if !activeTab.loading && activeTab.digest}
           {@const editorTab = activeTab}
-          {#key editorTab.tabId}
+          {#key `${editorTab.tabId}:${editorPrefsEpoch}`}
             <CodeMirrorHost
               bind:this={editor}
               value={editorTab.draft}
@@ -1439,14 +1515,14 @@
               {documentUri}
               lspLanguageId={editorTab.language}
               client={lspClient}
-              readOnly={!editable}
+              readOnly={!bufferInteractive}
               contentSyncKey={editorTab.syncKey}
               changedLines={reviewChangedLines}
               conventionIndentStyle={editorConventions.indent_style ?? null}
               conventionTabSize={Number.parseInt(editorConventions.indent_size ?? editorConventions.tab_width ?? "", 10) || null}
               {wordWrap}
               {showLineNumbers}
-              onchange={(value) => codeWorkspace.updateDraft(editorTab.tabId, value)}
+              onchange={(value) => void onDraftChanged(editorTab.tabId, value)}
               onCursorChanged={(cursor) => handleCursorChanged(editorTab, cursor)}
               onSelectionChanged={(selection) => (editorSelection = selection.text ? selection : null)}
               onProblemsChanged={syncProblems}
@@ -1454,7 +1530,7 @@
             />
           {/key}
         {:else if !activeTab.loading}
-          <div class="flex h-full min-h-48 items-center justify-center p-6 text-xs text-surface-500">
+          <div class="flex h-full min-h-48 items-center justify-center p-6 text-xs text-content-quiet">
             This file is not plain text, so Medousa cannot edit it here.
           </div>
         {/if}
@@ -1464,14 +1540,14 @@
     {#if contextPanel}
       <div class="max-h-44 shrink-0 overflow-y-auto border-t border-surface-500/30 bg-surface-950/80">
         <div class="sticky top-0 z-10 flex items-center justify-between border-b border-surface-500/25 bg-surface-950 px-2 py-1">
-          <span class="text-[9px] font-medium uppercase tracking-wider text-surface-400">
+          <span class="text-[9px] font-medium uppercase tracking-wider text-content-tertiary">
             {contextPanel === "problems" ? "Issues" : contextPanel === "references" ? "Uses" : "Structure"}
           </span>
-          <button type="button" class="rounded p-0.5 text-surface-500 hover:text-surface-200" aria-label="Close context panel" onclick={() => (contextPanel = null)}><X size={11} /></button>
+          <button type="button" class="rounded p-0.5 text-content-quiet hover:text-surface-200" aria-label="Close context panel" onclick={() => (contextPanel = null)}><X size={11} /></button>
         </div>
         {#if contextPanel === "problems"}
           {#if problems.length === 0 && workspaceProblemRows.length === 0}
-            <p class="px-3 py-3 text-[10px] text-surface-500">No issues found in this project.</p>
+            <p class="px-3 py-3 text-[10px] text-content-quiet">No issues found in this project.</p>
           {:else}
             {#each workspaceProblemRows as problem, index (`${problem.path}:${problem.line}:${problem.message}:${index}`)}
               <button
@@ -1484,14 +1560,14 @@
                 }}
               >
                 <CircleAlert size={11} class={problem.severity === 1 ? "mt-0.5 shrink-0 text-rose-300" : "mt-0.5 shrink-0 text-amber-300"} />
-                <span class="min-w-0 flex-1 text-[10px] text-surface-300"><span class="text-surface-500">{problem.path} · </span>{problem.message}</span>
-                <span class="shrink-0 font-mono text-[9px] text-surface-500">{problem.line}</span>
+                <span class="min-w-0 flex-1 text-[10px] text-content-secondary"><span class="text-content-quiet">{problem.path} · </span>{problem.message}</span>
+                <span class="shrink-0 font-mono text-[9px] text-content-quiet">{problem.line}</span>
               </button>
             {/each}
           {/if}
         {:else if contextPanel === "references"}
           {#if references.length === 0}
-            <p class="px-3 py-3 text-[10px] text-surface-500">No other uses found.</p>
+            <p class="px-3 py-3 text-[10px] text-content-quiet">No other uses found.</p>
           {:else}
             {#each references as reference, index (`${reference.uri}:${reference.range?.start?.line}:${index}`)}
               {@const referencePath = pathFromUri(reference.uri)}
@@ -1510,16 +1586,16 @@
                   editor?.revealLine(referenceLine);
                 }}
               >
-                <FileCode2 size={11} class="shrink-0 text-primary-300/70" />
-                <span class="min-w-0 flex-1 truncate text-[10px] text-surface-300">{referencePath ?? reference.uri}</span>
-                <span class="font-mono text-[9px] text-surface-500">{referenceLine}</span>
+                <FileCode2 size={11} class="shrink-0 text-content-link/70" />
+                <span class="min-w-0 flex-1 truncate text-[10px] text-content-secondary">{referencePath ?? reference.uri}</span>
+                <span class="font-mono text-[9px] text-content-quiet">{referenceLine}</span>
               </button>
             {/each}
           {/if}
         {:else if symbolsLoading}
-          <p class="px-3 py-3 text-[10px] text-surface-500">Reading file structure…</p>
+          <p class="px-3 py-3 text-[10px] text-content-quiet">Reading file structure…</p>
         {:else if symbols.length === 0}
-          <p class="px-3 py-3 text-[10px] text-surface-500">No structure is available for this file.</p>
+          <p class="px-3 py-3 text-[10px] text-content-quiet">No structure is available for this file.</p>
         {:else}
           {#each symbols as symbol (`${symbol.name}:${symbolLine(symbol)}`)}
             <button
@@ -1527,9 +1603,9 @@
               class="flex w-full items-center gap-2 border-b border-surface-500/15 px-3 py-1.5 text-left hover:bg-surface-800/60"
               onclick={() => editor?.revealLine(symbolLine(symbol))}
             >
-              <ListTree size={11} class="shrink-0 text-primary-300/70" />
-              <span class="min-w-0 flex-1 truncate text-[10px] text-surface-300">{symbol.name}</span>
-              <span class="font-mono text-[9px] text-surface-500">{symbolLine(symbol)}</span>
+              <ListTree size={11} class="shrink-0 text-content-link/70" />
+              <span class="min-w-0 flex-1 truncate text-[10px] text-content-secondary">{symbol.name}</span>
+              <span class="font-mono text-[9px] text-content-quiet">{symbolLine(symbol)}</span>
             </button>
           {/each}
         {/if}
@@ -1540,26 +1616,26 @@
       <div class="shrink-0 border-t {taskResult.success ? 'border-emerald-500/25 bg-emerald-950/20 text-emerald-200' : 'border-rose-500/30 bg-rose-950/25 text-rose-200'}">
       <button type="button" class="flex w-full items-center justify-between gap-2 px-2.5 py-1 text-left text-[9px]" title="Run this check again" onclick={() => void runDetectedTask()}>
         <span>{taskResult.success ? "Passed" : "Needs attention"} · {taskResult.task.label}</span>
-        <span class="text-current opacity-60">Rerun · {(taskResult.duration_ms / 1000).toFixed(1)}s{taskResult.exit_code != null ? ` · exit ${taskResult.exit_code}` : ""}</span>
+        <span class="text-current">Rerun · {(taskResult.duration_ms / 1000).toFixed(1)}s{taskResult.exit_code != null ? ` · exit ${taskResult.exit_code}` : ""}</span>
       </button>
       {#each taskResult.locations.slice(0, 5) as location (`${location.path}:${location.line}:${location.column}`)}
         <button type="button" class="flex w-full items-center gap-2 border-t border-current/10 px-2.5 py-1 text-left text-[9px] hover:bg-white/5" onclick={() => void openTaskLocation(location.path, location.line)}>
           <span class="min-w-0 flex-1 truncate">{location.message || location.path}</span>
-          <span class="shrink-0 font-mono opacity-60">{location.path}:{location.line}</span>
+          <span class="shrink-0 font-mono">{location.path}:{location.line}</span>
         </button>
       {/each}
       </div>
     {/if}
     {#if testsOpen}
       <div class="max-h-44 shrink-0 overflow-y-auto border-t border-surface-500/25 bg-surface-950/90">
-        <div class="sticky top-0 flex items-center justify-between bg-surface-950 px-2.5 py-1 text-[9px] uppercase tracking-wider text-surface-500"><span>Project tests</span><span>{projectTests.length}</span></div>
+        <div class="sticky top-0 flex items-center justify-between bg-surface-950 px-2.5 py-1 text-[9px] uppercase tracking-wider text-content-quiet"><span>Project tests</span><span>{projectTests.length}</span></div>
         {#if projectTests.length === 0}
-          <p class="px-3 py-3 text-[10px] text-surface-500">No individual tests were discovered. The project test command still works.</p>
+          <p class="px-3 py-3 text-[10px] text-content-quiet">No individual tests were discovered. The project test command still works.</p>
         {:else}
           {#each projectTests as test (test.id)}
             <div class="flex items-center border-t border-surface-500/15">
-              <button type="button" class="min-w-0 flex-1 truncate px-3 py-1.5 text-left text-[10px] text-surface-300 hover:bg-surface-800/60" onclick={() => void openTaskLocation(test.path, test.line)}>{test.label}<span class="ml-2 font-mono text-[9px] text-surface-600">{test.path}:{test.line}</span></button>
-              <button type="button" class="mr-2 rounded px-1.5 py-0.5 text-[9px] text-primary-300 hover:bg-surface-800 disabled:opacity-40" disabled={runningTask} onclick={() => void runDetectedTask(test)}>Run</button>
+              <button type="button" class="min-w-0 flex-1 truncate px-3 py-1.5 text-left text-[10px] text-content-secondary hover:bg-surface-800/60" onclick={() => void openTaskLocation(test.path, test.line)}>{test.label}<span class="ml-2 font-mono text-[9px] text-content-faint">{test.path}:{test.line}</span></button>
+              <button type="button" class="mr-2 rounded px-1.5 py-0.5 text-[9px] text-content-link hover:bg-surface-800 disabled:opacity-40" disabled={runningTask} onclick={() => void runDetectedTask(test)}>Run</button>
             </div>
           {/each}
         {/if}
@@ -1570,9 +1646,9 @@
       <div class="flex min-h-72 flex-1 items-center justify-center p-8 text-center">
         <div class="max-w-sm">
           {#if needsProvision}
-            <FileCode2 size={24} class="mx-auto text-surface-600" />
-            <p class="mt-2 text-xs font-medium text-surface-300">Set up this project</p>
-            <p class="mt-1 text-[10px] leading-relaxed text-surface-500">
+            <FileCode2 size={24} class="mx-auto text-content-faint" />
+            <p class="mt-2 text-xs font-medium text-content-secondary">Set up this project</p>
+            <p class="mt-1 text-[10px] leading-relaxed text-content-quiet">
               {landError || "Create the working copy so the tree and editor can open."}
             </p>
             {#if onProvision}
@@ -1602,9 +1678,9 @@
               {/if}
             </div>
           {:else}
-            <FileCode2 size={24} class="mx-auto text-surface-600" />
-            <p class="mt-2 text-xs font-medium text-surface-300">Open a file</p>
-            <p class="mt-1 text-[10px] leading-relaxed text-surface-500">
+            <FileCode2 size={24} class="mx-auto text-content-faint" />
+            <p class="mt-2 text-xs font-medium text-content-secondary">Open a file</p>
+            <p class="mt-1 text-[10px] leading-relaxed text-content-quiet">
               Jump in with Quick Open, or pick a path from the project tree.
             </p>
             <div class="mt-3 flex flex-wrap items-center justify-center gap-2">
@@ -1641,7 +1717,7 @@
   .code-intent-action {
     border-radius: 0.25rem;
     padding: 0.2rem 0.45rem;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     font-size: 0.625rem;
     white-space: nowrap;
   }
@@ -1661,40 +1737,40 @@
     <button type="button" class="absolute inset-0 bg-black/35" aria-label="Close file picker" onclick={() => (quickOpen = false)}></button>
     <div class="relative w-full max-w-xl overflow-hidden rounded-lg border border-surface-500/50 bg-surface-950 shadow-2xl" role="dialog" aria-modal="true" aria-label="Open a file" tabindex="-1">
       <div class="flex items-center gap-2 border-b border-surface-500/30 px-3">
-        <Search size={14} class="text-surface-500" />
+        <Search size={14} class="text-content-quiet" />
         <input bind:this={quickInput} class="min-w-0 flex-1 bg-transparent py-2.5 text-sm text-surface-100 outline-none" placeholder="File, @symbol, or :line" bind:value={quickQuery} oninput={() => { quickIndex = 0; void refreshQuickSymbols(); }} onkeydown={(event) => {
           if (event.key === "ArrowDown") { event.preventDefault(); quickIndex = Math.min(quickIndex + 1, quickResultCount - 1); }
           if (event.key === "ArrowUp") { event.preventDefault(); quickIndex = Math.max(quickIndex - 1, 0); }
           if (event.key === "Enter") { event.preventDefault(); chooseQuickResult(); }
         }} />
-        <span class="text-[9px] text-surface-600">⌘P</span>
+        <span class="text-[9px] text-content-faint">⌘P</span>
       </div>
       <div class="max-h-[50vh] overflow-y-auto py-1">
         {#if quickMode === "line"}
-          <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-surface-300 hover:bg-surface-800" onclick={chooseQuickLine}>
-            <span class="font-mono text-xs text-primary-300">:{quickQuery.slice(1).trim() || "line"}</span>
-            <span class="text-[10px] text-surface-500">Go to a line in {activeTab?.title}</span>
+          <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-content-secondary hover:bg-surface-800" onclick={chooseQuickLine}>
+            <span class="font-mono text-xs text-content-link">:{quickQuery.slice(1).trim() || "line"}</span>
+            <span class="text-[10px] text-content-quiet">Go to a line in {activeTab?.title}</span>
           </button>
         {:else if quickMode === "symbol" && quickSymbolResults.length === 0}
-          <p class="px-3 py-3 text-xs text-surface-500">No matching project symbols.</p>
+          <p class="px-3 py-3 text-xs text-content-quiet">No matching project symbols.</p>
         {:else if quickMode === "symbol"}
           {#each quickSymbolResults as symbol, index (`${symbol.name}:${symbol.location?.uri}:${symbol.location?.range?.start?.line}`)}
-            <button type="button" class="flex w-full items-center gap-2 px-3 py-1.5 text-left {index === quickIndex ? 'bg-surface-800 text-surface-100' : 'text-surface-400 hover:bg-surface-900'}" onmouseenter={() => (quickIndex = index)} onclick={() => void chooseQuickSymbol(symbol)}>
+            <button type="button" class="flex w-full items-center gap-2 px-3 py-1.5 text-left {index === quickIndex ? 'bg-surface-800 text-surface-100' : 'text-content-tertiary hover:bg-surface-900'}" onmouseenter={() => (quickIndex = index)} onclick={() => void chooseQuickSymbol(symbol)}>
               <ListTree size={12} class="shrink-0 opacity-65" />
               <span class="min-w-0 flex-1 truncate text-xs">{symbol.name}</span>
-              <span class="min-w-0 max-w-[60%] truncate font-mono text-[9px] text-surface-600">{symbol.containerName ?? pathFromUri(symbol.location?.uri) ?? ""}</span>
+              <span class="min-w-0 max-w-[60%] truncate font-mono text-[9px] text-content-faint">{symbol.containerName ?? pathFromUri(symbol.location?.uri) ?? ""}</span>
             </button>
           {/each}
         {:else if quickLoading}
-          <p class="px-3 py-3 text-xs text-surface-500">Reading project files…</p>
+          <p class="px-3 py-3 text-xs text-content-quiet">Reading project files…</p>
         {:else if quickResults.length === 0}
-          <p class="px-3 py-3 text-xs text-surface-500">No matching files.</p>
+          <p class="px-3 py-3 text-xs text-content-quiet">No matching files.</p>
         {:else}
           {#each quickResults as file, index (file.path)}
-            <button type="button" class="flex w-full items-center gap-2 px-3 py-1.5 text-left {index === quickIndex ? 'bg-surface-800 text-surface-100' : 'text-surface-400 hover:bg-surface-900'}" onmouseenter={() => (quickIndex = index)} onclick={() => void chooseQuickFile(file)}>
+            <button type="button" class="flex w-full items-center gap-2 px-3 py-1.5 text-left {index === quickIndex ? 'bg-surface-800 text-surface-100' : 'text-content-tertiary hover:bg-surface-900'}" onmouseenter={() => (quickIndex = index)} onclick={() => void chooseQuickFile(file)}>
               <FileCode2 size={12} class="shrink-0 opacity-65" />
               <span class="min-w-0 flex-1 truncate text-xs">{file.path.split("/").pop()}</span>
-              <span class="min-w-0 max-w-[60%] truncate font-mono text-[9px] text-surface-600">{file.path}</span>
+              <span class="min-w-0 max-w-[60%] truncate font-mono text-[9px] text-content-faint">{file.path}</span>
             </button>
           {/each}
         {/if}
@@ -1707,18 +1783,29 @@
   {@const conflictTab = tabs.find((tab) => tab.tabId === comparingTabId)}
   {@const projectVersion = externalVersions[comparingTabId]}
   {#if conflictTab && projectVersion}
+    {@const conflictFiles = [{
+      path: conflictTab.path,
+      status: "changed",
+      hunks: buildTextDiff(projectVersion.content, conflictTab.draft),
+    }]}
     <div class="fixed inset-0 z-[125] flex items-center justify-center p-4">
       <button type="button" class="absolute inset-0 bg-black/55" aria-label="Close comparison" onclick={() => (comparingTabId = null)}></button>
       <div class="relative flex max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-surface-500/50 bg-surface-950 shadow-2xl" role="dialog" aria-modal="true" aria-label="Compare file versions" tabindex="-1">
         <header class="flex items-center justify-between border-b border-surface-500/30 px-3 py-2">
-          <div><p class="text-xs font-medium text-surface-100">Choose the version to continue with</p><p class="font-mono text-[9px] text-surface-500">{conflictTab.path}</p></div>
-          <button type="button" class="rounded p-1 text-surface-500 hover:text-surface-100" aria-label="Close comparison" onclick={() => (comparingTabId = null)}><X size={13} /></button>
+          <div>
+            <p class="text-xs font-medium text-surface-100">Choose the version to continue with</p>
+            <p class="font-mono text-[9px] text-content-quiet">{conflictTab.path}</p>
+            <p class="mt-0.5 text-[10px] text-content-quiet">Draft vs project — same comparison chrome as Review.</p>
+          </div>
+          <button type="button" class="rounded p-1 text-content-quiet hover:text-surface-100" aria-label="Close comparison" onclick={() => (comparingTabId = null)}><X size={13} /></button>
         </header>
-        <div class="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-2">
-          <section class="flex min-h-48 flex-col border-b border-surface-500/30 md:border-b-0 md:border-r"><p class="border-b border-surface-500/25 px-3 py-1.5 text-[10px] font-medium text-surface-300">My draft</p><pre class="min-h-0 flex-1 overflow-auto p-3 text-[10px] leading-relaxed text-surface-300">{conflictTab.draft}</pre></section>
-          <section class="flex min-h-48 flex-col"><p class="border-b border-surface-500/25 px-3 py-1.5 text-[10px] font-medium text-surface-300">Project version</p><pre class="min-h-0 flex-1 overflow-auto p-3 text-[10px] leading-relaxed text-surface-300">{projectVersion.content}</pre></section>
+        <div class="min-h-0 flex-1 overflow-auto px-3 py-2">
+          <DiffStack files={conflictFiles} mode="side" showJumpList={false} />
         </div>
-        <footer class="flex justify-end gap-2 border-t border-surface-500/30 px-3 py-2"><button type="button" class="rounded px-2 py-1 text-[10px] text-surface-300 hover:bg-surface-800" onclick={() => useProjectVersion(conflictTab)}>Use project version</button><button type="button" class="rounded bg-primary-500/80 px-2 py-1 text-[10px] font-medium text-white" onclick={() => keepDraft(conflictTab)}>Keep my draft</button></footer>
+        <footer class="flex justify-end gap-2 border-t border-surface-500/30 px-3 py-2">
+          <button type="button" class="rounded px-2 py-1 text-[10px] text-content-secondary hover:bg-surface-800" onclick={() => useProjectVersion(conflictTab)}>Use project version</button>
+          <button type="button" class="rounded bg-primary-500/80 px-2 py-1 text-[10px] font-medium text-white" onclick={() => keepDraft(conflictTab)}>Keep my draft</button>
+        </footer>
       </div>
     </div>
   {/if}
@@ -1744,7 +1831,7 @@
     <div class="relative w-full max-w-sm overflow-hidden rounded-lg border border-surface-500/50 bg-surface-950 shadow-2xl" role="dialog" aria-modal="true" aria-label="Rename symbol">
       <div class="border-b border-surface-500/30 px-3 py-2">
         <p class="text-xs font-medium text-surface-100">Rename symbol</p>
-        <p class="text-[10px] text-surface-500">Applies across the project when the language server supports it.</p>
+        <p class="text-[10px] text-content-quiet">Applies across the project when the language server supports it.</p>
       </div>
       <div class="px-3 py-2.5">
         <input
@@ -1766,7 +1853,7 @@
         />
       </div>
       <footer class="flex justify-end gap-2 border-t border-surface-500/30 px-3 py-2">
-        <button type="button" class="rounded px-2 py-1 text-[10px] text-surface-400 hover:bg-surface-800" onclick={cancelInlineRename}>Cancel</button>
+        <button type="button" class="rounded px-2 py-1 text-[10px] text-content-tertiary hover:bg-surface-800" onclick={cancelInlineRename}>Cancel</button>
         <button type="button" class="rounded bg-primary-500/80 px-2 py-1 text-[10px] font-medium text-white disabled:opacity-40" disabled={!renameDraft.trim() || languageActionRunning} onclick={() => void commitInlineRename()}>Rename</button>
       </footer>
     </div>

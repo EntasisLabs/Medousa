@@ -242,7 +242,7 @@
     {#if workshop.loading && workshop.scripts.length === 0}
       <p class="workshop-muted px-3 py-2 text-sm">Loading…</p>
     {:else if workshop.error}
-      <p class="px-3 py-2 text-sm text-error-400">{workshop.error}</p>
+      <p class="px-3 py-2 text-sm text-content-error">{workshop.error}</p>
     {:else if filteredScripts.length === 0}
       <p class="workshop-muted px-3 py-4 text-xs">
         {searching ? "No scripts match." : "No saved scripts yet."}
@@ -317,10 +317,10 @@
   <footer class="lme-side-rail-dock" use:portLmeDock>
     {#if searchExpanded}
       <div class="lme-dock-search-expand flex min-w-0 flex-1 items-center gap-1">
-        <Search size={14} strokeWidth={1.75} class="shrink-0 text-surface-500" aria-hidden="true" />
+        <Search size={14} strokeWidth={1.75} class="shrink-0 text-content-quiet" aria-hidden="true" />
         <input
           bind:this={searchInputEl}
-          class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-surface-500 focus:outline-none focus:ring-0"
+          class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-content-quiet focus:outline-none focus:ring-0"
           type="search"
           placeholder="Search scripts…"
           bind:value={search}
@@ -366,7 +366,7 @@
           <button
             type="button"
             class="vault-dock-icon-btn {dockMenu === 'templates'
-              ? 'bg-surface-800 text-primary-300'
+              ? 'bg-surface-800 text-content-link'
               : ''}"
             aria-haspopup="dialog"
             aria-expanded={dockMenu === "templates"}
@@ -386,7 +386,7 @@
               onkeydown={handleMenuKeydown}
             >
               <div class="lme-scripts-popover-search">
-                <Search size={13} class="shrink-0 text-surface-500" />
+                <Search size={13} class="shrink-0 text-content-quiet" />
                 <input
                   bind:this={templateSearchEl}
                   class="lme-scripts-popover-search-input"
@@ -425,7 +425,7 @@
         <div class="relative shrink-0">
           <button
             type="button"
-            class="vault-dock-icon-btn {dockMenu === 'wasm' ? 'bg-surface-800 text-primary-300' : ''}"
+            class="vault-dock-icon-btn {dockMenu === 'wasm' ? 'bg-surface-800 text-content-link' : ''}"
             aria-haspopup="dialog"
             aria-expanded={dockMenu === "wasm"}
             aria-label="WASM modules"
@@ -469,7 +469,7 @@
                     <ChevronDown
                       size={13}
                       strokeWidth={2}
-                      class="shrink-0 text-surface-500 transition {wasmModuleOpen
+                      class="shrink-0 text-content-quiet transition {wasmModuleOpen
                         ? 'rotate-180'
                         : ''}"
                     />
@@ -574,10 +574,10 @@
                   {:else}
                     <ul class="max-h-28 space-y-1 overflow-y-auto">
                       {#each wasmLifecycleEvents as event (`${event.kind}-${event.generation_id}`)}
-                        <li class="truncate font-mono text-[10px] text-surface-400">
+                        <li class="truncate font-mono text-[10px] text-content-tertiary">
                           <span class="text-surface-200">{event.kind}</span>
                           {#if event.message}
-                            <span class="text-surface-600"> · {event.message}</span>
+                            <span class="text-content-faint"> · {event.message}</span>
                           {/if}
                         </li>
                       {/each}
@@ -613,7 +613,7 @@
     border: 0;
     border-radius: 0.35rem;
     background: transparent;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     opacity: 0;
     transition:
       opacity 120ms ease,

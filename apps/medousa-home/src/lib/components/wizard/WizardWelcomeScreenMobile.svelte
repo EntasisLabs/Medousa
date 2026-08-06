@@ -188,19 +188,19 @@
 </script>
 
 <div class="flex h-full flex-col">
-  <p class="text-[11px] font-semibold uppercase tracking-wide text-primary-300">Connect</p>
+  <p class="text-[11px] font-semibold uppercase tracking-wide text-content-link">Connect</p>
   <h1 id="product-wizard-title" class="mt-2 text-2xl font-semibold text-surface-50">
     Link to your computer
   </h1>
-  <p class="mt-3 text-sm leading-relaxed text-surface-300">
+  <p class="mt-3 text-sm leading-relaxed text-content-secondary">
     Medousa on your phone talks to Medousa on your computer over home Wi‑Fi. Models and memory
     stay on the computer — this app is your window in.
   </p>
 
   <div class="mt-6 rounded-xl border border-primary-500/35 bg-primary-500/10 p-5">
     <div class="flex items-start gap-3">
-      <Laptop class="mt-0.5 h-5 w-5 shrink-0 text-primary-300" aria-hidden="true" />
-      <div class="min-w-0 text-sm text-surface-300">
+      <Laptop class="mt-0.5 h-5 w-5 shrink-0 text-content-link" aria-hidden="true" />
+      <div class="min-w-0 text-sm text-content-secondary">
         <p class="font-medium text-surface-50">On your computer first</p>
         <p class="mt-2 leading-relaxed">
           Open Medousa there and finish setup. On the Pair phone step you'll see a QR code — scan
@@ -256,7 +256,7 @@
     </label>
     {#if daemonUrl && urlLooksValid(daemonUrl)}
       <p class="workshop-faint mt-2 text-xs">
-        Computer address: <span class="font-mono text-surface-300">{daemonUrl}</span>
+        Computer address: <span class="font-mono text-content-secondary">{daemonUrl}</span>
       </p>
     {/if}
   {:else}
@@ -294,7 +294,7 @@
   </div>
 
   {#if statusMessage}
-    <p class="mt-4 text-sm {connected ? 'text-success-200' : 'text-warning-200'}">{statusMessage}</p>
+    <p class="mt-4 text-sm {connected ? 'text-content-success' : 'text-content-warning'}">{statusMessage}</p>
   {/if}
 
   <button

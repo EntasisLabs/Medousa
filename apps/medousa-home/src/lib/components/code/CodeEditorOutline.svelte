@@ -23,13 +23,13 @@
   aria-label="Document outline"
 >
   <div
-    class="flex items-center justify-between border-b border-surface-500/30 px-2 py-1.5 text-[11px] font-medium uppercase tracking-wide text-surface-300"
+    class="flex items-center justify-between border-b border-surface-500/30 px-2 py-1.5 text-[11px] font-medium uppercase tracking-wide text-content-secondary"
   >
     <span>Outline</span>
     {#if onClose}
       <button
         type="button"
-        class="rounded px-1 text-surface-400 hover:bg-surface-700/60 hover:text-surface-100"
+        class="rounded px-1 text-content-tertiary hover:bg-surface-700/60 hover:text-surface-100"
         onclick={() => onClose?.()}
       >
         Hide
@@ -38,7 +38,7 @@
   </div>
   <ul class="min-h-0 flex-1 overflow-y-auto px-1 py-1 text-[12px]">
     {#if symbols.length === 0}
-      <li class="px-2 py-2 text-surface-400">No symbols</li>
+      <li class="px-2 py-2 text-content-tertiary">No symbols</li>
     {:else}
       {#each symbols as sym (sym.name + sym.line)}
         <li>
@@ -47,9 +47,9 @@
             class="flex w-full items-baseline gap-1 rounded px-2 py-0.5 text-left hover:bg-surface-700/50"
             onclick={() => onSelect?.(sym.line)}
           >
-            <span class="shrink-0 text-[10px] uppercase text-surface-500">{sym.kind}</span>
+            <span class="shrink-0 text-[10px] uppercase text-content-quiet">{sym.kind}</span>
             <span class="min-w-0 truncate text-surface-100">{sym.name}</span>
-            <span class="ml-auto shrink-0 text-[10px] text-surface-500">{sym.line}</span>
+            <span class="ml-auto shrink-0 text-[10px] text-content-quiet">{sym.line}</span>
           </button>
         </li>
       {/each}

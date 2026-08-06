@@ -89,7 +89,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     font-size: 0.8125rem;
   }
 </style>

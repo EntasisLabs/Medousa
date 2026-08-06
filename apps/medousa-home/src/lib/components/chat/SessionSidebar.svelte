@@ -323,7 +323,7 @@
     {/if}
 
     {#if chat.sessionsError}
-      <p class="px-3 py-2 text-xs text-error-400">{chat.sessionsError}</p>
+      <p class="px-3 py-2 text-xs text-content-error">{chat.sessionsError}</p>
     {:else if chat.sessionsRefreshing}
       <p class="workshop-faint px-3 py-1 text-[11px]">Updating sessions…</p>
     {/if}
@@ -423,7 +423,7 @@
           bind:value={renameDraft}
         />
         {#if renameError}
-          <p class="text-xs text-error-400">{renameError}</p>
+          <p class="text-xs text-content-error">{renameError}</p>
         {/if}
         <div class="flex justify-end gap-2">
           <button
@@ -473,7 +473,7 @@
           </button>
         </div>
         {#if deleteError}
-          <p class="text-xs text-error-400">{deleteError}</p>
+          <p class="text-xs text-content-error">{deleteError}</p>
         {/if}
         <div class="flex justify-end gap-2">
           <button

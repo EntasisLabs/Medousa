@@ -51,10 +51,10 @@
       family === "automations"
         ? "gap-1 px-1.5"
         : "gap-1.5 px-2";
-    return `lme-side-mode-btn inline-flex h-8 shrink-0 items-center rounded-md ${pad} text-[0.72rem] font-medium tracking-tight transition-colors ${
+    return `lme-side-mode-btn inline-flex h-8 shrink-0 items-center rounded-md ${pad} text-xs font-medium tracking-tight transition-colors ${
       active === modeId
         ? "bg-surface-700/90 text-surface-50"
-        : "text-surface-400 hover:bg-surface-800/80 hover:text-surface-200"
+        : "text-content-tertiary hover:bg-surface-800/80 hover:text-surface-200"
     }`;
   }
 </script>
@@ -78,7 +78,7 @@
 {#snippet pageChevron(direction: "prev" | "next")}
   <button
     type="button"
-    class="lme-side-mode-btn inline-flex size-8 shrink-0 items-center justify-center rounded-md text-surface-400 transition-colors hover:bg-surface-800/80 hover:text-surface-200"
+    class="lme-side-mode-btn inline-flex size-8 shrink-0 items-center justify-center rounded-md text-content-tertiary transition-colors hover:bg-surface-800/80 hover:text-surface-200"
     title={direction === "next" ? "More automations" : "Back"}
     aria-label={direction === "next"
       ? "Show history"

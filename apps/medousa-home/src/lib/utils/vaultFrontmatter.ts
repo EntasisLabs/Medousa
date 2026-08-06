@@ -166,11 +166,11 @@ export function kindLabel(kind: VaultNoteKind): string {
 export function kindBadgeClass(kind: VaultNoteKind): string {
   switch (kind) {
     case "ledger":
-      return "variant-soft-surface border border-success-500/30 text-success-200";
+      return "variant-soft-surface border border-success-500/30 text-content-success";
     case "daily":
       return "variant-soft-surface border border-primary-500/25 text-primary-200";
     default:
-      return "variant-soft-surface text-surface-300";
+      return "variant-soft-surface text-content-secondary";
   }
 }
 

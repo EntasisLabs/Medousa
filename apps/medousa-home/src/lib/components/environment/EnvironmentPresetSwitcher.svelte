@@ -445,7 +445,7 @@
 
   :global(.env-preset-picker-chevron) {
     flex-shrink: 0;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     transition: transform 140ms ease;
   }
 
@@ -509,7 +509,7 @@
     height: 1.4rem;
     flex-shrink: 0;
     border-radius: 0.3rem;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     background: color-mix(in srgb, var(--color-surface-800) 70%, transparent);
   }
 
@@ -535,12 +535,12 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 0.625rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   :global(.env-preset-picker-row-check) {
     flex-shrink: 0;
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
   }
 
   .workshop-layout-single {
@@ -558,7 +558,7 @@
 
   .workshop-layout-single-meta {
     font-size: 0.6875rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .workshop-layout-appearance {
@@ -605,7 +605,7 @@
     height: 1.75rem;
     flex-shrink: 0;
     border-radius: 0.4rem;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     background: color-mix(in srgb, var(--color-surface-800) 80%, transparent);
   }
 
@@ -638,7 +638,7 @@
     font-weight: 650;
     letter-spacing: 0.03em;
     text-transform: uppercase;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .workshop-layout-chip-value {
@@ -729,11 +729,11 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 0.625rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   :global(.workshop-layout-theme-card-check) {
     flex-shrink: 0;
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
   }
 </style>

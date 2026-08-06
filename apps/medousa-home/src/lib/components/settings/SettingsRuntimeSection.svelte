@@ -5,6 +5,7 @@
   import { workshop } from "$lib/stores/workshop.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
+  import { isTauri } from "$lib/window";
   import {
     HOST_BUS_CHARTER_OPTIONS,
     TOOL_CALL_CHARTER_OPTIONS,
@@ -288,16 +289,41 @@
       shellAllowedBinaries: parseMultilineList(binariesText),
       shellWritableRoots: parseMultilineList(writableRootsText),
     };
+    // Keep the draft→textarea effect from rewriting mid-edit.
+    syncedFrom = JSON.stringify([
+      workshopDefaults.draft.shellAllowedBinaries ?? [],
+      workshopDefaults.draft.shellWritableRoots ?? [],
+    ]);
   }
 
-  function beforeSave(): boolean {
+  function onBinariesInput(event: Event) {
+    binariesText = (event.currentTarget as HTMLTextAreaElement).value;
     syncListsIntoDraft();
-    if (agentToolsOn && binariesEmpty) {
-      return window.confirm(
-        "Agent shell tools are on with an empty binary allowlist. Any command basename inside the jail can run. Save anyway?",
-      );
+  }
+
+  function onWritableRootsInput(event: Event) {
+    writableRootsText = (event.currentTarget as HTMLTextAreaElement).value;
+    syncListsIntoDraft();
+  }
+
+  async function beforeSave(): Promise<boolean> {
+    syncListsIntoDraft();
+    if (!(agentToolsOn && binariesEmpty)) return true;
+    const warning =
+      "Agent shell tools are on with an empty binary allowlist. Any command basename inside the jail can run. Save anyway?";
+    // Prefer plugin `ask` (`dialog|message`). Do not use `window.confirm` in
+    // Tauri — it routes to a removed `dialog.confirm` command and aborts save.
+    if (!isTauri()) return window.confirm(warning);
+    try {
+      const { ask } = await import("@tauri-apps/plugin-dialog");
+      return await ask(warning, { title: "Shell allowlist", kind: "warning" });
+    } catch (err) {
+      workshopDefaults.message =
+        err instanceof Error
+          ? err.message
+          : "Could not confirm empty shell allowlist — save cancelled.";
+      return false;
     }
-    return true;
   }
 </script>
 
@@ -483,7 +509,7 @@
       <div class="prefs-more-body">
         <p class="prefs-footnote mb-2">
           Module names she can call (for example
-          <span class="font-mono text-surface-300">websearch.search</span>).
+          <span class="font-mono text-content-secondary">websearch.search</span>).
         </p>
         <textarea
           class="rt-mono-input"
@@ -620,7 +646,7 @@
       </p>
     {/if}
     {#if workshop.allowlistError}
-      <p class="mt-2 text-xs text-warning-400">{workshop.allowlistError}</p>
+      <p class="mt-2 text-xs text-content-warning">{workshop.allowlistError}</p>
     {/if}
 
     <details class="prefs-more" bind:open={allowlistsOpen}>
@@ -640,7 +666,8 @@
           <textarea
             class="rt-mono-input mt-2"
             rows="4"
-            bind:value={binariesText}
+            value={binariesText}
+            oninput={onBinariesInput}
             placeholder={"git\nls\nrg"}
             readonly={readOnly}
             disabled={readOnly}
@@ -653,7 +680,8 @@
           <textarea
             class="rt-mono-input mt-2"
             rows="3"
-            bind:value={writableRootsText}
+            value={writableRootsText}
+            oninput={onWritableRootsInput}
             placeholder="/Users/you/projects"
             readonly={readOnly}
             disabled={readOnly}
@@ -850,7 +878,7 @@
       </summary>
       <div class="prefs-more-body">
         <p class="prefs-footnote mb-2">
-          <span class="font-mono text-surface-300">KEY=value</span> per line, applied when a turn
+          <span class="font-mono text-content-secondary">KEY=value</span> per line, applied when a turn
           starts.
         </p>
         <textarea
@@ -964,7 +992,7 @@
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .rt-active-title {
@@ -976,7 +1004,7 @@
   .rt-active-meta {
     font-size: 0.7rem;
     line-height: 1.35;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .rt-active-action {
@@ -1024,7 +1052,7 @@
   .prefs-choice-hint {
     font-size: 0.68rem;
     line-height: 1.3;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .prefs-tile {
@@ -1059,7 +1087,7 @@
   .prefs-tile-meta {
     font-size: 0.68rem;
     line-height: 1.3;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .prefs-metric {
@@ -1090,7 +1118,7 @@
 
   .prefs-metric-unit {
     font-size: 0.68rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .prefs-switch {
@@ -1154,7 +1182,7 @@
     padding: var(--prefs-tile-pad);
     font-size: 0.75rem;
     font-weight: 600;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     cursor: pointer;
     list-style: none;
   }
@@ -1174,7 +1202,7 @@
   .prefs-more-summary-meta {
     font-size: 0.68rem;
     font-weight: 500;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   :global(.prefs-more-chevron) {
@@ -1193,7 +1221,7 @@
   .prefs-footnote {
     margin: 0.45rem 0 0;
     font-size: 0.7rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .rt-mono-input {
@@ -1212,7 +1240,7 @@
   }
 
   .rt-mono-input::placeholder {
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .rt-mono-input:focus {

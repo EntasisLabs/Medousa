@@ -196,7 +196,7 @@
     font-weight: 650;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   :global(.canvas-icon-group-label:first-child) {
@@ -211,7 +211,7 @@
     height: 2rem;
     border-radius: 0.375rem;
     border: 0;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     background: transparent;
     cursor: pointer;
   }

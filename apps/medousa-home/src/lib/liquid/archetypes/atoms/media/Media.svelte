@@ -98,7 +98,7 @@
     min-height: 6rem;
     padding: 1rem;
     font-size: 0.75rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .liquid-media-fallback--loading {
@@ -108,6 +108,6 @@
   .liquid-media figcaption {
     padding: 0.4rem 0.65rem;
     font-size: 0.7rem;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
   }
 </style>

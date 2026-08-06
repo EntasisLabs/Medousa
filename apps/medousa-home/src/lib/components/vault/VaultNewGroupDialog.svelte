@@ -31,13 +31,13 @@
       onsubmit={(event) => void handleCreate(event)}
     >
       <h3 id="new-group-title" class="text-base font-semibold">New group</h3>
-      <p class="text-sm text-surface-400">
+      <p class="text-sm text-content-tertiary">
         Create a top-level folder for your notes. Notes can be dragged into it from anywhere in the
         vault.
       </p>
 
       <label class="block space-y-1 text-left text-sm">
-        <span class="text-surface-400">Group name</span>
+        <span class="text-content-tertiary">Group name</span>
         <input
           class="input w-full"
           type="text"

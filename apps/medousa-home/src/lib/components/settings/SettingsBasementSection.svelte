@@ -348,8 +348,8 @@
           {#if settings.daemonMessage}
             <p
               class="mt-2 text-xs {settings.daemonMessage === 'Connected'
-                ? 'text-success-400'
-                : 'text-warning-400'}"
+                ? 'text-content-success'
+                : 'text-content-warning'}"
             >
               {settings.daemonMessage}
             </p>
@@ -358,8 +358,8 @@
       {:else if settings.daemonMessage}
         <p
           class="prefs-footnote {settings.daemonMessage === 'Connected'
-            ? 'text-success-400'
-            : 'text-warning-400'}"
+            ? 'text-content-success'
+            : 'text-content-warning'}"
         >
           {settings.daemonMessage}
         </p>
@@ -384,7 +384,7 @@
           </button>
         </div>
         {#if restartMessage}
-          <p class="prefs-footnote text-surface-400">{restartMessage}</p>
+          <p class="prefs-footnote text-content-tertiary">{restartMessage}</p>
         {/if}
       {/if}
     </div>
@@ -440,7 +440,7 @@
         {#if connectionPrefsError}
           <div class="prefs-tile">
             <span class="prefs-tile-copy">
-              <span class="prefs-tile-title text-warning-300">
+              <span class="prefs-tile-title text-content-warning">
                 Couldn’t read login start settings
               </span>
               <span class="prefs-tile-meta">{connectionPrefsError}</span>
@@ -508,7 +508,7 @@
             {#if configPathsError}
               <div class="prefs-tile">
                 <span class="prefs-tile-copy">
-                  <span class="prefs-tile-title text-warning-300">
+                  <span class="prefs-tile-title text-content-warning">
                     Couldn’t read workshop file paths
                   </span>
                   <span class="prefs-tile-meta">{configPathsError}</span>
@@ -540,7 +540,7 @@
             {#each workshopFiles as file (file.id)}
               <div class="prefs-tile">
                 <span class="prefs-tile-copy">
-                  <span class="prefs-tile-title font-mono text-[0.72rem]">{file.label}</span>
+                  <span class="prefs-tile-title font-mono text-xs">{file.label}</span>
                   <span class="prefs-tile-meta">{file.hint}</span>
                 </span>
                 <button
@@ -589,7 +589,7 @@
               <span class="prefs-tile-cta">Open</span>
             </button>
             {#if runbookError}
-              <p class="prefs-footnote text-warning-300">{runbookError}</p>
+              <p class="prefs-footnote text-content-warning">{runbookError}</p>
             {/if}
 
             {#if isDevBuild}
@@ -695,7 +695,7 @@
   .prefs-tile-meta {
     font-size: 0.68rem;
     line-height: 1.3;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .prefs-tile-cta {
@@ -705,7 +705,7 @@
     padding: 0;
     font-size: 0.72rem;
     font-weight: 600;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     cursor: pointer;
   }
 
@@ -758,7 +758,7 @@
     margin: 0;
     font-size: 0.7rem;
     line-height: 1.4;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .conn-status-icon {
@@ -773,23 +773,23 @@
 
   .conn-status-ok {
     background: rgb(var(--color-success-500) / 0.15);
-    color: rgb(var(--color-success-400));
+    color: rgb(var(--theme-success));
   }
 
   .conn-status-off {
     background: rgb(var(--color-warning-500) / 0.12);
-    color: rgb(var(--color-warning-400));
+    color: rgb(var(--theme-warning));
   }
 
   .conn-pill {
     flex-shrink: 0;
     font-size: 0.65rem;
     font-weight: 600;
-    color: rgb(var(--color-warning-400));
+    color: rgb(var(--theme-warning));
   }
 
   .conn-pill-ok {
-    color: rgb(var(--color-success-400));
+    color: rgb(var(--theme-success));
   }
 
   .conn-edit {
@@ -833,7 +833,7 @@
 
   :global(.prefs-more-chevron) {
     flex-shrink: 0;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     transition: transform 140ms ease;
   }
 
@@ -857,13 +857,13 @@
     gap: 0.75rem;
     margin: 0.2rem 0 0;
     font-size: 0.68rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .conn-kv-row span:last-child {
     min-width: 0;
     text-align: right;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     overflow: hidden;
     text-overflow: ellipsis;
   }

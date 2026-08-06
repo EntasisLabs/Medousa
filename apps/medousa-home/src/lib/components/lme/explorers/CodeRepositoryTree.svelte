@@ -365,13 +365,13 @@
 
 <div class="flex h-full min-h-0 flex-col border-y border-surface-500/20 bg-surface-950/25 {fill ? 'border-y-0' : ''}">
   {#if !prepared}
-    <p class="px-3 py-2 text-[10px] leading-relaxed text-surface-500">
+    <p class="px-3 py-2 text-[10px] leading-relaxed text-content-quiet">
       Set up this project to see and edit its files.
     </p>
   {:else}
     <div class="flex items-center gap-1 border-b border-surface-500/20 px-2 py-1">
       <div class="relative min-w-0 flex-1">
-        <Search size={11} class="pointer-events-none absolute left-1.5 top-1/2 -translate-y-1/2 text-surface-500" />
+        <Search size={11} class="pointer-events-none absolute left-1.5 top-1/2 -translate-y-1/2 text-content-quiet" />
         <input
           bind:this={searchInput}
           type="search"
@@ -396,14 +396,14 @@
       </div>
       <button
         type="button"
-        class="rounded p-1 text-surface-500 hover:bg-surface-800 hover:text-surface-200"
+        class="rounded p-1 text-content-quiet hover:bg-surface-800 hover:text-surface-200"
         aria-label="Refresh project files"
         title="Refresh files"
         onclick={() => void load(false, true)}
       ><RefreshCw size={12} class={loading ? "animate-spin" : ""} /></button>
       <button
         type="button"
-        class="rounded p-1 text-surface-500 hover:bg-surface-800 hover:text-surface-200"
+        class="rounded p-1 text-content-quiet hover:bg-surface-800 hover:text-surface-200"
         aria-label="New file"
         title="New file"
         onclick={() => (creatingPath = !creatingPath)}
@@ -436,15 +436,15 @@
             <button type="submit" class="rounded px-1.5 text-[9px] text-primary-200">Rename</button>
           </form>
         {:else}
-          <span class="min-w-0 flex-1 truncate font-mono text-[9px] text-surface-500">{undertakings.active.selectedPath}</span>
+          <span class="min-w-0 flex-1 truncate font-mono text-[9px] text-content-quiet">{undertakings.active.selectedPath}</span>
         {/if}
-        <button type="button" class="rounded p-1 text-surface-500 hover:bg-surface-800 hover:text-surface-200" title="Rename selected file" aria-label="Rename selected file" disabled={mutating} onclick={() => { renamingPath = undertakings.active?.selectedPath ?? null; renameDestination = renamingPath ?? ""; void tick().then(() => renameInput?.focus()); }}><Pencil size={11} /></button>
-        <button type="button" class="rounded p-1 text-surface-500 hover:bg-rose-950/50 hover:text-rose-200" title="Delete selected file" aria-label="Delete selected file" disabled={mutating} onclick={() => void deleteSelected()}><Trash2 size={11} /></button>
+        <button type="button" class="rounded p-1 text-content-quiet hover:bg-surface-800 hover:text-surface-200" title="Rename selected file" aria-label="Rename selected file" disabled={mutating} onclick={() => { renamingPath = undertakings.active?.selectedPath ?? null; renameDestination = renamingPath ?? ""; void tick().then(() => renameInput?.focus()); }}><Pencil size={11} /></button>
+        <button type="button" class="rounded p-1 text-content-quiet hover:bg-rose-950/50 hover:text-rose-200" title="Delete selected file" aria-label="Delete selected file" disabled={mutating} onclick={() => void deleteSelected()}><Trash2 size={11} /></button>
       </div>
     {/if}
 
     {#if deletedFile}
-      <div class="flex items-center gap-2 border-b border-surface-500/20 bg-surface-900/60 px-2 py-1.5 text-[9px] text-surface-300">
+      <div class="flex items-center gap-2 border-b border-surface-500/20 bg-surface-900/60 px-2 py-1.5 text-[9px] text-content-secondary">
         <span class="min-w-0 flex-1 truncate">Deleted {deletedFile.path}</span>
         <button type="button" class="flex items-center gap-1 rounded px-1.5 py-0.5 text-primary-200 hover:bg-surface-800" disabled={mutating} onclick={() => void undoDelete()}><Undo2 size={10} />Undo</button>
       </div>
@@ -453,11 +453,11 @@
     {#if error}
       <p class="px-3 py-2 text-[10px] text-amber-200">{humanizeForgeMessage(error)}</p>
     {:else if contentSearching}
-      <p class="px-3 py-2 text-[10px] text-surface-500">Searching inside files…</p>
+      <p class="px-3 py-2 text-[10px] text-content-quiet">Searching inside files…</p>
     {:else if contentSearch}
       <div class="min-h-0 flex-1 overflow-y-auto py-1 {fill ? '' : 'max-h-[min(46vh,32rem)]'}" aria-label="File search results">
         {#if contentSearch.hits.length === 0}
-          <p class="px-3 py-2 text-[10px] text-surface-500">No content matches.</p>
+          <p class="px-3 py-2 text-[10px] text-content-quiet">No content matches.</p>
         {:else}
           {#each contentSearch.hits as hit (`${hit.path}:${hit.line}`)}
             <button
@@ -465,8 +465,8 @@
               class="w-full border-b border-surface-500/15 px-2 py-1.5 text-left hover:bg-surface-800/70"
               onclick={() => void openUndertakingLocation({ workId, path: hit.path, line: hit.line })}
             >
-              <span class="block truncate font-mono text-[9px] text-primary-300/80">{hit.path}:{hit.line}</span>
-              <span class="mt-0.5 block truncate text-[10px] text-surface-400">{hit.preview}</span>
+              <span class="block truncate font-mono text-[9px] text-content-link/80">{hit.path}:{hit.line}</span>
+              <span class="mt-0.5 block truncate text-[10px] text-content-tertiary">{hit.preview}</span>
             </button>
           {/each}
         {/if}
@@ -475,16 +475,16 @@
         {/if}
       </div>
     {:else if loading && visibleRows.length === 0}
-      <p class="px-3 py-2 text-[10px] text-surface-500">Loading project files…</p>
+      <p class="px-3 py-2 text-[10px] text-content-quiet">Loading project files…</p>
       <button
         type="button"
-        class="mx-3 mb-2 rounded px-2 py-1 text-[9px] text-primary-300 hover:bg-surface-800"
+        class="mx-3 mb-2 rounded px-2 py-1 text-[9px] text-content-link hover:bg-surface-800"
         onclick={() => void load(false, true)}
       >Retry</button>
     {:else if building && visibleRows.length === 0}
-      <p class="px-3 py-2 text-[10px] text-surface-500">Indexing files…</p>
+      <p class="px-3 py-2 text-[10px] text-content-quiet">Indexing files…</p>
     {:else if !loading && !building && rows.length === 0}
-      <p class="px-3 py-2 text-[10px] text-surface-500">
+      <p class="px-3 py-2 text-[10px] text-content-quiet">
         {query ? "No matching files." : "There are no files to show yet."}
       </p>
     {:else}
@@ -497,7 +497,7 @@
             aria-selected={row.kind === "file" && undertakings.active?.workId === workId
               ? undertakings.active.selectedPath === row.path
               : false}
-            class="flex w-full items-center gap-1 py-0.5 pr-2 text-left text-[10px] text-surface-300 hover:bg-surface-800/70 hover:text-surface-50"
+            class="flex w-full items-center gap-1 py-0.5 pr-2 text-left text-[10px] text-content-secondary hover:bg-surface-800/70 hover:text-surface-50"
             style={`padding-left: ${0.35 + row.depth * 0.8}rem`}
             title={row.path}
             onclick={() => {
@@ -507,15 +507,15 @@
           >
             {#if row.kind === "directory"}
               {#if expanded.has(row.path)}
-                <ChevronDown size={11} class="shrink-0 text-surface-500" />
-                <FolderOpen size={12} class="shrink-0 text-primary-300/75" />
+                <ChevronDown size={11} class="shrink-0 text-content-quiet" />
+                <FolderOpen size={12} class="shrink-0 text-content-link/75" />
               {:else}
-                <ChevronRight size={11} class="shrink-0 text-surface-500" />
-                <Folder size={12} class="shrink-0 text-primary-300/75" />
+                <ChevronRight size={11} class="shrink-0 text-content-quiet" />
+                <Folder size={12} class="shrink-0 text-content-link/75" />
               {/if}
             {:else}
               <span class="w-[11px] shrink-0"></span>
-              <File size={11} class="shrink-0 text-surface-500" />
+              <File size={11} class="shrink-0 text-content-quiet" />
             {/if}
             <span class="min-w-0 flex-1 truncate">{query ? row.path : row.name}</span>
             {#if row.kind === "file" && row.status}
@@ -529,10 +529,10 @@
           </button>
         {/each}
         {#if building}
-          <p class="px-3 py-1 text-[9px] text-surface-500">Indexing remaining files…</p>
+          <p class="px-3 py-1 text-[9px] text-content-quiet">Indexing remaining files…</p>
         {/if}
         {#if hiddenRowCount > 0}
-          <p class="px-3 py-1 text-[9px] text-surface-500">
+          <p class="px-3 py-1 text-[9px] text-content-quiet">
             Showing {visibleRows.length} of {rows.length}. Narrow with Find a file.
           </p>
         {/if}
@@ -543,7 +543,7 @@
         </p>
       {/if}
       {#if query && !contentSearch}
-        <p class="border-t border-surface-500/20 px-2 py-1 text-[9px] text-surface-500">
+        <p class="border-t border-surface-500/20 px-2 py-1 text-[9px] text-content-quiet">
           Press Enter to search inside files.
         </p>
       {/if}

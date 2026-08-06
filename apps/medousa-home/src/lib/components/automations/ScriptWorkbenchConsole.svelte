@@ -87,10 +87,10 @@
     }}
   ></div>
   <div class="scripts-workbench-console-head">
-    <p class="text-[10px] font-medium tracking-[-0.01em] text-surface-400">Output</p>
+    <p class="text-[10px] font-medium tracking-[-0.01em] text-content-tertiary">Output</p>
     <button
       type="button"
-      class="text-[10px] text-surface-500 transition hover:text-surface-300"
+      class="text-[10px] text-content-quiet transition hover:text-content-secondary"
       onclick={onHide}
     >
       Hide
@@ -98,16 +98,16 @@
   </div>
   <div class="scripts-workbench-console-body">
     {#if graphemeScriptEditor.compileError}
-      <p class="mb-2 font-mono text-[11px] text-error-400">
+      <p class="mb-2 font-mono text-[11px] text-content-error">
         {graphemeScriptEditor.compileError}
       </p>
     {:else if graphemeScriptEditor.compileResult}
-      <div class="mb-2 space-y-1 font-mono text-[11px] text-surface-400">
+      <div class="mb-2 space-y-1 font-mono text-[11px] text-content-tertiary">
         {#each graphemeScriptEditor.compileResult.compile_hints as hint (hint)}
           <p>{hint}</p>
         {/each}
         {#each graphemeScriptEditor.compileResult.lint_warnings as warning (warning)}
-          <p class="text-warning-400">{warning}</p>
+          <p class="text-content-warning">{warning}</p>
         {/each}
       </div>
     {/if}

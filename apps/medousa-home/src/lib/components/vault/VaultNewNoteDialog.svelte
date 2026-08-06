@@ -258,7 +258,7 @@
       {#if vault.newNotePrefillPath}
         <p class="vault-interact-note">
           For
-          <span class="font-mono text-surface-300">{vault.newNotePrefillPath}</span>
+          <span class="font-mono text-content-secondary">{vault.newNotePrefillPath}</span>
         </p>
       {/if}
 

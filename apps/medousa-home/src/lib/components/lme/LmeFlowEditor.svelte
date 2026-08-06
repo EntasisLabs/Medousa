@@ -83,7 +83,7 @@
 
 <div class="lme-flow-editor flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
   {#if !active}
-    <p class="px-5 py-5 text-sm text-surface-500 sm:px-7 sm:py-6">
+    <p class="px-5 py-5 text-sm text-content-quiet sm:px-7 sm:py-6">
       Select a flow from the side panel.
     </p>
   {:else if isDraft}
@@ -93,12 +93,12 @@
   {:else if !selected && !selectedDetail}
     <div class="overflow-y-auto px-5 py-5 sm:px-7 sm:py-6">
       {#if active.workflowId && flows.detailLoadingId === active.workflowId}
-        <p class="text-sm text-surface-500">Loading flow…</p>
+        <p class="text-sm text-content-quiet">Loading flow…</p>
       {:else if active.workflowId && flows.detailErrorById[active.workflowId]}
-        <p class="text-sm text-warning-400">{flows.detailErrorById[active.workflowId]}</p>
+        <p class="text-sm text-content-warning">{flows.detailErrorById[active.workflowId]}</p>
       {:else}
-        <p class="text-sm text-surface-500">
-          Flow <span class="font-mono text-surface-300">{active.workflowId}</span> not found.
+        <p class="text-sm text-content-quiet">
+          Flow <span class="font-mono text-content-secondary">{active.workflowId}</span> not found.
         </p>
         <button
           type="button"
@@ -112,7 +112,7 @@
   {:else}
     {@const entry = selected}
     <div class="mx-auto w-full max-w-2xl overflow-y-auto px-5 py-5 sm:px-7 sm:py-6">
-      <p class="text-[11px] tracking-[0.12em] text-surface-500 uppercase">Named flow</p>
+      <p class="text-[11px] tracking-[0.12em] text-content-quiet uppercase">Named flow</p>
       <div class="mt-1 flex flex-wrap items-center gap-2">
         <h2 class="text-xl font-semibold tracking-tight text-surface-50">
           {entry ? flows.labelFor(entry) : active.title}
@@ -142,7 +142,7 @@
         {#if active.workflowId && flows.detailLoadingId === active.workflowId}
           <p class="workshop-muted mt-4 text-sm">Loading flow detail…</p>
         {:else if active.workflowId && flows.detailErrorById[active.workflowId]}
-          <p class="mt-4 text-sm text-warning-400">
+          <p class="mt-4 text-sm text-content-warning">
             {flows.detailErrorById[active.workflowId]}
           </p>
         {:else if selectedDetail}
@@ -182,7 +182,7 @@
                 {#if selectedDetail.step_results.length > 0}
                   {@const result = selectedDetail.step_results.find((row) => row.id === step.id)}
                   {#if result}
-                    <p class="mt-1 text-primary-300">
+                    <p class="mt-1 text-content-link">
                       {flows.statusLabel(result.status)}
                       {#if result.error}
                         · {result.error}
@@ -199,7 +199,7 @@
           {#if active.workflowId && flows.runsLoadingId === active.workflowId}
             <p class="workshop-muted text-sm">Loading run history…</p>
           {:else if active.workflowId && flows.runsErrorById[active.workflowId]}
-            <p class="text-sm text-warning-400">
+            <p class="text-sm text-content-warning">
               {flows.runsErrorById[active.workflowId]}
             </p>
           {:else if selectedRuns.length === 0}
@@ -258,7 +258,7 @@
       </div>
 
       {#if flows.actionMessage}
-        <p class="mt-4 text-xs text-primary-300">{flows.actionMessage}</p>
+        <p class="mt-4 text-xs text-content-link">{flows.actionMessage}</p>
       {/if}
     </div>
   {/if}

@@ -174,10 +174,10 @@
 
 {#if searchOpen}
   <div class="lme-dock-search-expand flex min-w-0 flex-1 items-center gap-1">
-    <Search size={14} strokeWidth={1.75} class="shrink-0 text-surface-500" aria-hidden="true" />
+    <Search size={14} strokeWidth={1.75} class="shrink-0 text-content-quiet" aria-hidden="true" />
     <input
       bind:this={searchInputEl}
-      class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-surface-500 focus:outline-none focus:ring-0"
+      class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-content-quiet focus:outline-none focus:ring-0"
       type="search"
       placeholder="Search map…"
       value={query}
@@ -251,7 +251,7 @@
       onkeydown={(event) => event.stopPropagation()}
     >
       <div class="map-dock-popover-search">
-        <Search size={13} strokeWidth={1.75} class="shrink-0 text-surface-500" aria-hidden="true" />
+        <Search size={13} strokeWidth={1.75} class="shrink-0 text-content-quiet" aria-hidden="true" />
         <input
           bind:this={momentsSearchEl}
           class="map-dock-moments-input"
@@ -307,7 +307,7 @@
         {#if filterActive}
           <button
             type="button"
-            class="text-[11px] text-surface-400 transition hover:text-surface-100"
+            class="text-[11px] text-content-tertiary transition hover:text-surface-100"
             onclick={() => contextShell.resetMapAvecMins()}
           >
             Reset
@@ -317,9 +317,9 @@
       <div class="space-y-3 px-2.5 pb-2.5 pt-1">
         {#each AVEC_DIMENSIONS as dim (dim.key)}
           <label class="block">
-            <span class="mb-1 flex items-center justify-between text-[11px] text-surface-300">
+            <span class="mb-1 flex items-center justify-between text-[11px] text-content-secondary">
               <span>{dim.label}</span>
-              <span class="tabular-nums text-surface-500">{avecMins[dim.key].toFixed(2)}</span>
+              <span class="tabular-nums text-content-quiet">{avecMins[dim.key].toFixed(2)}</span>
             </span>
             <input
               class="map-avec-dial"
@@ -375,7 +375,7 @@
   }
 
   .map-dock-moments-input::placeholder {
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .map-dock-popover-scroll {
@@ -390,7 +390,7 @@
     padding: 1rem 0.85rem;
     font-size: 11px;
     line-height: 1.45;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .map-dock-moment-row {
@@ -432,7 +432,7 @@
     white-space: nowrap;
     font-size: 10px;
     letter-spacing: 0.01em;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .map-avec-dial {

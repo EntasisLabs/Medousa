@@ -152,6 +152,6 @@
   }
 
   .presentation-artifact-menu-item-danger {
-    color: rgb(var(--color-error-300));
+    color: rgb(var(--theme-error));
   }
 </style>

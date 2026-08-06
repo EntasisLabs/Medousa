@@ -131,7 +131,7 @@
       <div class="agent-editor-popover-head">
         <div class="min-w-0">
           <p class="text-[11px] font-semibold tracking-[-0.01em] text-surface-100">Runs</p>
-          <p class="mt-0.5 text-[10px] text-surface-500">
+          <p class="mt-0.5 text-[10px] text-content-quiet">
             {#if failStreak >= 2}
               Last {failStreak} failed
             {:else}

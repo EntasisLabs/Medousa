@@ -206,16 +206,16 @@
                 </span>
               </span>
               {#if value === mode.mode}
-                <Check size={14} strokeWidth={2} class="shrink-0 text-primary-300" />
+                <Check size={14} strokeWidth={2} class="shrink-0 text-content-link" />
               {:else if !available}
-                <span class="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-surface-400">
+                <span class="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-content-tertiary">
                   {mode.mode === "coder" && mode.available ? "Needs work" : "Soon"}
                 </span>
               {/if}
             </button>
           {/each}
           {#if error}
-            <p class="px-2 py-1 text-[11px] text-error-300" role="status">
+            <p class="px-2 py-1 text-[11px] text-content-error" role="status">
               Mode state unavailable. General remains active.
             </p>
           {/if}

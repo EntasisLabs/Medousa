@@ -54,7 +54,7 @@
 {#if loading && !detail}
   <p class="workshop-muted text-sm">Loading this moment…</p>
 {:else if error}
-  <p class="text-sm text-warning-400">{error}</p>
+  <p class="text-sm text-content-warning">{error}</p>
 {:else if !detail}
   <div class="flex h-full min-h-[12rem] items-center justify-center px-4">
     <p class="workshop-muted max-w-sm text-center text-sm leading-relaxed">

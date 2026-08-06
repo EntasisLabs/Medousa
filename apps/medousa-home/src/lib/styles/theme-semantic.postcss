@@ -8,6 +8,7 @@
   html[data-theme] body {
     background-color: rgb(var(--theme-canvas));
     background-image: none;
+    color: rgb(var(--theme-text));
     accent-color: rgb(var(--theme-action));
   }
 }
@@ -29,6 +30,30 @@
   html[data-theme] :is(.input, .textarea, .select) {
     border-color: rgb(var(--theme-border) / 0.48);
     border-radius: var(--theme-control-radius);
+    color: rgb(var(--theme-text));
+  }
+
+  html[data-theme] :is(.input, .textarea, .select)::placeholder {
+    color: rgb(var(--theme-placeholder));
+    opacity: 1;
+  }
+
+  html[data-theme] :is(.input, .textarea, .select):disabled {
+    color: rgb(var(--theme-text-disabled));
+  }
+
+  /**
+   * Fallback ring for controls that carry no focus treatment of their own.
+   *
+   * Zero specificity on purpose: composite controls (the composer, the browser
+   * URL pill, rail buttons) already draw a shape-aware indicator, and stacking
+   * a rectangular outline on a rounded surface reads as a rendering bug. Form
+   * fields are excluded because they are almost always nested inside one of
+   * those composites, which owns the `:focus-within` treatment.
+   */
+  :where(html[data-theme] :is(button, a, [tabindex]:not([tabindex="-1"]))):focus-visible {
+    outline: 2px solid rgb(var(--theme-focus));
+    outline-offset: 2px;
   }
 
   html[data-theme] :is(.input, .textarea, .select):focus {
@@ -74,6 +99,7 @@
 
   html[data-theme] .markdown-content a {
     color: rgb(var(--theme-link));
+    text-decoration-color: rgb(var(--theme-link) / 0.55);
   }
 
   html[data-theme] .markdown-content :not(pre) > code {

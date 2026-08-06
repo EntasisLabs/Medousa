@@ -236,7 +236,7 @@
               onclick={() => goTo("templates")}
             >
               <span class="flex items-center gap-2">
-                <LayoutTemplate size={16} strokeWidth={1.75} class="text-primary-300" />
+                <LayoutTemplate size={16} strokeWidth={1.75} class="text-content-link" />
                 <span class="mobile-turn-sheet-link-label">Templates</span>
               </span>
               <ChevronRight size={16} strokeWidth={2} class="mobile-turn-sheet-link-chevron" />
@@ -247,7 +247,7 @@
               onclick={() => goTo("library")}
             >
               <span class="flex items-center gap-2">
-                <FileCode2 size={16} strokeWidth={1.75} class="text-primary-300" />
+                <FileCode2 size={16} strokeWidth={1.75} class="text-content-link" />
                 <span class="mobile-turn-sheet-link-label">Library</span>
               </span>
               <ChevronRight size={16} strokeWidth={2} class="mobile-turn-sheet-link-chevron" />
@@ -258,7 +258,7 @@
               onclick={() => goTo("chat")}
             >
               <span class="flex items-center gap-2">
-                <MessageSquare size={16} strokeWidth={1.75} class="text-primary-300" />
+                <MessageSquare size={16} strokeWidth={1.75} class="text-content-link" />
                 <span class="mobile-turn-sheet-link-label">Script chat</span>
               </span>
               <ChevronRight size={16} strokeWidth={2} class="mobile-turn-sheet-link-chevron" />

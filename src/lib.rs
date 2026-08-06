@@ -127,6 +127,7 @@ pub mod identity_tools;
 pub mod identity_write_policy;
 pub mod inference_profiles;
 pub mod inference_profiles_handlers;
+pub mod model_route;
 pub mod inference_router;
 pub mod stt;
 pub mod stt_handlers;

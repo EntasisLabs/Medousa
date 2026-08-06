@@ -176,7 +176,7 @@
     font-weight: 650;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .md-outline-mode-btn {
@@ -190,7 +190,7 @@
     border: 0;
     border-radius: 0.4rem;
     background: color-mix(in srgb, var(--color-surface-50) 5%, transparent);
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     cursor: pointer;
   }
 
@@ -222,7 +222,7 @@
     text-align: left;
     font-size: 0.74rem;
     line-height: 1.3;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     cursor: pointer;
     border-left: 2px solid transparent;
   }
@@ -248,7 +248,7 @@
   .md-outline-item-h3 {
     padding-left: 0.95rem;
     font-size: 0.7rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .md-outline-item:hover {

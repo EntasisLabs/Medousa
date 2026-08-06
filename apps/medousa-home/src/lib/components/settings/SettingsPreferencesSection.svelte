@@ -494,7 +494,7 @@
         {/if}
       </p>
       <p class="prefs-footnote">
-        Home widget: add <strong class="font-medium text-surface-300">Pulse</strong> from the iOS
+        Home widget: add <strong class="font-medium text-content-secondary">Pulse</strong> from the iOS
         gallery.
       </p>
     {/if}
@@ -681,6 +681,7 @@
   .prefs-theme-meta {
     font-size: 0.68rem;
     line-height: 1.3;
+    color: rgb(var(--theme-text-secondary));
   }
 
   .prefs-theme-action {
@@ -818,16 +819,20 @@
   }
 
   .prefs-theme-card-meta {
+    display: -webkit-box;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
     font-size: 0.65rem;
-    color: rgb(var(--color-surface-500));
+    line-height: 1.35;
+    color: rgb(var(--theme-text-quiet));
   }
 
   :global(.prefs-theme-card-check) {
     flex-shrink: 0;
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
   }
 
   .prefs-grid {
@@ -861,7 +866,7 @@
     border-radius: var(--prefs-tile-radius);
     border: 1px solid var(--prefs-tile-border);
     background: var(--prefs-tile-bg);
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     transition:
       transform 160ms ease,
       border-color 160ms ease,
@@ -976,8 +981,8 @@
 
   .prefs-tile-meta {
     font-size: 0.68rem;
-    line-height: 1.3;
-    color: rgb(var(--color-surface-500));
+    line-height: 1.4;
+    color: rgb(var(--theme-text-quiet));
   }
 
   .prefs-metric {
@@ -1004,7 +1009,7 @@
 
   .prefs-metric-unit {
     font-size: 0.68rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .prefs-endpoint-input {
@@ -1066,7 +1071,7 @@
   .prefs-footnote {
     margin: 0.45rem 0 0;
     font-size: 0.7rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .prefs-more {
@@ -1085,7 +1090,7 @@
     padding: var(--prefs-tile-pad);
     font-size: 0.75rem;
     font-weight: 600;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     cursor: pointer;
     list-style: none;
   }

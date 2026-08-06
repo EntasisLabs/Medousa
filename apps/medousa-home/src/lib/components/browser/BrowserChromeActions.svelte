@@ -228,7 +228,7 @@
       disabled={!canAct}
       onclick={() => void handleCopyUrl()}
     >
-      <Copy size={16} class="shrink-0 text-surface-400" />
+      <Copy size={16} class="shrink-0 text-content-tertiary" />
       <span class="text-sm text-surface-50">Copy link</span>
     </button>
     <button
@@ -237,22 +237,22 @@
       disabled={!canAct}
       onclick={() => void handleOpenExternal()}
     >
-      <ExternalLink size={16} class="shrink-0 text-surface-400" />
+      <ExternalLink size={16} class="shrink-0 text-content-tertiary" />
       <span class="text-sm text-surface-50">Open in browser</span>
     </button>
     <button type="button" class="browser-popover-row" onclick={handleFindInPage}>
-      <Search size={16} class="shrink-0 text-surface-400" />
+      <Search size={16} class="shrink-0 text-content-tertiary" />
       <span class="text-sm text-surface-50">Find in page</span>
       <span class="browser-popover-kbd">{formatShortcut("F")}</span>
     </button>
     <button type="button" class="browser-popover-row" onclick={() => void handleReopenTab()}>
-      <RotateCcw size={16} class="shrink-0 text-surface-400" />
+      <RotateCcw size={16} class="shrink-0 text-content-tertiary" />
       <span class="text-sm text-surface-50">Reopen closed tab</span>
       <span class="browser-popover-kbd">{formatShortcut("⇧T")}</span>
     </button>
     {#if showHandBack}
       <button type="button" class="browser-popover-row" onclick={handleHandBack}>
-        <Undo2 size={16} class="shrink-0 text-surface-400" />
+        <Undo2 size={16} class="shrink-0 text-content-tertiary" />
         <span class="text-sm text-surface-50">Hand back to Medousa</span>
       </button>
     {/if}
@@ -262,7 +262,7 @@
       disabled={!onReload}
       onclick={() => void handleReloadFromMenu()}
     >
-      <RefreshCw size={16} class="shrink-0 text-surface-400" />
+      <RefreshCw size={16} class="shrink-0 text-content-tertiary" />
       <span class="text-sm text-surface-50">Reload</span>
     </button>
     <button
@@ -273,7 +273,7 @@
     >
       <Star
         size={16}
-        class="shrink-0 {starred ? 'text-amber-400' : 'text-surface-400'}"
+        class="shrink-0 {starred ? 'text-amber-400' : 'text-content-tertiary'}"
         fill={starred ? "currentColor" : "none"}
       />
       <span class="text-sm text-surface-50">
@@ -286,11 +286,11 @@
       disabled={!canAct || saving}
       onclick={(event) => void handleSaveToLibrary(event)}
     >
-      <BookmarkPlus size={16} class="shrink-0 text-surface-400" />
+      <BookmarkPlus size={16} class="shrink-0 text-content-tertiary" />
       <span class="text-sm text-surface-50">Save to Library</span>
     </button>
     <button type="button" class="browser-popover-row" onclick={openSavedFromMenu}>
-      <ChevronDown size={16} class="shrink-0 text-surface-400" />
+      <ChevronDown size={16} class="shrink-0 text-content-tertiary" />
       <span class="text-sm text-surface-50">Saved pages</span>
     </button>
   </BrowserPopover>
@@ -355,7 +355,7 @@
         disabled={!canAct}
         onclick={() => void handleCopyUrl()}
       >
-        <Copy size={16} class="shrink-0 text-surface-400" />
+        <Copy size={16} class="shrink-0 text-content-tertiary" />
         <span class="text-sm text-surface-50">Copy link</span>
       </button>
       <button
@@ -364,22 +364,22 @@
         disabled={!canAct}
         onclick={() => void handleOpenExternal()}
       >
-        <ExternalLink size={16} class="shrink-0 text-surface-400" />
+        <ExternalLink size={16} class="shrink-0 text-content-tertiary" />
         <span class="text-sm text-surface-50">Open in default browser</span>
       </button>
       <button type="button" class="browser-popover-row" onclick={handleFindInPage}>
-        <Search size={16} class="shrink-0 text-surface-400" />
+        <Search size={16} class="shrink-0 text-content-tertiary" />
         <span class="text-sm text-surface-50">Find in page</span>
         <span class="browser-popover-kbd">{formatShortcut("F")}</span>
       </button>
       <button type="button" class="browser-popover-row" onclick={() => void handleReopenTab()}>
-        <RotateCcw size={16} class="shrink-0 text-surface-400" />
+        <RotateCcw size={16} class="shrink-0 text-content-tertiary" />
         <span class="text-sm text-surface-50">Reopen closed tab</span>
         <span class="browser-popover-kbd">{formatShortcut("⇧T")}</span>
       </button>
       {#if showHandBack}
         <button type="button" class="browser-popover-row" onclick={handleHandBack}>
-          <Undo2 size={16} class="shrink-0 text-surface-400" />
+          <Undo2 size={16} class="shrink-0 text-content-tertiary" />
           <span class="text-sm text-surface-50">Hand back to Medousa</span>
         </button>
       {/if}

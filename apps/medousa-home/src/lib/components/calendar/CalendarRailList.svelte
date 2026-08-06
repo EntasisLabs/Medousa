@@ -84,17 +84,17 @@
 
 <div class="flex h-full min-h-0 flex-col" data-chrome={chrome}>
   {#if calendar.error}
-    <p class="px-3 py-2 text-xs text-warning-400">{calendar.error}</p>
+    <p class="px-3 py-2 text-xs text-content-warning">{calendar.error}</p>
   {/if}
 
   <div class="cal-mini px-2 pb-2 pt-1">
     <div class="mb-1.5 flex items-center justify-between px-1">
-      <p class="text-[11px] font-semibold tracking-wide text-surface-300">
+      <p class="text-[11px] font-semibold tracking-wide text-content-secondary">
         {calendar.anchor.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
       </p>
       <button
         type="button"
-        class="text-[11px] font-medium text-primary-300 hover:text-primary-200"
+        class="text-[11px] font-medium text-content-link hover:text-primary-200"
         onclick={() => calendar.goToday()}
       >
         Today
@@ -135,8 +135,8 @@
 
   {#if buckets.length === 0}
     <div class="flex flex-1 flex-col items-center justify-center gap-2 px-3 py-6 text-center">
-      <CalendarDays size={22} strokeWidth={1.5} class="text-surface-500" />
-      <p class="text-sm text-surface-300">No events in this range</p>
+      <CalendarDays size={22} strokeWidth={1.5} class="text-content-quiet" />
+      <p class="text-sm text-content-secondary">No events in this range</p>
       <button type="button" class="btn btn-sm btn-primary" onclick={create}>
         <Plus size={14} strokeWidth={2} />
         New
@@ -146,7 +146,7 @@
     <div class="min-h-0 flex-1 overflow-y-auto px-1.5 py-1.5">
       {#each buckets as bucket (isoDay(bucket.day))}
         <section class="mb-2">
-          <p class="px-2 pb-0.5 pt-1 text-[10px] font-semibold uppercase tracking-wide text-surface-500">
+          <p class="px-2 pb-0.5 pt-1 text-[10px] font-semibold uppercase tracking-wide text-content-quiet">
             {bucket.label}
           </p>
           <ul>
@@ -175,7 +175,7 @@
                   class="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition hover:bg-surface-800/70"
                   onclick={() => pick(event)}
                 >
-                  <span class="w-14 shrink-0 pt-0.5 text-[11px] text-surface-500">
+                  <span class="w-14 shrink-0 pt-0.5 text-[11px] text-content-quiet">
                     {timeLabel(event)}
                   </span>
                   <span class="min-w-0 flex-1 truncate text-[13px] font-medium text-surface-100">
@@ -203,7 +203,7 @@
     text-align: center;
     font-size: 0.625rem;
     font-weight: 600;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .cal-mini-day {
@@ -222,7 +222,7 @@
   }
 
   .cal-mini-day-out {
-    color: rgb(var(--color-surface-600));
+    color: rgb(var(--theme-text-faint));
   }
 
   .cal-mini-day-today {

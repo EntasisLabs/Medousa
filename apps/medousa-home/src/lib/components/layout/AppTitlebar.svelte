@@ -306,7 +306,7 @@
     border: 0;
     border-radius: 5px;
     background: transparent;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     transition:
       background-color 120ms ease,
       color 120ms ease;

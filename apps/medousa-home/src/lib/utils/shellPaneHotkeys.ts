@@ -86,6 +86,18 @@ export function attachShellPaneHotkeys(handlers: ShellPaneHotkeyHandlers = {}): 
       }
     }
 
+    // Ctrl+Tab / Ctrl+Shift+Tab — cycle Code file tabs in the focused pane.
+    if (
+      ctrl &&
+      !event.altKey &&
+      key === "Tab" &&
+      Date.now() > prefixArmedUntil
+    ) {
+      event.preventDefault();
+      shellTabs.cycleCodeSourceTabsInActiveGroup(event.shiftKey ? -1 : 1);
+      return;
+    }
+
     // Arm prefix: Ctrl+; (chord second key may land in an input — intentional).
     if (ctrl && !event.altKey && (key === ";" || key === ":")) {
       event.preventDefault();

@@ -167,7 +167,7 @@
                     aria-pressed={vault.libraryBrowseMode === mode.id}
                     onclick={() => selectMode(mode.id)}
                   >
-                    <Icon size={16} strokeWidth={1.75} class="shrink-0 text-surface-400" />
+                    <Icon size={16} strokeWidth={1.75} class="shrink-0 text-content-tertiary" />
                     <span class="min-w-0 flex-1 text-left text-sm font-medium text-surface-100"
                       >{mode.label}</span
                     >

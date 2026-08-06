@@ -278,6 +278,7 @@ function M:turn(session_id, prompt, context, callbacks, options)
       surface = {
         channel_surface = "neovim",
         supports_browser_host = false,
+        supports_liquid_markdown = false,
         supports_ui_artifacts = false,
       },
     }

@@ -163,7 +163,7 @@
     margin: 0.35rem 0 0;
     font-size: 0.8rem;
     line-height: 1.45;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .liquid-shortlist-criteria {
@@ -180,7 +180,7 @@
     text-transform: uppercase;
     padding: 0.15rem 0.45rem;
     border-radius: 999px;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     border: 1px solid color-mix(in srgb, var(--color-surface-500) 35%, transparent);
     background: color-mix(in srgb, var(--color-surface-800) 55%, transparent);
   }
@@ -188,7 +188,7 @@
   .liquid-shortlist-criteria-plain {
     margin: 0.45rem 0 0;
     font-size: 0.68rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .liquid-shortlist-rows {
@@ -233,7 +233,7 @@
     font-size: 0.72rem;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     padding-top: 0.15rem;
   }
 
@@ -274,7 +274,7 @@
   .liquid-shortlist-summary {
     font-size: 0.75rem;
     line-height: 1.4;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     display: -webkit-box;
     -webkit-line-clamp: 3;
     line-clamp: 3;
@@ -289,14 +289,14 @@
 
   .liquid-shortlist-meta {
     font-size: 0.65rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .liquid-shortlist-score {
     font-size: 0.85rem;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
     padding-top: 0.1rem;
     white-space: nowrap;
   }

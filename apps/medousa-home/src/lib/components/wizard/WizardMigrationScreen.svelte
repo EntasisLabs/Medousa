@@ -4,7 +4,7 @@
 </script>
 
 <div class="flex h-full flex-col">
-  <div class="flex items-center gap-2 text-primary-300">
+  <div class="flex items-center gap-2 text-content-link">
     <Sparkles class="h-5 w-5" aria-hidden="true" />
     <p class="text-[11px] font-semibold uppercase tracking-wide">Welcome back</p>
   </div>
@@ -13,7 +13,7 @@
     Everything is still here.
   </h1>
 
-  <p class="mt-3 text-sm leading-relaxed text-surface-300">
+  <p class="mt-3 text-sm leading-relaxed text-content-secondary">
     Medousa found your existing setup on this computer. Your notes, memories, and conversations
     were not reset.
   </p>

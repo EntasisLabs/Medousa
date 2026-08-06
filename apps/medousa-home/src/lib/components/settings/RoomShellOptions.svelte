@@ -155,10 +155,10 @@
   </div>
 
   {#if chromeError}
-    <p class="room-shell-note text-warning-200">{chromeError}</p>
+    <p class="room-shell-note text-content-warning">{chromeError}</p>
   {/if}
   {#if mobileHomeError}
-    <p class="room-shell-note text-warning-200">{mobileHomeError}</p>
+    <p class="room-shell-note text-content-warning">{mobileHomeError}</p>
   {/if}
 
   {#if pending}
@@ -167,7 +167,7 @@
       <p class="workshop-faint mt-1 text-xs">{pending.diffSummary}</p>
       <p class="workshop-faint mt-1 text-xs">Proposed by {pending.proposedBy}</p>
       {#if pending.errors.length > 0}
-        <ul class="env-pending-errors mt-2 text-xs text-error-300">
+        <ul class="env-pending-errors mt-2 text-xs text-content-error">
           {#each pending.errors as error (error)}
             <li>{error}</li>
           {/each}
@@ -251,7 +251,7 @@
             <p class="room-shell-error">{environment.canvasStatusError}</p>
           {:else if canvasStatus && canvasStatus.customSurfaces.length > 0}
             <div class="mt-3 space-y-2">
-              <p class="text-xs font-semibold text-surface-300">Live surface status</p>
+              <p class="text-xs font-semibold text-content-secondary">Live surface status</p>
               {#each canvasStatus.customSurfaces as row (row.surfaceId)}
                 <div class="room-shell-status">
                   <div class="flex items-center justify-between gap-2">
@@ -545,6 +545,6 @@
   .room-shell-error {
     margin: 0.55rem 0 0;
     font-size: 0.75rem;
-    color: rgb(var(--color-error-300));
+    color: rgb(var(--theme-error));
   }
 </style>

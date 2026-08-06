@@ -51,7 +51,7 @@
     </div>
 
     {#if !isTauri()}
-      <p class="text-sm text-surface-400">Shared mode is managed from the Medousa desktop app.</p>
+      <p class="text-sm text-content-tertiary">Shared mode is managed from the Medousa desktop app.</p>
     {:else}
       <div class="prefs-stack">
         <label class="prefs-tile">
@@ -83,7 +83,7 @@
       </div>
 
       {#if sharedMode.error}
-        <p class="mt-2 text-xs text-warning-300/90">{sharedMode.error}</p>
+        <p class="mt-2 text-xs text-content-warning/90">{sharedMode.error}</p>
       {/if}
     {/if}
   </div>
@@ -97,7 +97,7 @@
     </div>
 
     {#if mobile && isTauriMobilePlatform()}
-      <div class="network-callout text-sm leading-relaxed text-surface-300">
+      <div class="network-callout text-sm leading-relaxed text-content-secondary">
         {workshopPairingManagedHint()} Then connect this app under Settings → Connection using your
         workshop's LAN address.
       </div>
@@ -184,7 +184,7 @@
   .prefs-tile-meta {
     font-size: 0.68rem;
     line-height: 1.3;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .prefs-switch {

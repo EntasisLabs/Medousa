@@ -63,7 +63,7 @@
   {#if loading && !summary}
     <p class="workshop-muted px-1 py-4 text-sm">Loading channels…</p>
   {:else if error}
-    <p class="px-1 py-4 text-sm text-warning-400">{error}</p>
+    <p class="px-1 py-4 text-sm text-content-warning">{error}</p>
   {:else if filteredChannels.length === 0}
     <p class="workshop-muted px-1 py-4 text-sm">No channels match.</p>
   {:else}
@@ -171,7 +171,7 @@
   }
 
   .msg-rail-row-active .msg-rail-status-label {
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
   }
 
   :global(.msg-rail-status .messaging-status-dot) {

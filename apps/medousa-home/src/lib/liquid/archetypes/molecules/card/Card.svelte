@@ -200,7 +200,7 @@
 
   .liquid-card-subtitle {
     font-size: 0.78rem;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
   }
 
   .liquid-card-body {
@@ -228,7 +228,7 @@
   .liquid-card-main :global(.liquid-card-chevron) {
     flex-shrink: 0;
     margin-top: 0.1rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     transition: transform 0.18s ease;
   }
 

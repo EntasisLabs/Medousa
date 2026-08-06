@@ -93,8 +93,8 @@
     <div
       class="script-editor-tab group flex max-w-[220px] shrink-0 items-center gap-1 rounded-t-md border border-b-0 px-2 py-1 text-[11px] {graphemeScriptEditor.activeTabId ===
       tab.tabId
-        ? 'border-surface-500/60 bg-surface-900 text-primary-300'
-        : 'border-transparent bg-transparent text-surface-400 hover:bg-surface-800/70'}"
+        ? 'border-surface-500/60 bg-surface-900 text-content-link'
+        : 'border-transparent bg-transparent text-content-tertiary hover:bg-surface-800/70'}"
       role="presentation"
     >
       {#if renamingTabId === tab.tabId}
@@ -139,7 +139,7 @@
       {#if renamingTabId !== tab.tabId}
         <button
           type="button"
-          class="rounded p-0.5 text-surface-500 opacity-0 transition group-hover:opacity-100 hover:text-surface-200"
+          class="rounded p-0.5 text-content-quiet opacity-0 transition group-hover:opacity-100 hover:text-surface-200"
           aria-label="Close tab"
           onclick={() => graphemeScriptEditor.closeTab(tab.tabId)}
         >
@@ -150,7 +150,7 @@
   {/each}
   <button
     type="button"
-    class="shrink-0 rounded-md p-1 text-surface-400 hover:bg-surface-800 hover:text-surface-100"
+    class="shrink-0 rounded-md p-1 text-content-tertiary hover:bg-surface-800 hover:text-surface-100"
     aria-label="New script tab"
     onclick={() => graphemeScriptEditor.openNewTab()}
   >

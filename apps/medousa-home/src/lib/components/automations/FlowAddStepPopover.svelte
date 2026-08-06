@@ -230,11 +230,11 @@
         <div class="min-w-0">
           {#if phase === "pick"}
             <p class="text-[11px] font-semibold tracking-[-0.01em] text-surface-100">Add step</p>
-            <p class="mt-0.5 text-[10px] text-surface-500">Choose a type</p>
+            <p class="mt-0.5 text-[10px] text-content-quiet">Choose a type</p>
           {:else}
             <button
               type="button"
-              class="inline-flex items-center gap-0.5 text-[11px] text-surface-400 hover:text-surface-200"
+              class="inline-flex items-center gap-0.5 text-[11px] text-content-tertiary hover:text-surface-200"
               onclick={(event) => {
                 event.stopPropagation();
                 phase = "pick";
@@ -270,7 +270,7 @@
               <span class="min-w-0 flex-1 truncate text-left text-[12px] text-surface-100"
                 >Script</span
               >
-              <span class="shrink-0 text-[10px] text-surface-500">Grapheme</span>
+              <span class="shrink-0 text-[10px] text-content-quiet">Grapheme</span>
             </button>
             <button
               type="button"
@@ -283,7 +283,7 @@
               <span class="min-w-0 flex-1 truncate text-left text-[12px] text-surface-100"
                 >Ask Medousa</span
               >
-              <span class="shrink-0 text-[10px] text-surface-500">Prompt</span>
+              <span class="shrink-0 text-[10px] text-content-quiet">Prompt</span>
             </button>
             <button
               type="button"
@@ -296,7 +296,7 @@
               <span class="min-w-0 flex-1 truncate text-left text-[12px] text-surface-100"
                 >External tool</span
               >
-              <span class="shrink-0 text-[10px] text-surface-500">MCP</span>
+              <span class="shrink-0 text-[10px] text-content-quiet">MCP</span>
             </button>
           </div>
         {:else if phase === "prompt"}
@@ -393,7 +393,7 @@
               ></textarea>
             </label>
             {#if argsError}
-              <p class="mt-1 text-[11px] text-warning-400">{argsError}</p>
+              <p class="mt-1 text-[11px] text-content-warning">{argsError}</p>
             {/if}
             <button
               type="button"

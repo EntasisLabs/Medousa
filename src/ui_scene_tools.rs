@@ -163,6 +163,7 @@ mod tests {
             model: "gpt-4".to_string(),
             response_depth_mode: "standard".to_string(),
             supports_ui_artifacts: supports,
+            supports_liquid_markdown: supports,
             supports_browser_host: false,
             channel_surface: Some("home-desktop".to_string()),
         })))

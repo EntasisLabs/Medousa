@@ -1141,7 +1141,7 @@
           <h1 class="truncate text-sm font-semibold text-surface-50">
             {mobileChatTitle}
           </h1>
-          <p class="truncate text-[11px] text-surface-400">{mobileChatSubtitle}</p>
+          <p class="text-content-tertiary truncate text-[11px]">{mobileChatSubtitle}</p>
         </div>
         {#if chat.hasTurnActivity}
           <span
@@ -1161,7 +1161,7 @@
     </div>
     {#if chat.streamErrorFor(panelSessionId)}
       <div class="mt-1 flex flex-wrap items-baseline gap-2">
-        <p class="min-w-0 flex-1 text-[11px] text-error-400" role="alert">
+        <p class="text-content-error min-w-0 flex-1 text-[11px]" role="alert">
           {chat.streamErrorFor(panelSessionId)}
         </p>
         {#if lastFailedSend}
@@ -1178,7 +1178,7 @@
         </button>
       </div>
     {:else if !mobile && chat.historyLoadingFor(panelSessionId) && panelMessages.length === 0}
-      <p class="mt-1 text-[11px] text-surface-400">Loading conversation…</p>
+      <p class="mt-1 text-[11px] text-content-tertiary">Loading conversation…</p>
     {/if}
   </header>
   {/if}
@@ -1202,7 +1202,7 @@
       <div class="flex shrink-0 items-center gap-2">
         <button
           type="button"
-          class="chat-restore-toast-dismiss text-primary-300"
+          class="chat-restore-toast-dismiss text-content-link"
           onclick={() => {
             void chat.newSession();
             userProfiles.dismissSwitchNotice();
@@ -1248,7 +1248,7 @@
       <div class="flex shrink-0 items-center gap-2">
         <button
           type="button"
-          class="chat-restore-toast-dismiss text-primary-300"
+          class="chat-restore-toast-dismiss text-content-link"
           onclick={() => {
             chat.clearAskHandoffNotice();
             openWorkAsks();
@@ -1306,7 +1306,7 @@
           <span>
             {askThreads.length} background ask{askThreads.length === 1 ? "" : "s"} in Work
           </span>
-          <span class="text-surface-500">→</span>
+          <span class="text-content-quiet">→</span>
         </button>
       {/if}
 
@@ -1320,15 +1320,15 @@
             <span>
               {workerThreads.length} worker{workerThreads.length === 1 ? "" : "s"} in Work
             </span>
-            <span class="text-surface-500">→</span>
+            <span class="text-content-quiet">→</span>
           </button>
         {:else}
         <section class="chat-ask-rail space-y-3">
           <div class="chat-ask-rail-header">
-            <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-surface-500">
+            <p class="text-content-quiet text-[11px] font-medium uppercase tracking-[0.12em]">
               Workers
             </p>
-            <p class="mt-0.5 text-[11px] text-surface-500">
+            <p class="text-content-quiet mt-0.5 text-[11px]">
               Workshop lane — progress stays off the main thread
             </p>
           </div>
@@ -1339,7 +1339,7 @@
                   <p class="truncate text-sm font-medium text-surface-100">
                     {thread.workId}
                   </p>
-                  <p class="mt-0.5 text-[10px] text-surface-500">
+                  <p class="text-content-quiet mt-0.5 text-[10px]">
                     {#if thread.active}
                       {visibleChatStatusLine(thread.statusLine, settings.showEngineDetailsInChat) ??
                         "Working in background…"}
@@ -1386,7 +1386,7 @@
         <div
           class="flex min-h-[120px] flex-col justify-center {embedded ? 'px-3 py-2' : mobile ? 'px-1 pb-4' : 'px-2'}"
         >
-          <p class="text-sm text-surface-400">Ask about this script — fixes, modules, or next steps.</p>
+          <p class="text-sm text-content-tertiary">Ask about this script — fixes, modules, or next steps.</p>
           <div class="mt-3 flex flex-wrap gap-2">
             {#each ["Explain this script", "Fix compile errors", "Suggest a module to use"] as prompt (prompt)}
               <button
@@ -1405,13 +1405,13 @@
           class="flex min-h-[120px] flex-col justify-center {embedded ? 'px-3 py-2' : mobile ? 'px-1 pb-4' : 'px-2'}"
         >
           {#if workshopSticky}
-            <p class="px-1 text-[12px] leading-relaxed text-surface-500">
+            <p class="text-content-quiet px-1 text-[12px] leading-relaxed">
               {vaultContextHasSelection(chat.vaultNoteContext)
                 ? "Ask about this passage…"
                 : "Ask about this note…"}
             </p>
           {:else}
-            <p class="text-sm text-surface-400">
+            <p class="text-sm text-content-tertiary">
               {vaultContextHasSelection(chat.vaultNoteContext)
                 ? "Work this passage with Medousa — edit, clarify, or next steps."
                 : "Ask about this note — links, edits, or next steps."}
@@ -1435,7 +1435,7 @@
         {/if}
       {:else if chat.historyLoadingFor(panelSessionId) && panelMessages.length === 0 && !mobile}
       <div class="flex min-h-[200px] items-center justify-center">
-        <LoaderCircle size={22} class="animate-spin text-surface-500/80" aria-label="Loading" />
+        <LoaderCircle size={22} class="animate-spin text-content-quiet/80" aria-label="Loading" />
       </div>
       {/if}
     </div>
@@ -1529,7 +1529,7 @@
       />
       {#if chat.hasWorkshopHandoff()}
         <p
-          class="{workshop ? 'mb-1.5' : 'mx-4 mb-1.5'} text-[11px] font-medium text-primary-300/90"
+          class="{workshop ? 'mb-1.5' : 'mx-4 mb-1.5'} text-[11px] font-medium text-content-link/90"
         >
           Steering handoff — your next message continues the worker
         </p>
@@ -1637,7 +1637,7 @@
 
   .chat-current-turn-anchor-label {
     flex-shrink: 0;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     font-size: 0.68rem;
     font-weight: 650;
     white-space: nowrap;
@@ -1669,7 +1669,7 @@
     padding: 0;
     font-size: 0.6875rem;
     font-weight: 600;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
     cursor: pointer;
   }
 
@@ -1751,7 +1751,7 @@
     border: 0;
     background: transparent;
     font-size: 0.8125rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
     text-decoration: underline;
     text-decoration-color: rgb(var(--color-surface-500) / 0.5);
     text-underline-offset: 0.18em;

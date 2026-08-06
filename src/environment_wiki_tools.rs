@@ -279,7 +279,7 @@ const TOPICS: &[WikiTopic] = &[
         id: "ui_scene",
         title: "Liquid in chat — markdown embeds + ui_build",
         summary: "Prefer enriched markdown embeds for structured chat answers; use cognition_ui_build for streaming interactive scenes.",
-        policy: r#"    role(.99): "Chat Liquid is primarily enriched markdown on supports_ui_artifacts clients (Home yes).",
+        policy: r#"    role(.99): "Chat Liquid is primarily enriched markdown on supports_liquid_markdown clients (Home and compatible extensions).",
     markdown_first(.99): {
         card(.99): "```card\\ntitle: Tradeoff\\nsubtitle: Less proven independently\\nemoji: 📋\\nmeta: Caveat · AI model · Early read\\nsummary: Headline claims need independent validation.\\nchips: Benchmarks | Claims\\npoint: Launch framing | Most early coverage echoes company claims.\\n``` (tap opens detail sheet)",
         carousel(.99): "```carousel\\n---\\ntitle: Strengths\\nsubtitle: Coding\\nemoji: 🎮\\nsummary: Strong agent signal\\nchips: Coding | Agents\\n---\\ntitle: Tradeoff\\nsubtitle: Less proven\\nsummary: Treat benchmarks as provisional\\npoint: Independent testing | Third-party evals lag launches.\\n``` (or legacy one-line rows)",
@@ -307,7 +307,7 @@ const TOPICS: &[WikiTopic] = &[
     ui_build(.97): "cognition_ui_build (begin → add_* → done) when you need a streaming interactive scene session beyond markdown embeds",
     legacy(.90): "cognition_ui_scene freeform ops are legacy — prefer markdown embeds or ui_build",
     prefer_over_html(.98): "Use markdown embeds / ui_build for interactive answers; reserve cognition_ui_present for opaque HTML blobs",
-    requirements(.98): "supports_ui_artifacts must be true for UI tools; markdown embeds still render in Home chat",
+    requirements(.98): "supports_liquid_markdown enables markdown embeds; supports_ui_artifacts is separately required for UI tools",
     anti_pattern(.99): "freeform HTML layouts, inventing CSS, or skipping markdown embeds for a simple card strip"#,
         related: &["scene_vs_html", "ui_present", "component_schema"],
         call_next: &["cognition_ui_build"],
@@ -316,7 +316,7 @@ const TOPICS: &[WikiTopic] = &[
         id: "scene_vs_html",
         title: "Scene vs HTML — how to present",
         summary: "Decision boundary: enriched markdown / Liquid builder (preferred) vs cognition_ui_present HTML artifact.",
-        policy: r#"    role(.99): "Presentation paths on supports_ui_artifacts clients — pick per intent; do NOT default to a single big HTML blob.",
+        policy: r#"    role(.99): "Presentation paths depend on independent Liquid and UI-artifact client capabilities — pick per intent; do NOT default to a single big HTML blob.",
     prefer_markdown(.99): {
         when(.99): "structured chat answers — cards, carousels, action rows, tables, icons — the common case",
         why(.98): "model writes familiar markdown; runtime hydrates Liquid molecules; no layout dialect",

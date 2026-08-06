@@ -383,7 +383,7 @@
 
   .new-tab-menu-nav {
     justify-content: center;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     padding-block: 0.35rem;
   }
 
@@ -400,7 +400,7 @@
     flex-shrink: 0;
     align-items: center;
     justify-content: center;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .new-tab-menu-item:hover .new-tab-menu-item-icon {

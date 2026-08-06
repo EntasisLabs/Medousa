@@ -332,6 +332,10 @@ SSE streaming is async-only on both SDKs.
 |------|--------|
 | `medousa_types::*` | `medousa.types.*` (generated from JSON Schema) |
 
+`InteractiveTurnRequest.surface` advertises independent rendering capabilities.
+Use `supports_liquid_markdown` for clients that hydrate Liquid embeds; do not set
+`supports_ui_artifacts` unless the client also implements HTML/scene artifact presentation.
+
 Regenerate Python types after Rust DTO changes:
 
 ```bash

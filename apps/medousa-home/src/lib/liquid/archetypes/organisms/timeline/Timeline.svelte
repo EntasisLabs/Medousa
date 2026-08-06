@@ -159,7 +159,7 @@
     margin: 0.35rem 0 0;
     font-size: 0.8rem;
     line-height: 1.45;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .liquid-timeline-granularity {
@@ -168,7 +168,7 @@
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .liquid-timeline-rail {
@@ -206,7 +206,7 @@
     font-variant-numeric: tabular-nums;
     text-align: right;
     line-height: 1.2;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .liquid-timeline-spine {
@@ -310,6 +310,6 @@
   .liquid-timeline-detail {
     font-size: 0.78rem;
     line-height: 1.45;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--theme-text-secondary));
   }
 </style>

@@ -26,7 +26,7 @@
     <h1 id="product-wizard-title" class="wizard-beat text-2xl font-semibold tracking-tight text-surface-50">
       How do you want to begin?
     </h1>
-    <p class="wizard-beat mt-2 text-sm leading-relaxed text-surface-400">
+    <p class="wizard-beat mt-2 text-sm leading-relaxed text-content-tertiary">
       Start with a brain — or just the workspace.
     </p>
 
@@ -38,7 +38,7 @@
         onclick={() => (selected = "workspace-ai")}
       >
         <div class="flex items-start gap-3">
-          <Brain class="mt-0.5 h-5 w-5 shrink-0 text-primary-300" aria-hidden="true" />
+          <Brain class="mt-0.5 h-5 w-5 shrink-0 text-content-link" aria-hidden="true" />
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
               <p class="font-semibold text-surface-50">Workspace with a brain</p>
@@ -48,7 +48,7 @@
                 Recommended
               </span>
             </div>
-            <p class="mt-1 text-sm leading-relaxed text-surface-300">
+            <p class="mt-1 text-sm leading-relaxed text-content-secondary">
               Notes, files, and decks plus Medousa Agent (private model or bring your API key).
             </p>
           </div>
@@ -62,10 +62,10 @@
         onclick={() => (selected = "workspace")}
       >
         <div class="flex items-start gap-3">
-          <PanelsTopLeft class="mt-0.5 h-5 w-5 shrink-0 text-primary-300" aria-hidden="true" />
+          <PanelsTopLeft class="mt-0.5 h-5 w-5 shrink-0 text-content-link" aria-hidden="true" />
           <div class="min-w-0">
             <p class="font-semibold text-surface-50">Just the workspace</p>
-            <p class="mt-1 text-sm leading-relaxed text-surface-300">
+            <p class="mt-1 text-sm leading-relaxed text-content-secondary">
               Notes, files, and decks — add AI when you are ready.
             </p>
           </div>

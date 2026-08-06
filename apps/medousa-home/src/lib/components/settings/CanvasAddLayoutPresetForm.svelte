@@ -130,7 +130,7 @@
   }
 
   .canvas-add-layout-toggle:hover {
-    color: rgb(var(--color-primary-300));
+    color: rgb(var(--theme-link));
   }
 
   .canvas-add-layout-delete {
@@ -140,13 +140,13 @@
     border: 0;
     border-radius: 0.3rem;
     padding: 0.2rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--theme-text-quiet));
     background: transparent;
     cursor: pointer;
   }
 
   .canvas-add-layout-delete:hover:not(:disabled) {
-    color: rgb(var(--color-error-300));
+    color: rgb(var(--theme-error));
     background: color-mix(in srgb, var(--color-error-600) 10%, transparent);
   }
 
@@ -169,7 +169,7 @@
     margin: 0;
     font-size: 0.6875rem;
     line-height: 1.35;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .canvas-field {
@@ -179,7 +179,7 @@
   }
 
   .canvas-field span {
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--theme-text-tertiary));
   }
 
   .canvas-field input {
@@ -194,6 +194,6 @@
   .canvas-form-error {
     margin: 0.35rem 0 0;
     font-size: 0.75rem;
-    color: rgb(var(--color-error-300));
+    color: rgb(var(--theme-error));
   }
 </style>

@@ -83,7 +83,7 @@
     >
       <div class="flex items-start justify-between gap-3 border-b border-surface-500/35 px-5 py-4">
         <div class="min-w-0">
-          <p class="text-[11px] font-semibold uppercase tracking-wide text-primary-300">
+          <p class="text-[11px] font-semibold uppercase tracking-wide text-content-link">
             Step {step} of 3
           </p>
           <h2 id="garage-wizard-title" class="mt-1 text-lg font-semibold text-surface-50">
@@ -98,7 +98,7 @@
         </div>
         <button
           type="button"
-          class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-surface-500 hover:bg-surface-800 hover:text-surface-200"
+          class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-content-quiet hover:bg-surface-800 hover:text-surface-200"
           aria-label="Close setup"
           onclick={close}
         >
@@ -108,12 +108,12 @@
 
       <div class="min-h-0 flex-1 overflow-y-auto px-5 py-5">
         {#if step === 1}
-          <p class="text-sm leading-relaxed text-surface-300">
+          <p class="text-sm leading-relaxed text-content-secondary">
             Medousa is your garage — journals, projects, budgets, and the files you already
             have. Markdown underneath. Human on top.
           </p>
 
-          <p class="mt-4 text-xs font-semibold uppercase tracking-wide text-surface-500">
+          <p class="mt-4 text-xs font-semibold uppercase tracking-wide text-content-quiet">
             What belongs here
           </p>
           <ul class="mt-3 grid gap-2 sm:grid-cols-2">
@@ -121,27 +121,27 @@
               {@const Icon = space.icon}
               <li class="rounded-lg border border-surface-500/35 bg-surface-950/50 p-3 text-left">
                 <div class="flex items-center gap-2">
-                  <Icon size={16} strokeWidth={2} class="text-primary-300" />
+                  <Icon size={16} strokeWidth={2} class="text-content-link" />
                   <span class="text-sm font-medium text-surface-100">{space.label}</span>
                 </div>
-                <p class="mt-1 text-xs leading-snug text-surface-500">{space.hint}</p>
+                <p class="mt-1 text-xs leading-snug text-content-quiet">{space.hint}</p>
               </li>
             {/each}
           </ul>
 
-          <p class="mt-4 text-xs text-surface-500">
+          <p class="mt-4 text-xs text-content-quiet">
             Bug reports and agent QA notes stay tucked away until you need them.
           </p>
         {:else if step === 2}
-          <p class="text-sm leading-relaxed text-surface-300">
+          <p class="text-sm leading-relaxed text-content-secondary">
             {vaultPinFolderHint()} Downloads, project dirs — and link PDFs or spreadsheets into notes without importing
             them.
           </p>
 
           <div class="mt-5 rounded-lg border border-dashed border-surface-500/45 bg-surface-950/40 p-5 text-center">
-            <Pin size={24} strokeWidth={1.5} class="mx-auto text-surface-500" />
+            <Pin size={24} strokeWidth={1.5} class="mx-auto text-content-quiet" />
             <p class="mt-3 text-sm text-surface-200">Pin your first folder</p>
-            <p class="mt-1 text-xs text-surface-500">Shows up under <strong class="font-medium text-surface-400">Your files</strong> in the sidebar</p>
+            <p class="mt-1 text-xs text-content-quiet">Shows up under <strong class="font-medium text-content-tertiary">Your files</strong> in the sidebar</p>
             <button
               type="button"
               class="btn btn-sm variant-filled-primary mt-4"
@@ -151,17 +151,17 @@
               {pinning ? "Opening picker…" : "Choose folder"}
             </button>
             {#if externalDesk.pinnedRoots.length > 0}
-              <p class="mt-3 text-xs text-success-400">
+              <p class="mt-3 text-xs text-content-success">
                 {externalDesk.pinnedRoots.length} folder{externalDesk.pinnedRoots.length === 1 ? "" : "s"} pinned
               </p>
             {/if}
           </div>
         {:else}
           <div class="flex flex-col items-center py-4 text-center">
-            <div class="flex h-12 w-12 items-center justify-center rounded-full bg-primary-500/15 text-primary-300">
+            <div class="flex h-12 w-12 items-center justify-center rounded-full bg-primary-500/15 text-content-link">
               <Sparkles size={22} strokeWidth={2} />
             </div>
-            <p class="mt-4 max-w-sm text-sm leading-relaxed text-surface-300">
+            <p class="mt-4 max-w-sm text-sm leading-relaxed text-content-secondary">
               Start with today's journal, capture a thought to Inbox, or browse what you already
               have. Your garage, your rhythm.
             </p>
