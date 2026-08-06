@@ -10,6 +10,10 @@ import {
   languageServerExtensions,
 } from "@codemirror/lsp-client";
 import {
+  MedousaCodeWorkspace,
+  MedousaCodeWorkspaceBridge,
+} from "$lib/code/medousaCodeWorkspace";
+import {
   daemonWebSocketUrl,
   getCodingEngineInfo,
   getDaemonUrl,
@@ -77,11 +81,14 @@ export type CodingEngineInfo = {
   message: string;
 };
 
-export async function connectOrchestratorLspClient(options?: {
+export type ConnectOrchestratorLspOptions = {
   language?: string;
   workId?: string;
   workspaceRoot?: string;
-}): Promise<{
+  workspaceBridge?: MedousaCodeWorkspaceBridge;
+};
+
+export async function connectOrchestratorLspClient(options?: ConnectOrchestratorLspOptions): Promise<{
   client: LSPClient;
   workspace: GraphemeLspWorkspaceResponse;
   via: "orchestrator" | "grapheme";
@@ -106,6 +113,9 @@ export async function connectOrchestratorLspClient(options?: {
         rootUri,
         timeout: 30_000,
         extensions: languageServerExtensions(),
+        workspace: options?.workspaceBridge
+          ? (client) => new MedousaCodeWorkspace(client, options.workspaceBridge!)
+          : undefined,
       }).connect(connection.transport);
       const ready = client.initializing;
       void ready.catch(() => {
@@ -137,6 +147,9 @@ export async function connectOrchestratorLspClient(options?: {
     rootUri: graphemeWorkspace.root_uri,
     timeout: 30_000,
     extensions: languageServerExtensions(),
+    workspace: options?.workspaceBridge
+      ? (client) => new MedousaCodeWorkspace(client, options.workspaceBridge!)
+      : undefined,
   }).connect(connection.transport);
   const ready = client.initializing;
   void ready.catch(() => {
@@ -155,18 +168,22 @@ export async function connectOrchestratorLspClient(options?: {
 export function pathToFileUri(path: string): string {
   const normalized = path.replaceAll("\\", "/");
   const prefixed = normalized.startsWith("/") ? normalized : `/${normalized}`;
-  return encodeURI(`file://${prefixed}`);
+  const uri = new URL("file://");
+  uri.pathname = prefixed;
+  return uri.href;
 }
 
 type WorkspaceClientEntry = {
   connection: ReturnType<typeof connectOrchestratorLspClient>;
   client: Promise<LSPClient>;
+  workspaceBridge: MedousaCodeWorkspaceBridge;
   references: number;
   releaseTimer: ReturnType<typeof setTimeout> | null;
 };
 
 export type CodeWorkspaceLspLease = {
   client: Promise<LSPClient>;
+  workspaceBridge: MedousaCodeWorkspaceBridge;
   release: () => void;
 };
 
@@ -191,7 +208,8 @@ export function acquireCodeWorkspaceLspClient(options: {
   const key = `${options.workId}:${options.language.toLowerCase()}:${workspaceRoot}`;
   let entry = workspaceClients.get(key);
   if (!entry) {
-    const connection = connectOrchestratorLspClient(options)
+    const workspaceBridge = new MedousaCodeWorkspaceBridge();
+    const connection = connectOrchestratorLspClient({ ...options, workspaceBridge })
     .catch((err) => {
       if (workspaceClients.get(key)?.connection === connection) {
         workspaceClients.delete(key);
@@ -207,7 +225,13 @@ export function acquireCodeWorkspaceLspClient(options: {
         workspaceClients.delete(key);
         throw err;
       });
-    entry = { connection, client, references: 0, releaseTimer: null };
+    entry = {
+      connection,
+      client,
+      workspaceBridge,
+      references: 0,
+      releaseTimer: null,
+    };
     workspaceClients.set(key, entry);
   }
   if (entry.releaseTimer) {
@@ -218,6 +242,7 @@ export function acquireCodeWorkspaceLspClient(options: {
   let released = false;
   return {
     client: entry.client,
+    workspaceBridge: entry.workspaceBridge,
     release() {
       if (released) return;
       released = true;
