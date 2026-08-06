@@ -591,6 +591,131 @@ impl GitEngine {
             .collect())
     }
 
+    /// Fetch from a remote (default `origin`). Never force-updates locals.
+    pub fn fetch(&self, cwd: &Path, remote: &str) -> Result<String> {
+        let remote = if remote.trim().is_empty() {
+            "origin"
+        } else {
+            remote.trim()
+        };
+        self.run(cwd, &["fetch", "--prune", remote])
+    }
+
+    /// Fast-forward only pull of the current branch. Refuses merge commits.
+    pub fn pull_ff_only(&self, cwd: &Path, remote: &str) -> Result<String> {
+        let remote = if remote.trim().is_empty() {
+            "origin"
+        } else {
+            remote.trim()
+        };
+        self.run(cwd, &["pull", "--ff-only", remote])
+    }
+
+    /// Push the named branch to `remote` without force. Refuses `--force*`.
+    pub fn push_branch(&self, cwd: &Path, remote: &str, branch: &str) -> Result<String> {
+        let remote = if remote.trim().is_empty() {
+            "origin"
+        } else {
+            remote.trim()
+        };
+        let branch = branch.trim();
+        if branch.is_empty() {
+            return Err(ForgeError::Git("push requires a branch name".into()));
+        }
+        self.run(
+            cwd,
+            &["push", "--set-upstream", remote, &format!("refs/heads/{branch}")],
+        )
+    }
+
+    /// Whether a merge or rebase is in progress in this worktree.
+    pub fn merge_in_progress(&self, cwd: &Path) -> bool {
+        let Ok(git_dir) = self.run(cwd, &["rev-parse", "--git-dir"]) else {
+            return false;
+        };
+        let git_dir = PathBuf::from(git_dir.trim());
+        let root = if git_dir.is_absolute() {
+            git_dir
+        } else {
+            cwd.join(git_dir)
+        };
+        root.join("MERGE_HEAD").is_file()
+            || root.join("rebase-merge").is_dir()
+            || root.join("rebase-apply").is_dir()
+    }
+
+    /// Bounded commit history newest-first: oid, subject, author, timestamp.
+    pub fn log_commits(
+        &self,
+        cwd: &Path,
+        range: &str,
+        limit: usize,
+    ) -> Result<Vec<CommitSummary>> {
+        let limit = limit.clamp(1, 200);
+        let out = self.run(
+            cwd,
+            &[
+                "log",
+                &format!("--max-count={limit}"),
+                "--format=%H%x00%an%x00%ae%x00%at%x00%s",
+                range,
+            ],
+        )?;
+        let mut commits = Vec::new();
+        for line in out.lines().filter(|l| !l.is_empty()) {
+            let mut parts = line.splitn(5, '\0');
+            let Some(oid) = parts.next() else { continue };
+            let author = parts.next().unwrap_or_default();
+            let email = parts.next().unwrap_or_default();
+            let ts = parts.next().unwrap_or_default();
+            let subject = parts.next().unwrap_or_default();
+            commits.push(CommitSummary {
+                oid: GitOid::new(oid),
+                author_name: author.to_string(),
+                author_email: email.to_string(),
+                authored_at: ts.parse().unwrap_or(0),
+                subject: subject.to_string(),
+            });
+        }
+        Ok(commits)
+    }
+
+    /// `git blame --porcelain` for one path, parsed into contiguous hunks.
+    pub fn blame(&self, cwd: &Path, path: &str) -> Result<Vec<BlameHunk>> {
+        let out = self.run(
+            cwd,
+            &["blame", "--porcelain", "--", path],
+        )?;
+        Ok(parse_blame_porcelain(&out))
+    }
+
+    /// Check out one side of a conflict (`--ours` / `--theirs`) for a path.
+    pub fn checkout_conflict_side(&self, cwd: &Path, path: &str, side: &str) -> Result<()> {
+        let flag = match side {
+            "ours" => "--ours",
+            "theirs" => "--theirs",
+            _ => {
+                return Err(ForgeError::Git(format!(
+                    "unsupported conflict side `{side}` (use ours or theirs)"
+                )));
+            }
+        };
+        self.run(cwd, &["checkout", flag, "--", path])?;
+        Ok(())
+    }
+
+    /// Stage a path (`git add -- <path>`), clearing unmerged state after resolve.
+    pub fn add_path(&self, cwd: &Path, path: &str) -> Result<()> {
+        self.run(cwd, &["add", "--", path])?;
+        Ok(())
+    }
+
+    /// Drop a path from the index and worktree (`git rm -f` when tracked).
+    pub fn remove_path(&self, cwd: &Path, path: &str) -> Result<()> {
+        self.run(cwd, &["rm", "-f", "--", path])?;
+        Ok(())
+    }
+
     /// `git diff --name-status -z <from> <to>`, parsed as (status, path,
     /// orig_path). Status is the single letter (A/M/D/T) or R/C for
     /// renames/copies.
@@ -824,6 +949,28 @@ pub fn parse_name_status_z(data: &[u8]) -> Vec<NameStatus> {
     out
 }
 
+/// One commit from `git log` for Changes history.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommitSummary {
+    pub oid: GitOid,
+    pub author_name: String,
+    pub author_email: String,
+    pub authored_at: i64,
+    pub subject: String,
+}
+
+/// Contiguous blame attribution for one or more lines.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlameHunk {
+    pub oid: GitOid,
+    pub author_name: String,
+    pub author_email: String,
+    pub authored_at: i64,
+    pub summary: String,
+    pub start_line: u32,
+    pub line_count: u32,
+}
+
 /// One parsed `git status --porcelain=v2 -z` record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PorcelainEntry {
@@ -967,6 +1114,126 @@ fn parse_ordinary(record: &str, kind: PorcelainKind) -> Option<PorcelainEntry> {
         orig_path: None,
         xy: Some(xy),
     })
+}
+
+/// Parse `git blame --porcelain` into contiguous hunks.
+pub fn parse_blame_porcelain(text: &str) -> Vec<BlameHunk> {
+    let mut hunks = Vec::new();
+    let mut current_oid = String::new();
+    let mut author_name = String::new();
+    let mut author_email = String::new();
+    let mut authored_at: i64 = 0;
+    let mut summary = String::new();
+    let mut pending_start: Option<u32> = None;
+    let mut pending_count: u32 = 0;
+    let mut remaining_in_group: u32 = 0;
+
+    let flush = |hunks: &mut Vec<BlameHunk>,
+                 oid: &str,
+                 author_name: &str,
+                 author_email: &str,
+                 authored_at: i64,
+                 summary: &str,
+                 start: Option<u32>,
+                 count: u32| {
+        if let Some(start_line) = start.filter(|_| count > 0 && !oid.is_empty()) {
+            hunks.push(BlameHunk {
+                oid: GitOid::new(oid),
+                author_name: author_name.to_string(),
+                author_email: author_email.to_string(),
+                authored_at,
+                summary: summary.to_string(),
+                start_line,
+                line_count: count,
+            });
+        }
+    };
+
+    for line in text.lines() {
+        if line.starts_with('\t') {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("author ") {
+            author_name = rest.to_string();
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("author-mail ") {
+            author_email = rest
+                .trim()
+                .trim_start_matches('<')
+                .trim_end_matches('>')
+                .to_string();
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("author-time ") {
+            authored_at = rest.parse().unwrap_or(0);
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("summary ") {
+            summary = rest.to_string();
+            continue;
+        }
+        // Header: <oid> <orig> <final> [<num>]
+        let mut parts = line.split_whitespace();
+        let Some(oid) = parts.next() else { continue };
+        if oid.len() < 7 || !oid.chars().all(|c| c.is_ascii_hexdigit()) {
+            continue;
+        }
+        let _orig = parts.next();
+        let Some(final_line) = parts.next().and_then(|v| v.parse::<u32>().ok()) else {
+            continue;
+        };
+        let group = parts.next().and_then(|v| v.parse::<u32>().ok());
+        if let Some(group_size) = group {
+            flush(
+                &mut hunks,
+                &current_oid,
+                &author_name,
+                &author_email,
+                authored_at,
+                &summary,
+                pending_start,
+                pending_count,
+            );
+            current_oid = oid.to_string();
+            pending_start = Some(final_line);
+            pending_count = 1;
+            remaining_in_group = group_size.saturating_sub(1);
+        } else if remaining_in_group > 0 && oid == current_oid {
+            pending_count += 1;
+            remaining_in_group -= 1;
+        } else if oid == current_oid
+            && pending_start.is_some_and(|start| final_line == start + pending_count)
+        {
+            pending_count += 1;
+        } else {
+            flush(
+                &mut hunks,
+                &current_oid,
+                &author_name,
+                &author_email,
+                authored_at,
+                &summary,
+                pending_start,
+                pending_count,
+            );
+            current_oid = oid.to_string();
+            pending_start = Some(final_line);
+            pending_count = 1;
+            remaining_in_group = 0;
+        }
+    }
+    flush(
+        &mut hunks,
+        &current_oid,
+        &author_name,
+        &author_email,
+        authored_at,
+        &summary,
+        pending_start,
+        pending_count,
+    );
+    hunks
 }
 
 fn find_in_path(name: &str) -> Option<PathBuf> {
@@ -1126,6 +1393,51 @@ mod tests {
             .unwrap();
         let untracked_text = String::from_utf8_lossy(&untracked);
         assert!(untracked_text.contains("+fresh"));
+    }
+
+    #[test]
+    fn blame_and_log_summaries() {
+        let (tmp, git, head) = init_repo();
+        let log = git.log_commits(tmp.path(), "HEAD", 5).unwrap();
+        assert!(!log.is_empty());
+        assert_eq!(log[0].oid, head);
+        assert!(!log[0].subject.is_empty());
+        let blame = git.blame(tmp.path(), "hello.txt").unwrap();
+        assert!(!blame.is_empty());
+        assert_eq!(blame[0].start_line, 1);
+        assert!(blame[0].line_count >= 1);
+    }
+
+    #[test]
+    fn parse_blame_groups_contiguous_lines() {
+        let raw = "\
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 1 1 2
+author Ada
+author-mail <ada@example.com>
+author-time 1700000000
+summary first
+\tline one
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 2 2
+author Ada
+author-mail <ada@example.com>
+author-time 1700000000
+summary first
+\tline two
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 3 3 1
+author Bea
+author-mail <bea@example.com>
+author-time 1700000001
+summary second
+\tline three
+";
+        let hunks = parse_blame_porcelain(raw);
+        assert_eq!(hunks.len(), 2);
+        assert_eq!(hunks[0].start_line, 1);
+        assert_eq!(hunks[0].line_count, 2);
+        assert_eq!(hunks[0].author_name, "Ada");
+        assert_eq!(hunks[1].start_line, 3);
+        assert_eq!(hunks[1].line_count, 1);
+        assert_eq!(hunks[1].summary, "second");
     }
 
     #[test]

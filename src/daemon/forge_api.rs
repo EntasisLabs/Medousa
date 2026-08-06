@@ -112,6 +112,42 @@ pub fn forge_router(state: AppState) -> Router {
             get(get_changes_file).post(restore_changes_file),
         )
         .route(
+            "/v1/forge/items/{work_id}/changes/fetch",
+            post(changes_fetch),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/changes/pull",
+            post(changes_pull),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/changes/push",
+            post(changes_push),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/changes/sync",
+            post(changes_sync),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/changes/checkpoint",
+            post(changes_checkpoint),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/changes/history",
+            get(changes_history),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/changes/blame",
+            get(changes_blame),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/changes/conflict",
+            post(resolve_changes_conflict),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/changes/file/hunk",
+            post(revert_changes_hunk),
+        )
+        .route(
             "/v1/forge/items/{work_id}/source/batch",
             put(save_source_batch),
         )
@@ -3374,6 +3410,10 @@ struct ForgeChangesResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     behind: Option<u64>,
     conflict: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    dirty: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    merge_in_progress: bool,
     files: Vec<ForgeChangesFile>,
 }
 
@@ -3449,6 +3489,8 @@ fn build_changes_response(state: &AppState, work_id: &WorkId) -> ApiResult<Forge
         ahead: tracking.ahead,
         behind: tracking.behind,
         conflict,
+        dirty: !files.is_empty() || conflict,
+        merge_in_progress: forge.git().merge_in_progress(&environment.worktree),
         files,
     })
 }
@@ -3697,6 +3739,9 @@ async fn restore_changes_file(
             )
         })?;
         let digest = source_digest(content.as_bytes());
+        if comparison.conflict || comparison.status == "unmerged" {
+            let _ = forge(&state).git().add_path(&environment.worktree, &restore_path);
+        }
         publish_project_change(
             &state,
             &item,
@@ -3716,6 +3761,11 @@ async fn restore_changes_file(
                 )
             })?;
         }
+        if comparison.conflict || comparison.status == "unmerged" {
+            let _ = forge(&state)
+                .git()
+                .add_path(&environment.worktree, &comparison.path);
+        }
         publish_project_change(
             &state,
             &item,
@@ -3732,6 +3782,768 @@ async fn restore_changes_file(
         path: restore_path,
         action,
         digest,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+struct ChangesLeaseRequest {
+    lease_id: String,
+    generation: u64,
+    #[serde(default)]
+    remote: Option<String>,
+    #[serde(default)]
+    ack_risks: bool,
+    #[serde(default)]
+    author_name: Option<String>,
+    #[serde(default)]
+    author_email: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ChangesSyncResult {
+    work_id: String,
+    fetched: bool,
+    pulled: bool,
+    pushed: bool,
+    message: String,
+    changes: ForgeChangesResponse,
+}
+
+fn changes_sync_preflight(
+    forge: &Forge,
+    environment: &medousa_forge::model::GovernedEnv,
+) -> ApiResult<()> {
+    if forge.git().merge_in_progress(&environment.worktree) {
+        return Err(request_error(
+            StatusCode::CONFLICT,
+            "finish or abort the in-progress merge/rebase before syncing",
+        ));
+    }
+    let snapshot = forge
+        .git()
+        .status_porcelain(&environment.worktree)
+        .map_err(map_err)?;
+    if snapshot
+        .iter()
+        .any(|entry| entry.kind == medousa_forge::git::PorcelainKind::Unmerged)
+    {
+        return Err(request_error(
+            StatusCode::CONFLICT,
+            "resolve merge conflicts before pull/push/sync",
+        ));
+    }
+    Ok(())
+}
+
+fn has_tracked_worktree_edits(
+    forge: &Forge,
+    environment: &medousa_forge::model::GovernedEnv,
+) -> ApiResult<bool> {
+    use medousa_forge::git::PorcelainKind;
+    let snapshot = forge
+        .git()
+        .status_porcelain(&environment.worktree)
+        .map_err(map_err)?;
+    Ok(snapshot.iter().any(|entry| {
+        matches!(
+            entry.kind,
+            PorcelainKind::Ordinary | PorcelainKind::RenameOrCopy | PorcelainKind::Unmerged
+        )
+    }))
+}
+
+async fn changes_fetch(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<ChangesLeaseRequest>,
+) -> ApiResult<Json<ChangesSyncResult>> {
+    let id = parse_work_id(&work_id)?;
+    let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+    let environment = item.workspace_environment().cloned().ok_or_else(|| {
+        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+    })?;
+    let remote = body.remote.as_deref().unwrap_or("origin");
+    let message = forge(&state)
+        .git()
+        .fetch(&environment.worktree, remote)
+        .map_err(map_err)?;
+    remember_worktree(&state, &item, &environment.worktree);
+    publish_project_change(
+        &state,
+        &item,
+        ForgeProjectEventKind::GitStatus,
+        None,
+        None,
+        None,
+    );
+    Ok(Json(ChangesSyncResult {
+        work_id: id.as_str().to_owned(),
+        fetched: true,
+        pulled: false,
+        pushed: false,
+        message: if message.trim().is_empty() {
+            "Fetched".into()
+        } else {
+            message.trim().to_owned()
+        },
+        changes: build_changes_response(&state, &id)?,
+    }))
+}
+
+async fn changes_pull(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<ChangesLeaseRequest>,
+) -> ApiResult<Json<ChangesSyncResult>> {
+    let id = parse_work_id(&work_id)?;
+    let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+    let environment = item.workspace_environment().cloned().ok_or_else(|| {
+        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+    })?;
+    changes_sync_preflight(forge(&state).as_ref(), &environment)?;
+    if has_tracked_worktree_edits(forge(&state).as_ref(), &environment)? {
+        return Err(request_error(
+            StatusCode::CONFLICT,
+            "commit or restore local changes before a fast-forward pull",
+        ));
+    }
+    let remote = body.remote.as_deref().unwrap_or("origin");
+    let message = forge(&state)
+        .git()
+        .pull_ff_only(&environment.worktree, remote)
+        .map_err(|err| {
+            request_error(
+                StatusCode::CONFLICT,
+                format!("fast-forward pull refused: {err}"),
+            )
+        })?;
+    remember_worktree(&state, &item, &environment.worktree);
+    publish_project_change(
+        &state,
+        &item,
+        ForgeProjectEventKind::GitStatus,
+        None,
+        None,
+        None,
+    );
+    Ok(Json(ChangesSyncResult {
+        work_id: id.as_str().to_owned(),
+        fetched: false,
+        pulled: true,
+        pushed: false,
+        message: if message.trim().is_empty() {
+            "Pulled (fast-forward)".into()
+        } else {
+            message.trim().to_owned()
+        },
+        changes: build_changes_response(&state, &id)?,
+    }))
+}
+
+async fn changes_push(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<ChangesLeaseRequest>,
+) -> ApiResult<Json<ChangesSyncResult>> {
+    let id = parse_work_id(&work_id)?;
+    let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+    let environment = item.workspace_environment().cloned().ok_or_else(|| {
+        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+    })?;
+    changes_sync_preflight(forge(&state).as_ref(), &environment)?;
+    let WorkTarget::Git(target) = &item.target;
+    if environment.branch == target.base_ref {
+        return Err(request_error(
+            StatusCode::CONFLICT,
+            "refusing to push the protected base branch from Changes",
+        ));
+    }
+    let remote = body.remote.as_deref().unwrap_or("origin");
+    let message = forge(&state)
+        .git()
+        .push_branch(&environment.worktree, remote, &environment.branch)
+        .map_err(|err| {
+            request_error(StatusCode::CONFLICT, format!("push refused: {err}"))
+        })?;
+    remember_worktree(&state, &item, &environment.worktree);
+    publish_project_change(
+        &state,
+        &item,
+        ForgeProjectEventKind::GitStatus,
+        None,
+        None,
+        None,
+    );
+    Ok(Json(ChangesSyncResult {
+        work_id: id.as_str().to_owned(),
+        fetched: false,
+        pulled: false,
+        pushed: true,
+        message: if message.trim().is_empty() {
+            format!("Pushed {}", environment.branch)
+        } else {
+            message.trim().to_owned()
+        },
+        changes: build_changes_response(&state, &id)?,
+    }))
+}
+
+async fn changes_sync(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<ChangesLeaseRequest>,
+) -> ApiResult<Json<ChangesSyncResult>> {
+    let id = parse_work_id(&work_id)?;
+    let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+    let environment = item.workspace_environment().cloned().ok_or_else(|| {
+        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+    })?;
+    changes_sync_preflight(forge(&state).as_ref(), &environment)?;
+    let remote = body.remote.as_deref().unwrap_or("origin");
+    let mut messages = Vec::new();
+    let mut pulled = false;
+    let mut pushed = false;
+    let fetch_msg = forge(&state)
+        .git()
+        .fetch(&environment.worktree, remote)
+        .map_err(|err| {
+            request_error(
+                StatusCode::CONFLICT,
+                format!("sync fetch failed: {err}"),
+            )
+        })?;
+    let fetched = true;
+    if !fetch_msg.trim().is_empty() {
+        messages.push(fetch_msg.trim().to_owned());
+    } else {
+        messages.push("Fetched".into());
+    }
+    let after_fetch = build_changes_response(&state, &id)?;
+    if after_fetch.behind.unwrap_or(0) > 0 {
+        if has_tracked_worktree_edits(forge(&state).as_ref(), &environment)? {
+            return Err(request_error(
+                StatusCode::CONFLICT,
+                "remote is ahead; restore or seal local changes before sync pull",
+            ));
+        }
+        let msg = forge(&state)
+            .git()
+            .pull_ff_only(&environment.worktree, remote)
+            .map_err(|err| {
+                request_error(
+                    StatusCode::CONFLICT,
+                    format!("sync pull refused: {err}"),
+                )
+            })?;
+        pulled = true;
+        messages.push(if msg.trim().is_empty() {
+            "Pulled (fast-forward)".into()
+        } else {
+            msg.trim().to_owned()
+        });
+    }
+    let after_pull = build_changes_response(&state, &id)?;
+    if after_pull.ahead.unwrap_or(0) > 0 {
+        let WorkTarget::Git(target) = &item.target;
+        if environment.branch == target.base_ref {
+            return Err(request_error(
+                StatusCode::CONFLICT,
+                "refusing to push the protected base branch from Changes",
+            ));
+        }
+        let msg = forge(&state)
+            .git()
+            .push_branch(&environment.worktree, remote, &environment.branch)
+            .map_err(|err| {
+                request_error(StatusCode::CONFLICT, format!("sync push refused: {err}"))
+            })?;
+        pushed = true;
+        messages.push(if msg.trim().is_empty() {
+            format!("Pushed {}", environment.branch)
+        } else {
+            msg.trim().to_owned()
+        });
+    }
+    remember_worktree(&state, &item, &environment.worktree);
+    publish_project_change(
+        &state,
+        &item,
+        ForgeProjectEventKind::GitStatus,
+        None,
+        None,
+        None,
+    );
+    Ok(Json(ChangesSyncResult {
+        work_id: id.as_str().to_owned(),
+        fetched,
+        pulled,
+        pushed,
+        message: messages.join(" · "),
+        changes: build_changes_response(&state, &id)?,
+    }))
+}
+
+async fn changes_checkpoint(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<ChangesLeaseRequest>,
+) -> ApiResult<Json<ItemProjection>> {
+    let id = parse_work_id(&work_id)?;
+    let (_item, lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+    let author = match (body.author_name, body.author_email) {
+        (Some(name), Some(email)) => Some(CheckpointAuthor { name, email }),
+        _ => None,
+    };
+    let options = SealOptions {
+        ack_risks: body.ack_risks,
+        author,
+    };
+    let actor = actor_from_state(&state);
+    let item = forge(&state)
+        .complete_attempt(&lease, &options, &actor)
+        .map_err(map_err)?;
+    if let Some(env) = item.environment_for_attempt(&lease.attempt_id) {
+        let sealed_oid = forge(&state)
+            .git()
+            .head_oid(&env.worktree)
+            .ok()
+            .map(|oid| oid.as_str().to_owned())
+            .unwrap_or_else(|| env.baseline_oid.as_str().to_owned());
+        crate::daemon::detamu_host::spawn_index_forge_item(
+            state.detamu.clone(),
+            item.id.as_str().to_owned(),
+            env.worktree.clone(),
+            sealed_oid,
+            crate::daemon::detamu_host::BindingKind::Sealed,
+        );
+    }
+    Ok(ok_item(&state, item, "sealed"))
+}
+
+#[derive(Debug, Deserialize)]
+struct ChangesHistoryQuery {
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Serialize)]
+struct ChangesHistoryEntry {
+    oid: String,
+    author_name: String,
+    author_email: String,
+    authored_at: i64,
+    subject: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ChangesHistoryResponse {
+    work_id: String,
+    commits: Vec<ChangesHistoryEntry>,
+}
+
+async fn changes_history(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Query(query): Query<ChangesHistoryQuery>,
+) -> ApiResult<Json<ChangesHistoryResponse>> {
+    let id = parse_work_id(&work_id)?;
+    let item = forge(&state).load(&id).map_err(map_err)?;
+    let environment = item.workspace_environment().cloned().ok_or_else(|| {
+        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+    })?;
+    let limit = query.limit.unwrap_or(50).clamp(1, 200);
+    let range = format!("{}..HEAD", environment.baseline_oid.as_str());
+    let commits = forge(&state)
+        .git()
+        .log_commits(&environment.worktree, &range, limit)
+        .or_else(|_| {
+            forge(&state)
+                .git()
+                .log_commits(&environment.worktree, "HEAD", limit)
+        })
+        .map_err(map_err)?
+        .into_iter()
+        .map(|commit| ChangesHistoryEntry {
+            oid: commit.oid.as_str().to_owned(),
+            author_name: commit.author_name,
+            author_email: commit.author_email,
+            authored_at: commit.authored_at,
+            subject: commit.subject,
+        })
+        .collect();
+    Ok(Json(ChangesHistoryResponse {
+        work_id: id.as_str().to_owned(),
+        commits,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+struct ChangesBlameQuery {
+    path: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ChangesBlameHunk {
+    oid: String,
+    author_name: String,
+    author_email: String,
+    authored_at: i64,
+    summary: String,
+    start_line: u32,
+    line_count: u32,
+}
+
+#[derive(Debug, Serialize)]
+struct ChangesBlameResponse {
+    work_id: String,
+    path: String,
+    hunks: Vec<ChangesBlameHunk>,
+}
+
+async fn changes_blame(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Query(query): Query<ChangesBlameQuery>,
+) -> ApiResult<Json<ChangesBlameResponse>> {
+    let id = parse_work_id(&work_id)?;
+    let (_, path) = normalize_source_relative(&query.path)?;
+    let item = forge(&state).load(&id).map_err(map_err)?;
+    let environment = item.workspace_environment().cloned().ok_or_else(|| {
+        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+    })?;
+    let hunks = forge(&state)
+        .git()
+        .blame(&environment.worktree, &path)
+        .map_err(map_err)?
+        .into_iter()
+        .map(|hunk| ChangesBlameHunk {
+            oid: hunk.oid.as_str().to_owned(),
+            author_name: hunk.author_name,
+            author_email: hunk.author_email,
+            authored_at: hunk.authored_at,
+            summary: hunk.summary,
+            start_line: hunk.start_line,
+            line_count: hunk.line_count,
+        })
+        .collect();
+    Ok(Json(ChangesBlameResponse {
+        work_id: id.as_str().to_owned(),
+        path,
+        hunks,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+struct ResolveChangesConflictRequest {
+    path: String,
+    /// `ours`, `theirs`, or `baseline`.
+    resolution: String,
+    #[serde(default)]
+    expected_working_digest: Option<String>,
+    lease_id: String,
+    generation: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct ResolveChangesConflictResponse {
+    work_id: String,
+    path: String,
+    action: String,
+    changes: ForgeChangesResponse,
+}
+
+async fn resolve_changes_conflict(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<ResolveChangesConflictRequest>,
+) -> ApiResult<Json<ResolveChangesConflictResponse>> {
+    let id = parse_work_id(&work_id)?;
+    let (_, path) = normalize_source_relative(&body.path)?;
+    let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+    let environment = item.workspace_environment().cloned().ok_or_else(|| {
+        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+    })?;
+    let comparison = changes_file_diff(&state, &id, &path)?;
+    if !comparison.conflict && comparison.status != "unmerged" {
+        return Err(request_error(
+            StatusCode::CONFLICT,
+            "file is not in an unmerged conflict state",
+        ));
+    }
+    if let Some(expected) = body
+        .expected_working_digest
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        match comparison.working_digest.as_deref() {
+            Some(have) if have != expected => {
+                return Err(request_error(
+                    StatusCode::CONFLICT,
+                    "the working copy changed; refresh Changes before resolving",
+                ));
+            }
+            None => {
+                return Err(request_error(
+                    StatusCode::CONFLICT,
+                    "the working copy changed; refresh Changes before resolving",
+                ));
+            }
+            _ => {}
+        }
+    }
+    let resolution = body.resolution.trim().to_ascii_lowercase();
+    let action = match resolution.as_str() {
+        "ours" | "theirs" => {
+            forge(&state)
+                .git()
+                .checkout_conflict_side(&environment.worktree, &path, &resolution)
+                .map_err(map_err)?;
+            forge(&state)
+                .git()
+                .add_path(&environment.worktree, &path)
+                .map_err(map_err)?;
+            format!("resolved_{resolution}")
+        }
+        "baseline" => {
+            if comparison.binary {
+                return Err(request_error(
+                    StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                    "binary conflict baseline restore is not available from Home",
+                ));
+            }
+            let content = comparison.baseline.content.clone().ok_or_else(|| {
+                request_error(
+                    StatusCode::CONFLICT,
+                    "baseline text is unavailable for this conflict",
+                )
+            })?;
+            let candidate = environment.worktree.join(&path);
+            let (destination, _) = if candidate.is_file() {
+                resolve_source_path(&environment.worktree, &path)?
+            } else {
+                resolve_new_source_path(&environment.worktree, &path)?
+            };
+            if let Some(parent) = destination.parent() {
+                std::fs::create_dir_all(parent).map_err(|err| {
+                    request_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("could not resolve conflict: {err}"),
+                    )
+                })?;
+            }
+            std::fs::write(&destination, content.as_bytes()).map_err(|err| {
+                request_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("could not resolve conflict: {err}"),
+                )
+            })?;
+            forge(&state)
+                .git()
+                .add_path(&environment.worktree, &path)
+                .map_err(map_err)?;
+            "resolved_baseline".into()
+        }
+        _ => {
+            return Err(request_error(
+                StatusCode::BAD_REQUEST,
+                "resolution must be ours, theirs, or baseline",
+            ));
+        }
+    };
+    let digest = std::fs::read(environment.worktree.join(&path))
+        .ok()
+        .map(|bytes| source_digest(&bytes));
+    publish_project_change(
+        &state,
+        &item,
+        ForgeProjectEventKind::Changed,
+        Some(path.clone()),
+        None,
+        digest,
+    );
+    remember_worktree(&state, &item, &environment.worktree);
+    Ok(Json(ResolveChangesConflictResponse {
+        work_id: id.as_str().to_owned(),
+        path,
+        action,
+        changes: build_changes_response(&state, &id)?,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+struct RevertChangesHunkRequest {
+    path: String,
+    /// 0-based hunk index from `GET …/changes/file`.
+    hunk_index: usize,
+    expected_working_digest: String,
+    lease_id: String,
+    generation: u64,
+}
+
+fn apply_hunks_except(
+    baseline: &str,
+    hunks: &[ReviewDiffHunk],
+    skip: usize,
+) -> ApiResult<String> {
+    let mut lines: Vec<String> = if baseline.is_empty() {
+        Vec::new()
+    } else {
+        let mut out: Vec<String> = baseline.split('\n').map(str::to_string).collect();
+        if baseline.ends_with('\n') {
+            out.pop();
+        }
+        out
+    };
+    // Apply remaining hunks from bottom to top so earlier offsets stay valid.
+    let mut ordered: Vec<(usize, &ReviewDiffHunk)> = hunks
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| *index != skip)
+        .collect();
+    ordered.sort_by(|a, b| b.1.old_start.cmp(&a.1.old_start));
+    for (_, hunk) in ordered {
+        let start = hunk.old_start.saturating_sub(1);
+        if start > lines.len() {
+            return Err(request_error(
+                StatusCode::CONFLICT,
+                "hunk no longer applies cleanly; refresh the diff",
+            ));
+        }
+        let mut replacement: Vec<String> = Vec::new();
+        let mut consumed = 0usize;
+        for line in &hunk.lines {
+            match line.kind.as_str() {
+                "context" => {
+                    replacement.push(line.content.clone());
+                    consumed += 1;
+                }
+                "deletion" => {
+                    consumed += 1;
+                }
+                "addition" => {
+                    replacement.push(line.content.clone());
+                }
+                _ => {}
+            }
+        }
+        let end = (start + consumed).min(lines.len());
+        lines.splice(start..end, replacement);
+    }
+    let mut out = lines.join("\n");
+    if baseline.ends_with('\n') && !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    } else if baseline.ends_with('\n') && out.is_empty() {
+        // empty file with trailing newline convention — leave empty
+    }
+    Ok(out)
+}
+
+async fn revert_changes_hunk(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<RevertChangesHunkRequest>,
+) -> ApiResult<Json<RestoreChangesFileResponse>> {
+    let id = parse_work_id(&work_id)?;
+    let comparison = changes_file_diff(&state, &id, &body.path)?;
+    if comparison.binary {
+        return Err(request_error(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "hunk revert is only available for text files",
+        ));
+    }
+    if comparison.hunks.is_empty() {
+        return Err(request_error(
+            StatusCode::CONFLICT,
+            "no hunks to revert",
+        ));
+    }
+    if body.hunk_index >= comparison.hunks.len() {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "hunk_index is out of range",
+        ));
+    }
+    let expected = body.expected_working_digest.trim();
+    match comparison.working_digest.as_deref() {
+        Some(have) if have == expected => {}
+        _ => {
+            return Err(request_error(
+                StatusCode::CONFLICT,
+                "the working copy changed; refresh Changes before reverting",
+            ));
+        }
+    }
+    let baseline = comparison.baseline.content.clone().unwrap_or_default();
+    let next = apply_hunks_except(&baseline, &comparison.hunks, body.hunk_index)?;
+    let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+    let environment = item.workspace_environment().cloned().ok_or_else(|| {
+        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+    })?;
+    let candidate = environment.worktree.join(&comparison.path);
+    let (destination, relative) = if candidate.is_file() || comparison.working.exists {
+        if candidate.is_file() {
+            resolve_source_path(&environment.worktree, &comparison.path)?
+        } else {
+            resolve_new_source_path(&environment.worktree, &comparison.path)?
+        }
+    } else {
+        resolve_new_source_path(&environment.worktree, &comparison.path)?
+    };
+    if next.is_empty() && !comparison.baseline.exists {
+        if destination.is_file() {
+            std::fs::remove_file(&destination).map_err(|err| {
+                request_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("could not revert hunk: {err}"),
+                )
+            })?;
+        }
+        publish_project_change(
+            &state,
+            &item,
+            ForgeProjectEventKind::Deleted,
+            Some(relative.clone()),
+            None,
+            None,
+        );
+        remember_worktree(&state, &item, &environment.worktree);
+        return Ok(Json(RestoreChangesFileResponse {
+            work_id: id.as_str().to_owned(),
+            path: relative,
+            action: "hunk_reverted_deleted".into(),
+            digest: None,
+        }));
+    }
+    if let Some(parent) = destination.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| {
+            request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not revert hunk: {err}"),
+            )
+        })?;
+    }
+    std::fs::write(&destination, next.as_bytes()).map_err(|err| {
+        request_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("could not revert hunk: {err}"),
+        )
+    })?;
+    let digest = source_digest(next.as_bytes());
+    publish_project_change(
+        &state,
+        &item,
+        ForgeProjectEventKind::Changed,
+        Some(relative.clone()),
+        None,
+        Some(digest.clone()),
+    );
+    remember_worktree(&state, &item, &environment.worktree);
+    Ok(Json(RestoreChangesFileResponse {
+        work_id: id.as_str().to_owned(),
+        path: relative,
+        action: "hunk_reverted".into(),
+        digest: Some(digest),
     }))
 }
 
@@ -7005,6 +7817,57 @@ mod source_tests {
             }),
             None
         );
+    }
+
+    #[test]
+    fn apply_hunks_except_skips_selected_hunk() {
+        let baseline = "a\nb\nc\n";
+        let hunks = vec![
+            ReviewDiffHunk {
+                old_start: 1,
+                old_count: 1,
+                new_start: 1,
+                new_count: 1,
+                lines: vec![
+                    ReviewDiffLine {
+                        kind: "deletion".into(),
+                        old_line: Some(1),
+                        new_line: None,
+                        content: "a".into(),
+                    },
+                    ReviewDiffLine {
+                        kind: "addition".into(),
+                        old_line: None,
+                        new_line: Some(1),
+                        content: "A".into(),
+                    },
+                ],
+            },
+            ReviewDiffHunk {
+                old_start: 3,
+                old_count: 1,
+                new_start: 3,
+                new_count: 1,
+                lines: vec![
+                    ReviewDiffLine {
+                        kind: "deletion".into(),
+                        old_line: Some(3),
+                        new_line: None,
+                        content: "c".into(),
+                    },
+                    ReviewDiffLine {
+                        kind: "addition".into(),
+                        old_line: None,
+                        new_line: Some(3),
+                        content: "C".into(),
+                    },
+                ],
+            },
+        ];
+        let with_both = apply_hunks_except(baseline, &hunks, usize::MAX).unwrap();
+        assert_eq!(with_both, "A\nb\nC\n");
+        let skip_first = apply_hunks_except(baseline, &hunks, 0).unwrap();
+        assert_eq!(skip_first, "a\nb\nC\n");
     }
 
     #[test]

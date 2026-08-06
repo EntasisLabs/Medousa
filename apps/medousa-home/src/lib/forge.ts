@@ -878,6 +878,8 @@ export type ForgeChanges = {
   ahead?: number | null;
   behind?: number | null;
   conflict: boolean;
+  dirty?: boolean;
+  merge_in_progress?: boolean;
   files: ForgeChangesFile[];
 };
 
@@ -901,6 +903,33 @@ export type RestoreChangesFileResponse = {
   path: string;
   action: string;
   digest?: string | null;
+};
+
+export type ChangesSyncResult = {
+  work_id: string;
+  fetched: boolean;
+  pulled: boolean;
+  pushed: boolean;
+  message: string;
+  changes: ForgeChanges;
+};
+
+export type ChangesHistoryEntry = {
+  oid: string;
+  author_name: string;
+  author_email: string;
+  authored_at: number;
+  subject: string;
+};
+
+export type ChangesBlameHunk = {
+  oid: string;
+  author_name: string;
+  author_email: string;
+  authored_at: number;
+  summary: string;
+  start_line: number;
+  line_count: number;
 };
 
 export async function getProjectTasks(workId: string): Promise<ProjectTask[]> {
@@ -1177,6 +1206,109 @@ export async function restoreChangesFile(
   },
 ): Promise<RestoreChangesFileResponse> {
   return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/changes/file`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+async function changesLeaseAction(
+  workId: string,
+  action: "fetch" | "pull" | "push" | "sync" | "checkpoint",
+  lease: {
+    lease_id: string;
+    generation: number;
+    remote?: string;
+    ack_risks?: boolean;
+  },
+): Promise<ChangesSyncResult | ItemProjection> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/changes/${action}`, {
+    method: "POST",
+    body: JSON.stringify(lease),
+  });
+}
+
+export async function fetchChanges(
+  workId: string,
+  lease: { lease_id: string; generation: number; remote?: string },
+): Promise<ChangesSyncResult> {
+  return changesLeaseAction(workId, "fetch", lease) as Promise<ChangesSyncResult>;
+}
+
+export async function pullChanges(
+  workId: string,
+  lease: { lease_id: string; generation: number; remote?: string },
+): Promise<ChangesSyncResult> {
+  return changesLeaseAction(workId, "pull", lease) as Promise<ChangesSyncResult>;
+}
+
+export async function pushChanges(
+  workId: string,
+  lease: { lease_id: string; generation: number; remote?: string },
+): Promise<ChangesSyncResult> {
+  return changesLeaseAction(workId, "push", lease) as Promise<ChangesSyncResult>;
+}
+
+export async function syncChanges(
+  workId: string,
+  lease: { lease_id: string; generation: number; remote?: string },
+): Promise<ChangesSyncResult> {
+  return changesLeaseAction(workId, "sync", lease) as Promise<ChangesSyncResult>;
+}
+
+export async function checkpointChanges(
+  workId: string,
+  lease: { lease_id: string; generation: number; ack_risks?: boolean },
+): Promise<ItemProjection> {
+  return changesLeaseAction(workId, "checkpoint", lease) as Promise<ItemProjection>;
+}
+
+export async function getChangesHistory(
+  workId: string,
+  limit = 50,
+): Promise<{ work_id: string; commits: ChangesHistoryEntry[] }> {
+  const query = new URLSearchParams({ limit: String(limit) });
+  return forgeFetch(
+    `/v1/forge/items/${encodeURIComponent(workId)}/changes/history?${query.toString()}`,
+  );
+}
+
+export async function getChangesBlame(
+  workId: string,
+  path: string,
+): Promise<{ work_id: string; path: string; hunks: ChangesBlameHunk[] }> {
+  const query = new URLSearchParams({ path });
+  return forgeFetch(
+    `/v1/forge/items/${encodeURIComponent(workId)}/changes/blame?${query.toString()}`,
+  );
+}
+
+export async function resolveChangesConflict(
+  workId: string,
+  input: {
+    path: string;
+    resolution: "ours" | "theirs" | "baseline";
+    expected_working_digest?: string | null;
+    lease_id: string;
+    generation: number;
+  },
+): Promise<{ work_id: string; path: string; action: string; changes: ForgeChanges }> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/changes/conflict`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function revertChangesHunk(
+  workId: string,
+  input: {
+    path: string;
+    hunk_index: number;
+    expected_working_digest: string;
+    lease_id: string;
+    generation: number;
+  },
+): Promise<RestoreChangesFileResponse> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/changes/file/hunk`, {
     method: "POST",
     body: JSON.stringify(input),
   });

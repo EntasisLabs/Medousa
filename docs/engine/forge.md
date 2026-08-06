@@ -52,8 +52,17 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | GET (SSE) | `/v1/forge/items/{id}/project-events?since=…` | Resumable path-aware source/Git project events for one work item |
 | GET (SSE) | `/v1/forge/stream` | Live undertaking list freshness (state/kind only; no path cursor) |
 | GET | `/v1/forge/items/{id}/tree` | List tracked and unignored repository files (bounded to 20,000) |
-| GET | `/v1/forge/items/{id}/changes` | Working-copy Changes: branch, upstream ahead/behind, conflict flag, and changed-file statuses |
+| GET | `/v1/forge/items/{id}/changes` | Working-copy Changes: branch, upstream ahead/behind, conflict flag, dirty/merge flags, and changed-file statuses |
 | GET, POST | `/v1/forge/items/{id}/changes/file` | Per-file working-copy vs baseline diff (`GET`) or lease-fenced restore to baseline (`POST`) |
+| POST | `/v1/forge/items/{id}/changes/file/hunk` | Lease-fenced revert of one diff hunk |
+| POST | `/v1/forge/items/{id}/changes/fetch` | Fetch remotes for the governed worktree |
+| POST | `/v1/forge/items/{id}/changes/pull` | Fast-forward-only pull |
+| POST | `/v1/forge/items/{id}/changes/push` | Non-force push of the Forge branch |
+| POST | `/v1/forge/items/{id}/changes/sync` | Fetch, then ff-only pull when behind, then push when ahead |
+| POST | `/v1/forge/items/{id}/changes/checkpoint` | Seal the active lease for Review (same as lease complete) |
+| GET | `/v1/forge/items/{id}/changes/history` | Commits since the project baseline |
+| GET | `/v1/forge/items/{id}/changes/blame` | Line blame for one path |
+| POST | `/v1/forge/items/{id}/changes/conflict` | Resolve unmerged path (`ours` / `theirs` / `baseline`) and clear conflict state |
 | GET | `/v1/forge/items/{id}/search?query=…` | Repository search (`literal`/`regex`, case/whole-word, include/exclude globs, `scope=all\|changed`, `limit`, `cursor` pagination; bounded to 500 hits; includes untracked, honors ignore by default) |
 | POST | `/v1/forge/items/{id}/search/replace` | Preview (`dry_run=true`) or apply digest-fenced repository replace; optional `paths` subset and `preconditions` |
 | GET, PUT | `/v1/forge/items/{id}/workspace-state` | Restore/preserve open files, cursor positions, bounded dirty drafts, and contextual Code layout (Problems/Terminal/Tests/Search/Changes) |

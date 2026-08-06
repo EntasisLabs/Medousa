@@ -232,6 +232,98 @@ export function buildCodeCommands(): WorkshopCommand[] {
       },
     },
     {
+      id: "git.fetch",
+      section: "do",
+      label: "Fetch",
+      subtitle: "Fetch remotes for the governed working copy",
+      keywords: "git fetch remote sync vscode",
+      aliases: ["git.fetch", "Fetch", "Git: Fetch"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("git.fetch");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "git.pull",
+      section: "do",
+      label: "Pull (fast-forward)",
+      subtitle: "Fast-forward only pull into the Forge branch",
+      keywords: "git pull ff sync vscode",
+      aliases: ["git.pull", "Pull", "Git: Pull"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("git.pull");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "git.push",
+      section: "do",
+      label: "Push",
+      subtitle: "Push the Forge branch (never force)",
+      keywords: "git push remote sync vscode",
+      aliases: ["git.push", "Push", "Git: Push"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("git.push");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "git.sync",
+      section: "do",
+      label: "Sync",
+      subtitle: "Fetch, fast-forward pull, then push when ahead",
+      keywords: "git sync fetch pull push vscode",
+      aliases: ["git.sync", "Sync", "Git: Sync"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("git.sync");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "medousa.forge.checkpoint",
+      section: "do",
+      label: "Seal for Review",
+      subtitle: "Checkpoint the working copy and open Review",
+      keywords: "seal checkpoint commit review forge vscode",
+      aliases: ["medousa.forge.checkpoint", "git.commit", "Seal for Review", "Checkpoint"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("medousa.forge.checkpoint");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "git.viewHistory",
+      section: "do",
+      label: "Changes History",
+      subtitle: "Commits since the project baseline",
+      keywords: "git history log timeline vscode",
+      aliases: ["git.viewHistory", "History", "Git: View History"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("git.viewHistory");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "git.blame.toggle",
+      section: "do",
+      label: "Toggle Blame",
+      subtitle: "Show blame for the selected Changes file",
+      keywords: "git blame annotate vscode",
+      aliases: ["git.blame.toggle", "Blame", "Git: Toggle Blame"],
+      verb: "toggle",
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("git.blame.toggle");
+        ctx.callbacks.close();
+      },
+    },
+    {
       id: "workbench.action.output.toggleOutput",
       section: "do",
       label: "Output",
