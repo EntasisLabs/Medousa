@@ -66,6 +66,10 @@
     watchedFileChangesForProjectEvent,
     type ForgeProjectEvent,
   } from "$lib/code/codeProjectEvents";
+  import {
+    codeWorkbenchState,
+    type CodeContextPanel,
+  } from "$lib/code/codeWorkbenchState.svelte";
   import { codeEditorViewRegistry } from "$lib/code/codeEditorViewRegistry";
   import type { CodeLanguageNavigationKind } from "$lib/code/codeLanguageNavigation";
   import { containingSymbolTrail } from "$lib/code/codeDocumentSymbols";
@@ -509,8 +513,13 @@
   }
 
   async function toggleTests() {
-    testsOpen = !testsOpen;
-    if (!testsOpen || projectTests.length || !workId) return;
+    const next = !testsOpen;
+    testsOpen = next;
+    if (workId) {
+      codeWorkbenchState.setTestsOpen(workId, next);
+      codeWorkspace.scheduleLayoutPersist(workId);
+    }
+    if (!next || projectTests.length || !workId) return;
     try {
       projectTests = await getProjectTests(workId);
     } catch (err) {
@@ -608,6 +617,10 @@
     const next = forceOpen === true ? true : forceOpen === false ? false : !terminalDockOpen;
     if (!next) {
       terminalDockOpen = false;
+      if (workId) {
+        codeWorkbenchState.setTerminalOpen(workId, false);
+        codeWorkspace.scheduleLayoutPersist(workId);
+      }
       return;
     }
     if (!detail || !terminalAvailable) {
@@ -615,6 +628,10 @@
       return;
     }
     terminalDockOpen = true;
+    if (workId) {
+      codeWorkbenchState.setTerminalOpen(workId, true);
+      codeWorkspace.scheduleLayoutPersist(workId);
+    }
     if (dockSessionId) return;
     dockBusy = true;
     surfaceError = null;
@@ -625,6 +642,10 @@
     } catch (err) {
       surfaceError = err instanceof Error ? err.message : String(err);
       terminalDockOpen = false;
+      if (workId) {
+        codeWorkbenchState.setTerminalOpen(workId, false);
+        codeWorkspace.scheduleLayoutPersist(workId);
+      }
     } finally {
       dockBusy = false;
     }
@@ -633,6 +654,10 @@
   async function popOutTerminal() {
     if (!detail) return;
     terminalDockOpen = false;
+    if (workId) {
+      codeWorkbenchState.setTerminalOpen(workId, false);
+      codeWorkspace.scheduleLayoutPersist(workId);
+    }
     await openTrackedTerminal(detail, { activate: true });
   }
 
@@ -721,6 +746,7 @@
     await lmeWorkspace.openCodeFile(workId, tab.path, {
       line: tab.line,
       recordNavigation: false,
+      groupId: entry.groupId ?? shellTabs.activeGroupId,
     });
     undertakings.setSelection({ path: tab.path, line: tab.line, entityId: null });
     await tick();
@@ -817,8 +843,7 @@
   }
 
   async function showLanguageLogs() {
-    contextPanel = contextPanel === "language" ? null : "language";
-    if (contextPanel === "language") await refreshLanguageSessions();
+    await showLanguagePanel();
   }
 
   function formatLanguageLogTime(timestamp: number): string {
@@ -1281,11 +1306,6 @@
     }
   }
 
-  async function showOutline() {
-    contextPanel = contextPanel === "outline" ? null : "outline";
-    if (contextPanel === "outline") await refreshSymbols();
-  }
-
   async function refreshSymbols() {
     if (!activeTab || !documentUri || !lspClient) {
       symbols = [];
@@ -1309,9 +1329,29 @@
     }
   }
 
+  function setContextPanel(next: CodeContextPanel) {
+    contextPanel = next;
+    if (!workId) return;
+    codeWorkbenchState.setContextPanel(workId, next);
+    codeWorkspace.scheduleLayoutPersist(workId);
+  }
+
+  async function showOutline() {
+    const next = contextPanel === "outline" ? null : "outline";
+    setContextPanel(next);
+    if (next === "outline") await refreshSymbols();
+  }
+
+  async function showLanguagePanel() {
+    const next = contextPanel === "language" ? null : "language";
+    setContextPanel(next);
+    if (next === "language") await refreshLanguageSessions();
+  }
+
   async function showProblems() {
-    contextPanel = contextPanel === "problems" ? null : "problems";
-    if (contextPanel !== "problems") return;
+    const next = contextPanel === "problems" ? null : "problems";
+    setContextPanel(next);
+    if (next !== "problems") return;
     lspClient?.sync();
     syncProblems();
   }
@@ -1635,7 +1675,7 @@
       const result = await client.request(method, params);
       if (action === "references") {
         references = Array.isArray(result) ? result : [];
-        contextPanel = "references";
+        setContextPanel("references");
         return;
       }
       if (action === "rename" && await reviewWorkspaceEdit(result)) return;
@@ -2152,6 +2192,21 @@
     };
   });
 
+  /** Restore contextual Code regions once per undertaking open. */
+  $effect(() => {
+    if (!interactive || !workId) return;
+    const id = workId;
+    void (async () => {
+      await codeWorkspace.hydrate(id);
+      if (workId !== id) return;
+      const layout = codeWorkbenchState.layoutFor(id);
+      contextPanel = layout.context_panel;
+      testsOpen = layout.tests;
+      if (layout.terminal) void toggleTerminalDock(true);
+      else terminalDockOpen = false;
+    })();
+  });
+
   $effect(() => {
     if (!interactive) {
       projectEventStream?.stop();
@@ -2462,7 +2517,7 @@
                 onclick={() => void refreshLanguageSessions()}
               ><RotateCcw size={11} class={languageSessionsLoading ? "animate-spin" : ""} /></button>
             {/if}
-            <button type="button" class="rounded p-0.5 text-content-quiet hover:text-surface-200" aria-label="Close context panel" onclick={() => (contextPanel = null)}><X size={11} /></button>
+            <button type="button" class="rounded p-0.5 text-content-quiet hover:text-surface-200" aria-label="Close context panel" onclick={() => setContextPanel(null)}><X size={11} /></button>
           </div>
         </div>
         {#if contextPanel === "problems"}
@@ -2601,9 +2656,10 @@
                 class="flex w-full items-center gap-2 border-b border-surface-500/15 px-3 py-1.5 text-left hover:bg-surface-800/60"
                 onclick={async () => {
                   if (!referencePath) return;
-                  contextPanel = null;
+                  setContextPanel(null);
                   await lmeWorkspace.openCodeFile(workId, referencePath, {
                     line: referenceLine,
+                    groupId: shellTabs.activeGroupId,
                   });
                   undertakings.setSelection({ path: referencePath, line: referenceLine, entityId: null });
                   await tick();
@@ -2732,7 +2788,13 @@
     sessionId={dockSessionId}
     {workId}
     title="Terminal"
-    onClose={() => (terminalDockOpen = false)}
+    onClose={() => {
+      terminalDockOpen = false;
+      if (workId) {
+        codeWorkbenchState.setTerminalOpen(workId, false);
+        codeWorkspace.scheduleLayoutPersist(workId);
+      }
+    }}
     onPopOut={() => void popOutTerminal()}
   />
 </section>
@@ -3019,6 +3081,6 @@
       beginInlineRename();
       return;
     }
-    if (event.key === "Escape" && contextPanel) contextPanel = null;
+    if (event.key === "Escape" && contextPanel) setContextPanel(null);
   }}
 />

@@ -509,6 +509,9 @@ class CodeWorkspaceStore {
         [workId]: active.tabId,
       };
     }
+    if (state.layout) {
+      codeWorkbenchState.applyLayout(workId, state.layout);
+    }
   }
 
   private schedulePersist(workId: string, delay = 700) {
@@ -523,12 +526,18 @@ class CodeWorkspaceStore {
     );
   }
 
+  /** Persist Code buffers and contextual layout for this undertaking. */
+  scheduleLayoutPersist(workId: string) {
+    this.schedulePersist(workId, 400);
+  }
+
   async persist(workId: string) {
     if (!this.hydrated.has(workId)) return;
     const tabs = this.tabsFor(workId).filter((tab) => !tab.loading && tab.digest);
     const dirty = tabs.some((tab) => this.isDirty(tab));
     const lease = this.leaseByWorkId[workId] ?? null;
     if (dirty && !lease) return;
+    const layout = codeWorkbenchState.layoutFor(workId);
     try {
       await saveCodeWorkspaceState(
         workId,
@@ -541,6 +550,11 @@ class CodeWorkspaceStore {
           })),
           active_path: this.activeFor(workId)?.path ?? null,
           secondary_path: null,
+          layout: {
+            context_panel: layout.context_panel,
+            terminal: layout.terminal,
+            tests: layout.tests,
+          },
         },
         lease,
       );

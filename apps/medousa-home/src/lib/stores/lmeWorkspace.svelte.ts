@@ -165,10 +165,18 @@ function codeResourceKey(workId: string, resource: CodeWorkspaceResource): strin
   return `code-${resource.kind}:${encodeURIComponent(workId)}`;
 }
 
-function mirrorActiveTabToShell(tabId: string | null, title?: string) {
+function mirrorActiveTabToShell(
+  tabId: string | null,
+  title?: string,
+  groupId?: string,
+) {
   if (!tabId) return;
   void import("$lib/stores/shellTabs.svelte").then(({ shellTabs }) => {
-    shellTabs.mirrorLmeTab(tabId, { activate: true, title });
+    shellTabs.mirrorLmeTab(tabId, {
+      activate: true,
+      title,
+      groupId,
+    });
   });
 }
 
@@ -432,6 +440,8 @@ export class LmeWorkspaceStore {
       projectTitle?: string;
       activate?: boolean;
       recordNavigation?: boolean;
+      /** Target shell editor group; defaults to the focused group. */
+      groupId?: string;
     },
   ) {
     const id = workId.trim();
@@ -471,7 +481,7 @@ export class LmeWorkspaceStore {
       }
       if (options?.activate !== false) {
         this.activeTabId = existing.tabId;
-        mirrorActiveTabToShell(existing.tabId, existing.title);
+        mirrorActiveTabToShell(existing.tabId, existing.title, options?.groupId);
       }
       return source;
     }
@@ -486,7 +496,7 @@ export class LmeWorkspaceStore {
     this.tabs = [...this.tabs, tab].slice(-MAX_TABS);
     if (options?.activate !== false) {
       this.activeTabId = tab.tabId;
-      mirrorActiveTabToShell(tab.tabId, tab.title);
+      mirrorActiveTabToShell(tab.tabId, tab.title, options?.groupId);
     }
     return source;
   }

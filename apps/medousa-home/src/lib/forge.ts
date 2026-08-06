@@ -324,6 +324,12 @@ export type ForgeCodeWorkspaceState = {
   }>;
   active_path?: string | null;
   secondary_path?: string | null;
+  /** Contextual Code regions (Problems/Terminal/Tests); additive. */
+  layout?: {
+    context_panel?: "problems" | "outline" | "references" | "language" | null;
+    terminal?: boolean;
+    tests?: boolean;
+  } | null;
   updated_at?: string | null;
 };
 

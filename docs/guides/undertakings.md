@@ -98,6 +98,8 @@ a private Code IDE chrome.
   current file visible in both panes; drag a tab to a pane edge to move it.
   Directional pane focus (`Ctrl+;` then hjkl) follows on-screen geometry.
   Code Back/Forward restores the remembered pane when that group still exists.
+  Problems, Structure, Tests, and the Terminal dock restore with the project
+  (`workspace-state` layout); they are not permanent chrome across Chat or Notes.
 - The Code explorer lists tracked and unignored repository files. `Cmd/Ctrl+P`
   opens Quick Open: type a file name, `@` plus a name for project symbols, or
   `:` plus a number to jump to a line.
