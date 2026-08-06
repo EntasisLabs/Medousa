@@ -108,7 +108,12 @@ a private Code IDE chrome.
   opens Quick Open: type a file name, `@` plus a name for project symbols, or
   `:` plus a number to jump to a line. `Cmd/Ctrl+Shift+F` opens Search across
   tracked and untracked source (regex, case, whole word, include/exclude globs,
-  changed-files scope, and load-more pagination). Replace lands in a later slice.
+  changed-files scope, and load-more pagination). **Replace…** previews
+  digest-fenced edits; uncheck files to skip them, then Apply writes the rest
+  atomically.
+- New file and New folder are available in the repository explorer. Nested
+  parents are created as needed. Rename and delete work on the selected file or
+  folder (folder ops apply one guarded multi-file transaction).
 - Open files become project-scoped shell tabs with independent unsaved drafts.
   Cursor targets and protected draft recovery survive view changes and app
   restarts. If the file changed outside Medousa, the recovered draft remains
@@ -120,9 +125,9 @@ a private Code IDE chrome.
   status bar shows find/save/open hints, `Ln`/`Col`, indentation, language id,
   and session ownership. **View** toggles word wrap and line numbers. Saves
   whisper `Saving…` / timed `Saved`.
-- New file, rename, and delete are available in the repository explorer. All
-  three begin or reuse the editing session and remain inside the working copy;
-  rename/delete refuse unsaved open drafts and use change-conflict protection.
+- File and folder create/rename/delete begin or reuse the editing session and
+  remain inside the working copy; rename/delete refuse unsaved open drafts and
+  use change-conflict protection.
 - Repository status refreshes with the tree. When Home regains focus, the
   active clean file refreshes if an agent or Terminal changed it; a dirty human
   draft is preserved and receives an explicit external-change warning. Live

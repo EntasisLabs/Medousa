@@ -2772,6 +2772,15 @@
         {workId}
         onOpenHit={openSearchHit}
         onClose={() => toggleSearch(false)}
+        onApplied={async () => {
+          await undertakings.refreshDetail();
+          reconcileOpenFiles();
+          try {
+            quickFiles = (await getUndertakingSourceTree(workId)).files;
+          } catch {
+            /* tree refresh can retry later */
+          }
+        }}
       />
     {/if}
     {#if testsOpen}

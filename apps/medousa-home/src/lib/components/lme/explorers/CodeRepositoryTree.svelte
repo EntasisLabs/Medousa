@@ -8,6 +8,7 @@
     FilePlus2,
     Folder,
     FolderOpen,
+    FolderPlus,
     RefreshCw,
     Search,
     Pencil,
@@ -19,6 +20,7 @@
     createUndertakingSource,
     renameUndertakingSource,
     deleteUndertakingSource,
+    applyUndertakingSourceWorkspaceEdit,
     beginHumanAttempt,
     humanizeForgeMessage,
     searchUndertakingSource,
@@ -64,10 +66,12 @@
   let contentSearch = $state<ForgeSourceSearch | null>(null);
   let contentSearching = $state(false);
   let creatingPath = $state(false);
+  let creatingFolder = $state(false);
   let newPath = $state("");
   let mutating = $state(false);
   let selectedDirectory = $state("");
   let renamingPath = $state<string | null>(null);
+  let renamingDirectory = $state<string | null>(null);
   let renameDestination = $state("");
   let deletedFile = $state<ForgeSourceFile | null>(null);
   let renameInput = $state<HTMLInputElement | null>(null);
@@ -226,6 +230,162 @@
       creatingPath = false;
       newPath = "";
       await openUndertakingLocation({ workId, path: source.path, line: 1 });
+      await load(false, true);
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      mutating = false;
+    }
+  }
+
+  async function createFolder() {
+    const entered = newPath.trim().replaceAll("\\", "/").replace(/\/+$/, "");
+    const path = selectedDirectory && !entered.includes("/")
+      ? `${selectedDirectory}/${entered}`
+      : entered;
+    if (!path || mutating) return;
+    mutating = true;
+    error = null;
+    try {
+      const lease = await ensureLease();
+      await createUndertakingSource(workId, {
+        path,
+        kind: "directory",
+        ...lease,
+      });
+      creatingFolder = false;
+      newPath = "";
+      selectedDirectory = path;
+      expanded.add(path);
+      await load(false, true);
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      mutating = false;
+    }
+  }
+
+  function filesUnderDirectory(directory: string): string[] {
+    const prefix = `${directory.replace(/\/+$/, "")}/`;
+    return (tree?.files ?? [])
+      .map((file) => file.path)
+      .filter((path) => path === directory || path.startsWith(prefix));
+  }
+
+  async function renameDirectorySelected() {
+    const directory = renamingDirectory?.trim() ?? "";
+    const destination = renameDestination.trim().replaceAll("\\", "/").replace(/\/+$/, "");
+    if (!directory || !destination || destination === directory || mutating) return;
+    const paths = filesUnderDirectory(directory);
+    if (paths.length === 0) {
+      error = "That folder has no files to rename yet.";
+      return;
+    }
+    const dirty = codeWorkspace.tabsFor(workId).some(
+      (tab) =>
+        codeWorkspace.isDirty(tab) &&
+        (tab.path === directory || tab.path.startsWith(`${directory}/`)),
+    );
+    if (dirty) {
+      error = "Save or discard drafts under this folder before renaming it.";
+      return;
+    }
+    mutating = true;
+    error = null;
+    try {
+      const lease = await ensureLease();
+      const preconditions = [];
+      const operations = [];
+      for (const path of paths) {
+        const source = await getUndertakingSource(workId, path);
+        preconditions.push({
+          kind: "existing" as const,
+          path,
+          expected_digest: source.digest,
+        });
+        const nextPath = path === directory
+          ? destination
+          : `${destination}/${path.slice(directory.length + 1)}`;
+        preconditions.push({ kind: "missing" as const, path: nextPath });
+        operations.push({
+          kind: "rename" as const,
+          path,
+          destination: nextPath,
+        });
+      }
+      await applyUndertakingSourceWorkspaceEdit(workId, {
+        preconditions,
+        operations,
+        ...lease,
+      });
+      for (const path of paths) {
+        const nextPath = path === directory
+          ? destination
+          : `${destination}/${path.slice(directory.length + 1)}`;
+        const open = codeWorkspace.tabsFor(workId).find((tab) => tab.path === path);
+        if (open) {
+          const source = await getUndertakingSource(workId, nextPath);
+          codeWorkspace.replacePath(workId, path, source);
+          await lmeWorkspace.replaceCodeFile(workId, path, nextPath);
+        }
+      }
+      renamingDirectory = null;
+      renameDestination = "";
+      selectedDirectory = destination;
+      await load(false, true);
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      mutating = false;
+    }
+  }
+
+  async function deleteDirectorySelected() {
+    const directory = selectedDirectory.trim();
+    if (!directory || mutating) return;
+    const paths = filesUnderDirectory(directory);
+    if (paths.length === 0) {
+      error = "That folder has no files to delete yet.";
+      return;
+    }
+    const dirty = codeWorkspace.tabsFor(workId).some(
+      (tab) =>
+        codeWorkspace.isDirty(tab) &&
+        (tab.path === directory || tab.path.startsWith(`${directory}/`)),
+    );
+    if (dirty) {
+      error = "Save or discard drafts under this folder before deleting it.";
+      return;
+    }
+    if (!window.confirm(`Delete folder ${directory} and ${paths.length} file${paths.length === 1 ? "" : "s"}?`)) {
+      return;
+    }
+    mutating = true;
+    error = null;
+    try {
+      const lease = await ensureLease();
+      const preconditions = [];
+      const operations = [];
+      for (const path of paths) {
+        const source = await getUndertakingSource(workId, path);
+        preconditions.push({
+          kind: "existing" as const,
+          path,
+          expected_digest: source.digest,
+        });
+        operations.push({ kind: "delete" as const, path });
+      }
+      await applyUndertakingSourceWorkspaceEdit(workId, {
+        preconditions,
+        operations,
+        ...lease,
+      });
+      for (const path of paths) {
+        await lmeWorkspace.closeCodeFile(workId, path);
+        codeWorkspace.removePath(workId, path);
+      }
+      selectedDirectory = "";
+      undertakings.setSelection({ path: null, line: null, entityId: null });
       await load(false, true);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -406,8 +566,21 @@
         class="rounded p-1 text-content-quiet hover:bg-surface-800 hover:text-surface-200"
         aria-label="New file"
         title="New file"
-        onclick={() => (creatingPath = !creatingPath)}
+        onclick={() => {
+          creatingFolder = false;
+          creatingPath = !creatingPath;
+        }}
       ><FilePlus2 size={12} /></button>
+      <button
+        type="button"
+        class="rounded p-1 text-content-quiet hover:bg-surface-800 hover:text-surface-200"
+        aria-label="New folder"
+        title="New folder"
+        onclick={() => {
+          creatingPath = false;
+          creatingFolder = !creatingFolder;
+        }}
+      ><FolderPlus size={12} /></button>
     </div>
 
     {#if creatingPath}
@@ -428,6 +601,24 @@
       </form>
     {/if}
 
+    {#if creatingFolder}
+      <form
+        class="flex gap-1 border-b border-surface-500/20 px-2 py-1"
+        onsubmit={(event) => {
+          event.preventDefault();
+          void createFolder();
+        }}
+      >
+        <input
+          class="min-w-0 flex-1 rounded border border-surface-500/40 bg-surface-900 px-1.5 py-1 font-mono text-[10px] text-surface-200"
+          placeholder={selectedDirectory ? `New folder in ${selectedDirectory}` : "src/utils"}
+          aria-label="New folder path"
+          bind:value={newPath}
+        />
+        <button type="submit" class="rounded bg-primary-500/80 px-2 text-[9px] text-surface-50" disabled={!newPath.trim() || mutating}>Create</button>
+      </form>
+    {/if}
+
     {#if undertakings.active?.workId === workId && undertakings.active.selectedPath}
       <div class="flex items-center justify-between gap-2 border-b border-surface-500/20 px-2 py-1">
         {#if renamingPath === undertakings.active.selectedPath}
@@ -438,8 +629,21 @@
         {:else}
           <span class="min-w-0 flex-1 truncate font-mono text-[9px] text-content-quiet">{undertakings.active.selectedPath}</span>
         {/if}
-        <button type="button" class="rounded p-1 text-content-quiet hover:bg-surface-800 hover:text-surface-200" title="Rename selected file" aria-label="Rename selected file" disabled={mutating} onclick={() => { renamingPath = undertakings.active?.selectedPath ?? null; renameDestination = renamingPath ?? ""; void tick().then(() => renameInput?.focus()); }}><Pencil size={11} /></button>
+        <button type="button" class="rounded p-1 text-content-quiet hover:bg-surface-800 hover:text-surface-200" title="Rename selected file" aria-label="Rename selected file" disabled={mutating} onclick={() => { renamingDirectory = null; renamingPath = undertakings.active?.selectedPath ?? null; renameDestination = renamingPath ?? ""; void tick().then(() => renameInput?.focus()); }}><Pencil size={11} /></button>
         <button type="button" class="rounded p-1 text-content-quiet hover:bg-rose-950/50 hover:text-rose-200" title="Delete selected file" aria-label="Delete selected file" disabled={mutating} onclick={() => void deleteSelected()}><Trash2 size={11} /></button>
+      </div>
+    {:else if selectedDirectory}
+      <div class="flex items-center justify-between gap-2 border-b border-surface-500/20 px-2 py-1">
+        {#if renamingDirectory === selectedDirectory}
+          <form class="flex min-w-0 flex-1 gap-1" onsubmit={(event) => { event.preventDefault(); void renameDirectorySelected(); }}>
+            <input bind:this={renameInput} class="min-w-0 flex-1 rounded border border-surface-500/40 bg-surface-900 px-1 py-0.5 font-mono text-[9px] text-surface-200" bind:value={renameDestination} onkeydown={(event) => { if (event.key === "Escape") renamingDirectory = null; }} />
+            <button type="submit" class="rounded px-1.5 text-[9px] text-primary-200">Rename</button>
+          </form>
+        {:else}
+          <span class="min-w-0 flex-1 truncate font-mono text-[9px] text-content-quiet">{selectedDirectory}/</span>
+        {/if}
+        <button type="button" class="rounded p-1 text-content-quiet hover:bg-surface-800 hover:text-surface-200" title="Rename selected folder" aria-label="Rename selected folder" disabled={mutating} onclick={() => { renamingPath = null; renamingDirectory = selectedDirectory; renameDestination = selectedDirectory; void tick().then(() => renameInput?.focus()); }}><Pencil size={11} /></button>
+        <button type="button" class="rounded p-1 text-content-quiet hover:bg-rose-950/50 hover:text-rose-200" title="Delete selected folder" aria-label="Delete selected folder" disabled={mutating} onclick={() => void deleteDirectorySelected()}><Trash2 size={11} /></button>
       </div>
     {/if}
 

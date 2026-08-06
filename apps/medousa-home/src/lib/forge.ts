@@ -528,6 +528,59 @@ export async function searchUndertakingSource(
   );
 }
 
+export type ForgeSourceReplaceFile = {
+  path: string;
+  expected_digest: string;
+  match_count: number;
+  before: string;
+  after: string;
+};
+
+export type ForgeSourceReplacePlan = {
+  work_id: string;
+  files: ForgeSourceReplaceFile[];
+  truncated: boolean;
+  applied: boolean;
+};
+
+export type ForgeSourceReplaceOptions = ForgeSourceSearchOptions & {
+  replacement: string;
+  dryRun?: boolean;
+  paths?: string[];
+  preconditions?: Array<{ path: string; expected_digest: string }>;
+  lease_id?: string;
+  generation?: number;
+};
+
+export async function replaceUndertakingSource(
+  workId: string,
+  options: ForgeSourceReplaceOptions,
+): Promise<ForgeSourceReplacePlan> {
+  return forgeFetch(
+    `/v1/forge/items/${encodeURIComponent(workId)}/search/replace`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        query: options.query,
+        replacement: options.replacement,
+        mode: options.mode,
+        case_sensitive: options.caseSensitive,
+        whole_word: options.wholeWord,
+        include: options.include,
+        exclude: options.exclude,
+        include_ignored: options.includeIgnored,
+        scope: options.scope,
+        limit: options.limit,
+        dry_run: options.dryRun ?? true,
+        paths: options.paths,
+        preconditions: options.preconditions,
+        lease_id: options.lease_id,
+        generation: options.generation,
+      }),
+    },
+  );
+}
+
 export async function getCodeWorkspaceState(
   workId: string,
 ): Promise<ForgeCodeWorkspaceState> {
@@ -611,6 +664,7 @@ export async function createUndertakingSource(
   input: {
     path: string;
     content?: string;
+    kind?: "file" | "directory";
     lease_id: string;
     generation: number;
   },
