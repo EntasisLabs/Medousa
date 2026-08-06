@@ -164,7 +164,7 @@ export function buildCodeCommands(): WorkshopCommand[] {
       id: "workbench.action.findInFiles",
       section: "do",
       label: "Search in Files",
-      subtitle: "Workspace search arrives in a later Code slice",
+      subtitle: `${chordHint("workbench.action.findInFiles", "Mod+Shift+F")} — project search`,
       keywords: "search find in files workspace vscode",
       aliases: [
         "workbench.action.findInFiles",
@@ -172,10 +172,9 @@ export function buildCodeCommands(): WorkshopCommand[] {
         "Find in Files",
         "Search: Find in Files",
       ],
-      run: (ctx: WorkshopCommandContext) => {
-        ctx.notice(
-          "Workspace Search is next — use Quick Open or the project tree for now.",
-        );
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("workbench.action.findInFiles");
         ctx.callbacks.close();
       },
     },

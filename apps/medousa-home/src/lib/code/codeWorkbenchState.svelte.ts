@@ -27,12 +27,14 @@ export type CodeWorkbenchLayout = {
   context_panel: CodeContextPanel;
   terminal: boolean;
   tests: boolean;
+  search: boolean;
 };
 
 export const DEFAULT_CODE_WORKBENCH_LAYOUT: CodeWorkbenchLayout = {
   context_panel: null,
   terminal: false,
   tests: false,
+  search: false,
 };
 
 const HISTORY_CAP = 100;
@@ -59,6 +61,7 @@ export function normalizeCodeWorkbenchLayout(
         : null,
     terminal: raw.terminal === true,
     tests: raw.tests === true,
+    search: raw.search === true,
   };
 }
 
@@ -165,6 +168,10 @@ class CodeWorkbenchState {
 
   setTestsOpen(workId: string, open: boolean) {
     this.patchLayout(workId, { tests: open });
+  }
+
+  setSearchOpen(workId: string, open: boolean) {
+    this.patchLayout(workId, { search: open });
   }
 
   record(

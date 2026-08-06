@@ -27,6 +27,7 @@
     type CodeEditorMenuAction,
   } from "$lib/components/code/CodeEditorContextMenu.svelte";
   import CodeTerminalDock from "$lib/components/work/CodeTerminalDock.svelte";
+  import CodeWorkspaceSearch from "$lib/components/code/CodeWorkspaceSearch.svelte";
   import { openTrackedTerminal } from "$lib/utils/undertakingWorkspace";
   import type { LSPClient } from "@codemirror/lsp-client";
   import {
@@ -205,6 +206,7 @@
   let taskRun = $state<ProjectTaskRun | null>(null);
   let projectTests = $state<ProjectTest[]>([]);
   let testsOpen = $state(false);
+  let searchOpen = $state(false);
   let externalVersions = $state<Record<string, ForgeSourceFile>>({});
   let comparingTabId = $state<string | null>(null);
   let reviewChangedLines = $state<Array<{ line: number; kind: string }>>([]);
@@ -525,6 +527,25 @@
     } catch (err) {
       surfaceError = err instanceof Error ? err.message : String(err);
     }
+  }
+
+  function toggleSearch(forceOpen?: boolean) {
+    const next =
+      forceOpen === true ? true : forceOpen === false ? false : !searchOpen;
+    searchOpen = next;
+    if (!workId) return;
+    codeWorkbenchState.setSearchOpen(workId, next);
+    codeWorkspace.scheduleLayoutPersist(workId);
+  }
+
+  async function openSearchHit(path: string, line: number) {
+    await lmeWorkspace.openCodeFile(workId, path, {
+      line,
+      groupId: shellTabs.activeGroupId,
+    });
+    undertakings.setSelection({ path, line, entityId: null });
+    await tick();
+    editor?.revealLine(line);
   }
 
   async function openTaskLocation(path: string, line: number) {
@@ -2208,6 +2229,9 @@
         case "workbench.view.testing":
           void toggleTests();
           break;
+        case "workbench.action.findInFiles":
+          toggleSearch(true);
+          break;
         default:
           break;
       }
@@ -2230,6 +2254,7 @@
       const layout = codeWorkbenchState.layoutFor(id);
       contextPanel = layout.context_panel;
       testsOpen = layout.tests;
+      searchOpen = layout.search;
       if (layout.terminal) void toggleTerminalDock(true);
       else terminalDockOpen = false;
     })();
@@ -2282,6 +2307,14 @@
           aria-pressed={contextPanel === "problems"}
           onclick={() => void showProblems()}
         ><CircleAlert size={14} strokeWidth={1.75} /></button>
+        <button
+          type="button"
+          class="scripts-workbench-toolbar-btn {searchOpen ? 'scripts-workbench-toolbar-btn-active' : ''}"
+          title={titleWithShortcut("Search in files", "code-search")}
+          aria-label="Search in files"
+          aria-pressed={searchOpen}
+          onclick={() => toggleSearch()}
+        ><Search size={14} strokeWidth={1.75} /></button>
         <button
           type="button"
           class="scripts-workbench-toolbar-btn {contextPanel === 'outline' ? 'scripts-workbench-toolbar-btn-active' : ''}"
@@ -2734,6 +2767,13 @@
       {/each}
       </div>
     {/if}
+    {#if searchOpen}
+      <CodeWorkspaceSearch
+        {workId}
+        onOpenHit={openSearchHit}
+        onClose={() => toggleSearch(false)}
+      />
+    {/if}
     {#if testsOpen}
       <div class="max-h-44 shrink-0 overflow-y-auto border-t border-surface-500/25 bg-surface-950/90">
         <div class="sticky top-0 flex items-center justify-between bg-surface-950 px-2.5 py-1 text-[9px] uppercase tracking-wider text-content-quiet"><span>Project tests</span><span>{projectTests.length}</span></div>
@@ -3093,6 +3133,11 @@
     if (command && event.key === "`") {
       event.preventDefault();
       void toggleTerminalDock();
+      return;
+    }
+    if (command && event.shiftKey && event.key.toLowerCase() === "f") {
+      event.preventDefault();
+      toggleSearch(true);
       return;
     }
     if (

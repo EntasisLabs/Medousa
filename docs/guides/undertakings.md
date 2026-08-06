@@ -98,15 +98,17 @@ a private Code IDE chrome.
   current file visible in both panes; drag a tab to a pane edge to move it.
   Directional pane focus (`Ctrl+;` then hjkl) follows on-screen geometry.
   Code Back/Forward restores the remembered pane when that group still exists.
-  Problems, Structure, Tests, and the Terminal dock restore with the project
+  Problems, Structure, Search, Tests, and the Terminal dock restore with the project
   (`workspace-state` layout); they are not permanent chrome across Chat or Notes.
   `Cmd/Ctrl+Shift+P` opens Spotlight in command mode (`>`). Code actions also
-  appear under familiar VS Code names (Quick Open, Problems, Terminal, Tests).
+  appear under familiar VS Code names (Quick Open, Search, Problems, Terminal, Tests).
   A small allowlist of chords can be overridden in storage; a Settings keybinding
   editor is not shipped yet.
 - The Code explorer lists tracked and unignored repository files. `Cmd/Ctrl+P`
   opens Quick Open: type a file name, `@` plus a name for project symbols, or
-  `:` plus a number to jump to a line.
+  `:` plus a number to jump to a line. `Cmd/Ctrl+Shift+F` opens Search across
+  tracked and untracked source (regex, case, whole word, include/exclude globs,
+  changed-files scope, and load-more pagination). Replace lands in a later slice.
 - Open files become project-scoped shell tabs with independent unsaved drafts.
   Cursor targets and protected draft recovery survive view changes and app
   restarts. If the file changed outside Medousa, the recovered draft remains

@@ -52,8 +52,8 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | GET (SSE) | `/v1/forge/items/{id}/project-events?since=…` | Resumable path-aware source/Git project events for one work item |
 | GET (SSE) | `/v1/forge/stream` | Live undertaking list freshness (state/kind only; no path cursor) |
 | GET | `/v1/forge/items/{id}/tree` | List tracked and unignored repository files (bounded to 20,000) |
-| GET | `/v1/forge/items/{id}/search?query=…` | Fixed-string tracked-source search (bounded to 500 hits) |
-| GET, PUT | `/v1/forge/items/{id}/workspace-state` | Restore/preserve open files, cursor positions, bounded dirty drafts, and contextual Code layout (Problems/Terminal/Tests) |
+| GET | `/v1/forge/items/{id}/search?query=…` | Repository search (`literal`/`regex`, case/whole-word, include/exclude globs, `scope=all\|changed`, `limit`, `cursor` pagination; bounded to 500 hits; includes untracked, honors ignore by default) |
+| GET, PUT | `/v1/forge/items/{id}/workspace-state` | Restore/preserve open files, cursor positions, bounded dirty drafts, and contextual Code layout (Problems/Terminal/Tests/Search) |
 | GET | `/v1/forge/items/{id}/review` | Structured outcome, risk, verification, attribution, timeline, and changed-file summary |
 | GET | `/v1/forge/evidence/{evidence_id}/receipts` | Sealed compact Coder evidence provenance (never raw payloads) |
 | GET | `/v1/forge/items/{id}/tasks` | Manifest-derived checks, tests, builds, and run commands |
@@ -278,8 +278,8 @@ draft requires the undertaking's live lease and is bounded to 2 MiB per draft,
 8 MiB total, and 32 tabs. Drafts retain their source digest so clients can
 surface recovery conflicts instead of silently applying stale text. The optional
 `layout` object restores contextual Code regions (`context_panel`, `terminal`,
-`tests`) independently of Home shell desktops; pane geometry and group tab
-strips remain shell-owned.
+`tests`, `search`) independently of Home shell desktops; pane geometry and group
+tab strips remain shell-owned.
 
 ### Errors
 

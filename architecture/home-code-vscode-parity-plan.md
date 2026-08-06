@@ -217,8 +217,8 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 | HCP-4B | All-open-buffer reconcile, rename/delete recovery, and watched-file LSP notifications | ✅ |
 | HCP-5A | Geometry-correct groups, split-with-retained-editor, and unified code history | ✅ |
 | HCP-5B | Contextual Code layout preset with group-local visible tabs and optional regions | ✅ |
-| HCP-5C | Shared command registry, VS Code aliases, context keys, and keybinding editor | 🔄 |
-| HCP-6A | Full repository search API/UI and cancellable pagination | ⬜ |
+| HCP-5C | Shared command registry, VS Code aliases, context keys, and keybinding editor | ✅ |
+| HCP-6A | Full repository search API/UI and cancellable pagination | 🔄 |
 | HCP-6B | Previewed repository replace and complete file/folder operations | ⬜ |
 | HCP-6C | Large-file, encoding, binary-preview, and fuzzy Quick Open fallbacks | ⬜ |
 | HCP-7A | Streaming execution protocol and bounded output replay | ⬜ |
@@ -228,12 +228,12 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 | HCP-8A | Forge Changes model and branch/upstream/conflict status | ⬜ |
 | HCP-8B | High-fidelity diff, real context expansion, file/hunk actions, and conflict editor | ⬜ |
 | HCP-8C | Guarded Git sync/history/blame/checkpoint operations and provider continuity | ⬜ |
-| HCP-9A | Test adapter contract, discovery hierarchy, stable state, and results | ⬜ |
-| HCP-9B | Gutter/Explorer runs, watch, coverage, profiles, and Forge evidence | ⬜ |
-| HCP-10A | Workshop DAP proxy, launch configuration, sessions, and source mapping | ⬜ |
-| HCP-10B | Breakpoints, stepping, stack, variables, watch, console, and debug-test | ⬜ |
+| HCP-9A | Test adapter contract, discovery hierarchy, stable state, and results | ⛔ |
+| HCP-9B | Gutter/Explorer runs, watch, coverage, profiles, and Forge evidence | ⛔ |
+| HCP-10A | Workshop DAP proxy, launch configuration, sessions, and source mapping | ⛔ |
+| HCP-10B | Breakpoints, stepping, stack, variables, watch, console, and debug-test | ⛔ |
 | HCP-11A | Versioned contribution registry and first-party language/tool packs | ⬜ |
-| HCP-11B | Settings/keybinding/profile persistence and useful VS Code config import | ⬜ |
+| HCP-11B | Settings/keybinding/profile persistence and useful VS Code config import | ⛔ |
 | HCP-11C | Multi-root/environment adapters and full remote-parity audit | ⬜ |
 
 ### Verified implementation ledger
@@ -317,6 +317,20 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
   `visibleCodeTabsInGroup` helpers composing shell strips. Migration: none.
   Compatibility: older daemons ignore `layout`; Home keeps defaults. Rollback:
   revert this commit; `layout` is additive.
+- **HCP-5C — `dbd4a3d4`.** Shared Code command ids/aliases in Spotlight,
+  `medousa-code-command` dispatch into the editor, and a thin remappable chord
+  allowlist (`commandBindings`) without a Settings keybinding editor.
+  Migration: none. Compatibility: catalog chords remain; overrides are local.
+  Rollback: revert this commit; additive command surface.
+
+### Product-fit boundary (post-HCP-8)
+
+Home ships through HCP-8 workbench depth (Search/replace, Terminal/tasks,
+Changes/diff) plus a thin remote Browser handoff (HCP-7D). Full Testing IDE
+(HCP-9), debugger DAP surfaces (HCP-10), and heavy VS Code settings/profile
+import (HCP-11B) are **out of current Home scope** — Code stays one peer among
+Chat/Notes/Browser, not a VS Code fork. HCP-11A/11C may reopen only for pack
+registry or remote-parity needs that stay workshop-owned.
 
 ### Slice rules
 
@@ -376,6 +390,11 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
   recoverable and visible in Forge provenance.
 
 ### HCP-9 through HCP-11: IDE and ecosystem depth
+
+**Parked for Home.** These slices describe Testing IDE, debugger, and deep
+settings/profile parity that would pull Code outside the current product model.
+Leave them ⛔ unless a later decision reopens a thin, workshop-owned subset
+(for example first-party pack registry without VSIX or multi-root audit).
 
 - Test adapters discover hierarchy without regex-only source scans; run,
   cancel, rerun, watch, coverage, and debug state persist and navigate.

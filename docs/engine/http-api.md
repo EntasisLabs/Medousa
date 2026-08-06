@@ -322,7 +322,7 @@ Custody of intentional work episodes over a git target (vault or any repo). Dist
 | POST | `/v1/forge/items/{id}/run-script` | Script adapter |
 | POST | `/v1/forge/items/{id}/export` | Export bundle |
 | GET | `/v1/forge/items/{id}/tree` | Browse governed source tree |
-| GET | `/v1/forge/items/{id}/search` | Search governed source contents |
+| GET | `/v1/forge/items/{id}/search` | Repository search (`query`, optional `mode`, `case_sensitive`, `whole_word`, `include`, `exclude`, `include_ignored`, `scope`, `limit`, `cursor`; response may include `next_cursor`) |
 | GET | `/v1/forge/items/{id}/source?path=…` | Read a governed source file |
 | POST | `/v1/forge/items/{id}/source` | Create a governed source file |
 | PUT | `/v1/forge/items/{id}/source` | Save with digest conflict fencing |

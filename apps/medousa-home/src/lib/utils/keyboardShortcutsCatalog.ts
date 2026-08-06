@@ -83,6 +83,7 @@ export const KEYBOARD_SHORTCUTS_CATALOG: ShortcutCatalogGroup[] = [
     title: "Code",
     entries: [
       { id: "code-quick-open", keys: "mod:P", action: "Quick Open file / symbol / line" },
+      { id: "code-search", keys: "mod:Shift+F", action: "Search in files" },
       { id: "code-save", keys: "mod:S", action: "Save focused file" },
       { id: "code-save-all", keys: "mod:Shift+S", action: "Save all modified files" },
       { id: "code-find", keys: "mod:F", action: "Find in file" },
@@ -193,6 +194,7 @@ export function shortcutEntryById(id: string): ShortcutCatalogEntry | undefined 
 const CATALOG_COMMAND_IDS: Record<string, string> = {
   "command-palette": "workbench.action.showCommands",
   "code-quick-open": "workbench.action.quickOpen",
+  "code-search": "workbench.action.findInFiles",
   "code-terminal": "workbench.action.terminal.toggleTerminal",
 };
 

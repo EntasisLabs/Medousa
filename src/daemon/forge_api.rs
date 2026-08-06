@@ -1474,6 +1474,29 @@ struct SourceTreeResponse {
 #[derive(Debug, Deserialize)]
 struct SourceSearchQuery {
     query: String,
+    /// `literal` (default) or `regex`.
+    #[serde(default)]
+    mode: Option<String>,
+    #[serde(default)]
+    case_sensitive: Option<String>,
+    #[serde(default)]
+    whole_word: Option<String>,
+    /// Comma-separated include globs (git pathspecs).
+    #[serde(default)]
+    include: Option<String>,
+    /// Comma-separated exclude globs.
+    #[serde(default)]
+    exclude: Option<String>,
+    #[serde(default)]
+    include_ignored: Option<String>,
+    /// `all` (default) or `changed`.
+    #[serde(default)]
+    scope: Option<String>,
+    #[serde(default)]
+    limit: Option<u32>,
+    /// Opaque skip cursor from a prior `next_cursor`.
+    #[serde(default)]
+    cursor: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1488,6 +1511,240 @@ struct SourceSearchResponse {
     work_id: String,
     hits: Vec<SourceSearchHit>,
     truncated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct SourceSearchOptions {
+    needle: String,
+    regex: bool,
+    case_sensitive: bool,
+    whole_word: bool,
+    include: Vec<String>,
+    exclude: Vec<String>,
+    include_ignored: bool,
+    changed_only: bool,
+    limit: usize,
+    skip: usize,
+}
+
+fn parse_query_bool(value: Option<&str>, default: bool) -> bool {
+    match value.map(str::trim).filter(|v| !v.is_empty()) {
+        None => default,
+        Some("1" | "true" | "yes" | "on") => true,
+        Some("0" | "false" | "no" | "off") => false,
+        Some(_) => default,
+    }
+}
+
+fn parse_csv_globs(value: Option<&str>) -> Vec<String> {
+    value
+        .unwrap_or("")
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(|part| part.replace('\\', "/"))
+        .collect()
+}
+
+fn source_search_options_from_query(query: &SourceSearchQuery) -> ApiResult<SourceSearchOptions> {
+    let needle = query.query.trim().to_owned();
+    if needle.len() < 2 || needle.len() > 200 {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "repository search must be between 2 and 200 characters",
+        ));
+    }
+    let mode = query
+        .mode
+        .as_deref()
+        .unwrap_or("literal")
+        .trim()
+        .to_ascii_lowercase();
+    let regex = match mode.as_str() {
+        "literal" | "" => false,
+        "regex" => true,
+        _ => {
+            return Err(request_error(
+                StatusCode::BAD_REQUEST,
+                "mode must be literal or regex",
+            ))
+        }
+    };
+    let scope = query
+        .scope
+        .as_deref()
+        .unwrap_or("all")
+        .trim()
+        .to_ascii_lowercase();
+    let changed_only = match scope.as_str() {
+        "all" | "" => false,
+        "changed" => true,
+        _ => {
+            return Err(request_error(
+                StatusCode::BAD_REQUEST,
+                "scope must be all or changed",
+            ))
+        }
+    };
+    let limit = query.limit.unwrap_or(100).clamp(1, 500) as usize;
+    let skip = query
+        .cursor
+        .as_deref()
+        .unwrap_or("0")
+        .trim()
+        .parse::<usize>()
+        .unwrap_or(0);
+    Ok(SourceSearchOptions {
+        needle,
+        regex,
+        case_sensitive: parse_query_bool(query.case_sensitive.as_deref(), true),
+        whole_word: parse_query_bool(query.whole_word.as_deref(), false),
+        include: parse_csv_globs(query.include.as_deref()),
+        exclude: parse_csv_globs(query.exclude.as_deref()),
+        include_ignored: parse_query_bool(query.include_ignored.as_deref(), false),
+        changed_only,
+        limit,
+        skip,
+    })
+}
+
+fn changed_repository_paths(root: &FsPath) -> ApiResult<Vec<String>> {
+    let output = background_command("git")
+        .args(["status", "--porcelain", "-z", "--untracked-files=all"])
+        .current_dir(root)
+        .output()
+        .map_err(|err| {
+            request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not list changed files: {err}"),
+            )
+        })?;
+    if !output.status.success() {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+        ));
+    }
+    let mut paths = Vec::new();
+    for entry in output.stdout.split(|&b| b == 0).filter(|chunk| !chunk.is_empty()) {
+        if entry.len() < 3 {
+            continue;
+        }
+        // XY<space>path — rename lines are "R  old\0new\0"; porcelain -z uses
+        // "R  old\0new" with the next null-separated chunk as the new path.
+        let text = String::from_utf8_lossy(entry);
+        if text.len() < 3 {
+            continue;
+        }
+        let path = text[3..].replace('\\', "/");
+        if !path.is_empty() {
+            paths.push(path);
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    Ok(paths)
+}
+
+fn run_repository_search(
+    root: &FsPath,
+    options: &SourceSearchOptions,
+) -> ApiResult<(Vec<SourceSearchHit>, bool, Option<String>)> {
+    use std::io::BufRead;
+    use std::process::Stdio;
+
+    let mut args = vec!["grep".to_owned(), "-n".into(), "-I".into()];
+    if options.regex {
+        args.push("-E".into());
+    } else {
+        args.push("-F".into());
+    }
+    if !options.case_sensitive {
+        args.push("-i".into());
+    }
+    if options.whole_word {
+        args.push("-w".into());
+    }
+    if !options.include_ignored {
+        args.push("--exclude-standard".into());
+    }
+    args.push("--untracked".into());
+    args.push("--".into());
+    args.push(options.needle.clone());
+
+    let mut pathspecs: Vec<String> = Vec::new();
+    if options.changed_only {
+        let changed = changed_repository_paths(root)?;
+        if changed.is_empty() {
+            return Ok((Vec::new(), false, None));
+        }
+        pathspecs.extend(changed);
+    }
+    pathspecs.extend(options.include.iter().cloned());
+    for exclude in &options.exclude {
+        pathspecs.push(format!(":(exclude){exclude}"));
+    }
+    args.extend(pathspecs);
+
+    let mut child = background_command("git")
+        .args(&args)
+        .current_dir(root)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|err| {
+            request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not search repository: {err}"),
+            )
+        })?;
+    let stdout = child.stdout.take().ok_or_else(|| {
+        request_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "repository search had no output",
+        )
+    })?;
+    let mut hits = Vec::new();
+    let mut seen = 0usize;
+    let mut truncated = false;
+    let page_end = options.skip.saturating_add(options.limit);
+    for line in std::io::BufReader::new(stdout)
+        .lines()
+        .map_while(Result::ok)
+    {
+        let mut parts = line.splitn(3, ':');
+        let Some(path) = parts.next() else { continue };
+        let Some(line_no) = parts.next().and_then(|value| value.parse::<u32>().ok()) else {
+            continue;
+        };
+        let preview = parts.next().unwrap_or_default().trim().to_owned();
+        if seen < options.skip {
+            seen += 1;
+            continue;
+        }
+        if hits.len() >= options.limit {
+            truncated = true;
+            break;
+        }
+        hits.push(SourceSearchHit {
+            path: path.replace('\\', "/"),
+            line: line_no,
+            preview,
+        });
+        seen += 1;
+    }
+    if truncated {
+        let _ = child.kill();
+    }
+    let _ = child.wait();
+    let next_cursor = if truncated {
+        Some(page_end.to_string())
+    } else {
+        None
+    };
+    Ok((hits, truncated, next_cursor))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1508,6 +1765,8 @@ struct CodeWorkspaceLayout {
     terminal: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     tests: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    search: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -1772,17 +2031,8 @@ async fn search_source(
     Path(work_id): Path<String>,
     Query(query): Query<SourceSearchQuery>,
 ) -> ApiResult<Json<SourceSearchResponse>> {
-    use std::io::BufRead;
-    use std::process::Stdio;
-
     let id = parse_work_id(&work_id)?;
-    let needle = query.query.trim();
-    if needle.len() < 2 || needle.len() > 200 {
-        return Err(request_error(
-            StatusCode::BAD_REQUEST,
-            "repository search must be between 2 and 200 characters",
-        ));
-    }
+    let options = source_search_options_from_query(&query)?;
     let item = forge(&state).load(&id).map_err(map_err)?;
     let environment = item.workspace_environment().cloned().ok_or_else(|| {
         request_error(
@@ -1790,54 +2040,26 @@ async fn search_source(
             "prepare the governed workspace before searching source files",
         )
     })?;
-    let mut child = background_command("git")
-        .args(["grep", "-n", "-I", "-F", "--", needle])
-        .current_dir(&environment.worktree)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|err| {
-            request_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("could not search repository: {err}"),
-            )
-        })?;
-    let stdout = child.stdout.take().ok_or_else(|| {
+    let root = std::fs::canonicalize(&environment.worktree).map_err(|err| {
         request_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "repository search had no output",
+            StatusCode::CONFLICT,
+            format!("governed workspace is unavailable: {err}"),
         )
     })?;
-    let mut hits = Vec::new();
-    let mut truncated = false;
-    for line in std::io::BufReader::new(stdout)
-        .lines()
-        .map_while(Result::ok)
-    {
-        if hits.len() >= 500 {
-            truncated = true;
-            break;
-        }
-        let mut parts = line.splitn(3, ':');
-        let Some(path) = parts.next() else { continue };
-        let Some(line) = parts.next().and_then(|value| value.parse::<u32>().ok()) else {
-            continue;
-        };
-        let preview = parts.next().unwrap_or_default().trim().to_owned();
-        hits.push(SourceSearchHit {
-            path: path.replace('\\', "/"),
-            line,
-            preview,
-        });
-    }
-    if truncated {
-        let _ = child.kill();
-    }
-    let _ = child.wait();
+    let (hits, truncated, next_cursor) =
+        tokio::task::spawn_blocking(move || run_repository_search(&root, &options))
+            .await
+            .map_err(|err| {
+                request_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("repository search worker failed: {err}"),
+                )
+            })??;
     Ok(Json(SourceSearchResponse {
         work_id: id.as_str().to_owned(),
         hits,
         truncated,
+        next_cursor,
     }))
 }
 
@@ -5275,6 +5497,7 @@ mod source_tests {
                 context_panel: Some("problems".into()),
                 terminal: true,
                 tests: false,
+                search: false,
             }),
             updated_at: None,
         };
@@ -5321,6 +5544,96 @@ mod source_tests {
             Some("??"),
         );
         assert!(!tree.truncated);
+    }
+
+    #[test]
+    fn repository_search_finds_untracked_honors_ignore_and_paginates() {
+        let root = tempfile::tempdir().unwrap();
+        let git = |args: &[&str]| {
+            let status = std::process::Command::new("git")
+                .args(args)
+                .current_dir(root.path())
+                .status()
+                .unwrap();
+            assert!(status.success());
+        };
+        git(&["init", "-q"]);
+        std::fs::write(root.path().join("tracked.rs"), "fn alpha_hit() {}\n").unwrap();
+        std::fs::write(root.path().join("fresh.rs"), "fn alpha_hit() {}\n").unwrap();
+        std::fs::write(root.path().join(".gitignore"), "secret/\n").unwrap();
+        std::fs::create_dir(root.path().join("secret")).unwrap();
+        std::fs::write(root.path().join("secret/hidden.rs"), "fn alpha_hit() {}\n").unwrap();
+        git(&["add", "tracked.rs", ".gitignore"]);
+
+        let options = SourceSearchOptions {
+            needle: "alpha_hit".into(),
+            regex: false,
+            case_sensitive: true,
+            whole_word: false,
+            include: Vec::new(),
+            exclude: Vec::new(),
+            include_ignored: false,
+            changed_only: false,
+            limit: 1,
+            skip: 0,
+        };
+        let (page1, truncated, next) =
+            run_repository_search(root.path(), &options).unwrap();
+        assert_eq!(page1.len(), 1);
+        assert!(truncated);
+        assert_eq!(next.as_deref(), Some("1"));
+        let paths: Vec<_> = page1.iter().map(|hit| hit.path.as_str()).collect();
+        assert!(
+            paths.contains(&"tracked.rs") || paths.contains(&"fresh.rs"),
+            "{paths:?}"
+        );
+
+        let page2 = run_repository_search(
+            root.path(),
+            &SourceSearchOptions {
+                skip: 1,
+                limit: 10,
+                ..options.clone()
+            },
+        )
+        .unwrap();
+        assert!(!page2.0.is_empty());
+        let all_paths: Vec<_> = page1
+            .iter()
+            .chain(page2.0.iter())
+            .map(|hit| hit.path.as_str())
+            .collect();
+        assert!(all_paths.contains(&"tracked.rs"));
+        assert!(all_paths.contains(&"fresh.rs"));
+        assert!(!all_paths.contains(&"secret/hidden.rs"));
+
+        let regex_hits = run_repository_search(
+            root.path(),
+            &SourceSearchOptions {
+                needle: "alpha_h.t".into(),
+                regex: true,
+                limit: 50,
+                skip: 0,
+                ..options.clone()
+            },
+        )
+        .unwrap()
+        .0;
+        assert!(regex_hits.len() >= 2);
+
+        let include_hits = run_repository_search(
+            root.path(),
+            &SourceSearchOptions {
+                include: vec!["fresh.rs".into()],
+                limit: 50,
+                skip: 0,
+                ..options.clone()
+            },
+        )
+        .unwrap()
+        .0;
+        assert_eq!(include_hits.len(), 1);
+        assert_eq!(include_hits[0].path, "fresh.rs");
     }
 
     #[test]
