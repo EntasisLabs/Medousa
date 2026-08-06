@@ -1178,11 +1178,15 @@ export class ShellTabsStore {
     }
   }
 
-  mirrorLmeTab(lmeTabId: string, options?: { activate?: boolean; title?: string }) {
+  mirrorLmeTab(
+    lmeTabId: string,
+    options?: { activate?: boolean; title?: string; groupId?: string },
+  ) {
     if (this.suppressMirror) return;
     this.openLme(lmeTabId, {
       activate: options?.activate !== false,
       title: options?.title,
+      groupId: options?.groupId,
     });
   }
 

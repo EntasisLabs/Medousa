@@ -213,8 +213,8 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 | HCP-3C | Remaining registered language grammar/package packs | ✅ |
 | HCP-4A | Cursor-based project source/Git event stream | ✅ |
 | HCP-4B | All-open-buffer reconcile, rename/delete recovery, and watched-file LSP notifications | ✅ |
-| HCP-5A | Geometry-correct groups, split-with-retained-editor, and unified code history | 🔄 |
-| HCP-5B | Contextual Code layout preset with group-local visible tabs and optional regions | ⬜ |
+| HCP-5A | Geometry-correct groups, split-with-retained-editor, and unified code history | ✅ |
+| HCP-5B | Contextual Code layout preset with group-local visible tabs and optional regions | 🔄 |
 | HCP-5C | Shared command registry, VS Code aliases, context keys, and keybinding editor | ⬜ |
 | HCP-6A | Full repository search API/UI and cancellable pagination | ⬜ |
 | HCP-6B | Previewed repository replace and complete file/folder operations | ⬜ |
@@ -305,6 +305,11 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
   compare/rebase, and notifies LSP via `workspace/didChangeWatchedFiles`.
   Migration: none. Compatibility: older daemons omit the stream; focus-based
   reconcile remains. Rollback: revert this commit; additive client surface.
+- **HCP-5A — `1793b47f`.** Split Editor retains the current tab in both panes
+  (`moveActiveToNewSplit` / drag-edge still move), directional focus follows
+  unit-square geometry, and Code history records/restores shell `groupId`.
+  Migration: none. Compatibility: existing shell layouts restore unchanged.
+  Rollback: revert this commit; additive split/history behavior.
 
 ### Slice rules
 

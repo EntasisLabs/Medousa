@@ -1501,6 +1501,16 @@ struct CodeWorkspaceTabState {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct CodeWorkspaceLayout {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    context_panel: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    terminal: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    tests: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct CodeWorkspaceState {
     #[serde(default)]
     tabs: Vec<CodeWorkspaceTabState>,
@@ -1508,6 +1518,9 @@ struct CodeWorkspaceState {
     active_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     secondary_path: Option<String>,
+    /// Contextual Code regions (Problems / Terminal / Tests). Additive.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    layout: Option<CodeWorkspaceLayout>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     updated_at: Option<String>,
 }
@@ -1934,6 +1947,14 @@ async fn save_workspace_state(
     if let Some(secondary_path) = body.state.secondary_path.as_mut() {
         let (_, clean) = resolve_source_path(&environment.worktree, secondary_path)?;
         *secondary_path = clean;
+    }
+    if let Some(layout) = body.state.layout.as_mut() {
+        if let Some(panel) = layout.context_panel.as_deref() {
+            match panel {
+                "problems" | "outline" | "references" | "language" => {}
+                _ => layout.context_panel = None,
+            }
+        }
     }
     let open_paths = body
         .state
@@ -5244,15 +5265,24 @@ mod source_tests {
         .unwrap();
         assert_eq!(legacy.active_path.as_deref(), Some("src/lib.rs"));
         assert!(legacy.secondary_path.is_none());
+        assert!(legacy.layout.is_none());
 
         let split = CodeWorkspaceState {
             tabs: legacy.tabs,
             active_path: legacy.active_path,
             secondary_path: Some("src/main.rs".into()),
+            layout: Some(CodeWorkspaceLayout {
+                context_panel: Some("problems".into()),
+                terminal: true,
+                tests: false,
+            }),
             updated_at: None,
         };
         let encoded = serde_json::to_value(split).unwrap();
         assert_eq!(encoded["secondary_path"], "src/main.rs");
+        assert_eq!(encoded["layout"]["context_panel"], "problems");
+        assert_eq!(encoded["layout"]["terminal"], true);
+        assert!(encoded["layout"].get("tests").is_none());
     }
 
     #[test]

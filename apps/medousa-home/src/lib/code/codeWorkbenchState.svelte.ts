@@ -1,5 +1,5 @@
 /**
- * Code workbench location history — one stack per undertaking, group-aware.
+ * Code workbench posture: group-aware history + restorable contextual regions.
  * Composes with shellTabs at the call site (no store import cycle).
  */
 
@@ -11,16 +11,111 @@ export type CodeHistoryEntry = {
   groupId: string | null;
 };
 
+/** Mutually exclusive side/context panel inside the Code editor chrome. */
+export type CodeContextPanel =
+  | "problems"
+  | "outline"
+  | "references"
+  | "language"
+  | null;
+
+/**
+ * Project-scoped Code layout. Shell owns pane geometry and group tab strips;
+ * this store owns which optional Code regions are open for a work item.
+ */
+export type CodeWorkbenchLayout = {
+  context_panel: CodeContextPanel;
+  terminal: boolean;
+  tests: boolean;
+};
+
+export const DEFAULT_CODE_WORKBENCH_LAYOUT: CodeWorkbenchLayout = {
+  context_panel: null,
+  terminal: false,
+  tests: false,
+};
+
 const HISTORY_CAP = 100;
+
+const CONTEXT_PANELS = new Set<string>([
+  "problems",
+  "outline",
+  "references",
+  "language",
+]);
+
+export function normalizeCodeWorkbenchLayout(
+  value: unknown,
+): CodeWorkbenchLayout {
+  if (!value || typeof value !== "object") {
+    return { ...DEFAULT_CODE_WORKBENCH_LAYOUT };
+  }
+  const raw = value as Record<string, unknown>;
+  const panel = raw.context_panel;
+  return {
+    context_panel:
+      panel === null || (typeof panel === "string" && CONTEXT_PANELS.has(panel))
+        ? (panel as CodeContextPanel)
+        : null,
+    terminal: raw.terminal === true,
+    tests: raw.tests === true,
+  };
+}
+
+/** Shell + LME composition: Code file tabs visible in one editor group. */
+export type VisibleCodeTab = {
+  shellTabId: string;
+  lmeTabId: string;
+  path: string;
+};
+
+export function visibleCodeTabsInGroup(input: {
+  workId: string;
+  groupTabs: Array<{ id: string; kind: string; lmeTabId?: string }>;
+  lmeTabs: Array<{
+    tabId: string;
+    kind: string;
+    workId?: string;
+    resource?: { kind?: string; path?: string };
+  }>;
+}): VisibleCodeTab[] {
+  const workId = input.workId.trim();
+  if (!workId) return [];
+  const byLmeId = new Map(
+    input.lmeTabs
+      .filter(
+        (tab) =>
+          tab.kind === "code" &&
+          tab.workId === workId &&
+          tab.resource?.kind === "file" &&
+          typeof tab.resource.path === "string",
+      )
+      .map((tab) => [tab.tabId, tab.resource!.path!]),
+  );
+  const out: VisibleCodeTab[] = [];
+  for (const shell of input.groupTabs) {
+    if (shell.kind !== "lme" || !shell.lmeTabId) continue;
+    const path = byLmeId.get(shell.lmeTabId);
+    if (!path) continue;
+    out.push({
+      shellTabId: shell.id,
+      lmeTabId: shell.lmeTabId,
+      path,
+    });
+  }
+  return out;
+}
 
 class CodeWorkbenchState {
   private entriesByWorkId = $state<Record<string, CodeHistoryEntry[]>>({});
   private indexByWorkId = $state<Record<string, number>>({});
+  private layoutByWorkId = $state<Record<string, CodeWorkbenchLayout>>({});
 
   /** Test / workshop-switch reset. */
   reset() {
     this.entriesByWorkId = {};
     this.indexByWorkId = {};
+    this.layoutByWorkId = {};
   }
 
   /** Snapshot for tests and adapters. */
@@ -37,6 +132,39 @@ class CodeWorkbenchState {
     const entries = this.entriesFor(workId);
     const index = this.indexFor(workId);
     return entries[index] ?? null;
+  }
+
+  layoutFor(workId: string): CodeWorkbenchLayout {
+    return this.layoutByWorkId[workId] ?? { ...DEFAULT_CODE_WORKBENCH_LAYOUT };
+  }
+
+  applyLayout(workId: string, layout: unknown) {
+    if (!workId) return;
+    this.layoutByWorkId = {
+      ...this.layoutByWorkId,
+      [workId]: normalizeCodeWorkbenchLayout(layout),
+    };
+  }
+
+  patchLayout(workId: string, patch: Partial<CodeWorkbenchLayout>) {
+    if (!workId) return;
+    const next = {
+      ...this.layoutFor(workId),
+      ...patch,
+    };
+    this.layoutByWorkId = { ...this.layoutByWorkId, [workId]: next };
+  }
+
+  setContextPanel(workId: string, panel: CodeContextPanel) {
+    this.patchLayout(workId, { context_panel: panel });
+  }
+
+  setTerminalOpen(workId: string, open: boolean) {
+    this.patchLayout(workId, { terminal: open });
+  }
+
+  setTestsOpen(workId: string, open: boolean) {
+    this.patchLayout(workId, { tests: open });
   }
 
   record(
