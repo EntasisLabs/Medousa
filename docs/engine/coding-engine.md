@@ -17,6 +17,7 @@ routes:
 - `GET /v1/code/conventions`
 - `GET /v1/code/language-root`
 - `GET /v1/code/language-sessions`
+- `GET /v1/code/language-matrix`
 - `GET /v1/code/hover` and `/v1/code/definition`
 - `POST /v1/code/request`
 
@@ -76,6 +77,15 @@ initialization. This keeps servers that require configuration functional even
 though the embedded CodeMirror LSP client does not implement arbitrary server
 requests. Project/user settings are added later through the versioned
 contribution contract.
+
+## Language matrix
+
+`GET /v1/code/language-matrix` returns every registered workshop language with
+its command, file extensions, root markers, optional package id, and a
+`binary_available` / `usable` probe against `{dataDir}/bin` and `PATH`. Home
+uses this before treating a language as supported and for **Repair language
+support**, which installs `coding-engine` plus the row's exact `package_id`
+when one exists. Registry membership alone never means the language is usable.
 
 ## Workspace diagnostics
 

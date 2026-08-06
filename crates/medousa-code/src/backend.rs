@@ -80,6 +80,31 @@ fn resolve_command(command: &str) -> PathBuf {
     as_path
 }
 
+/// Whether a language-server command can be resolved from `{dataDir}/bin` or PATH.
+pub fn command_available(command: &str) -> bool {
+    let resolved = resolve_command(command);
+    if resolved.is_file() {
+        return true;
+    }
+    let Some(path_os) = std::env::var_os("PATH") else {
+        return false;
+    };
+    for dir in std::env::split_paths(&path_os) {
+        let candidate = dir.join(command);
+        if candidate.is_file() {
+            return true;
+        }
+        #[cfg(windows)]
+        {
+            let exe = dir.join(format!("{command}.exe"));
+            if exe.is_file() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 async fn write_lsp_framed<W: AsyncWriteExt + Unpin>(
     writer: &mut W,
     json_body: &str,

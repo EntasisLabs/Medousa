@@ -152,14 +152,15 @@ a private Code IDE chrome.
 - Repository `.editorconfig` rules feed indentation before Medousa falls back
   to the file’s existing style and language defaults. An explicit user
   preference still wins.
-- A co-located Medousa app can repair missing coding packages from the editor —
-  for Svelte, TypeScript/TSX, JavaScript/JSX, and Python that installs the
-  coding engine plus the shared `langservers` pack (Pyright, TypeScript
-  Language Server, and `svelteserver`). A remote client links to Packages
-  instead, because installation belongs on the connected workshop machine.
-  Opening `*.svelte` uses Svelte syntax highlighting and the Svelte language
-  server; JSX/TSX files use JSX-aware grammars while still talking to the
-  TypeScript language server.
+- A co-located Medousa app can repair missing coding packages from the editor.
+  Repair consults the workshop language matrix and installs `coding-engine`
+  plus that language's exact package id when one exists (Svelte / TypeScript /
+  JavaScript / Python use `langservers`). Languages without a package id explain
+  which workshop binary is missing instead of installing an unrelated pack. A
+  remote client links to Packages, because installation belongs on the connected
+  workshop machine. Opening `*.svelte` uses Svelte syntax highlighting and the
+  Svelte language server; JSX/TSX files use JSX-aware grammars while still
+  talking to the TypeScript language server.
 
 Terminal and Understand remain contextual tools around the editor. **Review**
 opens as its own project tab — the same canvas for human, agent, and Terminal
