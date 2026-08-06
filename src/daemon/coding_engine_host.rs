@@ -292,6 +292,7 @@ pub fn coding_engine_router(state: AppState) -> Router {
         .route("/v1/code/workspace-symbols", get(code_workspace_symbols))
         .route("/v1/code/capabilities", get(code_capabilities))
         .route("/v1/code/conventions", get(code_conventions))
+        .route("/v1/code/language-root", get(code_language_root))
         .route("/v1/code/request", post(code_request))
         .with_state(state)
 }
@@ -307,6 +308,8 @@ pub struct CodeLspQuery {
     pub language: String,
     #[serde(default)]
     pub work_id: Option<String>,
+    #[serde(default)]
+    pub document_uri: Option<String>,
 }
 
 fn default_language() -> String {
@@ -323,8 +326,10 @@ pub async fn code_lsp_ws(
     if !info.available {
         return (axum::http::StatusCode::SERVICE_UNAVAILABLE, info.message).into_response();
     }
-    ws.on_upgrade(move |socket| proxy_lsp_socket(socket, state, q.language, q.work_id))
-        .into_response()
+    ws.on_upgrade(move |socket| {
+        proxy_lsp_socket(socket, state, q.language, q.work_id, q.document_uri)
+    })
+    .into_response()
 }
 
 async fn proxy_lsp_socket(
@@ -332,6 +337,7 @@ async fn proxy_lsp_socket(
     state: AppState,
     language: String,
     work_id: Option<String>,
+    document_uri: Option<String>,
 ) {
     let host = state.coding_engine.clone().unwrap_or_default();
     let info = ensure_coding_engine(&host).await;
@@ -354,32 +360,12 @@ async fn proxy_lsp_socket(
         );
         return;
     }
-    let root_query = workspace_root
-        .as_ref()
-        .map(|root| {
-            format!(
-                "&workspace_root={}",
-                urlencoding::encode(&root.to_string_lossy())
-            )
-        })
-        .unwrap_or_default();
-    let upstream = format!(
-        "{}/v1/lsp?language={}{}",
-        info.lsp_url.trim_end_matches('/'),
-        urlencoding::encode(&language),
-        root_query,
+    let upstream = lsp_upstream_url(
+        &info.lsp_url,
+        &language,
+        workspace_root.as_deref(),
+        document_uri.as_deref(),
     );
-    // lsp_url is already ws://host/v1/lsp — avoid double path
-    let upstream = if info.lsp_url.contains("/v1/lsp") {
-        format!(
-            "{}?language={}{}",
-            info.lsp_url,
-            urlencoding::encode(&language),
-            root_query,
-        )
-    } else {
-        upstream
-    };
 
     let Ok((upstream_ws, _)) = connect_async(&upstream).await else {
         tracing::warn!(%upstream, "failed to connect to medousa-code LSP");
@@ -421,6 +407,29 @@ async fn proxy_lsp_socket(
         }
     }
     client_to_up.abort();
+}
+
+fn lsp_upstream_url(
+    lsp_url: &str,
+    language: &str,
+    workspace_root: Option<&Path>,
+    document_uri: Option<&str>,
+) -> String {
+    let base = if lsp_url.contains("/v1/lsp") {
+        lsp_url.trim_end_matches('/').to_string()
+    } else {
+        format!("{}/v1/lsp", lsp_url.trim_end_matches('/'))
+    };
+    let mut query = format!("language={}", urlencoding::encode(language));
+    if let Some(root) = workspace_root {
+        query.push_str("&workspace_root=");
+        query.push_str(&urlencoding::encode(&root.to_string_lossy()));
+    }
+    if let Some(uri) = document_uri.filter(|uri| !uri.trim().is_empty()) {
+        query.push_str("&document_uri=");
+        query.push_str(&urlencoding::encode(uri));
+    }
+    format!("{base}?{query}")
 }
 
 pub async fn code_hover(
@@ -479,6 +488,13 @@ pub async fn code_conventions(
     proxy_agent_get(&state, "/v1/code/conventions", &q).await
 }
 
+pub async fn code_language_root(
+    State(state): State<AppState>,
+    Query(q): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    proxy_agent_get(&state, "/v1/code/language-root", &q).await
+}
+
 pub async fn code_request(
     State(state): State<AppState>,
     Json(body): Json<serde_json::Value>,
@@ -497,6 +513,8 @@ async fn proxy_agent_get(
         return Err((axum::http::StatusCode::SERVICE_UNAVAILABLE, info.message));
     }
     let mut forwarded = q.clone();
+    // Workshop paths are daemon authority, never caller authority.
+    forwarded.remove("workspace_root");
     if let Some(work_id) = forwarded.remove("work_id") {
         let id = medousa_forge::model::WorkId::from(work_id.trim().to_owned());
         let root = state
@@ -550,11 +568,11 @@ async fn proxy_agent_post(
     if !info.available {
         return Err((axum::http::StatusCode::SERVICE_UNAVAILABLE, info.message));
     }
-    if let Some(work_id) = body
-        .as_object_mut()
-        .and_then(|object| object.remove("work_id"))
-        .and_then(|value| value.as_str().map(str::to_owned))
-    {
+    let work_id = body.as_object_mut().and_then(|object| {
+        object.remove("workspace_root");
+        object.remove("work_id")
+    });
+    if let Some(work_id) = work_id.and_then(|value| value.as_str().map(str::to_owned)) {
         let id = medousa_forge::model::WorkId::from(work_id.trim().to_owned());
         let root = state
             .forge
@@ -628,8 +646,9 @@ pub fn workspace_is_under(root: &Path, candidate: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::proxy_upstream_status;
+    use super::{lsp_upstream_url, proxy_upstream_status};
     use axum::http::StatusCode;
+    use std::path::Path;
 
     #[test]
     fn coding_engine_client_errors_preserve_their_status() {
@@ -648,6 +667,27 @@ mod tests {
         assert_eq!(
             proxy_upstream_status(StatusCode::INTERNAL_SERVER_ERROR),
             StatusCode::BAD_GATEWAY
+        );
+    }
+
+    #[test]
+    fn lsp_proxy_forwards_the_document_and_daemon_owned_root() {
+        let upstream = lsp_upstream_url(
+            "ws://127.0.0.1:7861/v1/lsp",
+            "typescript",
+            Some(Path::new("/work trees/project")),
+            Some("file:///work%20trees/project/packages/app/src/main.ts"),
+        );
+        let parsed = reqwest::Url::parse(&upstream).unwrap();
+        let query = parsed
+            .query_pairs()
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(parsed.path(), "/v1/lsp");
+        assert_eq!(query.get("language").unwrap(), "typescript");
+        assert_eq!(query.get("workspace_root").unwrap(), "/work trees/project");
+        assert_eq!(
+            query.get("document_uri").unwrap(),
+            "file:///work%20trees/project/packages/app/src/main.ts"
         );
     }
 }

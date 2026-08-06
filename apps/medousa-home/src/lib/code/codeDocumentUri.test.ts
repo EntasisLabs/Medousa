@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canonicalCodeDocumentUri,
   pathToFileUri,
+  validatedCodeLanguageRootUri,
   workspaceRelativePathFromUri,
 } from "./codeDocumentUri";
 
@@ -63,6 +64,24 @@ describe("code document URIs", () => {
         "file:///remote/repo/src%2Foutside.ts",
         "/remote/repo",
       ),
+    ).toBe(null);
+  });
+
+  it("accepts only project-contained language roots", () => {
+    expect(validatedCodeLanguageRootUri("file:///remote/repo", "/remote/repo")).toBe(
+      "file:///remote/repo",
+    );
+    expect(
+      validatedCodeLanguageRootUri(
+        "file:///remote/repo/packages/app",
+        "/remote/repo",
+      ),
+    ).toBe("file:///remote/repo/packages/app");
+    expect(
+      validatedCodeLanguageRootUri("file:///remote/repository", "/remote/repo"),
+    ).toBe(null);
+    expect(
+      validatedCodeLanguageRootUri("https://example.test/repo", "/remote/repo"),
     ).toBe(null);
   });
 });

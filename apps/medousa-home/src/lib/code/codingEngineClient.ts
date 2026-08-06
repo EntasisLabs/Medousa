@@ -13,7 +13,11 @@ import {
   MedousaCodeWorkspace,
   MedousaCodeWorkspaceBridge,
 } from "$lib/code/medousaCodeWorkspace";
-import { pathToFileUri } from "$lib/code/codeDocumentUri";
+import {
+  canonicalCodeDocumentUri,
+  pathToFileUri,
+  validatedCodeLanguageRootUri,
+} from "$lib/code/codeDocumentUri";
 
 export { pathToFileUri } from "$lib/code/codeDocumentUri";
 import {
@@ -87,7 +91,9 @@ export type CodingEngineInfo = {
 export type ConnectOrchestratorLspOptions = {
   language?: string;
   workId?: string;
+  documentUri?: string;
   workspaceRoot?: string;
+  languageRootUri?: string;
   workspaceBridge?: MedousaCodeWorkspaceBridge;
 };
 
@@ -106,12 +112,15 @@ export async function connectOrchestratorLspClient(options?: ConnectOrchestrator
     if (info.available) {
       const query = new URLSearchParams({ language });
       if (options?.workId) query.set("work_id", options.workId);
+      if (options?.documentUri) query.set("document_uri", options.documentUri);
       const path = `${info.daemon_lsp_path || "/v1/code/lsp"}?${query}`;
       const wsUrl = await daemonWebSocketUrl(path);
       const connection = await createCloseableWebSocketTransport(wsUrl);
-      const rootUri = options?.workspaceRoot
-        ? pathToFileUri(options.workspaceRoot)
-        : info.workspace_root_uri || graphemeWorkspace.root_uri;
+      const rootUri = options?.languageRootUri
+        ? canonicalCodeDocumentUri(options.languageRootUri)
+        : options?.workspaceRoot
+          ? pathToFileUri(options.workspaceRoot)
+          : info.workspace_root_uri || graphemeWorkspace.root_uri;
       const client = new LSPClient({
         rootUri,
         timeout: 30_000,
@@ -130,7 +139,7 @@ export async function connectOrchestratorLspClient(options?: ConnectOrchestrator
         workspace: {
           ...graphemeWorkspace,
           root_uri: rootUri,
-          root_path: info.workspace_root || graphemeWorkspace.root_path,
+          root_path: options?.workspaceRoot || info.workspace_root || graphemeWorkspace.root_path,
         },
         via: "orchestrator",
         close: connection.close,
@@ -185,6 +194,14 @@ export type CodeWorkspaceLspLease = {
 const WORKSPACE_CLIENT_RELEASE_DELAY_MS = 1_000;
 const workspaceClients = new Map<string, WorkspaceClientEntry>();
 
+export function codeWorkspaceLspPoolKey(
+  workId: string,
+  language: string,
+  languageRootUri: string,
+): string {
+  return `${workId}:${language.toLowerCase()}:${canonicalCodeDocumentUri(languageRootUri)}`;
+}
+
 function closeWorkspaceClient(key: string, entry: WorkspaceClientEntry) {
   if (workspaceClients.get(key) !== entry || entry.references > 0) return;
   workspaceClients.delete(key);
@@ -194,18 +211,40 @@ function closeWorkspaceClient(key: string, entry: WorkspaceClientEntry) {
   }).catch(() => {});
 }
 
-export function acquireCodeWorkspaceLspClient(options: {
+export async function acquireCodeWorkspaceLspClient(options: {
   workId: string;
   workspaceRoot: string;
   language: string;
-}): CodeWorkspaceLspLease {
+  documentUri: string;
+}): Promise<CodeWorkspaceLspLease> {
   const workspaceRoot = options.workspaceRoot.replace(/[\\/]+$/, "");
-  const key = `${options.workId}:${options.language.toLowerCase()}:${workspaceRoot}`;
+  const projectRootUri = canonicalCodeDocumentUri(pathToFileUri(workspaceRoot));
+  let languageRootUri = projectRootUri;
+  try {
+    const resolved = await getCodeLanguageRoot({
+      workId: options.workId,
+      language: options.language,
+      uri: options.documentUri,
+    });
+    languageRootUri =
+      validatedCodeLanguageRootUri(resolved.root_uri, workspaceRoot) ?? projectRootUri;
+  } catch {
+    // Rolling-upgrade compatibility: older coding engines use the project root.
+  }
+  const key = codeWorkspaceLspPoolKey(
+    options.workId,
+    options.language,
+    languageRootUri,
+  );
   let entry = workspaceClients.get(key);
   if (!entry) {
     const workspaceBridge = new MedousaCodeWorkspaceBridge();
-    const connection = connectOrchestratorLspClient({ ...options, workspaceBridge })
-    .catch((err) => {
+    const connection = connectOrchestratorLspClient({
+      ...options,
+      workspaceRoot,
+      languageRootUri,
+      workspaceBridge,
+    }).catch((err) => {
       if (workspaceClients.get(key)?.connection === connection) {
         workspaceClients.delete(key);
       }
@@ -292,6 +331,37 @@ async function codeAgentPost<T>(
   return (await response.json()) as T;
 }
 
+export type CodeLanguageRoot = {
+  language: string;
+  root_uri: string;
+  relative_root: string;
+};
+
+export async function getCodeLanguageRoot(options: {
+  workId: string;
+  uri: string;
+  language: string;
+}): Promise<CodeLanguageRoot> {
+  const response = await codeAgentGet<{
+    ok: boolean;
+    language?: string;
+    root_uri?: string;
+    relative_root?: string;
+  }>("/v1/code/language-root", {
+    work_id: options.workId,
+    uri: options.uri,
+    language: options.language,
+  });
+  if (typeof response.root_uri !== "string" || !response.root_uri) {
+    throw new Error("Coding engine returned an invalid language root");
+  }
+  return {
+    language: response.language ?? options.language,
+    root_uri: response.root_uri,
+    relative_root: response.relative_root ?? "",
+  };
+}
+
 export type CodeDocumentSymbol = {
   name: string;
   kind?: number;
@@ -336,14 +406,17 @@ export async function getCodeWorkspaceSymbols(options: {
   workId: string;
   language: string;
   query: string;
+  uri?: string;
 }): Promise<CodeWorkspaceSymbol[]> {
+  const query: Record<string, string> = {
+    work_id: options.workId,
+    language: options.language,
+    query: options.query,
+  };
+  if (options.uri) query.uri = options.uri;
   const response = await codeAgentGet<{ ok: boolean; result?: CodeWorkspaceSymbol[] }>(
     "/v1/code/workspace-symbols",
-    {
-      work_id: options.workId,
-      language: options.language,
-      query: options.query,
-    },
+    query,
   );
   return Array.isArray(response.result) ? response.result : [];
 }

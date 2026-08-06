@@ -1551,10 +1551,12 @@
   $effect(() => {
     void lspRetry;
     const root = workspaceRoot;
+    const uri = documentUri;
     if (
       !interactive ||
       !activeTabId ||
       !root ||
+      !uri ||
       !languageSupportsLsp(activeTabLanguage)
     ) {
       lspClient = null;
@@ -1569,45 +1571,52 @@
     lspError = null;
     lspConnecting = true;
     const cancelDeferred = deferCodeWorkspaceWork(() => {
-      const lease = acquireCodeWorkspaceLspClient({
-        workId,
-        workspaceRoot: root,
-        language: activeTabLanguage,
-      });
-      release = lease.release;
-      unregisterWorkspaceBridge = lease.workspaceBridge.register({
-        handlesUri: (uri) => Boolean(pathFromUri(uri, root)),
-        requestFile: async (uri) => {
-          const path = pathFromUri(uri, root);
-          if (!path) return null;
-          const source = await getUndertakingSource(workId, path);
-          return {
-            languageId: languageForWorkspacePath(path),
-            text: source.content,
-          };
-        },
-        displayFile: async (uri) => {
-          const path = pathFromUri(uri, root);
-          if (!path) return null;
-          const source = await lmeWorkspace.openCodeFile(workId, path, {
-            recordNavigation: false,
+      void (async () => {
+        try {
+          const lease = await acquireCodeWorkspaceLspClient({
+            workId,
+            workspaceRoot: root,
+            language: activeTabLanguage,
+            documentUri: uri,
           });
-          return source ? codeEditorViewRegistry.waitFor(uri) : null;
-        },
-      });
-      void lease.client
-        .then((client) => {
           if (cancelled) {
+            lease.release();
             return;
           }
+          release = lease.release;
+          unregisterWorkspaceBridge = lease.workspaceBridge.register({
+            handlesUri: (candidateUri) => Boolean(pathFromUri(candidateUri, root)),
+            requestFile: async (candidateUri) => {
+              const path = pathFromUri(candidateUri, root);
+              if (!path) return null;
+              const source = await getUndertakingSource(workId, path);
+              return {
+                languageId: languageForWorkspacePath(path),
+                text: source.content,
+              };
+            },
+            displayFile: async (candidateUri) => {
+              const path = pathFromUri(candidateUri, root);
+              if (!path) return null;
+              const source = await lmeWorkspace.openCodeFile(workId, path, {
+                recordNavigation: false,
+              });
+              return source ? codeEditorViewRegistry.waitFor(candidateUri) : null;
+            },
+          });
+          const client = await lease.client;
+          if (cancelled) return;
           lspClient = client;
-        })
-        .catch((err) => {
+        } catch (err) {
+          unregisterWorkspaceBridge();
+          release();
+          unregisterWorkspaceBridge = () => {};
+          release = () => {};
           if (!cancelled) lspError = err instanceof Error ? err.message : String(err);
-        })
-        .finally(() => {
+        } finally {
           if (!cancelled) lspConnecting = false;
-        });
+        }
+      })();
     });
     return () => {
       cancelled = true;

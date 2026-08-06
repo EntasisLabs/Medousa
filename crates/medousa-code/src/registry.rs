@@ -129,7 +129,7 @@ impl ServerRegistry {
             kind: ServerKind::Stdio {
                 command: "omnisharp".into(),
             },
-            root_markers: vec![".sln".into(), ".csproj".into()],
+            root_markers: vec!["*.sln".into(), "*.csproj".into()],
             args: vec!["-lsp".into()],
         });
         reg.register(ServerLaunchSpec {
@@ -137,7 +137,11 @@ impl ServerRegistry {
             kind: ServerKind::Stdio {
                 command: "jdtls".into(),
             },
-            root_markers: vec!["pom.xml".into(), "build.gradle".into(), "build.gradle.kts".into()],
+            root_markers: vec![
+                "pom.xml".into(),
+                "build.gradle".into(),
+                "build.gradle.kts".into(),
+            ],
             args: vec![],
         });
         reg.register(ServerLaunchSpec {
@@ -196,33 +200,55 @@ impl ServerRegistry {
         self.specs.iter().map(|s| &s.language)
     }
 
-    /// Walk parents from `path` looking for a root marker; fall back to `fallback`.
+    /// Walk parents from `path` looking for the closest root marker without
+    /// ever escaping the canonical governed project root in `fallback`.
     pub fn resolve_root(&self, language: &LanguageId, path: &Path, fallback: &Path) -> PathBuf {
+        let fallback = fallback
+            .canonicalize()
+            .unwrap_or_else(|_| fallback.to_path_buf());
         let Some(spec) = self.get(language) else {
-            return fallback.to_path_buf();
+            return fallback;
         };
         if spec.root_markers.is_empty() {
-            return fallback.to_path_buf();
+            return fallback;
         }
-        let mut cur = path.to_path_buf();
+        let path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        if !path.starts_with(&fallback) {
+            return fallback;
+        }
+        let mut cur = path;
         if cur.is_file() {
             cur = cur
                 .parent()
                 .map(Path::to_path_buf)
-                .unwrap_or_else(|| fallback.to_path_buf());
+                .unwrap_or_else(|| fallback.clone());
         }
-        loop {
+        while cur.starts_with(&fallback) {
             for marker in &spec.root_markers {
-                if cur.join(marker).exists() {
+                if directory_has_marker(&cur, marker) {
                     return cur;
                 }
             }
-            if !cur.pop() {
+            if cur == fallback || !cur.pop() {
                 break;
             }
         }
-        fallback.to_path_buf()
+        fallback
     }
+}
+
+fn directory_has_marker(directory: &Path, marker: &str) -> bool {
+    let Some(suffix) = marker.strip_prefix('*') else {
+        return directory.join(marker).exists();
+    };
+    std::fs::read_dir(directory).is_ok_and(|entries| {
+        entries.flatten().any(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .is_some_and(|name| name.ends_with(suffix))
+        })
+    })
 }
 
 #[cfg(test)]
@@ -246,7 +272,58 @@ mod tests {
         let file = nested.join("main.rs");
         std::fs::write(&file, "fn main() {}").unwrap();
         let reg = ServerRegistry::with_defaults();
-        let root = reg.resolve_root(&LanguageId::new("rust"), &file, Path::new("/tmp"));
-        assert_eq!(root, dir.path());
+        let root = reg.resolve_root(&LanguageId::new("rust"), &file, dir.path());
+        assert_eq!(root, dir.path().canonicalize().unwrap());
+    }
+
+    #[test]
+    fn resolve_root_prefers_the_closest_nested_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let package = dir.path().join("packages/app");
+        let source = package.join("src");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(dir.path().join("package.json"), "{}").unwrap();
+        std::fs::write(package.join("package.json"), "{}").unwrap();
+        let file = source.join("main.ts");
+        std::fs::write(&file, "export {};").unwrap();
+
+        let root = ServerRegistry::with_defaults().resolve_root(
+            &LanguageId::new("typescript"),
+            &file,
+            dir.path(),
+        );
+        assert_eq!(root, package.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn resolve_root_never_uses_a_marker_above_the_governed_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("governed");
+        let source = project.join("src");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), "[workspace]\n").unwrap();
+        let file = source.join("lib.rs");
+        std::fs::write(&file, "pub fn value() {}").unwrap();
+
+        let root =
+            ServerRegistry::with_defaults().resolve_root(&LanguageId::new("rust"), &file, &project);
+        assert_eq!(root, project.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn resolve_root_supports_extension_markers() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("src");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(dir.path().join("Product.sln"), "").unwrap();
+        let file = source.join("Program.cs");
+        std::fs::write(&file, "class Program {}").unwrap();
+
+        let root = ServerRegistry::with_defaults().resolve_root(
+            &LanguageId::new("csharp"),
+            &file,
+            dir.path(),
+        );
+        assert_eq!(root, dir.path().canonicalize().unwrap());
     }
 }

@@ -1,7 +1,7 @@
 //! HTTP/WS surface for the Orchestrator.
 
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
@@ -15,6 +15,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tower_http::cors::CorsLayer;
+use url::Url;
 
 use crate::backend::spawn_backend;
 use crate::detamu::{DetamuDocumentSnapshot, DetamuServerHandle};
@@ -88,21 +89,18 @@ impl OrchestratorState {
             .await
             .into_iter()
             .map(|key| DetamuServerHandle {
-                workspace_root: key.workspace_root.display().to_string(),
+                workspace_root: key.language_root.display().to_string(),
                 language: key.language.to_string(),
-                session_key: format!("{}::{}", key.workspace_root.display(), key.language),
+                session_key: format!("{}::{}", key.language_root.display(), key.language),
             })
             .collect()
     }
 }
 
-fn path_to_file_uri(path: &std::path::Path) -> String {
-    let s = path.to_string_lossy();
-    if s.starts_with('/') {
-        format!("file://{s}")
-    } else {
-        format!("file:///{s}")
-    }
+fn path_to_file_uri(path: &Path) -> String {
+    Url::from_file_path(path)
+        .map(|url| url.to_string())
+        .unwrap_or_else(|_| format!("file:///{}", path.to_string_lossy().replace('\\', "/")))
 }
 
 #[derive(Serialize)]
@@ -127,6 +125,9 @@ pub struct LspQuery {
     /// Requested repository root. Must be under an orchestrator allowed root.
     #[serde(default)]
     pub workspace_root: Option<PathBuf>,
+    /// Active document used to select the closest language root.
+    #[serde(default)]
+    pub document_uri: Option<String>,
 }
 
 fn default_language() -> String {
@@ -145,6 +146,7 @@ pub fn app(state: OrchestratorState) -> Router {
         .route("/v1/code/workspace-symbols", get(workspace_symbols))
         .route("/v1/code/capabilities", get(agent_capabilities))
         .route("/v1/code/conventions", get(agent_conventions))
+        .route("/v1/code/language-root", get(language_root))
         .route("/v1/code/request", post(agent_request))
         .route("/v1/detamu/snapshot", get(detamu_snapshot))
         .route("/v1/detamu/handles", get(detamu_handles))
@@ -208,7 +210,15 @@ async fn lsp_ws(
     State(state): State<Arc<OrchestratorState>>,
     Query(query): Query<LspQuery>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_client(socket, state, query.language, query.workspace_root))
+    ws.on_upgrade(move |socket| {
+        handle_client(
+            socket,
+            state,
+            query.language,
+            query.workspace_root,
+            query.document_uri,
+        )
+    })
 }
 
 fn requested_workspace_root(
@@ -223,20 +233,107 @@ fn requested_workspace_root(
     Ok(root)
 }
 
+fn document_path_for_project(uri: &str, project_root: &Path) -> anyhow::Result<PathBuf> {
+    let normalized_uri = uri.to_ascii_lowercase();
+    if normalized_uri.contains("%2f") || normalized_uri.contains("%5c") {
+        anyhow::bail!("document URI contains an encoded path separator");
+    }
+    let url = Url::parse(uri)?;
+    if url.scheme() != "file" {
+        anyhow::bail!("document URI must use the file scheme");
+    }
+    let path = url
+        .to_file_path()
+        .map_err(|_| anyhow::anyhow!("document URI is not a valid workshop file path"))?;
+    let path = if path.exists() {
+        path.canonicalize()?
+    } else {
+        let parent = path
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("document path has no parent"))?
+            .canonicalize()?;
+        let name = path
+            .file_name()
+            .ok_or_else(|| anyhow::anyhow!("document path has no file name"))?;
+        parent.join(name)
+    };
+    if path == project_root || !path.starts_with(project_root) {
+        anyhow::bail!("document is outside the governed coding workspace");
+    }
+    Ok(path)
+}
+
+fn resolve_language_root(
+    state: &OrchestratorState,
+    project_root: &Path,
+    language: &LanguageId,
+    document_uri: Option<&str>,
+) -> anyhow::Result<PathBuf> {
+    let Some(document_uri) = document_uri.filter(|uri| !uri.trim().is_empty()) else {
+        return Ok(project_root.to_path_buf());
+    };
+    let document = document_path_for_project(document_uri, project_root)?;
+    Ok(state
+        .pool
+        .registry()
+        .resolve_root(language, &document, project_root))
+}
+
+fn rewrite_initialize_params(
+    params: &mut serde_json::Map<String, Value>,
+    language: &LanguageId,
+    language_root: &Path,
+) {
+    let language_root_uri = path_to_file_uri(language_root);
+    params.insert(
+        "initializationOptions".to_string(),
+        initialization_options(language),
+    );
+    params.insert(
+        "rootUri".to_string(),
+        Value::String(language_root_uri.clone()),
+    );
+    params.insert(
+        "rootPath".to_string(),
+        Value::String(language_root.to_string_lossy().into_owned()),
+    );
+    if params.contains_key("workspaceFolders") {
+        params.insert(
+            "workspaceFolders".to_string(),
+            json!([{
+                "uri": language_root_uri,
+                "name": language_root
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("workspace")
+            }]),
+        );
+    }
+}
+
 async fn handle_client(
     socket: WebSocket,
     state: Arc<OrchestratorState>,
     language: String,
     requested_root: Option<PathBuf>,
+    document_uri: Option<String>,
 ) {
     let language = LanguageId::new(language);
-    let workspace_root = match requested_workspace_root(&state, requested_root) {
+    let project_root = match requested_workspace_root(&state, requested_root) {
         Ok(root) => root,
         Err(err) => {
             tracing::warn!(error = %err, "rejected coding workspace root");
             return;
         }
     };
+    let language_root =
+        match resolve_language_root(&state, &project_root, &language, document_uri.as_deref()) {
+            Ok(root) => root,
+            Err(err) => {
+                tracing::warn!(error = %err, %language, "rejected coding document root");
+                return;
+            }
+        };
     let spec = match state.pool.registry().get(&language) {
         Some(spec) => spec.clone(),
         None => {
@@ -248,7 +345,7 @@ async fn handle_client(
     // Sharing the agent session here would require JSON-RPC id translation and
     // initialize virtualization; blindly forwarding multiple clients corrupts
     // the protocol and lets their request ids collide.
-    let backend = match spawn_backend(&spec, &workspace_root).await {
+    let backend = match spawn_backend(&spec, &language_root).await {
         Ok(backend) => backend,
         Err(err) => {
             tracing::warn!(error = %err, %language, "failed to spawn language session");
@@ -258,11 +355,12 @@ async fn handle_client(
     state.editor_sessions.fetch_add(1, Ordering::Relaxed);
     let diagnostic_session_id = state
         .workspace_diagnostics
-        .begin_session(workspace_root.clone(), language.to_string())
+        .begin_session(project_root.clone(), language.to_string())
         .await;
     tracing::info!(
         %language,
-        workspace_root = %workspace_root.display(),
+        project_root = %project_root.display(),
+        language_root = %language_root.display(),
         editor_sessions = state.editor_sessions.load(Ordering::Relaxed),
         "started editor language server"
     );
@@ -293,10 +391,7 @@ async fn handle_client(
             track_document(&state, &value).await;
             if value.get("method").and_then(Value::as_str) == Some("initialize") {
                 if let Some(params) = value.get_mut("params").and_then(Value::as_object_mut) {
-                    params.insert(
-                        "initializationOptions".to_string(),
-                        initialization_options(&language),
-                    );
+                    rewrite_initialize_params(params, &language, &language_root);
                 }
                 outbound = value.to_string();
             }
@@ -316,7 +411,8 @@ async fn handle_client(
     state.editor_sessions.fetch_sub(1, Ordering::Relaxed);
     tracing::info!(
         %language,
-        workspace_root = %workspace_root.display(),
+        project_root = %project_root.display(),
+        language_root = %language_root.display(),
         editor_sessions = state.editor_sessions.load(Ordering::Relaxed),
         "stopped editor language server"
     );
@@ -404,6 +500,8 @@ pub struct AgentWorkspaceQuery {
     pub workspace_root: Option<PathBuf>,
     #[serde(default)]
     pub query: Option<String>,
+    #[serde(default)]
+    pub uri: Option<String>,
 }
 
 fn language_for_uri(uri: &str, override_lang: Option<&str>) -> LanguageId {
@@ -435,18 +533,41 @@ fn language_for_uri(uri: &str, override_lang: Option<&str>) -> LanguageId {
     })
 }
 
+async fn language_root(
+    State(state): State<Arc<OrchestratorState>>,
+    Query(q): Query<AgentDocQuery>,
+) -> Result<Json<Value>, (axum::http::StatusCode, String)> {
+    let language = language_for_uri(&q.uri, q.language.as_deref());
+    let project_root = requested_workspace_root(&state, q.workspace_root)
+        .map_err(|err| (axum::http::StatusCode::BAD_REQUEST, err.to_string()))?;
+    let root = resolve_language_root(&state, &project_root, &language, Some(&q.uri))
+        .map_err(|err| (axum::http::StatusCode::BAD_REQUEST, err.to_string()))?;
+    let relative_root = root
+        .strip_prefix(&project_root)
+        .unwrap_or(Path::new(""))
+        .to_string_lossy()
+        .replace('\\', "/");
+    Ok(Json(json!({
+        "ok": true,
+        "language": language,
+        "root_uri": path_to_file_uri(&root),
+        "relative_root": relative_root,
+    })))
+}
+
 async fn session_for_doc(
     state: &OrchestratorState,
     q: &AgentDocQuery,
 ) -> anyhow::Result<Arc<crate::session::LiveSession>> {
     let language = language_for_uri(&q.uri, q.language.as_deref());
-    let workspace_root = requested_workspace_root(state, q.workspace_root.clone())?;
+    let project_root = requested_workspace_root(state, q.workspace_root.clone())?;
+    let language_root = resolve_language_root(state, &project_root, &language, Some(&q.uri))?;
     let session = state
         .pool
-        .get_or_spawn(workspace_root.clone(), language)
+        .get_or_spawn(project_root, language_root.clone(), language)
         .await?;
     session
-        .ensure_initialized(&path_to_file_uri(&workspace_root))
+        .ensure_initialized(&path_to_file_uri(&language_root))
         .await?;
     // Sync open doc from orchestrator store if present (notification, not request).
     if let Some(doc) = state.documents.get(&q.uri).await {
@@ -523,9 +644,14 @@ async fn agent_diagnostics(
     Query(q): Query<AgentDocQuery>,
 ) -> Result<Json<Value>, (axum::http::StatusCode, String)> {
     let language = language_for_uri(&q.uri, q.language.as_deref());
-    let workspace_root = requested_workspace_root(&state, q.workspace_root.clone())
+    let project_root = requested_workspace_root(&state, q.workspace_root.clone())
         .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
-    let diagnostics = if let Some(session) = state.pool.get_existing(workspace_root, language).await
+    let language_root = resolve_language_root(&state, &project_root, &language, Some(&q.uri))
+        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
+    let diagnostics = if let Some(session) = state
+        .pool
+        .get_existing(project_root, language_root, language)
+        .await
     {
         session
             .diagnostics
@@ -551,22 +677,30 @@ async fn workspace_diagnostics(
     State(state): State<Arc<OrchestratorState>>,
     Query(q): Query<AgentWorkspaceQuery>,
 ) -> Result<Json<Value>, (axum::http::StatusCode, String)> {
-    let workspace_root = requested_workspace_root(&state, q.workspace_root)
+    let project_root = requested_workspace_root(&state, q.workspace_root)
         .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
     let requested_language = q.language.filter(|language| !language.trim().is_empty());
     let sessions = if let Some(language) = requested_language.as_deref() {
-        let session = state
+        let language = LanguageId::new(language);
+        let mut sessions = state
             .pool
-            .get_or_spawn(workspace_root.clone(), LanguageId::new(language))
-            .await
-            .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
-        session
-            .ensure_initialized(&path_to_file_uri(&workspace_root))
-            .await
-            .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
-        vec![session]
+            .existing_for_workspace_language(&project_root, &language)
+            .await;
+        if sessions.is_empty() {
+            let session = state
+                .pool
+                .get_or_spawn(project_root.clone(), project_root.clone(), language)
+                .await
+                .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
+            session
+                .ensure_initialized(&path_to_file_uri(&project_root))
+                .await
+                .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
+            sessions.push(session);
+        }
+        sessions
     } else {
-        state.pool.existing_for_workspace(&workspace_root).await
+        state.pool.existing_for_workspace(&project_root).await
     };
 
     let mut languages = std::collections::BTreeSet::new();
@@ -588,7 +722,7 @@ async fn workspace_diagnostics(
 
     let editor_snapshot = state
         .workspace_diagnostics
-        .snapshot(&workspace_root, requested_language.as_deref())
+        .snapshot(&project_root, requested_language.as_deref())
         .await;
     languages.extend(editor_snapshot.languages);
     for diagnostic in editor_snapshot.documents {
@@ -625,15 +759,17 @@ async fn workspace_symbols(
     Query(q): Query<AgentWorkspaceQuery>,
 ) -> Result<Json<Value>, (axum::http::StatusCode, String)> {
     let language = LanguageId::new(q.language.as_deref().unwrap_or("plaintext"));
-    let workspace_root = requested_workspace_root(&state, q.workspace_root)
+    let project_root = requested_workspace_root(&state, q.workspace_root)
+        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
+    let language_root = resolve_language_root(&state, &project_root, &language, q.uri.as_deref())
         .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
     let session = state
         .pool
-        .get_or_spawn(workspace_root.clone(), language)
+        .get_or_spawn(project_root, language_root.clone(), language)
         .await
         .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
     session
-        .ensure_initialized(&path_to_file_uri(&workspace_root))
+        .ensure_initialized(&path_to_file_uri(&language_root))
         .await
         .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
     let result = session
@@ -869,7 +1005,12 @@ async fn detamu_handles(State(state): State<Arc<OrchestratorState>>) -> Json<Val
 
 #[cfg(test)]
 mod tests {
-    use super::apply_editorconfig;
+    use super::{
+        AgentDocQuery, OrchestratorConfig, OrchestratorState, apply_editorconfig,
+        document_path_for_project, language_root, path_to_file_uri, resolve_language_root,
+        rewrite_initialize_params,
+    };
+    use crate::registry::{LanguageId, ServerRegistry};
     use serde_json::{Map, Value};
 
     #[test]
@@ -882,5 +1023,138 @@ mod tests {
         );
         assert_eq!(resolved["indent_style"], "space");
         assert_eq!(resolved["indent_size"], "2");
+    }
+
+    #[test]
+    fn document_uri_resolution_is_bounded_to_the_canonical_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        let file = project.join("src/a b.ts");
+        std::fs::write(&file, "export {};").unwrap();
+        let project = project.canonicalize().unwrap();
+
+        assert_eq!(
+            document_path_for_project(&path_to_file_uri(&file), &project).unwrap(),
+            file.canonicalize().unwrap(),
+        );
+        let outside = dir.path().join("outside.ts");
+        std::fs::write(&outside, "").unwrap();
+        assert!(document_path_for_project(&path_to_file_uri(&outside), &project).is_err());
+        let encoded_separator = format!("{}/src%2Fmain.ts", path_to_file_uri(&project));
+        assert!(document_path_for_project(&encoded_separator, &project).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn document_uri_resolution_rejects_a_symlink_escape() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        let outside = dir.path().join("outside.ts");
+        std::fs::write(&outside, "").unwrap();
+        let linked = project.join("linked.ts");
+        symlink(&outside, &linked).unwrap();
+        let project = project.canonicalize().unwrap();
+
+        assert!(document_path_for_project(&path_to_file_uri(&linked), &project).is_err());
+    }
+
+    #[test]
+    fn language_root_resolution_uses_the_closest_marker() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        let package = project.join("packages/app");
+        std::fs::create_dir_all(package.join("src")).unwrap();
+        std::fs::write(project.join("package.json"), "{}").unwrap();
+        std::fs::write(package.join("package.json"), "{}").unwrap();
+        let file = package.join("src/main.ts");
+        std::fs::write(&file, "export {};").unwrap();
+        let project = project.canonicalize().unwrap();
+        let state = OrchestratorState::new(
+            OrchestratorConfig {
+                bind: "127.0.0.1:0".parse().unwrap(),
+                workspace_root: project.clone(),
+                allowed_roots: vec![project.clone()],
+            },
+            ServerRegistry::with_defaults(),
+        );
+
+        let root = resolve_language_root(
+            &state,
+            &project,
+            &LanguageId::new("typescript"),
+            Some(&path_to_file_uri(&file)),
+        )
+        .unwrap();
+        assert_eq!(root, package.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn editor_initialize_is_fenced_to_the_resolved_language_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("packages/app");
+        std::fs::create_dir_all(&root).unwrap();
+        let root = root.canonicalize().unwrap();
+        let mut params = serde_json::json!({
+            "rootUri": "file:///wrong",
+            "rootPath": "/wrong",
+            "workspaceFolders": [{ "uri": "file:///wrong", "name": "wrong" }]
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+
+        rewrite_initialize_params(&mut params, &LanguageId::new("typescript"), &root);
+
+        assert_eq!(params["rootUri"], path_to_file_uri(&root));
+        assert_eq!(params["rootPath"], root.to_string_lossy().as_ref());
+        assert_eq!(
+            params["workspaceFolders"][0]["uri"],
+            path_to_file_uri(&root)
+        );
+        assert_eq!(params["workspaceFolders"][0]["name"], "app");
+    }
+
+    #[tokio::test]
+    async fn language_root_route_reports_a_project_relative_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        let package = project.join("packages/app");
+        std::fs::create_dir_all(package.join("src")).unwrap();
+        std::fs::write(package.join("package.json"), "{}").unwrap();
+        let file = package.join("src/main.ts");
+        std::fs::write(&file, "export {};").unwrap();
+        let project = project.canonicalize().unwrap();
+        let state = std::sync::Arc::new(OrchestratorState::new(
+            OrchestratorConfig {
+                bind: "127.0.0.1:0".parse().unwrap(),
+                workspace_root: project.clone(),
+                allowed_roots: vec![project.clone()],
+            },
+            ServerRegistry::with_defaults(),
+        ));
+
+        let response = language_root(
+            axum::extract::State(state),
+            axum::extract::Query(AgentDocQuery {
+                uri: path_to_file_uri(&file),
+                line: None,
+                character: None,
+                language: Some("typescript".into()),
+                workspace_root: Some(project),
+            }),
+        )
+        .await
+        .unwrap()
+        .0;
+
+        assert_eq!(response["relative_root"], "packages/app");
+        assert_eq!(
+            response["root_uri"],
+            path_to_file_uri(&package.canonicalize().unwrap())
+        );
     }
 }
