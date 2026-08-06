@@ -24,7 +24,7 @@ function surface(
 }
 
 describe("buildLifeRailLayout", () => {
-  it("follows preset order and keeps Library / Automations in the primary strip", () => {
+  it("follows preset order and skips the library host surface", () => {
     const layout = buildLifeRailLayout([
       surface("chat", "Chat"),
       surface("peers", "Peers"),
@@ -33,6 +33,9 @@ describe("buildLifeRailLayout", () => {
       surface("work", "Work"),
       surface("web", "Web"),
       surface("library", "Workspace"),
+      surface("notes", "Notes"),
+      surface("files", "Files"),
+      surface("artifacts", "Artifacts"),
       surface("automations", "Automations"),
       surface("map", "Map"),
       surface("runtime", "Runtime"),
@@ -45,12 +48,13 @@ describe("buildLifeRailLayout", () => {
       "calendar",
       "work",
       "web",
-      "library",
+      "notes",
+      "files",
+      "artifacts",
       "automations",
       "map",
     ]);
     expect(layout.focusStartIndex).toBe(2);
-    expect(layout.showLibrary).toBe(true);
     expect(layout.showAutomations).toBe(true);
     expect(layout.customStartIndex).toBe(-1);
     expect(layout.you.id).toBe("profiles");
@@ -61,35 +65,38 @@ describe("buildLifeRailLayout", () => {
       surface("web", "Web"),
       surface("chat", "Chat"),
       surface("calendar", "Calendar"),
-      surface("library", "Library"),
+      surface("notes", "Notes"),
     ]);
     expect(layout.primary.map((item) => item.id)).toEqual([
       "web",
       "chat",
       "calendar",
-      "library",
+      "notes",
     ]);
     expect(layout.focusStartIndex).toBe(0);
   });
 
-  it("keeps Library and Automations independent in the primary strip", () => {
-    const libraryOnly = buildLifeRailLayout([
+  it("keeps Notes/Files/Artifacts and Automations independent in the primary strip", () => {
+    const notesOnly = buildLifeRailLayout([
       surface("chat", "Chat"),
-      surface("library", "Workspace"),
+      surface("notes", "Notes"),
     ]);
-    expect(libraryOnly.showLibrary).toBe(true);
-    expect(libraryOnly.showAutomations).toBe(false);
-    expect(libraryOnly.primary.map((item) => item.id)).toEqual(["chat", "library"]);
+    expect(notesOnly.showAutomations).toBe(false);
+    expect(notesOnly.primary.map((item) => item.id)).toEqual(["chat", "notes"]);
 
     const automationsFirst = buildLifeRailLayout([
       surface("automations", "Automations"),
       surface("chat", "Chat"),
-      surface("library", "Workspace"),
+      surface("notes", "Notes"),
+      surface("files", "Files"),
+      surface("artifacts", "Artifacts"),
     ]);
     expect(automationsFirst.primary.map((item) => item.id)).toEqual([
       "automations",
       "chat",
-      "library",
+      "notes",
+      "files",
+      "artifacts",
     ]);
     expect(automationsFirst.showAutomations).toBe(true);
   });
@@ -119,31 +126,42 @@ describe("buildLifeRailLayout", () => {
     expect(railSectionForItemId("map")).toBe("channels");
     expect(railSectionForItemId("profiles")).toBe("memory");
     expect(railSectionForItemId("library")).toBe("library");
+    expect(railSectionForItemId("notes")).toBe("library");
+    expect(railSectionForItemId("artifacts")).toBe("library");
   });
 
-  it("never puts runtime or settings in the rail layout", () => {
+  it("never puts runtime, settings, or library host in the rail layout", () => {
     const layout = buildLifeRailLayout([
       surface("runtime", "Runtime"),
       surface("settings", "Settings"),
+      surface("library", "Workspace"),
       surface("chat", "Chat"),
     ]);
     const ids = layout.primary.map((item) => item.id);
     expect(ids).not.toContain("runtime");
     expect(ids).not.toContain("settings");
-    expect(layout.showLibrary).toBe(false);
+    expect(ids).not.toContain("library");
     expect(layout.showAutomations).toBe(false);
   });
 });
 
 describe("buildLifeRailSections (legacy mapping)", () => {
-  it("maps Library and Automations as sibling doors", () => {
+  it("maps Notes/Files/Artifacts and Automations as sibling doors", () => {
     const sections = buildLifeRailSections([
       surface("chat", "Chat"),
-      surface("library", "Workspace"),
+      surface("notes", "Notes"),
+      surface("files", "Files"),
+      surface("artifacts", "Artifacts"),
       surface("automations", "Automations"),
       surface("map", "Map"),
     ]);
     const library = sections.find((section) => section.id === "library");
-    expect(library?.items.map((item) => item.id)).toEqual(["library", "automations"]);
+    expect(library?.items.map((item) => item.id)).toEqual([
+      "notes",
+      "files",
+      "artifacts",
+    ]);
+    const automations = sections.find((section) => section.id === "automations");
+    expect(automations?.items.map((item) => item.id)).toEqual(["automations"]);
   });
 });

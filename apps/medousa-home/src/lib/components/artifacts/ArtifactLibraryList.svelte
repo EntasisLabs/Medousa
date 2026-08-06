@@ -1,30 +1,19 @@
 <script lang="ts">
   import type { ArtifactSummary } from "$lib/types/artifact";
-  import { MessageSquare } from "@lucide/svelte";
 
   interface Props {
     artifacts: ArtifactSummary[];
     selectedArtifactId: string | null;
-    sessionTitle: (sessionId: string) => string;
     onSelect: (artifactId: string) => void;
-    onOpenChat?: (artifact: ArtifactSummary) => void;
   }
 
-  let { artifacts, selectedArtifactId, sessionTitle, onSelect, onOpenChat }: Props = $props();
+  let { artifacts, selectedArtifactId, onSelect }: Props = $props();
 
-  const grouped = $derived.by(() => {
-    const map = new Map<string, ArtifactSummary[]>();
-    for (const artifact of artifacts) {
-      const bucket = map.get(artifact.session_id) ?? [];
-      bucket.push(artifact);
-      map.set(artifact.session_id, bucket);
-    }
-    return [...map.entries()].sort((a, b) => {
-      const aTime = a[1][0]?.stored_at_utc ?? "";
-      const bTime = b[1][0]?.stored_at_utc ?? "";
-      return bTime.localeCompare(aTime);
-    });
-  });
+  const sorted = $derived.by(() =>
+    [...artifacts].sort((a, b) =>
+      (b.stored_at_utc ?? "").localeCompare(a.stored_at_utc ?? ""),
+    ),
+  );
 
   function formatWhen(value: string): string {
     const date = new Date(value);
@@ -39,92 +28,35 @@
 </script>
 
 <div class="artifact-library-list flex min-h-0 flex-1 flex-col overflow-y-auto px-1.5 py-1">
-  {#if artifacts.length === 0}
-    <p class="px-2 py-6 text-sm text-content-quiet">No presentations yet.</p>
+  {#if sorted.length === 0}
+    <p class="px-2 py-6 text-sm text-content-quiet">No artifacts yet.</p>
   {:else}
-    {#each grouped as [sessionId, items] (sessionId)}
-      <div class="mb-3">
-        <p class="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-content-quiet">
-          {sessionTitle(sessionId)}
-        </p>
-        <ul class="space-y-0.5">
-          {#each items as artifact (artifact.artifact_id)}
-            <li>
-              <div class="artifact-library-item-row">
-                <button
-                  type="button"
-                  class="artifact-library-item"
-                  class:artifact-library-item-active={selectedArtifactId === artifact.artifact_id}
-                  onclick={() => onSelect(artifact.artifact_id)}
-                >
-                  <span class="artifact-library-item-title">{artifact.label}</span>
-                  <span class="artifact-library-item-meta">
-                    {formatWhen(artifact.stored_at_utc)}
-                    {#if artifact.presentation}
-                      · {artifact.presentation}
-                    {/if}
-                  </span>
-                </button>
-                {#if onOpenChat}
-                  <button
-                    type="button"
-                    class="artifact-library-chat-btn"
-                    aria-label="Open chat for this presentation"
-                    onclick={(event) => {
-                      event.stopPropagation();
-                      onOpenChat(artifact);
-                    }}
-                  >
-                    <MessageSquare size={15} aria-hidden="true" />
-                  </button>
-                {/if}
-              </div>
-            </li>
-          {/each}
-        </ul>
-      </div>
-    {/each}
+    <ul class="space-y-0.5">
+      {#each sorted as artifact (artifact.artifact_id)}
+        <li>
+          <button
+            type="button"
+            class="artifact-library-item"
+            class:artifact-library-item-active={selectedArtifactId === artifact.artifact_id}
+            onclick={() => onSelect(artifact.artifact_id)}
+          >
+            <span class="artifact-library-item-title">{artifact.label}</span>
+            <span class="artifact-library-item-meta">{formatWhen(artifact.stored_at_utc)}</span>
+          </button>
+        </li>
+      {/each}
+    </ul>
   {/if}
 </div>
 
 <style>
-  .artifact-library-item-row {
-    display: flex;
-    align-items: stretch;
-    gap: 0.25rem;
-  }
-
-  .artifact-library-item-row .artifact-library-item {
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-
-  .artifact-library-chat-btn {
-    display: inline-flex;
-    flex-shrink: 0;
-    align-items: center;
-    justify-content: center;
-    align-self: center;
-    width: 2.5rem;
-    height: 2.5rem;
-    border-radius: 0.625rem;
-    color: rgb(var(--theme-link));
-    background: transparent;
-    cursor: pointer;
-    transition: background 140ms ease;
-  }
-
-  .artifact-library-chat-btn:hover {
-    background: rgb(var(--color-surface-800) / 0.55);
-  }
-
   .artifact-library-item {
     display: flex;
     width: 100%;
     flex-direction: column;
-    gap: 0.15rem;
-    border-radius: 0.625rem;
-    padding: 0.55rem 0.65rem;
+    gap: 0.125rem;
+    border-radius: 0.5rem;
+    padding: 0.45rem 0.6rem;
     text-align: left;
     background: transparent;
     cursor: pointer;
@@ -132,22 +64,24 @@
   }
 
   .artifact-library-item:hover {
-    background: rgb(var(--color-surface-800) / 0.55);
+    background: rgb(var(--shell-pane-muted-bg) / 0.5);
   }
 
   .artifact-library-item-active {
-    background: rgb(var(--color-primary-600) / 0.14);
-    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-500) / 0.28);
+    background: rgb(var(--theme-selection) / 0.14);
+  }
+
+  .artifact-library-item-active:hover {
+    background: rgb(var(--theme-selection) / 0.2);
   }
 
   .artifact-library-item-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 0.8125rem;
-    font-weight: 600;
-    color: rgb(var(--color-surface-100));
-  }
-
-  :global(html:not(.dark)) .artifact-library-item-title {
-    color: rgb(var(--color-surface-900));
+    font-weight: 550;
+    color: rgb(var(--theme-text));
   }
 
   .artifact-library-item-meta {

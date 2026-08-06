@@ -283,7 +283,7 @@ describe("lmeWorkspace", () => {
 
   it("opens decks as tabs", () => {
     store.openDeck("deck-1", "Pitch");
-    expect(store.explorerMode).toBe("presentations");
+    expect(store.explorerMode).toBe("artifacts");
     expect(store.tabs[0]).toMatchObject({
       kind: "deck",
       artifactId: "deck-1",

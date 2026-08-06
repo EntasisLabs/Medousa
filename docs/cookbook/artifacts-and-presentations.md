@@ -1,8 +1,8 @@
-# Artifacts & presentations
+# Artifacts
 
 **Audience:** integrator, operator
 
-HTML presentations created by the agent and browsed in Library.
+HTML artifacts created by the agent and browsed from the **Artifacts** rail door.
 
 ---
 
@@ -16,10 +16,10 @@ Engine: [artifacts.md](../engine/artifacts.md)
 
 ---
 
-## Library (Presentations tab)
+## Artifacts door
 
-Desktop: Library → **Presentations**  
-Mobile: You → Library → **Presentations**
+Desktop: **Artifacts** rail door  
+Mobile: You → Library → **Artifacts**
 
 Lists artifacts via `POST /v1/runtime/artifact/list-ui`:
 

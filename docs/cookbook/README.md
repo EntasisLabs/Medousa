@@ -18,7 +18,7 @@ Product overview: [README](../../README.md) → download **Medousa**.
 | [Mobile & LAN](mobile-and-lan.md) | Pairing, iOS dev, workshop transport |
 | [Peers, portals, and LAN sharing](lan-discovery-and-sharing.md) | Portal vs peer, Iroh, Nearby |
 | [Custom chat UI](custom-chat-ui.md) | Streaming client, artifacts |
-| [Artifacts & presentations](artifacts-and-presentations.md) | HTML artifacts, Library |
+| [Artifacts](artifacts-and-presentations.md) | HTML artifacts, Artifacts door |
 | [Custom views & canvas](custom-views-and-canvas.md) | Pinned dashboards, Settings → Canvas, My views |
 | [Edit canvas layout](canvas-layout-edit.md) | Reorder widgets, empty zones, mobile gestures |
 | [Spotify & Apple Music widgets](canvas-media-widgets.md) | Native media embeds (not HTML iframes) |

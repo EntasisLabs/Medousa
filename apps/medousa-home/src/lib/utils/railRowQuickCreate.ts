@@ -59,9 +59,15 @@ export async function runRailRowQuickCreate(
       dispatchWorkFocusAsk();
       return {};
     case "library":
+    case "notes":
       lmeWorkspace.setExplorerMode("notes");
       vault.openNewNoteDialog();
-      return { navigateTo: "library" };
+      return { navigateTo: "notes" };
+    case "files":
+      return { navigateTo: "files" };
+    case "artifacts":
+      lmeWorkspace.setExplorerMode("artifacts");
+      return { navigateTo: "artifacts" };
     case "code":
       lmeWorkspace.requestNewCodeProject();
       return { navigateTo: "code" };
@@ -87,7 +93,12 @@ export function railRowQuickCreateLabel(surfaceId: string): string {
     case "work":
       return "New ask";
     case "library":
+    case "notes":
       return "New note";
+    case "files":
+      return "Open files";
+    case "artifacts":
+      return "Open artifacts";
     case "code":
       return "New code project";
     case "automations":

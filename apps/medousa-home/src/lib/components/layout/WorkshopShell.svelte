@@ -130,6 +130,21 @@
       shellTabs.openSurface("library", { activate: true });
       return;
     }
+    if (surface === "notes") {
+      lmeWorkspace.setExplorerMode("notes");
+      shellTabs.openSurface("library", { activate: true });
+      return;
+    }
+    if (surface === "files") {
+      lmeWorkspace.setExplorerMode("files");
+      shellTabs.openSurface("library", { activate: true });
+      return;
+    }
+    if (surface === "artifacts") {
+      lmeWorkspace.setExplorerMode("artifacts");
+      shellTabs.openSurface("library", { activate: true });
+      return;
+    }
     if (surface === "code") {
       lmeWorkspace.setExplorerMode("code");
       shellTabs.openSurface("code", { activate: true });

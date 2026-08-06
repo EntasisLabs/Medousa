@@ -8,7 +8,9 @@ const LIFE_IDS = new Set([
   "chat",
   "work",
   "code",
-  "library",
+  "notes",
+  "files",
+  "artifacts",
   "calendar",
   "web",
   "map",
@@ -22,6 +24,9 @@ const HIDDEN_IDS = new Set([SAFETY_SURFACE_RUNTIME, "messaging"]);
 export const SHELL_SIDEBAR_VIEW_SURFACES = new Set([
   "chat",
   "library",
+  "notes",
+  "files",
+  "artifacts",
   "code",
   "automations",
   "peers",
@@ -40,7 +45,7 @@ export function surfaceHasShellSidebarView(surfaceId: string): boolean {
 }
 
 export function navTier(surface: SurfaceDef): "life" | "workshop" | "utility" | "hidden" {
-  // Workspace host stays real for LME/shell tabs; rail shows explorer modes instead.
+  // Workspace host stays real for LME/shell tabs; rail shows Notes/Files/Artifacts instead.
   if (
     surface.id === "library" ||
     surface.id === "automations" ||
@@ -57,7 +62,6 @@ export function navTier(surface: SurfaceDef): "life" | "workshop" | "utility" | 
 }
 
 export function navTitle(surface: SurfaceDef): string {
-  if (surface.id === "library") return "Library";
   if (surface.id === "automations") return "Automations";
   if (surface.id === "map") return "Session link map";
   if (surface.id === "peers") return "Peers";
@@ -66,7 +70,6 @@ export function navTitle(surface: SurfaceDef): string {
 }
 
 export function navLabel(surface: SurfaceDef): string {
-  if (surface.id === "library") return "Library";
   if (surface.id === "automations") return "Automations";
   if (surface.id === "map") return "Map";
   if (surface.id === "profiles") return "You";
@@ -78,7 +81,12 @@ export function shellSidebarViewTitle(surfaceId: string): string {
     case "chat":
       return "Sessions";
     case "library":
-      return "Library";
+    case "notes":
+      return "Notes";
+    case "files":
+      return "Files";
+    case "artifacts":
+      return "Artifacts";
     case "code":
       return "Projects";
     case "automations":

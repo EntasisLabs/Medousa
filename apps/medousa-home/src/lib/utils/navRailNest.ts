@@ -33,7 +33,7 @@ export const LME_MODE_TAB_KIND: Partial<Record<LmeExplorerMode, LmeTab["kind"]>>
   notes: "note",
   files: "file",
   code: "code",
-  presentations: "deck",
+  artifacts: "deck",
   scripts: "script",
   agents: "manuscript",
   flows: "flow",

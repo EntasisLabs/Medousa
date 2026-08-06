@@ -1,6 +1,6 @@
 # Navigation and surfaces
 
-Medousa is a set of **places** you switch between — Chat, Library, Web, and more — not a pile of separate apps. Here’s where things live on computer and phone.
+Medousa is a set of **places** you switch between — Chat, Notes, Web, and more — not a pile of separate apps. Here’s where things live on computer and phone.
 
 ## The rail and the dock
 
@@ -11,7 +11,7 @@ Medousa is a set of **places** you switch between — Chat, Library, Web, and mo
 - **Spotlight** (`⌘K` / `Ctrl+K`) — jump to a surface by name when you already know the destination.
 - **Edit destinations** — status bar layout menu; show/hide and reorder surfaces for the current preset (Settings and Runtime stay available as safety surfaces).
 
-**Library** and **Automations** are explorers with **modes** (see below). Opening “Automations” or legacy “Workshop” deep links usually lands you in Library/Automations with the right mode selected.
+**Notes**, **Files**, and **Artifacts** are separate rail doors (they used to share one Library door). **Automations** is still an explorer with modes. Opening “Automations” or legacy “Workshop” deep links usually lands you in the right mode.
 
 ## Built-in surfaces
 
@@ -25,10 +25,10 @@ summary: Where you ask Medousa — composer, turns, and artifacts.
 ```
 
 ```card
-title: Library
-subtitle: Notes and files
+title: Notes
+subtitle: Vault markdown
 icon: book
-summary: Notes, Local Files, and Presentations for what should stick around.
+summary: Notes for what should stick around — boards, sheets, and Liquid.
 ```
 
 ```card
@@ -42,7 +42,9 @@ summary: Kanban of background asks and agent jobs waiting on you or finishing up
 - Home | tone: default
 Chat | tone: accent
 Work | tone: default
-Library | tone: default
+Notes | tone: default
+Files | tone: default
+Artifacts | tone: default
 Calendar | tone: default
 Web | tone: default
 Map | tone: default
@@ -59,7 +61,9 @@ Settings | tone: default
 | **Home** | Landing / presence; often not a primary rail icon |
 | **Chat** | Sessions, composer, turns, artifacts |
 | **Work** | Kanban of background and agent jobs |
-| **Library** | Notes, Local Files, Presentations |
+| **Notes** | Vault markdown, boards, sheets, Liquid |
+| **Files** | Loose / pinned folders on the desktop host |
+| **Artifacts** | HTML decks and agent widgets |
 | **Calendar** | Day / week / month; phones often default to Day |
 | **Web** | Human browser (tabs, history, bookmarks) |
 | **Map** | Picture of recent chats and linked notes |
@@ -71,22 +75,6 @@ Settings | tone: default
 | **Settings** | Preferences, Agent, Runtime Controls, Sharing, Packages, Workshop |
 
 **Custom views** you create also appear as surfaces on the rail when the layout includes them.
-
-```callout
-tone: note
-title: Workspace vs Library
-body: Some Spotlight copy still says “Workspace” for notes and files. The rail and explorer label is Library.
-```
-
-## Library modes
-
-Open **Library**, then switch mode in the explorer strip:
-
-| Mode | For |
-|------|-----|
-| **Notes** | Vault markdown, boards, sheets, Liquid |
-| **Local Files** | Loose / pinned folders on the desktop host |
-| **Presentations** | Presentation artifacts |
 
 ## Automations modes
 
@@ -106,8 +94,8 @@ Built-in examples:
 
 | Preset | Typical surfaces |
 |--------|------------------|
-| **Default** | Full set (chat, work, library, calendar, web, map, peers, automations, messaging, runtime, settings, …) |
-| **Focus** | Smaller set — chat, peers, work, library, map, settings, runtime |
+| **Default** | Full set (chat, work, notes, files, artifacts, calendar, web, map, peers, automations, messaging, runtime, settings, …) |
+| **Focus** | Smaller set — chat, peers, work, notes, files, artifacts, map, settings, runtime |
 
 Switching preset can also apply that preset’s **theme** and **shell chrome**. Custom presets come from your environment / canvas setup — see [Views and environments](guide:views-environments).
 
@@ -118,7 +106,7 @@ Inside a desktop:
 - Split **right** / **down**; focus panes from the keyboard (see [Keyboard and flow](guide:keyboard-flow)).
 - Up to **four panes** per desktop.
 - Tabs inside a pane for sessions, notes, browser pages, etc.
-- Some surfaces are **singletons** (one tab max): Library, Peers, Channels, Map, Work, Calendar, Settings, Runtime, You.
+- Some surfaces are **singletons** (one tab max): Notes/Files/Artifacts (shared host), Peers, Channels, Map, Work, Calendar, Settings, Runtime, You.
 
 Treat panes like a light tiling manager for one workshop — not twelve separate Home windows.
 
@@ -161,14 +149,14 @@ Automations may open from deep links or More rather than a permanent tab. Compan
 
 ## Summon toolbars
 
-Library, Automations, and similar explorers can grow a contextual toolbar. Mouse-shake may summon it if enabled. Prefer keyboard when you know the binding — [Keyboard and flow](guide:keyboard-flow).
+Notes, Files, Artifacts, Automations, and similar explorers can grow a contextual toolbar. Mouse-shake may summon it if enabled. Prefer keyboard when you know the binding — [Keyboard and flow](guide:keyboard-flow).
 
 ## Quick “where is X?”
 
 ```chips
 - Sessions / ask → Chat | tone: accent
 Background jobs → Work | tone: default
-Notes → Library | tone: default
+Notes → Notes | tone: default
 Scripts / flows → Automations | tone: default
 Identity → You | tone: default
 LAN trust → Peers | tone: default
@@ -182,7 +170,9 @@ Engine restart → Settings · Workshop | tone: default
 |---------|--------|
 | Sessions / ask | Chat |
 | Background job board | Work |
-| Notes | Library → Notes |
+| Notes | Notes |
+| Files | Files |
+| Artifacts | Artifacts |
 | Scripts / flows | Automations |
 | Identity / teach | You |
 | LAN trust / inbox | Peers |

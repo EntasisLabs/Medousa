@@ -2,7 +2,6 @@
   import {
     LME_AUTOMATIONS_PRIMARY_MODES,
     LME_AUTOMATIONS_SECONDARY_MODES,
-    LME_LIBRARY_MODES,
     automationsStripPageForMode,
     type LmeExplorerFamily,
     type LmeExplorerModeDef,
@@ -14,7 +13,7 @@
     family?: LmeExplorerFamily;
   }
 
-  let { family = "library" }: Props = $props();
+  let { family = "automations" }: Props = $props();
 
   const active = $derived(lmeWorkspace.explorerMode);
 
@@ -47,11 +46,7 @@
   }
 
   function modeBtnClass(modeId: LmeExplorerMode): string {
-    const pad =
-      family === "automations"
-        ? "gap-1 px-1.5"
-        : "gap-1.5 px-2";
-    return `lme-side-mode-btn inline-flex h-8 shrink-0 items-center rounded-md ${pad} text-xs font-medium tracking-tight transition-colors ${
+    return `lme-side-mode-btn inline-flex h-8 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs font-medium tracking-tight transition-colors ${
       active === modeId
         ? "bg-surface-700/90 text-surface-50"
         : "text-content-tertiary hover:bg-surface-800/80 hover:text-surface-200"
@@ -93,20 +88,14 @@
   </button>
 {/snippet}
 
-<div
-  class="lme-side-mode-bar lme-explorer-mode-bar flex shrink-0 items-center gap-0.5 border-b border-surface-500/25 px-1.5 py-1"
-  role="tablist"
-  aria-label={family === "automations" ? "Automations modes" : "Library modes"}
-  data-debug-label="lme-explorer-mode-bar"
-  data-family={family}
->
-  {#if family === "library"}
-    <div class="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
-      {#each LME_LIBRARY_MODES as entry (entry.id)}
-        {@render modeTab(entry)}
-      {/each}
-    </div>
-  {:else}
+{#if family === "automations"}
+  <div
+    class="lme-side-mode-bar lme-explorer-mode-bar flex shrink-0 items-center gap-0.5 border-b border-surface-500/25 px-1.5 py-1"
+    role="tablist"
+    aria-label="Automations modes"
+    data-debug-label="lme-explorer-mode-bar"
+    data-family={family}
+  >
     <div class="lme-automations-strip relative min-w-0 flex-1 overflow-hidden">
       <div
         class="lme-automations-strip-track flex w-[200%] transition-transform duration-220 ease-out"
@@ -126,8 +115,8 @@
         </div>
       </div>
     </div>
-  {/if}
-</div>
+  </div>
+{/if}
 
 <style>
   .lme-automations-strip-track {

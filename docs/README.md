@@ -56,7 +56,7 @@ Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 | [Mobile & LAN](cookbook/mobile-and-lan.md) | Phone pairing, iOS dev, workshop transport |
 | [Peers, portals, and LAN sharing](cookbook/lan-discovery-and-sharing.md) | Portal vs peer, Iroh, Nearby toggle |
 | [Custom chat UI](cookbook/custom-chat-ui.md) | Sessions, streaming, artifacts |
-| [Artifacts & presentations](cookbook/artifacts-and-presentations.md) | HTML artifacts, Library tab, list-ui API |
+| [Artifacts](cookbook/artifacts-and-presentations.md) | HTML artifacts, Artifacts door, list-ui API |
 | [Custom views & canvas](cookbook/custom-views-and-canvas.md) | Pinned dashboards Medousa builds for you |
 | [Edit canvas layout](cookbook/canvas-layout-edit.md) | Reorder widgets, zones, mobile gestures |
 | [Spotify & Apple Music widgets](cookbook/canvas-media-widgets.md) | Native media embeds on custom views |

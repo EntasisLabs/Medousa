@@ -51,7 +51,7 @@
   const externalHits = $derived(externalDesk.searchHitsList);
   const showVaultChrome = $derived(externalDesk.sidebarMode === "vault");
   const showYourFiles = $derived(externalDesk.sidebarMode === "files");
-  const showPresentations = $derived(externalDesk.sidebarMode === "presentations");
+  const showPresentations = $derived(externalDesk.sidebarMode === "artifacts");
   const showFilesSearch = $derived(
     showYourFiles && vault.searchQuery.trim().length > 0,
   );

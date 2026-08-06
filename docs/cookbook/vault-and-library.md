@@ -55,7 +55,7 @@ Structured views (kanban, database) — see [vault-editing plan](../../architect
 
 Desktop Library **Files** tab pins folders outside the vault root. Search spans pinned roots.
 
-Mobile: external files are desktop-first today; notes and presentations are fully supported on mobile.
+Mobile: external files are desktop-first today; notes and artifacts are fully supported on mobile.
 
 **Obsidian on the same Mac:** use **Add vault folder…** and point at the Obsidian vault directory. See [vault.md](../engine/vault.md#multi-root--obsidian).
 

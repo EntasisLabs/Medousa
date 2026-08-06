@@ -5,6 +5,12 @@ import {
 } from "$lib/utils/lmeExplorerModes";
 import { surfaceHasShellSidebarView } from "$lib/utils/navSurfaces";
 
+function surfaceForLibraryMode(mode: LmeExplorerMode): string {
+  if (mode === "files") return "files";
+  if (mode === "artifacts") return "artifacts";
+  return "notes";
+}
+
 /**
  * Which rail-popover surface to summon for the current desktop + LME context.
  * Returns null when the active surface has no list toolbar chrome.
@@ -21,21 +27,33 @@ export function resolveSummonToolbarSurface(
   if (
     surfaceHasShellSidebarView(desktopSurface) &&
     desktopSurface !== "library" &&
+    desktopSurface !== "notes" &&
+    desktopSurface !== "files" &&
+    desktopSurface !== "artifacts" &&
     desktopSurface !== "automations"
   ) {
     return desktopSurface;
   }
 
-  // Workspace / LME host — pick Library vs Automations from the open tab when possible.
+  // Workspace / LME host — pick Notes/Files/Artifacts vs Automations from the open tab.
   if (
     desktopSurface === "library" ||
+    desktopSurface === "notes" ||
+    desktopSurface === "files" ||
+    desktopSurface === "artifacts" ||
     desktopSurface === "code" ||
     desktopSurface === "automations" ||
     desktopSurface === "workshop"
   ) {
     const fromTab = activeLmeKind ? familyForLmeTabKind(activeLmeKind) : null;
-    if (fromTab) return fromTab;
-    return familyForLmeExplorerMode(explorerMode);
+    const family = fromTab ?? familyForLmeExplorerMode(explorerMode);
+    if (family === "library") {
+      if (activeLmeKind === "file") return "files";
+      if (activeLmeKind === "deck") return "artifacts";
+      if (activeLmeKind === "note") return "notes";
+      return surfaceForLibraryMode(explorerMode);
+    }
+    return family;
   }
 
   return null;

@@ -259,7 +259,7 @@
           }}
         />
       {:else if layout.mobileTab === "notes"}
-        <MobileLibraryPanel visible={true} onOpenChat={handleOpenChat} />
+        <MobileLibraryPanel visible={true} />
       {:else if layout.mobileTab === "web"}
         <BrowserPanel visible={true} />
       {:else if layout.mobileTab === "more"}

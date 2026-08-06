@@ -27,6 +27,7 @@ import {
   defaultEnvironmentSpec,
   ensureCodeSurfaceInSpec,
   ensureCalendarSurfaceInSpec,
+  ensureLibrarySplitInSpec,
   ensureMapSurfaceInSpec,
   ensurePeersSurfaceInSpec,
 } from "$lib/utils/environmentDefault";
@@ -40,9 +41,11 @@ import type { PreferredMode } from "$lib/utils/preferredMode";
 import { layout } from "$lib/stores/layout.svelte";
 
 function migrateBuiltinNavSurfaces(spec: EnvironmentSpec): EnvironmentSpec {
-  return ensureCodeSurfaceInSpec(
-    ensureMapSurfaceInSpec(
-      ensureCalendarSurfaceInSpec(ensurePeersSurfaceInSpec(spec)),
+  return ensureLibrarySplitInSpec(
+    ensureCodeSurfaceInSpec(
+      ensureMapSurfaceInSpec(
+        ensureCalendarSurfaceInSpec(ensurePeersSurfaceInSpec(spec)),
+      ),
     ),
   );
 }

@@ -89,7 +89,7 @@ function isHomeOnboardingStage(value: unknown): value is HomeOnboardingStage {
 const FOCUS_SURFACES: Record<HomeOnboardingFocus, string[]> = {
   code: ["code"],
   messaging: ["messaging", "chat"],
-  notes: ["library", "web"],
+  notes: ["notes", "files", "artifacts", "web"],
   plan: ["work", "calendar", "automations"],
   ai: ["chat", "map"],
 };
@@ -113,7 +113,7 @@ export function onboardingWorkspaceSurfaces(
   const order = onboardingSurfaceOrder(focus).filter(
     (id) => id !== "home" && id !== SAFETY_SURFACE_SETTINGS && id !== SAFETY_SURFACE_RUNTIME,
   );
-  return order.length > 0 ? order : ["library"];
+  return order.length > 0 ? order : ["notes"];
 }
 
 export function onboardingPackageIds(

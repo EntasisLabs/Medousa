@@ -46,7 +46,9 @@ import type { WorkshopCommand, WorkshopCommandContext } from "./types";
 
 const GO_DESTINATIONS: { surface: Surface; label: string; subtitle: string; keywords: string }[] = [
   { surface: "chat", label: "Chat", subtitle: "Talk with Medousa", keywords: "message compose conversation" },
-  { surface: "library", label: "Workspace", subtitle: "Notes, files, scripts, agents, and flows", keywords: "vault notes documents library lme scripts automations agents" },
+  { surface: "notes", label: "Notes", subtitle: "Vault notes and markdown", keywords: "vault notes documents library" },
+  { surface: "files", label: "Files", subtitle: "Pinned folders on this machine", keywords: "files folders pin local" },
+  { surface: "artifacts", label: "Artifacts", subtitle: "HTML decks and agent widgets", keywords: "artifacts presentations decks widgets" },
   { surface: "work", label: "Work", subtitle: "Tasks and kanban board", keywords: "kanban cards jobs" },
   { surface: "code", label: "Code", subtitle: "Projects, editing, understanding, and review", keywords: "code project repository editor forge test review source" },
   { surface: "web", label: "Browser", subtitle: "Built-in web workshop", keywords: "browser web surf" },
