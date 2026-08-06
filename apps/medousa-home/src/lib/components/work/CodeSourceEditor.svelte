@@ -31,6 +31,7 @@
   import CodeWorkspaceSearch from "$lib/components/code/CodeWorkspaceSearch.svelte";
   import { openTrackedTerminal } from "$lib/utils/undertakingWorkspace";
   import { fuzzyMatchPaths } from "$lib/utils/pathFuzzyMatch";
+  import { writeToTerminal } from "$lib/terminal/terminalInputBridge";
   import type { LSPClient } from "@codemirror/lsp-client";
   import {
     CODE_LSP_MAX_RECONNECT_ATTEMPTS,
@@ -827,6 +828,19 @@
       }
     } finally {
       dockBusy = false;
+    }
+  }
+
+  async function runSelectedTextInTerminal() {
+    const text = editorSelection?.text?.trim();
+    if (!text) {
+      surfaceError = "Select text in the editor to run in the Terminal.";
+      return;
+    }
+    await toggleTerminalDock(true);
+    await tick();
+    if (!writeToTerminal(text, workId)) {
+      surfaceError = "Open the Terminal dock, then run the selection again.";
     }
   }
 
@@ -2388,6 +2402,16 @@
         case "workbench.action.terminal.toggleTerminal":
           void toggleTerminalDock();
           break;
+        case "workbench.action.terminal.focusFind":
+          void (async () => {
+            await toggleTerminalDock(true);
+            await tick();
+            window.dispatchEvent(new CustomEvent("medousa-terminal-find"));
+          })();
+          break;
+        case "workbench.action.terminal.runSelectedText":
+          void runSelectedTextInTerminal();
+          break;
         case "workbench.view.testing":
           void toggleTests();
           break;
@@ -3082,6 +3106,7 @@
     open={terminalDockOpen}
     sessionId={dockSessionId}
     {workId}
+    worktreeRoot={workspaceRoot ?? context?.worktree ?? null}
     title="Terminal"
     onClose={() => {
       terminalDockOpen = false;

@@ -142,6 +142,40 @@ export function buildCodeCommands(): WorkshopCommand[] {
       },
     },
     {
+      id: "workbench.action.terminal.focusFind",
+      section: "do",
+      label: "Find in Terminal",
+      subtitle: "Search scrollback in the Code terminal dock",
+      keywords: "terminal find search scrollback vscode",
+      aliases: [
+        "workbench.action.terminal.focusFind",
+        "Find in Terminal",
+        "Terminal: Find",
+      ],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("workbench.action.terminal.focusFind");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "workbench.action.terminal.runSelectedText",
+      section: "do",
+      label: "Run Selected Text in Terminal",
+      subtitle: "Send the editor selection to the workshop shell",
+      keywords: "run selection terminal send shell vscode",
+      aliases: [
+        "workbench.action.terminal.runSelectedText",
+        "Run Selected Text",
+        "Terminal: Run Selected Text",
+      ],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("workbench.action.terminal.runSelectedText");
+        ctx.callbacks.close();
+      },
+    },
+    {
       id: "workbench.view.testing",
       section: "do",
       label: "Tests",
