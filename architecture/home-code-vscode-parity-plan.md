@@ -81,8 +81,7 @@ recovery where applicable.
 - Debugging is absent. Source-control operations, deep test state, and editor
   contribution points remain below the daily-driver baseline. A full keybinding
   editor and context-key `when` clauses remain deferred. Custom terminal
-  profiles, OSC shell integration, task→PTY attach, and remote Browser handoff
-  remain ahead (HCP-7D+).
+  profiles, OSC shell integration, and task→PTY attach remain later work.
 
 ## Target architecture
 
@@ -218,8 +217,8 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 | HCP-6C | Large-file, encoding, binary-preview, and fuzzy Quick Open fallbacks | ✅ |
 | HCP-7A | Streaming execution protocol and bounded output replay | ✅ |
 | HCP-7B | Named task terminals, background readiness, configured tasks, and problem matchers | ✅ |
-| HCP-7C | Terminal search, profiles, groups, shell integration, file links, and run selection | 🔄 |
-| HCP-7D | Remote service detection/proxy and Browser preview handoff | ⬜ |
+| HCP-7C | Terminal search, profiles, groups, shell integration, file links, and run selection | ✅ |
+| HCP-7D | Remote service detection/proxy and Browser preview handoff | 🔄 |
 | HCP-8A | Forge Changes model and branch/upstream/conflict status | ⬜ |
 | HCP-8B | High-fidelity diff, real context expansion, file/hunk actions, and conflict editor | ⬜ |
 | HCP-8C | Guarded Git sync/history/blame/checkpoint operations and provider continuity | ⬜ |
@@ -341,6 +340,9 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
   (`npm`/`shell`/`process` + inline matchers). Migration: none. Compatibility:
   older Homes ignore new task/run fields. Rollback: revert this commit;
   additive task metadata and UI.
+- **HCP-7C — `61aef5a5`.** Terminal find, clickable `path:line` links, session
+  switching/cwd chrome, and Run Selected Text in Terminal. Migration: none.
+  Compatibility: additive xterm addons/UI. Rollback: revert this commit.
 
 ### Product-fit boundary (post-HCP-8)
 

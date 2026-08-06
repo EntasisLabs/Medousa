@@ -193,9 +193,10 @@ development processes at the same time, including in mixed repositories.
 - Run, Test, and Build start named project runs. A running command becomes a
   **Stop** action and can be cancelled without closing the project or Terminal.
 - **Output** is the named task channel (`Task: …`). It streams stdout/stderr while
-  a check runs, shows **ready** for background/dev servers, and lists clickable
-  problem locations as they appear. Spotlight **Output** toggles the panel; runs
-  open it automatically.
+  a check runs, shows **ready** for background/dev servers, lists clickable
+  problem locations, and offers **Open in Browser** for detected loopback URLs
+  (direct on a co-located workshop; tokenized private proxy when remote).
+  Spotlight **Output** toggles the panel; runs open it automatically.
 - Safe entries from `.vscode/tasks.json` (`npm` / `shell` / `process`) merge into
   the project command list with optional problem-matcher patterns and background
   readiness. Dependency graphs and the full VS Code matcher catalog are not
@@ -335,6 +336,8 @@ See `apps/medousa-home/src/lib/forge.ts` and daemon routes:
 - `POST …/tasks/{task_id}/runs` plus `GET|DELETE …/task-runs/{run_id}` and
   `GET …/task-runs/{run_id}/events?since=…` for cancellable runs with live
   bounded output streaming
+- `POST …/task-runs/{run_id}/preview` and `ANY /v1/forge/preview/{token}/…` for
+  private Browser handoff to workshop loopback services
 - `GET|POST /v1/forge/items/{id}/provider`, plus `…/context` and `…/comments`,
   for optional external review handoff and follow-up intent
 - `POST …/decisions` with **review intent** (server builds the decision)
