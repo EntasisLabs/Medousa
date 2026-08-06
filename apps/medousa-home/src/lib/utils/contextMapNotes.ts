@@ -1,6 +1,16 @@
-import type { VaultNote } from "$lib/types/vault";
 import type { ContextMapEdge, ContextMapNode } from "$lib/utils/contextMap";
 import { isWorkshopVaultTag } from "$lib/utils/vaultFrontmatter";
+
+/** List or full note — map only needs path/title/tags (+ optional link graph). */
+export type MapVaultNote = {
+  path: string;
+  title: string;
+  modified_at_utc: string;
+  tags?: string[];
+  wikilinks_out?: string[];
+  backlinks?: string[];
+  kind?: string;
+};
 
 export const MAX_NOTES = 80;
 export const MAX_TAG_EDGES_PER_NOTE = 4;
@@ -67,11 +77,15 @@ function humanTags(tags: string[]): string[] {
   return out;
 }
 
-function noteSearchText(note: VaultNote): string {
-  return [note.title, note.path, ...note.tags].join(" ").toLowerCase();
+function noteTags(note: MapVaultNote): string[] {
+  return note.tags ?? [];
 }
 
-function noteMatchesSearch(note: VaultNote, needle: string): boolean {
+function noteSearchText(note: MapVaultNote): string {
+  return [note.title, note.path, ...noteTags(note)].join(" ").toLowerCase();
+}
+
+function noteMatchesSearch(note: MapVaultNote, needle: string): boolean {
   if (!needle) return true;
   return noteSearchText(note).includes(needle);
 }
@@ -109,7 +123,7 @@ export interface NoteGraphSlice {
  * `sessionIds` are raw chat session ids (not `session:` prefixed).
  */
 export function buildNoteGraphSlice(
-  notes: VaultNote[],
+  notes: MapVaultNote[],
   sessionIds: string[],
   options?: {
     maxNotes?: number;
@@ -127,13 +141,14 @@ export function buildNoteGraphSlice(
   const sessionSet = new Set(sessionIds);
   const byPath = new Map(notes.map((note) => [note.path, note]));
 
-  type Ranked = { note: VaultNote; score: number; linkedSession: string | null };
+  type Ranked = { note: MapVaultNote; score: number; linkedSession: string | null };
   const ranked: Ranked[] = notes.map((note) => {
-    const linkedSession = sessionIdForNoteChatTag(note.tags, sessionSet);
+    const tags = noteTags(note);
+    const linkedSession = sessionIdForNoteChatTag(tags, sessionSet);
     let score = parseModified(note.modified_at_utc) / 1e13;
     if (linkedSession && sessionExists(linkedSession)) score += 100;
-    if (note.wikilinks_out.length > 0 || note.backlinks.length > 0) score += 10;
-    if (humanTags(note.tags).length > 0) score += 5;
+    if ((note.wikilinks_out?.length ?? 0) > 0 || (note.backlinks?.length ?? 0) > 0) score += 10;
+    if (humanTags(tags).length > 0) score += 5;
     if (needle && noteMatchesSearch(note, needle)) score += 50;
     else if (needle) score -= 1000;
     return { note, score, linkedSession };
@@ -165,8 +180,8 @@ export function buildNoteGraphSlice(
     grew = false;
     for (const entry of [...selected]) {
       const neighbors = [
-        ...entry.note.wikilinks_out,
-        ...entry.note.backlinks,
+        ...(entry.note.wikilinks_out ?? []),
+        ...(entry.note.backlinks ?? []),
       ];
       for (const path of neighbors) {
         if (selected.length >= maxNotes) break;
@@ -174,7 +189,7 @@ export function buildNoteGraphSlice(
         const note = byPath.get(path);
         if (!note) continue;
         if (needle && !noteMatchesSearch(note, needle)) continue;
-        const linkedSession = sessionIdForNoteChatTag(note.tags, sessionSet);
+        const linkedSession = sessionIdForNoteChatTag(noteTags(note), sessionSet);
         selected.push({ note, score: 0, linkedSession });
         selectedPaths.add(path);
         grew = true;
@@ -190,6 +205,7 @@ export function buildNoteGraphSlice(
     const id = noteMapId(entry.note.path);
     noteIds.add(id);
     const linked = entry.linkedSession;
+    const tags = noteTags(entry.note);
     nodes.push({
       id,
       kind: "note",
@@ -199,7 +215,7 @@ export function buildNoteGraphSlice(
       x: 0,
       y: 0,
       radius: 7,
-      weight: 1.2 + Math.min(3, humanTags(entry.note.tags).length * 0.2),
+      weight: 1.2 + Math.min(3, humanTags(tags).length * 0.2),
       hue: noteHue(entry.note.path),
       visible: true,
       showLabel: false,
@@ -222,7 +238,10 @@ export function buildNoteGraphSlice(
   const linkSeen = new Set<string>();
   for (const entry of selected) {
     const fromId = noteMapId(entry.note.path);
-    const targets = new Set([...entry.note.wikilinks_out, ...entry.note.backlinks]);
+    const targets = new Set([
+      ...(entry.note.wikilinks_out ?? []),
+      ...(entry.note.backlinks ?? []),
+    ]);
     for (const targetPath of targets) {
       const toId = noteMapId(targetPath);
       if (!noteIds.has(toId) || toId === fromId) continue;
@@ -244,7 +263,7 @@ export function buildNoteGraphSlice(
   const tagToNotes = new Map<string, string[]>();
   for (const entry of selected) {
     const id = noteMapId(entry.note.path);
-    for (const tag of humanTags(entry.note.tags)) {
+    for (const tag of humanTags(noteTags(entry.note))) {
       const list = tagToNotes.get(tag) ?? [];
       list.push(id);
       tagToNotes.set(tag, list);

@@ -29,6 +29,16 @@ struct ScanDraft {
     source: VaultNoteSource,
 }
 
+/// Metadata collected during an incremental vault walk (no body read).
+#[derive(Clone)]
+struct FileMeta {
+    path: String,
+    absolute: PathBuf,
+    created_at: DateTime<Utc>,
+    modified_at: DateTime<Utc>,
+    source: VaultNoteSource,
+}
+
 static STORE: Lazy<VaultStore> = Lazy::new(VaultStore::new);
 
 pub fn vault_store() -> &'static VaultStore {
@@ -108,7 +118,103 @@ impl VaultStore {
             }
         }
         let discovered = Self::finalize_entries(by_path.into_values().collect());
-        self.merge_discovered(discovered);
+        *self.index.write().expect("vault index") = discovered;
+        self.rebuild_link_index();
+        self.persist_index();
+        Ok(())
+    }
+
+    /// Cheap freshness pass for list/get: metadata walk, re-read only changed files.
+    pub fn ensure_index_fresh(&self) -> Result<()> {
+        let mut metas = Vec::new();
+        self.collect_metas(&user_vault_root(), VaultNoteSource::User, &mut metas)?;
+        if let Some(overlay) = project_vault_overlay_root()
+            && overlay.is_dir()
+        {
+            self.collect_metas(&overlay, VaultNoteSource::ProjectOverlay, &mut metas)?;
+        }
+
+        let mut by_path: HashMap<String, FileMeta> = HashMap::new();
+        for meta in metas {
+            match by_path.get(&meta.path) {
+                Some(existing) if existing.source == VaultNoteSource::User => continue,
+                _ => {
+                    by_path.insert(meta.path.clone(), meta);
+                }
+            }
+        }
+
+        let existing = self.index.read().expect("vault index").clone();
+        let mut dirty = false;
+        let mut to_read: Vec<FileMeta> = Vec::new();
+
+        for (path, meta) in &by_path {
+            match existing.get(path) {
+                Some(entry)
+                    if entry.modified_at_utc.timestamp() == meta.modified_at.timestamp()
+                        && entry.source == meta.source => {}
+                _ => {
+                    dirty = true;
+                    to_read.push(meta.clone());
+                }
+            }
+        }
+
+        let discovered_paths: HashSet<String> = by_path.keys().cloned().collect();
+        let removed: Vec<String> = existing
+            .keys()
+            .filter(|path| !discovered_paths.contains(*path))
+            .cloned()
+            .collect();
+        if !removed.is_empty() {
+            dirty = true;
+        }
+
+        if !dirty {
+            return Ok(());
+        }
+
+        let mut drafts = Vec::with_capacity(to_read.len());
+        for meta in to_read {
+            let body = match fs::read_to_string(&meta.absolute) {
+                Ok(body) => body,
+                Err(_) => continue,
+            };
+            drafts.push(ScanDraft {
+                path: meta.path,
+                body,
+                created_at: meta.created_at,
+                modified_at: meta.modified_at,
+                source: meta.source,
+            });
+        }
+        let updated = Self::finalize_entries(drafts);
+
+        {
+            let mut index = self.index.write().expect("vault index");
+            for path in removed {
+                index.remove(&path);
+            }
+            for (path, entry) in updated {
+                match index.get(&path) {
+                    Some(existing) if existing.source == VaultNoteSource::ProjectOverlay => {
+                        if entry.source == VaultNoteSource::User {
+                            index.insert(path, entry);
+                        }
+                    }
+                    Some(existing) => {
+                        let created = existing.created_at_utc;
+                        let mut merged = entry;
+                        merged.created_at_utc = created;
+                        index.insert(path, merged);
+                    }
+                    None => {
+                        index.insert(path, entry);
+                    }
+                }
+            }
+        }
+
         self.rebuild_link_index();
         self.persist_index();
         Ok(())
@@ -171,6 +277,74 @@ impl VaultStore {
             return Ok(());
         }
         self.scan_dir(root, root, source, drafts)
+    }
+
+    fn collect_metas(
+        &self,
+        root: &Path,
+        source: VaultNoteSource,
+        out: &mut Vec<FileMeta>,
+    ) -> Result<()> {
+        if !root.is_dir() {
+            return Ok(());
+        }
+        self.collect_metas_dir(root, root, source, out)
+    }
+
+    fn collect_metas_dir(
+        &self,
+        root: &Path,
+        dir: &Path,
+        source: VaultNoteSource,
+        out: &mut Vec<FileMeta>,
+    ) -> Result<()> {
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                let dir_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("");
+                if dir_name == ".trash" || dir_name == ".obsidian" || dir_name == ".git" {
+                    continue;
+                }
+                if dir_name.starts_with('.') {
+                    continue;
+                }
+                self.collect_metas_dir(root, &path, source.clone(), out)?;
+                continue;
+            }
+            if !path.is_file() {
+                continue;
+            }
+            let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("");
+            if file_name == INDEX_FILE || file_name == LINKS_FILE {
+                continue;
+            }
+            if !Self::is_indexable_vault_file(&path) {
+                continue;
+            }
+            let relative = path
+                .strip_prefix(root)
+                .ok()
+                .and_then(|value| value.to_str())
+                .map(|value| value.replace('\\', "/"))
+                .unwrap_or_default();
+            let normalized = match normalize_vault_path(&relative) {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+            let metadata = match fs::metadata(&path) {
+                Ok(metadata) => metadata,
+                Err(_) => continue,
+            };
+            out.push(FileMeta {
+                path: normalized,
+                absolute: path,
+                created_at: Self::file_timestamp(metadata.created()),
+                modified_at: Self::file_timestamp(metadata.modified()),
+                source: source.clone(),
+            });
+        }
+        Ok(())
     }
 
     fn scan_dir(
@@ -266,44 +440,26 @@ impl VaultStore {
         )
     }
 
-    fn merge_discovered(&self, discovered: HashMap<String, VaultIndexEntry>) {
-        let mut index = self.index.write().expect("vault index");
-        for (path, entry) in discovered {
-            match index.get(&path) {
-                Some(existing) if existing.source == VaultNoteSource::ProjectOverlay => {
-                    if entry.source == VaultNoteSource::User {
-                        index.insert(path, entry);
-                    }
-                }
-                Some(existing) if existing.content_hash != entry.content_hash => {
-                    let created = existing.created_at_utc;
-                    let mut merged = entry;
-                    merged.created_at_utc = created;
-                    index.insert(path, merged);
-                }
-                None => {
-                    index.insert(path, entry);
-                }
-                _ => {}
-            }
-        }
-    }
-
     pub fn list_entries(&self, prefix: Option<&str>, limit: usize) -> Vec<VaultIndexEntry> {
-        let _ = self.refresh_from_disk();
+        let _ = self.ensure_index_fresh();
         let index = self.index.read().expect("vault index");
         let mut entries = index.values().cloned().collect::<Vec<_>>();
         if let Some(prefix) = prefix.map(str::trim).filter(|value| !value.is_empty()) {
             entries.retain(|entry| entry.path.starts_with(prefix));
         }
-        entries.sort_by_key(|right| std::cmp::Reverse(right.modified_at_utc));
+        entries.sort_by_key(|right| Reverse(right.modified_at_utc));
         entries.truncate(limit);
         entries
     }
 
     pub fn get_entry(&self, path: &str) -> Option<VaultIndexEntry> {
-        let _ = self.refresh_from_disk();
-        self.index.read().expect("vault index").get(path).cloned()
+        let _ = self.ensure_index_fresh();
+        self.peek_entry(path)
+    }
+
+    fn peek_entry(&self, path: &str) -> Option<VaultIndexEntry> {
+        let normalized = normalize_vault_path(path).ok()?;
+        self.index.read().expect("vault index").get(&normalized).cloned()
     }
 
     pub fn read_content(&self, path: &str) -> Result<String> {
@@ -344,7 +500,7 @@ impl VaultStore {
         }
 
         let created_at = if absolute.is_file() {
-            self.get_entry(&normalized)
+            self.peek_entry(&normalized)
                 .map(|entry| entry.created_at_utc)
                 .unwrap_or_else(Utc::now)
         } else {
@@ -474,20 +630,17 @@ impl VaultStore {
             fs::create_dir_all(parent)?;
         }
         fs::rename(&trash, &absolute)?;
-        let _ = self.refresh_from_disk();
+        let _ = self.ensure_index_fresh();
         Ok(normalized)
     }
 
     pub fn note_exists(&self, path: &str) -> bool {
-        let _ = self.refresh_from_disk();
-        normalize_vault_path(path)
-            .ok()
-            .and_then(|normalized| self.index.read().expect("vault index").get(&normalized).cloned())
-            .is_some()
+        let _ = self.ensure_index_fresh();
+        self.peek_entry(path).is_some()
     }
 
     pub fn backlinks_for(&self, path: &str) -> Vec<String> {
-        let _ = self.refresh_from_disk();
+        let _ = self.ensure_index_fresh();
         let normalized = match normalize_vault_path(path) {
             Ok(value) => value,
             Err(_) => return Vec::new(),
@@ -511,7 +664,7 @@ impl VaultStore {
     }
 
     pub fn all_entries(&self) -> Vec<VaultIndexEntry> {
-        let _ = self.refresh_from_disk();
+        let _ = self.ensure_index_fresh();
         let mut entries = self
             .index
             .read()

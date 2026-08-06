@@ -16,10 +16,11 @@ export interface VaultNoteSummary {
   title: string;
   modified_at_utc: string;
   kind?: string;
+  tags?: string[];
 }
 
 export interface VaultNotesListResponse {
-  notes: VaultNote[];
+  notes: VaultNoteSummary[];
 }
 
 export interface VaultNoteContentResponse {

@@ -361,6 +361,8 @@ impl SessionStore for SurrealSessionStore {
                     last_verification_verified: None,
                     preview,
                     catalog: None,
+                    origin_surface: None,
+                    has_code_work: false,
                 }
             })
             .collect()

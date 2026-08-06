@@ -1524,7 +1524,18 @@ export class VaultStore {
     this.error = null;
     try {
       const response = await listVaultNotes({ limit: 500 });
-      this.notes = response.notes;
+      this.notes = response.notes.map((note) => ({
+        path: note.path,
+        title: note.title,
+        byte_size: 0,
+        content_hash: "",
+        modified_at_utc: note.modified_at_utc,
+        created_at_utc: note.modified_at_utc,
+        tags: note.tags ?? [],
+        wikilinks_out: [],
+        backlinks: [],
+        kind: note.kind,
+      }));
       this.rebuildTree();
       if (this.libraryBrowseMode === "tags") {
         void this.refreshVaultTags();

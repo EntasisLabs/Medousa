@@ -40,7 +40,7 @@ impl VaultService {
                 })
             })
             .take(limit)
-            .map(|entry| entry.to_vault_note(vault_store().backlinks_for(&entry.path)))
+            .map(|entry| entry.to_vault_note_summary())
             .collect();
         VaultNotesListResponse { notes }
     }
@@ -232,6 +232,7 @@ impl VaultService {
                         title: note.title.clone(),
                         modified_at_utc: note.modified_at_utc,
                         kind: note.kind,
+                        tags: note.tags,
                     },
                     score: 1.0,
                     matched_terms: required.clone(),

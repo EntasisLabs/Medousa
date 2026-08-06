@@ -85,7 +85,7 @@ for the protocol and surface-scoping rules.
 
 | Method | Path | Types | SDK |
 |--------|------|-------|-----|
-| GET | `/v1/sessions` | `SessionHistoryListResponse` | `sessions().list` |
+| GET | `/v1/sessions` | `SessionHistoryListResponse` (`origin_surface`, `has_code_work` on each summary) | `sessions().list` |
 | GET | `/v1/sessions/{session_id}/history` | `SessionHistoryResponse` | `sessions().history` |
 | PUT | `/v1/sessions/{session_id}/name` | `SessionSetDisplayNameRequest` | `sessions().set_display_name` |
 | GET | `/v1/sessions/{session_id}/agent-mode` | Effective selection and source | `sessions().agent_mode` |
@@ -215,7 +215,7 @@ Patch ops (`remove_custom_surface`, `remove_component`, etc.) are **agent-tool o
 |--------|------|---------|
 | GET/POST | `/v1/vault/roots` | List / add vault roots |
 | PUT | `/v1/vault/active` | Set active root |
-| GET/POST | `/v1/vault/notes` | List / create notes |
+| GET/POST | `/v1/vault/notes` | List (`VaultNoteSummary[]`) / create notes |
 | GET/PUT/DELETE | `/v1/vault/notes/{*note_path}` | Read / write / delete note |
 | GET | `/v1/vault/tags` | List tags |
 | GET | `/v1/vault/search` | Full-text search |

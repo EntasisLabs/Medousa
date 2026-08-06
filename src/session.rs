@@ -699,6 +699,11 @@ pub(crate) fn file_build_history_summaries_from_files(limit: usize) -> Vec<Sessi
                 last_verification_verified,
                 preview,
                 catalog: None,
+                origin_surface: turns.iter().find_map(|turn| {
+                    crate::agent_runtime::host_context::host_context_from_turn(turn)
+                        .and_then(|ctx| crate::session_catalog::sticky_origin_surface(&ctx.source))
+                }),
+                has_code_work: false,
             }
         })
         .collect()
@@ -751,6 +756,7 @@ pub fn list_history_sessions_page_for_profile(
         .unwrap_or_else(crate::user_profiles::resolve_workshop_identity_user_id);
 
     crate::session_catalog::ensure_catalog_populated(limit.max(500));
+    crate::session_catalog::ensure_rail_metadata_repaired();
 
     let mut page = if crate::shared_mode::is_shared_mode() {
         crate::shared_session_catalog::list_merged_sessions_for_profile(
@@ -805,6 +811,8 @@ pub fn list_history_sessions_page_for_profile(
             last_verification_verified: None,
             preview: "(named session)".to_string(),
             catalog: None,
+            origin_surface: None,
+            has_code_work: false,
         });
     }
 

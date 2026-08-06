@@ -109,6 +109,7 @@ pub fn search_vault(query: &str, limit: usize) -> anyhow::Result<VaultSearchResp
                     .kind
                     .clone()
                     .unwrap_or_else(|| crate::vault::note::resolve_kind_from_path(&entry.path)),
+                tags: entry.tags.clone(),
             },
             score,
             matched_terms,

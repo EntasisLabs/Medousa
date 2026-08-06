@@ -13,6 +13,36 @@ class MedousaModel(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
 
+class AgentModeId(Enum):
+    general = 'general'
+    coder = 'coder'
+
+
+class AgentModeProposalResolution(Enum):
+    user_accepted = 'user_accepted'
+    user_denied = 'user_denied'
+    auto_accepted = 'auto_accepted'
+    expired = 'expired'
+
+
+class AgentModeProposalStatus(Enum):
+    pending = 'pending'
+    accepted = 'accepted'
+    denied = 'denied'
+    expired = 'expired'
+
+
+class AgentModeScope(Enum):
+    session = 'session'
+    task = 'task'
+
+
+class AgentModeAutoAccept(Enum):
+    never = 'never'
+    task = 'task'
+    all = 'all'
+
+
 class AgentPermissionRequestStatus(Enum):
     pending = 'pending'
     approved = 'approved'
@@ -969,6 +999,21 @@ class RuntimeVerifyPolicyState(MedousaModel):
     min_supported_claim_ratio: str
 
 
+class AgentModeLeaseResponse(MedousaModel):
+    acquired_at_utc: AwareDatetime
+    expires_at_utc: AwareDatetime | None = None
+    lease_id: str
+    mode: AgentModeId
+    task_id: str
+
+
+class AgentModeSource(Enum):
+    default = 'default'
+    session = 'session'
+    task = 'task'
+    turn = 'turn'
+
+
 class TurnArtifactRef(MedousaModel):
     artifact_id: str | None = None
     byte_size: int = Field(..., ge=0)
@@ -1091,11 +1136,18 @@ class SessionHistorySummary(MedousaModel):
         description='`shared` when indexed in the multi-member catalog; omitted for single-seat chats.',
     )
     display_name: str | None = None
+    has_code_work: bool | None = Field(
+        None, description='Sticky once a Forge code binding was set on the session.'
+    )
     last_timestamp: AwareDatetime | None = None
     last_verification_confidence: float | None = None
     last_verification_coverage: float | None = None
     last_verification_timestamp: AwareDatetime | None = None
     last_verification_verified: bool | None = None
+    origin_surface: str | None = Field(
+        None,
+        description='First sticky non-home host surface (`vscode` | `neovim` | `obsidian` | `browser`).',
+    )
     preview: str
     session_id: str
     turns: int = Field(..., ge=0)
@@ -1137,6 +1189,11 @@ class StageRouteCommandSpec(
     root: StageRouteCommandSpec1 | StageRouteCommandSpec2 | StageRouteCommandSpec3
 
 
+class CodeProjectSource(Enum):
+    blank = 'blank'
+    repository = 'repository'
+
+
 class TurnBudgetRequestRecord(MedousaModel):
     channel: str | None = None
     created_at_utc: AwareDatetime
@@ -1156,6 +1213,22 @@ class TurnBudgetRequestRecord(MedousaModel):
     updated_at_utc: AwareDatetime
 
 
+class TurnTicketMode(Enum):
+    interactive = 'interactive'
+    background = 'background'
+
+
+class TurnTicketPhase(Enum):
+    accepted = 'accepted'
+    streaming = 'streaming'
+    worker_handoff = 'worker_handoff'
+    workshop_handoff = 'workshop_handoff'
+    budget_blocked = 'budget_blocked'
+    done = 'done'
+    error = 'error'
+    cancelled = 'cancelled'
+
+
 class VaultNote(MedousaModel):
     backlinks: list[str]
     byte_size: int = Field(..., ge=0)
@@ -1169,6 +1242,14 @@ class VaultNote(MedousaModel):
     wikilinks_out: list[str]
 
 
+class VaultNoteSummary(MedousaModel):
+    kind: str | None = ''
+    modified_at_utc: AwareDatetime
+    path: str
+    tags: list[str] | None = []
+    title: str
+
+
 class VaultRootView(MedousaModel):
     active: bool
     id: str
@@ -1178,13 +1259,6 @@ class VaultRootView(MedousaModel):
     )
     label: str
     path: str
-
-
-class VaultNoteSummary(MedousaModel):
-    kind: str | None = ''
-    modified_at_utc: AwareDatetime
-    path: str
-    title: str
 
 
 class VaultSearchHit(MedousaModel):
@@ -1240,6 +1314,11 @@ class WorkspaceEventKind(Enum):
 class WorkspaceEventRef(MedousaModel):
     ref_id: str
     ref_type: str
+
+
+class AgentModeTransitionPolicy(MedousaModel):
+    auto_accept: AgentModeAutoAccept | None = 'never'
+    proposal_ttl_seconds: int = Field(..., ge=0)
 
 
 class AgentPermissionResolveRequest(MedousaModel):
@@ -1512,6 +1591,10 @@ class CreateAgentSessionResponse(MedousaModel):
     stream_ready: bool
     stream_url: str
     work_id: str | None = None
+
+
+class DecideAgentModeProposalRequest(MedousaModel):
+    accept: bool
 
 
 class DeleteRecurringResponse(MedousaModel):
@@ -1882,9 +1965,38 @@ class RuntimeConfigCommandResponse(MedousaModel):
     should_persist_reasoning_defaults: bool
 
 
+class SessionAgentModeResponse(MedousaModel):
+    effective_mode: AgentModeId
+    effective_source: AgentModeSource
+    revision: int = Field(..., ge=0)
+    selected_mode: AgentModeId | None = None
+    session_id: str
+    task_lease: AgentModeLeaseResponse | None = None
+    updated_at_utc: AwareDatetime | None = None
+
+
 class SessionAppendTurnResponse(MedousaModel):
     session_id: str
     stored: bool
+
+
+class SessionCodeBindingResponse(MedousaModel):
+    session_id: str
+    updated_at_utc: AwareDatetime | None = None
+    work_id: str | None = None
+
+
+class SessionCodeProjectResponse(MedousaModel):
+    base_ref: str
+    brief: str
+    created_repository: bool
+    human_phase: str
+    repo_path: str
+    session_id: str
+    state: str
+    title: str
+    work_id: str
+    worktree: str
 
 
 class SessionDeleteResponse(MedousaModel):
@@ -1909,6 +2021,17 @@ class SessionSetDisplayNameResponse(MedousaModel):
     session_id: str
 
 
+class SetSessionAgentModeRequest(MedousaModel):
+    expires_at_utc: AwareDatetime | None = None
+    mode: AgentModeId
+    scope: AgentModeScope | None = 'session'
+    task_id: str | None = None
+
+
+class SetSessionCodeBindingRequest(MedousaModel):
+    work_id: str
+
+
 class StageRouteCommandRequest(MedousaModel):
     command: StageRouteCommandSpec
     model: str
@@ -1919,6 +2042,14 @@ class StageRouteCommandRequest(MedousaModel):
 class StageRouteCommandResponse(MedousaModel):
     rendered_output: str
     stage_routing: StageRoutingMatrix
+
+
+class StartSessionCodeProjectRequest(MedousaModel):
+    base_ref: str | None = None
+    brief: str
+    repo_path: str | None = None
+    source: CodeProjectSource | None = 'blank'
+    title: str
 
 
 class TurnBudgetApproveRequest(MedousaModel):
@@ -1937,6 +2068,19 @@ class TurnBudgetRequestListResponse(MedousaModel):
 class TurnBudgetRequestResponse(MedousaModel):
     message: str
     request: TurnBudgetRequestRecord
+
+
+class TurnTicketRecord(MedousaModel):
+    composer_handoff: bool
+    mode: TurnTicketMode
+    phase: TurnTicketPhase
+    prompt_preview: str
+    session_id: str
+    started_at: AwareDatetime
+    stream_url: str
+    turn_id: str
+    updated_at: AwareDatetime
+    workspace_card_id: str | None = None
 
 
 class UpdateRecurringRequest(MedousaModel):
@@ -1983,7 +2127,7 @@ class VaultNoteContentResponse(MedousaModel):
 
 
 class VaultNotesListResponse(MedousaModel):
-    notes: list[VaultNote]
+    notes: list[VaultNoteSummary]
 
 
 class VaultRootsResponse(MedousaModel):
@@ -2041,6 +2185,29 @@ class WorkspaceCardActionResponse(MedousaModel):
 
 class WorkspaceLinkVaultRequest(MedousaModel):
     vault_path: str
+
+
+class AgentModeAvailability(MedousaModel):
+    available: bool
+    contract_revision: str | None = None
+    label: str
+    mode: AgentModeId
+    unavailable_reason: str | None = None
+
+
+class AgentModeProposalResponse(MedousaModel):
+    created_at_utc: AwareDatetime
+    expires_at_utc: AwareDatetime
+    from_mode: AgentModeId
+    proposal_id: str
+    reason: str
+    resolution: AgentModeProposalResolution | None = None
+    resolved_at_utc: AwareDatetime | None = None
+    scope: AgentModeScope
+    session_id: str
+    status: AgentModeProposalStatus
+    task_id: str | None = None
+    to_mode: AgentModeId
 
 
 class AgentPermissionRequestRecord(MedousaModel):
@@ -2218,6 +2385,14 @@ class WorkspaceSnapshot(MedousaModel):
     workspace_revision: int = Field(..., ge=0)
 
 
+class AgentModeListResponse(MedousaModel):
+    modes: list[AgentModeAvailability]
+
+
+class AgentModeProposalListResponse(MedousaModel):
+    proposals: list[AgentModeProposalResponse]
+
+
 class AgentPermissionRequestListResponse(MedousaModel):
     requests: list[AgentPermissionRequestRecord]
 
@@ -2241,6 +2416,19 @@ class FeedTailResponse(MedousaModel):
 
 class InteractiveTurnRequest(MedousaModel):
     additional_manuscript_ids: list[str] | None = None
+    agent_mode: AgentModeId | None = Field(
+        None,
+        description='Per-turn behavioral mode override. Omitted requests inherit task/session state.',
+    )
+    code_context: CodeIntentContext | None = Field(
+        None,
+        description='Advisory editor/undertaking intent. Coder entry re-resolves Forge authority.',
+    )
+    code_project_setup_authorized: (
+        bool | None
+    ) = (
+        Field(False, description='The principal explicitly selected the surface action allowing unbound Coder to choose, bind, or create a project for this turn.')
+    )
     host_context: HostTurnContext | None = Field(
         None,
         description='Advisory editor, note, or page snapshot. The daemon bounds and formats it.',
