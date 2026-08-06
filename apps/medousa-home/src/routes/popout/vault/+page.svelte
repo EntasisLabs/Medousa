@@ -22,7 +22,7 @@
   } from "$lib/window";
   import { connectWorkshop } from "$lib/workshopConnection";
   import { whenDocumentVisible } from "$lib/utils/whenDocumentVisible";
-  import { formatShortcut } from "$lib/platform";
+  import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
 
   let alwaysOnTop = $state(true);
   let loadingPath = $state(true);
@@ -175,7 +175,7 @@
       <button
         type="button"
         class="vault-sticky-icon"
-        title="Find note ({formatShortcut('O')})"
+        title={titleWithShortcut("Find note", "open-notes")}
         aria-label="Find note"
         onclick={() => (findOpen = true)}
       >
@@ -184,7 +184,7 @@
       <button
         type="button"
         class="vault-sticky-icon"
-        title="New note ({formatShortcut('N')})"
+        title={titleWithShortcut("New note", "vault-new")}
         aria-label="New note"
         onclick={() => void openNewNote()}
       >

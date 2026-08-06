@@ -8,7 +8,7 @@
     popBrowserPopoverOverlay,
     pushBrowserPopoverOverlay,
   } from "$lib/utils/browserPopoverOverlay";
-  import { formatShortcut } from "$lib/platform";
+  import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
 
   const humanBrowser = $derived(humanBrowserForWindow());
 
@@ -153,7 +153,7 @@
     autocapitalize="off"
     aria-label="Address bar"
     aria-autocomplete="list"
-    title="Search or enter URL ({formatShortcut('L')})"
+    title={titleWithShortcut("Search or enter URL", "browser-focus-url")}
     onfocus={handleFocus}
     onblur={handleBlur}
     oninput={handleInput}

@@ -7,7 +7,7 @@ You don’t need every shortcut — learn a small set that matches how you work.
 | Habit | On a Mac | On Windows / Linux |
 |-------|----------|---------------------|
 | Spotlight | ⌘K | Ctrl+K |
-| Pane prefix, then a key | ⌘; then %, ", h/j/k/l, z, … | Ctrl+; then the same |
+| Pane prefix, then a key | ⌘; + %, ", h/j/k/l, z, … | Ctrl+; + the same |
 | Shortcuts sheet | ⌘; ? | Ctrl+; ? |
 | Zoom the whole window | ⌘+ / ⌘− / ⌘0 | Ctrl+ equivalents |
 | Toggle left rail | ⌘B | Ctrl+B |

@@ -22,6 +22,7 @@
   import { vault } from "$lib/stores/vault.svelte";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
   import { formatShortcut } from "$lib/platform";
+  import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
   import {
     placeDockPopover,
     type DockPopoverPlacement,
@@ -211,7 +212,7 @@
           aria-haspopup="menu"
           aria-expanded={createOpen}
           aria-label="New note"
-          title="New"
+          title={titleWithShortcut("New", "vault-new")}
           onclick={toggleCreateMenu}
         >
           <Plus size={16} strokeWidth={1.75} />

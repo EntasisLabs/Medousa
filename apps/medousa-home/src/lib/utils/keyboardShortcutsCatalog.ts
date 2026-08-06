@@ -1,6 +1,12 @@
 import { formatShortcut, modKeyLabel, usesMetaModKey } from "$lib/platform";
 
-export type ShortcutCatalogGroupId = "global" | "panes" | "code" | "vault" | "chat";
+export type ShortcutCatalogGroupId =
+  | "global"
+  | "panes"
+  | "code"
+  | "vault"
+  | "browser"
+  | "chat";
 
 export type ShortcutCatalogEntry = {
   id: string;
@@ -17,7 +23,7 @@ export type ShortcutCatalogGroup = {
 
 /**
  * Single reference for binds that already exist in the app.
- * Drive cheat sheet / Spotlight labels from here — no remapping UI.
+ * Drive cheat sheet / Spotlight labels / button hover titles from here — no remapping UI.
  */
 export const KEYBOARD_SHORTCUTS_CATALOG: ShortcutCatalogGroup[] = [
   {
@@ -101,6 +107,21 @@ export const KEYBOARD_SHORTCUTS_CATALOG: ShortcutCatalogGroup[] = [
     ],
   },
   {
+    id: "browser",
+    title: "Browser",
+    entries: [
+      { id: "browser-focus-url", keys: "mod:L", action: "Focus URL bar" },
+      { id: "browser-find", keys: "mod:F", action: "Find in page" },
+      { id: "browser-bookmarks", keys: "mod:Shift+B", action: "Open bookmarks" },
+      { id: "browser-new-tab", keys: "mod:T", action: "New tab" },
+      { id: "browser-reopen-tab", keys: "mod:Shift+T", action: "Reopen closed tab" },
+      { id: "browser-close-tab", keys: "mod:W", action: "Close tab" },
+      { id: "browser-reload", keys: "mod:R", action: "Reload page" },
+      { id: "browser-back", keys: "mod:[", action: "Go back" },
+      { id: "browser-forward", keys: "mod:]", action: "Go forward" },
+    ],
+  },
+  {
     id: "chat",
     title: "Chat / Spotlight",
     entries: [
@@ -123,7 +144,7 @@ export function formatCatalogKeys(keys: string): string {
     // Two-step chord — spell out the sequence so it doesn't read as one press.
     const suffix = keys.slice("prefix:".length);
     const mod = modKeyLabel();
-    return usesMetaModKey() ? `${mod}; then ${suffix}` : `Ctrl+; then ${suffix}`;
+    return usesMetaModKey() ? `${mod}; + ${suffix}` : `Ctrl+; + ${suffix}`;
   }
   if (keys.startsWith("mod:")) {
     const chord = keys.slice("mod:".length);
@@ -149,11 +170,38 @@ export function catalogGroup(
   return KEYBOARD_SHORTCUTS_CATALOG.find((group) => group.id === id);
 }
 
+/** Flat lookup across all catalog groups. */
+export function shortcutEntryById(id: string): ShortcutCatalogEntry | undefined {
+  for (const group of KEYBOARD_SHORTCUTS_CATALOG) {
+    const entry = group.entries.find((e) => e.id === id);
+    if (entry) return entry;
+  }
+  return undefined;
+}
+
+/**
+ * Native `title` hint: `Label (⌘B)`. Falls back to bare label if the id is unknown.
+ */
+export function titleWithShortcut(label: string, catalogId: string): string {
+  const entry = shortcutEntryById(catalogId);
+  if (!entry) return label;
+  return `${label} (${formatCatalogKeys(entry.keys)})`;
+}
+
+/**
+ * Native `title` hint from a raw keys token (for binds not in the cheat sheet).
+ * Tokens use the same grammar as catalog `keys` (`mod:…`, `prefix:…`, `literal:…`).
+ */
+export function titleWithKeys(label: string, keys: string): string {
+  return `${label} (${formatCatalogKeys(keys)})`;
+}
+
 /** Groups shown in the in-app shortcuts sheet. */
 export const CHEAT_SHEET_GROUP_IDS: ShortcutCatalogGroupId[] = [
   "global",
   "panes",
   "code",
   "vault",
+  "browser",
   "chat",
 ];

@@ -7,7 +7,7 @@ Related: [Keyboard and flow](guide:keyboard-flow) · [Chat](guide:chat) · [Brow
 ```callout
 tone: note
 title: Prefix chord
-body: Pane bindings use a prefix — ⌘; on macOS, Ctrl+; elsewhere — then the key (for example ⌘; then % to split right). Spotlight always opens with ⌘K / Ctrl+K.
+body: Pane bindings use a prefix — ⌘; on macOS, Ctrl+; elsewhere — then the key (for example ⌘; + % to split right). Spotlight always opens with ⌘K / Ctrl+K.
 ```
 
 ## Keyboard shortcuts
@@ -28,16 +28,30 @@ body: Pane bindings use a prefix — ⌘; on macOS, Ctrl+; elsewhere — then th
 
 | Action | macOS | Windows / Linux |
 |--------|-------|-----------------|
-| Split right | ⌘; then % | Ctrl+; then % |
-| Split down | ⌘; then " | Ctrl+; then " |
-| Focus pane | ⌘; then h/j/k/l | Ctrl+; then h/j/k/l |
-| Zoom pane | ⌘; then z | Ctrl+; then z |
-| Close pane (merge tabs) | ⌘; then x | Ctrl+; then x |
-| Chat tab here | ⌘; then c | Ctrl+; then c |
-| Next / prev tab | ⌘; then n/p | Ctrl+; then n/p |
-| Show tabs | ⌘; then w | Ctrl+; then w |
-| Switch virtual desktop | ⌘; then 1–4 | Ctrl+; then 1–4 |
+| Split right | ⌘; + % | Ctrl+; + % |
+| Split down | ⌘; + " | Ctrl+; + " |
+| Focus pane | ⌘; + h/j/k/l | Ctrl+; + h/j/k/l |
+| Zoom pane | ⌘; + z | Ctrl+; + z |
+| Close pane (merge tabs) | ⌘; + x | Ctrl+; + x |
+| Chat tab here | ⌘; + c | Ctrl+; + c |
+| Next / prev tab | ⌘; + n/p | Ctrl+; + n/p |
+| Show tabs | ⌘; + w | Ctrl+; + w |
+| Switch virtual desktop | ⌘; + 1–4 | Ctrl+; + 1–4 |
 | Move tab to another pane | Drag tab | Drag tab |
+
+### Code
+
+| Action | macOS | Windows / Linux |
+|--------|-------|-----------------|
+| Quick Open file / symbol / line | ⌘P | Ctrl+P |
+| Save focused file | ⌘S | Ctrl+S |
+| Save all modified files | ⇧⌘S | Ctrl+Shift+S |
+| Find in file | ⌘F | Ctrl+F |
+| Structure (symbols) | ⇧⌘O | Ctrl+Shift+O |
+| Reopen last closed file | ⇧⌘T | Ctrl+Shift+T |
+| Toggle Terminal dock | ⌘` | Ctrl+` |
+| Rename symbol | F2 | F2 |
+| Cycle Code file tabs in focused pane | Ctrl+Tab | Ctrl+Tab |
 
 ### Vault
 
@@ -49,6 +63,20 @@ body: Pane bindings use a prefix — ⌘; on macOS, Ctrl+; elsewhere — then th
 | Toggle edit / preview plane | ⇧⌘E | Ctrl+Shift+E |
 | Export PDF | ⇧⌘P | Ctrl+Shift+P |
 | Toggle board | ⇧⌘B | Ctrl+Shift+B |
+
+### Browser
+
+| Action | macOS | Windows / Linux |
+|--------|-------|-----------------|
+| Focus URL bar | ⌘L | Ctrl+L |
+| Find in page | ⌘F | Ctrl+F |
+| Open bookmarks | ⇧⌘B | Ctrl+Shift+B |
+| New tab | ⌘T | Ctrl+T |
+| Reopen closed tab | ⇧⌘T | Ctrl+Shift+T |
+| Close tab | ⌘W | Ctrl+W |
+| Reload page | ⌘R | Ctrl+R |
+| Go back | ⌘[ | Ctrl+[ |
+| Go forward | ⌘] | Ctrl+] |
 
 ### Chat / Spotlight
 
@@ -75,7 +103,9 @@ Browser chords (also in Spotlight when Web is focused) include address bar, new/
 | Destination | Subtitle |
 |-------------|----------|
 | Chat | Talk with Medousa |
-| Workspace | Notes, files, scripts, agents, and flows |
+| Notes | Vault notes and markdown |
+| Files | Pinned folders on this machine |
+| Artifacts | HTML decks and agent widgets |
 | Work | Tasks and kanban board |
 | Code | Projects, editing, understanding, and review |
 | Browser | Built-in web workshop |

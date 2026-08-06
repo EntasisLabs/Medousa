@@ -8,6 +8,7 @@
   import EnvironmentPresetSwitcher from "$lib/components/environment/EnvironmentPresetSwitcher.svelte";
   import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
   import { formatShortcut } from "$lib/platform";
+  import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
   import { environment } from "$lib/stores/environment.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import {
@@ -264,7 +265,7 @@
       <button
         type="button"
         class="workshop-status-spotlight"
-        title="Command spotlight"
+        title={titleWithShortcut("Command spotlight", "spotlight")}
         onclick={onOpenSpotlight}
       >
         {formatShortcut("K")}
