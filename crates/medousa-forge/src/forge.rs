@@ -911,6 +911,7 @@ impl Forge {
             }
             let status = match entry.kind {
                 crate::git::PorcelainKind::Untracked => ChangeStatus::Untracked,
+                crate::git::PorcelainKind::Unmerged => ChangeStatus::Unmerged,
                 crate::git::PorcelainKind::RenameOrCopy => {
                     if entry.xy.as_deref().unwrap_or_default().starts_with('C') {
                         ChangeStatus::Copied

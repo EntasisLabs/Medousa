@@ -23,6 +23,7 @@ describe("codeWorkbenchState", () => {
       terminal: false,
       tests: false,
       search: false,
+      changes: false,
     });
     expect(
       normalizeCodeWorkbenchLayout({
@@ -36,6 +37,7 @@ describe("codeWorkbenchState", () => {
       terminal: true,
       tests: false,
       search: false,
+      changes: false,
     });
 
     codeWorkbenchState.applyLayout("work-1", {
@@ -47,11 +49,14 @@ describe("codeWorkbenchState", () => {
       terminal: true,
       tests: false,
       search: false,
+      changes: false,
     });
     codeWorkbenchState.setTestsOpen("work-1", true);
     expect(codeWorkbenchState.layoutFor("work-1").tests).toBe(true);
     codeWorkbenchState.setSearchOpen("work-1", true);
     expect(codeWorkbenchState.layoutFor("work-1").search).toBe(true);
+    codeWorkbenchState.setChangesOpen("work-1", true);
+    expect(codeWorkbenchState.layoutFor("work-1").changes).toBe(true);
   });
 
   it("lists group-local Code tabs by composing shell and LME identities", () => {

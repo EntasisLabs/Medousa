@@ -218,8 +218,8 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 | HCP-7A | Streaming execution protocol and bounded output replay | ✅ |
 | HCP-7B | Named task terminals, background readiness, configured tasks, and problem matchers | ✅ |
 | HCP-7C | Terminal search, profiles, groups, shell integration, file links, and run selection | ✅ |
-| HCP-7D | Remote service detection/proxy and Browser preview handoff | 🔄 |
-| HCP-8A | Forge Changes model and branch/upstream/conflict status | ⬜ |
+| HCP-7D | Remote service detection/proxy and Browser preview handoff | ✅ |
+| HCP-8A | Forge Changes model and branch/upstream/conflict status | 🔄 |
 | HCP-8B | High-fidelity diff, real context expansion, file/hunk actions, and conflict editor | ⬜ |
 | HCP-8C | Guarded Git sync/history/blame/checkpoint operations and provider continuity | ⬜ |
 | HCP-9A | Test adapter contract, discovery hierarchy, stable state, and results | ⛔ |
@@ -343,6 +343,16 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 - **HCP-7C — `61aef5a5`.** Terminal find, clickable `path:line` links, session
   switching/cwd chrome, and Run Selected Text in Terminal. Migration: none.
   Compatibility: additive xterm addons/UI. Rollback: revert this commit.
+- **HCP-7D — `04bbc5f1`.** Ready-task `ready_url` extract, tokenized
+  `/v1/forge/preview/{token}/…` reverse proxy, and Output **Open in Browser**
+  (co-located localhost or remote daemon proxy). Migration: none.
+  Compatibility: older Homes ignore preview fields/routes. Rollback: revert
+  this commit; additive preview mint/proxy.
+- **HCP-8A — (this commit).** `GET /v1/forge/items/{id}/changes` with branch,
+  upstream ahead/behind, conflict/`unmerged` paths, and changed-file statuses;
+  Code Changes panel + `layout.changes` + Spotlight `workbench.view.scm`.
+  Migration: none. Compatibility: older Homes omit the route; Review remains
+  the decision surface. Rollback: revert this commit; additive Changes surface.
 
 ### Product-fit boundary (post-HCP-8)
 

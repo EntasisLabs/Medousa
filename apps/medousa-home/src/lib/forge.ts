@@ -344,12 +344,13 @@ export type ForgeCodeWorkspaceState = {
   }>;
   active_path?: string | null;
   secondary_path?: string | null;
-  /** Contextual Code regions (Problems/Terminal/Tests/Search); additive. */
+  /** Contextual Code regions (Problems/Terminal/Tests/Search/Changes); additive. */
   layout?: {
     context_panel?: "problems" | "outline" | "references" | "language" | null;
     terminal?: boolean;
     tests?: boolean;
     search?: boolean;
+    changes?: boolean;
   } | null;
   updated_at?: string | null;
 };
@@ -861,6 +862,25 @@ export type ProjectTest = {
   task_id: string;
 };
 
+export type ForgeChangesFile = {
+  path: string;
+  status: string;
+  old_path?: string | null;
+};
+
+export type ForgeChanges = {
+  work_id: string;
+  branch?: string | null;
+  detached?: boolean;
+  base_ref?: string | null;
+  baseline_oid?: string | null;
+  upstream?: string | null;
+  ahead?: number | null;
+  behind?: number | null;
+  conflict: boolean;
+  files: ForgeChangesFile[];
+};
+
 export async function getProjectTasks(workId: string): Promise<ProjectTask[]> {
   return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/tasks`);
 }
@@ -1109,6 +1129,10 @@ export async function getReview(workId: string, attemptId?: string): Promise<Rev
   if (attemptId) query.set("attempt_id", attemptId);
   const suffix = query.size ? `?${query.toString()}` : "";
   return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/review${suffix}`);
+}
+
+export async function getForgeChanges(workId: string): Promise<ForgeChanges> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/changes`);
 }
 
 export async function getReviewFile(

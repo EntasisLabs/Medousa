@@ -19,6 +19,7 @@
     X,
     Search,
     ScrollText,
+    GitBranch,
   } from "@lucide/svelte";
   import CodeMirrorHost from "$lib/components/code/CodeMirrorHost.svelte";
   import CodeBreadcrumbs from "$lib/components/code/CodeBreadcrumbs.svelte";
@@ -29,6 +30,7 @@
   } from "$lib/components/code/CodeEditorContextMenu.svelte";
   import CodeTerminalDock from "$lib/components/work/CodeTerminalDock.svelte";
   import CodeWorkspaceSearch from "$lib/components/code/CodeWorkspaceSearch.svelte";
+  import CodeChangesPanel from "$lib/components/code/CodeChangesPanel.svelte";
   import { openTrackedTerminal } from "$lib/utils/undertakingWorkspace";
   import { fuzzyMatchPaths } from "$lib/utils/pathFuzzyMatch";
   import { writeToTerminal } from "$lib/terminal/terminalInputBridge";
@@ -102,6 +104,7 @@
     type ForgeSourceTreeFile,
     getProjectTasks,
     getProjectTests,
+    getForgeChanges,
     startProjectTaskRun,
     getProjectTaskRun,
     cancelProjectTaskRun,
@@ -110,6 +113,7 @@
     type ProjectTaskResult,
     type ProjectTaskRun,
     type ProjectTest,
+    type ForgeChanges,
     type ForgeSourceFile,
   } from "$lib/forge";
   import { codeWorkspace, type CodeDocumentTab } from "$lib/stores/codeWorkspace.svelte";
@@ -226,6 +230,11 @@
   let projectTests = $state<ProjectTest[]>([]);
   let testsOpen = $state(false);
   let searchOpen = $state(false);
+  let changesOpen = $state(false);
+  let forgeChanges = $state<ForgeChanges | null>(null);
+  let changesLoading = $state(false);
+  let changesError = $state<string | null>(null);
+  let changesRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   let externalVersions = $state<Record<string, ForgeSourceFile>>({});
   let comparingTabId = $state<string | null>(null);
   let reviewChangedLines = $state<Array<{ line: number; kind: string }>>([]);
@@ -725,6 +734,43 @@
     if (!workId) return;
     codeWorkbenchState.setSearchOpen(workId, next);
     codeWorkspace.scheduleLayoutPersist(workId);
+  }
+
+  async function refreshForgeChanges() {
+    if (!workId || !changesOpen) return;
+    changesLoading = true;
+    changesError = null;
+    try {
+      forgeChanges = await getForgeChanges(workId);
+    } catch (err) {
+      if (isMissingForgeRoute(err)) {
+        changesError = "This workshop does not expose Changes yet — update the daemon.";
+      } else {
+        changesError = err instanceof Error ? err.message : String(err);
+      }
+    } finally {
+      changesLoading = false;
+    }
+  }
+
+  function scheduleChangesRefresh() {
+    if (!changesOpen || !workId) return;
+    if (changesRefreshTimer) clearTimeout(changesRefreshTimer);
+    changesRefreshTimer = setTimeout(() => {
+      changesRefreshTimer = null;
+      void refreshForgeChanges();
+    }, 200);
+  }
+
+  async function toggleChanges(forceOpen?: boolean) {
+    const next =
+      forceOpen === true ? true : forceOpen === false ? false : !changesOpen;
+    changesOpen = next;
+    if (workId) {
+      codeWorkbenchState.setChangesOpen(workId, next);
+      codeWorkspace.scheduleLayoutPersist(workId);
+    }
+    if (next) await refreshForgeChanges();
   }
 
   async function openSearchHit(path: string, line: number) {
@@ -1290,6 +1336,7 @@
   async function handleProjectEvent(event: ForgeProjectEvent) {
     if (!workId || event.work_id !== workId) return;
     notifyLanguageServerOfProjectEvent(event);
+    scheduleChangesRefresh();
     const plan = planOpenBufferAction(event);
     switch (plan.action) {
       case "reconcile": {
@@ -2448,6 +2495,9 @@
         case "workbench.action.findInFiles":
           toggleSearch(true);
           break;
+        case "workbench.view.scm":
+          void toggleChanges(true);
+          break;
         case "workbench.action.output.toggleOutput":
           toggleOutput();
           break;
@@ -2474,8 +2524,10 @@
       contextPanel = layout.context_panel;
       testsOpen = layout.tests;
       searchOpen = layout.search;
+      changesOpen = layout.changes;
       if (layout.terminal) void toggleTerminalDock(true);
       else terminalDockOpen = false;
+      if (layout.changes) void refreshForgeChanges();
     })();
   });
 
@@ -2496,6 +2548,7 @@
   onDestroy(() => {
     if (linePersistTimer) clearTimeout(linePersistTimer);
     if (treeRefreshTimer) clearTimeout(treeRefreshTimer);
+    if (changesRefreshTimer) clearTimeout(changesRefreshTimer);
     projectEventStream?.teardown();
     projectEventStream = null;
     stopTaskRunEvents();
@@ -2535,6 +2588,14 @@
           aria-pressed={searchOpen}
           onclick={() => toggleSearch()}
         ><Search size={14} strokeWidth={1.75} /></button>
+        <button
+          type="button"
+          class="scripts-workbench-toolbar-btn {changesOpen ? 'scripts-workbench-toolbar-btn-active' : ''}"
+          title="Changes"
+          aria-label="Show changes"
+          aria-pressed={changesOpen}
+          onclick={() => void toggleChanges()}
+        ><GitBranch size={14} strokeWidth={1.75} /></button>
         <button
           type="button"
           class="scripts-workbench-toolbar-btn {outputOpen ? 'scripts-workbench-toolbar-btn-active' : ''}"
@@ -3061,6 +3122,16 @@
             /* tree refresh can retry later */
           }
         }}
+      />
+    {/if}
+    {#if changesOpen}
+      <CodeChangesPanel
+        changes={forgeChanges}
+        loading={changesLoading}
+        error={changesError}
+        onOpenPath={(path) => void openTaskLocation(path, 1)}
+        onClose={() => void toggleChanges(false)}
+        onRefresh={() => void refreshForgeChanges()}
       />
     {/if}
     {#if testsOpen}

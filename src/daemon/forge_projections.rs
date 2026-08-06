@@ -323,6 +323,7 @@ pub fn build_review_for_attempt(
                         medousa_forge::model::ChangeStatus::Copied => "copied",
                         medousa_forge::model::ChangeStatus::TypeChanged => "type_changed",
                         medousa_forge::model::ChangeStatus::Untracked => "untracked",
+                        medousa_forge::model::ChangeStatus::Unmerged => "unmerged",
                     }
                     .to_owned(),
                     old_path: f.old_path.clone(),
