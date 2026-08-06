@@ -13,6 +13,9 @@ import {
   MedousaCodeWorkspace,
   MedousaCodeWorkspaceBridge,
 } from "$lib/code/medousaCodeWorkspace";
+import { pathToFileUri } from "$lib/code/codeDocumentUri";
+
+export { pathToFileUri } from "$lib/code/codeDocumentUri";
 import {
   daemonWebSocketUrl,
   getCodingEngineInfo,
@@ -163,14 +166,6 @@ export async function connectOrchestratorLspClient(options?: ConnectOrchestrator
     close: connection.close,
     ready,
   };
-}
-
-export function pathToFileUri(path: string): string {
-  const normalized = path.replaceAll("\\", "/");
-  const prefixed = normalized.startsWith("/") ? normalized : `/${normalized}`;
-  const uri = new URL("file://");
-  uri.pathname = prefixed;
-  return uri.href;
 }
 
 type WorkspaceClientEntry = {

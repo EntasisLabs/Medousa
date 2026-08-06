@@ -32,12 +32,20 @@
   import {
     acquireCodeWorkspaceLspClient,
     getCodeEditorConventions,
-    pathToFileUri,
     type CodeDocumentSymbol,
     type CodeWorkspaceSymbol,
   } from "$lib/code/codingEngineClient";
+  import {
+    pathToFileUri,
+    workspaceRelativePathFromUri,
+  } from "$lib/code/codeDocumentUri";
+  import { codeEditorViewRegistry } from "$lib/code/codeEditorViewRegistry";
+  import type { CodeLanguageNavigationKind } from "$lib/code/codeLanguageNavigation";
   import { containingSymbolTrail } from "$lib/code/codeDocumentSymbols";
-  import { languageSupportsLsp } from "$lib/code/codeEditorLanguageRegistry";
+  import {
+    languageSupportsLsp,
+    resolveCodeEditorLanguage,
+  } from "$lib/code/codeEditorLanguageRegistry";
   import {
     beginHumanAttempt,
     getUndertakingSource,
@@ -290,6 +298,9 @@
   const canFormat = $derived(Boolean(languageCapabilities.documentFormattingProvider));
   const canCodeAction = $derived(Boolean(languageCapabilities.codeActionProvider));
   const canDefinition = $derived(Boolean(languageCapabilities.definitionProvider ?? lspClient));
+  const canDeclaration = $derived(Boolean(languageCapabilities.declarationProvider));
+  const canTypeDefinition = $derived(Boolean(languageCapabilities.typeDefinitionProvider));
+  const canImplementation = $derived(Boolean(languageCapabilities.implementationProvider));
   const symbolTrail = $derived(
     containingSymbolTrail(
       symbols,
@@ -494,11 +505,17 @@
     if (tab) editor?.focusEditor();
   }
 
-  function pathFromUri(uri = ""): string | null {
-    if (!uri || !context?.worktree) return null;
-    const decoded = decodeURIComponent(uri.replace(/^file:\/\//, ""));
-    const root = context.worktree.replace(/[\\/]$/, "");
-    return decoded.startsWith(`${root}/`) ? decoded.slice(root.length + 1) : null;
+  function pathFromUri(
+    uri = "",
+    root = workspaceRoot ?? context?.worktree ?? "",
+  ): string | null {
+    return uri && root ? workspaceRelativePathFromUri(uri, root) : null;
+  }
+
+  function languageForWorkspacePath(path: string): string {
+    const extension = path.split(".").pop()?.toLowerCase() ?? "";
+    const resolved = resolveCodeEditorLanguage(extension);
+    return resolved === "plaintext" ? activeTabLanguage : resolved;
   }
 
   async function refreshQuickSymbols() {
@@ -551,15 +568,66 @@
   async function navigate(direction: -1 | 1) {
     const tab = await codeWorkspace.navigate(workId, direction);
     if (!tab) return;
+    await lmeWorkspace.openCodeFile(workId, tab.path, {
+      line: tab.line,
+      recordNavigation: false,
+    });
     undertakings.setSelection({ path: tab.path, line: tab.line, entityId: null });
     await tick();
     if (tab.line) editor?.revealLine(tab.line);
+  }
+
+  async function navigateLanguageLocation(kind: CodeLanguageNavigationKind) {
+    const sourceTab = activeTab;
+    const sourceEditor = editor;
+    const root = workspaceRoot;
+    if (!sourceTab || !sourceEditor || !root) return;
+    const sourceCursor = sourceEditor.getCursorPosition();
+    surfaceError = null;
+    try {
+      const target = await sourceEditor.goToLanguageLocation(kind);
+      if (!target) return;
+      const targetPath = pathFromUri(target.uri, root);
+      if (!targetPath) {
+        throw new Error("The language server returned a location outside this project");
+      }
+      codeWorkspace.recordNavigationLocation(
+        workId,
+        sourceTab.path,
+        sourceCursor.line + 1,
+      );
+      codeWorkspace.recordNavigationLocation(workId, targetPath, target.line);
+      const targetTab = codeWorkspace.tabs.find(
+        (tab) => tab.work_id === workId && tab.path === targetPath,
+      );
+      if (targetTab) codeWorkspace.updateLine(targetTab.tabId, target.line);
+      lmeWorkspace.updateCodeLocation(workId, targetPath, target.line);
+      undertakings.setSelection({
+        path: targetPath,
+        line: target.line,
+        entityId: null,
+      });
+    } catch (err) {
+      surfaceError = err instanceof Error ? err.message : String(err);
+    }
   }
 
   function onWindowKeydown(event: KeyboardEvent) {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "p") {
       event.preventDefault();
       void showQuickOpen();
+    }
+    if (event.altKey && !event.metaKey && !event.ctrlKey) {
+      if (event.key === "ArrowLeft" && codeWorkspace.canNavigate(workId, -1)) {
+        event.preventDefault();
+        void navigate(-1);
+      } else if (
+        event.key === "ArrowRight" &&
+        codeWorkspace.canNavigate(workId, 1)
+      ) {
+        event.preventDefault();
+        void navigate(1);
+      }
     }
     if (event.key === "Escape" && quickOpen) quickOpen = false;
   }
@@ -1019,7 +1087,16 @@
     if (!activeTab) return;
     switch (action) {
       case "definition":
-        editor?.goToDefinition();
+        void navigateLanguageLocation("definition");
+        break;
+      case "declaration":
+        void navigateLanguageLocation("declaration");
+        break;
+      case "type_definition":
+        void navigateLanguageLocation("typeDefinition");
+        break;
+      case "implementation":
+        void navigateLanguageLocation("implementation");
         break;
       case "references":
         void runLanguageAction("references");
@@ -1145,6 +1222,7 @@
     }
     let cancelled = false;
     let release = () => {};
+    let unregisterWorkspaceBridge = () => {};
     lspClient = null;
     lspError = null;
     lspConnecting = true;
@@ -1155,6 +1233,26 @@
         language: activeTabLanguage,
       });
       release = lease.release;
+      unregisterWorkspaceBridge = lease.workspaceBridge.register({
+        handlesUri: (uri) => Boolean(pathFromUri(uri, root)),
+        requestFile: async (uri) => {
+          const path = pathFromUri(uri, root);
+          if (!path) return null;
+          const source = await getUndertakingSource(workId, path);
+          return {
+            languageId: languageForWorkspacePath(path),
+            text: source.content,
+          };
+        },
+        displayFile: async (uri) => {
+          const path = pathFromUri(uri, root);
+          if (!path) return null;
+          const source = await lmeWorkspace.openCodeFile(workId, path, {
+            recordNavigation: false,
+          });
+          return source ? codeEditorViewRegistry.waitFor(uri) : null;
+        },
+      });
       void lease.client
         .then((client) => {
           if (cancelled) {
@@ -1172,6 +1270,7 @@
     return () => {
       cancelled = true;
       cancelDeferred();
+      unregisterWorkspaceBridge();
       release();
     };
   });
@@ -1514,6 +1613,7 @@
               onSelectionChanged={(selection) => (editorSelection = selection.text ? selection : null)}
               onProblemsChanged={syncProblems}
               onContextMenu={onEditorContextMenu}
+              onLanguageNavigationRequested={(kind) => void navigateLanguageLocation(kind)}
             />
           {/key}
         {:else if !activeTab.loading}
@@ -1803,6 +1903,9 @@
   x={editorMenuX}
   y={editorMenuY}
   canDefinition={canDefinition}
+  canDeclaration={canDeclaration}
+  canTypeDefinition={canTypeDefinition}
+  canImplementation={canImplementation}
   canReference={canReference}
   canRename={canRename}
   canFormat={canFormat}

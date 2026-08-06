@@ -195,6 +195,23 @@ describe("MedousaCodeWorkspace", () => {
     ]);
   });
 
+  it("waits for a handled Home tab to mount its editor view", async () => {
+    const { bridge, workspace } = createWorkspace();
+    const mounted = new TestView("mounted");
+    bridge.register({
+      displayFile: (uri) => {
+        queueMicrotask(() =>
+          workspace.openFile(uri, "typescript", asView(mounted)),
+        );
+        return "handled";
+      },
+    });
+
+    await expect(workspace.displayFile("file:///repo/a.ts")).resolves.toBe(
+      asView(mounted),
+    );
+  });
+
   it("canonicalizes equivalent workshop URI spellings", () => {
     expect(canonicalCodeDocumentUri("FILE:///Repo/a b.ts#symbol")).toBe(
       "file:///Repo/a%20b.ts",

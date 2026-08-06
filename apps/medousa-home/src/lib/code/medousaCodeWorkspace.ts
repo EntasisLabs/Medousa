@@ -11,6 +11,9 @@ import {
   type WorkspaceFile,
 } from "@codemirror/lsp-client";
 import type { EditorView } from "@codemirror/view";
+import { canonicalCodeDocumentUri } from "$lib/code/codeDocumentUri";
+
+export { canonicalCodeDocumentUri } from "$lib/code/codeDocumentUri";
 
 export type MedousaWorkspaceDocument = {
   languageId: string;
@@ -24,7 +27,11 @@ export type MedousaCodeWorkspaceHandler = {
   ) => Promise<MedousaWorkspaceDocument | null> | MedousaWorkspaceDocument | null;
   displayFile?: (
     uri: string,
-  ) => Promise<EditorView | null> | EditorView | null;
+  ) =>
+    | Promise<EditorView | "handled" | null>
+    | EditorView
+    | "handled"
+    | null;
 };
 
 /**
@@ -55,7 +62,7 @@ export class MedousaCodeWorkspaceBridge {
     return null;
   }
 
-  async displayFile(uri: string): Promise<EditorView | null> {
+  async displayFile(uri: string): Promise<EditorView | "handled" | null> {
     for (let index = this.handlers.length - 1; index >= 0; index -= 1) {
       const handler = this.handlers[index];
       if (handler.handlesUri && !handler.handlesUri(uri)) continue;
@@ -107,22 +114,6 @@ function replaceDocument(doc: Text, replacement: Text): ChangeSet {
 }
 
 /**
- * Normalize URI spelling without translating it through the Home filesystem.
- * The workshop URI remains authoritative, including for remote projects.
- */
-export function canonicalCodeDocumentUri(uri: string): string {
-  try {
-    const parsed = new URL(uri);
-    parsed.protocol = parsed.protocol.toLowerCase();
-    parsed.hostname = parsed.hostname.toLowerCase();
-    parsed.hash = "";
-    return parsed.href;
-  } catch {
-    return uri;
-  }
-}
-
-/**
  * CodeMirror workspace implementation for Home's pooled project-language
  * clients. It supports multiple views of one URI and headless documents used
  * by references while preserving the daemon/workshop as filesystem authority.
@@ -133,6 +124,10 @@ export class MedousaCodeWorkspace extends Workspace {
   private requestingFiles = new Map<
     string,
     Promise<MedousaWorkspaceFile | null>
+  >();
+  private viewWaiters = new Map<
+    string,
+    Set<(view: EditorView | null) => void>
   >();
 
   constructor(
@@ -167,6 +162,7 @@ export class MedousaCodeWorkspace extends Workspace {
       file.views.push(view);
       this.files = [...this.files, file];
       this.client.didOpen(file);
+      this.resolveViewWaiters(canonicalUri, view);
       return;
     }
 
@@ -179,6 +175,7 @@ export class MedousaCodeWorkspace extends Workspace {
       file.pendingDoc = view.state.doc;
     }
     file.views.push(view);
+    this.resolveViewWaiters(canonicalUri, view);
   }
 
   override closeFile(uri: string, view: EditorView): void {
@@ -224,7 +221,38 @@ export class MedousaCodeWorkspace extends Workspace {
   override async displayFile(uri: string): Promise<EditorView | null> {
     const canonicalUri = canonicalCodeDocumentUri(uri);
     const displayed = await this.bridge.displayFile(canonicalUri);
-    return displayed ?? this.getFile(canonicalUri)?.getView() ?? null;
+    if (displayed !== "handled") {
+      return displayed ?? this.getFile(canonicalUri)?.getView() ?? null;
+    }
+    const mounted = this.getFile(canonicalUri)?.getView();
+    return mounted ?? this.waitForView(canonicalUri);
+  }
+
+  private waitForView(uri: string, timeoutMs = 5_000): Promise<EditorView | null> {
+    const mounted = this.getFile(uri)?.getView();
+    if (mounted) return Promise.resolve(mounted);
+    return new Promise((resolve) => {
+      const waiters = this.viewWaiters.get(uri) ?? new Set();
+      let settled = false;
+      const finish = (view: EditorView | null) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        waiters.delete(finish);
+        if (waiters.size === 0) this.viewWaiters.delete(uri);
+        resolve(view);
+      };
+      const timer = setTimeout(() => finish(null), timeoutMs);
+      waiters.add(finish);
+      this.viewWaiters.set(uri, waiters);
+    });
+  }
+
+  private resolveViewWaiters(uri: string, view: EditorView): void {
+    const waiters = this.viewWaiters.get(uri);
+    if (!waiters) return;
+    this.viewWaiters.delete(uri);
+    for (const resolve of waiters) resolve(view);
   }
 
   override updateFile(uri: string, update: TransactionSpec): void {
