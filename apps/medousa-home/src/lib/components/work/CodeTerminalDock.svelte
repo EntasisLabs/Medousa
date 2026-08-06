@@ -6,6 +6,7 @@
     open: boolean;
     sessionId: string | null;
     workId: string;
+    worktreeRoot?: string | null;
     title?: string;
     onClose: () => void;
     onPopOut?: () => void;
@@ -15,6 +16,7 @@
     open,
     sessionId,
     workId,
+    worktreeRoot = null,
     title = "Terminal",
     onClose,
     onPopOut,
@@ -55,7 +57,7 @@
     <div class="min-h-0 flex-1">
       {#if sessionId}
         {#key sessionId}
-          <TerminalPane {sessionId} {workId} {title} compact />
+          <TerminalPane {sessionId} {workId} {title} {worktreeRoot} compact />
         {/key}
       {:else}
         <p class="px-3 py-4 text-[10px] text-white">Opening workshop shell…</p>

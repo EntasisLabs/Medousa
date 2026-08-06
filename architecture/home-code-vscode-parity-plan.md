@@ -78,12 +78,11 @@ recovery where applicable.
 
 ### Trust gaps to close first
 
-- Debugging is absent. Source-control operations, test state, terminal shell
-  integration, and editor contribution points are substantially below the
-  daily-driver baseline. Command identities and VS Code aliases exist for the
-  Code journey; a full keybinding editor and context-key `when` clauses remain
-  deferred. Interactive PTY attachment for task runs, task groups, and remote
-  Browser handoff remain ahead (HCP-7C/7D).
+- Debugging is absent. Source-control operations, deep test state, and editor
+  contribution points remain below the daily-driver baseline. A full keybinding
+  editor and context-key `when` clauses remain deferred. Custom terminal
+  profiles, OSC shell integration, task→PTY attach, and remote Browser handoff
+  remain ahead (HCP-7D+).
 
 ## Target architecture
 
@@ -218,8 +217,8 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 | HCP-6B | Previewed repository replace and complete file/folder operations | ✅ |
 | HCP-6C | Large-file, encoding, binary-preview, and fuzzy Quick Open fallbacks | ✅ |
 | HCP-7A | Streaming execution protocol and bounded output replay | ✅ |
-| HCP-7B | Named task terminals, background readiness, configured tasks, and problem matchers | 🔄 |
-| HCP-7C | Terminal search, profiles, groups, shell integration, file links, and run selection | ⬜ |
+| HCP-7B | Named task terminals, background readiness, configured tasks, and problem matchers | ✅ |
+| HCP-7C | Terminal search, profiles, groups, shell integration, file links, and run selection | 🔄 |
 | HCP-7D | Remote service detection/proxy and Browser preview handoff | ⬜ |
 | HCP-8A | Forge Changes model and branch/upstream/conflict status | ⬜ |
 | HCP-8B | High-fidelity diff, real context expansion, file/hunk actions, and conflict editor | ⬜ |
@@ -337,6 +336,11 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
   `…/task-runs/{id}/events?since=`, bounded live stdout/stderr on poll, and a
   Code Output panel. Migration: none. Compatibility: older Homes keep
   poll-until-exit. Rollback: revert this commit; additive stream route/fields.
+- **HCP-7B — `a91774b5`.** Named Output channels with background readiness,
+  incremental problem locations, and thin `.vscode/tasks.json` import
+  (`npm`/`shell`/`process` + inline matchers). Migration: none. Compatibility:
+  older Homes ignore new task/run fields. Rollback: revert this commit;
+  additive task metadata and UI.
 
 ### Product-fit boundary (post-HCP-8)
 

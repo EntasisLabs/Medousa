@@ -207,9 +207,9 @@ development processes at the same time, including in mixed repositories.
 - Completed checks are written into Forge command evidence. Review uses the
   latest completed result to say whether verification passed; cancelled runs
   are preserved as activity but do not pretend the revision failed.
-- Attachment of task runs to interactive PTY Terminal sessions, configured task
-  groups, and richer matchers remain later work. Terminal stays the interactive
-  escape hatch.
+- Attachment of task runs to interactive PTY Terminal sessions and full OSC shell
+  integration remain later work. Terminal stays the interactive escape hatch with
+  find, path links, session switching, and run-selection.
 
 ## What each surface does
 
@@ -230,8 +230,13 @@ impact.”
   `work_id` + `lease_id` so commands can enter sealed evidence.
 - Tracked Terminal tabs retain their undertaking when restored and keep their
   active lease fresh while open.
-- Choose **Diagnostic** in the Terminal header to open a separate untracked
-  shell. Its commands are not part of sealed evidence.
+- The Code terminal dock supports **Find** (Mod+F while focused / Spotlight),
+  clickable `path:line` links into Code, session switching, and **Run Selected
+  Text in Terminal** from the editor. The default workshop shell profile uses
+  `$SHELL` (login for bash/zsh); custom shell profiles and OSC shell
+  integration arrive later.
+- Choose **Diagnostic** / **New shell** in the Terminal header to open a separate
+  untracked shell. Its commands are not part of sealed evidence.
 
 ## Review and Understand
 
