@@ -47,6 +47,7 @@
     humanPhaseGuidance,
     humanPhaseLabel,
     humanizeForgeMessage,
+    gitTargetBaseRef,
     getProviderHandoff,
     shareProviderHandoff,
     saveProviderContext,
@@ -1601,7 +1602,7 @@
 
                       <ReviewProvenanceStrip
                         {review}
-                        baseRef={baseRef || detail?.target?.Git?.base_ref || null}
+                        baseRef={baseRef || gitTargetBaseRef(detail?.target) || null}
                         onExport={() => void beginExport()}
                       />
 

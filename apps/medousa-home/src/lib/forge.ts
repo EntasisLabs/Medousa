@@ -65,8 +65,30 @@ export type ForgeWorkItem = {
   active_attempts?: string[];
   review_decisions?: Array<{ id: string; strategy: string }>;
   disposition?: string | null;
-  target?: { Git?: { repo_path: string; base_ref: string } };
+  /** Internally tagged: `{ kind: "git", repo_path, base_ref, base_oid }`. */
+  target?: GitWorkTarget | null;
 };
+
+export type GitWorkTarget = {
+  kind: "git";
+  repo_path: string;
+  base_ref: string;
+  base_oid?: string;
+};
+
+export function gitTargetRepoPath(
+  target: GitWorkTarget | null | undefined,
+): string | null {
+  const path = target?.kind === "git" ? target.repo_path?.trim() : "";
+  return path || null;
+}
+
+export function gitTargetBaseRef(
+  target: GitWorkTarget | null | undefined,
+): string | null {
+  const ref = target?.kind === "git" ? target.base_ref?.trim() : "";
+  return ref || null;
+}
 
 export type ItemProjection = ForgeWorkItem & {
   human_phase: HumanPhase | string;
