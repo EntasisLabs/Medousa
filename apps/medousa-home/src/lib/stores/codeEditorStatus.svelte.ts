@@ -11,7 +11,9 @@ export type CodeEditorStatusSnapshot = {
   saving: boolean;
   saveWhisper: string | null;
   control: string;
-  languageState: "ready" | "connecting" | "editing-only";
+  languageState: "ready" | "connecting" | "editing-only" | "reconnecting" | "failed";
+  /** Quiet LSP progress / notices (scanning, server whispers). */
+  languageDetail: string | null;
 };
 
 class CodeEditorStatusStore {

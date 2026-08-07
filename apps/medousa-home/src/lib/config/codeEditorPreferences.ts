@@ -1,13 +1,21 @@
 /** Scripts / code editor UX preferences (localStorage). */
 
+import {
+  DEFAULT_CODE_SYNTAX_THEME,
+  resolveCodeSyntaxTheme,
+  type CodeSyntaxThemeId,
+} from "$lib/syntax/codeSyntaxThemes";
+
 const WORD_WRAP_KEY = "medousa-code-editor-word-wrap";
 const TAB_SIZE_KEY = "medousa-code-editor-tab-size";
 const LINE_NUMBERS_KEY = "medousa-code-editor-line-numbers";
 const FONT_SIZE_KEY = "medousa-code-editor-font-size";
+const SYNTAX_THEME_KEY = "medousa-code-editor-syntax-theme";
 const OUTLINE_OPEN_KEY = "medousa-code-editor-outline-open";
 const PROBLEMS_OPEN_KEY = "medousa-code-editor-problems-open";
 
 export type CodeEditorFontSize = 12 | 13 | 14 | 15 | 16;
+export type { CodeSyntaxThemeId };
 
 function readBool(key: string, defaultValue: boolean): boolean {
   if (typeof localStorage === "undefined") return defaultValue;
@@ -49,6 +57,16 @@ export function writeCodeEditorFontSize(size: number): void {
   const next: CodeEditorFontSize =
     size === 12 || size === 14 || size === 15 || size === 16 ? size : 13;
   localStorage.setItem(FONT_SIZE_KEY, String(next));
+}
+
+export function readCodeEditorSyntaxTheme(): CodeSyntaxThemeId {
+  if (typeof localStorage === "undefined") return DEFAULT_CODE_SYNTAX_THEME;
+  return resolveCodeSyntaxTheme(localStorage.getItem(SYNTAX_THEME_KEY));
+}
+
+export function writeCodeEditorSyntaxTheme(id: string): void {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(SYNTAX_THEME_KEY, resolveCodeSyntaxTheme(id));
 }
 
 export function readCodeEditorTabSize(): number {

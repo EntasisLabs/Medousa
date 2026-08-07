@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onDestroy, onMount, untrack } from "svelte";
-  import { basicSetup } from "codemirror";
   import {
     Compartment,
     EditorState,
@@ -10,13 +9,43 @@
   import {
     EditorView,
     GutterMarker,
+    crosshairCursor,
+    drawSelection,
+    dropCursor,
     gutter,
+    highlightActiveLine,
+    highlightActiveLineGutter,
+    highlightSpecialChars,
     keymap,
+    lineNumbers,
+    rectangularSelection,
   } from "@codemirror/view";
-  import { indentWithTab } from "@codemirror/commands";
-  import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
-  import { forEachDiagnostic } from "@codemirror/lint";
-  import { foldGutter, indentUnit } from "@codemirror/language";
+  import {
+    defaultKeymap,
+    history,
+    historyKeymap,
+    indentWithTab,
+  } from "@codemirror/commands";
+  import {
+    highlightSelectionMatches,
+    searchKeymap,
+  } from "@codemirror/search";
+  import {
+    closeBrackets,
+    closeBracketsKeymap,
+    completionKeymap,
+    autocompletion,
+  } from "@codemirror/autocomplete";
+  import { forEachDiagnostic, lintKeymap } from "@codemirror/lint";
+  import {
+    bracketMatching,
+    defaultHighlightStyle,
+    foldGutter,
+    foldKeymap,
+    indentOnInput,
+    indentUnit,
+    syntaxHighlighting,
+  } from "@codemirror/language";
   import type { LSPClient } from "@codemirror/lsp-client";
   import {
     navigateToCodeLanguageLocation,
@@ -38,73 +67,88 @@
     readCodeEditorWordWrap,
     hasCodeEditorTabSizePreference,
   } from "$lib/config/codeEditorPreferences";
+  import { buildCodeSyntaxThemeExtensions, getCodeSyntaxTheme } from "$lib/syntax/codeSyntaxThemes";
+  import { codeSyntaxThemePreference } from "$lib/stores/codeSyntaxThemePreference.svelte";
   import { codeEditorFind } from "$lib/stores/codeEditorFind.svelte";
 
-  /** Medousa chrome for the coding host — Notes care, gutters kept for code. */
-  const codeEditorChromeTheme = EditorView.theme(
-    {
-      "&": {
-        height: "100%",
-        width: "100%",
-        maxWidth: "100%",
-        fontSize: "inherit",
-        color: "rgb(var(--color-surface-100))",
-        backgroundColor: "transparent",
-      },
-      ".cm-scroller": {
-        overflow: "auto",
-        maxWidth: "100%",
-        fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-        fontSize: "var(--code-editor-font-size, 13px)",
-        lineHeight: "1.55",
-      },
-      ".cm-content": {
-        padding: "0.35rem 0",
-        caretColor: "rgb(var(--color-primary-200))",
-        color: "rgb(var(--color-surface-100))",
-      },
-      ".cm-cursor, .cm-dropCursor": {
-        borderLeftColor: "rgb(var(--color-primary-200))",
-        borderLeftWidth: "2px",
-      },
-      "&.cm-focused .cm-cursor": {
-        borderLeftColor: "rgb(var(--color-primary-100))",
-      },
-      ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
-        backgroundColor: "rgb(var(--color-primary-500) / 0.28) !important",
-      },
-      ".cm-gutters": {
-        backgroundColor: "transparent",
-        border: "none",
-        color: "rgb(var(--color-surface-600))",
-        minWidth: "2.25rem",
-      },
-      ".cm-lineNumbers .cm-gutterElement": {
-        padding: "0 0.5rem 0 0.2rem",
-        minWidth: "1.85rem",
-      },
-      ".cm-activeLine": {
-        backgroundColor: "rgb(var(--color-surface-900) / 0.45)",
-      },
-      ".cm-activeLineGutter": {
-        backgroundColor: "rgb(var(--color-surface-900) / 0.35)",
-        color: "rgb(var(--color-surface-400))",
-      },
-      ".cm-selectionMatch": {
-        backgroundColor: "rgb(var(--color-primary-500) / 0.18)",
-      },
-      ".cm-searchMatch": {
-        backgroundColor: "rgb(var(--color-warning-400) / 0.35)",
-      },
-      ".cm-searchMatch.cm-searchMatch-selected": {
-        backgroundColor: "rgb(var(--color-warning-300) / 0.55)",
-      },
-      "&.cm-focused": {
-        outline: "none",
-      },
+  /**
+   * Like CodeMirror basicSetup, with fold chevrons to the right of line numbers
+   * and transparent gutters (no separate fold “pane”).
+   */
+  const codeEditorCoreSetup: Extension = [
+    lineNumbers(),
+    foldGutter({
+      openText: "▾",
+      closedText: "▸",
+    }),
+    highlightActiveLineGutter(),
+    highlightSpecialChars(),
+    history(),
+    drawSelection(),
+    dropCursor(),
+    EditorState.allowMultipleSelections.of(true),
+    indentOnInput(),
+    syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+    bracketMatching(),
+    closeBrackets(),
+    autocompletion(),
+    rectangularSelection(),
+    crosshairCursor(),
+    highlightActiveLine(),
+    highlightSelectionMatches(),
+    keymap.of([
+      ...closeBracketsKeymap,
+      ...defaultKeymap,
+      ...searchKeymap,
+      ...historyKeymap,
+      ...foldKeymap,
+      ...completionKeymap,
+      ...lintKeymap,
+    ]),
+  ];
+
+  /** Layout / find chrome — canvas fill comes from the syntax theme pack. */
+  const codeEditorChromeTheme = EditorView.theme({
+    "&": {
+      height: "100%",
+      width: "100%",
+      maxWidth: "100%",
+      fontSize: "inherit",
     },
-    { dark: true },
-  );
+    ".cm-scroller": {
+      overflow: "auto",
+      maxWidth: "100%",
+      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+      fontSize: "var(--code-editor-font-size, 13px)",
+      lineHeight: "1.55",
+    },
+    ".cm-content": {
+      padding: "0.35rem 0",
+    },
+    ".cm-gutters": {
+      border: "none",
+    },
+    ".cm-foldGutter": {
+      width: "1.05rem",
+    },
+    ".cm-foldGutter .cm-gutterElement": {
+      padding: "0 0.1rem",
+      textAlign: "center",
+    },
+    ".cm-lineNumbers .cm-gutterElement": {
+      padding: "0 0.55rem 0 0.15rem",
+      minWidth: "1.65rem",
+    },
+    ".cm-searchMatch": {
+      backgroundColor: "rgb(var(--color-warning-400) / 0.35)",
+    },
+    ".cm-searchMatch.cm-searchMatch-selected": {
+      backgroundColor: "rgb(var(--color-warning-300) / 0.55)",
+    },
+    "&.cm-focused": {
+      outline: "none",
+    },
+  });
 
   class ReviewMarker extends GutterMarker {
     kind: string;
@@ -157,6 +201,8 @@
     conventionTabSize?: number | null;
     wordWrap?: boolean;
     showLineNumbers?: boolean;
+    /** Override syntax pack; default follows Settings → Preferences. */
+    syntaxTheme?: string | null;
   }
 
   let {
@@ -178,6 +224,7 @@
     conventionTabSize = null,
     wordWrap = readCodeEditorWordWrap(),
     showLineNumbers = readCodeEditorLineNumbers(),
+    syntaxTheme = null,
   }: Props = $props();
 
   let host: HTMLDivElement | undefined = $state();
@@ -202,8 +249,15 @@
   const wrapCompartment = new Compartment();
   const lineNumbersCompartment = new Compartment();
   const reviewCompartment = new Compartment();
+  const syntaxThemeCompartment = new Compartment();
 
   const resolvedLanguage = $derived(resolveCodeEditorLanguage(languageId));
+  const resolvedSyntaxTheme = $derived(
+    syntaxTheme?.trim()
+      ? syntaxTheme
+      : codeSyntaxThemePreference.id,
+  );
+  const activeSyntaxTheme = $derived(getCodeSyntaxTheme(resolvedSyntaxTheme));
   const lspLang = $derived(
     (lspLanguageId?.trim() || resolvedLanguage).toLowerCase(),
   );
@@ -322,18 +376,18 @@
 
   function buildExtensions(): Extension[] {
     return [
-      basicSetup,
+      codeEditorCoreSetup,
       codeEditorChromeTheme,
-      foldGutter(),
-      EditorState.allowMultipleSelections.of(true),
       languageCompartment.of(buildCodeEditorLanguageExtensions(resolvedLanguage)),
-      keymap.of([...searchKeymap, indentWithTab]),
+      syntaxThemeCompartment.of(
+        buildCodeSyntaxThemeExtensions(resolvedSyntaxTheme),
+      ),
+      keymap.of([indentWithTab]),
       Prec.highest(keymap.of([
         { key: "F12", run: () => requestLanguageNavigation("definition") },
         { key: "Ctrl-F12", run: () => requestLanguageNavigation("implementation") },
         { key: "Cmd-F12", run: () => requestLanguageNavigation("implementation") },
       ])),
-      highlightSelectionMatches(),
       indentationCompartment.of(indentationExtensions(value)),
       readOnlyCompartment.of(EditorState.readOnly.of(readOnly)),
       lspCompartment.of(lspExtensions()),
@@ -579,6 +633,15 @@
 
   $effect(() => {
     if (!view) return;
+    view.dispatch({
+      effects: syntaxThemeCompartment.reconfigure(
+        buildCodeSyntaxThemeExtensions(resolvedSyntaxTheme),
+      ),
+    });
+  });
+
+  $effect(() => {
+    if (!view) return;
     void conventionIndentStyle;
     void conventionTabSize;
     void resolvedLanguage;
@@ -629,7 +692,7 @@
 <div
   bind:this={host}
   class="grapheme-codemirror-host code-codemirror-host h-full min-h-0 min-w-0 flex-1 overflow-hidden"
-  style={`--code-editor-font-size: ${readCodeEditorFontSize()}px`}
+  style={`--code-editor-font-size: ${readCodeEditorFontSize()}px; --code-syntax-bg: ${activeSyntaxTheme.canvas.background}; --code-syntax-fg: ${activeSyntaxTheme.canvas.foreground}; background-color: ${activeSyntaxTheme.canvas.background}; color: ${activeSyntaxTheme.canvas.foreground}`}
   role="textbox"
   tabindex="0"
   aria-label="Code editor"
@@ -642,6 +705,26 @@
 ></div>
 
 <style>
+  :global(.code-codemirror-host .cm-editor),
+  :global(.code-codemirror-host .cm-scroller),
+  :global(.code-codemirror-host .cm-content) {
+    background-color: var(--code-syntax-bg) !important;
+    color: var(--code-syntax-fg);
+  }
+
+  :global(.code-codemirror-host .cm-gutters) {
+    background-color: var(--code-syntax-bg) !important;
+    border: none !important;
+  }
+
+  :global(.code-codemirror-host .cm-activeLineGutter) {
+    background-color: transparent;
+  }
+
+  :global(.code-codemirror-host .cm-foldGutter) {
+    width: 1.05rem;
+  }
+
   :global(.code-review-gutter) {
     width: 4px;
     background: transparent;

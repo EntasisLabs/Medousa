@@ -26,7 +26,6 @@ import {
   graphemeLanguageSupport,
 } from "$lib/grapheme/graphemeEditorTheme";
 import { graphemeHostCompletions } from "$lib/grapheme/graphemeHostCompletions";
-import { medousaSyntaxHighlighting } from "$lib/syntax/codemirrorSyntaxTheme";
 import { vaultMarkdownSyntax } from "$lib/utils/vaultCodeMirror";
 import { shellLanguage } from "$lib/code/shellLanguage";
 
@@ -110,9 +109,7 @@ const HIGHLIGHT_LSP: CodeEditorLanguageCapabilities = {
   addToFlow: false,
 };
 
-const shellLanguageSupport = new LanguageSupport(shellLanguage, [
-  medousaSyntaxHighlighting,
-]);
+const shellLanguageSupport = new LanguageSupport(shellLanguage);
 
 const csharpLanguageSupport = new LanguageSupport(StreamLanguage.define(csharpMode));
 const kotlinLanguageSupport = new LanguageSupport(StreamLanguage.define(kotlinMode));
@@ -394,7 +391,8 @@ export function languageRepairPackageId(
   return getCodeEditorLanguage(id).packageId ?? null;
 }
 
-/** CodeMirror extensions for a language tier (never attaches fake LSP). */
+/** CodeMirror extensions for a language tier (never attaches fake LSP).
+ * Syntax colors are owned by CodeMirrorHost’s syntax theme compartment. */
 export function buildCodeEditorLanguageExtensions(
   id: CodeEditorLanguageId | string | null | undefined,
 ): Extension[] {
@@ -411,63 +409,54 @@ export function buildCodeEditorLanguageExtensions(
     case "shell":
       return [graphemeEditorTheme, shellLanguageSupport];
     case "javascript":
-      return [graphemeEditorTheme, javascript(), medousaSyntaxHighlighting];
+      return [graphemeEditorTheme, javascript()];
     case "jsx":
-      return [
-        graphemeEditorTheme,
-        javascript({ jsx: true }),
-        medousaSyntaxHighlighting,
-      ];
+      return [graphemeEditorTheme, javascript({ jsx: true })];
     case "typescript":
-      return [
-        graphemeEditorTheme,
-        javascript({ typescript: true }),
-        medousaSyntaxHighlighting,
-      ];
+      return [graphemeEditorTheme, javascript({ typescript: true })];
     case "tsx":
       return [
         graphemeEditorTheme,
         javascript({ typescript: true, jsx: true }),
-        medousaSyntaxHighlighting,
       ];
     case "svelte":
-      return [graphemeEditorTheme, svelte(), medousaSyntaxHighlighting];
+      return [graphemeEditorTheme, svelte()];
     case "python":
-      return [graphemeEditorTheme, python(), medousaSyntaxHighlighting];
+      return [graphemeEditorTheme, python()];
     case "rust":
-      return [graphemeEditorTheme, rust(), medousaSyntaxHighlighting];
+      return [graphemeEditorTheme, rust()];
     case "go":
-      return [graphemeEditorTheme, go(), medousaSyntaxHighlighting];
+      return [graphemeEditorTheme, go()];
     case "c":
     case "cpp":
-      return [graphemeEditorTheme, cpp(), medousaSyntaxHighlighting];
+      return [graphemeEditorTheme, cpp()];
     case "java":
-      return [graphemeEditorTheme, java(), medousaSyntaxHighlighting];
+      return [graphemeEditorTheme, java()];
     case "php":
-      return [graphemeEditorTheme, php(), medousaSyntaxHighlighting];
+      return [graphemeEditorTheme, php()];
     case "csharp":
-      return [graphemeEditorTheme, csharpLanguageSupport, medousaSyntaxHighlighting];
+      return [graphemeEditorTheme, csharpLanguageSupport];
     case "kotlin":
-      return [graphemeEditorTheme, kotlinLanguageSupport, medousaSyntaxHighlighting];
+      return [graphemeEditorTheme, kotlinLanguageSupport];
     case "ruby":
-      return [graphemeEditorTheme, rubyLanguageSupport, medousaSyntaxHighlighting];
+      return [graphemeEditorTheme, rubyLanguageSupport];
     case "lua":
-      return [graphemeEditorTheme, luaLanguageSupport, medousaSyntaxHighlighting];
+      return [graphemeEditorTheme, luaLanguageSupport];
     case "swift":
-      return [graphemeEditorTheme, swiftLanguageSupport, medousaSyntaxHighlighting];
+      return [graphemeEditorTheme, swiftLanguageSupport];
     case "yaml":
-      return [graphemeEditorTheme, yaml(), medousaSyntaxHighlighting];
+      return [graphemeEditorTheme, yaml()];
     case "json":
-      return [graphemeEditorTheme, json(), medousaSyntaxHighlighting];
+      return [graphemeEditorTheme, json()];
     case "html":
-      return [graphemeEditorTheme, html(), medousaSyntaxHighlighting];
+      return [graphemeEditorTheme, html()];
     case "css":
-      return [graphemeEditorTheme, css(), medousaSyntaxHighlighting];
+      return [graphemeEditorTheme, css()];
     case "xml":
-      return [graphemeEditorTheme, xml(), medousaSyntaxHighlighting];
+      return [graphemeEditorTheme, xml()];
     case "plaintext":
-      return [graphemeEditorTheme, medousaSyntaxHighlighting];
+      return [graphemeEditorTheme];
     default:
-      return [graphemeEditorTheme, medousaSyntaxHighlighting];
+      return [graphemeEditorTheme];
   }
 }

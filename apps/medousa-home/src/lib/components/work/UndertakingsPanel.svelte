@@ -1018,6 +1018,7 @@
           </div>
         </div>
       {:else}
+        {#if reviewCanvas || !detail.environment}
         <div class="flex shrink-0 flex-wrap items-center justify-between gap-2 {showBrowser ? 'px-0' : 'border-b border-surface-500/25 px-2 py-1'}">
           <div class="min-w-0 flex-1">
             <h3 class="truncate text-sm font-semibold text-surface-50" title={detail.brief || detail.title}>{detail.title}</h3>
@@ -1404,6 +1405,7 @@
             </OverflowMenu>
           </div>
         </div>
+        {/if}
 
         {#if detail.environment && !reviewCanvas}
           <CodeSourceEditor
@@ -1412,12 +1414,18 @@
             {resourcePath}
             {interactive}
             worldOpen={worldMode}
-            reviewAvailable={Boolean(review && (detail.human_phase === "review" || review.evidence_id))}
+            projectTitle={detail.title}
+            phaseLabel={humanPhaseLabel(detail.human_phase)}
+            reviewAvailable={Boolean(actions?.seal.allowed) || Boolean(review && (detail.human_phase === "review" || review.evidence_id))}
             terminalAvailable={Boolean(actions?.open_terminal.allowed)}
+            agentRunning={agentRunning}
+            agentLabel={agentLabel}
             preferredAgent={preferredCodeAgent}
             onToggleWorld={() => void toggleWorldFromEditor()}
-            onOpenReview={() => void openReviewFromEditor()}
+            onOpenReview={() => void (actions?.seal.allowed ? doSeal() : openReviewFromEditor())}
             onOpenTerminal={() => void openTerminalTracked()}
+            onStopAgent={() => void interruptAgent()}
+            onResumeEditing={() => void reclaimHuman()}
             onProvision={async () => {
               await run(async () => {
                 await provisionAndOpenProject(detail.id);
@@ -1425,7 +1433,69 @@
             }}
             onHandoffToAgent={handoffToAgent}
             onReclaimHuman={reclaimHuman}
-          />
+          >
+            {#snippet projectMenu()}
+              {#if actions?.start_agent.allowed}
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="code-chrome-menu-item"
+                  disabled={busy}
+                  title={actions?.start_agent.reason ?? ""}
+                  onclick={() => void startAgent("codex")}
+                >Ask Codex to continue</button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="code-chrome-menu-item"
+                  disabled={busy}
+                  onclick={() => void startAgent("cursor")}
+                >Ask Cursor to continue</button>
+              {/if}
+              <button
+                type="button"
+                role="menuitem"
+                class="code-chrome-menu-item"
+                disabled={busy || !actions?.open_terminal.allowed}
+                onclick={() => void openTerminalTracked()}
+              >Terminal in working copy</button>
+              {#if detail.environment?.worktree}
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="code-chrome-menu-item"
+                  disabled={busy}
+                  onclick={() => void revealWorktree()}
+                >Reveal working copy</button>
+              {/if}
+              {#if undertakings.active?.workId === detail.id && undertakings.active.selectedPath}
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="code-chrome-menu-item"
+                  disabled={busy}
+                  onclick={() => void copyLocationLink()}
+                >Copy location link</button>
+              {/if}
+              {#if detail.environment}
+                <details class="px-2 py-1 text-[11px] text-content-quiet">
+                  <summary class="cursor-pointer select-none hover:text-content-secondary">Technical details</summary>
+                  <p class="mt-1 break-all font-mono leading-relaxed text-[10px]">
+                    Working copy: {detail.environment.worktree}<br />Starting revision:
+                    {detail.environment.baseline_oid.slice(0, 12)} · internal state: {detail.state}
+                  </p>
+                </details>
+              {/if}
+              <div class="code-chrome-menu-sep" role="separator"></div>
+              <button
+                type="button"
+                role="menuitem"
+                class="code-chrome-menu-item code-chrome-menu-item--warn"
+                disabled={busy || !actions?.discard.allowed}
+                onclick={() => void discardWithConfirmation()}
+              >Discard project…</button>
+            {/snippet}
+          </CodeSourceEditor>
         {:else if !reviewCanvas && actions?.provision.allowed}
           <div class="flex min-h-48 flex-1 items-center justify-center p-6 text-center">
             <div class="max-w-sm">
@@ -2170,20 +2240,31 @@
   .secondary-action {
     display: block;
     width: 100%;
-    border-radius: 0.4rem;
+    border: 0;
+    border-radius: 0.35rem;
+    background: transparent;
     padding: 0.4rem 0.5rem;
     text-align: left;
-    font-size: 0.75rem;
-    color: rgb(var(--color-surface-200));
+    font-family:
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      system-ui,
+      sans-serif;
+    font-size: 13px;
+    font-weight: 400;
+    color: rgb(var(--theme-text));
+    cursor: pointer;
   }
 
   .secondary-action:hover:not(:disabled) {
-    background: rgb(var(--color-surface-700) / 0.65);
-    color: rgb(var(--color-surface-50));
+    background: rgb(var(--color-surface-800) / 0.7);
+    color: rgb(var(--theme-text));
   }
 
   .secondary-action:disabled {
     opacity: 0.35;
+    cursor: default;
   }
 
   .review-canvas {

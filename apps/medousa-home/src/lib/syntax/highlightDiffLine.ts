@@ -17,7 +17,8 @@ import {
   resolveCodeEditorLanguage,
   type CodeEditorLanguageId,
 } from "$lib/code/codeEditorLanguageRegistry";
-import { medousaSyntaxHighlightStyle } from "$lib/syntax/codemirrorSyntaxTheme";
+import { activeCodeSyntaxHighlightStyle } from "$lib/syntax/codemirrorSyntaxTheme";
+import { readCodeEditorSyntaxTheme } from "$lib/config/codeEditorPreferences";
 
 export type DiffHighlightSpan = {
   text: string;
@@ -103,7 +104,8 @@ export function highlightDiffLine(
 ): DiffHighlightSpan[] {
   if (!line) return [];
   const languageId = resolveCodeEditorLanguage(languageHint);
-  const cacheKey = `${languageId}\0${line}`;
+  const themeId = readCodeEditorSyntaxTheme();
+  const cacheKey = `${themeId}\0${languageId}\0${line}`;
   const cached = lineCache.get(cacheKey);
   if (cached) return cached;
 
@@ -118,7 +120,8 @@ export function highlightDiffLine(
     const tree = support.language.parser.parse(line);
     const spans: DiffHighlightSpan[] = [];
     let last = 0;
-    highlightTree(tree, medousaSyntaxHighlightStyle, (from, to, style) => {
+    const highlightStyle = activeCodeSyntaxHighlightStyle();
+    highlightTree(tree, highlightStyle, (from, to, style) => {
       if (from > last) {
         spans.push({ text: line.slice(last, from), style: null });
       }

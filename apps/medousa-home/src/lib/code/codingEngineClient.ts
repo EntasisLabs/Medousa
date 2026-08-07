@@ -255,6 +255,7 @@ export async function connectOrchestratorLspClient(options?: ConnectOrchestrator
       const client = new LSPClient({
         rootUri,
         timeout: 30_000,
+        notificationHandlers: quietShowMessageHandlers(options?.onServerEvent),
         extensions: [
           ...languageServerExtensions(),
           {
@@ -304,6 +305,7 @@ export async function connectOrchestratorLspClient(options?: ConnectOrchestrator
   const client = new LSPClient({
     rootUri: graphemeWorkspace.root_uri,
     timeout: 30_000,
+    notificationHandlers: quietShowMessageHandlers(options?.onServerEvent),
     extensions: languageServerExtensions(),
     workspace: options?.workspaceBridge
       ? (client) => new MedousaCodeWorkspace(client, options.workspaceBridge!)
@@ -335,6 +337,8 @@ export type CodeWorkspaceLspStatus = {
   phase: "connecting" | "ready" | "reconnecting" | "failed" | "stopped";
   detail: string;
   progress: CodeWorkspaceLspProgress | null;
+  /** Server window/showMessage (warnings/errors only — info stays quiet). */
+  notice: string | null;
 };
 
 type WorkspaceClientEntry = {
@@ -401,6 +405,7 @@ function closeWorkspaceClient(key: string, entry: WorkspaceClientEntry) {
     phase: "stopped",
     detail: "Language session released",
     progress: null,
+    notice: null,
   });
   void entry.connection.then(({ client, close }) => {
     client.disconnect();
@@ -420,19 +425,60 @@ function applyWorkspaceServerEvent(
   entry: WorkspaceClientEntry,
   event: CodeLanguageServerEvent,
 ) {
-  if (event.kind !== "progress") return;
-  publishWorkspaceClientStatus(entry, {
-    ...entry.status,
-    progress:
-      event.progressKind === "end"
-        ? null
-        : {
-            token: event.token,
-            title: event.title || entry.status.progress?.title || "Language service",
-            message: event.message,
-            percentage: event.percentage,
-          },
-  });
+  if (event.kind === "progress") {
+    publishWorkspaceClientStatus(entry, {
+      ...entry.status,
+      progress:
+        event.progressKind === "end"
+          ? null
+          : {
+              token: event.token,
+              title: event.title || entry.status.progress?.title || "Language service",
+              message: event.message,
+              percentage: event.percentage,
+            },
+      notice: entry.status.notice,
+    });
+    return;
+  }
+  if (event.kind === "log" && (event.level === "error" || event.level === "warning")) {
+    // rust-analyzer nags about workspace reload; Medousa owns the worktree — ignore.
+    if (/auto-reloading is disabled/i.test(event.message)) return;
+    publishWorkspaceClientStatus(entry, {
+      ...entry.status,
+      notice: event.message,
+    });
+  }
+}
+
+/** Suppress CodeMirror's top OK dialog for window/showMessage; route via onServerEvent. */
+function quietShowMessageHandlers(
+  onServerEvent?: (event: CodeLanguageServerEvent) => void,
+): NonNullable<ConstructorParameters<typeof LSPClient>[0]>["notificationHandlers"] {
+  return {
+    "window/showMessage": (_client, params) => {
+      const message =
+        params && typeof (params as { message?: unknown }).message === "string"
+          ? (params as { message: string }).message
+          : "";
+      const type = (params as { type?: unknown } | null)?.type;
+      const level =
+        type === 1
+          ? "error"
+          : type === 2
+            ? "warning"
+            : type === 3
+              ? "info"
+              : "log";
+      if (message) {
+        // Info spam (e.g. rust-analyzer auto-reload) stays out of the chrome.
+        if (level === "info" || level === "log") return true;
+        if (/auto-reloading is disabled/i.test(message)) return true;
+        onServerEvent?.({ kind: "log", level, message });
+      }
+      return true;
+    },
+  };
 }
 
 function createWorkspaceClientEntry(
@@ -459,6 +505,7 @@ function createWorkspaceClientEntry(
       phase: "ready",
       detail: `${options.language} language server ready`,
       progress: entry.status.progress,
+      notice: entry.status.notice,
     });
     return result.client;
   });
@@ -472,6 +519,7 @@ function createWorkspaceClientEntry(
       phase: "connecting",
       detail: `Starting ${options.language} language server`,
       progress: null,
+      notice: null,
     },
     listeners: new Set(),
     expectedClose: false,
@@ -489,6 +537,7 @@ function createWorkspaceClientEntry(
         phase: "reconnecting",
         detail,
         progress: null,
+        notice: null,
       });
     });
   });
@@ -500,6 +549,7 @@ function createWorkspaceClientEntry(
       phase: "failed",
       detail: err instanceof Error ? err.message : String(err),
       progress: null,
+      notice: null,
     });
   });
   return entry;
@@ -513,6 +563,7 @@ function restartWorkspaceClient(key: string, entry: WorkspaceClientEntry) {
     phase: "reconnecting",
     detail: "Restarting language server",
     progress: null,
+    notice: null,
   });
   void entry.connection.then(({ client, close }) => {
     client.disconnect();

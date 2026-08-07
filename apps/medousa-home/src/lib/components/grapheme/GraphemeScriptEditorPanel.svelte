@@ -436,6 +436,7 @@
               lspLanguageId={activeLanguage.id}
               client={canUseLsp ? lspClient : null}
               contentSyncKey={graphemeScriptEditor.contentEpoch}
+              {wordWrap}
               onchange={(body) => graphemeScriptEditor.patchActiveTab({ body })}
               onProblemsChanged={refreshProblems}
             />
