@@ -66,7 +66,7 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | GET | `/v1/forge/items/{id}/search?query=…` | Repository search (`literal`/`regex`, case/whole-word, include/exclude globs, `scope=all\|changed`, `limit`, `cursor` pagination; bounded to 500 hits; includes untracked, honors ignore by default) |
 | POST | `/v1/forge/items/{id}/search/replace` | Preview (`dry_run=true`) or apply digest-fenced repository replace; optional `paths` subset and `preconditions` |
 | GET, PUT | `/v1/forge/items/{id}/workspace-state` | Restore/preserve open files, cursor positions, bounded dirty drafts, and contextual Code layout (Problems/Terminal/Tests/Search/Changes) |
-| GET | `/v1/forge/items/{id}/review` | Structured outcome, risk, verification, attribution, timeline, and changed-file summary |
+| GET | `/v1/forge/items/{id}/review` | Structured outcome, risk, verification, attribution, timeline, comments, and changed-file summary |
 | GET | `/v1/forge/evidence/{evidence_id}/receipts` | Sealed compact Coder evidence provenance (never raw payloads) |
 | GET | `/v1/forge/items/{id}/tasks` | Manifest-derived checks plus safe `.vscode/tasks.json` entries |
 | POST | `/v1/forge/items/{id}/tasks/{task_id}/runs` | Start a named, cancellable project run |
@@ -77,6 +77,9 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | GET | `/v1/forge/items/{id}/tests` | Discover addressable project tests |
 | GET | `/v1/forge/items/{id}/review/file?path=…` | Exact baseline-to-reviewed file comparison with structured hunks |
 | POST | `/v1/forge/items/{id}/review/file` | Reopen work and restore one text file to its baseline while retaining the reviewed checkpoint |
+| GET, POST | `/v1/forge/items/{id}/review/comments` | List or add line-anchored review comments bound to sealed evidence |
+| PATCH, DELETE | `/v1/forge/items/{id}/review/comments/{comment_id}` | Resolve/edit or delete a review comment |
+| POST | `/v1/forge/items/{id}/review/request-changes` | Record changes-requested feedback, reopen to Ready, and keep a revision brief for the next attempt |
 | GET | `/v1/forge/items/{id}/tasks` | Detect safe project commands from repository manifests |
 | POST | `/v1/forge/items/{id}/tasks/{task_id}/run` | Run a detected command and stage its result into active evidence |
 | POST | `/v1/forge/items/{id}/provision` | Create governed worktree env |
@@ -290,6 +293,15 @@ a human attempt, and restores the selected baseline text. The sealed commit
 and evidence are not rewritten, so the newer reviewed version remains a Git
 recovery point until the user seals another revision. Binary baseline content
 remains recoverable in Git but is not written through the Home text API.
+
+Line-anchored review comments are append-only events on the work item
+(`ReviewCommentAdded` / `Resolved` / `Deleted`). Each comment binds to an
+`evidence_id`, path, side, and line range, with an `anchor_digest` of the
+quoted line content. `POST …/review/request-changes` records a
+`ChangesRequested` event (including a daemon-composed revision brief from
+unresolved comments), then reopens the item to Ready via the same recovery
+transition as restore — without requiring a per-file restore. The next agent
+attempt should be seeded with that revision brief on the same work item.
 
 ### Lease fencing
 

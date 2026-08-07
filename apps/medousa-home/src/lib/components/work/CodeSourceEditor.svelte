@@ -31,27 +31,24 @@
   import CodeTerminalDock from "$lib/components/work/CodeTerminalDock.svelte";
   import CodeWorkspaceSearch from "$lib/components/code/CodeWorkspaceSearch.svelte";
   import CodeChangesPanel from "$lib/components/code/CodeChangesPanel.svelte";
+  import EmptyState from "$lib/components/ui/EmptyState.svelte";
+  import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
   import { openTrackedTerminal } from "$lib/utils/undertakingWorkspace";
   import { fuzzyMatchPaths } from "$lib/utils/pathFuzzyMatch";
   import { writeToTerminal } from "$lib/terminal/terminalInputBridge";
   import { resolveTaskPreviewOpenUrl } from "$lib/code/taskPreviewUrl";
   import { openInBrowser } from "$lib/utils/openInBrowser";
-  import type { LSPClient } from "@codemirror/lsp-client";
   import {
-    CODE_LSP_MAX_RECONNECT_ATTEMPTS,
-    acquireCodeWorkspaceLspClient,
-    codeLspReconnectDelay,
     findCodeLanguageMatrixEntry,
     getAllCodeWorkspaceDiagnostics,
     getCodeEditorConventions,
     getCodeLanguageMatrix,
     getCodeLanguageSessions,
     type CodeDocumentSymbol,
-    type CodeLanguageMatrixEntry,
     type CodeLanguageSessionSnapshot,
     type CodeWorkspaceSymbol,
-    type CodeWorkspaceLspStatus,
   } from "$lib/code/codingEngineClient";
+  import { CodeLspSession } from "$lib/code/codeLspSession.svelte";
   import {
     countCodeProblems,
     filterCodeProblems,
@@ -91,6 +88,12 @@
     languageSupportsLsp,
     resolveCodeEditorLanguage,
   } from "$lib/code/codeEditorLanguageRegistry";
+  import {
+    canInvokeCodeSaveShortcut,
+    CODE_SAVE_NO_LEASE_ERROR,
+    CODE_SAVE_PREVIEW_ERROR,
+    decideCodeSave,
+  } from "$lib/code/codeSaveGate";
   import {
     beginHumanAttempt,
     applyUndertakingSourceWorkspaceEdit,
@@ -189,7 +192,10 @@
     onReclaimHuman,
   }: Props = $props();
 
-  let saving = $state(false);
+  let savingFile = $state(false);
+  let beginningEdit = $state(false);
+  let handingOff = $state(false);
+  const busy = $derived(savingFile || beginningEdit || handingOff);
   let saveWhisper = $state<string | null>(null);
   let saveWhisperTimer: ReturnType<typeof setTimeout> | null = null;
   let surfaceError = $state<string | null>(null);
@@ -203,9 +209,18 @@
   let dockSessionId = $state<string | null>(null);
   let dockBusy = $state(false);
   let editor = $state<CodeMirrorHost | undefined>();
-  let lspClient = $state<LSPClient | null>(null);
-  let lspError = $state<string | null>(null);
-  let lspConnecting = $state(false);
+  let lspSession = new CodeLspSession();
+  const lspClient = $derived(lspSession.client);
+  const lspError = $derived(lspSession.error);
+  const lspConnecting = $derived(lspSession.connecting);
+  const lspStatus = $derived(lspSession.status);
+  const languageMatrix = $derived(lspSession.languageMatrix);
+  const languageMatrixError = $derived(lspSession.languageMatrixError);
+  let languageSessions = $state<CodeLanguageSessionSnapshot[]>([]);
+  let languageSessionsLoading = $state(false);
+  let languageSessionsError = $state<string | null>(null);
+  let repairingLanguage = $state(false);
+  let languageActionRunning = $state(false);
   let contextPanel = $state<"problems" | "outline" | "references" | "language" | null>(null);
   let problems = $state<ReturnType<CodeMirrorHost["getProblems"]>>([]);
   let workspaceProblems = $state<CodeProblem[]>([]);
@@ -267,22 +282,6 @@
   let languageCapabilities = $state<Record<string, unknown>>({});
   let editorConventions = $state<{ indent_style?: "space" | "tab"; indent_size?: string; tab_width?: string }>({});
   let references = $state<Array<{ uri?: string; range?: { start?: { line?: number } } }>>([]);
-  let languageActionRunning = $state(false);
-  let repairingLanguage = $state(false);
-  let lspRetry = $state(0);
-  let lspReconnectAttempt = $state(0);
-  let lspStatus = $state<CodeWorkspaceLspStatus>({
-    phase: "stopped",
-    detail: "Language service is not running",
-    progress: null,
-  });
-  let languageSessions = $state<CodeLanguageSessionSnapshot[]>([]);
-  let languageSessionsLoading = $state(false);
-  let languageSessionsError = $state<string | null>(null);
-  let languageMatrix = $state<CodeLanguageMatrixEntry[]>([]);
-  let languageMatrixError = $state<string | null>(null);
-  let activeLspRestart: (() => void) | null = null;
-  let lspConnectionScope = "";
   let cursorLine = $state(1);
   let cursorTotalLines = $state(1);
   let cursorColumn = $state(1);
@@ -836,7 +835,7 @@
       });
     }
     if (!leaseId || generation == null) {
-      throw new Error("Begin an editing session before restoring Changes");
+      throw new Error(CODE_SAVE_NO_LEASE_ERROR);
     }
     return { leaseId, generation };
   }
@@ -1355,10 +1354,7 @@
   }
 
   function restartLanguageServer() {
-    lspError = null;
-    lspReconnectAttempt = 0;
-    if (activeLspRestart) activeLspRestart();
-    else lspRetry += 1;
+    lspSession.restart();
   }
 
   const activeLanguageMatrix = $derived(
@@ -1367,16 +1363,17 @@
 
   async function refreshLanguageMatrix(options?: { quiet?: boolean }) {
     if (!languageSupportsLsp(activeTabLanguage)) {
-      languageMatrix = [];
-      languageMatrixError = null;
+      lspSession.languageMatrix = [];
+      lspSession.languageMatrixError = null;
       return;
     }
     try {
-      languageMatrix = await getCodeLanguageMatrix();
-      languageMatrixError = null;
+      lspSession.languageMatrix = await getCodeLanguageMatrix();
+      lspSession.languageMatrixError = null;
     } catch (err) {
       if (!options?.quiet) {
-        languageMatrixError = err instanceof Error ? err.message : String(err);
+        lspSession.languageMatrixError =
+          err instanceof Error ? err.message : String(err);
       }
     }
   }
@@ -1410,8 +1407,7 @@
         if (row && !row.installed) await installPackage(packageId);
       }
       await refreshLanguageMatrix({ quiet: true });
-      lspReconnectAttempt = 0;
-      lspRetry += 1;
+      lspSession.restart();
     } catch (err) {
       surfaceError = err instanceof Error ? err.message : String(err);
       openLanguagePackages();
@@ -1618,7 +1614,7 @@
       await beginEditPromise;
       return;
     }
-    saving = true;
+    beginningEdit = true;
     surfaceError = null;
     beginEditPromise = (async () => {
       const begun = await beginHumanAttempt(detail.id);
@@ -1632,10 +1628,12 @@
     try {
       await beginEditPromise;
     } catch (err) {
-      surfaceError = err instanceof Error ? err.message : String(err);
+      surfaceError = humanizeForgeMessage(
+        err instanceof Error ? err.message : String(err),
+      );
     } finally {
       beginEditPromise = null;
-      saving = false;
+      beginningEdit = false;
     }
   }
 
@@ -1647,11 +1645,12 @@
   }
 
   async function saveTab(tab: CodeDocumentTab | null): Promise<boolean> {
-    if (tab?.preview) {
-      surfaceError = "This file is open as a preview and cannot be saved from Code.";
+    if (!tab) return true;
+    if (tab.preview) {
+      surfaceError = CODE_SAVE_PREVIEW_ERROR;
       return false;
     }
-    if (tab?.tabId === activeTabId && editor) {
+    if (tab.tabId === activeTabId && editor) {
       const liveDraft = editor.getValue();
       if (liveDraft !== tab.draft) {
         codeWorkspace.updateDraft(tab.tabId, liveDraft);
@@ -1659,25 +1658,81 @@
       }
       editor.flushChanges();
     }
-    const active = context;
-    if (
-      !tab ||
-      !active?.leaseId ||
-      active.leaseGeneration == null ||
-      !codeWorkspace.isDirty(tab) ||
-      saving
-    ) return !tab || !codeWorkspace.isDirty(tab);
-    saving = true;
+
+    const decision = decideCodeSave({
+      preview: Boolean(tab.preview),
+      dirty: codeWorkspace.isDirty(tab),
+      savingFile,
+      hasLease: Boolean(
+        context?.workId === workId &&
+          context.leaseId &&
+          context.leaseGeneration != null,
+      ),
+      canBeginEdit,
+      beginningEdit: beginningEdit || Boolean(beginEditPromise),
+    });
+
+    if (decision.action === "noop") {
+      return decision.reason === "not-dirty" || decision.reason === "already-saving";
+    }
+    if (decision.action === "reject") {
+      surfaceError =
+        decision.reason === "preview"
+          ? CODE_SAVE_PREVIEW_ERROR
+          : CODE_SAVE_NO_LEASE_ERROR;
+      return false;
+    }
+    if (decision.action === "await-lease") {
+      if (beginEditPromise) {
+        try {
+          await beginEditPromise;
+        } catch (err) {
+          surfaceError = humanizeForgeMessage(
+            err instanceof Error ? err.message : String(err),
+          );
+          return false;
+        }
+      }
+    } else if (decision.action === "begin-then-save") {
+      try {
+        await startEditing();
+      } catch (err) {
+        surfaceError = humanizeForgeMessage(
+          err instanceof Error ? err.message : String(err),
+        );
+        return false;
+      }
+    }
+
+    let leaseId = context?.leaseId ?? null;
+    let generation = context?.leaseGeneration ?? null;
+    if (!leaseId || generation == null) {
+      try {
+        const lease = await ensureHumanLease();
+        leaseId = lease.leaseId;
+        generation = lease.generation;
+      } catch (err) {
+        surfaceError = humanizeForgeMessage(
+          err instanceof Error ? err.message : String(err),
+        );
+        return false;
+      }
+    }
+    if (!leaseId || generation == null || !codeWorkspace.isDirty(tab) || savingFile) {
+      return !codeWorkspace.isDirty(tab);
+    }
+
+    savingFile = true;
     saveWhisper = "Saving…";
     if (saveWhisperTimer) clearTimeout(saveWhisperTimer);
     surfaceError = null;
     codeWorkspace.setError(tab.tabId, null);
     try {
-      const next = await saveUndertakingSource(active.workId, {
+      const next = await saveUndertakingSource(workId, {
         path: tab.path,
         content: tab.draft,
-        lease_id: active.leaseId,
-        generation: active.leaseGeneration,
+        lease_id: leaseId,
+        generation,
         expected_digest: tab.digest,
       });
       codeWorkspace.acceptSaved(tab.tabId, next);
@@ -1688,18 +1743,22 @@
       return true;
     } catch (err) {
       saveWhisper = null;
-      codeWorkspace.setError(
-        tab.tabId,
+      const message = humanizeForgeMessage(
         err instanceof Error ? err.message : String(err),
       );
+      codeWorkspace.setError(tab.tabId, message);
+      surfaceError = message;
       return false;
     } finally {
-      saving = false;
+      savingFile = false;
     }
   }
 
   async function save() {
-    await saveTab(activeTab);
+    const ok = await saveTab(activeTab);
+    if (!ok && !surfaceError && activeTab && codeWorkspace.isDirty(activeTab)) {
+      surfaceError = "Could not save the file.";
+    }
   }
 
   async function saveAll(): Promise<boolean> {
@@ -1710,33 +1769,37 @@
   }
 
   async function handoffToAgent(draft?: string) {
-    if (!onHandoffToAgent || saving) return;
+    if (!onHandoffToAgent || busy) return;
     surfaceError = null;
     if (!(await saveAll())) {
       surfaceError = "Resolve the unsaved file before asking an agent to continue.";
       return;
     }
-    saving = true;
+    handingOff = true;
     try {
       captureEditorContext();
       await onHandoffToAgent(preferredAgent, draft);
     } catch (err) {
-      surfaceError = err instanceof Error ? err.message : String(err);
+      surfaceError = humanizeForgeMessage(
+        err instanceof Error ? err.message : String(err),
+      );
     } finally {
-      saving = false;
+      handingOff = false;
     }
   }
 
   async function reclaimHuman() {
-    if (!onReclaimHuman || saving) return;
-    saving = true;
+    if (!onReclaimHuman || busy) return;
+    handingOff = true;
     surfaceError = null;
     try {
       await onReclaimHuman();
     } catch (err) {
-      surfaceError = err instanceof Error ? err.message : String(err);
+      surfaceError = humanizeForgeMessage(
+        err instanceof Error ? err.message : String(err),
+      );
     } finally {
-      saving = false;
+      handingOff = false;
     }
   }
 
@@ -2366,184 +2429,59 @@
   });
 
   $effect(() => {
-    void lspRetry;
     const root = workspaceRoot;
     const uri = documentUri;
-    const scope = `${workId}:${activeLspLanguage}:${uri ?? ""}`;
     if (
       !interactive ||
       !activeTabId ||
+      !workId ||
       !root ||
       !uri ||
       !languageSupportsLsp(activeTabLanguage)
     ) {
-      lspClient = null;
-      lspError = null;
-      lspConnecting = false;
-      lspReconnectAttempt = 0;
-      lspStatus = {
-        phase: "stopped",
-        detail: "Language service is not running",
-        progress: null,
-      };
-      activeLspRestart = null;
+      lspSession.stop();
       return;
     }
-    if (lspConnectionScope !== scope) {
-      lspConnectionScope = scope;
-      lspReconnectAttempt = 0;
+    const language = activeLspLanguage;
+    const languageLabel = activeTabLanguage;
+    const scope = `${workId}:${language}:${uri}`;
+    if (lspSession.scope !== scope) {
       languageSessions = [];
       languageSessionsError = null;
     }
-    let cancelled = false;
-    let release = () => {};
-    let unregisterWorkspaceBridge = () => {};
-    let unsubscribeStatus = () => {};
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let restartForLease: (() => void) | null = null;
-    const scheduleReconnect = (detail: string, immediate = false) => {
-      if (cancelled || reconnectTimer) return;
-      const attempt = lspReconnectAttempt + 1;
-      const delay = immediate ? 0 : codeLspReconnectDelay(attempt);
-      if (delay == null) {
-        lspConnecting = false;
-        lspError = detail || "Language server could not be restarted";
-        lspStatus = {
-          phase: "failed",
-          detail: lspError,
-          progress: null,
-        };
-        return;
-      }
-      lspReconnectAttempt = attempt;
-      lspClient = null;
-      lspError = null;
-      lspConnecting = true;
-      lspStatus = {
-        phase: "reconnecting",
-        detail: `${detail} · retry ${attempt}/${CODE_LSP_MAX_RECONNECT_ATTEMPTS}`,
-        progress: null,
-      };
-      reconnectTimer = setTimeout(() => {
-        reconnectTimer = null;
-        if (!cancelled) lspRetry += 1;
-      }, delay);
-    };
-    lspClient = null;
-    lspError = null;
-    lspConnecting = true;
-    const reconnectAttempt = untrack(() => lspReconnectAttempt);
-    lspStatus = {
-      phase: reconnectAttempt > 0 ? "reconnecting" : "connecting",
-      detail:
-        reconnectAttempt > 0
-          ? `Restarting ${activeTabLanguage} language server`
-          : `Starting ${activeTabLanguage} language server`,
-      progress: null,
-    };
-    const cancelDeferred = deferCodeWorkspaceWork(() => {
-      void (async () => {
-        try {
-          try {
-            const matrix = await getCodeLanguageMatrix();
-            if (cancelled) return;
-            languageMatrix = matrix;
-            languageMatrixError = null;
-            const entry = findCodeLanguageMatrixEntry(matrix, activeLspLanguage);
-            if (entry && !entry.usable) {
-              const missing = entry.command ?? activeLspLanguage;
-              lspConnecting = false;
-              lspError = entry.packageId
-                ? `${missing} is not installed on this workshop`
-                : `${missing} was not found on this workshop PATH`;
-              lspStatus = {
-                phase: "failed",
-                detail: lspError,
-                progress: null,
-              };
-              return;
-            }
-          } catch (err) {
-            // Older coding engines omit the matrix; keep attempting the LSP.
-            languageMatrixError =
-              err instanceof Error ? err.message : String(err);
-          }
-          const lease = await acquireCodeWorkspaceLspClient({
-            workId,
-            workspaceRoot: root,
-            language: activeLspLanguage,
-            documentUri: uri,
+    // connect() is a no-op reconnect when scope is unchanged and already live,
+    // but always safe to call — it cancels in-flight work via generation.
+    lspSession.connect({
+      workId,
+      workspaceRoot: root,
+      language,
+      languageLabel,
+      documentUri: uri,
+      bridge: {
+        handlesUri: (candidateUri) => Boolean(pathFromUri(candidateUri, root)),
+        requestFile: async (candidateUri) => {
+          const path = pathFromUri(candidateUri, root);
+          if (!path) return null;
+          const source = await getUndertakingSource(workId, path);
+          return {
+            languageId: languageForWorkspacePath(path),
+            text: source.content,
+          };
+        },
+        displayFile: async (candidateUri) => {
+          const path = pathFromUri(candidateUri, root);
+          if (!path) return null;
+          const source = await lmeWorkspace.openCodeFile(workId, path, {
+            recordNavigation: false,
           });
-          if (cancelled) {
-            lease.release();
-            return;
-          }
-          release = lease.release;
-          restartForLease = lease.restart;
-          activeLspRestart = restartForLease;
-          unsubscribeStatus = lease.subscribeStatus((status) => {
-            if (cancelled) return;
-            lspStatus = status;
-            if (status.phase === "ready") {
-              lspReconnectAttempt = 0;
-              lspConnecting = false;
-              lspError = null;
-              return;
-            }
-            if (status.phase === "connecting") {
-              lspConnecting = true;
-              return;
-            }
-            if (status.phase === "reconnecting" || status.phase === "failed") {
-              scheduleReconnect(
-                status.detail,
-                status.detail === "Restarting language server",
-              );
-            }
-          });
-          unregisterWorkspaceBridge = lease.workspaceBridge.register({
-            handlesUri: (candidateUri) => Boolean(pathFromUri(candidateUri, root)),
-            requestFile: async (candidateUri) => {
-              const path = pathFromUri(candidateUri, root);
-              if (!path) return null;
-              const source = await getUndertakingSource(workId, path);
-              return {
-                languageId: languageForWorkspacePath(path),
-                text: source.content,
-              };
-            },
-            displayFile: async (candidateUri) => {
-              const path = pathFromUri(candidateUri, root);
-              if (!path) return null;
-              const source = await lmeWorkspace.openCodeFile(workId, path, {
-                recordNavigation: false,
-              });
-              return source ? codeEditorViewRegistry.waitFor(candidateUri) : null;
-            },
-          });
-          const client = await lease.client;
-          if (cancelled) return;
-          lspClient = client;
-        } catch (err) {
-          unregisterWorkspaceBridge();
-          release();
-          unregisterWorkspaceBridge = () => {};
-          release = () => {};
-          if (!cancelled) {
-            scheduleReconnect(err instanceof Error ? err.message : String(err));
-          }
-        }
-      })();
+          return source ? codeEditorViewRegistry.waitFor(candidateUri) : null;
+        },
+      },
     });
-    return () => {
-      cancelled = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      cancelDeferred();
-      unsubscribeStatus();
-      unregisterWorkspaceBridge();
-      release();
-      if (activeLspRestart === restartForLease) activeLspRestart = null;
-    };
+  });
+
+  $effect(() => {
+    return () => lspSession.dispose();
   });
 
   $effect(() => {
@@ -2676,7 +2614,7 @@
       indentation: indentStatusLabel,
       issueCount: workspaceProblemCounts.total,
       dirty,
-      saving,
+      saving: busy,
       saveWhisper,
       control: statusControlLabel,
       languageState: lspConnecting
@@ -2908,67 +2846,58 @@
 
         <span class="mx-0.5 h-4 w-px shrink-0 bg-surface-500/35" aria-hidden="true"></span>
 
+        <OverflowMenu label="Editor options" title="Editor options">
+          <button type="button" role="menuitem" class="flex w-full items-center rounded px-2 py-1.5 text-left text-chrome-sm text-content-secondary hover:bg-surface-800" title={titleWithShortcut("Find in file", "code-find")} onclick={() => editor?.openFind()}>Find in file</button>
+          <button type="button" role="menuitem" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-chrome-sm text-content-secondary hover:bg-surface-800" onclick={toggleWordWrap}>
+            <span>Word wrap</span>
+            <span class="text-content-quiet">{wordWrap ? "On" : "Off"}</span>
+          </button>
+          <button type="button" role="menuitem" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-chrome-sm text-content-secondary hover:bg-surface-800" onclick={toggleLineNumbers}>
+            <span>Line numbers</span>
+            <span class="text-content-quiet">{showLineNumbers ? "On" : "Off"}</span>
+          </button>
+          <button type="button" role="menuitem" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-chrome-sm text-content-secondary hover:bg-surface-800" onclick={cycleFontSize}>
+            <span>Font size</span>
+            <span class="text-content-quiet">{fontSize}px</span>
+          </button>
+          <button type="button" role="menuitem" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-chrome-sm text-content-secondary hover:bg-surface-800" onclick={cycleTabSize}>
+            <span>Tab size</span>
+            <span class="text-content-quiet">{tabSizePref}</span>
+          </button>
+          {#if projectTasks.length > 1}
+            <label class="block border-t border-surface-500/20 px-2 pb-1.5 pt-1">
+              <span class="text-chrome-xs uppercase tracking-wider text-content-quiet">Project command</span>
+              <select class="mt-1 w-full rounded bg-surface-800 px-1.5 py-1 text-chrome-sm text-content-secondary outline-none" aria-label="Project command" bind:value={selectedTaskId}>
+                {#each projectTasks as task (task.id)}
+                  <option value={task.id}>{task.label}{#if task.long_running} · background{/if}{#if task.provider === "vscode-tasks"} · tasks.json{/if}</option>
+                {/each}
+              </select>
+            </label>
+          {/if}
+          {#if projectTasks.some((task) => task.kind === "test")}
+            <button type="button" role="menuitem" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-chrome-sm text-content-secondary hover:bg-surface-800" onclick={() => void toggleTests()}>
+              <span>Discovered tests</span>
+              <span class="text-content-quiet">{testsOpen ? "Hide" : "Show"}</span>
+            </button>
+          {/if}
+          {#if canFormat && editable}
+            <button type="button" role="menuitem" class="flex w-full items-center rounded px-2 py-1.5 text-left text-chrome-sm text-content-secondary hover:bg-surface-800 disabled:opacity-40" disabled={languageActionRunning} onclick={() => void runLanguageAction("format")}>Format document</button>
+          {/if}
+          {#if canCodeAction && editable}
+            <button type="button" role="menuitem" class="flex w-full items-center rounded px-2 py-1.5 text-left text-chrome-sm text-content-secondary hover:bg-surface-800 disabled:opacity-40" disabled={languageActionRunning} onclick={() => void runLanguageAction("organize_imports")}>Organize imports</button>
+          {/if}
+          {#if languageSupportsLsp(activeTabLanguage)}
+            <button type="button" role="menuitem" class="flex w-full items-center rounded border-t border-surface-500/20 px-2 py-1.5 text-left text-chrome-sm text-content-secondary hover:bg-surface-800" onclick={restartLanguageServer}>Restart language server</button>
+            <button type="button" role="menuitem" class="flex w-full items-center rounded px-2 py-1.5 text-left text-chrome-sm text-content-secondary hover:bg-surface-800" onclick={() => void showLanguageLogs()}>Show language server logs</button>
+          {/if}
+          {#if lspError}
+            <button type="button" role="menuitem" class="flex w-full items-center rounded px-2 py-1.5 text-left text-chrome-sm text-content-warning hover:bg-surface-800 disabled:opacity-40" disabled={repairingLanguage} onclick={() => void repairLanguageSupport()}>{repairingLanguage ? "Repairing…" : "Repair language support"}</button>
+          {/if}
+        </OverflowMenu>
         <button
           type="button"
           class="scripts-workbench-toolbar-btn"
-          title={titleWithShortcut("Find", "code-find")}
-          aria-label="Find in file"
-          onclick={() => editor?.openFind()}
-        ><Search size={14} strokeWidth={1.75} /></button>
-        <details class="relative">
-          <summary class="scripts-workbench-toolbar-btn cursor-pointer list-none [&::-webkit-details-marker]:hidden" title="Editor options" aria-label="Editor options">•••</summary>
-          <div class="absolute right-0 top-full z-30 mt-1 w-44 rounded-md border border-surface-500/40 bg-surface-900 p-1 shadow-xl">
-            <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-content-secondary hover:bg-surface-800" onclick={toggleWordWrap}>
-              <span>Word wrap</span>
-              <span class="text-content-quiet">{wordWrap ? "On" : "Off"}</span>
-            </button>
-            <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-content-secondary hover:bg-surface-800" onclick={toggleLineNumbers}>
-              <span>Line numbers</span>
-              <span class="text-content-quiet">{showLineNumbers ? "On" : "Off"}</span>
-            </button>
-            <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-content-secondary hover:bg-surface-800" onclick={cycleFontSize}>
-              <span>Font size</span>
-              <span class="text-content-quiet">{fontSize}px</span>
-            </button>
-            <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-content-secondary hover:bg-surface-800" onclick={cycleTabSize}>
-              <span>Tab size</span>
-              <span class="text-content-quiet">{tabSizePref}</span>
-            </button>
-            {#if projectTasks.length > 1}
-              <label class="block border-t border-surface-500/20 px-2 pb-1.5 pt-1">
-                <span class="text-[9px] uppercase tracking-wider text-content-quiet">Project command</span>
-                <select class="mt-1 w-full rounded bg-surface-800 px-1.5 py-1 text-[10px] text-content-secondary outline-none" aria-label="Project command" bind:value={selectedTaskId}>
-                  {#each projectTasks as task (task.id)}
-                    <option value={task.id}>{task.label}{#if task.long_running} · background{/if}{#if task.provider === "vscode-tasks"} · tasks.json{/if}</option>
-                  {/each}
-                </select>
-              </label>
-            {/if}
-            {#if projectTasks.some((task) => task.kind === "test")}
-              <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-content-secondary hover:bg-surface-800" onclick={() => void toggleTests()}>
-                <span>Discovered tests</span>
-                <span class="text-content-quiet">{testsOpen ? "Hide" : "Show"}</span>
-              </button>
-            {/if}
-            {#if canFormat && editable}
-              <button type="button" class="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-content-secondary hover:bg-surface-800 disabled:opacity-40" disabled={languageActionRunning} onclick={() => void runLanguageAction("format")}>Format document</button>
-            {/if}
-            {#if canCodeAction && editable}
-              <button type="button" class="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-content-secondary hover:bg-surface-800 disabled:opacity-40" disabled={languageActionRunning} onclick={() => void runLanguageAction("organize_imports")}>Organize imports</button>
-            {/if}
-            {#if languageSupportsLsp(activeTabLanguage)}
-              <button type="button" class="flex w-full items-center rounded border-t border-surface-500/20 px-2 py-1.5 text-left text-[10px] text-content-secondary hover:bg-surface-800" onclick={restartLanguageServer}>Restart language server</button>
-              <button type="button" class="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-content-secondary hover:bg-surface-800" onclick={() => void showLanguageLogs()}>Show language server logs</button>
-            {/if}
-            {#if lspError}
-              <button type="button" class="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-content-warning hover:bg-surface-800 disabled:opacity-40" disabled={repairingLanguage} onclick={() => void repairLanguageSupport()}>{repairingLanguage ? "Repairing…" : "Repair language support"}</button>
-            {/if}
-          </div>
-        </details>
-        <button
-          type="button"
-          class="scripts-workbench-toolbar-btn"
-          disabled={activeTab.loading || saving}
+          disabled={activeTab.loading || busy}
           onclick={() => void reload()}
           aria-label="Reload file"
           title="Reload file"
@@ -2977,7 +2906,7 @@
           <button
             type="button"
             class="scripts-workbench-toolbar-btn scripts-workbench-toolbar-btn-primary"
-            disabled={saving}
+            disabled={busy}
             onclick={() => void reclaimHuman()}
             aria-label="Resume editing"
             title="Resume editing — take the file back from the agent"
@@ -2986,7 +2915,7 @@
           <button
             type="button"
             class="scripts-workbench-toolbar-btn scripts-workbench-toolbar-btn-primary"
-            disabled={saving}
+            disabled={busy}
             onclick={() => void startEditing()}
             aria-label="Edit file"
             title="Start editing (or just type)"
@@ -2995,17 +2924,17 @@
           <button
             type="button"
             class="scripts-workbench-toolbar-btn scripts-workbench-toolbar-btn-primary"
-            disabled={!editable || !dirty || saving}
+            disabled={!editable || !dirty || savingFile}
             onclick={() => void save()}
             aria-label="Save file"
-            title={saving ? "Saving…" : titleWithShortcut("Save", "code-save")}
+            title={savingFile ? "Saving…" : titleWithShortcut("Save", "code-save")}
           ><Save size={14} strokeWidth={1.75} /></button>
         {/if}
       </div>
     </header>
 
     {#if lspStatus.phase === "reconnecting" || lspStatus.phase === "failed"}
-      <div class="flex shrink-0 flex-wrap items-center gap-2 border-b {lspStatus.phase === 'failed' ? 'border-rose-500/30 bg-rose-950/25 text-rose-100' : 'border-amber-500/30 bg-amber-950/20 text-amber-100'} px-2.5 py-1.5 text-[10px]" role="status">
+      <div class="flex shrink-0 flex-wrap items-center gap-2 border-b {lspStatus.phase === 'failed' ? 'border-rose-500/30 bg-rose-950/25 text-rose-100' : 'border-amber-500/30 bg-amber-950/20 text-amber-100'} px-2.5 py-1.5 text-chrome-sm" role="status">
         <span class="min-w-40 flex-1">{lspStatus.detail}</span>
         <button type="button" class="rounded px-1.5 py-0.5 hover:bg-white/10" onclick={restartLanguageServer}>Restart now</button>
         <button type="button" class="rounded px-1.5 py-0.5 hover:bg-white/10" onclick={() => void showLanguageLogs()}>Logs</button>
@@ -3014,7 +2943,7 @@
         {/if}
       </div>
     {:else if lspStatus.progress}
-      <div class="flex shrink-0 items-center gap-2 border-b border-sky-500/20 bg-sky-950/15 px-2.5 py-1 text-[10px] text-sky-100/85" role="status">
+      <div class="flex shrink-0 items-center gap-2 border-b border-sky-500/20 bg-sky-950/15 px-2.5 py-1 text-chrome-sm text-sky-100/85" role="status">
         <LoaderCircle size={11} class="shrink-0 animate-spin" />
         <span class="min-w-0 flex-1 truncate">{lspStatus.progress.title}{lspStatus.progress.message ? ` · ${lspStatus.progress.message}` : ""}</span>
         {#if lspStatus.progress.percentage != null}<span>{Math.round(lspStatus.progress.percentage)}%</span>{/if}
@@ -3022,12 +2951,12 @@
     {/if}
 
     {#if surfaceError || activeTab.error || codeWorkspace.workspaceErrorByWorkId[workId]}
-      <p class="shrink-0 border-b border-amber-500/30 bg-amber-950/25 px-2.5 py-1.5 text-[10px] text-amber-100">
+      <p class="shrink-0 border-b border-amber-500/30 bg-amber-950/25 px-2.5 py-1.5 text-chrome-sm text-amber-100">
         {humanizeForgeMessage(surfaceError || activeTab.error || codeWorkspace.workspaceErrorByWorkId[workId] || "")}
       </p>
     {/if}
     {#if activeTab.preview}
-      <div class="flex shrink-0 items-center gap-2 border-b border-sky-500/25 bg-sky-950/20 px-2.5 py-1.5 text-[10px] text-sky-100/90" role="status">
+      <div class="flex shrink-0 items-center gap-2 border-b border-sky-500/25 bg-sky-950/20 px-2.5 py-1.5 text-chrome-sm text-sky-100/90" role="status">
         {#if activeTab.encoding === "binary"}
           <span>Binary preview · {activeTab.byte_size.toLocaleString()} bytes · read-only</span>
         {:else if activeTab.truncated}
@@ -3038,7 +2967,7 @@
       </div>
     {/if}
     {#if externalVersions[activeTab.tabId]}
-      <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-500/30 bg-amber-950/20 px-2.5 py-1.5 text-[10px] text-amber-100">
+      <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-500/30 bg-amber-950/20 px-2.5 py-1.5 text-chrome-sm text-amber-100">
         <span class="min-w-40 flex-1">This file changed elsewhere. Your draft is safe.</span>
         <button type="button" class="rounded px-1.5 py-0.5 hover:bg-white/10" onclick={() => (comparingTabId = activeTab.tabId)}>Compare</button>
         <button type="button" class="rounded px-1.5 py-0.5 hover:bg-white/10" onclick={() => useProjectVersion(activeTab)}>Use project version</button>
@@ -3050,12 +2979,12 @@
       <div class="relative min-h-0 min-w-0 flex-1">
         {#if editorSelection?.text && onHandoffToAgent && !agentHasControl}
           <div class="absolute right-3 top-2 z-20 flex max-w-[calc(100%-1.5rem)] items-center gap-1 overflow-x-auto rounded-md border border-primary-500/30 bg-surface-950/95 px-1.5 py-1 shadow-xl" aria-label="Selected code actions">
-            <span class="mr-1 flex shrink-0 items-center gap-1 text-[9px] text-primary-200/80"><Sparkles size={10} />Selection</span>
-            <button type="button" class="code-intent-action" disabled={saving} onclick={() => void handoffToAgent("Help me understand the selected code and answer my questions about it.")}>Ask</button>
-            <button type="button" class="code-intent-action" disabled={saving} onclick={() => void handoffToAgent("Change the selected code. Ask only if the intended change is ambiguous.")}>Change</button>
-            {#if problems.length > 0}<button type="button" class="code-intent-action" disabled={saving} onclick={() => void handoffToAgent("Fix the relevant issue in the selected code and verify the result.")}>Fix</button>{/if}
-            <button type="button" class="code-intent-action" disabled={saving} onclick={() => void handoffToAgent("Explain the selected code clearly, including its role and important behavior.")}>Explain</button>
-            <button type="button" class="code-intent-action" disabled={saving} onclick={() => void handoffToAgent("Add the most valuable focused test for the selected code and run the relevant check.")}>Add test</button>
+            <span class="mr-1 flex shrink-0 items-center gap-1 text-chrome-xs text-primary-200/80"><Sparkles size={10} />Selection</span>
+            <button type="button" class="code-intent-action" disabled={busy} onclick={() => void handoffToAgent("Help me understand the selected code and answer my questions about it.")}>Ask</button>
+            <button type="button" class="code-intent-action" disabled={busy} onclick={() => void handoffToAgent("Change the selected code. Ask only if the intended change is ambiguous.")}>Change</button>
+            {#if problems.length > 0}<button type="button" class="code-intent-action" disabled={busy} onclick={() => void handoffToAgent("Fix the relevant issue in the selected code and verify the result.")}>Fix</button>{/if}
+            <button type="button" class="code-intent-action" disabled={busy} onclick={() => void handoffToAgent("Explain the selected code clearly, including its role and important behavior.")}>Explain</button>
+            <button type="button" class="code-intent-action" disabled={busy} onclick={() => void handoffToAgent("Add the most valuable focused test for the selected code and run the relevant check.")}>Add test</button>
             {#if canReference}<button type="button" class="code-intent-action" disabled={languageActionRunning} onclick={() => void runLanguageAction("references")}>Find uses</button>{/if}
             {#if canRename && editable}<button type="button" class="code-intent-action" disabled={languageActionRunning} onclick={() => beginInlineRename()}>Rename</button>{/if}
           </div>
@@ -3102,13 +3031,13 @@
       <div class="{contextPanel === 'problems' || contextPanel === 'language' ? 'max-h-72' : 'max-h-44'} shrink-0 overflow-y-auto border-t border-surface-500/30 bg-surface-950/80">
         <div class="sticky top-0 z-10 flex items-center justify-between border-b border-surface-500/25 bg-surface-950 px-2 py-1">
           <div class="flex min-w-0 items-center gap-2">
-            <span class="text-[9px] font-medium uppercase tracking-wider text-content-tertiary">
+            <span class="text-chrome-xs font-medium uppercase tracking-wider text-content-tertiary">
               {contextPanel === "problems" ? "Problems" : contextPanel === "references" ? "Uses" : contextPanel === "language" ? "Language server" : "Structure"}
             </span>
             {#if contextPanel === "problems"}
-              <span class="text-[9px] text-rose-300" title="Errors">{workspaceProblemCounts.errors}</span>
-              <span class="text-[9px] text-amber-300" title="Warnings">{workspaceProblemCounts.warnings}</span>
-              <span class="text-[9px] text-content-quiet" title="Information and hints">{workspaceProblemCounts.information + workspaceProblemCounts.hints}</span>
+              <span class="text-chrome-xs text-rose-300" title="Errors">{workspaceProblemCounts.errors}</span>
+              <span class="text-chrome-xs text-amber-300" title="Warnings">{workspaceProblemCounts.warnings}</span>
+              <span class="text-chrome-xs text-content-quiet" title="Information and hints">{workspaceProblemCounts.information + workspaceProblemCounts.hints}</span>
             {/if}
           </div>
           <div class="flex items-center gap-0.5">
@@ -3139,7 +3068,7 @@
             <label class="flex min-w-28 flex-1 items-center gap-1.5 rounded border border-surface-500/35 bg-surface-900/70 px-1.5 py-1 focus-within:border-primary-400/60">
               <Search size={11} class="shrink-0 text-content-quiet" />
               <input
-                class="min-w-0 flex-1 bg-transparent text-[10px] text-content-secondary outline-none placeholder:text-content-faint"
+                class="min-w-0 flex-1 bg-transparent text-chrome-sm text-content-secondary outline-none placeholder:text-content-faint"
                 aria-label="Filter project problems"
                 placeholder="Filter problems"
                 bind:value={problemQuery}
@@ -3149,7 +3078,7 @@
               {#each problemSeverityOptions as option (option.value)}
                 <button
                   type="button"
-                  class="rounded px-1.5 py-1 text-[9px] {problemSeverity === option.value ? 'bg-primary-500/20 text-primary-100' : 'text-content-quiet hover:bg-surface-800 hover:text-content-secondary'}"
+                  class="rounded px-1.5 py-1 text-chrome-xs {problemSeverity === option.value ? 'bg-primary-500/20 text-primary-100' : 'text-content-quiet hover:bg-surface-800 hover:text-content-secondary'}"
                   aria-pressed={problemSeverity === option.value}
                   onclick={() => (problemSeverity = option.value)}
                 >{option.label}</button>
@@ -3157,25 +3086,25 @@
             </div>
           </div>
           {#if workspaceProblemsError}
-            <div class="flex items-start justify-between gap-3 border-b border-rose-400/20 bg-rose-500/5 px-3 py-2 text-[10px] text-rose-200">
+            <div class="flex items-start justify-between gap-3 border-b border-rose-400/20 bg-rose-500/5 px-3 py-2 text-chrome-sm text-rose-200">
               <span>Could not refresh project problems: {workspaceProblemsError}</span>
               <button type="button" class="shrink-0 underline underline-offset-2" onclick={() => void refreshWorkspaceProblems()}>Retry</button>
             </div>
           {/if}
           {#if workspaceProblemsUnavailableLanguages.length > 0}
-            <p class="border-b border-amber-400/20 bg-amber-500/5 px-3 py-1.5 text-[10px] text-amber-200">
+            <p class="border-b border-amber-400/20 bg-amber-500/5 px-3 py-1.5 text-chrome-sm text-amber-200">
               Results are incomplete for {workspaceProblemsUnavailableLanguages.join(", ")}.
             </p>
           {/if}
           {#if workspaceProblemsLoading && !workspaceProblemsLoaded}
-            <p class="flex items-center px-3 py-3 text-[10px] text-content-quiet"><LoaderCircle size={11} class="mr-1.5 animate-spin" />Loading project problems…</p>
+            <p class="flex items-center px-3 py-3 text-chrome-sm text-content-quiet"><LoaderCircle size={11} class="mr-1.5 animate-spin" />Loading project problems…</p>
           {:else if workspaceProblemCounts.total === 0}
-            <p class="px-3 py-3 text-[10px] text-content-quiet">No problems found in this project.</p>
+            <p class="px-3 py-3 text-chrome-sm text-content-quiet">No problems found in this project.</p>
           {:else if workspaceProblemGroups.length === 0}
-            <p class="px-3 py-3 text-[10px] text-content-quiet">No problems match the current filters.</p>
+            <p class="px-3 py-3 text-chrome-sm text-content-quiet">No problems match the current filters.</p>
           {:else}
             {#each workspaceProblemGroups as group (group.path)}
-              <div class="flex items-center gap-2 border-b border-surface-500/20 bg-surface-900/70 px-3 py-1 text-[9px] text-content-tertiary">
+              <div class="flex items-center gap-2 border-b border-surface-500/20 bg-surface-900/70 px-3 py-1 text-chrome-xs text-content-tertiary">
                 <FileCode2 size={10} class="shrink-0 text-content-link/70" />
                 <span class="min-w-0 flex-1 truncate font-mono">{group.path}</span>
                 {#if group.counts.errors > 0}<span class="text-rose-300">{group.counts.errors}E</span>{/if}
@@ -3197,40 +3126,40 @@
                         ? "mt-0.5 shrink-0 text-amber-300"
                         : "mt-0.5 shrink-0 text-sky-300"}
                   />
-                  <span class="min-w-0 flex-1 text-[10px] text-content-secondary">
+                  <span class="min-w-0 flex-1 text-chrome-sm text-content-secondary">
                     <span class="break-words">{problem.message}</span>
                     {#if problem.source || problem.code}
-                      <span class="ml-1 text-[9px] text-content-faint">{[problem.source, problem.code].filter(Boolean).join(" · ")}</span>
+                      <span class="ml-1 text-chrome-xs text-content-faint">{[problem.source, problem.code].filter(Boolean).join(" · ")}</span>
                     {/if}
                   </span>
-                  <span class="shrink-0 font-mono text-[9px] text-content-quiet">{problem.line}:{problem.character}</span>
+                  <span class="shrink-0 font-mono text-chrome-xs text-content-quiet">{problem.line}:{problem.character}</span>
                 </button>
               {/each}
             {/each}
           {/if}
         {:else if contextPanel === "language"}
-          <div class="flex flex-wrap items-center gap-2 border-b border-surface-500/20 bg-surface-900/55 px-3 py-2 text-[10px] text-content-secondary">
+          <div class="flex flex-wrap items-center gap-2 border-b border-surface-500/20 bg-surface-900/55 px-3 py-2 text-chrome-sm text-content-secondary">
             <span class="font-medium">{activeTabLanguage}</span>
             {#if activeLanguageMatrix}
-              <span class="rounded bg-surface-800 px-1.5 py-0.5 text-[9px] {activeLanguageMatrix.usable ? 'text-emerald-200' : 'text-rose-200'}">{activeLanguageMatrix.usable ? "usable" : "missing"}</span>
+              <span class="rounded bg-surface-800 px-1.5 py-0.5 text-chrome-xs {activeLanguageMatrix.usable ? 'text-emerald-200' : 'text-rose-200'}">{activeLanguageMatrix.usable ? "usable" : "missing"}</span>
               {#if activeLanguageMatrix.command}
-                <span class="font-mono text-[9px] text-content-quiet">{activeLanguageMatrix.command}</span>
+                <span class="font-mono text-chrome-xs text-content-quiet">{activeLanguageMatrix.command}</span>
               {/if}
               {#if activeLanguageMatrix.packageId}
-                <span class="rounded bg-surface-800 px-1.5 py-0.5 text-[9px] text-content-quiet">pkg:{activeLanguageMatrix.packageId}</span>
+                <span class="rounded bg-surface-800 px-1.5 py-0.5 text-chrome-xs text-content-quiet">pkg:{activeLanguageMatrix.packageId}</span>
               {/if}
             {/if}
             {#if latestLanguageSession}
-              <span class="rounded bg-surface-800 px-1.5 py-0.5 text-[9px] {latestLanguageSession.phase === 'failed' ? 'text-rose-200' : latestLanguageSession.phase === 'ready' ? 'text-emerald-200' : 'text-amber-200'}">{latestLanguageSession.phase}</span>
-              <span class="min-w-0 flex-1 truncate font-mono text-[9px] text-content-quiet" title={latestLanguageSession.language_root}>{latestLanguageSession.relative_root || "."}</span>
+              <span class="rounded bg-surface-800 px-1.5 py-0.5 text-chrome-xs {latestLanguageSession.phase === 'failed' ? 'text-rose-200' : latestLanguageSession.phase === 'ready' ? 'text-emerald-200' : 'text-amber-200'}">{latestLanguageSession.phase}</span>
+              <span class="min-w-0 flex-1 truncate font-mono text-chrome-xs text-content-quiet" title={latestLanguageSession.language_root}>{latestLanguageSession.relative_root || "."}</span>
             {:else}
               <span class="min-w-0 flex-1 text-content-quiet">No workshop session snapshot yet</span>
             {/if}
-            <button type="button" class="rounded bg-surface-800 px-1.5 py-0.5 text-[9px] hover:bg-surface-700" onclick={restartLanguageServer}>Restart</button>
+            <button type="button" class="rounded bg-surface-800 px-1.5 py-0.5 text-chrome-xs hover:bg-surface-700" onclick={restartLanguageServer}>Restart</button>
           </div>
           {#if latestLanguageSession?.progress.some((progress) => !progress.done)}
             {#each latestLanguageSession.progress.filter((progress) => !progress.done) as progress (progress.token)}
-              <div class="flex items-center gap-2 border-b border-sky-500/15 bg-sky-950/10 px-3 py-1.5 text-[9px] text-sky-100/80">
+              <div class="flex items-center gap-2 border-b border-sky-500/15 bg-sky-950/10 px-3 py-1.5 text-chrome-xs text-sky-100/80">
                 <LoaderCircle size={10} class="animate-spin" />
                 <span class="min-w-0 flex-1 truncate">{progress.title || "Language service"}{progress.message ? ` · ${progress.message}` : ""}</span>
                 {#if progress.percentage != null}<span>{Math.round(progress.percentage)}%</span>{/if}
@@ -3238,17 +3167,17 @@
             {/each}
           {/if}
           {#if languageSessionsError}
-            <div class="flex items-start justify-between gap-3 border-b border-rose-400/20 bg-rose-500/5 px-3 py-2 text-[10px] text-rose-200">
+            <div class="flex items-start justify-between gap-3 border-b border-rose-400/20 bg-rose-500/5 px-3 py-2 text-chrome-sm text-rose-200">
               <span>Could not read workshop language logs: {languageSessionsError}</span>
               <button type="button" class="shrink-0 underline underline-offset-2" onclick={() => void refreshLanguageSessions()}>Retry</button>
             </div>
           {/if}
           {#if languageSessionsLoading && languageSessions.length === 0}
-            <p class="flex items-center px-3 py-3 text-[10px] text-content-quiet"><LoaderCircle size={11} class="mr-1.5 animate-spin" />Reading workshop logs…</p>
+            <p class="flex items-center px-3 py-3 text-chrome-sm text-content-quiet"><LoaderCircle size={11} class="mr-1.5 animate-spin" />Reading workshop logs…</p>
           {:else if languageSessionLogs.length === 0}
-            <p class="px-3 py-3 text-[10px] text-content-quiet">No language server output has been recorded.</p>
+            <p class="px-3 py-3 text-chrome-sm text-content-quiet">No language server output has been recorded.</p>
           {:else}
-            <div class="font-mono text-[9px]" aria-label="Language server output">
+            <div class="font-mono text-chrome-xs" aria-label="Language server output">
               {#each languageSessionLogs as entry (`${entry.sessionId}:${entry.sequence}`)}
                 <div class="grid grid-cols-[4.8rem_3.5rem_minmax(0,1fr)] gap-2 border-b border-surface-500/10 px-3 py-1 {entry.level === 'error' ? 'text-rose-200' : entry.level === 'warning' ? 'text-amber-200' : 'text-content-tertiary'}">
                   <span class="text-content-faint">{formatLanguageLogTime(entry.timestamp_ms)}</span>
@@ -3260,7 +3189,7 @@
           {/if}
         {:else if contextPanel === "references"}
           {#if references.length === 0}
-            <p class="px-3 py-3 text-[10px] text-content-quiet">No other uses found.</p>
+            <p class="px-3 py-3 text-chrome-sm text-content-quiet">No other uses found.</p>
           {:else}
             {#each references as reference, index (`${reference.uri}:${reference.range?.start?.line}:${index}`)}
               {@const referencePath = pathFromUri(reference.uri)}
@@ -3281,15 +3210,15 @@
                 }}
               >
                 <FileCode2 size={11} class="shrink-0 text-content-link/70" />
-                <span class="min-w-0 flex-1 truncate text-[10px] text-content-secondary">{referencePath ?? reference.uri}</span>
-                <span class="font-mono text-[9px] text-content-quiet">{referenceLine}</span>
+                <span class="min-w-0 flex-1 truncate text-chrome-sm text-content-secondary">{referencePath ?? reference.uri}</span>
+                <span class="font-mono text-chrome-xs text-content-quiet">{referenceLine}</span>
               </button>
             {/each}
           {/if}
         {:else if symbolsLoading}
-          <p class="px-3 py-3 text-[10px] text-content-quiet">Reading file structure…</p>
+          <p class="px-3 py-3 text-chrome-sm text-content-quiet">Reading file structure…</p>
         {:else if symbols.length === 0}
-          <p class="px-3 py-3 text-[10px] text-content-quiet">No structure is available for this file.</p>
+          <p class="px-3 py-3 text-chrome-sm text-content-quiet">No structure is available for this file.</p>
         {:else}
           {#each symbols as symbol (`${symbol.name}:${symbolLine(symbol)}`)}
             <button
@@ -3298,8 +3227,8 @@
               onclick={() => editor?.revealLine(symbolLine(symbol))}
             >
               <ListTree size={11} class="shrink-0 text-content-link/70" />
-              <span class="min-w-0 flex-1 truncate text-[10px] text-content-secondary">{symbol.name}</span>
-              <span class="font-mono text-[9px] text-content-quiet">{symbolLine(symbol)}</span>
+              <span class="min-w-0 flex-1 truncate text-chrome-sm text-content-secondary">{symbol.name}</span>
+              <span class="font-mono text-chrome-xs text-content-quiet">{symbolLine(symbol)}</span>
             </button>
           {/each}
         {/if}
@@ -3309,7 +3238,7 @@
     {#if outputOpen}
       <div class="flex max-h-52 shrink-0 flex-col border-t border-surface-500/30 bg-surface-950/80">
         <div class="flex items-center justify-between gap-2 border-b border-surface-500/20 px-2.5 py-1">
-          <span class="text-[9px] font-medium uppercase tracking-[0.06em] text-content-quiet">
+          <span class="text-chrome-xs font-medium uppercase tracking-[0.06em] text-content-quiet">
             {#if taskRun}Task: {taskRun.task.label}{:else}Output{/if}
             {#if taskRun?.state === "ready"}<span class="normal-case tracking-normal text-emerald-300/90"> · ready</span>
             {:else if runningTask}<span class="normal-case tracking-normal text-content-link"> · running</span>{/if}
@@ -3319,25 +3248,25 @@
             {#if (taskReadyUrl || taskRun?.ready_url) && (taskRun?.state === "ready" || runningTask)}
               <button
                 type="button"
-                class="rounded px-1.5 py-0.5 text-[9px] text-emerald-200/90 hover:bg-emerald-500/10 disabled:opacity-40"
+                class="rounded px-1.5 py-0.5 text-chrome-xs text-emerald-200/90 hover:bg-emerald-500/10 disabled:opacity-40"
                 disabled={previewOpening}
                 onclick={() => void openTaskPreview()}
               >{previewOpening ? "Opening…" : "Open in Browser"}</button>
             {/if}
             {#if runningTask && (taskRun?.state === "running" || taskRun?.state === "ready")}
-              <button type="button" class="rounded px-1.5 py-0.5 text-[9px] text-rose-200/90 hover:bg-rose-500/10" onclick={() => void stopDetectedTask()}>Stop</button>
+              <button type="button" class="rounded px-1.5 py-0.5 text-chrome-xs text-rose-200/90 hover:bg-rose-500/10" onclick={() => void stopDetectedTask()}>Stop</button>
             {/if}
-            <button type="button" class="rounded px-1.5 py-0.5 text-[9px] text-content-quiet hover:bg-surface-800 hover:text-content-secondary" onclick={() => toggleOutput(false)}>Hide</button>
+            <button type="button" class="rounded px-1.5 py-0.5 text-chrome-xs text-content-quiet hover:bg-surface-800 hover:text-content-secondary" onclick={() => toggleOutput(false)}>Hide</button>
           </div>
         </div>
         {#if !taskLiveStdout && !taskLiveStderr && !runningTask && !taskRun}
-          <p class="px-2.5 py-2 text-[10px] text-content-quiet">Run a project check to stream output here.</p>
+          <p class="px-2.5 py-2 text-chrome-sm text-content-quiet">Run a project check to stream output here.</p>
         {:else}
-          <pre class="min-h-0 flex-1 overflow-auto px-2.5 py-1.5 font-mono text-[9px] leading-relaxed text-content-tertiary whitespace-pre-wrap break-words" aria-label="Task output">{taskLiveStdout}{#if taskLiveStdout && taskLiveStderr}{"\n\n"}{/if}{#if taskLiveStderr}<span class="text-rose-200/90">{taskLiveStderr}</span>{/if}{#if !taskLiveStdout && !taskLiveStderr && runningTask}<span class="text-content-quiet">Waiting for output…</span>{/if}</pre>
+          <pre class="min-h-0 flex-1 overflow-auto px-2.5 py-1.5 font-mono text-chrome-xs leading-relaxed text-content-tertiary whitespace-pre-wrap break-words" aria-label="Task output">{taskLiveStdout}{#if taskLiveStdout && taskLiveStderr}{"\n\n"}{/if}{#if taskLiveStderr}<span class="text-rose-200/90">{taskLiveStderr}</span>{/if}{#if !taskLiveStdout && !taskLiveStderr && runningTask}<span class="text-content-quiet">Waiting for output…</span>{/if}</pre>
           {#if taskLiveLocations.length}
             <div class="max-h-20 shrink-0 overflow-y-auto border-t border-surface-500/20">
               {#each taskLiveLocations.slice(0, 8) as location (`${location.path}:${location.line}:${location.column}:${location.message}`)}
-                <button type="button" class="flex w-full items-center gap-2 border-b border-surface-500/10 px-2.5 py-1 text-left text-[9px] text-content-secondary hover:bg-surface-800/60" onclick={() => void openTaskLocation(location.path, location.line)}>
+                <button type="button" class="flex w-full items-center gap-2 border-b border-surface-500/10 px-2.5 py-1 text-left text-chrome-xs text-content-secondary hover:bg-surface-800/60" onclick={() => void openTaskLocation(location.path, location.line)}>
                   <span class="min-w-0 flex-1 truncate">{location.message || location.path}</span>
                   <span class="shrink-0 font-mono text-content-quiet">{location.path}:{location.line}</span>
                 </button>
@@ -3349,12 +3278,12 @@
     {/if}
     {#if taskResult}
       <div class="shrink-0 border-t {taskResult.success ? 'border-emerald-500/25 bg-emerald-950/20 text-emerald-200' : 'border-rose-500/30 bg-rose-950/25 text-rose-200'}">
-      <button type="button" class="flex w-full items-center justify-between gap-2 px-2.5 py-1 text-left text-[9px]" title="Run this check again" onclick={() => void runDetectedTask()}>
+      <button type="button" class="flex w-full items-center justify-between gap-2 px-2.5 py-1 text-left text-chrome-xs" title="Run this check again" onclick={() => void runDetectedTask()}>
         <span>{taskResult.success ? "Passed" : "Needs attention"} · {taskResult.task.label}</span>
         <span class="text-current">Rerun · {(taskResult.duration_ms / 1000).toFixed(1)}s{taskResult.exit_code != null ? ` · exit ${taskResult.exit_code}` : ""}</span>
       </button>
       {#each taskResult.locations.slice(0, 5) as location (`${location.path}:${location.line}:${location.column}`)}
-        <button type="button" class="flex w-full items-center gap-2 border-t border-current/10 px-2.5 py-1 text-left text-[9px] hover:bg-white/5" onclick={() => void openTaskLocation(location.path, location.line)}>
+        <button type="button" class="flex w-full items-center gap-2 border-t border-current/10 px-2.5 py-1 text-left text-chrome-xs hover:bg-white/5" onclick={() => void openTaskLocation(location.path, location.line)}>
           <span class="min-w-0 flex-1 truncate">{location.message || location.path}</span>
           <span class="shrink-0 font-mono">{location.path}:{location.line}</span>
         </button>
@@ -3411,14 +3340,14 @@
     {/if}
     {#if testsOpen}
       <div class="max-h-44 shrink-0 overflow-y-auto border-t border-surface-500/25 bg-surface-950/90">
-        <div class="sticky top-0 flex items-center justify-between bg-surface-950 px-2.5 py-1 text-[9px] uppercase tracking-wider text-content-quiet"><span>Project tests</span><span>{projectTests.length}</span></div>
+        <div class="sticky top-0 flex items-center justify-between bg-surface-950 px-2.5 py-1 text-chrome-xs uppercase tracking-wider text-content-quiet"><span>Project tests</span><span>{projectTests.length}</span></div>
         {#if projectTests.length === 0}
-          <p class="px-3 py-3 text-[10px] text-content-quiet">No individual tests were discovered. The project test command still works.</p>
+          <p class="px-3 py-3 text-chrome-sm text-content-quiet">No individual tests were discovered. The project test command still works.</p>
         {:else}
           {#each projectTests as test (test.id)}
             <div class="flex items-center border-t border-surface-500/15">
-              <button type="button" class="min-w-0 flex-1 truncate px-3 py-1.5 text-left text-[10px] text-content-secondary hover:bg-surface-800/60" onclick={() => void openTaskLocation(test.path, test.line)}>{test.label}<span class="ml-2 font-mono text-[9px] text-content-faint">{test.path}:{test.line}</span></button>
-              <button type="button" class="mr-2 rounded px-1.5 py-0.5 text-[9px] text-content-link hover:bg-surface-800 disabled:opacity-40" disabled={runningTask} onclick={() => void runDetectedTask(test)}>Run</button>
+              <button type="button" class="min-w-0 flex-1 truncate px-3 py-1.5 text-left text-chrome-sm text-content-secondary hover:bg-surface-800/60" onclick={() => void openTaskLocation(test.path, test.line)}>{test.label}<span class="ml-2 font-mono text-chrome-xs text-content-faint">{test.path}:{test.line}</span></button>
+              <button type="button" class="mr-2 rounded px-1.5 py-0.5 text-chrome-xs text-content-link hover:bg-surface-800 disabled:opacity-40" disabled={runningTask} onclick={() => void runDetectedTask(test)}>Run</button>
             </div>
           {/each}
         {/if}
@@ -3426,63 +3355,58 @@
     {/if}
   {:else}
     <div class="flex min-h-0 flex-1 flex-col">
-      <div class="flex min-h-72 flex-1 items-center justify-center p-8 text-center">
-        <div class="max-w-sm">
-          {#if needsProvision}
-            <FileCode2 size={24} class="mx-auto text-content-faint" />
-            <p class="mt-2 text-xs font-medium text-content-secondary">Set up this project</p>
-            <p class="mt-1 text-[10px] leading-relaxed text-content-quiet">
-              {landError || "Create the working copy so the tree and editor can open."}
-            </p>
+      <div class="flex min-h-72 flex-1 items-center justify-center p-8">
+        {#if needsProvision}
+          <EmptyState
+            title="Set up this project"
+            description={landError
+              ? humanizeForgeMessage(landError)
+              : "Create the working copy so the tree and editor can open."}
+          >
             {#if onProvision}
               <button
                 type="button"
-                class="mt-3 rounded bg-primary-500/80 px-3 py-1.5 text-[11px] font-medium text-surface-50"
+                class="rounded bg-primary-500/80 px-3 py-1.5 text-chrome-md font-medium text-surface-50"
                 onclick={() => void onProvision()}
               >Set up project</button>
             {/if}
-          {:else if landError}
-            <FileCode2 size={24} class="mx-auto text-amber-500/70" />
-            <p class="mt-2 text-xs font-medium text-amber-100">Could not open the working set</p>
-            <p class="mt-1 text-[10px] leading-relaxed text-amber-100/80">{humanizeForgeMessage(landError)}</p>
-            <div class="mt-3 flex flex-wrap items-center justify-center gap-2">
+          </EmptyState>
+        {:else if landError}
+          <EmptyState
+            title="Could not open the working set"
+            description={humanizeForgeMessage(landError)}
+          >
+            {#if terminalAvailable}
               <button
                 type="button"
-                class="rounded bg-primary-500/80 px-3 py-1.5 text-[11px] font-medium text-surface-50"
+                class="rounded border border-surface-500/40 px-3 py-1.5 text-chrome-md text-surface-200 hover:bg-surface-800"
+                disabled={dockBusy}
+                onclick={() => void toggleTerminalDock(true)}
+              >Terminal</button>
+            {/if}
+          </EmptyState>
+        {:else}
+          <EmptyState
+            title="Open a file"
+            description="Jump in with Quick Open, or pick a path from the project tree."
+          >
+            <div class="flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                class="rounded bg-primary-500/80 px-3 py-1.5 text-chrome-md font-medium text-surface-50"
                 onclick={() => void showQuickOpen()}
               >Open file</button>
               {#if terminalAvailable}
                 <button
                   type="button"
-                  class="rounded border border-surface-500/40 px-3 py-1.5 text-[11px] text-surface-200 hover:bg-surface-800"
+                  class="rounded border border-surface-500/40 px-3 py-1.5 text-chrome-md text-surface-200 hover:bg-surface-800"
                   disabled={dockBusy}
                   onclick={() => void toggleTerminalDock(true)}
                 >Terminal</button>
               {/if}
             </div>
-          {:else}
-            <FileCode2 size={24} class="mx-auto text-content-faint" />
-            <p class="mt-2 text-xs font-medium text-content-secondary">Open a file</p>
-            <p class="mt-1 text-[10px] leading-relaxed text-content-quiet">
-              Jump in with Quick Open, or pick a path from the project tree.
-            </p>
-            <div class="mt-3 flex flex-wrap items-center justify-center gap-2">
-              <button
-                type="button"
-                class="rounded bg-primary-500/80 px-3 py-1.5 text-[11px] font-medium text-surface-50"
-                onclick={() => void showQuickOpen()}
-              >Open file</button>
-              {#if terminalAvailable}
-                <button
-                  type="button"
-                  class="rounded border border-surface-500/40 px-3 py-1.5 text-[11px] text-surface-200 hover:bg-surface-800"
-                  disabled={dockBusy}
-                  onclick={() => void toggleTerminalDock(true)}
-                >Terminal</button>
-              {/if}
-            </div>
-          {/if}
-        </div>
+          </EmptyState>
+        {/if}
       </div>
     </div>
   {/if}
@@ -3533,13 +3457,13 @@
           if (event.key === "ArrowUp") { event.preventDefault(); quickIndex = Math.max(quickIndex - 1, 0); }
           if (event.key === "Enter") { event.preventDefault(); chooseQuickResult(); }
         }} />
-        <span class="text-[9px] text-content-faint">⌘P</span>
+        <span class="text-chrome-xs text-content-faint">⌘P</span>
       </div>
       <div class="max-h-[50vh] overflow-y-auto py-1">
         {#if quickMode === "line"}
           <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-content-secondary hover:bg-surface-800" onclick={chooseQuickLine}>
             <span class="font-mono text-xs text-content-link">:{quickQuery.slice(1).trim() || "line"}</span>
-            <span class="text-[10px] text-content-quiet">Go to a line in {activeTab?.title}</span>
+            <span class="text-chrome-sm text-content-quiet">Go to a line in {activeTab?.title}</span>
           </button>
         {:else if quickMode === "symbol" && quickSymbolResults.length === 0}
           <p class="px-3 py-3 text-xs text-content-quiet">No matching project symbols.</p>
@@ -3548,7 +3472,7 @@
             <button type="button" class="flex w-full items-center gap-2 px-3 py-1.5 text-left {index === quickIndex ? 'bg-surface-800 text-surface-100' : 'text-content-tertiary hover:bg-surface-900'}" onmouseenter={() => (quickIndex = index)} onclick={() => void chooseQuickSymbol(symbol)}>
               <ListTree size={12} class="shrink-0 opacity-65" />
               <span class="min-w-0 flex-1 truncate text-xs">{symbol.name}</span>
-              <span class="min-w-0 max-w-[60%] truncate font-mono text-[9px] text-content-faint">{symbol.containerName ?? pathFromUri(symbol.location?.uri) ?? ""}</span>
+              <span class="min-w-0 max-w-[60%] truncate font-mono text-chrome-xs text-content-faint">{symbol.containerName ?? pathFromUri(symbol.location?.uri) ?? ""}</span>
             </button>
           {/each}
         {:else if quickLoading}
@@ -3560,7 +3484,7 @@
             <button type="button" class="flex w-full items-center gap-2 px-3 py-1.5 text-left {index === quickIndex ? 'bg-surface-800 text-surface-100' : 'text-content-tertiary hover:bg-surface-900'}" onmouseenter={() => (quickIndex = index)} onclick={() => void chooseQuickFile(file)}>
               <FileCode2 size={12} class="shrink-0 opacity-65" />
               <span class="min-w-0 flex-1 truncate text-xs">{file.path.split("/").pop()}</span>
-              <span class="min-w-0 max-w-[60%] truncate font-mono text-[9px] text-content-faint">{file.path}</span>
+              <span class="min-w-0 max-w-[60%] truncate font-mono text-chrome-xs text-content-faint">{file.path}</span>
             </button>
           {/each}
         {/if}
@@ -3584,8 +3508,8 @@
         <header class="flex items-center justify-between border-b border-surface-500/30 px-3 py-2">
           <div>
             <p class="text-xs font-medium text-surface-100">Choose the version to continue with</p>
-            <p class="font-mono text-[9px] text-content-quiet">{conflictTab.path}</p>
-            <p class="mt-0.5 text-[10px] text-content-quiet">Draft vs project — same comparison chrome as Review.</p>
+            <p class="font-mono text-chrome-xs text-content-quiet">{conflictTab.path}</p>
+            <p class="mt-0.5 text-chrome-sm text-content-quiet">Draft vs project — same comparison chrome as Review.</p>
           </div>
           <button type="button" class="rounded p-1 text-content-quiet hover:text-surface-100" aria-label="Close comparison" onclick={() => (comparingTabId = null)}><X size={13} /></button>
         </header>
@@ -3593,8 +3517,8 @@
           <DiffStack files={conflictFiles} mode="side" showJumpList={false} />
         </div>
         <footer class="flex justify-end gap-2 border-t border-surface-500/30 px-3 py-2">
-          <button type="button" class="rounded px-2 py-1 text-[10px] text-content-secondary hover:bg-surface-800" onclick={() => useProjectVersion(conflictTab)}>Use project version</button>
-          <button type="button" class="rounded bg-primary-500/80 px-2 py-1 text-[10px] font-medium text-white" onclick={() => keepDraft(conflictTab)}>Keep my draft</button>
+          <button type="button" class="rounded px-2 py-1 text-chrome-sm text-content-secondary hover:bg-surface-800" onclick={() => useProjectVersion(conflictTab)}>Use project version</button>
+          <button type="button" class="rounded bg-primary-500/80 px-2 py-1 text-chrome-sm font-medium text-white" onclick={() => keepDraft(conflictTab)}>Keep my draft</button>
         </footer>
       </div>
     </div>
@@ -3625,10 +3549,10 @@
       <header class="flex items-start justify-between gap-3 border-b border-surface-500/30 px-4 py-3">
         <div class="min-w-0">
           <p class="text-sm font-medium text-surface-100">Review refactor</p>
-          <p class="mt-0.5 text-[10px] leading-relaxed text-content-quiet">
+          <p class="mt-0.5 text-chrome-sm leading-relaxed text-content-quiet">
             Nothing changes until you apply this preview. The workshop verifies every file snapshot and commits the complete edit atomically.
           </p>
-          <div class="mt-2 flex flex-wrap items-center gap-1.5 text-[9px] text-content-tertiary">
+          <div class="mt-2 flex flex-wrap items-center gap-1.5 text-chrome-xs text-content-tertiary">
             <span class="rounded bg-surface-800 px-1.5 py-0.5">{refactorPlan.operations.length} {refactorPlan.operations.length === 1 ? "operation" : "operations"}</span>
             {#if resourceOperationCount > 0}
               <span class="rounded bg-primary-950/60 px-1.5 py-0.5 text-primary-200">{resourceOperationCount} file {resourceOperationCount === 1 ? "operation" : "operations"}</span>
@@ -3647,7 +3571,7 @@
         ><X size={14} /></button>
       </header>
       {#if surfaceError}
-        <p class="shrink-0 border-b border-amber-500/30 bg-amber-950/25 px-4 py-2 text-[10px] text-amber-100">
+        <p class="shrink-0 border-b border-amber-500/30 bg-amber-950/25 px-4 py-2 text-chrome-sm text-amber-100">
           {humanizeForgeMessage(surfaceError)}
         </p>
       {/if}
@@ -3662,17 +3586,17 @@
         />
       </div>
       <footer class="flex items-center justify-between gap-3 border-t border-surface-500/30 px-4 py-3">
-        <p class="text-[9px] text-content-quiet">If any file changed since this preview was built, Apply stops without changing the project.</p>
+        <p class="text-chrome-xs text-content-quiet">If any file changed since this preview was built, Apply stops without changing the project.</p>
         <div class="flex shrink-0 items-center gap-2">
           <button
             type="button"
-            class="rounded px-2.5 py-1.5 text-[10px] text-content-tertiary hover:bg-surface-800 disabled:opacity-40"
+            class="rounded px-2.5 py-1.5 text-chrome-sm text-content-tertiary hover:bg-surface-800 disabled:opacity-40"
             disabled={refactorApplying}
             onclick={() => (refactorPreview = null)}
           >Cancel</button>
           <button
             type="button"
-            class="inline-flex items-center gap-1.5 rounded bg-primary-500/80 px-2.5 py-1.5 text-[10px] font-medium text-white hover:bg-primary-500 disabled:opacity-40"
+            class="inline-flex items-center gap-1.5 rounded bg-primary-500/80 px-2.5 py-1.5 text-chrome-sm font-medium text-white hover:bg-primary-500 disabled:opacity-40"
             disabled={refactorApplying}
             onclick={() => void applyRefactorPreview()}
           >{#if refactorApplying}<LoaderCircle size={11} class="animate-spin" />Applying…{:else}Apply refactor{/if}</button>
@@ -3705,7 +3629,7 @@
     <div class="relative w-full max-w-sm overflow-hidden rounded-lg border border-surface-500/50 bg-surface-950 shadow-2xl" role="dialog" aria-modal="true" aria-label="Rename symbol">
       <div class="border-b border-surface-500/30 px-3 py-2">
         <p class="text-xs font-medium text-surface-100">Rename symbol</p>
-        <p class="text-[10px] text-content-quiet">Applies across the project when the language server supports it.</p>
+        <p class="text-chrome-sm text-content-quiet">Applies across the project when the language server supports it.</p>
       </div>
       <div class="px-3 py-2.5">
         <input
@@ -3727,8 +3651,8 @@
         />
       </div>
       <footer class="flex justify-end gap-2 border-t border-surface-500/30 px-3 py-2">
-        <button type="button" class="rounded px-2 py-1 text-[10px] text-content-tertiary hover:bg-surface-800" onclick={cancelInlineRename}>Cancel</button>
-        <button type="button" class="rounded bg-primary-500/80 px-2 py-1 text-[10px] font-medium text-white disabled:opacity-40" disabled={!renameDraft.trim() || languageActionRunning} onclick={() => void commitInlineRename()}>Rename</button>
+        <button type="button" class="rounded px-2 py-1 text-chrome-sm text-content-tertiary hover:bg-surface-800" onclick={cancelInlineRename}>Cancel</button>
+        <button type="button" class="rounded bg-primary-500/80 px-2 py-1 text-chrome-sm font-medium text-white disabled:opacity-40" disabled={!renameDraft.trim() || languageActionRunning} onclick={() => void commitInlineRename()}>Rename</button>
       </footer>
     </div>
   </div>
@@ -3758,12 +3682,18 @@
     }
     if (command && event.shiftKey && event.key.toLowerCase() === "s") {
       event.preventDefault();
-      void saveAll();
+      if (canInvokeCodeSaveShortcut({ editable, canBeginEdit })) void saveAll();
       return;
     }
     if (command && event.key.toLowerCase() === "s") {
       event.preventDefault();
-      if (activeTab && codeWorkspace.isDirty(activeTab)) void saveTab(activeTab);
+      if (
+        canInvokeCodeSaveShortcut({ editable, canBeginEdit }) &&
+        activeTab &&
+        codeWorkspace.isDirty(activeTab)
+      ) {
+        void saveTab(activeTab);
+      }
       return;
     }
     if (command && event.key === "`") {

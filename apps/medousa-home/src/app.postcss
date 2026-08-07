@@ -27,6 +27,11 @@
     /* Legacy font multipliers stay at 1; real UI zoom is Tauri webview setZoom
        (see contentZoom.ts). Never put CSS zoom on individual scroll hosts. */
     --content-zoom: 1;
+    /* Chrome typography scale — dense UI chrome (toolbars, status, menus).
+       Floor is 11px; pairs with Tailwind `text-chrome-*` utilities. */
+    --chrome-xs: 11px;
+    --chrome-sm: 12px;
+    --chrome-md: 13px;
   }
 
   /* App-wide Lucide weight. Overrides per-icon stroke-width attrs (charts stay untouched). */

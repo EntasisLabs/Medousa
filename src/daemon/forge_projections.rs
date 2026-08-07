@@ -8,7 +8,8 @@ use chrono::{DateTime, Utc};
 use medousa_forge::events::{EventPayload, SideEffect};
 use medousa_forge::forge::Forge;
 use medousa_forge::model::{
-    ActorKind, AttemptId, AttemptState, EvidenceId, EvidenceManifest, WorkItem, WorkState,
+    ActorKind, AttemptId, AttemptState, EvidenceId, EvidenceManifest, ReviewComment, WorkItem,
+    WorkState,
 };
 use serde::Serialize;
 
@@ -138,6 +139,15 @@ pub struct ReviewVerification {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct ReviewIssue {
+    pub id: String,
+    pub message: String,
+    /// `high` | `attention` | `info`
+    pub severity: String,
+    pub blocks_approval: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct ReviewSynthesis {
     pub outcome: String,
     pub status: String,
@@ -146,7 +156,14 @@ pub struct ReviewSynthesis {
     pub risk_summary: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub verification: Option<ReviewVerification>,
+    /// Flat message list retained for older clients.
     pub unresolved_issues: Vec<String>,
+    /// Severity-ranked issues; risk/status/blocking all derive from this list.
+    #[serde(default)]
+    pub issues: Vec<ReviewIssue>,
+    /// True when any issue has `blocks_approval`.
+    #[serde(default)]
+    pub blocks_approval: bool,
     pub recommended_next_action: String,
 }
 
@@ -160,6 +177,13 @@ pub struct ReviewAttribution {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ended_at: Option<DateTime<Utc>>,
     pub files: Vec<String>,
+    /// Number of attempts/contributions collapsed into this chip.
+    #[serde(default, skip_serializing_if = "is_one")]
+    pub count: u32,
+}
+
+fn is_one(value: &u32) -> bool {
+    *value == 1
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -172,6 +196,73 @@ pub struct ReviewTimelineEntry {
     pub detail: Option<String>,
     pub actor_kind: String,
     pub actor_label: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ReviewCommentProjection {
+    pub id: String,
+    pub thread_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<String>,
+    pub evidence_id: String,
+    pub attempt_id: String,
+    pub path: String,
+    pub side: String,
+    pub start_line: u32,
+    pub end_line: u32,
+    pub anchor_digest: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor_text: Option<String>,
+    pub body: String,
+    pub actor_kind: String,
+    pub actor_id: String,
+    pub created_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolved_at: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolved_by_kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolved_by_id: Option<String>,
+}
+
+impl ReviewCommentProjection {
+    pub fn from_comment(comment: &ReviewComment) -> Self {
+        Self {
+            id: comment.id.as_str().to_owned(),
+            thread_id: comment.thread_id.as_str().to_owned(),
+            parent_id: comment.parent_id.as_ref().map(|id| id.as_str().to_owned()),
+            evidence_id: comment.evidence_id.as_str().to_owned(),
+            attempt_id: comment.attempt_id.as_str().to_owned(),
+            path: comment.path.clone(),
+            side: comment.side.clone(),
+            start_line: comment.start_line,
+            end_line: comment.end_line,
+            anchor_digest: comment.anchor_digest.clone(),
+            anchor_text: comment.anchor_text.clone(),
+            body: comment.body.clone(),
+            actor_kind: match comment.actor.kind {
+                ActorKind::User => "user",
+                ActorKind::Profile => "profile",
+                ActorKind::System => "system",
+            }
+            .into(),
+            actor_id: comment.actor.id.clone(),
+            created_at: comment.created_at,
+            resolved_at: comment.resolved_at,
+            resolved_by_kind: comment.resolved_by.as_ref().map(|actor| {
+                match actor.kind {
+                    ActorKind::User => "user",
+                    ActorKind::Profile => "profile",
+                    ActorKind::System => "system",
+                }
+                .into()
+            }),
+            resolved_by_id: comment
+                .resolved_by
+                .as_ref()
+                .map(|actor| actor.id.clone()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -198,6 +289,13 @@ pub struct ReviewProjection {
     pub synthesis: ReviewSynthesis,
     pub attribution: Vec<ReviewAttribution>,
     pub timeline: Vec<ReviewTimelineEntry>,
+    pub comments: Vec<ReviewCommentProjection>,
+    pub unresolved_comment_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revision_brief: Option<String>,
+    /// Paths that differ from the previously reviewed attempt (after request-changes).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changed_since_previous: Vec<String>,
     pub truncated: bool,
     pub base_advanced: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -362,114 +460,21 @@ pub fn build_review_for_attempt(
                     .unwrap_or(0)
         })
         .unwrap_or(0);
-    let mut unresolved_issues = Vec::new();
-    if base_advanced {
-        unresolved_issues
-            .push("The starting branch changed while this work was in progress.".into());
-    }
-    if truncated {
-        unresolved_issues
-            .push("Some evidence was shortened by the configured capture limits.".into());
-    }
-    if compact_receipt_rejections > 0 {
-        unresolved_issues.push(format!(
-            "{compact_receipt_rejections} compact evidence receipt{} could not be validated at seal.",
-            if compact_receipt_rejections == 1 { "" } else { "s" }
-        ));
-    }
-    if policy_issues > 0 {
-        unresolved_issues.push(format!(
-            "{policy_issues} policy or content risk{} need review.",
-            if policy_issues == 1 { "" } else { "s" }
-        ));
-    }
-    if verification.as_ref().is_some_and(|result| !result.success) {
-        unresolved_issues.push("The latest project check did not pass.".into());
-    } else if verification.is_none() {
-        unresolved_issues.push("No project check was recorded for this revision.".into());
-    }
-    let risk = if policy_issues > 0 || base_advanced {
-        "attention"
-    } else if verification.as_ref().is_some_and(|result| !result.success) {
-        "high"
-    } else {
-        "low"
-    };
-    let status = if unresolved_issues.is_empty() {
-        "ready"
-    } else if verification.as_ref().is_some_and(|result| !result.success) || policy_issues > 0 {
-        "needs_attention"
-    } else {
-        "review"
-    };
-    let synthesis = ReviewSynthesis {
-        outcome: item.brief.clone(),
-        status: status.into(),
-        status_summary: match status {
-            "ready" => "The intended change is ready for your decision.",
-            "needs_attention" => "A recorded result deserves your attention before finishing.",
-            _ => "The changes are ready to inspect; one confirmation remains.",
-        }
-        .into(),
-        risk: risk.into(),
-        risk_summary: match risk {
-            "high" => "Verification failed; inspect the affected code before continuing.",
-            "attention" => "Forge found a branch or policy condition that needs a human decision.",
-            _ => "Forge found no recorded policy or branch risks.",
-        }
-        .into(),
-        verification,
-        unresolved_issues,
-        recommended_next_action: match status {
-            "ready" => "Approve the revision or inspect any file that matters to you.",
-            "needs_attention" => {
-                "Open the highlighted evidence, then revise or approve explicitly."
-            }
-            _ => "Inspect the changed files and decide whether to finish or revise.",
-        }
-        .into(),
-    };
+
+    let empty_seal = evidence_id.is_some() && changed_files.is_empty();
+    let issues = collect_review_issues(
+        base_advanced,
+        truncated,
+        compact_receipt_rejections,
+        policy_issues,
+        verification.as_ref(),
+        empty_seal,
+    );
+    let synthesis = synthesize_review(item.brief.clone(), verification, issues);
+
     let sealed_attempt_id = sealed_attempt.map(|attempt| attempt.id.as_str());
     let changed_paths: Vec<String> = changed_files.iter().map(|file| file.path.clone()).collect();
-    let mut attribution: Vec<ReviewAttribution> = item
-        .attempts
-        .iter()
-        .map(|attempt| {
-            let executor = attempt.executor.kind.trim().to_ascii_lowercase();
-            let kind = match executor.as_str() {
-                "human" => "human",
-                "terminal" => "terminal",
-                "codex" | "cursor" | "agent" | "script" => "agent",
-                _ => "agent",
-            };
-            ReviewAttribution {
-                id: attempt.id.as_str().to_owned(),
-                kind: kind.into(),
-                label: match executor.as_str() {
-                    "human" => "You".into(),
-                    "terminal" => "Terminal".into(),
-                    "codex" => "Codex".into(),
-                    "cursor" => "Cursor".into(),
-                    "script" => "Automation".into(),
-                    _ => attempt.executor.kind.clone(),
-                },
-                state: match attempt.state {
-                    AttemptState::Running => "working",
-                    AttemptState::Completed => "finished",
-                    AttemptState::Interrupted => "paused",
-                    AttemptState::Failed => "needs attention",
-                }
-                .into(),
-                started_at: attempt.started_at,
-                ended_at: attempt.ended_at,
-                files: if sealed_attempt_id == Some(attempt.id.as_str()) {
-                    changed_paths.clone()
-                } else {
-                    Vec::new()
-                },
-            }
-        })
-        .collect();
+    let mut attribution = collect_attribution(item, sealed_attempt_id, &changed_paths);
     if synthesis.verification.is_some() {
         attribution.push(ReviewAttribution {
             id: "verification".into(),
@@ -490,9 +495,55 @@ pub fn build_review_for_attempt(
                 .unwrap_or(item.updated_at),
             ended_at: None,
             files: Vec::new(),
+            count: 1,
         });
     }
     let timeline = build_timeline(forge, item);
+
+    let evidence_id_ref = evidence_id.as_ref();
+    let comments: Vec<ReviewCommentProjection> = item
+        .review_comments
+        .iter()
+        .filter(|comment| evidence_id_ref.is_none_or(|eid| &comment.evidence_id == eid))
+        .map(ReviewCommentProjection::from_comment)
+        .collect();
+    let unresolved_comment_count = comments
+        .iter()
+        .filter(|comment| comment.resolved_at.is_none())
+        .count();
+    let revision_brief = item
+        .changes_requested
+        .iter()
+        .rev()
+        .find(|request| evidence_id_ref.is_none_or(|eid| &request.evidence_id == eid))
+        .map(|request| request.revision_brief.clone())
+        .or_else(|| {
+            let unresolved: Vec<&ReviewComment> = item
+                .review_comments
+                .iter()
+                .filter(|comment| {
+                    comment.resolved_at.is_none()
+                        && evidence_id_ref.is_none_or(|eid| &comment.evidence_id == eid)
+                })
+                .collect();
+            if unresolved.is_empty() {
+                None
+            } else {
+                let brief = compose_revision_brief(unresolved, None);
+                if brief.trim().is_empty() {
+                    None
+                } else {
+                    Some(brief)
+                }
+            }
+        });
+
+    let changed_since_previous = changed_since_previous_paths(
+        forge,
+        item,
+        sealed_attempt.map(|a| a.id.as_str()),
+        &changed_files,
+    );
 
     ReviewProjection {
         work_id: item.id.as_str().to_owned(),
@@ -511,6 +562,10 @@ pub fn build_review_for_attempt(
         synthesis,
         attribution,
         timeline,
+        comments,
+        unresolved_comment_count,
+        revision_brief,
+        changed_since_previous,
         truncated,
         base_advanced,
         policy,
@@ -535,6 +590,280 @@ pub fn build_review_for_attempt(
         active_lease_generation: active.map(|l| l.generation),
         world: None,
     }
+}
+
+fn issue(
+    id: &str,
+    message: impl Into<String>,
+    severity: &str,
+    blocks_approval: bool,
+) -> ReviewIssue {
+    ReviewIssue {
+        id: id.into(),
+        message: message.into(),
+        severity: severity.into(),
+        blocks_approval,
+    }
+}
+
+/// Build a severity-ranked issue list. Risk, status, summary copy, and
+/// approval-blocking all derive from this list — never from parallel if-chains.
+pub fn collect_review_issues(
+    base_advanced: bool,
+    truncated: bool,
+    compact_receipt_rejections: u64,
+    policy_issues: usize,
+    verification: Option<&ReviewVerification>,
+    empty_seal: bool,
+) -> Vec<ReviewIssue> {
+    let mut issues = Vec::new();
+    if empty_seal {
+        issues.push(issue(
+            "empty_seal",
+            "This revision has no file changes to approve.",
+            "attention",
+            true,
+        ));
+    }
+    if verification.is_some_and(|result| !result.success) {
+        issues.push(issue(
+            "verification_failed",
+            "The latest project check did not pass.",
+            "high",
+            true,
+        ));
+    }
+    if policy_issues > 0 {
+        issues.push(issue(
+            "policy",
+            format!(
+                "{policy_issues} policy or content risk{} need review.",
+                if policy_issues == 1 { "" } else { "s" }
+            ),
+            "attention",
+            true,
+        ));
+    }
+    if base_advanced {
+        issues.push(issue(
+            "base_advanced",
+            "The starting branch changed while this work was in progress.",
+            "attention",
+            true,
+        ));
+    }
+    if truncated {
+        issues.push(issue(
+            "truncated",
+            "Some evidence was shortened by the configured capture limits.",
+            "attention",
+            false,
+        ));
+    }
+    if compact_receipt_rejections > 0 {
+        issues.push(issue(
+            "compact_receipts",
+            format!(
+                "{compact_receipt_rejections} compact evidence receipt{} could not be validated at seal.",
+                if compact_receipt_rejections == 1 {
+                    ""
+                } else {
+                    "s"
+                }
+            ),
+            "attention",
+            false,
+        ));
+    }
+    if verification.is_none() && !empty_seal {
+        issues.push(issue(
+            "verification_missing",
+            "No project check was recorded for this revision.",
+            "info",
+            false,
+        ));
+    }
+    issues
+}
+
+pub fn synthesize_review(
+    outcome: String,
+    verification: Option<ReviewVerification>,
+    issues: Vec<ReviewIssue>,
+) -> ReviewSynthesis {
+    let blocks_approval = issues.iter().any(|issue| issue.blocks_approval);
+    let risk = if issues.iter().any(|issue| issue.severity == "high") {
+        "high"
+    } else if issues
+        .iter()
+        .any(|issue| issue.severity == "attention" || issue.blocks_approval)
+    {
+        "attention"
+    } else {
+        "low"
+    };
+    let status = if issues.is_empty() {
+        "ready"
+    } else if blocks_approval || issues.iter().any(|issue| issue.severity == "high") {
+        "needs_attention"
+    } else {
+        "review"
+    };
+    let unresolved_issues: Vec<String> = issues.iter().map(|issue| issue.message.clone()).collect();
+    ReviewSynthesis {
+        outcome,
+        status: status.into(),
+        status_summary: match status {
+            "ready" => "The intended change is ready for your decision.",
+            "needs_attention" => "A recorded result deserves your attention before finishing.",
+            _ => "The changes are ready to inspect; one confirmation remains.",
+        }
+        .into(),
+        risk: risk.into(),
+        risk_summary: match risk {
+            "high" => "Verification failed; inspect the affected code before continuing.",
+            "attention" => "Forge found a branch or policy condition that needs a human decision.",
+            _ => "Forge found no recorded policy or branch risks.",
+        }
+        .into(),
+        verification,
+        unresolved_issues,
+        issues,
+        blocks_approval,
+        recommended_next_action: match status {
+            "ready" => "Approve the revision or inspect any file that matters to you.",
+            "needs_attention" => {
+                "Open the highlighted evidence, then revise or approve explicitly."
+            }
+            _ => "Inspect the changed files and decide whether to finish or revise.",
+        }
+        .into(),
+    }
+}
+
+
+fn changed_since_previous_paths(
+    forge: &Forge,
+    item: &WorkItem,
+    current_attempt_id: Option<&str>,
+    current_files: &[ChangedFileSummary],
+) -> Vec<String> {
+    let Some(current_id) = current_attempt_id else {
+        return Vec::new();
+    };
+    // Only meaningful after at least one ChangesRequested cycle.
+    if item.changes_requested.is_empty() {
+        return Vec::new();
+    }
+    let previous = item
+        .attempts
+        .iter()
+        .rev()
+        .find(|attempt| {
+            attempt.id.as_str() != current_id
+                && attempt.evidence_id.is_some()
+                && item
+                    .changes_requested
+                    .iter()
+                    .any(|request| request.attempt_id == attempt.id)
+        });
+    let Some(previous) = previous else {
+        return Vec::new();
+    };
+    let Some(evidence_id) = previous.evidence_id.as_ref() else {
+        return Vec::new();
+    };
+    let Some(dir) = evidence_dir(forge, item, evidence_id) else {
+        return Vec::new();
+    };
+    let Some(manifest) = load_manifest(&dir) else {
+        return Vec::new();
+    };
+    let previous_paths: std::collections::HashSet<&str> = manifest
+        .changed_files
+        .iter()
+        .map(|file| file.path.as_str())
+        .collect();
+    let current_paths: std::collections::HashSet<&str> =
+        current_files.iter().map(|file| file.path.as_str()).collect();
+    let mut out: Vec<String> = current_paths
+        .difference(&previous_paths)
+        .chain(previous_paths.difference(&current_paths))
+        .map(|path| (*path).to_owned())
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
+fn collect_attribution(
+    item: &WorkItem,
+    sealed_attempt_id: Option<&str>,
+    changed_paths: &[String],
+) -> Vec<ReviewAttribution> {
+    let mut grouped: Vec<ReviewAttribution> = Vec::new();
+    for attempt in &item.attempts {
+        let executor = attempt.executor.kind.trim().to_ascii_lowercase();
+        let kind = match executor.as_str() {
+            "human" => "human",
+            "terminal" => "terminal",
+            "codex" | "cursor" | "agent" | "script" => "agent",
+            _ => "agent",
+        };
+        let label = match executor.as_str() {
+            "human" => "You".into(),
+            "terminal" => "Terminal".into(),
+            "codex" => "Codex".into(),
+            "cursor" => "Cursor".into(),
+            "script" => "Automation".into(),
+            _ => attempt.executor.kind.clone(),
+        };
+        let state = match attempt.state {
+            AttemptState::Running => "working",
+            AttemptState::Completed => "finished",
+            AttemptState::Interrupted => "paused",
+            AttemptState::Failed => "needs attention",
+        };
+        let files = if sealed_attempt_id == Some(attempt.id.as_str()) {
+            changed_paths.to_vec()
+        } else {
+            Vec::new()
+        };
+        if let Some(existing) = grouped
+            .iter_mut()
+            .find(|entry| entry.kind == kind && entry.label == label)
+        {
+            existing.count = existing.count.saturating_add(1);
+            if attempt.started_at < existing.started_at {
+                existing.started_at = attempt.started_at;
+            }
+            if let Some(ended) = attempt.ended_at {
+                existing.ended_at = Some(match existing.ended_at {
+                    Some(prev) if prev > ended => prev,
+                    _ => ended,
+                });
+            }
+            if !files.is_empty() {
+                existing.files = files;
+                existing.state = state.into();
+                existing.id = attempt.id.as_str().to_owned();
+            } else if existing.state != "working" && state == "working" {
+                existing.state = state.into();
+            }
+            continue;
+        }
+        grouped.push(ReviewAttribution {
+            id: attempt.id.as_str().to_owned(),
+            kind: kind.into(),
+            label,
+            state: state.into(),
+            started_at: attempt.started_at,
+            ended_at: attempt.ended_at,
+            files,
+            count: 1,
+        });
+    }
+    grouped
 }
 
 fn review_candidates(forge: &Forge, item: &WorkItem) -> Vec<ReviewCandidateProjection> {
@@ -634,6 +963,26 @@ fn build_timeline(forge: &Forge, item: &WorkItem) -> Vec<ReviewTimelineEntry> {
                     ("evidence", "Revision prepared for review", None)
                 }
                 EventPayload::ReviewDecided { .. } => ("decision", "Changes approved", None),
+                EventPayload::ReviewCommentAdded { comment } => (
+                    "comment",
+                    "Comment added",
+                    Some(format!("{}:{}", comment.path, comment.start_line)),
+                ),
+                EventPayload::ReviewCommentResolved { .. } => {
+                    ("comment", "Comment resolved", None)
+                }
+                EventPayload::ReviewCommentDeleted { .. } => {
+                    ("comment", "Comment removed", None)
+                }
+                EventPayload::ChangesRequested { request } => (
+                    "decision",
+                    "Changes requested",
+                    if request.revision_brief.trim().is_empty() {
+                        None
+                    } else {
+                        Some(request.revision_brief.chars().take(200).collect())
+                    },
+                ),
                 EventPayload::DecisionInvalidated { reason, .. } => {
                     ("decision", "Approval set aside", Some(reason))
                 }
@@ -700,6 +1049,9 @@ pub fn project_item(mut item: WorkItem) -> ItemProjection {
 pub fn project_items(items: Vec<WorkItem>) -> Vec<ItemProjection> {
     items.into_iter().map(project_item).collect()
 }
+
+/// Re-export for callers/tests; builds a revision brief from comments + summary.
+pub use medousa_forge::model::compose_revision_brief;
 
 /// Paginate a text file by line range (1-based inclusive end optional).
 pub fn read_lines_page(
@@ -818,5 +1170,91 @@ mod tests {
                 .any(|file| file.path == "second.txt")
         );
         assert_ne!(selected.worktree, latest.worktree);
+    }
+
+    #[test]
+    fn compose_revision_brief_formats_path_anchor_and_summary() {
+        use medousa_forge::model::{
+            ActorKind, ActorRef, AttemptId, EvidenceId, ReviewComment, ReviewCommentId,
+        };
+
+        let comment = ReviewComment {
+            id: ReviewCommentId::new(),
+            thread_id: ReviewCommentId::new(),
+            parent_id: None,
+            evidence_id: EvidenceId::new(),
+            attempt_id: AttemptId::new(),
+            path: "src/lib.rs".into(),
+            side: "new".into(),
+            start_line: 42,
+            end_line: 42,
+            anchor_digest: medousa_forge::model::anchor_digest_for("fn main() {}"),
+            anchor_text: Some("fn main() {}".into()),
+            body: "Add error handling".into(),
+            actor: ActorRef {
+                kind: ActorKind::User,
+                id: "user-1".into(),
+            },
+            created_at: Utc::now(),
+            resolved_at: None,
+            resolved_by: None,
+        };
+        let brief = compose_revision_brief([&comment], Some("Please revise"));
+        assert!(brief.starts_with("Please revise"));
+        assert!(brief.contains("src/lib.rs:42 \"fn main() {}\""));
+        assert!(brief.contains("Add error handling"));
+    }
+
+    #[test]
+    fn base_advanced_alone_is_attention_and_blocks() {
+        let issues = collect_review_issues(true, false, 0, 0, None, false);
+        let synthesis = synthesize_review("brief".into(), None, issues);
+        assert_eq!(synthesis.risk, "attention");
+        assert_eq!(synthesis.status, "needs_attention");
+        assert!(synthesis.blocks_approval);
+        assert!(
+            synthesis
+                .status_summary
+                .contains("deserves your attention")
+        );
+    }
+
+    #[test]
+    fn verification_failure_is_high_risk() {
+        let verification = ReviewVerification {
+            label: "check".into(),
+            command: vec!["npm".into(), "test".into()],
+            success: false,
+            exit_code: Some(1),
+            duration_ms: Some(10),
+        };
+        let issues = collect_review_issues(false, false, 0, 0, Some(&verification), false);
+        let synthesis = synthesize_review("brief".into(), Some(verification), issues);
+        assert_eq!(synthesis.risk, "high");
+        assert_eq!(synthesis.status, "needs_attention");
+        assert!(synthesis.blocks_approval);
+    }
+
+    #[test]
+    fn missing_verification_alone_does_not_block() {
+        let issues = collect_review_issues(false, false, 0, 0, None, false);
+        let synthesis = synthesize_review("brief".into(), None, issues);
+        assert_eq!(synthesis.risk, "low");
+        assert_eq!(synthesis.status, "review");
+        assert!(!synthesis.blocks_approval);
+    }
+
+    #[test]
+    fn empty_seal_blocks_approval() {
+        let issues = collect_review_issues(false, false, 0, 0, None, true);
+        let synthesis = synthesize_review("brief".into(), None, issues);
+        assert!(synthesis.blocks_approval);
+        assert_eq!(synthesis.risk, "attention");
+        assert!(
+            synthesis
+                .unresolved_issues
+                .iter()
+                .any(|msg| msg.contains("no file changes"))
+        );
     }
 }

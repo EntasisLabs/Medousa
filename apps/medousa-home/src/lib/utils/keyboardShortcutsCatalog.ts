@@ -5,6 +5,7 @@ export type ShortcutCatalogGroupId =
   | "global"
   | "panes"
   | "code"
+  | "review"
   | "vault"
   | "browser"
   | "chat";
@@ -96,6 +97,16 @@ export const KEYBOARD_SHORTCUTS_CATALOG: ShortcutCatalogGroup[] = [
         keys: "literal:Ctrl+Tab",
         action: "Cycle Code file tabs in focused pane",
       },
+    ],
+  },
+  {
+    id: "review",
+    title: "Review",
+    entries: [
+      { id: "review-next-file", keys: "literal:n / j", action: "Next changed file" },
+      { id: "review-prev-file", keys: "literal:p / k", action: "Previous changed file" },
+      { id: "review-toggle-viewed", keys: "literal:v", action: "Toggle file viewed" },
+      { id: "review-comment", keys: "literal:.", action: "Add comment on focused file" },
     ],
   },
   {

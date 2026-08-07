@@ -1,6 +1,9 @@
 <script lang="ts">
-  import type { DiffHunk, DiffLine } from "$lib/diff/diffTypes";
+  import type { DiffHunk } from "$lib/diff/diffTypes";
   import { linesInRange, splitDiffFileLines } from "$lib/diff/diffTypes";
+  import { sideRowsForHunk, wordDiffParts } from "$lib/diff/wordDiff";
+  import DiffCodeLine from "./DiffCodeLine.svelte";
+  import { MessageSquarePlus } from "@lucide/svelte";
 
   interface Props {
     hunks: DiffHunk[];
@@ -9,8 +12,16 @@
     beforeText?: string | null;
     /** Full after-file text for real gap expansion. */
     afterText?: string | null;
+    languageHint?: string | null;
+    density?: "comfortable" | "compact";
     onRevertHunk?: (hunkIndex: number) => void;
     revertBusy?: boolean;
+    /** When set, shows a gutter comment affordance on hover. */
+    onComment?: (input: {
+      side: "new" | "old";
+      line: number;
+      content: string;
+    }) => void;
   }
 
   let {
@@ -18,8 +29,11 @@
     mode = "inline",
     beforeText = null,
     afterText = null,
+    languageHint = null,
+    density = "comfortable",
     onRevertHunk,
     revertBusy = false,
+    onComment,
   }: Props = $props();
 
   /** Expanded gap keys: "lead" | "between:i" */
@@ -28,15 +42,6 @@
   const beforeLines = $derived(splitDiffFileLines(beforeText));
   const afterLines = $derived(splitDiffFileLines(afterText));
   const canExpandReal = $derived(beforeLines.length > 0 || afterLines.length > 0);
-
-  type SideRow = {
-    key: string;
-    oldNumber?: number | null;
-    newNumber?: number | null;
-    oldContent: string;
-    newContent: string;
-    kind: string;
-  };
 
   function gapBefore(hunk: DiffHunk): number {
     if (hunk.new_start <= 1) return 0;
@@ -87,56 +92,44 @@
     };
   }
 
-  function sideRowsForHunk(hunk: DiffHunk): SideRow[] {
-    const rows: SideRow[] = [];
-    for (let index = 0; index < hunk.lines.length; ) {
-      const line = hunk.lines[index]!;
-      if (line.kind === "context") {
-        rows.push({
-          key: `${hunk.old_start}:${hunk.new_start}:context:${index}`,
-          oldNumber: line.old_line,
-          newNumber: line.new_line,
-          oldContent: line.content,
-          newContent: line.content,
-          kind: "context",
-        });
-        index += 1;
-        continue;
-      }
-      const block: DiffLine[] = [];
-      while (index < hunk.lines.length && hunk.lines[index]!.kind !== "context") {
-        block.push(hunk.lines[index]!);
-        index += 1;
-      }
-      const deletions = block.filter((entry) => entry.kind === "deletion");
-      const additions = block.filter((entry) => entry.kind === "addition");
-      for (let offset = 0; offset < Math.max(deletions.length, additions.length); offset += 1) {
-        const oldLine = deletions[offset];
-        const newLine = additions[offset];
-        rows.push({
-          key: `${hunk.old_start}:${hunk.new_start}:change:${index}:${offset}`,
-          oldNumber: oldLine?.old_line,
-          newNumber: newLine?.new_line,
-          oldContent: oldLine?.content ?? "",
-          newContent: newLine?.content ?? "",
-          kind: oldLine && newLine ? "replacement" : oldLine ? "deletion" : "addition",
-        });
-      }
-    }
-    return rows;
-  }
-
   function linePrefix(kind: string): string {
     if (kind === "addition") return "+";
     if (kind === "deletion") return "−";
     return " ";
+  }
+
+  function inlineWordParts(kind: string, content: string, peer?: string | null) {
+    if ((kind !== "addition" && kind !== "deletion") || !peer) return null;
+    const parts = wordDiffParts(
+      kind === "deletion" ? content : peer,
+      kind === "addition" ? content : peer,
+    );
+    return kind === "deletion" ? parts.before : parts.after;
+  }
+
+  function peerForInline(hunkLines: DiffHunk["lines"], index: number): string | null {
+    const line = hunkLines[index]!;
+    if (line.kind === "deletion") {
+      // Find nearest following addition in the change block.
+      for (let i = index + 1; i < hunkLines.length; i += 1) {
+        if (hunkLines[i]!.kind === "context") break;
+        if (hunkLines[i]!.kind === "addition") return hunkLines[i]!.content;
+      }
+    }
+    if (line.kind === "addition") {
+      for (let i = index - 1; i >= 0; i -= 1) {
+        if (hunkLines[i]!.kind === "context") break;
+        if (hunkLines[i]!.kind === "deletion") return hunkLines[i]!.content;
+      }
+    }
+    return null;
   }
 </script>
 
 {#if hunks.length === 0}
   <div class="diff-empty">No textual differences to show.</div>
 {:else if mode === "inline"}
-  <div class="diff-view diff-view--inline">
+  <div class="diff-view diff-view--inline" class:diff-view--compact={density === "compact"}>
     {#each hunks as hunk, hi (`${hunk.old_start}:${hunk.new_start}:${hi}`)}
       {#if hi === 0}
         {@const lead = gapBefore(hunk)}
@@ -155,7 +148,7 @@
                     <span class="diff-line diff-line--context">
                       <span class="diff-gutter"></span>
                       <span class="diff-gutter">{row.line}</span>
-                      <code> {row.content}</code>
+                      <DiffCodeLine content={row.content} {languageHint} prefix=" " />
                     </span>
                   {:else}
                     <span class="diff-gap-expanded">{lead} unmodified lines</span>
@@ -187,7 +180,7 @@
                     <span class="diff-line diff-line--context">
                       <span class="diff-gutter"></span>
                       <span class="diff-gutter">{row.line}</span>
-                      <code> {row.content}</code>
+                      <DiffCodeLine content={row.content} {languageHint} prefix=" " />
                     </span>
                   {:else}
                     <span class="diff-gap-expanded">{gap} unmodified lines</span>
@@ -218,16 +211,36 @@
         {/if}
       </div>
       {#each hunk.lines as line, index (`${line.old_line ?? ""}:${line.new_line ?? ""}:${index}`)}
-        <div class="diff-line diff-line--{line.kind}">
+        {@const peer = peerForInline(hunk.lines, index)}
+        <div class="diff-line diff-line--{line.kind}" data-diff-line={line.new_line ?? line.old_line ?? ""}>
           <span class="diff-gutter">{line.old_line ?? ""}</span>
           <span class="diff-gutter">{line.new_line ?? ""}</span>
-          <code>{linePrefix(line.kind)}{line.content}</code>
+          <DiffCodeLine
+            content={line.content}
+            {languageHint}
+            prefix={linePrefix(line.kind)}
+            parts={inlineWordParts(line.kind, line.content, peer)}
+          />
+          {#if onComment && (line.new_line || line.old_line)}
+            <button
+              type="button"
+              class="diff-line-comment"
+              title="Add comment"
+              aria-label="Add comment on line {line.new_line ?? line.old_line}"
+              onclick={() =>
+                onComment({
+                  side: line.new_line ? "new" : "old",
+                  line: (line.new_line ?? line.old_line)!,
+                  content: line.content,
+                })}
+            ><MessageSquarePlus size={11} /></button>
+          {/if}
         </div>
       {/each}
     {/each}
   </div>
 {:else}
-  <div class="diff-view diff-view--side">
+  <div class="diff-view diff-view--side" class:diff-view--compact={density === "compact"}>
     <div class="diff-side-labels"><span>Before</span><span>After</span></div>
     {#each hunks as hunk, hi (`${hunk.old_start}:${hunk.new_start}:side:${hi}`)}
       {#if hi === 0}
@@ -247,11 +260,11 @@
                     <span class="diff-side-row">
                       <div>
                         <span class="diff-gutter">{rows.before[i]?.line ?? ""}</span>
-                        <code>{rows.before[i]?.content ?? row.content}</code>
+                        <DiffCodeLine content={rows.before[i]?.content ?? row.content} {languageHint} />
                       </div>
                       <div>
                         <span class="diff-gutter">{row.line}</span>
-                        <code>{row.content}</code>
+                        <DiffCodeLine content={row.content} {languageHint} />
                       </div>
                     </span>
                   {:else}
@@ -284,11 +297,11 @@
                     <span class="diff-side-row">
                       <div>
                         <span class="diff-gutter">{rows.before[i]?.line ?? ""}</span>
-                        <code>{rows.before[i]?.content ?? row.content}</code>
+                        <DiffCodeLine content={rows.before[i]?.content ?? row.content} {languageHint} />
                       </div>
                       <div>
                         <span class="diff-gutter">{row.line}</span>
-                        <code>{row.content}</code>
+                        <DiffCodeLine content={row.content} {languageHint} />
                       </div>
                     </span>
                   {:else}
@@ -317,15 +330,29 @@
         </div>
       {/if}
 
-      {#each sideRowsForHunk(hunk) as row (row.key)}
-        <div class="diff-side-row">
+      {#each sideRowsForHunk(`${hunk.old_start}:${hunk.new_start}:${hi}`, hunk.lines) as row (row.key)}
+        <div class="diff-side-row" data-diff-line={row.newNumber ?? row.oldNumber ?? ""}>
           <div class:diff-side-old={row.kind === "deletion" || row.kind === "replacement"}>
             <span class="diff-gutter">{row.oldNumber ?? ""}</span>
-            <code>{row.oldContent}</code>
+            <DiffCodeLine content={row.oldContent} {languageHint} parts={row.oldParts} />
           </div>
           <div class:diff-side-new={row.kind === "addition" || row.kind === "replacement"}>
             <span class="diff-gutter">{row.newNumber ?? ""}</span>
-            <code>{row.newContent}</code>
+            <DiffCodeLine content={row.newContent} {languageHint} parts={row.newParts} />
+            {#if onComment && (row.newNumber || row.oldNumber)}
+              <button
+                type="button"
+                class="diff-line-comment"
+                title="Add comment"
+                aria-label="Add comment on line {row.newNumber ?? row.oldNumber}"
+                onclick={() =>
+                  onComment({
+                    side: row.newNumber ? "new" : "old",
+                    line: (row.newNumber ?? row.oldNumber)!,
+                    content: row.newContent || row.oldContent,
+                  })}
+              ><MessageSquarePlus size={11} /></button>
+            {/if}
           </div>
         </div>
       {/each}
@@ -337,8 +364,13 @@
   .diff-view {
     overflow: auto;
     font-family: var(--font-mono);
-    font-size: 0.625rem;
-    line-height: 1.15rem;
+    font-size: 0.75rem;
+    line-height: 1.35rem;
+  }
+
+  .diff-view--compact {
+    font-size: 0.6875rem;
+    line-height: 1.2rem;
   }
 
   .diff-empty {
@@ -389,8 +421,9 @@
   }
 
   .diff-line {
+    position: relative;
     display: grid;
-    grid-template-columns: 2.25rem 2.25rem minmax(0, 1fr);
+    grid-template-columns: 2.25rem 2.25rem minmax(0, 1fr) auto;
     color: rgb(var(--theme-text-tertiary));
   }
 
@@ -399,11 +432,6 @@
     color: rgb(var(--theme-text-faint));
     text-align: right;
     user-select: none;
-  }
-
-  .diff-view code {
-    padding: 0 0.6rem;
-    white-space: pre;
   }
 
   .diff-line--addition,
@@ -416,6 +444,33 @@
   .diff-side-old {
     background: rgb(var(--color-error-950) / 0.32);
     color: rgb(var(--theme-error));
+  }
+
+  .diff-line-comment {
+    position: absolute;
+    right: 0.25rem;
+    top: 50%;
+    transform: translateY(-50%);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    border: 0;
+    border-radius: 0.25rem;
+    background: rgb(var(--color-surface-800) / 0.9);
+    color: rgb(var(--theme-text-quiet));
+    cursor: pointer;
+  }
+
+  .diff-line:hover .diff-line-comment,
+  .diff-side-row:hover .diff-line-comment {
+    display: inline-flex;
+  }
+
+  .diff-line-comment:hover {
+    color: rgb(var(--theme-link));
+    background: rgb(var(--color-primary-500) / 0.12);
   }
 
   .diff-gap {
@@ -495,6 +550,7 @@
   }
 
   .diff-side-row > div {
+    position: relative;
     display: grid;
     grid-template-columns: 2.25rem minmax(0, 1fr);
     min-width: 0;

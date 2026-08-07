@@ -12,12 +12,13 @@ use crate::error::{ForgeError, Result};
 use crate::events::{EventPayload, OperationKind, SideEffect, TransitionEvent};
 use crate::git::{CheckpointAuthor, GitEngine};
 use crate::model::{
-    AcceptedDisposition, ActorKind, ActorRef, Attempt, AttemptState, CaptureRisk, ChangeStatus,
-    ChangedFile, CompactEvidenceReceipt, CompactEvidenceRetention, Digest, EvidenceId,
-    EvidenceManifest, ExecutionLease, ExecutorDescriptor, GitWorkTarget, GovernedEnv,
-    IntegrationStrategy, LeaseId, MODEL_SCHEMA_VERSION, OperationId, PolicyReport, PolicyViolation,
-    RawEvidenceDisposition, RecoveryDisposition, ReviewDecision, ReviewDecisionId, WorkId,
-    WorkItem, WorkPolicy, WorkState, WorkTarget,
+    AcceptedDisposition, ActorKind, ActorRef, Attempt, AttemptId, AttemptState, CaptureRisk,
+    ChangeStatus, ChangedFile, ChangesRequested, ChangesRequestedId, CompactEvidenceReceipt,
+    CompactEvidenceRetention, Digest, EvidenceId, EvidenceManifest, ExecutionLease,
+    ExecutorDescriptor, GitWorkTarget, GovernedEnv, IntegrationStrategy, LeaseId,
+    MODEL_SCHEMA_VERSION, OperationId, PolicyReport, PolicyViolation, RawEvidenceDisposition,
+    RecoveryDisposition, ReviewComment, ReviewCommentId, ReviewDecision, ReviewDecisionId, WorkId,
+    WorkItem, WorkPolicy, WorkState, WorkTarget, anchor_digest_for, compose_revision_brief,
 };
 use crate::store::FsWorkStore;
 
@@ -1429,6 +1430,15 @@ impl Forge {
         actor: &ActorRef,
     ) -> Result<WorkItem> {
         let _item_lock = self.store.lock_item(work_id)?;
+        self.reopen_for_changes_locked(work_id, reason, actor)
+    }
+
+    fn reopen_for_changes_locked(
+        &self,
+        work_id: &WorkId,
+        reason: &str,
+        actor: &ActorRef,
+    ) -> Result<WorkItem> {
         let mut item = self.load(work_id)?;
         expect_state(&item, WorkState::AwaitingReview, "request review changes")?;
         for decision in std::mem::take(&mut item.review_decisions) {
@@ -1443,6 +1453,283 @@ impl Forge {
         }
         self.transition(&mut item, WorkState::Ready, Some(reason.to_string()), actor)?;
         Ok(item)
+    }
+
+    /// Add a line-anchored review comment while the item awaits review.
+    pub fn add_review_comment(
+        &self,
+        work_id: &WorkId,
+        evidence_id: EvidenceId,
+        attempt_id: Option<AttemptId>,
+        path: impl Into<String>,
+        side: impl Into<String>,
+        start_line: u32,
+        end_line: u32,
+        anchor_text: Option<String>,
+        body: impl Into<String>,
+        parent_id: Option<ReviewCommentId>,
+        actor: &ActorRef,
+    ) -> Result<WorkItem> {
+        let _item_lock = self.store.lock_item(work_id)?;
+        let mut item = self.load(work_id)?;
+        expect_state(&item, WorkState::AwaitingReview, "add review comment")?;
+
+        let path = path.into();
+        let side = side.into();
+        let body = body.into();
+        if path.trim().is_empty() {
+            return Err(ForgeError::Store("review comment path is required".into()));
+        }
+        if side != "new" && side != "old" {
+            return Err(ForgeError::Store(
+                "review comment side must be \"new\" or \"old\"".into(),
+            ));
+        }
+        if start_line == 0 || end_line == 0 || end_line < start_line {
+            return Err(ForgeError::Store(
+                "review comment line range is invalid".into(),
+            ));
+        }
+        if body.trim().is_empty() {
+            return Err(ForgeError::Store("review comment body is required".into()));
+        }
+
+        let attempt = match attempt_id {
+            Some(id) => item.attempt(&id).ok_or_else(|| ForgeError::AttemptNotFound(id))?,
+            None => item
+                .attempts
+                .iter()
+                .rev()
+                .find(|a| a.evidence_id.as_ref() == Some(&evidence_id))
+                .ok_or_else(|| {
+                    ForgeError::Store("evidence_id does not match a sealed attempt".into())
+                })?,
+        };
+        if attempt.evidence_id.as_ref() != Some(&evidence_id) {
+            return Err(ForgeError::Store(
+                "attempt does not own the given evidence_id".into(),
+            ));
+        }
+        let attempt_id = attempt.id.clone();
+
+        let id = ReviewCommentId::new();
+        let (thread_id, parent_id) = if let Some(parent_id) = parent_id {
+            let parent = item
+                .review_comments
+                .iter()
+                .find(|c| c.id == parent_id)
+                .ok_or_else(|| ForgeError::Store(format!("parent comment {parent_id} not found")))?;
+            if parent.evidence_id != evidence_id {
+                return Err(ForgeError::Store(
+                    "parent comment belongs to different evidence".into(),
+                ));
+            }
+            (parent.thread_id.clone(), Some(parent_id))
+        } else {
+            (id.clone(), None)
+        };
+
+        let anchor_digest = anchor_text
+            .as_deref()
+            .map(anchor_digest_for)
+            .unwrap_or_default();
+        let comment = ReviewComment {
+            id,
+            thread_id,
+            parent_id,
+            evidence_id,
+            attempt_id,
+            path,
+            side,
+            start_line,
+            end_line,
+            anchor_digest,
+            anchor_text,
+            body,
+            actor: actor.clone(),
+            created_at: Utc::now(),
+            resolved_at: None,
+            resolved_by: None,
+        };
+        item.review_comments.push(comment.clone());
+        self.store.append(
+            &item.id,
+            actor,
+            EventPayload::ReviewCommentAdded {
+                comment: Box::new(comment),
+            },
+        )?;
+        self.persist_fresh(&mut item)?;
+        Ok(item)
+    }
+
+    /// Mark a review comment resolved.
+    pub fn resolve_review_comment(
+        &self,
+        work_id: &WorkId,
+        comment_id: &ReviewCommentId,
+        actor: &ActorRef,
+    ) -> Result<WorkItem> {
+        let _item_lock = self.store.lock_item(work_id)?;
+        let mut item = self.load(work_id)?;
+        let comment = item
+            .review_comments
+            .iter_mut()
+            .find(|c| &c.id == comment_id)
+            .ok_or_else(|| ForgeError::Store(format!("review comment {comment_id} not found")))?;
+        let resolved_at = Utc::now();
+        comment.resolved_at = Some(resolved_at);
+        comment.resolved_by = Some(actor.clone());
+        self.store.append(
+            &item.id,
+            actor,
+            EventPayload::ReviewCommentResolved {
+                comment_id: comment_id.clone(),
+                resolved_by: actor.clone(),
+                resolved_at,
+            },
+        )?;
+        self.persist_fresh(&mut item)?;
+        Ok(item)
+    }
+
+    /// Update a review comment body (re-appends as ReviewCommentAdded upsert).
+    pub fn update_review_comment_body(
+        &self,
+        work_id: &WorkId,
+        comment_id: &ReviewCommentId,
+        body: impl Into<String>,
+        actor: &ActorRef,
+    ) -> Result<WorkItem> {
+        let _item_lock = self.store.lock_item(work_id)?;
+        let mut item = self.load(work_id)?;
+        let body = body.into();
+        if body.trim().is_empty() {
+            return Err(ForgeError::Store("review comment body is required".into()));
+        }
+        let comment = item
+            .review_comments
+            .iter_mut()
+            .find(|c| &c.id == comment_id)
+            .ok_or_else(|| ForgeError::Store(format!("review comment {comment_id} not found")))?;
+        comment.body = body;
+        let updated = comment.clone();
+        self.store.append(
+            &item.id,
+            actor,
+            EventPayload::ReviewCommentAdded {
+                comment: Box::new(updated),
+            },
+        )?;
+        self.persist_fresh(&mut item)?;
+        Ok(item)
+    }
+
+    /// Delete a review comment.
+    pub fn delete_review_comment(
+        &self,
+        work_id: &WorkId,
+        comment_id: &ReviewCommentId,
+        actor: &ActorRef,
+    ) -> Result<WorkItem> {
+        let _item_lock = self.store.lock_item(work_id)?;
+        let mut item = self.load(work_id)?;
+        let before = item.review_comments.len();
+        item.review_comments.retain(|c| &c.id != comment_id);
+        if item.review_comments.len() == before {
+            return Err(ForgeError::Store(format!(
+                "review comment {comment_id} not found"
+            )));
+        }
+        self.store.append(
+            &item.id,
+            actor,
+            EventPayload::ReviewCommentDeleted {
+                comment_id: comment_id.clone(),
+            },
+        )?;
+        self.persist_fresh(&mut item)?;
+        Ok(item)
+    }
+
+    /// Record that changes were requested, then reopen the item to Ready.
+    pub fn request_changes(
+        &self,
+        work_id: &WorkId,
+        evidence_id: EvidenceId,
+        evidence_digest: Digest,
+        summary: Option<String>,
+        comment_ids: Option<Vec<ReviewCommentId>>,
+        actor: &ActorRef,
+    ) -> Result<WorkItem> {
+        let _item_lock = self.store.lock_item(work_id)?;
+        let mut item = self.load(work_id)?;
+        expect_state(&item, WorkState::AwaitingReview, "request changes")?;
+
+        let attempt = item
+            .attempts
+            .iter()
+            .rev()
+            .find(|a| a.evidence_id.as_ref() == Some(&evidence_id))
+            .ok_or_else(|| {
+                ForgeError::Store("evidence_id does not match a sealed attempt".into())
+            })?;
+        let attempt_id = attempt.id.clone();
+
+        if let Some(ids) = comment_ids.as_ref() {
+            for id in ids {
+                let found = item.review_comments.iter().any(|c| {
+                    &c.id == id && c.evidence_id == evidence_id
+                });
+                if !found {
+                    return Err(ForgeError::Store(format!(
+                        "review comment {id} not found for evidence"
+                    )));
+                }
+            }
+        }
+
+        let unresolved: Vec<&ReviewComment> = item
+            .review_comments
+            .iter()
+            .filter(|c| c.evidence_id == evidence_id && c.resolved_at.is_none())
+            .collect();
+        let revision_brief = compose_revision_brief(unresolved, summary.as_deref());
+        let selected_ids = comment_ids.unwrap_or_else(|| {
+            item.review_comments
+                .iter()
+                .filter(|c| c.evidence_id == evidence_id && c.resolved_at.is_none())
+                .map(|c| c.id.clone())
+                .collect()
+        });
+
+        let request = ChangesRequested {
+            id: ChangesRequestedId::new(),
+            actor: actor.clone(),
+            attempt_id,
+            evidence_id,
+            evidence_digest,
+            comment_ids: selected_ids,
+            summary,
+            revision_brief: revision_brief.clone(),
+            decided_at: Utc::now(),
+        };
+        item.changes_requested.push(request.clone());
+        self.store.append(
+            &item.id,
+            actor,
+            EventPayload::ChangesRequested {
+                request: Box::new(request),
+            },
+        )?;
+        self.persist_fresh(&mut item)?;
+
+        let reason = if revision_brief.trim().is_empty() {
+            "Changes requested".to_owned()
+        } else {
+            revision_brief
+        };
+        self.reopen_for_changes_locked(work_id, &reason, actor)
     }
 
     /// Evidence-bound re-verification — the authorization boundary. Approval
@@ -1754,6 +2041,34 @@ pub fn fold(events: &[TransitionEvent]) -> Result<WorkItem> {
             }
             EventPayload::ReviewDecided { decision } => {
                 item.review_decisions.push((**decision).clone());
+            }
+            EventPayload::ReviewCommentAdded { comment } => {
+                if let Some(existing) = item
+                    .review_comments
+                    .iter_mut()
+                    .find(|c| c.id == comment.id)
+                {
+                    *existing = (**comment).clone();
+                } else {
+                    item.review_comments.push((**comment).clone());
+                }
+            }
+            EventPayload::ReviewCommentResolved {
+                comment_id,
+                resolved_by,
+                resolved_at,
+            } => {
+                if let Some(comment) = item.review_comments.iter_mut().find(|c| &c.id == comment_id)
+                {
+                    comment.resolved_at = Some(*resolved_at);
+                    comment.resolved_by = Some(resolved_by.clone());
+                }
+            }
+            EventPayload::ReviewCommentDeleted { comment_id } => {
+                item.review_comments.retain(|c| &c.id != comment_id);
+            }
+            EventPayload::ChangesRequested { request } => {
+                item.changes_requested.push((**request).clone());
             }
             EventPayload::DecisionInvalidated { decision_id, .. } => {
                 item.review_decisions.retain(|d| &d.id != decision_id);
@@ -2282,6 +2597,100 @@ mod tests {
         assert_eq!(reopened.state, WorkState::Ready);
         assert_eq!(forge.git().head_oid(&worktree).unwrap(), checkpoint);
         assert!(reopened.attempts.last().unwrap().evidence_id.is_some());
+    }
+
+    #[test]
+    fn review_comment_folds_onto_item() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let (item, _env, _sealed_head, manifest) = to_awaiting_review(&fx, &forge);
+        let evidence_id = manifest.evidence_id.clone();
+
+        let item = forge
+            .add_review_comment(
+                &item.id,
+                evidence_id.clone(),
+                None,
+                "feature.txt",
+                "new",
+                1,
+                1,
+                Some("shipped".into()),
+                "Please expand this",
+                None,
+                &actor(),
+            )
+            .unwrap();
+        assert_eq!(item.review_comments.len(), 1);
+        assert_eq!(item.review_comments[0].path, "feature.txt");
+        assert_eq!(
+            item.review_comments[0].anchor_digest,
+            anchor_digest_for("shipped")
+        );
+        assert_eq!(item.review_comments[0].thread_id, item.review_comments[0].id);
+
+        let events = forge.store().replay(&item.id).unwrap();
+        let folded = fold(&events).unwrap();
+        assert_eq!(folded.review_comments.len(), 1);
+        assert_eq!(folded.review_comments[0].body, "Please expand this");
+    }
+
+    #[test]
+    fn request_changes_records_and_reopens_to_ready() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let (item, _env, _sealed_head, manifest) = to_awaiting_review(&fx, &forge);
+        let evidence_id = manifest.evidence_id.clone();
+        let evidence_digest = manifest.bundle_digest.clone().unwrap();
+
+        let item = forge
+            .add_review_comment(
+                &item.id,
+                evidence_id.clone(),
+                None,
+                "feature.txt",
+                "new",
+                1,
+                1,
+                Some("shipped".into()),
+                "Needs a test",
+                None,
+                &actor(),
+            )
+            .unwrap();
+        let comment_id = item.review_comments[0].id.clone();
+
+        let item = forge
+            .request_changes(
+                &item.id,
+                evidence_id.clone(),
+                evidence_digest,
+                Some("Please revise".into()),
+                Some(vec![comment_id.clone()]),
+                &actor(),
+            )
+            .unwrap();
+
+        assert_eq!(item.state, WorkState::Ready);
+        assert_eq!(item.changes_requested.len(), 1);
+        assert_eq!(item.changes_requested[0].comment_ids, vec![comment_id]);
+        assert!(
+            item.changes_requested[0]
+                .revision_brief
+                .contains("Please revise")
+        );
+        assert!(
+            item.changes_requested[0]
+                .revision_brief
+                .contains("feature.txt:1")
+        );
+        assert!(item.review_decisions.is_empty());
+
+        let events = forge.store().replay(&item.id).unwrap();
+        let folded = fold(&events).unwrap();
+        assert_eq!(folded.state, WorkState::Ready);
+        assert_eq!(folded.changes_requested.len(), 1);
+        assert_eq!(folded.review_comments.len(), 1);
     }
 
     #[test]

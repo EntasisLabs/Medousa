@@ -1,15 +1,28 @@
 <script lang="ts">
-  import { FileCode2, FileQuestion, RotateCcw } from "@lucide/svelte";
+  import { Check, Eye, FileCode2, FileQuestion, RotateCcw } from "@lucide/svelte";
   import DiffHunkView from "./DiffHunkView.svelte";
   import { countDiffStats, type DiffFileSection } from "$lib/diff/diffTypes";
+  import { languageHintForPath } from "$lib/syntax/highlightDiffLine";
 
   interface Props {
     file: DiffFileSection;
     mode: "inline" | "side";
     busy?: boolean;
+    density?: "comfortable" | "compact";
+    collapsed?: boolean;
+    viewed?: boolean;
+    mountHunks?: boolean;
     onOpenFile?: (path: string, line?: number) => void;
     onRestore?: () => void;
     onRevertHunk?: (hunkIndex: number) => void;
+    onToggleCollapsed?: () => void;
+    onToggleViewed?: () => void;
+    onComment?: (input: {
+      path: string;
+      side: "new" | "old";
+      line: number;
+      content: string;
+    }) => void;
     /** Footer copy when restore is available. */
     restoreHint?: string;
     restoreLabel?: string;
@@ -19,9 +32,16 @@
     file,
     mode,
     busy = false,
+    density = "comfortable",
+    collapsed = false,
+    viewed = false,
+    mountHunks = true,
     onOpenFile,
     onRestore,
     onRevertHunk,
+    onToggleCollapsed,
+    onToggleViewed,
+    onComment,
     restoreHint = "The reviewed revision remains available as a recovery point.",
     restoreLabel = "Restore before this change…",
   }: Props = $props();
@@ -31,6 +51,8 @@
       ? { additions: file.additions, deletions: file.deletions }
       : countDiffStats(file.hunks),
   );
+
+  const languageHint = $derived(languageHintForPath(file.path));
 
   function fileName(path: string): string {
     return path.split("/").at(-1) || path;
@@ -73,12 +95,19 @@
   }
 
   const parent = $derived(parentPath(file.path));
-  const openLine = $derived(file.hunks[0]?.new_start && file.hunks[0].new_start > 0 ? file.hunks[0].new_start : 1);
+  const openLine = $derived(
+    file.hunks[0]?.new_start && file.hunks[0].new_start > 0 ? file.hunks[0].new_start : 1,
+  );
 </script>
 
-<article class="diff-file">
+<article class="diff-file" class:diff-file--viewed={viewed} class:diff-file--collapsed={collapsed}>
   <header class="diff-file-header">
-    <div class="diff-file-title">
+    <button
+      type="button"
+      class="diff-file-title"
+      onclick={() => onToggleCollapsed?.()}
+      aria-expanded={!collapsed}
+    >
       <span class="diff-file-icon"><FileCode2 size={14} /></span>
       <div class="diff-file-copy">
         <p>{fileName(file.path)}</p>
@@ -100,81 +129,104 @@
           {/if}
         </div>
       </div>
-    </div>
-    {#if onOpenFile && !file.binary}
-      <div class="diff-file-actions">
+    </button>
+    <div class="diff-file-actions">
+      {#if onToggleViewed}
+        <button
+          type="button"
+          class="diff-viewed"
+          class:diff-viewed--on={viewed}
+          aria-pressed={viewed}
+          title={viewed ? "Mark as not viewed" : "Mark as viewed"}
+          onclick={() => onToggleViewed()}
+        >{#if viewed}<Check size={12} />{:else}<Eye size={12} />{/if}</button>
+      {/if}
+      {#if onOpenFile && !file.binary}
         <button
           type="button"
           class="diff-open-code"
           onclick={() => onOpenFile?.(file.path, openLine)}
         >Open in Code</button>
-      </div>
-    {/if}
-  </header>
-
-  {#if file.binary}
-    <div class="diff-binary">
-      <span class="diff-binary-icon"><FileQuestion size={22} strokeWidth={1.5} /></span>
-      <div>
-        <p class="diff-binary-title">{binaryMessage(file.path).title}</p>
-        <p class="diff-binary-copy">{binaryMessage(file.path).copy}</p>
-      </div>
-      {#if file.baselineBytes != null || file.reviewedBytes != null || file.baselineExists != null || file.reviewedExists != null}
-        <dl class="diff-binary-facts">
-          <div>
-            <dt>Before</dt>
-            <dd>
-              {file.baselineExists === false
-                ? "Not present"
-                : typeof file.baselineBytes === "number"
-                  ? formatBytes(file.baselineBytes)
-                  : "—"}
-            </dd>
-          </div>
-          <div>
-            <dt>After</dt>
-            <dd>
-              {file.reviewedExists === false
-                ? "Removed"
-                : typeof file.reviewedBytes === "number"
-                  ? formatBytes(file.reviewedBytes)
-                  : "—"}
-            </dd>
-          </div>
-        </dl>
       {/if}
     </div>
-  {:else if file.hunks.length === 0}
-    <div class="diff-file-empty">
-      <p>No textual differences to show.</p>
-    </div>
-  {:else}
-    <DiffHunkView
-      hunks={file.hunks}
-      {mode}
-      beforeText={file.beforeText}
-      afterText={file.afterText}
-      onRevertHunk={onRevertHunk}
-      revertBusy={busy}
-    />
-  {/if}
+  </header>
 
-  {#if onRestore && !file.binary}
-    <footer class="diff-file-footer">
-      <p>
-        {#if file.conflict}
-          Resolve by restoring the project baseline, or edit markers in Code.
-        {:else}
-          {restoreHint}
+  {#if !collapsed}
+    {#if file.binary}
+      <div class="diff-binary">
+        <span class="diff-binary-icon"><FileQuestion size={22} strokeWidth={1.5} /></span>
+        <div>
+          <p class="diff-binary-title">{binaryMessage(file.path).title}</p>
+          <p class="diff-binary-copy">{binaryMessage(file.path).copy}</p>
+        </div>
+        {#if file.baselineBytes != null || file.reviewedBytes != null || file.baselineExists != null || file.reviewedExists != null}
+          <dl class="diff-binary-facts">
+            <div>
+              <dt>Before</dt>
+              <dd>
+                {file.baselineExists === false
+                  ? "Not present"
+                  : typeof file.baselineBytes === "number"
+                    ? formatBytes(file.baselineBytes)
+                    : "—"}
+              </dd>
+            </div>
+            <div>
+              <dt>After</dt>
+              <dd>
+                {file.reviewedExists === false
+                  ? "Removed"
+                  : typeof file.reviewedBytes === "number"
+                    ? formatBytes(file.reviewedBytes)
+                    : "—"}
+              </dd>
+            </div>
+          </dl>
         {/if}
-      </p>
-      <button
-        type="button"
-        class="diff-restore"
-        disabled={busy}
-        onclick={() => onRestore?.()}
-      ><RotateCcw size={12} />{restoreLabel}</button>
-    </footer>
+      </div>
+    {:else if file.hunks.length === 0}
+      <div class="diff-file-empty">
+        <p>No textual differences to show.</p>
+      </div>
+    {:else if mountHunks}
+      <DiffHunkView
+        hunks={file.hunks}
+        {mode}
+        {density}
+        languageHint={languageHint}
+        beforeText={file.beforeText}
+        afterText={file.afterText}
+        onRevertHunk={onRevertHunk}
+        revertBusy={busy}
+        onComment={
+          onComment
+            ? (input) => onComment({ path: file.path, ...input })
+            : undefined
+        }
+      />
+    {:else}
+      <div class="diff-file-empty">
+        <p>Scroll to load this comparison…</p>
+      </div>
+    {/if}
+
+    {#if onRestore && !file.binary}
+      <footer class="diff-file-footer">
+        <p>
+          {#if file.conflict}
+            Resolve by restoring the project baseline, or edit markers in Code.
+          {:else}
+            {restoreHint}
+          {/if}
+        </p>
+        <button
+          type="button"
+          class="diff-restore"
+          disabled={busy}
+          onclick={() => onRestore?.()}
+        ><RotateCcw size={12} />{restoreLabel}</button>
+      </footer>
+    {/if}
   {/if}
 </article>
 
@@ -184,6 +236,10 @@
     border-radius: 0.65rem;
     background: rgb(var(--color-surface-950) / 0.2);
     overflow: hidden;
+  }
+
+  .diff-file--viewed {
+    border-color: rgb(var(--color-success-500) / 0.22);
   }
 
   .diff-file-header {
@@ -196,12 +252,21 @@
     padding: 0.5rem 0.75rem;
   }
 
+  .diff-file--collapsed .diff-file-header {
+    border-bottom: 0;
+  }
+
   .diff-file-title {
     display: flex;
     min-width: 0;
     align-items: flex-start;
     gap: 0.55rem;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    text-align: left;
     color: rgb(var(--theme-text-tertiary));
+    cursor: pointer;
   }
 
   .diff-file-icon {
@@ -263,7 +328,8 @@
   }
 
   .diff-open-code,
-  .diff-restore {
+  .diff-restore,
+  .diff-viewed {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -276,7 +342,12 @@
     font-size: 0.625rem;
   }
 
-  .diff-open-code:hover {
+  .diff-viewed--on {
+    color: rgb(var(--theme-success));
+  }
+
+  .diff-open-code:hover,
+  .diff-viewed:hover {
     background: rgb(var(--color-primary-500) / 0.1);
     color: rgb(var(--theme-link));
   }

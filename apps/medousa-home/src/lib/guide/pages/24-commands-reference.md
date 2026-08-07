@@ -17,6 +17,7 @@ body: Pane bindings use a prefix — ⌘; on macOS, Ctrl+; elsewhere — then th
 | Action | macOS | Windows / Linux |
 |--------|-------|-----------------|
 | Open Spotlight | ⌘K | Ctrl+K |
+| Show All Commands (Spotlight >) | ⇧⌘P | Ctrl+Shift+P |
 | Toggle left rail | ⌘B | Ctrl+B |
 | Summon view toolbar | ⇧⌘. | Ctrl+Shift+. |
 | Zoom in / out | ⌘+ / ⌘− | Ctrl++ / Ctrl+− |
@@ -44,6 +45,7 @@ body: Pane bindings use a prefix — ⌘; on macOS, Ctrl+; elsewhere — then th
 | Action | macOS | Windows / Linux |
 |--------|-------|-----------------|
 | Quick Open file / symbol / line | ⌘P | Ctrl+P |
+| Search in files | ⇧⌘F | Ctrl+Shift+F |
 | Save focused file | ⌘S | Ctrl+S |
 | Save all modified files | ⇧⌘S | Ctrl+Shift+S |
 | Find in file | ⌘F | Ctrl+F |

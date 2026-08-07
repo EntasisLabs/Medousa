@@ -24,7 +24,7 @@
     {/if}
     <button
       type="button"
-      class="code-breadcrumb-seg max-w-36 shrink-0 truncate rounded px-1 py-0.5 text-left font-mono text-[11px] {segment.isFile
+      class="code-breadcrumb-seg max-w-36 shrink-0 truncate rounded px-1 py-0.5 text-left font-mono text-chrome-md {segment.isFile
         ? 'text-surface-100 hover:bg-surface-800'
         : 'text-content-tertiary hover:bg-surface-800 hover:text-surface-200'}"
       title={segment.path}
@@ -35,7 +35,7 @@
     <ChevronRight size={10} class="shrink-0 text-content-faint" aria-hidden="true" />
     <button
       type="button"
-      class="code-breadcrumb-seg max-w-40 shrink-0 truncate rounded px-1 py-0.5 text-left text-[11px] text-content-link/80 hover:bg-surface-800 hover:text-primary-200"
+      class="code-breadcrumb-seg max-w-40 shrink-0 truncate rounded px-1 py-0.5 text-left text-chrome-md text-content-link/80 hover:bg-surface-800 hover:text-primary-200"
       title={`Go to ${symbol.name}`}
       onclick={() => onSymbol?.(symbol.line)}
     >{symbol.name}</button>

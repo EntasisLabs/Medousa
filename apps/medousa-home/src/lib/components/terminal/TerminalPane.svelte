@@ -32,6 +32,7 @@
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { getUndertaking, heartbeatLease } from "$lib/forge";
   import { Search, X } from "@lucide/svelte";
+  import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
 
   interface Props {
     /** Workshop shell session id. Empty string = create a fresh session on mount. */
@@ -642,25 +643,37 @@
         aria-pressed={findOpen}
         onclick={() => toggleFind()}
       ><Search size={12} /></button>
-      <details class="relative">
-        <summary class="cursor-pointer list-none rounded px-2 py-0.5 text-[10px] text-white hover:bg-white/10 hover:text-white [&::-webkit-details-marker]:hidden">Sessions</summary>
-        <div class="absolute right-0 top-full z-30 mt-1 w-56 rounded border border-white/15 bg-[#171312] p-1 shadow-xl">
-          {#each sessions as session (session.session_id)}
-            <button
-              type="button"
-              class="block w-full truncate rounded px-2 py-1 text-left text-[10px] text-white hover:bg-white/10 hover:text-white"
-              title={session.cwd}
-              onclick={() => void switchSession(session.session_id)}
-            >
-              {session.work_id === workId ? "Project shell" : session.work_id ? "Another project" : "Shell"} · {session.cwd.split(/[\\/]/).filter(Boolean).pop() ?? session.cwd}
-            </button>
-          {/each}
-          {#if sessions.length === 0}
-            <p class="px-2 py-1 text-[10px] text-white">No other sessions</p>
-          {/if}
-          <p class="mt-1 border-t border-white/10 px-2 pt-1 font-mono text-[8px] text-white">Current {boundSessionId.slice(0, 8)}</p>
-        </div>
-      </details>
+      <OverflowMenu
+        label="Sessions"
+        title="Sessions"
+        panelClass="w-56 rounded border border-white/15 bg-[#171312] p-1 shadow-xl"
+      >
+        {#snippet trigger({ open, toggle })}
+          <button
+            type="button"
+            class="rounded px-2 py-0.5 text-chrome-sm text-white hover:bg-white/10 hover:text-white {open ? 'bg-white/10' : ''}"
+            aria-label="Sessions"
+            aria-expanded={open}
+            aria-haspopup="menu"
+            onclick={toggle}
+          >Sessions</button>
+        {/snippet}
+        {#each sessions as session (session.session_id)}
+          <button
+            type="button"
+            role="menuitem"
+            class="block w-full truncate rounded px-2 py-1 text-left text-chrome-sm text-white hover:bg-white/10 hover:text-white"
+            title={session.cwd}
+            onclick={() => void switchSession(session.session_id)}
+          >
+            {session.work_id === workId ? "Project shell" : session.work_id ? "Another project" : "Shell"} · {session.cwd.split(/[\\/]/).filter(Boolean).pop() ?? session.cwd}
+          </button>
+        {/each}
+        {#if sessions.length === 0}
+          <p class="px-2 py-1 text-chrome-sm text-white">No other sessions</p>
+        {/if}
+        <p class="mt-1 border-t border-white/10 px-2 pt-1 font-mono text-chrome-xs text-white">Current {boundSessionId.slice(0, 8)}</p>
+      </OverflowMenu>
       {#if !compact}
         <button
           type="button"

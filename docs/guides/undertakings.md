@@ -275,6 +275,13 @@ outside the Home text editor. Policy exceptions and risky content are called
 out before approval; an exception must be explicitly acknowledged. Applying
 an approved revision has its own confirmation boundary.
 
+Line comments live on the reviewed revision. Hover a changed line and add a
+comment, or press `.` while Review is focused. Open comments appear in the
+comment rail and are compiled into a **revision brief**. Choose **Request
+changes** to reopen the same project for another attempt; Medousa seeds the
+next agent draft with that brief. After a follow-up seal, Review highlights
+files that differ from the attempt that received your feedback.
+
 Understand can compare **Before** and **Current**. Search for a class, function,
 or other name, then inspect its possible impact or open its file and line in
 Code. Unavailable analyzers mean Medousa lacks evidence; they do not mean zero

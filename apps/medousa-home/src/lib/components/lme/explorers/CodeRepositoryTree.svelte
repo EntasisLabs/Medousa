@@ -686,10 +686,10 @@
         onclick={() => void load(false, true)}
       >Retry</button>
     {:else if building && visibleRows.length === 0}
-      <p class="px-3 py-2 text-[10px] text-content-quiet">Indexing files…</p>
+      <p class="px-3 py-2 text-[10px] text-content-quiet">Building file list…</p>
     {:else if !loading && !building && rows.length === 0}
       <p class="px-3 py-2 text-[10px] text-content-quiet">
-        {query ? "No matching files." : "There are no files to show yet."}
+        {query ? "No matching files." : "No files yet."}
       </p>
     {:else}
       <div class="min-h-0 flex-1 overflow-y-auto py-1 {fill ? '' : 'max-h-[min(46vh,32rem)]'}" role="tree" aria-label="Project files">
@@ -733,7 +733,7 @@
           </button>
         {/each}
         {#if building}
-          <p class="px-3 py-1 text-[9px] text-content-quiet">Indexing remaining files…</p>
+          <p class="px-3 py-1 text-[9px] text-content-quiet">Building remaining files…</p>
         {/if}
         {#if hiddenRowCount > 0}
           <p class="px-3 py-1 text-[9px] text-content-quiet">

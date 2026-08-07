@@ -26,7 +26,7 @@
 {#if open}
   <div class="flex h-52 shrink-0 flex-col border-t border-surface-500/35 bg-[#0c0a09] sm:h-56">
     <div class="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 px-2 py-0.5">
-      <span class="flex items-center gap-1.5 text-[10px] text-white">
+      <span class="flex items-center gap-1.5 text-chrome-sm text-white">
         <SquareTerminal size={11} />
         {title}
       </span>
@@ -34,7 +34,7 @@
         {#if onPopOut}
           <button
             type="button"
-            class="rounded px-1.5 py-0.5 text-[9px] text-white hover:bg-white/10 hover:text-white"
+            class="rounded px-1.5 py-0.5 text-chrome-xs text-white hover:bg-white/10 hover:text-white"
             onclick={onPopOut}
             title="Open as a full Terminal tab"
           >Pop out</button>
@@ -60,7 +60,7 @@
           <TerminalPane {sessionId} {workId} {title} {worktreeRoot} compact />
         {/key}
       {:else}
-        <p class="px-3 py-4 text-[10px] text-white">Opening workshop shell…</p>
+        <p class="px-3 py-4 text-chrome-sm text-white">Opening workshop shell…</p>
       {/if}
     </div>
   </div>
