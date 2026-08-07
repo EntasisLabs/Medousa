@@ -17,13 +17,22 @@
       line: number;
       content: string;
     }) => void;
+    onToggleCommentRail?: () => void;
   }
 
-  let { review, busy = false, onOpenFile, onRestore, onSelectCandidate, onComment }: Props =
-    $props();
+  let {
+    review,
+    busy = false,
+    onOpenFile,
+    onRestore,
+    onSelectCandidate,
+    onComment,
+    onToggleCommentRail,
+  }: Props = $props();
 
   let mode = $state<"inline" | "side">("inline");
   let density = $state<"comfortable" | "compact">("comfortable");
+  let wrap = $state(false);
   let loading = $state(false);
   let fileDiffs = $state<ReviewFileDiff[]>([]);
   let fileErrors = $state<Record<string, string>>({});
@@ -65,6 +74,16 @@
     orderedPaths.filter((path) => viewedPaths.includes(path)).length,
   );
 
+  const stackStats = $derived.by(() => {
+    let additions = 0;
+    let deletions = 0;
+    for (const file of stackFiles) {
+      additions += file.additions ?? 0;
+      deletions += file.deletions ?? 0;
+    }
+    return { additions, deletions };
+  });
+
   function toStackFile(diff: ReviewFileDiff): DiffFileSection {
     const stats = countDiffStats(diff.hunks);
     return {
@@ -92,6 +111,10 @@
 
   function densityStorageKey(): string {
     return "medousa-review-density";
+  }
+
+  function wrapStorageKey(): string {
+    return "medousa-review-wrap";
   }
 
   function loadViewed(evidenceId: string | null | undefined) {
@@ -135,20 +158,15 @@
     loading = true;
     fileDiffs = [];
     fileErrors = {};
-    // Stream: kick all loads, render as each resolves.
+    focusIndex = 0;
+    // Multi-file: inventory collapsed except the focused file.
+    collapsedPaths = paths.length > 1 ? paths.slice(1) : [];
     await Promise.all(
       paths.map(async (path) => {
         await loadFile(path, workId, attemptId, token);
       }),
     );
     if (token === loadToken) loading = false;
-
-    // Default collapse for large stacks: collapse files after the first 8.
-    if (paths.length > 12) {
-      collapsedPaths = paths.slice(8);
-    } else {
-      collapsedPaths = [];
-    }
   }
 
   $effect(() => {
@@ -163,6 +181,7 @@
     if (typeof localStorage === "undefined") return;
     const saved = localStorage.getItem(densityStorageKey());
     if (saved === "compact" || saved === "comfortable") density = saved;
+    wrap = localStorage.getItem(wrapStorageKey()) === "1";
   });
 
   async function restorePath(path: string) {
@@ -180,9 +199,13 @@
   }
 
   function toggleCollapsed(path: string) {
-    collapsedPaths = collapsedPaths.includes(path)
+    const wasCollapsed = collapsedPaths.includes(path);
+    collapsedPaths = wasCollapsed
       ? collapsedPaths.filter((entry) => entry !== path)
       : [...collapsedPaths, path];
+    if (wasCollapsed) {
+      focusIndex = Math.max(0, orderedPaths.indexOf(path));
+    }
   }
 
   function setDensity(next: "comfortable" | "compact") {
@@ -192,13 +215,26 @@
     }
   }
 
+  function setWrap(next: boolean) {
+    wrap = next;
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(wrapStorageKey(), next ? "1" : "0");
+    }
+  }
+
   function focusFile(index: number) {
     if (!orderedPaths.length) return;
     const clamped = ((index % orderedPaths.length) + orderedPaths.length) % orderedPaths.length;
     focusIndex = clamped;
     const path = orderedPaths[clamped]!;
+    collapsedPaths = collapsedPaths.filter((entry) => entry !== path);
     const el = document.getElementById(`diff-file-${encodeURIComponent(path)}`);
     el?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function statusKicker(): string {
+    if (review.synthesis.status === "needs_attention") return "Needs attention";
+    return "Ready for review";
   }
 
   function onReviewKeydown(event: KeyboardEvent) {
@@ -207,16 +243,10 @@
       return;
     }
     const key = event.key.toLowerCase();
-    if (key === "n") {
+    if (key === "n" || key === "j") {
       event.preventDefault();
       focusFile(focusIndex + 1);
-    } else if (key === "p") {
-      event.preventDefault();
-      focusFile(focusIndex - 1);
-    } else if (key === "j") {
-      event.preventDefault();
-      focusFile(focusIndex + 1);
-    } else if (key === "k") {
+    } else if (key === "p" || key === "k") {
       event.preventDefault();
       focusFile(focusIndex - 1);
     } else if (key === "v") {
@@ -228,6 +258,9 @@
       const path = orderedPaths[focusIndex];
       if (!path) return;
       onComment({ path, side: "new", line: 1, content: "" });
+    } else if (key === "c" && onToggleCommentRail) {
+      event.preventDefault();
+      onToggleCommentRail();
     }
   }
 </script>
@@ -260,50 +293,36 @@
     </label>
   {/if}
 
-  <div class="review-summary">
-    <div class="review-summary-copy">
-      <p class="review-summary-kicker">
-        {#if review.synthesis.status === "needs_attention"}
-          Needs attention
-        {:else if review.synthesis.status === "ready"}
-          Ready for review
-        {:else}
-          Ready for review
-        {/if}
-      </p>
-      <p class="review-summary-text">{review.synthesis.status_summary}</p>
+  <div class="review-header-quiet">
+    <p class="review-header-line" title={review.synthesis.status_summary}>
+      <span class="review-header-kicker">{statusKicker()}</span>
       {#if orderedPaths.length > 0}
-        <p class="review-progress">{viewedCount} of {orderedPaths.length} files viewed</p>
+        <span class="review-header-sep" aria-hidden="true">·</span>
+        <span>
+          {orderedPaths.length}
+          {orderedPaths.length === 1 ? "file" : "files"}
+        </span>
+        {#if !loading || stackFiles.length > 0}
+          <span class="diff-add">+{stackStats.additions}</span>
+          <span class="diff-del">−{stackStats.deletions}</span>
+        {/if}
+        <span class="review-header-sep" aria-hidden="true">·</span>
+        <span class="review-header-viewed">{viewedCount}/{orderedPaths.length} viewed</span>
       {/if}
-    </div>
+    </p>
     <div class="review-signals" aria-label="Review signals">
       <span
         class="review-signal review-signal--{review.synthesis.risk}"
         title={review.synthesis.risk_summary}
       >{review.synthesis.risk} risk</span>
-      <span
-        class="review-signal {review.synthesis.verification?.success
-          ? 'review-signal--passed'
-          : 'review-signal--unchecked'}"
-        title={review.synthesis.verification
-          ? `${review.synthesis.verification.label} · ${review.synthesis.verification.command.join(" ")}`
-          : "No project check was recorded"}
-      >{review.synthesis.verification?.success ? "Checked" : "Not checked"}</span>
+      {#if review.synthesis.verification?.success}
+        <span
+          class="review-signal review-signal--passed"
+          title={`${review.synthesis.verification.label} · ${review.synthesis.verification.command.join(" ")}`}
+        >Checked</span>
+      {/if}
     </div>
   </div>
-
-  {#if review.attribution.length > 0}
-    <div class="review-attribution" aria-label="Who contributed">
-      {#each review.attribution as actor (actor.id)}
-        <span class="review-attribution-chip review-attribution-chip--{actor.kind}">
-          {actor.label}{#if (actor.count ?? 1) > 1}<span> · {actor.count}</span>{/if}
-          {#if actor.files.length > 0}
-            <span>· {actor.files.length}</span>
-          {/if}
-        </span>
-      {/each}
-    </div>
-  {/if}
 
   {#if review.evidence_id && review.changed_files.length === 0}
     <div class="review-empty-seal" role="status">
@@ -348,16 +367,19 @@
       files={stackFiles}
       bind:mode
       bind:density
+      bind:wrap
+      chrome="prefs"
+      showJumpList={false}
       busy={busy || loading}
       riskPaths={riskPaths}
       viewedPaths={viewedPaths}
       collapsedPaths={collapsedPaths}
-      subtitle={review.synthesis.recommended_next_action || undefined}
       onOpenFile={(path, line) => void onOpenFile(path, line)}
       onRestoreFile={(path) => void restorePath(path)}
       onToggleViewed={toggleViewed}
       onToggleCollapsed={toggleCollapsed}
       onDensityChange={setDensity}
+      onWrapChange={setWrap}
       {onComment}
     />
   {/if}
@@ -388,37 +410,46 @@
     color: rgb(var(--color-surface-200));
   }
 
-  .review-summary {
+  .review-header-quiet {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
-    gap: 1.5rem;
-    padding: 0.35rem 0.15rem 0.75rem;
+    gap: 1rem;
+    padding: 0.1rem 0.1rem 0.55rem;
   }
 
-  .review-summary-copy {
+  .review-header-line {
+    display: flex;
     min-width: 0;
-    max-width: 48rem;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.6875rem;
+    color: rgb(var(--theme-text-tertiary));
   }
 
-  .review-summary-kicker {
-    font-size: 0.6875rem;
+  .review-header-kicker {
     font-weight: 600;
-    letter-spacing: -0.01em;
+    font-size: 0.8125rem;
     color: rgb(var(--color-surface-200));
   }
 
-  .review-summary-text {
-    margin-top: 0.2rem;
-    font-size: 0.75rem;
-    line-height: 1.5;
+  .review-header-sep {
+    color: rgb(var(--theme-text-faint));
+  }
+
+  .review-header-viewed {
     color: rgb(var(--theme-text-quiet));
   }
 
-  .review-progress {
-    margin-top: 0.35rem;
-    font-size: 0.625rem;
-    color: rgb(var(--theme-text-faint));
+  .diff-add {
+    color: rgb(var(--theme-success));
+    font-variant-numeric: tabular-nums;
+  }
+
+  .diff-del {
+    color: rgb(var(--theme-error));
+    font-variant-numeric: tabular-nums;
   }
 
   .review-signals {
@@ -432,7 +463,7 @@
     border: 1px solid rgb(var(--color-surface-500) / 0.22);
     border-radius: 999px;
     padding: 0.15rem 0.5rem;
-    font-size: 0.5625rem;
+    font-size: 0.6875rem;
     font-weight: 500;
     color: rgb(var(--theme-text-secondary));
   }
@@ -447,35 +478,23 @@
     color: rgb(var(--theme-warning));
   }
 
+  .review-signal--low {
+    border-color: rgb(var(--color-surface-500) / 0.28);
+    color: rgb(var(--theme-text-quiet));
+  }
+
+  .review-signal--medium {
+    border-color: rgb(var(--color-warning-500) / 0.28);
+    color: rgb(var(--theme-warning));
+  }
+
+  .review-signal--unchecked {
+    border-color: rgb(var(--color-warning-500) / 0.28);
+    color: rgb(var(--theme-warning));
+  }
+
   .review-signal--passed {
     border-color: rgb(var(--color-success-500) / 0.35);
-    color: rgb(var(--theme-success));
-  }
-
-  .review-attribution {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem;
-    margin-bottom: 0.75rem;
-  }
-
-  .review-attribution-chip {
-    border-radius: 999px;
-    border: 1px solid rgb(var(--color-surface-500) / 0.25);
-    padding: 0.15rem 0.5rem;
-    font-size: 0.5625rem;
-    color: rgb(var(--theme-text-tertiary));
-  }
-
-  .review-attribution-chip--human {
-    color: rgb(var(--theme-link));
-  }
-
-  .review-attribution-chip--agent {
-    color: rgb(var(--color-secondary-400, var(--theme-link)));
-  }
-
-  .review-attribution-chip--terminal {
     color: rgb(var(--theme-success));
   }
 

@@ -11,6 +11,7 @@ import {
   codeLspReconnectDelay,
   findCodeLanguageMatrixEntry,
   getCodeLanguageMatrix,
+  isPermanentLanguageServiceError,
   type CodeLanguageMatrixEntry,
   type CodeWorkspaceLspLease,
   type CodeWorkspaceLspStatus,
@@ -62,6 +63,8 @@ export function unusableLanguageError(
     : `${missing} was not found on this workshop PATH`;
 }
 
+export { isPermanentLanguageServiceError };
+
 export type CodeLspReconnectPlan =
   | { action: "retry"; attempt: number; delayMs: number; detail: string }
   | { action: "fail"; detail: string };
@@ -71,9 +74,16 @@ export function planLspReconnect(options: {
   previousAttempt: number;
   detail: string;
   immediate?: boolean;
+  permanent?: boolean;
   reconnectDelay?: (attempt: number) => number | null;
   maxAttempts?: number;
 }): CodeLspReconnectPlan {
+  if (options.permanent || isPermanentLanguageServiceError(options.detail)) {
+    return {
+      action: "fail",
+      detail: options.detail || "Language server could not be restarted",
+    };
+  }
   const attempt = options.previousAttempt + 1;
   const delayFn = options.reconnectDelay ?? codeLspReconnectDelay;
   const max = options.maxAttempts ?? CODE_LSP_MAX_RECONNECT_ATTEMPTS;

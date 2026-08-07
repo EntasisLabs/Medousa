@@ -122,6 +122,22 @@ fn forge_worktree_roots() -> Vec<PathBuf> {
     vec![forge_root]
 }
 
+/// Resolve the worktree Home and coding tools should use for a work id.
+///
+/// Must match forge projections (`workspace_environment`), not the durable
+/// staging `item.environment` alone — after an isolated attempt the client
+/// document URIs live under the attempt worktree, which is a sibling of staging.
+fn worktree_for_work(
+    forge: &medousa_forge::forge::Forge,
+    work_id: &str,
+) -> Option<PathBuf> {
+    let id = medousa_forge::model::WorkId::from(work_id.trim().to_owned());
+    forge
+        .load(&id)
+        .ok()
+        .and_then(|item| item.workspace_environment().map(|env| env.worktree.clone()))
+}
+
 #[derive(Debug, Deserialize)]
 struct EngineHealth {
     name: String,
@@ -347,14 +363,9 @@ async fn proxy_lsp_socket(
         tracing::warn!(message = %info.message, "coding engine unavailable for LSP proxy");
         return;
     }
-    let workspace_root = work_id.as_deref().and_then(|raw| {
-        let id = medousa_forge::model::WorkId::from(raw.trim().to_owned());
-        state
-            .forge
-            .load(&id)
-            .ok()
-            .and_then(|item| item.environment.map(|env| env.worktree))
-    });
+    let workspace_root = work_id
+        .as_deref()
+        .and_then(|raw| worktree_for_work(state.forge.as_ref(), raw));
     if work_id.is_some() && workspace_root.is_none() {
         tracing::warn!(
             work_id,
@@ -532,16 +543,10 @@ async fn proxy_agent_get(
     // Workshop paths are daemon authority, never caller authority.
     forwarded.remove("workspace_root");
     if let Some(work_id) = forwarded.remove("work_id") {
-        let id = medousa_forge::model::WorkId::from(work_id.trim().to_owned());
-        let root = state
-            .forge
-            .load(&id)
-            .ok()
-            .and_then(|item| item.environment.map(|env| env.worktree))
-            .ok_or((
-                axum::http::StatusCode::CONFLICT,
-                "unknown or unprepared undertaking".to_string(),
-            ))?;
+        let root = worktree_for_work(state.forge.as_ref(), &work_id).ok_or((
+            axum::http::StatusCode::CONFLICT,
+            "unknown or unprepared undertaking".to_string(),
+        ))?;
         forwarded.insert("workspace_root".into(), root.to_string_lossy().into_owned());
     }
     let mut url = reqwest::Url::parse(&format!("{}{path}", info.url))
@@ -589,16 +594,10 @@ async fn proxy_agent_post(
         object.remove("work_id")
     });
     if let Some(work_id) = work_id.and_then(|value| value.as_str().map(str::to_owned)) {
-        let id = medousa_forge::model::WorkId::from(work_id.trim().to_owned());
-        let root = state
-            .forge
-            .load(&id)
-            .ok()
-            .and_then(|item| item.environment.map(|env| env.worktree))
-            .ok_or((
-                axum::http::StatusCode::CONFLICT,
-                "unknown or unprepared undertaking".to_string(),
-            ))?;
+        let root = worktree_for_work(state.forge.as_ref(), &work_id).ok_or((
+            axum::http::StatusCode::CONFLICT,
+            "unknown or unprepared undertaking".to_string(),
+        ))?;
         if let Some(object) = body.as_object_mut() {
             object.insert(
                 "workspace_root".into(),

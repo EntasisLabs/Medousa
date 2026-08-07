@@ -107,6 +107,11 @@ export const KEYBOARD_SHORTCUTS_CATALOG: ShortcutCatalogGroup[] = [
       { id: "review-prev-file", keys: "literal:p / k", action: "Previous changed file" },
       { id: "review-toggle-viewed", keys: "literal:v", action: "Toggle file viewed" },
       { id: "review-comment", keys: "literal:.", action: "Add comment on focused file" },
+      {
+        id: "review-toggle-comments",
+        keys: "literal:c",
+        action: "Show or hide the comments rail when threads exist",
+      },
     ],
   },
   {

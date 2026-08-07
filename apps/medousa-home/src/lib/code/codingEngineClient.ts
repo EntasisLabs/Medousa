@@ -361,6 +361,22 @@ const WORKSPACE_CLIENT_RELEASE_DELAY_MS = 1_000;
 export const CODE_LSP_MAX_RECONNECT_ATTEMPTS = 3;
 const workspaceClients = new Map<string, WorkspaceClientEntry>();
 
+/** Errors that will not recover by reconnecting (path/policy/install). */
+export function isPermanentLanguageServiceError(detail: string): boolean {
+  const lower = detail.toLowerCase();
+  return (
+    lower.includes("outside the governed") ||
+    lower.includes("outside the coding engine allowlist") ||
+    lower.includes("is not installed on this workshop") ||
+    lower.includes("was not found on this workshop path") ||
+    lower.includes("unknown or unprepared undertaking") ||
+    lower.includes("document uri must use the file scheme") ||
+    lower.includes("encoded path separator") ||
+    lower.includes("document uri is not a valid workshop file path") ||
+    lower.includes("document uri contains an encoded path separator")
+  );
+}
+
 export function codeLspReconnectDelay(attempt: number): number | null {
   if (!Number.isInteger(attempt) || attempt < 1 || attempt > CODE_LSP_MAX_RECONNECT_ATTEMPTS) {
     return null;
@@ -521,7 +537,11 @@ export async function acquireCodeWorkspaceLspClient(options: {
     });
     languageRootUri =
       validatedCodeLanguageRootUri(resolved.root_uri, workspaceRoot) ?? projectRootUri;
-  } catch {
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    // Permanent path/policy failures must not fall through to a websocket that
+    // will immediately die and trigger reconnect spam.
+    if (isPermanentLanguageServiceError(detail)) throw err;
     // Rolling-upgrade compatibility: older coding engines use the project root.
   }
   const key = codeWorkspaceLspPoolKey(

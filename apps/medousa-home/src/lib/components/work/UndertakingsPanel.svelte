@@ -12,9 +12,7 @@
     MoreHorizontal,
     Play,
     Save,
-    ShieldCheck,
     Square,
-    UserRound,
   } from "@lucide/svelte";
   import { undertakings } from "$lib/stores/undertakings.svelte";
   import {
@@ -76,6 +74,7 @@
   import CodeSourceEditor from "$lib/components/work/CodeSourceEditor.svelte";
   import ForgeReviewSurface from "$lib/components/work/ForgeReviewSurface.svelte";
   import ReviewCommentRail from "$lib/components/work/ReviewCommentRail.svelte";
+  import ReviewProvenanceStrip from "$lib/components/work/ReviewProvenanceStrip.svelte";
   import EmptyState from "$lib/components/ui/EmptyState.svelte";
   import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
   import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
@@ -141,10 +140,12 @@
   let providerOpen = $state(false);
   let reviewDetailsFor = $state<string | null>(null);
   let reviewDetailsLoading = $state(false);
-  let reviewDetailsOpen = $state(true);
+  let reviewDetailsOpen = $state(false);
   let reviewTimelineOpen = $state(false);
   let reviewAuditOpen = $state(true);
   let providerLinkOpen = $state(false);
+  /** When threads exist, `c` can dismiss the rail without losing comments. */
+  let commentRailDismissed = $state(false);
 
   const detail = $derived(
     !boundWorkId || undertakings.detail?.id === boundWorkId
@@ -343,7 +344,9 @@
     Boolean(
       undertakings.active?.workId === detail?.id &&
         undertakings.active?.executorKind &&
-        undertakings.active.executorKind !== "human",
+        undertakings.active.executorKind !== "human" &&
+        undertakings.active.leaseId &&
+        undertakings.active.leaseGeneration != null,
     ),
   );
   const agentLabel = $derived(
@@ -380,18 +383,15 @@
     const evidenceId = current.evidence_id;
     reviewDetailsFor = evidenceId;
     reviewDetailsLoading = true;
-    patch = null;
     commands = null;
     worldInsight = null;
     providerHandoff = null;
-    const [patchResult, commandsResult, worldResult, providerResult] = await Promise.allSettled([
-      getEvidencePatch(evidenceId, { work_id: current.work_id, limit: 400 }),
+    const [commandsResult, worldResult, providerResult] = await Promise.allSettled([
       getEvidenceCommands(evidenceId, { work_id: current.work_id, limit: 100 }),
       getWorldCodeAvec(current.work_id),
       getProviderHandoff(current.work_id),
     ]);
     if (review?.evidence_id !== evidenceId) return;
-    patch = patchResult.status === "fulfilled" ? patchResult.value : null;
     commands = commandsResult.status === "fulfilled" ? commandsResult.value : null;
     if (worldResult.status === "fulfilled") {
       worldInsight = worldResult.value;
@@ -407,22 +407,16 @@
   }
 
   $effect(() => {
-    if (reviewDetailsOpen && review?.evidence_id) {
+    if (review?.evidence_id) {
       void loadReviewDetails();
     }
   });
 
-  async function loadMorePatch() {
-    if (!patch?.truncated || !review?.evidence_id) return;
-    await run(async () => {
-      const next = await getEvidencePatch(review!.evidence_id!, {
-        work_id: review!.work_id,
-        offset: patch!.offset + patch!.lines.length,
-        limit: 400,
-      });
-      patch = { ...next, offset: patch!.offset, lines: [...patch!.lines, ...next.lines] };
-    });
-  }
+  $effect(() => {
+    // Fresh evidence → show comments again if any exist.
+    void review?.evidence_id;
+    commentRailDismissed = false;
+  });
 
   async function loadMoreCommands() {
     if (!commands?.truncated || !review?.evidence_id) return;
@@ -541,7 +535,7 @@
 
   function reviewIssueLabel(issue: string): string {
     if (issue.toLowerCase().includes("no project check")) {
-      return "Verification is missing";
+      return "Project checks haven't run";
     }
     if (issue.toLowerCase().includes("no file changes")) {
       return "Nothing to approve";
@@ -659,7 +653,31 @@
   }) {
     commentCompose = input;
     commentDraft = "";
+    commentRailDismissed = false;
   }
+
+  function toggleCommentRail() {
+    const hasThreads = (review?.comments?.length ?? 0) > 0;
+    if (!hasThreads && !commentCompose) {
+      // Summon compose affordance hint by pinning an empty rail briefly is avoided —
+      // `.` / hover already start compose. Toggle only when threads earn the rail.
+      return;
+    }
+    commentRailDismissed = !commentRailDismissed;
+  }
+
+  function openAboutReview() {
+    reviewDetailsOpen = true;
+    void loadReviewDetails();
+    queueMicrotask(() => {
+      document.getElementById("review-about")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  const showCommentRail = $derived(
+    Boolean(commentCompose)
+      || (((review?.comments?.length ?? 0) > 0) && !commentRailDismissed),
+  );
 
   async function submitComment() {
     if (!detail || !review?.evidence_id || !commentCompose || !commentDraft.trim()) return;
@@ -678,6 +696,7 @@
       });
       commentCompose = null;
       commentDraft = "";
+      commentRailDismissed = false;
       await undertakings.refreshDetail();
     });
   }
@@ -1050,6 +1069,24 @@
                   onclick={() => void copyLocationLink()}
                 >Copy location link</button>
               {/if}
+              {#if reviewCanvas && review}
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="secondary-action"
+                  onclick={() => openAboutReview()}
+                >Review details</button>
+                {#if (review.comments?.length ?? 0) > 0}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    class="secondary-action"
+                    onclick={() => {
+                      commentRailDismissed = !commentRailDismissed;
+                    }}
+                  >{showCommentRail ? "Hide comments" : "Show comments"}</button>
+                {/if}
+              {/if}
               <div class="my-1 border-t border-surface-500/25" role="separator"></div>
               {#if detail.environment}
                 <details class="px-2 py-1 text-chrome-xs text-content-quiet">
@@ -1120,17 +1157,11 @@
         {#if reviewCanvas && review && (detail.human_phase === "review" || review.evidence_id)}
           <div class="flex min-h-0 flex-1 flex-col bg-surface-950/20">
             <div class="min-h-0 flex-1 overflow-auto px-4 py-3">
-              <div class="review-canvas review-canvas--with-rail">
+              <div
+                class="review-canvas"
+                class:review-canvas--with-rail={showCommentRail}
+              >
                 <div class="review-canvas-main">
-                <ForgeReviewSurface
-                  {review}
-                  {busy}
-                  onOpenFile={(path, line) => revealLocation({ path, line })}
-                  onRestore={restoreReviewedFile}
-                  onSelectCandidate={(attemptId) => undertakings.selectReviewAttempt(attemptId)}
-                  onComment={openCommentCompose}
-                />
-
                 {#if (review.changed_since_previous?.length ?? 0) > 0}
                   {@const sincePrevious = review.changed_since_previous ?? []}
                   <p class="review-since-banner" role="status">
@@ -1207,6 +1238,42 @@
                   </section>
                 {/if}
 
+                <ReviewProvenanceStrip
+                  {review}
+                  {providerHandoff}
+                  {worldInsight}
+                  baseRef={baseRef || detail?.target?.Git?.base_ref || null}
+                  onExport={() => void beginExport()}
+                  onOpenHistory={() => {
+                    reviewDetailsOpen = true;
+                    reviewTimelineOpen = true;
+                    queueMicrotask(() => {
+                      document
+                        .getElementById("review-about")
+                        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    });
+                  }}
+                  onOpenPullRequest={() => {
+                    reviewDetailsOpen = true;
+                    queueMicrotask(() => {
+                      document
+                        .getElementById("review-about")
+                        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    });
+                  }}
+                  onShare={() => void shareProject()}
+                />
+
+                <ForgeReviewSurface
+                  {review}
+                  {busy}
+                  onOpenFile={(path, line) => revealLocation({ path, line })}
+                  onRestore={restoreReviewedFile}
+                  onSelectCandidate={(attemptId) => undertakings.selectReviewAttempt(attemptId)}
+                  onComment={openCommentCompose}
+                  onToggleCommentRail={toggleCommentRail}
+                />
+
                 {#if review.decision?.rationale}
                   <p class="review-prior-note">
                     Prior decision note: <span>{review.decision.rationale}</span>
@@ -1244,14 +1311,13 @@
                   </section>
                 {/if}
 
-                <section class="review-context">
+                <section class="review-context" id="review-about">
                   <button
                     type="button"
                     class="review-context-disclosure"
                     aria-expanded={reviewDetailsOpen}
                     onclick={() => {
                       reviewDetailsOpen = !reviewDetailsOpen;
-                      if (reviewDetailsOpen) void loadReviewDetails();
                     }}
                   >
                     <ChevronRight
@@ -1259,8 +1325,8 @@
                       strokeWidth={2}
                       class="review-context-chevron {reviewDetailsOpen ? 'review-context-chevron--open' : ''}"
                     />
-                    <span>About this review</span>
-                    <small>People, history, sharing, and recovery</small>
+                    <span>More details</span>
+                    <small>History, pull request, and command log</small>
                   </button>
 
                   {#if reviewDetailsOpen}
@@ -1272,34 +1338,6 @@
                         </div>
                       {/if}
 
-                      <div class="review-context-row">
-                        <span class="review-context-icon"><UserRound size={14} strokeWidth={1.7} /></span>
-                        <div class="review-context-copy">
-                          <p>Contributors</p>
-                          <span>
-                            {#if review.attribution.length}
-                              {review.attribution.map((source) => source.label).join(", ")}
-                            {:else}
-                              No contributor record
-                            {/if}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div class="review-context-row">
-                        <span class="review-context-icon"><GitCommitHorizontal size={14} strokeWidth={1.7} /></span>
-                        <div class="review-context-copy">
-                          <p>Recovery point</p>
-                          <span>
-                            The reviewed state is saved and can be revisited later.
-                            {#if review.base_advanced} The starting branch moved while this work was open.{/if}
-                          </span>
-                        </div>
-                        <button type="button" class="review-context-action" onclick={() => void beginExport()}>
-                          <Save size={12} />Save a copy…
-                        </button>
-                      </div>
-
                       <div class="review-context-row review-context-row--stack">
                         <button
                           type="button"
@@ -1309,7 +1347,7 @@
                         >
                           <span class="review-context-icon"><History size={14} strokeWidth={1.7} /></span>
                           <span class="review-context-copy">
-                            <span class="review-context-copy-title">Project history</span>
+                            <span class="review-context-copy-title">History</span>
                             <span>{review.timeline.length} recorded {review.timeline.length === 1 ? "event" : "events"}</span>
                           </span>
                           <ChevronRight
@@ -1336,14 +1374,14 @@
                       {#if providerHandoff}
                         <div class="review-context-row review-context-row--stack">
                           <div class="review-context-row-main">
-                            <span class="review-context-icon"><Link2 size={14} strokeWidth={1.7} /></span>
+                            <span class="review-context-icon"><GitPullRequestArrow size={14} strokeWidth={1.7} /></span>
                             <div class="review-context-copy">
-                              <p>Repository review</p>
+                              <p>Pull request</p>
                               <span>
                                 {#if providerHandoff.available}
                                   {#if providerHandoff.repository}{providerHandoff.repository}{:else}Ready to share{/if}
                                 {:else}
-                                  Sharing is not configured on this workshop.
+                                  Not linked
                                 {/if}
                               </span>
                             </div>
@@ -1407,20 +1445,7 @@
                         </div>
                       {/if}
 
-                      {#if worldInsight?.code_avec}
-                        <div class="review-context-row">
-                          <span class="review-context-icon"><ShieldCheck size={14} strokeWidth={1.7} /></span>
-                          <div class="review-context-copy">
-                            <p>Code understanding</p>
-                            <span>
-                              {worldInsight.code_avec.fully_scored_entities} of
-                              {worldInsight.code_avec.scoreable_entities} known elements fully understood
-                            </span>
-                          </div>
-                        </div>
-                      {/if}
-
-                      {#if patch || (commands && commands.lines.length)}
+                      {#if commands && commands.lines.length}
                         <div class="review-context-row review-context-row--stack">
                           <button
                             type="button"
@@ -1428,10 +1453,10 @@
                             aria-expanded={reviewAuditOpen}
                             onclick={() => (reviewAuditOpen = !reviewAuditOpen)}
                           >
-                            <span class="review-context-icon"><ShieldCheck size={14} strokeWidth={1.7} /></span>
+                            <span class="review-context-icon"><GitCommitHorizontal size={14} strokeWidth={1.7} /></span>
                             <span class="review-context-copy">
-                              <span class="review-context-copy-title">Audit trail</span>
-                              <span>Exact patch and command record</span>
+                              <span class="review-context-copy-title">Command log</span>
+                              <span>{commands.lines.length} recorded {commands.lines.length === 1 ? "command" : "commands"}</span>
                             </span>
                             <ChevronRight
                               size={13}
@@ -1444,18 +1469,9 @@
                                 {review.baseline_oid?.slice(0, 10)}… → {review.sealed_head_oid?.slice(0, 10)}…
                                 {#if review.evidence_digest} · record {review.evidence_digest.slice(0, 16)}…{/if}
                               </p>
-                              {#if patch}
-                                <pre>{patch.lines.join("\n")}</pre>
-                                {#if patch.truncated}
-                                  <button type="button" disabled={busy} onclick={() => void loadMorePatch()}>Show more changes · {patch.lines.length} of {patch.total_lines} lines</button>
-                                {/if}
-                              {/if}
-                              {#if commands && commands.lines.length}
-                                <p class="review-audit-label">Commands</p>
-                                <pre>{commands.lines.join("\n")}</pre>
-                                {#if commands.truncated}
-                                  <button type="button" disabled={busy} onclick={() => void loadMoreCommands()}>Show more commands · {commands.lines.length} of {commands.total_lines}</button>
-                                {/if}
+                              <pre>{commands.lines.join("\n")}</pre>
+                              {#if commands.truncated}
+                                <button type="button" disabled={busy} onclick={() => void loadMoreCommands()}>Show more commands · {commands.lines.length} of {commands.total_lines}</button>
                               {/if}
                             </div>
                           {/if}
@@ -1472,27 +1488,29 @@
                 {/if}
                 </div>
 
-                <ReviewCommentRail
-                  comments={review.comments ?? []}
-                  compose={commentCompose}
-                  draft={commentDraft}
-                  {busy}
-                  onDraftChange={(value) => (commentDraft = value)}
-                  onSubmit={submitComment}
-                  onCancelCompose={() => {
-                    commentCompose = null;
-                    commentDraft = "";
-                  }}
-                  onResolve={resolveComment}
-                  onDelete={removeComment}
-                  onJump={(comment) => {
-                    scrollToReviewFile(comment.path);
-                    const el = document.querySelector(
-                      `[data-diff-line="${comment.start_line}"]`,
-                    ) as HTMLElement | null;
-                    el?.scrollIntoView({ behavior: "smooth", block: "center" });
-                  }}
-                />
+                {#if showCommentRail}
+                  <ReviewCommentRail
+                    comments={review.comments ?? []}
+                    compose={commentCompose}
+                    draft={commentDraft}
+                    {busy}
+                    onDraftChange={(value) => (commentDraft = value)}
+                    onSubmit={submitComment}
+                    onCancelCompose={() => {
+                      commentCompose = null;
+                      commentDraft = "";
+                    }}
+                    onResolve={resolveComment}
+                    onDelete={removeComment}
+                    onJump={(comment) => {
+                      scrollToReviewFile(comment.path);
+                      const el = document.querySelector(
+                        `[data-diff-line="${comment.start_line}"]`,
+                      ) as HTMLElement | null;
+                      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+                    }}
+                  />
+                {/if}
               </div>
             </div>
 
@@ -1518,21 +1536,19 @@
                     {:else if actions?.apply.allowed}
                       <Check size={13} strokeWidth={1.8} />
                       <p>Approved and ready to finish</p>
-                    {:else}
-                      <p>Review the changes, then record your decision.</p>
                     {/if}
                   </div>
                   <div class="review-decision-actions">
                     {#if actions?.review.allowed}
                       <button
                         type="button"
-                        class="review-decision-btn"
+                        class="review-decision-btn review-decision-btn--quiet"
                         aria-pressed={reviewNoteOpen}
                         onclick={() => (reviewNoteOpen = !reviewNoteOpen)}
                       ><MessageSquarePlus size={13} /><span>{reviewRationale.trim() ? "Edit note" : "Add note"}</span></button>
                       <button
                         type="button"
-                        class="review-decision-btn"
+                        class="review-decision-btn review-decision-btn--outline"
                         disabled={busy || review.changed_files.length === 0}
                         onclick={() => void beginRequestChanges()}
                       ><span>Request changes</span></button>
@@ -1924,7 +1940,7 @@
   }
 
   .review-since-banner {
-    margin: 0.65rem 0 0.25rem;
+    margin: 0 0 0.65rem;
     border: 1px solid rgb(var(--color-primary-500) / 0.28);
     border-radius: 0.5rem;
     background: rgb(var(--color-primary-500) / 0.08);
@@ -1968,7 +1984,7 @@
     border: 1px solid rgb(var(--color-warning-500) / 0.26);
     border-radius: 0.6rem;
     padding: 0.75rem;
-    background: rgb(var(--color-warning-950) / 0.12);
+    background: rgb(var(--color-warning-500) / 0.1);
     color: rgb(var(--theme-warning));
   }
 
@@ -2171,11 +2187,9 @@
   .review-context-copy > span:not(.review-context-copy-title) {
     overflow: hidden;
     margin-top: 0.1rem;
-    font-size: 0.625rem;
+    font-size: 0.6875rem;
     line-height: 1.4;
     color: rgb(var(--theme-text-quiet));
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .review-context-action {
@@ -2352,20 +2366,11 @@
     margin: 0.55rem 0 0 2.3rem;
   }
 
-  .review-audit-revision,
-  .review-audit-label {
+  .review-audit-revision {
     margin-bottom: 0.35rem;
     font-family: var(--font-mono);
     font-size: 0.5625rem;
     color: rgb(var(--theme-text-faint));
-  }
-
-  .review-audit-label {
-    margin-top: 0.65rem;
-    font-family: inherit;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
   }
 
   .review-audit pre {
@@ -2435,7 +2440,7 @@
 
   .review-decision-guidance p {
     overflow: hidden;
-    font-size: 0.625rem;
+    font-size: 0.8125rem;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -2455,13 +2460,29 @@
     border-radius: 0.45rem;
     background: transparent;
     padding: 0.4rem 0.6rem;
-    font-size: 0.6875rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
     color: rgb(var(--theme-text-tertiary));
   }
 
   .review-decision-btn:hover:not(:disabled) {
     background: rgb(var(--color-surface-700) / 0.35);
     color: rgb(var(--color-surface-100));
+  }
+
+  .review-decision-btn--quiet {
+    font-weight: 400;
+    color: rgb(var(--theme-text-quiet));
+  }
+
+  .review-decision-btn--outline {
+    border-color: rgb(var(--color-surface-500) / 0.35);
+    color: rgb(var(--color-surface-200));
+  }
+
+  .review-decision-btn--outline:hover:not(:disabled) {
+    border-color: rgb(var(--color-surface-500) / 0.5);
+    background: rgb(var(--color-surface-800) / 0.45);
   }
 
   .review-decision-btn--primary {
