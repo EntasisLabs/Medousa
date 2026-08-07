@@ -5,14 +5,17 @@
 
 First-run UX, Home shell milestones, turn-loop FSM, user profiles (Phases 0–6), **centralized agent runtime**, **0.5.0 Vault / Versions / Liquid**, **0.6.0 Shared / Peer mesh / Dynamic + Home polish**, and **0.7.0 Accounts / Liquid depth / Browser act + Languages** are **shipped**. See [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md), [ADR-002](../docs/architecture/decisions/adr-002-user-profiles.md), [v0.5.0-vault-versions-plan.md](v0.5.0-vault-versions-plan.md), [v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md), [v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md), [v0.7.0-plan.md](v0.7.0-plan.md).
 
-**Next focus:** Undertakings flowstate residual polish (empty states, F3–F5) on ForgeLens / World coverage UX, alongside the proposed [Medousa Anywhere plan](medousa-anywhere-plan.md) for VS Code, Neovim, and Obsidian surfaces. Coding / Detamu / shared-shell / ACP transcript / Forge Home contracts landed.
+**Next focus:** Undertakings flowstate residual polish (empty states, F3–F5) on ForgeLens / World coverage UX, alongside the proposed [Medousa Anywhere plan](medousa-anywhere-plan.md) for VS Code, Neovim, and Obsidian surfaces. Coding / Detamu / shared-shell / ACP transcript / Forge Home contracts landed. Proposed sibling-shell work: [TUI ↔ Home workspace parity](tui-home-workspace-parity-plan.md) (tmux panes + notes/code/review/chat — not Anywhere plugins).
 
-Full plans: **[v0.7.0-forge-plan.md](v0.7.0-forge-plan.md)** · **[detamu-medousa-fit.md](detamu-medousa-fit.md)** · **[coding-engine-orchestrator.md](coding-engine-orchestrator.md)** · **[coding-session-terminal.md](coding-session-terminal.md)** · **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md)** · **[home-messaging-matrix.md](home-messaging-matrix.md)** · [ADR-011](../docs/architecture/decisions/adr-011-shared-mode-portal-and-mesh.md) · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)** · **[operators-guide-docs-epic.md](operators-guide-docs-epic.md)**
+Full plans: **[v0.7.0-forge-plan.md](v0.7.0-forge-plan.md)** · **[detamu-medousa-fit.md](detamu-medousa-fit.md)** · **[coding-engine-orchestrator.md](coding-engine-orchestrator.md)** · **[coding-session-terminal.md](coding-session-terminal.md)** · **[tui-home-workspace-parity-plan.md](tui-home-workspace-parity-plan.md)** · **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md)** · **[home-messaging-matrix.md](home-messaging-matrix.md)** · [ADR-011](../docs/architecture/decisions/adr-011-shared-mode-portal-and-mesh.md) · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)** · **[operators-guide-docs-epic.md](operators-guide-docs-epic.md)**
 
 ### External surfaces — proposed
 
 **Goal:** Make Medousa available wherever work happens without reproducing
 Home in every host. See [medousa-anywhere-plan.md](medousa-anywhere-plan.md).
+The TUI is a **sibling shell** to Home (not an Anywhere host plugin); selective
+workspace parity is tracked separately in
+[tui-home-workspace-parity-plan.md](tui-home-workspace-parity-plan.md).
 
 | Slice | Status |
 |-------|--------|
@@ -20,6 +23,7 @@ Home in every host. See [medousa-anywhere-plan.md](medousa-anywhere-plan.md).
 | VS Code reference integration | ✅ 0.2 chat polish implementation · packaged dogfood pending · [plan](vscode-chat-polish-plan.md) |
 | Neovim focused adapter | ⬜ Phase 3 |
 | Obsidian vault-native adapter | ⬜ Phase 4 |
+| TUI ↔ Home workspace parity (panes/notes/code/review) | ⬜ proposed · [plan](tui-home-workspace-parity-plan.md) |
 
 ---
 

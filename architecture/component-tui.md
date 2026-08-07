@@ -78,6 +78,14 @@ Primary surfaces:
 - thinking views and grapheme console
 - command palette and script editor
 
+### Workspace parity with Home (proposed)
+
+Home grew a tmux-shaped multi-surface desk (notes / code / review / chat /
+terminal panes). The TUI should become a **sibling workshop shell** over the
+same daemon APIs — not an Anywhere plugin and not a port of gen-UI / canvas /
+browser. Living plan:
+[tui-home-workspace-parity-plan.md](tui-home-workspace-parity-plan.md).
+
 ## Persistence and Secrets
 
 User-level persistence (session.rs):
