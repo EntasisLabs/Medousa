@@ -44,6 +44,7 @@
     getCodeEditorConventions,
     getCodeLanguageMatrix,
     getCodeLanguageSessions,
+    isPermanentLanguageServiceError,
     type CodeDocumentSymbol,
     type CodeLanguageSessionSnapshot,
     type CodeWorkspaceSymbol,
@@ -352,7 +353,12 @@
     ),
   );
   const agentHasControl = $derived(
-    Boolean(context?.executorKind && context.executorKind !== "human"),
+    Boolean(
+      context?.executorKind &&
+        context.executorKind !== "human" &&
+        context.leaseId &&
+        context.leaseGeneration != null,
+    ),
   );
   const canBeginEdit = $derived(
     Boolean(
@@ -2541,6 +2547,13 @@
     const scope = `${workId}:${activeTabLanguage}:${documentUri ?? ""}`;
     void scope;
     if (!showingLanguage || !workId || !documentUri) return;
+    // Permanent path/policy failures will not clear by polling — stop the spam.
+    if (
+      languageSessionsError &&
+      isPermanentLanguageServiceError(languageSessionsError)
+    ) {
+      return;
+    }
     const timer = setInterval(
       () => untrack(() => void refreshLanguageSessions({ quiet: true })),
       1_500,
@@ -2963,6 +2976,20 @@
           <span>Large file preview (first 2 MiB of {activeTab.byte_size.toLocaleString()} bytes) · read-only</span>
         {:else}
           <span>Lossy text preview ({activeTab.encoding ?? "unknown"} encoding) · read-only</span>
+        {/if}
+      </div>
+    {:else if interactive && !bufferInteractive && !agentHasControl}
+      <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-500/30 bg-amber-950/20 px-2.5 py-1.5 text-chrome-sm text-amber-100" role="status">
+        {#if reviewAvailable || detail?.human_phase === "review"}
+          <span class="min-w-40 flex-1">This project is in review — request changes to unlock editing.</span>
+          {#if onOpenReview}
+            <button type="button" class="rounded bg-amber-500/20 px-1.5 py-0.5" onclick={() => onOpenReview()}>Open review</button>
+          {/if}
+        {:else if !detail?.allowed_actions.begin_attempt.allowed}
+          <span class="min-w-40 flex-1">Editing isn’t available in this project state.</span>
+        {:else}
+          <span class="min-w-40 flex-1">Start editing to change this file.</span>
+          <button type="button" class="rounded bg-amber-500/20 px-1.5 py-0.5" onclick={() => void startEditing()}>Edit file</button>
         {/if}
       </div>
     {/if}

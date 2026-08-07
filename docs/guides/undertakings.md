@@ -256,31 +256,35 @@ edits, coding-agent attempts, and Terminal work all land on that same Review —
 there is no separate “user commit” center. Provenance labels who contributed;
 the surface does not change.
 
-Changed files stack in one scroll by default (with jump links for large sets),
-with unmodified spans collapsed until expanded. Inline comparison is the
-default; side-by-side remains available. Binary changes show honest file
-metadata instead of an unreadable patch. Raw patch and command records remain
-available under supporting detail.
+Changed files read like an inventory: one quiet status line (scale, viewed
+progress, risk), then file rows with `+/-` counts. Multi-file reviews keep other
+files collapsed until you open or step to them (`n`/`j`, `p`/`k`); a single-file
+review goes straight to the hunk. Unmodified spans stay collapsed until
+expanded. Inline comparison is the default; density and side-by-side live in
+the diff overflow menu. Binary changes show honest file metadata instead of an
+unreadable patch. People, history, sharing, audit, and recovery sit under
+**About this review** (closed until you open it, also from project overflow).
 
 Code marks lines changed by the reviewed revision with quiet gutter indicators.
-**Who contributed** distinguishes human, coding-agent, Terminal, and verification
-work; **Project timeline** shows the durable Forge milestones and recovery
-points without exposing lease machinery.
+**Who contributed** and **Project timeline** live in About — durable Forge
+milestones and recovery points without exposing lease machinery.
 
-Choose **Restore starting version…** when one file should go back for another
-pass. Medousa reopens the project for editing and keeps the reviewed revision
-saved as a recovery point, so restoring never destroys the newer work before
-you decide. Binary versions remain safe in Git but must currently be restored
-outside the Home text editor. Policy exceptions and risky content are called
-out before approval; an exception must be explicitly acknowledged. Applying
-an approved revision has its own confirmation boundary.
+Choose **Restore before this change…** from a file’s overflow when one path
+should go back for another pass. Medousa reopens the project for editing and
+keeps the reviewed revision saved as a recovery point, so restoring never
+destroys the newer work before you decide. Binary versions remain safe in Git
+but must currently be restored outside the Home text editor. Policy exceptions
+and risky content are called out above the diff before approval; an exception
+must be explicitly acknowledged. Applying an approved revision has its own
+confirmation boundary.
 
 Line comments live on the reviewed revision. Hover a changed line and add a
-comment, or press `.` while Review is focused. Open comments appear in the
-comment rail and are compiled into a **revision brief**. Choose **Request
-changes** to reopen the same project for another attempt; Medousa seeds the
-next agent draft with that brief. After a follow-up seal, Review highlights
-files that differ from the attempt that received your feedback.
+comment, or press `.` while Review is focused. The comments rail appears when
+you are composing or when threads exist (`c` toggles it). Open comments compile
+into a **revision brief**. Choose **Request changes** to reopen the same
+project for another attempt; Medousa seeds the next agent draft with that
+brief. After a follow-up seal, Review highlights files that differ from the
+attempt that received your feedback.
 
 Understand can compare **Before** and **Current**. Search for a class, function,
 or other name, then inspect its possible impact or open its file and line in

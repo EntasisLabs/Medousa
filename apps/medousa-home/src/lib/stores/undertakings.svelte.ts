@@ -126,8 +126,12 @@ function createUndertakingsStore() {
       next.selectionEndLine = prev.selectionEndLine;
       next.selectedText = prev.selectedText;
       next.sealedOid = prev.sealedOid;
+      // Only sticky-hold agent kind across a projection gap while a lease is
+      // still live. After seal, active_attempt/lease clear and sticky must not
+      // keep the Code editor locked in "agent owns this" forever.
       if (
         !next.executorKind &&
+        next.leaseId &&
         (prev.executorKind === "codex" || prev.executorKind === "cursor")
       ) {
         next.executorKind = prev.executorKind;

@@ -313,7 +313,7 @@ async fn create_session(
             .forge
             .load(&medousa_forge::model::WorkId::from(wid.to_string()))
             .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
-        let Some(env) = item.environment else {
+        let Some(env) = item.workspace_environment() else {
             return Err((
                 axum::http::StatusCode::BAD_REQUEST,
                 format!("work {wid} is not provisioned (no governed env)"),

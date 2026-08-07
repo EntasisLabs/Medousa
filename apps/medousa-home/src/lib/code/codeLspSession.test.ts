@@ -45,6 +45,22 @@ describe("planLspReconnect", () => {
       }),
     ).toMatchObject({ action: "retry", delayMs: 0, attempt: 1 });
   });
+
+  it("fails immediately for permanent workspace errors", () => {
+    expect(
+      planLspReconnect({
+        previousAttempt: 0,
+        detail:
+          "coding engine returned 400 Bad Request: document is outside the governed coding workspace",
+        reconnectDelay: () => 250,
+        maxAttempts: 3,
+      }),
+    ).toEqual({
+      action: "fail",
+      detail:
+        "coding engine returned 400 Bad Request: document is outside the governed coding workspace",
+    });
+  });
 });
 
 describe("unusableLanguageError", () => {
@@ -207,6 +223,41 @@ describe("CodeLspSession", () => {
     expect(session.status.phase).toBe("failed");
     expect(session.error).toContain("transport down");
 
+    session.dispose();
+  });
+
+  it("fails permanently when acquire reports an outside-workspace error", async () => {
+    const acquire = vi.fn(async () => {
+      throw new Error(
+        "coding engine returned 400 Bad Request: document is outside the governed coding workspace",
+      );
+    });
+    const session = new CodeLspSession({
+      getMatrix: async () => [],
+      acquire,
+      reconnectDelay: () => 10,
+      maxReconnectAttempts: 3,
+      deferWork: (fn) => {
+        fn();
+        return () => {};
+      },
+    });
+
+    session.connect({
+      workId: "w1",
+      workspaceRoot: "/repo",
+      language: "rust",
+      languageLabel: "rust",
+      documentUri: "file:///attempt/src/main.rs",
+      bridge: {},
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(acquire).toHaveBeenCalledTimes(1);
+    expect(session.status.phase).toBe("failed");
+    expect(session.error).toContain("outside the governed");
     session.dispose();
   });
 

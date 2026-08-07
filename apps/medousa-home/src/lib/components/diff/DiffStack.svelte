@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Columns2, Rows3 } from "@lucide/svelte";
   import DiffFileSection from "./DiffFileSection.svelte";
+  import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
   import { countStackStats, type DiffFileSection as DiffFileSectionType } from "$lib/diff/diffTypes";
   import { onMount } from "svelte";
 
@@ -8,10 +9,14 @@
     files: DiffFileSectionType[];
     mode?: "inline" | "side";
     density?: "comfortable" | "compact";
+    /** Explicit jump chips. Default off — file rows are the inventory. */
     showJumpList?: boolean;
+    /** full = summary + prefs; prefs = overflow only; none = no header. */
+    chrome?: "full" | "prefs" | "none";
     busy?: boolean;
     title?: string;
     subtitle?: string;
+    wrap?: boolean;
     viewedPaths?: Set<string> | string[];
     collapsedPaths?: Set<string> | string[];
     riskPaths?: Set<string> | string[];
@@ -21,6 +26,7 @@
     onToggleViewed?: (path: string) => void;
     onToggleCollapsed?: (path: string) => void;
     onDensityChange?: (density: "comfortable" | "compact") => void;
+    onWrapChange?: (wrap: boolean) => void;
     onComment?: (input: {
       path: string;
       side: "new" | "old";
@@ -35,10 +41,12 @@
     files,
     mode = $bindable<"inline" | "side">("inline"),
     density = $bindable<"comfortable" | "compact">("comfortable"),
-    showJumpList,
+    showJumpList = false,
+    chrome = "full",
     busy = false,
     title,
     subtitle,
+    wrap = $bindable(false),
     viewedPaths = [],
     collapsedPaths = [],
     riskPaths = [],
@@ -48,13 +56,14 @@
     onToggleViewed,
     onToggleCollapsed,
     onDensityChange,
+    onWrapChange,
     onComment,
     restoreHint,
     restoreLabel,
   }: Props = $props();
 
   const stats = $derived(countStackStats(files));
-  const jumpListVisible = $derived(showJumpList ?? files.length > 3);
+  const jumpListVisible = $derived(showJumpList && files.length > 1);
   const viewedSet = $derived(
     viewedPaths instanceof Set ? viewedPaths : new Set(viewedPaths),
   );
@@ -65,6 +74,7 @@
 
   let mounted = $state<Record<string, boolean>>({});
   let itemEls = $state<Record<string, HTMLElement | null>>({});
+  let prefsOpen = $state(false);
 
   onMount(() => {
     const observer = new IntersectionObserver(
@@ -84,11 +94,9 @@
   });
 
   $effect(() => {
-    // Re-observe when files change.
     const paths = files.map((file) => file.path);
     for (const path of paths) {
       const el = itemEls[path];
-      // touch for reactivity
       void el;
     }
   });
@@ -115,68 +123,103 @@
   function isCollapsed(file: DiffFileSectionType, _index: number): boolean {
     return collapsedSet.has(file.path);
   }
+
+  function setDensity(next: "comfortable" | "compact") {
+    density = next;
+    onDensityChange?.(next);
+    prefsOpen = false;
+  }
+
+  function setMode(next: "inline" | "side") {
+    mode = next;
+    prefsOpen = false;
+  }
+
+  function setWrap(next: boolean) {
+    wrap = next;
+    onWrapChange?.(next);
+    prefsOpen = false;
+  }
 </script>
 
 <section class="diff-stack">
-  <header class="diff-stack-header">
-    <div class="diff-stack-heading">
-      {#if title}
-        <h2 class="diff-stack-title">{title}</h2>
-      {/if}
-      <p class="diff-stack-summary">
-        {#if files.length === 0}
-          No files changed
-        {:else}
-          {stats.files} {stats.files === 1 ? "file" : "files"} changed ·
-          <span class="diff-add">+{stats.additions}</span>
-          <span class="diff-del">−{stats.deletions}</span>
+  {#if chrome !== "none"}
+    <header class="diff-stack-header">
+      <div class="diff-stack-heading">
+        {#if chrome === "full"}
+          {#if title}
+            <h2 class="diff-stack-title">{title}</h2>
+          {/if}
+          <p class="diff-stack-summary">
+            {#if files.length === 0}
+              No files changed
+            {:else}
+              {stats.files} {stats.files === 1 ? "file" : "files"} changed ·
+              <span class="diff-add">+{stats.additions}</span>
+              <span class="diff-del">−{stats.deletions}</span>
+            {/if}
+          </p>
+          {#if subtitle}
+            <p class="diff-stack-subtitle">{subtitle}</p>
+          {/if}
         {/if}
-      </p>
-      {#if subtitle}
-        <p class="diff-stack-subtitle">{subtitle}</p>
+      </div>
+      {#if chrome === "full" || chrome === "prefs"}
+        <div class="diff-stack-controls">
+          <OverflowMenu
+            bind:open={prefsOpen}
+            label="Diff view options"
+            title="Diff view options"
+            panelClass="w-48 rounded-lg border border-surface-500/40 bg-surface-900 p-1.5 shadow-xl"
+          >
+            <button
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={density === "comfortable"}
+              class="secondary-action"
+              onclick={() => setDensity("comfortable")}
+            >Comfortable density</button>
+            <button
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={density === "compact"}
+              class="secondary-action"
+              onclick={() => setDensity("compact")}
+            >Compact density</button>
+            <div class="my-1 border-t border-surface-500/25" role="separator"></div>
+            <button
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={mode === "inline"}
+              class="secondary-action"
+              onclick={() => setMode("inline")}
+            >
+              <Rows3 size={13} />
+              <span>Inline</span>
+            </button>
+            <button
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={mode === "side"}
+              class="secondary-action"
+              onclick={() => setMode("side")}
+            >
+              <Columns2 size={13} />
+              <span>Side by side</span>
+            </button>
+            <div class="my-1 border-t border-surface-500/25" role="separator"></div>
+            <button
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={wrap}
+              class="secondary-action"
+              onclick={() => setWrap(!wrap)}
+            >Wrap long lines</button>
+          </OverflowMenu>
+        </div>
       {/if}
-    </div>
-    <div class="diff-stack-controls">
-      <div class="diff-mode" aria-label="Diff density">
-        <button
-          type="button"
-          class:diff-mode-active={density === "comfortable"}
-          aria-label="Comfortable density"
-          title="Comfortable density"
-          onclick={() => {
-            density = "comfortable";
-            onDensityChange?.("comfortable");
-          }}
-        ><span class="diff-compact-glyph">A+</span></button>
-        <button
-          type="button"
-          class:diff-mode-active={density === "compact"}
-          aria-label="Compact density"
-          title="Compact density"
-          onclick={() => {
-            density = "compact";
-            onDensityChange?.("compact");
-          }}
-        ><span class="diff-compact-glyph">A</span></button>
-      </div>
-      <div class="diff-mode" aria-label="Diff layout">
-        <button
-          type="button"
-          class:diff-mode-active={mode === "inline"}
-          aria-label="Inline comparison"
-          title="Inline comparison"
-          onclick={() => (mode = "inline")}
-        ><Rows3 size={13} /></button>
-        <button
-          type="button"
-          class:diff-mode-active={mode === "side"}
-          aria-label="Side-by-side comparison"
-          title="Side-by-side comparison"
-          onclick={() => (mode = "side")}
-        ><Columns2 size={13} /></button>
-      </div>
-    </div>
-  </header>
+    </header>
+  {/if}
 
   {#if jumpListVisible && files.length > 0}
     <nav class="diff-jump-list" aria-label="Changed files">
@@ -203,11 +246,12 @@
       <p>No file changes to review.</p>
     </div>
   {:else}
-    <div class="diff-stack-body">
+    <div class="diff-stack-body" class:diff-stack-body--inventory={files.length > 1}>
       {#each files as file, index (file.id ?? `${file.path}:${index}`)}
         <div
           id={fileAnchorId(file, index)}
           class="diff-stack-item"
+          class:diff-stack-item--risk={riskSet.has(file.path)}
           data-diff-path={file.path}
           bind:this={itemEls[file.path]}
         >
@@ -215,10 +259,12 @@
             {file}
             {mode}
             {density}
+            {wrap}
             {busy}
             collapsed={isCollapsed(file, index)}
             viewed={viewedSet.has(file.path)}
-            mountHunks={mounted[file.path] || index < 4}
+            inventory={files.length > 1}
+            mountHunks={mounted[file.path] || index < 4 || !isCollapsed(file, index)}
             {onOpenFile}
             {restoreHint}
             {restoreLabel}
@@ -252,6 +298,7 @@
     justify-content: space-between;
     gap: 1rem;
     padding: 0.15rem 0.1rem;
+    min-height: 1.75rem;
   }
 
   .diff-stack-heading {
@@ -292,39 +339,7 @@
     align-items: center;
     gap: 0.35rem;
     flex-shrink: 0;
-  }
-
-  .diff-mode {
-    display: flex;
-    align-items: center;
-    gap: 0;
-    flex-shrink: 0;
-    padding: 0.15rem;
-    border-radius: 0.4rem;
-    background: rgb(var(--color-surface-800) / 0.45);
-  }
-
-  .diff-mode button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.6rem;
-    height: 1.45rem;
-    border: 0;
-    border-radius: 0.3rem;
-    background: transparent;
-    color: rgb(var(--theme-text-quiet));
-  }
-
-  .diff-mode button:hover,
-  .diff-mode .diff-mode-active {
-    background: rgb(var(--color-surface-700) / 0.65);
-    color: rgb(var(--color-surface-100));
-  }
-
-  .diff-compact-glyph {
-    font-size: 0.625rem;
-    font-weight: 700;
+    margin-left: auto;
   }
 
   .diff-jump-list {
@@ -381,6 +396,10 @@
     gap: 0.85rem;
   }
 
+  .diff-stack-body--inventory {
+    gap: 0.35rem;
+  }
+
   .diff-stack-item {
     scroll-margin-top: 0.75rem;
   }
@@ -395,5 +414,27 @@
     background: rgb(var(--color-surface-950) / 0.15);
     color: rgb(var(--theme-text-quiet));
     font-size: 0.6875rem;
+  }
+
+  :global(.diff-stack-controls .secondary-action) {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 0.45rem;
+    border: 0;
+    border-radius: 0.4rem;
+    background: transparent;
+    padding: 0.4rem 0.55rem;
+    color: rgb(var(--color-surface-200));
+    font-size: 0.6875rem;
+    text-align: left;
+  }
+
+  :global(.diff-stack-controls .secondary-action:hover) {
+    background: rgb(var(--color-surface-700) / 0.55);
+  }
+
+  :global(.diff-stack-controls .secondary-action[aria-checked="true"]) {
+    color: rgb(var(--theme-link));
   }
 </style>

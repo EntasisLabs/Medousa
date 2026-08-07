@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Check, Eye, FileCode2, FileQuestion, RotateCcw } from "@lucide/svelte";
   import DiffHunkView from "./DiffHunkView.svelte";
+  import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
   import { countDiffStats, type DiffFileSection } from "$lib/diff/diffTypes";
   import { languageHintForPath } from "$lib/syntax/highlightDiffLine";
 
@@ -9,8 +10,11 @@
     mode: "inline" | "side";
     busy?: boolean;
     density?: "comfortable" | "compact";
+    wrap?: boolean;
     collapsed?: boolean;
     viewed?: boolean;
+    /** Denser Cursor-style inventory row when collapsed in a multi-file stack. */
+    inventory?: boolean;
     mountHunks?: boolean;
     onOpenFile?: (path: string, line?: number) => void;
     onRestore?: () => void;
@@ -23,7 +27,6 @@
       line: number;
       content: string;
     }) => void;
-    /** Footer copy when restore is available. */
     restoreHint?: string;
     restoreLabel?: string;
   }
@@ -33,8 +36,10 @@
     mode,
     busy = false,
     density = "comfortable",
+    wrap = false,
     collapsed = false,
     viewed = false,
+    inventory = false,
     mountHunks = true,
     onOpenFile,
     onRestore,
@@ -53,6 +58,7 @@
   );
 
   const languageHint = $derived(languageHintForPath(file.path));
+  let fileMenuOpen = $state(false);
 
   function fileName(path: string): string {
     return path.split("/").at(-1) || path;
@@ -64,7 +70,7 @@
     return parts.join("/");
   }
 
-  function formatBytes(bytes: number): string {
+  function formatBytesLabel(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -84,12 +90,12 @@
   }
 
   function statusLabel(status?: string): string {
-    if (status === "added") return "Added";
+    if (status === "added") return "New";
     if (status === "deleted") return "Deleted";
     if (status === "renamed") return "Renamed";
     if (status === "copied") return "Copied";
     if (status === "type_changed") return "Type changed";
-    if (status === "untracked") return "Untracked";
+    if (status === "untracked") return "New";
     if (status === "unmerged") return "Conflict";
     return "Changed";
   }
@@ -98,31 +104,42 @@
   const openLine = $derived(
     file.hunks[0]?.new_start && file.hunks[0].new_start > 0 ? file.hunks[0].new_start : 1,
   );
+  const isNew = $derived(file.status === "added" || file.status === "untracked");
 </script>
 
-<article class="diff-file" class:diff-file--viewed={viewed} class:diff-file--collapsed={collapsed}>
+<article
+  class="diff-file"
+  class:diff-file--viewed={viewed}
+  class:diff-file--collapsed={collapsed}
+  class:diff-file--inventory={inventory}
+>
   <header class="diff-file-header">
     <button
       type="button"
       class="diff-file-title"
       onclick={() => onToggleCollapsed?.()}
       aria-expanded={!collapsed}
+      title={file.path}
     >
-      <span class="diff-file-icon"><FileCode2 size={14} /></span>
+      <span class="diff-file-lang" aria-hidden="true">{languageHint.slice(0, 3)}</span>
       <div class="diff-file-copy">
-        <p>{fileName(file.path)}</p>
-        {#if parent}
-          <span>{parent}</span>
-        {/if}
-        <div class="diff-file-meta">
-          {#if file.status}
-            <span class="diff-file-status">{statusLabel(file.status)}</span>
+        <p>
+          <span class="diff-file-name">{fileName(file.path)}</span>
+          {#if parent}
+            <span class="diff-file-parent">{parent}</span>
           {/if}
+        </p>
+        <div class="diff-file-meta">
           {#if !file.binary}
             <span class="diff-file-stats">
               <span class="diff-add">+{stats.additions}</span>
               <span class="diff-del">−{stats.deletions}</span>
             </span>
+          {/if}
+          {#if isNew}
+            <span class="diff-file-status diff-file-status--new">New</span>
+          {:else if file.status && file.status !== "modified"}
+            <span class="diff-file-status">{statusLabel(file.status)}</span>
           {/if}
           {#if file.oldPath}
             <span class="diff-file-moved">Moved from {file.oldPath}</span>
@@ -141,12 +158,45 @@
           onclick={() => onToggleViewed()}
         >{#if viewed}<Check size={12} />{:else}<Eye size={12} />{/if}</button>
       {/if}
-      {#if onOpenFile && !file.binary}
+      {#if onOpenFile && !file.binary && !collapsed}
         <button
           type="button"
           class="diff-open-code"
           onclick={() => onOpenFile?.(file.path, openLine)}
         >Open in Code</button>
+      {/if}
+      {#if onRestore || (onOpenFile && !file.binary && collapsed)}
+        <OverflowMenu
+          bind:open={fileMenuOpen}
+          label="File actions"
+          title="File actions"
+          panelClass="w-56 rounded-lg border border-surface-500/40 bg-surface-900 p-1.5 shadow-xl"
+        >
+          {#if onOpenFile && !file.binary}
+            <button
+              type="button"
+              role="menuitem"
+              class="secondary-action"
+              onclick={() => {
+                fileMenuOpen = false;
+                void onOpenFile?.(file.path, openLine);
+              }}
+            ><FileCode2 size={12} /><span>Open in Code</span></button>
+          {/if}
+          {#if onRestore}
+            <button
+              type="button"
+              role="menuitem"
+              class="secondary-action secondary-action--warn"
+              disabled={busy}
+              title={restoreHint}
+              onclick={() => {
+                fileMenuOpen = false;
+                onRestore?.();
+              }}
+            ><RotateCcw size={12} /><span>{restoreLabel}</span></button>
+          {/if}
+        </OverflowMenu>
       {/if}
     </div>
   </header>
@@ -167,7 +217,7 @@
                 {file.baselineExists === false
                   ? "Not present"
                   : typeof file.baselineBytes === "number"
-                    ? formatBytes(file.baselineBytes)
+                    ? formatBytesLabel(file.baselineBytes)
                     : "—"}
               </dd>
             </div>
@@ -177,7 +227,7 @@
                 {file.reviewedExists === false
                   ? "Removed"
                   : typeof file.reviewedBytes === "number"
-                    ? formatBytes(file.reviewedBytes)
+                    ? formatBytesLabel(file.reviewedBytes)
                     : "—"}
               </dd>
             </div>
@@ -193,6 +243,7 @@
         hunks={file.hunks}
         {mode}
         {density}
+        {wrap}
         languageHint={languageHint}
         beforeText={file.beforeText}
         afterText={file.afterText}
@@ -209,24 +260,6 @@
         <p>Scroll to load this comparison…</p>
       </div>
     {/if}
-
-    {#if onRestore && !file.binary}
-      <footer class="diff-file-footer">
-        <p>
-          {#if file.conflict}
-            Resolve by restoring the project baseline, or edit markers in Code.
-          {:else}
-            {restoreHint}
-          {/if}
-        </p>
-        <button
-          type="button"
-          class="diff-restore"
-          disabled={busy}
-          onclick={() => onRestore?.()}
-        ><RotateCcw size={12} />{restoreLabel}</button>
-      </footer>
-    {/if}
   {/if}
 </article>
 
@@ -242,14 +275,33 @@
     border-color: rgb(var(--color-success-500) / 0.22);
   }
 
+  .diff-file--inventory.diff-file--collapsed {
+    border-radius: 0.45rem;
+    background: transparent;
+  }
+
+  .diff-file--inventory.diff-file--collapsed:hover {
+    background: rgb(var(--color-surface-900) / 0.35);
+  }
+
   .diff-file-header {
+    position: sticky;
+    top: 0;
+    z-index: 3;
     display: flex;
     min-height: 2.75rem;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
     border-bottom: 1px solid rgb(var(--color-surface-500) / 0.18);
+    background: rgb(var(--color-surface-950) / 0.96);
+    backdrop-filter: blur(8px);
     padding: 0.5rem 0.75rem;
+  }
+
+  .diff-file--inventory.diff-file--collapsed .diff-file-header {
+    min-height: 2.1rem;
+    padding: 0.35rem 0.55rem;
   }
 
   .diff-file--collapsed .diff-file-header {
@@ -259,7 +311,7 @@
   .diff-file-title {
     display: flex;
     min-width: 0;
-    align-items: flex-start;
+    align-items: center;
     gap: 0.55rem;
     border: 0;
     background: transparent;
@@ -269,28 +321,50 @@
     cursor: pointer;
   }
 
-  .diff-file-icon {
-    margin-top: 0.15rem;
+  .diff-file-lang {
     flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.65rem;
+    height: 1.15rem;
+    border-radius: 0.25rem;
+    background: rgb(var(--color-surface-800) / 0.7);
+    padding: 0 0.25rem;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 0.5rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: rgb(var(--theme-text-quiet));
   }
 
   .diff-file-copy {
     min-width: 0;
+    flex: 1;
   }
 
   .diff-file-copy > p {
+    display: flex;
+    min-width: 0;
+    align-items: baseline;
+    gap: 0.45rem;
     overflow: hidden;
-    font-size: 0.75rem;
+  }
+
+  .diff-file-name {
+    overflow: hidden;
+    font-size: 0.8125rem;
     font-weight: 500;
     color: rgb(var(--color-surface-200));
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .diff-file-copy > span {
-    display: block;
+  .diff-file-parent {
     overflow: hidden;
     font-size: 0.5625rem;
+    font-weight: 400;
     color: rgb(var(--theme-text-faint));
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -301,9 +375,17 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 0.45rem;
-    margin-top: 0.15rem;
+    margin-top: 0.1rem;
     font-size: 0.5625rem;
     color: rgb(var(--theme-text-faint));
+  }
+
+  .diff-file--inventory.diff-file--collapsed .diff-file-meta {
+    margin-top: 0;
+  }
+
+  .diff-file--inventory.diff-file--collapsed .diff-file-copy > p {
+    align-items: center;
   }
 
   .diff-file-stats {
@@ -320,6 +402,15 @@
     color: rgb(var(--theme-error));
   }
 
+  .diff-file-status {
+    color: rgb(var(--theme-text-quiet));
+  }
+
+  .diff-file-status--new {
+    color: rgb(var(--theme-success));
+    font-weight: 600;
+  }
+
   .diff-file-actions {
     display: flex;
     align-items: center;
@@ -328,7 +419,6 @@
   }
 
   .diff-open-code,
-  .diff-restore,
   .diff-viewed {
     display: inline-flex;
     align-items: center;
@@ -402,30 +492,29 @@
     font-size: 0.6875rem;
   }
 
-  .diff-file-footer {
+  :global(.diff-file-actions .secondary-action) {
     display: flex;
+    width: 100%;
     align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    border-top: 1px solid rgb(var(--color-surface-500) / 0.18);
-    padding: 0.45rem 0.65rem;
+    gap: 0.45rem;
+    border: 0;
+    border-radius: 0.4rem;
+    background: transparent;
+    padding: 0.4rem 0.55rem;
+    color: rgb(var(--color-surface-200));
+    font-size: 0.6875rem;
+    text-align: left;
   }
 
-  .diff-file-footer p {
-    font-size: 0.5625rem;
-    color: rgb(var(--theme-text-faint));
+  :global(.diff-file-actions .secondary-action:hover:not(:disabled)) {
+    background: rgb(var(--color-surface-700) / 0.55);
   }
 
-  .diff-restore {
+  :global(.diff-file-actions .secondary-action--warn) {
     color: rgb(var(--theme-warning));
   }
 
-  .diff-restore:hover:not(:disabled) {
-    background: rgb(var(--color-warning-500) / 0.08);
-    color: rgb(var(--theme-warning));
-  }
-
-  .diff-restore:disabled {
-    opacity: 0.35;
+  :global(.diff-file-actions .secondary-action:disabled) {
+    opacity: 0.4;
   }
 </style>
