@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { CircleAlert, CircleCheck } from "@lucide/svelte";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
@@ -10,6 +11,13 @@
   import { workshop } from "$lib/stores/workshop.svelte";
   import { formatVaultNoteStats, vaultNoteStats } from "$lib/utils/vaultNoteStats";
   import { dispatchScriptWorkbenchOpenConsole } from "$lib/utils/scriptWorkbenchChromeEvents";
+
+  function reviewStatusLabel(issue: string): string {
+    if (/no project check|project checks haven'?t run/i.test(issue)) {
+      return "Project checks haven't run";
+    }
+    return issue;
+  }
 
   const activeLme = $derived(lmeWorkspace.activeTab);
   const onLibrary = $derived(layout.desktopSurface === "library");
@@ -114,28 +122,31 @@
 
 {#if codeReview}
   <div class="status-contextual status-contextual--code" aria-label="Code review status">
-    <span class="status-contextual-item">
-      {codeReview.changed_files.length}
-      {codeReview.changed_files.length === 1 ? "changed file" : "changed files"}
-    </span>
-    <span class="status-contextual-sep" aria-hidden="true">·</span>
-    <span
-      class="status-contextual-item"
-      class:text-content-warning={codeReview.synthesis.risk !== "low"}
-    >
-      {codeReview.synthesis.risk === "low"
-        ? "Low risk"
-        : codeReview.synthesis.risk_summary}
-    </span>
     {#if codeReview.synthesis.verification}
-      <span class="status-contextual-sep" aria-hidden="true">·</span>
       <span
-        class="status-contextual-item"
+        class="status-contextual-item status-contextual-item--icon"
         class:text-content-success={codeReview.synthesis.verification.success}
         class:text-content-error={!codeReview.synthesis.verification.success}
       >
-        {codeReview.synthesis.verification.success ? "Checks passed" : "Checks failed"}
+        {#if codeReview.synthesis.verification.success}
+          <CircleCheck size={11} strokeWidth={2} aria-hidden="true" />
+        {:else}
+          <CircleAlert size={11} strokeWidth={2} aria-hidden="true" />
+        {/if}
+        <span class="truncate">
+          {codeReview.synthesis.verification.success ? "Checks passed" : "Checks failed"}
+        </span>
       </span>
+    {:else if codeReview.synthesis.unresolved_issues.length > 0}
+      <span
+        class="status-contextual-item status-contextual-item--icon text-content-warning"
+        title={codeReview.synthesis.unresolved_issues.join(" · ")}
+      >
+        <CircleAlert size={11} strokeWidth={2} aria-hidden="true" />
+        <span class="truncate">{reviewStatusLabel(codeReview.synthesis.unresolved_issues[0]!)}</span>
+      </span>
+    {:else}
+      <span class="status-contextual-whisper">Review open</span>
     {/if}
   </div>
 {:else if showCode && codeStatus}
@@ -245,6 +256,22 @@
 
   .status-contextual-item {
     min-width: 0;
+  }
+
+  .status-contextual-item--icon {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.3rem;
+  }
+
+  :global(html.dark) .status-contextual-item.text-content-warning,
+  :global(html.dark) .status-contextual-item--icon.text-content-warning {
+    color: color-mix(
+      in srgb,
+      rgb(var(--theme-warning)) 72%,
+      rgb(var(--theme-text-secondary))
+    );
   }
 
   .status-contextual-sep {

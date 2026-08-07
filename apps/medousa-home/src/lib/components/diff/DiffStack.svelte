@@ -289,7 +289,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
-    color: rgb(var(--color-surface-100));
+    color: rgb(var(--theme-text));
   }
 
   .diff-stack-header {
@@ -309,7 +309,7 @@
     font-size: 0.8125rem;
     font-weight: 600;
     letter-spacing: -0.01em;
-    color: rgb(var(--color-surface-100));
+    color: rgb(var(--theme-text));
   }
 
   .diff-stack-summary {
