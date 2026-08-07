@@ -1,15 +1,31 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { ChevronLeft, Code2, Download, Folder, FolderOpen, Pin, Plus, RefreshCw } from "@lucide/svelte";
+  import { onMount, tick } from "svelte";
+  import {
+    ChevronLeft,
+    Code2,
+    Download,
+    FilePlus2,
+    Folder,
+    FolderOpen,
+    FolderPlus,
+    GitPullRequestArrow,
+    Pin,
+    Plus,
+    RefreshCw,
+    Search,
+    X,
+  } from "@lucide/svelte";
   import {
     browseForgeRepositories,
     cloneProviderRepository,
     getProviderRepositoryCapabilities,
+    gitTargetRepoPath,
     humanPhaseLabel,
     humanizeForgeMessage,
     inspectForgeRepository,
     listForgeRepositories,
     setForgeRepositoryPinned,
+    type ItemProjection,
     type RepositoryBrowseResponse,
     type RepositoryCatalogEntry,
     type RepositoryInspection,
@@ -20,7 +36,15 @@
   import { vault } from "$lib/stores/vault.svelte";
   import { isCoLocatedWorkshop } from "$lib/utils/workshopLocality";
   import { pickExternalFolder, rootLabelFromPath } from "$lib/utils/externalDeskApi";
+  import {
+    placeDockPopover,
+    type DockPopoverPlacement,
+  } from "$lib/utils/dockPopoverPlace";
+  import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import CodeRepositoryTree from "$lib/components/lme/explorers/CodeRepositoryTree.svelte";
+  import CodeRailSwitcher from "$lib/components/lme/explorers/CodeRailSwitcher.svelte";
+  import { portLmeDock } from "$lib/utils/lmeDockHost";
+  import { ensureRailPopoverOpen } from "$lib/utils/railPopoverChrome";
 
   let creating = $state(false);
   let busy = $state(false);
@@ -42,6 +66,22 @@
   let hostedLoading = $state(false);
   let duplicateAcknowledged = $state(false);
   let error = $state<string | null>(null);
+  let searchExpanded = $state(false);
+  let fileQuery = $state("");
+  let treeLoading = $state(false);
+  let treeRef = $state<{
+    refreshFiles: () => void;
+    startNewFile: () => void;
+    startNewFolder: () => void;
+    searchInFiles: () => void;
+    clearFind: () => void;
+  } | null>(null);
+  let createOpen = $state(false);
+  let createBtnEl = $state<HTMLButtonElement | null>(null);
+  let createMenuEl = $state<HTMLDivElement | null>(null);
+  let createPlacement = $state<DockPopoverPlacement | null>(null);
+  let searchInputEl = $state<HTMLInputElement | null>(null);
+
   const coLocated = $derived(isCoLocatedWorkshop());
   const currentFolder = $derived(
     coLocated && vault.activeVaultRoot?.path
@@ -49,25 +89,72 @@
       : null,
   );
 
+  function normalizePath(path: string): string {
+    return path.replace(/\\/g, "/").replace(/\/+$/, "");
+  }
+
+  function repoPathFromWorktree(worktree: string): string | null {
+    const normalized = normalizePath(worktree);
+    const marker = "/.medousa/worktrees/";
+    const idx = normalized.indexOf(marker);
+    if (idx > 0) return normalized.slice(0, idx);
+    return null;
+  }
+
+  function itemRepoPath(item: ItemProjection): string | null {
+    const fromTarget = gitTargetRepoPath(item.target);
+    if (fromTarget) return fromTarget;
+    if (undertakings.detail?.id === item.id) {
+      const fromDetail = gitTargetRepoPath(undertakings.detail.target);
+      if (fromDetail) return fromDetail;
+    }
+    const worktree = item.environment?.worktree?.trim()
+      ?? (undertakings.detail?.id === item.id
+        ? undertakings.detail.environment?.worktree?.trim()
+        : undefined);
+    if (worktree) {
+      const carved = repoPathFromWorktree(worktree);
+      if (carved) return carved;
+      const needle = normalizePath(worktree);
+      for (const entry of repositoryCatalog) {
+        const root = normalizePath(entry.path);
+        if (needle === root || needle.startsWith(`${root}/`)) return entry.path;
+      }
+    }
+    return null;
+  }
+
+  function isActiveThread(item: ItemProjection): boolean {
+    return (
+      item.human_phase !== "complete" &&
+      item.state !== "discarded" &&
+      item.state !== "accepted"
+    );
+  }
+
+  function sortThreads(a: ItemProjection, b: ItemProjection): number {
+    const at = a.updated_at ?? a.created_at ?? "";
+    const bt = b.updated_at ?? b.created_at ?? "";
+    return bt.localeCompare(at);
+  }
+
+  function labelForRepo(path: string): string {
+    const catalog = repositoryCatalog.find((entry) => entry.path === path);
+    return catalog?.display_name ?? rootLabelFromPath(path);
+  }
+
   const activeItems = $derived(
-    undertakings.items.filter(
-      (item) =>
-        item.human_phase !== "complete" &&
-        item.state !== "discarded" &&
-        item.state !== "accepted",
-    ),
+    undertakings.items.filter(isActiveThread).slice().sort(sortThreads),
   );
   const completedItems = $derived(
-    undertakings.items.filter(
-      (item) =>
-        item.human_phase === "complete" ||
-        item.state === "discarded" ||
-        item.state === "accepted",
-    ),
+    undertakings.items.filter((item) => !isActiveThread(item)).slice().sort(sortThreads),
   );
   const selectedItem = $derived(
     undertakings.selectedId
-      ? undertakings.items.find((item) => item.id === undertakings.selectedId) ?? null
+      ? undertakings.items.find((item) => item.id === undertakings.selectedId) ??
+          (undertakings.detail?.id === undertakings.selectedId
+            ? undertakings.detail
+            : null)
       : null,
   );
   const selectedPrepared = $derived(
@@ -78,12 +165,97 @@
             Boolean(undertakings.detail.environment))),
     ),
   );
-  const otherActiveItems = $derived(
-    activeItems.filter((item) => item.id !== selectedItem?.id),
-  );
-  const otherCompletedItems = $derived(
-    completedItems.filter((item) => item.id !== selectedItem?.id),
-  );
+  const selectedRepoPath = $derived.by(() => {
+    if (!selectedItem) return null;
+    return (
+      itemRepoPath(selectedItem) ||
+      (undertakings.detail?.id === selectedItem.id
+        ? itemRepoPath(undertakings.detail)
+        : null)
+    );
+  });
+  const selectedProjectLabel = $derived.by(() => {
+    if (selectedRepoPath) return labelForRepo(selectedRepoPath);
+    const detail = undertakings.detail;
+    const worktree =
+      selectedItem?.environment?.worktree?.trim() ||
+      (detail && detail.id === selectedItem?.id
+        ? detail.environment?.worktree?.trim()
+        : undefined);
+    if (worktree) {
+      const carved = repoPathFromWorktree(worktree);
+      if (carved) return labelForRepo(carved);
+    }
+    return "Project";
+  });
+  const selectedThreadLabel = $derived(selectedItem?.title ?? "Thread");
+  const fileSearching = $derived(fileQuery.trim().length > 0);
+  const showTreeChrome = $derived(Boolean(selectedItem && selectedPrepared));
+
+  const projectSwitcherItems = $derived.by(() => {
+    const byPath = new Map<
+      string,
+      { id: string; label: string; threadCount: number; active: boolean }
+    >();
+    for (const item of undertakings.items) {
+      const path = itemRepoPath(item);
+      if (!path) continue;
+      const existing = byPath.get(path);
+      if (existing) existing.threadCount += 1;
+      else {
+        byPath.set(path, {
+          id: path,
+          label: labelForRepo(path),
+          threadCount: 1,
+          active: path === selectedRepoPath,
+        });
+      }
+    }
+    for (const entry of repositoryCatalog.filter((e) => e.available)) {
+      if (byPath.has(entry.path)) continue;
+      byPath.set(entry.path, {
+        id: entry.path,
+        label: entry.display_name,
+        threadCount: 0,
+        active: entry.path === selectedRepoPath,
+      });
+    }
+    return [...byPath.values()]
+      .sort((a, b) => a.label.localeCompare(b.label))
+      .map((entry) => ({
+        id: entry.id,
+        label: entry.label,
+        detail:
+          entry.threadCount === 0
+            ? "No threads yet"
+            : `${entry.threadCount} ${entry.threadCount === 1 ? "thread" : "threads"}`,
+        active: entry.active,
+      }));
+  });
+
+  const threadSwitcherItems = $derived.by(() => {
+    const preferred = selectedRepoPath
+      ? activeItems.filter((item) => itemRepoPath(item) === selectedRepoPath)
+      : [];
+    const otherActive = activeItems.filter(
+      (item) => itemRepoPath(item) !== selectedRepoPath,
+    );
+    const finished = completedItems;
+    const ordered = [...preferred, ...otherActive, ...finished];
+    return ordered.map((item) => {
+      const repo = itemRepoPath(item);
+      const sameRepo = Boolean(selectedRepoPath && repo === selectedRepoPath);
+      return {
+        id: item.id,
+        label: item.title,
+        detail: sameRepo
+          ? humanPhaseLabel(item.human_phase)
+          : `${repo ? labelForRepo(repo) : "Project"} · ${humanPhaseLabel(item.human_phase)}`,
+        active: item.id === selectedItem?.id,
+      };
+    });
+  });
+
   const recentRepositories = $derived(repositoryCatalog.filter((entry) => entry.available));
   const duplicateNeedsChoice = $derived(
     Boolean(repository?.existing_projects.length && !duplicateAcknowledged),
@@ -116,6 +288,112 @@
   async function openItem(id: string, label: string) {
     creating = false;
     await lmeWorkspace.openCodeWorkspace(id, label);
+  }
+
+  async function selectProject(path: string) {
+    const threads = undertakings.items
+      .filter((item) => itemRepoPath(item) === path)
+      .slice()
+      .sort(sortThreads);
+    const preferred = threads.find(isActiveThread) ?? threads[0];
+    if (preferred) {
+      await openItem(preferred.id, preferred.title);
+      return;
+    }
+    await chooseRepository(path);
+  }
+
+  async function openReview() {
+    if (!selectedItem || selectedItem.human_phase !== "review") return;
+    await lmeWorkspace.openCodeReview(selectedItem.id, selectedItem.title);
+  }
+
+  function placeCreateMenu() {
+    if (!createBtnEl) return;
+    createPlacement = placeDockPopover(createBtnEl, {
+      preferUp: false,
+      width: 196,
+      maxHeight: 280,
+    });
+  }
+
+  function closeMenus() {
+    createOpen = false;
+    createPlacement = null;
+  }
+
+  function toggleCreateMenu(event: MouseEvent) {
+    event.stopPropagation();
+    if (createOpen) {
+      closeMenus();
+      return;
+    }
+    createOpen = true;
+    requestAnimationFrame(placeCreateMenu);
+  }
+
+  function handleMenuKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeMenus();
+    }
+  }
+
+  function onCreatePointerDown(event: PointerEvent) {
+    if (!createOpen) return;
+    const target = event.target as Node;
+    if (createBtnEl?.contains(target) || createMenuEl?.contains(target)) return;
+    closeMenus();
+  }
+
+  $effect(() => {
+    if (!createOpen) return;
+    window.addEventListener("pointerdown", onCreatePointerDown);
+    window.addEventListener("resize", placeCreateMenu);
+    return () => {
+      window.removeEventListener("pointerdown", onCreatePointerDown);
+      window.removeEventListener("resize", placeCreateMenu);
+    };
+  });
+
+  $effect(() => {
+    if (fileSearching && !searchExpanded) searchExpanded = true;
+  });
+
+  $effect(() => {
+    if (showTreeChrome) return;
+    if (!searchExpanded && !fileQuery) return;
+    searchExpanded = false;
+    fileQuery = "";
+  });
+
+  async function openSearch() {
+    closeMenus();
+    await ensureRailPopoverOpen();
+    searchExpanded = true;
+    await tick();
+    searchInputEl?.focus();
+    searchInputEl?.select();
+  }
+
+  function closeSearch() {
+    searchExpanded = false;
+    if (fileSearching) {
+      fileQuery = "";
+      treeRef?.clearFind();
+    }
+  }
+
+  function handleSearchKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeSearch();
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      treeRef?.searchInFiles();
+    }
   }
 
   function inferredTitle(): string {
@@ -252,30 +530,179 @@
   }
 </script>
 
-<aside class="flex h-full min-h-0 w-full flex-col" aria-label="Code projects">
-  <header class="lme-side-rail-dock">
-    <div class="lme-dock-leading-ghost flex min-w-0 flex-1 items-center gap-1.5">
-      <Code2 size={13} strokeWidth={1.8} class="shrink-0 text-content-quiet" aria-hidden="true" />
-      <span class="truncate text-[11px] font-medium text-content-secondary">Projects</span>
-    </div>
-    <button
-      type="button"
-      class="vault-dock-icon-btn"
-      aria-label="Refresh projects"
-      title="Refresh"
-      onclick={() => void undertakings.refreshList()}
-    >
-      <RefreshCw size={15} strokeWidth={1.75} />
-    </button>
-    <button
-      type="button"
-      class="vault-dock-icon-btn"
-      aria-label="New code project"
-      title="New code project"
-      onclick={() => (creating = !creating)}
-    >
-      <Plus size={16} strokeWidth={1.75} />
-    </button>
+<aside class="flex h-full min-h-0 w-full flex-col" aria-label="Code">
+  <header class="lme-side-rail-dock lme-code-dock" use:portLmeDock>
+    {#if searchExpanded && showTreeChrome}
+      <div class="lme-dock-search-expand flex min-w-0 flex-1 items-center gap-1">
+        <Search size={14} strokeWidth={1.75} class="shrink-0 text-content-quiet" aria-hidden="true" />
+        <input
+          bind:this={searchInputEl}
+          class="lme-code-dock-search min-w-0 flex-1 border-0 bg-transparent placeholder:text-content-quiet focus:outline-none focus:ring-0"
+          type="search"
+          placeholder="Find a file…"
+          bind:value={fileQuery}
+          onkeydown={handleSearchKeydown}
+        />
+        <button
+          type="button"
+          class="vault-dock-icon-btn"
+          aria-label="Close search"
+          title="Close search"
+          onclick={closeSearch}
+        >
+          <X size={14} strokeWidth={1.75} />
+        </button>
+      </div>
+    {:else}
+      <div
+        class="lme-dock-chrome-secondary lme-dock-chrome-secondary--crumb flex min-w-0 items-center gap-0.5"
+      >
+        <CodeRailSwitcher
+          label="Project"
+          value={selectedProjectLabel}
+          title="Switch project"
+          soft={!selectedRepoPath && selectedProjectLabel === "Project"}
+          items={projectSwitcherItems}
+          emptyHint="No projects yet"
+          onSelect={(id) => void selectProject(id)}
+        />
+        <span
+          class="nav-rail-dock-crumb-sep lme-code-dock-sep shrink-0 px-px leading-none"
+          aria-hidden="true"
+        >/</span>
+        <CodeRailSwitcher
+          label="Thread"
+          value={selectedThreadLabel}
+          title="Switch thread"
+          soft={!selectedItem}
+          items={threadSwitcherItems}
+          emptyHint="No threads yet"
+          onSelect={(id) => {
+            const item = undertakings.items.find((entry) => entry.id === id);
+            if (item) void openItem(item.id, item.title);
+          }}
+        />
+      </div>
+      <div class="lme-dock-chrome-secondary lme-dock-chrome-secondary--spacer min-w-1 flex-1"></div>
+
+      {#if selectedItem && !selectedPrepared && selectedItem.allowed_actions.provision.allowed}
+        <button
+          type="button"
+          class="vault-dock-icon-btn"
+          aria-label="Set up project"
+          title="Set up project"
+          onclick={() => void openItem(selectedItem.id, selectedItem.title)}
+        >
+          <FolderOpen size={15} strokeWidth={1.75} />
+        </button>
+      {/if}
+
+      {#if selectedItem?.human_phase === "review"}
+        <button
+          type="button"
+          class="vault-dock-icon-btn"
+          aria-label="Open review"
+          title="Open review"
+          onclick={() => void openReview()}
+        >
+          <GitPullRequestArrow size={15} strokeWidth={1.75} />
+        </button>
+      {/if}
+
+      <div class="relative shrink-0">
+        <button
+          bind:this={createBtnEl}
+          type="button"
+          class="vault-dock-icon-btn"
+          aria-haspopup="menu"
+          aria-expanded={createOpen}
+          aria-label="New"
+          title="New"
+          onclick={toggleCreateMenu}
+        >
+          <Plus size={16} strokeWidth={1.75} />
+        </button>
+      </div>
+      {#if createOpen && createPlacement}
+        <BodyPortal>
+          <div
+            bind:this={createMenuEl}
+            class="vault-dock-popover"
+            role="menu"
+            tabindex="-1"
+            style:left="{createPlacement.left}px"
+            style:top="{createPlacement.top}px"
+            style:width="{createPlacement.width}px"
+            style:max-height="{createPlacement.maxHeight}px"
+            style:transform={createPlacement.transform}
+            onclick={(event) => event.stopPropagation()}
+            onkeydown={handleMenuKeydown}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              class="vault-menu-item"
+              onclick={() => {
+                closeMenus();
+                creating = true;
+              }}
+            >
+              <Plus size={14} strokeWidth={2} />
+              New thread
+            </button>
+            {#if showTreeChrome}
+              <div class="vault-dock-popover__sep"></div>
+              <button
+                type="button"
+                role="menuitem"
+                class="vault-menu-item"
+                onclick={() => {
+                  closeMenus();
+                  treeRef?.startNewFile();
+                }}
+              >
+                <FilePlus2 size={14} strokeWidth={2} />
+                New file
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                class="vault-menu-item"
+                onclick={() => {
+                  closeMenus();
+                  treeRef?.startNewFolder();
+                }}
+              >
+                <FolderPlus size={14} strokeWidth={2} />
+                New folder
+              </button>
+            {/if}
+          </div>
+        </BodyPortal>
+      {/if}
+
+      {#if showTreeChrome}
+        <button
+          type="button"
+          class="vault-dock-icon-btn"
+          aria-label="Refresh files"
+          title="Refresh files"
+          disabled={treeLoading}
+          onclick={() => treeRef?.refreshFiles()}
+        >
+          <RefreshCw size={14} strokeWidth={1.75} class={treeLoading ? "animate-spin" : ""} />
+        </button>
+        <button
+          type="button"
+          class="vault-dock-icon-btn {fileSearching ? 'vault-dock-icon-btn-active' : ''}"
+          aria-label="Find a file"
+          title="Find"
+          onclick={() => void openSearch()}
+        >
+          <Search size={15} strokeWidth={1.75} />
+        </button>
+      {/if}
+    {/if}
   </header>
 
   {#if creating}
@@ -487,65 +914,27 @@
 
   <div class="flex min-h-0 flex-1 flex-col">
     {#if undertakings.loading && undertakings.items.length === 0}
-      <p class="px-3 py-3 text-xs text-content-quiet">Loading projects…</p>
+      <p class="px-3 py-3 text-xs text-content-quiet">Loading threads…</p>
     {:else if undertakings.items.length === 0}
       <div class="px-3 py-5 text-center">
         <Code2 size={20} class="mx-auto text-content-faint" />
-        <p class="mt-2 text-sm font-medium text-surface-200">No code projects yet</p>
+        <p class="mt-2 text-sm font-medium text-surface-200">No threads yet</p>
         <p class="workshop-faint mt-1 text-[10px] leading-relaxed">
           Start with a repository and the change you want to make. Medousa will keep the work together.
         </p>
       </div>
     {:else if selectedItem}
-      <div class="flex shrink-0 items-center gap-1 border-b border-surface-500/25 px-2 py-1.5">
-        <div class="min-w-0 flex-1">
-          <p class="truncate text-[11px] font-medium text-surface-100">{selectedItem.title}</p>
-          <p class="truncate text-[9px] text-content-quiet">{humanPhaseLabel(selectedItem.human_phase)}</p>
-        </div>
-        {#if !selectedPrepared && selectedItem.allowed_actions.provision.allowed}
-          <button
-            type="button"
-            class="shrink-0 rounded bg-primary-500/80 px-2 py-1 text-[9px] font-medium text-surface-50"
-            onclick={() => void openItem(selectedItem.id, selectedItem.title)}
-          >Open</button>
-        {/if}
-      </div>
       <div class="min-h-0 flex-1 overflow-hidden">
         <CodeRepositoryTree
+          bind:this={treeRef}
           workId={selectedItem.id}
           prepared={selectedPrepared}
+          chromeInDock
+          bind:query={fileQuery}
+          bind:loading={treeLoading}
           fill
         />
       </div>
-      {#if otherActiveItems.length || otherCompletedItems.length}
-        <details class="shrink-0 border-t border-surface-500/25">
-          <summary class="cursor-pointer select-none px-3 py-1.5 text-[9px] uppercase tracking-wider text-content-quiet hover:text-content-secondary">
-            Other projects
-          </summary>
-          <div class="max-h-40 overflow-y-auto pb-1.5">
-            {#each otherActiveItems as item (item.id)}
-              <button
-                type="button"
-                class="w-full px-3 py-1.5 text-left hover:bg-surface-800/70"
-                onclick={() => void openItem(item.id, item.title)}
-              >
-                <span class="block truncate text-[11px] text-surface-200">{item.title}</span>
-                <span class="text-[9px] text-content-quiet">{humanPhaseLabel(item.human_phase)}</span>
-              </button>
-            {/each}
-            {#each otherCompletedItems as item (item.id)}
-              <button
-                type="button"
-                class="w-full px-3 py-1.5 text-left hover:bg-surface-800/70"
-                onclick={() => void openItem(item.id, item.title)}
-              >
-                <span class="block truncate text-[11px] text-content-secondary">{item.title}</span>
-                <span class="text-[9px] text-content-quiet">{humanPhaseLabel(item.human_phase)}</span>
-              </button>
-            {/each}
-          </div>
-        </details>
-      {/if}
     {:else}
       <div class="min-h-0 flex-1 overflow-y-auto py-1.5">
         {#if activeItems.length}
@@ -553,12 +942,12 @@
           {#each activeItems as item (item.id)}
             <button
               type="button"
-              class="w-full px-3 py-2 text-left transition hover:bg-surface-800/70"
+              class="w-full px-3 py-1.5 text-left transition hover:bg-surface-800/70"
               onclick={() => void openItem(item.id, item.title)}
             >
               <span class="block truncate text-xs font-medium text-surface-100">{item.title}</span>
-              <span class="mt-0.5 block truncate text-[9px] text-content-quiet">
-                {humanPhaseLabel(item.human_phase)}
+              <span class="mt-0.5 block truncate text-[9px] text-content-secondary">
+                {#if itemRepoPath(item)}{labelForRepo(itemRepoPath(item)!)} · {/if}{humanPhaseLabel(item.human_phase)}
               </span>
             </button>
           {/each}
@@ -568,12 +957,12 @@
           {#each completedItems as item (item.id)}
             <button
               type="button"
-              class="w-full px-3 py-2 text-left transition hover:bg-surface-800/70"
+              class="w-full px-3 py-1.5 text-left transition hover:bg-surface-800/70"
               onclick={() => void openItem(item.id, item.title)}
             >
               <span class="block truncate text-xs font-medium text-surface-200">{item.title}</span>
-              <span class="mt-0.5 block truncate text-[9px] text-content-quiet">
-                {humanPhaseLabel(item.human_phase)}
+              <span class="mt-0.5 block truncate text-[9px] text-content-secondary">
+                {#if itemRepoPath(item)}{labelForRepo(itemRepoPath(item)!)} · {/if}{humanPhaseLabel(item.human_phase)}
               </span>
             </button>
           {/each}
@@ -584,6 +973,68 @@
 </aside>
 
 <style>
+  /* Match Code tree workbench type in the dock strip. */
+  :global(.lme-code-dock) {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  :global(.lme-code-dock .vault-dock-branch) {
+    max-width: 10rem;
+    height: 1.75rem;
+    color: color-mix(
+      in srgb,
+      rgb(var(--theme-text)) 92%,
+      rgb(var(--theme-text-secondary))
+    );
+    font-family:
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      system-ui,
+      sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0;
+    line-height: 1.2;
+  }
+
+  :global(.lme-code-dock .vault-dock-branch:hover),
+  :global(.lme-code-dock .vault-dock-branch--active),
+  :global(.lme-code-dock .vault-dock-branch[aria-expanded="true"]) {
+    color: rgb(var(--theme-text));
+  }
+
+  :global(.lme-code-dock .vault-dock-branch__label) {
+    color: inherit;
+  }
+
+  :global(.lme-code-dock .lme-code-dock-sep) {
+    color: color-mix(in srgb, rgb(var(--theme-text)) 40%, transparent);
+    font-family:
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      system-ui,
+      sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  :global(.lme-code-dock .lme-code-dock-search) {
+    color: rgb(var(--theme-text));
+    font-family:
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      system-ui,
+      sans-serif;
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: 0;
+    line-height: 1.2;
+  }
+
   .code-field {
     width: 100%;
     border: 1px solid rgb(var(--color-surface-500) / 0.4);
