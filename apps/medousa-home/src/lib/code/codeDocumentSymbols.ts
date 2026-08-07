@@ -74,3 +74,41 @@ export function pathBreadcrumbSegments(path: string): Array<{
     };
   });
 }
+
+export type CodeBreadcrumbSegment = {
+  label: string;
+  path: string;
+  isFile: boolean;
+  /** Collapsed middle marker — not navigable. */
+  ellipsis?: boolean;
+};
+
+/**
+ * Collapse deep paths to `root › … › parent › file` (head + last `tailCount`).
+ */
+export function collapsePathBreadcrumbs(
+  segments: Array<{ label: string; path: string; isFile: boolean }>,
+  options?: { headCount?: number; tailCount?: number },
+): CodeBreadcrumbSegment[] {
+  const headCount = options?.headCount ?? 1;
+  const tailCount = options?.tailCount ?? 2;
+  if (segments.length <= headCount + tailCount) {
+    return segments.map((segment) => ({ ...segment }));
+  }
+  const head = segments.slice(0, headCount);
+  const tail = segments.slice(-tailCount);
+  return [
+    ...head.map((segment) => ({ ...segment })),
+    { label: "…", path: "", isFile: false, ellipsis: true },
+    ...tail.map((segment) => ({ ...segment })),
+  ];
+}
+
+/** Prefer the innermost symbol(s) for the trail — avoid stacking the whole chain. */
+export function collapseSymbolTrail(
+  symbols: CodeBreadcrumbSymbol[],
+  maxLeaf = 1,
+): CodeBreadcrumbSymbol[] {
+  if (symbols.length <= maxLeaf) return symbols;
+  return symbols.slice(-maxLeaf);
+}

@@ -178,15 +178,26 @@
           : codeStatus.saveWhisper || "Unsaved"}
       </span>
     {/if}
-    {#if codeStatus.languageState !== "ready"}
+    {#if codeStatus.languageDetail || codeStatus.languageState !== "ready"}
       <span class="status-contextual-sep" aria-hidden="true">·</span>
       <span
-        class="status-contextual-item"
-        class:text-content-warning={codeStatus.languageState === "editing-only"}
+        class="status-contextual-item truncate"
+        class:text-content-warning={codeStatus.languageState === "editing-only" ||
+          codeStatus.languageState === "reconnecting"}
+        class:text-content-error={codeStatus.languageState === "failed"}
+        title={codeStatus.languageDetail ?? undefined}
       >
-        {codeStatus.languageState === "connecting"
-          ? "Language starting…"
-          : "Editing only"}
+        {#if codeStatus.languageDetail}
+          {codeStatus.languageDetail}
+        {:else if codeStatus.languageState === "connecting"}
+          Language starting…
+        {:else if codeStatus.languageState === "reconnecting"}
+          Language reconnecting…
+        {:else if codeStatus.languageState === "failed"}
+          Language failed
+        {:else}
+          Editing only
+        {/if}
       </span>
     {/if}
   </div>

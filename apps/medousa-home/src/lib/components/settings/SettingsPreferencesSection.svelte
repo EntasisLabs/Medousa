@@ -30,6 +30,13 @@
     writeGrammarSettings,
     type GrammarSettings,
   } from "$lib/utils/grammarCheck";
+  import { codeSyntaxThemePreference } from "$lib/stores/codeSyntaxThemePreference.svelte";
+  import {
+    codeSyntaxPreviewLines,
+    getCodeSyntaxTheme,
+    listCodeSyntaxThemes,
+    type CodeSyntaxThemeId,
+  } from "$lib/syntax/codeSyntaxThemes";
 
   interface Props {
     mobile?: boolean;
@@ -61,9 +68,13 @@
 
   let themeBusy = $state(false);
   let themePickerOpen = $state(false);
+  let syntaxPickerOpen = $state(false);
   let moreOpen = $state(false);
   let liveActivityStatus = $state<LiveActivityStatus | null>(null);
   let grammar = $state<GrammarSettings>(readGrammarSettings());
+
+  const syntaxThemeOptions = listCodeSyntaxThemes();
+  const activeSyntaxTheme = $derived(codeSyntaxThemePreference.theme);
 
   function patchGrammar(partial: Partial<GrammarSettings>) {
     grammar = { ...grammar, ...partial };
@@ -100,6 +111,11 @@
     } finally {
       themeBusy = false;
     }
+  }
+
+  function pickSyntaxTheme(themeId: CodeSyntaxThemeId) {
+    codeSyntaxThemePreference.set(themeId);
+    syntaxPickerOpen = false;
   }
 
   function commitHideHours(raw: string) {
@@ -139,7 +155,8 @@
     <div class="prefs-band-head">
       <h3 class="settings-subsection-heading">Look</h3>
       <p class="settings-subsection-lead">
-        Theme for <span class="prefs-layout-name">{activeLayoutLabel}</span>
+        Shell theme for <span class="prefs-layout-name">{activeLayoutLabel}</span>.
+        Code syntax is separate below.
       </p>
       <button
         type="button"
@@ -218,6 +235,97 @@
                 </div>
               </div>
             {/each}
+          </div>
+        {/if}
+      </div>
+
+      <div class="prefs-theme">
+        <button
+          type="button"
+          class="prefs-theme-trigger"
+          class:prefs-theme-trigger-open={syntaxPickerOpen}
+          aria-haspopup="listbox"
+          aria-expanded={syntaxPickerOpen}
+          onclick={() => (syntaxPickerOpen = !syntaxPickerOpen)}
+        >
+          <span
+            class="prefs-syntax-swatch"
+            style:background-color={activeSyntaxTheme.canvas.background}
+            style:color={activeSyntaxTheme.canvas.foreground}
+            style:border-color={activeSyntaxTheme.canvas.gutterBorder}
+            aria-hidden="true"
+          >
+            <span style:color={activeSyntaxTheme.tokens.keyword}>fn</span>
+            <span style:color={activeSyntaxTheme.tokens.function}>·</span>
+            <span style:color={activeSyntaxTheme.tokens.string}>""</span>
+          </span>
+          <span class="prefs-theme-copy">
+            <span class="prefs-theme-name">Code syntax · {activeSyntaxTheme.label}</span>
+            <span class="workshop-faint prefs-theme-meta">{activeSyntaxTheme.tagline}</span>
+          </span>
+          <span class="prefs-theme-action workshop-faint">
+            {syntaxPickerOpen ? "Close" : "Change"}
+          </span>
+        </button>
+
+        {#if syntaxPickerOpen}
+          <div class="prefs-theme-popover" role="listbox" aria-label="Choose code syntax theme">
+            <div class="prefs-theme-group" role="presentation">
+              <p class="prefs-theme-group-label">Editor tokens</p>
+              <p class="prefs-syntax-lead">
+                Independent of shell Look — Code and Grapheme only.
+              </p>
+              <div class="prefs-theme-group-grid">
+                {#each syntaxThemeOptions as option (option.id)}
+                  {@const active = codeSyntaxThemePreference.id === option.id}
+                  {@const pack = getCodeSyntaxTheme(option.id)}
+                  {@const preview = codeSyntaxPreviewLines(option.id)}
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    class="prefs-theme-card prefs-syntax-card"
+                    class:prefs-theme-card-active={active}
+                    onclick={() => pickSyntaxTheme(option.id)}
+                  >
+                    <span
+                      class="prefs-syntax-mini"
+                      style:background-color={pack.canvas.background}
+                      style:color={pack.canvas.foreground}
+                      style:border-color={pack.canvas.gutterBorder}
+                      aria-hidden="true"
+                    >
+                      <span class="prefs-syntax-mini-chrome">
+                        <i style:background={pack.tokens.keyword}></i>
+                        <i style:background={pack.tokens.function}></i>
+                        <i style:background={pack.tokens.string}></i>
+                      </span>
+                      <span class="prefs-syntax-mini-body">
+                        {#each preview as line, lineIndex (lineIndex)}
+                          <span class="prefs-syntax-mini-line">
+                            {#each line as span, spanIndex (`${lineIndex}-${spanIndex}`)}
+                              <span style:color={span.color}>{span.text}</span>
+                            {/each}
+                          </span>
+                        {/each}
+                      </span>
+                    </span>
+                    <span class="prefs-theme-card-copy">
+                      <span class="prefs-theme-card-name">{option.label}</span>
+                      <span class="prefs-theme-card-meta">{option.tagline}</span>
+                    </span>
+                    {#if active}
+                      <Check
+                        size={14}
+                        strokeWidth={2.5}
+                        class="prefs-theme-card-check"
+                        aria-hidden="true"
+                      />
+                    {/if}
+                  </button>
+                {/each}
+              </div>
+            </div>
           </div>
         {/if}
       </div>
@@ -833,6 +941,85 @@
   :global(.prefs-theme-card-check) {
     flex-shrink: 0;
     color: rgb(var(--theme-link));
+  }
+
+  .prefs-syntax-swatch {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.12rem;
+    width: 2.5rem;
+    height: 1.65rem;
+    flex-shrink: 0;
+    overflow: hidden;
+    border-radius: 0.35rem;
+    border: 1px solid;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.58rem;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+  }
+
+  .prefs-syntax-lead {
+    margin: 0 0 0.35rem;
+    padding: 0 0.2rem;
+    font-size: 0.65rem;
+    line-height: 1.35;
+    color: rgb(var(--theme-text-quiet));
+  }
+
+  .prefs-syntax-card {
+    grid-template-columns: 5.6rem minmax(0, 1fr) auto;
+  }
+
+  .prefs-syntax-mini {
+    display: flex;
+    flex-direction: column;
+    width: 5.6rem;
+    height: 3.35rem;
+    flex-shrink: 0;
+    overflow: hidden;
+    border-radius: 0.38rem;
+    border: 1px solid;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.08);
+  }
+
+  .prefs-syntax-mini-chrome {
+    display: flex;
+    align-items: center;
+    gap: 0.18rem;
+    height: 0.55rem;
+    padding: 0 0.3rem;
+    border-bottom: 1px solid rgb(127 127 127 / 0.22);
+    background: color-mix(in srgb, currentColor 6%, transparent);
+  }
+
+  .prefs-syntax-mini-chrome i {
+    display: block;
+    width: 0.28rem;
+    height: 0.28rem;
+    border-radius: 999px;
+    opacity: 0.9;
+  }
+
+  .prefs-syntax-mini-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.08rem;
+    padding: 0.22rem 0.3rem 0.28rem;
+    min-height: 0;
+  }
+
+  .prefs-syntax-mini-line {
+    display: block;
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: 0.42rem;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
   }
 
   .prefs-grid {

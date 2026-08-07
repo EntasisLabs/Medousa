@@ -51,6 +51,7 @@ const STOPPED: CodeWorkspaceLspStatus = {
   phase: "stopped",
   detail: "Language service is not running",
   progress: null,
+  notice: null,
 };
 
 export function unusableLanguageError(
@@ -176,7 +177,7 @@ export class CodeLspSession {
     this.client = null;
     this.error = null;
     this.connecting = false;
-    this.status = { phase: "stopped", detail, progress: null };
+    this.status = { phase: "stopped", detail, progress: null, notice: null };
     this.#leaseRestart = null;
   }
 
@@ -208,6 +209,7 @@ export class CodeLspSession {
           ? `Restarting ${request.languageLabel} language server`
           : `Starting ${request.languageLabel} language server`,
       progress: null,
+      notice: null,
     };
 
     this.#cancelDeferred = this.#deps.deferWork(() => {
@@ -228,7 +230,7 @@ export class CodeLspSession {
           const detail = unusableLanguageError(entry, request.language);
           this.connecting = false;
           this.error = detail;
-          this.status = { phase: "failed", detail, progress: null };
+          this.status = { phase: "failed", detail, progress: null, notice: null };
           return;
         }
       } catch (err) {
@@ -296,7 +298,7 @@ export class CodeLspSession {
     if (plan.action === "fail") {
       this.connecting = false;
       this.error = plan.detail;
-      this.status = { phase: "failed", detail: plan.detail, progress: null };
+      this.status = { phase: "failed", detail: plan.detail, progress: null, notice: null };
       this.client = null;
       return;
     }
@@ -308,6 +310,7 @@ export class CodeLspSession {
       phase: "reconnecting",
       detail: plan.detail,
       progress: null,
+      notice: null,
     };
     const pending = this.#pending;
     this.#reconnectTimer = this.#deps.setTimeout(() => {

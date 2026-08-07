@@ -1,24 +1,25 @@
 <script lang="ts">
-  import { onDestroy, tick, untrack } from "svelte";
+  import { onDestroy, tick, untrack, type Snippet } from "svelte";
   import {
     CircleAlert,
     ArrowLeft,
     ArrowRight,
     FileCode2,
+    FolderKanban,
     ListTree,
     LoaderCircle,
     Pencil,
     RotateCcw,
     Save,
+    Settings2,
+    Square,
     SquareTerminal,
     GitPullRequestArrow,
-    Orbit,
     Play,
     Sparkles,
     UserRound,
     X,
     Search,
-    ScrollText,
     GitBranch,
   } from "@lucide/svelte";
   import CodeMirrorHost from "$lib/components/code/CodeMirrorHost.svelte";
@@ -159,6 +160,7 @@
   } from "$lib/config/codeEditorPreferences";
   import { codeEditorFind } from "$lib/stores/codeEditorFind.svelte";
   import { codeEditorStatus } from "$lib/stores/codeEditorStatus.svelte";
+  import { codeSyntaxThemePreference } from "$lib/stores/codeSyntaxThemePreference.svelte";
 
   interface Props {
     fill?: boolean;
@@ -168,13 +170,22 @@
     worldOpen?: boolean;
     reviewAvailable?: boolean;
     terminalAvailable?: boolean;
+    /** Leading project identity for the unified chrome bar. */
+    projectTitle?: string | null;
+    phaseLabel?: string | null;
+    agentRunning?: boolean;
+    agentLabel?: string;
     onToggleWorld?: () => void;
     onOpenReview?: () => void;
     onOpenTerminal?: () => void;
+    onStopAgent?: () => void;
+    onResumeEditing?: () => void;
     onProvision?: () => Promise<void>;
     preferredAgent?: "codex" | "cursor";
     onHandoffToAgent?: (runtime: "codex" | "cursor", draft?: string) => Promise<void>;
     onReclaimHuman?: () => Promise<void>;
+    /** Project kebab items (Ask Codex, Terminal, Discard, …). */
+    projectMenu?: Snippet;
   }
 
   let {
@@ -185,13 +196,20 @@
     worldOpen = false,
     reviewAvailable = false,
     terminalAvailable = false,
+    projectTitle = null,
+    phaseLabel = null,
+    agentRunning = false,
+    agentLabel = "agent",
     onToggleWorld,
     onOpenReview,
     onOpenTerminal,
+    onStopAgent,
+    onResumeEditing,
     onProvision,
     preferredAgent = "codex",
     onHandoffToAgent,
     onReclaimHuman,
+    projectMenu,
   }: Props = $props();
 
   let savingFile = $state(false);
@@ -371,12 +389,6 @@
   );
   /** Soft lease: typing is allowed when a human attempt can begin or continue. */
   const bufferInteractive = $derived((editable || canBeginEdit) && !previewOnly);
-  const sealedForReview = $derived(
-    Boolean(
-      detail?.state === "awaiting_review" &&
-        detail.allowed_actions.continue_editing?.allowed,
-    ),
-  );
   let beginEditPromise = $state<Promise<void> | null>(null);
   const statusControlLabel = $derived.by(() => {
     if (agentHasControl) {
@@ -1073,6 +1085,10 @@
     tabSizePref = next;
     writeCodeEditorTabSize(next);
     editorPrefsEpoch += 1;
+  }
+
+  function openSyntaxThemeSettings() {
+    settingsNav.openSection("preferences");
   }
 
   function handleCursorChanged(
@@ -2637,11 +2653,33 @@
       saving: busy,
       saveWhisper,
       control: statusControlLabel,
-      languageState: lspConnecting
-        ? "connecting"
-        : lspError
-          ? "editing-only"
-          : "ready",
+      languageState: lspStatus.phase === "failed"
+        ? "failed"
+        : lspStatus.phase === "reconnecting"
+          ? "reconnecting"
+          : lspConnecting
+            ? "connecting"
+            : lspError
+              ? "editing-only"
+              : "ready",
+      languageDetail: (() => {
+        if (lspStatus.progress) {
+          const pct =
+            lspStatus.progress.percentage != null
+              ? ` ${Math.round(lspStatus.progress.percentage)}%`
+              : "";
+          const msg = lspStatus.progress.message
+            ? ` · ${lspStatus.progress.message}`
+            : "";
+          return `${lspStatus.progress.title}${msg}${pct}`;
+        }
+        if (lspStatus.phase === "reconnecting" || lspStatus.phase === "failed") {
+          return lspStatus.detail;
+        }
+        if (lspStatus.notice) return lspStatus.notice;
+        if (lspConnecting) return "Language starting…";
+        return null;
+      })(),
     });
   });
 
@@ -2767,22 +2805,60 @@
   });
 </script>
 
-<section class="flex flex-col overflow-hidden rounded-lg border border-surface-500/35 bg-surface-950/45 {fill ? 'min-h-0 flex-1' : 'min-h-[26rem]'}">
-  {#if activeTab}
-    <header class="relative z-20 flex shrink-0 items-center justify-between gap-2 border-b border-surface-500/30 bg-surface-950/65 px-1.5 py-0.5">
-      <div class="flex min-w-0 flex-1 items-center gap-1.5">
-        <div class="flex shrink-0 items-center">
-          <button type="button" class="scripts-workbench-toolbar-btn" aria-label="Go back" title="Go back" disabled={!codeWorkspace.canNavigate(workId, -1)} onclick={() => void navigate(-1)}><ArrowLeft size={14} strokeWidth={1.75} /></button>
-          <button type="button" class="scripts-workbench-toolbar-btn" aria-label="Go forward" title="Go forward" disabled={!codeWorkspace.canNavigate(workId, 1)} onclick={() => void navigate(1)}><ArrowRight size={14} strokeWidth={1.75} /></button>
-        </div>
+<section class="code-source-editor flex flex-col overflow-hidden {fill ? 'code-source-editor--fill min-h-0 flex-1' : 'min-h-[26rem] rounded-lg border border-surface-500/35 bg-surface-950/45'}">
+  <header class="code-editor-chrome relative z-20 flex shrink-0 items-center gap-1.5 border-b border-surface-500/30 px-1.5">
+    <div class="flex min-w-0 flex-1 items-center gap-1">
+      <div class="flex shrink-0 items-center">
+        <button type="button" class="scripts-workbench-toolbar-btn" aria-label="Go back" title="Go back" disabled={!activeTab || !codeWorkspace.canNavigate(workId, -1)} onclick={() => void navigate(-1)}><ArrowLeft size={14} strokeWidth={1.75} /></button>
+        <button type="button" class="scripts-workbench-toolbar-btn" aria-label="Go forward" title="Go forward" disabled={!activeTab || !codeWorkspace.canNavigate(workId, 1)} onclick={() => void navigate(1)}><ArrowRight size={14} strokeWidth={1.75} /></button>
+      </div>
+      {#if projectTitle}
+        <span class="code-editor-chrome-title" title={projectTitle}>{projectTitle}</span>
+        {#if activeTab}
+          <span class="code-editor-chrome-sep" aria-hidden="true">›</span>
+        {:else if phaseLabel}
+          <span class="code-editor-chrome-phase">{phaseLabel}</span>
+        {/if}
+      {/if}
+      {#if activeTab}
         <CodeBreadcrumbs
           path={activeTab.path}
-          symbols={symbolTrail}
           onPathSegment={onBreadcrumbPath}
-          onSymbol={(line) => editor?.revealLine(line)}
         />
-      </div>
-      <div class="flex shrink-0 items-center gap-0.5">
+      {/if}
+    </div>
+    <div class="code-editor-chrome-actions flex shrink-0 items-center gap-0.5">
+      {#if reviewAvailable}
+        <button
+          type="button"
+          class="scripts-workbench-toolbar-btn text-amber-300/85"
+          title="Review changes"
+          aria-label="Review changes"
+          onclick={onOpenReview}
+        >
+          <GitPullRequestArrow size={14} strokeWidth={1.75} />
+        </button>
+      {/if}
+      {#if agentRunning}
+        <button
+          type="button"
+          class="scripts-workbench-toolbar-btn flex items-center gap-1 text-amber-300"
+          title={`Stop ${agentLabel}`}
+          aria-label={`Stop ${agentLabel}`}
+          onclick={onStopAgent}
+        ><Square size={13} strokeWidth={1.75} /></button>
+        <button
+          type="button"
+          class="scripts-workbench-toolbar-btn scripts-workbench-toolbar-btn-primary"
+          title="Resume editing"
+          aria-label="Resume editing"
+          onclick={() => {
+            if (onResumeEditing) onResumeEditing();
+            else void reclaimHuman();
+          }}
+        ><Play size={14} strokeWidth={1.75} /></button>
+      {/if}
+      {#if activeTab}
         <button
           type="button"
           class="scripts-workbench-toolbar-btn {contextPanel === 'problems' ? 'scripts-workbench-toolbar-btn-active' : ''}"
@@ -2807,35 +2883,6 @@
           aria-pressed={changesOpen}
           onclick={() => void toggleChanges()}
         ><GitBranch size={14} strokeWidth={1.75} /></button>
-        <button
-          type="button"
-          class="scripts-workbench-toolbar-btn {outputOpen ? 'scripts-workbench-toolbar-btn-active' : ''}"
-          title="Output"
-          aria-label="Toggle task output"
-          aria-pressed={outputOpen}
-          onclick={() => toggleOutput()}
-        ><ScrollText size={14} strokeWidth={1.75} /></button>
-        <button
-          type="button"
-          class="scripts-workbench-toolbar-btn {contextPanel === 'outline' ? 'scripts-workbench-toolbar-btn-active' : ''}"
-          title={titleWithShortcut("Structure", "code-structure")}
-          aria-label="Show file structure"
-          aria-pressed={contextPanel === "outline"}
-          disabled={!lspClient}
-          onclick={() => void showOutline()}
-        ><ListTree size={14} strokeWidth={1.75} /></button>
-        {#if selectedTask}
-          <button
-            type="button"
-            class="scripts-workbench-toolbar-btn {runningTask ? 'scripts-workbench-toolbar-btn-active' : ''}"
-            title={runningTask ? `Stop ${selectedTask.label}` : `${selectedTask.label}: ${selectedTask.argv.join(" ")}`}
-            aria-label={runningTask ? `Stop ${selectedTask.label}` : `Run ${selectedTask.label}`}
-            onclick={() => {
-              if (runningTask) void stopDetectedTask();
-              else void runDetectedTask();
-            }}
-          >{#if runningTask}<X size={14} />{:else}<Play size={14} strokeWidth={1.75} />{/if}</button>
-        {/if}
         {#if terminalAvailable}
           <button
             type="button"
@@ -2846,83 +2893,19 @@
             onclick={() => void toggleTerminalDock()}
           ><SquareTerminal size={14} strokeWidth={1.75} /></button>
         {/if}
-        <button
-          type="button"
-          class="scripts-workbench-toolbar-btn {worldOpen ? 'scripts-workbench-toolbar-btn-active' : ''}"
-          title="Understand this code"
-          aria-label="Understand this code"
-          aria-pressed={worldOpen}
-          onclick={onToggleWorld}
-        ><Orbit size={14} strokeWidth={1.75} /></button>
-        {#if reviewAvailable}
+        {#if runningTask}
           <button
             type="button"
-            class="scripts-workbench-toolbar-btn text-amber-300/80"
-            title="Review changes"
-            aria-label="Review changes"
-            onclick={onOpenReview}
-          ><GitPullRequestArrow size={14} strokeWidth={1.75} /></button>
+            class="scripts-workbench-toolbar-btn scripts-workbench-toolbar-btn-active"
+            title={selectedTask ? `Stop ${selectedTask.label}` : "Stop task"}
+            aria-label={selectedTask ? `Stop ${selectedTask.label}` : "Stop task"}
+            onclick={() => void stopDetectedTask()}
+          ><X size={14} strokeWidth={1.75} /></button>
         {/if}
 
-        <span class="mx-0.5 h-4 w-px shrink-0 bg-surface-500/35" aria-hidden="true"></span>
+        <span class="code-editor-chrome-divider" aria-hidden="true"></span>
 
-        <OverflowMenu label="Editor options" title="Editor options">
-          <button type="button" role="menuitem" class="flex w-full items-center rounded px-2 py-1.5 text-left text-chrome-sm text-content-secondary hover:bg-surface-800" title={titleWithShortcut("Find in file", "code-find")} onclick={() => editor?.openFind()}>Find in file</button>
-          <button type="button" role="menuitem" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-chrome-sm text-content-secondary hover:bg-surface-800" onclick={toggleWordWrap}>
-            <span>Word wrap</span>
-            <span class="text-content-quiet">{wordWrap ? "On" : "Off"}</span>
-          </button>
-          <button type="button" role="menuitem" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-chrome-sm text-content-secondary hover:bg-surface-800" onclick={toggleLineNumbers}>
-            <span>Line numbers</span>
-            <span class="text-content-quiet">{showLineNumbers ? "On" : "Off"}</span>
-          </button>
-          <button type="button" role="menuitem" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-chrome-sm text-content-secondary hover:bg-surface-800" onclick={cycleFontSize}>
-            <span>Font size</span>
-            <span class="text-content-quiet">{fontSize}px</span>
-          </button>
-          <button type="button" role="menuitem" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-chrome-sm text-content-secondary hover:bg-surface-800" onclick={cycleTabSize}>
-            <span>Tab size</span>
-            <span class="text-content-quiet">{tabSizePref}</span>
-          </button>
-          {#if projectTasks.length > 1}
-            <label class="block border-t border-surface-500/20 px-2 pb-1.5 pt-1">
-              <span class="text-chrome-xs uppercase tracking-wider text-content-quiet">Project command</span>
-              <select class="mt-1 w-full rounded bg-surface-800 px-1.5 py-1 text-chrome-sm text-content-secondary outline-none" aria-label="Project command" bind:value={selectedTaskId}>
-                {#each projectTasks as task (task.id)}
-                  <option value={task.id}>{task.label}{#if task.long_running} · background{/if}{#if task.provider === "vscode-tasks"} · tasks.json{/if}</option>
-                {/each}
-              </select>
-            </label>
-          {/if}
-          {#if projectTasks.some((task) => task.kind === "test")}
-            <button type="button" role="menuitem" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-chrome-sm text-content-secondary hover:bg-surface-800" onclick={() => void toggleTests()}>
-              <span>Discovered tests</span>
-              <span class="text-content-quiet">{testsOpen ? "Hide" : "Show"}</span>
-            </button>
-          {/if}
-          {#if canFormat && editable}
-            <button type="button" role="menuitem" class="flex w-full items-center rounded px-2 py-1.5 text-left text-chrome-sm text-content-secondary hover:bg-surface-800 disabled:opacity-40" disabled={languageActionRunning} onclick={() => void runLanguageAction("format")}>Format document</button>
-          {/if}
-          {#if canCodeAction && editable}
-            <button type="button" role="menuitem" class="flex w-full items-center rounded px-2 py-1.5 text-left text-chrome-sm text-content-secondary hover:bg-surface-800 disabled:opacity-40" disabled={languageActionRunning} onclick={() => void runLanguageAction("organize_imports")}>Organize imports</button>
-          {/if}
-          {#if languageSupportsLsp(activeTabLanguage)}
-            <button type="button" role="menuitem" class="flex w-full items-center rounded border-t border-surface-500/20 px-2 py-1.5 text-left text-chrome-sm text-content-secondary hover:bg-surface-800" onclick={restartLanguageServer}>Restart language server</button>
-            <button type="button" role="menuitem" class="flex w-full items-center rounded px-2 py-1.5 text-left text-chrome-sm text-content-secondary hover:bg-surface-800" onclick={() => void showLanguageLogs()}>Show language server logs</button>
-          {/if}
-          {#if lspError}
-            <button type="button" role="menuitem" class="flex w-full items-center rounded px-2 py-1.5 text-left text-chrome-sm text-content-warning hover:bg-surface-800 disabled:opacity-40" disabled={repairingLanguage} onclick={() => void repairLanguageSupport()}>{repairingLanguage ? "Repairing…" : "Repair language support"}</button>
-          {/if}
-        </OverflowMenu>
-        <button
-          type="button"
-          class="scripts-workbench-toolbar-btn"
-          disabled={activeTab.loading || busy}
-          onclick={() => void reload()}
-          aria-label="Reload file"
-          title="Reload file"
-        ><RotateCcw size={14} strokeWidth={1.75} /></button>
-        {#if agentHasControl}
+        {#if agentHasControl && !agentRunning}
           <button
             type="button"
             class="scripts-workbench-toolbar-btn scripts-workbench-toolbar-btn-primary"
@@ -2950,26 +2933,126 @@
             title={savingFile ? "Saving…" : titleWithShortcut("Save", "code-save")}
           ><Save size={14} strokeWidth={1.75} /></button>
         {/if}
-      </div>
-    </header>
 
-    {#if lspStatus.phase === "reconnecting" || lspStatus.phase === "failed"}
-      <div class="flex shrink-0 flex-wrap items-center gap-2 border-b {lspStatus.phase === 'failed' ? 'border-rose-500/30 bg-rose-950/25 text-rose-100' : 'border-amber-500/30 bg-amber-950/20 text-amber-100'} px-2.5 py-1.5 text-chrome-sm" role="status">
-        <span class="min-w-40 flex-1">{lspStatus.detail}</span>
-        <button type="button" class="rounded px-1.5 py-0.5 hover:bg-white/10" onclick={restartLanguageServer}>Restart now</button>
-        <button type="button" class="rounded px-1.5 py-0.5 hover:bg-white/10" onclick={() => void showLanguageLogs()}>Logs</button>
-        {#if lspStatus.phase === "failed"}
-          <button type="button" class="rounded bg-white/10 px-1.5 py-0.5" disabled={repairingLanguage} onclick={() => void repairLanguageSupport()}>{repairingLanguage ? "Repairing…" : "Repair"}</button>
+        <OverflowMenu
+          label="Editor options"
+          title="Editor options"
+          panelClass="w-[min(16rem,calc(100vw-2rem))] rounded-lg border border-surface-500/40 bg-surface-900 p-1.5 shadow-xl"
+        >
+          {#snippet trigger({ open, toggle })}
+            <button
+              type="button"
+              class="scripts-workbench-toolbar-btn {open ? 'scripts-workbench-toolbar-btn-active' : ''}"
+              title="Editor options — wrap, font, structure, language server"
+              aria-label="Editor options"
+              aria-expanded={open}
+              aria-haspopup="menu"
+              onclick={toggle}
+            >
+              <Settings2 size={14} strokeWidth={1.75} />
+            </button>
+          {/snippet}
+          <button type="button" role="menuitem" class="code-chrome-menu-item" title={titleWithShortcut("Find in file", "code-find")} onclick={() => editor?.openFind()}>Find in file</button>
+          <button type="button" role="menuitem" class="code-chrome-menu-item" onclick={() => toggleOutput()}>
+            <span>Output</span>
+            <span class="code-chrome-menu-meta">{outputOpen ? "On" : "Off"}</span>
+          </button>
+          <button type="button" role="menuitem" class="code-chrome-menu-item" disabled={!lspClient} onclick={() => void showOutline()}>
+            <span>{titleWithShortcut("Structure", "code-structure")}</span>
+          </button>
+          <button type="button" role="menuitem" class="code-chrome-menu-item" onclick={onToggleWorld}>
+            <span>Understand this code</span>
+            <span class="code-chrome-menu-meta">{worldOpen ? "On" : "Off"}</span>
+          </button>
+          {#if selectedTask && !runningTask}
+            <button
+              type="button"
+              role="menuitem"
+              class="code-chrome-menu-item"
+              title={`${selectedTask.label}: ${selectedTask.argv.join(" ")}`}
+              onclick={() => void runDetectedTask()}
+            >Run {selectedTask.label}</button>
+          {/if}
+          <button type="button" role="menuitem" class="code-chrome-menu-item" disabled={activeTab.loading || busy} onclick={() => void reload()}>Reload file</button>
+          <div class="code-chrome-menu-sep" role="separator"></div>
+          <button type="button" role="menuitem" class="code-chrome-menu-item" onclick={toggleWordWrap}>
+            <span>Word wrap</span>
+            <span class="code-chrome-menu-meta">{wordWrap ? "On" : "Off"}</span>
+          </button>
+          <button type="button" role="menuitem" class="code-chrome-menu-item" onclick={toggleLineNumbers}>
+            <span>Line numbers</span>
+            <span class="code-chrome-menu-meta">{showLineNumbers ? "On" : "Off"}</span>
+          </button>
+          <button type="button" role="menuitem" class="code-chrome-menu-item" onclick={cycleFontSize}>
+            <span>Font size</span>
+            <span class="code-chrome-menu-meta">{fontSize}px</span>
+          </button>
+          <button type="button" role="menuitem" class="code-chrome-menu-item" onclick={openSyntaxThemeSettings}>
+            <span>Syntax theme</span>
+            <span class="code-chrome-menu-meta">{codeSyntaxThemePreference.theme.label}</span>
+          </button>
+          <button type="button" role="menuitem" class="code-chrome-menu-item" onclick={cycleTabSize}>
+            <span>Tab size</span>
+            <span class="code-chrome-menu-meta">{tabSizePref}</span>
+          </button>
+          {#if projectTasks.length > 1}
+            <label class="code-chrome-menu-field">
+              <span class="code-chrome-menu-field-label">Project command</span>
+              <select class="code-chrome-menu-select" aria-label="Project command" bind:value={selectedTaskId}>
+                {#each projectTasks as task (task.id)}
+                  <option value={task.id}>{task.label}{#if task.long_running} · background{/if}{#if task.provider === "vscode-tasks"} · tasks.json{/if}</option>
+                {/each}
+              </select>
+            </label>
+          {/if}
+          {#if projectTasks.some((task) => task.kind === "test")}
+            <button type="button" role="menuitem" class="code-chrome-menu-item" onclick={() => void toggleTests()}>
+              <span>Discovered tests</span>
+              <span class="code-chrome-menu-meta">{testsOpen ? "Hide" : "Show"}</span>
+            </button>
+          {/if}
+          {#if canFormat && editable}
+            <button type="button" role="menuitem" class="code-chrome-menu-item" disabled={languageActionRunning} onclick={() => void runLanguageAction("format")}>Format document</button>
+          {/if}
+          {#if canCodeAction && editable}
+            <button type="button" role="menuitem" class="code-chrome-menu-item" disabled={languageActionRunning} onclick={() => void runLanguageAction("organize_imports")}>Organize imports</button>
+          {/if}
+          {#if languageSupportsLsp(activeTabLanguage)}
+            <div class="code-chrome-menu-sep" role="separator"></div>
+            <button type="button" role="menuitem" class="code-chrome-menu-item" onclick={restartLanguageServer}>Restart language server</button>
+            <button type="button" role="menuitem" class="code-chrome-menu-item" onclick={() => void showLanguageLogs()}>Show language server logs</button>
+          {/if}
+          {#if lspError}
+            <button type="button" role="menuitem" class="code-chrome-menu-item code-chrome-menu-item--warn" disabled={repairingLanguage} onclick={() => void repairLanguageSupport()}>{repairingLanguage ? "Repairing…" : "Repair language support"}</button>
+          {/if}
+        </OverflowMenu>
+        {#if projectMenu}
+          <OverflowMenu
+            label="Project actions"
+            title="Project actions"
+            panelClass="w-52 rounded-lg border border-surface-500/40 bg-surface-900 p-1.5 shadow-xl"
+          >
+            {#snippet trigger({ open, toggle })}
+              <button
+                type="button"
+                class="scripts-workbench-toolbar-btn {open ? 'scripts-workbench-toolbar-btn-active' : ''}"
+                title="Project actions — agent, terminal, discard"
+                aria-label="Project actions"
+                aria-expanded={open}
+                aria-haspopup="menu"
+                onclick={toggle}
+              >
+                <FolderKanban size={14} strokeWidth={1.75} />
+              </button>
+            {/snippet}
+            {@render projectMenu()}
+          </OverflowMenu>
         {/if}
-      </div>
-    {:else if lspStatus.progress}
-      <div class="flex shrink-0 items-center gap-2 border-b border-sky-500/20 bg-sky-950/15 px-2.5 py-1 text-chrome-sm text-sky-100/85" role="status">
-        <LoaderCircle size={11} class="shrink-0 animate-spin" />
-        <span class="min-w-0 flex-1 truncate">{lspStatus.progress.title}{lspStatus.progress.message ? ` · ${lspStatus.progress.message}` : ""}</span>
-        {#if lspStatus.progress.percentage != null}<span>{Math.round(lspStatus.progress.percentage)}%</span>{/if}
-      </div>
-    {/if}
+      {/if}
+    </div>
+  </header>
 
+  {#if activeTab}
     {#if surfaceError || activeTab.error || codeWorkspace.workspaceErrorByWorkId[workId]}
       <p class="shrink-0 border-b border-amber-500/30 bg-amber-950/25 px-2.5 py-1.5 text-chrome-sm text-amber-100">
         {humanizeForgeMessage(surfaceError || activeTab.error || codeWorkspace.workspaceErrorByWorkId[workId] || "")}
@@ -2983,23 +3066,6 @@
           <span>Large file preview (first 2 MiB of {activeTab.byte_size.toLocaleString()} bytes) · read-only</span>
         {:else}
           <span>Lossy text preview ({activeTab.encoding ?? "unknown"} encoding) · read-only</span>
-        {/if}
-      </div>
-    {:else if interactive && !editable && !agentHasControl && sealedForReview}
-      <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-surface-700/80 bg-surface-900/50 px-2.5 py-1.5 text-chrome-sm text-content-secondary" role="status">
-        <span class="min-w-40 flex-1">Sealed for review · edits start a new attempt</span>
-        {#if onOpenReview}
-          <button type="button" class="rounded bg-surface-800 px-1.5 py-0.5" onclick={() => onOpenReview()}>Open review</button>
-        {/if}
-        <button type="button" class="rounded bg-primary-500/20 px-1.5 py-0.5 text-primary-100" onclick={() => void startEditing()}>Continue editing</button>
-      </div>
-    {:else if interactive && !bufferInteractive && !agentHasControl}
-      <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-500/30 bg-amber-950/20 px-2.5 py-1.5 text-chrome-sm text-amber-100" role="status">
-        {#if !canStartHumanEditing(detail?.allowed_actions)}
-          <span class="min-w-40 flex-1">Editing isn’t available in this project state.</span>
-        {:else}
-          <span class="min-w-40 flex-1">Start editing to change this file.</span>
-          <button type="button" class="rounded bg-amber-500/20 px-1.5 py-0.5" onclick={() => void startEditing()}>Edit file</button>
         {/if}
       </div>
     {/if}
@@ -3465,6 +3531,161 @@
 </section>
 
 <style>
+  .code-source-editor--fill {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .code-editor-chrome {
+    min-height: 30px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background: transparent;
+  }
+
+  .code-editor-chrome-title {
+    max-width: 8.5rem;
+    flex-shrink: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: color-mix(
+      in srgb,
+      rgb(var(--theme-text)) 92%,
+      rgb(var(--theme-text-secondary))
+    );
+    font-family:
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      system-ui,
+      sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0;
+    line-height: 1.2;
+  }
+
+  .code-editor-chrome-sep {
+    flex-shrink: 0;
+    color: color-mix(in srgb, rgb(var(--theme-text)) 40%, transparent);
+    font-family:
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      system-ui,
+      sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1;
+  }
+
+  .code-editor-chrome-phase {
+    flex-shrink: 0;
+    color: color-mix(
+      in srgb,
+      rgb(var(--theme-text)) 55%,
+      rgb(var(--theme-text-secondary))
+    );
+    font-family:
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      system-ui,
+      sans-serif;
+    font-size: 12px;
+    font-weight: 400;
+  }
+
+  .code-editor-chrome-divider {
+    margin: 0 0.15rem;
+    height: 1rem;
+    width: 1px;
+    flex-shrink: 0;
+    background: rgb(var(--color-surface-500) / 0.35);
+  }
+
+  :global(.code-chrome-menu-item) {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    border: 0;
+    border-radius: 0.35rem;
+    background: transparent;
+    padding: 0.4rem 0.5rem;
+    color: rgb(var(--theme-text));
+    font-family:
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      system-ui,
+      sans-serif;
+    font-size: 13px;
+    font-weight: 400;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  :global(.code-chrome-menu-item:hover:not(:disabled)) {
+    background: rgb(var(--color-surface-800) / 0.7);
+  }
+
+  :global(.code-chrome-menu-item:disabled) {
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  :global(.code-chrome-menu-item--warn) {
+    color: rgb(var(--theme-warning));
+  }
+
+  :global(.code-chrome-menu-meta) {
+    color: color-mix(
+      in srgb,
+      rgb(var(--theme-text)) 50%,
+      rgb(var(--theme-text-secondary))
+    );
+    font-size: 12px;
+  }
+
+  :global(.code-chrome-menu-sep) {
+    margin: 0.25rem 0.35rem;
+    border-top: 1px solid rgb(var(--color-surface-500) / 0.25);
+  }
+
+  :global(.code-chrome-menu-field) {
+    display: block;
+    border-top: 1px solid rgb(var(--color-surface-500) / 0.2);
+    padding: 0.4rem 0.5rem 0.5rem;
+  }
+
+  :global(.code-chrome-menu-field-label) {
+    color: color-mix(
+      in srgb,
+      rgb(var(--theme-text)) 45%,
+      transparent
+    );
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  :global(.code-chrome-menu-select) {
+    margin-top: 0.3rem;
+    width: 100%;
+    border: 0;
+    border-radius: 0.3rem;
+    background: rgb(var(--color-surface-800));
+    padding: 0.3rem 0.4rem;
+    color: rgb(var(--theme-text-secondary));
+    font-size: 12px;
+    outline: none;
+  }
+
   .code-intent-action {
     border-radius: 0.25rem;
     padding: 0.2rem 0.45rem;
