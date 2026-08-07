@@ -183,6 +183,10 @@ pub fn forge_router(state: AppState) -> Router {
             post(request_review_changes),
         )
         .route(
+            "/v1/forge/items/{work_id}/review/continue-editing",
+            post(continue_editing),
+        )
+        .route(
             "/v1/forge/items/{work_id}/review/file",
             get(get_review_file).post(restore_review_file),
         )
@@ -4758,6 +4762,70 @@ async fn request_review_changes(
         )
         .map_err(map_err)?;
     Ok(ok_item(&state, item, "changes_requested"))
+}
+
+/// Reopen sealed review for human edits (no agent). Same custody path as
+/// restore-from-review, without mutating a specific file.
+async fn continue_editing(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+) -> ApiResult<Json<BeginAttemptResponse>> {
+    let id = parse_work_id(&work_id)?;
+    let actor = actor_from_state(&state);
+    let forge = forge(&state);
+    let item = forge.load(&id).map_err(map_err)?;
+    if item.state != WorkState::AwaitingReview {
+        return Err(request_error(
+            StatusCode::CONFLICT,
+            format!("Cannot continue editing in state {}", item.state),
+        ));
+    }
+    let source_attempt_id = item
+        .attempts
+        .iter()
+        .filter(|attempt| attempt.evidence_id.is_some())
+        .max_by_key(|attempt| attempt.seq)
+        .map(|attempt| attempt.id.clone())
+        .ok_or_else(|| {
+            request_error(
+                StatusCode::CONFLICT,
+                "No sealed evidence to continue editing from",
+            )
+        })?;
+    forge
+        .reopen_for_changes(&id, "Continue editing after review", &actor)
+        .map_err(map_err)?;
+    let (item, lease) = forge
+        .begin_isolated_attempt_from(
+            &id,
+            &source_attempt_id,
+            ExecutorDescriptor {
+                kind: "human".into(),
+                detail: serde_json::json!({"reason": "continue_editing"}),
+            },
+            None,
+            &actor,
+        )
+        .map_err(map_err)?;
+    let environment = item
+        .environment_for_attempt(&lease.attempt_id)
+        .ok_or_else(|| {
+            request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "isolated attempt has no governed environment",
+            )
+        })?;
+    let attempt_id = lease.attempt_id.as_str().to_owned();
+    let worktree = environment.worktree.display().to_string();
+    let branch = environment.branch.clone();
+    publish_item(&state, &item, "continue_editing");
+    Ok(Json(BeginAttemptResponse {
+        item: project_item(item),
+        lease,
+        attempt_id,
+        worktree,
+        branch,
+    }))
 }
 
 #[derive(Debug, Deserialize)]

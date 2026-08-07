@@ -1,6 +1,11 @@
 /** Shared transitions into an undertaking's permanent workspace surfaces. */
 
-import { beginHumanAttempt, humanizeForgeMessage, type ItemProjection } from "$lib/forge";
+import {
+  canStartHumanEditing,
+  startHumanEditingSession,
+  humanizeForgeMessage,
+  type ItemProjection,
+} from "$lib/forge";
 import { terminalCreate } from "$lib/terminal";
 import { undertakings } from "$lib/stores/undertakings.svelte";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
@@ -90,8 +95,8 @@ export async function openTrackedTerminal(
   }
 
   let leaseId = undertakings.active?.leaseId ?? null;
-  if (item.allowed_actions.begin_attempt.allowed) {
-    const begun = await beginHumanAttempt(item.id);
+  if (canStartHumanEditing(item.allowed_actions)) {
+    const begun = await startHumanEditingSession(item.id, item.allowed_actions);
     leaseId = begun.lease.lease_id;
     undertakings.setActiveFromItem(begun.item, {
       leaseId,
@@ -170,7 +175,7 @@ export async function reclaimTrackedHuman(item: ItemProjection): Promise<ItemPro
   await interruptTrackedAgent(item);
   await undertakings.refreshDetail();
   const ready = undertakings.detail?.id === item.id ? undertakings.detail : item;
-  const begun = await beginHumanAttempt(ready.id);
+  const begun = await startHumanEditingSession(ready.id, ready.allowed_actions);
   undertakings.setActiveFromItem(begun.item, {
     leaseId: begun.lease.lease_id,
     leaseGeneration: begun.lease.generation,

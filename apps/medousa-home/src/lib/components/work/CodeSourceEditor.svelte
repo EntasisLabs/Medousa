@@ -96,7 +96,8 @@
     decideCodeSave,
   } from "$lib/code/codeSaveGate";
   import {
-    beginHumanAttempt,
+    canStartHumanEditing,
+    startHumanEditingSession,
     applyUndertakingSourceWorkspaceEdit,
     getUndertakingSource,
     heartbeatLease,
@@ -365,11 +366,17 @@
       interactive &&
         !previewOnly &&
         !agentHasControl &&
-        detail?.allowed_actions.begin_attempt.allowed,
+        canStartHumanEditing(detail?.allowed_actions),
     ),
   );
-  /** Soft lease: typing is allowed when a human attempt can begin. */
+  /** Soft lease: typing is allowed when a human attempt can begin or continue. */
   const bufferInteractive = $derived((editable || canBeginEdit) && !previewOnly);
+  const sealedForReview = $derived(
+    Boolean(
+      detail?.state === "awaiting_review" &&
+        detail.allowed_actions.continue_editing?.allowed,
+    ),
+  );
   let beginEditPromise = $state<Promise<void> | null>(null);
   const statusControlLabel = $derived.by(() => {
     if (agentHasControl) {
@@ -662,8 +669,8 @@
     try {
       let leaseId = context?.leaseId ?? null;
       let generation = context?.leaseGeneration ?? null;
-      if ((!leaseId || generation == null) && detail?.allowed_actions.begin_attempt.allowed) {
-        const begun = await beginHumanAttempt(detail.id);
+      if ((!leaseId || generation == null) && canStartHumanEditing(detail?.allowed_actions)) {
+        const begun = await startHumanEditingSession(detail!.id, detail!.allowed_actions);
         leaseId = begun.lease.lease_id;
         generation = begun.lease.generation;
         undertakings.setActiveFromItem(begun.item, {
@@ -830,8 +837,8 @@
   async function ensureHumanLease(): Promise<{ leaseId: string; generation: number }> {
     let leaseId = context?.leaseId ?? null;
     let generation = context?.leaseGeneration ?? null;
-    if ((!leaseId || generation == null) && detail?.allowed_actions.begin_attempt.allowed) {
-      const begun = await beginHumanAttempt(detail.id);
+    if ((!leaseId || generation == null) && detail && canStartHumanEditing(detail.allowed_actions)) {
+      const begun = await startHumanEditingSession(detail.id, detail.allowed_actions);
       leaseId = begun.lease.lease_id;
       generation = begun.lease.generation;
       undertakings.setActiveFromItem(begun.item, {
@@ -1615,7 +1622,7 @@
   }
 
   async function startEditing() {
-    if (!detail || !detail.allowed_actions.begin_attempt.allowed) return;
+    if (!detail || !canStartHumanEditing(detail.allowed_actions)) return;
     if (beginEditPromise) {
       await beginEditPromise;
       return;
@@ -1623,7 +1630,7 @@
     beginningEdit = true;
     surfaceError = null;
     beginEditPromise = (async () => {
-      const begun = await beginHumanAttempt(detail.id);
+      const begun = await startHumanEditingSession(detail.id, detail.allowed_actions);
       undertakings.setActiveFromItem(begun.item, {
         leaseId: begun.lease.lease_id,
         leaseGeneration: begun.lease.generation,
@@ -2978,14 +2985,17 @@
           <span>Lossy text preview ({activeTab.encoding ?? "unknown"} encoding) · read-only</span>
         {/if}
       </div>
+    {:else if interactive && !editable && !agentHasControl && sealedForReview}
+      <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-surface-700/80 bg-surface-900/50 px-2.5 py-1.5 text-chrome-sm text-content-secondary" role="status">
+        <span class="min-w-40 flex-1">Sealed for review · edits start a new attempt</span>
+        {#if onOpenReview}
+          <button type="button" class="rounded bg-surface-800 px-1.5 py-0.5" onclick={() => onOpenReview()}>Open review</button>
+        {/if}
+        <button type="button" class="rounded bg-primary-500/20 px-1.5 py-0.5 text-primary-100" onclick={() => void startEditing()}>Continue editing</button>
+      </div>
     {:else if interactive && !bufferInteractive && !agentHasControl}
       <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-500/30 bg-amber-950/20 px-2.5 py-1.5 text-chrome-sm text-amber-100" role="status">
-        {#if reviewAvailable || detail?.human_phase === "review"}
-          <span class="min-w-40 flex-1">This project is in review — request changes to unlock editing.</span>
-          {#if onOpenReview}
-            <button type="button" class="rounded bg-amber-500/20 px-1.5 py-0.5" onclick={() => onOpenReview()}>Open review</button>
-          {/if}
-        {:else if !detail?.allowed_actions.begin_attempt.allowed}
+        {#if !canStartHumanEditing(detail?.allowed_actions)}
           <span class="min-w-40 flex-1">Editing isn’t available in this project state.</span>
         {:else}
           <span class="min-w-40 flex-1">Start editing to change this file.</span>

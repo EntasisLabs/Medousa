@@ -38,6 +38,26 @@
     onComment,
   }: Props = $props();
 
+  let expandedDeleteHunks = $state<Set<string>>(new Set());
+
+  function hunkKey(hunk: DiffHunk, hi: number): string {
+    return `${hunk.old_start}:${hunk.new_start}:${hi}`;
+  }
+
+  function isPureDeletion(hunk: DiffHunk): boolean {
+    return hunk.lines.length >= 4 && hunk.lines.every((line) => line.kind === "deletion");
+  }
+
+  function deletionCollapsed(hunk: DiffHunk, hi: number): boolean {
+    return isPureDeletion(hunk) && !expandedDeleteHunks.has(hunkKey(hunk, hi));
+  }
+
+  function expandDeletion(hunk: DiffHunk, hi: number) {
+    const next = new Set(expandedDeleteHunks);
+    next.add(hunkKey(hunk, hi));
+    expandedDeleteHunks = next;
+  }
+
   /** Gap reveal: lines shown from the start and end of each unmodified region. */
   let gapReveal = $state<Record<string, { head: number; tail: number }>>({});
 
@@ -266,6 +286,15 @@
     class:diff-view--wrap={wrap}
   >
     {#each hunks as hunk, hi (`${hunk.old_start}:${hunk.new_start}:${hi}`)}
+      {#if deletionCollapsed(hunk, hi)}
+        <button
+          type="button"
+          class="diff-delete-collapse"
+          onclick={() => expandDeletion(hunk, hi)}
+        >
+          Removed {hunk.lines.length} lines · {hunkLineLabel(hunk)} — show
+        </button>
+      {:else}
       {#if hi === 0}
         {@const lead = gapBefore(hunk)}
         {#if lead > 0}
@@ -365,6 +394,7 @@
           />
         </div>
       {/each}
+      {/if}
     {/each}
   </div>
 {:else}
@@ -375,6 +405,15 @@
   >
     <div class="diff-side-labels"><span>Before</span><span>After</span></div>
     {#each hunks as hunk, hi (`${hunk.old_start}:${hunk.new_start}:side:${hi}`)}
+      {#if deletionCollapsed(hunk, hi)}
+        <button
+          type="button"
+          class="diff-delete-collapse diff-delete-collapse--side"
+          onclick={() => expandDeletion(hunk, hi)}
+        >
+          Removed {hunk.lines.length} lines · {hunkLineLabel(hunk)} — show
+        </button>
+      {:else}
       {#if hi === 0}
         {@const lead = gapBefore(hunk)}
         {#if lead > 0}
@@ -520,6 +559,7 @@
           </div>
         </div>
       {/each}
+      {/if}
     {/each}
   </div>
 {/if}
@@ -545,6 +585,32 @@
     padding: 1.25rem;
     color: rgb(var(--theme-text-quiet));
     font-size: 0.6875rem;
+  }
+
+  .diff-delete-collapse {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0.15rem 0;
+    padding: 0.35rem 0.75rem;
+    border: 1px dashed rgb(var(--theme-border) / 0.55);
+    border-radius: 0.35rem;
+    background: rgb(var(--theme-danger) / 0.06);
+    color: rgb(var(--theme-text-quiet));
+    font: inherit;
+    font-size: 0.6875rem;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .diff-delete-collapse:hover {
+    background: rgb(var(--theme-danger) / 0.1);
+    color: rgb(var(--theme-text));
+  }
+
+  .diff-delete-collapse--side {
+    grid-column: 1 / -1;
   }
 
   .diff-hunk-meta {
@@ -656,7 +722,7 @@
 
   .diff-line--deletion,
   .diff-side-old {
-    background: rgb(var(--syn-deletion-bg) / 0.12);
+    background: rgb(var(--syn-deletion-bg) / 0.08);
   }
 
   .diff-line--addition .diff-marker,

@@ -83,8 +83,10 @@ Code resources); pane splits and tab cycling belong to the Workshop shell, not
 a private Code IDE chrome.
 
 - File paths are always relative to the project’s safe working copy.
-- Files open read-only until **Edit** starts an editing session (or the first
-  keystroke begins one when the project is ready).
+- Files stay editable when the project can start (or continue) a human editing
+  session — the first keystroke or save begins one. While a revision is sealed
+  for review, Code shows that edits start a new attempt; sealed evidence stays
+  available as a recovery point.
 - Medousa keeps that editing session available while the file surface is open.
 - Saves present the lease fence and the digest from the opened file. A stale
   lease or an externally changed file returns `409`; Medousa never silently
@@ -249,42 +251,43 @@ impact.”
 
 ## Review and Understand
 
-Review starts by answering four questions: whether the intended outcome was
-reached, what risk deserves attention, what verification ran, and what should
-happen next. It opens as a **separate Workshop tab** for the project. Human
-edits, coding-agent attempts, and Terminal work all land on that same Review —
-there is no separate “user commit” center. Provenance labels who contributed;
-the surface does not change.
+Review starts by answering what this seal did and why each file changed, then
+lets you dig into symbols and diffs only when something smells wrong. It opens
+as a **separate Workshop tab** for the project. Human edits, coding-agent
+attempts, and Terminal work all land on that same Review — there is no separate
+“user commit” center.
 
-Changed files read like an inventory: one quiet status line (scale, viewed
-progress, risk), then file rows with `+/-` counts. Multi-file reviews keep other
-files collapsed until you open or step to them (`n`/`j`, `p`/`k`); a single-file
-review goes straight to the hunk. Unmodified spans stay collapsed until
-expanded. Inline comparison is the default; density and side-by-side live in
-the diff overflow menu. Binary changes show honest file metadata instead of an
-unreadable patch. People, history, sharing, audit, and recovery sit under
-**About this review** (closed until you open it, also from project overflow).
+The first viewport shows an **outcome** line, quiet status chips (who wrote it,
+checks, follow-up to your comments), and a **file skim**: path, symbol count
+when known, `+/-` lines, and the coder’s sealed intents (hover or click the
+intents control — that does **not** open the diff). Expand a file to see changed
+symbols when World has indexed them, or the whole-file diff. Expand a symbol for
+that scope’s hunks only. Large pure deletions start collapsed. Custody details
+(base, digest, history, index coverage, PR) live under **About**.
 
-Code marks lines changed by the reviewed revision with quiet gutter indicators.
-**Who contributed** and **Project timeline** live in About — durable Forge
-milestones and recovery points without exposing lease machinery.
+Binary changes show honest file metadata instead of an unreadable patch. Policy
+exceptions and risky content (secrets, oversize) are called out above the file
+list and must be acknowledged before approval; softer warnings such as “checks
+haven’t run” do not block Approve. Applying an approved revision has its own
+confirmation boundary.
+
+When several sealed attempts exist, pick another from a quiet overflow under the
+outcome — not as the hero of the page.
 
 Choose **Restore before this change…** from a file’s overflow when one path
 should go back for another pass. Medousa reopens the project for editing and
 keeps the reviewed revision saved as a recovery point, so restoring never
 destroys the newer work before you decide. Binary versions remain safe in Git
-but must currently be restored outside the Home text editor. Policy exceptions
-and risky content are called out above the diff before approval; an exception
-must be explicitly acknowledged. Applying an approved revision has its own
-confirmation boundary.
+but must currently be restored outside the Home text editor.
 
 Line comments live on the reviewed revision. Hover a changed line and add a
 comment, or press `.` while Review is focused. The comments rail appears when
 you are composing or when threads exist (`c` toggles it). Open comments compile
-into a **revision brief**. Choose **Request changes** to reopen the same
-project for another attempt; Medousa seeds the next agent draft with that
-brief. After a follow-up seal, Review highlights files that differ from the
-attempt that received your feedback.
+into a **revision brief**. Choose **Continue editing** to reopen the project
+yourself without starting an agent, or **Request changes** to hand the brief to
+Codex/Cursor for another attempt. Typing in Code while sealed does the same
+human reopen. After a follow-up seal, Review notes that this is a follow-up to
+your last review when files differ from the attempt that received your feedback.
 
 Understand can compare **Before** and **Current**. Search for a class, function,
 or other name, then inspect its possible impact or open its file and line in

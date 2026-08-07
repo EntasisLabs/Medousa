@@ -42,6 +42,8 @@ pub struct AllowedActions {
     pub start_agent: ActionAffordance,
     pub open_terminal: ActionAffordance,
     pub begin_attempt: ActionAffordance,
+    /// Reopen sealed review for human edits without an agent handoff.
+    pub continue_editing: ActionAffordance,
     pub seal: ActionAffordance,
     pub review: ActionAffordance,
     pub apply: ActionAffordance,
@@ -80,6 +82,14 @@ pub fn allowed_actions(item: &WorkItem) -> AllowedActions {
             WorkState::Ready | WorkState::Executing => ActionAffordance::yes(),
             _ => ActionAffordance::no(format!("Cannot begin attempt in state {}", item.state)),
         },
+        continue_editing: match item.state {
+            WorkState::AwaitingReview if has_sealed_evidence => ActionAffordance::yes(),
+            WorkState::AwaitingReview => ActionAffordance::no("No sealed evidence yet"),
+            _ => ActionAffordance::no(format!(
+                "Cannot continue editing in state {}",
+                item.state
+            )),
+        },
         seal: if has_running {
             ActionAffordance::yes()
         } else {
@@ -117,6 +127,21 @@ pub fn human_phase(state: WorkState) -> &'static str {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct ReviewSymbolScope {
+    pub id: String,
+    pub label: String,
+    pub kind: String,
+    pub line_start: u32,
+    pub line_end: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entity_id: Option<String>,
+    pub lines_added: u32,
+    pub lines_removed: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub intents: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct ChangedFileSummary {
     pub path: String,
     pub status: String,
@@ -125,6 +150,20 @@ pub struct ChangedFileSummary {
     pub is_binary: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub byte_size: Option<u64>,
+    #[serde(default)]
+    pub lines_added: u32,
+    #[serde(default)]
+    pub lines_removed: u32,
+    /// Unique Coder tool intents that touched this path (skim without opening a diff).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub intents: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary_intent: Option<String>,
+    /// Number of nested symbol scopes (0 until World enrichment).
+    #[serde(default)]
+    pub symbol_count: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scopes: Vec<ReviewSymbolScope>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -390,6 +429,10 @@ pub fn build_review_for_attempt(
     let mut compact_receipt_rejections = 0u64;
     let mut compact_receipts_digest = None;
     let mut verification = None;
+    let mut intents_by_path: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    let mut patch_line_stats: std::collections::HashMap<String, (u32, u32)> =
+        std::collections::HashMap::new();
 
     if let Some(eid) = evidence_id.as_ref()
         && let Some(dir) = evidence_dir(forge, item, eid)
@@ -427,18 +470,39 @@ pub fn build_review_for_attempt(
                     old_path: f.old_path.clone(),
                     is_binary: f.is_binary,
                     byte_size: f.byte_size,
+                    lines_added: 0,
+                    lines_removed: 0,
+                    intents: Vec::new(),
+                    primary_intent: None,
+                    symbol_count: 0,
+                    scopes: Vec::new(),
                 })
                 .collect();
         }
         if let Ok(meta) = std::fs::metadata(dir.join("patch.diff")) {
             patch_byte_size = meta.len();
         }
+        if let Ok(patch) = std::fs::read_to_string(dir.join("patch.diff")) {
+            patch_line_stats = count_patch_line_stats(&patch);
+        }
         if let Ok(commands) = std::fs::read_to_string(dir.join("commands.jsonl")) {
             command_log_lines = commands.lines().filter(|l| !l.trim().is_empty()).count();
             verification = commands.lines().rev().find_map(parse_verification);
+            intents_by_path = collect_coder_intents_by_path(&commands);
         }
         if let Ok(bytes) = std::fs::read(dir.join("policy.json")) {
             policy = serde_json::from_slice(&bytes).ok();
+        }
+    }
+
+    for file in &mut changed_files {
+        if let Some((added, removed)) = patch_line_stats.get(&file.path) {
+            file.lines_added = *added;
+            file.lines_removed = *removed;
+        }
+        if let Some(intents) = intents_by_path.get(&file.path) {
+            file.intents = intents.clone();
+            file.primary_intent = intents.first().cloned();
         }
     }
 
@@ -897,6 +961,90 @@ fn review_candidates(forge: &Forge, item: &WorkItem) -> Vec<ReviewCandidateProje
         .collect()
 }
 
+fn collect_coder_intents_by_path(
+    commands: &str,
+) -> std::collections::HashMap<String, Vec<String>> {
+    let mut by_path: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for line in commands.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+            continue;
+        };
+        if value.get("kind").and_then(|v| v.as_str()) != Some("medousa_coder_tool") {
+            continue;
+        }
+        let Some(intent) = value
+            .get("intent")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+        else {
+            continue;
+        };
+        let Some(path) = value
+            .get("path")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.trim_start_matches("./").replace('\\', "/"))
+        else {
+            continue;
+        };
+        let entry = by_path.entry(path).or_default();
+        if !entry.iter().any(|existing| existing == &intent) {
+            entry.push(intent);
+        }
+    }
+    by_path
+}
+
+/// Count +/- lines per path from a unified `patch.diff` (best-effort skim stats).
+fn count_patch_line_stats(patch: &str) -> std::collections::HashMap<String, (u32, u32)> {
+    let mut stats: std::collections::HashMap<String, (u32, u32)> =
+        std::collections::HashMap::new();
+    let mut current: Option<String> = None;
+    for line in patch.lines() {
+        if let Some(rest) = line.strip_prefix("diff --git ") {
+            // `diff --git a/path b/path` — prefer b/ path
+            let path = rest
+                .split_whitespace()
+                .nth(1)
+                .and_then(|token| token.strip_prefix("b/"))
+                .or_else(|| {
+                    rest.split_whitespace()
+                        .next()
+                        .and_then(|token| token.strip_prefix("a/"))
+                })
+                .unwrap_or("")
+                .replace('\\', "/");
+            if path.is_empty() {
+                current = None;
+            } else {
+                current = Some(path.clone());
+                stats.entry(path).or_insert((0, 0));
+            }
+            continue;
+        }
+        let Some(path) = current.as_ref() else {
+            continue;
+        };
+        if line.starts_with("+++") || line.starts_with("---") || line.starts_with("@@") {
+            continue;
+        }
+        if line.starts_with('+') {
+            stats.entry(path.clone()).or_default().0 += 1;
+        } else if line.starts_with('-') {
+            stats.entry(path.clone()).or_default().1 += 1;
+        }
+    }
+    stats
+}
+
 fn parse_verification(line: &str) -> Option<ReviewVerification> {
     let value: serde_json::Value = serde_json::from_str(line).ok()?;
     if value.get("kind")?.as_str()? != "project_task" {
@@ -1170,6 +1318,77 @@ mod tests {
                 .any(|file| file.path == "second.txt")
         );
         assert_ne!(selected.worktree, latest.worktree);
+    }
+
+    #[test]
+    fn coder_intents_and_patch_stats_attach_to_paths() {
+        let commands = r#"
+{"kind":"medousa_coder_tool","intent":"Add helper","path":"src/lib.rs","ok":true}
+{"kind":"medousa_coder_tool","intent":"Add helper","path":"src/lib.rs","ok":true}
+{"kind":"medousa_coder_tool","intent":"Fix test","path":"src/lib.rs","ok":true}
+{"kind":"project_task","success":true}
+{"kind":"medousa_coder_tool","intent":"No path"}
+"#;
+        let intents = collect_coder_intents_by_path(commands);
+        assert_eq!(
+            intents.get("src/lib.rs"),
+            Some(&vec!["Add helper".to_string(), "Fix test".to_string()])
+        );
+
+        let patch = "\
+diff --git a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1,3 +1,4 @@
+ keep
+-old
++new
++also
+";
+        let stats = count_patch_line_stats(patch);
+        assert_eq!(stats.get("src/lib.rs"), Some(&(2, 1)));
+    }
+
+    #[test]
+    fn continue_editing_is_allowed_only_while_awaiting_review_with_evidence() {
+        use medousa_forge::model::{
+            Attempt, AttemptId, AttemptState, EvidenceId, ExecutorDescriptor, GitOid, GitWorkTarget,
+            WorkItem, WorkState, WorkTarget,
+        };
+
+        let mut item = WorkItem::new(
+            "t",
+            "b",
+            WorkTarget::Git(GitWorkTarget {
+                repo_path: std::path::PathBuf::from("/tmp/repo"),
+                base_ref: "main".into(),
+                base_oid: GitOid::new("a".repeat(40)),
+            }),
+            "user-1",
+        );
+        item.state = WorkState::AwaitingReview;
+        assert!(!allowed_actions(&item).continue_editing.allowed);
+
+        item.attempts.push(Attempt {
+            id: AttemptId::new(),
+            seq: 1,
+            state: AttemptState::Completed,
+            executor: ExecutorDescriptor {
+                kind: "human".into(),
+                detail: serde_json::json!({}),
+            },
+            environment: None,
+            lease: None,
+            evidence_id: Some(EvidenceId::new()),
+            started_at: chrono::Utc::now(),
+            ended_at: Some(chrono::Utc::now()),
+            recovery: None,
+        });
+        assert!(allowed_actions(&item).continue_editing.allowed);
+
+        item.state = WorkState::Ready;
+        assert!(!allowed_actions(&item).continue_editing.allowed);
+        assert!(allowed_actions(&item).begin_attempt.allowed);
     }
 
     #[test]

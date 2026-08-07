@@ -15,6 +15,8 @@ export type AllowedActions = {
   start_agent: ActionAffordance;
   open_terminal: ActionAffordance;
   begin_attempt: ActionAffordance;
+  /** Present once the workshop advertises reopen-without-agent. */
+  continue_editing?: ActionAffordance;
   seal: ActionAffordance;
   review: ActionAffordance;
   apply: ActionAffordance;
@@ -103,6 +105,12 @@ export type ReviewProjection = {
     old_path?: string | null;
     is_binary: boolean;
     byte_size?: number | null;
+    lines_added?: number;
+    lines_removed?: number;
+    intents?: string[];
+    primary_intent?: string | null;
+    symbol_count?: number;
+    scopes?: ReviewSymbolScope[];
   }>;
   synthesis: {
     outcome: string;
@@ -166,6 +174,20 @@ export type ReviewProjection = {
   active_lease_generation?: number | null;
   world?: WorldBindingStatus | null;
 };
+
+export type ReviewSymbolScope = {
+  id: string;
+  label: string;
+  kind: string;
+  line_start: number;
+  line_end: number;
+  entity_id?: string | null;
+  lines_added: number;
+  lines_removed: number;
+  intents?: string[];
+};
+
+export type ReviewFileChange = ReviewProjection["changed_files"][number];
 
 export type ReviewComment = {
   id: string;
@@ -1177,6 +1199,40 @@ export async function beginHumanAttempt(workId: string): Promise<BeginAttemptRes
     method: "POST",
     body: JSON.stringify({ executor: { kind: "human", detail: {} } }),
   });
+}
+
+/** Reopen sealed review and begin a human attempt (no agent). */
+export async function continueEditing(workId: string): Promise<BeginAttemptResponse> {
+  return forgeFetch(
+    `/v1/forge/items/${encodeURIComponent(workId)}/review/continue-editing`,
+    { method: "POST", body: "{}" },
+  );
+}
+
+/** True when a human can start or resume editing without an agent. */
+export function canStartHumanEditing(actions: AllowedActions | null | undefined): boolean {
+  return Boolean(actions?.begin_attempt.allowed || actions?.continue_editing?.allowed);
+}
+
+/**
+ * Begin a human editing session: either a normal attempt (Ready) or continue
+ * editing after review (AwaitingReview → reopen + human lease).
+ */
+export async function startHumanEditingSession(
+  workId: string,
+  actions: AllowedActions,
+): Promise<BeginAttemptResponse> {
+  if (actions.begin_attempt.allowed) {
+    return beginHumanAttempt(workId);
+  }
+  if (actions.continue_editing?.allowed) {
+    return continueEditing(workId);
+  }
+  throw new Error(
+    actions.continue_editing?.reason
+      ?? actions.begin_attempt.reason
+      ?? "This project is not ready for file changes",
+  );
 }
 
 export async function prepareExecutorHandoff(input: {

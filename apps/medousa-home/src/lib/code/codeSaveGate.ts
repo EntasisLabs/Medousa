@@ -65,4 +65,4 @@ export const CODE_SAVE_PREVIEW_ERROR =
   "This file is open as a preview and cannot be saved from Code.";
 
 export const CODE_SAVE_NO_LEASE_ERROR =
-  "Begin an editing session before saving.";
+  "Couldn’t save — the project isn’t ready for edits yet.";
