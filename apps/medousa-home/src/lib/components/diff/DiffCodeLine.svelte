@@ -146,10 +146,18 @@
   }
 
   .diff-word-changed--add {
-    background: rgb(var(--syn-addition-bg) / 0.3);
+    background: rgb(var(--syn-addition-bg) / 0.22);
   }
 
   .diff-word-changed--del {
-    background: rgb(var(--syn-deletion-bg) / 0.14);
+    background: rgb(var(--syn-deletion-bg) / 0.12);
+  }
+
+  :global(html.dark) .diff-word-changed--add {
+    background: rgb(var(--syn-addition-bg) / 0.14);
+  }
+
+  :global(html.dark) .diff-word-changed--del {
+    background: rgb(var(--syn-deletion-bg) / 0.09);
   }
 </style>

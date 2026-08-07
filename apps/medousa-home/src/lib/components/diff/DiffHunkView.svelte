@@ -596,7 +596,7 @@
     padding: 0.35rem 0.75rem;
     border: 1px dashed rgb(var(--theme-border) / 0.55);
     border-radius: 0.35rem;
-    background: rgb(var(--theme-danger) / 0.06);
+    background: rgb(var(--theme-error) / 0.06);
     color: rgb(var(--theme-text-quiet));
     font: inherit;
     font-size: 0.6875rem;
@@ -605,7 +605,7 @@
   }
 
   .diff-delete-collapse:hover {
-    background: rgb(var(--theme-danger) / 0.1);
+    background: rgb(var(--theme-error) / 0.1);
     color: rgb(var(--theme-text));
   }
 
@@ -699,11 +699,11 @@
   }
 
   .diff-gutter--old {
-    color: rgb(var(--theme-text-faint));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .diff-gutter--new {
-    color: rgb(var(--theme-text-tertiary));
+    color: rgb(var(--theme-text-secondary));
   }
 
   .diff-marker {
@@ -711,30 +711,66 @@
     align-items: center;
     justify-content: center;
     border-left: 3px solid transparent;
-    color: rgb(var(--theme-text-faint));
+    color: rgb(var(--theme-text-quiet));
     user-select: none;
   }
 
   .diff-line--addition,
   .diff-side-new {
-    background: rgb(var(--syn-addition-bg) / 0.12);
+    background: rgb(var(--syn-addition-bg) / 0.1);
   }
 
   .diff-line--deletion,
   .diff-side-old {
-    background: rgb(var(--syn-deletion-bg) / 0.08);
+    background: rgb(var(--syn-deletion-bg) / 0.07);
   }
 
   .diff-line--addition .diff-marker,
   .diff-side-new .diff-marker {
-    border-left-color: rgb(var(--syn-addition-bg));
-    color: rgb(var(--theme-success));
+    border-left-color: color-mix(
+      in srgb,
+      rgb(var(--syn-addition-bg)) 70%,
+      transparent
+    );
+    color: color-mix(
+      in srgb,
+      rgb(var(--theme-success)) 65%,
+      rgb(var(--theme-text-secondary))
+    );
   }
 
   .diff-line--deletion .diff-marker,
   .diff-side-old .diff-marker {
-    border-left-color: rgb(var(--syn-deletion-bg));
-    color: rgb(var(--theme-error));
+    border-left-color: color-mix(
+      in srgb,
+      rgb(var(--syn-deletion-bg)) 65%,
+      transparent
+    );
+    color: color-mix(
+      in srgb,
+      rgb(var(--theme-error)) 65%,
+      rgb(var(--theme-text-secondary))
+    );
+  }
+
+  :global(html.dark) .diff-line--addition,
+  :global(html.dark) .diff-side-new {
+    background: rgb(var(--syn-addition-bg) / 0.055);
+  }
+
+  :global(html.dark) .diff-line--deletion,
+  :global(html.dark) .diff-side-old {
+    background: rgb(var(--syn-deletion-bg) / 0.04);
+  }
+
+  :global(html.dark) .diff-line--addition .diff-marker,
+  :global(html.dark) .diff-side-new .diff-marker {
+    border-left-color: rgb(var(--syn-addition-bg) / 0.55);
+  }
+
+  :global(html.dark) .diff-line--deletion .diff-marker,
+  :global(html.dark) .diff-side-old .diff-marker {
+    border-left-color: rgb(var(--syn-deletion-bg) / 0.5);
   }
 
   .diff-line-comment {

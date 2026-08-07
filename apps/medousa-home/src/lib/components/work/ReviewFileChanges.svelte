@@ -33,16 +33,17 @@
     onComment,
   }: Props = $props();
 
-  let expandedPath = $state<string | null>(null);
-  let expandedScopeId = $state<string | null>(null);
+  let expandedPaths = $state<Set<string>>(new Set());
+  let expandedScopeKeys = $state<Set<string>>(new Set());
+  let fullDiffPaths = $state<Set<string>>(new Set());
   let pinnedIntentsPath = $state<string | null>(null);
   let hoverIntentsPath = $state<string | null>(null);
   let fileDiffs = $state<Record<string, ReviewFileDiff>>({});
   let fileErrors = $state<Record<string, string>>({});
-  let loadingPath = $state<string | null>(null);
+  let loadingPaths = $state<Set<string>>(new Set());
   let scopesByPath = $state<Record<string, ReviewSymbolScope[]>>({});
   let scopesLoading = $state<Record<string, boolean>>({});
-  let density = $state<"comfortable" | "compact">("comfortable");
+  let density = $state<"comfortable" | "compact">("compact");
   let wrap = $state(false);
   let mode = $state<"inline" | "side">("inline");
   /** Non-reactive latch so seal changes reset local UI without an effect loop. */
@@ -69,17 +70,25 @@
     });
   });
 
+  const allExpanded = $derived(
+    files.length > 0 && files.every((file) => expandedPaths.has(file.path)),
+  );
+
+  const anyExpanded = $derived(files.some((file) => expandedPaths.has(file.path)));
+
   $effect(() => {
     const evidenceId = review.evidence_id ?? null;
     if (evidenceId === resetForEvidenceId) return;
     resetForEvidenceId = evidenceId;
     untrack(() => {
-      expandedPath = null;
-      expandedScopeId = null;
+      expandedPaths = new Set();
+      expandedScopeKeys = new Set();
+      fullDiffPaths = new Set();
       pinnedIntentsPath = null;
       hoverIntentsPath = null;
       fileDiffs = {};
       fileErrors = {};
+      loadingPaths = new Set();
       scopesByPath = {};
       scopesLoading = {};
     });
@@ -90,13 +99,42 @@
     return parts[parts.length - 1] || path;
   }
 
+  function parentDir(path: string): string {
+    const normalized = path.replaceAll("\\", "/");
+    const idx = normalized.lastIndexOf("/");
+    return idx > 0 ? normalized.slice(0, idx) : "";
+  }
+
+  function scopeKey(path: string, scopeId: string): string {
+    return `${path}\0${scopeId}`;
+  }
+
   function symbolLabel(file: ReviewFileChange): string | null {
     const count = scopesByPath[file.path]?.length ?? file.symbol_count ?? 0;
     if (count <= 0) {
-      if (scopesLoading[file.path]) return "indexing…";
+      if (scopesLoading[file.path]) return "…";
       return null;
     }
-    return `${count} ${count === 1 ? "symbol" : "symbols"}`;
+    return `${count}`;
+  }
+
+  function shortKind(kind: string | null | undefined): string {
+    const raw = (kind ?? "").toLowerCase();
+    if (raw.includes("fn") || raw.includes("function") || raw.includes("method")) return "fn";
+    if (raw.includes("struct") || raw.includes("class") || raw.includes("type")) return "type";
+    if (raw.includes("trait") || raw.includes("interface")) return "trait";
+    if (raw.includes("mod") || raw.includes("module")) return "mod";
+    if (raw.includes("enum")) return "enum";
+    if (raw.includes("const")) return "const";
+    if (raw.length <= 6 && raw) return raw;
+    return "sym";
+  }
+
+  function symbolName(label: string): string {
+    const trimmed = label.trim();
+    if (!trimmed) return label;
+    const parts = trimmed.split("::");
+    return parts[parts.length - 1] || trimmed;
   }
 
   function intentsFor(file: ReviewFileChange): string[] {
@@ -111,7 +149,7 @@
 
   async function ensureFileDiff(path: string): Promise<ReviewFileDiff | null> {
     if (fileDiffs[path]) return fileDiffs[path]!;
-    loadingPath = path;
+    loadingPaths = new Set(loadingPaths).add(path);
     try {
       const diff = await getReviewFile(review.work_id, path, review.attempt_id ?? undefined);
       fileDiffs = { ...fileDiffs, [path]: diff };
@@ -126,7 +164,9 @@
       };
       return null;
     } finally {
-      if (loadingPath === path) loadingPath = null;
+      const next = new Set(loadingPaths);
+      next.delete(path);
+      loadingPaths = next;
     }
   }
 
@@ -202,16 +242,45 @@
     }
   }
 
-  async function toggleFile(path: string) {
-    if (expandedPath === path) {
-      expandedPath = null;
-      expandedScopeId = null;
-      return;
-    }
-    expandedPath = path;
-    expandedScopeId = null;
+  async function openFile(path: string) {
+    const next = new Set(expandedPaths);
+    next.add(path);
+    expandedPaths = next;
     const diff = await ensureFileDiff(path);
     if (diff) void enrichScopes(path, diff);
+  }
+
+  async function toggleFile(path: string) {
+    if (expandedPaths.has(path)) {
+      const next = new Set(expandedPaths);
+      next.delete(path);
+      expandedPaths = next;
+      const nextScopes = new Set(
+        [...expandedScopeKeys].filter((key) => !key.startsWith(`${path}\0`)),
+      );
+      expandedScopeKeys = nextScopes;
+      const nextFull = new Set(fullDiffPaths);
+      nextFull.delete(path);
+      fullDiffPaths = nextFull;
+      return;
+    }
+    await openFile(path);
+  }
+
+  async function expandAll() {
+    expandedPaths = new Set(files.map((file) => file.path));
+    await Promise.all(
+      files.map(async (file) => {
+        const diff = await ensureFileDiff(file.path);
+        if (diff) void enrichScopes(file.path, diff);
+      }),
+    );
+  }
+
+  function collapseAll() {
+    expandedPaths = new Set();
+    expandedScopeKeys = new Set();
+    fullDiffPaths = new Set();
   }
 
   function toStackFile(diff: ReviewFileDiff, scope?: ReviewSymbolScope | null): DiffFileSection {
@@ -244,154 +313,215 @@
     };
   }
 
-  function openScope(path: string, scopeId: string) {
-    expandedScopeId = expandedScopeId === scopeId ? null : scopeId;
-    expandedPath = path;
+  function toggleScope(path: string, scopeId: string) {
+    const key = scopeKey(path, scopeId);
+    const next = new Set(expandedScopeKeys);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    expandedScopeKeys = next;
+    if (!expandedPaths.has(path)) {
+      void openFile(path);
+    }
+  }
+
+  function toggleFullDiff(path: string) {
+    const next = new Set(fullDiffPaths);
+    if (next.has(path)) next.delete(path);
+    else next.add(path);
+    fullDiffPaths = next;
   }
 </script>
 
 {#if files.length === 0}
   <p class="file-empty">No file changes in this revision.</p>
 {:else}
-  <ul class="file-skim" aria-label="Changed files">
-    {#each files as file (file.path)}
-      {@const intents = intentsFor(file)}
-      {@const symbols = symbolLabel(file)}
-      {@const open = expandedPath === file.path}
-      {@const showIntents = pinnedIntentsPath === file.path || hoverIntentsPath === file.path}
-      <li class="file-row" class:file-row--open={open} class:file-row--risk={riskPaths.has(file.path)}>
-        <div class="file-row-main">
-          <button
-            type="button"
-            class="file-expand"
-            aria-expanded={open}
-            onclick={() => void toggleFile(file.path)}
-          >
-            <ChevronRight size={13} class="file-chevron {open ? 'file-chevron--open' : ''}" />
-            <span class="file-path" title={file.path}>{basename(file.path)}</span>
-            <span class="file-dir">{file.path.includes("/") ? file.path.slice(0, file.path.lastIndexOf("/")) : ""}</span>
-          </button>
-          <div class="file-stats">
-            {#if symbols}
-              <span class="file-stat">{symbols}</span>
-            {/if}
-            {#if (file.lines_added ?? 0) > 0 || (file.lines_removed ?? 0) > 0}
-              <span class="file-add">+{file.lines_added ?? 0}</span>
-              <span class="file-del">−{file.lines_removed ?? 0}</span>
-            {/if}
-            {#if intents.length > 0}
-              <button
-                type="button"
-                class="file-intents"
-                aria-expanded={pinnedIntentsPath === file.path}
-                aria-label={intents.length === 1 ? "Show intent" : `Show ${intents.length} intents`}
-                onmouseenter={() => (hoverIntentsPath = file.path)}
-                onmouseleave={() => {
-                  if (hoverIntentsPath === file.path) hoverIntentsPath = null;
-                }}
-                onclick={(event) => toggleIntents(file.path, event)}
-              >
-                <MessageSquareText size={11} strokeWidth={1.8} />
-                {#if intents.length === 1}
-                  <span class="file-intent-peek">{intents[0]}</span>
-                {:else}
-                  <span>{intents.length} intents</span>
-                {/if}
-              </button>
-            {/if}
-          </div>
-        </div>
-
-        {#if showIntents && intents.length}
-          <div
-            class="intent-popover"
-            role="dialog"
-            tabindex="-1"
-            aria-label="Edit intents"
-            onmouseenter={() => (hoverIntentsPath = file.path)}
-            onmouseleave={() => {
-              if (hoverIntentsPath === file.path && pinnedIntentsPath !== file.path) {
-                hoverIntentsPath = null;
-              }
-            }}
-          >
-            <p class="intent-popover-title">Why this file changed</p>
-            <ol>
-              {#each intents as intent, index (`${file.path}:${index}`)}
-                <li>{intent}</li>
-              {/each}
-            </ol>
-          </div>
+  <div class="file-skim-chrome">
+    <div class="file-skim-toolbar">
+      {#if allExpanded}
+        <button type="button" class="file-skim-action" onclick={collapseAll}>Collapse all</button>
+      {:else}
+        <button type="button" class="file-skim-action" onclick={() => void expandAll()}>
+          Expand all
+        </button>
+        {#if anyExpanded}
+          <button type="button" class="file-skim-action" onclick={collapseAll}>Collapse all</button>
         {/if}
+      {/if}
+    </div>
 
-        {#if open}
-          <div class="file-body">
-            {#if loadingPath === file.path && !fileDiffs[file.path]}
-              <p class="file-loading">Loading changes…</p>
-            {:else if fileErrors[file.path]}
-              <p class="file-error">{fileErrors[file.path]}</p>
-            {:else if fileDiffs[file.path]}
-              {@const diff = fileDiffs[file.path]!}
-              {@const scopes = scopesByPath[file.path] ?? []}
-              {#if scopes.length > 0}
-                <ul class="scope-list" aria-label="Changed symbols">
-                  {#each scopes as scope (scope.id)}
-                    {@const scopeOpen = expandedScopeId === scope.id}
-                    <li class="scope-row">
-                      <button
-                        type="button"
-                        class="scope-expand"
-                        aria-expanded={scopeOpen}
-                        onclick={() => openScope(file.path, scope.id)}
-                      >
-                        <ChevronRight
-                          size={12}
-                          class="file-chevron {scopeOpen ? 'file-chevron--open' : ''}"
-                        />
-                        <span class="scope-kind">{scope.kind}</span>
-                        <span class="scope-label">{scope.label}</span>
-                        <span class="file-add">+{scope.lines_added}</span>
-                        <span class="file-del">−{scope.lines_removed}</span>
-                      </button>
-                      {#if scopeOpen}
-                        <div class="scope-diff">
-                          <DiffStack
-                            files={[toStackFile(diff, scope)]}
-                            {mode}
-                            {density}
-                            {wrap}
-                            chrome="none"
-                            collapsedPaths={[]}
-                            onToggleCollapsed={() => {}}
-                            onOpenFile={(path, line) => onOpenFile(path, line)}
-                            onRestoreFile={async (path) => {
-                              const comparison = fileDiffs[path];
-                              if (comparison) await onRestore(comparison);
-                            }}
-                            onComment={onComment
-                              ? (input) =>
-                                  onComment({
-                                    path: input.path,
-                                    side: input.side,
-                                    line: input.line,
-                                    content: input.content,
-                                  })
-                              : undefined}
-                          />
-                        </div>
-                      {/if}
-                    </li>
-                  {/each}
-                </ul>
+    <ul class="file-skim" aria-label="Changed files">
+      {#each files as file (file.path)}
+        {@const intents = intentsFor(file)}
+        {@const symbols = symbolLabel(file)}
+        {@const open = expandedPaths.has(file.path)}
+        {@const showIntents = pinnedIntentsPath === file.path || hoverIntentsPath === file.path}
+        {@const dir = parentDir(file.path)}
+        <li class="file-row" class:file-row--open={open} class:file-row--risk={riskPaths.has(file.path)}>
+          <div class="file-row-main">
+            <button
+              type="button"
+              class="file-expand"
+              aria-expanded={open}
+              title={intents.length ? intents.join(" · ") : file.path}
+              onclick={() => void toggleFile(file.path)}
+            >
+              <ChevronRight size={12} class="file-chevron {open ? 'file-chevron--open' : ''}" />
+              <span class="file-identity">
+                <span class="file-path">{basename(file.path)}</span>
+                {#if dir}
+                  <span class="file-dir">{dir}</span>
+                {/if}
+              </span>
+            </button>
+
+            <div class="file-meta">
+              {#if intents.length === 1}
+                <span class="file-intent-quiet" title={intents[0]}>{intents[0]}</span>
+              {:else if intents.length > 1}
                 <button
                   type="button"
-                  class="file-full-diff"
-                  disabled={busy}
-                  onclick={() => (expandedScopeId = expandedScopeId === "__full__" ? null : "__full__")}
+                  class="file-intent-quiet file-intent-quiet--btn"
+                  aria-expanded={pinnedIntentsPath === file.path}
+                  title={intents.join(" · ")}
+                  onmouseenter={() => (hoverIntentsPath = file.path)}
+                  onmouseleave={() => {
+                    if (hoverIntentsPath === file.path) hoverIntentsPath = null;
+                  }}
+                  onclick={(event) => toggleIntents(file.path, event)}
                 >
-                  {expandedScopeId === "__full__" ? "Hide full file diff" : "Show full file diff"}
+                  <MessageSquareText size={11} strokeWidth={1.8} />
+                  {intents.length}
                 </button>
-                {#if expandedScopeId === "__full__"}
+              {/if}
+              {#if symbols}
+                <span class="file-stat" title="{symbols} {Number(symbols) === 1 ? 'symbol' : 'symbols'}">
+                  {symbols}
+                  <span class="file-stat-unit">{Number(symbols) === 1 ? "symbol" : "symbols"}</span>
+                </span>
+              {/if}
+              {#if (file.lines_added ?? 0) > 0 || (file.lines_removed ?? 0) > 0}
+                <span class="file-add tabular-nums">+{file.lines_added ?? 0}</span>
+                <span class="file-del tabular-nums">−{file.lines_removed ?? 0}</span>
+              {/if}
+            </div>
+          </div>
+
+          {#if showIntents && intents.length > 1}
+            <div
+              class="intent-popover"
+              role="dialog"
+              tabindex="-1"
+              aria-label="Edit intents"
+              onmouseenter={() => (hoverIntentsPath = file.path)}
+              onmouseleave={() => {
+                if (hoverIntentsPath === file.path && pinnedIntentsPath !== file.path) {
+                  hoverIntentsPath = null;
+                }
+              }}
+            >
+              <p class="intent-popover-title">Why this file changed</p>
+              <ol>
+                {#each intents as intent, index (`${file.path}:${index}`)}
+                  <li>{intent}</li>
+                {/each}
+              </ol>
+            </div>
+          {/if}
+
+          {#if open}
+            <div class="file-body">
+              {#if loadingPaths.has(file.path) && !fileDiffs[file.path]}
+                <p class="file-loading">Loading changes…</p>
+              {:else if fileErrors[file.path]}
+                <p class="file-error">{fileErrors[file.path]}</p>
+              {:else if fileDiffs[file.path]}
+                {@const diff = fileDiffs[file.path]!}
+                {@const scopes = scopesByPath[file.path] ?? []}
+                {#if scopes.length > 0}
+                  <ul class="scope-list" aria-label="Changed symbols">
+                    {#each scopes as scope (scope.id)}
+                      {@const scopeOpen = expandedScopeKeys.has(scopeKey(file.path, scope.id))}
+                      <li class="scope-row">
+                        <button
+                          type="button"
+                          class="scope-expand"
+                          aria-expanded={scopeOpen}
+                          title={scope.label}
+                          onclick={() => toggleScope(file.path, scope.id)}
+                        >
+                          <ChevronRight
+                            size={11}
+                            class="file-chevron {scopeOpen ? 'file-chevron--open' : ''}"
+                          />
+                          <span class="scope-kind">{shortKind(scope.kind)}</span>
+                          <span class="scope-label">{symbolName(scope.label)}</span>
+                          <span class="file-add tabular-nums">+{scope.lines_added}</span>
+                          <span class="file-del tabular-nums">−{scope.lines_removed}</span>
+                        </button>
+                        {#if scopeOpen}
+                          <div class="scope-diff">
+                            <DiffStack
+                              files={[toStackFile(diff, scope)]}
+                              {mode}
+                              {density}
+                              {wrap}
+                              chrome="none"
+                              collapsedPaths={[]}
+                              onToggleCollapsed={() => {}}
+                              onOpenFile={(path, line) => onOpenFile(path, line)}
+                              onRestoreFile={async (path) => {
+                                const comparison = fileDiffs[path];
+                                if (comparison) await onRestore(comparison);
+                              }}
+                              onComment={onComment
+                                ? (input) =>
+                                    onComment({
+                                      path: input.path,
+                                      side: input.side,
+                                      line: input.line,
+                                      content: input.content,
+                                    })
+                                : undefined}
+                            />
+                          </div>
+                        {/if}
+                      </li>
+                    {/each}
+                  </ul>
+                  <button
+                    type="button"
+                    class="file-full-diff"
+                    disabled={busy}
+                    onclick={() => toggleFullDiff(file.path)}
+                  >
+                    {fullDiffPaths.has(file.path) ? "Hide full file diff" : "Show full file diff"}
+                  </button>
+                  {#if fullDiffPaths.has(file.path)}
+                    <DiffStack
+                      files={[toStackFile(diff)]}
+                      {mode}
+                      {density}
+                      {wrap}
+                      chrome="prefs"
+                      collapsedPaths={[]}
+                      onToggleCollapsed={() => {}}
+                      onOpenFile={(path, line) => onOpenFile(path, line)}
+                      onRestoreFile={async (path) => {
+                        const comparison = fileDiffs[path];
+                        if (comparison) await onRestore(comparison);
+                      }}
+                      onComment={onComment
+                        ? (input) =>
+                            onComment({
+                              path: input.path,
+                              side: input.side,
+                              line: input.line,
+                              content: input.content,
+                            })
+                        : undefined}
+                    />
+                  {/if}
+                {:else}
                   <DiffStack
                     files={[toStackFile(diff)]}
                     {mode}
@@ -402,9 +532,9 @@
                     onToggleCollapsed={() => {}}
                     onOpenFile={(path, line) => onOpenFile(path, line)}
                     onRestoreFile={async (path) => {
-                              const comparison = fileDiffs[path];
-                              if (comparison) await onRestore(comparison);
-                            }}
+                      const comparison = fileDiffs[path];
+                      if (comparison) await onRestore(comparison);
+                    }}
                     onComment={onComment
                       ? (input) =>
                           onComment({
@@ -416,81 +546,96 @@
                       : undefined}
                   />
                 {/if}
-              {:else}
-                <DiffStack
-                  files={[toStackFile(diff)]}
-                  {mode}
-                  {density}
-                  {wrap}
-                  chrome="prefs"
-                  collapsedPaths={[]}
-                  onToggleCollapsed={() => {}}
-                  onOpenFile={(path, line) => onOpenFile(path, line)}
-                  onRestoreFile={async (path) => {
-                              const comparison = fileDiffs[path];
-                              if (comparison) await onRestore(comparison);
-                            }}
-                  onComment={onComment
-                    ? (input) =>
-                        onComment({
-                          path: input.path,
-                          side: input.side,
-                          line: input.line,
-                          content: input.content,
-                        })
-                    : undefined}
-                />
               {/if}
-            {/if}
-          </div>
-        {/if}
-      </li>
-    {/each}
-  </ul>
+            </div>
+          {/if}
+        </li>
+      {/each}
+    </ul>
+  </div>
 {/if}
 
 <style>
   .file-empty {
     margin: 0;
     font-size: 0.8rem;
-    color: var(--color-content-quiet, #8a8580);
+    color: rgb(var(--theme-text-quiet));
+  }
+
+  .file-skim-chrome {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .file-skim-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.55rem;
+    padding: 0 0.1rem;
+  }
+
+  .file-skim-action {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: rgb(var(--theme-text-secondary));
+    font-size: 0.6875rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .file-skim-action:hover {
+    color: rgb(var(--theme-link));
   }
 
   .file-skim {
     margin: 0;
     padding: 0;
     list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
+    border: 1px solid rgb(var(--theme-border) / 0.22);
+    border-radius: var(--theme-container-radius, 0.55rem);
+    background: rgb(var(--theme-card) / calc(var(--theme-pane-alpha, 0.82) * 0.55));
+    overflow: hidden;
   }
 
   .file-row {
     position: relative;
-    border: 1px solid color-mix(in oklab, var(--syn-border, #333) 85%, transparent);
-    border-radius: 0.55rem;
-    background: color-mix(in oklab, var(--syn-bg-elevated, #161616) 55%, transparent);
+    border-bottom: 1px solid rgb(var(--theme-border) / 0.16);
+    color: rgb(var(--theme-text));
+    transition: background-color 140ms ease;
+  }
+
+  .file-row:last-child {
+    border-bottom: 0;
+  }
+
+  .file-row:hover {
+    background: rgb(var(--color-surface-800) / 0.18);
+  }
+
+  .file-row--open {
+    background: rgb(var(--color-surface-800) / 0.14);
   }
 
   .file-row--risk {
-    border-color: color-mix(in oklab, var(--color-warning-600, #c9893a) 45%, transparent);
+    box-shadow: inset 2px 0 0 rgb(var(--theme-warning) / 0.7);
   }
 
   .file-row-main {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.35rem 0.75rem;
-    padding: 0.45rem 0.55rem;
+    gap: 0.55rem;
+    min-height: 1.7rem;
+    padding: 0.22rem 0.55rem;
   }
 
   .file-expand {
     display: flex;
     min-width: 0;
-    flex: 1 1 12rem;
-    align-items: baseline;
-    gap: 0.35rem;
+    align-items: center;
+    gap: 0.3rem;
     border: 0;
     background: transparent;
     color: inherit;
@@ -500,18 +645,28 @@
 
   :global(.file-chevron) {
     flex-shrink: 0;
-    opacity: 0.55;
-    transition: transform 120ms ease;
+    opacity: 0.62;
+    transition: transform 140ms ease, opacity 140ms ease;
   }
 
   :global(.file-chevron--open) {
     transform: rotate(90deg);
+    opacity: 0.85;
+  }
+
+  .file-identity {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    align-items: baseline;
+    gap: 0.4rem;
   }
 
   .file-path {
-    font-size: 0.8rem;
+    flex-shrink: 0;
+    font-size: 0.75rem;
     font-weight: 600;
-    color: var(--color-content-primary, #eee);
+    color: rgb(var(--theme-text));
   }
 
   .file-dir {
@@ -519,75 +674,109 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 0.68rem;
-    color: var(--color-content-quiet, #8a8580);
+    font-size: 0.625rem;
+    color: rgb(var(--theme-text-secondary));
   }
 
-  .file-stats {
+  .file-meta {
     display: flex;
-    flex-wrap: wrap;
+    flex-shrink: 0;
     align-items: center;
-    gap: 0.35rem 0.5rem;
+    gap: 0.4rem;
+    max-width: 42%;
+    font-variant-numeric: tabular-nums;
   }
 
-  .file-stat {
-    font-size: 0.68rem;
-    color: var(--color-content-secondary, #b8b4ae);
-  }
-
-  .file-add {
-    font-size: 0.68rem;
-    font-weight: 600;
-    color: color-mix(in oklab, var(--syn-addition-fg, #3f9c6b) 90%, white);
-  }
-
-  .file-del {
-    font-size: 0.68rem;
-    font-weight: 600;
-    color: color-mix(in oklab, var(--syn-deletion-fg, #c45c5c) 90%, white);
-  }
-
-  .file-intents {
-    display: inline-flex;
-    max-width: 16rem;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.15rem 0.45rem;
-    border-radius: 999px;
-    border: 1px solid color-mix(in oklab, var(--syn-border, #333) 80%, transparent);
-    background: color-mix(in oklab, var(--syn-bg, #111) 70%, transparent);
-    color: var(--color-content-secondary, #b8b4ae);
-    font-size: 0.68rem;
-    cursor: pointer;
-  }
-
-  .file-intent-peek {
+  .file-intent-quiet {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 0.625rem;
+    color: rgb(var(--theme-text-secondary));
+  }
+
+  .file-intent-quiet--btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    max-width: none;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: rgb(var(--theme-text-secondary));
+    cursor: pointer;
+  }
+
+  .file-intent-quiet--btn:hover {
+    color: rgb(var(--theme-text));
+  }
+
+  .file-stat {
+    font-size: 0.625rem;
+    font-weight: 600;
+    color: rgb(var(--theme-text-secondary));
+  }
+
+  .file-stat-unit {
+    margin-left: 0.12rem;
+    font-weight: 500;
+    opacity: 0.85;
+  }
+
+  .file-add {
+    font-size: 0.625rem;
+    font-weight: 600;
+    color: color-mix(
+      in srgb,
+      rgb(var(--syn-addition-fg)) 72%,
+      rgb(var(--theme-text-secondary))
+    );
+  }
+
+  .file-del {
+    font-size: 0.625rem;
+    font-weight: 600;
+    color: color-mix(
+      in srgb,
+      rgb(var(--syn-deletion-fg)) 72%,
+      rgb(var(--theme-text-secondary))
+    );
   }
 
   .intent-popover {
     position: absolute;
     z-index: 5;
-    top: calc(100% - 0.15rem);
-    right: 0.55rem;
-    left: auto;
-    width: min(22rem, calc(100% - 1rem));
+    top: calc(100% - 0.1rem);
+    left: 1.35rem;
+    width: min(22rem, calc(100% - 2rem));
     padding: 0.55rem 0.65rem;
-    border-radius: 0.5rem;
-    border: 1px solid color-mix(in oklab, var(--syn-border, #444) 90%, transparent);
-    background: color-mix(in oklab, var(--syn-bg-elevated, #1a1a1a) 96%, black);
-    box-shadow: 0 10px 30px rgb(0 0 0 / 0.35);
+    border-radius: var(--theme-control-radius, 0.5rem);
+    border: 1px solid rgb(var(--theme-border) / 0.4);
+    background: rgb(var(--theme-card) / 0.98);
+    box-shadow: 0 10px 30px rgb(var(--theme-shadow) / 0.22);
+    color: rgb(var(--theme-text));
+    animation: intent-in 140ms ease;
+  }
+
+  @keyframes intent-in {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   .intent-popover-title {
     margin: 0 0 0.35rem;
-    font-size: 0.65rem;
+    font-size: 0.625rem;
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: var(--color-content-quiet, #8a8580);
+    color: rgb(var(--theme-text-faint));
   }
 
   .intent-popover ol {
@@ -601,80 +790,102 @@
   .intent-popover li {
     font-size: 0.75rem;
     line-height: 1.4;
-    color: var(--color-content-primary, #eee);
+    color: rgb(var(--theme-text));
   }
 
   .file-body {
-    padding: 0 0.45rem 0.55rem;
-    border-top: 1px solid color-mix(in oklab, var(--syn-border, #333) 70%, transparent);
+    padding: 0 0.45rem 0.45rem 1.35rem;
+    border-top: 1px solid rgb(var(--theme-border) / 0.12);
+    animation: body-in 160ms ease;
+  }
+
+  @keyframes body-in {
+    from {
+      opacity: 0.4;
+    }
+    to {
+      opacity: 1;
+    }
   }
 
   .file-loading,
   .file-error {
-    margin: 0.55rem 0.2rem;
+    margin: 0.4rem 0.15rem;
     font-size: 0.75rem;
-    color: var(--color-content-quiet, #8a8580);
+    color: rgb(var(--theme-text-secondary));
   }
 
   .file-error {
-    color: var(--color-error-600, #c45c5c);
+    color: rgb(var(--theme-error));
   }
 
   .scope-list {
-    margin: 0.45rem 0 0;
+    margin: 0.25rem 0 0;
     padding: 0;
     list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.05rem;
   }
 
   .scope-expand {
-    display: flex;
+    display: grid;
     width: 100%;
+    grid-template-columns: auto auto minmax(0, 1fr) auto auto;
     align-items: center;
-    gap: 0.4rem;
-    padding: 0.35rem 0.3rem;
+    gap: 0.35rem;
+    padding: 0.18rem 0.2rem;
     border: 0;
-    border-radius: 0.35rem;
+    border-radius: 0.3rem;
     background: transparent;
     color: inherit;
     cursor: pointer;
     text-align: left;
+    transition: background-color 120ms ease;
   }
 
   .scope-expand:hover {
-    background: color-mix(in oklab, var(--syn-bg, #111) 50%, transparent);
+    background: rgb(var(--color-surface-800) / 0.28);
   }
 
   .scope-kind {
-    font-size: 0.62rem;
+    font-size: 0.5625rem;
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--color-content-quiet, #8a8580);
+    letter-spacing: 0.02em;
+    color: rgb(var(--theme-text-quiet));
   }
 
   .scope-label {
-    flex: 1;
     min-width: 0;
+    overflow: hidden;
     font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: 0.75rem;
+    font-size: 0.6875rem;
     font-weight: 550;
+    color: rgb(var(--theme-text));
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .scope-diff {
-    margin: 0.15rem 0 0.35rem;
+    margin: 0.1rem 0 0.25rem;
   }
 
   .file-full-diff {
-    margin: 0.45rem 0 0.25rem;
+    margin: 0.3rem 0 0.1rem;
     border: 0;
     background: transparent;
-    color: var(--color-content-secondary, #b8b4ae);
-    font-size: 0.7rem;
+    color: color-mix(
+      in srgb,
+      rgb(var(--theme-link)) 55%,
+      rgb(var(--theme-text-secondary))
+    );
+    font-size: 0.6875rem;
     text-decoration: underline;
     text-underline-offset: 2px;
     cursor: pointer;
+  }
+
+  .file-full-diff:hover {
+    color: rgb(var(--theme-link));
   }
 </style>
