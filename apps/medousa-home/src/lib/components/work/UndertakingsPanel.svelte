@@ -32,6 +32,9 @@
     resolveReviewComment,
     deleteReviewComment,
     requestReviewChanges,
+    continueEditing,
+    canStartHumanEditing,
+    startHumanEditingSession,
     getWorldCodeAvec,
     getWorldFiles,
     getWorldFind,
@@ -353,14 +356,32 @@
     undertakings.active?.executorKind === "cursor" ? "Cursor" : "Codex",
   );
   async function doSeal() {
-    const leaseId = undertakings.active?.leaseId;
-    const generation = undertakings.active?.leaseGeneration;
+    let leaseId = undertakings.active?.leaseId ?? null;
+    let generation = undertakings.active?.leaseGeneration ?? null;
+    if ((!leaseId || generation == null) && detail && canStartHumanEditing(detail.allowed_actions)) {
+      try {
+        const begun = await startHumanEditingSession(detail.id, detail.allowed_actions);
+        leaseId = begun.lease.lease_id;
+        generation = begun.lease.generation;
+        undertakings.setActiveFromItem(begun.item, {
+          leaseId,
+          leaseGeneration: generation,
+          executorKind: "human",
+        });
+        await undertakings.refreshDetail();
+      } catch (err) {
+        actionError = humanizeForgeMessage(
+          err instanceof Error ? err.message : String(err),
+        );
+        return;
+      }
+    }
     if (!leaseId || generation == null) {
-      actionError = "Editing is not active yet. Open a file or ask an agent to begin.";
+      actionError = "Nothing to seal yet — make a change first, then seal for review.";
       return;
     }
     await run(async () => {
-      await sealLease(leaseId, generation);
+      await sealLease(leaseId!, generation!);
       await undertakings.refreshDetail();
       if (undertakings.review?.evidence_id) {
         patch = await getEvidencePatch(undertakings.review.evidence_id, {
@@ -556,6 +577,17 @@
       ),
   );
 
+  const reviewSoftWarnings = $derived(
+    reviewBlockingMessages.filter((message) =>
+      /no project check|project checks haven'?t run/i.test(message),
+    ),
+  );
+  const reviewHardBlockingMessages = $derived(
+    reviewBlockingMessages.filter(
+      (message) => !/no project check|project checks haven'?t run/i.test(message),
+    ),
+  );
+
   const canApproveReview = $derived(
     Boolean(
       review
@@ -563,7 +595,7 @@
         && review.changed_files.length > 0
         && !busy
         && !(review.policy?.violations.length && !acknowledgePolicy)
-        && !(reviewBlockingMessages.length && !acknowledgeBlocking && !acknowledgePolicy),
+        && !(reviewHardBlockingMessages.length && !acknowledgeBlocking && !acknowledgePolicy),
     ),
   );
 
@@ -613,6 +645,20 @@
           : [],
       });
       await undertakings.refreshDetail();
+    });
+  }
+
+  async function beginContinueEditing() {
+    if (!detail?.allowed_actions.continue_editing?.allowed) return;
+    await run(async () => {
+      const begun = await continueEditing(detail!.id);
+      undertakings.setActiveFromItem(begun.item, {
+        leaseId: begun.lease.lease_id,
+        leaseGeneration: begun.lease.generation,
+        executorKind: "human",
+      });
+      await undertakings.refreshDetail();
+      await lmeWorkspace.openCodeWorkspace(detail!.id, detail!.title);
     });
   }
 
@@ -1162,16 +1208,6 @@
                 class:review-canvas--with-rail={showCommentRail}
               >
                 <div class="review-canvas-main">
-                {#if (review.changed_since_previous?.length ?? 0) > 0}
-                  {@const sincePrevious = review.changed_since_previous ?? []}
-                  <p class="review-since-banner" role="status">
-                    {sincePrevious.length}
-                    {sincePrevious.length === 1 ? "file differs" : "files differ"}
-                    from the attempt that received your feedback:
-                    <span>{sincePrevious.slice(0, 6).join(", ")}{sincePrevious.length > 6 ? "…" : ""}</span>
-                  </p>
-                {/if}
-
                 {#if review.policy && (review.policy.violations.length || review.policy.capture_risks.length)}
                   <section class="review-policy" aria-label="Policy exceptions">
                     <CircleAlert size={15} strokeWidth={1.7} aria-hidden="true" />
@@ -1220,13 +1256,13 @@
                   </section>
                 {/if}
 
-                {#if reviewBlockingMessages.length > 0 && !(review.policy?.violations.length)}
+                {#if reviewHardBlockingMessages.length > 0 && !(review.policy?.violations.length)}
                   <section class="review-policy" aria-label="Blocking review issues">
                     <CircleAlert size={15} strokeWidth={1.7} aria-hidden="true" />
                     <div class="min-w-0 flex-1">
                       <p>Needs acknowledgment before approval</p>
                       <ul>
-                        {#each reviewBlockingMessages as message (message)}
+                        {#each reviewHardBlockingMessages as message (message)}
                           <li>{reviewIssueLabel(message)}</li>
                         {/each}
                       </ul>
@@ -1236,33 +1272,19 @@
                       </label>
                     </div>
                   </section>
+                {:else if reviewSoftWarnings.length > 0 && !(review.policy?.violations.length)}
+                  <section class="review-policy" aria-label="Review warnings">
+                    <CircleAlert size={15} strokeWidth={1.7} aria-hidden="true" />
+                    <div class="min-w-0 flex-1">
+                      <p>Approve with warnings</p>
+                      <ul>
+                        {#each reviewSoftWarnings as message (message)}
+                          <li>{reviewIssueLabel(message)}</li>
+                        {/each}
+                      </ul>
+                    </div>
+                  </section>
                 {/if}
-
-                <ReviewProvenanceStrip
-                  {review}
-                  {providerHandoff}
-                  {worldInsight}
-                  baseRef={baseRef || detail?.target?.Git?.base_ref || null}
-                  onExport={() => void beginExport()}
-                  onOpenHistory={() => {
-                    reviewDetailsOpen = true;
-                    reviewTimelineOpen = true;
-                    queueMicrotask(() => {
-                      document
-                        .getElementById("review-about")
-                        ?.scrollIntoView({ behavior: "smooth", block: "start" });
-                    });
-                  }}
-                  onOpenPullRequest={() => {
-                    reviewDetailsOpen = true;
-                    queueMicrotask(() => {
-                      document
-                        .getElementById("review-about")
-                        ?.scrollIntoView({ behavior: "smooth", block: "start" });
-                    });
-                  }}
-                  onShare={() => void shareProject()}
-                />
 
                 <ForgeReviewSurface
                   {review}
@@ -1325,8 +1347,8 @@
                       strokeWidth={2}
                       class="review-context-chevron {reviewDetailsOpen ? 'review-context-chevron--open' : ''}"
                     />
-                    <span>More details</span>
-                    <small>History, pull request, and command log</small>
+                    <span>About</span>
+                    <small>Custody, history, pull request, and command log</small>
                   </button>
 
                   {#if reviewDetailsOpen}
@@ -1337,6 +1359,21 @@
                           Preparing context…
                         </div>
                       {/if}
+
+                      <ReviewProvenanceStrip
+                        {review}
+                        {providerHandoff}
+                        {worldInsight}
+                        baseRef={baseRef || detail?.target?.Git?.base_ref || null}
+                        onExport={() => void beginExport()}
+                        onOpenHistory={() => {
+                          reviewTimelineOpen = true;
+                        }}
+                        onOpenPullRequest={() => {
+                          /* already inside About */
+                        }}
+                        onShare={() => void shareProject()}
+                      />
 
                       <div class="review-context-row review-context-row--stack">
                         <button
@@ -1546,10 +1583,18 @@
                         aria-pressed={reviewNoteOpen}
                         onclick={() => (reviewNoteOpen = !reviewNoteOpen)}
                       ><MessageSquarePlus size={13} /><span>{reviewRationale.trim() ? "Edit note" : "Add note"}</span></button>
+                      {#if actions.continue_editing?.allowed}
+                        <button
+                          type="button"
+                          class="review-decision-btn review-decision-btn--outline"
+                          disabled={busy}
+                          onclick={() => void beginContinueEditing()}
+                        ><span>Continue editing</span></button>
+                      {/if}
                       <button
                         type="button"
                         class="review-decision-btn review-decision-btn--outline"
-                        disabled={busy || review.changed_files.length === 0}
+                        disabled={busy}
                         onclick={() => void beginRequestChanges()}
                       ><span>Request changes</span></button>
                       <button
@@ -1937,22 +1982,6 @@
 
   .review-revision-brief {
     margin-top: 0.85rem;
-  }
-
-  .review-since-banner {
-    margin: 0 0 0.65rem;
-    border: 1px solid rgb(var(--color-primary-500) / 0.28);
-    border-radius: 0.5rem;
-    background: rgb(var(--color-primary-500) / 0.08);
-    padding: 0.55rem 0.7rem;
-    color: rgb(var(--theme-link));
-    font-size: 0.6875rem;
-    line-height: 1.45;
-  }
-
-  .review-since-banner span {
-    font-family: var(--font-mono);
-    color: rgb(var(--color-surface-200));
   }
 
   .review-revision-brief-body {

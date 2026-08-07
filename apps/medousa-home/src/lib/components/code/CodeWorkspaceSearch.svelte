@@ -4,7 +4,8 @@
   import DiffStack from "$lib/components/diff/DiffStack.svelte";
   import { buildTextDiff } from "$lib/diff/buildTextDiff";
   import {
-    beginHumanAttempt,
+    canStartHumanEditing,
+    startHumanEditingSession,
     humanizeForgeMessage,
     replaceUndertakingSource,
     searchUndertakingSource,
@@ -154,7 +155,15 @@
         ? undertakings.active.leaseGeneration
         : null;
       if (!leaseId || generation == null) {
-        const begun = await beginHumanAttempt(workId);
+        const detail = undertakings.detail;
+        if (detail?.id !== workId || !canStartHumanEditing(detail.allowed_actions)) {
+          throw new Error(
+            detail?.allowed_actions.continue_editing?.reason
+              ?? detail?.allowed_actions.begin_attempt.reason
+              ?? "This project is not ready for file changes",
+          );
+        }
+        const begun = await startHumanEditingSession(workId, detail.allowed_actions);
         undertakings.setActiveFromItem(begun.item, {
           leaseId: begun.lease.lease_id,
           leaseGeneration: begun.lease.generation,

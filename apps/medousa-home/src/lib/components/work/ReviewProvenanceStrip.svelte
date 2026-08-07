@@ -206,7 +206,7 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(11.5rem, 1fr));
     gap: 0.45rem;
-    margin: 0 0 0.85rem;
+    margin: 0 0 0.75rem;
   }
 
   .provenance-tile,

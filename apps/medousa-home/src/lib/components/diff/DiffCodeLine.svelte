@@ -150,6 +150,6 @@
   }
 
   .diff-word-changed--del {
-    background: rgb(var(--syn-deletion-bg) / 0.3);
+    background: rgb(var(--syn-deletion-bg) / 0.14);
   }
 </style>
