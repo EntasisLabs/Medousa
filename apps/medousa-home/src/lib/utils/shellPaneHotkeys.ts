@@ -22,7 +22,7 @@ export function isEditableTarget(target: EventTarget | null): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
 }
 
-function modalBlocksHotkeys(): boolean {
+export function modalBlocksHotkeys(): boolean {
   if (typeof document === "undefined") return false;
   return Boolean(
     document.querySelector(

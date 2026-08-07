@@ -52,6 +52,8 @@ id_type!(LeaseId, "lease");
 id_type!(OperationId, "op");
 id_type!(EvidenceId, "ev");
 id_type!(ReviewDecisionId, "rev");
+id_type!(ReviewCommentId, "rc");
+id_type!(ChangesRequestedId, "cr");
 id_type!(RepoId, "repo");
 id_type!(PolicyViolationId, "pv");
 
@@ -91,12 +93,22 @@ impl Digest {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Wrap an already-computed hex digest (no re-hash).
+    pub fn from_hex(hex: impl Into<String>) -> Self {
+        Self(hex.into())
+    }
 }
 
 impl fmt::Display for Digest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
     }
+}
+
+/// SHA-256 hex digest of anchored line content for review comment stability.
+pub fn anchor_digest_for(content: &str) -> String {
+    Digest::sha256_hex(content.as_bytes()).as_str().to_owned()
 }
 
 /// A full Git object id (commit/tree/blob hash).
@@ -557,6 +569,87 @@ pub struct ReviewDecision {
     pub decided_at: DateTime<Utc>,
 }
 
+/// A line-anchored review comment (or reply) on sealed evidence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReviewComment {
+    pub id: ReviewCommentId,
+    /// Root comment id; for a root comment this equals `id`.
+    pub thread_id: ReviewCommentId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<ReviewCommentId>,
+    pub evidence_id: EvidenceId,
+    pub attempt_id: AttemptId,
+    pub path: String,
+    /// Diff side: `"new"` or `"old"`.
+    pub side: String,
+    pub start_line: u32,
+    pub end_line: u32,
+    /// SHA-256 hex of the anchored line content at comment time.
+    pub anchor_digest: String,
+    /// Optional original anchor text (aids revision briefs; may be omitted).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anchor_text: Option<String>,
+    pub body: String,
+    pub actor: ActorRef,
+    pub created_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_by: Option<ActorRef>,
+}
+
+/// Durable record that review was returned for another pass.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChangesRequested {
+    pub id: ChangesRequestedId,
+    pub actor: ActorRef,
+    pub attempt_id: AttemptId,
+    pub evidence_id: EvidenceId,
+    pub evidence_digest: Digest,
+    #[serde(default)]
+    pub comment_ids: Vec<ReviewCommentId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    pub revision_brief: String,
+    pub decided_at: DateTime<Utc>,
+}
+
+/// Build a revision brief from review comments plus an optional summary.
+///
+/// Each comment becomes `path:line` (plus a quoted anchor when available) and
+/// its body. A non-empty summary is placed first.
+pub fn compose_revision_brief<'a, I>(comments: I, summary: Option<&str>) -> String
+where
+    I: IntoIterator<Item = &'a ReviewComment>,
+{
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(summary) = summary.map(str::trim).filter(|s| !s.is_empty()) {
+        parts.push(summary.to_owned());
+    }
+    for comment in comments {
+        let mut header = format!("{}:{}", comment.path, comment.start_line);
+        if let Some(anchor) = comment
+            .anchor_text
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            let clipped: String = anchor.chars().take(120).collect();
+            header.push(' ');
+            header.push('"');
+            header.push_str(&clipped);
+            header.push('"');
+        }
+        let body = comment.body.trim();
+        if body.is_empty() {
+            parts.push(header);
+        } else {
+            parts.push(format!("{header}\n{body}"));
+        }
+    }
+    parts.join("\n\n")
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorkItem {
     pub schema_version: u32,
@@ -585,6 +678,10 @@ pub struct WorkItem {
     /// validity is re-verified at disposition time, never assumed.
     #[serde(default)]
     pub review_decisions: Vec<ReviewDecision>,
+    #[serde(default)]
+    pub review_comments: Vec<ReviewComment>,
+    #[serde(default)]
+    pub changes_requested: Vec<ChangesRequested>,
     pub owner: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -612,6 +709,8 @@ impl WorkItem {
             state: WorkState::Draft,
             disposition: None,
             review_decisions: Vec::new(),
+            review_comments: Vec::new(),
+            changes_requested: Vec::new(),
             owner: owner.into(),
             created_at: now,
             updated_at: now,

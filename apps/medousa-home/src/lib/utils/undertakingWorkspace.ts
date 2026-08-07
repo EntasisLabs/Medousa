@@ -51,10 +51,13 @@ export function activeCodeContext(sessionId: string): CodeIntentContext | null {
   const detail = undertakings.detail?.id === active.workId ? undertakings.detail : null;
   const openFiles = codeWorkspace.tabsFor(active.workId).map((tab) => tab.path).slice(0, 12);
   const insights = codeInsightsByWorkId.get(active.workId);
+  const revisionBrief = undertakings.review?.work_id === active.workId
+    ? undertakings.review.revision_brief?.trim() || null
+    : null;
   return {
     work_id: active.workId,
     project_title: active.title,
-    outcome: detail?.brief ?? null,
+    outcome: revisionBrief || detail?.brief || null,
     active_path: active.selectedPath,
     cursor_line: active.selectedLine,
     selection_start_line: active.selectionStartLine,

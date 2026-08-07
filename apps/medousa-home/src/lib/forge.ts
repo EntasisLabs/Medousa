@@ -118,6 +118,13 @@ export type ReviewProjection = {
       duration_ms?: number | null;
     } | null;
     unresolved_issues: string[];
+    issues?: Array<{
+      id: string;
+      message: string;
+      severity: "high" | "attention" | "info" | string;
+      blocks_approval: boolean;
+    }>;
+    blocks_approval?: boolean;
     recommended_next_action: string;
   };
   attribution: Array<{
@@ -128,6 +135,7 @@ export type ReviewProjection = {
     started_at: string;
     ended_at?: string | null;
     files: string[];
+    count?: number;
   }>;
   timeline: Array<{
     id: string;
@@ -140,15 +148,44 @@ export type ReviewProjection = {
   }>;
   truncated: boolean;
   base_advanced: boolean;
+  comments?: ReviewComment[];
+  unresolved_comment_count?: number;
+  revision_brief?: string | null;
+  changed_since_previous?: string[];
   policy?: PolicyReport | null;
   command_log_lines: number;
   patch_byte_size: number;
-  decision?: { id?: string; strategy?: string } | null;
+  decision?: {
+    id?: string;
+    strategy?: string;
+    rationale?: string | null;
+  } | null;
   disposition?: string | null;
   worktree?: string | null;
   active_lease_id?: string | null;
   active_lease_generation?: number | null;
   world?: WorldBindingStatus | null;
+};
+
+export type ReviewComment = {
+  id: string;
+  thread_id: string;
+  parent_id?: string | null;
+  evidence_id: string;
+  attempt_id: string;
+  path: string;
+  side: "new" | "old" | string;
+  start_line: number;
+  end_line: number;
+  anchor_digest: string;
+  anchor_text?: string | null;
+  body: string;
+  actor_kind: string;
+  actor_id: string;
+  created_at: string;
+  resolved_at?: string | null;
+  resolved_by_kind?: string | null;
+  resolved_by_id?: string | null;
 };
 
 export type ReviewFileDiff = {
@@ -1386,6 +1423,89 @@ export async function recordReviewIntent(
   });
 }
 
+export async function listReviewComments(
+  workId: string,
+  attemptId?: string,
+): Promise<ReviewComment[]> {
+  const query = new URLSearchParams();
+  if (attemptId) query.set("attempt_id", attemptId);
+  const suffix = query.size ? `?${query.toString()}` : "";
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/review/comments${suffix}`);
+}
+
+export async function addReviewComment(
+  workId: string,
+  input: {
+    evidence_id: string;
+    attempt_id?: string;
+    path: string;
+    side?: "new" | "old" | string;
+    start_line: number;
+    end_line?: number;
+    anchor_text?: string | null;
+    body: string;
+    parent_id?: string | null;
+  },
+): Promise<ItemProjection> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/review/comments`, {
+    method: "POST",
+    body: JSON.stringify({
+      evidence_id: input.evidence_id,
+      attempt_id: input.attempt_id ?? null,
+      path: input.path,
+      side: input.side ?? "new",
+      start_line: input.start_line,
+      end_line: input.end_line ?? input.start_line,
+      anchor_text: input.anchor_text ?? null,
+      body: input.body,
+      parent_id: input.parent_id ?? null,
+    }),
+  });
+}
+
+export async function resolveReviewComment(
+  workId: string,
+  commentId: string,
+): Promise<ItemProjection> {
+  return forgeFetch(
+    `/v1/forge/items/${encodeURIComponent(workId)}/review/comments/${encodeURIComponent(commentId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ resolve: true }),
+    },
+  );
+}
+
+export async function deleteReviewComment(
+  workId: string,
+  commentId: string,
+): Promise<ItemProjection> {
+  return forgeFetch(
+    `/v1/forge/items/${encodeURIComponent(workId)}/review/comments/${encodeURIComponent(commentId)}`,
+    { method: "DELETE" },
+  );
+}
+
+export async function requestReviewChanges(
+  workId: string,
+  input: {
+    evidence_id: string;
+    evidence_digest: string;
+    summary?: string;
+    comment_ids?: string[];
+  },
+): Promise<ItemProjection> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/review/request-changes`, {
+    method: "POST",
+    body: JSON.stringify({
+      evidence_id: input.evidence_id,
+      evidence_digest: input.evidence_digest,
+      summary: input.summary ?? null,
+      comment_ids: input.comment_ids ?? null,
+    }),
+  });
+}
+
 export async function applyDecision(
   workId: string,
   decisionId: string,
@@ -1535,6 +1655,13 @@ export function humanExecutorLabel(executor: string | null | undefined): string 
 /** Keep daemon diagnostics useful without making users learn Forge's machinery. */
 export function humanizeForgeMessage(message: string): string {
   const trimmed = message.trim();
+  if (
+    /no ready indexed snapshot/i.test(trimmed) ||
+    (/HTTP\s+404\b/i.test(trimmed) && /\/v1\/world\//i.test(trimmed)) ||
+    (/indexed snapshot/i.test(trimmed) && /not (ready|available|indexed)/i.test(trimmed))
+  ) {
+    return "The code map isn’t ready yet. Rebuild it, or wait for indexing to finish.";
+  }
   if (
     /^workshop returned HTTP 404(\s+Not Found)?:?\s*$/i.test(trimmed) ||
     /^workshop returned HTTP 405(\s+Method Not Allowed)?:?\s*$/i.test(trimmed) ||

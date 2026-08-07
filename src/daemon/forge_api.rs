@@ -10,7 +10,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 
 use axum::extract::{DefaultBodyLimit, Path, Query, State};
 use axum::http::StatusCode;
-use axum::routing::{get, post, put};
+use axum::routing::{get, patch, post, put};
 use axum::{Json, Router};
 use medousa_forge::adapter::{ScriptAdapter, export_bundle};
 use medousa_forge::error::ForgeError;
@@ -18,8 +18,8 @@ use medousa_forge::forge::{Forge, SealOptions};
 use medousa_forge::git::{CheckpointAuthor, GitEngine};
 use medousa_forge::model::{
     ActorKind, ActorRef, CompactEvidenceReceipt, EvidenceId, ExecutionLease, ExecutorDescriptor,
-    GitOid, IntegrationStrategy, LeaseId, RecoveryDisposition, ReviewDecision, ReviewDecisionId,
-    WorkId, WorkItem, WorkPolicy, WorkState, WorkTarget,
+    GitOid, IntegrationStrategy, LeaseId, RecoveryDisposition, ReviewCommentId, ReviewDecision,
+    ReviewDecisionId, WorkId, WorkItem, WorkPolicy, WorkState, WorkTarget,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -29,8 +29,8 @@ use crate::daemon_api::{
 };
 
 use crate::daemon::forge_projections::{
-    ItemProjection, ReviewProjection, build_review_for_attempt, evidence_dir, project_item,
-    project_items, read_lines_page,
+    ItemProjection, ReviewCommentProjection, ReviewProjection, build_review_for_attempt,
+    evidence_dir, project_item, project_items, read_lines_page,
 };
 use crate::daemon::forge_events::ForgeProjectEventKind;
 use crate::daemon::state::AppState;
@@ -170,6 +170,18 @@ pub fn forge_router(state: AppState) -> Router {
             get(read_workspace_state).put(save_workspace_state),
         )
         .route("/v1/forge/items/{work_id}/review", get(get_review))
+        .route(
+            "/v1/forge/items/{work_id}/review/comments",
+            get(list_review_comments).post(add_review_comment),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/review/comments/{comment_id}",
+            patch(patch_review_comment).delete(delete_review_comment),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/review/request-changes",
+            post(request_review_changes),
+        )
         .route(
             "/v1/forge/items/{work_id}/review/file",
             get(get_review_file).post(restore_review_file),
@@ -4575,6 +4587,177 @@ async fn get_review(
         review.world = Some(host.binding_status_json(item.id.as_str()).await);
     }
     Ok(Json(review))
+}
+
+#[derive(Debug, Deserialize)]
+struct AddReviewCommentRequest {
+    evidence_id: String,
+    #[serde(default)]
+    attempt_id: Option<String>,
+    path: String,
+    #[serde(default = "default_comment_side")]
+    side: String,
+    start_line: u32,
+    #[serde(default)]
+    end_line: Option<u32>,
+    #[serde(default)]
+    anchor_text: Option<String>,
+    body: String,
+    #[serde(default)]
+    parent_id: Option<String>,
+}
+
+fn default_comment_side() -> String {
+    "new".into()
+}
+
+#[derive(Debug, Deserialize)]
+struct PatchReviewCommentRequest {
+    #[serde(default)]
+    resolve: Option<bool>,
+    #[serde(default)]
+    body: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RequestReviewChangesRequest {
+    evidence_id: String,
+    evidence_digest: String,
+    #[serde(default)]
+    summary: Option<String>,
+    #[serde(default)]
+    comment_ids: Option<Vec<String>>,
+}
+
+async fn list_review_comments(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Query(query): Query<ReviewSelectionQuery>,
+) -> ApiResult<Json<Vec<ReviewCommentProjection>>> {
+    let id = parse_work_id(&work_id)?;
+    let item = forge(&state).load(&id).map_err(map_err)?;
+    let attempt_id = query
+        .attempt_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| medousa_forge::model::AttemptId::from(value.to_string()));
+    let review = build_review_for_attempt(forge(&state).as_ref(), &item, attempt_id.as_ref());
+    Ok(Json(review.comments))
+}
+
+async fn add_review_comment(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<AddReviewCommentRequest>,
+) -> ApiResult<Json<ItemProjection>> {
+    let id = parse_work_id(&work_id)?;
+    let actor = actor_from_state(&state);
+    let evidence_id = EvidenceId::from(body.evidence_id);
+    let attempt_id = body
+        .attempt_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| medousa_forge::model::AttemptId::from(value.to_string()));
+    let parent_id = body
+        .parent_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| ReviewCommentId::from(value.to_string()));
+    let end_line = body.end_line.unwrap_or(body.start_line);
+    let item = forge(&state)
+        .add_review_comment(
+            &id,
+            evidence_id,
+            attempt_id,
+            body.path,
+            body.side,
+            body.start_line,
+            end_line,
+            body.anchor_text,
+            body.body,
+            parent_id,
+            &actor,
+        )
+        .map_err(map_err)?;
+    Ok(ok_item(&state, item, "review_comment_added"))
+}
+
+async fn patch_review_comment(
+    State(state): State<AppState>,
+    Path((work_id, comment_id)): Path<(String, String)>,
+    Json(body): Json<PatchReviewCommentRequest>,
+) -> ApiResult<Json<ItemProjection>> {
+    let id = parse_work_id(&work_id)?;
+    let actor = actor_from_state(&state);
+    let comment_id = ReviewCommentId::from(comment_id);
+    if body.resolve.is_none() && body.body.is_none() {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "patch requires resolve and/or body",
+        ));
+    }
+    if body.resolve == Some(false) {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "unresolving comments is not supported",
+        ));
+    }
+    let forge = forge(&state);
+    let mut item = forge.load(&id).map_err(map_err)?;
+    if let Some(text) = body.body {
+        item = forge
+            .update_review_comment_body(&id, &comment_id, text, &actor)
+            .map_err(map_err)?;
+    }
+    if body.resolve == Some(true) {
+        item = forge
+            .resolve_review_comment(&id, &comment_id, &actor)
+            .map_err(map_err)?;
+    }
+    Ok(ok_item(&state, item, "review_comment_updated"))
+}
+
+async fn delete_review_comment(
+    State(state): State<AppState>,
+    Path((work_id, comment_id)): Path<(String, String)>,
+) -> ApiResult<Json<ItemProjection>> {
+    let id = parse_work_id(&work_id)?;
+    let actor = actor_from_state(&state);
+    let comment_id = ReviewCommentId::from(comment_id);
+    let item = forge(&state)
+        .delete_review_comment(&id, &comment_id, &actor)
+        .map_err(map_err)?;
+    Ok(ok_item(&state, item, "review_comment_deleted"))
+}
+
+async fn request_review_changes(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<RequestReviewChangesRequest>,
+) -> ApiResult<Json<ItemProjection>> {
+    let id = parse_work_id(&work_id)?;
+    let actor = actor_from_state(&state);
+    let evidence_id = EvidenceId::from(body.evidence_id);
+    let evidence_digest = medousa_forge::model::Digest::from_hex(body.evidence_digest);
+    let comment_ids = body.comment_ids.map(|ids| {
+        ids.into_iter()
+            .map(ReviewCommentId::from)
+            .collect::<Vec<_>>()
+    });
+    let item = forge(&state)
+        .request_changes(
+            &id,
+            evidence_id,
+            evidence_digest,
+            body.summary,
+            comment_ids,
+            &actor,
+        )
+        .map_err(map_err)?;
+    Ok(ok_item(&state, item, "changes_requested"))
 }
 
 #[derive(Debug, Deserialize)]

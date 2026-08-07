@@ -27,6 +27,21 @@ export default {
         "content-success": "rgb(var(--theme-success) / <alpha-value>)",
         "content-warning": "rgb(var(--theme-warning) / <alpha-value>)",
       },
+      fontSize: {
+        /* Dense UI chrome — floor 11px. Prefer these over text-[9px]/[11px]. */
+        "chrome-xs": [
+          "calc(var(--chrome-xs, 11px) * var(--content-zoom, 1))",
+          { lineHeight: "1.25" },
+        ],
+        "chrome-sm": [
+          "calc(var(--chrome-sm, 12px) * var(--content-zoom, 1))",
+          { lineHeight: "1.3" },
+        ],
+        "chrome-md": [
+          "calc(var(--chrome-md, 13px) * var(--content-zoom, 1))",
+          { lineHeight: "1.35" },
+        ],
+      },
     },
   },
   plugins: [

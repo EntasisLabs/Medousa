@@ -211,12 +211,12 @@
 <div class="flex max-h-80 min-h-[12rem] flex-col border-t border-surface-500/30 bg-surface-950/85">
   <header class="flex shrink-0 items-center gap-2 border-b border-surface-500/20 px-2 py-1.5">
     <Search size={12} class="shrink-0 text-content-quiet" />
-    <span class="text-[10px] font-medium uppercase tracking-wide text-content-tertiary">Search</span>
+    <span class="text-chrome-sm font-medium uppercase tracking-wide text-content-tertiary">Search</span>
     <div class="ml-auto flex items-center gap-1">
       {#if loading || loadingMore}
         <button
           type="button"
-          class="rounded px-1.5 py-0.5 text-[9px] text-content-quiet hover:bg-surface-800"
+          class="rounded px-1.5 py-0.5 text-chrome-xs text-content-quiet hover:bg-surface-800"
           onclick={cancel}
         >Cancel</button>
       {/if}
@@ -234,13 +234,13 @@
   <div class="flex shrink-0 flex-col gap-1.5 border-b border-surface-500/15 px-2 py-1.5">
     <input
       bind:this={queryInput}
-      class="w-full rounded border border-surface-500/35 bg-surface-900/80 px-2 py-1 text-[11px] text-content-secondary outline-none focus:border-primary-500/50"
+      class="w-full rounded border border-surface-500/35 bg-surface-900/80 px-2 py-1 text-chrome-md text-content-secondary outline-none focus:border-primary-500/50"
       placeholder="Search in project…"
       bind:value={query}
       onkeydown={onKeydown}
     />
     <input
-      class="w-full rounded border border-surface-500/35 bg-surface-900/80 px-2 py-1 text-[11px] text-content-secondary outline-none focus:border-primary-500/50"
+      class="w-full rounded border border-surface-500/35 bg-surface-900/80 px-2 py-1 text-chrome-md text-content-secondary outline-none focus:border-primary-500/50"
       placeholder="Replace with…"
       bind:value={replacement}
       onkeydown={onKeydown}
@@ -248,54 +248,54 @@
     <div class="flex flex-wrap items-center gap-1">
       <button
         type="button"
-        class="rounded px-1.5 py-0.5 text-[9px] {caseSensitive ? 'bg-primary-500/20 text-primary-100' : 'text-content-quiet hover:bg-surface-800'}"
+        class="rounded px-1.5 py-0.5 text-chrome-xs {caseSensitive ? 'bg-primary-500/20 text-primary-100' : 'text-content-quiet hover:bg-surface-800'}"
         title="Match case"
         aria-pressed={caseSensitive}
         onclick={() => (caseSensitive = !caseSensitive)}
       >Aa</button>
       <button
         type="button"
-        class="rounded px-1.5 py-0.5 text-[9px] {wholeWord ? 'bg-primary-500/20 text-primary-100' : 'text-content-quiet hover:bg-surface-800'}"
+        class="rounded px-1.5 py-0.5 text-chrome-xs {wholeWord ? 'bg-primary-500/20 text-primary-100' : 'text-content-quiet hover:bg-surface-800'}"
         title="Whole word"
         aria-pressed={wholeWord}
         onclick={() => (wholeWord = !wholeWord)}
       >W</button>
       <button
         type="button"
-        class="rounded px-1.5 py-0.5 text-[9px] {regex ? 'bg-primary-500/20 text-primary-100' : 'text-content-quiet hover:bg-surface-800'}"
+        class="rounded px-1.5 py-0.5 text-chrome-xs {regex ? 'bg-primary-500/20 text-primary-100' : 'text-content-quiet hover:bg-surface-800'}"
         title="Use regular expression"
         aria-pressed={regex}
         onclick={() => (regex = !regex)}
       >.*</button>
       <button
         type="button"
-        class="rounded px-1.5 py-0.5 text-[9px] {changedOnly ? 'bg-primary-500/20 text-primary-100' : 'text-content-quiet hover:bg-surface-800'}"
+        class="rounded px-1.5 py-0.5 text-chrome-xs {changedOnly ? 'bg-primary-500/20 text-primary-100' : 'text-content-quiet hover:bg-surface-800'}"
         title="Changed files only"
         aria-pressed={changedOnly}
         onclick={() => (changedOnly = !changedOnly)}
       >Changed</button>
       <button
         type="button"
-        class="ml-auto rounded bg-primary-500/80 px-2 py-0.5 text-[9px] font-medium text-white disabled:opacity-40"
+        class="ml-auto rounded bg-primary-500/80 px-2 py-0.5 text-chrome-xs font-medium text-white disabled:opacity-40"
         disabled={loading || query.trim().length < 2}
         onclick={() => void runSearch()}
       >Search</button>
       <button
         type="button"
-        class="rounded border border-surface-500/40 px-2 py-0.5 text-[9px] text-content-secondary hover:bg-surface-800 disabled:opacity-40"
+        class="rounded border border-surface-500/40 px-2 py-0.5 text-chrome-xs text-content-secondary hover:bg-surface-800 disabled:opacity-40"
         disabled={previewing || query.trim().length < 2}
         onclick={() => void previewReplace()}
       >{previewing ? "Previewing…" : "Replace…"}</button>
     </div>
     <div class="grid grid-cols-2 gap-1">
       <input
-        class="rounded border border-surface-500/25 bg-surface-900/50 px-1.5 py-0.5 text-[9px] text-content-tertiary outline-none focus:border-primary-500/40"
+        class="rounded border border-surface-500/25 bg-surface-900/50 px-1.5 py-0.5 text-chrome-xs text-content-tertiary outline-none focus:border-primary-500/40"
         placeholder="files to include"
         bind:value={include}
         onkeydown={onKeydown}
       />
       <input
-        class="rounded border border-surface-500/25 bg-surface-900/50 px-1.5 py-0.5 text-[9px] text-content-tertiary outline-none focus:border-primary-500/40"
+        class="rounded border border-surface-500/25 bg-surface-900/50 px-1.5 py-0.5 text-chrome-xs text-content-tertiary outline-none focus:border-primary-500/40"
         placeholder="files to exclude"
         bind:value={exclude}
         onkeydown={onKeydown}
@@ -305,17 +305,17 @@
 
   <div class="min-h-0 flex-1 overflow-y-auto">
     {#if loading}
-      <p class="flex items-center gap-1.5 px-3 py-3 text-[10px] text-content-quiet">
+      <p class="flex items-center gap-1.5 px-3 py-3 text-chrome-sm text-content-quiet">
         <LoaderCircle size={11} class="animate-spin" /> Searching…
       </p>
     {:else if error && !replacePlan}
-      <p class="px-3 py-3 text-[10px] text-rose-300/90">{error}</p>
+      <p class="px-3 py-3 text-chrome-sm text-rose-300/90">{error}</p>
     {:else if !result}
-      <p class="px-3 py-3 text-[10px] text-content-quiet">
+      <p class="px-3 py-3 text-chrome-sm text-content-quiet">
         Search tracked and untracked source. Preview a replace before applying.
       </p>
     {:else if hits.length === 0}
-      <p class="px-3 py-3 text-[10px] text-content-quiet">No matches.</p>
+      <p class="px-3 py-3 text-chrome-sm text-content-quiet">No matches.</p>
     {:else}
       {#each hits as hit, index (`${hit.path}:${hit.line}:${index}`)}
         <button
@@ -323,23 +323,23 @@
           class="flex w-full flex-col gap-0.5 border-b border-surface-500/10 px-3 py-1.5 text-left hover:bg-surface-800/60"
           onclick={() => void onOpenHit?.(hit.path, hit.line)}
         >
-          <span class="truncate text-[10px] text-content-secondary">
+          <span class="truncate text-chrome-sm text-content-secondary">
             {hit.path}<span class="text-content-quiet">:{hit.line}</span>
           </span>
-          <span class="truncate font-mono text-[9px] text-content-quiet">{hit.preview}</span>
+          <span class="truncate font-mono text-chrome-xs text-content-quiet">{hit.preview}</span>
         </button>
       {/each}
       {#if canLoadMore}
         <div class="px-3 py-2">
           <button
             type="button"
-            class="rounded px-2 py-1 text-[9px] text-primary-200 hover:bg-primary-900/25 disabled:opacity-40"
+            class="rounded px-2 py-1 text-chrome-xs text-primary-200 hover:bg-primary-900/25 disabled:opacity-40"
             disabled={loadingMore}
             onclick={() => void runSearch({ append: true })}
           >{loadingMore ? "Loading…" : "Load more"}</button>
         </div>
       {:else if result.truncated}
-        <p class="px-3 py-2 text-[9px] text-content-quiet">Results truncated.</p>
+        <p class="px-3 py-2 text-chrome-xs text-content-quiet">Results truncated.</p>
       {/if}
     {/if}
   </div>
@@ -367,21 +367,21 @@
       <header class="flex items-start justify-between gap-3 border-b border-surface-500/30 px-4 py-3">
         <div class="min-w-0">
           <p class="text-sm font-medium text-surface-100">Review replace</p>
-          <p class="mt-0.5 text-[10px] leading-relaxed text-content-quiet">
+          <p class="mt-0.5 text-chrome-sm leading-relaxed text-content-quiet">
             Uncheck files to skip them. Apply verifies every digest and writes the remaining edits atomically.
           </p>
           <div class="mt-2 flex flex-wrap gap-1">
             {#each replacePlan.files as file (file.path)}
               <button
                 type="button"
-                class="rounded px-1.5 py-0.5 text-[9px] {excludedPaths.has(file.path) ? 'bg-surface-800 text-content-quiet line-through' : 'bg-primary-950/50 text-primary-100'}"
+                class="rounded px-1.5 py-0.5 text-chrome-xs {excludedPaths.has(file.path) ? 'bg-surface-800 text-content-quiet line-through' : 'bg-primary-950/50 text-primary-100'}"
                 disabled={applying}
                 onclick={() => toggleExcluded(file.path)}
               >{file.path} · {file.match_count}</button>
             {/each}
           </div>
           {#if replacePlan.truncated}
-            <p class="mt-2 text-[9px] text-amber-200/90">Replace plan was truncated to the file limit.</p>
+            <p class="mt-2 text-chrome-xs text-amber-200/90">Replace plan was truncated to the file limit.</p>
           {/if}
         </div>
         <button
@@ -393,7 +393,7 @@
         ><X size={14} /></button>
       </header>
       {#if error}
-        <p class="shrink-0 border-b border-amber-500/30 bg-amber-950/25 px-4 py-2 text-[10px] text-amber-100">{error}</p>
+        <p class="shrink-0 border-b border-amber-500/30 bg-amber-950/25 px-4 py-2 text-chrome-sm text-amber-100">{error}</p>
       {/if}
       <div class="min-h-0 flex-1 overflow-auto px-4 py-3">
         <DiffStack
@@ -407,17 +407,17 @@
         />
       </div>
       <footer class="flex items-center justify-between gap-3 border-t border-surface-500/30 px-4 py-3">
-        <p class="text-[9px] text-content-quiet">{replaceFiles.length} of {replacePlan.files.length} files selected</p>
+        <p class="text-chrome-xs text-content-quiet">{replaceFiles.length} of {replacePlan.files.length} files selected</p>
         <div class="flex shrink-0 items-center gap-2">
           <button
             type="button"
-            class="rounded px-2.5 py-1.5 text-[10px] text-content-tertiary hover:bg-surface-800 disabled:opacity-40"
+            class="rounded px-2.5 py-1.5 text-chrome-sm text-content-tertiary hover:bg-surface-800 disabled:opacity-40"
             disabled={applying}
             onclick={() => (replacePlan = null)}
           >Cancel</button>
           <button
             type="button"
-            class="inline-flex items-center gap-1.5 rounded bg-primary-500/80 px-2.5 py-1.5 text-[10px] font-medium text-white hover:bg-primary-500 disabled:opacity-40"
+            class="inline-flex items-center gap-1.5 rounded bg-primary-500/80 px-2.5 py-1.5 text-chrome-sm font-medium text-white hover:bg-primary-500 disabled:opacity-40"
             disabled={applying || replaceFiles.length === 0}
             onclick={() => void applyReplace()}
           >{#if applying}<LoaderCircle size={11} class="animate-spin" />Applying…{:else}Apply replace{/if}</button>

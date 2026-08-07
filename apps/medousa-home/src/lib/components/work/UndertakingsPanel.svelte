@@ -30,6 +30,10 @@
     getEvidencePatch,
     getEvidenceCommands,
     restoreReviewFile,
+    addReviewComment,
+    resolveReviewComment,
+    deleteReviewComment,
+    requestReviewChanges,
     getWorldCodeAvec,
     getWorldFiles,
     getWorldFind,
@@ -71,6 +75,9 @@
   import { shareText } from "$lib/share";
   import CodeSourceEditor from "$lib/components/work/CodeSourceEditor.svelte";
   import ForgeReviewSurface from "$lib/components/work/ForgeReviewSurface.svelte";
+  import ReviewCommentRail from "$lib/components/work/ReviewCommentRail.svelte";
+  import EmptyState from "$lib/components/ui/EmptyState.svelte";
+  import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
   import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
   import { isTauri } from "$lib/window";
   import { toast } from "$lib/stores/toast.svelte";
@@ -114,6 +121,15 @@
   let reviewRationale = $state("");
   let reviewNoteOpen = $state(false);
   let acknowledgePolicy = $state(false);
+  let acknowledgeBlocking = $state(false);
+  let commentDraft = $state("");
+  let commentCompose = $state<{
+    path: string;
+    side: "new" | "old" | string;
+    line: number;
+    content: string;
+  } | null>(null);
+  let requestChangesPreviewOpen = $state(false);
   let exportOpen = $state(false);
   let exportDestination = $state("");
   let exportedDestination = $state<string | null>(null);
@@ -125,9 +141,9 @@
   let providerOpen = $state(false);
   let reviewDetailsFor = $state<string | null>(null);
   let reviewDetailsLoading = $state(false);
-  let reviewDetailsOpen = $state(false);
+  let reviewDetailsOpen = $state(true);
   let reviewTimelineOpen = $state(false);
-  let reviewAuditOpen = $state(false);
+  let reviewAuditOpen = $state(true);
   let providerLinkOpen = $state(false);
 
   const detail = $derived(
@@ -158,6 +174,16 @@
   function selectedWorldSnapshot(): WorldSnapshotRef | null {
     return worldBinding?.[worldSnapshot] ?? null;
   }
+
+  const worldSlot = $derived(worldBinding?.[worldSnapshot] ?? null);
+  const worldSlotState = $derived((worldSlot?.state ?? "").toLowerCase());
+  const worldMapIndexing = $derived(
+    worldSlotState === "queued" || worldSlotState === "indexing",
+  );
+  const worldMapFailed = $derived(worldSlotState === "failed");
+  const worldMapReady = $derived(
+    worldSlotState === "ready" && worldInsight != null && !worldError,
+  );
 
   onMount(() => {
     // Default repo path only when Home shares the workshop disk.
@@ -380,6 +406,12 @@
     reviewDetailsLoading = false;
   }
 
+  $effect(() => {
+    if (reviewDetailsOpen && review?.evidence_id) {
+      void loadReviewDetails();
+    }
+  });
+
   async function loadMorePatch() {
     if (!patch?.truncated || !review?.evidence_id) return;
     await run(async () => {
@@ -410,13 +442,48 @@
 
   async function loadWorldOverview() {
     if (!detail) return;
-    await run(async () => {
-      worldBinding = await getWorldBinding(detail!.id);
+    busy = true;
+    worldError = null;
+    try {
+      worldBinding = await getWorldBinding(detail.id);
+      const slot = worldBinding?.[worldSnapshot];
+      const state = (slot?.state ?? "").toLowerCase();
+      if (state && state !== "ready") {
+        worldFiles = null;
+        worldInsight = null;
+        worldFind = null;
+        worldImpact = null;
+        if (state === "failed") {
+          worldError = slot?.error?.trim() || "Code map indexing failed.";
+        }
+        return;
+      }
       const snapshot = selectedWorldSnapshot();
-      worldFiles = await getWorldFiles(detail!.id, undefined, snapshot);
-      worldInsight = await getWorldCodeAvec(detail!.id, snapshot);
-      worldError = null;
+      try {
+        worldFiles = await getWorldFiles(detail.id, undefined, snapshot);
+        worldInsight = await getWorldCodeAvec(detail.id, snapshot);
+        worldError = null;
+      } catch (err) {
+        worldFiles = null;
+        worldInsight = null;
+        worldError = err instanceof Error ? err.message : String(err);
+      }
+    } catch (err) {
+      worldFiles = null;
+      worldInsight = null;
+      worldError = err instanceof Error ? err.message : String(err);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function rebuildWorldMap() {
+    if (!detail) return;
+    await run(async () => {
+      await queueWorldIndex(detail!.id, worldSnapshot);
+      worldBinding = await getWorldBinding(detail!.id);
     });
+    await loadWorldOverview();
   }
 
   async function revealLocation(input: {
@@ -476,7 +543,39 @@
     if (issue.toLowerCase().includes("no project check")) {
       return "Verification is missing";
     }
+    if (issue.toLowerCase().includes("no file changes")) {
+      return "Nothing to approve";
+    }
     return humanizeForgeMessage(issue);
+  }
+
+  const reviewBlockingMessages = $derived(
+    (review?.synthesis.issues ?? [])
+      .filter((issue) => issue.blocks_approval)
+      .map((issue) => issue.message)
+      .concat(
+        !(review?.synthesis.issues?.length)
+          ? (review?.synthesis.unresolved_issues ?? []).filter((message) =>
+              /did not pass|policy or content|starting branch|no file changes/i.test(message),
+            )
+          : [],
+      ),
+  );
+
+  const canApproveReview = $derived(
+    Boolean(
+      review
+        && actions?.review.allowed
+        && review.changed_files.length > 0
+        && !busy
+        && !(review.policy?.violations.length && !acknowledgePolicy)
+        && !(reviewBlockingMessages.length && !acknowledgeBlocking && !acknowledgePolicy),
+    ),
+  );
+
+  function scrollToReviewFile(path: string) {
+    const el = document.getElementById(`diff-file-${encodeURIComponent(path)}`);
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   async function beginExport() {
@@ -519,6 +618,82 @@
           ? (review.policy?.violations.map((violation) => violation.id) ?? [])
           : [],
       });
+      await undertakings.refreshDetail();
+    });
+  }
+
+  async function beginRequestChanges() {
+    if (!review?.evidence_id || !review.evidence_digest || !detail) return;
+    const summary = reviewRationale.trim() || undefined;
+    const unresolvedIds = (review.comments ?? [])
+      .filter((comment) => !comment.resolved_at)
+      .map((comment) => comment.id);
+    await run(async () => {
+      const item = await requestReviewChanges(detail!.id, {
+        evidence_id: review.evidence_id!,
+        evidence_digest: review.evidence_digest!,
+        summary,
+        comment_ids: unresolvedIds.length ? unresolvedIds : undefined,
+      });
+      undertakings.setActiveFromItem(item);
+      const brief =
+        review.revision_brief?.trim()
+        || summary
+        || unresolvedIds.map((id) => {
+            const comment = review.comments?.find((entry) => entry.id === id);
+            return comment ? `${comment.path}:${comment.start_line}\n${comment.body}` : "";
+          }).filter(Boolean).join("\n\n");
+      await startTrackedAgent(item, preferredCodeAgent, {
+        draft: brief || undefined,
+      });
+      await undertakings.refreshDetail();
+      toast.show("Changes requested — a new attempt is starting with your feedback.");
+    });
+  }
+
+  function openCommentCompose(input: {
+    path: string;
+    side: "new" | "old" | string;
+    line: number;
+    content: string;
+  }) {
+    commentCompose = input;
+    commentDraft = "";
+  }
+
+  async function submitComment() {
+    if (!detail || !review?.evidence_id || !commentCompose || !commentDraft.trim()) return;
+    const compose = commentCompose;
+    const body = commentDraft.trim();
+    await run(async () => {
+      await addReviewComment(detail!.id, {
+        evidence_id: review.evidence_id!,
+        attempt_id: review.attempt_id ?? undefined,
+        path: compose.path,
+        side: compose.side,
+        start_line: compose.line,
+        end_line: compose.line,
+        anchor_text: compose.content || null,
+        body,
+      });
+      commentCompose = null;
+      commentDraft = "";
+      await undertakings.refreshDetail();
+    });
+  }
+
+  async function resolveComment(commentId: string) {
+    if (!detail) return;
+    await run(async () => {
+      await resolveReviewComment(detail!.id, commentId);
+      await undertakings.refreshDetail();
+    });
+  }
+
+  async function removeComment(commentId: string) {
+    if (!detail) return;
+    await run(async () => {
+      await deleteReviewComment(detail!.id, commentId);
       await undertakings.refreshDetail();
     });
   }
@@ -815,72 +990,84 @@
               ><Play size={14} /><span class="hidden sm:inline">Resume</span></button>
             {/if}
 
-            <details class="relative">
-              <summary
-                class="scripts-workbench-toolbar-btn cursor-pointer list-none [&::-webkit-details-marker]:hidden"
-                title="Project actions"
-                aria-label="Project actions"
-              >
-                <MoreHorizontal size={15} strokeWidth={1.75} />
-              </summary>
-              <div
-                class="absolute right-0 top-full z-30 mt-1 w-52 rounded-lg border border-surface-500/40 bg-surface-900 p-1.5 shadow-xl"
-              >
-                {#if actions?.start_agent.allowed}
-                  <button
-                    type="button"
-                    class="secondary-action"
-                    disabled={busy}
-                    title={actions?.start_agent.reason ?? ""}
-                    onclick={() => void startAgent("codex")}
-                  >Ask Codex to continue</button>
-                  <button
-                    type="button"
-                    class="secondary-action"
-                    disabled={busy}
-                    onclick={() => void startAgent("cursor")}
-                  >Ask Cursor to continue</button>
-                {/if}
+            <OverflowMenu
+              label="Project actions"
+              title="Project actions"
+              panelClass="w-52 rounded-lg border border-surface-500/40 bg-surface-900 p-1.5 shadow-xl"
+            >
+              {#snippet trigger({ open, toggle })}
                 <button
                   type="button"
+                  class="scripts-workbench-toolbar-btn {open ? 'scripts-workbench-toolbar-btn-active' : ''}"
+                  title="Project actions"
+                  aria-label="Project actions"
+                  aria-expanded={open}
+                  aria-haspopup="menu"
+                  onclick={toggle}
+                >
+                  <MoreHorizontal size={15} strokeWidth={1.75} />
+                </button>
+              {/snippet}
+              {#if actions?.start_agent.allowed}
+                <button
+                  type="button"
+                  role="menuitem"
                   class="secondary-action"
-                  disabled={busy || !actions?.open_terminal.allowed}
-                  onclick={() => void openTerminalTracked()}
-                >Terminal in working copy</button>
-                {#if detail.environment?.worktree}
-                  <button
-                    type="button"
-                    class="secondary-action"
-                    disabled={busy}
-                    onclick={() => void revealWorktree()}
-                  >Reveal working copy</button>
-                {/if}
-                {#if undertakings.active?.workId === detail.id && undertakings.active.selectedPath}
-                  <button
-                    type="button"
-                    class="secondary-action"
-                    disabled={busy}
-                    onclick={() => void copyLocationLink()}
-                  >Copy location link</button>
-                {/if}
-                <div class="my-1 border-t border-surface-500/25"></div>
-                {#if detail.environment}
-                  <details class="px-2 py-1 text-[9px] text-content-quiet">
-                    <summary class="cursor-pointer select-none hover:text-content-secondary">Technical details</summary>
-                    <p class="mt-1 break-all font-mono leading-relaxed">
-                      Working copy: {detail.environment.worktree}<br />Starting revision:
-                      {detail.environment.baseline_oid.slice(0, 12)} · internal state: {detail.state}
-                    </p>
-                  </details>
-                {/if}
+                  disabled={busy}
+                  title={actions?.start_agent.reason ?? ""}
+                  onclick={() => void startAgent("codex")}
+                >Ask Codex to continue</button>
                 <button
                   type="button"
-                  class="secondary-action text-rose-200"
-                  disabled={busy || !actions?.discard.allowed}
-                  onclick={() => void discardWithConfirmation()}
-                >Discard project…</button>
-              </div>
-            </details>
+                  role="menuitem"
+                  class="secondary-action"
+                  disabled={busy}
+                  onclick={() => void startAgent("cursor")}
+                >Ask Cursor to continue</button>
+              {/if}
+              <button
+                type="button"
+                role="menuitem"
+                class="secondary-action"
+                disabled={busy || !actions?.open_terminal.allowed}
+                onclick={() => void openTerminalTracked()}
+              >Terminal in working copy</button>
+              {#if detail.environment?.worktree}
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="secondary-action"
+                  disabled={busy}
+                  onclick={() => void revealWorktree()}
+                >Reveal working copy</button>
+              {/if}
+              {#if undertakings.active?.workId === detail.id && undertakings.active.selectedPath}
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="secondary-action"
+                  disabled={busy}
+                  onclick={() => void copyLocationLink()}
+                >Copy location link</button>
+              {/if}
+              <div class="my-1 border-t border-surface-500/25" role="separator"></div>
+              {#if detail.environment}
+                <details class="px-2 py-1 text-chrome-xs text-content-quiet">
+                  <summary class="cursor-pointer select-none hover:text-content-secondary">Technical details</summary>
+                  <p class="mt-1 break-all font-mono leading-relaxed">
+                    Working copy: {detail.environment.worktree}<br />Starting revision:
+                    {detail.environment.baseline_oid.slice(0, 12)} · internal state: {detail.state}
+                  </p>
+                </details>
+              {/if}
+              <button
+                type="button"
+                role="menuitem"
+                class="secondary-action text-rose-200"
+                disabled={busy || !actions?.discard.allowed}
+                onclick={() => void discardWithConfirmation()}
+              >Discard project…</button>
+            </OverflowMenu>
           </div>
         </div>
 
@@ -933,14 +1120,26 @@
         {#if reviewCanvas && review && (detail.human_phase === "review" || review.evidence_id)}
           <div class="flex min-h-0 flex-1 flex-col bg-surface-950/20">
             <div class="min-h-0 flex-1 overflow-auto px-4 py-3">
-              <div class="review-canvas">
+              <div class="review-canvas review-canvas--with-rail">
+                <div class="review-canvas-main">
                 <ForgeReviewSurface
                   {review}
                   {busy}
                   onOpenFile={(path, line) => revealLocation({ path, line })}
                   onRestore={restoreReviewedFile}
                   onSelectCandidate={(attemptId) => undertakings.selectReviewAttempt(attemptId)}
+                  onComment={openCommentCompose}
                 />
+
+                {#if (review.changed_since_previous?.length ?? 0) > 0}
+                  {@const sincePrevious = review.changed_since_previous ?? []}
+                  <p class="review-since-banner" role="status">
+                    {sincePrevious.length}
+                    {sincePrevious.length === 1 ? "file differs" : "files differ"}
+                    from the attempt that received your feedback:
+                    <span>{sincePrevious.slice(0, 6).join(", ")}{sincePrevious.length > 6 ? "…" : ""}</span>
+                  </p>
+                {/if}
 
                 {#if review.policy && (review.policy.violations.length || review.policy.capture_risks.length)}
                   <section class="review-policy" aria-label="Policy exceptions">
@@ -949,14 +1148,31 @@
                       <p>Review exceptions</p>
                       <ul>
                         {#each review.policy.violations as violation (violation.id)}
-                          <li><span>{violation.path}</span> — {violation.detail}</li>
+                          <li>
+                            <button
+                              type="button"
+                              class="review-policy-path"
+                              onclick={() => scrollToReviewFile(violation.path)}
+                            >{violation.path}</button>
+                            — {violation.detail}
+                          </li>
                         {/each}
-                        {#each review.policy.capture_risks as risk}
+                        {#each review.policy.capture_risks as risk, riskIndex (`${risk.kind}:${"path" in risk ? risk.path : ""}:${riskIndex}`)}
                           <li>
                             {#if risk.kind === "secret_pattern"}
-                              Possible secret in <span>{risk.path}</span>
+                              Possible secret in
+                              <button
+                                type="button"
+                                class="review-policy-path"
+                                onclick={() => scrollToReviewFile(risk.path)}
+                              >{risk.path}</button>
                             {:else if risk.kind === "oversize_file"}
-                              Large file <span>{risk.path}</span>
+                              Large file
+                              <button
+                                type="button"
+                                class="review-policy-path"
+                                onclick={() => scrollToReviewFile(risk.path)}
+                              >{risk.path}</button>
                             {:else}
                               These changes exceed the configured size limit
                             {/if}
@@ -970,6 +1186,61 @@
                         </label>
                       {/if}
                     </div>
+                  </section>
+                {/if}
+
+                {#if reviewBlockingMessages.length > 0 && !(review.policy?.violations.length)}
+                  <section class="review-policy" aria-label="Blocking review issues">
+                    <CircleAlert size={15} strokeWidth={1.7} aria-hidden="true" />
+                    <div class="min-w-0 flex-1">
+                      <p>Needs acknowledgment before approval</p>
+                      <ul>
+                        {#each reviewBlockingMessages as message (message)}
+                          <li>{reviewIssueLabel(message)}</li>
+                        {/each}
+                      </ul>
+                      <label>
+                        <input type="checkbox" bind:checked={acknowledgeBlocking} />
+                        <span>I reviewed these conditions and want to approve anyway.</span>
+                      </label>
+                    </div>
+                  </section>
+                {/if}
+
+                {#if review.decision?.rationale}
+                  <p class="review-prior-note">
+                    Prior decision note: <span>{review.decision.rationale}</span>
+                  </p>
+                {/if}
+
+                {#if review.revision_brief || (review.unresolved_comment_count ?? 0) > 0 || (review.comments?.length ?? 0) > 0}
+                  <section class="review-revision-brief" aria-label="Revision brief preview">
+                    <button
+                      type="button"
+                      class="review-context-disclosure"
+                      aria-expanded={requestChangesPreviewOpen}
+                      onclick={() => (requestChangesPreviewOpen = !requestChangesPreviewOpen)}
+                    >
+                      <ChevronRight
+                        size={13}
+                        strokeWidth={2}
+                        class="review-context-chevron {requestChangesPreviewOpen ? 'review-context-chevron--open' : ''}"
+                      />
+                      <span>Feedback for the next attempt</span>
+                      <small>
+                        {(review.unresolved_comment_count ?? 0) === 1
+                          ? "1 open comment"
+                          : `${review.unresolved_comment_count ?? 0} open comments`}
+                      </small>
+                    </button>
+                    {#if requestChangesPreviewOpen}
+                      <pre class="review-revision-brief-body">{review.revision_brief
+                        || (review.comments ?? [])
+                            .filter((comment) => !comment.resolved_at)
+                            .map((comment) => `${comment.path}:${comment.start_line}\n${comment.body}`)
+                            .join("\n\n")
+                        || "No open comments yet."}</pre>
+                    {/if}
                   </section>
                 {/if}
 
@@ -1199,6 +1470,29 @@
                     Project record saved at <span>{exportedDestination}</span>
                   </p>
                 {/if}
+                </div>
+
+                <ReviewCommentRail
+                  comments={review.comments ?? []}
+                  compose={commentCompose}
+                  draft={commentDraft}
+                  {busy}
+                  onDraftChange={(value) => (commentDraft = value)}
+                  onSubmit={submitComment}
+                  onCancelCompose={() => {
+                    commentCompose = null;
+                    commentDraft = "";
+                  }}
+                  onResolve={resolveComment}
+                  onDelete={removeComment}
+                  onJump={(comment) => {
+                    scrollToReviewFile(comment.path);
+                    const el = document.querySelector(
+                      `[data-diff-line="${comment.start_line}"]`,
+                    ) as HTMLElement | null;
+                    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  }}
+                />
               </div>
             </div>
 
@@ -1238,8 +1532,14 @@
                       ><MessageSquarePlus size={13} /><span>{reviewRationale.trim() ? "Edit note" : "Add note"}</span></button>
                       <button
                         type="button"
+                        class="review-decision-btn"
+                        disabled={busy || review.changed_files.length === 0}
+                        onclick={() => void beginRequestChanges()}
+                      ><span>Request changes</span></button>
+                      <button
+                        type="button"
                         class="review-decision-btn review-decision-btn--primary"
-                        disabled={busy || (!!review.policy?.violations.length && !acknowledgePolicy)}
+                        disabled={!canApproveReview}
                         onclick={() => void recordApproval()}
                       ><Check size={14} /><span>Approve changes</span></button>
                     {:else if actions?.apply.allowed}
@@ -1315,12 +1615,14 @@
         {#if worldMode}
           <div
             bind:this={worldEl}
-            class="absolute inset-y-0 right-0 z-30 w-[min(32rem,100%)] overflow-auto border-l border-surface-500/40 bg-surface-950/98 p-3 shadow-2xl"
+            class="absolute inset-y-0 right-0 z-30 flex w-[min(32rem,100%)] flex-col overflow-auto border-l border-surface-500/40 bg-surface-950/98 p-3 shadow-2xl"
           >
             <div class="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h4 class="text-sm font-semibold">Understand this code</h4>
-                <p class="text-[10px] text-content-quiet">See relationships and possible impact without leaving your work</p>
+                <p class="workshop-faint mt-0.5 text-[10px]">
+                  See relationships and possible impact without leaving your work
+                </p>
               </div>
               <div class="flex items-center gap-1 text-[10px]">
                 <button
@@ -1356,184 +1658,222 @@
                 >×</button>
               </div>
             </div>
-            <p class="mt-1 text-[10px] text-content-quiet">This view only explains the code; it never changes files.</p>
-            <div class="mt-2 flex flex-wrap gap-1">
-              <button
-                type="button"
-                class="rounded border border-surface-500/50 px-2 py-1 text-xs"
-                onclick={() => void loadWorldOverview()}
-              >
-                Refresh understanding
-              </button>
-              <button
-                type="button"
-                class="rounded border border-surface-500/50 px-2 py-1 text-xs"
-                onclick={() =>
-                  void run(async () => {
-                    await queueWorldIndex(detail.id, worldSnapshot);
-                    worldBinding = await getWorldBinding(detail.id);
-                  })}
-              >
-                Rebuild code map
-              </button>
-            </div>
-            {#if worldBinding}
-              <details class="mt-2 text-[10px] text-content-quiet">
-                <summary class="w-fit cursor-pointer hover:text-content-secondary">Technical details</summary>
-                <p class="mt-1">
-                  Before: {worldBinding.baseline?.state ?? "not indexed"} · current:
-                  {worldBinding.sealed?.state ?? "not indexed"}
-                </p>
-                {#if worldBinding.capabilities}
-                  <div class="mt-1 flex flex-wrap gap-1">
-                  {#each Object.entries(worldBinding.capabilities).filter(([key]) => key !== "note") as [capability, enabled]}
-                    <span
-                      class="rounded-full border border-surface-500/30 px-1.5 py-0.5 text-[9px] {enabled
-                        ? 'text-content-secondary'
-                        : 'text-content-faint'}"
-                    >{capability.replaceAll("_", " ")}{enabled ? "" : " · unavailable"}</span>
-                  {/each}
-                  </div>
-                {/if}
-                {#if worldBinding.diagnostics?.length}
-                  <ul class="mt-1 text-[10px] text-amber-200/90">
-                  {#each worldBinding.diagnostics as d}
-                    <li>{d}</li>
-                  {/each}
-                  </ul>
-                {/if}
-              </details>
-            {/if}
-            <div class="mt-2 flex flex-wrap items-center gap-1">
-              <input
-                class="min-w-[120px] flex-1 rounded border border-surface-500/40 bg-surface-900 px-2 py-1 text-xs"
-                placeholder="Find a class, function, or name…"
-                bind:value={findQuery}
-              />
-              <button
-                type="button"
-                class="rounded border border-surface-500/50 px-2 py-1 text-xs"
-                onclick={() =>
-                  void run(async () => {
-                    worldFind = await getWorldFind(detail.id, {
-                      name_contains: findQuery.trim() || undefined,
-                      snapshot: selectedWorldSnapshot(),
-                    });
-                  })}
-              >
-                Find
-              </button>
-            </div>
-            <div class="mt-1 flex flex-wrap items-center gap-1">
-              <input
-                class="min-w-[120px] flex-1 rounded border border-surface-500/40 bg-surface-900 px-2 py-1 text-xs"
-                placeholder="Class or function to check"
-                bind:value={impactEntity}
-              />
-              <button
-                type="button"
-                class="rounded border border-surface-500/50 px-2 py-1 text-xs"
-                disabled={!impactEntity.trim()}
-                onclick={() =>
-                  void run(async () => {
-                    worldImpact = await getWorldImpact(
-                      detail.id,
-                      impactEntity.trim(),
-                      selectedWorldSnapshot(),
-                    );
-                  })}
-              >
-                See impact
-              </button>
-            </div>
-            {#if worldFind}
-              <div class="mt-2 max-h-44 overflow-auto rounded-md border border-surface-500/25">
-                {#if worldFind.entities.length === 0}
-                  <p class="p-2 text-[10px] text-content-quiet">Nothing matched that name.</p>
-                {:else}
-                  {#each worldFind.entities as entity (entity.id)}
-                    <button
-                      type="button"
-                      class="flex w-full items-center justify-between gap-2 border-b border-surface-500/20 px-2 py-1.5 text-left last:border-0 hover:bg-surface-800/60"
-                      onclick={() => {
-                        void revealLocation({
-                          path: entity.path,
-                          line: entity.line_start,
-                          entityId: entity.id,
-                        });
-                      }}
-                    >
-                      <span class="min-w-0">
-                        <span class="block truncate text-[11px] text-surface-200">{entity.label}</span>
-                        <span class="block truncate font-mono text-[9px] text-content-quiet">{entity.path}</span>
-                      </span>
-                      <span class="shrink-0 text-[9px] text-content-quiet">{entity.kind}</span>
-                    </button>
-                  {/each}
-                {/if}
+            <p class="mt-1 text-[10px] text-content-quiet">
+              This view only explains the code; it never changes files.
+            </p>
+
+            {#if worldMapReady}
+              <div class="mt-2 flex flex-wrap gap-1">
+                <button
+                  type="button"
+                  class="rounded border border-surface-500/50 px-2 py-1 text-xs"
+                  onclick={() => void loadWorldOverview()}
+                >
+                  Refresh understanding
+                </button>
+                <button
+                  type="button"
+                  class="rounded border border-surface-500/50 px-2 py-1 text-xs"
+                  onclick={() => void rebuildWorldMap()}
+                >
+                  Rebuild code map
+                </button>
               </div>
-            {/if}
-            {#if worldImpact}
-              <div class="mt-2 rounded-md border border-surface-500/25 p-2">
-                <p class="text-[11px] font-medium text-surface-200">
-                  What depends on this · {worldImpact.direct_dependents ?? 0} directly,
-                  {worldImpact.transitive_dependents ?? 0} through other code
-                </p>
-                {#if worldImpact.message}
-                  <p class="mt-1 text-[10px] text-content-quiet">{worldImpact.message}</p>
-                {/if}
-                <ul class="mt-1 max-h-32 overflow-auto text-[10px] text-content-tertiary">
-                  {#each worldImpact.nodes as node (node.id)}
-                    <li class="truncate py-0.5">{node.label} <span class="text-content-faint">· {node.path}</span></li>
-                  {/each}
-                </ul>
+              {#if worldBinding}
+                <details class="mt-2 text-[10px] text-content-quiet">
+                  <summary class="w-fit cursor-pointer hover:text-content-secondary">Technical details</summary>
+                  <p class="mt-1">
+                    Before: {worldBinding.baseline?.state ?? "not indexed"} · current:
+                    {worldBinding.sealed?.state ?? "not indexed"}
+                  </p>
+                  {#if worldBinding.capabilities}
+                    <div class="mt-1 flex flex-wrap gap-1">
+                    {#each Object.entries(worldBinding.capabilities).filter(([key]) => key !== "note") as [capability, enabled]}
+                      <span
+                        class="rounded-full border border-surface-500/30 px-1.5 py-0.5 text-[9px] {enabled
+                          ? 'text-content-secondary'
+                          : 'text-content-faint'}"
+                      >{capability.replaceAll("_", " ")}{enabled ? "" : " · unavailable"}</span>
+                    {/each}
+                    </div>
+                  {/if}
+                  {#if worldBinding.diagnostics?.length}
+                    <ul class="mt-1 text-[10px] text-amber-200/90">
+                    {#each worldBinding.diagnostics as d}
+                      <li>{d}</li>
+                    {/each}
+                    </ul>
+                  {/if}
+                </details>
+              {/if}
+              <div class="mt-2 flex flex-wrap items-center gap-1">
+                <input
+                  class="min-w-[120px] flex-1 rounded border border-surface-500/40 bg-surface-900 px-2 py-1 text-xs"
+                  placeholder="Find a class, function, or name…"
+                  bind:value={findQuery}
+                />
+                <button
+                  type="button"
+                  class="rounded border border-surface-500/50 px-2 py-1 text-xs"
+                  onclick={() =>
+                    void run(async () => {
+                      worldFind = await getWorldFind(detail.id, {
+                        name_contains: findQuery.trim() || undefined,
+                        snapshot: selectedWorldSnapshot(),
+                      });
+                    })}
+                >
+                  Find
+                </button>
               </div>
-            {/if}
-            {#if worldInsight}
-              <div class="mt-2 grid gap-2 sm:grid-cols-3">
-                <div class="rounded-md bg-surface-900/60 p-2">
-                  <p class="text-lg font-semibold text-surface-100">
-                    {worldInsight.code_avec?.fully_scored_entities ?? 0}
-                  </p>
-                  <p class="text-[9px] text-content-quiet">fully understood</p>
-                </div>
-                <div class="rounded-md bg-surface-900/60 p-2">
-                  <p class="text-lg font-semibold text-surface-100">
-                    {worldInsight.code_avec?.scoreable_entities ?? 0}
-                  </p>
-                  <p class="text-[9px] text-content-quiet">code elements found</p>
-                </div>
-                <div class="rounded-md bg-surface-900/60 p-2">
-                  <p class="text-lg font-semibold text-surface-100">
-                    {worldInsight.code_avec?.gaps.length ?? 0}
-                  </p>
-                  <p class="text-[9px] text-content-quiet">still unclear</p>
-                </div>
+              <div class="mt-1 flex flex-wrap items-center gap-1">
+                <input
+                  class="min-w-[120px] flex-1 rounded border border-surface-500/40 bg-surface-900 px-2 py-1 text-xs"
+                  placeholder="Class or function to check"
+                  bind:value={impactEntity}
+                />
+                <button
+                  type="button"
+                  class="rounded border border-surface-500/50 px-2 py-1 text-xs"
+                  disabled={!impactEntity.trim()}
+                  onclick={() =>
+                    void run(async () => {
+                      worldImpact = await getWorldImpact(
+                        detail.id,
+                        impactEntity.trim(),
+                        selectedWorldSnapshot(),
+                      );
+                    })}
+                >
+                  See impact
+                </button>
               </div>
-            {/if}
-            {#if worldFiles}
-              <details class="mt-2">
-                <summary class="cursor-pointer text-[10px] text-content-tertiary">
-                  Files in this view · {worldFiles.files.length}
-                </summary>
-                <ul class="mt-1 max-h-48 overflow-auto rounded-md border border-surface-500/25">
-                  {#each worldFiles.files as file (file.id)}
-                    <li class="border-b border-surface-500/15 px-2 py-1 last:border-0">
+              {#if worldFind}
+                <div class="mt-2 max-h-44 overflow-auto rounded-md border border-surface-500/25">
+                  {#if worldFind.entities.length === 0}
+                    <p class="p-2 text-[10px] text-content-quiet">Nothing matched that name.</p>
+                  {:else}
+                    {#each worldFind.entities as entity (entity.id)}
                       <button
                         type="button"
-                        class="w-full truncate text-left font-mono text-[10px] text-content-tertiary hover:text-surface-100"
-                        onclick={() =>
-                          void revealLocation({ path: file.path, line: 1, entityId: file.id })}
-                      >{file.path}</button>
-                    </li>
-                  {/each}
-                </ul>
-              </details>
-            {/if}
-            {#if worldError}
-              <p class="mt-2 rounded-md bg-amber-950/30 p-2 text-[10px] text-amber-100">
-                Code understanding is not ready yet. {humanizeForgeMessage(worldError)}
-              </p>
+                        class="flex w-full items-center justify-between gap-2 border-b border-surface-500/20 px-2 py-1.5 text-left last:border-0 hover:bg-surface-800/60"
+                        onclick={() => {
+                          void revealLocation({
+                            path: entity.path,
+                            line: entity.line_start,
+                            entityId: entity.id,
+                          });
+                        }}
+                      >
+                        <span class="min-w-0">
+                          <span class="block truncate text-[11px] text-surface-200">{entity.label}</span>
+                          <span class="block truncate font-mono text-[9px] text-content-quiet">{entity.path}</span>
+                        </span>
+                        <span class="shrink-0 text-[9px] text-content-quiet">{entity.kind}</span>
+                      </button>
+                    {/each}
+                  {/if}
+                </div>
+              {/if}
+              {#if worldImpact}
+                <div class="mt-2 rounded-md border border-surface-500/25 p-2">
+                  <p class="text-[11px] font-medium text-surface-200">
+                    What depends on this · {worldImpact.direct_dependents ?? 0} directly,
+                    {worldImpact.transitive_dependents ?? 0} through other code
+                  </p>
+                  {#if worldImpact.message}
+                    <p class="mt-1 text-[10px] text-content-quiet">{worldImpact.message}</p>
+                  {/if}
+                  <ul class="mt-1 max-h-32 overflow-auto text-[10px] text-content-tertiary">
+                    {#each worldImpact.nodes as node (node.id)}
+                      <li class="truncate py-0.5">{node.label} <span class="text-content-faint">· {node.path}</span></li>
+                    {/each}
+                  </ul>
+                </div>
+              {/if}
+              {#if worldInsight}
+                <div class="mt-2 grid gap-2 sm:grid-cols-3">
+                  <div class="rounded-md bg-surface-900/60 p-2">
+                    <p class="text-lg font-semibold text-surface-100">
+                      {worldInsight.code_avec?.fully_scored_entities ?? 0}
+                    </p>
+                    <p class="text-[9px] text-content-quiet">fully understood</p>
+                  </div>
+                  <div class="rounded-md bg-surface-900/60 p-2">
+                    <p class="text-lg font-semibold text-surface-100">
+                      {worldInsight.code_avec?.scoreable_entities ?? 0}
+                    </p>
+                    <p class="text-[9px] text-content-quiet">code elements found</p>
+                  </div>
+                  <div class="rounded-md bg-surface-900/60 p-2">
+                    <p class="text-lg font-semibold text-surface-100">
+                      {worldInsight.code_avec?.gaps.length ?? 0}
+                    </p>
+                    <p class="text-[9px] text-content-quiet">still unclear</p>
+                  </div>
+                </div>
+              {/if}
+              {#if worldFiles}
+                <details class="mt-2">
+                  <summary class="cursor-pointer text-[10px] text-content-tertiary">
+                    Files in this view · {worldFiles.files.length}
+                  </summary>
+                  <ul class="mt-1 max-h-48 overflow-auto rounded-md border border-surface-500/25">
+                    {#each worldFiles.files as file (file.id)}
+                      <li class="border-b border-surface-500/15 px-2 py-1 last:border-0">
+                        <button
+                          type="button"
+                          class="w-full truncate text-left font-mono text-[10px] text-content-tertiary hover:text-surface-100"
+                          onclick={() =>
+                            void revealLocation({ path: file.path, line: 1, entityId: file.id })}
+                        >{file.path}</button>
+                      </li>
+                    {/each}
+                  </ul>
+                </details>
+              {/if}
+            {:else}
+              <div class="mt-6 flex flex-1 flex-col items-center justify-center px-2">
+                {#if busy || worldMapIndexing}
+                  <p class="workshop-faint text-sm">Building the code map…</p>
+                  <p class="mt-1 max-w-xs text-center text-[10px] leading-relaxed text-content-quiet">
+                    Relationships and impact stay hidden until indexing finishes.
+                  </p>
+                {:else}
+                  <EmptyState
+                    title={worldMapFailed ? "Code map failed" : "Code map isn’t ready"}
+                    description={worldError
+                      ? humanizeForgeMessage(worldError)
+                      : worldMapFailed
+                        ? "Indexing didn’t finish. Rebuild the code map and try again."
+                        : "Build a map of this project to find symbols and see what depends on them."}
+                  >
+                    <div class="flex flex-wrap items-center justify-center gap-2">
+                      <button
+                        type="button"
+                        class="rounded bg-primary-500/80 px-3 py-1.5 text-[11px] font-medium text-surface-50"
+                        disabled={busy}
+                        onclick={() => void rebuildWorldMap()}
+                      >Rebuild code map</button>
+                      <button
+                        type="button"
+                        class="rounded border border-surface-500/40 px-3 py-1.5 text-[11px] text-surface-200 hover:bg-surface-800"
+                        disabled={busy}
+                        onclick={() => void loadWorldOverview()}
+                      >Refresh</button>
+                    </div>
+                  </EmptyState>
+                {/if}
+              </div>
+              {#if worldBinding}
+                <details class="mt-auto pt-4 text-[10px] text-content-quiet">
+                  <summary class="w-fit cursor-pointer hover:text-content-secondary">Technical details</summary>
+                  <p class="mt-1">
+                    Before: {worldBinding.baseline?.state ?? "not indexed"} · current:
+                    {worldBinding.sealed?.state ?? "not indexed"}
+                  </p>
+                </details>
+              {/if}
             {/if}
           </div>
         {/if}
@@ -1568,6 +1908,58 @@
     margin: 0 auto;
   }
 
+  .review-canvas--with-rail {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(14rem, 17rem);
+    gap: 0.85rem;
+    align-items: start;
+  }
+
+  .review-canvas-main {
+    min-width: 0;
+  }
+
+  .review-revision-brief {
+    margin-top: 0.85rem;
+  }
+
+  .review-since-banner {
+    margin: 0.65rem 0 0.25rem;
+    border: 1px solid rgb(var(--color-primary-500) / 0.28);
+    border-radius: 0.5rem;
+    background: rgb(var(--color-primary-500) / 0.08);
+    padding: 0.55rem 0.7rem;
+    color: rgb(var(--theme-link));
+    font-size: 0.6875rem;
+    line-height: 1.45;
+  }
+
+  .review-since-banner span {
+    font-family: var(--font-mono);
+    color: rgb(var(--color-surface-200));
+  }
+
+  .review-revision-brief-body {
+    margin-top: 0.45rem;
+    max-height: 12rem;
+    overflow: auto;
+    border: 1px solid rgb(var(--color-surface-500) / 0.22);
+    border-radius: 0.5rem;
+    background: rgb(var(--color-surface-950) / 0.35);
+    padding: 0.65rem 0.75rem;
+    color: rgb(var(--theme-text-secondary));
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+  }
+
+  @media (max-width: 960px) {
+    .review-canvas--with-rail {
+      grid-template-columns: 1fr;
+    }
+  }
+
   .review-policy {
     display: flex;
     align-items: flex-start;
@@ -1592,8 +1984,22 @@
     color: rgb(var(--theme-warning) / 0.72);
   }
 
-  .review-policy li span {
+  .review-policy-path {
     font-family: var(--font-mono);
+  }
+
+  .review-policy-path {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 0.12em;
+    cursor: pointer;
+  }
+
+  .review-policy-path:hover {
+    color: rgb(var(--color-surface-100));
   }
 
   .review-policy label {
@@ -1603,6 +2009,16 @@
     margin-top: 0.55rem;
     font-size: 0.625rem;
     color: rgb(var(--theme-warning));
+  }
+
+  .review-prior-note {
+    margin-top: 0.75rem;
+    font-size: 0.6875rem;
+    color: rgb(var(--theme-text-quiet));
+  }
+
+  .review-prior-note span {
+    color: rgb(var(--color-surface-200));
   }
 
   .review-context {

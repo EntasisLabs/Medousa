@@ -344,9 +344,12 @@ Custody of intentional work episodes over a git target (vault or any repo). Dist
 | GET (SSE) | `/v1/forge/stream` | Undertaking list freshness |
 | GET | `/v1/forge/items/{id}/workspace-state` | Restore editor tabs, drafts, and groups |
 | PUT | `/v1/forge/items/{id}/workspace-state` | Persist lease-bound editor recovery state |
-| GET | `/v1/forge/items/{id}/review` | Structured review synthesis, attribution, and timeline |
+| GET | `/v1/forge/items/{id}/review` | Structured review synthesis, attribution, timeline, and comments |
 | GET | `/v1/forge/items/{id}/review/file?path=…` | Compare one file between exact baseline and reviewed revisions |
 | POST | `/v1/forge/items/{id}/review/file` | Reopen and restore one baseline text file while preserving reviewed evidence |
+| GET, POST | `/v1/forge/items/{id}/review/comments` | List or add line-anchored review comments |
+| PATCH, DELETE | `/v1/forge/items/{id}/review/comments/{comment_id}` | Resolve/edit or delete a review comment |
+| POST | `/v1/forge/items/{id}/review/request-changes` | Request changes, reopen for another attempt, retain revision brief |
 | GET | `/v1/forge/items/{id}/tasks` | Detect project commands (manifest + thin tasks.json) |
 | POST | `/v1/forge/items/{id}/tasks/{task_id}/run` | Run a detected command and record its result |
 | POST | `/v1/forge/items/{id}/tasks/{task_id}/runs` | Start a named, cancellable project run |

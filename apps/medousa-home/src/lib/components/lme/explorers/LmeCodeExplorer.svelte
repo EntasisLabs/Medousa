@@ -491,8 +491,8 @@
     {:else if undertakings.items.length === 0}
       <div class="px-3 py-5 text-center">
         <Code2 size={20} class="mx-auto text-content-faint" />
-        <p class="mt-2 text-xs text-content-tertiary">No code projects yet.</p>
-        <p class="mt-1 text-[10px] leading-relaxed text-content-quiet">
+        <p class="mt-2 text-sm font-medium text-surface-200">No code projects yet</p>
+        <p class="workshop-faint mt-1 text-[10px] leading-relaxed">
           Start with a repository and the change you want to make. Medousa will keep the work together.
         </p>
       </div>

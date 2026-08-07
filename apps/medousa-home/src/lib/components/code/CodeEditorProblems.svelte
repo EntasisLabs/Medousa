@@ -26,7 +26,7 @@
   aria-label="Problems"
 >
   <div
-    class="flex items-center justify-between border-b border-surface-500/30 px-2 py-1 text-[11px] text-content-secondary"
+    class="flex items-center justify-between border-b border-surface-500/30 px-2 py-1 text-chrome-md text-content-secondary"
   >
     <span>
       Problems
@@ -48,7 +48,7 @@
       </button>
     {/if}
   </div>
-  <ul class="min-h-0 flex-1 overflow-y-auto text-[12px]">
+  <ul class="min-h-0 flex-1 overflow-y-auto text-chrome-sm">
     {#if problems.length === 0}
       <li class="px-3 py-2 text-content-tertiary">No problems</li>
     {:else}
