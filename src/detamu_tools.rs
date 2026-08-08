@@ -27,7 +27,7 @@ pub fn is_detamu_cognition_tool(name: &str) -> bool {
 }
 
 fn daemon_base() -> String {
-    std::env::var("MEDOUSA_DAEMON_URL").unwrap_or_else(|_| "http://127.0.0.1:8741".into())
+    crate::daemon_self_url::daemon_self_base_url()
 }
 
 async fn daemon_get(path: &str) -> StasisResult<Value> {
