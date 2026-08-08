@@ -106,7 +106,7 @@
     }
     layout.setShellSidebarExpanded(true);
     layout.setShellSidebarMode("view");
-    shellTabs.openSurface("library", { activate: true });
+    shellTabs.enterLmeFamily("library");
   }
 </script>
 

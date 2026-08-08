@@ -482,7 +482,7 @@ mod tests {
 
         assert_eq!(entry.work_id, work_id);
         assert_eq!(entry.title, "Repair demo");
-        assert!(entry.branch.starts_with("medousa/work/"));
+        assert!(entry.branch.starts_with("worktree/"));
         assert_eq!(entry.project_markers, vec!["Cargo.toml"]);
         assert_eq!(entry.repository_instructions[0].path, "AGENTS.md");
         assert_eq!(entry.editor.active_path.as_deref(), Some("src/lib.rs"));

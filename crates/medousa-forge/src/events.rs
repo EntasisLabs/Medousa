@@ -203,7 +203,7 @@ mod tests {
             EventPayload::OperationSideEffect {
                 operation_id: OperationId::new(),
                 effect: SideEffect::CheckpointCommitCreated {
-                    branch: "medousa/work/x".into(),
+                    branch: "worktree/x".into(),
                     oid: GitOid::new("d".repeat(40)),
                 },
             },

@@ -25,7 +25,6 @@
     prepareExecutorHandoff,
     recordReviewIntent,
     applyDecision,
-    discardUndertaking,
     getEvidencePatch,
     getEvidenceCommands,
     restoreReviewFile,
@@ -65,6 +64,7 @@
     type ProviderComment,
   } from "$lib/forge";
   import {
+    closeUndertaking,
     interruptTrackedAgent,
     landCodeWorkingSet,
     openTrackedTerminal,
@@ -856,11 +856,15 @@
 
   async function discardWithConfirmation() {
     if (!detail) return;
-    if (!window.confirm(`Discard “${detail.title}”? Its working copy will be removed.`)) {
+    if (
+      !window.confirm(
+        `Close “${detail.title}”? Its working copy will be removed.`,
+      )
+    ) {
       return;
     }
     await run(async () => {
-      await discardUndertaking(detail!.id);
+      await closeUndertaking(detail!);
       undertakings.clearActive();
       await undertakings.refreshList();
       await undertakings.select("");
@@ -1401,7 +1405,7 @@
                 class="secondary-action text-rose-200"
                 disabled={busy || !actions?.discard.allowed}
                 onclick={() => void discardWithConfirmation()}
-              >Discard project…</button>
+              >Close project…</button>
             </OverflowMenu>
           </div>
         </div>
@@ -1493,7 +1497,7 @@
                 class="code-chrome-menu-item code-chrome-menu-item--warn"
                 disabled={busy || !actions?.discard.allowed}
                 onclick={() => void discardWithConfirmation()}
-              >Discard project…</button>
+              >Close project…</button>
             {/snippet}
           </CodeSourceEditor>
         {:else if !reviewCanvas && actions?.provision.allowed}

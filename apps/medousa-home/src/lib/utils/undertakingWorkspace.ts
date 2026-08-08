@@ -2,6 +2,7 @@
 
 import {
   canStartHumanEditing,
+  discardUndertaking,
   startHumanEditingSession,
   humanizeForgeMessage,
   type ItemProjection,
@@ -85,12 +86,17 @@ export async function openTrackedTerminal(
     undertakings.active?.workId === item.id
       ? undertakings.active.boundTerminalSessionIds[0]
       : null;
+
+  const openShellTab = options?.activate !== false;
+
   if (existing) {
-    shellTabs.openTerminal(existing, {
-      activate: options?.activate !== false,
-      title: `Terminal · ${item.title}`,
-      workId: item.id,
-    });
+    if (openShellTab) {
+      shellTabs.openTerminal(existing, {
+        activate: true,
+        title: `Terminal · ${item.title}`,
+        workId: item.id,
+      });
+    }
     return existing;
   }
 
@@ -110,11 +116,13 @@ export async function openTrackedTerminal(
   if (!sessionId) return null;
 
   undertakings.bindTerminal(sessionId);
-  shellTabs.openTerminal(sessionId, {
-    activate: options?.activate !== false,
-    title: `Terminal · ${item.title}`,
-    workId: item.id,
-  });
+  if (openShellTab) {
+    shellTabs.openTerminal(sessionId, {
+      activate: true,
+      title: `Terminal · ${item.title}`,
+      workId: item.id,
+    });
+  }
   return sessionId;
 }
 
@@ -169,6 +177,19 @@ export async function interruptTrackedAgent(item: ItemProjection): Promise<void>
     break;
   }
   undertakings.setActiveFromItem(item, { executorKind: "human" });
+}
+
+/**
+ * Close an undertaking: cancel any bound agent, then discard (Forge releases
+ * executing leases before tearing down worktrees).
+ */
+export async function closeUndertaking(item: ItemProjection): Promise<void> {
+  try {
+    await interruptTrackedAgent(item);
+  } catch {
+    // Discard still releases forge leases; agent cancel is best-effort.
+  }
+  await discardUndertaking(item.id);
 }
 
 export async function reclaimTrackedHuman(item: ItemProjection): Promise<ItemProjection> {

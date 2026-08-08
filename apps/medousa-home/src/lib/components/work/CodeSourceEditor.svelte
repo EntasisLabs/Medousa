@@ -3518,7 +3518,7 @@
     sessionId={dockSessionId}
     {workId}
     worktreeRoot={workspaceRoot ?? context?.worktree ?? null}
-    title="Terminal"
+    title={detail?.title?.trim() || "Terminal"}
     onClose={() => {
       terminalDockOpen = false;
       if (workId) {

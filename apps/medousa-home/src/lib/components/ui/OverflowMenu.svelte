@@ -1,7 +1,9 @@
 <script lang="ts">
   import { Ellipsis } from "@lucide/svelte";
   import type { Snippet } from "svelte";
-  import { onDestroy } from "svelte";
+  import { onDestroy, tick } from "svelte";
+  import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
+  import { placeToolbarPopover } from "$lib/utils/railPopover";
 
   interface Props {
     /** Controlled / bindable open state. */
@@ -16,6 +18,8 @@
     label?: string;
     /** Title / tooltip for the default ellipsis trigger. */
     title?: string;
+    /** Preferred panel width in px before viewport clamp. */
+    panelWidth?: number;
     /** Optional custom trigger. Receives open state and toggle. */
     trigger?: Snippet<[{ open: boolean; toggle: () => void }]>;
     /** Menu body — put role=menuitem buttons inside. */
@@ -30,12 +34,14 @@
     class: wrapperClass = "",
     label = "More actions",
     title = "More actions",
+    panelWidth = 11 * 16,
     trigger,
     children,
     onOpenChange,
   }: Props = $props();
 
   let rootEl = $state<HTMLDivElement | null>(null);
+  let triggerEl = $state<HTMLElement | null>(null);
   let panelEl = $state<HTMLDivElement | null>(null);
   let focusedIndex = $state(-1);
 
@@ -95,6 +101,43 @@
     }
   }
 
+  function resolveTrigger(): HTMLElement | null {
+    if (triggerEl) return triggerEl;
+    if (!rootEl) return null;
+    return rootEl.querySelector<HTMLElement>("[aria-haspopup='menu']");
+  }
+
+  function placePanel() {
+    const triggerNode = resolveTrigger();
+    if (!triggerNode || !panelEl) return;
+    const measured = panelEl.offsetWidth || panelEl.getBoundingClientRect().width;
+    placeToolbarPopover(triggerNode, panelEl, {
+      prefer: "below",
+      align: align === "left" ? "start" : "end",
+      width: Math.max(panelWidth, measured || 0),
+      gap: 6,
+      pad: 8,
+    });
+    panelEl.style.overflowY = "auto";
+  }
+
+  $effect(() => {
+    if (!open) return;
+    let frame = 0;
+    const place = () => {
+      placePanel();
+      frame = window.requestAnimationFrame(() => placePanel());
+    };
+    void tick().then(place);
+    window.addEventListener("resize", place);
+    window.visualViewport?.addEventListener("resize", place);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", place);
+      window.visualViewport?.removeEventListener("resize", place);
+    };
+  });
+
   $effect(() => {
     if (!open) return;
     const onKeydown = (event: KeyboardEvent) => {
@@ -132,31 +175,34 @@
       class="scripts-workbench-toolbar-btn"
       class:scripts-workbench-toolbar-btn-active={open}
       aria-label={label}
-      title={title}
+      {title}
       aria-expanded={open}
       aria-haspopup="menu"
       onclick={toggle}
+      bind:this={triggerEl}
     >
       <Ellipsis size={15} strokeWidth={1.75} />
     </button>
   {/if}
 
   {#if open}
-    <button
-      type="button"
-      class="fixed inset-0 z-40 cursor-default"
-      aria-label="Close menu"
-      tabindex="-1"
-      onclick={() => setOpen(false)}
-    ></button>
-    <div
-      bind:this={panelEl}
-      class="absolute top-full z-50 mt-1 {align === 'left' ? 'left-0' : 'right-0'} {panelClass}"
-      role="menu"
-      tabindex="-1"
-      onkeydown={onPanelKeydown}
-    >
-      {@render children()}
-    </div>
+    <BodyPortal>
+      <button
+        type="button"
+        class="fixed inset-0 z-40 cursor-default"
+        aria-label="Close menu"
+        tabindex="-1"
+        onclick={() => setOpen(false)}
+      ></button>
+      <div
+        bind:this={panelEl}
+        class="z-50 {panelClass}"
+        role="menu"
+        tabindex="-1"
+        onkeydown={onPanelKeydown}
+      >
+        {@render children()}
+      </div>
+    </BodyPortal>
   {/if}
 </div>

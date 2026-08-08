@@ -181,11 +181,18 @@
     {#if codeStatus.languageDetail || codeStatus.languageState !== "ready"}
       <span class="status-contextual-sep" aria-hidden="true">·</span>
       <span
-        class="status-contextual-item truncate"
+        class="status-contextual-item status-contextual-item--detail"
         class:text-content-warning={codeStatus.languageState === "editing-only" ||
           codeStatus.languageState === "reconnecting"}
         class:text-content-error={codeStatus.languageState === "failed"}
-        title={codeStatus.languageDetail ?? undefined}
+        title={codeStatus.languageDetail ??
+          (codeStatus.languageState === "connecting"
+            ? "Language starting…"
+            : codeStatus.languageState === "reconnecting"
+              ? "Language reconnecting…"
+              : codeStatus.languageState === "failed"
+                ? "Language failed"
+                : "Editing only")}
       >
         {#if codeStatus.languageDetail}
           {codeStatus.languageDetail}
@@ -251,29 +258,46 @@
   .status-contextual {
     display: inline-flex;
     min-width: 0;
-    max-width: 18rem;
+    max-width: 100%;
     flex: 0 1 auto;
+    flex-wrap: nowrap;
     align-items: center;
     justify-content: flex-end;
     gap: 0.35rem;
     color: rgb(var(--theme-text-quiet));
     overflow: hidden;
     text-align: right;
+    white-space: nowrap;
   }
 
   .status-contextual--code {
-    max-width: min(38rem, 55vw);
+    /* Prefer yielding to trailing chrome over wrapping into the fixed-height bar. */
+    max-width: min(38rem, 100%);
   }
 
   .status-contextual-item {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  /* Long LSP / language notices absorb squeeze; full text stays on title. */
+  .status-contextual-item--detail {
     min-width: 0;
+    flex: 1 1 auto;
+    max-width: 16rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .status-contextual-item--icon {
     display: inline-flex;
     min-width: 0;
+    max-width: 100%;
+    flex-shrink: 1;
     align-items: center;
     gap: 0.3rem;
+    overflow: hidden;
   }
 
   :global(html.dark) .status-contextual-item.text-content-warning,
@@ -291,13 +315,14 @@
   }
 
   .status-contextual-action {
-    min-width: 0;
+    flex-shrink: 0;
     border: 0;
     background: transparent;
     padding: 0;
     color: inherit;
     font: inherit;
     text-align: right;
+    white-space: nowrap;
     transition: color 140ms ease;
   }
 
@@ -308,5 +333,6 @@
   .status-contextual-whisper {
     flex-shrink: 0;
     color: rgb(var(--theme-text-tertiary));
+    white-space: nowrap;
   }
 </style>

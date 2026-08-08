@@ -25,8 +25,9 @@ export function buildWorkshopCommandContext(
     settingsNav,
     callbacks,
     navigate(surface: Surface) {
-      // Same path as WorkshopShell: open/activate a real shell tab.
-      // layout.navigateDesktop alone changes the rail hint without a tab.
+      // Same path as WorkshopShell: open/activate a real shell tab when one
+      // exists. LME families (notes/code/…) only seed empty Workspace/Code
+      // placeholders when a document is opened — never on rail entry.
       if (surface === "context") {
         shellTabs.openSurface("map", { activate: true });
         return;
@@ -42,12 +43,29 @@ export function buildWorkshopCommandContext(
         ) {
           lmeWorkspace.setExplorerMode("scripts");
         }
-        shellTabs.openSurface("library", { activate: true });
+        shellTabs.enterLmeFamily("library");
         return;
       }
       if (surface === "workshop") {
         lmeWorkspace.setExplorerMode("agents");
-        shellTabs.openSurface("library", { activate: true });
+        shellTabs.enterLmeFamily("library");
+        return;
+      }
+      if (
+        surface === "notes" ||
+        surface === "files" ||
+        surface === "artifacts" ||
+        surface === "library"
+      ) {
+        if (surface === "notes") lmeWorkspace.setExplorerMode("notes");
+        if (surface === "files") lmeWorkspace.setExplorerMode("files");
+        if (surface === "artifacts") lmeWorkspace.setExplorerMode("artifacts");
+        shellTabs.enterLmeFamily("library");
+        return;
+      }
+      if (surface === "code") {
+        lmeWorkspace.setExplorerMode("code");
+        shellTabs.enterLmeFamily("code");
         return;
       }
       if (surface === "chat") {
