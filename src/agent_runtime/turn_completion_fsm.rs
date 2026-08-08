@@ -452,6 +452,32 @@ mod tests {
     }
 
     #[test]
+    fn foreground_announcement_stays_a_preamble() {
+        // Coder announces before executing. On the foreground lane that keeps the loop
+        // alive; on the scheduler lane the same text is held and then committed, which
+        // is why prose used to end a coding turn before any work happened.
+        let announce =
+            "I'll correct the hardcoded port in the three tool modules, then rerun the shell \
+             smoke test to confirm the session proxy answers.";
+        let mut foreground = ctx(announce);
+        foreground.interim_continue_cap = resolve_interim_continue_cap(12);
+        assert!(matches!(
+            decide_no_tool_debt_text_round(&foreground),
+            TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::InterimProse,
+                ..
+            }
+        ));
+        assert!(matches!(
+            decide_no_tool_debt_text_round(&host_ctx(announce)),
+            TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::PackHold,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn interim_continue_cap_scales_with_round_budget() {
         assert_eq!(resolve_interim_continue_cap(10), 8);
         assert_eq!(resolve_interim_continue_cap(4), 4);

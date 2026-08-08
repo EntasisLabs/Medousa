@@ -79,6 +79,15 @@ pub enum ModeExecutionLane {
     ForegroundWorkshop,
 }
 
+impl ResolvedAgentMode {
+    /// Host scheduling treats prose as the principal-facing answer, because the work
+    /// itself is delegated to a workshop. A foreground mode performs the work in this
+    /// turn, so prose is a preamble and only `cognition_turn_finish` commits an answer.
+    pub fn uses_host_scheduler_lane(&self) -> bool {
+        matches!(self.execution_lane, ModeExecutionLane::HostOrchestrated)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentModeUnavailable {
     pub requested: AgentModeId,
@@ -194,6 +203,22 @@ mod tests {
         assert_eq!(mode.contract_revision, "coder-v3");
         assert_eq!(mode.execution_lane, ModeExecutionLane::ForegroundWorkshop);
         assert_eq!(mode.coder_phase, Some(CoderRuntimePhase::Setup));
+    }
+
+    #[test]
+    fn only_host_orchestrated_modes_use_the_scheduler_lane() {
+        // Coder executes in the foreground, so its announcements are preambles rather
+        // than answers; running it on the scheduler lane ends the turn on first prose.
+        assert!(
+            resolve_agent_mode(AgentModeId::General)
+                .expect("general mode")
+                .uses_host_scheduler_lane()
+        );
+        assert!(
+            !resolve_agent_mode(AgentModeId::Coder)
+                .expect("coder mode")
+                .uses_host_scheduler_lane()
+        );
     }
 
     #[test]
