@@ -108,10 +108,13 @@ pub fn allowed_actions(item: &WorkItem) -> AllowedActions {
             WorkState::ApplyingDecision => ActionAffordance::yes(),
             _ => ActionAffordance::no(format!("Cannot apply in state {}", item.state)),
         },
-        discard: if item.state.is_terminal() {
-            ActionAffordance::no("Work is already terminal")
-        } else {
-            ActionAffordance::yes()
+        discard: match item.state {
+            WorkState::Draft
+            | WorkState::Ready
+            | WorkState::Executing
+            | WorkState::AwaitingReview => ActionAffordance::yes(),
+            state if state.is_terminal() => ActionAffordance::no("Work is already terminal"),
+            state => ActionAffordance::no(format!("Cannot discard in state {state}")),
         },
     }
 }

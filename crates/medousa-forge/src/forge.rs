@@ -245,6 +245,17 @@ impl Forge {
             owner,
         );
         item.policy = policy;
+        let taken: Vec<String> = self
+            .list()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|existing| existing.slug)
+            .filter(|slug| !slug.is_empty())
+            .collect();
+        item.slug = crate::slug::allocate_unique_slug(
+            &item.slug,
+            taken.iter().map(String::as_str),
+        );
         let _item_lock = self.store.lock_item(&item.id)?;
         self.store.append(
             &item.id,
@@ -364,8 +375,9 @@ impl Forge {
             .as_ref()
             .map(|e| e.generation + 1)
             .unwrap_or(1);
-        let worktree = self.worktree_path(&repo.repo_id, &item.id, generation);
-        let branch = format!("medousa/work/{}", item.id.as_str());
+        let slug = item_slug(item);
+        let worktree = self.worktree_path(&repo.repo_id, &slug, generation);
+        let branch = crate::slug::staging_branch(&slug, generation);
         self.git
             .worktree_add(&target.repo_path, &worktree, &branch, &baseline_oid)?;
         self.store.append(
@@ -400,7 +412,7 @@ impl Forge {
     fn worktree_path(
         &self,
         repo_id: &crate::model::RepoId,
-        work_id: &WorkId,
+        slug: &str,
         generation: u32,
     ) -> PathBuf {
         let digest = Digest::sha256_hex(repo_id.as_str().as_bytes());
@@ -409,7 +421,7 @@ impl Forge {
             .root()
             .join("worktrees")
             .join(repo_short)
-            .join(format!("{}-gen{generation}", work_id.as_str()))
+            .join(crate::slug::staging_worktree_leaf(slug, generation))
     }
 
     // ------------------------------------------------------------------
@@ -547,7 +559,7 @@ impl Forge {
         &self,
         item: &WorkItem,
         target: &GitWorkTarget,
-        attempt_id: &crate::model::AttemptId,
+        _attempt_id: &crate::model::AttemptId,
         attempt_seq: u32,
         source_attempt_id: Option<&crate::model::AttemptId>,
     ) -> Result<GovernedEnv> {
@@ -601,27 +613,14 @@ impl Forge {
             .ok_or_else(|| ForgeError::EnvironmentDrift("no staging environment".into()))?;
         let digest = Digest::sha256_hex(staging.repo.repo_id.as_str().as_bytes());
         let repo_short = &digest.as_str()[..12];
-        let attempt_short = attempt_id
-            .as_str()
-            .rsplit('-')
-            .next()
-            .unwrap_or(attempt_id.as_str());
-        let attempt_short = &attempt_short[..attempt_short.len().min(12)];
+        let slug = item_slug(item);
         let worktree = self
             .store
             .root()
             .join("worktrees")
             .join(repo_short)
-            .join(format!(
-                "{}-gen{}-attempt{attempt_seq}-{attempt_short}",
-                item.id.as_str(),
-                staging.generation
-            ));
-        let branch = format!(
-            "medousa/attempt/{}/{}-{attempt_short}",
-            item.id.as_str(),
-            attempt_seq
-        );
+            .join(crate::slug::attempt_worktree_leaf(&slug, attempt_seq));
+        let branch = crate::slug::attempt_branch(&slug, attempt_seq);
         self.git.worktree_add_from_worktree(
             &target.repo_path,
             &staging.worktree,
@@ -1313,8 +1312,8 @@ impl Forge {
         Ok(format!("patch exported to {} ({digest})", path.display()))
     }
 
-    /// Guarded discard: remove the worktree, then the branch, then terminal.
-    /// Allowed from Ready or AwaitingReview; never while an attempt runs.
+    /// Guarded discard: release any running attempts, remove worktrees/branches,
+    /// then mark Discarded. Allowed from Draft, Ready, Executing, or AwaitingReview.
     pub fn discard(&self, work_id: &WorkId, actor: &ActorRef) -> Result<WorkItem> {
         let probe = self.load(work_id)?;
         let repo_key = match &probe.environment {
@@ -1325,7 +1324,10 @@ impl Forge {
         let _item_lock = self.store.lock_item(work_id)?;
         let mut item = self.load(work_id)?;
         match item.state {
-            WorkState::Ready | WorkState::AwaitingReview => {}
+            WorkState::Draft
+            | WorkState::Ready
+            | WorkState::Executing
+            | WorkState::AwaitingReview => {}
             state => {
                 return Err(ForgeError::InvalidState {
                     work_id: work_id.clone(),
@@ -1333,6 +1335,31 @@ impl Forge {
                     action: "discard",
                 });
             }
+        }
+
+        // Owner-initiated teardown: interrupt active attempts before deleting
+        // worktrees so leases cannot keep Executing after discard.
+        let active_ids: Vec<_> = item
+            .active_attempt_ids()
+            .into_iter()
+            .cloned()
+            .collect();
+        for attempt_id in &active_ids {
+            if item.attempt(attempt_id).is_none() {
+                continue;
+            }
+            self.end_attempt(
+                &mut item,
+                attempt_id,
+                AttemptState::Interrupted,
+                RecoveryDisposition::NotResumable,
+                actor,
+            )?;
+        }
+        if !active_ids.is_empty() {
+            // Persist attempt endings without requiring Ready first — discard
+            // continues below into Discarded.
+            self.persist_fresh(&mut item)?;
         }
 
         let operation_id = OperationId::new();
@@ -1960,6 +1987,14 @@ impl Forge {
 pub(crate) fn git_target(item: &WorkItem) -> Result<GitWorkTarget> {
     match &item.target {
         WorkTarget::Git(t) => Ok(t.clone()),
+    }
+}
+
+fn item_slug(item: &WorkItem) -> String {
+    if item.slug.is_empty() {
+        crate::slug::project_slug(&item.title)
+    } else {
+        item.slug.clone()
     }
 }
 
@@ -3361,6 +3396,35 @@ mod tests {
         assert_eq!(fx.git.ref_oid(&fx.repo, "main").unwrap(), fx.baseline);
         let forge2 = Forge::open(&fx.forge_root).unwrap();
         assert_eq!(forge2.load(&item.id).unwrap().state, WorkState::Discarded);
+    }
+
+    #[test]
+    fn discard_while_executing_interrupts_and_removes_worktree() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let item = forge
+            .register(
+                "Close me",
+                "teardown while editing",
+                &fx.repo,
+                "main",
+                "user-1",
+                &actor(),
+            )
+            .unwrap();
+        let item = forge.provision(&item.id, &actor()).unwrap();
+        let staging = item.environment.clone().unwrap();
+        let (item, _lease) = forge
+            .begin_attempt(&item.id, script_executor(), None, &actor())
+            .unwrap();
+        assert_eq!(item.state, WorkState::Executing);
+        assert!(item.has_active_attempts());
+
+        let discarded = forge.discard(&item.id, &actor()).unwrap();
+        assert_eq!(discarded.state, WorkState::Discarded);
+        assert!(!discarded.has_active_attempts());
+        assert!(!staging.worktree.exists());
+        assert!(!fx.git.branch_exists(&fx.repo, &staging.branch));
     }
 
     #[test]

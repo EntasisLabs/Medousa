@@ -17,6 +17,7 @@ pub mod git;
 pub mod model;
 pub mod policy;
 pub mod reconcile;
+pub mod slug;
 pub mod store;
 
 pub use error::{ForgeError, Result};

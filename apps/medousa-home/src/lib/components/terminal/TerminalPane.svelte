@@ -25,13 +25,21 @@
   import { parseTerminalFileLinks } from "$lib/terminal/terminalFileLinks";
   import { registerTerminalInputHandler } from "$lib/terminal/terminalInputBridge";
   import { undertakings } from "$lib/stores/undertakings.svelte";
-  import UndertakingContextChip from "$lib/components/work/UndertakingContextChip.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { getUndertaking, heartbeatLease } from "$lib/forge";
-  import { Search, X } from "@lucide/svelte";
+  import {
+    ChevronDown,
+    Layers,
+    PanelTop,
+    Plus,
+    Search,
+    Square,
+    SquareTerminal,
+    X,
+  } from "@lucide/svelte";
   import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
 
   interface Props {
@@ -43,6 +51,10 @@
     compact?: boolean;
     /** Forge worktree root for resolving absolute paths in output. */
     worktreeRoot?: string | null;
+    /** Dock: open as a full shell tab. */
+    onPopOut?: () => void;
+    /** Dock: collapse the terminal panel. */
+    onCollapse?: () => void;
   }
 
   let {
@@ -51,6 +63,8 @@
     title = "Terminal",
     compact = false,
     worktreeRoot = null,
+    onPopOut,
+    onCollapse,
   }: Props = $props();
 
   let attachId = $state<number | null>(null);
@@ -147,6 +161,30 @@
       terminal?.focus();
     }
   }
+
+  function sessionLabel(session: TerminalSessionSummary): string {
+    if (session.work_id && workId && session.work_id === workId) {
+      return title.trim() || "Shell";
+    }
+    if (session.work_id) {
+      const match = undertakings.items.find((item) => item.id === session.work_id);
+      if (match?.title?.trim()) return match.title.trim();
+      return "Another project";
+    }
+    return "Shell";
+  }
+
+  const connectionTitle = $derived(
+    [
+      connected ? "Connected" : connecting ? "Connecting" : "Disconnected",
+      sessionCwd || null,
+      connected
+        ? `view ${terminalCols}×${terminalRows} · PTY ${ptyCols || "—"}×${ptyRows || "—"} · ${boundSessionId.slice(0, 8)}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+  );
 
   function runFind(direction: "next" | "previous") {
     const term = findQuery.trim();
@@ -487,6 +525,15 @@
     }
   }
 
+  function closeShellTab() {
+    const sid = (boundSessionId || sessionId).trim();
+    if (!sid) return;
+    const tab = shellTabs.tabs.find(
+      (entry) => entry.kind === "terminal" && entry.sessionId === sid,
+    );
+    if (tab) shellTabs.close(tab.id);
+  }
+
   async function restoreUndertakingContext() {
     if (!workId) return;
     try {
@@ -622,76 +669,115 @@
   aria-label={title}
 >
   <div
-    class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-white/10 px-3 py-1.5"
+    class="terminal-chrome flex shrink-0 items-center justify-between gap-2 border-b border-white/10 px-2 py-0.5"
   >
-    <div class="min-w-0 flex flex-wrap items-center gap-2 text-xs text-white">
-      {#if !compact}
-        <span class="truncate">{title}</span>
-        <UndertakingContextChip />
-      {:else}
-        <span class="truncate text-[10px] text-white" title={sessionCwd || undefined}>
-          Default shell{#if sessionCwd} · {sessionCwd.split(/[\\/]/).filter(Boolean).slice(-2).join("/") || sessionCwd}{/if}
-        </span>
-      {/if}
+    <div class="min-w-0 flex items-center gap-1.5">
+      <SquareTerminal size={11} class="shrink-0 text-white/70" strokeWidth={1.75} />
+      <span class="truncate text-chrome-sm font-medium text-white" title={sessionCwd || undefined}>
+        {title}
+      </span>
+      <span
+        class="terminal-status-dot shrink-0"
+        class:terminal-status-dot--ok={connected}
+        class:terminal-status-dot--pending={connecting && !connected}
+        title={connectionTitle}
+        aria-label={connectionTitle}
+        role="status"
+      ></span>
     </div>
-    <div class="flex items-center gap-1">
+    <div class="flex shrink-0 items-center gap-0.5">
       <button
         type="button"
-        class="rounded p-1 text-white hover:bg-white/10 hover:text-white {findOpen ? 'bg-white/10' : ''}"
+        class="scripts-workbench-toolbar-btn {findOpen ? 'scripts-workbench-toolbar-btn-active' : ''}"
         aria-label="Find in terminal"
         title="Find in terminal"
         aria-pressed={findOpen}
         onclick={() => toggleFind()}
-      ><Search size={12} /></button>
+      ><Search size={13} strokeWidth={1.75} /></button>
       <OverflowMenu
-        label="Sessions"
-        title="Sessions"
-        panelClass="w-56 rounded border border-white/15 bg-[#171312] p-1 shadow-xl"
+        label="Shell sessions"
+        title="Shell sessions"
+        panelClass="w-64 rounded-lg border border-white/15 bg-[#171312] p-1.5 shadow-xl"
       >
         {#snippet trigger({ open, toggle })}
           <button
             type="button"
-            class="rounded px-2 py-0.5 text-chrome-sm text-white hover:bg-white/10 hover:text-white {open ? 'bg-white/10' : ''}"
-            aria-label="Sessions"
+            class="scripts-workbench-toolbar-btn {open ? 'scripts-workbench-toolbar-btn-active' : ''}"
+            aria-label="Shell sessions"
+            title="Shell sessions"
             aria-expanded={open}
             aria-haspopup="menu"
             onclick={toggle}
-          >Sessions</button>
+          ><Layers size={13} strokeWidth={1.75} /></button>
         {/snippet}
         {#each sessions as session (session.session_id)}
           <button
             type="button"
             role="menuitem"
             class="block w-full truncate rounded px-2 py-1 text-left text-chrome-sm text-white hover:bg-white/10 hover:text-white"
-            title={session.cwd}
+            title={session.cwd || undefined}
             onclick={() => void switchSession(session.session_id)}
           >
-            {session.work_id === workId ? "Project shell" : session.work_id ? "Another project" : "Shell"} · {session.cwd.split(/[\\/]/).filter(Boolean).pop() ?? session.cwd}
+            {sessionLabel(session)}
           </button>
         {/each}
         {#if sessions.length === 0}
-          <p class="px-2 py-1 text-chrome-sm text-white">No other sessions</p>
+          <p class="px-2 py-1 text-chrome-sm text-white/60">No other sessions</p>
         {/if}
-        <p class="mt-1 border-t border-white/10 px-2 pt-1 font-mono text-chrome-xs text-white">Current {boundSessionId.slice(0, 8)}</p>
+        <div class="mt-1 border-t border-white/10 px-2 pt-1.5 text-chrome-xs text-white/55" role="note">
+          <p class="truncate" title={sessionCwd || undefined}>
+            {sessionCwd || "Shared with agents in this project"}
+          </p>
+          <p class="mt-0.5 font-mono">
+            {connected ? "Connected" : connecting ? "Connecting" : "Disconnected"}
+            · view {terminalCols}×{terminalRows}
+            · PTY {ptyCols || "—"}×{ptyRows || "—"}
+            · {boundSessionId.slice(0, 8)}
+          </p>
+        </div>
       </OverflowMenu>
       {#if !compact}
         <button
           type="button"
-          class="rounded px-2 py-0.5 text-[11px] text-white hover:bg-white/10 hover:text-white"
+          class="scripts-workbench-toolbar-btn"
           onclick={() => void openDiagnosticSession()}
           title="Open a shell outside the current project"
-        >
-          New shell
-        </button>
+          aria-label="New shell"
+        ><Plus size={13} strokeWidth={1.75} /></button>
       {/if}
       <button
         type="button"
-        class="rounded px-2 py-0.5 text-[11px] text-white hover:bg-white/10 hover:text-white"
+        class="scripts-workbench-toolbar-btn"
         onclick={interrupt}
         title="Stop the running command"
-      >
-        Stop
-      </button>
+        aria-label="Stop the running command"
+      ><Square size={12} strokeWidth={1.75} /></button>
+      {#if onPopOut}
+        <button
+          type="button"
+          class="scripts-workbench-toolbar-btn"
+          onclick={onPopOut}
+          title="Open as a full Terminal tab"
+          aria-label="Open as a full Terminal tab"
+        ><PanelTop size={13} strokeWidth={1.75} /></button>
+      {/if}
+      {#if onCollapse}
+        <button
+          type="button"
+          class="scripts-workbench-toolbar-btn"
+          onclick={onCollapse}
+          title="Collapse terminal"
+          aria-label="Collapse terminal"
+        ><ChevronDown size={13} strokeWidth={1.75} /></button>
+      {:else if !compact}
+        <button
+          type="button"
+          class="scripts-workbench-toolbar-btn"
+          onclick={closeShellTab}
+          title="Close terminal"
+          aria-label="Close terminal"
+        ><X size={13} strokeWidth={1.75} /></button>
+      {/if}
     </div>
   </div>
 
@@ -756,26 +842,6 @@
       </button>
     {/if}
   </div>
-
-  <div
-    class="flex shrink-0 items-center gap-2 border-t border-white/10 px-3 py-1 text-[10px] text-white"
-  >
-    <span class={connected ? "text-emerald-300/60" : "text-white"}>
-      {connected ? "Connected" : connecting ? "Connecting" : "Disconnected"}
-    </span>
-    <span class="truncate text-white/70" title={sessionCwd || undefined}>
-      {sessionCwd ? sessionCwd : "Shared with agents working in this project"}
-    </span>
-    <details class="ml-auto">
-      <summary class="cursor-pointer">Technical details</summary>
-      <span
-        class="ml-2 font-mono"
-        class:text-amber-300={connected && (ptyCols !== terminalCols || ptyRows !== terminalRows)}
-      >
-        view {terminalCols}×{terminalRows} · PTY {ptyCols || "—"}×{ptyRows || "—"} · {boundSessionId.slice(0, 8)}
-      </span>
-    </details>
-  </div>
 </div>
 
 <style>
@@ -789,5 +855,20 @@
 
   .terminal-host :global(.xterm-viewport) {
     overscroll-behavior: contain;
+  }
+
+  .terminal-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: color-mix(in srgb, #a8a29e 55%, transparent);
+  }
+
+  .terminal-status-dot--ok {
+    background: color-mix(in srgb, #6ee7b7 80%, transparent);
+  }
+
+  .terminal-status-dot--pending {
+    background: color-mix(in srgb, #fbbf24 75%, transparent);
   }
 </style>

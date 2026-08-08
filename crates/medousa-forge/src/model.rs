@@ -187,7 +187,7 @@ pub struct GovernedEnv {
     pub kind: EnvironmentKind,
     pub repo: RepoIdentity,
     pub worktree: PathBuf,
-    /// Forge-owned branch (medousa/work/<work_id>).
+    /// Forge-owned branch (`worktree/{slug}` or `worktree/{slug}-a{seq}`).
     pub branch: String,
     /// Immutable commit the environment was provisioned from. Evidence and
     /// integration compare against this OID, never a symbolic ref.
@@ -657,6 +657,9 @@ pub struct WorkItem {
     pub title: String,
     /// User intent, user-owned.
     pub brief: String,
+    /// Human-readable worktree/branch identity, derived from title at register.
+    #[serde(default)]
+    pub slug: String,
     pub target: WorkTarget,
     pub policy: WorkPolicy,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -695,11 +698,14 @@ impl WorkItem {
         owner: impl Into<String>,
     ) -> Self {
         let now = Utc::now();
+        let title = title.into();
+        let slug = crate::slug::project_slug(&title);
         Self {
             schema_version: MODEL_SCHEMA_VERSION,
             id: WorkId::new(),
-            title: title.into(),
+            title,
             brief: brief.into(),
+            slug,
             target,
             policy: WorkPolicy::default(),
             environment: None,
@@ -866,8 +872,8 @@ mod tests {
                 format: Some("0".into()),
                 remotes: vec!["git@example.com:r.git".into()],
             },
-            worktree: PathBuf::from("/tmp/forge/worktrees/repo-x/work-1"),
-            branch: format!("medousa/work/{}", item.id),
+            worktree: PathBuf::from("/tmp/forge/worktrees/repo-x/t"),
+            branch: format!("worktree/{}", item.slug),
             baseline_oid: GitOid::new("b".repeat(40)),
             generation: 1,
         };

@@ -34,6 +34,8 @@ export type ForgeWorkItem = {
   id: string;
   title: string;
   brief: string;
+  /** Human-readable worktree/branch identity derived from title. */
+  slug?: string;
   state: string;
   owner: string;
   created_at?: string;

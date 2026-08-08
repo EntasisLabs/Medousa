@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Check } from "@lucide/svelte";
+  import { Check, X } from "@lucide/svelte";
   import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
 
   export type CodeRailSwitcherItem = {
@@ -7,6 +7,8 @@
     label: string;
     detail?: string | null;
     active?: boolean;
+    /** Show a close control (threads that can be discarded). */
+    closable?: boolean;
   };
 
   interface Props {
@@ -19,6 +21,8 @@
     emptyHint?: string;
     soft?: boolean;
     onSelect: (id: string) => void | Promise<void>;
+    /** Close/remove an item (e.g. discard a thread). */
+    onClose?: (id: string) => void | Promise<void>;
   }
 
   let {
@@ -29,6 +33,7 @@
     emptyHint = "Nothing here yet",
     soft = false,
     onSelect,
+    onClose,
   }: Props = $props();
 
   let menuOpen = $state(false);
@@ -36,6 +41,14 @@
   async function pick(id: string) {
     menuOpen = false;
     await onSelect(id);
+  }
+
+  async function closeItem(event: MouseEvent, id: string) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!onClose) return;
+    menuOpen = false;
+    await onClose(id);
   }
 </script>
 
@@ -46,6 +59,7 @@
   align="left"
   class="min-w-0 shrink"
   panelClass="w-[min(18rem,calc(100vw-2rem))] rounded-lg border border-surface-500/40 bg-surface-900 p-1.5 shadow-xl"
+  panelWidth={18 * 16}
 >
   {#snippet trigger({ open, toggle })}
     <button
@@ -66,26 +80,42 @@
     <p class="px-2 py-1.5 text-[10px] text-content-quiet">{emptyHint}</p>
   {:else}
     {#each items as item (item.id)}
-      <button
-        type="button"
-        role="menuitem"
+      <div
         class="code-dock-menu-item"
         class:code-dock-menu-item--active={item.active}
-        aria-current={item.active ? "true" : undefined}
-        onclick={() => void pick(item.id)}
+        role="none"
       >
-        <Check
-          size={12}
-          strokeWidth={2}
-          class="code-dock-menu-check {item.active ? 'opacity-100' : 'opacity-0'}"
-        />
-        <span class="min-w-0 flex-1">
-          <span class="code-dock-menu-label">{item.label}</span>
-          {#if item.detail}
-            <span class="code-dock-menu-detail">{item.detail}</span>
-          {/if}
-        </span>
-      </button>
+        <button
+          type="button"
+          role="menuitem"
+          class="code-dock-menu-pick"
+          aria-current={item.active ? "true" : undefined}
+          onclick={() => void pick(item.id)}
+        >
+          <Check
+            size={12}
+            strokeWidth={2}
+            class="code-dock-menu-check {item.active ? 'opacity-100' : 'opacity-0'}"
+          />
+          <span class="min-w-0 flex-1">
+            <span class="code-dock-menu-label">{item.label}</span>
+            {#if item.detail}
+              <span class="code-dock-menu-detail">{item.detail}</span>
+            {/if}
+          </span>
+        </button>
+        {#if onClose && item.closable !== false}
+          <button
+            type="button"
+            class="code-dock-menu-close"
+            title="Close {item.label}"
+            aria-label="Close {item.label}"
+            onclick={(event) => void closeItem(event, item.id)}
+          >
+            <X size={12} strokeWidth={2} />
+          </button>
+        {/if}
+      </div>
     {/each}
   {/if}
 </OverflowMenu>
@@ -103,14 +133,9 @@
   .code-dock-menu-item {
     display: flex;
     width: 100%;
-    align-items: flex-start;
-    gap: 0.4rem;
-    border: 0;
+    align-items: stretch;
+    gap: 0.15rem;
     border-radius: 0.35rem;
-    background: transparent;
-    padding: 0.4rem 0.45rem;
-    text-align: left;
-    cursor: pointer;
   }
 
   .code-dock-menu-item:hover {
@@ -119,6 +144,44 @@
 
   .code-dock-menu-item--active {
     background: rgb(var(--color-primary-500) / 0.1);
+  }
+
+  .code-dock-menu-pick {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    align-items: flex-start;
+    gap: 0.4rem;
+    border: 0;
+    background: transparent;
+    padding: 0.4rem 0.45rem;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .code-dock-menu-close {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    align-self: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    margin-right: 0.2rem;
+    border: 0;
+    border-radius: 0.3rem;
+    background: transparent;
+    color: color-mix(
+      in srgb,
+      rgb(var(--theme-text)) 45%,
+      rgb(var(--theme-text-secondary))
+    );
+    cursor: pointer;
+  }
+
+  .code-dock-menu-close:hover {
+    background: rgb(var(--color-surface-700) / 0.8);
+    color: rgb(var(--theme-text));
   }
 
   :global(.code-dock-menu-check) {

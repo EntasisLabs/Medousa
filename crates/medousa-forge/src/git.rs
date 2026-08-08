@@ -1444,10 +1444,10 @@ summary second
     fn worktree_add_commit_and_remove() {
         let (tmp, git, base) = init_repo();
         let wt = tmp.path().join("wt-1");
-        git.worktree_add(tmp.path(), &wt, "medousa/work/test", &base)
+        git.worktree_add(tmp.path(), &wt, "worktree/test", &base)
             .unwrap();
         assert!(wt.join("hello.txt").is_file());
-        assert!(git.branch_exists(tmp.path(), "medousa/work/test"));
+        assert!(git.branch_exists(tmp.path(), "worktree/test"));
 
         fs::write(wt.join("work.txt"), "worked\n").unwrap();
         let sealed = git
@@ -1471,8 +1471,8 @@ summary second
 
         git.worktree_remove(tmp.path(), &wt).unwrap();
         assert!(!wt.exists());
-        git.branch_delete(tmp.path(), "medousa/work/test").unwrap();
-        assert!(!git.branch_exists(tmp.path(), "medousa/work/test"));
+        git.branch_delete(tmp.path(), "worktree/test").unwrap();
+        assert!(!git.branch_exists(tmp.path(), "worktree/test"));
     }
 
     #[test]
@@ -1497,7 +1497,7 @@ summary second
                 source,
                 source,
                 &destination,
-                "medousa/work/attempt-fork",
+                "worktree/attempt-fork",
             )
             .unwrap();
         assert_eq!(fork_head, source_head);
@@ -1520,7 +1520,7 @@ summary second
         symlink("hello.txt", tmp.path().join("link.txt")).unwrap();
         let destination_root = TempDir::new().unwrap();
         let destination = destination_root.path().join("attempt-wt");
-        let branch = "medousa/work/rejected-attempt-fork";
+        let branch = "worktree/rejected-attempt-fork";
 
         let error = git
             .worktree_add_from_worktree(tmp.path(), tmp.path(), &destination, branch)

@@ -184,93 +184,98 @@
   <!-- Keeps connection/activity left and contextual + desktops + ⌘K pinned right. -->
   <div class="status-bar-mid min-w-0 flex-1" aria-hidden="true"></div>
 
-  <div class="status-bar-trailing text-content-quiet flex min-w-0 shrink-0 items-center gap-3">
-    <StatusContextualSlot />
+  <!-- Contextual can shrink/truncate; chrome stays pinned so ⌘K never leaves the viewport. -->
+  <div class="status-bar-trailing text-content-quiet flex min-w-0 items-center justify-end gap-3">
+    <div class="status-bar-contextual-host">
+      <StatusContextualSlot />
+    </div>
 
-    {#if showMotion}
-      <div class="work-motion-control">
+    <div class="status-bar-trailing-chrome">
+      {#if showMotion}
+        <div class="work-motion-control">
+          <button
+            type="button"
+            class="work-motion-trigger"
+            class:work-motion-trigger--active={inMotionCount > 0}
+            class:work-motion-trigger--open={motionPeekOpen}
+            aria-expanded={motionPeekOpen}
+            aria-haspopup="dialog"
+            title="In-motion work"
+            onclick={toggleMotionPeek}
+          >
+            <Activity
+              size={12}
+              strokeWidth={2}
+              class="work-motion-icon {inMotionCount > 0
+                ? 'work-motion-icon--live'
+                : ''}"
+            />
+            <span>{inMotionCount} in motion</span>
+            {#if needsAttentionCount > 0}
+              <span class="work-motion-attention" title="Needs attention">
+                {needsAttentionCount}
+              </span>
+            {/if}
+          </button>
+
+          {#if motionPeekOpen}
+            <div
+              class="work-motion-peek"
+              role="dialog"
+              aria-label="In-motion work"
+            >
+              <WorkMotionPeek
+                cards={motionCards}
+                selectedId={selectedMotionId}
+                onSelect={handleSelectMotion}
+              />
+            </div>
+          {/if}
+        </div>
+      {:else if !quiet && needsAttentionCount > 0}
+        <span class="text-content-warning/85">{needsAttentionCount} need attention</span>
+      {/if}
+
+      {#if !quiet}
+        <StatusDesktopStrip />
+      {/if}
+
+      {#if !quiet && onOpenCron}
         <button
           type="button"
-          class="work-motion-trigger"
-          class:work-motion-trigger--active={inMotionCount > 0}
-          class:work-motion-trigger--open={motionPeekOpen}
-          aria-expanded={motionPeekOpen}
-          aria-haspopup="dialog"
-          title="In-motion work"
-          onclick={toggleMotionPeek}
+          class="status-automations-btn"
+          title={automationsTitle}
+          aria-label={automationsTitle}
+          onclick={onOpenCron}
         >
-          <Activity
-            size={12}
-            strokeWidth={2}
-            class="work-motion-icon {inMotionCount > 0
-              ? 'work-motion-icon--live'
-              : ''}"
-          />
-          <span>{inMotionCount} in motion</span>
-          {#if needsAttentionCount > 0}
-            <span class="work-motion-attention" title="Needs attention">
-              {needsAttentionCount}
-            </span>
-          {/if}
+          <Workflow size={12} strokeWidth={1.85} class="shrink-0 opacity-80" aria-hidden="true" />
+          <span class="tabular-nums">{automationsRatio}</span>
         </button>
+      {/if}
 
-        {#if motionPeekOpen}
-          <div
-            class="work-motion-peek"
-            role="dialog"
-            aria-label="In-motion work"
-          >
-            <WorkMotionPeek
-              cards={motionCards}
-              selectedId={selectedMotionId}
-              onSelect={handleSelectMotion}
-            />
-          </div>
-        {/if}
-      </div>
-    {:else if !quiet && needsAttentionCount > 0}
-      <span class="text-content-warning/85">{needsAttentionCount} need attention</span>
-    {/if}
+      {#if isTauri()}
+        <button
+          type="button"
+          class="workshop-status-spotlight"
+          title="Operator's Guide"
+          aria-label="Open Operator's Guide"
+          onclick={() => void openGuide()}
+        >
+          <CircleHelp size={12} strokeWidth={1.85} />
+        </button>
+      {/if}
 
-    {#if !quiet}
-      <StatusDesktopStrip />
-    {/if}
-
-    {#if !quiet && onOpenCron}
-      <button
-        type="button"
-        class="status-automations-btn"
-        title={automationsTitle}
-        aria-label={automationsTitle}
-        onclick={onOpenCron}
-      >
-        <Workflow size={12} strokeWidth={1.85} class="shrink-0 opacity-80" aria-hidden="true" />
-        <span class="tabular-nums">{automationsRatio}</span>
-      </button>
-    {/if}
-
-    {#if isTauri()}
-      <button
-        type="button"
-        class="workshop-status-spotlight"
-        title="Operator's Guide"
-        aria-label="Open Operator's Guide"
-        onclick={() => void openGuide()}
-      >
-        <CircleHelp size={12} strokeWidth={1.85} />
-      </button>
-    {/if}
-
-    {#if onOpenSpotlight}
-      <button
-        type="button"
-        class="workshop-status-spotlight"
-        title={titleWithShortcut("Command spotlight", "spotlight")}
-        onclick={onOpenSpotlight}
-      >
-        {formatShortcut("K")}
-      </button>
-    {/if}
+      {#if onOpenSpotlight}
+        <button
+          type="button"
+          class="workshop-status-spotlight"
+          title={titleWithShortcut("Command spotlight", "spotlight")}
+          onclick={onOpenSpotlight}
+        >
+          {formatShortcut("K")}
+        </button>
+      {/if}
+    </div>
   </div>
 </footer>
 
@@ -296,7 +301,22 @@
   }
 
   .status-bar-trailing {
+    overflow: hidden;
+  }
+
+  .status-bar-contextual-host {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
     justify-content: flex-end;
+    overflow: hidden;
+  }
+
+  .status-bar-trailing-chrome {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.75rem;
   }
 
   :global(.workshop-status-workshop--static) {

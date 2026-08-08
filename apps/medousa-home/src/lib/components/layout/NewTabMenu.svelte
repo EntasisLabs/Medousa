@@ -164,7 +164,7 @@
         case "code":
           lmeWorkspace.requestNewCodeProject();
           layout.openShellSidebarView("code");
-          shellTabs.openSurface("code", { activate: true });
+          shellTabs.enterLmeFamily("code");
           break;
         case "web":
           await humanBrowser.openTab("about:blank");

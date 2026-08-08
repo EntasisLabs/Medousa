@@ -34,6 +34,7 @@
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { undertakings } from "$lib/stores/undertakings.svelte";
   import { vault } from "$lib/stores/vault.svelte";
+  import { closeUndertaking } from "$lib/utils/undertakingWorkspace";
   import { isCoLocatedWorkshop } from "$lib/utils/workshopLocality";
   import { pickExternalFolder, rootLabelFromPath } from "$lib/utils/externalDeskApi";
   import {
@@ -245,6 +246,8 @@
     return ordered.map((item) => {
       const repo = itemRepoPath(item);
       const sameRepo = Boolean(selectedRepoPath && repo === selectedRepoPath);
+      const closable =
+        item.allowed_actions?.discard?.allowed !== false && isActiveThread(item);
       return {
         id: item.id,
         label: item.title,
@@ -252,6 +255,7 @@
           ? humanPhaseLabel(item.human_phase)
           : `${repo ? labelForRepo(repo) : "Project"} · ${humanPhaseLabel(item.human_phase)}`,
         active: item.id === selectedItem?.id,
+        closable,
       };
     });
   });
@@ -288,6 +292,43 @@
   async function openItem(id: string, label: string) {
     creating = false;
     await lmeWorkspace.openCodeWorkspace(id, label);
+  }
+
+  async function closeThread(id: string) {
+    const item =
+      undertakings.items.find((entry) => entry.id === id) ??
+      (undertakings.detail?.id === id ? undertakings.detail : null);
+    if (!item) return;
+    if (
+      !window.confirm(
+        `Close “${item.title}”? Its working copy will be removed.`,
+      )
+    ) {
+      return;
+    }
+    busy = true;
+    error = null;
+    try {
+      await closeUndertaking(item);
+      await undertakings.refreshList();
+      if (undertakings.selectedId === id) {
+        const next = undertakings.items
+          .filter((entry) => entry.id !== id && isActiveThread(entry))
+          .slice()
+          .sort(sortThreads)[0];
+        if (next) {
+          await openItem(next.id, next.title);
+        } else {
+          undertakings.clearActive();
+          await undertakings.select("");
+        }
+      }
+      outcome = `Closed “${item.title}”`;
+    } catch (err) {
+      error = humanizeForgeMessage(err instanceof Error ? err.message : String(err));
+    } finally {
+      busy = false;
+    }
   }
 
   async function selectProject(path: string) {
@@ -581,6 +622,7 @@
             const item = undertakings.items.find((entry) => entry.id === id);
             if (item) void openItem(item.id, item.title);
           }}
+          onClose={(id) => void closeThread(id)}
         />
       </div>
       <div class="lme-dock-chrome-secondary lme-dock-chrome-secondary--spacer min-w-1 flex-1"></div>

@@ -1455,25 +1455,7 @@ fn initialize_blank_repository(
 }
 
 fn project_slug(title: &str) -> String {
-    let mut slug = String::new();
-    let mut separator = false;
-    for character in title.chars().flat_map(char::to_lowercase) {
-        if character.is_ascii_alphanumeric() {
-            slug.push(character);
-            separator = false;
-        } else if !slug.is_empty() && !separator {
-            slug.push('-');
-            separator = true;
-        }
-    }
-    while slug.ends_with('-') {
-        slug.pop();
-    }
-    if slug.is_empty() {
-        "new-project".to_string()
-    } else {
-        slug.chars().take(64).collect()
-    }
+    medousa_forge::slug::project_slug(title)
 }
 
 async fn list_items(State(state): State<AppState>) -> ApiResult<Json<Vec<ItemProjection>>> {

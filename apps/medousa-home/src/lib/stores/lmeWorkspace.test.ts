@@ -84,6 +84,32 @@ vi.mock("$lib/stores/catalog.svelte", () => ({
   },
 }));
 
+vi.mock("$lib/stores/codeWorkspace.svelte", () => ({
+  codeWorkspace: {
+    tabsFor: (workId: string) =>
+      workId === "work-a"
+        ? [
+            {
+              tabId: "code:work-a:src/lib.rs",
+              work_id: "work-a",
+              path: "src/lib.rs",
+              title: "lib.rs",
+              line: 3,
+              loading: false,
+            },
+            {
+              tabId: "code:work-a:README.md",
+              work_id: "work-a",
+              path: "README.md",
+              title: "README.md",
+              line: 1,
+              loading: false,
+            },
+          ]
+        : [],
+  },
+}));
+
 const openComposer = vi.fn((seed?: Record<string, unknown>) => {
   flowsMock.composerOpen = true;
   if (seed?.name) flowsMock.composerDraft = { name: String(seed.name) };
@@ -240,6 +266,15 @@ describe("lmeWorkspace", () => {
     expect(store.captureSession().tabs.map((tab) => tab.tabId)).toEqual([
       "code-file:work-a:src%2Flib.rs",
     ]);
+  });
+
+  it("materializes LME presentations for every hydrated Code buffer", async () => {
+    await store.ensureCodeFilePresentations("work-a");
+    expect(store.tabs.map((tab) => tab.tabId).sort()).toEqual([
+      "code-file:work-a:README.md",
+      "code-file:work-a:src%2Flib.rs",
+    ].sort());
+    expect(store.tabs.every((tab) => tab.kind === "code")).toBe(true);
   });
 
   it("checkpoints the latest code cursor line into the workspace descriptor", () => {

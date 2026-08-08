@@ -217,7 +217,6 @@
 
   async function openSelectedNote() {
     if (!selectedNotePath) return;
-    shellTabs.openSurface("library", { activate: true });
     await lmeWorkspace.openNote(selectedNotePath);
   }
 

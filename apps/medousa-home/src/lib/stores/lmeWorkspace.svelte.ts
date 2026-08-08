@@ -402,7 +402,9 @@ export class LmeWorkspaceStore {
     this.setExplorerMode("code");
     const result = await openCodeWorkspaceSession(id);
     if (result.ok) {
-      return this.openCodeFile(id, result.path, { projectTitle: title });
+      const opened = await this.openCodeFile(id, result.path, { projectTitle: title });
+      await this.ensureCodeFilePresentations(id);
+      return opened;
     }
 
     // A project without a working copy still needs a real room so setup and
@@ -499,6 +501,43 @@ export class LmeWorkspaceStore {
       mirrorActiveTabToShell(tab.tabId, tab.title, options?.groupId);
     }
     return source;
+  }
+
+  /**
+   * Ensure every hydrated Code buffer has an LME presentation so multi-file
+   * workspaces survive shell/LME session restore (daemon state alone is not enough).
+   */
+  async ensureCodeFilePresentations(workId: string) {
+    const id = workId.trim();
+    if (!id) return;
+    const { codeWorkspace } = await import("$lib/stores/codeWorkspace.svelte");
+    const buffers = codeWorkspace.tabsFor(id).filter((tab) => tab.path && !tab.loading);
+    if (buffers.length === 0) return;
+    const existing = new Set(
+      this.tabs
+        .filter((tab) => tab.kind === "code" && tab.workId === id)
+        .map((tab) => tab.tabId),
+    );
+    const additions: LmeTab[] = [];
+    for (const buffer of buffers) {
+      const resource: CodeWorkspaceResource = {
+        kind: "file",
+        path: buffer.path,
+        line: buffer.line,
+      };
+      const tabId = codeResourceKey(id, resource);
+      if (existing.has(tabId)) continue;
+      existing.add(tabId);
+      additions.push({
+        tabId,
+        kind: "code",
+        workId: id,
+        title: buffer.title || fileTitle(buffer.path),
+        resource,
+      });
+    }
+    if (additions.length === 0) return;
+    this.tabs = [...this.tabs, ...additions].slice(-MAX_TABS);
   }
 
   /** Review is a canvas, not a panel stacked beneath the editor. */
@@ -815,9 +854,10 @@ export class LmeWorkspaceStore {
       if (undertakings.detail?.id !== tab.workId) {
         await undertakings.select(tab.workId);
       }
+      const { codeWorkspace } = await import("$lib/stores/codeWorkspace.svelte");
+      await codeWorkspace.hydrate(tab.workId);
+      await this.ensureCodeFilePresentations(tab.workId);
       if (tab.resource.kind === "file") {
-        const { codeWorkspace } = await import("$lib/stores/codeWorkspace.svelte");
-        await codeWorkspace.hydrate(tab.workId);
         await codeWorkspace.open(
           tab.workId,
           tab.resource.path,
