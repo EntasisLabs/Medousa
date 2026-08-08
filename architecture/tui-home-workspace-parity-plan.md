@@ -1,6 +1,6 @@
 # TUI ↔ Home workspace parity
 
-> **Status:** Proposed living plan  
+> **Status:** Implementing (P0 + P1 in progress)  
 > **Date:** 2026-08-07  
 > **Related:** [component-tui.md](component-tui.md), [coding-session-terminal.md](coding-session-terminal.md),
 > [code-surface-bridge-plan.md](code-surface-bridge-plan.md), [medousa-anywhere-plan.md](medousa-anywhere-plan.md),
@@ -104,7 +104,7 @@ do not leave a parallel orphan editor forever.
 
 ## Architecture slices
 
-### Phase 0 — Shared workspace model (foundation)
+### Phase 0 — Shared workspace model (foundation) ✅
 
 Extract (or newly define in Rust, mirrored from Home) a pure layout crate/module:
 
@@ -118,7 +118,10 @@ Extract (or newly define in Rust, mirrored from Home) a pure layout crate/module
 
 **Acceptance:** layout module tested without ratatui; no UI behavior change yet.
 
-### Phase 1 — Multi-pane shell + multi-chat
+**Landed:** `src/tui/workspace/` (`split_tree`, `session`, `persist`) with Home-aligned
+caps and golden unit tests.
+
+### Phase 1 — Multi-pane shell + multi-chat ✅ (v1)
 
 Replace “one conversation + modal overlays” as the only spatial model with:
 
@@ -135,6 +138,17 @@ Replace “one conversation + modal overlays” as the only spatial model with:
 
 **Acceptance:** operator can `Ctrl+;` `%` split, run two sessions side by side,
 zoom one pane, restart and restore layout.
+
+**Landed (v1):**
+- `WorkspaceShell` on `TuiState` + `tui_workspace_session_v1.json` persistence
+- ratatui split render, zoom, focus ring, pane titles
+- prefix keymap `Ctrl+;` then `%` `"` `hjkl` `z` `x` `c` `n/p` `1-4` `?`
+- chat-lane stash/restore per session (one live stream at a time — pane switch
+  blocked while a turn is running; stop with Ctrl+G first)
+- `/new` and history pick rebind the focused chat tab
+
+**Follow-up inside P1:** concurrent multi-stream (Home `chatStreamPool` parity)
+so unfocused panes can keep streaming.
 
 ### Phase 2 — Notes (Library-lite)
 

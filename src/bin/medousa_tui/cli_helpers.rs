@@ -53,6 +53,7 @@ pub(crate) fn print_help() {
     println!("  Ctrl+T       Toggle thinking detail panel");
     println!("  Ctrl+G       Stop active generation");
     println!("  Esc          Close current menu");
+    println!("  Ctrl+;       Pane prefix (then % \" h/j/k/l z x c n/p 1-4 ?)");
     println!("  Ctrl+C       Quit");
     println!();
     println!("HISTORY:");

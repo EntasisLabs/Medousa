@@ -6,7 +6,7 @@ use clap::Parser;
 #[command(
     name = "medousa_tui",
     about = "medousa-tui — persistent cognitive terminal agent",
-    after_help = "Keys: Enter submit · Ctrl+O observability · Ctrl+K palette · Ctrl+, settings · Ctrl+C quit\nSlash: /help · /new · /history · /settings · /close\nRun with no unknown flags — typos like --modl are rejected."
+    after_help = "Keys: Enter submit · Ctrl+; panes · Ctrl+O observability · Ctrl+K palette · Ctrl+, settings · Ctrl+C quit\nPanes: Ctrl+; then % \" h/j/k/l z x c n/p 1-4\nSlash: /help · /new · /history · /settings · /close\nRun with no unknown flags — typos like --modl are rejected."
 )]
 pub struct TuiCli {
     #[arg(long, env = "MEDOUSA_LLM_PROVIDER")]

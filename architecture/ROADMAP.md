@@ -23,7 +23,7 @@ workspace parity is tracked separately in
 | VS Code reference integration | ✅ 0.2 chat polish implementation · packaged dogfood pending · [plan](vscode-chat-polish-plan.md) |
 | Neovim focused adapter | ⬜ Phase 3 |
 | Obsidian vault-native adapter | ⬜ Phase 4 |
-| TUI ↔ Home workspace parity (panes/notes/code/review) | ⬜ proposed · [plan](tui-home-workspace-parity-plan.md) |
+| TUI ↔ Home workspace parity (panes/notes/code/review) | 🔄 P0+P1 landed (WM + multi-chat) · [plan](tui-home-workspace-parity-plan.md) |
 
 ---
 

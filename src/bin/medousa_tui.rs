@@ -98,6 +98,8 @@ mod ui_helpers;
 mod ui_render;
 #[path = "medousa_tui/workers.rs"]
 mod workers;
+#[path = "medousa_tui/workspace_runtime.rs"]
+mod workspace_runtime;
 
 use agent_runtime::{start_prompt_run, stop_active_generation};
 use editor_runtime::{load_editor_file, run_editor_source_via_runtime, save_editor_buffer};
@@ -232,6 +234,12 @@ struct TuiState {
     markdown_cache: RefCell<HashMap<MarkdownCacheKey, Vec<Line<'static>>>>,
     markdown_cache_order: RefCell<VecDeque<MarkdownCacheKey>>,
     perf_baseline: Option<PerfSnapshot>,
+    /// Home-aligned pane / desktop layout (tmux-style WM).
+    workspace: medousa::tui::workspace::WorkspaceShell,
+    /// Stashed chat views for unfocused sessions.
+    chat_lanes: HashMap<String, workspace_runtime::ChatLane>,
+    /// Ctrl+; prefix chord armed (awaiting % " hjkl z x …).
+    prefix_active: bool,
 }
 
 pub(crate) fn build_tui_platform_config(state: &TuiState) -> TuiPlatformBuildConfig {
@@ -737,6 +745,9 @@ async fn main() -> Result<()> {
         markdown_cache: RefCell::new(HashMap::new()),
         markdown_cache_order: RefCell::new(VecDeque::new()),
         perf_baseline: None,
+        workspace: workspace_runtime::bootstrap_workspace_from_disk(&session_id),
+        chat_lanes: workspace_runtime::empty_chat_lanes(),
+        prefix_active: false,
     };
 
     if local_runtime_only {
@@ -964,6 +975,7 @@ async fn handle_history_key_event(code: KeyCode, state: &mut TuiState) -> EventO
                 state.auto_scroll = true;
                 state.conv_scroll = state.conv_max_scroll;
                 save_last_session_id(&state.session_id);
+                workspace_runtime::rebind_focused_session(state);
                 state.mode = UiMode::Chat;
             }
         }
@@ -1410,6 +1422,12 @@ mod tests {
             markdown_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
             markdown_cache_order: std::cell::RefCell::new(VecDeque::new()),
             perf_baseline: None,
+            workspace: medousa::tui::workspace::WorkspaceShell::bootstrap(
+                "test-session",
+                "Chat",
+            ),
+            chat_lanes: super::workspace_runtime::empty_chat_lanes(),
+            prefix_active: false,
         }
     }
 

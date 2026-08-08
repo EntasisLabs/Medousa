@@ -81,6 +81,13 @@ pub(crate) async fn handle_key_event(
         return handle_startup_key_event(key, state, tui_rt, event_tx).await;
     }
 
+    if state.prefix_active {
+        return super::workspace_runtime::handle_prefix_key(key, state).await;
+    }
+    if super::workspace_runtime::handle_prefix_trigger(key, state) {
+        return EventOutcome::Continue;
+    }
+
     if key.code == KeyCode::Esc {
         if state.mode == UiMode::RuntimeEnv {
             state.mode = UiMode::Settings;
