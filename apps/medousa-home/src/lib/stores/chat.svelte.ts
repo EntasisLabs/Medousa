@@ -2766,10 +2766,8 @@ export class ChatStore {
         event.final_text?.trim() ||
         event.message?.trim() ||
         current.content;
-      // Streamed tokens are canonical (Phase 7A). The old `prior + "\n\n" + body`
-      // concatenation doubled text whenever the checkpoint's `final_text` echoed
-      // what we'd already streamed via content_delta. Defer to resolveTurnContent
-      // so the streamed body wins; only an empty draft falls back to the body.
+      // The terminal checkpoint body is canonical. Replacing the streamed draft
+      // avoids both duplication and races with queued content deltas.
       const merged = resolveTurnContent(current.content, checkpointBody, true);
       const next: ChatMessage = {
         ...current,
@@ -2833,9 +2831,7 @@ export class ChatStore {
       content =
         (isWorkerSynthesisTarget || isWorkerSynthesisOnEnvelope) && terminal
           ? event.final_text!
-          : resolveTurnContent(current.content, event.final_text, terminal, {
-              afterToolLoop: (current.toolRuns?.length ?? 0) > 0,
-            });
+          : resolveTurnContent(current.content, event.final_text, terminal);
 
       const shouldReveal =
         event.terminal &&

@@ -41,8 +41,7 @@ pub const COGNITION_TURN_PROPOSE_MODE: &str = "cognition_turn_propose_mode";
 pub const COGNITION_TURN_PROPOSE_MODE_DOTTED: &str = "cognition.turn.propose_mode";
 
 /// Principal-facing body when the model ends with prose after tools without `cognition_turn_finish`.
-pub const PROSE_REQUIRES_FINISH_STUB: &str =
-    "I finished the tool work but didn't commit a final answer. Reply to continue and I'll \
+pub const PROSE_REQUIRES_FINISH_STUB: &str = "I finished the tool work but didn't commit a final answer. Reply to continue and I'll \
      deliver the full summary with cognition_turn_finish.";
 
 pub struct RequestMoreRoundsPayload {
@@ -305,7 +304,9 @@ pub struct CognitionTurnBeginWorkTool {
 }
 
 impl CognitionTurnBeginWorkTool {
-    pub fn new(scheduler: std::sync::Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>) -> Self {
+    pub fn new(
+        scheduler: std::sync::Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
+    ) -> Self {
         Self { scheduler }
     }
 }
@@ -371,7 +372,9 @@ impl StasisTool for CognitionTurnBeginWorkTool {
         )
         .unwrap_or(crate::agent_runtime::turn_worker::TurnWorkerIntent::General);
 
-        self.scheduler.enter_bound_workshop(&message, goal, intent).await
+        self.scheduler
+            .enter_bound_workshop(&message, goal, intent)
+            .await
     }
 }
 
@@ -452,13 +455,17 @@ impl StasisTool for CognitionTurnUpdateUserTool {
 
 pub struct CognitionTurnProposeModeTool {
     bootstrap_session_id: String,
-    turn_scope: std::sync::Arc<tokio::sync::RwLock<Option<crate::turn_continuation::TurnContinuationScope>>>,
+    turn_scope: std::sync::Arc<
+        tokio::sync::RwLock<Option<crate::turn_continuation::TurnContinuationScope>>,
+    >,
 }
 
 impl CognitionTurnProposeModeTool {
     pub fn new(
         bootstrap_session_id: String,
-        turn_scope: std::sync::Arc<tokio::sync::RwLock<Option<crate::turn_continuation::TurnContinuationScope>>>,
+        turn_scope: std::sync::Arc<
+            tokio::sync::RwLock<Option<crate::turn_continuation::TurnContinuationScope>>,
+        >,
     ) -> Self {
         Self {
             bootstrap_session_id,
@@ -503,7 +510,11 @@ impl StasisTool for CognitionTurnProposeModeTool {
                 }));
             }
         };
-        let scope = match input.get("scope").and_then(Value::as_str).unwrap_or("session") {
+        let scope = match input
+            .get("scope")
+            .and_then(Value::as_str)
+            .unwrap_or("session")
+        {
             "session" => crate::daemon_api::AgentModeScope::Session,
             "task" => crate::daemon_api::AgentModeScope::Task,
             _ => {
@@ -608,8 +619,10 @@ impl StasisTool for CognitionTurnFinishTool {
     fn description(&self) -> Option<&'static str> {
         Some(
             "Deliver the complete principal-facing final answer now and end this turn immediately. \
-             Required after tool work — naked prose without this tool ends the turn with a stub, not your draft. \
-             Mid-task updates use cognition_turn_checkpoint.",
+             Use it as an explicit hard stop after tool work; synthesis-bound workers require it \
+             for direct pass-through, while principal-facing turns may also commit after two \
+             consecutive non-tool responses. \
+             Mid-task handoffs use cognition_turn_checkpoint.",
         )
     }
 

@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { resolveTurnContent } from "./resolveTurnContent";
 
 describe("resolveTurnContent", () => {
-  it("prefers streamed body on terminal when prose was streamed", () => {
+  it("prefers the terminal body when prose was streamed", () => {
     expect(resolveTurnContent("Hello world", "Final answer", true)).toBe(
-      "Hello world",
+      "Final answer",
     );
   });
 
@@ -12,12 +12,10 @@ describe("resolveTurnContent", () => {
     expect(resolveTurnContent("", "Final answer", true)).toBe("Final answer");
   });
 
-  it("prefers final_text after tool loop even when streamed body exists", () => {
-    expect(
-      resolveTurnContent("partial before tools", "Done after tools", true, {
-        afterToolLoop: true,
-      }),
-    ).toBe("Done after tools");
+  it("replaces a partial streamed body with the terminal answer", () => {
+    expect(resolveTurnContent("partial before tools", "Done after tools", true)).toBe(
+      "Done after tools",
+    );
   });
 
   it("returns final body for non-terminal commits", () => {

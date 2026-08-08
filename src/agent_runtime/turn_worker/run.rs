@@ -826,7 +826,8 @@ pub async fn run_worker_turn(
         delivery_target: record.delivery_target.clone(),
         tool_round_budget_ceiling: worker_max_rounds,
         require_operator_budget_gate: false,
-        host_scheduler_lane: false,
+        completion_profile:
+            crate::agent_runtime::turn_completion_fsm::TurnCompletionProfile::WorkerSynthesis,
         cancel_poll_work_id: Some(work_id.clone()),
         steer_poll_work_id: is_bound_workshop.then_some(work_id.clone()),
         round_context_provider: None,
@@ -849,8 +850,7 @@ pub async fn run_worker_turn(
 
     // Stream worker tokens into the sink so Home can show live reasoning and
     // draft output. The sink batches these before touching the store.
-    let (chunk_tx, mut chunk_rx) =
-        tokio::sync::mpsc::unbounded_channel::<StreamDelta>();
+    let (chunk_tx, mut chunk_rx) = tokio::sync::mpsc::unbounded_channel::<StreamDelta>();
     let chunk_sink = sink.clone();
     let chunk_pump = tokio::spawn(async move {
         while let Some(delta) = chunk_rx.recv().await {
@@ -1030,7 +1030,12 @@ async fn run_worker_failure_notify(
     crate::feed_adapters::publish_workshop_finish_activity(
         &record,
         "failed",
-        Some(&record.error.clone().unwrap_or_else(|| "worker failed".to_string())),
+        Some(
+            &record
+                .error
+                .clone()
+                .unwrap_or_else(|| "worker failed".to_string()),
+        ),
     )
     .await;
 }
@@ -1041,24 +1046,6 @@ async fn run_synthesis_turn(
     sink: SharedAgentStreamSink,
     synthesis_turn_id: u64,
 ) {
-    // Bound workshops: the worker's finish prose IS the host reply — never run a
-    // second host synthesis LLM over it. Parallel peers get a synthesized ping so
-    // the orchestrator can continue with a compact summary.
-    if bound_passes_through(&record) {
-        let text = record
-            .result_text
-            .clone()
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| "(worker produced no text)".to_string());
-        sink.notice(format!(
-            "◈ work_synthesis work_id={} pass-through (bound worker finish)",
-            record.work_id
-        ))
-        .await;
-        deliver_synthesis_response(&record, &sink, synthesis_turn_id, text).await;
-        return;
-    }
-
     if worker_synthesis_pass_through(&record) {
         let text = record
             .result_text
@@ -1072,8 +1059,6 @@ async fn run_synthesis_turn(
         deliver_synthesis_response(&record, &sink, synthesis_turn_id, text).await;
         return;
     }
-    let _ = ctx;
-
     let parent_prompt = record
         .parent_user_prompt
         .clone()
@@ -1163,12 +1148,6 @@ pub(crate) fn worker_synthesis_pass_through(record: &TurnWorkRecord) -> bool {
             .is_some_and(|text| !text.trim().is_empty())
 }
 
-/// Bound workshops always pass the worker finish prose straight through as the
-/// host reply; only Parallel peers fall back to the host synthesis LLM.
-pub(crate) fn bound_passes_through(record: &TurnWorkRecord) -> bool {
-    record.disposition == TurnWorkDisposition::Bound
-}
-
 async fn deliver_synthesis_response(
     record: &TurnWorkRecord,
     sink: &SharedAgentStreamSink,
@@ -1187,12 +1166,7 @@ async fn deliver_synthesis_response(
         worker.result_text = Some(text.clone());
     });
     // Work-scoped finish on the workspace feed bus (independent of parent SSE).
-    crate::feed_adapters::publish_workshop_finish_activity(
-        record,
-        "synthesis",
-        Some(&text),
-    )
-    .await;
+    crate::feed_adapters::publish_workshop_finish_activity(record, "synthesis", Some(&text)).await;
     if record.disposition == TurnWorkDisposition::Bound {
         crate::feed_adapters::publish_workshop_synthesis(record, &text).await;
         crate::feed_adapters::publish_workshop_terminal(record, "done", Some(&text)).await;
@@ -1358,22 +1332,13 @@ mod tests {
         )));
     }
 
-    /// Bound workshops always pass through the worker finish prose as the host
-    /// reply — regardless of termination reason — and never run host synthesis.
+    /// Workers only pass through on an explicit cognition_turn_finish;
+    /// partial or fused results still go through host synthesis.
     #[test]
-    fn bound_disposition_skips_host_synthesis() {
+    fn worker_requires_finish_for_pass_through() {
         let mut record = sample_record(Some("max_rounds_fuse"), Some("partial"));
         record.disposition = TurnWorkDisposition::Bound;
-        assert!(bound_passes_through(&record));
-    }
-
-    /// Parallel peers only pass through on an explicit cognition_turn_finish;
-    /// otherwise the host synthesis LLM produces the summary ping.
-    #[test]
-    fn parallel_requires_finish_for_pass_through() {
-        let mut record = sample_record(Some("max_rounds_fuse"), Some("partial"));
-        record.disposition = TurnWorkDisposition::Parallel;
-        assert!(!bound_passes_through(&record));
+        assert!(!worker_synthesis_pass_through(&record));
         assert!(worker_synthesis_pass_through(&sample_record(
             Some("cognition_turn_finish"),
             Some("Here is the report.")

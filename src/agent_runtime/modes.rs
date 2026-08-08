@@ -4,6 +4,8 @@ use std::borrow::Cow;
 
 use crate::daemon_api::{AgentModeAvailability, AgentModeId, AgentModeListResponse};
 
+use super::turn_completion_fsm::TurnCompletionProfile;
+
 const CODER_SYSTEM_OVERLAY: &str = r#"
 ⊕⟨ ⏣0{ trigger: seed, response_format: temporal_node, origin_session: "medousa-coder-mode-policy", compression_depth: 1, parent_node: ref:⏣0, prime: { attractor_config: { stability: 0.92, friction: 0.18, logic: 0.98, autonomy: 0.86 }, context_summary: "Coder mode policy: Forge-governed senior engineering world model, direct foreground execution, evidence-led changes and validation.", relevant_tier: raw, retrieval_budget: 16 } } ⟩
 ⦿⟨ ⏣0{ timestamp: "2026-08-03T00:00:00Z", tier: raw, session_id: "medousa-coder-mode", schema_version: "sttp-1.0", user_avec: { stability: 0.90, friction: 0.20, logic: 0.96, autonomy: 0.84, psi: 2.90 }, model_avec: { stability: 0.92, friction: 0.18, logic: 0.98, autonomy: 0.86, psi: 2.94 } } ⟩
@@ -30,6 +32,7 @@ const CODER_SYSTEM_OVERLAY: &str = r#"
         engineering_pointers(.99): "Use ranked engineering pointers as present-tense attention cues; follow a pointer for causal detail and unlock bounded history only when the ranked view is insufficient.",
         progressive_tools(.99): "The visible palette is a subset of fixed turn authority. Use cognition_coder_tools_discover to reveal intelligence, world_model, or history tools when evidence makes that domain relevant.",
         evidence_integrity(.99): "Never claim a check passed, a file changed, or a command succeeded without a receipt from this turn.",
+        final_delivery(.99): "cognition_turn_finish commits immediately. Without it, two consecutive non-tool responses commit together as the principal-facing Coder answer; a tool call between them resets the prose hold.",
         minimal_change(.98): "Prefer the smallest complete change that resolves the causal model; avoid drive-by refactors."
     }
 } ⟩
@@ -64,6 +67,7 @@ pub struct ResolvedAgentMode {
     pub id: AgentModeId,
     pub contract_revision: &'static str,
     pub execution_lane: ModeExecutionLane,
+    pub completion_profile: TurnCompletionProfile,
     pub coder_phase: Option<CoderRuntimePhase>,
 }
 
@@ -77,15 +81,6 @@ pub enum CoderRuntimePhase {
 pub enum ModeExecutionLane {
     HostOrchestrated,
     ForegroundWorkshop,
-}
-
-impl ResolvedAgentMode {
-    /// Host scheduling treats prose as the principal-facing answer, because the work
-    /// itself is delegated to a workshop. A foreground mode performs the work in this
-    /// turn, so prose is a preamble and only `cognition_turn_finish` commits an answer.
-    pub fn uses_host_scheduler_lane(&self) -> bool {
-        matches!(self.execution_lane, ModeExecutionLane::HostOrchestrated)
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -119,12 +114,14 @@ pub fn resolve_agent_mode(
             id: AgentModeId::General,
             contract_revision: "general-v1",
             execution_lane: ModeExecutionLane::HostOrchestrated,
+            completion_profile: TurnCompletionProfile::HostScheduler,
             coder_phase: None,
         }),
         AgentModeId::Coder => Ok(ResolvedAgentMode {
             id: AgentModeId::Coder,
             contract_revision: "coder-v3",
             execution_lane: ModeExecutionLane::ForegroundWorkshop,
+            completion_profile: TurnCompletionProfile::ForegroundPrincipal,
             coder_phase: Some(CoderRuntimePhase::Setup),
         }),
     }
@@ -195,6 +192,10 @@ mod tests {
         assert_eq!(mode.id, AgentModeId::General);
         assert_eq!(mode.contract_revision, "general-v1");
         assert_eq!(mode.execution_lane, ModeExecutionLane::HostOrchestrated);
+        assert_eq!(
+            mode.completion_profile,
+            TurnCompletionProfile::HostScheduler
+        );
     }
 
     #[test]
@@ -202,22 +203,20 @@ mod tests {
         let mode = resolve_agent_mode(AgentModeId::Coder).expect("coder mode");
         assert_eq!(mode.contract_revision, "coder-v3");
         assert_eq!(mode.execution_lane, ModeExecutionLane::ForegroundWorkshop);
+        assert_eq!(
+            mode.completion_profile,
+            TurnCompletionProfile::ForegroundPrincipal
+        );
         assert_eq!(mode.coder_phase, Some(CoderRuntimePhase::Setup));
     }
 
     #[test]
-    fn only_host_orchestrated_modes_use_the_scheduler_lane() {
-        // Coder executes in the foreground, so its announcements are preambles rather
-        // than answers; running it on the scheduler lane ends the turn on first prose.
-        assert!(
-            resolve_agent_mode(AgentModeId::General)
-                .expect("general mode")
-                .uses_host_scheduler_lane()
-        );
-        assert!(
-            !resolve_agent_mode(AgentModeId::Coder)
-                .expect("coder mode")
-                .uses_host_scheduler_lane()
+    fn execution_lane_does_not_own_the_completion_contract() {
+        let coder = resolve_agent_mode(AgentModeId::Coder).expect("coder mode");
+        assert_eq!(coder.execution_lane, ModeExecutionLane::ForegroundWorkshop);
+        assert_eq!(
+            coder.completion_profile,
+            TurnCompletionProfile::ForegroundPrincipal
         );
     }
 
@@ -247,6 +246,7 @@ mod tests {
             id: AgentModeId::Coder,
             contract_revision: "coder-v3",
             execution_lane: ModeExecutionLane::ForegroundWorkshop,
+            completion_profile: TurnCompletionProfile::ForegroundPrincipal,
             coder_phase: Some(CoderRuntimePhase::Work),
         };
         let prompt = system_prompt_for_mode("core", &mode);

@@ -59,6 +59,49 @@ use super::turn_worker::{
 use crate::turn_continuation::StoredDeliveryTarget;
 use crate::turn_slice::session_scratch_seed_from_history;
 
+/// Serializes streamed model deltas ahead of terminal delivery.
+///
+/// Model pipelines enqueue deltas through an unbounded sender. The consumer must
+/// be drained before publishing a terminal event; otherwise the terminal commit
+/// can overtake a queued delta and the client can append stale prose afterward.
+struct TurnStreamBridge {
+    sender: Option<tokio::sync::mpsc::UnboundedSender<StreamDelta>>,
+    pump: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl TurnStreamBridge {
+    fn new(sink: SharedAgentStreamSink, turn_id: u64) -> Self {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<StreamDelta>();
+        let pump = tokio::spawn(async move {
+            while let Some(delta) = receiver.recv().await {
+                match delta {
+                    StreamDelta::Content(delta) => sink.content_chunk(turn_id, delta).await,
+                    StreamDelta::Reasoning(delta) | StreamDelta::ThoughtSignature(delta) => {
+                        sink.reasoning_chunk(turn_id, delta).await
+                    }
+                }
+            }
+        });
+        Self {
+            sender: Some(sender),
+            pump: Some(pump),
+        }
+    }
+
+    fn sender(&self) -> &tokio::sync::mpsc::UnboundedSender<StreamDelta> {
+        self.sender
+            .as_ref()
+            .expect("stream bridge sender requested after drain")
+    }
+
+    async fn drain(&mut self) {
+        self.sender.take();
+        if let Some(pump) = self.pump.take() {
+            let _ = pump.await;
+        }
+    }
+}
+
 pub const MAX_PRIOR_TOTAL_CHARS: usize = 24_000;
 pub const MAX_SINGLE_PRIOR_MESSAGE_CHARS: usize = 4_000;
 pub const DEFAULT_HOT_WINDOW_TURNS: usize = 8;
@@ -797,7 +840,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
     } else {
         host_profile.host_bus_active
     };
-    let host_scheduler_lane = agent_mode.uses_host_scheduler_lane();
+    let completion_profile = agent_mode.completion_profile;
     let suggested_intent = host_profile
         .route
         .suggested_worker_intent()
@@ -920,18 +963,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         }
     }
 
-    let (chunk_tx, mut chunk_rx) = tokio::sync::mpsc::unbounded_channel::<StreamDelta>();
-    let chunk_sink = sink.clone();
-    tokio::spawn(async move {
-        while let Some(delta) = chunk_rx.recv().await {
-            match delta {
-                StreamDelta::Content(delta) => chunk_sink.content_chunk(turn_id, delta).await,
-                StreamDelta::Reasoning(delta) | StreamDelta::ThoughtSignature(delta) => {
-                    chunk_sink.reasoning_chunk(turn_id, delta).await
-                }
-            }
-        }
-    });
+    let mut stream_bridge = TurnStreamBridge::new(sink.clone(), turn_id);
 
     sink.tool_invoked("llm.chat".to_string(), prompt_preview)
         .await;
@@ -950,12 +982,14 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
 
         if !try_consume_prompt_only_budget(&sink, &mut orchestration_state, &turn_budget).await {
             orchestration_state.final_mode = "prompt_only_budget_denied".to_string();
+            stream_bridge.drain().await;
             sink.agent_error(
                 turn_id,
                 "turn budget exhausted before prompt-only execution".to_string(),
             )
             .await;
             emit_orchestration_summary(&sink, &orchestration_state).await;
+            worker_scheduler.clear_bus_session().await;
             return;
         }
         orchestration_state.final_mode = "prompt_only".to_string();
@@ -963,14 +997,15 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         sink.notice("◈ fallback_mode=prompt_only retry_count=0 retry_reason=none".to_string())
             .await;
 
-        match no_tools_pipeline
+        let prompt_only_result = no_tools_pipeline
             .complete_chat_stream(
                 ChatRequest::new(messages),
                 prompt_ctx.clone(),
-                Some(&chunk_tx),
+                Some(stream_bridge.sender()),
             )
-            .await
-        {
+            .await;
+        stream_bridge.drain().await;
+        match prompt_only_result {
             Ok(completion) => {
                 let final_text = completion
                     .response
@@ -998,6 +1033,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 emit_orchestration_summary(&sink, &orchestration_state).await;
             }
         }
+        worker_scheduler.clear_bus_session().await;
         return;
     }
 
@@ -1017,12 +1053,14 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
     };
     if !try_consume_tool_loop_budget(&sink, &mut orchestration_state, &turn_budget).await {
         orchestration_state.final_mode = "tool_loop_budget_denied".to_string();
+        stream_bridge.drain().await;
         sink.agent_error(
             turn_id,
             "turn budget exhausted before tool-loop execution".to_string(),
         )
         .await;
         emit_orchestration_summary(&sink, &orchestration_state).await;
+        worker_scheduler.clear_bus_session().await;
         return;
     }
     orchestration_state.final_mode = "tool_loop".to_string();
@@ -1127,7 +1165,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     loop_max_rounds,
                 ),
                 require_operator_budget_gate: require_operator_budget_gate(),
-                host_scheduler_lane,
+                completion_profile,
                 cancel_poll_work_id: None,
                 steer_poll_work_id: None,
                 round_context_provider: round_context_provider.clone(),
@@ -1139,7 +1177,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 .execute_with_stream_prior_messages_max_rounds(
                     request.clone(),
                     prior_messages.clone(),
-                    Some(&chunk_tx),
+                    Some(stream_bridge.sender()),
                     loop_max_rounds,
                     Some(&mut completion_gate),
                     Some(current_turn_user_message.clone()),
@@ -1199,10 +1237,12 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                         &combined_invocations,
                     )
                     .map(|(id, _)| id);
+                stream_bridge.drain().await;
                 stage_scratch_for_persist(&sink, &last_tool_scratch).await;
                 sink.agent_worker_ack(turn_id, final_text, tool_names, work_id)
                     .await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
+                worker_scheduler.clear_bus_session().await;
                 return;
             }
             if response.termination_reason == "workshop_entered" {
@@ -1211,14 +1251,17 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     &combined_invocations,
                 )
                 .map(|(id, _)| id);
+                stream_bridge.drain().await;
                 stage_scratch_for_persist(&sink, &last_tool_scratch).await;
                 sink.agent_workshop_ack(turn_id, final_text, tool_names, work_id)
                     .await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
+                worker_scheduler.clear_bus_session().await;
                 return;
             }
             if response.termination_reason == "cognition_turn_checkpoint" {
                 let tool_names = collect_tool_names(&combined_invocations);
+                stream_bridge.drain().await;
                 sink.tool_invoked(
                     "llm.chat".to_string(),
                     format!(
@@ -1233,6 +1276,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 )
                 .await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
+                worker_scheduler.clear_bus_session().await;
                 return;
             }
             if should_run_continuation(&combined_invocations)
@@ -1318,7 +1362,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                                 continuation_max_rounds,
                             ),
                             require_operator_budget_gate: require_operator_budget_gate(),
-                            host_scheduler_lane,
+                            completion_profile,
                             cancel_poll_work_id: None,
                             steer_poll_work_id: None,
                             round_context_provider: round_context_provider.clone(),
@@ -1329,7 +1373,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                             .execute_with_stream_prior_messages_max_rounds(
                                 continuation_request,
                                 continuation_prior_messages,
-                                Some(&chunk_tx),
+                                Some(stream_bridge.sender()),
                                 continuation_max_rounds,
                                 Some(&mut continuation_gate),
                                 None,
@@ -1364,6 +1408,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 profile,
             );
             let tool_names = collect_tool_names(&combined_invocations);
+            stream_bridge.drain().await;
             sink.tool_invoked(
                 "llm.chat".to_string(),
                 format!("done  {} token(s)", final_text.split_whitespace().count()),
@@ -1406,9 +1451,11 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     {
                         orchestration_state.final_mode =
                             "tool_loop_retry_budget_denied".to_string();
+                        stream_bridge.drain().await;
                         sink.agent_error(turn_id, "turn budget exhausted before retry".to_string())
                             .await;
                         emit_orchestration_summary(&sink, &orchestration_state).await;
+                        worker_scheduler.clear_bus_session().await;
                         return;
                     }
                     orchestration_state.final_mode = "tool_loop_retry".to_string();
@@ -1443,7 +1490,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                                 retry_rounds,
                             ),
                             require_operator_budget_gate: require_operator_budget_gate(),
-                            host_scheduler_lane,
+                            completion_profile,
                             cancel_poll_work_id: None,
                             steer_poll_work_id: None,
                             round_context_provider: round_context_provider.clone(),
@@ -1454,7 +1501,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                             .execute_with_stream_prior_messages_max_rounds(
                                 request.clone(),
                                 prior_messages.clone(),
-                                Some(&chunk_tx),
+                                Some(stream_bridge.sender()),
                                 retry_rounds,
                                 Some(&mut retry_gate),
                                 None,
@@ -1465,6 +1512,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     match retry_result {
                         Ok(response) => {
                             let tool_names = collect_tool_names(&response.tool_invocations);
+                            stream_bridge.drain().await;
                             stage_scratch_for_persist(&sink, &last_tool_scratch).await;
                             super::turn_delivery::deliver_agent_turn_outcome(
                                 &sink,
@@ -1478,6 +1526,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                             .await;
                             orchestration_state.final_mode = "tool_loop_retry_success".to_string();
                             emit_orchestration_summary(&sink, &orchestration_state).await;
+                            worker_scheduler.clear_bus_session().await;
                             return;
                         }
                         Err(retry_err) => {
@@ -1486,6 +1535,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     }
                 }
                 orchestration_state.final_mode = "tool_loop_retry_exhausted".to_string();
+                stream_bridge.drain().await;
                 deliver_turn_failure(
                     &sink,
                     turn_id,
@@ -1498,6 +1548,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 sink.notice("◈ retry_policy retry_count=0 retry_reason=not_runtime".to_string())
                     .await;
                 orchestration_state.final_mode = "tool_loop_error_non_retryable".to_string();
+                stream_bridge.drain().await;
                 deliver_turn_failure(&sink, turn_id, &err_text, &mut orchestration_state).await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
             }
@@ -1509,10 +1560,89 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             } else {
                 inference_last_err.clone()
             };
+            stream_bridge.drain().await;
             deliver_turn_failure(&sink, turn_id, &err_text, &mut orchestration_state).await;
             emit_orchestration_summary(&sink, &orchestration_state).await;
         }
     }
 
+    stream_bridge.drain().await;
     worker_scheduler.clear_bus_session().await;
+}
+
+#[cfg(test)]
+mod stream_bridge_tests {
+    use std::sync::{Arc, Mutex};
+
+    use async_trait::async_trait;
+    use medousa_engine::receipt::ArtifactReceiptMeta;
+
+    use super::*;
+    use crate::agent_runtime::stream_sink::AgentStreamSink;
+
+    #[derive(Default)]
+    struct OrderedSink {
+        events: Mutex<Vec<String>>,
+    }
+
+    impl OrderedSink {
+        fn push(&self, event: String) {
+            self.events.lock().expect("events lock").push(event);
+        }
+    }
+
+    #[async_trait]
+    impl AgentStreamSink for OrderedSink {
+        async fn content_chunk(&self, _turn_id: u64, delta: String) {
+            tokio::task::yield_now().await;
+            self.push(delta);
+        }
+
+        async fn reasoning_chunk(&self, _turn_id: u64, _delta: String) {}
+
+        async fn agent_response(&self, _turn_id: u64, text: String, _tool_names: Vec<String>) {
+            self.push(text);
+        }
+
+        async fn agent_error(&self, _turn_id: u64, _message: String) {}
+
+        async fn notice(&self, _message: String) {}
+
+        async fn tool_invoked(&self, _tool_name: String, _input_summary: String) {}
+
+        async fn tool_payload(
+            &self,
+            _tool_name: String,
+            _tool_input: Value,
+            _tool_output: Value,
+            _input_receipt: Option<ArtifactReceiptMeta>,
+            _output_receipt: Option<ArtifactReceiptMeta>,
+        ) {
+        }
+    }
+
+    #[tokio::test]
+    async fn drain_orders_all_streamed_deltas_before_terminal_delivery() {
+        let concrete = Arc::new(OrderedSink::default());
+        let sink: SharedAgentStreamSink = concrete.clone();
+        let mut bridge = TurnStreamBridge::new(sink, 7);
+
+        bridge
+            .sender()
+            .send(StreamDelta::Content("first".to_string()))
+            .expect("first delta");
+        bridge
+            .sender()
+            .send(StreamDelta::Content("second".to_string()))
+            .expect("second delta");
+        bridge.drain().await;
+        concrete
+            .agent_response(7, "terminal".to_string(), Vec::new())
+            .await;
+
+        assert_eq!(
+            *concrete.events.lock().expect("events lock"),
+            vec!["first", "second", "terminal"]
+        );
+    }
 }

@@ -84,7 +84,7 @@ pub struct InteractiveTurnStreamSink {
     delivery: Option<InteractiveTurnDeliveryContext>,
     session_hooks: InteractiveTurnSessionHooks,
     parts: std::sync::Mutex<TurnPartsAccumulator>,
-    /// Principal-facing answer text delivered via content_delta (Phase 7A canonical body).
+    /// Current presentation draft assembled from content deltas.
     streamed_markdown: std::sync::Mutex<String>,
     pending_slice_scratch: std::sync::Mutex<Option<TurnScratchpad>>,
 }
@@ -152,14 +152,12 @@ impl InteractiveTurnStreamSink {
         self.spawn_persist_turn(projected);
     }
 
-    /// Prefer streamed tokens for persist + terminal commit when the client already saw them.
-    fn canonical_terminal_body(&self, fallback: &str) -> (String, bool) {
-        let streamed = self.streamed_markdown();
-        if streamed.trim().is_empty() {
-            (fallback.to_string(), false)
-        } else {
-            (streamed, true)
-        }
+    /// Terminal model/control output is the durable source of truth.
+    ///
+    /// Stream deltas are presentation-only and travel through an asynchronous bridge;
+    /// using their arrival state here can persist a stale preamble or a partial final.
+    fn canonical_terminal_body(terminal_text: &str) -> String {
+        terminal_text.to_string()
     }
 
     async fn turn_cancelled(&self) -> bool {
@@ -347,7 +345,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             return;
         }
 
-        let (body, _stream_authoritative) = self.canonical_terminal_body(&text);
+        let body = Self::canonical_terminal_body(&text);
 
         let assistant_turn = self
             .parts
@@ -365,11 +363,8 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                 )
             });
 
-        // Always carry the canonical body in the terminal commit. The client prefers
-        // its streamed content when present (resolveTurnContent) and only falls back to
-        // final_text when the local bubble is empty — e.g. after a scratch_reset cleared
-        // the draft — so a turn that finished mid-reloop self-heals instead of going blank
-        // until the user navigates away and back.
+        // Always carry the authoritative body in the terminal commit. The client
+        // replaces any partial streamed draft with this value.
         let final_event = interactive_turn_runtime::final_stream_event_with_tools(
             &self.turn_id,
             &body,
@@ -391,7 +386,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             return;
         }
 
-        let (body, stream_authoritative) = self.canonical_terminal_body(&text);
+        let body = Self::canonical_terminal_body(&text);
 
         let assistant_turn = self
             .parts
@@ -415,19 +410,11 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                 )
             });
 
-        let checkpoint_event = if stream_authoritative {
-            interactive_turn_runtime::turn_checkpoint_stream_event(
-                &self.turn_id,
-                "",
-                tool_names.clone(),
-            )
-        } else {
-            interactive_turn_runtime::turn_checkpoint_stream_event(
-                &self.turn_id,
-                &body,
-                tool_names.clone(),
-            )
-        };
+        let checkpoint_event = interactive_turn_runtime::turn_checkpoint_stream_event(
+            &self.turn_id,
+            &body,
+            tool_names.clone(),
+        );
         let event = super::turn_event::TurnEvent::checkpoint_from_turn(&assistant_turn);
         self.publish_tracked_with_journal(checkpoint_event, Some(event.clone()))
             .await;
@@ -444,7 +431,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             return;
         }
 
-        let (body, stream_authoritative) = self.canonical_terminal_body(&text);
+        let body = Self::canonical_terminal_body(&text);
 
         let assistant_turn = self
             .parts
@@ -468,19 +455,11 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                 )
             });
 
-        let needs_input_event = if stream_authoritative {
-            interactive_turn_runtime::needs_input_stream_event_with_tools(
-                &self.turn_id,
-                "",
-                tool_names.clone(),
-            )
-        } else {
-            interactive_turn_runtime::needs_input_stream_event_with_tools(
-                &self.turn_id,
-                &body,
-                tool_names.clone(),
-            )
-        };
+        let needs_input_event = interactive_turn_runtime::needs_input_stream_event_with_tools(
+            &self.turn_id,
+            &body,
+            tool_names.clone(),
+        );
         let event = super::turn_event::TurnEvent::needs_input_from_turn(&assistant_turn);
         self.publish_tracked_with_journal(needs_input_event, Some(event.clone()))
             .await;
