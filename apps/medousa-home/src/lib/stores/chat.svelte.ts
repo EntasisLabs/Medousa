@@ -1803,6 +1803,10 @@ export class ChatStore {
       if (!detail || detail.kind !== "turn_worker") continue;
       const workId = detail.work_id?.trim() || card.id;
       if (!this.isRelevantWorkerDetail(detail, workId)) continue;
+      const { workerTranscripts } = await import(
+        "$lib/stores/workerTranscripts.svelte"
+      );
+      workerTranscripts.ingestDetail(detail, card.column);
       this.onWorkerCardDetail(detail, card.column, undefined);
       const link = this.workers.get(workId);
       const isTerminal =
@@ -1897,7 +1901,11 @@ export class ChatStore {
       if (!detail || detail.kind !== "turn_worker") continue;
       const workId = detail.work_id?.trim() || card.id;
       if (!this.isRelevantWorkerDetail(detail, workId)) continue;
-      const statusLine = workerStatusLineForColumn(card.column);
+      const live = detail.live_status_line?.trim();
+      const statusLine =
+        live && live.length > 0
+          ? live
+          : workerStatusLineForColumn(card.column);
       const streaming =
         card.column === "backlog" || card.column === "in_flight";
       this.updateWorkerLaneBubble(workId, { statusLine, streaming });
@@ -2578,6 +2586,7 @@ export class ChatStore {
         status: "running",
         round,
         inputSummary: event.tool_input_summary ?? null,
+        inputParams: event.tool_input_params ?? undefined,
       };
       if (existingIdx >= 0) {
         runs[existingIdx] = { ...runs[existingIdx], ...next };
@@ -2594,6 +2603,8 @@ export class ChatStore {
         round,
         inputSummary:
           event.tool_input_summary ?? runs[existingIdx]?.inputSummary ?? null,
+        inputParams:
+          event.tool_input_params ?? runs[existingIdx]?.inputParams ?? undefined,
         outputSummary: event.tool_output_summary ?? null,
         artifactRefs: event.tool_artifact_refs ?? undefined,
       };

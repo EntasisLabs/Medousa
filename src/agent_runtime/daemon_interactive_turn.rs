@@ -666,6 +666,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         tool_run_id: String,
         tool_name: String,
         input_summary: String,
+        input_params: Vec<medousa_types::daemon_api::ToolInputParam>,
         tool_round: usize,
     ) {
         if self.emit_cancelled_if_needed().await {
@@ -679,6 +680,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             &tool_run_id,
             &tool_name,
             &input_summary,
+            input_params,
             tool_round,
         ))
         .await;
@@ -825,6 +827,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             &tool_name,
             &status,
             &input_summary,
+            super::tool_stream::preview_tool_input(&tool_input),
             output_summary.as_deref(),
             tool_round,
             artifact_refs,
@@ -1638,10 +1641,17 @@ impl AgentStreamSink for TurnOutcomeTrackingSink {
         tool_run_id: String,
         tool_name: String,
         input_summary: String,
+        input_params: Vec<medousa_types::daemon_api::ToolInputParam>,
         tool_round: usize,
     ) {
         self.inner
-            .tool_run_started(tool_run_id, tool_name, input_summary, tool_round)
+            .tool_run_started(
+                tool_run_id,
+                tool_name,
+                input_summary,
+                input_params,
+                tool_round,
+            )
             .await;
     }
 

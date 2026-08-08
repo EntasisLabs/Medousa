@@ -290,6 +290,7 @@ impl AgentStreamSink for CapturingSink {
         _tool_run_id: String,
         tool_name: String,
         _input_summary: String,
+        _input_params: Vec<medousa_types::daemon_api::ToolInputParam>,
         tool_round: usize,
     ) {
         self.push(Ev::ToolStarted {

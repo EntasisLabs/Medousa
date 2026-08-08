@@ -81,6 +81,7 @@ pub fn spawn_workspace_stream(
                         feed_event: None,
                         counts: None,
                         snapshot: None,
+                        worker_progress: None,
                     };
                     if tx.send(frame).await.is_err() {
                         return;
@@ -116,6 +117,7 @@ async fn initial_snapshot_event(
         feed_event: None,
         counts: Some(filtered.counts_by_column.clone()),
         snapshot: Some(filtered),
+        worker_progress: None,
     })
 }
 
@@ -194,6 +196,7 @@ async fn emit_snapshot_delta(
                 feed_event: Some(event),
                 counts: None,
                 snapshot: None,
+                worker_progress: None,
             };
             tx.send(frame).await?;
         }
@@ -203,10 +206,13 @@ async fn emit_snapshot_delta(
     let cards = card_map_from_snapshot(snapshot, session_id);
 
     for (card_id, card) in &cards {
-        match last_cards.get(card_id) {
-            None => send_card_upserted(tx, revision, card).await?,
-            Some(previous) if previous != card => send_card_upserted(tx, revision, card).await?,
-            _ => {}
+        let changed = match last_cards.get(card_id) {
+            None => true,
+            Some(previous) => previous != card,
+        };
+        if changed {
+            let progress = snapshot.items.get(card_id).and_then(worker_progress_for);
+            send_card_upserted(tx, revision, card, progress).await?;
         }
     }
 
@@ -227,6 +233,7 @@ async fn emit_snapshot_delta(
                 feed_event: None,
                 counts: None,
                 snapshot: None,
+                worker_progress: None,
             };
             tx.send(frame).await?;
         }
@@ -242,6 +249,7 @@ async fn emit_snapshot_delta(
             feed_event: None,
             counts: Some(counts),
             snapshot: None,
+            worker_progress: None,
         };
         tx.send(frame).await?;
         *last_revision = revision;
@@ -255,6 +263,7 @@ async fn send_card_upserted(
     tx: &mpsc::Sender<WorkspaceStreamEvent>,
     revision: u64,
     card: &WorkCard,
+    worker_progress: Option<crate::daemon_api::WorkerProgressDto>,
 ) -> Result<(), mpsc::error::SendError<WorkspaceStreamEvent>> {
     tx.send(WorkspaceStreamEvent {
         workspace_revision: revision,
@@ -264,8 +273,38 @@ async fn send_card_upserted(
         feed_event: None,
         counts: None,
         snapshot: None,
+        worker_progress,
     })
     .await
+}
+
+/// Live transcript slice for turn-worker cards. Chat renders subagent rows from
+/// this instead of re-fetching card detail on every tool event.
+fn worker_progress_for(
+    item: &crate::workspace::card::ProjectedWorkItem,
+) -> Option<crate::daemon_api::WorkerProgressDto> {
+    if item.detail.kind != crate::daemon_api::WorkCardKind::TurnWorker {
+        return None;
+    }
+    let work_id = item
+        .detail
+        .work_id
+        .clone()
+        .unwrap_or_else(|| item.card.id.0.clone());
+    Some(crate::daemon_api::WorkerProgressDto {
+        work_id,
+        session_id: item.detail.session_id.clone(),
+        live_tool_activity: item.detail.live_tool_activity.clone(),
+        live_thinking: item.detail.live_thinking.clone(),
+        live_output: item.detail.live_output.clone(),
+        thinking_started_at: item.detail.thinking_started_at,
+        thinking_finished_at: item.detail.thinking_finished_at,
+        live_status_line: item.detail.live_status_line.clone(),
+        model: item.detail.model.clone(),
+        result_excerpt: item.detail.result_excerpt.clone(),
+        terminal: item.detail.terminal,
+        column: item.card.column,
+    })
 }
 
 fn stream_error_event() -> WorkspaceStreamEvent {
@@ -277,5 +316,6 @@ fn stream_error_event() -> WorkspaceStreamEvent {
         feed_event: None,
         counts: None,
         snapshot: None,
+        worker_progress: None,
     }
 }

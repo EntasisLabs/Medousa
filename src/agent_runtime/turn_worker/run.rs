@@ -30,7 +30,7 @@ use stasis::application::orchestration::prompt_pipeline::{
     PromptExecutionPipeline, PromptExecutionRequest,
 };
 use stasis::application::orchestration::tool_registry::ToolRegistry;
-use stasis::ports::outbound::ai_chat_client::AiChatClient;
+use stasis::ports::outbound::ai_chat_client::{AiChatClient, StreamDelta};
 
 use stasis::prelude::RuntimeComposition;
 
@@ -351,6 +351,11 @@ impl TurnWorkerScheduler {
             supports_ui_artifacts: bus.supports_ui_artifacts,
             supports_liquid_markdown: bus.supports_liquid_markdown,
             supports_browser_host: bus.supports_browser_host,
+            live_tool_activity: Vec::new(),
+            live_thinking: String::new(),
+            live_output: String::new(),
+            thinking_started_at: None,
+            thinking_finished_at: None,
             created_at: now,
             updated_at: now,
         };
@@ -552,6 +557,11 @@ impl TurnWorkerScheduler {
             supports_ui_artifacts: true,
             supports_liquid_markdown: bus.supports_liquid_markdown,
             supports_browser_host: bus.supports_browser_host,
+            live_tool_activity: Vec::new(),
+            live_thinking: String::new(),
+            live_output: String::new(),
+            thinking_started_at: None,
+            thinking_finished_at: None,
             created_at: now,
             updated_at: now,
         };
@@ -837,16 +847,35 @@ pub async fn run_worker_turn(
         return;
     }
 
+    // Stream worker tokens into the sink so Home can show live reasoning and
+    // draft output. The sink batches these before touching the store.
+    let (chunk_tx, mut chunk_rx) =
+        tokio::sync::mpsc::unbounded_channel::<StreamDelta>();
+    let chunk_sink = sink.clone();
+    let chunk_pump = tokio::spawn(async move {
+        while let Some(delta) = chunk_rx.recv().await {
+            match delta {
+                StreamDelta::Content(delta) => chunk_sink.content_chunk(0, delta).await,
+                StreamDelta::Reasoning(delta) | StreamDelta::ThoughtSignature(delta) => {
+                    chunk_sink.reasoning_chunk(0, delta).await
+                }
+            }
+        }
+    });
+
     let result = worker_pipeline
         .execute_with_stream_prior_messages_max_rounds(
             request,
             Vec::new(),
-            None,
+            Some(&chunk_tx),
             worker_max_rounds,
             Some(&mut completion_gate),
             None,
         )
         .await;
+
+    drop(chunk_tx);
+    let _ = chunk_pump.await;
 
     match result {
         Ok(response) => {
@@ -997,6 +1026,13 @@ async fn run_worker_failure_notify(
         vec!["turn_worker.failure".to_string()],
     )
     .await;
+
+    crate::feed_adapters::publish_workshop_finish_activity(
+        &record,
+        "failed",
+        Some(&record.error.clone().unwrap_or_else(|| "worker failed".to_string())),
+    )
+    .await;
 }
 
 async fn run_synthesis_turn(
@@ -1005,6 +1041,24 @@ async fn run_synthesis_turn(
     sink: SharedAgentStreamSink,
     synthesis_turn_id: u64,
 ) {
+    // Bound workshops: the worker's finish prose IS the host reply — never run a
+    // second host synthesis LLM over it. Parallel peers get a synthesized ping so
+    // the orchestrator can continue with a compact summary.
+    if bound_passes_through(&record) {
+        let text = record
+            .result_text
+            .clone()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| "(worker produced no text)".to_string());
+        sink.notice(format!(
+            "◈ work_synthesis work_id={} pass-through (bound worker finish)",
+            record.work_id
+        ))
+        .await;
+        deliver_synthesis_response(&record, &sink, synthesis_turn_id, text).await;
+        return;
+    }
+
     if worker_synthesis_pass_through(&record) {
         let text = record
             .result_text
@@ -1018,6 +1072,7 @@ async fn run_synthesis_turn(
         deliver_synthesis_response(&record, &sink, synthesis_turn_id, text).await;
         return;
     }
+    let _ = ctx;
 
     let parent_prompt = record
         .parent_user_prompt
@@ -1108,6 +1163,12 @@ pub(crate) fn worker_synthesis_pass_through(record: &TurnWorkRecord) -> bool {
             .is_some_and(|text| !text.trim().is_empty())
 }
 
+/// Bound workshops always pass the worker finish prose straight through as the
+/// host reply; only Parallel peers fall back to the host synthesis LLM.
+pub(crate) fn bound_passes_through(record: &TurnWorkRecord) -> bool {
+    record.disposition == TurnWorkDisposition::Bound
+}
+
 async fn deliver_synthesis_response(
     record: &TurnWorkRecord,
     sink: &SharedAgentStreamSink,
@@ -1125,6 +1186,13 @@ async fn deliver_synthesis_response(
         worker.synthesis_delivered = true;
         worker.result_text = Some(text.clone());
     });
+    // Work-scoped finish on the workspace feed bus (independent of parent SSE).
+    crate::feed_adapters::publish_workshop_finish_activity(
+        record,
+        "synthesis",
+        Some(&text),
+    )
+    .await;
     if record.disposition == TurnWorkDisposition::Bound {
         crate::feed_adapters::publish_workshop_synthesis(record, &text).await;
         crate::feed_adapters::publish_workshop_terminal(record, "done", Some(&text)).await;
@@ -1256,6 +1324,11 @@ mod tests {
             supports_ui_artifacts: false,
             supports_liquid_markdown: false,
             supports_browser_host: false,
+            live_tool_activity: Vec::new(),
+            live_thinking: String::new(),
+            live_output: String::new(),
+            thinking_started_at: None,
+            thinking_finished_at: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -1282,6 +1355,28 @@ mod tests {
         assert!(!worker_synthesis_pass_through(&sample_record(
             None,
             Some("done")
+        )));
+    }
+
+    /// Bound workshops always pass through the worker finish prose as the host
+    /// reply — regardless of termination reason — and never run host synthesis.
+    #[test]
+    fn bound_disposition_skips_host_synthesis() {
+        let mut record = sample_record(Some("max_rounds_fuse"), Some("partial"));
+        record.disposition = TurnWorkDisposition::Bound;
+        assert!(bound_passes_through(&record));
+    }
+
+    /// Parallel peers only pass through on an explicit cognition_turn_finish;
+    /// otherwise the host synthesis LLM produces the summary ping.
+    #[test]
+    fn parallel_requires_finish_for_pass_through() {
+        let mut record = sample_record(Some("max_rounds_fuse"), Some("partial"));
+        record.disposition = TurnWorkDisposition::Parallel;
+        assert!(!bound_passes_through(&record));
+        assert!(worker_synthesis_pass_through(&sample_record(
+            Some("cognition_turn_finish"),
+            Some("Here is the report.")
         )));
     }
 }
