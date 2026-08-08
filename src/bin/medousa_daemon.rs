@@ -316,6 +316,9 @@ async fn main() -> Result<()> {
         format!("failed to bind medousa daemon on {addr} — another daemon may already be running")
     })?;
     tracing::info!(%addr, "acquired bind address, initializing runtime");
+    // In-process tool proxies dial the API over loopback; point them at the
+    // port we actually bound rather than the compiled-in default.
+    medousa::daemon_self_url::init_daemon_self_base_url(bind);
 
     let webhook_client = heartbeat_notify
         .webhook_url

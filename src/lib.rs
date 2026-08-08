@@ -74,6 +74,7 @@ pub mod mcp_turn_token;
 pub mod mcp_policy;
 pub mod daemon;
 pub mod daemon_api;
+pub mod daemon_self_url;
 pub mod daemon_handlers;
 pub mod vault;
 pub mod vault_handlers;
