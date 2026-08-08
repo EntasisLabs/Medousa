@@ -1148,7 +1148,7 @@ async fn run_agent_turn_inner(
                     entry.clone(),
                     item.policy,
                 ));
-                let shared_space_appendix = match registry.initial_prompt_appendix() {
+                let shared_space_appendix = match registry.initial_prompt_appendix().await {
                     Ok(appendix) => appendix,
                     Err(err) => {
                         sink.agent_error(1, err.to_string()).await;
@@ -1521,6 +1521,7 @@ async fn run_agent_turn_inner(
 
     turn_orchestrator::execute_local_turn(sink, assembled.execution).await;
     if let Some(registry) = coder_registry {
+        let _ = registry.flush_memory_queue().await;
         registry.interrupt_shell_sessions().await;
     }
     drop(coder_authority);

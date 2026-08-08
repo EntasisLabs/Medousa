@@ -4,13 +4,14 @@
 //! scope, compact schemas, canonical STTP construction, and bounded recall
 //! projection. The model never chooses the underlying Locus session.
 
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::fmt::Write as _;
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 
 use chrono::{SecondsFormat, Utc};
 use genai::chat::Tool;
 use locus_core_rs::SttpNodeParser;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
 use stasis::prelude::{Result, StasisError};
@@ -60,6 +61,10 @@ const MAX_RELATIONS: usize = 16;
 const MAX_RECALL_LIMIT: usize = 12;
 const MAX_OVERVIEW_LIMIT: usize = 20;
 const MAX_RECALLED_RAW_CHARS: usize = 6_000;
+const MAX_PENDING_MEMORY_WRITES: usize = 64;
+const MAX_MEMORY_QUEUE_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_PENDING_OVERVIEW_ITEMS: usize = 8;
+const MEMORY_QUEUE_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoderMemoryScope {
@@ -134,13 +139,213 @@ pub struct CoderMemoryRelation {
     pub confidence: f64,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CoderMemoryCommit {
     pub kind: String,
     pub summary: String,
     pub raw_node: String,
     pub semantic_tags: Vec<String>,
     pub dedupe_tag: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CoderPendingMemorySummary {
+    pub kind: String,
+    pub summary: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CoderMemoryQueueFile {
+    schema_version: u32,
+    session_id: String,
+    entries: Vec<CoderMemoryCommit>,
+}
+
+/// Bounded, redacted semantic writes that could not reach Locus yet.
+///
+/// The queue is persisted per governed environment. It contains only commits
+/// already compiled and redacted by [`build_commit`], never raw tool output.
+#[derive(Debug)]
+pub struct CoderMemoryRetryQueue {
+    session_id: String,
+    path: Option<PathBuf>,
+    entries: VecDeque<CoderMemoryCommit>,
+}
+
+impl CoderMemoryRetryQueue {
+    pub fn for_scope(scope: &CoderMemoryScope) -> Self {
+        let path = if cfg!(test) {
+            None
+        } else {
+            Some(memory_queue_path(scope))
+        };
+        Self::load(scope, path)
+    }
+
+    #[cfg(test)]
+    fn at_path(scope: &CoderMemoryScope, path: PathBuf) -> Self {
+        Self::load(scope, Some(path))
+    }
+
+    fn load(scope: &CoderMemoryScope, path: Option<PathBuf>) -> Self {
+        let mut queue = Self {
+            session_id: scope.session_id.clone(),
+            path,
+            entries: VecDeque::new(),
+        };
+        let Some(path) = queue.path.as_ref() else {
+            return queue;
+        };
+        let raw = match std::fs::metadata(path) {
+            Ok(metadata) if metadata.len() > MAX_MEMORY_QUEUE_BYTES => {
+                tracing::warn!(path = %path.display(), "ignoring oversized Coder memory retry queue");
+                return queue;
+            }
+            Ok(_) => match std::fs::read(path) {
+                Ok(raw) => raw,
+                Err(error) => {
+                    tracing::warn!(error = %error, path = %path.display(), "failed to read Coder memory retry queue");
+                    return queue;
+                }
+            },
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return queue,
+            Err(error) => {
+                tracing::warn!(error = %error, path = %path.display(), "failed to inspect Coder memory retry queue");
+                return queue;
+            }
+        };
+        let file = match serde_json::from_slice::<CoderMemoryQueueFile>(&raw) {
+            Ok(file)
+                if file.schema_version == MEMORY_QUEUE_SCHEMA_VERSION
+                    && file.session_id == scope.session_id =>
+            {
+                file
+            }
+            Ok(_) => {
+                tracing::warn!(path = %path.display(), "ignoring Coder memory queue with mismatched scope or version");
+                return queue;
+            }
+            Err(error) => {
+                tracing::warn!(error = %error, path = %path.display(), "ignoring malformed Coder memory retry queue");
+                return queue;
+            }
+        };
+        let mut seen = HashSet::new();
+        for commit in file
+            .entries
+            .into_iter()
+            .rev()
+            .take(MAX_PENDING_MEMORY_WRITES)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+        {
+            let valid_scope = validate_raw_node_scope(&commit.raw_node, &scope.session_id).is_ok();
+            let valid_dedupe = commit.semantic_tags.contains(&commit.dedupe_tag);
+            if valid_scope && valid_dedupe && seen.insert(commit.dedupe_tag.clone()) {
+                queue.entries.push_back(commit);
+            }
+        }
+        queue
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    pub fn front(&self) -> Option<CoderMemoryCommit> {
+        self.entries.front().cloned()
+    }
+
+    pub fn pending_summaries(&self) -> Vec<CoderPendingMemorySummary> {
+        self.entries
+            .iter()
+            .rev()
+            .take(MAX_PENDING_OVERVIEW_ITEMS)
+            .map(|commit| CoderPendingMemorySummary {
+                kind: commit.kind.clone(),
+                summary: truncate_chars(&commit.summary, 500),
+            })
+            .collect()
+    }
+
+    /// Adds one semantic write. Returns whether a new entry was inserted.
+    pub fn enqueue(&mut self, commit: CoderMemoryCommit) -> Result<bool> {
+        if self
+            .entries
+            .iter()
+            .any(|pending| pending.dedupe_tag == commit.dedupe_tag)
+        {
+            return Ok(false);
+        }
+        if self.entries.len() == MAX_PENDING_MEMORY_WRITES {
+            tracing::warn!(
+                pending_writes = self.entries.len(),
+                "Coder memory retry queue reached its bound; replacing the oldest deferred summary"
+            );
+            self.entries.pop_front();
+        }
+        self.entries.push_back(commit);
+        self.persist()?;
+        Ok(true)
+    }
+
+    pub fn pop_front(&mut self, expected_dedupe_tag: &str) -> Result<bool> {
+        if self
+            .entries
+            .front()
+            .is_some_and(|commit| commit.dedupe_tag == expected_dedupe_tag)
+        {
+            self.entries.pop_front();
+            self.persist()?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    fn persist(&mut self) -> Result<()> {
+        let Some(path) = self.path.clone() else {
+            return Ok(());
+        };
+        let raw = loop {
+            let file = CoderMemoryQueueFile {
+                schema_version: MEMORY_QUEUE_SCHEMA_VERSION,
+                session_id: self.session_id.clone(),
+                entries: self.entries.iter().cloned().collect(),
+            };
+            let raw = serde_json::to_vec_pretty(&file).map_err(|error| {
+                input_error(format!("cannot encode memory retry queue: {error}"))
+            })?;
+            if raw.len() as u64 <= MAX_MEMORY_QUEUE_BYTES {
+                break raw;
+            }
+            if self.entries.len() <= 1 {
+                return Err(input_error(format!(
+                    "one memory retry entry exceeds the {}-byte queue bound",
+                    MAX_MEMORY_QUEUE_BYTES
+                )));
+            }
+            self.entries.pop_front();
+            tracing::warn!(
+                pending_writes = self.entries.len(),
+                "Coder memory retry queue reached its byte bound; replacing the oldest deferred summary"
+            );
+        };
+        crate::session::atomic_write(&path, &raw)
+            .map_err(|error| input_error(format!("cannot persist memory retry queue: {error}")))
+    }
+}
+
+fn memory_queue_path(scope: &CoderMemoryScope) -> PathBuf {
+    let digest = Sha256::digest(scope.session_id.as_bytes());
+    crate::paths::medousa_data_dir()
+        .join("coder_memory_queue")
+        .join(format!("{:x}.json", digest))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -509,6 +714,11 @@ fn project_node(node: &Value, current_head: &str, include_raw: bool) -> Value {
         .filter_map(|tag| tag.strip_prefix("path:"))
         .map(decode_parser_string)
         .collect::<Vec<_>>();
+    let symbols = tags
+        .iter()
+        .filter_map(|tag| tag.strip_prefix("symbol:"))
+        .map(decode_parser_string)
+        .collect::<Vec<_>>();
     let stale = observed_head
         .as_deref()
         .is_some_and(|head| head != current_head.trim());
@@ -539,6 +749,7 @@ fn project_node(node: &Value, current_head: &str, include_raw: bool) -> Value {
         "observed_head": observed_head,
         "stale": stale,
         "paths": paths,
+        "symbols": symbols,
         "relations": relations,
     });
     if include_raw {
@@ -548,6 +759,40 @@ fn project_node(node: &Value, current_head: &str, include_raw: bool) -> Value {
             Value::Bool(content.chars().count() > MAX_RECALLED_RAW_CHARS);
     }
     projected
+}
+
+/// Compile the bounded, public Coder memory state into model context.
+///
+/// `overview` must already be projected through [`project_recall`]. The raw
+/// Locus session id and raw STTP nodes are therefore never exposed here.
+pub fn environment_overview_prompt_appendix(overview: &Value) -> String {
+    let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
+    let overview = parser_safe_json(overview);
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "⊕⟨ ⏣0{{ trigger: manual, response_format: temporal_node, origin_session: \"medousa-coder-memory-overview\", compression_depth: 1, parent_node: ref:⏣0, prime: {{ attractor_config: {{ stability: 0.96, friction: 0.12, logic: 0.99, autonomy: 0.84 }}, context_summary: \"Bounded semantic working state for the governed Coder environment.\", relevant_tier: raw, retrieval_budget: 12 }} }} ⟩"
+    );
+    let _ = writeln!(
+        out,
+        "⦿⟨ ⏣0{{ timestamp: \"{timestamp}\", tier: raw, session_id: \"medousa-coder-memory-overview\", schema_version: \"sttp-1.0\", user_avec: {{ stability: 0.90, friction: 0.20, logic: 0.96, autonomy: 0.84, psi: 2.90 }}, model_avec: {{ stability: 0.96, friction: 0.12, logic: 0.99, autonomy: 0.84, psi: 2.95 }} }} ⟩"
+    );
+    let _ = writeln!(out, "◈⟨ ⏣0{{");
+    let _ = writeln!(out, "    environment_memory(.99): {overview},");
+    let _ = writeln!(
+        out,
+        "    memory_contract(.99): \"Treat current non-stale nodes as compact working state; queued writes are usable summaries awaiting durable Locus storage; verify repository facts against Forge and Git before mutation.\""
+    );
+    let _ = writeln!(out, "}} ⟩");
+    let _ = write!(
+        out,
+        "⍉⟨ ⏣0{{ rho: 0.99, kappa: 0.99, psi: 2.95, compression_avec: {{ stability: 0.96, friction: 0.12, logic: 0.99, autonomy: 0.84, psi: 2.95 }} }} ⟩"
+    );
+    debug_assert!(
+        super::sttp::validate_canonical_sttp_node(&out).is_ok(),
+        "Coder environment-memory compiler emitted invalid STTP"
+    );
+    out
 }
 
 fn recalled_content(raw: &str) -> String {
@@ -727,6 +972,31 @@ fn json_string_array(values: &[String]) -> String {
     escape_protocol_glyphs(&serde_json::to_string(values).unwrap_or_else(|_| "[]".to_string()))
 }
 
+fn parser_safe_json(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(value) => value.to_string(),
+        Value::Number(value) => value.to_string(),
+        Value::String(value) => json_string(value),
+        Value::Array(values) => format!(
+            "[{}]",
+            values
+                .iter()
+                .map(parser_safe_json)
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        Value::Object(values) => format!(
+            "{{{}}}",
+            values
+                .iter()
+                .map(|(key, value)| format!("{}:{}", json_string(key), parser_safe_json(value)))
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+    }
+}
+
 fn parser_encoded_string(value: &str) -> String {
     let encoded = json_string(value);
     encoded
@@ -869,6 +1139,7 @@ mod tests {
     use std::path::PathBuf;
 
     use locus_core_rs::ParseProfile;
+    use tempfile::TempDir;
 
     use super::*;
     use crate::agent_runtime::coder_mode::{CoderEditorContext, RepositoryInstruction};
@@ -905,6 +1176,65 @@ mod tests {
         assert_ne!(first.session_id, restart.session_id);
         assert!(first.session_id.contains("coder:repo-123:work-456:"));
         assert!(!first.session_id.contains("/tmp/demo"));
+    }
+
+    #[test]
+    fn retry_queue_is_persistent_bounded_deduplicated_and_redacted() {
+        let temp = TempDir::new().expect("queue tempdir");
+        let entry = entry("worktree/demo-a1", 1);
+        let scope = CoderMemoryScope::for_entry(&entry);
+        let identity = CoderAgentIdentity::for_turn("chat-1", 7, "attempt-1");
+        let path = temp.path().join("memory-queue.json");
+        let secret = build_commit(
+            &json!({
+                "kind": "checkpoint",
+                "summary": "Persist recovery boundary",
+                "details": "token=must-not-survive"
+            }),
+            &scope,
+            &identity,
+            &entry.head_oid,
+        )
+        .expect("compiled checkpoint");
+        let mut queue = CoderMemoryRetryQueue::at_path(&scope, path.clone());
+        assert!(queue.enqueue(secret.clone()).expect("enqueue"));
+        assert!(!queue.enqueue(secret).expect("dedupe enqueue"));
+        assert_eq!(queue.len(), 1);
+        assert!(
+            !std::fs::read_to_string(&path)
+                .expect("queue file")
+                .contains("must-not-survive")
+        );
+
+        drop(queue);
+        let mut queue = CoderMemoryRetryQueue::at_path(&scope, path.clone());
+        assert_eq!(queue.len(), 1);
+        let front = queue.front().expect("restored pending write");
+        queue
+            .pop_front(&front.dedupe_tag)
+            .expect("persist queue drain");
+        assert!(CoderMemoryRetryQueue::at_path(&scope, path.clone()).is_empty());
+
+        let mut queue = CoderMemoryRetryQueue::at_path(&scope, path.clone());
+        for index in 0..(MAX_PENDING_MEMORY_WRITES + 5) {
+            let commit = build_commit(
+                &json!({
+                    "kind": "discovery",
+                    "summary": format!("Bounded queued observation {index}")
+                }),
+                &scope,
+                &identity,
+                &entry.head_oid,
+            )
+            .expect("compiled queued observation");
+            queue.enqueue(commit).expect("bounded enqueue");
+        }
+        assert_eq!(queue.len(), MAX_PENDING_MEMORY_WRITES);
+        drop(queue);
+        assert_eq!(
+            CoderMemoryRetryQueue::at_path(&scope, path).len(),
+            MAX_PENDING_MEMORY_WRITES
+        );
     }
 
     #[test]
@@ -1062,7 +1392,8 @@ mod tests {
                 "semantic_tags": [
                     "kind:decision",
                     "head:old-head",
-                    "path:src/lib.rs"
+                    "path:src/lib.rs",
+                    "symbol:demo::run"
                 ],
                 "raw": "bounded STTP"
             }]
@@ -1071,8 +1402,30 @@ mod tests {
         assert_eq!(projected["nodes"][0]["stale"], true);
         assert_eq!(projected["nodes"][0]["kind"], "decision");
         assert_eq!(projected["nodes"][0]["paths"][0], "src/lib.rs");
+        assert_eq!(projected["nodes"][0]["symbols"][0], "demo::run");
         assert!(projected.to_string().contains("bounded STTP"));
         assert!(!projected.to_string().contains(&scope.session_id));
+    }
+
+    #[test]
+    fn environment_overview_is_canonical_and_protocol_safe() {
+        let scope = CoderMemoryScope::for_entry(&entry("worktree/demo-a1", 1));
+        let overview = json!({
+            "ok": true,
+            "scope": scope.public_descriptor(),
+            "current_head": "head-1",
+            "nodes": [{
+                "kind": "open_gap",
+                "summary": "Quoted { gap } with ⊕⟨ marker",
+                "paths": ["src/{odd}.rs"],
+                "symbols": ["demo::run"]
+            }],
+            "pending_writes": []
+        });
+        let appendix = environment_overview_prompt_appendix(&overview);
+        crate::agent_runtime::sttp::validate_canonical_sttp_node(&appendix)
+            .expect("canonical overview STTP");
+        assert!(!appendix.contains(&scope.session_id));
     }
 
     #[test]

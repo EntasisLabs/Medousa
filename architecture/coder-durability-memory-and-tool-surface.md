@@ -1,6 +1,6 @@
 # Coder durability, worktree memory, and dynamic tools
 
-> **Status:** Approved direction; Slices 1–2 implemented, remaining slices active
+> **Status:** Approved direction; Slices 1–3 implemented, remaining slices active
 > **Parent:** [Coder cognitive runtime](coder-cognitive-runtime-plan.md)
 > **Related:** [Context lanes and scratchpad](context-lanes-and-scratchpad-plan.md),
 > [Turn runtime and lanes](turn-runtime-and-lanes.md), and
@@ -172,6 +172,12 @@ Locus failure is non-fatal to the coding turn. The runtime queues the bounded
 semantic write for retry and preserves exact recovery through the active-turn
 checkpoint.
 
+The retry queue is daemon-owned and keyed by the governed environment scope.
+It persists only already-redacted, runtime-compiled commits, is capped at 64
+writes and 2 MiB, and drains at most four writes per boundary. Individual
+Locus operations have a two-second bound, so memory degradation cannot turn
+into an unbounded coding-loop stall.
+
 ## Active-turn checkpoint
 
 Locus provides semantic recovery; it cannot recover provider protocol state.
@@ -331,12 +337,13 @@ General and Coder deliberately use different loop policies.
 - Bind every Coder memory operation to the environment scope.
 - Add stale-observation and idempotency tests.
 
-### Slice 3 — automatic working-memory checkpoints
+### Slice 3 — automatic working-memory checkpoints (implemented)
 
 - Commit at patch, verification, handoff, budget, and terminal boundaries.
 - Compile a small environment overview at turn entry.
 - Feed semantic state into initial tool-pack selection.
-- Queue writes when Locus is unavailable.
+- Queue bounded, redacted writes durably when Locus is unavailable and retry
+  without failing the coding tool that produced the checkpoint.
 
 ### Slice 4 — exact active-turn recovery
 
