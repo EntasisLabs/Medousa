@@ -34,7 +34,7 @@ const CATEGORY_ORDER: [PaletteCategory; 5] = [
     PaletteCategory::SafetyKeys,
 ];
 
-const PALETTE_ACTIONS: [PaletteAction; 21] = [
+const PALETTE_ACTIONS: [PaletteAction; 22] = [
     PaletteAction {
         category: PaletteCategory::QuickActions,
         title: "Start New Chat",
@@ -43,6 +43,15 @@ const PALETTE_ACTIONS: [PaletteAction; 21] = [
         risk: ActionRisk::Caution,
         key_hint: "/new",
         aliases: &["new", "reset", "fresh"],
+    },
+    PaletteAction {
+        category: PaletteCategory::QuickActions,
+        title: "Open Notes Library",
+        subtitle: "Browse and search the vault (Ctrl+; o)",
+        command: "/notes",
+        risk: ActionRisk::Safe,
+        key_hint: "Ctrl+; o",
+        aliases: &["notes", "library", "vault"],
     },
     PaletteAction {
         category: PaletteCategory::QuickActions,
@@ -886,6 +895,7 @@ fn risk_label(risk: ActionRisk) -> &'static str {
 fn command_effect(command: &str) -> &'static str {
     match command {
         "/new" => "Resets context to a fresh conversation.",
+        "/notes" => "Opens the vault notes picker (Library-lite).",
         "/history" => "Opens session history for quick switching.",
         "/name" => "Shows or sets a global display name for the current session.",
         "/name " => "Sets the global display name (stored in Surreal on daemon runtime).",

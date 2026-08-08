@@ -98,6 +98,10 @@ mod ui_helpers;
 mod ui_render;
 #[path = "medousa_tui/workers.rs"]
 mod workers;
+#[path = "medousa_tui/workspace_runtime.rs"]
+mod workspace_runtime;
+#[path = "medousa_tui/notes_runtime.rs"]
+mod notes_runtime;
 
 use agent_runtime::{start_prompt_run, stop_active_generation};
 use editor_runtime::{load_editor_file, run_editor_source_via_runtime, save_editor_buffer};
@@ -232,6 +236,23 @@ struct TuiState {
     markdown_cache: RefCell<HashMap<MarkdownCacheKey, Vec<Line<'static>>>>,
     markdown_cache_order: RefCell<VecDeque<MarkdownCacheKey>>,
     perf_baseline: Option<PerfSnapshot>,
+    /// Home-aligned pane / desktop layout (tmux-style WM).
+    workspace: medousa::tui::workspace::WorkspaceShell,
+    /// Stashed chat views for unfocused sessions.
+    chat_lanes: HashMap<String, workspace_runtime::ChatLane>,
+    /// Ctrl+; prefix chord armed (awaiting % " hjkl z x …).
+    prefix_active: bool,
+    /// turn_id → session_id for routing stream events across panes.
+    turn_sessions: HashMap<u64, String>,
+    /// Background generation tasks for unfocused chat sessions.
+    session_tasks: HashMap<String, tokio::task::JoinHandle<()>>,
+    /// Vault notes picker (Library-lite).
+    notes_picker_query: String,
+    notes_picker_selected: usize,
+    notes_picker_scroll: u16,
+    notes_picker_hits: Vec<NotesPickerHit>,
+    /// Open note buffers keyed by vault path.
+    note_buffers: HashMap<String, NoteBuffer>,
 }
 
 pub(crate) fn build_tui_platform_config(state: &TuiState) -> TuiPlatformBuildConfig {
@@ -312,6 +333,8 @@ struct PendingSettingsApply {
 enum UiMode {
     Startup,
     Chat,
+    Notes,
+    NotesPicker,
     History,
     CommandPalette,
     Settings,
@@ -323,6 +346,26 @@ enum UiMode {
     ThinkingPeek,
     ThinkingPanel,
     GraphemeConsole,
+}
+
+#[derive(Debug, Clone)]
+struct NotesPickerHit {
+    path: String,
+    title: String,
+    snippet: String,
+}
+
+#[derive(Debug, Clone)]
+struct NoteBuffer {
+    #[allow(dead_code)]
+    path: String,
+    title: String,
+    buffer: TextBuffer,
+    content_hash: String,
+    dirty: bool,
+    status: String,
+    scroll: u16,
+    preferred_col: Option<usize>,
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -737,6 +780,16 @@ async fn main() -> Result<()> {
         markdown_cache: RefCell::new(HashMap::new()),
         markdown_cache_order: RefCell::new(VecDeque::new()),
         perf_baseline: None,
+        workspace: workspace_runtime::bootstrap_workspace_from_disk(&session_id),
+        chat_lanes: workspace_runtime::empty_chat_lanes(),
+        prefix_active: false,
+        turn_sessions: HashMap::new(),
+        session_tasks: HashMap::new(),
+        notes_picker_query: String::new(),
+        notes_picker_selected: 0,
+        notes_picker_scroll: 0,
+        notes_picker_hits: Vec::new(),
+        note_buffers: HashMap::new(),
     };
 
     if local_runtime_only {
@@ -964,6 +1017,7 @@ async fn handle_history_key_event(code: KeyCode, state: &mut TuiState) -> EventO
                 state.auto_scroll = true;
                 state.conv_scroll = state.conv_max_scroll;
                 save_last_session_id(&state.session_id);
+                workspace_runtime::rebind_focused_session(state);
                 state.mode = UiMode::Chat;
             }
         }
@@ -1410,6 +1464,19 @@ mod tests {
             markdown_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
             markdown_cache_order: std::cell::RefCell::new(VecDeque::new()),
             perf_baseline: None,
+            workspace: medousa::tui::workspace::WorkspaceShell::bootstrap(
+                "test-session",
+                "Chat",
+            ),
+            chat_lanes: super::workspace_runtime::empty_chat_lanes(),
+            prefix_active: false,
+            turn_sessions: HashMap::new(),
+            session_tasks: HashMap::new(),
+            notes_picker_query: String::new(),
+            notes_picker_selected: 0,
+            notes_picker_scroll: 0,
+            notes_picker_hits: Vec::new(),
+            note_buffers: HashMap::new(),
         }
     }
 

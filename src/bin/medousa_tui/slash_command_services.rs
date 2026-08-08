@@ -30,6 +30,7 @@ pub(crate) async fn handle_new_session_command(
     state.auto_scroll = true;
     state.conv_scroll = 0;
     save_last_session_id(&state.session_id);
+    super::workspace_runtime::rebind_focused_session(state);
     push_obs_alert(state, format!("✓ new session {}", &state.session_id[..8]));
 
     if let Ok(new_rt) = build_tui_platform(build_tui_platform_config(state), event_tx.clone()).await {

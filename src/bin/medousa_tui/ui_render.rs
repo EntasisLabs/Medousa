@@ -1,9 +1,11 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
+
+use medousa::tui::workspace::{ShellTabKind, SplitBranchDirection, SplitNode};
 
 use super::{
     ConversationTurn, ObservabilityFilter, TuiState, UiMode, api_key_storage_backend_label,
@@ -33,49 +35,20 @@ pub(crate) fn render(frame: &mut ratatui::Frame, state: &mut TuiState) {
     let content_area = outer[0];
     let input_area = outer[1];
 
-    let left = content_area;
-
-    let conv_title = if state.is_processing {
-        " Conversation  ⟳ "
-    } else {
-        " Conversation "
-    };
-
-    let inner_width = left.width.saturating_sub(2);
-    let conv_text = build_conversation_text(state, &state.conversation, inner_width);
-    let visible_height = left.height.saturating_sub(2);
-    let visual_lines = visual_line_count(&conv_text, inner_width);
-    let max_scroll = visual_lines.saturating_sub(visible_height);
-    state.conv_max_scroll = max_scroll;
-    let safe_scroll = if state.auto_scroll {
-        max_scroll
-    } else {
-        state.conv_scroll.min(max_scroll)
-    };
-    state.conv_scroll = safe_scroll;
-
-    let conv_border = if state.is_processing {
-        Style::default().fg(ui_accent_warn())
-    } else {
-        Style::default().fg(ui_border())
-    };
-
-    let conv_widget = Paragraph::new(conv_text)
-        .block(
-            Block::default()
-                .title(conv_title)
-                .borders(Borders::ALL)
-                .border_style(conv_border)
-                .style(Style::default().bg(ui_panel_bg())),
-        )
-        .style(Style::default().fg(Color::White).bg(ui_panel_bg()))
-        .wrap(Wrap { trim: false })
-        .scroll((safe_scroll, 0));
-    frame.render_widget(conv_widget, left);
+    render_workspace_panes(frame, state, content_area);
 
     let obs_count = state.observability.len();
     let jobs_count = state.job_history.len();
     let drops = state.perf.dropped_events;
+    let pane_n = state.workspace.pane_count();
+    let desk_n = state.workspace.desktops.len();
+    let desk_idx = state
+        .workspace
+        .desktops
+        .iter()
+        .position(|d| d.id == state.workspace.active_desktop_id)
+        .unwrap_or(0)
+        + 1;
 
     let session_short = medousa::session::format_session_history_label(
         &state.session_id,
@@ -88,12 +61,44 @@ pub(crate) fn render(frame: &mut ratatui::Frame, state: &mut TuiState) {
     } else {
         ""
     };
-    let input_title = format!(
-        " {}  depth:{}  session:{session_short}{}  |  obs:{obs_count} jobs:{jobs_count} drops:{drops}  [Ctrl+O for details] ",
-        state.provider_model, state.response_depth_mode, thinking_hint
-    );
-    let input_display = format!("  {}_", state.input_buffer);
-    let input_border = if state.is_processing {
+    let prefix_hint = if state.prefix_active {
+        "  PREFIX % \" hjkl z x o"
+    } else {
+        "  [Ctrl+; panes]"
+    };
+    let notes_focused = state.mode == UiMode::Notes
+        || state
+            .workspace
+            .active_tab()
+            .is_some_and(|t| t.kind() == ShellTabKind::Notes);
+    let input_title = if notes_focused {
+        format!(
+            " Note edit  Ctrl+S save · Ctrl+A ask · Ctrl+; o library  panes:{pane_n} desk:{desk_idx}/{desk_n}{prefix_hint}  |  obs:{obs_count} "
+        )
+    } else {
+        format!(
+            " {}  depth:{}  session:{session_short}  panes:{pane_n} desk:{desk_idx}/{desk_n}{}{}  |  obs:{obs_count} jobs:{jobs_count} drops:{drops}  [Ctrl+O] ",
+            state.provider_model, state.response_depth_mode, thinking_hint, prefix_hint
+        )
+    };
+    let input_display = if notes_focused {
+        let path = state
+            .workspace
+            .active_tab()
+            .and_then(|t| t.notes_path())
+            .unwrap_or("");
+        let dirty = state
+            .note_buffers
+            .get(path)
+            .map(|n| n.dirty)
+            .unwrap_or(false);
+        format!("  {}{}", path, if dirty { " *" } else { "" })
+    } else {
+        format!("  {}_", state.input_buffer)
+    };
+    let input_border = if state.prefix_active {
+        Style::default().fg(Color::Yellow)
+    } else if state.is_processing {
         Style::default().fg(ui_accent_warn())
     } else {
         Style::default().fg(ui_accent_primary())
@@ -110,7 +115,9 @@ pub(crate) fn render(frame: &mut ratatui::Frame, state: &mut TuiState) {
         .style(Style::default().fg(Color::White).bg(ui_panel_bg()));
     frame.render_widget(input_widget, input_area);
 
-    if state.mode == UiMode::History {
+    if state.mode == UiMode::NotesPicker {
+        render_notes_picker_overlay(frame, state);
+    } else if state.mode == UiMode::History {
         render_history_overlay(frame, state);
     } else if state.mode == UiMode::CommandPalette {
         render_command_palette_overlay(frame, state);
@@ -133,6 +140,274 @@ pub(crate) fn render(frame: &mut ratatui::Frame, state: &mut TuiState) {
     } else if state.mode == UiMode::GraphemeConsole {
         render_grapheme_console_overlay(frame, state);
     }
+}
+
+fn render_workspace_panes(frame: &mut ratatui::Frame, state: &mut TuiState, area: Rect) {
+    let layout = state.workspace.layout();
+    let zoomed = layout.zoomed_group_id.clone();
+    let active = layout.active_group_id.clone();
+    let root = layout.split_root.clone();
+
+    if let Some(zoom_id) = zoomed {
+        render_group_pane(frame, state, area, &zoom_id, true);
+        return;
+    }
+
+    let mut regions: Vec<(String, Rect)> = Vec::new();
+    collect_pane_regions(&root, area, &mut regions);
+    for (group_id, rect) in regions {
+        let focused = group_id == active;
+        render_group_pane(frame, state, rect, &group_id, focused);
+    }
+}
+
+fn render_group_pane(
+    frame: &mut ratatui::Frame,
+    state: &mut TuiState,
+    area: Rect,
+    group_id: &str,
+    focused: bool,
+) {
+    let kind = state
+        .workspace
+        .group_active_tab(group_id)
+        .map(|t| t.kind())
+        .unwrap_or(ShellTabKind::Chat);
+    match kind {
+        ShellTabKind::Notes => render_notes_pane(frame, state, area, group_id, focused),
+        _ => render_chat_pane(frame, state, area, group_id, focused),
+    }
+}
+
+fn collect_pane_regions(node: &SplitNode, area: Rect, out: &mut Vec<(String, Rect)>) {
+    match node {
+        SplitNode::Group { id } => out.push((id.clone(), area)),
+        SplitNode::Branch {
+            direction,
+            ratio,
+            a,
+            b,
+            ..
+        } => {
+            let pct_a = ((*ratio) * 100.0).round().clamp(20.0, 80.0) as u16;
+            let pct_b = 100u16.saturating_sub(pct_a);
+            let dir = match direction {
+                SplitBranchDirection::Row => Direction::Vertical,
+                SplitBranchDirection::Column => Direction::Horizontal,
+            };
+            let chunks = Layout::default()
+                .direction(dir)
+                .constraints([
+                    Constraint::Percentage(pct_a),
+                    Constraint::Percentage(pct_b),
+                ])
+                .split(area);
+            collect_pane_regions(a, chunks[0], out);
+            collect_pane_regions(b, chunks[1], out);
+        }
+    }
+}
+
+fn render_chat_pane(
+    frame: &mut ratatui::Frame,
+    state: &mut TuiState,
+    area: Rect,
+    group_id: &str,
+    focused: bool,
+) {
+    let tab_title = state
+        .workspace
+        .group_active_tab(group_id)
+        .map(|t| t.title().to_string())
+        .unwrap_or_else(|| "Chat".to_string());
+    let session_id = state
+        .workspace
+        .group_active_tab(group_id)
+        .and_then(|t| t.chat_session_id().map(str::to_string))
+        .unwrap_or_else(|| state.session_id.clone());
+
+    let processing = super::workspace_runtime::lane_is_processing(state, &session_id);
+    let title = if processing {
+        format!(" {tab_title}  ⟳ ")
+    } else if focused {
+        format!(" {tab_title}  ● ")
+    } else {
+        format!(" {tab_title} ")
+    };
+
+    let inner_width = area.width.saturating_sub(2);
+    // Unfocused panes clone a snapshot so we can still borrow `state` mutably for scroll.
+    let unfocused_turns = if focused {
+        None
+    } else {
+        Some(
+            super::workspace_runtime::lane_conversation(state, &session_id)
+                .map(|slice| slice.to_vec())
+                .unwrap_or_default(),
+        )
+    };
+    let conv_text = match unfocused_turns.as_deref() {
+        Some(turns) => build_conversation_text(state, turns, inner_width),
+        None => build_conversation_text(state, &state.conversation, inner_width),
+    };
+    let visible_height = area.height.saturating_sub(2);
+    let visual_lines = visual_line_count(&conv_text, inner_width);
+    let max_scroll = visual_lines.saturating_sub(visible_height);
+
+    let safe_scroll = if focused {
+        state.conv_max_scroll = max_scroll;
+        let scroll = if state.auto_scroll {
+            max_scroll
+        } else {
+            state.conv_scroll.min(max_scroll)
+        };
+        state.conv_scroll = scroll;
+        scroll
+    } else {
+        state
+            .chat_lanes
+            .get(&session_id)
+            .map(|lane| {
+                if lane.auto_scroll {
+                    max_scroll
+                } else {
+                    lane.conv_scroll.min(max_scroll)
+                }
+            })
+            .unwrap_or(max_scroll)
+    };
+
+    let conv_border = if processing {
+        Style::default().fg(ui_accent_warn())
+    } else if focused {
+        Style::default().fg(ui_accent_primary())
+    } else {
+        Style::default().fg(ui_border())
+    };
+
+    let conv_widget = Paragraph::new(conv_text)
+        .block(
+            Block::default()
+                .title(title)
+                .borders(Borders::ALL)
+                .border_style(conv_border)
+                .style(Style::default().bg(ui_panel_bg())),
+        )
+        .style(Style::default().fg(Color::White).bg(ui_panel_bg()))
+        .wrap(Wrap { trim: false })
+        .scroll((safe_scroll, 0));
+    frame.render_widget(conv_widget, area);
+}
+
+fn render_notes_pane(
+    frame: &mut ratatui::Frame,
+    state: &mut TuiState,
+    area: Rect,
+    group_id: &str,
+    focused: bool,
+) {
+    let path = state
+        .workspace
+        .group_active_tab(group_id)
+        .and_then(|t| t.notes_path().map(str::to_string))
+        .unwrap_or_default();
+    let (title, body, status, dirty, scroll) = state
+        .note_buffers
+        .get(&path)
+        .map(|n| {
+            (
+                n.title.clone(),
+                n.buffer.as_text().to_string(),
+                n.status.clone(),
+                n.dirty,
+                n.scroll,
+            )
+        })
+        .unwrap_or_else(|| {
+            (
+                path.clone(),
+                String::from("(note not loaded)"),
+                String::new(),
+                false,
+                0,
+            )
+        });
+    let dirty_mark = if dirty { "*" } else { "" };
+    let focus_mark = if focused { " ●" } else { "" };
+    let block_title = format!(" Note {title}{dirty_mark}{focus_mark}  {status} ");
+    let border = if focused {
+        Style::default().fg(ui_accent_primary())
+    } else {
+        Style::default().fg(ui_border())
+    };
+    let widget = Paragraph::new(body)
+        .block(
+            Block::default()
+                .title(block_title)
+                .borders(Borders::ALL)
+                .border_style(border)
+                .style(Style::default().bg(ui_panel_bg())),
+        )
+        .style(Style::default().fg(Color::White).bg(ui_panel_bg()))
+        .wrap(Wrap { trim: false })
+        .scroll((scroll, 0));
+    frame.render_widget(widget, area);
+}
+
+fn render_notes_picker_overlay(frame: &mut ratatui::Frame, state: &TuiState) {
+    let area = frame.area();
+    let popup = centered_rect(area, 72, 70);
+    frame.render_widget(Clear, popup);
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from(Span::styled(
+        format!(" Library  /{} ", state.notes_picker_query),
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )));
+    lines.push(Line::from(Span::styled(
+        "Type to search · Enter open · Esc close · Ctrl+; o",
+        Style::default().fg(Color::DarkGray),
+    )));
+    lines.push(Line::from(""));
+    if state.notes_picker_hits.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "No notes (is the daemon vault available?)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        for (idx, hit) in state.notes_picker_hits.iter().enumerate() {
+            let selected = idx == state.notes_picker_selected;
+            let marker = if selected { ">" } else { " " };
+            let style = if selected {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            lines.push(Line::from(Span::styled(
+                format!("{marker} {}  ({})", hit.title, hit.path),
+                style,
+            )));
+            if selected && !hit.snippet.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    format!("    {}", hit.snippet),
+                    Style::default().fg(Color::DarkGray),
+                )));
+            }
+        }
+    }
+    let panel = Paragraph::new(Text::from(lines))
+        .block(
+            Block::default()
+                .title(" Notes ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(ui_accent_primary()))
+                .style(Style::default().bg(ui_modal_bg())),
+        )
+        .wrap(Wrap { trim: false });
+    frame.render_widget(panel, popup);
 }
 
 fn render_startup_overlay(frame: &mut ratatui::Frame, state: &TuiState) {

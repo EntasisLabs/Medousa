@@ -60,6 +60,7 @@ Shipped product features: [artifacts](../docs/engine/artifacts.md), [mobile shel
 |-----|--------|
 | [agent-runtime-modes-plan.md](agent-runtime-modes-plan.md) | **Agent runtime modes** — General parity, mode transitions, and Medousa Coder |
 | [code-surface-bridge-plan.md](code-surface-bridge-plan.md) | **Code surface bridge** — Workshop-owned chrome, unified Review DiffStack, buffer polish |
+| [tui-home-workspace-parity-plan.md](tui-home-workspace-parity-plan.md) | **TUI ↔ Home workspace parity** — tmux panes, notes, code, review, chat over the same daemon |
 | [workshop-and-automations-plan.md](workshop-and-automations-plan.md) | **Workshop + Automations** — W0–W5 (shipped); see [scripts-workbench-plan.md](scripts-workbench-plan.md) for W6 IA |
 | [scripts-workbench-plan.md](scripts-workbench-plan.md) | **Scripts Workbench** — Automations authoring IDE, Capabilities rename, module/WASM split |
 | [polish-and-package-plan.md](polish-and-package-plan.md) | **0.6 felt polish** — tone, wayfinding, interactions (capability era archived) |

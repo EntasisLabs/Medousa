@@ -21,7 +21,7 @@ use super::{
     EventOutcome, TuiState, WorkerCommand, next_worker_request_id, push_obs_alert, queue_worker_command,
 };
 
-fn daemon_client(daemon_url: &str) -> MedousaClient {
+pub(crate) fn daemon_client(daemon_url: &str) -> MedousaClient {
     MedousaClient::with_transport(Arc::new(HttpTransport::new()), daemon_url)
 }
 
