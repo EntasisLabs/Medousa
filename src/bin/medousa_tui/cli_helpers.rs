@@ -53,7 +53,10 @@ pub(crate) fn print_help() {
     println!("  Ctrl+T       Toggle thinking detail panel");
     println!("  Ctrl+G       Stop active generation");
     println!("  Esc          Close current menu");
-    println!("  Ctrl+;       Pane prefix (then % \" h/j/k/l z x c n/p 1-4 ?)");
+    println!("  Ctrl+;       Pane prefix (then % \" h/j/k/l z x c o n/p 1-4 ?)");
+    println!("  Ctrl+; o     Open vault notes picker");
+    println!("  Ctrl+S       Save focused note");
+    println!("  Ctrl+A       Ask about focused note (new chat tab)");
     println!("  Ctrl+C       Quit");
     println!();
     println!("HISTORY:");
@@ -64,6 +67,7 @@ pub(crate) fn print_help() {
     println!();
     println!("SLASH COMMANDS:");
     println!("  /new                    Start fresh session");
+    println!("  /notes [path|new path]  Vault library picker / open / create");
     println!("  /history                Open session history menu");
     println!("  /name                   Show current session display name");
     println!("  /name <label>           Set global session display name (Surreal when daemon uses it)");

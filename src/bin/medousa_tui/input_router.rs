@@ -88,6 +88,13 @@ pub(crate) async fn handle_key_event(
         return EventOutcome::Continue;
     }
 
+    if state.mode == UiMode::NotesPicker {
+        return super::notes_runtime::handle_notes_picker_key(key, state).await;
+    }
+    if state.mode == UiMode::Notes {
+        return super::notes_runtime::handle_notes_key(key, state).await;
+    }
+
     if key.code == KeyCode::Esc {
         if state.mode == UiMode::RuntimeEnv {
             state.mode = UiMode::Settings;

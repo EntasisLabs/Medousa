@@ -30,7 +30,24 @@ pub(crate) async fn handle_slash_command(
                 "  /settings open provider, model, and routing".to_string(),
             );
             push_obs_alert(state, "  /usage    context window / token breakdown".to_string());
+            push_obs_alert(state, "  /notes    open vault library picker (Ctrl+; o)".to_string());
             push_obs_alert(state, "  /close    quit medousa_tui".to_string());
+        }
+        "/notes" | "/library" => {
+            let rest = parts.collect::<Vec<_>>().join(" ");
+            let rest = rest.trim();
+            if rest.is_empty() {
+                notes_runtime::open_notes_picker(state).await;
+            } else if rest.starts_with("new ") {
+                let path = rest.trim_start_matches("new ").trim();
+                if path.is_empty() {
+                    push_obs_alert(state, "⚠ usage: /notes new <path.md>".to_string());
+                } else {
+                    let _ = notes_runtime::create_note(state, path, "# \n\n").await;
+                }
+            } else {
+                let _ = notes_runtime::open_note_path(state, rest).await;
+            }
         }
         "/new" => {
             slash_command_services::handle_new_session_command(state, tui_rt, event_tx).await;

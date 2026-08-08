@@ -100,6 +100,8 @@ mod ui_render;
 mod workers;
 #[path = "medousa_tui/workspace_runtime.rs"]
 mod workspace_runtime;
+#[path = "medousa_tui/notes_runtime.rs"]
+mod notes_runtime;
 
 use agent_runtime::{start_prompt_run, stop_active_generation};
 use editor_runtime::{load_editor_file, run_editor_source_via_runtime, save_editor_buffer};
@@ -240,6 +242,17 @@ struct TuiState {
     chat_lanes: HashMap<String, workspace_runtime::ChatLane>,
     /// Ctrl+; prefix chord armed (awaiting % " hjkl z x …).
     prefix_active: bool,
+    /// turn_id → session_id for routing stream events across panes.
+    turn_sessions: HashMap<u64, String>,
+    /// Background generation tasks for unfocused chat sessions.
+    session_tasks: HashMap<String, tokio::task::JoinHandle<()>>,
+    /// Vault notes picker (Library-lite).
+    notes_picker_query: String,
+    notes_picker_selected: usize,
+    notes_picker_scroll: u16,
+    notes_picker_hits: Vec<NotesPickerHit>,
+    /// Open note buffers keyed by vault path.
+    note_buffers: HashMap<String, NoteBuffer>,
 }
 
 pub(crate) fn build_tui_platform_config(state: &TuiState) -> TuiPlatformBuildConfig {
@@ -320,6 +333,8 @@ struct PendingSettingsApply {
 enum UiMode {
     Startup,
     Chat,
+    Notes,
+    NotesPicker,
     History,
     CommandPalette,
     Settings,
@@ -331,6 +346,26 @@ enum UiMode {
     ThinkingPeek,
     ThinkingPanel,
     GraphemeConsole,
+}
+
+#[derive(Debug, Clone)]
+struct NotesPickerHit {
+    path: String,
+    title: String,
+    snippet: String,
+}
+
+#[derive(Debug, Clone)]
+struct NoteBuffer {
+    #[allow(dead_code)]
+    path: String,
+    title: String,
+    buffer: TextBuffer,
+    content_hash: String,
+    dirty: bool,
+    status: String,
+    scroll: u16,
+    preferred_col: Option<usize>,
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -748,6 +783,13 @@ async fn main() -> Result<()> {
         workspace: workspace_runtime::bootstrap_workspace_from_disk(&session_id),
         chat_lanes: workspace_runtime::empty_chat_lanes(),
         prefix_active: false,
+        turn_sessions: HashMap::new(),
+        session_tasks: HashMap::new(),
+        notes_picker_query: String::new(),
+        notes_picker_selected: 0,
+        notes_picker_scroll: 0,
+        notes_picker_hits: Vec::new(),
+        note_buffers: HashMap::new(),
     };
 
     if local_runtime_only {
@@ -1428,6 +1470,13 @@ mod tests {
             ),
             chat_lanes: super::workspace_runtime::empty_chat_lanes(),
             prefix_active: false,
+            turn_sessions: HashMap::new(),
+            session_tasks: HashMap::new(),
+            notes_picker_query: String::new(),
+            notes_picker_selected: 0,
+            notes_picker_scroll: 0,
+            notes_picker_hits: Vec::new(),
+            note_buffers: HashMap::new(),
         }
     }
 

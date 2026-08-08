@@ -148,9 +148,10 @@ zoom one pane, restart and restore layout.
 - `/new` and history pick rebind the focused chat tab
 
 **Follow-up inside P1:** concurrent multi-stream (Home `chatStreamPool` parity)
-so unfocused panes can keep streaming.
+so unfocused panes can keep streaming. ✅ landed — turn events route via
+`turn_sessions` + lane swap; live cap 4; unfocused panes show ⟳.
 
-### Phase 2 — Notes (Library-lite)
+### Phase 2 — Notes (Library-lite) ✅ (v1)
 
 - left rail or picker: vault tree + search (`/v1/vault/notes`, `/search`)
 - buffer: markdown edit with dirty flag, `If-Match` / conflict notice
@@ -164,6 +165,13 @@ workshops.
 
 **Acceptance:** browse → open → edit → save note on local and paired daemon;
 ask-about-note hands context to a chat pane.
+
+**Landed (v1):**
+- `Ctrl+; o` / `/notes` picker (list + search via SDK vault)
+- notes tab kind + markdown buffer with dirty/`If-Match` save (`Ctrl+S`)
+- `/notes <path>`, `/notes new <path.md>`
+- `Ctrl+A` ask-about-note → new chat tab with note snippet prefilled
+- Follow-ups: backlinks panel, conflict UI polish, tree sidebar
 
 ### Phase 3 — Code + Review
 

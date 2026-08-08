@@ -120,6 +120,13 @@ impl ShellTab {
             _ => None,
         }
     }
+
+    pub fn notes_path(&self) -> Option<&str> {
+        match self {
+            Self::Notes { path, .. } => Some(path.as_str()),
+            _ => None,
+        }
+    }
 }
 
 pub type ChatTab = ShellTab;
@@ -172,6 +179,16 @@ pub fn new_chat_tab(session_id: impl Into<String>, title: impl Into<String>) -> 
         id: new_tab_id("chat"),
         session_id: session_id.into(),
         title: title.into(),
+    }
+}
+
+pub fn new_notes_tab(path: impl Into<String>, title: impl Into<String>) -> ShellTab {
+    let path = path.into();
+    let title = title.into();
+    ShellTab::Notes {
+        id: new_tab_id("notes"),
+        path,
+        title,
     }
 }
 
@@ -401,6 +418,37 @@ impl WorkspaceShell {
                 .flat_map(|g| g.tab_ids.iter().cloned())
                 .collect();
             layout.tabs.retain(|t| live.contains(t.id()));
+        }
+        true
+    }
+
+    pub fn open_notes_tab_in_active(&mut self, path: &str, title: &str) -> bool {
+        let layout = self.layout_mut();
+        if layout.tabs.len() >= MAX_TABS {
+            return false;
+        }
+        let active_group_id = layout.active_group_id.clone();
+        if let Some(existing) = layout.tabs.iter().find(|t| {
+            t.notes_path() == Some(path)
+                && layout
+                    .groups
+                    .iter()
+                    .find(|g| g.id == active_group_id)
+                    .is_some_and(|g| g.tab_ids.iter().any(|id| id == t.id()))
+        }) {
+            let existing_id = existing.id().to_string();
+            if let Some(group) = layout.groups.iter_mut().find(|g| g.id == active_group_id) {
+                group.active_tab_id.replace(existing_id);
+            }
+            return true;
+        }
+
+        let tab = new_notes_tab(path, title);
+        let tab_id = tab.id().to_string();
+        layout.tabs.push(tab);
+        if let Some(group) = layout.groups.iter_mut().find(|g| g.id == active_group_id) {
+            group.tab_ids.push(tab_id.clone());
+            group.active_tab_id = Some(tab_id);
         }
         true
     }
