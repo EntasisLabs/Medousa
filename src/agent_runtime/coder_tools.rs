@@ -51,6 +51,68 @@ const CODER_PEER_SPAWN_TOOLS: &[&str] = &[
     "cognition_turn_worker_cancel",
 ];
 
+const CODER_ADVANCED_MEMORY_TOOLS: &[&str] = &[
+    "cognition_memory_schema",
+    "cognition_memory_context",
+    "cognition_memory_list",
+    "cognition_memory_recall",
+    "cognition_memory_store",
+    "cognition_memory_tags",
+];
+
+const CODER_SCOPED_MEMORY_TOOLS: &[&str] = &[
+    "cognition_memory_context",
+    "cognition_memory_list",
+    "cognition_memory_recall",
+    "cognition_memory_store",
+    "cognition_memory_tags",
+];
+
+const CODER_RESEARCH_TOOLS: &[&str] = &[
+    "cognition_web_search",
+    "cognition_browser_fetch",
+    "cognition_browser_snapshot",
+    "cognition_browser_act",
+];
+
+const CODER_CAPABILITY_TOOLS: &[&str] = &[
+    "cognition_capability_search",
+    "cognition_capability_resolve",
+    "cognition_capability_invoke",
+    "cognition_mcp_discover",
+    "cognition_mcp_servers",
+    "cognition_mcp_invoke",
+    "cognition_grapheme_modules",
+    "cognition_grapheme_modules_info",
+    "cognition_grapheme_modules_ops",
+    "cognition_grapheme_examples",
+    "cognition_grapheme_run",
+    "cognition_grapheme_cli_run",
+    "cognition_grapheme_template_run",
+];
+
+const CODER_WORKSPACE_TOOLS: &[&str] = &[
+    "cognition_vault_list",
+    "cognition_vault_read",
+    "cognition_vault_grep",
+    "cognition_vault_search",
+    "cognition_vault_write",
+    "cognition_artifact_list",
+    "cognition_artifact_read",
+    "cognition_artifact_grep",
+    "cognition_artifact_write",
+];
+
+const CODER_DISCOVERABLE_DOMAINS: &[&str] = &[
+    "intelligence",
+    "world_model",
+    "history",
+    "memory",
+    "research",
+    "capabilities",
+    "workspace",
+];
+
 const CODER_RUNTIME_TOOLS: &[&str] = &[
     COGNITION_CODER_TOOLS_DISCOVER,
     COGNITION_ENGINEERING_POINTERS,
@@ -77,12 +139,6 @@ fn coder_tool_allowed(tool_name: &str, policy: &WorkPolicy) -> bool {
         && !restricted_shell
         && !tool_name.starts_with("cognition_runtime_")
         && !GENERAL_MODE_RUNTIME_TOOLS.contains(&tool_name)
-}
-
-fn requires_coder_discovery(tool_name: &str) -> bool {
-    crate::code_intelligence_tools::is_code_cognition_tool(tool_name)
-        || crate::detamu_tools::is_detamu_cognition_tool(tool_name)
-        || tool_name == COGNITION_ENGINEERING_HISTORY
 }
 
 pub struct CoderTurnLease {
@@ -317,6 +373,7 @@ pub struct CoderBoundToolRegistry {
     inner: Arc<dyn ToolRegistry>,
     authority: Weak<CoderTurnLease>,
     entry: Arc<CoderEntryContext>,
+    memory_scope: super::coder_memory::CoderMemoryScope,
     policy: WorkPolicy,
     visible_tools: Arc<StdMutex<HashSet<String>>>,
     shell_sessions: Arc<Mutex<HashSet<String>>>,
@@ -329,10 +386,12 @@ impl CoderBoundToolRegistry {
         entry: Arc<CoderEntryContext>,
         policy: WorkPolicy,
     ) -> Self {
+        let memory_scope = super::coder_memory::CoderMemoryScope::for_entry(&entry);
         let mut visible_tools = crate::coding_tools::CODING_COGNITION_TOOLS
             .iter()
             .chain(TURN_CONTROL_TOOLS.iter())
             .chain(CODER_PEER_SPAWN_TOOLS.iter())
+            .chain(super::coder_memory::CODER_MEMORY_TOOL_NAMES.iter())
             .chain(
                 [
                     COGNITION_CODER_TOOLS_DISCOVER,
@@ -356,6 +415,7 @@ impl CoderBoundToolRegistry {
             inner,
             authority: Arc::downgrade(authority),
             entry,
+            memory_scope,
             policy,
             visible_tools: Arc::new(StdMutex::new(visible_tools)),
             shell_sessions: Arc::new(Mutex::new(HashSet::new())),
@@ -419,15 +479,14 @@ impl CoderBoundToolRegistry {
             "intelligence" => crate::code_intelligence_tools::CODE_COGNITION_TOOLS.to_vec(),
             "world_model" => crate::detamu_tools::DETAMU_COGNITION_TOOLS.to_vec(),
             "history" => vec![COGNITION_ENGINEERING_HISTORY],
-            "all" => crate::code_intelligence_tools::CODE_COGNITION_TOOLS
-                .iter()
-                .chain(crate::detamu_tools::DETAMU_COGNITION_TOOLS.iter())
-                .copied()
-                .chain(std::iter::once(COGNITION_ENGINEERING_HISTORY))
-                .collect(),
+            "memory" => CODER_ADVANCED_MEMORY_TOOLS.to_vec(),
+            "research" => CODER_RESEARCH_TOOLS.to_vec(),
+            "capabilities" => CODER_CAPABILITY_TOOLS.to_vec(),
+            "workspace" => CODER_WORKSPACE_TOOLS.to_vec(),
             _ => {
                 return Err(StasisError::PortFailure(format!(
-                    "unknown Coder tool domain '{domain}'; expected intelligence, world_model, history, or all"
+                    "unknown Coder tool domain '{domain}'; expected one of {}",
+                    CODER_DISCOVERABLE_DOMAINS.join(", ")
                 )));
             }
         };
@@ -474,7 +533,7 @@ impl CoderBoundToolRegistry {
                     "ok": true,
                     "domain": domain,
                     "newly_visible": unlocked,
-                    "available_domains": ["intelligence", "world_model", "history"],
+                    "available_domains": CODER_DISCOVERABLE_DOMAINS,
                 }))
             }
             COGNITION_ENGINEERING_POINTERS => {
@@ -562,10 +621,152 @@ impl CoderBoundToolRegistry {
         }
     }
 
+    async fn invoke_coder_memory_tool(
+        &self,
+        authority: &CoderTurnLease,
+        tool_name: &str,
+        input: &Value,
+    ) -> Result<Value> {
+        let scope = &self.memory_scope;
+        let current_head = authority
+            .forge
+            .git()
+            .head_oid(&self.entry.worktree)
+            .map_err(|error| {
+                StasisError::PortFailure(format!(
+                    "cannot observe Coder HEAD before memory operation: {error}"
+                ))
+            })?
+            .to_string();
+
+        match tool_name {
+            super::coder_memory::COGNITION_CODER_MEMORY_OVERVIEW => {
+                let limit = super::coder_memory::overview_limit(input);
+                let result = self
+                    .inner
+                    .invoke_tool(
+                        "cognition_memory_list",
+                        json!({
+                            "session_id": scope.session_id,
+                            "limit": limit,
+                        }),
+                    )
+                    .await?;
+                Ok(super::coder_memory::project_recall(
+                    scope,
+                    &current_head,
+                    &result,
+                    false,
+                    limit,
+                ))
+            }
+            super::coder_memory::COGNITION_CODER_MEMORY_RECALL => {
+                let query = super::coder_memory::parse_recall_query(input)?;
+                let semantic_tags = super::coder_memory::recall_semantic_tags(&query);
+                let mut recall_input = json!({
+                    "session_id": scope.session_id,
+                    "query": query.query,
+                    "limit": query.limit,
+                });
+                if !semantic_tags.is_empty() {
+                    recall_input["semantic_tags"] = json!(semantic_tags);
+                }
+                let result = self
+                    .inner
+                    .invoke_tool("cognition_memory_recall", recall_input)
+                    .await?;
+                Ok(super::coder_memory::project_recall(
+                    scope,
+                    &current_head,
+                    &result,
+                    true,
+                    query.limit,
+                ))
+            }
+            super::coder_memory::COGNITION_CODER_MEMORY_COMMIT => {
+                let commit = super::coder_memory::build_commit(
+                    input,
+                    scope,
+                    &authority.identity,
+                    &current_head,
+                )?;
+                let existing = self
+                    .inner
+                    .invoke_tool(
+                        "cognition_memory_list",
+                        json!({
+                            "session_id": scope.session_id,
+                            "semantic_tags": [commit.dedupe_tag],
+                            "limit": 1,
+                        }),
+                    )
+                    .await?;
+                if let Some(node_id) = super::coder_memory::first_node_id(&existing) {
+                    return Ok(json!({
+                        "ok": true,
+                        "stored": false,
+                        "duplicate": true,
+                        "node_id": node_id,
+                        "kind": commit.kind,
+                        "summary": commit.summary,
+                        "scope": scope.public_descriptor(),
+                    }));
+                }
+
+                let stored = self
+                    .inner
+                    .invoke_tool(
+                        "cognition_memory_store",
+                        json!({
+                            "session_id": scope.session_id,
+                            "node": commit.raw_node,
+                            "semantic_tags": commit.semantic_tags,
+                        }),
+                    )
+                    .await?;
+                let accepted = stored
+                    .get("stored")
+                    .and_then(Value::as_bool)
+                    .or_else(|| stored.get("valid").and_then(Value::as_bool))
+                    .unwrap_or(false);
+                Ok(json!({
+                    "ok": accepted,
+                    "stored": accepted,
+                    "duplicate": false,
+                    "node_id": stored.get("node_id"),
+                    "kind": commit.kind,
+                    "summary": commit.summary,
+                    "scope": scope.public_descriptor(),
+                    "validation_error": stored.get("validation_error"),
+                }))
+            }
+            _ => Err(StasisError::PortFailure(format!(
+                "unknown Coder memory tool: {tool_name}"
+            ))),
+        }
+    }
+
     fn bind_input(&self, tool_name: &str, mut input: Value) -> Result<Value> {
         let map = input.as_object_mut().ok_or_else(|| {
             StasisError::PortFailure("Coder tools require an object input".into())
         })?;
+        if CODER_SCOPED_MEMORY_TOOLS.contains(&tool_name) {
+            if tool_name == "cognition_memory_store"
+                && let Some(raw_node) = map
+                    .get("node")
+                    .or_else(|| map.get("content"))
+                    .and_then(Value::as_str)
+            {
+                super::coder_memory::validate_raw_node_scope(
+                    raw_node,
+                    &self.memory_scope.session_id,
+                )?;
+            }
+            map.insert(
+                "session_id".into(),
+                Value::String(self.memory_scope.session_id.clone()),
+            );
+        }
         if crate::coding_tools::is_coding_cognition_tool(tool_name) {
             match tool_name {
                 crate::coding_tools::COGNITION_CODE_READ
@@ -814,8 +1015,7 @@ impl ToolRegistry for CoderBoundToolRegistry {
             .into_iter()
             .filter(|tool| {
                 coder_tool_allowed(tool.name.as_str(), &self.policy)
-                    && (!requires_coder_discovery(tool.name.as_str())
-                        || visible.contains(tool.name.as_str()))
+                    && visible.contains(tool.name.as_str())
             })
             .map(|tool| with_coder_tool_advertisement(with_required_coder_intent(tool)))
             .collect())
@@ -827,14 +1027,13 @@ impl ToolRegistry for CoderBoundToolRegistry {
                 "tool is outside the Coder mode contract: {tool_name}"
             )));
         }
-        let visible = !requires_coder_discovery(tool_name)
-            || self
-                .visible_tools
-                .lock()
-                .map_err(|err| {
-                    StasisError::PortFailure(format!("Coder visible tool lock poisoned: {err}"))
-                })?
-                .contains(tool_name);
+        let visible = self
+            .visible_tools
+            .lock()
+            .map_err(|err| {
+                StasisError::PortFailure(format!("Coder visible tool lock poisoned: {err}"))
+            })?
+            .contains(tool_name);
         let authority = self.authority()?;
         authority.heartbeat()?;
         let spawn_intent_hint = input
@@ -910,7 +1109,10 @@ impl ToolRegistry for CoderBoundToolRegistry {
             ));
             return Err(err);
         }
-        let result = if CODER_RUNTIME_TOOLS.contains(&tool_name) {
+        let result = if super::coder_memory::CODER_MEMORY_TOOL_NAMES.contains(&tool_name) {
+            self.invoke_coder_memory_tool(&authority, tool_name, &input)
+                .await
+        } else if CODER_RUNTIME_TOOLS.contains(&tool_name) {
             self.invoke_runtime_tool(tool_name, &input)
         } else if crate::turn_control_tools::is_begin_work_tool_name(tool_name) {
             match remap_begin_work_to_spawn_input(&input, spawn_intent_hint) {
@@ -949,17 +1151,17 @@ impl ToolRegistry for CoderBoundToolRegistry {
 }
 
 fn coder_runtime_tool_definitions() -> Vec<Tool> {
-    vec![
+    let mut tools = vec![
         Tool::new(COGNITION_CODER_TOOLS_DISCOVER)
             .with_description(
-                "Reveal an already-authorized Coder tool domain for this turn. Domains: intelligence, world_model, history, all.",
+                "Reveal one already-authorized Coder tool pack for this turn. Packs are monotonic and cannot expand Forge authority.",
             )
             .with_schema(json!({
                 "type": "object",
                 "properties": {
                     "domain": {
                         "type": "string",
-                        "enum": ["intelligence", "world_model", "history", "all"]
+                        "enum": CODER_DISCOVERABLE_DOMAINS
                     }
                 },
                 "required": ["domain"]
@@ -1016,7 +1218,9 @@ fn coder_runtime_tool_definitions() -> Vec<Tool> {
                 },
                 "required": ["reference"]
             })),
-    ]
+    ];
+    tools.extend(super::coder_memory::tool_definitions());
+    tools
 }
 
 fn with_required_coder_intent(mut tool: Tool) -> Tool {
@@ -1081,6 +1285,12 @@ fn with_coder_tool_advertisement(tool: Tool) -> Tool {
         "cognition_turn_worker_cancel" => {
             tool.with_description("Cancel a peer sub-agent spawned from this Coder turn.")
         }
+        "cognition_memory_schema" => tool.with_description(
+            "Advanced raw Locus schema diagnostic. Normal Coder memory does not require model-authored STTP; use cognition_coder_memory_commit.",
+        ),
+        "cognition_memory_store" => tool.with_description(
+            "Advanced diagnostic-only raw STTP store. For normal Coder memory writes use cognition_coder_memory_commit; the runtime compiles strict STTP from simple structured fields.",
+        ),
         _ => tool,
     }
 }
@@ -1179,7 +1389,11 @@ fn tool_targets(tool_name: &str, input: &Value, lease: &ExecutionLease) -> Vec<S
     if let Some(uri) = input.get("uri").and_then(Value::as_str) {
         targets.push(uri.trim().to_string());
     }
-    if let Some(session_id) = input.get("session_id").and_then(Value::as_str) {
+    if super::coder_memory::CODER_MEMORY_TOOL_NAMES.contains(&tool_name)
+        || tool_name.starts_with("cognition_memory_")
+    {
+        targets.push(format!("work://{}/memory", lease.work_id));
+    } else if let Some(session_id) = input.get("session_id").and_then(Value::as_str) {
         targets.push(format!("shell://{session_id}"));
     } else if tool_name.starts_with("cognition_shell_") {
         targets.push(format!("attempt://{}", lease.attempt_id));
@@ -1289,6 +1503,7 @@ mod tests {
     struct RecordingRegistry {
         last_input: StdMutex<Option<Value>>,
         invoked_tools: StdMutex<Vec<String>>,
+        memory_nodes: StdMutex<Vec<Value>>,
     }
 
     #[async_trait]
@@ -1302,6 +1517,7 @@ mod tests {
                 Tool::new(crate::code_intelligence_tools::COGNITION_CODE_DIAGNOSTICS),
                 Tool::new(crate::detamu_tools::COGNITION_DETAMU_STATUS),
                 Tool::new("cognition_vault_write"),
+                Tool::new("cognition_memory_list"),
                 Tool::new("cognition_memory_recall"),
                 Tool::new("cognition_memory_store"),
                 Tool::new("cognition_web_search"),
@@ -1324,7 +1540,67 @@ mod tests {
                 .lock()
                 .expect("tools lock")
                 .push(tool_name.to_string());
-            if tool_name == crate::coding_tools::COGNITION_SHELL_SESSION_STATUS
+            if tool_name == "cognition_memory_list" || tool_name == "cognition_memory_recall" {
+                let session_id = input.get("session_id").and_then(Value::as_str);
+                let required_tags = input
+                    .get("semantic_tags")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>();
+                let limit = input.get("limit").and_then(Value::as_u64).unwrap_or(20) as usize;
+                let nodes = self
+                    .memory_nodes
+                    .lock()
+                    .expect("memory nodes")
+                    .iter()
+                    .filter(|node| {
+                        session_id.is_none_or(|session_id| {
+                            node.get("session_id").and_then(Value::as_str) == Some(session_id)
+                        }) && required_tags.iter().all(|required| {
+                            node.get("semantic_tags")
+                                .and_then(Value::as_array)
+                                .is_some_and(|tags| {
+                                    tags.iter().any(|tag| tag.as_str() == Some(required))
+                                })
+                        })
+                    })
+                    .take(limit)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                Ok(json!({ "retrieved": nodes.len(), "nodes": nodes }))
+            } else if tool_name == "cognition_memory_store" {
+                let session_id = input
+                    .get("session_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                let raw = input
+                    .get("node")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                let parsed = locus_core_rs::SttpNodeParser::new().try_parse(raw, session_id);
+                let context_summary = parsed
+                    .node
+                    .as_ref()
+                    .and_then(|node| node.context_summary.clone());
+                let mut nodes = self.memory_nodes.lock().expect("memory nodes");
+                let node_id = format!("memory-node-{}", nodes.len() + 1);
+                nodes.push(json!({
+                    "sync_key": node_id,
+                    "session_id": session_id,
+                    "timestamp": chrono::Utc::now().to_rfc3339(),
+                    "context_summary": context_summary,
+                    "semantic_tags": input.get("semantic_tags").cloned().unwrap_or_else(|| json!([])),
+                    "raw": raw,
+                }));
+                Ok(json!({
+                    "node_id": node_id,
+                    "valid": parsed.success,
+                    "stored": parsed.success,
+                    "validation_error": parsed.error,
+                }))
+            } else if tool_name == crate::coding_tools::COGNITION_SHELL_SESSION_STATUS
                 || tool_name == crate::coding_tools::COGNITION_CODER_SHELL_RUN
                 || tool_name == crate::coding_tools::COGNITION_CODER_SHELL_STATUS
             {
@@ -1494,7 +1770,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn surface_inherits_existing_tools_except_runtime_controls() {
+    async fn surface_exposes_only_the_coder_bootstrap_until_discovery() {
         let fixture = fixture();
         let authority = authority(&fixture);
         let inner = Arc::new(RecordingRegistry::default());
@@ -1505,6 +1781,50 @@ mod tests {
             fixture.policy.clone(),
         );
         let tools = registry.list_tools().await.expect("list");
+        assert!(
+            registry.visible_tools.lock().expect("visible tools").len() <= 24,
+            "Coder bootstrap schema must remain intentionally bounded"
+        );
+        for memory_tool in super::super::coder_memory::CODER_MEMORY_TOOL_NAMES {
+            assert!(
+                tools.iter().any(|tool| tool.name.as_str() == *memory_tool),
+                "Coder memory bootstrap tool missing: {memory_tool}"
+            );
+        }
+        let memory_commit = tools
+            .iter()
+            .find(|tool| {
+                tool.name.as_str()
+                    == super::super::coder_memory::COGNITION_CODER_MEMORY_COMMIT
+            })
+            .expect("typed memory commit visible");
+        let memory_schema = memory_commit.schema.as_ref().expect("memory commit schema");
+        let properties = memory_schema["properties"]
+            .as_object()
+            .expect("memory commit properties");
+        for runtime_owned in [
+            "node",
+            "session_id",
+            "semantic_tags",
+            "origin_session",
+            "timestamp",
+            "user_avec",
+            "model_avec",
+        ] {
+            assert!(
+                !properties.contains_key(runtime_owned),
+                "runtime-owned STTP field leaked into the model schema: {runtime_owned}"
+            );
+        }
+        let required = memory_schema["required"]
+            .as_array()
+            .expect("memory commit required fields");
+        for field in ["intent", "kind", "summary"] {
+            assert!(
+                required.iter().any(|value| value.as_str() == Some(field)),
+                "simple memory commit requirement missing: {field}"
+            );
+        }
         assert!(
             tools
                 .iter()
@@ -1523,7 +1843,7 @@ mod tests {
                 .iter()
                 .any(|tool| tool.name.as_str() == COGNITION_CODER_EVIDENCE_READ)
         );
-        for inherited in [
+        for hidden in [
             "cognition_vault_write",
             "cognition_memory_recall",
             "cognition_memory_store",
@@ -1532,8 +1852,8 @@ mod tests {
             "cognition_mcp_invoke",
         ] {
             assert!(
-                tools.iter().any(|tool| tool.name.as_str() == inherited),
-                "missing inherited Coder tool {inherited}"
+                tools.iter().all(|tool| tool.name.as_str() != hidden),
+                "unselected tool leaked into the Coder bootstrap: {hidden}"
             );
         }
         for runtime_control in ["cognition_runtime_jobs_cancel", "cognition_shell_run"] {
@@ -1595,16 +1915,67 @@ mod tests {
         );
         assert!(input.get("intent").is_none());
 
+        let hidden_memory = registry
+            .invoke_tool(
+                "cognition_memory_recall",
+                json!({
+                    "intent": "Recall the user's established implementation preferences",
+                    "session_id": "attacker-controlled-session",
+                    "query": "implementation preferences"
+                }),
+            )
+            .await
+            .expect_err("undiscovered memory tool denied");
+        assert!(hidden_memory.to_string().contains("not visible"));
+
+        registry
+            .invoke_tool(
+                COGNITION_CODER_TOOLS_DISCOVER,
+                json!({
+                    "intent": "Reveal bounded Locus tools for explicit memory recall",
+                    "domain": "memory"
+                }),
+            )
+            .await
+            .expect("discover memory");
+        let after_memory = registry.list_tools().await.expect("list after memory");
+        for memory_tool in ["cognition_memory_recall", "cognition_memory_store"] {
+            assert!(
+                after_memory
+                    .iter()
+                    .any(|tool| tool.name.as_str() == memory_tool),
+                "discovered memory tool missing: {memory_tool}"
+            );
+        }
+        let raw_store = after_memory
+            .iter()
+            .find(|tool| tool.name.as_str() == "cognition_memory_store")
+            .expect("advanced raw store visible");
+        assert!(
+            raw_store
+                .description
+                .as_deref()
+                .is_some_and(|description| description.contains("cognition_coder_memory_commit")),
+            "advanced raw store must direct Coder back to the typed facade"
+        );
+        assert!(
+            after_memory
+                .iter()
+                .all(|tool| tool.name.as_str() != "cognition_vault_write"),
+            "discovering memory must not reveal the workspace pack"
+        );
+
         registry
             .invoke_tool(
                 "cognition_memory_recall",
                 json!({
                     "intent": "Recall the user's established implementation preferences",
+                    "session_id": "attacker-controlled-session",
                     "query": "implementation preferences"
                 }),
             )
             .await
-            .expect("inherited memory tool");
+            .expect("discovered memory tool");
         let input = inner
             .last_input
             .lock()
@@ -1612,6 +1983,10 @@ mod tests {
             .clone()
             .expect("recorded memory input");
         assert_eq!(input["query"], "implementation preferences");
+        assert_eq!(
+            input["session_id"],
+            super::super::coder_memory::CoderMemoryScope::for_entry(&fixture.entry).session_id
+        );
         assert!(input.get("intent").is_none());
 
         let denied = registry
@@ -1655,6 +2030,142 @@ mod tests {
         assert_eq!(
             inner.invoked_tools.lock().expect("tools lock").last(),
             Some(&crate::coding_tools::COGNITION_SHELL_SESSION_INTERRUPT.to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn coder_memory_facade_pins_environment_scope_and_dedupes_commits() {
+        let fixture = fixture();
+        let authority = authority(&fixture);
+        let inner = Arc::new(RecordingRegistry::default());
+        let registry = CoderBoundToolRegistry::new(
+            inner.clone(),
+            &authority,
+            fixture.entry.clone(),
+            fixture.policy.clone(),
+        );
+        let commit_input = json!({
+            "intent": "Preserve the selected runtime boundary for another Coder agent",
+            "session_id": "attacker-controlled-session",
+            "kind": "decision",
+            "summary": "Keep semantic memory separate from exact turn checkpoints",
+            "details": "Locus stores explicit engineering state while the turn checkpoint owns provider protocol recovery.",
+            "paths": ["src/agent_runtime/coder_memory.rs"],
+            "relations": [{
+                "rel": "supports",
+                "target": "decision:durable-coder",
+                "confidence": 0.98
+            }]
+        });
+
+        let first = registry
+            .invoke_tool(
+                super::super::coder_memory::COGNITION_CODER_MEMORY_COMMIT,
+                commit_input.clone(),
+            )
+            .await
+            .expect("commit memory");
+        assert_eq!(first["ok"], true);
+        assert_eq!(first["stored"], true);
+        assert_eq!(first["duplicate"], false);
+        assert_eq!(first["scope"]["repo_id"], fixture.entry.repo_id);
+        assert_eq!(first["scope"]["work_id"], fixture.entry.work_id);
+        assert!(!first.to_string().contains("attacker-controlled-session"));
+
+        let stored_input = inner
+            .last_input
+            .lock()
+            .expect("last input")
+            .clone()
+            .expect("stored input");
+        let pinned_session = stored_input["session_id"]
+            .as_str()
+            .expect("pinned Locus session")
+            .to_string();
+        assert_ne!(pinned_session, "attacker-controlled-session");
+        assert!(pinned_session.contains("coder:"));
+        assert_eq!(
+            stored_input["node"]
+                .as_str()
+                .map(|node| node.contains(&pinned_session)),
+            Some(true)
+        );
+        let mismatched_raw = stored_input["node"]
+            .as_str()
+            .expect("stored STTP")
+            .replace(&pinned_session, "another-locus-session");
+        let scope_error = registry
+            .bind_input(
+                "cognition_memory_store",
+                json!({ "node": mismatched_raw }),
+            )
+            .expect_err("raw STTP cannot escape the environment scope");
+        assert!(
+            scope_error
+                .to_string()
+                .contains("governed Coder environment")
+        );
+
+        let second = registry
+            .invoke_tool(
+                super::super::coder_memory::COGNITION_CODER_MEMORY_COMMIT,
+                commit_input,
+            )
+            .await
+            .expect("dedupe memory");
+        assert_eq!(second["ok"], true);
+        assert_eq!(second["stored"], false);
+        assert_eq!(second["duplicate"], true);
+        assert_eq!(
+            inner
+                .invoked_tools
+                .lock()
+                .expect("invoked tools")
+                .iter()
+                .filter(|tool| tool.as_str() == "cognition_memory_store")
+                .count(),
+            1
+        );
+
+        let recalled = registry
+            .invoke_tool(
+                super::super::coder_memory::COGNITION_CODER_MEMORY_RECALL,
+                json!({
+                    "intent": "Recover the prior boundary decision from this worktree",
+                    "session_id": "attacker-controlled-session",
+                    "query": "semantic memory exact turn checkpoints",
+                    "kind": "decision",
+                    "path": "src/agent_runtime/coder_memory.rs",
+                    "limit": 4
+                }),
+            )
+            .await
+            .expect("recall memory");
+        assert_eq!(recalled["retrieved"], 1);
+        assert_eq!(recalled["nodes"][0]["kind"], "decision");
+        assert_eq!(recalled["nodes"][0]["stale"], false);
+        assert!(
+            recalled["nodes"][0]["content"]
+                .as_str()
+                .is_some_and(|content| content.contains("semantic memory separate"))
+        );
+        assert_eq!(
+            recalled["nodes"][0]["relations"][0]["target"],
+            "decision:durable-coder"
+        );
+        assert!(!recalled.to_string().contains(&pinned_session));
+        assert!(!recalled.to_string().contains("attacker-controlled-session"));
+
+        let recall_input = inner
+            .last_input
+            .lock()
+            .expect("last input")
+            .clone()
+            .expect("recall input");
+        assert_eq!(recall_input["session_id"], pinned_session);
+        assert_eq!(
+            recall_input["semantic_tags"],
+            json!(["kind:decision", "path:src/agent_runtime/coder_memory.rs"])
         );
     }
 
@@ -1884,7 +2395,7 @@ mod tests {
         assert!(
             after
                 .iter()
-                .any(|tool| tool.name.as_str() == "cognition_memory_recall")
+                .all(|tool| tool.name.as_str() != "cognition_memory_recall")
         );
         assert!(
             after

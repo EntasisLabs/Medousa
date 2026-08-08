@@ -1,6 +1,6 @@
 # Coder cognitive runtime
 
-> Status: Approved direction; slices 1–6 complete
+> Status: Approved direction; slices 1–6 complete, Slice 7 started
 > Parent: [Agent runtime modes](agent-runtime-modes-plan.md)
 
 ## Product decision
@@ -449,10 +449,15 @@ Implemented:
 
 ### Slice 7 — engineering notebook and experiments
 
+The approved durability, worktree-scoped Locus/STTP memory, exact recovery, and
+dynamic model-visible tool-surface contract now lives in
+[Coder durability, worktree memory, and dynamic tools](coder-durability-memory-and-tool-surface.md).
+
 - Persist objectives, hypotheses, evidence, unresolved questions, experiments,
-  acceptance criteria, and next actions by undertaking.
+  acceptance criteria, and next actions by governed environment lineage.
 - Support branchable speculative states and comparison between change sets.
-- Checkpoint cognitive state independently from conversation length.
+- Checkpoint semantic cognition independently from conversation length while
+  preserving exact turn protocol state in a separate active-turn checkpoint.
 
 ### Slice 8 — semantic actions and causal runtime
 

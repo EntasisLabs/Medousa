@@ -25,11 +25,13 @@ const MAX_REPO_INSTRUCTIONS_CHARS: usize = 12_000;
 /// enrich the prompt, but can never select the working directory or branch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoderEntryContext {
+    pub repo_id: String,
     pub work_id: String,
     pub title: String,
     pub brief: String,
     pub worktree: PathBuf,
     pub branch: String,
+    pub environment_generation: u32,
     pub baseline_oid: String,
     pub head_oid: String,
     pub changed_paths: Vec<String>,
@@ -171,11 +173,13 @@ fn compile_coder_entry_inner(
     let editor = compile_editor_context(advisory);
 
     Ok(CoderEntryContext {
+        repo_id: environment.repo.repo_id.to_string(),
         work_id: item.id.to_string(),
         title: truncate(&item.title, MAX_FIELD_CHARS),
         brief: truncate(&item.brief, MAX_FIELD_CHARS),
         worktree: worktree.clone(),
         branch,
+        environment_generation: environment.generation,
         baseline_oid: environment.baseline_oid.to_string(),
         head_oid: head_oid.to_string(),
         changed_paths,
@@ -206,9 +210,11 @@ impl CoderEntryContext {
             })
             .collect();
         let forge_state = json!({
+            "repo_id": self.repo_id,
             "work_id": self.work_id,
             "worktree": self.worktree.display().to_string(),
             "branch": self.branch,
+            "environment_generation": self.environment_generation,
             "baseline_oid": self.baseline_oid,
             "head_oid": self.head_oid,
             "title": self.title,
