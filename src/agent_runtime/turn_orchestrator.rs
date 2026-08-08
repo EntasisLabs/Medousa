@@ -797,6 +797,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
     } else {
         host_profile.host_bus_active
     };
+    let host_scheduler_lane = agent_mode.uses_host_scheduler_lane();
     let suggested_intent = host_profile
         .route
         .suggested_worker_intent()
@@ -1126,7 +1127,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     loop_max_rounds,
                 ),
                 require_operator_budget_gate: require_operator_budget_gate(),
-                host_scheduler_lane: true,
+                host_scheduler_lane,
                 cancel_poll_work_id: None,
                 steer_poll_work_id: None,
                 round_context_provider: round_context_provider.clone(),
@@ -1317,7 +1318,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                                 continuation_max_rounds,
                             ),
                             require_operator_budget_gate: require_operator_budget_gate(),
-                            host_scheduler_lane: true,
+                            host_scheduler_lane,
                             cancel_poll_work_id: None,
                             steer_poll_work_id: None,
                             round_context_provider: round_context_provider.clone(),
@@ -1442,7 +1443,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                                 retry_rounds,
                             ),
                             require_operator_budget_gate: require_operator_budget_gate(),
-                            host_scheduler_lane: true,
+                            host_scheduler_lane,
                             cancel_poll_work_id: None,
                             steer_poll_work_id: None,
                             round_context_provider: round_context_provider.clone(),
