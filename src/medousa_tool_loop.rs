@@ -19,8 +19,9 @@ use stasis::ports::outbound::ai_chat_client::StreamDelta;
 use crate::agent_runtime::perception_governor::ToolPerceptionGovernor;
 use crate::agent_runtime::turn_completion::{ToolLoopCompletionGate, collect_tool_names};
 use crate::agent_runtime::turn_completion_fsm::{
-    AfterToolsRoundContext, ContinueReason, NoToolDebtRoundContext, TurnRoundAction,
-    decide_after_tools_text_round, decide_no_tool_debt_text_round, resolve_interim_continue_cap,
+    AfterToolsRoundContext, ContinueReason, NoToolDebtRoundContext, TurnCompletionProfile,
+    TurnRoundAction, decide_after_tools_text_round, decide_no_tool_debt_text_round,
+    resolve_interim_continue_cap,
 };
 use crate::agent_runtime::turn_context::{
     HostTurnContext, TurnScratchpad, publish_host_handoff_snapshot,
@@ -230,12 +231,14 @@ impl MedousaToolLoopPipeline {
         let mut discipline =
             TurnLoopDiscipline::with_max_text_only_stuck_continues(max_text_only_stuck);
         let mut loop_awareness = TurnLoopAwareness::default();
-        let host_scheduler_lane = completion_gate
+        let completion_profile = completion_gate
             .as_ref()
-            .map(|gate| gate.host_scheduler_lane)
-            .unwrap_or(false);
-        // Workshop: scaled interim cap. Host scheduler uses content-pack hold instead.
-        let interim_continue_cap = if host_scheduler_lane {
+            .map(|gate| gate.completion_profile)
+            .unwrap_or(TurnCompletionProfile::ForegroundPrincipal);
+        let holds_first_prose = completion_profile.holds_first_prose();
+        // Principal-facing profiles use a one-round content hold; synthesis-bound
+        // workers retain the scaled interim-prose cap.
+        let interim_continue_cap = if holds_first_prose {
             1
         } else {
             resolve_interim_continue_cap(effective_max_tool_rounds)
@@ -401,7 +404,7 @@ impl MedousaToolLoopPipeline {
                     if !invocations.is_empty() || maybe_text.is_some() {
                         let text = maybe_text.unwrap_or_default();
 
-                        if host_scheduler_lane && let Some(pack) = pack_hold.as_ref() {
+                        if holds_first_prose && let Some(pack) = pack_hold.as_ref() {
                             let merged = merge_assistant_pack_fragments(&pack.fragments, &text);
                             let tools = collect_tool_names(&invocations);
                             if let Some(gate) = completion_gate.as_ref() {
@@ -409,7 +412,7 @@ impl MedousaToolLoopPipeline {
                                     gate.session_id.as_deref(),
                                     &record_finalized(
                                         gate.stream_turn_id,
-                                        "host_pack_merged",
+                                        "content_pack_merged",
                                         rounds_executed,
                                         &tools,
                                     ),
@@ -427,7 +430,7 @@ impl MedousaToolLoopPipeline {
                                 tool_output: last.tool_output,
                                 tool_invocations: invocations,
                                 rounds_executed,
-                                termination_reason: "host_pack_merged".to_string(),
+                                termination_reason: "content_pack_merged".to_string(),
                             });
                         }
 
@@ -443,7 +446,7 @@ impl MedousaToolLoopPipeline {
                                 max_tool_rounds: effective_max_tool_rounds,
                                 interim_continues_used,
                                 interim_continue_cap,
-                                host_scheduler_lane,
+                                completion_profile,
                             })
                         } else {
                             decide_after_tools_text_round(&AfterToolsRoundContext {
@@ -455,7 +458,7 @@ impl MedousaToolLoopPipeline {
                                 workshop_lane,
                                 interim_continues_used,
                                 interim_continue_cap,
-                                host_scheduler_lane,
+                                completion_profile,
                                 empty_after_tools_continues_used,
                             })
                         };
@@ -507,13 +510,13 @@ impl MedousaToolLoopPipeline {
                                 ) {
                                     interim_continues_used += 1;
                                 }
-                                if host_scheduler_lane
+                                if completion_profile.uses_host_scheduler_rules()
                                     && reason == ContinueReason::EmptyAfterTools
                                     && !invocations.is_empty()
                                 {
                                     empty_after_tools_continues_used += 1;
                                 }
-                                if host_scheduler_lane && reason == ContinueReason::PackHold {
+                                if holds_first_prose && reason == ContinueReason::PackHold {
                                     pack_hold = Some(AssistantPackHold {
                                         fragments: vec![text.clone()],
                                     });
@@ -549,7 +552,7 @@ impl MedousaToolLoopPipeline {
                                     &shared_inputs,
                                     rounds_executed,
                                     effective_max_tool_rounds,
-                                    host_scheduler_lane,
+                                    completion_profile,
                                 )
                                 .await?
                                 {
@@ -1302,7 +1305,7 @@ async fn apply_fsm_continue_loop(
     shared_inputs: &ToolLoopSharedInputs,
     rounds_executed: usize,
     max_tool_rounds: usize,
-    host_scheduler_lane: bool,
+    completion_profile: TurnCompletionProfile,
 ) -> Result<Option<ToolLoopExecutionResponse>> {
     if !missing_tools.is_empty() {
         turn_ctx.scratchpad.set_open_gaps(missing_tools);
@@ -1332,7 +1335,7 @@ async fn apply_fsm_continue_loop(
     if !text.trim().is_empty() {
         loop_awareness.record_user_response(text);
     }
-    let preserve_prose_in_tool_lane = !host_scheduler_lane
+    let preserve_prose_in_tool_lane = !completion_profile.holds_first_prose()
         && matches!(
             continue_reason,
             ContinueReason::InterimProse | ContinueReason::ExtendedProse
@@ -1623,6 +1626,7 @@ mod tests {
         MALFORMED_TOOL_JSON_GUIDANCE, is_serde_json_completion_error, recoverable_tool_error_value,
         tool_output_from_invoke,
     };
+    use crate::agent_runtime::turn_completion_fsm::TurnCompletionProfile;
     use crate::turn_control_tools::finish_turn_from_invocations;
     use stasis::domain::errors::StasisError;
 
@@ -1667,7 +1671,7 @@ mod tests {
     }
 
     #[test]
-    fn celebratory_preamble_after_tools_continues_extended() {
+    fn foreground_prose_after_tools_enters_content_hold() {
         use crate::agent_runtime::turn_completion_fsm::{
             AfterToolsRoundContext, ContinueReason, TurnRoundAction, decide_after_tools_text_round,
         };
@@ -1699,13 +1703,13 @@ mod tests {
             workshop_lane: false,
             interim_continues_used: 0,
             interim_continue_cap: 2,
-            host_scheduler_lane: false,
+            completion_profile: TurnCompletionProfile::ForegroundPrincipal,
             empty_after_tools_continues_used: 0,
         });
         assert!(matches!(
             action,
             TurnRoundAction::ContinueLoop {
-                reason: ContinueReason::ExtendedProse,
+                reason: ContinueReason::PackHold,
                 ..
             }
         ));
@@ -1772,7 +1776,7 @@ mod tests {
             max_tool_rounds: 10,
             interim_continues_used: 0,
             interim_continue_cap: 2,
-            host_scheduler_lane: false,
+            completion_profile: TurnCompletionProfile::ForegroundPrincipal,
         });
         assert!(matches!(
             action,

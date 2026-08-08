@@ -31,13 +31,17 @@ const WORK_IN_PROGRESS_ANYWHERE: &[&str] = &[
     "grab the schemas",
 ];
 
+fn normalized_lower(text: &str) -> String {
+    text.trim().to_lowercase().replace(['’', '‘'], "'")
+}
+
 pub fn looks_like_interim_status(text: &str) -> bool {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return true;
     }
 
-    let lower = trimmed.to_ascii_lowercase();
+    let lower = normalized_lower(trimmed);
 
     if WORK_IN_PROGRESS_ANYWHERE
         .iter()
@@ -47,20 +51,8 @@ pub fn looks_like_interim_status(text: &str) -> bool {
     }
 
     const SHORT_ACKS: &[&str] = &[
-        "stored.",
-        "stored!",
-        "done.",
-        "done!",
-        "ok.",
-        "ok!",
-        "okay.",
-        "okay!",
-        "got it.",
-        "got it!",
-        "sure.",
-        "sure!",
-        "saved.",
-        "saved!",
+        "stored.", "stored!", "done.", "done!", "ok.", "ok!", "okay.", "okay!", "got it.",
+        "got it!", "sure.", "sure!", "saved.", "saved!",
     ];
     if SHORT_ACKS.iter().any(|ack| lower == *ack) {
         return true;
@@ -96,11 +88,10 @@ const PLANNING_PROSE_PHRASES: &[&str] = &[
 
 /// Future-work or status planning without a delivered outcome.
 fn looks_like_planning_prose_inner(text: &str) -> bool {
-    let lower = text.trim().to_ascii_lowercase();
+    let lower = normalized_lower(text);
     PLANNING_PROSE_PHRASES
         .iter()
         .any(|phrase| lower.contains(phrase))
-        || (is_extended_prose(text) && !looks_like_clarifying_question(text))
 }
 
 pub fn looks_like_planning_prose(text: &str) -> bool {
@@ -110,7 +101,7 @@ pub fn looks_like_planning_prose(text: &str) -> bool {
 pub fn looks_like_substantive_final_answer(text: &str) -> bool {
     let trimmed = text.trim();
     let word_count = trimmed.split_whitespace().count();
-    let lower = trimmed.to_ascii_lowercase();
+    let lower = normalized_lower(trimmed);
 
     if looks_like_interim_status(text) || looks_like_planning_prose_inner(text) {
         return false;
@@ -307,6 +298,24 @@ mod tests {
             1,
             10
         ));
+    }
+
+    #[test]
+    fn smart_apostrophe_announcement_is_still_interim() {
+        let announcement = "I’ll inspect the completion state first, then run the focused tests.";
+        assert!(looks_like_interim_status(announcement));
+        assert!(!looks_like_substantive_final_answer(announcement));
+    }
+
+    #[test]
+    fn detailed_outcome_is_not_planning_just_because_it_is_long() {
+        let answer = "The foreground runtime now preserves the completed model response as the \
+                      terminal body after tool execution. The completion profile remains separate \
+                      from the execution lane, worker synthesis still requires an explicit finish, \
+                      and the focused validation suite completed without any pending work.";
+        assert!(is_extended_prose(answer));
+        assert!(looks_like_substantive_final_answer(answer));
+        assert!(!looks_like_planning_prose(answer));
     }
 
     #[test]

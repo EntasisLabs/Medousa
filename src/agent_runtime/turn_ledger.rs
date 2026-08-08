@@ -16,7 +16,7 @@ use crate::agent_runtime::turn_completion_fsm::ContinueReason;
 
 pub const TURN_CONTROL_PREFIX: &str = "[MEDOUSA_TURN_CONTROL]";
 
-/// Host content-pack hold — one resolution round before commit or more tools.
+/// Principal content-pack hold — one resolution round before commit or more tools.
 pub const PACK_HOLD_PREFIX: &str = "[MEDOUSA_PACK_HOLD]";
 
 pub fn pack_hold_resolution_control_message() -> String {
@@ -24,9 +24,9 @@ pub fn pack_hold_resolution_control_message() -> String {
         "{PACK_HOLD_PREFIX}\n\
          Your previous assistant message is still visible to the principal — do not repeat or rewrite it.\n\
          Next step (pick one):\n\
-         - Call tools (or cognition_turn_begin_work) if you still have work.\n\
-         - Call cognition_turn_finish with the final answer if you are committing.\n\
-         - Send only a short ack or a clarifying question that adds new information (not a restatement)."
+         - Call tools (or cognition_turn_begin_work) if work remains; a tool call resets this prose hold.\n\
+         - Call cognition_turn_finish with the final answer to commit immediately.\n\
+         - Send one additional non-tool response to commit both prose messages as the answer."
     )
 }
 
@@ -98,9 +98,7 @@ fn pack_texts_near_duplicate(a: &str, b: &str) -> bool {
 }
 
 pub fn push_pack_hold_message(messages: &mut Vec<ChatMessage>) {
-    messages.push(ChatMessage::system(
-        pack_hold_resolution_control_message(),
-    ));
+    messages.push(ChatMessage::system(pack_hold_resolution_control_message()));
 }
 
 /// Injected on host/worker tool turns and echoed in STTP — strict runtime boundary for prose vs tools.
@@ -109,7 +107,7 @@ Runtime boundary (enforced by the daemon):
 - Chat (host): memory, identity, runtime, vault read, quick cognition_web_search/cognition_browser_fetch, cognition_turn_begin_work(message, goal) for multi-tool execution, cognition_spawn_turn_worker for parallel research.
 - cognition_turn_begin_work enters the bound Workshop (one per session) — Chat ends with ack; synthesis delivers on the same thread.
 - Chat prose may continue briefly for scheduling; Studio/environment/canvas, Grapheme, and heavy web belong in the Workshop.
-- After tool work on Chat: cognition_turn_finish commits the principal-facing answer.
+- After tool work on a principal-facing turn: cognition_turn_finish commits immediately; otherwise two consecutive prose rounds commit one merged answer.
 - Mid-task handoff: cognition_turn_checkpoint. Parallel delegate: cognition_spawn_turn_worker in a tool round.
 - UI stream draft may reset between rounds; [MEDOUSA_SCRATCH] engine notes persist across rounds and client disconnect."#;
 
@@ -189,8 +187,10 @@ impl TurnLoopAwareness {
             return;
         }
         self.user_responses_sent = self.user_responses_sent.saturating_add(1);
-        self.last_response_preview =
-            Some(truncate_user_response_preview(trimmed, USER_RESPONSE_PREVIEW_MAX_CHARS));
+        self.last_response_preview = Some(truncate_user_response_preview(
+            trimmed,
+            USER_RESPONSE_PREVIEW_MAX_CHARS,
+        ));
     }
 
     pub fn loop_budget_message(&self, tool_rounds_remaining: usize) -> String {
@@ -261,7 +261,11 @@ pub fn turn_ledger_path(session_id: &str) -> PathBuf {
             }
         })
         .collect::<String>();
-    let safe = if safe.is_empty() { "default".to_string() } else { safe };
+    let safe = if safe.is_empty() {
+        "default".to_string()
+    } else {
+        safe
+    };
     crate::paths::medousa_data_dir()
         .join("turn_ledger")
         .join(format!("{safe}.jsonl"))
@@ -270,8 +274,7 @@ pub fn turn_ledger_path(session_id: &str) -> PathBuf {
 pub fn append_turn_ledger_record(session_id: &str, record: &TurnLedgerRecord) {
     let mut record = record.clone();
     if record.active_profile_id.is_none() {
-        record.active_profile_id =
-            Some(crate::user_profiles::resolve_workshop_active_profile_id());
+        record.active_profile_id = Some(crate::user_profiles::resolve_workshop_active_profile_id());
     }
     let path = turn_ledger_path(session_id);
     if let Some(parent) = path.parent() {
@@ -387,9 +390,7 @@ pub fn record_stuck(
         timestamp: Utc::now(),
         stream_turn_id,
         kind: TurnLedgerEventKind::Stuck,
-        detail: format!(
-            "text_only_continue_without_new_tools>={text_only_limit}"
-        ),
+        detail: format!("text_only_continue_without_new_tools>={text_only_limit}"),
         tools_invoked: tools_invoked.to_vec(),
         missing_tools: Vec::new(),
         rounds_executed,
@@ -431,13 +432,19 @@ mod tests {
 
     #[test]
     fn turn_ledger_record_stamps_active_profile_id() {
-        let record = record_tool_round(1, 1, &["cognition_memory_recall".to_string()], &TurnScratchpad::default());
+        let record = record_tool_round(
+            1,
+            1,
+            &["cognition_memory_recall".to_string()],
+            &TurnScratchpad::default(),
+        );
         assert!(record.active_profile_id.is_none());
         let session = "test-ledger-profile-stamp";
         append_turn_ledger_record(session, &record);
         let path = turn_ledger_path(session);
         let raw = std::fs::read_to_string(&path).expect("ledger file");
-        let parsed: TurnLedgerRecord = serde_json::from_str(raw.lines().next().unwrap()).expect("json");
+        let parsed: TurnLedgerRecord =
+            serde_json::from_str(raw.lines().next().unwrap()).expect("json");
         assert!(parsed.active_profile_id.is_some());
         let _ = std::fs::remove_file(path);
     }
@@ -534,8 +541,7 @@ mod tests {
 
     #[test]
     fn merge_assistant_pack_dedupes_identical_resolution() {
-        let merged =
-            merge_assistant_pack_fragments(&["Which repo?".to_string()], "Which repo?");
+        let merged = merge_assistant_pack_fragments(&["Which repo?".to_string()], "Which repo?");
         assert_eq!(merged, "Which repo?");
     }
 
@@ -576,6 +582,8 @@ mod tests {
         assert!(msg.contains("still visible"));
         assert!(msg.contains("do not repeat"));
         assert!(msg.contains("cognition_turn_finish"));
+        assert!(msg.contains("additional non-tool response"));
+        assert!(msg.contains("tool call resets"));
         assert!(!msg.contains("continuing that thought"));
     }
 }

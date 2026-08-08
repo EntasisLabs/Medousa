@@ -19,14 +19,14 @@
 //! termination reason produces) is locked separately in `sink_golden` against
 //! `InteractiveTurnStreamSink`.
 
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use genai::ModelIden;
 use genai::adapter::AdapterKind;
 use genai::chat::{ChatOptions, ChatRequest, ChatResponse, MessageContent, Tool, ToolCall};
-use genai::ModelIden;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
 use stasis::application::orchestration::prompt_pipeline::{
@@ -45,9 +45,7 @@ use crate::agent_runtime::stream_sink::{AgentStreamSink, SharedAgentStreamSink};
 use crate::agent_runtime::turn_completion::ToolLoopCompletionGate;
 use crate::medousa_tool_loop::MedousaToolLoopPipeline;
 use crate::payload_receipt::ArtifactReceiptMeta;
-use crate::turn_control_tools::{
-    CognitionTurnCheckpointTool, CognitionTurnFinishTool,
-};
+use crate::turn_control_tools::{CognitionTurnCheckpointTool, CognitionTurnFinishTool};
 
 // ── Scripted model provider ──────────────────────────────────────────────────
 
@@ -229,6 +227,7 @@ enum Ev {
     ToolStarted { tool: String, round: usize },
     ToolFinished { tool: String, round: usize },
     Progress(String),
+    PackHold(String),
     ScratchReset,
     Content(String),
 }
@@ -250,6 +249,7 @@ impl CapturingSink {
                 Ev::ToolStarted { tool, .. } => format!("tool_started:{tool}"),
                 Ev::ToolFinished { tool, .. } => format!("tool_finished:{tool}"),
                 Ev::Progress(_) => "progress".to_string(),
+                Ev::PackHold(_) => "pack_hold".to_string(),
                 Ev::ScratchReset => "scratch_reset".to_string(),
                 Ev::Content(_) => "content".to_string(),
             })
@@ -273,6 +273,15 @@ impl AgentStreamSink for CapturingSink {
 
     async fn agent_turn_progress(&self, _turn_id: u64, message: String, _tool_names: Vec<String>) {
         self.push(Ev::Progress(message));
+    }
+
+    async fn agent_pack_hold(
+        &self,
+        _turn_id: u64,
+        fragments: Vec<String>,
+        _tool_names: Vec<String>,
+    ) {
+        self.push(Ev::PackHold(fragments.join("\n\n")));
     }
 
     async fn agent_error(&self, _turn_id: u64, _message: String) {}
@@ -363,7 +372,8 @@ async fn run_golden(
 
     let sink_concrete = Arc::new(CapturingSink::default());
     let sink: SharedAgentStreamSink = sink_concrete.clone();
-    let mut gate = ToolLoopCompletionGate::new_for_execution(1, None, Some(sink.clone()), max_rounds);
+    let mut gate =
+        ToolLoopCompletionGate::new_for_execution(1, None, Some(sink.clone()), max_rounds);
 
     let request = ToolLoopExecutionRequest {
         user_prompt: user_prompt.to_string(),
@@ -530,6 +540,7 @@ async fn golden_model_visible_tools_refresh_after_a_tool_round() {
         tool_response(vec![tool_call("discover", json!({}))]),
         tool_response(vec![tool_call("revealed_tool", json!({}))]),
         text_response("done"),
+        text_response("done"),
     ]));
     let pipeline = MedousaToolLoopPipeline::new(
         PromptExecutionPipeline::new(client.clone()),
@@ -570,23 +581,24 @@ async fn golden_model_visible_tools_refresh_after_a_tool_round() {
 }
 
 #[tokio::test]
-async fn golden_plain_reply_terminates_on_prose() {
-    let answer = "Here is a complete explanation of how the ingester maps channel \
-                  sessions to Medousa history without any further steps needed.";
+async fn golden_plain_reply_terminates_on_two_consecutive_prose_rounds() {
+    let first = "Here is a complete explanation of how the ingester maps channel \
+                 sessions to Medousa history without any further steps needed.";
+    let second = "The mapping preserves the active session identity and commits the combined response without duplication.";
+    let expected = format!("{first}\n\n{second}");
     let outcome = run_golden(
         "explain the ingester mapping",
-        vec![text_response(answer)],
+        vec![text_response(first), text_response(second)],
         10,
         false,
     )
     .await;
 
-    assert_eq!(outcome.termination_reason, "no_tools_prose");
-    assert_eq!(outcome.text, answer);
-    assert_eq!(outcome.rounds_executed, 1);
+    assert_eq!(outcome.termination_reason, "content_pack_merged");
+    assert_eq!(outcome.text, expected);
+    assert_eq!(outcome.rounds_executed, 2);
     assert!(outcome.tool_invocations.is_empty());
-    // No tool work, no progress, no scratch reset on a single-round plain reply.
-    assert!(outcome.event_kinds.is_empty(), "events: {:?}", outcome.events);
+    assert_eq!(outcome.event_kinds, vec!["pack_hold".to_string()]);
 }
 
 #[tokio::test]
@@ -610,7 +622,10 @@ async fn golden_tool_round_then_finish_commits_terminal_body() {
     assert_eq!(outcome.rounds_executed, 2);
     assert_eq!(
         outcome.tool_invocations,
-        vec!["data_probe".to_string(), "cognition_turn_finish".to_string()]
+        vec![
+            "data_probe".to_string(),
+            "cognition_turn_finish".to_string()
+        ]
     );
     // Tooling slices: probe runs in round 1; the finish tool runs in round 2.
     // (Scratch reset between rounds only fires on the streaming path; this case
@@ -667,14 +682,53 @@ async fn golden_interim_prose_continues_then_finishes() {
     assert_eq!(outcome.termination_reason, "cognition_turn_finish");
     assert_eq!(outcome.text, "Done — here is the result.");
     assert_eq!(outcome.rounds_executed, 2);
-    // The interim note is surfaced to the principal as a non-terminal progress line.
+    // The first prose round is visible while the model gets one bounded exit round.
     assert!(
         outcome
             .events
             .iter()
-            .any(|ev| matches!(ev, Ev::Progress(msg) if msg.contains("Let me check that"))),
-        "expected interim progress, got: {:?}",
+            .any(|ev| matches!(ev, Ev::PackHold(msg) if msg.contains("Let me check that"))),
+        "expected held prose, got: {:?}",
         outcome.events
+    );
+}
+
+#[tokio::test]
+async fn golden_foreground_announcement_tools_and_two_prose_final() {
+    let first_final = "The completion policy is now separate from the execution lane. Coder keeps \
+                       its announcement alive, executes the requested probe, and holds this completed \
+                       principal-facing prose for one bounded resolution round.";
+    let second_final = "The focused regression passed, so these two prose responses now commit together as one answer.";
+    let expected = format!("{first_final}\n\n{second_final}");
+    let outcome = run_golden(
+        "inspect the runtime and report back",
+        vec![
+            text_response("I’ll inspect the runtime first, then report back with the result."),
+            tool_response(vec![tool_call("data_probe", json!({ "q": "completion" }))]),
+            text_response(first_final),
+            text_response(second_final),
+        ],
+        10,
+        false,
+    )
+    .await;
+
+    assert_eq!(outcome.termination_reason, "content_pack_merged");
+    assert_eq!(outcome.text, expected);
+    assert_eq!(outcome.rounds_executed, 4);
+    assert_eq!(outcome.tool_invocations, vec!["data_probe".to_string()]);
+    assert!(
+        outcome
+            .events
+            .iter()
+            .any(|event| matches!(event, Ev::PackHold(message) if message.contains("inspect the runtime"))),
+        "expected announcement hold, got: {:?}",
+        outcome.events
+    );
+    assert!(
+        !outcome.text.contains("inspect the runtime"),
+        "tool execution should reset the announcement hold: {}",
+        outcome.text
     );
 }
 
@@ -695,16 +749,30 @@ async fn golden_max_rounds_fuse_terminates() {
 
 #[tokio::test]
 async fn golden_streamed_content_reaches_sink() {
-    // Use a genuinely substantive answer so it terminates in a single round
-    // (a short note would be treated as interim prose and bounded-continue).
-    let answer = "Here is a complete explanation of how the ingester maps channel \
-                  sessions to Medousa history without any further steps needed.";
-    let outcome = run_golden("stream me an answer", vec![text_response(answer)], 10, true).await;
+    let first = "Here is a complete explanation of how the ingester maps channel \
+                 sessions to Medousa history without any further steps needed.";
+    let second = "The streamed resolution confirms that the complete answer is ready for terminal delivery now.";
+    let outcome = run_golden(
+        "stream me an answer",
+        vec![text_response(first), text_response(second)],
+        10,
+        true,
+    )
+    .await;
 
-    assert_eq!(outcome.termination_reason, "no_tools_prose");
-    assert_eq!(outcome.rounds_executed, 1);
-    // The streamed token reaches the sink once (the loop's non-streaming retry
-    // does not re-stream); content_chunk is the only sink event.
-    assert_eq!(outcome.streamed, vec![answer.to_string()]);
-    assert_eq!(outcome.event_kinds, vec!["content".to_string()]);
+    assert_eq!(outcome.termination_reason, "content_pack_merged");
+    assert_eq!(outcome.rounds_executed, 2);
+    assert_eq!(
+        outcome.streamed,
+        vec![first.to_string(), second.to_string()]
+    );
+    assert_eq!(
+        outcome
+            .event_kinds
+            .iter()
+            .filter(|kind| kind.as_str() == "content")
+            .count(),
+        2
+    );
+    assert!(outcome.event_kinds.iter().any(|kind| kind == "pack_hold"));
 }
