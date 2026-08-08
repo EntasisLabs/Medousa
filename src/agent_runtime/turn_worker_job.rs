@@ -1,9 +1,10 @@
 //! Durable Stasis jobs for background turn workers (`workflow.medousa.turn_worker`).
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use stasis::application::runtime::in_memory_runtime::{JobExecutionOutcome, JobHandler};
 use stasis::domain::runtime::job::{BackoffPolicy, Job, JobState, NewJob};
@@ -248,25 +249,147 @@ impl JobHandler for TurnWorkerJobHandler {
     }
 }
 
+/// Newest tool runs kept on a worker record.
+const TOOL_ACTIVITY_CAP: usize = 64;
+/// Characters of live thinking/output retained per worker.
+const LIVE_TEXT_CAP: usize = 4_000;
+/// Flush buffered chunks once this much text is pending.
+const LIVE_FLUSH_CHARS: usize = 400;
+/// …or once this long has passed, whichever comes first.
+const LIVE_FLUSH_INTERVAL: Duration = Duration::from_millis(250);
+
+/// Chunks buffered in memory between store writes.
+///
+/// Every `store.update` rewrites `turn_workers.json` and fires a projector
+/// event, so writing per token would hammer the disk at streaming rate.
+#[derive(Default)]
+struct LiveTextPending {
+    thinking: String,
+    output: String,
+    thinking_started_at: Option<DateTime<Utc>>,
+    thinking_last_at: Option<DateTime<Utc>>,
+    last_flush: Option<Instant>,
+}
+
+impl LiveTextPending {
+    fn is_empty(&self) -> bool {
+        self.thinking.is_empty() && self.output.is_empty()
+    }
+
+    fn due(&self) -> bool {
+        if self.is_empty() {
+            return false;
+        }
+        if self.thinking.chars().count() + self.output.chars().count() >= LIVE_FLUSH_CHARS {
+            return true;
+        }
+        self.last_flush
+            .is_none_or(|at| at.elapsed() >= LIVE_FLUSH_INTERVAL)
+    }
+}
+
 struct DurableWorkerStreamSink {
     session_id: String,
     work_id: String,
+    live: Mutex<LiveTextPending>,
+}
+
+impl DurableWorkerStreamSink {
+    /// Buffer a chunk, writing through only when the flush budget is spent.
+    fn buffer_live_text(&self, delta: &str, reasoning: bool) {
+        let flush = {
+            let Ok(mut pending) = self.live.lock() else {
+                return;
+            };
+            if reasoning {
+                pending.thinking.push_str(delta);
+                let now = Utc::now();
+                pending.thinking_started_at.get_or_insert(now);
+                pending.thinking_last_at = Some(now);
+            } else {
+                pending.output.push_str(delta);
+            }
+            pending.due().then(|| Self::take(&mut pending))
+        };
+        if let Some(flush) = flush {
+            self.write_live_text(flush);
+        }
+    }
+
+    fn flush_live_text(&self) {
+        let flush = {
+            let Ok(mut pending) = self.live.lock() else {
+                return;
+            };
+            if pending.is_empty() {
+                return;
+            }
+            Self::take(&mut pending)
+        };
+        self.write_live_text(flush);
+    }
+
+    fn take(pending: &mut LiveTextPending) -> LiveTextFlush {
+        pending.last_flush = Some(Instant::now());
+        LiveTextFlush {
+            thinking: std::mem::take(&mut pending.thinking),
+            output: std::mem::take(&mut pending.output),
+            thinking_started_at: pending.thinking_started_at,
+            thinking_last_at: pending.thinking_last_at,
+        }
+    }
+
+    fn write_live_text(&self, flush: LiveTextFlush) {
+        turn_worker_store().update(&self.work_id, |record| {
+            if !flush.thinking.is_empty() {
+                append_capped(&mut record.live_thinking, &flush.thinking);
+            }
+            if !flush.output.is_empty() {
+                append_capped(&mut record.live_output, &flush.output);
+            }
+            if record.thinking_started_at.is_none() {
+                record.thinking_started_at = flush.thinking_started_at;
+            }
+            if flush.thinking_last_at.is_some() {
+                record.thinking_finished_at = flush.thinking_last_at;
+            }
+        });
+    }
+}
+
+struct LiveTextFlush {
+    thinking: String,
+    output: String,
+    thinking_started_at: Option<DateTime<Utc>>,
+    thinking_last_at: Option<DateTime<Utc>>,
 }
 
 fn durable_worker_sink(record: &TurnWorkRecord) -> SharedAgentStreamSink {
     Arc::new(DurableWorkerStreamSink {
         session_id: record.session_id.clone(),
         work_id: record.work_id.clone(),
+        live: Mutex::new(LiveTextPending::default()),
     })
 }
 
 #[async_trait]
 impl crate::agent_runtime::stream_sink::AgentStreamSink for DurableWorkerStreamSink {
-    async fn content_chunk(&self, _turn_id: u64, _delta: String) {}
+    async fn content_chunk(&self, _turn_id: u64, delta: String) {
+        if delta.is_empty() {
+            return;
+        }
+        self.buffer_live_text(&delta, false);
+    }
 
-    async fn reasoning_chunk(&self, _turn_id: u64, _delta: String) {}
+    async fn reasoning_chunk(&self, _turn_id: u64, delta: String) {
+        if delta.is_empty() {
+            return;
+        }
+        self.buffer_live_text(&delta, true);
+    }
 
     async fn agent_response(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
+        self.flush_live_text();
         let turn = ConversationTurn::plain(
             "assistant",
             text.clone(),
@@ -292,6 +415,7 @@ impl crate::agent_runtime::stream_sink::AgentStreamSink for DurableWorkerStreamS
     }
 
     async fn agent_error(&self, _turn_id: u64, message: String) {
+        self.flush_live_text();
         eprintln!(
             "turn_worker durable sink error session_id={}: {message}",
             self.session_id
@@ -302,25 +426,125 @@ impl crate::agent_runtime::stream_sink::AgentStreamSink for DurableWorkerStreamS
         eprintln!("{message}");
     }
 
-    async fn tool_invoked(&self, _tool_name: String, _input_summary: String) {}
+    /// Legacy entry point — only reached when a caller skips the structured
+    /// `tool_run_started` path. Synthesizes a run id so the row still correlates.
+    async fn tool_invoked(&self, tool_name: String, input_summary: String) {
+        self.tool_run_started(
+            crate::agent_runtime::tool_stream::new_tool_run_id(),
+            tool_name,
+            input_summary,
+            Vec::new(),
+            0,
+        )
+        .await;
+    }
+
+    async fn tool_run_started(
+        &self,
+        tool_run_id: String,
+        tool_name: String,
+        input_summary: String,
+        input_params: Vec<medousa_types::daemon_api::ToolInputParam>,
+        tool_round: usize,
+    ) {
+        // Land the reasoning that led here before the tool row, so the
+        // transcript reads in the order it happened.
+        self.flush_live_text();
+        let store = turn_worker_store();
+        store.update(&self.work_id, |record| {
+            record.live_tool_activity.push(
+                crate::agent_runtime::turn_worker::WorkerToolActivity {
+                    run_id: tool_run_id.clone(),
+                    name: tool_name.clone(),
+                    round: tool_round,
+                    status: "running".to_string(),
+                    input_summary: (!input_summary.trim().is_empty())
+                        .then(|| truncate_line(&input_summary, 160)),
+                    input_params: input_params.clone(),
+                    output_summary: None,
+                    started_at: Utc::now(),
+                    finished_at: None,
+                },
+            );
+            trim_tool_activity(&mut record.live_tool_activity);
+        });
+        if let Some(record) = store.get(&self.work_id) {
+            crate::feed_adapters::publish_workshop_progress_activity(
+                &record,
+                &tool_name,
+                "started",
+                None,
+            )
+            .await;
+        }
+    }
 
     async fn tool_run_finished(
         &self,
-        _tool_run_id: String,
+        tool_run_id: String,
         tool_name: String,
-        _status: String,
-        _input_summary: String,
-        _output_summary: Option<String>,
+        status: String,
+        input_summary: String,
+        output_summary: Option<String>,
         tool_input: serde_json::Value,
         tool_output: serde_json::Value,
         input_receipt: Option<crate::payload_receipt::ArtifactReceiptMeta>,
         output_receipt: Option<crate::payload_receipt::ArtifactReceiptMeta>,
-        _tool_round: usize,
+        tool_round: usize,
     ) {
-        // Default trait path only calls tool_payload (a no-op here). Forward UI
-        // side-effects onto the parent interactive turn so Home can paint scenes
-        // and artifacts authored in the Workshop.
-        if let Some(record) = turn_worker_store().get(&self.work_id) {
+        let store = turn_worker_store();
+        store.update(&self.work_id, |record| {
+            let output_line = output_summary
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(|value| truncate_line(value, 200));
+            let existing = record
+                .live_tool_activity
+                .iter_mut()
+                .find(|activity| activity.run_id == tool_run_id);
+            match existing {
+                Some(activity) => {
+                    activity.status = status.clone();
+                    activity.output_summary = output_line;
+                    activity.finished_at = Some(Utc::now());
+                }
+                None => {
+                    // Start row aged out of the ring (or never arrived) — keep the
+                    // evidence rather than dropping the run entirely.
+                    record.live_tool_activity.push(
+                        crate::agent_runtime::turn_worker::WorkerToolActivity {
+                            run_id: tool_run_id.clone(),
+                            name: tool_name.clone(),
+                            round: tool_round,
+                            status: status.clone(),
+                            input_summary: (!input_summary.trim().is_empty())
+                                .then(|| truncate_line(&input_summary, 160)),
+                            input_params: crate::agent_runtime::tool_stream::preview_tool_input(
+                                &tool_input,
+                            ),
+                            output_summary: output_line,
+                            started_at: Utc::now(),
+                            finished_at: Some(Utc::now()),
+                        },
+                    );
+                    trim_tool_activity(&mut record.live_tool_activity);
+                }
+            }
+        });
+        if let Some(record) = store.get(&self.work_id) {
+            crate::feed_adapters::publish_workshop_progress_activity(
+                &record,
+                &tool_name,
+                "finished",
+                output_summary.as_deref(),
+            )
+            .await;
+        }
+
+        // Forward UI side-effects onto the parent interactive turn so Home can
+        // paint scenes and artifacts authored in the Workshop.
+        if let Some(record) = store.get(&self.work_id) {
             crate::turn_worker_notify::publish_worker_ui_side_effects_to_parent_turn(
                 &record,
                 &tool_name,
@@ -349,6 +573,31 @@ impl crate::agent_runtime::stream_sink::AgentStreamSink for DurableWorkerStreamS
     }
 }
 
+/// Keep the newest `TOOL_ACTIVITY_CAP` runs; older evidence scrolls off.
+fn trim_tool_activity(activity: &mut Vec<crate::agent_runtime::turn_worker::WorkerToolActivity>) {
+    if activity.len() > TOOL_ACTIVITY_CAP {
+        let drop = activity.len() - TOOL_ACTIVITY_CAP;
+        activity.drain(0..drop);
+    }
+}
+
+/// Append to a live transcript tail, keeping only the last `LIVE_TEXT_CAP` chars.
+fn append_capped(target: &mut String, delta: &str) {
+    target.push_str(delta);
+    let len = target.chars().count();
+    if len > LIVE_TEXT_CAP {
+        *target = target.chars().skip(len - LIVE_TEXT_CAP).collect();
+    }
+}
+
+fn truncate_line(value: &str, max: usize) -> String {
+    let trimmed = value.trim();
+    if trimmed.chars().count() <= max {
+        return trimmed.to_string();
+    }
+    trimmed.chars().take(max).collect::<String>() + "…"
+}
+
 fn success_outcome(work_id: &str, summary: String) -> JobExecutionOutcome {
     JobExecutionOutcome::Success {
         sttp_output_node_id: format!("sttp:out:turn-worker:{work_id}"),
@@ -362,5 +611,60 @@ fn fatal_outcome(message: String) -> JobExecutionOutcome {
         message,
         execution_id: None,
         diagnostics: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent_runtime::turn_worker::WorkerToolActivity;
+
+    fn activity(run_id: &str) -> WorkerToolActivity {
+        WorkerToolActivity {
+            run_id: run_id.to_string(),
+            name: "web_search".to_string(),
+            round: 1,
+            status: "running".to_string(),
+            input_summary: None,
+            input_params: Vec::new(),
+            output_summary: None,
+            started_at: Utc::now(),
+            finished_at: None,
+        }
+    }
+
+    /// The ring drops the oldest runs, so `run_id` correlation must survive on
+    /// whatever is still in the window.
+    #[test]
+    fn trim_tool_activity_keeps_newest_runs() {
+        let mut runs: Vec<WorkerToolActivity> = (0..(TOOL_ACTIVITY_CAP + 5))
+            .map(|index| activity(&format!("run-{index}")))
+            .collect();
+        trim_tool_activity(&mut runs);
+        assert_eq!(runs.len(), TOOL_ACTIVITY_CAP);
+        assert_eq!(runs[0].run_id, "run-5");
+        assert_eq!(
+            runs.last().expect("last").run_id,
+            format!("run-{}", TOOL_ACTIVITY_CAP + 4)
+        );
+    }
+
+    #[test]
+    fn append_capped_keeps_the_tail_not_the_head() {
+        let mut text = String::new();
+        append_capped(&mut text, &"a".repeat(LIVE_TEXT_CAP));
+        append_capped(&mut text, "TAIL");
+        assert_eq!(text.chars().count(), LIVE_TEXT_CAP);
+        assert!(text.ends_with("TAIL"));
+        assert!(!text.starts_with("TAIL"));
+    }
+
+    /// Multi-byte input must not panic or split a character mid-way.
+    #[test]
+    fn append_capped_is_char_safe() {
+        let mut text = String::new();
+        append_capped(&mut text, &"é".repeat(LIVE_TEXT_CAP + 10));
+        assert_eq!(text.chars().count(), LIVE_TEXT_CAP);
+        assert!(text.chars().all(|ch| ch == 'é'));
     }
 }

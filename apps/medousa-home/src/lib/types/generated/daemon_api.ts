@@ -42,6 +42,12 @@ export interface StreamUiScene {
   turn_id?: string | null;
 }
 
+export interface ToolInputParam {
+  key: string;
+  truncated?: boolean;
+  value: string;
+}
+
 export interface InteractiveTurnStreamEvent {
   agent_runtime?: string | null;
   agent_session_id?: string | null;
@@ -65,6 +71,7 @@ export interface InteractiveTurnStreamEvent {
   seq?: number;
   terminal: boolean;
   tool_artifact_refs?: StreamToolArtifactRef[] | null;
+  tool_input_params?: ToolInputParam[] | null;
   tool_input_summary?: string | null;
   tool_name?: string | null;
   tool_names?: string[] | null;

@@ -4,8 +4,10 @@
    * User→assistant pairs render as timeline beats (whisper + full-width voice).
    */
   import { Copy, Library, Share2 } from "@lucide/svelte";
+  import ChatSubagentRow from "$lib/components/chat/ChatSubagentRow.svelte";
   import ChatUserWhisper from "$lib/components/chat/ChatUserWhisper.svelte";
   import LiquidChatMessage from "$lib/components/chat/LiquidChatMessage.svelte";
+  import type { SubagentRow } from "$lib/utils/subagentRows";
   import { chat } from "$lib/stores/chat.svelte";
   import { toast } from "$lib/stores/toast.svelte";
   import { shareText } from "$lib/share";
@@ -41,6 +43,10 @@
     onSaveToVault?: (assistant: ChatMessage, user?: ChatMessage | null) => void | Promise<void>;
     /** Open structured card detail sheet (Monogram expand). */
     onOpenCardDetail?: (detail: import("$lib/markdown/liquidEmbeds").CardDetailPayload) => void;
+    /** Sub-agent beats keyed by work id, anchored on their worker-lane message. */
+    subagentRows?: Map<string, SubagentRow>;
+    onOpenSubagent?: (workId: string) => void;
+    onStopSubagent?: (workId: string) => void;
   }
 
   let {
@@ -55,7 +61,18 @@
     onSubmitIntent,
     onSaveToVault,
     onOpenCardDetail,
+    subagentRows,
+    onOpenSubagent,
+    onStopSubagent,
   }: Props = $props();
+
+  /** Worker-lane turns carry the sub-agent beat that produced them. */
+  function subagentFor(message: ChatMessage): SubagentRow | null {
+    if (message.lane !== "worker") return null;
+    const workId = message.workId?.trim();
+    if (!workId) return null;
+    return subagentRows?.get(workId) ?? null;
+  }
 
   const painted = $derived(
     workerThread ? presentWorkerThreadMessages(messages) : presentChatMessages(messages),
@@ -149,6 +166,15 @@
   {/if}
 {/snippet}
 
+{#snippet subagentBeat(row: SubagentRow)}
+  <ChatSubagentRow
+    {row}
+    {compact}
+    onOpen={() => onOpenSubagent?.(row.workId)}
+    onStop={onStopSubagent ? () => onStopSubagent(row.workId) : undefined}
+  />
+{/snippet}
+
 {#each beats as beat, beatIndex (beat.kind === "pair" ? `${beat.user.id}:${beat.assistant.id}` : beat.message.id)}
   {@const previousBeat = beatIndex > 0 ? beats[beatIndex - 1] : null}
   {@const turnBreak =
@@ -170,6 +196,9 @@
         forceExpand={shouldForceExpandUserWhisper(painted, beat.user.id)}
         {onSubmitIntent}
       />
+      {#if subagentFor(beat.assistant)}
+        {@render subagentBeat(subagentFor(beat.assistant)!)}
+      {/if}
       <article class="group relative {assistantClass(beat.assistant)}">
         <LiquidChatMessage
           message={beat.assistant}
@@ -200,6 +229,9 @@
       />
     </div>
   {:else}
+    {#if subagentFor(beat.message)}
+      {@render subagentBeat(subagentFor(beat.message)!)}
+    {/if}
     <article class="group relative {turnBreak ? 'chat-turn-break' : ''} {assistantClass(beat.message)}">
       <LiquidChatMessage
         message={beat.message}

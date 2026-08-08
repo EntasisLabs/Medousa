@@ -10113,6 +10113,16 @@
           "$ref": "#/definitions/StreamToolArtifactRef"
         }
       },
+      "tool_input_params": {
+        "description": "Redacted key/value arguments so chat can show `query: \"…\"`, not just the tool name.",
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "$ref": "#/definitions/ToolInputParam"
+        }
+      },
       "tool_input_summary": {
         "type": [
           "string",
@@ -10381,6 +10391,26 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "ToolInputParam": {
+        "description": "One redacted key/value from a tool's arguments, for chat-adjacent tool evidence. Values are truncated at the emit site; `truncated` tells the UI to say so.",
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "type": "boolean"
+          },
+          "value": {
+            "type": "string"
           }
         }
       }
@@ -16381,6 +16411,17 @@
       "stream_event_type": {
         "type": "string"
       },
+      "worker_progress": {
+        "description": "Live subagent progress rides along with `card_upserted` for turn-worker cards so chat can tick without a detail round trip.",
+        "anyOf": [
+          {
+            "$ref": "#/definitions/WorkerProgressDto"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "workspace_revision": {
         "type": "integer",
         "format": "uint64",
@@ -16388,6 +16429,26 @@
       }
     },
     "definitions": {
+      "ToolInputParam": {
+        "description": "One redacted key/value from a tool's arguments, for chat-adjacent tool evidence. Values are truncated at the emit site; `truncated` tells the UI to say so.",
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "type": "boolean"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
       "WorkBoardColumn": {
         "type": "string",
         "enum": [
@@ -16433,6 +16494,133 @@
       },
       "WorkCardId": {
         "type": "string"
+      },
+      "WorkerProgressDto": {
+        "description": "Streaming slice of a worker's live transcript — the `live_*` fields of `WorkCardDetail`, pushed instead of polled.",
+        "type": "object",
+        "required": [
+          "column",
+          "terminal",
+          "work_id"
+        ],
+        "properties": {
+          "column": {
+            "$ref": "#/definitions/WorkBoardColumn"
+          },
+          "live_output": {
+            "type": "string"
+          },
+          "live_status_line": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "live_thinking": {
+            "type": "string"
+          },
+          "live_tool_activity": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/WorkerToolActivityDto"
+            }
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "result_excerpt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "terminal": {
+            "type": "boolean"
+          },
+          "thinking_finished_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "thinking_started_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "work_id": {
+            "type": "string"
+          }
+        }
+      },
+      "WorkerToolActivityDto": {
+        "description": "One worker tool run, shaped to match the host's `ToolRun` turn part so both render through the same chat evidence component.",
+        "type": "object",
+        "required": [
+          "name",
+          "started_at"
+        ],
+        "properties": {
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "input_params": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ToolInputParam"
+            }
+          },
+          "input_summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "output_summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "round": {
+            "default": 0,
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "run_id": {
+            "default": "",
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "description": "running | succeeded | failed",
+            "default": "",
+            "type": "string"
+          }
+        }
       },
       "WorkspaceEvent": {
         "type": "object",

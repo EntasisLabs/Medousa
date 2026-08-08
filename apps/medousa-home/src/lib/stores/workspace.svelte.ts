@@ -8,6 +8,7 @@ import {
   retryWorkspaceCard,
 } from "$lib/daemon";
 import { chat } from "$lib/stores/chat.svelte";
+import { workerTranscripts } from "$lib/stores/workerTranscripts.svelte";
 import { settings } from "$lib/stores/settings.svelte";
 import type { BlockedGroup } from "$lib/utils/groupWork";
 import {
@@ -117,6 +118,9 @@ export class WorkspaceStore {
       case "card_upserted":
         if (event.card) {
           this.handleCardUpserted(event.card);
+        }
+        if (event.worker_progress) {
+          workerTranscripts.ingestProgress(event.worker_progress, event.card?.title);
         }
         break;
       case "card_removed":
@@ -352,6 +356,7 @@ export class WorkspaceStore {
     try {
       const detail = await getWorkspaceCard(cardId);
       this.cardDetailsCache.set(cardId, detail);
+      workerTranscripts.ingestDetail(detail, detail.card.column);
       this.handleCardUpserted(detail.card);
     } catch {
       // Card may have been archived between feed and fetch.
@@ -456,6 +461,7 @@ export class WorkspaceStore {
       if (cached) {
         const card = this.cards.find((item) => item.id === id);
         if (card) {
+          workerTranscripts.ingestDetail(cached, card.column);
           chat.onWorkerCardDetail(cached, card.column, previousColumn);
           chat.syncWorkerLaneFromCards(this.cards, this.cardDetailsCache);
           if (
@@ -485,6 +491,7 @@ export class WorkspaceStore {
         }
         const card = this.cards.find((item) => item.id === id);
         if (card) {
+          workerTranscripts.ingestDetail(detail, card.column);
           chat.onWorkerCardDetail(detail, card.column, previousColumn);
           chat.syncWorkerLaneFromCards(this.cards, this.cardDetailsCache);
           if (

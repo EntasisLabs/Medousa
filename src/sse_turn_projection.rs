@@ -376,6 +376,7 @@ fn empty_stream_event(turn_id: &str) -> InteractiveTurnStreamEvent {
         tool_name: None,
         tool_status: None,
         tool_input_summary: None,
+        tool_input_params: None,
         tool_output_summary: None,
         tool_round: None,
         tool_artifact_refs: None,

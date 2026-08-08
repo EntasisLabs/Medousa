@@ -7,10 +7,28 @@ use crate::daemon_api::StreamToolArtifactRef;
 use crate::payload_receipt::ArtifactReceiptMeta;
 
 use super::prompt_prep::truncate_text_for_budget;
-use super::stream_sink::SharedAgentStreamSink;
+use super::stream_sink::{SharedAgentStreamSink, ToolInputParam};
 use super::turn_context;
 
 const SUMMARY_MAX_CHARS: usize = 160;
+const PARAM_VALUE_MAX_CHARS: usize = 120;
+const PARAM_MAX_KEYS: usize = 6;
+
+/// Keys surfaced first in tool evidence — the ones that usually carry intent.
+const PARAM_PRIORITY_KEYS: &[&str] = &[
+    "query",
+    "task",
+    "prompt",
+    "action",
+    "intent",
+    "module",
+    "capability",
+    "reference",
+    "title",
+    "message",
+    "path",
+    "url",
+];
 
 pub fn new_tool_run_id() -> String {
     format!("tr-{}", Uuid::new_v4().simple())
@@ -98,6 +116,60 @@ pub fn summarize_tool_input(tool_name: &str, tool_input: &serde_json::Value) -> 
         &serde_json::to_string(tool_input).unwrap_or_else(|_| tool_input.to_string()),
         SUMMARY_MAX_CHARS,
     )
+}
+
+/// Redacted key/value preview of a tool's arguments for chat-adjacent evidence.
+///
+/// This is what lets the UI say `query: "newest Qwen models"` instead of just
+/// naming the tool. Intent-bearing keys come first, the rest are alphabetical so
+/// the order is stable across rounds.
+pub fn preview_tool_input(tool_input: &serde_json::Value) -> Vec<ToolInputParam> {
+    let redacted = crate::settings_guard::redact_json_value(tool_input);
+    let Some(object) = redacted.as_object() else {
+        return Vec::new();
+    };
+
+    let mut ordered: Vec<&String> = Vec::with_capacity(object.len());
+    for key in PARAM_PRIORITY_KEYS {
+        if let Some((found, _)) = object.get_key_value(*key) {
+            ordered.push(found);
+        }
+    }
+    let mut rest: Vec<&String> = object
+        .keys()
+        .filter(|key| !PARAM_PRIORITY_KEYS.contains(&key.as_str()))
+        .collect();
+    rest.sort();
+    ordered.extend(rest);
+
+    let mut params = Vec::new();
+    for key in ordered {
+        if params.len() >= PARAM_MAX_KEYS {
+            break;
+        }
+        let Some(value) = object.get(key).and_then(param_value_text) else {
+            continue;
+        };
+        let truncated = value.chars().count() > PARAM_VALUE_MAX_CHARS;
+        params.push(ToolInputParam {
+            key: key.clone(),
+            value: truncate_text_for_budget(&value, PARAM_VALUE_MAX_CHARS),
+            truncated,
+        });
+    }
+    params
+}
+
+/// Flatten one argument to display text, dropping anything with nothing to show.
+fn param_value_text(value: &serde_json::Value) -> Option<String> {
+    let text = match value {
+        serde_json::Value::Null => return None,
+        serde_json::Value::String(raw) => raw.trim().to_string(),
+        serde_json::Value::Array(items) if items.is_empty() => return None,
+        serde_json::Value::Object(fields) if fields.is_empty() => return None,
+        other => serde_json::to_string(other).unwrap_or_else(|_| other.to_string()),
+    };
+    (!text.is_empty()).then_some(text)
 }
 
 pub fn summarize_tool_output(tool_name: &str, tool_output: &serde_json::Value) -> Option<String> {
@@ -386,10 +458,12 @@ pub async fn emit_tool_run_started(
     tool_round: usize,
 ) {
     let input_summary = summarize_tool_input(tool_name, tool_input);
+    let input_params = preview_tool_input(tool_input);
     sink.tool_run_started(
         tool_run_id.to_string(),
         tool_name.to_string(),
         input_summary,
+        input_params,
         tool_round,
     )
     .await;
@@ -498,6 +572,49 @@ mod tests {
             })),
             "succeeded"
         );
+    }
+
+    /// The headline case: chat should show what the agent actually searched for.
+    #[test]
+    fn preview_tool_input_surfaces_query_first() {
+        let params = preview_tool_input(&json!({
+            "limit": 3,
+            "query": "newest Qwen models"
+        }));
+        assert_eq!(params[0].key, "query");
+        assert_eq!(params[0].value, "newest Qwen models");
+        assert!(!params[0].truncated);
+        assert_eq!(params[1].key, "limit");
+        assert_eq!(params[1].value, "3");
+    }
+
+    #[test]
+    fn preview_tool_input_truncates_long_values_and_flags_them() {
+        let long = "x".repeat(PARAM_VALUE_MAX_CHARS + 40);
+        let params = preview_tool_input(&json!({ "prompt": long }));
+        assert!(params[0].truncated);
+        assert!(params[0].value.chars().count() <= PARAM_VALUE_MAX_CHARS);
+    }
+
+    #[test]
+    fn preview_tool_input_caps_key_count_and_drops_empties() {
+        let params = preview_tool_input(&json!({
+            "a": 1, "b": 2, "c": 3, "d": 4, "e": 5, "f": 6, "g": 7, "h": 8
+        }));
+        assert_eq!(params.len(), PARAM_MAX_KEYS);
+
+        let sparse = preview_tool_input(&json!({
+            "query": "ok", "empty": "", "nothing": null, "none": []
+        }));
+        assert_eq!(sparse.len(), 1);
+        assert_eq!(sparse[0].key, "query");
+    }
+
+    /// Non-object arguments have no key/value shape; the summary covers those.
+    #[test]
+    fn preview_tool_input_ignores_non_objects() {
+        assert!(preview_tool_input(&json!("just a string")).is_empty());
+        assert!(preview_tool_input(&json!([1, 2, 3])).is_empty());
     }
 
     #[test]

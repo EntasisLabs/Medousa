@@ -36,5 +36,6 @@ pub use run::{
 };
 pub use status::{append_active_workers_hint, format_active_workers_block};
 pub use store::{
-    TurnWorkDisposition, TurnWorkRecord, TurnWorkStatus, TurnWorkerStore, turn_worker_store,
+    TurnWorkDisposition, TurnWorkRecord, TurnWorkStatus, TurnWorkerStore, WorkerToolActivity,
+    turn_worker_store,
 };

@@ -142,6 +142,7 @@ impl AgentStreamSink for TuiStreamSink {
         tool_run_id: String,
         tool_name: String,
         input_summary: String,
+        _input_params: Vec<medousa_types::daemon_api::ToolInputParam>,
         tool_round: usize,
     ) {
         let _ = self

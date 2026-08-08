@@ -1703,6 +1703,7 @@ impl AgentStreamSink for IngestAgentStreamSink {
         tool_run_id: String,
         tool_name: String,
         input_summary: String,
+        input_params: Vec<medousa_types::daemon_api::ToolInputParam>,
         tool_round: usize,
     ) {
         if let Ok(mut parts) = self.parts.lock() {
@@ -1715,6 +1716,7 @@ impl AgentStreamSink for IngestAgentStreamSink {
                 &tool_run_id,
                 &tool_name,
                 &input_summary,
+                input_params,
                 tool_round,
             ),
         );
@@ -1767,6 +1769,7 @@ impl AgentStreamSink for IngestAgentStreamSink {
                 &tool_name,
                 &status,
                 &input_summary,
+                crate::agent_runtime::tool_stream::preview_tool_input(&tool_input),
                 output_summary.as_deref(),
                 tool_round,
                 artifact_refs,

@@ -325,6 +325,13 @@ mod tests {
                 "cognition_grapheme_run".to_string(),
             ]),
             associations: WorkCardAssociations::default(),
+            live_tool_activity: Vec::new(),
+            live_thinking: String::new(),
+            live_output: String::new(),
+            thinking_started_at: None,
+            thinking_finished_at: None,
+            live_status_line: None,
+            model: None,
         }
     }
 

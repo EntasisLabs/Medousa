@@ -433,6 +433,11 @@ mod tests {
             supports_ui_artifacts: false,
             supports_liquid_markdown: false,
             supports_browser_host: false,
+            live_tool_activity: Vec::new(),
+            live_thinking: String::new(),
+            live_output: String::new(),
+            thinking_started_at: None,
+            thinking_finished_at: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };

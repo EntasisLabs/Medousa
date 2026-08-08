@@ -18,7 +18,7 @@ pub use ports::{
 };
 pub use receipt::ArtifactReceiptMeta;
 pub use scratch::{TurnScratchPhase, TurnScratchpad, WorkerDelegateScratch};
-pub use stream_sink::{AgentStreamSink, SharedAgentStreamSink};
+pub use stream_sink::{AgentStreamSink, SharedAgentStreamSink, ToolInputParam};
 pub use turn_event::{
     Principal, PrincipalKind, SequencedTurnEvent, TurnEnvelope, TurnEvent, TurnSurface,
 };
