@@ -17,6 +17,7 @@ use crate::openshell_handoff::collect_openshell_doctor_report;
 use crate::openshell_sandbox_run::{OPENSHELL_SANDBOX_RUN_JOB_TYPE, OpenshellSandboxRunPayload};
 use crate::runtime_composition_ext::RuntimeCompositionExt;
 use crate::runtime_job_spec::ToolJobSpec;
+use crate::semantic_values::RequiredContent;
 use crate::turn_continuation::{
     ContinuationAwaitMode, TurnContinuationScope, continuation_tool_metadata, wire_turn_child_job,
 };
@@ -476,25 +477,22 @@ fn parse_command_argv(command: Option<&OpenshellCommandInput>) -> StasisResult<V
         StasisError::PortFailure("cognition_openshell_sandbox_run: command is required".to_string())
     })?;
     if let OpenshellCommandInput::Text(text) = command {
-        let trimmed = text.trim();
-        if trimmed.is_empty() {
-            return Err(StasisError::PortFailure(
+        let content = RequiredContent::new(text.clone()).map_err(|_| {
+            StasisError::PortFailure(
                 "cognition_openshell_sandbox_run: command must be non-empty".to_string(),
-            ));
-        }
+            )
+        })?;
         return Ok(vec![
             "sh".to_string(),
             "-lc".to_string(),
-            trimmed.to_string(),
+            content.into_string(),
         ]);
     }
     if let OpenshellCommandInput::Argv(parts) = command {
         let argv: Vec<String> = parts
             .iter()
-            .map(String::as_str)
-            .map(str::trim)
-            .filter(|part| !part.is_empty())
-            .map(str::to_string)
+            .filter(|part| !part.trim().is_empty())
+            .cloned()
             .collect();
         if argv.is_empty() {
             return Err(StasisError::PortFailure(
@@ -527,9 +525,34 @@ mod tests {
     }
 
     #[test]
+    fn parse_string_command_preserves_surrounding_content() {
+        let command = OpenshellCommandInput::Text("  echo hi  \n".to_string());
+        let argv = parse_command_argv(Some(&command)).expect("parse");
+        assert_eq!(argv[2], "  echo hi  \n");
+    }
+
+    #[test]
+    fn parse_blank_string_command_rejects_whitespace_only() {
+        let command = OpenshellCommandInput::Text(" \n\t".to_string());
+        let error = parse_command_argv(Some(&command)).expect_err("blank command should fail");
+        assert!(error.to_string().contains("command must be non-empty"));
+    }
+
+    #[test]
     fn parse_array_command() {
         let command = OpenshellCommandInput::Argv(vec!["echo".to_string(), "hi".to_string()]);
         let argv = parse_command_argv(Some(&command)).expect("parse");
         assert_eq!(argv, vec!["echo", "hi"]);
+    }
+
+    #[test]
+    fn parse_array_command_preserves_valid_argument_bytes() {
+        let command = OpenshellCommandInput::Argv(vec![
+            " echo ".to_string(),
+            "hi".to_string(),
+            "   ".to_string(),
+        ]);
+        let argv = parse_command_argv(Some(&command)).expect("parse");
+        assert_eq!(argv, vec![" echo ", "hi"]);
     }
 }
