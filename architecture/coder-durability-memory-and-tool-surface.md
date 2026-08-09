@@ -1,6 +1,6 @@
 # Coder durability, worktree memory, and dynamic tools
 
-> **Status:** Approved direction; Slices 1–4 implemented, remaining slices active
+> **Status:** Approved direction; Slices 1–5 implemented
 > **Parent:** [Coder cognitive runtime](coder-cognitive-runtime-plan.md)
 > **Related:** [Context lanes and scratchpad](context-lanes-and-scratchpad-plan.md),
 > [Turn runtime and lanes](turn-runtime-and-lanes.md), and
@@ -386,12 +386,36 @@ Mode-aware defaults now give General 30 model rounds and Coder 100. Coder's
 100-round limit is a hard ceiling; an explicit lower per-turn override is
 honored without inheriting General's conservative default.
 
-### Slice 5 — lineage inheritance and promotion
+### Slice 5 — lineage inheritance and promotion (implemented)
 
 - Link forked memory scopes to their source environment.
 - Define bounded inheritance and cross-attempt recall.
 - Promote accepted decisions and verification to undertaking/repository scope.
 - Archive or compact terminal environment memory according to policy.
+
+Forge now records the source branch, environment generation, and immutable
+fork timestamp on each isolated environment. Older persisted work can derive
+the same parent boundary from its staging environment and first attempt time,
+so lineage does not require a migration rewrite.
+
+Coder recall merges four independently pinned sources: the current environment,
+the parent environment as it existed at the fork cutoff, accepted undertaking
+knowledge, and accepted repository knowledge. Parent inheritance is restricted
+to goals, decisions, verification, open gaps, checkpoints, and handoffs. The
+runtime never queries a live sibling environment.
+
+Acceptance promotes decisions and verification to the stable undertaking
+scope; verification also promotes to the repository scope. Promotion stores a
+`derived_from` relation to the source node and Forge decision/evidence pointers.
+Only nodes observed at the accepted reviewed HEAD are eligible, and queued
+source writes drain before selection. If the source Locus session is temporarily
+unavailable, an identifier-only promotion task is persisted and retried on a
+later Coder entry.
+
+Accepted and discarded undertakings append `lineage:archived` checkpoints to
+their governed environment scopes. Archival is non-destructive: Forge and Git
+remain authoritative, while terminal scopes are excluded from active ambient
+recall without deleting their audit history.
 
 ## Acceptance and observability
 

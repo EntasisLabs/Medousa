@@ -266,6 +266,7 @@ impl Forge {
                     branch,
                     baseline_oid,
                     generation,
+                    derived_from: None,
                 };
                 item.environment = Some(env.clone());
                 self.store.append(

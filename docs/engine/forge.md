@@ -175,6 +175,11 @@ fresh isolated worktree rather than reusing an active environment.
 current lease-owned workspace through `environment`; the durable item still
 retains its original staging anchor internally.
 
+Forked attempt environments also expose an optional `derived_from` object with
+the source `branch`, source `generation`, and immutable `forked_at` timestamp.
+The field is absent for staging environments and snapshots created before
+lineage metadata was introduced.
+
 Sealing, interruption, and failure are peer-safe. Ending one attempt leaves the
 item `Executing` while any healthy lease remains. After the last active attempt
 ends, sealed evidence yields `AwaitingReview`; otherwise the item returns to

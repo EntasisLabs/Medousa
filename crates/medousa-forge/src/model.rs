@@ -182,6 +182,16 @@ pub enum EnvironmentKind {
     GitWorktree,
 }
 
+/// Stable source identity for an environment that was forked from another
+/// governed worktree. The path is deliberately absent: branch + generation
+/// are the durable lineage identity used by runtime-owned semantic memory.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnvironmentLineage {
+    pub branch: String,
+    pub generation: u32,
+    pub forked_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GovernedEnv {
     pub kind: EnvironmentKind,
@@ -194,6 +204,10 @@ pub struct GovernedEnv {
     pub baseline_oid: GitOid,
     /// Bumped on explicit environment restart/fork.
     pub generation: u32,
+    /// Exact governed environment this scope was cloned from. Reusing one
+    /// preserved environment keeps the same lineage record and memory scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub derived_from: Option<EnvironmentLineage>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -876,6 +890,7 @@ mod tests {
             branch: format!("worktree/{}", item.slug),
             baseline_oid: GitOid::new("b".repeat(40)),
             generation: 1,
+            derived_from: None,
         };
         item.environment = Some(env);
         let lease = ExecutionLease {

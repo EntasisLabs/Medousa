@@ -7,6 +7,7 @@
 use std::collections::{HashSet, VecDeque};
 use std::fmt::Write as _;
 use std::path::{Component, Path, PathBuf};
+use std::time::SystemTime;
 
 use chrono::{SecondsFormat, Utc};
 use genai::chat::Tool;
@@ -65,56 +66,186 @@ const MAX_PENDING_MEMORY_WRITES: usize = 64;
 const MAX_MEMORY_QUEUE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_PENDING_OVERVIEW_ITEMS: usize = 8;
 const MEMORY_QUEUE_SCHEMA_VERSION: u32 = 1;
+const MEMORY_LIFECYCLE_SCHEMA_VERSION: u32 = 1;
+const MAX_PENDING_LIFECYCLE_TASKS: usize = 64;
+const MAX_LIFECYCLE_TASK_BYTES: u64 = 64 * 1024;
+const INHERITED_MEMORY_KINDS: &[&str] = &[
+    "goal",
+    "decision",
+    "verification",
+    "open_gap",
+    "checkpoint",
+    "handoff",
+];
+const ACCEPTED_MEMORY_KINDS: &[&str] = &["decision", "verification"];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoderMemoryScopeKind {
+    Environment,
+    AcceptedUndertaking,
+    AcceptedRepository,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoderMemoryParentScope {
+    pub session_id: String,
+    pub branch: String,
+    pub branch_digest: String,
+    pub environment_generation: u32,
+    pub inherited_before_utc: String,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoderMemoryScope {
     pub session_id: String,
+    pub kind: CoderMemoryScopeKind,
     pub repo_id: String,
     pub work_id: String,
     pub branch: String,
     pub branch_digest: String,
     pub environment_generation: u32,
+    pub parent: Option<CoderMemoryParentScope>,
 }
 
 impl CoderMemoryScope {
     pub fn for_entry(entry: &CoderEntryContext) -> Self {
-        let branch_digest = short_digest(&entry.branch);
-        let environment_key = environment_memory_key(
+        let mut scope = Self::for_environment(
             &entry.repo_id,
             &entry.work_id,
-            &branch_digest,
+            &entry.branch,
             entry.environment_generation,
         );
+        scope.parent = entry.memory_parent.as_ref().map(|parent| {
+            let branch_digest = short_digest(&parent.branch);
+            CoderMemoryParentScope {
+                session_id: crate::locus_memory::resolve_workshop_locus_session(
+                    &environment_memory_key(
+                        &entry.repo_id,
+                        &entry.work_id,
+                        &branch_digest,
+                        parent.environment_generation,
+                    ),
+                ),
+                branch: parent.branch.clone(),
+                branch_digest,
+                environment_generation: parent.environment_generation,
+                inherited_before_utc: parent.inherited_before_utc.clone(),
+            }
+        });
+        scope
+    }
+
+    pub fn for_environment(
+        repo_id: &str,
+        work_id: &str,
+        branch: &str,
+        environment_generation: u32,
+    ) -> Self {
+        let branch_digest = short_digest(branch);
+        let environment_key =
+            environment_memory_key(repo_id, work_id, &branch_digest, environment_generation);
         Self {
             session_id: crate::locus_memory::resolve_workshop_locus_session(&environment_key),
-            repo_id: entry.repo_id.clone(),
-            work_id: entry.work_id.clone(),
-            branch: entry.branch.clone(),
+            kind: CoderMemoryScopeKind::Environment,
+            repo_id: repo_id.to_string(),
+            work_id: work_id.to_string(),
+            branch: branch.to_string(),
             branch_digest,
-            environment_generation: entry.environment_generation,
+            environment_generation,
+            parent: None,
         }
     }
 
-    pub fn public_descriptor(&self) -> Value {
-        json!({
-            "repo_id": self.repo_id,
-            "work_id": self.work_id,
-            "branch": self.branch,
-            "environment_generation": self.environment_generation,
-            "environment_id": format!("{}:g{}", self.branch_digest, self.environment_generation),
+    pub fn parent_environment_scope(&self) -> Option<Self> {
+        let parent = self.parent.as_ref()?;
+        Some(Self {
+            session_id: parent.session_id.clone(),
+            kind: CoderMemoryScopeKind::Environment,
+            repo_id: self.repo_id.clone(),
+            work_id: self.work_id.clone(),
+            branch: parent.branch.clone(),
+            branch_digest: parent.branch_digest.clone(),
+            environment_generation: parent.environment_generation,
+            parent: None,
         })
     }
 
-    pub fn base_tags(&self) -> Vec<String> {
-        vec![
-            "coder-memory".to_string(),
-            format!("repo:{}", self.repo_id),
-            format!("work:{}", self.work_id),
-            format!(
-                "environment:{}:g{}",
+    pub fn accepted_undertaking_scope(&self) -> Self {
+        let mut scope = self.clone();
+        scope.session_id = crate::locus_memory::resolve_workshop_locus_session(&format!(
+            "coder:{}:{}:accepted",
+            self.repo_id, self.work_id
+        ));
+        scope.kind = CoderMemoryScopeKind::AcceptedUndertaking;
+        scope.parent = None;
+        scope
+    }
+
+    pub fn accepted_repository_scope(&self) -> Self {
+        let mut scope = self.clone();
+        scope.session_id = crate::locus_memory::resolve_workshop_locus_session(&format!(
+            "coder:{}:accepted",
+            self.repo_id
+        ));
+        scope.kind = CoderMemoryScopeKind::AcceptedRepository;
+        scope.parent = None;
+        scope
+    }
+
+    pub fn public_descriptor(&self) -> Value {
+        let mut descriptor = json!({
+            "scope_kind": match self.kind {
+                CoderMemoryScopeKind::Environment => "environment",
+                CoderMemoryScopeKind::AcceptedUndertaking => "accepted_undertaking",
+                CoderMemoryScopeKind::AcceptedRepository => "accepted_repository",
+            },
+            "repo_id": self.repo_id,
+            "work_id": self.work_id,
+            "source_branch": self.branch,
+            "source_environment_generation": self.environment_generation,
+            "source_environment_id": format!("{}:g{}", self.branch_digest, self.environment_generation),
+        });
+        if self.kind == CoderMemoryScopeKind::Environment {
+            descriptor["branch"] = Value::String(self.branch.clone());
+            descriptor["environment_generation"] = json!(self.environment_generation);
+            descriptor["environment_id"] = Value::String(format!(
+                "{}:g{}",
                 self.branch_digest, self.environment_generation
-            ),
-        ]
+            ));
+            if let Some(parent) = self.parent.as_ref() {
+                descriptor["derived_from"] = json!({
+                    "environment_id": format!("{}:g{}", parent.branch_digest, parent.environment_generation),
+                    "branch": parent.branch,
+                    "environment_generation": parent.environment_generation,
+                    "inherited_before_utc": parent.inherited_before_utc,
+                });
+            }
+        }
+        descriptor
+    }
+
+    pub fn base_tags(&self) -> Vec<String> {
+        let mut tags = vec!["coder-memory".to_string(), format!("repo:{}", self.repo_id)];
+        match self.kind {
+            CoderMemoryScopeKind::Environment => {
+                tags.push(format!("work:{}", self.work_id));
+                tags.push(format!(
+                    "environment:{}:g{}",
+                    self.branch_digest, self.environment_generation
+                ));
+                tags.push("memory-scope:environment".to_string());
+            }
+            CoderMemoryScopeKind::AcceptedUndertaking => {
+                tags.push(format!("work:{}", self.work_id));
+                tags.push("memory-scope:undertaking".to_string());
+                tags.push("knowledge:accepted".to_string());
+            }
+            CoderMemoryScopeKind::AcceptedRepository => {
+                tags.push("memory-scope:repository".to_string());
+                tags.push("knowledge:accepted".to_string());
+            }
+        }
+        tags
     }
 }
 
@@ -152,6 +283,138 @@ pub struct CoderMemoryCommit {
 pub struct CoderPendingMemorySummary {
     pub kind: String,
     pub summary: String,
+}
+
+/// Durable routing intent for accepted knowledge whose source Locus session
+/// was temporarily unavailable. It stores identifiers only, never node bodies
+/// or repository content; retry rereads the canonical source session.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CoderMemoryPromotionTask {
+    schema_version: u32,
+    pub repo_id: String,
+    pub work_id: String,
+    pub source_branch: String,
+    pub source_environment_generation: u32,
+    pub accepted_head: String,
+    pub decision_id: String,
+    pub attempt_id: String,
+    pub evidence_id: String,
+    pub evidence_digest: String,
+}
+
+impl CoderMemoryPromotionTask {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        repo_id: impl Into<String>,
+        work_id: impl Into<String>,
+        source_branch: impl Into<String>,
+        source_environment_generation: u32,
+        accepted_head: impl Into<String>,
+        decision_id: impl Into<String>,
+        attempt_id: impl Into<String>,
+        evidence_id: impl Into<String>,
+        evidence_digest: impl Into<String>,
+    ) -> Self {
+        Self {
+            schema_version: MEMORY_LIFECYCLE_SCHEMA_VERSION,
+            repo_id: repo_id.into(),
+            work_id: work_id.into(),
+            source_branch: source_branch.into(),
+            source_environment_generation,
+            accepted_head: accepted_head.into(),
+            decision_id: decision_id.into(),
+            attempt_id: attempt_id.into(),
+            evidence_id: evidence_id.into(),
+            evidence_digest: evidence_digest.into(),
+        }
+    }
+
+    pub fn source_scope(&self) -> CoderMemoryScope {
+        CoderMemoryScope::for_environment(
+            &self.repo_id,
+            &self.work_id,
+            &self.source_branch,
+            self.source_environment_generation,
+        )
+    }
+
+    pub fn persist(&self) -> Result<()> {
+        if cfg!(test) {
+            return Ok(());
+        }
+        let raw = serde_json::to_vec_pretty(self).map_err(|error| {
+            input_error(format!("cannot encode pending memory promotion: {error}"))
+        })?;
+        if raw.len() as u64 > MAX_LIFECYCLE_TASK_BYTES {
+            return Err(input_error(
+                "pending memory promotion exceeds its byte bound",
+            ));
+        }
+        let path = memory_lifecycle_task_path(self);
+        if !path.exists() {
+            let pending = std::fs::read_dir(memory_lifecycle_directory(&self.repo_id))
+                .map(|entries| entries.flatten().take(MAX_PENDING_LIFECYCLE_TASKS).count())
+                .unwrap_or_default();
+            if pending >= MAX_PENDING_LIFECYCLE_TASKS {
+                return Err(input_error(
+                    "pending memory promotion queue reached its repository bound",
+                ));
+            }
+        }
+        crate::session::atomic_write(&path, &raw).map_err(|error| {
+            input_error(format!("cannot persist pending memory promotion: {error}"))
+        })
+    }
+
+    pub fn remove(&self) -> Result<()> {
+        if cfg!(test) {
+            return Ok(());
+        }
+        let path = memory_lifecycle_task_path(self);
+        match std::fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(input_error(format!(
+                "cannot remove completed memory promotion: {error}"
+            ))),
+        }
+    }
+
+    pub fn pending_for_repo(repo_id: &str) -> Vec<Self> {
+        if cfg!(test) {
+            return Vec::new();
+        }
+        let directory = memory_lifecycle_directory(repo_id);
+        let Ok(entries) = std::fs::read_dir(directory) else {
+            return Vec::new();
+        };
+        let mut tasks = entries
+            .flatten()
+            .take(MAX_PENDING_LIFECYCLE_TASKS.saturating_mul(2))
+            .filter_map(|entry| {
+                let path = entry.path();
+                let metadata = std::fs::symlink_metadata(&path).ok()?;
+                if metadata.file_type().is_symlink()
+                    || !metadata.is_file()
+                    || metadata.len() > MAX_LIFECYCLE_TASK_BYTES
+                {
+                    return None;
+                }
+                let queued_at = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+                let raw = std::fs::read(path).ok()?;
+                let task = serde_json::from_slice::<Self>(&raw).ok()?;
+                (task.schema_version == MEMORY_LIFECYCLE_SCHEMA_VERSION && task.repo_id == repo_id)
+                    .then_some((queued_at, task))
+            })
+            .collect::<Vec<_>>();
+        tasks.sort_by(|(left_time, left), (right_time, right)| {
+            left_time
+                .cmp(right_time)
+                .then_with(|| left.decision_id.cmp(&right.decision_id))
+        });
+        tasks.truncate(MAX_PENDING_LIFECYCLE_TASKS);
+        tasks.into_iter().map(|(_, task)| task).collect()
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -348,6 +611,20 @@ fn memory_queue_path(scope: &CoderMemoryScope) -> PathBuf {
         .join(format!("{:x}.json", digest))
 }
 
+fn memory_lifecycle_directory(repo_id: &str) -> PathBuf {
+    let repo_digest = Sha256::digest(repo_id.as_bytes());
+    crate::paths::medousa_data_dir()
+        .join("coder_memory_lifecycle")
+        .join(format!("{repo_digest:x}"))
+}
+
+fn memory_lifecycle_task_path(task: &CoderMemoryPromotionTask) -> PathBuf {
+    let digest = Sha256::digest(
+        format!("{}:{}:{}", task.repo_id, task.work_id, task.decision_id).as_bytes(),
+    );
+    memory_lifecycle_directory(&task.repo_id).join(format!("{:x}.json", digest))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoderMemoryRecallQuery {
     pub query: String,
@@ -360,7 +637,7 @@ pub fn tool_definitions() -> Vec<Tool> {
     vec![
         Tool::new(COGNITION_CODER_MEMORY_OVERVIEW)
             .with_description(
-                "Load the compact semantic working state pinned to this governed Coder environment: goals, decisions, touched paths, verification, open gaps, and checkpoints.",
+                "Load compact semantic working state for this governed Coder environment plus a bounded fork snapshot and accepted undertaking/repository knowledge. Live sibling state is excluded.",
             )
             .with_schema(json!({
                 "type": "object",
@@ -370,7 +647,7 @@ pub fn tool_definitions() -> Vec<Tool> {
             })),
         Tool::new(COGNITION_CODER_MEMORY_RECALL)
             .with_description(
-                "Recall bounded STTP working-memory nodes from this governed Coder environment. The runtime pins scope and labels observations stale when HEAD changed.",
+                "Recall bounded STTP working-memory nodes from this governed environment, its immutable parent snapshot, and accepted knowledge scopes. The runtime pins every scope, excludes live sibling state, and labels changed-HEAD observations stale.",
             )
             .with_schema(json!({
                 "type": "object",
@@ -501,6 +778,16 @@ pub fn build_commit(
     identity: &CoderAgentIdentity,
     current_head: &str,
 ) -> Result<CoderMemoryCommit> {
+    build_commit_with_tags(input, scope, identity, current_head, &[])
+}
+
+pub fn build_commit_with_tags(
+    input: &Value,
+    scope: &CoderMemoryScope,
+    identity: &CoderAgentIdentity,
+    current_head: &str,
+    additional_tags: &[String],
+) -> Result<CoderMemoryCommit> {
     let kind = required_text(input, "kind", 64)?;
     if !MEMORY_KINDS.contains(&kind.as_str()) {
         return Err(input_error(format!(
@@ -559,6 +846,7 @@ pub fn build_commit(
     semantic_tags.push(dedupe_tag.clone());
     semantic_tags.extend(paths.iter().map(|path| indexed_tag("path", path)));
     semantic_tags.extend(symbols.iter().map(|symbol| indexed_tag("symbol", symbol)));
+    semantic_tags.extend(additional_tags.iter().cloned());
     dedupe_preserving_order(&mut semantic_tags);
 
     let links = if relations.is_empty() {
@@ -699,6 +987,305 @@ pub fn project_recall(
     })
 }
 
+/// Merge bounded current, parent-snapshot, and accepted knowledge without ever
+/// querying a live sibling environment. The caller pins each result to its
+/// daemon-derived Locus session before this projection runs.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CoderMemoryLineageSources<'a> {
+    pub current: Option<&'a Value>,
+    pub parent: Option<&'a Value>,
+    pub undertaking: Option<&'a Value>,
+    pub repository: Option<&'a Value>,
+}
+
+pub fn project_lineage_recall(
+    scope: &CoderMemoryScope,
+    current_head: &str,
+    sources: CoderMemoryLineageSources<'_>,
+    include_raw: bool,
+    limit: usize,
+) -> Value {
+    let limit = limit.clamp(1, MAX_RECALL_LIMIT.max(MAX_OVERVIEW_LIMIT));
+    let local_nodes = projected_source_nodes(
+        sources.current,
+        current_head,
+        include_raw,
+        "current_environment",
+        |_| true,
+    );
+    let inherited_nodes = projected_source_nodes(
+        sources.parent,
+        current_head,
+        include_raw,
+        "inherited_parent",
+        |node| inherited_node_allowed(scope, node),
+    );
+    let undertaking_nodes = projected_source_nodes(
+        sources.undertaking,
+        current_head,
+        include_raw,
+        "accepted_undertaking",
+        |node| accepted_node_allowed(node, "memory-scope:undertaking"),
+    );
+    let repository_nodes = projected_source_nodes(
+        sources.repository,
+        current_head,
+        include_raw,
+        "accepted_repository",
+        |node| accepted_node_allowed(node, "memory-scope:repository"),
+    );
+    let available = json!({
+        "current_environment": local_nodes.len(),
+        "inherited_parent": inherited_nodes.len(),
+        "accepted_undertaking": undertaking_nodes.len(),
+        "accepted_repository": repository_nodes.len(),
+    });
+    let nodes = merge_lineage_nodes(
+        local_nodes,
+        inherited_nodes,
+        undertaking_nodes,
+        repository_nodes,
+        limit,
+    );
+    json!({
+        "ok": true,
+        "scope": scope.public_descriptor(),
+        "current_head": current_head,
+        "retrieved": nodes.len(),
+        "available_by_origin": available,
+        "nodes": nodes,
+    })
+}
+
+fn projected_source_nodes<F>(
+    result: Option<&Value>,
+    current_head: &str,
+    include_raw: bool,
+    origin: &str,
+    mut predicate: F,
+) -> Vec<Value>
+where
+    F: FnMut(&Value) -> bool,
+{
+    result
+        .and_then(|result| result.get("nodes"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|node| predicate(node))
+        .map(|node| {
+            let mut projected = project_node(node, current_head, include_raw);
+            projected["memory_origin"] = Value::String(origin.to_string());
+            projected["inherited"] = Value::Bool(origin == "inherited_parent");
+            projected["accepted_knowledge"] = Value::Bool(origin.starts_with("accepted_"));
+            projected
+        })
+        .collect()
+}
+
+fn inherited_node_allowed(scope: &CoderMemoryScope, node: &Value) -> bool {
+    let Some(parent) = scope.parent.as_ref() else {
+        return false;
+    };
+    let Some(kind) = node_memory_kind(node) else {
+        return false;
+    };
+    if !INHERITED_MEMORY_KINDS.contains(&kind.as_str()) {
+        return false;
+    }
+    let Some(timestamp) = node.get("timestamp").and_then(Value::as_str) else {
+        return false;
+    };
+    let Ok(timestamp) = chrono::DateTime::parse_from_rfc3339(timestamp) else {
+        return false;
+    };
+    let Ok(cutoff) = chrono::DateTime::parse_from_rfc3339(&parent.inherited_before_utc) else {
+        return false;
+    };
+    timestamp <= cutoff
+}
+
+fn accepted_node_allowed(node: &Value, expected_scope_tag: &str) -> bool {
+    let Some(kind) = node_memory_kind(node) else {
+        return false;
+    };
+    ACCEPTED_MEMORY_KINDS.contains(&kind.as_str())
+        && node_has_tag(node, "knowledge:accepted")
+        && node_has_tag(node, expected_scope_tag)
+}
+
+fn node_memory_kind(node: &Value) -> Option<String> {
+    let tags = node
+        .get("semantic_tags")
+        .and_then(Value::as_array)?
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>();
+    tag_value(&tags, "kind:").map(|kind| decode_parser_string(&kind))
+}
+
+fn node_has_tag(node: &Value, expected: &str) -> bool {
+    node.get("semantic_tags")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .any(|tag| decode_parser_string(tag).eq_ignore_ascii_case(expected))
+}
+
+pub fn promotion_candidates(
+    result: &Value,
+    current_head: &str,
+    expected_kind: &str,
+    limit: usize,
+) -> Vec<Value> {
+    result
+        .get("nodes")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|node| {
+            node_memory_kind(node).as_deref() == Some(expected_kind)
+                && node_has_tag(node, &format!("head:{}", current_head.trim()))
+        })
+        .take(limit)
+        .map(|node| project_node(node, current_head, false))
+        .collect()
+}
+
+pub fn build_promotion_commit(
+    source_node: &Value,
+    target_scope: &CoderMemoryScope,
+    identity: &CoderAgentIdentity,
+    accepted_head: &str,
+    decision_id: &str,
+    evidence_id: &str,
+    evidence_digest: &str,
+) -> Result<CoderMemoryCommit> {
+    let kind = source_node
+        .get("kind")
+        .and_then(Value::as_str)
+        .filter(|kind| ACCEPTED_MEMORY_KINDS.contains(kind))
+        .ok_or_else(|| input_error("only decisions and verification may be promoted"))?;
+    let context_summary = source_node
+        .get("summary")
+        .and_then(Value::as_str)
+        .unwrap_or("accepted engineering knowledge");
+    let summary = context_summary
+        .strip_prefix(&format!("{kind}: "))
+        .unwrap_or(context_summary);
+    let source_node_id = source_node
+        .get("node_id")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown-source-node");
+    let input = json!({
+        "kind": kind,
+        "summary": summary,
+        "details": format!(
+            "Accepted Forge outcome; promoted from environment memory node {source_node_id}."
+        ),
+        "paths": source_node.get("paths").cloned().unwrap_or_else(|| json!([])),
+        "symbols": source_node.get("symbols").cloned().unwrap_or_else(|| json!([])),
+        "evidence_refs": [
+            format!("forge:decision:{decision_id}"),
+            format!("forge:evidence:{evidence_id}"),
+            format!("forge:evidence-digest:{evidence_digest}"),
+        ],
+        "relations": [{
+            "rel": "derived_from",
+            "target": source_node_id,
+            "confidence": 1.0,
+        }],
+    });
+    build_commit_with_tags(
+        &input,
+        target_scope,
+        identity,
+        accepted_head,
+        &[
+            "knowledge:accepted".to_string(),
+            format!("accepted-head:{}", accepted_head.trim()),
+            format!("forge-decision:{}", short_digest(decision_id)),
+        ],
+    )
+}
+
+pub fn build_archive_commit(
+    scope: &CoderMemoryScope,
+    identity: &CoderAgentIdentity,
+    current_head: &str,
+    terminal_state: &str,
+    detail: &str,
+) -> Result<CoderMemoryCommit> {
+    let input = json!({
+        "kind": "checkpoint",
+        "summary": format!(
+            "Archived governed environment memory after undertaking became {terminal_state}."
+        ),
+        "details": detail,
+    });
+    build_commit_with_tags(
+        &input,
+        scope,
+        identity,
+        current_head,
+        &[
+            "lineage:archived".to_string(),
+            format!("terminal:{terminal_state}"),
+        ],
+    )
+}
+
+fn merge_lineage_nodes(
+    current: Vec<Value>,
+    inherited: Vec<Value>,
+    undertaking: Vec<Value>,
+    repository: Vec<Value>,
+    limit: usize,
+) -> Vec<Value> {
+    let sources = [current, undertaking, repository, inherited];
+    let non_local_sources = sources[1..]
+        .iter()
+        .filter(|nodes| !nodes.is_empty())
+        .count();
+    let reserved = non_local_sources.min(limit / 2);
+    let local_take = sources[0].len().min(limit.saturating_sub(reserved));
+    let mut positions = [0usize; 4];
+    let mut merged = Vec::with_capacity(limit);
+    for node in sources[0].iter().take(local_take) {
+        merged.push(node.clone());
+    }
+    positions[0] = local_take;
+
+    for source_index in 1..sources.len() {
+        if merged.len() >= limit {
+            break;
+        }
+        if let Some(node) = sources[source_index].first() {
+            merged.push(node.clone());
+            positions[source_index] = 1;
+        }
+    }
+
+    while merged.len() < limit {
+        let mut advanced = false;
+        for source_index in 0..sources.len() {
+            if let Some(node) = sources[source_index].get(positions[source_index]) {
+                merged.push(node.clone());
+                positions[source_index] += 1;
+                advanced = true;
+                if merged.len() == limit {
+                    break;
+                }
+            }
+        }
+        if !advanced {
+            break;
+        }
+    }
+    merged
+}
+
 fn project_node(node: &Value, current_head: &str, include_raw: bool) -> Value {
     let tags = node
         .get("semantic_tags")
@@ -781,7 +1368,7 @@ pub fn environment_overview_prompt_appendix(overview: &Value) -> String {
     let _ = writeln!(out, "    environment_memory(.99): {overview},");
     let _ = writeln!(
         out,
-        "    memory_contract(.99): \"Treat current non-stale nodes as compact working state; queued writes are usable summaries awaiting durable Locus storage; verify repository facts against Forge and Git before mutation.\""
+        "    memory_contract(.99): \"Treat current non-stale nodes as compact working state. Inherited nodes are frozen at the fork cutoff; accepted knowledge is review-promoted; live sibling state is excluded. Queued writes are usable summaries awaiting durable Locus storage. Verify repository facts against Forge and Git before mutation.\""
     );
     let _ = writeln!(out, "}} ⟩");
     let _ = write!(
@@ -1142,7 +1729,9 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::agent_runtime::coder_mode::{CoderEditorContext, RepositoryInstruction};
+    use crate::agent_runtime::coder_mode::{
+        CoderEditorContext, CoderMemoryParentContext, RepositoryInstruction,
+    };
 
     fn entry(branch: &str, generation: u32) -> CoderEntryContext {
         CoderEntryContext {
@@ -1153,6 +1742,7 @@ mod tests {
             worktree: PathBuf::from("/tmp/demo"),
             branch: branch.to_string(),
             environment_generation: generation,
+            memory_parent: None,
             baseline_oid: "a".repeat(40),
             head_oid: "b".repeat(40),
             changed_paths: Vec::new(),
@@ -1176,6 +1766,15 @@ mod tests {
         assert_ne!(first.session_id, restart.session_id);
         assert!(first.session_id.contains("coder:repo-123:work-456:"));
         assert!(!first.session_id.contains("/tmp/demo"));
+
+        assert_eq!(
+            first.accepted_undertaking_scope().session_id,
+            fork.accepted_undertaking_scope().session_id
+        );
+        assert_eq!(
+            first.accepted_repository_scope().session_id,
+            fork.accepted_repository_scope().session_id
+        );
     }
 
     #[test]
@@ -1405,6 +2004,151 @@ mod tests {
         assert_eq!(projected["nodes"][0]["symbols"][0], "demo::run");
         assert!(projected.to_string().contains("bounded STTP"));
         assert!(!projected.to_string().contains(&scope.session_id));
+    }
+
+    #[test]
+    fn lineage_projection_honors_fork_cutoff_and_filters_unaccepted_siblings() {
+        let mut child_entry = entry("worktree/demo-a2", 1);
+        child_entry.memory_parent = Some(CoderMemoryParentContext {
+            branch: "worktree/demo-a1".into(),
+            environment_generation: 1,
+            inherited_before_utc: "2026-08-08T01:00:00Z".into(),
+        });
+        let scope = CoderMemoryScope::for_entry(&child_entry);
+        let current = json!({
+            "nodes": [{
+                "sync_key": "current-1",
+                "timestamp": "2026-08-08T03:00:00Z",
+                "context_summary": "hypothesis: current child idea",
+                "semantic_tags": ["kind:hypothesis", "head:child-head"],
+                "raw": ""
+            }]
+        });
+        let parent = json!({
+            "nodes": [
+                {
+                    "sync_key": "parent-before",
+                    "timestamp": "2026-08-08T00:30:00Z",
+                    "context_summary": "decision: inherited decision",
+                    "semantic_tags": ["kind:decision", "head:parent-head"],
+                    "raw": ""
+                },
+                {
+                    "sync_key": "parent-transient",
+                    "timestamp": "2026-08-08T00:20:00Z",
+                    "context_summary": "hypothesis: transient parent idea",
+                    "semantic_tags": ["kind:hypothesis", "head:parent-head"],
+                    "raw": ""
+                },
+                {
+                    "sync_key": "parent-after",
+                    "timestamp": "2026-08-08T02:00:00Z",
+                    "context_summary": "decision: post-fork decision",
+                    "semantic_tags": ["kind:decision", "head:parent-head"],
+                    "raw": ""
+                }
+            ]
+        });
+        let undertaking = json!({
+            "nodes": [
+                {
+                    "sync_key": "accepted-work",
+                    "timestamp": "2026-08-08T00:00:00Z",
+                    "context_summary": "decision: accepted undertaking decision",
+                    "semantic_tags": [
+                        "kind:decision",
+                        "head:accepted-head",
+                        "knowledge:accepted",
+                        "memory-scope:undertaking"
+                    ],
+                    "raw": ""
+                },
+                {
+                    "sync_key": "sibling-transient",
+                    "timestamp": "2026-08-08T00:00:00Z",
+                    "context_summary": "decision: live sibling conclusion",
+                    "semantic_tags": ["kind:decision", "head:sibling-head"],
+                    "raw": ""
+                }
+            ]
+        });
+        let repository = json!({
+            "nodes": [{
+                "sync_key": "accepted-repo",
+                "timestamp": "2026-08-08T00:00:00Z",
+                "context_summary": "verification: accepted repository check",
+                "semantic_tags": [
+                    "kind:verification",
+                    "head:accepted-head",
+                    "knowledge:accepted",
+                    "memory-scope:repository"
+                ],
+                "raw": ""
+            }]
+        });
+
+        let projected = project_lineage_recall(
+            &scope,
+            "child-head",
+            CoderMemoryLineageSources {
+                current: Some(&current),
+                parent: Some(&parent),
+                undertaking: Some(&undertaking),
+                repository: Some(&repository),
+            },
+            false,
+            10,
+        );
+        let rendered = projected.to_string();
+        assert!(rendered.contains("current child idea"));
+        assert!(rendered.contains("inherited decision"));
+        assert!(rendered.contains("accepted undertaking decision"));
+        assert!(rendered.contains("accepted repository check"));
+        assert!(!rendered.contains("transient parent idea"));
+        assert!(!rendered.contains("post-fork decision"));
+        assert!(!rendered.contains("live sibling conclusion"));
+        assert_eq!(projected["available_by_origin"]["inherited_parent"], 1);
+    }
+
+    #[test]
+    fn promotion_compiler_keeps_scope_runtime_owned_and_links_source_node() {
+        let source_scope = CoderMemoryScope::for_entry(&entry("worktree/demo-a1", 1));
+        let target_scope = source_scope.accepted_undertaking_scope();
+        let identity =
+            CoderAgentIdentity::for_turn("forge-memory-lifecycle", "decision-1", "attempt-1");
+        let commit = build_promotion_commit(
+            &json!({
+                "node_id": "source-node-1",
+                "kind": "decision",
+                "summary": "decision: preserve the typed facade",
+                "paths": ["src/agent_runtime/coder_memory.rs"],
+                "symbols": ["CoderMemoryScope"]
+            }),
+            &target_scope,
+            &identity,
+            "accepted-head",
+            "decision-1",
+            "evidence-1",
+            "digest-1",
+        )
+        .expect("promotion commit");
+
+        validate_raw_node_scope(&commit.raw_node, &target_scope.session_id)
+            .expect("accepted target scope");
+        assert!(commit.semantic_tags.contains(&"knowledge:accepted".into()));
+        assert!(
+            commit
+                .semantic_tags
+                .contains(&"memory-scope:undertaking".into())
+        );
+        assert!(commit.raw_node.contains("derived_from"));
+        assert!(commit.raw_node.contains("source-node-1"));
+        assert!(
+            !target_scope
+                .public_descriptor()
+                .to_string()
+                .contains("session")
+        );
     }
 
     #[test]

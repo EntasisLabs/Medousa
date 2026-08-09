@@ -6,10 +6,12 @@ use std::sync::{Arc, Mutex as StdMutex, Weak};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use futures_util::StreamExt;
 use genai::chat::Tool;
 use medousa_forge::forge::Forge;
 use medousa_forge::model::{
-    ActorRef, ChangeStatus, ChangedFile, ExecutionLease, RecoveryDisposition, WorkPolicy,
+    ActorRef, ChangeStatus, ChangedFile, ExecutionLease, RecoveryDisposition, ReviewDecisionId,
+    WorkItem, WorkPolicy, WorkState,
 };
 use once_cell::sync::Lazy;
 use serde_json::{Value, json};
@@ -125,6 +127,11 @@ const CODER_RUNTIME_TOOLS: &[&str] = &[
 
 const CODER_MEMORY_IO_TIMEOUT: Duration = Duration::from_secs(2);
 const MAX_MEMORY_FLUSH_WRITES_PER_PASS: usize = 4;
+const MAX_ACCEPTED_PROMOTIONS_PER_KIND: usize = 4;
+const MAX_ARCHIVED_MEMORY_ENVIRONMENTS: usize = 64;
+const MAX_CONCURRENT_MEMORY_ARCHIVES: usize = 4;
+const MAX_LIFECYCLE_RECONCILIATIONS_PER_PASS: usize = 8;
+const MAX_CONCURRENT_MEMORY_RECONCILIATIONS: usize = 4;
 
 static CODER_MEMORY_RETRY_QUEUES: Lazy<
     StdMutex<HashMap<String, Weak<Mutex<super::coder_memory::CoderMemoryRetryQueue>>>>,
@@ -238,6 +245,414 @@ fn shared_memory_retry_queue(
     ));
     queues.insert(scope.session_id.clone(), Arc::downgrade(&queue));
     queue
+}
+
+async fn invoke_locus_registry_tool(
+    registry: &dyn ToolRegistry,
+    tool_name: &str,
+    input: Value,
+) -> Result<Value> {
+    tokio::time::timeout(
+        CODER_MEMORY_IO_TIMEOUT,
+        registry.invoke_tool(tool_name, input),
+    )
+    .await
+    .map_err(|_| {
+        StasisError::PortFailure(format!(
+            "Coder memory operation '{tool_name}' timed out after {} seconds",
+            CODER_MEMORY_IO_TIMEOUT.as_secs()
+        ))
+    })?
+}
+
+async fn try_store_memory_commit_with_registry(
+    registry: &dyn ToolRegistry,
+    scope: &super::coder_memory::CoderMemoryScope,
+    commit: &super::coder_memory::CoderMemoryCommit,
+) -> Result<Value> {
+    let existing = invoke_locus_registry_tool(
+        registry,
+        "cognition_memory_list",
+        json!({
+            "session_id": scope.session_id,
+            "semantic_tags": [commit.dedupe_tag],
+            "limit": 1,
+        }),
+    )
+    .await?;
+    if let Some(node_id) = super::coder_memory::first_node_id(&existing) {
+        return Ok(json!({
+            "ok": true,
+            "stored": false,
+            "duplicate": true,
+            "node_id": node_id,
+            "kind": commit.kind,
+            "summary": commit.summary,
+            "scope": scope.public_descriptor(),
+        }));
+    }
+
+    let stored = invoke_locus_registry_tool(
+        registry,
+        "cognition_memory_store",
+        json!({
+            "session_id": scope.session_id,
+            "node": commit.raw_node,
+            "semantic_tags": commit.semantic_tags,
+        }),
+    )
+    .await?;
+    let accepted = stored
+        .get("stored")
+        .and_then(Value::as_bool)
+        .or_else(|| stored.get("valid").and_then(Value::as_bool))
+        .unwrap_or(false);
+    if !accepted {
+        let validation_error = stored
+            .get("validation_error")
+            .and_then(Value::as_str)
+            .unwrap_or("Locus did not accept the compiled node");
+        return Err(StasisError::PortFailure(format!(
+            "Coder memory store rejected a runtime-compiled node: {}",
+            bounded_memory_error(validation_error)
+        )));
+    }
+    Ok(json!({
+        "ok": true,
+        "stored": true,
+        "duplicate": false,
+        "node_id": stored.get("node_id"),
+        "kind": commit.kind,
+        "summary": commit.summary,
+        "scope": scope.public_descriptor(),
+    }))
+}
+
+async fn persist_lifecycle_commits(
+    registry: &dyn ToolRegistry,
+    scope: &super::coder_memory::CoderMemoryScope,
+    commits: Vec<super::coder_memory::CoderMemoryCommit>,
+) -> Result<Value> {
+    let queue = shared_memory_retry_queue(scope);
+    let mut queue = queue.lock().await;
+    let mut flushed = 0usize;
+    let mut memory_available = true;
+    while flushed < MAX_MEMORY_FLUSH_WRITES_PER_PASS
+        && let Some(pending) = queue.front()
+    {
+        match try_store_memory_commit_with_registry(registry, scope, &pending).await {
+            Ok(_) => {
+                queue.pop_front(&pending.dedupe_tag)?;
+                flushed += 1;
+            }
+            Err(_) => {
+                memory_available = false;
+                break;
+            }
+        }
+    }
+
+    let mut writes_attempted = flushed;
+    let mut stored = 0usize;
+    let mut queued = 0usize;
+    for commit in commits {
+        if memory_available && writes_attempted < MAX_MEMORY_FLUSH_WRITES_PER_PASS {
+            writes_attempted += 1;
+            match try_store_memory_commit_with_registry(registry, scope, &commit).await {
+                Ok(_) => {
+                    stored += 1;
+                    continue;
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        error = %error,
+                        memory_kind = %commit.kind,
+                        "deferring Coder memory lifecycle write"
+                    );
+                    memory_available = false;
+                }
+            }
+        }
+        queue.enqueue(commit)?;
+        queued += 1;
+    }
+    Ok(json!({
+        "ok": true,
+        "scope": scope.public_descriptor(),
+        "flushed": flushed,
+        "stored": stored,
+        "queued": queued,
+        "pending_writes": queue.len(),
+    }))
+}
+
+async fn promote_memory_task(
+    registry: &dyn ToolRegistry,
+    task: &super::coder_memory::CoderMemoryPromotionTask,
+) -> Result<Value> {
+    let source_scope = task.source_scope();
+    let source_flush = persist_lifecycle_commits(registry, &source_scope, Vec::new()).await?;
+    if source_flush
+        .get("pending_writes")
+        .and_then(Value::as_u64)
+        .unwrap_or_default()
+        > 0
+    {
+        return Err(StasisError::PortFailure(
+            "accepted memory promotion is waiting for its source queue to drain".into(),
+        ));
+    }
+    let accepted_head_tag = format!("head:{}", task.accepted_head.trim());
+    let (decisions, verifications) = tokio::join!(
+        invoke_locus_registry_tool(
+            registry,
+            "cognition_memory_list",
+            json!({
+                "session_id": source_scope.session_id,
+                "semantic_tags": ["kind:decision", accepted_head_tag.clone()],
+                "limit": MAX_ACCEPTED_PROMOTIONS_PER_KIND,
+            }),
+        ),
+        invoke_locus_registry_tool(
+            registry,
+            "cognition_memory_list",
+            json!({
+                "session_id": source_scope.session_id,
+                "semantic_tags": ["kind:verification", accepted_head_tag],
+                "limit": MAX_ACCEPTED_PROMOTIONS_PER_KIND,
+            }),
+        ),
+    );
+    let decisions = decisions?;
+    let verifications = verifications?;
+    let decisions = super::coder_memory::promotion_candidates(
+        &decisions,
+        &task.accepted_head,
+        "decision",
+        MAX_ACCEPTED_PROMOTIONS_PER_KIND,
+    );
+    let verifications = super::coder_memory::promotion_candidates(
+        &verifications,
+        &task.accepted_head,
+        "verification",
+        MAX_ACCEPTED_PROMOTIONS_PER_KIND,
+    );
+    let undertaking_scope = source_scope.accepted_undertaking_scope();
+    let repository_scope = source_scope.accepted_repository_scope();
+    let identity = CoderAgentIdentity::for_turn(
+        "forge-memory-lifecycle",
+        &task.decision_id,
+        &task.attempt_id,
+    );
+    let compile = |node: &Value,
+                   scope: &super::coder_memory::CoderMemoryScope|
+     -> Result<super::coder_memory::CoderMemoryCommit> {
+        super::coder_memory::build_promotion_commit(
+            node,
+            scope,
+            &identity,
+            &task.accepted_head,
+            &task.decision_id,
+            &task.evidence_id,
+            &task.evidence_digest,
+        )
+    };
+    let mut undertaking_commits = decisions
+        .iter()
+        .map(|node| compile(node, &undertaking_scope))
+        .collect::<Result<Vec<_>>>()?;
+    undertaking_commits.extend(
+        verifications
+            .iter()
+            .map(|node| compile(node, &undertaking_scope))
+            .collect::<Result<Vec<_>>>()?,
+    );
+    let repository_commits = verifications
+        .iter()
+        .map(|node| compile(node, &repository_scope))
+        .collect::<Result<Vec<_>>>()?;
+    let (undertaking, repository) = tokio::join!(
+        persist_lifecycle_commits(registry, &undertaking_scope, undertaking_commits),
+        persist_lifecycle_commits(registry, &repository_scope, repository_commits),
+    );
+    Ok(json!({
+        "ok": true,
+        "decision_candidates": decisions.len(),
+        "verification_candidates": verifications.len(),
+        "undertaking": undertaking?,
+        "repository": repository?,
+    }))
+}
+
+pub async fn reconcile_coder_memory_lineage(
+    registry: Arc<dyn ToolRegistry>,
+    repo_id: &str,
+) -> Value {
+    let tasks = super::coder_memory::CoderMemoryPromotionTask::pending_for_repo(repo_id);
+    let reconciled = futures_util::stream::iter(
+        tasks
+            .into_iter()
+            .take(MAX_LIFECYCLE_RECONCILIATIONS_PER_PASS),
+    )
+    .map(|task| {
+        let registry = registry.clone();
+        async move {
+            let result = promote_memory_task(registry.as_ref(), &task).await;
+            (task, result)
+        }
+    })
+    .buffer_unordered(MAX_CONCURRENT_MEMORY_RECONCILIATIONS)
+    .collect::<Vec<_>>()
+    .await;
+    let mut completed = 0usize;
+    let mut deferred = 0usize;
+    let mut errors = Vec::new();
+    for (task, result) in reconciled {
+        match result {
+            Ok(_) => match task.remove() {
+                Ok(()) => completed += 1,
+                Err(error) => {
+                    deferred += 1;
+                    let _ = task.persist();
+                    errors.push(bounded_memory_error(&error.to_string()));
+                }
+            },
+            Err(error) => {
+                deferred += 1;
+                let _ = task.persist();
+                errors.push(bounded_memory_error(&error.to_string()));
+            }
+        }
+    }
+    json!({
+        "ok": errors.is_empty(),
+        "completed": completed,
+        "deferred": deferred,
+        "errors": errors,
+    })
+}
+
+pub async fn finalize_coder_memory_lineage(
+    registry: Arc<dyn ToolRegistry>,
+    forge: Arc<Forge>,
+    item: &WorkItem,
+    accepted_decision_id: Option<&ReviewDecisionId>,
+) -> Value {
+    if !item.state.is_terminal() {
+        return json!({ "ok": true, "skipped": "undertaking_not_terminal" });
+    }
+
+    let mut promotion = Value::Null;
+    if item.state == WorkState::Accepted
+        && let Some(decision_id) = accepted_decision_id
+        && let Some(decision) = item
+            .review_decisions
+            .iter()
+            .find(|decision| &decision.id == decision_id)
+        && let Some(environment) = item.environment_for_attempt(&decision.attempt_id)
+    {
+        let task = super::coder_memory::CoderMemoryPromotionTask::new(
+            environment.repo.repo_id.to_string(),
+            item.id.to_string(),
+            environment.branch.clone(),
+            environment.generation,
+            decision.reviewed_head_oid.to_string(),
+            decision.id.to_string(),
+            decision.attempt_id.to_string(),
+            decision.evidence_id.to_string(),
+            decision.evidence_digest.to_string(),
+        );
+        promotion = match promote_memory_task(registry.as_ref(), &task).await {
+            Ok(report) => {
+                if let Err(error) = task.remove() {
+                    tracing::warn!(error = %error, "failed to clear completed memory promotion task");
+                }
+                report
+            }
+            Err(error) => {
+                let durable = task.persist().is_ok();
+                tracing::warn!(
+                    error = %error,
+                    durable,
+                    work_id = %item.id,
+                    "deferred accepted Coder memory promotion"
+                );
+                json!({
+                    "ok": false,
+                    "deferred": true,
+                    "durable": durable,
+                    "error": bounded_memory_error(&error.to_string()),
+                })
+            }
+        };
+    }
+
+    let terminal_state = item.state.to_string();
+    let detail = format!(
+        "Forge terminal state {terminal_state}; semantic nodes remain audit-only and are excluded from active ambient recall."
+    );
+    let mut seen = HashSet::new();
+    let mut environments = item
+        .attempts
+        .iter()
+        .rev()
+        .filter_map(|attempt| attempt.environment.as_ref())
+        .chain(item.environment.iter())
+        .filter(|environment| seen.insert((environment.branch.clone(), environment.generation)))
+        .take(MAX_ARCHIVED_MEMORY_ENVIRONMENTS)
+        .cloned()
+        .collect::<Vec<_>>();
+    environments.reverse();
+    let archive_futures = environments.into_iter().map(|environment| {
+        let registry = registry.clone();
+        let forge = forge.clone();
+        let work_id = item.id.to_string();
+        let terminal_state = terminal_state.clone();
+        let detail = detail.clone();
+        async move {
+            let scope = super::coder_memory::CoderMemoryScope::for_environment(
+                &environment.repo.repo_id.to_string(),
+                &work_id,
+                &environment.branch,
+                environment.generation,
+            );
+            let current_head = forge
+                .git()
+                .head_oid(&environment.worktree)
+                .map(|head| head.to_string())
+                .unwrap_or_else(|_| environment.baseline_oid.to_string());
+            let identity = CoderAgentIdentity::for_turn(
+                "forge-memory-lifecycle",
+                format!("terminal-{terminal_state}"),
+                "terminal",
+            );
+            let commit = super::coder_memory::build_archive_commit(
+                &scope,
+                &identity,
+                &current_head,
+                &terminal_state,
+                &detail,
+            )?;
+            persist_lifecycle_commits(registry.as_ref(), &scope, vec![commit]).await
+        }
+    });
+    let archived = futures_util::stream::iter(archive_futures)
+        .buffer_unordered(MAX_CONCURRENT_MEMORY_ARCHIVES)
+        .collect::<Vec<_>>()
+        .await;
+    let archive_errors = archived
+        .iter()
+        .filter_map(|result| result.as_ref().err())
+        .map(|error| bounded_memory_error(&error.to_string()))
+        .collect::<Vec<_>>();
+    json!({
+        "ok": promotion.get("ok").and_then(Value::as_bool) != Some(false)
+            && archive_errors.is_empty(),
+        "terminal_state": terminal_state,
+        "promotion": promotion,
+        "archived_environments": archived.len().saturating_sub(archive_errors.len()),
+        "archive_errors": archive_errors,
+    })
 }
 
 pub struct CoderTurnLease {
@@ -537,6 +952,14 @@ impl CoderBoundToolRegistry {
         let shared = authority.shared_space_prompt_appendix()?;
         let pointers = self.ranked_pointers(super::coder_pointers::MAX_AMBIENT_POINTERS)?;
         self.refresh_visible_from_pointers(&pointers)?;
+        let lineage_reconciliation =
+            reconcile_coder_memory_lineage(self.inner.clone(), &self.memory_scope.repo_id).await;
+        if lineage_reconciliation.get("ok").and_then(Value::as_bool) == Some(false) {
+            tracing::warn!(
+                report = %lineage_reconciliation,
+                "Coder memory lineage reconciliation remains deferred"
+            );
+        }
         let memory = self.environment_memory_overview(&authority, 10).await?;
         self.refresh_visible_from_memory_overview(&memory)?;
         Ok(format!(
@@ -848,92 +1271,40 @@ impl CoderBoundToolRegistry {
     }
 
     async fn invoke_locus_tool(&self, tool_name: &str, input: Value) -> Result<Value> {
-        tokio::time::timeout(
-            CODER_MEMORY_IO_TIMEOUT,
-            self.inner.invoke_tool(tool_name, input),
-        )
-        .await
-        .map_err(|_| {
-            StasisError::PortFailure(format!(
-                "Coder memory operation '{tool_name}' timed out after {} seconds",
-                CODER_MEMORY_IO_TIMEOUT.as_secs()
-            ))
-        })?
+        invoke_locus_registry_tool(self.inner.as_ref(), tool_name, input).await
     }
 
     async fn try_store_memory_commit(
         &self,
         commit: &super::coder_memory::CoderMemoryCommit,
     ) -> Result<Value> {
-        let existing = self
-            .invoke_locus_tool(
-                "cognition_memory_list",
-                json!({
-                    "session_id": self.memory_scope.session_id,
-                    "semantic_tags": [commit.dedupe_tag],
-                    "limit": 1,
-                }),
-            )
-            .await?;
-        if let Some(node_id) = super::coder_memory::first_node_id(&existing) {
-            self.remember_memory_cursor(&existing);
-            return Ok(json!({
-                "ok": true,
-                "stored": false,
-                "duplicate": true,
-                "node_id": node_id,
-                "kind": commit.kind,
-                "summary": commit.summary,
-                "scope": self.memory_scope.public_descriptor(),
-            }));
-        }
+        self.try_store_memory_commit_in_scope(&self.memory_scope, commit)
+            .await
+    }
 
-        let stored = self
-            .invoke_locus_tool(
-                "cognition_memory_store",
-                json!({
-                    "session_id": self.memory_scope.session_id,
-                    "node": commit.raw_node,
-                    "semantic_tags": commit.semantic_tags,
-                }),
-            )
-            .await?;
-        self.remember_memory_cursor(&stored);
-        let accepted = stored
-            .get("stored")
-            .and_then(Value::as_bool)
-            .or_else(|| stored.get("valid").and_then(Value::as_bool))
-            .unwrap_or(false);
-        if !accepted {
-            let validation_error = stored
-                .get("validation_error")
-                .and_then(Value::as_str)
-                .unwrap_or("Locus did not accept the compiled node");
-            return Err(StasisError::PortFailure(format!(
-                "Coder memory store rejected a runtime-compiled node: {}",
-                bounded_memory_error(validation_error)
-            )));
+    async fn try_store_memory_commit_in_scope(
+        &self,
+        scope: &super::coder_memory::CoderMemoryScope,
+        commit: &super::coder_memory::CoderMemoryCommit,
+    ) -> Result<Value> {
+        let stored =
+            try_store_memory_commit_with_registry(self.inner.as_ref(), scope, commit).await?;
+        if scope.session_id == self.memory_scope.session_id {
+            self.remember_memory_cursor(&stored);
         }
-        Ok(json!({
-            "ok": true,
-            "stored": true,
-            "duplicate": false,
-            "node_id": stored.get("node_id"),
-            "kind": commit.kind,
-            "summary": commit.summary,
-            "scope": self.memory_scope.public_descriptor(),
-        }))
+        Ok(stored)
     }
 
     async fn flush_memory_queue_locked(
         &self,
+        scope: &super::coder_memory::CoderMemoryScope,
         queue: &mut super::coder_memory::CoderMemoryRetryQueue,
     ) -> (usize, Option<String>) {
         let mut flushed = 0usize;
         while flushed < MAX_MEMORY_FLUSH_WRITES_PER_PASS
             && let Some(commit) = queue.front()
         {
-            match self.try_store_memory_commit(&commit).await {
+            match self.try_store_memory_commit_in_scope(scope, &commit).await {
                 Ok(_) => {
                     if let Err(error) = queue.pop_front(&commit.dedupe_tag) {
                         tracing::warn!(error = %error, "failed to persist a drained Coder memory queue");
@@ -951,7 +1322,29 @@ impl CoderBoundToolRegistry {
     pub async fn flush_memory_queue(&self) -> Value {
         let mut queue = self.memory_retry_queue.lock().await;
         let before = queue.len();
-        let (flushed, error) = self.flush_memory_queue_locked(&mut queue).await;
+        let (flushed, error) = self
+            .flush_memory_queue_locked(&self.memory_scope, &mut queue)
+            .await;
+        json!({
+            "ok": error.is_none(),
+            "queued_before": before,
+            "flushed": flushed,
+            "pending_writes": queue.len(),
+            "error": error,
+        })
+    }
+
+    async fn flush_memory_scope_queue(
+        &self,
+        scope: &super::coder_memory::CoderMemoryScope,
+    ) -> Value {
+        if scope.session_id == self.memory_scope.session_id {
+            return self.flush_memory_queue().await;
+        }
+        let queue = shared_memory_retry_queue(scope);
+        let mut queue = queue.lock().await;
+        let before = queue.len();
+        let (flushed, error) = self.flush_memory_queue_locked(scope, &mut queue).await;
         json!({
             "ok": error.is_none(),
             "queued_before": before,
@@ -968,7 +1361,9 @@ impl CoderBoundToolRegistry {
         source: &str,
     ) -> Value {
         let mut queue = self.memory_retry_queue.lock().await;
-        let (_, flush_error) = self.flush_memory_queue_locked(&mut queue).await;
+        let (_, flush_error) = self
+            .flush_memory_queue_locked(&self.memory_scope, &mut queue)
+            .await;
         let direct = if flush_error.is_none() {
             self.try_store_memory_commit(&commit).await
         } else {
@@ -1048,57 +1443,116 @@ impl CoderBoundToolRegistry {
                 ))
             })?
             .to_string();
-        let flush = self.flush_memory_queue().await;
-        let recalled = if flush.get("ok").and_then(Value::as_bool) == Some(false) {
-            Err(StasisError::PortFailure(
-                flush
-                    .get("error")
-                    .and_then(Value::as_str)
-                    .unwrap_or("Coder memory retry is temporarily unavailable")
-                    .to_string(),
-            ))
-        } else {
+        let parent_scope = self.memory_scope.parent_environment_scope();
+        let undertaking_scope = self.memory_scope.accepted_undertaking_scope();
+        let repository_scope = self.memory_scope.accepted_repository_scope();
+        let (flush, parent_flush, undertaking_flush, repository_flush) = tokio::join!(
+            self.flush_memory_scope_queue(&self.memory_scope),
+            async {
+                match parent_scope.as_ref() {
+                    Some(scope) => Some(self.flush_memory_scope_queue(scope).await),
+                    None => None,
+                }
+            },
+            self.flush_memory_scope_queue(&undertaking_scope),
+            self.flush_memory_scope_queue(&repository_scope),
+        );
+        let lineage_limit = limit.saturating_mul(2).clamp(1, 40);
+        let (current, parent, undertaking, repository) = tokio::join!(
             self.invoke_locus_tool(
                 "cognition_memory_list",
                 json!({
                     "session_id": self.memory_scope.session_id,
-                    "limit": limit,
+                    "limit": lineage_limit,
                 }),
-            )
-            .await
-        };
-        let (pending_count, pending) = self.pending_memory_summaries().await;
-        let mut overview = match recalled {
-            Ok(result) => {
-                self.remember_memory_cursor(&result);
-                super::coder_memory::project_recall(
-                    &self.memory_scope,
-                    &current_head,
-                    &result,
-                    false,
-                    limit,
-                )
-            }
-            Err(error) => json!({
-                "ok": false,
-                "scope": self.memory_scope.public_descriptor(),
-                "current_head": current_head,
-                "retrieved": 0,
-                "nodes": [],
-                "memory_status": "unavailable",
-                "error": bounded_memory_error(&error.to_string()),
-            }),
-        };
-        if overview.get("memory_status").is_none() {
-            overview["memory_status"] = Value::String(if pending_count == 0 {
-                "available".into()
-            } else {
-                "degraded".into()
-            });
+            ),
+            async {
+                match parent_scope.as_ref() {
+                    Some(scope) => Some(
+                        self.invoke_locus_tool(
+                            "cognition_memory_list",
+                            json!({
+                                "session_id": scope.session_id,
+                                "limit": lineage_limit,
+                            }),
+                        )
+                        .await,
+                    ),
+                    None => None,
+                }
+            },
+            self.invoke_locus_tool(
+                "cognition_memory_list",
+                json!({
+                    "session_id": undertaking_scope.session_id,
+                    "limit": lineage_limit,
+                }),
+            ),
+            self.invoke_locus_tool(
+                "cognition_memory_list",
+                json!({
+                    "session_id": repository_scope.session_id,
+                    "limit": lineage_limit,
+                }),
+            ),
+        );
+        if let Ok(result) = current.as_ref() {
+            self.remember_memory_cursor(result);
         }
+        let (pending_count, pending) = self.pending_memory_summaries().await;
+        let mut overview = super::coder_memory::project_lineage_recall(
+            &self.memory_scope,
+            &current_head,
+            super::coder_memory::CoderMemoryLineageSources {
+                current: current.as_ref().ok(),
+                parent: parent.as_ref().and_then(|result| result.as_ref().ok()),
+                undertaking: undertaking.as_ref().ok(),
+                repository: repository.as_ref().ok(),
+            },
+            false,
+            limit,
+        );
+        let mut unavailable_sources = Vec::new();
+        if current.is_err() {
+            unavailable_sources.push("current_environment");
+        }
+        if parent.as_ref().is_some_and(Result::is_err) {
+            unavailable_sources.push("inherited_parent");
+        }
+        if undertaking.is_err() {
+            unavailable_sources.push("accepted_undertaking");
+        }
+        if repository.is_err() {
+            unavailable_sources.push("accepted_repository");
+        }
+        let flush_degraded = [&flush, &undertaking_flush, &repository_flush]
+            .into_iter()
+            .chain(parent_flush.as_ref())
+            .any(|result| result.get("ok").and_then(Value::as_bool) == Some(false));
+        let all_unavailable = current.is_err()
+            && undertaking.is_err()
+            && repository.is_err()
+            && parent.as_ref().is_none_or(Result::is_err);
+        overview["ok"] = Value::Bool(!all_unavailable);
+        overview["memory_status"] = Value::String(
+            if all_unavailable {
+                "unavailable"
+            } else if pending_count > 0 || flush_degraded || !unavailable_sources.is_empty() {
+                "degraded"
+            } else {
+                "available"
+            }
+            .into(),
+        );
+        overview["unavailable_sources"] = json!(unavailable_sources);
         overview["pending_write_count"] = json!(pending_count);
         overview["pending_writes"] = json!(pending);
-        overview["retry_flush"] = flush;
+        overview["retry_flush"] = json!({
+            "current_environment": flush,
+            "inherited_parent": parent_flush,
+            "accepted_undertaking": undertaking_flush,
+            "accepted_repository": repository_flush,
+        });
         Ok(overview)
     }
 
@@ -1130,43 +1584,116 @@ impl CoderBoundToolRegistry {
             super::coder_memory::COGNITION_CODER_MEMORY_RECALL => {
                 let query = super::coder_memory::parse_recall_query(input)?;
                 let semantic_tags = super::coder_memory::recall_semantic_tags(&query);
-                let mut recall_input = json!({
-                    "session_id": self.memory_scope.session_id,
-                    "query": query.query,
-                    "limit": query.limit,
+                let parent_scope = self.memory_scope.parent_environment_scope();
+                let undertaking_scope = self.memory_scope.accepted_undertaking_scope();
+                let repository_scope = self.memory_scope.accepted_repository_scope();
+                let (flush, parent_flush, undertaking_flush, repository_flush) = tokio::join!(
+                    self.flush_memory_scope_queue(&self.memory_scope),
+                    async {
+                        match parent_scope.as_ref() {
+                            Some(scope) => Some(self.flush_memory_scope_queue(scope).await),
+                            None => None,
+                        }
+                    },
+                    self.flush_memory_scope_queue(&undertaking_scope),
+                    self.flush_memory_scope_queue(&repository_scope),
+                );
+                let recall_input = |session_id: &str| {
+                    let mut input = json!({
+                        "session_id": session_id,
+                        "query": query.query,
+                        "limit": query.limit.saturating_mul(2).clamp(1, 24),
+                    });
+                    if !semantic_tags.is_empty() {
+                        input["semantic_tags"] = json!(semantic_tags);
+                    }
+                    input
+                };
+                let (current, parent, undertaking, repository) = tokio::join!(
+                    self.invoke_locus_tool(
+                        "cognition_memory_recall",
+                        recall_input(&self.memory_scope.session_id),
+                    ),
+                    async {
+                        match parent_scope.as_ref() {
+                            Some(scope) => Some(
+                                self.invoke_locus_tool(
+                                    "cognition_memory_recall",
+                                    recall_input(&scope.session_id),
+                                )
+                                .await,
+                            ),
+                            None => None,
+                        }
+                    },
+                    self.invoke_locus_tool(
+                        "cognition_memory_recall",
+                        recall_input(&undertaking_scope.session_id),
+                    ),
+                    self.invoke_locus_tool(
+                        "cognition_memory_recall",
+                        recall_input(&repository_scope.session_id),
+                    ),
+                );
+                if let Ok(result) = current.as_ref() {
+                    self.remember_memory_cursor(result);
+                }
+                let (pending_count, pending) = self.pending_memory_summaries().await;
+                let mut recalled = super::coder_memory::project_lineage_recall(
+                    &self.memory_scope,
+                    &current_head,
+                    super::coder_memory::CoderMemoryLineageSources {
+                        current: current.as_ref().ok(),
+                        parent: parent.as_ref().and_then(|result| result.as_ref().ok()),
+                        undertaking: undertaking.as_ref().ok(),
+                        repository: repository.as_ref().ok(),
+                    },
+                    true,
+                    query.limit,
+                );
+                let mut unavailable_sources = Vec::new();
+                if current.is_err() {
+                    unavailable_sources.push("current_environment");
+                }
+                if parent.as_ref().is_some_and(Result::is_err) {
+                    unavailable_sources.push("inherited_parent");
+                }
+                if undertaking.is_err() {
+                    unavailable_sources.push("accepted_undertaking");
+                }
+                if repository.is_err() {
+                    unavailable_sources.push("accepted_repository");
+                }
+                let flush_degraded = [&flush, &undertaking_flush, &repository_flush]
+                    .into_iter()
+                    .chain(parent_flush.as_ref())
+                    .any(|result| result.get("ok").and_then(Value::as_bool) == Some(false));
+                let all_unavailable = current.is_err()
+                    && undertaking.is_err()
+                    && repository.is_err()
+                    && parent.as_ref().is_none_or(Result::is_err);
+                recalled["ok"] = Value::Bool(!all_unavailable);
+                recalled["memory_status"] = Value::String(
+                    if all_unavailable {
+                        "unavailable"
+                    } else if pending_count > 0 || flush_degraded || !unavailable_sources.is_empty()
+                    {
+                        "degraded"
+                    } else {
+                        "available"
+                    }
+                    .into(),
+                );
+                recalled["unavailable_sources"] = json!(unavailable_sources);
+                recalled["pending_write_count"] = json!(pending_count);
+                recalled["pending_writes"] = json!(pending);
+                recalled["retry_flush"] = json!({
+                    "current_environment": flush,
+                    "inherited_parent": parent_flush,
+                    "accepted_undertaking": undertaking_flush,
+                    "accepted_repository": repository_flush,
                 });
-                if !semantic_tags.is_empty() {
-                    recall_input["semantic_tags"] = json!(semantic_tags);
-                }
-                match self
-                    .invoke_locus_tool("cognition_memory_recall", recall_input)
-                    .await
-                {
-                    Ok(result) => {
-                        self.remember_memory_cursor(&result);
-                        Ok(super::coder_memory::project_recall(
-                            &self.memory_scope,
-                            &current_head,
-                            &result,
-                            true,
-                            query.limit,
-                        ))
-                    }
-                    Err(error) => {
-                        let (pending_count, pending) = self.pending_memory_summaries().await;
-                        Ok(json!({
-                            "ok": false,
-                            "scope": self.memory_scope.public_descriptor(),
-                            "current_head": current_head,
-                            "retrieved": 0,
-                            "nodes": [],
-                            "memory_status": "unavailable",
-                            "pending_write_count": pending_count,
-                            "pending_writes": pending,
-                            "error": bounded_memory_error(&error.to_string()),
-                        }))
-                    }
-                }
+                Ok(recalled)
             }
             super::coder_memory::COGNITION_CODER_MEMORY_COMMIT => {
                 let commit = super::coder_memory::build_commit(
@@ -2091,6 +2618,7 @@ mod tests {
     struct RecordingRegistry {
         last_input: StdMutex<Option<Value>>,
         invoked_tools: StdMutex<Vec<String>>,
+        invocations: StdMutex<Vec<(String, Value)>>,
         memory_nodes: StdMutex<Vec<Value>>,
         memory_unavailable: AtomicBool,
     }
@@ -2127,6 +2655,10 @@ mod tests {
                 .lock()
                 .expect("tools lock")
                 .push(tool_name.to_string());
+            self.invocations
+                .lock()
+                .expect("invocations lock")
+                .push((tool_name.to_string(), input.clone()));
             if tool_name.starts_with("cognition_memory_")
                 && self.memory_unavailable.load(Ordering::SeqCst)
             {
@@ -2787,16 +3319,162 @@ mod tests {
         assert!(!recalled.to_string().contains("attacker-controlled-session"));
 
         let recall_input = inner
-            .last_input
+            .invocations
             .lock()
-            .expect("last input")
-            .clone()
-            .expect("recall input");
+            .expect("invocations")
+            .iter()
+            .rev()
+            .find(|(tool, input)| {
+                tool == "cognition_memory_recall"
+                    && input.get("session_id").and_then(Value::as_str)
+                        == Some(pinned_session.as_str())
+            })
+            .map(|(_, input)| input.clone())
+            .expect("environment recall input");
         assert_eq!(recall_input["session_id"], pinned_session);
         assert_eq!(
             recall_input["semantic_tags"],
             json!(["kind:decision", "path:src/agent_runtime/coder_memory.rs"])
         );
+    }
+
+    #[tokio::test]
+    async fn accepted_promotion_excludes_transient_nodes_and_uses_stable_scopes() {
+        let fixture = fixture();
+        let inner = Arc::new(RecordingRegistry::default());
+        let source_scope = super::super::coder_memory::CoderMemoryScope::for_entry(&fixture.entry);
+        let identity = CoderAgentIdentity::for_turn("chat-1", 1, "attempt-1");
+        for (kind, summary) in [
+            ("decision", "Keep the typed memory facade"),
+            ("hypothesis", "A transient sibling theory"),
+        ] {
+            let commit = super::super::coder_memory::build_commit(
+                &json!({ "kind": kind, "summary": summary }),
+                &source_scope,
+                &identity,
+                &fixture.entry.head_oid,
+            )
+            .expect("source memory commit");
+            try_store_memory_commit_with_registry(inner.as_ref(), &source_scope, &commit)
+                .await
+                .expect("store source memory");
+        }
+        let queued_verification = super::super::coder_memory::build_commit(
+            &json!({ "kind": "verification", "summary": "Focused tests pass" }),
+            &source_scope,
+            &identity,
+            &fixture.entry.head_oid,
+        )
+        .expect("queued source verification");
+        let source_queue = shared_memory_retry_queue(&source_scope);
+        source_queue
+            .lock()
+            .await
+            .enqueue(queued_verification)
+            .expect("queue source verification");
+        for (kind, summary) in [
+            ("decision", "A stale rejected design"),
+            ("verification", "Checks from an older HEAD"),
+        ] {
+            let commit = super::super::coder_memory::build_commit(
+                &json!({ "kind": kind, "summary": summary }),
+                &source_scope,
+                &identity,
+                "stale-head",
+            )
+            .expect("stale source memory commit");
+            try_store_memory_commit_with_registry(inner.as_ref(), &source_scope, &commit)
+                .await
+                .expect("store stale source memory");
+        }
+
+        let task = super::super::coder_memory::CoderMemoryPromotionTask::new(
+            source_scope.repo_id.clone(),
+            source_scope.work_id.clone(),
+            source_scope.branch.clone(),
+            source_scope.environment_generation,
+            fixture.entry.head_oid.clone(),
+            "decision-1",
+            "attempt-1",
+            "evidence-1",
+            "digest-1",
+        );
+        let report = promote_memory_task(inner.as_ref(), &task)
+            .await
+            .expect("promote accepted memory");
+        assert_eq!(report["decision_candidates"], 1);
+        assert_eq!(report["verification_candidates"], 1);
+        assert_eq!(source_queue.lock().await.len(), 0);
+
+        let undertaking_session = source_scope.accepted_undertaking_scope().session_id;
+        let repository_session = source_scope.accepted_repository_scope().session_id;
+        let nodes = inner.memory_nodes.lock().expect("memory nodes");
+        let undertaking = nodes
+            .iter()
+            .filter(|node| node["session_id"] == undertaking_session)
+            .collect::<Vec<_>>();
+        let repository = nodes
+            .iter()
+            .filter(|node| node["session_id"] == repository_session)
+            .collect::<Vec<_>>();
+        assert_eq!(undertaking.len(), 2);
+        assert_eq!(repository.len(), 1);
+        assert!(undertaking.iter().all(|node| {
+            node["semantic_tags"]
+                .as_array()
+                .is_some_and(|tags| tags.iter().any(|tag| tag == "knowledge:accepted"))
+        }));
+        assert!(
+            repository[0]["semantic_tags"]
+                .as_array()
+                .is_some_and(|tags| tags.iter().any(|tag| tag == "kind:verification"))
+        );
+        assert!(nodes.iter().all(|node| {
+            node["session_id"] == source_scope.session_id
+                || !node["context_summary"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains("transient sibling theory")
+        }));
+        let promoted = undertaking
+            .iter()
+            .chain(repository.iter())
+            .map(|node| node["context_summary"].as_str().unwrap_or_default())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(!promoted.contains("stale rejected design"));
+        assert!(!promoted.contains("older HEAD"));
+    }
+
+    #[tokio::test]
+    async fn discarded_undertaking_appends_an_archive_marker() {
+        let fixture = fixture();
+        let inner = Arc::new(RecordingRegistry::default());
+        let work_id = medousa_forge::model::WorkId::from(fixture.entry.work_id.clone());
+        let item = fixture
+            .forge
+            .discard(&work_id, &Forge::system_actor())
+            .expect("discard undertaking");
+
+        let report = finalize_coder_memory_lineage(
+            inner.clone(),
+            fixture.forge.clone(),
+            &item,
+            None,
+        )
+        .await;
+        assert_eq!(report["ok"], true);
+        assert_eq!(report["terminal_state"], "discarded");
+        assert_eq!(report["archived_environments"], 1);
+
+        let nodes = inner.memory_nodes.lock().expect("memory nodes");
+        assert_eq!(nodes.len(), 1);
+        let tags = nodes[0]["semantic_tags"]
+            .as_array()
+            .expect("archive tags");
+        assert!(tags.iter().any(|tag| tag == "lineage:archived"));
+        assert!(tags.iter().any(|tag| tag == "terminal:discarded"));
+        assert!(tags.iter().any(|tag| tag == "kind:checkpoint"));
     }
 
     #[tokio::test]

@@ -7648,6 +7648,24 @@ async fn apply_decision(
     let item = forge(&state)
         .apply_decision(&id, &decision_id, &actor)
         .map_err(map_err)?;
+    let memory_lineage = crate::agent_runtime::coder_tools::finalize_coder_memory_lineage(
+        state.platform.agent().tool_registry.clone(),
+        forge(&state),
+        &item,
+        Some(&decision_id),
+    )
+    .await;
+    if memory_lineage
+        .get("ok")
+        .and_then(serde_json::Value::as_bool)
+        == Some(false)
+    {
+        tracing::warn!(
+            work_id = %item.id,
+            report = %memory_lineage,
+            "accepted Coder memory lineage finalized with deferred work"
+        );
+    }
     Ok(ok_item(&state, item, "applied"))
 }
 
@@ -7658,6 +7676,24 @@ async fn discard_item(
     let id = parse_work_id(&work_id)?;
     let actor = actor_from_state(&state);
     let item = forge(&state).discard(&id, &actor).map_err(map_err)?;
+    let memory_lineage = crate::agent_runtime::coder_tools::finalize_coder_memory_lineage(
+        state.platform.agent().tool_registry.clone(),
+        forge(&state),
+        &item,
+        None,
+    )
+    .await;
+    if memory_lineage
+        .get("ok")
+        .and_then(serde_json::Value::as_bool)
+        == Some(false)
+    {
+        tracing::warn!(
+            work_id = %item.id,
+            report = %memory_lineage,
+            "discarded Coder memory lineage finalized with deferred work"
+        );
+    }
     Ok(ok_item(&state, item, "discarded"))
 }
 

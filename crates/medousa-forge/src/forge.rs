@@ -399,6 +399,7 @@ impl Forge {
             branch,
             baseline_oid,
             generation,
+            derived_from: None,
         };
         item.environment = Some(env.clone());
         self.store.append(
@@ -621,6 +622,10 @@ impl Forge {
             .join(repo_short)
             .join(crate::slug::attempt_worktree_leaf(&slug, attempt_seq));
         let branch = crate::slug::attempt_branch(&slug, attempt_seq);
+        // Capture the inheritance boundary before Git starts cloning the
+        // source state. Parent memory written during the fork must not leak
+        // into the child's immutable snapshot.
+        let forked_at = Utc::now();
         self.git.worktree_add_from_worktree(
             &target.repo_path,
             &staging.worktree,
@@ -634,6 +639,11 @@ impl Forge {
             branch,
             baseline_oid: staging.baseline_oid.clone(),
             generation: staging.generation,
+            derived_from: Some(crate::model::EnvironmentLineage {
+                branch: staging.branch.clone(),
+                generation: staging.generation,
+                forked_at,
+            }),
         })
     }
 
@@ -2474,6 +2484,19 @@ mod tests {
             .environment_for_attempt(&first_lease.attempt_id)
             .unwrap()
             .clone();
+        let lineage = first_environment
+            .derived_from
+            .as_ref()
+            .expect("isolated environment lineage");
+        assert_eq!(lineage.branch, staging.branch);
+        assert_eq!(lineage.generation, staging.generation);
+        assert!(
+            lineage.forked_at
+                <= item
+                    .attempt(&first_lease.attempt_id)
+                    .expect("first attempt")
+                    .started_at
+        );
         fs::write(
             first_environment.worktree.join("app.txt"),
             "unfinished agent edit\n",
@@ -2493,6 +2516,10 @@ mod tests {
 
         assert_eq!(second_environment.worktree, first_environment.worktree);
         assert_eq!(second_environment.branch, first_environment.branch);
+        assert_eq!(
+            second_environment.derived_from,
+            first_environment.derived_from
+        );
         assert_eq!(
             fs::read_to_string(second_environment.worktree.join("app.txt")).unwrap(),
             "unfinished agent edit\n"
@@ -2535,6 +2562,24 @@ mod tests {
             .clone();
         assert_ne!(first_env.worktree, second_env.worktree);
         assert_ne!(first_env.branch, second_env.branch);
+        assert_eq!(
+            first_env
+                .derived_from
+                .as_ref()
+                .map(|lineage| lineage.branch.as_str()),
+            item.environment
+                .as_ref()
+                .map(|environment| environment.branch.as_str())
+        );
+        assert_eq!(
+            second_env
+                .derived_from
+                .as_ref()
+                .map(|lineage| (lineage.branch.as_str(), lineage.generation)),
+            item.environment
+                .as_ref()
+                .map(|environment| (environment.branch.as_str(), environment.generation))
+        );
 
         fs::write(first_env.worktree.join("first.txt"), "first agent\n").unwrap();
         fs::write(second_env.worktree.join("second.txt"), "second agent\n").unwrap();
