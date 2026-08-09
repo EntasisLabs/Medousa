@@ -1,33 +1,36 @@
 //! Host/worker calendar tools: list, create, update, delete, import, export.
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
-use serde::Deserialize;
-use serde_json::{Value, json};
-use stasis::application::orchestration::tool_registry::StasisTool;
+use serde::{Deserialize, Deserializer};
+use serde_json::Value;
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 use tokio::sync::mpsc;
 
 use crate::calendar::CalendarService;
 use crate::daemon_api::{
-    CalendarExportResponse, CalendarImportRequest, CalendarListResponse, CalendarWriteRequest,
+    CalendarAlarm, CalendarDeleteResponse, CalendarExportResponse, CalendarImportRequest,
+    CalendarImportResponse, CalendarListResponse, CalendarWriteRequest, CalendarWriteResponse,
 };
 use crate::events::TuiEvent;
 use crate::typed_tools::{ToolId, medousa_tool};
 
 const COGNITION_CALENDAR_LIST_ID: ToolId = ToolId::new("cognition_calendar_list");
 const COGNITION_CALENDAR_EXPORT_ID: ToolId = ToolId::new("cognition_calendar_export");
+const COGNITION_CALENDAR_CREATE_ID: ToolId = ToolId::new("cognition_calendar_create");
+const COGNITION_CALENDAR_UPDATE_ID: ToolId = ToolId::new("cognition_calendar_update");
+const COGNITION_CALENDAR_DELETE_ID: ToolId = ToolId::new("cognition_calendar_delete");
+const COGNITION_CALENDAR_IMPORT_ID: ToolId = ToolId::new("cognition_calendar_import");
 
 pub fn register_calendar_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
     event_tx: mpsc::Sender<TuiEvent>,
 ) -> StasisResult<()> {
     registry.register_typed_tool(CognitionCalendarListTool::new(event_tx.clone()))?;
-    registry.register_tool(CognitionCalendarCreateTool::new(event_tx.clone()))?;
-    registry.register_tool(CognitionCalendarUpdateTool::new(event_tx.clone()))?;
-    registry.register_tool(CognitionCalendarDeleteTool::new(event_tx.clone()))?;
-    registry.register_tool(CognitionCalendarImportTool::new(event_tx.clone()))?;
+    registry.register_typed_tool(CognitionCalendarCreateTool::new(event_tx.clone()))?;
+    registry.register_typed_tool(CognitionCalendarUpdateTool::new(event_tx.clone()))?;
+    registry.register_typed_tool(CognitionCalendarDeleteTool::new(event_tx.clone()))?;
+    registry.register_typed_tool(CognitionCalendarImportTool::new(event_tx.clone()))?;
     registry.register_typed_tool(CognitionCalendarExportTool::new(event_tx))?;
     Ok(())
 }
@@ -39,10 +42,6 @@ fn emit_invoked(event_tx: &mpsc::Sender<TuiEvent>, tool_name: &str, summary: &st
     });
 }
 
-fn parse_rfc3339(value: Option<&Value>, field: &str) -> StasisResult<Option<DateTime<Utc>>> {
-    parse_rfc3339_str(value.and_then(Value::as_str), field)
-}
-
 fn parse_rfc3339_str(raw: Option<&str>, field: &str) -> StasisResult<Option<DateTime<Utc>>> {
     let Some(raw) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
         return Ok(None);
@@ -52,28 +51,33 @@ fn parse_rfc3339_str(raw: Option<&str>, field: &str) -> StasisResult<Option<Date
         .map_err(|err| StasisError::PortFailure(format!("invalid {field}: {err}")))
 }
 
-fn require_rfc3339(value: Option<&Value>, field: &str) -> StasisResult<DateTime<Utc>> {
-    parse_rfc3339(value, field)?
-        .ok_or_else(|| StasisError::PortFailure(format!("{field} is required (RFC3339)")))
-}
-
-fn optional_string(input: &Value, field: &str) -> Option<String> {
-    input
-        .get(field)
-        .and_then(Value::as_str)
+fn normalized_optional_string(value: Option<String>) -> Option<String> {
+    value
+        .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_string)
 }
 
-fn write_request_from_input(input: &Value, require_summary: bool) -> StasisResult<CalendarWriteRequest> {
-    let summary = optional_string(input, "summary").unwrap_or_default();
-    if require_summary && summary.is_empty() {
-        return Err(StasisError::PortFailure("summary is required".to_string()));
-    }
-    let alarms = input
-        .get("alarms")
-        .and_then(Value::as_array)
+#[derive(Debug, JsonSchema)]
+pub struct CalendarAlarmInput {
+    /// Minutes before dtstart
+    trigger_minutes_before: i64,
+    /// VALARM action (display)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    action: Option<String>,
+}
+
+fn deserialize_lenient_calendar_alarms<'de, D>(
+    deserializer: D,
+) -> Result<Option<Vec<CalendarAlarmInput>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    let alarms = value
+        .as_array()
         .map(|items| {
             items
                 .iter()
@@ -84,66 +88,183 @@ fn write_request_from_input(input: &Value, require_summary: bool) -> StasisResul
                         .or_else(|| {
                             item.get("trigger_minutes_before")
                                 .and_then(Value::as_u64)
-                                .map(|v| v as i64)
+                                .map(|value| value as i64)
                         })?;
-                    if minutes <= 0 {
-                        return None;
-                    }
-                    Some(medousa_types::CalendarAlarm {
-                        trigger_minutes_before: minutes.min(i32::MAX as i64) as i32,
+                    (minutes > 0).then(|| CalendarAlarmInput {
+                        trigger_minutes_before: minutes,
                         action: item
                             .get("action")
                             .and_then(Value::as_str)
-                            .unwrap_or("display")
-                            .to_string(),
+                            .map(str::to_string),
                     })
                 })
-                .collect::<Vec<_>>()
+                .collect()
         })
         .unwrap_or_default();
-
-    Ok(CalendarWriteRequest {
-        uid: optional_string(input, "uid"),
-        summary,
-        description: optional_string(input, "description"),
-        location: optional_string(input, "location"),
-        dtstart: require_rfc3339(input.get("dtstart"), "dtstart")?,
-        dtend: parse_rfc3339(input.get("dtend"), "dtend")?,
-        all_day: input
-            .get("all_day")
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
-        rrule: optional_string(input, "rrule"),
-        calendar_path: optional_string(input, "path").or_else(|| optional_string(input, "calendar_path")),
-        note_path: optional_string(input, "note_path"),
-        alarms,
-    })
+    Ok(Some(alarms))
 }
 
-const WRITE_SCHEMA_PROPERTIES: &str = r#"{
-  "summary": { "type": "string", "description": "Event title" },
-  "description": { "type": "string" },
-  "location": { "type": "string" },
-  "dtstart": { "type": "string", "description": "RFC3339 start. All-day: YYYY-MM-DDT00:00:00Z for that calendar date." },
-  "dtend": { "type": "string", "description": "RFC3339 end. All-day: exclusive next-day YYYY-MM-DDT00:00:00Z." },
-  "all_day": { "type": "boolean", "description": "True for DATE (calendar-day) events; use UTC midnights for dtstart/dtend." },
-  "rrule": { "type": "string", "description": "Optional RRULE body (without RRULE: prefix)" },
-  "note_path": { "type": "string", "description": "Optional vault-relative markdown note linked to this event" },
-  "alarms": {
-    "type": "array",
-    "description": "Display alerts before start",
-    "items": {
-      "type": "object",
-      "properties": {
-        "trigger_minutes_before": { "type": "integer", "description": "Minutes before dtstart" },
-        "action": { "type": "string", "description": "VALARM action (display)" }
-      },
-      "required": ["trigger_minutes_before"]
+#[derive(Debug, JsonSchema)]
+pub struct CalendarWriteFieldsInput {
+    /// Event title
+    #[schemars(required, with = "String")]
+    summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    location: Option<String>,
+    /// RFC3339 start. All-day: YYYY-MM-DDT00:00:00Z for that calendar date.
+    #[schemars(required, with = "String")]
+    dtstart: Option<String>,
+    /// RFC3339 end. All-day: exclusive next-day YYYY-MM-DDT00:00:00Z.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    dtend: Option<String>,
+    /// True for DATE (calendar-day) events; use UTC midnights for dtstart/dtend.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
+    all_day: Option<bool>,
+    /// Optional RRULE body (without RRULE: prefix)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    rrule: Option<String>,
+    /// Optional vault-relative markdown note linked to this event
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    note_path: Option<String>,
+    /// Display alerts before start
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        with = "Vec<CalendarAlarmInput>",
+        skip_serializing_if = "Option::is_none"
+    )]
+    alarms: Option<Vec<CalendarAlarmInput>>,
+    /// Vault-relative .ics path (default calendar/personal.ics)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+    /// Alias for path
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    calendar_path: Option<String>,
+}
+
+impl CalendarWriteFieldsInput {
+    fn into_request(self, uid: Option<String>) -> StasisResult<CalendarWriteRequest> {
+        let summary = normalized_optional_string(self.summary)
+            .ok_or_else(|| StasisError::PortFailure("summary is required".to_string()))?;
+        let dtstart = parse_rfc3339_str(self.dtstart.as_deref(), "dtstart")?
+            .ok_or_else(|| StasisError::PortFailure("dtstart is required (RFC3339)".to_string()))?;
+        let alarms = self
+            .alarms
+            .unwrap_or_default()
+            .into_iter()
+            .map(|alarm| CalendarAlarm {
+                trigger_minutes_before: alarm.trigger_minutes_before.min(i32::MAX as i64) as i32,
+                action: alarm.action.unwrap_or_else(|| "display".to_string()),
+            })
+            .collect();
+
+        Ok(CalendarWriteRequest {
+            uid: normalized_optional_string(uid),
+            summary,
+            description: normalized_optional_string(self.description),
+            location: normalized_optional_string(self.location),
+            dtstart,
+            dtend: parse_rfc3339_str(self.dtend.as_deref(), "dtend")?,
+            all_day: self.all_day.unwrap_or(false),
+            rrule: normalized_optional_string(self.rrule),
+            calendar_path: normalized_optional_string(self.path)
+                .or_else(|| normalized_optional_string(self.calendar_path)),
+            note_path: normalized_optional_string(self.note_path),
+            alarms,
+        })
     }
-  },
-  "path": { "type": "string", "description": "Vault-relative .ics path (default calendar/personal.ics)" },
-  "calendar_path": { "type": "string", "description": "Alias for path" }
-}"#;
+}
+
+#[derive(Deserialize)]
+struct CalendarWriteWire {
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    uid: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    summary: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    description: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    location: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    dtstart: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    dtend: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
+    )]
+    all_day: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    rrule: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    note_path: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_lenient_calendar_alarms")]
+    alarms: Option<Vec<CalendarAlarmInput>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    path: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    calendar_path: Option<String>,
+}
+
+impl CalendarWriteWire {
+    fn into_parts(self) -> (Option<String>, CalendarWriteFieldsInput) {
+        (
+            self.uid,
+            CalendarWriteFieldsInput {
+                summary: self.summary,
+                description: self.description,
+                location: self.location,
+                dtstart: self.dtstart,
+                dtend: self.dtend,
+                all_day: self.all_day,
+                rrule: self.rrule,
+                note_path: self.note_path,
+                alarms: self.alarms,
+                path: self.path,
+                calendar_path: self.calendar_path,
+            },
+        )
+    }
+}
 
 pub struct CognitionCalendarListTool {
     event_tx: mpsc::Sender<TuiEvent>,
@@ -213,36 +334,39 @@ impl CognitionCalendarCreateTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionCalendarCreateTool {
-    fn name(&self) -> &'static str {
-        "cognition_calendar_create"
-    }
+#[derive(Debug, JsonSchema)]
+pub struct CalendarCreateInput {
+    #[serde(flatten)]
+    fields: CalendarWriteFieldsInput,
+    #[schemars(skip)]
+    hidden_uid: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Create a calendar event in the vault .ics store. For all-day events set all_day=true and use UTC midnights for the calendar date.",
-        )
+impl<'de> Deserialize<'de> for CalendarCreateInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let (hidden_uid, fields) = CalendarWriteWire::deserialize(deserializer)?.into_parts();
+        Ok(Self { fields, hidden_uid })
     }
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        let mut schema = json!({
-            "type": "object",
-            "required": ["summary", "dtstart"],
-            "properties": {}
-        });
-        let props: Value = serde_json::from_str(WRITE_SCHEMA_PROPERTIES)
-            .unwrap_or_else(|_| json!({}));
-        schema["properties"] = props;
-        Some(schema)
-    }
-
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let request = write_request_from_input(&input, true)?;
-        emit_invoked(&self.event_tx, self.name(), &request.summary);
-        let response = CalendarService::create_event(&request)
-            .map_err(|err| StasisError::PortFailure(err.to_string()))?;
-        serde_json::to_value(response).map_err(|err| StasisError::PortFailure(err.to_string()))
+#[medousa_tool(id = COGNITION_CALENDAR_CREATE_ID)]
+impl CognitionCalendarCreateTool {
+    /// Create a calendar event in the vault .ics store. For all-day events set all_day=true and use UTC midnights for the calendar date.
+    async fn invoke_typed(
+        &self,
+        input: CalendarCreateInput,
+    ) -> stasis::prelude::Result<CalendarWriteResponse> {
+        let request = input.fields.into_request(input.hidden_uid)?;
+        emit_invoked(
+            &self.event_tx,
+            COGNITION_CALENDAR_CREATE_ID.as_str(),
+            &request.summary,
+        );
+        CalendarService::create_event(&request)
+            .map_err(|err| StasisError::PortFailure(err.to_string()))
     }
 }
 
@@ -256,42 +380,38 @@ impl CognitionCalendarUpdateTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionCalendarUpdateTool {
-    fn name(&self) -> &'static str {
-        "cognition_calendar_update"
-    }
+#[derive(Debug, JsonSchema)]
+pub struct CalendarUpdateInput {
+    /// Event UID to update
+    #[schemars(required, with = "String")]
+    uid: Option<String>,
+    #[serde(flatten)]
+    fields: CalendarWriteFieldsInput,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("Update an existing calendar event by uid (full replace of mutable fields).")
+impl<'de> Deserialize<'de> for CalendarUpdateInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let (uid, fields) = CalendarWriteWire::deserialize(deserializer)?.into_parts();
+        Ok(Self { uid, fields })
     }
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        let mut schema = json!({
-            "type": "object",
-            "required": ["uid", "summary", "dtstart"],
-            "properties": {
-                "uid": { "type": "string", "description": "Event UID to update" }
-            }
-        });
-        let mut props: serde_json::Map<String, Value> = serde_json::from_str(WRITE_SCHEMA_PROPERTIES)
-            .unwrap_or_default();
-        props.insert(
-            "uid".to_string(),
-            json!({ "type": "string", "description": "Event UID to update" }),
-        );
-        schema["properties"] = Value::Object(props);
-        Some(schema)
-    }
-
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let uid = optional_string(&input, "uid")
+#[medousa_tool(id = COGNITION_CALENDAR_UPDATE_ID)]
+impl CognitionCalendarUpdateTool {
+    /// Update an existing calendar event by uid (full replace of mutable fields).
+    async fn invoke_typed(
+        &self,
+        input: CalendarUpdateInput,
+    ) -> stasis::prelude::Result<CalendarWriteResponse> {
+        let uid = normalized_optional_string(input.uid)
             .ok_or_else(|| StasisError::PortFailure("uid is required".to_string()))?;
-        let request = write_request_from_input(&input, true)?;
-        emit_invoked(&self.event_tx, self.name(), &uid);
-        let response = CalendarService::update_event(&uid, &request)
-            .map_err(|err| StasisError::PortFailure(err.to_string()))?;
-        serde_json::to_value(response).map_err(|err| StasisError::PortFailure(err.to_string()))
+        let request = input.fields.into_request(Some(uid.clone()))?;
+        emit_invoked(&self.event_tx, COGNITION_CALENDAR_UPDATE_ID.as_str(), &uid);
+        CalendarService::update_event(&uid, &request)
+            .map_err(|err| StasisError::PortFailure(err.to_string()))
     }
 }
 
@@ -305,35 +425,55 @@ impl CognitionCalendarDeleteTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionCalendarDeleteTool {
-    fn name(&self) -> &'static str {
-        "cognition_calendar_delete"
-    }
+#[derive(Debug, JsonSchema)]
+pub struct CalendarDeleteInput {
+    #[schemars(required, with = "String")]
+    uid: Option<String>,
+    /// Vault-relative .ics path (default calendar/personal.ics)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("Delete a calendar event by uid from the vault .ics store.")
+impl<'de> Deserialize<'de> for CalendarDeleteInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            uid: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            path: Option<String>,
+        }
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            uid: input.uid,
+            path: input.path,
+        })
     }
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["uid"],
-            "properties": {
-                "uid": { "type": "string" },
-                "path": { "type": "string", "description": "Vault-relative .ics path (default calendar/personal.ics)" }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let uid = optional_string(&input, "uid")
+#[medousa_tool(id = COGNITION_CALENDAR_DELETE_ID)]
+impl CognitionCalendarDeleteTool {
+    /// Delete a calendar event by uid from the vault .ics store.
+    async fn invoke_typed(
+        &self,
+        input: CalendarDeleteInput,
+    ) -> stasis::prelude::Result<CalendarDeleteResponse> {
+        let uid = normalized_optional_string(input.uid)
             .ok_or_else(|| StasisError::PortFailure("uid is required".to_string()))?;
-        let path = optional_string(&input, "path");
-        emit_invoked(&self.event_tx, self.name(), &uid);
-        let response = CalendarService::delete_event(&uid, path.as_deref())
-            .map_err(|err| StasisError::PortFailure(err.to_string()))?;
-        serde_json::to_value(response).map_err(|err| StasisError::PortFailure(err.to_string()))
+        let path = normalized_optional_string(input.path);
+        emit_invoked(&self.event_tx, COGNITION_CALENDAR_DELETE_ID.as_str(), &uid);
+        CalendarService::delete_event(&uid, path.as_deref())
+            .map_err(|err| StasisError::PortFailure(err.to_string()))
     }
 }
 
@@ -347,44 +487,74 @@ impl CognitionCalendarImportTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionCalendarImportTool {
-    fn name(&self) -> &'static str {
-        "cognition_calendar_import"
-    }
+#[derive(Debug, JsonSchema)]
+pub struct CalendarImportInput {
+    /// Raw RFC 5545 text
+    #[schemars(required, with = "String")]
+    ics: Option<String>,
+    /// Vault-relative .ics path (default calendar/personal.ics)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+    /// Alias for path
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    calendar_path: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("Merge VEVENT components from raw ICS text into the vault calendar (UID upsert).")
+impl<'de> Deserialize<'de> for CalendarImportInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            ics: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            path: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            calendar_path: Option<String>,
+        }
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            ics: input.ics,
+            path: input.path,
+            calendar_path: input.calendar_path,
+        })
     }
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["ics"],
-            "properties": {
-                "ics": { "type": "string", "description": "Raw RFC 5545 text" },
-                "path": { "type": "string", "description": "Vault-relative .ics path (default calendar/personal.ics)" },
-                "calendar_path": { "type": "string", "description": "Alias for path" }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let ics = optional_string(&input, "ics")
+#[medousa_tool(id = COGNITION_CALENDAR_IMPORT_ID)]
+impl CognitionCalendarImportTool {
+    /// Merge VEVENT components from raw ICS text into the vault calendar (UID upsert).
+    async fn invoke_typed(
+        &self,
+        input: CalendarImportInput,
+    ) -> stasis::prelude::Result<CalendarImportResponse> {
+        let ics = normalized_optional_string(input.ics)
             .ok_or_else(|| StasisError::PortFailure("ics is required".to_string()))?;
-        let path = optional_string(&input, "path").or_else(|| optional_string(&input, "calendar_path"));
+        let path = normalized_optional_string(input.path)
+            .or_else(|| normalized_optional_string(input.calendar_path));
         emit_invoked(
             &self.event_tx,
-            self.name(),
+            COGNITION_CALENDAR_IMPORT_ID.as_str(),
             path.as_deref().unwrap_or("calendar/personal.ics"),
         );
         let request = CalendarImportRequest {
             ics,
             calendar_path: path,
         };
-        let response = CalendarService::import(&request)
-            .map_err(|err| StasisError::PortFailure(err.to_string()))?;
-        serde_json::to_value(response).map_err(|err| StasisError::PortFailure(err.to_string()))
+        CalendarService::import(&request).map_err(|err| StasisError::PortFailure(err.to_string()))
     }
 }
 
@@ -427,5 +597,42 @@ impl CognitionCalendarExportTool {
         );
         CalendarService::export(path.as_deref())
             .map_err(|err| StasisError::PortFailure(err.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn calendar_create_input_preserves_hidden_uid_aliases_and_alarm_defaults() {
+        let input: CalendarCreateInput = serde_json::from_value(json!({
+            "uid": "event-1",
+            "summary": "  Typed migration  ",
+            "dtstart": "2026-08-09T12:00:00Z",
+            "all_day": "not-a-bool",
+            "path": "   ",
+            "calendar_path": "calendar/team.ics",
+            "alarms": [
+                { "trigger_minutes_before": 15, "action": false },
+                { "trigger_minutes_before": 0 },
+                { "trigger_minutes_before": "soon" }
+            ]
+        }))
+        .expect("legacy-compatible calendar input");
+
+        let request = input
+            .fields
+            .into_request(input.hidden_uid)
+            .expect("valid write request");
+        assert_eq!(request.uid.as_deref(), Some("event-1"));
+        assert_eq!(request.summary, "Typed migration");
+        assert!(!request.all_day);
+        assert_eq!(request.calendar_path.as_deref(), Some("calendar/team.ics"));
+        assert_eq!(request.alarms.len(), 1);
+        assert_eq!(request.alarms[0].trigger_minutes_before, 15);
+        assert_eq!(request.alarms[0].action, "display");
     }
 }

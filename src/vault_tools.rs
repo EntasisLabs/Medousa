@@ -2,15 +2,16 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
-use serde_json::{Value, json};
-use stasis::application::orchestration::tool_registry::StasisTool;
+use serde_json::Value;
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 use tokio::sync::{RwLock, mpsc};
 
-use crate::daemon_api::{VaultNote, VaultNotesListResponse, VaultSearchResponse, VaultWriteRequest};
+use crate::daemon_api::{
+    VaultDeleteResponse, VaultNote, VaultNotesListResponse, VaultSearchResponse, VaultWriteRequest,
+    VaultWriteResponse,
+};
 use crate::events::TuiEvent;
 use crate::locus_semantic_tags::parse_semantic_tags_from_value;
 use crate::turn_continuation::TurnContinuationScope;
@@ -23,6 +24,9 @@ const COGNITION_VAULT_READ_ID: ToolId = ToolId::new("cognition_vault_read");
 const COGNITION_VAULT_GREP_ID: ToolId = ToolId::new("cognition_vault_grep");
 const COGNITION_VAULT_SEARCH_ID: ToolId = ToolId::new("cognition_vault_search");
 const COGNITION_VAULT_TAGS_ID: ToolId = ToolId::new("cognition_vault_tags");
+const COGNITION_VAULT_WRITE_ID: ToolId = ToolId::new("cognition_vault_write");
+const COGNITION_VAULT_DELETE_ID: ToolId = ToolId::new("cognition_vault_delete");
+const COGNITION_VAULT_MOVE_ID: ToolId = ToolId::new("cognition_vault_move");
 
 pub fn register_vault_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
@@ -35,13 +39,13 @@ pub fn register_vault_tools(
     registry.register_typed_tool(CognitionVaultGrepTool::new(event_tx.clone()))?;
     registry.register_typed_tool(CognitionVaultSearchTool::new(event_tx.clone()))?;
     registry.register_typed_tool(CognitionVaultTagsTool::new(event_tx.clone()))?;
-    registry.register_tool(CognitionVaultWriteTool::new(
+    registry.register_typed_tool(CognitionVaultWriteTool::new(
         event_tx.clone(),
         turn_scope.clone(),
         fallback_chat_session_id.clone(),
     ))?;
-    registry.register_tool(CognitionVaultDeleteTool::new(event_tx.clone()))?;
-    registry.register_tool(CognitionVaultMoveTool::new(event_tx))?;
+    registry.register_typed_tool(CognitionVaultDeleteTool::new(event_tx.clone()))?;
+    registry.register_typed_tool(CognitionVaultMoveTool::new(event_tx))?;
     Ok(())
 }
 
@@ -252,12 +256,8 @@ impl CognitionVaultReadTool {
         let note = VaultService::get_note(path)
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
         if line_start.is_some() || line_end.is_some() {
-            let excerpt = crate::line_grep::excerpt_lines(
-                &note.content,
-                line_start,
-                line_end,
-                max_chars,
-            );
+            let excerpt =
+                crate::line_grep::excerpt_lines(&note.content, line_start, line_end, max_chars);
             return Ok(VaultReadOutput::Excerpt {
                 note: note.note,
                 content: excerpt.content,
@@ -529,91 +529,146 @@ impl CognitionVaultWriteTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionVaultWriteTool {
-    fn name(&self) -> &'static str {
-        "cognition_vault_write"
-    }
+#[derive(Debug, Default)]
+struct LenientStringPresence {
+    provided: bool,
+    value: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Create or update a vault markdown note. Merges Locus-aligned semantic tags into frontmatter.",
-        )
+impl<'de> Deserialize<'de> for LenientStringPresence {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        Ok(Self {
+            provided: true,
+            value: value.as_str().map(str::to_string),
+        })
     }
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["path", "content"],
-            "properties": {
-                "path": { "type": "string" },
-                "content": { "type": "string" },
-                "session_id": {
-                    "type": "string",
-                    "description": "Chat session for workshop linking tags (defaults to current turn session)"
-                },
-                "semantic_tags": {
-                    "type": "array",
-                    "items": { "type": "string" }
-                },
-                "auto_workshop_tags": {
-                    "type": "boolean",
-                    "description": "Merge medousa/vault/session/profile/chat defaults (default true)"
-                },
-                "if_match": { "type": "string", "description": "Optional content_hash for optimistic concurrency" }
-            }
-        }))
+#[derive(Debug, JsonSchema)]
+pub struct VaultWriteInput {
+    #[schemars(required, with = "String")]
+    path: Option<String>,
+    #[schemars(required, with = "String")]
+    content: Option<String>,
+    /// Chat session for workshop linking tags (defaults to current turn session)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    session_id: Option<String>,
+    #[schemars(skip)]
+    session_id_provided: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
+    semantic_tags: Option<Vec<String>>,
+    /// Merge medousa/vault/session/profile/chat defaults (default true)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
+    auto_workshop_tags: Option<bool>,
+    /// Optional content_hash for optimistic concurrency
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    if_match: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for VaultWriteInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            path: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            content: Option<String>,
+            #[serde(default)]
+            session_id: LenientStringPresence,
+            #[serde(default, deserialize_with = "deserialize_lenient_semantic_tags")]
+            semantic_tags: Option<Vec<String>>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
+            )]
+            auto_workshop_tags: Option<bool>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            if_match: Option<String>,
+        }
+
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            path: input.path,
+            content: input.content,
+            session_id: input.session_id.value,
+            session_id_provided: input.session_id.provided,
+            semantic_tags: input.semantic_tags,
+            auto_workshop_tags: input.auto_workshop_tags,
+            if_match: input.if_match,
+        })
     }
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+#[medousa_tool(id = COGNITION_VAULT_WRITE_ID)]
+impl CognitionVaultWriteTool {
+    /// Create or update a vault markdown note. Merges Locus-aligned semantic tags into frontmatter.
+    async fn invoke_typed(
+        &self,
+        input: VaultWriteInput,
+    ) -> stasis::prelude::Result<VaultWriteResponse> {
         let path = input
-            .get("path")
-            .and_then(Value::as_str)
+            .path
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
-            .ok_or_else(|| StasisError::PortFailure("path is required".to_string()))?;
+            .ok_or_else(|| StasisError::PortFailure("path is required".to_string()))?
+            .to_string();
         let content = input
-            .get("content")
-            .and_then(Value::as_str)
+            .content
             .ok_or_else(|| StasisError::PortFailure("content is required".to_string()))?;
-        let if_match = input.get("if_match").and_then(Value::as_str);
-        let session_id = if input.get("session_id").is_some() {
+        let session_id = if input.session_id_provided {
             input
-                .get("session_id")
-                .and_then(Value::as_str)
+                .session_id
+                .as_deref()
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .map(str::to_string)
         } else {
-            Some(crate::locus_memory::resolve_memory_tool_session_id(
-                &input,
+            let chat_session_id = crate::runtime_session::resolve_active_chat_session_id_async(
                 &self.turn_scope,
                 &self.fallback_chat_session_id,
-                true,
             )
-            .await)
+            .await;
+            Some(crate::locus_memory::resolve_workshop_locus_session(
+                &chat_session_id,
+            ))
         };
-        let auto_workshop_tags = input
-            .get("auto_workshop_tags")
-            .and_then(Value::as_bool)
-            .unwrap_or(true);
-        emit_invoked(&self.event_tx, self.name(), path);
+        emit_invoked(&self.event_tx, COGNITION_VAULT_WRITE_ID.as_str(), &path);
         let request = VaultWriteRequest {
-            path: Some(path.to_string()),
-            content: content.to_string(),
+            path: Some(path.clone()),
+            content,
             session_id,
-            semantic_tags: parse_semantic_tags_from_value(input.get("semantic_tags")),
-            auto_workshop_tags,
+            semantic_tags: input.semantic_tags,
+            auto_workshop_tags: input.auto_workshop_tags.unwrap_or(true),
         };
-        let response = VaultService::write_note_with_actor(
-            Some(path),
+        VaultService::write_note_with_actor(
+            Some(&path),
             &request,
-            if_match,
+            input.if_match.as_deref(),
             crate::daemon_api::WorkspaceEventActor::Agent,
             Some("cognition_vault_write"),
         )
-        .map_err(|err| StasisError::PortFailure(err.to_string()))?;
-        serde_json::to_value(response).map_err(|err| StasisError::PortFailure(err.to_string()))
+        .map_err(|err| StasisError::PortFailure(err.to_string()))
     }
 }
 
@@ -645,39 +700,46 @@ impl CognitionVaultDeleteTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionVaultDeleteTool {
-    fn name(&self) -> &'static str {
-        "cognition_vault_delete"
-    }
+#[derive(Debug, JsonSchema)]
+pub struct VaultDeleteInput {
+    /// Relative vault note path to delete
+    #[schemars(required, with = "String")]
+    path: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Soft-delete a vault markdown note (moves to .trash). Use after confirming the path with list/read.",
-        )
+impl<'de> Deserialize<'de> for VaultDeleteInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            path: Option<String>,
+        }
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self { path: input.path })
     }
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["path"],
-            "properties": {
-                "path": { "type": "string", "description": "Relative vault note path to delete" }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+#[medousa_tool(id = COGNITION_VAULT_DELETE_ID)]
+impl CognitionVaultDeleteTool {
+    /// Soft-delete a vault markdown note (moves to .trash). Use after confirming the path with list/read.
+    async fn invoke_typed(
+        &self,
+        input: VaultDeleteInput,
+    ) -> stasis::prelude::Result<VaultDeleteResponse> {
         let path = input
-            .get("path")
-            .and_then(Value::as_str)
+            .path
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .ok_or_else(|| StasisError::PortFailure("path is required".to_string()))?;
-        emit_invoked(&self.event_tx, self.name(), path);
-        let response = VaultService::delete_note(path)
-            .map_err(|err| StasisError::PortFailure(err.to_string()))?;
-        serde_json::to_value(response).map_err(|err| StasisError::PortFailure(err.to_string()))
+        emit_invoked(&self.event_tx, COGNITION_VAULT_DELETE_ID.as_str(), path);
+        VaultService::delete_note(path).map_err(|err| StasisError::PortFailure(err.to_string()))
     }
 }
 
@@ -691,50 +753,68 @@ impl CognitionVaultMoveTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionVaultMoveTool {
-    fn name(&self) -> &'static str {
-        "cognition_vault_move"
-    }
+#[derive(Debug, JsonSchema)]
+pub struct VaultMoveInput {
+    /// Existing note path
+    #[schemars(required, with = "String")]
+    from_path: Option<String>,
+    /// Destination path
+    #[schemars(required, with = "String")]
+    to_path: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Move/rename a vault note to a new relative path. Creates parent folders as needed and removes the source note.",
-        )
+impl<'de> Deserialize<'de> for VaultMoveInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            from_path: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            to_path: Option<String>,
+        }
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            from_path: input.from_path,
+            to_path: input.to_path,
+        })
     }
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["from_path", "to_path"],
-            "properties": {
-                "from_path": { "type": "string", "description": "Existing note path" },
-                "to_path": { "type": "string", "description": "Destination path" }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+#[medousa_tool(id = COGNITION_VAULT_MOVE_ID)]
+impl CognitionVaultMoveTool {
+    /// Move/rename a vault note to a new relative path. Creates parent folders as needed and removes the source note.
+    async fn invoke_typed(
+        &self,
+        input: VaultMoveInput,
+    ) -> stasis::prelude::Result<VaultWriteResponse> {
         let from_path = input
-            .get("from_path")
-            .and_then(Value::as_str)
+            .from_path
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .ok_or_else(|| StasisError::PortFailure("from_path is required".to_string()))?;
         let to_path = input
-            .get("to_path")
-            .and_then(Value::as_str)
+            .to_path
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .ok_or_else(|| StasisError::PortFailure("to_path is required".to_string()))?;
         emit_invoked(
             &self.event_tx,
-            self.name(),
+            COGNITION_VAULT_MOVE_ID.as_str(),
             &format!("{from_path} -> {to_path}"),
         );
-        let response = VaultService::relocate_note(from_path, to_path)
-            .map_err(|err| StasisError::PortFailure(err.to_string()))?;
-        serde_json::to_value(response).map_err(|err| StasisError::PortFailure(err.to_string()))
+        VaultService::relocate_note(from_path, to_path)
+            .map_err(|err| StasisError::PortFailure(err.to_string()))
     }
 }
 
@@ -743,7 +823,7 @@ mod tests {
     use serde_json::json;
     use stasis::application::orchestration::tool_registry::StasisTool;
 
-    use super::{COGNITION_VAULT_LIST_ID, CognitionVaultListTool, VaultListInput};
+    use super::{COGNITION_VAULT_LIST_ID, CognitionVaultListTool, VaultListInput, VaultWriteInput};
     use crate::events::TuiEvent;
 
     #[test]
@@ -795,5 +875,34 @@ mod tests {
                 .expect("generated Stasis boundary");
             assert!(boundary["notes"].is_array());
         });
+    }
+
+    #[test]
+    fn vault_write_input_preserves_explicit_session_presence() {
+        let omitted: VaultWriteInput = serde_json::from_value(json!({
+            "path": "notes/typed.md",
+            "content": "hello"
+        }))
+        .expect("omitted session input");
+        assert!(!omitted.session_id_provided);
+        assert_eq!(omitted.session_id, None);
+
+        let explicit_null: VaultWriteInput = serde_json::from_value(json!({
+            "path": "notes/typed.md",
+            "content": "hello",
+            "session_id": null
+        }))
+        .expect("explicit null session input");
+        assert!(explicit_null.session_id_provided);
+        assert_eq!(explicit_null.session_id, None);
+
+        let explicit: VaultWriteInput = serde_json::from_value(json!({
+            "path": "notes/typed.md",
+            "content": "hello",
+            "session_id": "chat-1"
+        }))
+        .expect("explicit session input");
+        assert!(explicit.session_id_provided);
+        assert_eq!(explicit.session_id.as_deref(), Some("chat-1"));
     }
 }

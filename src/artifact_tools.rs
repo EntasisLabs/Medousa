@@ -2,12 +2,9 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
-use serde_json::{Value, json};
-use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::prelude::{Result as StasisResult, StasisError};
 use tokio::sync::{RwLock, mpsc};
 
@@ -24,6 +21,8 @@ pub const COGNITION_ARTIFACT_DELETE: &str = "cognition_artifact_delete";
 const COGNITION_ARTIFACT_LIST_ID: ToolId = ToolId::new(COGNITION_ARTIFACT_LIST);
 const COGNITION_ARTIFACT_READ_ID: ToolId = ToolId::new(COGNITION_ARTIFACT_READ);
 const COGNITION_ARTIFACT_GREP_ID: ToolId = ToolId::new(COGNITION_ARTIFACT_GREP);
+const COGNITION_ARTIFACT_WRITE_ID: ToolId = ToolId::new(COGNITION_ARTIFACT_WRITE);
+const COGNITION_ARTIFACT_DELETE_ID: ToolId = ToolId::new(COGNITION_ARTIFACT_DELETE);
 
 pub const ARTIFACT_COGNITION_TOOLS: &[&str] = &[
     COGNITION_ARTIFACT_LIST,
@@ -44,11 +43,23 @@ pub fn register_artifact_tools(
     event_tx: mpsc::Sender<TuiEvent>,
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 ) -> StasisResult<()> {
-    registry.register_typed_tool(CognitionArtifactListTool::new(event_tx.clone(), turn_scope.clone()))?;
-    registry.register_typed_tool(CognitionArtifactReadTool::new(event_tx.clone(), turn_scope.clone()))?;
-    registry.register_typed_tool(CognitionArtifactGrepTool::new(event_tx.clone(), turn_scope.clone()))?;
-    registry.register_tool(CognitionArtifactWriteTool::new(event_tx.clone(), turn_scope.clone()))?;
-    registry.register_tool(CognitionArtifactDeleteTool::new(event_tx, turn_scope))?;
+    registry.register_typed_tool(CognitionArtifactListTool::new(
+        event_tx.clone(),
+        turn_scope.clone(),
+    ))?;
+    registry.register_typed_tool(CognitionArtifactReadTool::new(
+        event_tx.clone(),
+        turn_scope.clone(),
+    ))?;
+    registry.register_typed_tool(CognitionArtifactGrepTool::new(
+        event_tx.clone(),
+        turn_scope.clone(),
+    ))?;
+    registry.register_typed_tool(CognitionArtifactWriteTool::new(
+        event_tx.clone(),
+        turn_scope.clone(),
+    ))?;
+    registry.register_typed_tool(CognitionArtifactDeleteTool::new(event_tx, turn_scope))?;
     Ok(())
 }
 
@@ -477,86 +488,155 @@ impl CognitionArtifactWriteTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionArtifactWriteTool {
-    fn name(&self) -> &'static str {
-        COGNITION_ARTIFACT_WRITE
-    }
+#[allow(dead_code)]
+#[derive(Debug, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+enum ArtifactPresentationSchema {
+    Inline,
+    Panel,
+    Fullscreen,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Create or revise an HTML presentation artifact. Pass artifact_id to publish a new revision \
-             (content-addressed). Use if_match_hash64 for optimistic concurrency. First-time publish: use cognition_ui_present. \
-             Canvas widgets using MedousaStore: get/set/delete return Promises — use async/await (wiki topic artifact_runtime).",
-        )
-    }
+#[derive(Debug, JsonSchema)]
+pub struct ArtifactWriteInput {
+    #[schemars(required, with = "String")]
+    title: Option<String>,
+    /// HTML fragment or document. MedousaStore get/set/delete are async — await in async init and handlers (cognition_environment_wiki topic=artifact_runtime).
+    #[schemars(required, with = "String")]
+    html: Option<String>,
+    #[schemars(required, with = "ArtifactPresentationSchema")]
+    presentation: Option<String>,
+    /// When set, supersedes this artifact revision
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    artifact_id: Option<String>,
+    /// Optional hash64 of the artifact being revised
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    if_match_hash64: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        with = "u64",
+        range(min = 120, max = 1200),
+        skip_serializing_if = "Option::is_none"
+    )]
+    height: Option<u64>,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["title", "html", "presentation"],
-            "properties": {
-                "title": { "type": "string" },
-                "html": {
-                    "type": "string",
-                    "description": "HTML fragment or document. MedousaStore get/set/delete are async — await in async init and handlers (cognition_environment_wiki topic=artifact_runtime)."
-                },
-                "presentation": { "type": "string", "enum": ["inline", "panel", "fullscreen"] },
-                "artifact_id": { "type": "string", "description": "When set, supersedes this artifact revision" },
-                "if_match_hash64": { "type": "string", "description": "Optional hash64 of the artifact being revised" },
-                "height": { "type": "integer", "minimum": 120, "maximum": 1200 }
-            }
-        }))
-    }
+impl<'de> Deserialize<'de> for ArtifactWriteInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            title: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            html: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            presentation: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            artifact_id: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            if_match_hash64: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_u64"
+            )]
+            height: Option<u64>,
+        }
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            title: input.title,
+            html: input.html,
+            presentation: input.presentation,
+            artifact_id: input.artifact_id,
+            if_match_hash64: input.if_match_hash64,
+            height: input.height,
+        })
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ArtifactWriteOutput {
+    ok: bool,
+    artifact_id: String,
+    previous_artifact_id: Option<String>,
+    root_artifact_id: Option<String>,
+    label: Option<String>,
+    mime: String,
+    presentation: Option<String>,
+    height_px: Option<u32>,
+    byte_size: usize,
+    hash64: String,
+}
+
+#[medousa_tool(id = COGNITION_ARTIFACT_WRITE_ID)]
+impl CognitionArtifactWriteTool {
+    /// Create or revise an HTML presentation artifact. Pass artifact_id to publish a new revision (content-addressed). Use if_match_hash64 for optimistic concurrency. First-time publish: use cognition_ui_present. Canvas widgets using MedousaStore: get/set/delete return Promises — use async/await (wiki topic artifact_runtime).
+    async fn invoke_typed(
+        &self,
+        input: ArtifactWriteInput,
+    ) -> stasis::prelude::Result<ArtifactWriteOutput> {
         self.ctx.require_ui_artifacts().await?;
-        let session_id = self.ctx.session_id(self.name()).await?;
+        let session_id = self.ctx.session_id(COGNITION_ARTIFACT_WRITE).await?;
         let title = input
-            .get("title")
-            .and_then(Value::as_str)
+            .title
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .ok_or_else(|| StasisError::PortFailure("title is required".to_string()))?
             .to_string();
         let html = input
-            .get("html")
-            .and_then(Value::as_str)
+            .html
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .ok_or_else(|| StasisError::PortFailure("html is required".to_string()))?
             .to_string();
-        let presentation = input
-            .get("presentation")
-            .and_then(Value::as_str)
-            .unwrap_or("inline")
-            .to_string();
-        let height_px = input.get("height").and_then(Value::as_u64).map(|value| {
-            value.clamp(120, 1200) as u32
-        });
+        let presentation = input.presentation.unwrap_or_else(|| "inline".to_string());
+        let height_px = input.height.map(|value| value.clamp(120, 1200) as u32);
         let artifact_id = input
-            .get("artifact_id")
-            .and_then(Value::as_str)
+            .artifact_id
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string);
         let if_match_hash64 = input
-            .get("if_match_hash64")
-            .and_then(Value::as_str)
+            .if_match_hash64
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string);
         emit_invoked(
             &self.event_tx,
-            self.name(),
+            COGNITION_ARTIFACT_WRITE,
             artifact_id.as_deref().unwrap_or("new"),
         );
 
         let record = tokio::task::spawn_blocking(move || {
             if let Some(previous_id) = artifact_id.as_deref() {
                 if let Some(expected) = if_match_hash64.as_deref() {
-                    let previous = crate::artifact_store::fetch_artifact_at_id(&session_id, previous_id)
-                        .ok_or_else(|| format!("artifact not found: {previous_id}"))?;
+                    let previous =
+                        crate::artifact_store::fetch_artifact_at_id(&session_id, previous_id)
+                            .ok_or_else(|| format!("artifact not found: {previous_id}"))?;
                     if previous.record.hash64 != expected {
                         return Err(format!(
                             "if_match_hash64 mismatch (expected {expected}, got {})",
@@ -594,18 +674,18 @@ impl StasisTool for CognitionArtifactWriteTool {
                 &record.artifact_id,
             );
         }
-        Ok(json!({
-            "ok": true,
-            "artifact_id": record.artifact_id,
-            "previous_artifact_id": previous_artifact_id,
-            "root_artifact_id": record.root_artifact_id,
-            "label": record.label,
-            "mime": record.content_type,
-            "presentation": record.presentation,
-            "height_px": record.height_px,
-            "byte_size": record.byte_size,
-            "hash64": record.hash64,
-        }))
+        Ok(ArtifactWriteOutput {
+            ok: true,
+            artifact_id: record.artifact_id,
+            previous_artifact_id,
+            root_artifact_id: record.root_artifact_id,
+            label: record.label,
+            mime: record.content_type,
+            presentation: record.presentation,
+            height_px: record.height_px,
+            byte_size: record.byte_size,
+            hash64: record.hash64,
+        })
     }
 }
 
@@ -626,40 +706,57 @@ impl CognitionArtifactDeleteTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionArtifactDeleteTool {
-    fn name(&self) -> &'static str {
-        COGNITION_ARTIFACT_DELETE
-    }
+#[derive(Debug, JsonSchema)]
+pub struct ArtifactDeleteInput {
+    /// Presentation artifact id or alias to delete
+    #[schemars(required, with = "String")]
+    artifact_id: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Delete an HTML presentation artifact and its revision chain from the session store. \
-             Use cognition_artifact_list to discover artifact_id values first.",
-        )
+impl<'de> Deserialize<'de> for ArtifactDeleteInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            artifact_id: Option<String>,
+        }
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            artifact_id: input.artifact_id,
+        })
     }
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["artifact_id"],
-            "properties": {
-                "artifact_id": { "type": "string", "description": "Presentation artifact id or alias to delete" }
-            }
-        }))
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ArtifactDeleteOutput {
+    ok: bool,
+    deleted_artifact_ids: Vec<String>,
+    count: usize,
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+#[medousa_tool(id = COGNITION_ARTIFACT_DELETE_ID)]
+impl CognitionArtifactDeleteTool {
+    /// Delete an HTML presentation artifact and its revision chain from the session store. Use cognition_artifact_list to discover artifact_id values first.
+    async fn invoke_typed(
+        &self,
+        input: ArtifactDeleteInput,
+    ) -> stasis::prelude::Result<ArtifactDeleteOutput> {
         self.ctx.require_ui_artifacts().await?;
-        let session_id = self.ctx.session_id(self.name()).await?;
+        let session_id = self.ctx.session_id(COGNITION_ARTIFACT_DELETE).await?;
         let artifact_id = input
-            .get("artifact_id")
-            .and_then(Value::as_str)
+            .artifact_id
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .ok_or_else(|| StasisError::PortFailure("artifact_id is required".to_string()))?
             .to_string();
-        emit_invoked(&self.event_tx, self.name(), &artifact_id);
+        emit_invoked(&self.event_tx, COGNITION_ARTIFACT_DELETE, &artifact_id);
 
         let deleted = tokio::task::spawn_blocking(move || {
             crate::artifact_store::delete_ui_artifact(&session_id, &artifact_id)
@@ -667,11 +764,12 @@ impl StasisTool for CognitionArtifactDeleteTool {
         .await
         .map_err(|err| StasisError::PortFailure(format!("artifact delete join error: {err}")))?
         .map_err(StasisError::PortFailure)?;
+        let count = deleted.len();
 
-        Ok(json!({
-            "ok": true,
-            "deleted_artifact_ids": deleted,
-            "count": deleted.len(),
-        }))
+        Ok(ArtifactDeleteOutput {
+            ok: true,
+            deleted_artifact_ids: deleted,
+            count,
+        })
     }
 }

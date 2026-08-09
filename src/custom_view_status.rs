@@ -315,20 +315,25 @@ pub fn nav_visibility_fields(
     surface_id: &str,
     nav_visible: bool,
 ) -> serde_json::Value {
-    if nav_visible {
-        serde_json::json!({
-            "live": true,
-            "nav_visible": true,
-        })
-    } else {
-        serde_json::json!({
-            "live": true,
-            "nav_visible": false,
-            "hint": format!(
-                "Surface '{surface_id}' is not in the active layout preset — call cognition_environment_patch with add_to_active_preset or cognition_custom_view_compose."
-            ),
-        })
+    let mut fields = serde_json::json!({
+        "live": true,
+        "nav_visible": nav_visible,
+    });
+    if let (Some(object), Some(hint)) = (
+        fields.as_object_mut(),
+        nav_visibility_hint(surface_id, nav_visible),
+    ) {
+        object.insert("hint".to_string(), serde_json::Value::String(hint));
     }
+    fields
+}
+
+pub fn nav_visibility_hint(surface_id: &str, nav_visible: bool) -> Option<String> {
+    (!nav_visible).then(|| {
+        format!(
+            "Surface '{surface_id}' is not in the active layout preset — call cognition_environment_patch with add_to_active_preset or cognition_custom_view_compose."
+        )
+    })
 }
 
 pub fn recurring_feed_binding_json(binding: &RecurringFeedBinding) -> Value {
