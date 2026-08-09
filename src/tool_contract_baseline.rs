@@ -221,7 +221,7 @@ async fn assembled_contract_baseline() -> ContractBaseline {
                     tool,
                     None,
                     vec!["coder:unbound".to_string()],
-                    false,
+                    true,
                 )
             }),
     );
@@ -318,11 +318,16 @@ fn audit_static_inventory(general_tools: &[Tool]) {
 }
 
 fn audit_typed_contract_inventory(catalog: &crate::typed_tools::ToolCatalog) {
-    let actual = catalog
+    let mut actual = catalog
         .entries()
         .filter(|entry| entry.contract.kind == crate::typed_tools::RegisteredToolKind::Typed)
         .map(|entry| entry.id.as_str())
         .collect::<BTreeSet<_>>();
+    actual.extend(
+        crate::agent_runtime::coder_setup_tools::typed_contract_ids()
+            .into_iter()
+            .map(|id| id.as_str()),
+    );
     let declared = crate::tool_names::TYPED_TOOL_CONTRACTS
         .iter()
         .copied()

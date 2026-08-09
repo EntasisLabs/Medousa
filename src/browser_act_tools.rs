@@ -2,26 +2,28 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use serde_json::{json, Value};
-use stasis::application::orchestration::tool_registry::StasisTool;
+use schemars::JsonSchema;
+use serde::Deserialize;
+use serde_json::{Value, json};
 use stasis::domain::errors::StasisError;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 
 use crate::browser_host_client::browser_host_act;
 use crate::browser_search::{client_executed, surface_from_scope};
 use crate::browser_sessions::{
-    attach_browser_act_request, create_browser_session, get_browser_session,
-    BrowserSessionCreateRequest, BrowserSessionStatus,
+    BrowserSessionCreateRequest, BrowserSessionStatus, attach_browser_act_request,
+    create_browser_session, get_browser_session,
 };
-use crate::browser_tools::{surface_supports_browser_host, COGNITION_BROWSER_ACT};
+use crate::browser_tools::{COGNITION_BROWSER_ACT, surface_supports_browser_host};
 use crate::events::TuiEvent;
 use crate::turn_continuation::TurnContinuationScope;
+use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
 
 const ACT_ACTIONS: &[&str] = &["click", "type", "press", "scroll", "select", "wait"];
 const HIGH_RISK_ACTIONS: &[&str] = &["click", "select"];
 const CLIENT_ACT_WAIT_SECS: u64 = 120;
 const CLIENT_ACT_POLL_MS: u64 = 500;
+const COGNITION_BROWSER_ACT_ID: ToolId = ToolId::new(COGNITION_BROWSER_ACT);
 
 pub struct CognitionBrowserActTool {
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
@@ -61,65 +63,126 @@ fn target_is_high_risk(action: &str, selector: Option<&str>) -> bool {
         || selector.contains("delete")
 }
 
-#[async_trait]
-impl StasisTool for CognitionBrowserActTool {
-    fn name(&self) -> &'static str {
-        COGNITION_BROWSER_ACT
-    }
+#[allow(dead_code)]
+#[derive(Debug, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum BrowserActActionSchema {
+    Click,
+    Type,
+    Press,
+    Scroll,
+    Select,
+    Wait,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Act on the shared human Web tab (click, type, press, scroll, select, wait). \
-             Requires a browser-capable client (Home desktop/iOS) and agent control of the tab. \
-             Use cognition_browser_snapshot first to discover selectors.",
-        )
-    }
+fn default_browser_act_wait_ms() -> i64 {
+    1000
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": ACT_ACTIONS,
-                    "description": "Interaction to perform"
-                },
-                "selector": {
-                    "type": "string",
-                    "description": "CSS selector of the target element (required for click/type/press/select)"
-                },
-                "text": {
-                    "type": "string",
-                    "description": "Text to type (action=type)"
-                },
-                "key": {
-                    "type": "string",
-                    "description": "Key name such as Enter/Tab/Escape (action=press)"
-                },
-                "delta_y": {
-                    "type": "integer",
-                    "description": "Vertical scroll delta in px (action=scroll; positive = down)"
-                },
-                "value": {
-                    "type": "string",
-                    "description": "Option value to choose (action=select)"
-                },
-                "ms": {
-                    "type": "integer",
-                    "default": 1000,
-                    "description": "Wait duration in milliseconds (action=wait)"
-                },
-                "allow_high_risk": {
-                    "type": "boolean",
-                    "default": false,
-                    "description": "Set true to act on submit/password/checkout-like targets"
-                }
-            },
-            "required": ["action"]
-        }))
-    }
+fn default_browser_act_allow_high_risk() -> bool {
+    false
+}
 
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
+#[derive(Debug, JsonSchema)]
+pub struct BrowserActInput {
+    /// Interaction to perform
+    #[schemars(required, with = "BrowserActActionSchema")]
+    action: Option<String>,
+    /// CSS selector of the target element (required for click/type/press/select)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    selector: Option<String>,
+    /// Text to type (action=type)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    text: Option<String>,
+    /// Key name such as Enter/Tab/Escape (action=press)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    key: Option<String>,
+    /// Vertical scroll delta in px (action=scroll; positive = down)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
+    delta_y: Option<i64>,
+    /// Option value to choose (action=select)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    value: Option<String>,
+    /// Wait duration in milliseconds (action=wait)
+    #[schemars(with = "i64", default = "default_browser_act_wait_ms")]
+    ms: Option<i64>,
+    /// Set true to act on submit/password/checkout-like targets
+    #[schemars(with = "bool", default = "default_browser_act_allow_high_risk")]
+    allow_high_risk: Option<bool>,
+}
+
+impl<'de> Deserialize<'de> for BrowserActInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            action: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            selector: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            text: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            key: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_i64"
+            )]
+            delta_y: Option<i64>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            value: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_i64"
+            )]
+            ms: Option<i64>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
+            )]
+            allow_high_risk: Option<bool>,
+        }
+
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            action: input.action,
+            selector: input.selector,
+            text: input.text,
+            key: input.key,
+            delta_y: input.delta_y,
+            value: input.value,
+            ms: input.ms,
+            allow_high_risk: input.allow_high_risk,
+        })
+    }
+}
+
+#[medousa_tool(id = COGNITION_BROWSER_ACT_ID)]
+impl CognitionBrowserActTool {
+    /// Act on the shared human Web tab (click, type, press, scroll, select, wait). Requires a browser-capable client (Home desktop/iOS) and agent control of the tab. Use cognition_browser_snapshot first to discover selectors.
+    async fn invoke_typed(&self, input: BrowserActInput) -> stasis::prelude::Result<ExternalJson> {
         if !self.browser_enabled().await {
             return Err(StasisError::PortFailure(format!(
                 "{COGNITION_BROWSER_ACT}: requires supports_browser_host client (Home desktop/iOS)"
@@ -127,8 +190,8 @@ impl StasisTool for CognitionBrowserActTool {
         }
 
         let action = input
-            .get("action")
-            .and_then(|value| value.as_str())
+            .action
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string)
@@ -142,8 +205,8 @@ impl StasisTool for CognitionBrowserActTool {
         }
 
         let selector = input
-            .get("selector")
-            .and_then(|value| value.as_str())
+            .selector
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string);
@@ -154,10 +217,7 @@ impl StasisTool for CognitionBrowserActTool {
             )));
         }
 
-        let allow_high_risk = input
-            .get("allow_high_risk")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false);
+        let allow_high_risk = input.allow_high_risk.unwrap_or(false);
         if !allow_high_risk && target_is_high_risk(&action, selector.as_deref()) {
             return Err(StasisError::PortFailure(format!(
                 "{COGNITION_BROWSER_ACT}: target looks high-risk (submit/password/checkout-like). \
@@ -169,15 +229,20 @@ impl StasisTool for CognitionBrowserActTool {
         if let Some(selector) = selector {
             body["selector"] = json!(selector);
         }
-        for key in ["text", "key", "value"] {
-            if let Some(value) = input.get(key).and_then(|value| value.as_str()) {
-                body[key] = json!(value);
-            }
+        if let Some(value) = input.text {
+            body["text"] = json!(value);
         }
-        for key in ["delta_y", "ms"] {
-            if let Some(value) = input.get(key).and_then(|value| value.as_i64()) {
-                body[key] = json!(value);
-            }
+        if let Some(value) = input.key {
+            body["key"] = json!(value);
+        }
+        if let Some(value) = input.value {
+            body["value"] = json!(value);
+        }
+        if let Some(value) = input.delta_y {
+            body["delta_y"] = json!(value);
+        }
+        if let Some(value) = input.ms {
+            body["ms"] = json!(value);
         }
 
         let summary = body
@@ -188,14 +253,17 @@ impl StasisTool for CognitionBrowserActTool {
         let _ = self
             .event_tx
             .send(TuiEvent::ToolInvoked {
-                tool_name: self.name().to_string(),
+                tool_name: COGNITION_BROWSER_ACT.to_string(),
                 input_summary: summary,
             })
             .await;
 
         let scope = self.turn_scope.read().await.clone();
         if client_executed(scope.as_ref()) {
-            return self.invoke_client_executed(body, &scope).await;
+            return self
+                .invoke_client_executed(body, &scope)
+                .await
+                .map(ExternalJson::new);
         }
 
         let outcome = browser_host_act(body)
@@ -206,7 +274,7 @@ impl StasisTool for CognitionBrowserActTool {
             .and_then(|value| value.as_bool())
             .unwrap_or(false)
         {
-            return Ok(outcome);
+            return Ok(ExternalJson::new(outcome));
         }
 
         let code = outcome
@@ -219,13 +287,13 @@ impl StasisTool for CognitionBrowserActTool {
             .and_then(|value| value.as_str())
             .unwrap_or("browser act failed")
             .to_string();
-        Ok(json!({
+        Ok(ExternalJson::new(json!({
             "ok": false,
             "code": code,
             "error": error,
             "binding_used": outcome.get("binding_used").cloned().unwrap_or(json!("browser_host")),
             "decision": "block",
-        }))
+        })))
     }
 }
 
@@ -316,7 +384,7 @@ pub fn register_browser_act_tool(
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
     event_tx: mpsc::Sender<TuiEvent>,
 ) -> stasis::prelude::Result<()> {
-    registry.register_tool(CognitionBrowserActTool::new(turn_scope, event_tx))?;
+    registry.register_typed_tool(CognitionBrowserActTool::new(turn_scope, event_tx))?;
     Ok(())
 }
 

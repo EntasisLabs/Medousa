@@ -6,11 +6,12 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use medousa_types::feed::is_valid_feed_id;
 use once_cell::sync::Lazy;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
-use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
 use surrealdb_types::SurrealValue;
 use tokio::sync::RwLock as AsyncRwLock;
 
@@ -52,7 +53,7 @@ pub async fn init_recurring_feed_store_with_runtime(runtime: &RuntimeComposition
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[derive(Default)]
 pub enum FeedPayloadMode {
@@ -61,7 +62,6 @@ pub enum FeedPayloadMode {
     ParsedPoll,
     RawExcerpt,
 }
-
 
 impl FeedPayloadMode {
     pub fn parse(raw: Option<&str>) -> Self {
@@ -88,12 +88,40 @@ pub struct RecurringFeedBinding {
     pub payload_mode: FeedPayloadMode,
 }
 
+/// Typed model-visible feed binding used by recurring tool contracts.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RecurringFeedSpec {
+    /// Bounded feed bus ids, e.g. trip.london.trains
+    pub feed_ids: Vec<String>,
+    #[serde(default)]
+    #[schemars(default)]
+    pub payload_mode: FeedPayloadMode,
+}
+
 pub async fn bind_recurring_feed_for_registration(
     recurring_id: &str,
     input: &Value,
 ) -> StasisResult<(bool, Option<RecurringFeedBinding>)> {
     let bound = persist_recurring_feed_binding(recurring_id, input).await?;
     Ok((bound.is_some(), bound))
+}
+
+pub async fn bind_recurring_feed_spec_for_registration(
+    recurring_id: &str,
+    feeds: Option<&RecurringFeedSpec>,
+) -> StasisResult<(bool, Option<RecurringFeedBinding>)> {
+    let Some(feeds) = feeds else {
+        return Ok((false, None));
+    };
+    let value = serde_json::to_value(feeds).map_err(|error| {
+        StasisError::PortFailure(format!("failed to encode recurring feed spec: {error}"))
+    })?;
+    let binding = parse_feeds_spec(&value)?;
+    recurring_feed_store()
+        .upsert(recurring_id, &binding)
+        .await
+        .map_err(|err| StasisError::PortFailure(err.to_string()))?;
+    Ok((true, Some(binding)))
 }
 
 pub async fn remove_recurring_feed_binding(recurring_id: &str) -> anyhow::Result<()> {
@@ -122,7 +150,9 @@ pub fn parse_feeds_spec(value: &Value) -> StasisResult<RecurringFeedBinding> {
         .get("feed_ids")
         .and_then(|v| v.as_array())
         .ok_or_else(|| {
-            StasisError::PortFailure("feeds.feed_ids is required and must be a non-empty array".to_string())
+            StasisError::PortFailure(
+                "feeds.feed_ids is required and must be a non-empty array".to_string(),
+            )
         })?;
 
     if feed_ids_raw.is_empty() {
@@ -148,11 +178,7 @@ pub fn parse_feeds_spec(value: &Value) -> StasisResult<RecurringFeedBinding> {
         feed_ids.push(feed_id.to_string());
     }
 
-    let payload_mode = FeedPayloadMode::parse(
-        value
-            .get("payload_mode")
-            .and_then(|v| v.as_str()),
-    );
+    let payload_mode = FeedPayloadMode::parse(value.get("payload_mode").and_then(|v| v.as_str()));
 
     Ok(RecurringFeedBinding {
         feed_ids,
@@ -199,7 +225,11 @@ pub fn feeds_binding_to_json(binding: &RecurringFeedBinding) -> Value {
 
 #[async_trait]
 pub trait RecurringFeedStore: Send + Sync {
-    async fn upsert(&self, recurring_id: &str, binding: &RecurringFeedBinding) -> anyhow::Result<()>;
+    async fn upsert(
+        &self,
+        recurring_id: &str,
+        binding: &RecurringFeedBinding,
+    ) -> anyhow::Result<()>;
     async fn get(&self, recurring_id: &str) -> anyhow::Result<Option<RecurringFeedBinding>>;
     async fn remove(&self, recurring_id: &str) -> anyhow::Result<()>;
     async fn count(&self) -> anyhow::Result<usize>;
@@ -212,7 +242,11 @@ struct InMemoryRecurringFeedStore {
 
 #[async_trait]
 impl RecurringFeedStore for InMemoryRecurringFeedStore {
-    async fn upsert(&self, recurring_id: &str, binding: &RecurringFeedBinding) -> anyhow::Result<()> {
+    async fn upsert(
+        &self,
+        recurring_id: &str,
+        binding: &RecurringFeedBinding,
+    ) -> anyhow::Result<()> {
         self.bindings
             .write()
             .await
@@ -275,7 +309,11 @@ impl SurrealRecurringFeedStore {
 
 #[async_trait]
 impl RecurringFeedStore for SurrealRecurringFeedStore {
-    async fn upsert(&self, recurring_id: &str, binding: &RecurringFeedBinding) -> anyhow::Result<()> {
+    async fn upsert(
+        &self,
+        recurring_id: &str,
+        binding: &RecurringFeedBinding,
+    ) -> anyhow::Result<()> {
         let now = Utc::now();
         let record = RecurringFeedRecord {
             recurring_id: recurring_id.to_string(),

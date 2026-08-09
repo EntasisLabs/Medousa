@@ -165,12 +165,12 @@ pub(crate) async fn assemble_tui_runtime(
         model: resolved_model.clone(),
         base_url: resolved_base_url.clone(),
     };
-    tool_registry.register_tool(CognitionJobEnqueueTool::new(
+    tool_registry.register_typed_tool(CognitionJobEnqueueTool::new(
         runtime.clone(),
         event_tx.clone(),
         turn_scope.clone(),
     ))?;
-    tool_registry.register_tool(CognitionGraphemeRunTool::new(
+    tool_registry.register_typed_tool(CognitionGraphemeRunTool::new(
         runtime.clone(),
         event_tx.clone(),
         session_id.to_string(),
@@ -321,28 +321,28 @@ pub(crate) async fn assemble_tui_runtime(
         turn_scope.clone(),
         event_tx.clone(),
     ))?;
-    tool_registry.register_tool(CognitionGraphemeModulesSearchTool::new(event_tx.clone()))?;
-    tool_registry.register_tool(CognitionGraphemeModulesInfoTool::new(event_tx.clone()))?;
-    tool_registry.register_tool(CognitionGraphemeModulesOpsTool::new(event_tx.clone()))?;
-    tool_registry.register_tool(CognitionGraphemeExamplesTool::new(event_tx.clone()))?;
-    tool_registry.register_tool(CognitionGraphemeCliRunTool::new(
+    tool_registry.register_typed_tool(CognitionGraphemeModulesSearchTool::new(event_tx.clone()))?;
+    tool_registry.register_typed_tool(CognitionGraphemeModulesInfoTool::new(event_tx.clone()))?;
+    tool_registry.register_typed_tool(CognitionGraphemeModulesOpsTool::new(event_tx.clone()))?;
+    tool_registry.register_typed_tool(CognitionGraphemeExamplesTool::new(event_tx.clone()))?;
+    tool_registry.register_typed_tool(CognitionGraphemeCliRunTool::new(
         runtime.clone(),
         event_tx.clone(),
         session_id.to_string(),
         compaction_target,
         turn_scope.clone(),
     ))?;
-    tool_registry.register_tool(CognitionGraphemePromoteToJobTool::new(
+    tool_registry.register_typed_tool(CognitionGraphemePromoteToJobTool::new(
         runtime.clone(),
         event_tx.clone(),
         turn_scope.clone(),
     ))?;
-    tool_registry.register_tool(CognitionGraphemePromoteToRecurringTool::new(
+    tool_registry.register_typed_tool(CognitionGraphemePromoteToRecurringTool::new(
         runtime.clone(),
         event_tx.clone(),
         turn_scope.clone(),
     ))?;
-    tool_registry.register_tool(CognitionGraphemePromoteLastRunToRecurringTool::new(
+    tool_registry.register_typed_tool(CognitionGraphemePromoteLastRunToRecurringTool::new(
         runtime.clone(),
         event_tx.clone(),
         turn_scope.clone(),
@@ -358,13 +358,13 @@ pub(crate) async fn assemble_tui_runtime(
         worker_scheduler.clone(),
     )?;
 
-    tool_registry.register_tool(CognitionTurnBeginWorkTool::new(worker_scheduler.clone()))?;
+    tool_registry.register_typed_tool(CognitionTurnBeginWorkTool::new(worker_scheduler.clone()))?;
     tool_registry.register_typed_tool(CognitionTurnUpdateUserTool)?;
     tool_registry.register_typed_tool(CognitionTurnCheckpointTool)?;
     tool_registry.register_typed_tool(CognitionTurnPrepareFinalTool)?;
     tool_registry.register_typed_tool(CognitionTurnFinishTool)?;
     tool_registry.register_typed_tool(CognitionTurnRequestMoreRoundsTool)?;
-    tool_registry.register_tool(CognitionTurnProposeModeTool::new(
+    tool_registry.register_typed_tool(CognitionTurnProposeModeTool::new(
         session_id.to_string(),
         turn_scope.clone(),
     ))?;
@@ -372,33 +372,33 @@ pub(crate) async fn assemble_tui_runtime(
         .register_typed_tool(CognitionRuntimeRecurringPreviewTool::new(event_tx.clone()))?;
     tool_registry.register_typed_tool(CognitionRuntimeJobStatusTool::new(runtime.clone()))?;
     tool_registry.register_typed_tool(CognitionRuntimeJobsListTool::new(runtime.clone()))?;
-    tool_registry.register_tool(CognitionRuntimeJobsCancelTool::new(
+    tool_registry.register_typed_tool(CognitionRuntimeJobsCancelTool::new(
         runtime.clone(),
         event_tx.clone(),
     ))?;
     tool_registry.register_typed_tool(CognitionRuntimeRecurringListTool::new(runtime.clone()))?;
     tool_registry.register_typed_tool(CognitionRuntimeRecurringDoctorTool::new(runtime.clone()))?;
-    tool_registry.register_tool(CognitionRuntimeRecurringRegisterTool::new(
+    tool_registry.register_typed_tool(CognitionRuntimeRecurringRegisterTool::new(
         runtime.clone(),
         event_tx.clone(),
         turn_scope.clone(),
     ))?;
-    tool_registry.register_tool(CognitionRuntimeRecurringPauseTool::new(
+    tool_registry.register_typed_tool(CognitionRuntimeRecurringPauseTool::new(
         runtime.clone(),
         event_tx.clone(),
     ))?;
-    tool_registry.register_tool(CognitionRuntimeRecurringCancelTool::new(
+    tool_registry.register_typed_tool(CognitionRuntimeRecurringCancelTool::new(
         runtime.clone(),
         event_tx.clone(),
     ))?;
     tool_registry.register_typed_tool(CognitionRuntimeDeliveryStatusTool::new(runtime.clone()))?;
-    tool_registry.register_tool(CognitionRuntimeWorkflowRunTool::new(
+    tool_registry.register_typed_tool(CognitionRuntimeWorkflowRunTool::new(
         runtime.clone(),
         workflow_registry.clone(),
         event_tx.clone(),
         turn_scope.clone(),
     ))?;
-    tool_registry.register_tool(CognitionRuntimeWorkflowScheduleTool::new(
+    tool_registry.register_typed_tool(CognitionRuntimeWorkflowScheduleTool::new(
         runtime.clone(),
         workflow_registry.clone(),
         event_tx.clone(),
@@ -408,12 +408,12 @@ pub(crate) async fn assemble_tui_runtime(
         runtime.clone(),
         workflow_registry.clone(),
     ))?;
-    tool_registry.register_tool(CognitionRuntimeWorkflowCancelTool::new(
+    tool_registry.register_typed_tool(CognitionRuntimeWorkflowCancelTool::new(
         runtime.clone(),
         workflow_registry.clone(),
         event_tx.clone(),
     ))?;
-    tool_registry.register_tool(CognitionRuntimeWorkflowPlanTool::new(event_tx.clone()))?;
+    tool_registry.register_typed_tool(CognitionRuntimeWorkflowPlanTool::new(event_tx.clone()))?;
 
     let capability_registry = Arc::new(RwLock::new(CapabilityRegistry::with_loaded_manifest()));
     let mcp_gateway_client = Arc::new(McpGatewayClient::from_env());
@@ -434,14 +434,14 @@ pub(crate) async fn assemble_tui_runtime(
         turn_scope.clone(),
         event_tx.clone(),
     ))?;
-    tool_registry.register_tool(CognitionMcpInvokeTool::new(
+    tool_registry.register_typed_tool(CognitionMcpInvokeTool::new(
         mcp_gateway_client.clone(),
         session_id.to_string(),
         turn_scope.clone(),
         event_tx.clone(),
     ))?;
     tool_registry.register_typed_tool(CognitionMcpServersTool::new(mcp_gateway_client.clone()))?;
-    tool_registry.register_tool(CognitionCapabilityInvokeTool::new(
+    tool_registry.register_typed_tool(CognitionCapabilityInvokeTool::new(
         capability_registry.clone(),
         runtime.clone(),
         mcp_gateway_client.clone(),
@@ -455,17 +455,17 @@ pub(crate) async fn assemble_tui_runtime(
         turn_scope.clone(),
     )?;
     crate::layout_tools::register_layout_tools(&mut tool_registry)?;
-    tool_registry.register_tool(CognitionMcpPromoteToJobTool::new(
+    tool_registry.register_typed_tool(CognitionMcpPromoteToJobTool::new(
         runtime.clone(),
         workflow_registry.clone(),
         event_tx.clone(),
         turn_scope.clone(),
     ))?;
-    tool_registry.register_tool(CognitionGraphemeTemplateRunTool::new(
+    tool_registry.register_typed_tool(CognitionGraphemeTemplateRunTool::new(
         runtime.clone(),
         event_tx.clone(),
     ))?;
-    tool_registry.register_tool(CognitionWebSearchTool::new(
+    tool_registry.register_typed_tool(CognitionWebSearchTool::new(
         capability_registry.clone(),
         runtime.clone(),
         mcp_gateway_client.clone(),

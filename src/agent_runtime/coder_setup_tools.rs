@@ -1,24 +1,33 @@
 //! Least-authority Coder entry surface before a Forge project is bound.
 
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use genai::chat::Tool;
 use medousa_forge::model::{WorkState, WorkTarget};
-use serde_json::{Value, json};
-use stasis::application::orchestration::tool_registry::{
-    InMemoryToolRegistry, StasisTool, ToolRegistry,
-};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use stasis::application::orchestration::tool_registry::{InMemoryToolRegistry, ToolRegistry};
 use stasis::domain::errors::StasisError;
 use stasis::prelude::Result;
 
 use crate::daemon::state::AppState;
-use crate::daemon_api::StartSessionCodeProjectRequest;
+use crate::daemon_api::{
+    CodeProjectSource, SessionCodeProjectResponse, StartSessionCodeProjectRequest,
+};
+#[cfg(test)]
+use crate::typed_tools::TypedTool;
+use crate::typed_tools::{ToolId, ToolRegistration, medousa_tool};
 
 const PROJECT_LIST: &str = "cognition_project_list";
 const PROJECT_BIND: &str = "cognition_project_bind";
 const PROJECT_CREATE: &str = "cognition_project_create";
+const PROJECT_LIST_ID: ToolId = ToolId::new(PROJECT_LIST);
+const PROJECT_BIND_ID: ToolId = ToolId::new(PROJECT_BIND);
+const PROJECT_CREATE_ID: ToolId = ToolId::new(PROJECT_CREATE);
 const TURN_CONTROL_TOOLS: &[&str] = &[
     "cognition_turn_update_user",
     "cognition_turn_checkpoint",
@@ -41,15 +50,15 @@ impl CoderSetupToolRegistry {
         session_id: impl Into<String>,
     ) -> Result<Self> {
         let session_id = session_id.into();
-        let setup = InMemoryToolRegistry::default();
-        setup.register_tool(CognitionProjectListTool {
+        let mut setup = InMemoryToolRegistry::default();
+        setup.register_typed_tool(CognitionProjectListTool {
             state: state.clone(),
         })?;
-        setup.register_tool(CognitionProjectBindTool {
+        setup.register_typed_tool(CognitionProjectBindTool {
             state: state.clone(),
             session_id: session_id.clone(),
         })?;
-        setup.register_tool(CognitionProjectCreateTool { state, session_id })?;
+        setup.register_typed_tool(CognitionProjectCreateTool { state, session_id })?;
         Ok(Self {
             inner,
             setup: Arc::new(setup),
@@ -92,21 +101,28 @@ struct CognitionProjectListTool {
     state: AppState,
 }
 
-#[async_trait]
-impl StasisTool for CognitionProjectListTool {
-    fn name(&self) -> &'static str {
-        PROJECT_LIST
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ProjectListInput {}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(project_list_description())
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+struct ProjectListEntryOutput {
+    work_id: String,
+    title: String,
+    brief: String,
+    repo_path: PathBuf,
+    base_ref: String,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(project_list_schema())
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+struct ProjectListOutput {
+    ok: bool,
+    projects: Vec<ProjectListEntryOutput>,
+}
 
-    async fn invoke(&self, _input: Value) -> Result<Value> {
+#[medousa_tool(id = PROJECT_LIST_ID)]
+impl CognitionProjectListTool {
+    /// List ready Forge projects that this Coder conversation can continue.
+    async fn invoke_typed(&self, _input: ProjectListInput) -> Result<ProjectListOutput> {
         let items = self
             .state
             .forge
@@ -121,16 +137,16 @@ impl StasisTool for CognitionProjectListTool {
             .take(20)
             .map(|item| {
                 let WorkTarget::Git(target) = item.target;
-                json!({
-                    "work_id": item.id,
-                    "title": item.title,
-                    "brief": item.brief,
-                    "repo_path": target.repo_path,
-                    "base_ref": target.base_ref,
-                })
+                ProjectListEntryOutput {
+                    work_id: item.id.to_string(),
+                    title: item.title,
+                    brief: item.brief,
+                    repo_path: target.repo_path,
+                    base_ref: target.base_ref,
+                }
             })
             .collect::<Vec<_>>();
-        Ok(json!({ "ok": true, "projects": projects }))
+        Ok(ProjectListOutput { ok: true, projects })
     }
 }
 
@@ -139,24 +155,48 @@ struct CognitionProjectBindTool {
     session_id: String,
 }
 
-#[async_trait]
-impl StasisTool for CognitionProjectBindTool {
-    fn name(&self) -> &'static str {
-        PROJECT_BIND
-    }
+#[derive(Debug, JsonSchema)]
+struct ProjectBindInput {
+    /// Ready project id returned by cognition_project_list
+    #[schemars(required, with = "String")]
+    work_id: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(project_bind_description())
-    }
+impl<'de> Deserialize<'de> for ProjectBindInput {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            work_id: Option<String>,
+        }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(project_bind_schema())
+        Ok(Self {
+            work_id: WireInput::deserialize(deserializer)?.work_id,
+        })
     }
+}
 
-    async fn invoke(&self, input: Value) -> Result<Value> {
+#[derive(Debug, Serialize, JsonSchema)]
+struct ProjectBindOutput {
+    ok: bool,
+    work_id: String,
+    title: String,
+    message: String,
+}
+
+#[medousa_tool(id = PROJECT_BIND_ID)]
+impl CognitionProjectBindTool {
+    /// Bind this conversation to a ready Forge project selected by the user. The full Coder workspace becomes active on the next turn.
+    async fn invoke_typed(&self, input: ProjectBindInput) -> Result<ProjectBindOutput> {
         let work_id = input
-            .get("work_id")
-            .and_then(Value::as_str)
+            .work_id
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .ok_or_else(|| StasisError::PortFailure("work_id is required".into()))?;
@@ -174,12 +214,12 @@ impl StasisTool for CognitionProjectBindTool {
         }
         crate::agent_mode_state::set_session_code_binding(&self.session_id, work_id)
             .map_err(StasisError::PortFailure)?;
-        Ok(json!({
-            "ok": true,
-            "work_id": work_id,
-            "title": item.title,
-            "message": "Project bound. Full Coder tools become active on the next turn.",
-        }))
+        Ok(ProjectBindOutput {
+            ok: true,
+            work_id: work_id.to_string(),
+            title: item.title,
+            message: "Project bound. Full Coder tools become active on the next turn.".to_string(),
+        })
     }
 }
 
@@ -188,23 +228,83 @@ struct CognitionProjectCreateTool {
     session_id: String,
 }
 
-#[async_trait]
-impl StasisTool for CognitionProjectCreateTool {
-    fn name(&self) -> &'static str {
-        PROJECT_CREATE
-    }
+#[derive(Debug, JsonSchema)]
+struct ProjectCreateInput {
+    #[schemars(required, with = "String")]
+    title: Option<String>,
+    /// Concrete outcome the project should achieve
+    #[schemars(required, with = "String")]
+    brief: Option<String>,
+    #[schemars(required)]
+    source: CodeProjectSource,
+    /// Required only for source=repository
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    repo_path: Option<String>,
+    #[schemars(with = "String", default = "default_project_base_ref")]
+    base_ref: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(project_create_description())
-    }
+fn default_project_base_ref() -> String {
+    "main".to_string()
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(project_create_schema())
-    }
+impl<'de> Deserialize<'de> for ProjectCreateInput {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(default)]
+            title: Option<String>,
+            #[serde(default)]
+            brief: Option<String>,
+            #[serde(default)]
+            source: CodeProjectSource,
+            #[serde(default)]
+            repo_path: Option<String>,
+            #[serde(default)]
+            base_ref: Option<String>,
+        }
 
-    async fn invoke(&self, input: Value) -> Result<Value> {
-        let request: StartSessionCodeProjectRequest = serde_json::from_value(input)
-            .map_err(|err| StasisError::PortFailure(format!("invalid project request: {err}")))?;
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            title: input.title,
+            brief: input.brief,
+            source: input.source,
+            repo_path: input.repo_path,
+            base_ref: input.base_ref,
+        })
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct ProjectCreateOutput {
+    ok: bool,
+    project: SessionCodeProjectResponse,
+    message: String,
+}
+
+#[medousa_tool(id = PROJECT_CREATE_ID)]
+impl CognitionProjectCreateTool {
+    /// Create, provision, and bind a code project after the user explicitly asks for project creation. Blank projects are initialized under the connected workshop's Medousa projects directory.
+    async fn invoke_typed(&self, input: ProjectCreateInput) -> Result<ProjectCreateOutput> {
+        let request = StartSessionCodeProjectRequest {
+            title: input.title.ok_or_else(|| {
+                StasisError::PortFailure(
+                    "invalid project request: missing field `title`".to_string(),
+                )
+            })?,
+            brief: input.brief.ok_or_else(|| {
+                StasisError::PortFailure(
+                    "invalid project request: missing field `brief`".to_string(),
+                )
+            })?,
+            source: input.source,
+            repo_path: input.repo_path,
+            base_ref: input.base_ref,
+        };
         let state = self.state.clone();
         let session_id = self.session_id.clone();
         let response = tokio::task::spawn_blocking(move || {
@@ -213,67 +313,33 @@ impl StasisTool for CognitionProjectCreateTool {
         .await
         .map_err(|err| StasisError::PortFailure(format!("project creation task failed: {err}")))?
         .map_err(StasisError::PortFailure)?;
-        serde_json::to_value(response)
-            .map(|value| json!({
-                "ok": true,
-                "project": value,
-                "message": "Project created and bound. Full Coder tools become active on the next turn.",
-            }))
-            .map_err(|err| StasisError::PortFailure(err.to_string()))
+        Ok(ProjectCreateOutput {
+            ok: true,
+            project: response,
+            message: "Project created and bound. Full Coder tools become active on the next turn."
+                .to_string(),
+        })
     }
 }
 
-fn project_list_description() -> &'static str {
-    "List ready Forge projects that this Coder conversation can continue."
-}
-
-fn project_list_schema() -> Value {
-    json!({ "type": "object", "properties": {} })
-}
-
-fn project_bind_description() -> &'static str {
-    "Bind this conversation to a ready Forge project selected by the user. The full Coder workspace becomes active on the next turn."
-}
-
-fn project_bind_schema() -> Value {
-    json!({
-        "type": "object",
-        "required": ["work_id"],
-        "properties": {
-            "work_id": { "type": "string", "description": "Ready project id returned by cognition_project_list" }
-        }
-    })
-}
-
-fn project_create_description() -> &'static str {
-    "Create, provision, and bind a code project after the user explicitly asks for project creation. Blank projects are initialized under the connected workshop's Medousa projects directory."
-}
-
-fn project_create_schema() -> Value {
-    json!({
-        "type": "object",
-        "required": ["title", "brief", "source"],
-        "properties": {
-            "title": { "type": "string" },
-            "brief": { "type": "string", "description": "Concrete outcome the project should achieve" },
-            "source": { "type": "string", "enum": ["blank", "repository"] },
-            "repo_path": { "type": "string", "description": "Required only for source=repository" },
-            "base_ref": { "type": "string", "default": "main" }
-        }
-    })
+#[cfg(test)]
+fn contract_tool_definition<T: TypedTool>() -> Tool {
+    let contract = T::contract();
+    Tool::new(contract.id.as_str())
+        .with_description(contract.description)
+        .with_schema(contract.input_schema.clone())
 }
 
 #[cfg(test)]
 pub(crate) fn contract_tool_definitions() -> Vec<Tool> {
     vec![
-        Tool::new(PROJECT_LIST)
-            .with_description(project_list_description())
-            .with_schema(project_list_schema()),
-        Tool::new(PROJECT_BIND)
-            .with_description(project_bind_description())
-            .with_schema(project_bind_schema()),
-        Tool::new(PROJECT_CREATE)
-            .with_description(project_create_description())
-            .with_schema(project_create_schema()),
+        contract_tool_definition::<CognitionProjectListTool>(),
+        contract_tool_definition::<CognitionProjectBindTool>(),
+        contract_tool_definition::<CognitionProjectCreateTool>(),
     ]
+}
+
+#[cfg(test)]
+pub(crate) fn typed_contract_ids() -> [ToolId; 3] {
+    [PROJECT_LIST_ID, PROJECT_BIND_ID, PROJECT_CREATE_ID]
 }

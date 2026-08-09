@@ -1,14 +1,11 @@
 //! Host-bus delegation tools (spawn / status / cancel).
 
-use async_trait::async_trait;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
-use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::domain::errors::StasisError;
 
 use crate::agent_runtime::turn_worker::{
-    TurnWorkRecord, TurnWorkStatus, TurnWorkerIntent, turn_worker_store,
+    SpawnTurnWorkerOutput, TurnWorkRecord, TurnWorkStatus, TurnWorkerIntent, turn_worker_store,
 };
 use crate::typed_tools::{ToolId, medousa_tool};
 use std::sync::Arc;
@@ -20,6 +17,8 @@ pub const COGNITION_WORKSHOP_STEER: &str = "cognition_workshop_steer";
 
 const COGNITION_TURN_WORKER_CANCEL_ID: ToolId = ToolId::new(COGNITION_TURN_WORKER_CANCEL);
 const COGNITION_TURN_WORKER_STATUS_ID: ToolId = ToolId::new(COGNITION_TURN_WORKER_STATUS);
+const COGNITION_SPAWN_TURN_WORKER_ID: ToolId = ToolId::new(COGNITION_SPAWN_TURN_WORKER);
+const COGNITION_WORKSHOP_STEER_ID: ToolId = ToolId::new(COGNITION_WORKSHOP_STEER);
 
 pub fn is_spawn_turn_worker_tool_name(name: &str) -> bool {
     name.trim() == COGNITION_SPAWN_TURN_WORKER
@@ -62,73 +61,100 @@ impl CognitionSpawnTurnWorkerTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionSpawnTurnWorkerTool {
-    fn name(&self) -> &'static str {
-        COGNITION_SPAWN_TURN_WORKER
-    }
+#[derive(Debug, JsonSchema)]
+pub struct SpawnTurnWorkerInput {
+    /// Worker profile: memory.avec_calibrate | memory.context | research | general
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    intent: Option<String>,
+    /// Focused task for the worker: capability id, module.op, URLs, and constraints. Include what the host already resolved so the worker does not rediscover.
+    #[schemars(required, with = "String")]
+    task: Option<String>,
+    /// Short message for the user while the worker runs
+    #[schemars(required, with = "String")]
+    user_ack: Option<String>,
+    /// Optional YAML specialty (voice, tools, worker intent, spec.worker.stage_role, spec.worker.model_hint).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    manuscript_id: Option<String>,
+    /// Optional StageRoutingMatrix role (extractor, verifier, chunker, …)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    stage_role: Option<String>,
+    /// Optional. Prefer omit or 'auto' to use user stage-routing / host prefs. Only set provider:model when explicitly requested (e.g. deepseek:deepseek-v4-flash).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    model_hint: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Delegate heavy work to a background turn worker (web/Grapheme execution, memory rituals). \
-             Returns immediately; the worker runs tools with a focused policy, then a synthesis pass \
-             delivers the final user-facing answer. Intents: memory.avec_calibrate | memory.context | research | general. \
-             Optional manuscript_id loads a YAML specialty (voice, tool allowlist, identity pins, OpenShell/skill tools). \
-             Manuscript spec.worker.stage_role selects a StageRoutingMatrix route (extractor, verifier, …); \
-             spec.worker.model_hint overrides provider/model. Spawn-time stage_role/model_hint win over manuscript defaults. \
-             Prefer omitting model_hint (or set model_hint=auto) so workshop StageRoutingMatrix / host \
-             preferences choose provider+model. Only pass provider:model when the user explicitly asked \
-             for that combo. Bare model ids infer the provider when unambiguous; otherwise they inherit \
-             the host turn provider — never the process default. \
-             Use manuscript_id=echo-skill or openshell-researcher for sandbox script execution. \
-             Put resolved capability/module/op and any host evidence into task — workers do not see parent chat.",
-        )
-    }
+impl<'de> Deserialize<'de> for SpawnTurnWorkerInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            intent: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            task: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            user_ack: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            manuscript_id: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            stage_role: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            model_hint: Option<String>,
+        }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "intent": {
-                    "type": "string",
-                    "description": "Worker profile: memory.avec_calibrate | memory.context | research | general"
-                },
-                "task": {
-                    "type": "string",
-                    "description": "Focused task for the worker: capability id, module.op, URLs, and constraints. Include what the host already resolved so the worker does not rediscover."
-                },
-                "user_ack": {
-                    "type": "string",
-                    "description": "Short message for the user while the worker runs"
-                },
-                "manuscript_id": {
-                    "type": "string",
-                    "description": "Optional YAML specialty (voice, tools, worker intent, spec.worker.stage_role, spec.worker.model_hint)."
-                },
-                "stage_role": {
-                    "type": "string",
-                    "description": "Optional StageRoutingMatrix role (extractor, verifier, chunker, …)"
-                },
-                "model_hint": {
-                    "type": "string",
-                    "description": "Optional. Prefer omit or 'auto' to use user stage-routing / host prefs. Only set provider:model when explicitly requested (e.g. deepseek:deepseek-v4-flash)."
-                }
-            },
-            "required": ["task", "user_ack"]
-        }))
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            intent: input.intent,
+            task: input.task,
+            user_ack: input.user_ack,
+            manuscript_id: input.manuscript_id,
+            stage_role: input.stage_role,
+            model_hint: input.model_hint,
+        })
     }
+}
 
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
+#[medousa_tool(id = COGNITION_SPAWN_TURN_WORKER_ID)]
+impl CognitionSpawnTurnWorkerTool {
+    /// Delegate heavy work to a background turn worker (web/Grapheme execution, memory rituals). Returns immediately; the worker runs tools with a focused policy, then a synthesis pass delivers the final user-facing answer. Intents: memory.avec_calibrate | memory.context | research | general. Optional manuscript_id loads a YAML specialty (voice, tool allowlist, identity pins, OpenShell/skill tools). Manuscript spec.worker.stage_role selects a StageRoutingMatrix route (extractor, verifier, …); spec.worker.model_hint overrides provider/model. Spawn-time stage_role/model_hint win over manuscript defaults. Prefer omitting model_hint (or set model_hint=auto) so workshop StageRoutingMatrix / host preferences choose provider+model. Only pass provider:model when the user explicitly asked for that combo. Bare model ids infer the provider when unambiguous; otherwise they inherit the host turn provider — never the process default. Use manuscript_id=echo-skill or openshell-researcher for sandbox script execution. Put resolved capability/module/op and any host evidence into task — workers do not see parent chat.
+    async fn invoke_typed(
+        &self,
+        input: SpawnTurnWorkerInput,
+    ) -> stasis::prelude::Result<SpawnTurnWorkerOutput> {
         let manuscript = input
-            .get("manuscript_id")
-            .and_then(|v| v.as_str())
+            .manuscript_id
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(crate::identity_manuscript::build_manuscript_context)
             .transpose()
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
 
-        let intent_raw = input.get("intent").and_then(|v| v.as_str()).map(str::trim);
+        let intent_raw = input.intent.as_deref().map(str::trim);
         let intent = match (
             intent_raw.filter(|value| !value.is_empty()),
             manuscript
@@ -152,8 +178,8 @@ impl StasisTool for CognitionSpawnTurnWorkerTool {
             }
         };
         let task = input
-            .get("task")
-            .and_then(|v| v.as_str())
+            .task
+            .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .ok_or_else(|| {
@@ -162,8 +188,8 @@ impl StasisTool for CognitionSpawnTurnWorkerTool {
                 )
             })?;
         let user_ack = input
-            .get("user_ack")
-            .and_then(|v| v.as_str())
+            .user_ack
+            .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .ok_or_else(|| {
@@ -173,13 +199,13 @@ impl StasisTool for CognitionSpawnTurnWorkerTool {
             })?;
 
         let stage_role = input
-            .get("stage_role")
-            .and_then(|v| v.as_str())
+            .stage_role
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty());
         let model_hint = input
-            .get("model_hint")
-            .and_then(|v| v.as_str())
+            .model_hint
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty());
 
@@ -330,8 +356,8 @@ pub fn register_turn_worker_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
     scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
 ) -> stasis::prelude::Result<()> {
-    registry.register_tool(CognitionSpawnTurnWorkerTool::new(scheduler.clone()))?;
-    registry.register_tool(CognitionWorkshopSteerTool::new(scheduler.clone()))?;
+    registry.register_typed_tool(CognitionSpawnTurnWorkerTool::new(scheduler.clone()))?;
+    registry.register_typed_tool(CognitionWorkshopSteerTool::new(scheduler.clone()))?;
     registry.register_typed_tool(CognitionTurnWorkerStatusTool::new(scheduler))?;
     registry.register_typed_tool(CognitionTurnWorkerCancelTool)?;
     Ok(())
@@ -347,38 +373,46 @@ impl CognitionWorkshopSteerTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionWorkshopSteerTool {
-    fn name(&self) -> &'static str {
-        COGNITION_WORKSHOP_STEER
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct WorkshopSteerInput {
+    /// Steer text for the bound workshop
+    message: String,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Forward a principal steer message into the active bound workshop for this session. \
-             Use when the operator adds guidance while workshop execution is in flight.",
-        )
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum WorkshopSteerOutput {
+    Failure {
+        ok: bool,
+        error: String,
+    },
+    Queued {
+        ok: bool,
+        work_id: String,
+        queued: usize,
+        speaker_profile_id: Option<String>,
+    },
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["message"],
-            "properties": {
-                "message": { "type": "string", "description": "Steer text for the bound workshop" }
-            }
-        }))
+impl WorkshopSteerOutput {
+    pub fn is_ok(&self) -> bool {
+        matches!(self, Self::Queued { .. })
     }
+}
 
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let message = input
-            .get("message")
-            .and_then(|v| v.as_str())
-            .map(str::trim)
-            .filter(|v| !v.is_empty())
-            .ok_or_else(|| {
-                StasisError::PortFailure("cognition_workshop_steer: message required".to_string())
-            })?;
+#[medousa_tool(id = COGNITION_WORKSHOP_STEER_ID)]
+impl CognitionWorkshopSteerTool {
+    /// Forward a principal steer message into the active bound workshop for this session. Use when the operator adds guidance while workshop execution is in flight.
+    async fn invoke_typed(
+        &self,
+        input: WorkshopSteerInput,
+    ) -> stasis::prelude::Result<WorkshopSteerOutput> {
+        let message = input.message.trim();
+        if message.is_empty() {
+            return Err(StasisError::PortFailure(
+                "cognition_workshop_steer: message required".to_string(),
+            ));
+        }
         let session_id = self
             .scheduler
             .active_bus_session_id()
@@ -397,13 +431,13 @@ pub fn steer_bound_workshop_for_session(
     session_id: &str,
     message: &str,
     speaker_profile_id: Option<String>,
-) -> stasis::prelude::Result<Value> {
+) -> stasis::prelude::Result<WorkshopSteerOutput> {
     let store = turn_worker_store();
     let Some(record) = store.active_bound_workshop(session_id) else {
-        return Ok(json!({
-            "ok": false,
-            "error": "no active bound workshop for session",
-        }));
+        return Ok(WorkshopSteerOutput::Failure {
+            ok: false,
+            error: "no active bound workshop for session".to_string(),
+        });
     };
 
     let speaker = speaker_profile_id
@@ -413,10 +447,10 @@ pub fn steer_bound_workshop_for_session(
         && let Some(row) = crate::shared_session_catalog::get_shared_row(session_id)
         && !row.includes_member(profile_id)
     {
-        return Ok(json!({
-            "ok": false,
-            "error": "speaker is not a member of this shared room",
-        }));
+        return Ok(WorkshopSteerOutput::Failure {
+            ok: false,
+            error: "speaker is not a member of this shared room".to_string(),
+        });
     }
 
     let updated = store
@@ -431,10 +465,10 @@ pub fn steer_bound_workshop_for_session(
     );
     crate::session_writer::persist_turn(session_id, turn, None);
 
-    Ok(json!({
-        "ok": true,
-        "work_id": updated.work_id,
-        "queued": updated.steer_messages.len(),
-        "speaker_profile_id": speaker,
-    }))
+    Ok(WorkshopSteerOutput::Queued {
+        ok: true,
+        work_id: updated.work_id,
+        queued: updated.steer_messages.len(),
+        speaker_profile_id: speaker,
+    })
 }

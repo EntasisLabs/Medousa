@@ -2,22 +2,21 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use schemars::JsonSchema;
-use serde::Deserialize;
-use serde_json::{Value, json};
-use stasis::application::orchestration::tool_registry::StasisTool;
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
 
 use crate::shell_grapheme::synthesize_shell_run_source;
 use crate::shell_sandbox::{ShellSandboxStatus, probe_shell_sandbox, shell_agent_tools_enabled};
 use crate::tools::run_grapheme_via_runtime;
-use crate::typed_tools::{ToolId, medousa_tool};
+use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
 
 pub const COGNITION_SHELL_STATUS: &str = "cognition_shell_status";
 pub const COGNITION_SHELL_RUN: &str = "cognition_shell_run";
 
 const COGNITION_SHELL_STATUS_ID: ToolId = ToolId::new(COGNITION_SHELL_STATUS);
+const COGNITION_SHELL_RUN_ID: ToolId = ToolId::new(COGNITION_SHELL_RUN);
 
 pub const SHELL_COGNITION_TOOLS: &[&str] = &[COGNITION_SHELL_STATUS, COGNITION_SHELL_RUN];
 
@@ -44,7 +43,7 @@ pub fn register_shell_tools(
     runtime: Arc<RuntimeComposition>,
 ) -> stasis::prelude::Result<()> {
     registry.register_typed_tool(CognitionShellStatusTool)?;
-    registry.register_tool(CognitionShellRunTool::new(runtime))?;
+    registry.register_typed_tool(CognitionShellRunTool::new(runtime))?;
     Ok(())
 }
 
@@ -78,64 +77,164 @@ impl CognitionShellRunTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionShellRunTool {
-    fn name(&self) -> &'static str {
-        COGNITION_SHELL_RUN
-    }
+#[derive(Debug, JsonSchema)]
+pub struct ShellRunInput {
+    /// Shell command string (wrapped in sh -c / cmd /C)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    command: Option<String>,
+    /// Explicit argv (preferred over command when possible)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
+    argv: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    cwd: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
+    writable_roots: Option<Vec<String>>,
+    /// Allow network (default false)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
+    network: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
+    timeout_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
+    allowed_binaries: Option<Vec<String>>,
+    #[schemars(skip)]
+    readonly_roots: Option<Vec<String>>,
+    #[schemars(skip)]
+    max_output_bytes: Option<u64>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Run a command in Medousa's OS-native sandbox via the Grapheme shell.run module. \
-             Prefer argv or a short command; network is denied by default. \
-             Power users can call shell.run directly inside Grapheme scripts.",
-        )
+fn compatible_path_list(value: Option<&Value>) -> Option<Vec<String>> {
+    let value = value?;
+    if let Some(items) = value.as_array() {
+        return Some(
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect(),
+        );
     }
+    value.as_str().map(|value| vec![value.to_string()])
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "command": {
-                    "type": "string",
-                    "description": "Shell command string (wrapped in sh -c / cmd /C)"
-                },
-                "argv": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Explicit argv (preferred over command when possible)"
-                },
-                "cwd": { "type": "string" },
-                "writable_roots": {
-                    "type": "array",
-                    "items": { "type": "string" }
-                },
-                "network": {
-                    "type": "boolean",
-                    "description": "Allow network (default false)"
-                },
-                "timeout_ms": { "type": "integer" },
-                "allowed_binaries": {
-                    "type": "array",
-                    "items": { "type": "string" }
-                }
-            }
-        }))
+impl<'de> Deserialize<'de> for ShellRunInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        let string = |key: &str| value.get(key).and_then(Value::as_str).map(str::to_string);
+        let string_list = |key: &str| {
+            value.get(key).and_then(Value::as_array).map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
+        };
+        Ok(Self {
+            command: string("command").or_else(|| string("cmd")),
+            argv: string_list("argv"),
+            cwd: string("cwd"),
+            writable_roots: compatible_path_list(
+                value
+                    .get("writable_roots")
+                    .or_else(|| value.get("writable")),
+            ),
+            network: value.get("network").and_then(Value::as_bool),
+            timeout_ms: value
+                .get("timeout_ms")
+                .and_then(Value::as_u64)
+                .or_else(|| value.get("timeout").and_then(Value::as_u64)),
+            allowed_binaries: string_list("allowed_binaries").or_else(|| string_list("binaries")),
+            readonly_roots: compatible_path_list(
+                value
+                    .get("readonly_roots")
+                    .or_else(|| value.get("readonly")),
+            ),
+            max_output_bytes: value.get("max_output_bytes").and_then(Value::as_u64),
+        })
     }
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+impl ShellRunInput {
+    fn into_grapheme_args(self) -> Value {
+        let mut args = Map::new();
+        if let Some(value) = self.command {
+            args.insert("command".to_string(), Value::String(value));
+        }
+        if let Some(value) = self.argv {
+            args.insert(
+                "argv".to_string(),
+                Value::Array(value.into_iter().map(Value::String).collect()),
+            );
+        }
+        if let Some(value) = self.cwd {
+            args.insert("cwd".to_string(), Value::String(value));
+        }
+        if let Some(value) = self.writable_roots {
+            args.insert(
+                "writable_roots".to_string(),
+                Value::Array(value.into_iter().map(Value::String).collect()),
+            );
+        }
+        if let Some(value) = self.network {
+            args.insert("network".to_string(), Value::Bool(value));
+        }
+        if let Some(value) = self.timeout_ms {
+            args.insert("timeout_ms".to_string(), Value::from(value));
+        }
+        if let Some(value) = self.allowed_binaries {
+            args.insert(
+                "allowed_binaries".to_string(),
+                Value::Array(value.into_iter().map(Value::String).collect()),
+            );
+        }
+        if let Some(value) = self.readonly_roots {
+            args.insert(
+                "readonly_roots".to_string(),
+                Value::Array(value.into_iter().map(Value::String).collect()),
+            );
+        }
+        if let Some(value) = self.max_output_bytes {
+            args.insert("max_output_bytes".to_string(), Value::from(value));
+        }
+        Value::Object(args)
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ShellRunOutput {
+    mode: String,
+    source: String,
+    runtime: ExternalJson,
+    shell: ExternalJson,
+}
+
+#[medousa_tool(id = COGNITION_SHELL_RUN_ID)]
+impl CognitionShellRunTool {
+    /// Run a command in Medousa's OS-native sandbox via the Grapheme shell.run module. Prefer argv or a short command; network is denied by default. Power users can call shell.run directly inside Grapheme scripts.
+    async fn invoke_typed(&self, input: ShellRunInput) -> stasis::prelude::Result<ShellRunOutput> {
         ensure_shell_agent_tools_enabled()?;
-        let source = synthesize_shell_run_source(&input).map_err(StasisError::PortFailure)?;
+        let args = input.into_grapheme_args();
+        let source = synthesize_shell_run_source(&args).map_err(StasisError::PortFailure)?;
         let result = run_grapheme_via_runtime(&self.runtime, &source, COGNITION_SHELL_RUN).await?;
 
         // Surface shell.run fields when the grapheme diagnostics carry final_state.
         let shell = extract_shell_result(&result);
-        Ok(json!({
-            "mode": "grapheme_shell_run",
-            "source": source,
-            "runtime": result,
-            "shell": shell,
-        }))
+        Ok(ShellRunOutput {
+            mode: "grapheme_shell_run".to_string(),
+            source,
+            runtime: ExternalJson::new(result),
+            shell: ExternalJson::new(shell),
+        })
     }
 }
 

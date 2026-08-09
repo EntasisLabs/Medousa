@@ -5,13 +5,14 @@ use std::sync::{Arc, RwLock};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use stasis::domain::runtime::recurring::RecurringDefinition;
-use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
 use stasis::ports::outbound::runtime::job_store::JobStore;
-use surrealdb::engine::any::Any;
+use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
 use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
 use surrealdb_types::SurrealValue;
 use tokio::sync::RwLock as AsyncRwLock;
 
@@ -36,7 +37,8 @@ const SCHEMA_STATEMENTS: &[&str] = &[
 ];
 
 const MIN_SCHEDULE_INTERVAL_SECS: i64 = 60;
-const CRON_FORMAT_HINT: &str = "sec min hour day-of-month month day-of-week year (example every 4h: 0 0 */4 * * * *)";
+const CRON_FORMAT_HINT: &str =
+    "sec min hour day-of-month month day-of-week year (example every 4h: 0 0 */4 * * * *)";
 
 static RECURRING_DELIVERY_STORE: Lazy<RwLock<Arc<dyn RecurringDeliveryStore>>> =
     Lazy::new(|| RwLock::new(Arc::new(InMemoryRecurringDeliveryStore::default())));
@@ -72,8 +74,58 @@ pub struct DeliveryResolveContext<'a> {
     pub fallback_session_id: String,
 }
 
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RecurringDeliveryMode {
+    #[default]
+    Explicit,
+    CurrentChannel,
+    LinkedChannel,
+    ProductDefault,
+}
+
+/// Typed model-visible delivery binding used by recurring tool contracts.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RecurringDeliverySpec {
+    #[serde(default)]
+    #[schemars(default)]
+    pub mode: RecurringDeliveryMode,
+    /// telegram | discord | slack | whatsapp | cli
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    pub channel: Option<String>,
+    /// Canonical id, e.g. telegram:chat:123
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    pub channel_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    pub telegram_chat_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    pub discord_channel_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    pub slack_channel_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    pub whatsapp_chat_jid: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub whatsapp_chat_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
+    /// Medousa session for job context
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+}
+
 /// Delivery target from an active agent turn (ingest / daemon interactive), if any.
-pub fn ambient_from_turn_scope(scope: Option<&TurnContinuationScope>) -> Option<ChannelDeliveryTarget> {
+pub fn ambient_from_turn_scope(
+    scope: Option<&TurnContinuationScope>,
+) -> Option<ChannelDeliveryTarget> {
     scope
         .and_then(|turn| turn.delivery_target.as_ref())
         .cloned()
@@ -90,6 +142,28 @@ pub async fn bind_recurring_delivery_for_registration(
     validate_recurring_cron(cron_expr, timezone)?;
     let bound = persist_recurring_delivery_binding(recurring_id, input, ctx).await?;
     Ok((bound.is_some(), bound))
+}
+
+pub async fn bind_recurring_delivery_spec_for_registration(
+    recurring_id: &str,
+    cron_expr: &str,
+    timezone: &str,
+    delivery: Option<&RecurringDeliverySpec>,
+    ctx: DeliveryResolveContext<'_>,
+) -> StasisResult<(bool, Option<ChannelDeliveryTarget>)> {
+    validate_recurring_cron(cron_expr, timezone)?;
+    let Some(delivery) = delivery else {
+        return Ok((false, None));
+    };
+    let value = serde_json::to_value(delivery).map_err(|error| {
+        StasisError::PortFailure(format!("failed to encode recurring delivery spec: {error}"))
+    })?;
+    let target = parse_delivery_spec(&value, ctx).await?;
+    recurring_delivery_store()
+        .upsert(recurring_id, &target)
+        .await
+        .map_err(|err| StasisError::PortFailure(err.to_string()))?;
+    Ok((true, Some(target)))
 }
 
 /// Validate cron and ensure the first two scheduled firings are not sub-minute.
@@ -132,10 +206,7 @@ pub async fn persist_recurring_delivery_binding(
     input: &Value,
     ctx: DeliveryResolveContext<'_>,
 ) -> StasisResult<Option<ChannelDeliveryTarget>> {
-    let Some(delivery_value) = input
-        .get("delivery")
-        .filter(|value| !value.is_null())
-    else {
+    let Some(delivery_value) = input.get("delivery").filter(|value| !value.is_null()) else {
         return Ok(None);
     };
 
@@ -186,8 +257,8 @@ fn resolve_explicit_delivery(
     config: &ProductConfig,
     fallback_session_id: &str,
 ) -> StasisResult<ChannelDeliveryTarget> {
-    let channel = required_string_field(value, &["channel"], "delivery.channel")?
-        .to_ascii_lowercase();
+    let channel =
+        required_string_field(value, &["channel"], "delivery.channel")?.to_ascii_lowercase();
 
     let channel_id = resolve_channel_id(&channel, value)?;
     let user_id = optional_string_field(value, &["user_id"])
@@ -220,7 +291,8 @@ async fn resolve_linked_channel_delivery(
         .map(|s| s.to_ascii_lowercase())
         .ok_or_else(|| {
             StasisError::PortFailure(
-                "delivery.mode=linked_channel requires delivery.channel (e.g. telegram)".to_string(),
+                "delivery.mode=linked_channel requires delivery.channel (e.g. telegram)"
+                    .to_string(),
             )
         })?;
 
@@ -372,14 +444,15 @@ fn resolve_channel_id(channel: &str, value: &Value) -> StasisResult<String> {
                 format!("slack:channel:{id}")
             }
         }),
-        "whatsapp" => optional_string_field(value, &["whatsapp_chat_jid", "whatsapp_chat_id"])
-            .map(|id| {
+        "whatsapp" => {
+            optional_string_field(value, &["whatsapp_chat_jid", "whatsapp_chat_id"]).map(|id| {
                 if id.starts_with("whatsapp:chat:") {
                     id
                 } else {
                     format!("whatsapp:chat:{id}")
                 }
-            }),
+            })
+        }
         "cli" => Some("cli:session:default".to_string()),
         _ => None,
     }
@@ -402,7 +475,10 @@ fn default_user_id_for_channel(channel: &str) -> String {
     }
 }
 
-fn enforce_delivery_policy(target: &ChannelDeliveryTarget, config: &ProductConfig) -> StasisResult<()> {
+fn enforce_delivery_policy(
+    target: &ChannelDeliveryTarget,
+    config: &ProductConfig,
+) -> StasisResult<()> {
     if target.channel == "cli" {
         return Ok(());
     }
@@ -411,9 +487,10 @@ fn enforce_delivery_policy(target: &ChannelDeliveryTarget, config: &ProductConfi
         // For telegram with only chat id, also allow heartbeat-configured chats.
         if target.channel == "telegram"
             && let Some(chat_id) = parse_telegram_chat_numeric(&target.channel_id)
-                && config.telegram.heartbeat_chat_ids.contains(&chat_id) {
-                    return Ok(());
-                }
+            && config.telegram.heartbeat_chat_ids.contains(&chat_id)
+        {
+            return Ok(());
+        }
 
         if heartbeat_channel_allowed(target, config) {
             return Ok(());
@@ -441,9 +518,11 @@ fn heartbeat_channel_allowed(target: &ChannelDeliveryTarget, config: &ProductCon
             .heartbeat_channel_ids
             .iter()
             .any(|id| target.channel_id.contains(id.as_str())),
-        "whatsapp" => config.whatsapp.heartbeat_chat_jids.iter().any(|jid| {
-            target.channel_id.contains(jid) || jid == &target.channel_id
-        }),
+        "whatsapp" => config
+            .whatsapp
+            .heartbeat_chat_jids
+            .iter()
+            .any(|jid| target.channel_id.contains(jid) || jid == &target.channel_id),
         _ => false,
     }
 }
@@ -460,11 +539,7 @@ fn parse_discord_channel_numeric(channel_id: &str) -> Option<u64> {
         .and_then(|value| value.parse::<u64>().ok())
 }
 
-fn required_string_field(
-    value: &Value,
-    keys: &[&str],
-    label: &str,
-) -> StasisResult<String> {
+fn required_string_field(value: &Value, keys: &[&str], label: &str) -> StasisResult<String> {
     for key in keys {
         if let Some(found) = optional_string_field(value, &[*key]) {
             return Ok(found);
@@ -482,10 +557,7 @@ fn optional_string_field(value: &Value, keys: &[&str]) -> Option<String> {
         .map(ToString::to_string)
 }
 
-pub async fn job_correlation_id(
-    runtime: &RuntimeComposition,
-    job_id: &str,
-) -> Option<String> {
+pub async fn job_correlation_id(runtime: &RuntimeComposition, job_id: &str) -> Option<String> {
     let job = match runtime {
         RuntimeComposition::InMemory(rt) => rt.job_store.get(job_id).await,
         RuntimeComposition::Surreal(rt) => rt.job_store.get(job_id).await,
@@ -504,7 +576,10 @@ pub async fn resolve_delivery_target_for_job(
     }
 
     let correlation_id = job_correlation_id(runtime, job_id).await?;
-    let stored = recurring_delivery_store().get(&correlation_id).await.ok()??;
+    let stored = recurring_delivery_store()
+        .get(&correlation_id)
+        .await
+        .ok()??;
     Some(ChannelDeliveryTarget::from(&stored))
 }
 
@@ -552,7 +627,11 @@ pub fn delivery_spec_schema_fragment() -> Value {
 
 #[async_trait]
 pub trait RecurringDeliveryStore: Send + Sync {
-    async fn upsert(&self, recurring_id: &str, target: &ChannelDeliveryTarget) -> anyhow::Result<()>;
+    async fn upsert(
+        &self,
+        recurring_id: &str,
+        target: &ChannelDeliveryTarget,
+    ) -> anyhow::Result<()>;
     async fn get(&self, recurring_id: &str) -> anyhow::Result<Option<StoredDeliveryTarget>>;
     async fn remove(&self, recurring_id: &str) -> anyhow::Result<()>;
     async fn count(&self) -> anyhow::Result<usize>;
@@ -565,17 +644,21 @@ struct InMemoryRecurringDeliveryStore {
 
 #[async_trait]
 impl RecurringDeliveryStore for InMemoryRecurringDeliveryStore {
-    async fn upsert(&self, recurring_id: &str, target: &ChannelDeliveryTarget) -> anyhow::Result<()> {
-        self.bindings
-            .write()
-            .await
-            .insert(recurring_id.to_string(), StoredDeliveryTarget {
+    async fn upsert(
+        &self,
+        recurring_id: &str,
+        target: &ChannelDeliveryTarget,
+    ) -> anyhow::Result<()> {
+        self.bindings.write().await.insert(
+            recurring_id.to_string(),
+            StoredDeliveryTarget {
                 channel: target.channel.clone(),
                 user_id: target.user_id.clone(),
                 channel_id: target.channel_id.clone(),
                 session_id: target.session_id.clone(),
                 stream_id: target.stream_id.clone(),
-            });
+            },
+        );
         Ok(())
     }
 
@@ -637,7 +720,11 @@ impl SurrealRecurringDeliveryStore {
 
 #[async_trait]
 impl RecurringDeliveryStore for SurrealRecurringDeliveryStore {
-    async fn upsert(&self, recurring_id: &str, target: &ChannelDeliveryTarget) -> anyhow::Result<()> {
+    async fn upsert(
+        &self,
+        recurring_id: &str,
+        target: &ChannelDeliveryTarget,
+    ) -> anyhow::Result<()> {
         let now = Utc::now();
         let record = RecurringDeliveryRecord {
             recurring_id: recurring_id.to_string(),

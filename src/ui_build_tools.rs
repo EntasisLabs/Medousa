@@ -10,16 +10,20 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use async_trait::async_trait;
+use schemars::JsonSchema;
+use serde::Deserialize;
 use serde_json::{Value, json};
+#[cfg(test)]
 use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::prelude::{Result as StasisResult, StasisError};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::turn_continuation::TurnContinuationScope;
+use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
 
 pub const COGNITION_UI_BUILD: &str = "cognition_ui_build";
+const COGNITION_UI_BUILD_ID: ToolId = ToolId::new(COGNITION_UI_BUILD);
 
 pub const UI_BUILD_COGNITION_TOOLS: &[&str] = &[COGNITION_UI_BUILD];
 
@@ -164,10 +168,20 @@ impl BuildSession {
         if self.sealed {
             return vec![];
         }
-        let ty = self.nodes.get(parent).map(|n| n.ty.as_str()).unwrap_or("stack");
+        let ty = self
+            .nodes
+            .get(parent)
+            .map(|n| n.ty.as_str())
+            .unwrap_or("stack");
         match ty {
             "section" => vec!["set_prose", "add_card", "add_actions", "done"],
-            _ => vec!["set_prose", "add_section", "add_card", "add_actions", "done"],
+            _ => vec![
+                "set_prose",
+                "add_section",
+                "add_card",
+                "add_actions",
+                "done",
+            ],
         }
     }
 
@@ -201,7 +215,7 @@ pub fn register_ui_build_tools(
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 ) -> stasis::prelude::Result<()> {
     let sessions: SessionMap = Arc::new(RwLock::new(HashMap::new()));
-    registry.register_tool(CognitionUiBuildTool::new(turn_scope, sessions))?;
+    registry.register_typed_tool(CognitionUiBuildTool::new(turn_scope, sessions))?;
     Ok(())
 }
 
@@ -238,21 +252,16 @@ impl CognitionUiBuildTool {
             .ok_or_else(|| StasisError::PortFailure("no active turn scope".to_string()))
     }
 
-    fn verb(input: &Value) -> Option<&str> {
+    fn verb(input: &UiBuildInput) -> Option<&str> {
         input
-            .get("verb")
-            .or_else(|| input.get("op"))
-            .and_then(Value::as_str)
+            .verb
+            .as_deref()
             .map(str::trim)
             .filter(|v| !v.is_empty())
     }
 
-    fn string_arg<'a>(input: &'a Value, key: &str) -> Option<&'a str> {
-        input
-            .get(key)
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|v| !v.is_empty())
+    fn string_arg(value: Option<&str>) -> Option<&str> {
+        value.map(str::trim).filter(|v| !v.is_empty())
     }
 
     fn require_parent(session: &BuildSession, parent: &str) -> StasisResult<()> {
@@ -265,14 +274,14 @@ impl CognitionUiBuildTool {
         }
     }
 
-    async fn begin(&self, input: &Value) -> StasisResult<Value> {
+    async fn begin(&self, input: &UiBuildInput) -> StasisResult<Value> {
         let scope = self
             .turn_scope
             .read()
             .await
             .clone()
             .ok_or_else(|| StasisError::PortFailure("no active turn scope".to_string()))?;
-        let surface_id = Self::string_arg(input, "surface_id")
+        let surface_id = Self::string_arg(input.surface_id.as_deref())
             .map(str::to_string)
             .unwrap_or_else(|| format!("chat:turn:{}", scope.turn_correlation_id));
 
@@ -313,12 +322,12 @@ impl CognitionUiBuildTool {
         f(session)
     }
 
-    async fn set_prose(&self, input: &Value) -> StasisResult<Value> {
-        let markdown = Self::string_arg(input, "markdown")
-            .or_else(|| Self::string_arg(input, "text"))
+    async fn set_prose(&self, input: &UiBuildInput) -> StasisResult<Value> {
+        let markdown = Self::string_arg(input.markdown.as_deref())
+            .or_else(|| Self::string_arg(input.text.as_deref()))
             .ok_or_else(|| StasisError::PortFailure("set_prose requires markdown".to_string()))?
             .to_string();
-        let parent_arg = Self::string_arg(input, "parent").map(str::to_string);
+        let parent_arg = Self::string_arg(input.parent.as_deref()).map(str::to_string);
 
         self.with_open_session(|session| {
             let parent_id = parent_arg.unwrap_or_else(|| session.body_id.clone());
@@ -342,12 +351,12 @@ impl CognitionUiBuildTool {
         .await
     }
 
-    async fn add_section(&self, input: &Value) -> StasisResult<Value> {
-        let title = Self::string_arg(input, "title")
+    async fn add_section(&self, input: &UiBuildInput) -> StasisResult<Value> {
+        let title = Self::string_arg(input.title.as_deref())
             .ok_or_else(|| StasisError::PortFailure("add_section requires title".to_string()))?
             .to_string();
-        let subtitle = Self::string_arg(input, "subtitle").map(str::to_string);
-        let parent_arg = Self::string_arg(input, "parent").map(str::to_string);
+        let subtitle = Self::string_arg(input.subtitle.as_deref()).map(str::to_string);
+        let parent_arg = Self::string_arg(input.parent.as_deref()).map(str::to_string);
 
         self.with_open_session(|session| {
             let parent_id = parent_arg.unwrap_or_else(|| session.body_id.clone());
@@ -375,13 +384,13 @@ impl CognitionUiBuildTool {
         .await
     }
 
-    async fn add_card(&self, input: &Value) -> StasisResult<Value> {
-        let title = Self::string_arg(input, "title")
+    async fn add_card(&self, input: &UiBuildInput) -> StasisResult<Value> {
+        let title = Self::string_arg(input.title.as_deref())
             .ok_or_else(|| StasisError::PortFailure("add_card requires title".to_string()))?
             .to_string();
-        let body = Self::string_arg(input, "body").map(str::to_string);
-        let subtitle = Self::string_arg(input, "subtitle").map(str::to_string);
-        let parent_arg = Self::string_arg(input, "parent").map(str::to_string);
+        let body = Self::string_arg(input.body.as_deref()).map(str::to_string);
+        let subtitle = Self::string_arg(input.subtitle.as_deref()).map(str::to_string);
+        let parent_arg = Self::string_arg(input.parent.as_deref()).map(str::to_string);
 
         self.with_open_session(|session| {
             let parent_id = parent_arg.unwrap_or_else(|| session.body_id.clone());
@@ -412,20 +421,18 @@ impl CognitionUiBuildTool {
         .await
     }
 
-    async fn add_actions(&self, input: &Value) -> StasisResult<Value> {
-        let actions = input
-            .get("actions")
-            .and_then(Value::as_array)
-            .cloned()
-            .ok_or_else(|| {
-                StasisError::PortFailure(
-                    "add_actions requires actions: [{ label, intent? }, ...]".to_string(),
-                )
-            })?;
+    async fn add_actions(&self, input: &UiBuildInput) -> StasisResult<Value> {
+        let actions = input.actions.as_ref().ok_or_else(|| {
+            StasisError::PortFailure(
+                "add_actions requires actions: [{ label, intent? }, ...]".to_string(),
+            )
+        })?;
         if actions.is_empty() {
-            return Err(StasisError::PortFailure("actions must not be empty".to_string()));
+            return Err(StasisError::PortFailure(
+                "actions must not be empty".to_string(),
+            ));
         }
-        let parent_arg = Self::string_arg(input, "parent").map(str::to_string);
+        let parent_arg = Self::string_arg(input.parent.as_deref()).map(str::to_string);
 
         self.with_open_session(|session| {
             let parent_id = parent_arg.unwrap_or_else(|| session.body_id.clone());
@@ -433,16 +440,16 @@ impl CognitionUiBuildTool {
             let mut last_id = parent_id.clone();
             for (i, action) in actions.iter().enumerate() {
                 let label = action
-                    .get("label")
-                    .and_then(Value::as_str)
+                    .label
+                    .as_deref()
                     .map(str::trim)
                     .filter(|v| !v.is_empty())
                     .ok_or_else(|| {
                         StasisError::PortFailure(format!("actions[{i}] requires label"))
                     })?;
                 let intent = action
-                    .get("intent")
-                    .and_then(Value::as_str)
+                    .intent
+                    .as_deref()
                     .map(str::trim)
                     .filter(|v| !v.is_empty())
                     .unwrap_or(label);
@@ -487,92 +494,125 @@ impl CognitionUiBuildTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionUiBuildTool {
-    fn name(&self) -> &'static str {
-        COGNITION_UI_BUILD
-    }
+#[allow(dead_code)]
+#[derive(Debug, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum UiBuildVerbSchema {
+    Begin,
+    SetProse,
+    AddSection,
+    AddCard,
+    AddActions,
+    Done,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Build a streaming interactive Liquid UI body with atomic verbs that chain. \
-             Prefer markdown embeds (```card``` / ```carousel``` / ```actions``` / {{icon:}}) for \
-             ordinary structured chat answers; use this tool when you need a multi-step scene session. \
-             Preferred over cognition_ui_scene — you never invent layout trees. \
-             Call verb=begin first; each response returns handles + next[] for the following call. \
-             Verbs: begin, set_prose, add_section, add_card, add_actions, done. \
-             Pass parent= from a prior handles.* id. Runtime expands verbs into scene ops.",
-        )
-    }
+#[derive(Debug, JsonSchema)]
+struct UiBuildActionInput {
+    #[schemars(required, with = "String")]
+    label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    intent: Option<String>,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["verb"],
-            "properties": {
-                "verb": {
-                    "type": "string",
-                    "enum": ["begin", "set_prose", "add_section", "add_card", "add_actions", "done"],
-                    "description": "Atomic builder verb. Chain begin → add_* / set_* → done."
-                },
-                "parent": {
-                    "type": "string",
-                    "description": "Parent handle from a previous response (bodyId, sectionId, …)."
-                },
-                "markdown": {
-                    "type": "string",
-                    "description": "Prose markdown for set_prose."
-                },
-                "text": {
-                    "type": "string",
-                    "description": "Alias for markdown (set_prose)."
-                },
-                "title": {
-                    "type": "string",
-                    "description": "Title for add_section / add_card."
-                },
-                "subtitle": {
-                    "type": "string",
-                    "description": "Optional subtitle for add_section / add_card."
-                },
-                "body": {
-                    "type": "string",
-                    "description": "Optional body text for add_card."
-                },
-                "actions": {
-                    "type": "array",
-                    "description": "For add_actions: [{ label, intent? }, ...]",
-                    "items": {
-                        "type": "object",
-                        "required": ["label"],
-                        "properties": {
-                            "label": { "type": "string" },
-                            "intent": { "type": "string" }
-                        }
-                    }
-                },
-                "surface_id": {
-                    "type": "string",
-                    "description": "Optional surface id for begin (defaults to chat:turn:<turnId>)."
-                }
-            }
-        }))
-    }
+#[derive(Debug, JsonSchema)]
+pub struct UiBuildInput {
+    /// Atomic builder verb. Chain begin → add_* / set_* → done.
+    #[schemars(required, with = "UiBuildVerbSchema")]
+    verb: Option<String>,
+    /// Parent handle from a previous response (bodyId, sectionId, …).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    parent: Option<String>,
+    /// Prose markdown for set_prose.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    markdown: Option<String>,
+    /// Alias for markdown (set_prose).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    text: Option<String>,
+    /// Title for add_section / add_card.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    title: Option<String>,
+    /// Optional subtitle for add_section / add_card.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    subtitle: Option<String>,
+    /// Optional body text for add_card.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    body: Option<String>,
+    /// For add_actions: [{ label, intent? }, ...]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        with = "Vec<UiBuildActionInput>",
+        skip_serializing_if = "Option::is_none"
+    )]
+    actions: Option<Vec<UiBuildActionInput>>,
+    /// Optional surface id for begin (defaults to chat:turn:<turnId>).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    surface_id: Option<String>,
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+impl<'de> Deserialize<'de> for UiBuildInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        let string = |key: &str| value.get(key).and_then(Value::as_str).map(str::to_string);
+        let actions = value.get("actions").and_then(Value::as_array).map(|items| {
+            items
+                .iter()
+                .map(|item| UiBuildActionInput {
+                    label: item
+                        .get("label")
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
+                    intent: item
+                        .get("intent")
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
+                })
+                .collect()
+        });
+        Ok(Self {
+            verb: string("verb").or_else(|| string("op")),
+            parent: string("parent"),
+            markdown: string("markdown"),
+            text: string("text"),
+            title: string("title"),
+            subtitle: string("subtitle"),
+            body: string("body"),
+            actions,
+            surface_id: string("surface_id"),
+        })
+    }
+}
+
+#[medousa_tool(id = COGNITION_UI_BUILD_ID)]
+impl CognitionUiBuildTool {
+    /// Build a streaming interactive Liquid UI body with atomic verbs that chain. Prefer markdown embeds (```card``` / ```carousel``` / ```actions``` / {{icon:}}) for ordinary structured chat answers; use this tool when you need a multi-step scene session. Preferred over cognition_ui_scene — you never invent layout trees. Call verb=begin first; each response returns handles + next[] for the following call. Verbs: begin, set_prose, add_section, add_card, add_actions, done. Pass parent= from a prior handles.* id. Runtime expands verbs into scene ops.
+    async fn invoke_typed(&self, input: UiBuildInput) -> stasis::prelude::Result<ExternalJson> {
         if !self.supports_ui().await {
-            return Ok(json!({
+            return Ok(ExternalJson::new(json!({
                 "ok": false,
                 "unsupported_surface": true,
                 "error": "This channel does not support UI scenes (supports_ui_artifacts=false). Answer in markdown instead.",
-            }));
+            })));
         }
 
         let verb = Self::verb(&input).ok_or_else(|| {
-            StasisError::PortFailure("verb is required (begin|set_prose|add_section|add_card|add_actions|done)".to_string())
+            StasisError::PortFailure(
+                "verb is required (begin|set_prose|add_section|add_card|add_actions|done)"
+                    .to_string(),
+            )
         })?;
 
-        match verb {
+        let output = match verb {
             "begin" => self.begin(&input).await,
             "set_prose" => self.set_prose(&input).await,
             "add_section" => self.add_section(&input).await,
@@ -582,7 +622,8 @@ impl StasisTool for CognitionUiBuildTool {
             other => Err(StasisError::PortFailure(format!(
                 "unknown verb `{other}` — use begin|set_prose|add_section|add_card|add_actions|done"
             ))),
-        }
+        }?;
+        Ok(ExternalJson::new(output))
     }
 }
 
@@ -624,7 +665,10 @@ mod tests {
             .await
             .expect("invoke");
         assert_eq!(out.get("ok").and_then(Value::as_bool), Some(false));
-        assert_eq!(out.get("unsupported_surface").and_then(Value::as_bool), Some(true));
+        assert_eq!(
+            out.get("unsupported_surface").and_then(Value::as_bool),
+            Some(true)
+        );
     }
 
     #[tokio::test]
@@ -635,8 +679,16 @@ mod tests {
             .await
             .expect("begin");
         assert_eq!(begin.get("ok").and_then(Value::as_bool), Some(true));
-        assert!(begin.get("ops").and_then(Value::as_array).is_some_and(|o| !o.is_empty()));
-        let body_id = begin["handles"]["bodyId"].as_str().expect("bodyId").to_string();
+        assert!(
+            begin
+                .get("ops")
+                .and_then(Value::as_array)
+                .is_some_and(|o| !o.is_empty())
+        );
+        let body_id = begin["handles"]["bodyId"]
+            .as_str()
+            .expect("bodyId")
+            .to_string();
         let next = begin["next"].as_array().expect("next");
         assert!(next.iter().any(|v| v.as_str() == Some("set_prose")));
 
@@ -669,7 +721,9 @@ mod tests {
     #[tokio::test]
     async fn rejects_unknown_parent() {
         let tool = tool(true);
-        tool.invoke(json!({ "verb": "begin" })).await.expect("begin");
+        tool.invoke(json!({ "verb": "begin" }))
+            .await
+            .expect("begin");
         let err = tool
             .invoke(json!({
                 "verb": "add_card",
@@ -684,7 +738,10 @@ mod tests {
     #[tokio::test]
     async fn add_section_and_card_chain() {
         let tool = tool(true);
-        let begin = tool.invoke(json!({ "verb": "begin" })).await.expect("begin");
+        let begin = tool
+            .invoke(json!({ "verb": "begin" }))
+            .await
+            .expect("begin");
         let body_id = begin["handles"]["bodyId"].as_str().unwrap().to_string();
         let section = tool
             .invoke(json!({
@@ -694,7 +751,10 @@ mod tests {
             }))
             .await
             .expect("section");
-        let section_id = section["handles"]["sectionId"].as_str().unwrap().to_string();
+        let section_id = section["handles"]["sectionId"]
+            .as_str()
+            .unwrap()
+            .to_string();
         let card = tool
             .invoke(json!({
                 "verb": "add_card",

@@ -2,12 +2,9 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use chrono::Utc;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
-use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::domain::runtime::job::{BackoffPolicy, NewJob};
 use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
 use tokio::sync::{RwLock, mpsc};
@@ -20,7 +17,7 @@ use crate::openshell_sandbox_run::{OPENSHELL_SANDBOX_RUN_JOB_TYPE, OpenshellSand
 use crate::skill_execution::{
     SkillAdoptionProposal, SkillScriptEntry, SkillScriptRiskClass, SkillSecurityLevel,
     build_sandbox_payload_for_skill, discover_skill_for_manuscript, evaluate_skill_adoption,
-    proposal_json, resolve_skill_assets_dir,
+    resolve_skill_assets_dir,
 };
 use crate::skill_import::resolve_skill_source;
 use crate::turn_continuation::{ContinuationAwaitMode, TurnContinuationScope, wire_turn_child_job};
@@ -32,6 +29,7 @@ pub const COGNITION_SKILL_PROBE: &str = "cognition_skill_probe";
 
 const COGNITION_SKILL_DISCOVER_ID: ToolId = ToolId::new(COGNITION_SKILL_DISCOVER);
 const COGNITION_SKILL_PROPOSE_ID: ToolId = ToolId::new(COGNITION_SKILL_PROPOSE);
+const COGNITION_SKILL_PROBE_ID: ToolId = ToolId::new(COGNITION_SKILL_PROBE);
 
 pub const SKILL_COGNITION_TOOLS: &[&str] = &[
     COGNITION_SKILL_DISCOVER,
@@ -51,7 +49,7 @@ pub fn register_skill_tools(
 ) -> stasis::prelude::Result<()> {
     registry.register_typed_tool(CognitionSkillDiscoverTool)?;
     registry.register_typed_tool(CognitionSkillProposeTool)?;
-    registry.register_tool(CognitionSkillProbeTool::new(runtime, event_tx, turn_scope))?;
+    registry.register_typed_tool(CognitionSkillProbeTool::new(runtime, event_tx, turn_scope))?;
     Ok(())
 }
 
@@ -300,47 +298,123 @@ impl CognitionSkillProbeTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionSkillProbeTool {
-    fn name(&self) -> &'static str {
-        COGNITION_SKILL_PROBE
-    }
+fn default_skill_probe_check_grapheme() -> bool {
+    true
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "H6/H7 validation: optionally run grapheme --version in sandbox, then upload and execute \
-             an imported skill script when policy grants sandbox level. Host filesystem stays untouched.",
-        )
-    }
+fn default_skill_probe_operator_approved() -> bool {
+    false
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "manuscript_id": { "type": "string" },
-                "script": {
-                    "type": "string",
-                    "description": "Relative script path (default: first discovered script)"
-                },
-                "check_grapheme": {
-                    "type": "boolean",
-                    "description": "Run grapheme --version before skill script (H6)",
-                    "default": true
-                },
-                "operator_approved": {
-                    "type": "boolean",
-                    "description": "Set true when operator approved a proposal with requires_approval",
-                    "default": false
-                }
-            },
-            "required": ["manuscript_id"]
-        }))
-    }
+#[derive(Debug, JsonSchema)]
+pub struct SkillProbeInput {
+    #[schemars(required, with = "String")]
+    manuscript_id: Option<String>,
+    /// Relative script path (default: first discovered script)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    script: Option<String>,
+    /// Run grapheme --version before skill script (H6)
+    #[schemars(with = "bool", default = "default_skill_probe_check_grapheme")]
+    check_grapheme: Option<bool>,
+    /// Set true when operator approved a proposal with requires_approval
+    #[schemars(with = "bool", default = "default_skill_probe_operator_approved")]
+    operator_approved: Option<bool>,
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+impl<'de> Deserialize<'de> for SkillProbeInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            manuscript_id: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            script: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
+            )]
+            check_grapheme: Option<bool>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
+            )]
+            operator_approved: Option<bool>,
+        }
+
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            manuscript_id: input.manuscript_id,
+            script: input.script,
+            check_grapheme: input.check_grapheme,
+            operator_approved: input.operator_approved,
+        })
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum SkillProbeJobOutput {
+    GraphemeVersion {
+        job_id: String,
+        stage: String,
+    },
+    SkillScript {
+        job_id: String,
+        stage: String,
+        script: String,
+        assets_dir: Option<String>,
+    },
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum SkillProbeOutput {
+    PolicyRejected {
+        status: String,
+        reason: String,
+        proposal: SkillAdoptionProposal,
+    },
+    ProposalRequired {
+        status: String,
+        proposal: SkillAdoptionProposal,
+        next: String,
+    },
+    ApprovalRequired {
+        status: String,
+        proposal: SkillAdoptionProposal,
+    },
+    GatewayRejected {
+        status: String,
+        reason: String,
+        gateway_url: String,
+    },
+    Enqueued {
+        status: String,
+        proposal: SkillAdoptionProposal,
+        jobs: Vec<SkillProbeJobOutput>,
+    },
+}
+
+#[medousa_tool(id = COGNITION_SKILL_PROBE_ID)]
+impl CognitionSkillProbeTool {
+    /// H6/H7 validation: optionally run grapheme --version in sandbox, then upload and execute an imported skill script when policy grants sandbox level. Host filesystem stays untouched.
+    async fn invoke_typed(
+        &self,
+        input: SkillProbeInput,
+    ) -> stasis::prelude::Result<SkillProbeOutput> {
         let manuscript_id = input
-            .get("manuscript_id")
-            .and_then(|value| value.as_str())
+            .manuscript_id
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .ok_or_else(|| {
@@ -348,14 +422,8 @@ impl StasisTool for CognitionSkillProbeTool {
                     "cognition_skill_probe: manuscript_id is required".to_string(),
                 )
             })?;
-        let check_grapheme = input
-            .get("check_grapheme")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(true);
-        let operator_approved = input
-            .get("operator_approved")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false);
+        let check_grapheme = input.check_grapheme.unwrap_or(true);
+        let operator_approved = input.operator_approved.unwrap_or(false);
 
         let discovery = discover_skill_for_manuscript(manuscript_id)
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
@@ -363,8 +431,8 @@ impl StasisTool for CognitionSkillProbeTool {
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
 
         let script = input
-            .get("script")
-            .and_then(|value| value.as_str())
+            .script
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string)
@@ -387,24 +455,25 @@ impl StasisTool for CognitionSkillProbeTool {
             Some(&script),
         );
         if proposal.granted_level == SkillSecurityLevel::Deny {
-            return Ok(json!({
-                "status": "rejected",
-                "reason": "policy_denied",
-                "proposal": proposal_json(&proposal),
-            }));
+            return Ok(SkillProbeOutput::PolicyRejected {
+                status: "rejected".to_string(),
+                reason: "policy_denied".to_string(),
+                proposal,
+            });
         }
         if proposal.granted_level == SkillSecurityLevel::Propose {
-            return Ok(json!({
-                "status": "proposal_required",
-                "proposal": proposal_json(&proposal),
-                "next": "Re-run with operator_approved=true after review, or use cognition_skill_propose.",
-            }));
+            return Ok(SkillProbeOutput::ProposalRequired {
+                status: "proposal_required".to_string(),
+                proposal,
+                next: "Re-run with operator_approved=true after review, or use cognition_skill_propose."
+                    .to_string(),
+            });
         }
         if proposal.requires_approval && !operator_approved {
-            return Ok(json!({
-                "status": "approval_required",
-                "proposal": proposal_json(&proposal),
-            }));
+            return Ok(SkillProbeOutput::ApprovalRequired {
+                status: "approval_required".to_string(),
+                proposal,
+            });
         }
 
         let gateway = tokio::task::spawn_blocking(collect_openshell_doctor_report)
@@ -413,11 +482,11 @@ impl StasisTool for CognitionSkillProbeTool {
                 StasisError::PortFailure(format!("openshell preflight join error: {err}"))
             })?;
         if !gateway.readyz_ok {
-            return Ok(json!({
-                "status": "rejected",
-                "reason": "gateway_unhealthy",
-                "gateway_url": gateway.gateway_url,
-            }));
+            return Ok(SkillProbeOutput::GatewayRejected {
+                status: "rejected".to_string(),
+                reason: "gateway_unhealthy".to_string(),
+                gateway_url: gateway.gateway_url,
+            });
         }
 
         let mut job_ids = Vec::new();
@@ -443,10 +512,10 @@ impl StasisTool for CognitionSkillProbeTool {
                 "cognition_skill_probe",
             )
             .await?;
-            job_ids.push(json!({
-                "job_id": job_id,
-                "stage": "h6_grapheme_version",
-            }));
+            job_ids.push(SkillProbeJobOutput::GraphemeVersion {
+                job_id,
+                stage: "h6_grapheme_version".to_string(),
+            });
         }
 
         let skill_payload = build_sandbox_payload_for_skill(
@@ -464,20 +533,20 @@ impl StasisTool for CognitionSkillProbeTool {
             "cognition_skill_probe",
         )
         .await?;
-        job_ids.push(json!({
-            "job_id": skill_job_id,
-            "stage": "h7_skill_script",
-            "script": script,
-            "assets_dir": resolve_skill_assets_dir(manuscript_id)
+        job_ids.push(SkillProbeJobOutput::SkillScript {
+            job_id: skill_job_id,
+            stage: "h7_skill_script".to_string(),
+            script,
+            assets_dir: resolve_skill_assets_dir(manuscript_id)
                 .map(|path| path.display().to_string())
                 .ok(),
-        }));
+        });
 
-        Ok(json!({
-            "status": "enqueued",
-            "proposal": proposal_json(&proposal),
-            "jobs": job_ids,
-        }))
+        Ok(SkillProbeOutput::Enqueued {
+            status: "enqueued".to_string(),
+            proposal,
+            jobs: job_ids,
+        })
     }
 }
 

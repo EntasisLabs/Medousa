@@ -3,7 +3,9 @@
 use std::sync::Arc;
 
 use chrono::Utc;
-use serde_json::{Value, json};
+use schemars::JsonSchema;
+use serde::Serialize;
+use serde_json::Value;
 use stasis::application::orchestration::prompt_pipeline::PromptExecutionContext;
 use stasis::application::orchestration::tool_loop_pipeline::ToolLoopExecutionRequest;
 use tokio::sync::RwLock;
@@ -158,6 +160,44 @@ pub struct TurnWorkerScheduler {
     bus_session: RwLock<Option<ActiveWorkerBusSession>>,
 }
 
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct SpawnTurnWorkerOutput {
+    pub ok: bool,
+    pub worker_spawned: bool,
+    pub work_id: String,
+    pub stasis_job_id: String,
+    pub intent: String,
+    pub manuscript_id: Option<String>,
+    pub stage_role: Option<String>,
+    pub status: String,
+    pub user_ack: String,
+    pub handoff_summary: String,
+    pub scratch_digest: String,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum EnterBoundWorkshopOutput {
+    Failure {
+        ok: bool,
+        workshop_entered: bool,
+        error: String,
+    },
+    Entered {
+        ok: bool,
+        workshop_entered: bool,
+        work_id: String,
+        stasis_job_id: String,
+        intent: String,
+        status: String,
+        user_ack: String,
+        message: String,
+        handoff_summary: String,
+        scratch_digest: String,
+    },
+}
+
 impl TurnWorkerScheduler {
     pub fn new(store: Arc<TurnWorkerStore>) -> Self {
         Self {
@@ -208,7 +248,7 @@ impl TurnWorkerScheduler {
         manuscript: Option<crate::identity_manuscript::ManuscriptContext>,
         stage_role: Option<&str>,
         model_hint: Option<&str>,
-    ) -> stasis::prelude::Result<Value> {
+    ) -> stasis::prelude::Result<SpawnTurnWorkerOutput> {
         let bus = self.bus_session.read().await.clone().ok_or_else(|| {
             stasis::domain::errors::StasisError::PortFailure(
                 "cognition_spawn_turn_worker: no active host turn session".to_string(),
@@ -416,20 +456,20 @@ impl TurnWorkerScheduler {
         )
         .await?;
 
-        Ok(json!({
-            "ok": true,
-            "worker_spawned": true,
-            "work_id": work_id,
-            "stasis_job_id": work_id,
-            "intent": intent.as_str(),
-            "manuscript_id": manuscript_id,
-            "stage_role": record_stage_role_for_response(resolved_stage_role.as_deref()),
-            "status": "pending",
-            "user_ack": user_ack,
-            "handoff_summary": handoff_summary,
-            "scratch_digest": scratch_digest,
-            "message": "Worker enqueued on durable bus; host turn may end with user_ack.",
-        }))
+        Ok(SpawnTurnWorkerOutput {
+            ok: true,
+            worker_spawned: true,
+            work_id: work_id.clone(),
+            stasis_job_id: work_id,
+            intent: intent.as_str().to_string(),
+            manuscript_id,
+            stage_role: record_stage_role_for_response(resolved_stage_role.as_deref()),
+            status: "pending".to_string(),
+            user_ack: user_ack.to_string(),
+            handoff_summary,
+            scratch_digest,
+            message: "Worker enqueued on durable bus; host turn may end with user_ack.".to_string(),
+        })
     }
 
     pub async fn enter_bound_workshop(
@@ -437,7 +477,7 @@ impl TurnWorkerScheduler {
         message: &str,
         goal: &str,
         intent: TurnWorkerIntent,
-    ) -> stasis::prelude::Result<Value> {
+    ) -> stasis::prelude::Result<EnterBoundWorkshopOutput> {
         let bus = self.bus_session.read().await.clone().ok_or_else(|| {
             stasis::domain::errors::StasisError::PortFailure(
                 "cognition_turn_begin_work: no active host turn session".to_string(),
@@ -445,11 +485,13 @@ impl TurnWorkerScheduler {
         })?;
 
         if self.store.active_bound_workshop(&bus.session_id).is_some() {
-            return Ok(json!({
-                "ok": false,
-                "workshop_entered": false,
-                "error": "A bound workshop is already active for this session; steer or cancel it first.",
-            }));
+            return Ok(EnterBoundWorkshopOutput::Failure {
+                ok: false,
+                workshop_entered: false,
+                error:
+                    "A bound workshop is already active for this session; steer or cancel it first."
+                        .to_string(),
+            });
         }
 
         let _runtime_ctx = self.runtime_ctx.read().await.clone().ok_or_else(|| {
@@ -461,20 +503,20 @@ impl TurnWorkerScheduler {
 
         let task = goal.trim();
         if task.is_empty() {
-            return Ok(json!({
-                "ok": false,
-                "workshop_entered": false,
-                "error": "goal is required and must be non-empty",
-            }));
+            return Ok(EnterBoundWorkshopOutput::Failure {
+                ok: false,
+                workshop_entered: false,
+                error: "goal is required and must be non-empty".to_string(),
+            });
         }
 
         let user_ack = message.trim();
         if user_ack.is_empty() {
-            return Ok(json!({
-                "ok": false,
-                "workshop_entered": false,
-                "error": "message is required and must be non-empty",
-            }));
+            return Ok(EnterBoundWorkshopOutput::Failure {
+                ok: false,
+                workshop_entered: false,
+                error: "message is required and must be non-empty".to_string(),
+            });
         }
 
         let parent_turn_correlation_id = bus.parent_turn_correlation_id.clone();
@@ -608,18 +650,18 @@ impl TurnWorkerScheduler {
         )
         .await?;
 
-        Ok(json!({
-            "ok": true,
-            "workshop_entered": true,
-            "work_id": work_id,
-            "stasis_job_id": work_id,
-            "intent": intent.as_str(),
-            "status": "pending",
-            "user_ack": user_ack,
-            "message": user_ack,
-            "handoff_summary": handoff_summary,
-            "scratch_digest": scratch_digest,
-        }))
+        Ok(EnterBoundWorkshopOutput::Entered {
+            ok: true,
+            workshop_entered: true,
+            work_id: work_id.clone(),
+            stasis_job_id: work_id,
+            intent: intent.as_str().to_string(),
+            status: "pending".to_string(),
+            user_ack: user_ack.to_string(),
+            message: user_ack.to_string(),
+            handoff_summary,
+            scratch_digest,
+        })
     }
 }
 

@@ -2,16 +2,16 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use chrono::Utc;
 use medousa_types::environment::SurfaceKind;
 use medousa_types::environment_validate::validate_environment_spec;
-use medousa_types::feed::{FeedEvent, FeedRef, FeedSource, is_valid_feed_id};
+use medousa_types::feed::{
+    FeedEvent, FeedRef, FeedSource, IntentResolveResponse, is_valid_feed_id,
+};
 use schemars::JsonSchema;
 use schemars::schema::{InstanceType, Schema, SchemaObject};
 use serde::{Deserialize, Deserializer, Serialize};
-use serde_json::{Value, json};
-use stasis::application::orchestration::tool_registry::StasisTool;
+use serde_json::Value;
 use stasis::prelude::{Result as StasisResult, StasisError};
 use tokio::sync::RwLock;
 
@@ -26,14 +26,16 @@ pub const COGNITION_FEED_SUBSCRIBE: &str = "cognition_feed_subscribe";
 pub const COGNITION_FEED_PUBLISH: &str = "cognition_feed_publish";
 
 const COGNITION_FEED_PUBLISH_ID: ToolId = ToolId::new(COGNITION_FEED_PUBLISH);
+const COGNITION_INTENT_RESOLVE_ID: ToolId = ToolId::new(COGNITION_INTENT_RESOLVE);
+const COGNITION_FEED_SUBSCRIBE_ID: ToolId = ToolId::new(COGNITION_FEED_SUBSCRIBE);
 
 pub fn register_feed_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
     capability_registry: Arc<RwLock<CapabilityRegistry>>,
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 ) -> StasisResult<()> {
-    registry.register_tool(CognitionIntentResolveTool::new(capability_registry.clone()))?;
-    registry.register_tool(CognitionFeedSubscribeTool::new(turn_scope))?;
+    registry.register_typed_tool(CognitionIntentResolveTool::new(capability_registry.clone()))?;
+    registry.register_typed_tool(CognitionFeedSubscribeTool::new(turn_scope))?;
     registry.register_typed_tool(CognitionFeedPublishTool)?;
     Ok(())
 }
@@ -50,43 +52,39 @@ impl CognitionIntentResolveTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionIntentResolveTool {
-    fn name(&self) -> &'static str {
-        COGNITION_INTENT_RESOLVE
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+struct IntentResolveInput {
+    /// Exact intent id, e.g. setup_dashboard or workshop_status
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    intent: Option<String>,
+    /// Optional fuzzy query when intent id is unknown
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    query: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Resolve an operator intent or fuzzy query to capabilities with suggested feed ids and component templates.",
-        )
-    }
-
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "intent": {
-                    "type": "string",
-                    "description": "Exact intent id, e.g. setup_dashboard or workshop_status"
-                },
-                "query": {
-                    "type": "string",
-                    "description": "Optional fuzzy query when intent id is unknown"
-                }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+#[medousa_tool(id = COGNITION_INTENT_RESOLVE_ID)]
+impl CognitionIntentResolveTool {
+    /// Resolve an operator intent or fuzzy query to capabilities with suggested feed ids and component templates.
+    async fn invoke_typed(
+        &self,
+        input: IntentResolveInput,
+    ) -> stasis::prelude::Result<IntentResolveResponse> {
         let intent = input
-            .get("intent")
-            .and_then(Value::as_str)
+            .intent
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty());
         let query = input
-            .get("query")
-            .and_then(Value::as_str)
+            .query
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty());
 
@@ -97,12 +95,7 @@ impl StasisTool for CognitionIntentResolveTool {
         }
 
         let registry = self.capability_registry.read().await;
-        let response = registry.resolve_intent(intent, query);
-        serde_json::to_value(response).map_err(|error| {
-            StasisError::PortFailure(format!(
-                "cognition_intent_resolve: failed to encode response: {error}"
-            ))
-        })
+        Ok(registry.resolve_intent(intent, query))
     }
 }
 
@@ -116,61 +109,103 @@ impl CognitionFeedSubscribeTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionFeedSubscribeTool {
-    fn name(&self) -> &'static str {
-        COGNITION_FEED_SUBSCRIBE
-    }
+#[derive(Debug, JsonSchema)]
+struct FeedSubscribeInput {
+    #[schemars(required, with = "String")]
+    component_id: Option<String>,
+    /// Feed ids such as workshop.pulse
+    #[schemars(required, with = "Vec<String>")]
+    feed_ids: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    profile_id: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Bind feed ids on a canvas component so runtime publishers can deliver component_patch updates.",
-        )
-    }
+impl<'de> Deserialize<'de> for FeedSubscribeInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            component_id: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string_list"
+            )]
+            feed_ids: Option<Vec<String>>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            profile_id: Option<String>,
+        }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["component_id", "feed_ids"],
-            "properties": {
-                "component_id": { "type": "string" },
-                "feed_ids": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Feed ids such as workshop.pulse"
-                },
-                "profile_id": { "type": "string" }
-            }
-        }))
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            component_id: input.component_id,
+            feed_ids: input.feed_ids,
+            profile_id: input.profile_id,
+        })
     }
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let profile_id = profile_from_input(&input);
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+enum FeedSubscribeOutput {
+    Success {
+        ok: bool,
+        revision: u64,
+        component_id: String,
+        feed_ids: Vec<String>,
+        live: bool,
+        nav_visible: bool,
+        feeds_subscribed: Vec<String>,
+    },
+    Error {
+        ok: bool,
+        errors: Vec<String>,
+    },
+}
+
+#[medousa_tool(id = COGNITION_FEED_SUBSCRIBE_ID)]
+impl CognitionFeedSubscribeTool {
+    /// Bind feed ids on a canvas component so runtime publishers can deliver component_patch updates.
+    async fn invoke_typed(
+        &self,
+        input: FeedSubscribeInput,
+    ) -> stasis::prelude::Result<FeedSubscribeOutput> {
+        let profile_id = profile_from_typed_input(input.profile_id.as_deref());
         let component_id = input
-            .get("component_id")
-            .and_then(Value::as_str)
+            .component_id
+            .as_deref()
             .ok_or_else(|| StasisError::PortFailure("component_id required".to_string()))?;
         let feed_ids = input
-            .get("feed_ids")
-            .and_then(Value::as_array)
+            .feed_ids
             .ok_or_else(|| StasisError::PortFailure("feed_ids array required".to_string()))?
-            .iter()
-            .filter_map(|value| value.as_str().map(str::trim).filter(|id| !id.is_empty()))
-            .map(str::to_string)
+            .into_iter()
+            .filter_map(|value| {
+                let value = value.trim();
+                (!value.is_empty()).then(|| value.to_string())
+            })
             .collect::<Vec<_>>();
 
         if feed_ids.is_empty() {
-            return Ok(json!({
-                "ok": false,
-                "errors": ["feed_ids must contain at least one feed id"]
-            }));
+            return Ok(FeedSubscribeOutput::Error {
+                ok: false,
+                errors: vec!["feed_ids must contain at least one feed id".to_string()],
+            });
         }
         for feed_id in &feed_ids {
             if !is_valid_feed_id(feed_id) {
-                return Ok(json!({
-                    "ok": false,
-                    "errors": [format!("invalid feed id '{feed_id}'")]
-                }));
+                return Ok(FeedSubscribeOutput::Error {
+                    ok: false,
+                    errors: vec![format!("invalid feed id '{feed_id}'")],
+                });
             }
         }
 
@@ -184,10 +219,10 @@ impl StasisTool for CognitionFeedSubscribeTool {
             .iter()
             .position(|component| component.id == component_id)
         else {
-            return Ok(json!({
-                "ok": false,
-                "errors": [format!("component not found: {component_id}")]
-            }));
+            return Ok(FeedSubscribeOutput::Error {
+                ok: false,
+                errors: vec![format!("component not found: {component_id}")],
+            });
         };
 
         let surface_id = record.spec.components[index].surface_id.clone();
@@ -197,12 +232,12 @@ impl StasisTool for CognitionFeedSubscribeTool {
             .iter()
             .find(|surface| surface.id == surface_id);
         if surface.map(|surface| &surface.kind) != Some(&SurfaceKind::Custom) {
-            return Ok(json!({
-                "ok": false,
-                "errors": [format!(
+            return Ok(FeedSubscribeOutput::Error {
+                ok: false,
+                errors: vec![format!(
                     "component '{component_id}' must live on a custom surface to subscribe feeds"
-                )]
-            }));
+                )],
+            });
         }
 
         let previous = record.spec.components[index].feeds.clone();
@@ -211,7 +246,7 @@ impl StasisTool for CognitionFeedSubscribeTool {
         let errors = validate_environment_spec(&record.spec);
         if !errors.is_empty() {
             record.spec.components[index].feeds = previous;
-            return Ok(json!({ "ok": false, "errors": errors }));
+            return Ok(FeedSubscribeOutput::Error { ok: false, errors });
         }
 
         let updated = environment_hub()
@@ -221,15 +256,15 @@ impl StasisTool for CognitionFeedSubscribeTool {
         let nav_visible =
             crate::custom_view_status::surface_nav_visible(&updated.spec, &surface_id);
         let _ = self.turn_scope.read().await;
-        Ok(json!({
-            "ok": true,
-            "revision": updated.revision,
-            "component_id": component_id,
-            "feed_ids": feed_ids,
-            "live": true,
-            "nav_visible": nav_visible,
-            "feeds_subscribed": feed_ids,
-        }))
+        Ok(FeedSubscribeOutput::Success {
+            ok: true,
+            revision: updated.revision,
+            component_id: component_id.to_string(),
+            feed_ids: feed_ids.clone(),
+            live: true,
+            nav_visible,
+            feeds_subscribed: feed_ids,
+        })
     }
 }
 
@@ -380,12 +415,6 @@ impl CognitionFeedPublishTool {
     }
 }
 
-fn profile_from_input(input: &Value) -> String {
-    resolve_profile_id(
-        input
-            .get("profile_id")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty()),
-    )
+fn profile_from_typed_input(profile_id: Option<&str>) -> String {
+    resolve_profile_id(profile_id.map(str::trim).filter(|value| !value.is_empty()))
 }
