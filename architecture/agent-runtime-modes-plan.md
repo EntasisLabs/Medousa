@@ -6,6 +6,9 @@
 Coder's post-foundation ambient world model, tool intent, shared undertaking,
 and multi-agent concurrency roadmap lives in
 [Coder cognitive runtime](coder-cognitive-runtime-plan.md).
+The shared typed tool contract, mode metadata envelope, catalog, and migration
+plan lives in
+[Typed tool contracts and mode-aware runtime](typed-tool-contract-runtime-plan.md).
 
 ## Product decision
 

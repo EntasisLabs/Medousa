@@ -4,7 +4,9 @@
 > **Parent:** [Coder cognitive runtime](coder-cognitive-runtime-plan.md)
 > **Related:** [Context lanes and scratchpad](context-lanes-and-scratchpad-plan.md),
 > [Turn runtime and lanes](turn-runtime-and-lanes.md), and
-> [Forge plan](v0.7.0-forge-plan.md)
+> [Forge plan](v0.7.0-forge-plan.md). The typed contract and mode-envelope
+> migration is tracked in
+> [Typed tool contracts and mode-aware runtime](typed-tool-contract-runtime-plan.md).
 
 ## Product decision
 
