@@ -10,6 +10,7 @@ use tokio::sync::RwLock;
 
 use crate::daemon_api::TurnSurfaceContext;
 use crate::runtime_session::{require_active_chat_session_id_async, runtime_bootstrap_session_id};
+use crate::semantic_values::{RequiredContent, TrimmedText};
 use crate::turn_continuation::TurnContinuationScope;
 use crate::typed_tools::{ToolId, medousa_tool};
 
@@ -101,6 +102,57 @@ pub struct UiPresentInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     pub(crate) slot: Option<String>,
+}
+
+impl UiPresentInput {
+    pub(crate) fn inline(
+        title: impl Into<String>,
+        html: impl Into<String>,
+    ) -> StasisResult<Self> {
+        let title = TrimmedText::new(title)
+            .map_err(|_| StasisError::PortFailure("title is required".to_string()))?;
+        let html = RequiredContent::new(html)
+            .map_err(|_| StasisError::PortFailure("html is required".to_string()))?;
+
+        Ok(Self {
+            title: Some(title.into_string()),
+            html: Some(html.into_string()),
+            presentation: Some("inline".to_string()),
+            height: None,
+            persist: None,
+            component_id: None,
+            surface_id: None,
+            slot: None,
+        })
+    }
+
+    pub(crate) fn persistent_component(
+        title: impl Into<String>,
+        html: impl Into<String>,
+        presentation: Option<String>,
+        component_id: impl Into<String>,
+        surface_id: impl Into<String>,
+        slot: impl Into<String>,
+    ) -> StasisResult<Self> {
+        let mut input = Self::inline(title, html)?;
+        let component_id = TrimmedText::new(component_id)
+            .map_err(|_| {
+                StasisError::PortFailure(
+                    "component_id is required when persist=true".to_string(),
+                )
+            })?;
+        let surface_id = TrimmedText::new(surface_id)
+            .map_err(|_| {
+                StasisError::PortFailure("surface_id is required when persist=true".to_string())
+            })?;
+
+        input.presentation = presentation;
+        input.persist = Some(true);
+        input.component_id = Some(component_id.into_string());
+        input.surface_id = Some(surface_id.into_string());
+        input.slot = Some(slot.into());
+        Ok(input)
+    }
 }
 
 impl<'de> Deserialize<'de> for UiPresentInput {
@@ -215,25 +267,23 @@ impl CognitionUiPresentTool {
             });
         }
 
-        let title = input
-            .title
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| StasisError::PortFailure("title is required".to_string()))?;
+        let title = TrimmedText::new(input.title.as_deref().unwrap_or_default())
+            .map_err(|_| StasisError::PortFailure("title is required".to_string()))?;
         let html = input
             .html
             .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
+            .filter(|value| !value.trim().is_empty())
+            .map(RequiredContent::new)
+            .transpose()
+            .map_err(|_| StasisError::PortFailure("html is required".to_string()))?
             .ok_or_else(|| StasisError::PortFailure("html is required".to_string()))?;
         let presentation = input.presentation.as_deref().unwrap_or("inline");
         let height_px = input.height.map(|value| value.clamp(120, 1200) as u32);
 
         let session_id = self.resolve_session_id().await?;
         let session_id_for_alias = session_id.clone();
-        let title = title.to_string();
-        let html = html.to_string();
+        let title = title.into_string();
+        let html = html.into_string();
         let presentation = presentation.to_string();
         let label_for_component = title.clone();
 
@@ -394,6 +444,29 @@ mod tests {
         assert!(surface_supports_ui_artifacts(Some(
             &TurnSurfaceContext::tui().with_ui_artifacts(true)
         )));
+    }
+
+    #[test]
+    fn persistent_constructor_keeps_content_bytes_and_requires_identity() {
+        let input = UiPresentInput::persistent_component(
+            "  title  ",
+            "  <div>hello</div>\n",
+            Some("panel".to_string()),
+            " component ",
+            " surface ",
+            "main",
+        )
+        .expect("persistent input");
+
+        assert_eq!(input.title.as_deref(), Some("title"));
+        assert_eq!(input.html.as_deref(), Some("  <div>hello</div>\n"));
+        assert_eq!(input.component_id.as_deref(), Some("component"));
+        assert_eq!(input.surface_id.as_deref(), Some("surface"));
+        assert_eq!(input.persist, Some(true));
+        assert!(UiPresentInput::persistent_component(
+            "title", "html", None, " ", "surface", "main"
+        )
+        .is_err());
     }
 
     #[tokio::test]

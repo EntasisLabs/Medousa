@@ -28,6 +28,7 @@ use crate::runtime_tools::{
     CognitionRuntimeRecurringRegisterTool, RuntimeRecurringRegisterInput,
     RuntimeRecurringRegisterOutput,
 };
+use crate::semantic_values::{RequiredContent, TrimmedText};
 use crate::turn_continuation::TurnContinuationScope;
 use crate::typed_tools::{ToolId, medousa_tool};
 use crate::ui_present_tools::{CognitionUiPresentTool, UiPresentInput, UiPresentOutput};
@@ -327,6 +328,78 @@ pub struct CustomViewComposeInput {
     presentation: Option<String>,
 }
 
+#[derive(Debug)]
+struct CustomViewComposeCommand {
+    surface_id: String,
+    label: Option<String>,
+    icon: Option<String>,
+    component_id: String,
+    html: Option<String>,
+    artifact_id: Option<String>,
+    title: Option<String>,
+    feed_ids: Vec<String>,
+    layout_root: Option<LayoutNode>,
+    recurring: Option<CustomViewRecurringInput>,
+    nav: Option<CustomViewNavInput>,
+    preset_rewrite: Option<CustomViewPresetRewriteInput>,
+    profile_id: Option<String>,
+    presentation: Option<String>,
+}
+
+impl TryFrom<CustomViewComposeInput> for CustomViewComposeCommand {
+    type Error = StasisError;
+
+    fn try_from(input: CustomViewComposeInput) -> Result<Self, Self::Error> {
+        let surface_id = required_compose_string(input.surface_id, "surface_id")?;
+        let component_id = required_compose_string(input.component_id, "component_id")?;
+        let html = input
+            .html
+            .filter(|value| !value.trim().is_empty())
+            .map(RequiredContent::new)
+            .transpose()
+            .map_err(|_| StasisError::PortFailure("html is required".to_string()))?
+            .map(RequiredContent::into_string);
+        let artifact_id = optional_trimmed(input.artifact_id);
+
+        if html.is_none() && artifact_id.is_none() {
+            return Err(StasisError::PortFailure(
+                "cognition_custom_view_compose: html or artifact_id is required".to_string(),
+            ));
+        }
+
+        let feed_ids = input
+            .feed_ids
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|value| TrimmedText::new(value).ok().map(TrimmedText::into_string))
+            .collect::<Vec<_>>();
+        for feed_id in &feed_ids {
+            if !is_valid_feed_id(feed_id) {
+                return Err(StasisError::PortFailure(format!(
+                    "cognition_custom_view_compose: invalid feed_id '{feed_id}'"
+                )));
+            }
+        }
+
+        Ok(Self {
+            surface_id,
+            label: optional_trimmed(input.label),
+            icon: optional_trimmed(input.icon),
+            component_id,
+            html,
+            artifact_id,
+            title: optional_trimmed(input.title),
+            feed_ids,
+            layout_root: input.layout_root.map(|root| root.0),
+            recurring: input.recurring,
+            nav: input.nav,
+            preset_rewrite: input.preset_rewrite,
+            profile_id: optional_trimmed(input.profile_id),
+            presentation: optional_trimmed(input.presentation),
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct CustomViewComposeFailure {
     ok: bool,
@@ -419,6 +492,16 @@ struct ComposeStatusAugment {
     doctor: Option<EnvironmentStatusResponse>,
 }
 
+struct ComposeStatusContext<'a> {
+    pending_operator_approval: bool,
+    surface_id: &'a str,
+    profile_id: &'a str,
+    feeds_subscribed: &'a [String],
+    feeds_bound_recurring: &'a [String],
+    next_run_at_utc: Option<&'a str>,
+    runtime: &'a RuntimeComposition,
+}
+
 #[medousa_tool(id = COGNITION_CUSTOM_VIEW_COMPOSE_ID)]
 impl CognitionCustomViewComposeTool {
     /// Orchestrate a custom view: surface + HTML component + feed subscribe + layout + recurring poll in one call.
@@ -426,44 +509,14 @@ impl CognitionCustomViewComposeTool {
         &self,
         input: CustomViewComposeInput,
     ) -> stasis::prelude::Result<CustomViewComposeOutput> {
-        let profile_id = resolve_profile_id(input.profile_id.as_deref());
-        let surface_id = required_compose_string(input.surface_id, "surface_id")?;
-        let component_id = required_compose_string(input.component_id, "component_id")?;
-        let html = input
-            .html
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
-        let artifact_id = input
-            .artifact_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
-
-        if html.is_none() && artifact_id.is_none() {
-            return Err(StasisError::PortFailure(
-                "cognition_custom_view_compose: html or artifact_id is required".to_string(),
-            ));
-        }
-
-        let feed_ids = input
-            .feed_ids
-            .unwrap_or_default()
-            .into_iter()
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-            .collect::<Vec<_>>();
-        for feed_id in &feed_ids {
-            if !is_valid_feed_id(feed_id) {
-                return Err(StasisError::PortFailure(format!(
-                    "cognition_custom_view_compose: invalid feed_id '{feed_id}'"
-                )));
-            }
-        }
-
-        let add_to_preset = input
+        let command = CustomViewComposeCommand::try_from(input)?;
+        let profile_id = resolve_profile_id(command.profile_id.as_deref());
+        let surface_id = command.surface_id;
+        let component_id = command.component_id;
+        let html = command.html;
+        let artifact_id = command.artifact_id;
+        let feed_ids = command.feed_ids;
+        let add_to_preset = command
             .nav
             .as_ref()
             .map(|nav| nav.add_to_active_preset)
@@ -483,8 +536,8 @@ impl CognitionCustomViewComposeTool {
             .any(|surface| surface.id == surface_id);
 
         if !surface_exists {
-            let label = input.label.as_deref().unwrap_or(&surface_id).to_string();
-            let icon = input.icon.as_deref().unwrap_or("layout-grid").to_string();
+            let label = command.label.as_deref().unwrap_or(&surface_id).to_string();
+            let icon = command.icon.as_deref().unwrap_or("layout-grid").to_string();
             patch_ops.push(EnvironmentPatchOp::AddCustomSurface {
                 id: surface_id.clone(),
                 label,
@@ -498,7 +551,7 @@ impl CognitionCustomViewComposeTool {
             });
         }
 
-        if let Some(rewrite) = input.preset_rewrite.as_ref() {
+        if let Some(rewrite) = command.preset_rewrite.as_ref() {
             patch_ops.push(EnvironmentPatchOp::RewriteActivePresetSurfaces {
                 surfaces: rewrite.surfaces.clone().unwrap_or_default(),
             });
@@ -527,16 +580,14 @@ impl CognitionCustomViewComposeTool {
         let mut next_run_at_utc: Option<String> = None;
 
         if let Some(html) = html {
-            let ui_input = UiPresentInput {
-                title: Some(input.title.clone().unwrap_or_else(|| surface_id.clone())),
-                html: Some(html),
-                presentation: input.presentation.clone(),
-                height: None,
-                persist: Some(true),
-                component_id: Some(component_id.clone()),
-                surface_id: Some(surface_id.clone()),
-                slot: Some("main".to_string()),
-            };
+            let ui_input = UiPresentInput::persistent_component(
+                command.title.clone().unwrap_or_else(|| surface_id.clone()),
+                html,
+                command.presentation.clone(),
+                component_id.clone(),
+                surface_id.clone(),
+                "main",
+            )?;
             let ui_tool = CognitionUiPresentTool::new(self.turn_scope.clone());
             let ui_result = ui_tool.invoke_typed(ui_input).await?;
             let ui_failed = match &ui_result {
@@ -546,21 +597,23 @@ impl CognitionCustomViewComposeTool {
             if ui_failed {
                 return merge_compose_status(
                     ui_result,
-                    pending_operator_approval,
-                    &surface_id,
-                    &profile_id,
-                    &feeds_subscribed,
-                    &feeds_bound_recurring,
-                    next_run_at_utc.as_deref(),
-                    self.runtime.as_ref(),
+                    ComposeStatusContext {
+                        pending_operator_approval,
+                        surface_id: &surface_id,
+                        profile_id: &profile_id,
+                        feeds_subscribed: &feeds_subscribed,
+                        feeds_bound_recurring: &feeds_bound_recurring,
+                        next_run_at_utc: next_run_at_utc.as_deref(),
+                        runtime: self.runtime.as_ref(),
+                    },
                 )
                 .await;
             }
         } else if let Some(artifact_id) = artifact_id {
-            let label = input
+            let label = command
                 .title
                 .as_deref()
-                .or(input.label.as_deref())
+                .or(command.label.as_deref())
                 .unwrap_or(&component_id)
                 .to_string();
             let component =
@@ -599,11 +652,11 @@ impl CognitionCustomViewComposeTool {
                 subscribe_component_feeds(&profile_id, &component_id, &feed_ids).await?;
         }
 
-        if let Some(layout_root) = input.layout_root {
-            apply_layout_root(&profile_id, &surface_id, layout_root.0).await?;
+        if let Some(layout_root) = command.layout_root {
+            apply_layout_root(&profile_id, &surface_id, layout_root).await?;
         }
 
-        if let Some(recurring) = input.recurring
+        if let Some(recurring) = command.recurring
             && !feed_ids.is_empty()
         {
             let CustomViewRecurringInput {
@@ -707,33 +760,26 @@ impl CognitionCustomViewComposeTool {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn merge_compose_status(
     base: UiPresentOutput,
-    pending_operator_approval: bool,
-    surface_id: &str,
-    profile_id: &str,
-    feeds_subscribed: &[String],
-    feeds_bound_recurring: &[String],
-    next_run_at_utc: Option<&str>,
-    runtime: &RuntimeComposition,
+    context: ComposeStatusContext<'_>,
 ) -> StasisResult<CustomViewComposeOutput> {
     let augment = ComposeStatusAugment {
-        pending_operator_approval,
-        live: !pending_operator_approval,
+        pending_operator_approval: context.pending_operator_approval,
+        live: !context.pending_operator_approval,
         nav_visible: environment_hub()
-            .get(profile_id)
+            .get(context.profile_id)
             .await
             .ok()
-            .map(|record| surface_nav_visible(&record.spec, surface_id)),
-        feeds_subscribed: feeds_subscribed.to_vec(),
-        feeds_bound_recurring: feeds_bound_recurring.to_vec(),
-        next_run_at_utc: next_run_at_utc.map(str::to_string),
+            .map(|record| surface_nav_visible(&record.spec, context.surface_id)),
+        feeds_subscribed: context.feeds_subscribed.to_vec(),
+        feeds_bound_recurring: context.feeds_bound_recurring.to_vec(),
+        next_run_at_utc: context.next_run_at_utc.map(str::to_string),
         doctor: build_environment_status(
             environment_hub(),
-            profile_id,
-            Some(surface_id),
-            Some(runtime),
+            context.profile_id,
+            Some(context.surface_id),
+            Some(context.runtime),
             None,
         )
         .await
@@ -797,14 +843,15 @@ async fn merge_compose_status(
 }
 
 fn required_compose_string(input: Option<String>, key: &str) -> StasisResult<String> {
-    input
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-        .ok_or_else(|| {
+    TrimmedText::new(input.unwrap_or_default())
+        .map(TrimmedText::into_string)
+        .map_err(|_| {
             StasisError::PortFailure(format!("cognition_custom_view_compose: {key} is required"))
         })
+}
+
+fn optional_trimmed(input: Option<String>) -> Option<String> {
+    input.and_then(|value| TrimmedText::new(value).ok().map(TrimmedText::into_string))
 }
 
 async fn subscribe_component_feeds(
@@ -913,5 +960,31 @@ mod tests {
         }];
         crate::environment_patch::apply_patch_ops(&mut spec, &ops).expect("patch");
         assert!(surface_nav_visible(&spec, "trip-london"));
+    }
+
+    #[test]
+    fn compose_command_normalizes_ids_and_preserves_html() {
+        let command = CustomViewComposeCommand::try_from(CustomViewComposeInput {
+            surface_id: Some("  trip-london  ".to_string()),
+            label: Some("  Trip  ".to_string()),
+            icon: None,
+            component_id: Some("  departures  ".to_string()),
+            html: Some("  <main>Departures</main>\n".to_string()),
+            artifact_id: None,
+            title: None,
+            feed_ids: Some(vec!["  trip.london.trains  ".to_string()]),
+            layout_root: None,
+            recurring: None,
+            nav: None,
+            preset_rewrite: None,
+            profile_id: None,
+            presentation: None,
+        })
+        .expect("compose command");
+
+        assert_eq!(command.surface_id, "trip-london");
+        assert_eq!(command.component_id, "departures");
+        assert_eq!(command.html.as_deref(), Some("  <main>Departures</main>\n"));
+        assert_eq!(command.feed_ids, vec!["trip.london.trains"]);
     }
 }
