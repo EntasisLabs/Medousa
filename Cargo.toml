@@ -157,6 +157,7 @@ otel-export = [
 iroh-transport = ["dep:iroh", "dep:iroh-tickets", "dep:httparse", "dep:medousa-iroh-http"]
 
 [dev-dependencies]
+medousa-mcp-server = { path = "crates/medousa-mcp-server" }
 surrealdb-types = { version = "3.1.5" }
 surrealdb = { version = "3.1.5", default-features = false, features = ["kv-mem"] }
 tempfile = "3"

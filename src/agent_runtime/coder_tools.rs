@@ -1102,28 +1102,12 @@ impl CoderBoundToolRegistry {
     }
 
     fn unlock_domain(&self, domain: &str) -> Result<Vec<String>> {
-        let names: Vec<&str> = match domain {
-            "intelligence" => crate::code_intelligence_tools::CODE_COGNITION_TOOLS.to_vec(),
-            "semantic_actions" => {
-                super::coder_semantic_actions::SEMANTIC_ACTION_TOOL_NAMES.to_vec()
-            }
-            "causal" => vec![super::coder_causal::COGNITION_CODER_CAUSAL_QUERY],
-            "world_model" => crate::detamu_tools::DETAMU_COGNITION_TOOLS.to_vec(),
-            "experiments" => {
-                vec![super::coder_experiments::COGNITION_CODER_EXPERIMENT_COMPARE]
-            }
-            "history" => vec![COGNITION_ENGINEERING_HISTORY],
-            "memory" => CODER_ADVANCED_MEMORY_TOOLS.to_vec(),
-            "research" => CODER_RESEARCH_TOOLS.to_vec(),
-            "capabilities" => CODER_CAPABILITY_TOOLS.to_vec(),
-            "workspace" => CODER_WORKSPACE_TOOLS.to_vec(),
-            _ => {
-                return Err(StasisError::PortFailure(format!(
-                    "unknown Coder tool domain '{domain}'; expected one of {}",
-                    CODER_DISCOVERABLE_DOMAINS.join(", ")
-                )));
-            }
-        };
+        let names = coder_domain_tool_names(domain).ok_or_else(|| {
+            StasisError::PortFailure(format!(
+                "unknown Coder tool domain '{domain}'; expected one of {}",
+                CODER_DISCOVERABLE_DOMAINS.join(", ")
+            ))
+        })?;
         let mut visible = self.visible_tools.lock().map_err(|err| {
             StasisError::PortFailure(format!("Coder visible tool lock poisoned: {err}"))
         })?;
@@ -2109,6 +2093,26 @@ impl CoderBoundToolRegistry {
     }
 }
 
+fn coder_domain_tool_names(domain: &str) -> Option<Vec<&'static str>> {
+    match domain {
+        "intelligence" => Some(crate::code_intelligence_tools::CODE_COGNITION_TOOLS.to_vec()),
+        "semantic_actions" => {
+            Some(super::coder_semantic_actions::SEMANTIC_ACTION_TOOL_NAMES.to_vec())
+        }
+        "causal" => Some(vec![super::coder_causal::COGNITION_CODER_CAUSAL_QUERY]),
+        "world_model" => Some(crate::detamu_tools::DETAMU_COGNITION_TOOLS.to_vec()),
+        "experiments" => Some(vec![
+            super::coder_experiments::COGNITION_CODER_EXPERIMENT_COMPARE,
+        ]),
+        "history" => Some(vec![COGNITION_ENGINEERING_HISTORY]),
+        "memory" => Some(CODER_ADVANCED_MEMORY_TOOLS.to_vec()),
+        "research" => Some(CODER_RESEARCH_TOOLS.to_vec()),
+        "capabilities" => Some(CODER_CAPABILITY_TOOLS.to_vec()),
+        "workspace" => Some(CODER_WORKSPACE_TOOLS.to_vec()),
+        _ => None,
+    }
+}
+
 impl super::coder_evidence::CompactEvidenceReceiptSink for CoderBoundToolRegistry {
     fn stage_compact_receipt(
         &self,
@@ -2496,6 +2500,95 @@ fn with_coder_tool_advertisement(tool: Tool) -> Tool {
         ),
         _ => tool,
     }
+}
+
+#[cfg(test)]
+pub(crate) fn contract_projected_tools(mut base_tools: Vec<Tool>) -> Vec<Tool> {
+    base_tools.extend(coder_runtime_tool_definitions());
+    let visible_names = coder_contract_visible_names();
+    let policy = WorkPolicy::default();
+    base_tools
+        .into_iter()
+        .filter(|tool| {
+            visible_names.contains(tool.name.as_str())
+                && coder_tool_allowed(tool.name.as_str(), &policy)
+        })
+        .map(|tool| with_coder_tool_advertisement(with_required_coder_intent(tool)))
+        .collect()
+}
+
+#[cfg(test)]
+pub(crate) fn contract_policy_references() -> HashSet<String> {
+    let mut names = coder_contract_visible_names();
+    names.extend(
+        GENERAL_MODE_RUNTIME_TOOLS
+            .iter()
+            .map(|name| (*name).to_string()),
+    );
+    names.insert(crate::shell_tools::COGNITION_SHELL_RUN.to_string());
+    names.insert(crate::shell_tools::COGNITION_SHELL_STATUS.to_string());
+    names
+}
+
+#[cfg(test)]
+pub(crate) fn contract_placement_labels(tool_name: &str) -> Vec<String> {
+    let mut placements = Vec::new();
+    if coder_contract_initial_names().contains(tool_name) {
+        placements.push("coder:initial".to_string());
+    }
+    if crate::code_intelligence_tools::CODE_COGNITION_TOOLS.contains(&tool_name) {
+        placements.push("coder:editor_context".to_string());
+    }
+    for domain in CODER_DISCOVERABLE_DOMAINS {
+        if coder_domain_tool_names(domain).is_some_and(|names| names.contains(&tool_name)) {
+            placements.push(format!("coder:domain:{domain}"));
+        }
+    }
+    placements.sort();
+    placements.dedup();
+    placements
+}
+
+#[cfg(test)]
+fn coder_contract_initial_names() -> HashSet<&'static str> {
+    crate::coding_tools::CODING_COGNITION_TOOLS
+        .iter()
+        .chain(TURN_CONTROL_TOOLS.iter())
+        .chain(CODER_PEER_SPAWN_TOOLS.iter())
+        .chain(super::coder_memory::CODER_MEMORY_TOOL_NAMES.iter())
+        .chain(
+            [
+                COGNITION_CODER_TOOLS_DISCOVER,
+                COGNITION_ENGINEERING_POINTERS,
+                COGNITION_ENGINEERING_POINTER_FOLLOW,
+                COGNITION_CODER_EVIDENCE_READ,
+            ]
+            .iter(),
+        )
+        .copied()
+        .collect()
+}
+
+#[cfg(test)]
+fn coder_contract_visible_names() -> HashSet<String> {
+    let mut names = coder_contract_initial_names()
+        .into_iter()
+        .map(str::to_string)
+        .collect::<HashSet<_>>();
+    names.extend(
+        crate::code_intelligence_tools::CODE_COGNITION_TOOLS
+            .iter()
+            .map(|name| (*name).to_string()),
+    );
+    for domain in CODER_DISCOVERABLE_DOMAINS {
+        names.extend(
+            coder_domain_tool_names(domain)
+                .into_iter()
+                .flatten()
+                .map(str::to_string),
+        );
+    }
+    names
 }
 
 /// Map Coder `cognition_turn_begin_work` args onto `cognition_spawn_turn_worker`.

@@ -99,11 +99,11 @@ impl StasisTool for CognitionProjectListTool {
     }
 
     fn description(&self) -> Option<&'static str> {
-        Some("List ready Forge projects that this Coder conversation can continue.")
+        Some(project_list_description())
     }
 
     fn input_schema(&self) -> Option<Value> {
-        Some(json!({ "type": "object", "properties": {} }))
+        Some(project_list_schema())
     }
 
     async fn invoke(&self, _input: Value) -> Result<Value> {
@@ -146,19 +146,11 @@ impl StasisTool for CognitionProjectBindTool {
     }
 
     fn description(&self) -> Option<&'static str> {
-        Some(
-            "Bind this conversation to a ready Forge project selected by the user. The full Coder workspace becomes active on the next turn.",
-        )
+        Some(project_bind_description())
     }
 
     fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["work_id"],
-            "properties": {
-                "work_id": { "type": "string", "description": "Ready project id returned by cognition_project_list" }
-            }
-        }))
+        Some(project_bind_schema())
     }
 
     async fn invoke(&self, input: Value) -> Result<Value> {
@@ -203,23 +195,11 @@ impl StasisTool for CognitionProjectCreateTool {
     }
 
     fn description(&self) -> Option<&'static str> {
-        Some(
-            "Create, provision, and bind a code project after the user explicitly asks for project creation. Blank projects are initialized under the connected workshop's Medousa projects directory.",
-        )
+        Some(project_create_description())
     }
 
     fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["title", "brief", "source"],
-            "properties": {
-                "title": { "type": "string" },
-                "brief": { "type": "string", "description": "Concrete outcome the project should achieve" },
-                "source": { "type": "string", "enum": ["blank", "repository"] },
-                "repo_path": { "type": "string", "description": "Required only for source=repository" },
-                "base_ref": { "type": "string", "default": "main" }
-            }
-        }))
+        Some(project_create_schema())
     }
 
     async fn invoke(&self, input: Value) -> Result<Value> {
@@ -241,4 +221,59 @@ impl StasisTool for CognitionProjectCreateTool {
             }))
             .map_err(|err| StasisError::PortFailure(err.to_string()))
     }
+}
+
+fn project_list_description() -> &'static str {
+    "List ready Forge projects that this Coder conversation can continue."
+}
+
+fn project_list_schema() -> Value {
+    json!({ "type": "object", "properties": {} })
+}
+
+fn project_bind_description() -> &'static str {
+    "Bind this conversation to a ready Forge project selected by the user. The full Coder workspace becomes active on the next turn."
+}
+
+fn project_bind_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["work_id"],
+        "properties": {
+            "work_id": { "type": "string", "description": "Ready project id returned by cognition_project_list" }
+        }
+    })
+}
+
+fn project_create_description() -> &'static str {
+    "Create, provision, and bind a code project after the user explicitly asks for project creation. Blank projects are initialized under the connected workshop's Medousa projects directory."
+}
+
+fn project_create_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["title", "brief", "source"],
+        "properties": {
+            "title": { "type": "string" },
+            "brief": { "type": "string", "description": "Concrete outcome the project should achieve" },
+            "source": { "type": "string", "enum": ["blank", "repository"] },
+            "repo_path": { "type": "string", "description": "Required only for source=repository" },
+            "base_ref": { "type": "string", "default": "main" }
+        }
+    })
+}
+
+#[cfg(test)]
+pub(crate) fn contract_tool_definitions() -> Vec<Tool> {
+    vec![
+        Tool::new(PROJECT_LIST)
+            .with_description(project_list_description())
+            .with_schema(project_list_schema()),
+        Tool::new(PROJECT_BIND)
+            .with_description(project_bind_description())
+            .with_schema(project_bind_schema()),
+        Tool::new(PROJECT_CREATE)
+            .with_description(project_create_description())
+            .with_schema(project_create_schema()),
+    ]
 }

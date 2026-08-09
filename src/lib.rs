@@ -143,6 +143,8 @@ pub mod local_inference_handlers;
 pub mod memory_tools;
 pub mod tool_aliases;
 pub mod tool_names;
+#[cfg(test)]
+mod tool_contract_baseline;
 pub mod adapter_heartbeat;
 pub mod paths;
 pub mod product_config;

@@ -284,19 +284,6 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                 summary: "Home environment — surfaces, chrome, persistent components, context pointers",
                 tools: ENVIRONMENT_DOMAIN_TOOLS,
             },
-            ToolDomainCatalogEntry {
-                domain: "presentation",
-                summary: "Liquid chat embeds (markdown) first; ui_build for streaming scenes; legacy ui_scene + HTML artifacts",
-                tools: &[
-                    "cognition_ui_build",
-                    "cognition_ui_scene",
-                    "cognition_ui_present",
-                    "cognition_artifact_list",
-                    "cognition_artifact_read",
-                    "cognition_artifact_grep",
-                    "cognition_artifact_write",
-                ],
-            },
         ]
     })
     .as_slice()

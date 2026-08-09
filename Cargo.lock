@@ -7490,6 +7490,7 @@ dependencies = [
  "medousa-iroh-http",
  "medousa-local-inference",
  "medousa-mcp-gateway",
+ "medousa-mcp-server",
  "medousa-sdk",
  "medousa-types",
  "notify",

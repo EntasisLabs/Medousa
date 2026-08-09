@@ -1,7 +1,7 @@
-//! Canonical cognition tool names (`StasisTool::name()` values). Keep in sync with registrations.
+//! Canonical first-party tool inventory used by the contract migration audit.
 
-/// All cognition tools registered in `assemble_tui_runtime` (snake_case canonical).
-pub const REGISTERED_COGNITION_TOOLS: &[&str] = &[
+/// Manual `StasisTool` contracts that must shrink as typed tools replace them.
+pub const LEGACY_MANUAL_TOOL_CONTRACTS: &[&str] = &[
     "cognition_job_enqueue",
     "cognition_grapheme_run",
     "cognition_grapheme_modules",
@@ -108,7 +108,58 @@ pub const REGISTERED_COGNITION_TOOLS: &[&str] = &[
     "cognition_environment_patch",
     "cognition_custom_view_doctor",
     "cognition_custom_view_compose",
+    "cognition_artifact_delete",
+    "cognition_artifact_grep",
+    "cognition_artifact_list",
+    "cognition_artifact_read",
+    "cognition_artifact_write",
+    "cognition_browser_fetch",
+    "cognition_browser_snapshot",
+    "cognition_code_apply_patch",
+    "cognition_code_read",
+    "cognition_code_search",
+    "cognition_coder_shell_run",
+    "cognition_coder_shell_status",
+    "cognition_component_create",
+    "cognition_component_delete",
+    "cognition_component_get",
+    "cognition_component_list",
+    "cognition_component_update",
+    "cognition_context_follow_pointer",
+    "cognition_context_list_pointers",
+    "cognition_detamu_code_avec",
+    "cognition_detamu_files",
+    "cognition_detamu_find",
+    "cognition_detamu_impact",
+    "cognition_detamu_status",
+    "cognition_environment_activate_preset",
+    "cognition_environment_apply",
+    "cognition_environment_get",
+    "cognition_environment_propose",
+    "cognition_environment_wiki",
+    "cognition_project_bind",
+    "cognition_project_create",
+    "cognition_project_list",
+    "cognition_shell_session_interrupt",
+    "cognition_shell_session_run",
+    "cognition_shell_session_status",
+    "cognition_turn_propose_mode",
+    "cognition_ui_build",
+    "cognition_ui_present",
+    "cognition_ui_scene",
+    "cognition_vault_grep",
+    "cognition_workshop_steer",
 ];
+
+/// Typed contracts already excluded from the manual migration allowlist.
+pub const TYPED_TOOL_CONTRACTS: &[&str] = &["cognition_turn_control_ping"];
+
+pub fn registered_cognition_tools() -> impl Iterator<Item = &'static str> {
+    LEGACY_MANUAL_TOOL_CONTRACTS
+        .iter()
+        .chain(TYPED_TOOL_CONTRACTS.iter())
+        .copied()
+}
 
 /// Grapheme first-class tools (templates + discovery + run) — worker execution surface.
 pub const WORKER_GRAPHEME_EXECUTION_TOOLS: &[&str] = &[
@@ -134,11 +185,11 @@ mod tests {
 
     #[test]
     fn registered_names_are_stable_snake_case() {
-        for name in REGISTERED_COGNITION_TOOLS {
+        for name in registered_cognition_tools() {
             assert!(!name.contains('.'), "use snake_case canonical name: {name}");
             assert_eq!(
                 sanitize_tool_advertised_name(name),
-                *name,
+                name,
                 "sanitized alias should match canonical: {name}"
             );
         }
@@ -203,7 +254,8 @@ mod tests {
 
     #[test]
     fn no_duplicate_registered_entries() {
-        let set: HashSet<_> = REGISTERED_COGNITION_TOOLS.iter().copied().collect();
-        assert_eq!(set.len(), REGISTERED_COGNITION_TOOLS.len());
+        let names = registered_cognition_tools().collect::<Vec<_>>();
+        let set: HashSet<_> = names.iter().copied().collect();
+        assert_eq!(set.len(), names.len());
     }
 }
