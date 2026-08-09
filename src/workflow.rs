@@ -16,7 +16,6 @@ use stasis::application::orchestration::prompt_pipeline::{
 };
 use stasis::application::runtime::in_memory_runtime::{JobExecutionOutcome, JobHandler};
 use stasis::application::runtime::runtime_factory::RuntimeComposition;
-use stasis::prelude::{BackoffPolicy, NewJob};
 use stasis::domain::runtime::job::Job;
 use stasis::ports::outbound::runtime::workflow_engine::WorkflowEngine;
 use tokio::sync::RwLock;
@@ -30,6 +29,7 @@ use crate::mcp_gateway_api::{McpInvokeRequest, McpTurnContext, McpTurnLane};
 use crate::mcp_gateway_client::McpGatewayClient;
 use crate::mcp_turn_token::mint_mcp_turn_token;
 use crate::runtime_composition_ext::RuntimeCompositionExt;
+use crate::runtime_job_spec::ToolJobSpec;
 use crate::tools::validate_grapheme_source_for_schedule;
 use crate::turn_continuation::{ContinuationAwaitMode, TurnContinuationScope, wire_turn_child_job};
 
@@ -866,21 +866,18 @@ pub async fn enqueue_workflow_job(
 
     let job_id = format!("wf-job-{}", Uuid::new_v4().simple());
     let now = Utc::now();
-    let mut job = NewJob {
-        id: job_id.clone(),
-        queue: queue.to_string(),
-        job_type: job_type.to_string(),
-        payload_ref: encode_workflow_payload(payload)?,
-        priority: 100,
-        max_attempts: 1,
-        idempotency_key: format!("idem-{job_id}"),
-        correlation_id: payload.workflow_id.clone(),
-        causation_id: "cognition_runtime_workflow".to_string(),
-        trace_id: payload.workflow_id.clone(),
-        sttp_input_node_id: format!("sttp:in:workflow:{}", payload.workflow_id),
-        scheduled_at: now,
-        backoff_policy: BackoffPolicy::default(),
-    };
+    let mut job = ToolJobSpec::new(
+        job_id.clone(),
+        queue,
+        job_type,
+        encode_workflow_payload(payload)?,
+        "cognition_runtime_workflow",
+        format!("sttp:in:workflow:{}", payload.workflow_id),
+        now,
+    )
+    .correlation_id(payload.workflow_id.clone())
+    .trace_id(payload.workflow_id.clone())
+    .build();
 
     if let Some(ctx) = continuation {
         wire_turn_child_job(

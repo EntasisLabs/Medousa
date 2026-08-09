@@ -18,7 +18,7 @@ use stasis::domain::runtime::job_attempt::JobAttemptOutcome;
 use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
 use stasis::ports::outbound::runtime::job_attempt_store::JobAttemptStore;
 use stasis::prelude::{
-    BackoffPolicy, NewJob, RuntimeBackend, RuntimeComposition, StasisError,
+    RuntimeBackend, RuntimeComposition, StasisError,
 };
 use stasis::prelude_ext::{MemoryContextReader, MemoryContextWriter};
 
@@ -44,6 +44,7 @@ use crate::recurring_delivery::{
 use crate::recurring_feed::{RecurringFeedSpec, bind_recurring_feed_spec_for_registration};
 use crate::recurring_schedule::RecurringScheduleSpec;
 use crate::runtime_composition_ext::RuntimeCompositionExt;
+use crate::runtime_job_spec::ToolJobSpec;
 use crate::tui::runtime_services::{
     build_tool_loop_pipeline_for_target, build_tui_runtime_services,
 };
@@ -113,26 +114,18 @@ pub(crate) async fn run_grapheme_via_runtime(
     let job_id = format!("cognition-gph-runtime-{}", Uuid::new_v4().simple());
     let now = Utc::now();
 
-    let job = NewJob {
-        id: job_id.clone(),
-        queue: "default".to_string(),
-        job_type: "workflow.grapheme.run".to_string(),
-        payload_ref: format!("grapheme:inline:{source}"),
-        priority: 100,
-        max_attempts: 1,
-        idempotency_key: format!("idem-{job_id}"),
-        correlation_id: job_id.clone(),
-        causation_id: causation.to_string(),
-        trace_id: job_id.clone(),
-        sttp_input_node_id: "sttp:in:cognition:grapheme:runtime".to_string(),
-        scheduled_at: now,
-        backoff_policy: BackoffPolicy::default(),
-    };
+    let job = ToolJobSpec::new(
+        job_id.clone(),
+        "default",
+        "workflow.grapheme.run",
+        format!("grapheme:inline:{source}"),
+        causation,
+        "sttp:in:cognition:grapheme:runtime",
+        now,
+    )
+    .build();
 
-    match &**runtime {
-        RuntimeComposition::InMemory(rt) => rt.enqueue(job).await?,
-        RuntimeComposition::Surreal(rt) => rt.enqueue(job).await?,
-    }
+    runtime.enqueue_job(job).await?;
 
     let _ = process_once(runtime, causation)
         .await
@@ -418,21 +411,16 @@ impl CognitionJobEnqueueTool {
         let job_id = format!("cognition-{}", Uuid::new_v4().simple());
         let now = Utc::now();
 
-        let mut job = NewJob {
-            id: job_id.clone(),
-            queue: "default".to_string(),
-            job_type: job_type.to_string(),
-            payload_ref: payload_ref.to_string(),
-            priority: 100,
-            max_attempts: 1,
-            idempotency_key: format!("idem-{job_id}"),
-            correlation_id: job_id.clone(),
-            causation_id: "cognition_tui".to_string(),
-            trace_id: job_id.clone(),
-            sttp_input_node_id: "sttp:in:cognition:enqueue".to_string(),
-            scheduled_at: now,
-            backoff_policy: BackoffPolicy::default(),
-        };
+        let mut job = ToolJobSpec::new(
+            job_id.clone(),
+            "default",
+            job_type,
+            payload_ref,
+            "cognition_tui",
+            "sttp:in:cognition:enqueue",
+            now,
+        )
+        .build();
 
         if let Some(scope) = self.turn_scope.read().await.clone() {
             wire_turn_child_job(
@@ -445,10 +433,7 @@ impl CognitionJobEnqueueTool {
             .await;
         }
 
-        match &*self.runtime {
-            RuntimeComposition::InMemory(rt) => rt.enqueue(job).await?,
-            RuntimeComposition::Surreal(rt) => rt.enqueue(job).await?,
-        }
+        self.runtime.enqueue_job(job).await?;
 
         let _ = self
             .event_tx
@@ -544,21 +529,16 @@ impl CognitionGraphemeRunTool {
         let job_id = format!("cognition-gph-{}", Uuid::new_v4().simple());
         let now = Utc::now();
 
-        let mut job = NewJob {
-            id: job_id.clone(),
-            queue: "default".to_string(),
-            job_type: "workflow.grapheme.run".to_string(),
-            payload_ref: format!("grapheme:inline:{source}"),
-            priority: 100,
-            max_attempts: 1,
-            idempotency_key: format!("idem-{job_id}"),
-            correlation_id: job_id.clone(),
-            causation_id: "cognition_tui".to_string(),
-            trace_id: job_id.clone(),
-            sttp_input_node_id: "sttp:in:cognition:grapheme".to_string(),
-            scheduled_at: now,
-            backoff_policy: BackoffPolicy::default(),
-        };
+        let mut job = ToolJobSpec::new(
+            job_id.clone(),
+            "default",
+            "workflow.grapheme.run",
+            format!("grapheme:inline:{source}"),
+            "cognition_tui",
+            "sttp:in:cognition:grapheme",
+            now,
+        )
+        .build();
 
         if let Some(scope) = self.turn_scope.read().await.clone() {
             wire_turn_child_job(
@@ -576,10 +556,7 @@ impl CognitionGraphemeRunTool {
                 continuation_tool_metadata(&scope, &job_id, ContinuationAwaitMode::Sync)
             });
 
-        match &*self.runtime {
-            RuntimeComposition::InMemory(rt) => rt.enqueue(job).await?,
-            RuntimeComposition::Surreal(rt) => rt.enqueue(job).await?,
-        }
+        self.runtime.enqueue_job(job).await?;
 
         let _ = self
             .event_tx
@@ -1251,21 +1228,18 @@ impl CognitionGraphemePromoteToJobTool {
         let job_id = format!("cognition-promote-job-{}", Uuid::new_v4().simple());
         let now = Utc::now();
 
-        let mut job = NewJob {
-            id: job_id.clone(),
-            queue: input.queue.clone(),
-            job_type: "workflow.grapheme.run".to_string(),
-            payload_ref: format!("grapheme:inline:{source}"),
-            priority: input.priority as i32,
-            max_attempts: input.max_attempts as u32,
-            idempotency_key: format!("idem-{job_id}"),
-            correlation_id: job_id.clone(),
-            causation_id: "cognition_tui.promote".to_string(),
-            trace_id: job_id.clone(),
-            sttp_input_node_id: "sttp:in:cognition:grapheme:promote".to_string(),
-            scheduled_at: now,
-            backoff_policy: BackoffPolicy::default(),
-        };
+        let mut job = ToolJobSpec::new(
+            job_id.clone(),
+            input.queue.clone(),
+            "workflow.grapheme.run",
+            format!("grapheme:inline:{source}"),
+            "cognition_tui.promote",
+            "sttp:in:cognition:grapheme:promote",
+            now,
+        )
+        .priority(input.priority as i32)
+        .max_attempts(input.max_attempts as u32)
+        .build();
 
         if let Some(scope) = self.turn_scope.read().await.clone() {
             wire_turn_child_job(
@@ -1278,10 +1252,7 @@ impl CognitionGraphemePromoteToJobTool {
             .await;
         }
 
-        match &*self.runtime {
-            RuntimeComposition::InMemory(rt) => rt.enqueue(job).await?,
-            RuntimeComposition::Surreal(rt) => rt.enqueue(job).await?,
-        }
+        self.runtime.enqueue_job(job).await?;
 
         let _ = self
             .event_tx
