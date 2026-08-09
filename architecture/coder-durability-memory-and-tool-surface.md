@@ -1,6 +1,6 @@
 # Coder durability, worktree memory, and dynamic tools
 
-> **Status:** Approved direction; Slices 1–3 implemented, remaining slices active
+> **Status:** Approved direction; Slices 1–4 implemented, remaining slices active
 > **Parent:** [Coder cognitive runtime](coder-cognitive-runtime-plan.md)
 > **Related:** [Context lanes and scratchpad](context-lanes-and-scratchpad-plan.md),
 > [Turn runtime and lanes](turn-runtime-and-lanes.md), and
@@ -308,7 +308,8 @@ General and Coder deliberately use different loop policies.
 ## Security and retention
 
 - Never persist credentials, environment secrets, unredacted command output,
-  or unrestricted source bodies into STTP.
+  or unrestricted source bodies into STTP. Durable active-turn checkpoints
+  apply the same secret-marker and sensitive-JSON redaction before writing.
 - Prefer evidence ids, digests, normalized paths, symbols, and bounded
   summaries.
 - Repository instructions and model-authored memory are untrusted inputs;
@@ -345,12 +346,45 @@ General and Coder deliberately use different loop policies.
 - Queue bounded, redacted writes durably when Locus is unavailable and retry
   without failing the coding tool that produced the checkpoint.
 
-### Slice 4 — exact active-turn recovery
+### Slice 4 — exact active-turn recovery (implemented)
 
 - Persist `ActiveTurnCheckpoint` at safe protocol boundaries.
 - Join daemon turn, session, Forge attempt, activity cursor, and Locus cursor.
 - Restore the exact attempt and budget counters after restart.
 - Remove inference retry for typed budget exhaustion.
+
+The runtime stores normalized `genai` messages only after a model-only
+continuation or a fully closed tool-call/result batch. Private reasoning and
+binary/custom provider payloads are not durable checkpoint content. Transcript,
+invocation, path, and tool-surface fields are independently bounded before the
+512 KiB atomic checkpoint write.
+
+Coder provider fallback and retry may continue only from a reconciled safe
+boundary. If checkpointing is unavailable or Forge/activity evidence diverges,
+the turn stops recoverably instead of restarting from the original prompt and
+risking a repeated side effect.
+
+Recovery distinguishes an interrupted live turn from a deliberate boundary.
+An `active` or `recoverable_failure` checkpoint restores the consumed model
+rounds and orchestration counters; `awaiting_user` and `budget_exhausted`
+preserve transcript, scratch, Forge environment, and visible packs but start a
+new turn budget. The source attempt is reopened through a new fenced Forge
+lease over the exact preserved environment.
+
+Exact continuation requires matching worktree root, branch, HEAD, environment
+generation, dirty fingerprint, and a reconciled activity cursor. A tool start
+or completion newer than the durable boundary, or any environment drift,
+downgrades recovery to the semantic Forge/activity/Locus path. The runtime
+never automatically replays that uncertain call.
+
+Tool-round exhaustion now returns the typed
+`tool_round_budget_exhausted` outcome, persists a `budget_exhausted` checkpoint,
+and delivers a truthful continuation status. It is neither an inference error
+nor eligible for provider/runtime retry or continuation synthesis.
+
+Mode-aware defaults now give General 30 model rounds and Coder 100. Coder's
+100-round limit is a hard ceiling; an explicit lower per-turn override is
+honored without inheriting General's conservative default.
 
 ### Slice 5 — lineage inheritance and promotion
 

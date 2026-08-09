@@ -562,7 +562,7 @@ pub fn build_interactive_turn_request_for_ingest(
         stage_routing: StageRoutingMatrix::default_for(provider, model),
         surface,
         host_context: None,
-        max_tool_rounds: Some(defaults.max_tool_rounds.unwrap_or(10)),
+        max_tool_rounds: None,
         retry_runtime_max_rounds: Some(
             defaults
                 .retry_runtime_max_rounds

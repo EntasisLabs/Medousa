@@ -1,8 +1,9 @@
 use crate::engine_context::{EngineExecutionLane, lane_execution_budget};
+use serde::{Deserialize, Serialize};
 
 use super::stream_sink::SharedAgentStreamSink;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TurnOrchestrationState {
     pub calls_total: usize,
     pub classifier_calls: usize,

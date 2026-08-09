@@ -825,6 +825,7 @@ pub async fn run_worker_turn(
             .map(|target| target.channel.clone()),
         delivery_target: record.delivery_target.clone(),
         tool_round_budget_ceiling: worker_max_rounds,
+        hard_tool_round_ceiling: None,
         require_operator_budget_gate: false,
         completion_profile:
             crate::agent_runtime::turn_completion_fsm::TurnCompletionProfile::WorkerSynthesis,
@@ -833,6 +834,8 @@ pub async fn run_worker_turn(
         round_context_provider: None,
         evidence_undertaking_id: None,
         compact_evidence_receipt_sink: None,
+        active_turn_checkpoint_sink: None,
+        active_turn_resume: None,
     };
 
     if store.is_work_cancelled(&work_id) {

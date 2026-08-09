@@ -139,6 +139,15 @@ enum CoderMemoryBoundary {
     Terminal,
 }
 
+struct CoderMemoryCheckpoint<'a> {
+    boundary: CoderMemoryBoundary,
+    tool_name: &'a str,
+    intent: &'a str,
+    call_id: &'a str,
+    input: &'a Value,
+    result: std::result::Result<&'a Value, &'a StasisError>,
+}
+
 impl CoderMemoryBoundary {
     fn memory_kind(self, succeeded: bool) -> &'static str {
         if !succeeded {
@@ -467,6 +476,7 @@ pub struct CoderBoundToolRegistry {
     memory_retry_queue: Arc<Mutex<super::coder_memory::CoderMemoryRetryQueue>>,
     policy: WorkPolicy,
     visible_tools: Arc<StdMutex<HashSet<String>>>,
+    memory_cursor: Arc<StdMutex<Option<String>>>,
     shell_sessions: Arc<Mutex<HashSet<String>>>,
 }
 
@@ -511,6 +521,7 @@ impl CoderBoundToolRegistry {
             memory_retry_queue,
             policy,
             visible_tools: Arc::new(StdMutex::new(visible_tools)),
+            memory_cursor: Arc::new(StdMutex::new(None)),
             shell_sessions: Arc::new(Mutex::new(HashSet::new())),
         }
     }
@@ -539,7 +550,88 @@ impl CoderBoundToolRegistry {
         &self.entry.work_id
     }
 
-    fn engineering_events(&self) -> Result<Vec<super::coder_activity::CoderActivityEvent>> {
+    pub(crate) fn checkpoint_visible_tools(&self) -> Result<Vec<String>> {
+        let mut visible = self
+            .visible_tools
+            .lock()
+            .map_err(|err| {
+                StasisError::PortFailure(format!("Coder visible tool lock poisoned: {err}"))
+            })?
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        visible.sort();
+        Ok(visible)
+    }
+
+    /// Restore only model visibility. Forge/runtime policy remains the immutable
+    /// authority superset, and `list_tools` still intersects this set with the
+    /// tools actually registered for the turn.
+    pub(crate) fn restore_checkpoint_surface(
+        &self,
+        visible_tools: &[String],
+        memory_cursor: Option<&str>,
+    ) -> Result<()> {
+        let mut visible = self.visible_tools.lock().map_err(|err| {
+            StasisError::PortFailure(format!("Coder visible tool lock poisoned: {err}"))
+        })?;
+        *visible = visible_tools
+            .iter()
+            .filter(|name| !name.trim().is_empty() && coder_tool_allowed(name, &self.policy))
+            .cloned()
+            .collect();
+        drop(visible);
+        *self.memory_cursor.lock().map_err(|err| {
+            StasisError::PortFailure(format!("Coder memory cursor lock poisoned: {err}"))
+        })? = memory_cursor
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        Ok(())
+    }
+
+    pub(crate) fn checkpoint_activity_cursor(&self) -> Result<u64> {
+        let authority = self.authority()?;
+        authority
+            .activity
+            .snapshot(&self.entry.work_id, &authority.identity.agent_id)
+            .map(|snapshot| snapshot.revision)
+            .map_err(|err| {
+                StasisError::PortFailure(format!("cannot read Coder activity cursor: {err}"))
+            })
+    }
+
+    pub(crate) fn checkpoint_agent_id(&self) -> Result<String> {
+        Ok(self.authority()?.identity.agent_id.clone())
+    }
+
+    pub(crate) fn checkpoint_memory_cursor(&self) -> Result<Option<String>> {
+        self.memory_cursor
+            .lock()
+            .map(|cursor| cursor.clone())
+            .map_err(|err| {
+                StasisError::PortFailure(format!("Coder memory cursor lock poisoned: {err}"))
+            })
+    }
+
+    fn remember_memory_cursor(&self, result: &Value) {
+        let Some(cursor) = result
+            .get("node_id")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .or_else(|| super::coder_memory::first_node_id(result))
+        else {
+            return;
+        };
+        match self.memory_cursor.lock() {
+            Ok(mut current) => *current = Some(cursor),
+            Err(err) => tracing::warn!(error = %err, "failed to update Coder memory cursor"),
+        }
+    }
+
+    pub(crate) fn engineering_events(
+        &self,
+    ) -> Result<Vec<super::coder_activity::CoderActivityEvent>> {
         let authority = self.authority()?;
         authority
             .activity
@@ -784,6 +876,7 @@ impl CoderBoundToolRegistry {
             )
             .await?;
         if let Some(node_id) = super::coder_memory::first_node_id(&existing) {
+            self.remember_memory_cursor(&existing);
             return Ok(json!({
                 "ok": true,
                 "stored": false,
@@ -805,6 +898,7 @@ impl CoderBoundToolRegistry {
                 }),
             )
             .await?;
+        self.remember_memory_cursor(&stored);
         let accepted = stored
             .get("stored")
             .and_then(Value::as_bool)
@@ -975,13 +1069,16 @@ impl CoderBoundToolRegistry {
         };
         let (pending_count, pending) = self.pending_memory_summaries().await;
         let mut overview = match recalled {
-            Ok(result) => super::coder_memory::project_recall(
-                &self.memory_scope,
-                &current_head,
-                &result,
-                false,
-                limit,
-            ),
+            Ok(result) => {
+                self.remember_memory_cursor(&result);
+                super::coder_memory::project_recall(
+                    &self.memory_scope,
+                    &current_head,
+                    &result,
+                    false,
+                    limit,
+                )
+            }
             Err(error) => json!({
                 "ok": false,
                 "scope": self.memory_scope.public_descriptor(),
@@ -1045,13 +1142,16 @@ impl CoderBoundToolRegistry {
                     .invoke_locus_tool("cognition_memory_recall", recall_input)
                     .await
                 {
-                    Ok(result) => Ok(super::coder_memory::project_recall(
-                        &self.memory_scope,
-                        &current_head,
-                        &result,
-                        true,
-                        query.limit,
-                    )),
+                    Ok(result) => {
+                        self.remember_memory_cursor(&result);
+                        Ok(super::coder_memory::project_recall(
+                            &self.memory_scope,
+                            &current_head,
+                            &result,
+                            true,
+                            query.limit,
+                        ))
+                    }
                     Err(error) => {
                         let (pending_count, pending) = self.pending_memory_summaries().await;
                         Ok(json!({
@@ -1088,13 +1188,16 @@ impl CoderBoundToolRegistry {
     async fn checkpoint_tool_boundary(
         &self,
         authority: &CoderTurnLease,
-        boundary: CoderMemoryBoundary,
-        tool_name: &str,
-        intent: &str,
-        call_id: &str,
-        input: &Value,
-        result: std::result::Result<&Value, &StasisError>,
+        checkpoint: CoderMemoryCheckpoint<'_>,
     ) {
+        let CoderMemoryCheckpoint {
+            boundary,
+            tool_name,
+            intent,
+            call_id,
+            input,
+            result,
+        } = checkpoint;
         let succeeded = result
             .as_ref()
             .ok()
@@ -1559,12 +1662,14 @@ impl ToolRegistry for CoderBoundToolRegistry {
         if let Some(boundary) = memory_boundary {
             self.checkpoint_tool_boundary(
                 &authority,
-                boundary,
-                tool_name,
-                &intent,
-                &call_id,
-                &input,
-                result.as_ref(),
+                CoderMemoryCheckpoint {
+                    boundary,
+                    tool_name,
+                    intent: &intent,
+                    call_id: &call_id,
+                    input: &input,
+                    result: result.as_ref(),
+                },
             )
             .await;
         }
@@ -2524,6 +2629,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn exact_restore_replaces_visible_surface_without_expanding_authority() {
+        let fixture = fixture();
+        let authority = authority(&fixture);
+        let inner = Arc::new(RecordingRegistry::default());
+        let registry = CoderBoundToolRegistry::new(
+            inner,
+            &authority,
+            fixture.entry.clone(),
+            fixture.policy.clone(),
+        );
+
+        registry
+            .restore_checkpoint_surface(
+                &[
+                    crate::coding_tools::COGNITION_CODE_READ.to_string(),
+                    "cognition_runtime_jobs_cancel".to_string(),
+                ],
+                Some("node-42"),
+            )
+            .expect("restore checkpoint surface");
+
+        assert_eq!(
+            registry.checkpoint_visible_tools().unwrap(),
+            vec![crate::coding_tools::COGNITION_CODE_READ.to_string()]
+        );
+        assert_eq!(
+            registry.checkpoint_memory_cursor().unwrap().as_deref(),
+            Some("node-42")
+        );
+        let tools = registry.list_tools().await.expect("list restored tools");
+        assert_eq!(tools.len(), 1);
+        assert_eq!(
+            tools[0].name.as_str(),
+            crate::coding_tools::COGNITION_CODE_READ
+        );
+    }
+
+    #[tokio::test]
     async fn coder_memory_facade_pins_environment_scope_and_dedupes_commits() {
         let fixture = fixture();
         let authority = authority(&fixture);
@@ -2690,14 +2833,15 @@ mod tests {
         assert_eq!(flushed["ok"], true);
         assert_eq!(flushed["flushed"], 1);
         assert_eq!(flushed["pending_writes"], 0);
-        let nodes = inner.memory_nodes.lock().expect("memory nodes");
-        assert_eq!(nodes.len(), 1);
-        assert!(
-            nodes[0]["semantic_tags"]
-                .as_array()
-                .is_some_and(|tags| tags.iter().any(|tag| tag == "kind:change"))
-        );
-        drop(nodes);
+        {
+            let nodes = inner.memory_nodes.lock().expect("memory nodes");
+            assert_eq!(nodes.len(), 1);
+            assert!(
+                nodes[0]["semantic_tags"]
+                    .as_array()
+                    .is_some_and(|tags| tags.iter().any(|tag| tag == "kind:change"))
+            );
+        }
 
         let second_flush = registry.flush_memory_queue().await;
         assert_eq!(second_flush["flushed"], 0);

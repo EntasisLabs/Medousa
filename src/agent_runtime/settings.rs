@@ -3,10 +3,8 @@ use crate::session::TuiDefaults;
 use crate::stage_routing::StageRoutingMatrix;
 use crate::tui::settings::RuntimeSettings;
 
-use super::turn_loop_settings::apply_turn_loop_field_defaults;
+use super::turn_loop_settings::{DEFAULT_GENERAL_MAX_TOOL_ROUNDS, apply_turn_loop_field_defaults};
 use super::turn_orchestrator::DEFAULT_RETRY_RUNTIME_MAX_ROUNDS;
-
-const DEFAULT_MAX_TOOL_ROUNDS: usize = 10;
 
 fn apply_tui_defaults_to_runtime_settings(settings: &mut RuntimeSettings, defaults: &TuiDefaults) {
     if let Some(value) = defaults
@@ -38,7 +36,7 @@ fn apply_tui_defaults_to_runtime_settings(settings: &mut RuntimeSettings, defaul
     }
     settings.max_tool_rounds = defaults
         .max_tool_rounds
-        .unwrap_or(DEFAULT_MAX_TOOL_ROUNDS)
+        .unwrap_or(DEFAULT_GENERAL_MAX_TOOL_ROUNDS)
         .to_string();
     if let Some(value) = defaults.thinking_capture {
         settings.thinking_capture = value.to_string();
@@ -135,7 +133,7 @@ pub fn default_daemon_runtime_settings(
         api_key: String::new(),
         allowed_modules: String::new(),
         tool_call_mode: "auto".to_string(),
-        max_tool_rounds: "10".to_string(),
+        max_tool_rounds: DEFAULT_GENERAL_MAX_TOOL_ROUNDS.to_string(),
         host_bus_max_tool_rounds: super::turn_loop_settings::DEFAULT_HOST_BUS_MAX_TOOL_ROUNDS
             .to_string(),
         host_turn_bus_mode: super::turn_loop_settings::default_host_turn_bus_mode_label()
@@ -228,4 +226,20 @@ pub fn stage_routing_for_interactive_turn(request: &InteractiveTurnRequest) -> S
     }
 
     request.stage_routing.clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn daemon_defaults_general_to_thirty_rounds() {
+        let settings = default_daemon_runtime_settings("in-memory", "openai", "test", "");
+        assert_eq!(settings.max_tool_rounds, "30");
+        assert_eq!(
+            super::super::turn_loop_settings::TurnLoopSettings::from_runtime_settings(&settings)
+                .configured_max_tool_rounds,
+            30
+        );
+    }
 }

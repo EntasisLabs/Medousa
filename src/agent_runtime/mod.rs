@@ -40,6 +40,7 @@ pub mod coder_mode;
 pub mod coder_pointers;
 pub mod coder_setup_tools;
 pub mod coder_tools;
+pub mod coder_turn_checkpoint;
 pub mod modes;
 pub mod context_usage;
 pub mod continuation;
@@ -113,6 +114,12 @@ pub use coder_claims::{CoderClaimMode, CoderClaimScope};
 pub use coder_mode::{CoderEntryContext, CoderEntryError, compile_coder_entry};
 pub use coder_pointers::{CoderEngineeringPointer, CoderPointerDetail, CoderPointerKind};
 pub use coder_tools::{CoderBoundToolRegistry, CoderTurnLease};
+pub use coder_turn_checkpoint::{
+    ActiveTurnCheckpoint, ActiveTurnCheckpointSink, ActiveTurnCheckpointStatus,
+    ActiveTurnResumeState, CoderRecoveryPlan, CoderTurnCheckpointController,
+    SafeCheckpointBoundary, TOOL_ROUND_BUDGET_EXHAUSTED_REASON,
+    coder_turn_checkpoint_store, plan_coder_recovery,
+};
 pub use sttp::{SttpValidationError, validate_canonical_sttp_node};
 pub use daemon_interactive_turn::{
     InteractiveTurnDeliveryContext, InteractiveTurnSessionHooks, run_agent_turn,
@@ -145,7 +152,8 @@ pub use turn_loop_settings::{
     parse_host_turn_bus_mode,
     DEFAULT_ACTIVATION_SHORT_TURN_MAX_TOOL_ROUNDS,
     DEFAULT_ACTIVATION_TOOL_INTENT_MAX_ROUNDS, DEFAULT_CLASSIFIER_RESTRICTED_MAX_TOOL_ROUNDS,
-    DEFAULT_CONTINUATION_MAX_TOOL_ROUNDS, DEFAULT_HOST_BUS_MAX_TOOL_ROUNDS,
+    DEFAULT_CODER_MAX_TOOL_ROUNDS, DEFAULT_CONTINUATION_MAX_TOOL_ROUNDS,
+    DEFAULT_GENERAL_MAX_TOOL_ROUNDS, DEFAULT_HOST_BUS_MAX_TOOL_ROUNDS,
     DEFAULT_MAX_TEXT_ONLY_STUCK_CONTINUES, RETRY_LIMIT_MAX, RETRY_LIMIT_MIN, ROUND_LIMIT_MAX,
     ROUND_LIMIT_MIN,
 };

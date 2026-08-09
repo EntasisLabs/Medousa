@@ -181,6 +181,17 @@ pub struct TurnLoopAwareness {
 }
 
 impl TurnLoopAwareness {
+    pub fn restore(&mut self, user_responses_sent: usize, last_response_preview: Option<String>) {
+        self.user_responses_sent = user_responses_sent;
+        self.last_response_preview = last_response_preview.map(|preview| {
+            truncate_user_response_preview(&preview, USER_RESPONSE_PREVIEW_MAX_CHARS)
+        });
+    }
+
+    pub fn checkpoint_state(&self) -> (usize, Option<String>) {
+        (self.user_responses_sent, self.last_response_preview.clone())
+    }
+
     pub fn record_user_response(&mut self, text: &str) {
         let trimmed = text.trim();
         if trimmed.is_empty() {
@@ -235,6 +246,23 @@ impl TurnLoopDiscipline {
 
     pub fn on_tool_round(&mut self) {
         self.text_only_continues_without_new_tools = 0;
+    }
+
+    pub fn restore_checkpoint_state(
+        &mut self,
+        text_only_continues_without_new_tools: usize,
+        invocations_at_last_text_continue: usize,
+    ) {
+        self.text_only_continues_without_new_tools =
+            text_only_continues_without_new_tools.min(self.max_text_only_stuck_continues);
+        self.invocations_at_last_text_continue = invocations_at_last_text_continue;
+    }
+
+    pub fn checkpoint_state(&self) -> (usize, usize) {
+        (
+            self.text_only_continues_without_new_tools,
+            self.invocations_at_last_text_continue,
+        )
     }
 
     /// Returns true when the loop should stop with a user-visible stuck message.
