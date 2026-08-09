@@ -516,6 +516,7 @@ pub(crate) async fn start_prompt_run(
     )
     .max(hot_window_turns);
     let prior_build = build_prior_messages(
+        tui_rt.tool_catalog.as_ref(),
         &state.session_id,
         &state.conversation,
         &prompt,
@@ -1097,6 +1098,7 @@ async fn dispatch_daemon_stream_event(
 }
 
 fn build_prior_messages(
+    tool_catalog: &medousa::typed_tools::ToolCatalog,
     session_id: &str,
     turns: &[ConversationTurn],
     current_prompt: &str,
@@ -1105,6 +1107,7 @@ fn build_prior_messages(
     cold_window_turns: usize,
 ) -> turn_services::PriorMessageBuild {
     turn_services::build_prior_messages(
+        tool_catalog,
         session_id,
         turns,
         current_prompt,

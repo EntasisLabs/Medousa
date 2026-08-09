@@ -197,7 +197,7 @@ impl BuildSession {
 type SessionMap = Arc<RwLock<HashMap<String, BuildSession>>>;
 
 pub fn register_ui_build_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 ) -> stasis::prelude::Result<()> {
     let sessions: SessionMap = Arc::new(RwLock::new(HashMap::new()));

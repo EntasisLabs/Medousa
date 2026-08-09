@@ -35,7 +35,7 @@ fn ensure_shell_agent_tools_enabled_flag(enabled: bool) -> StasisResult<()> {
 }
 
 pub fn register_shell_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
     runtime: Arc<RuntimeComposition>,
 ) -> stasis::prelude::Result<()> {
     registry.register_tool(CognitionShellStatusTool)?;

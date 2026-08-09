@@ -793,7 +793,7 @@ impl StasisTool for CognitionEnvironmentWikiTool {
 }
 
 pub fn register_environment_wiki_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
 ) -> StasisResult<()> {
     registry.register_tool(CognitionEnvironmentWikiTool)?;
     Ok(())

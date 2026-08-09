@@ -437,6 +437,7 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
     .max(hot_window_turns);
 
     let prior_build = turn_services::build_prior_messages(
+        params.tui_rt.tool_catalog.as_ref(),
         params.session_id,
         params.conversation,
         params.prompt,

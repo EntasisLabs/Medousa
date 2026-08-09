@@ -12,20 +12,26 @@ use tokio::sync::RwLock;
 use crate::agent_runtime::turn_worker::{host_bus_tool_names, tool_allowed};
 use crate::tool_bootstrap::{
     COGNITION_TOOLS_DISCOVER, ToolSurfaceLane, bootstrap_tools, discover_session_domain,
-    domain_catalog, load_session_tool_surface, tool_one_liner,
+    domain_catalog, load_session_tool_surface,
 };
 use crate::turn_continuation::TurnContinuationScope;
+use crate::typed_tools::ToolCatalogHandle;
 
 pub fn register_tool_bootstrap_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    catalog: ToolCatalogHandle,
 ) -> StasisResult<()> {
-    registry.register_tool(CognitionToolsDiscoverTool { turn_scope })?;
+    registry.register_tool(CognitionToolsDiscoverTool {
+        turn_scope,
+        catalog,
+    })?;
     Ok(())
 }
 
 pub struct CognitionToolsDiscoverTool {
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    catalog: ToolCatalogHandle,
 }
 
 #[async_trait]
@@ -97,7 +103,13 @@ impl StasisTool for CognitionToolsDiscoverTool {
             .unwrap_or_default();
 
         if list_only {
-            return Ok(domain_detail(&session_id, lane, domain, &host_bus_tool_names()));
+            return Ok(domain_detail(
+                &session_id,
+                lane,
+                domain,
+                &host_bus_tool_names(),
+                &self.catalog,
+            ));
         }
 
         let allowlist = match lane {
@@ -173,6 +185,7 @@ fn domain_detail(
     lane: ToolSurfaceLane,
     domain: &str,
     allowlist: &HashSet<String>,
+    catalog: &ToolCatalogHandle,
 ) -> Value {
     let normalized = domain.trim().to_ascii_lowercase();
     let entry = domain_catalog(lane)
@@ -191,7 +204,7 @@ fn domain_detail(
         .map(|name| {
             json!({
                 "name": name,
-                "summary": tool_one_liner(name),
+                "summary": catalog.presentation_summary_for_wire(name),
             })
         })
         .collect();

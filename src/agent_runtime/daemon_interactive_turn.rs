@@ -1227,8 +1227,9 @@ async fn run_agent_turn_inner(
                         return;
                     }
                 };
-                let registry = Arc::new(super::coder_tools::CoderBoundToolRegistry::new(
+                let registry = Arc::new(super::coder_tools::CoderBoundToolRegistry::new_with_catalog(
                     agent_rt.tool_registry.clone(),
+                    agent_rt.tool_catalog.clone(),
                     &authority,
                     entry.clone(),
                     item.policy,

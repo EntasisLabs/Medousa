@@ -4,7 +4,7 @@ use locus_core_rs::NodeStore;
 use stasis::application::orchestration::prompt_pipeline::PromptExecutionPipeline;
 use stasis::application::use_cases::identity_memory_service::IdentityMemoryService;
 use crate::medousa_tool_loop::MedousaToolLoopPipeline;
-use stasis::application::orchestration::tool_registry::{InMemoryToolRegistry, ToolRegistry};
+use stasis::application::orchestration::tool_registry::ToolRegistry;
 use stasis::ports::outbound::ai_chat_client::AiChatClient;
 use crate::identity_store_ext::MedousaIdentityMemoryStore;
 use stasis::prelude::RuntimeBackend;
@@ -58,6 +58,7 @@ use crate::turn_control_tools::{
     CognitionTurnRequestMoreRoundsTool, CognitionTurnUpdateUserTool,
 };
 use crate::turn_continuation::TurnContinuationScope;
+use crate::typed_tools::{ToolCatalogHandle, ToolRegistrar, ToolRegistration};
 use crate::workflow;
 use tokio::sync::RwLock;
 
@@ -156,7 +157,8 @@ pub(crate) async fn assemble_tui_runtime(
         ));
 
     let workflow_registry = workflow::shared_workflow_registry();
-    let mut tool_registry = InMemoryToolRegistry::default();
+    let catalog_handle = ToolCatalogHandle::default();
+    let mut tool_registry = ToolRegistrar::new(crate::tool_catalog::first_party_placement_index());
     let turn_scope = Arc::new(RwLock::new(None::<TurnContinuationScope>));
     let compaction_target = GraphemeCompactionModelTarget {
         provider: resolved_provider.clone(),
@@ -262,6 +264,7 @@ pub(crate) async fn assemble_tui_runtime(
     crate::tool_bootstrap_tools::register_tool_bootstrap_tools(
         &mut tool_registry,
         turn_scope.clone(),
+        catalog_handle.clone(),
     )?;
     crate::environment_tools::register_environment_tools(&mut tool_registry, turn_scope.clone())?;
     crate::custom_view_tools::register_custom_view_tools(
@@ -355,9 +358,9 @@ pub(crate) async fn assemble_tui_runtime(
         event_tx.clone(),
         turn_scope.clone(),
     ))?;
-    tool_registry.register_tool(CognitionUtilityTimeNowTool)?;
-    tool_registry.register_tool(CognitionUtilityDayOfWeekTool)?;
-    tool_registry.register_tool(CognitionUtilityUuidTool)?;
+    tool_registry.register_typed_tool(CognitionUtilityTimeNowTool)?;
+    tool_registry.register_typed_tool(CognitionUtilityDayOfWeekTool)?;
+    tool_registry.register_typed_tool(CognitionUtilityUuidTool)?;
     let worker_scheduler = Arc::new(crate::agent_runtime::turn_worker::TurnWorkerScheduler::new(
         crate::agent_runtime::turn_worker::turn_worker_store(),
     ));
@@ -494,6 +497,11 @@ pub(crate) async fn assemble_tui_runtime(
         event_tx.clone(),
     )?;
 
+    crate::agent_runtime::coder_tools::register_catalog_runtime_adapters(&mut tool_registry)?;
+    let (tool_registry, tool_catalog) = tool_registry.finish();
+    crate::tool_catalog::compile_general_surface(&tool_catalog)?;
+    catalog_handle.initialize(tool_catalog.clone())?;
+
     let prompt_pipeline = PromptExecutionPipeline::new(chat_client);
     let base_registry: Arc<dyn ToolRegistry> = Arc::new(tool_registry);
     let client_tool_registry: Arc<dyn ToolRegistry> = Arc::new(ClientToolRegistry::new(
@@ -512,6 +520,7 @@ pub(crate) async fn assemble_tui_runtime(
         runtime,
         tool_loop_pipeline,
         tool_registry: guarded_registry,
+        tool_catalog,
         capability_registry,
         mcp_gateway_client,
         workflow_registry,

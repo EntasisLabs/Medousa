@@ -28,7 +28,7 @@ pub const COGNITION_CUSTOM_VIEW_DOCTOR: &str = "cognition_custom_view_doctor";
 pub const COGNITION_CUSTOM_VIEW_COMPOSE: &str = "cognition_custom_view_compose";
 
 pub fn register_custom_view_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
     runtime: Arc<RuntimeComposition>,
     event_tx: mpsc::Sender<TuiEvent>,
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,

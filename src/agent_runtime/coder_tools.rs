@@ -27,7 +27,10 @@ use tokio::sync::Mutex;
 use super::coder_activity::{CoderActivityStore, CoderAgentIdentity, CoderToolActivityAdmission};
 use super::coder_claims::CoderClaimScope;
 use super::coder_mode::CoderEntryContext;
-use crate::typed_tools::ToolId;
+use crate::typed_tools::{
+    ModeToolAdapter, ToolCatalog, ToolDomainId, ToolExposureRef, ToolId, ToolPlacementIndex,
+    ToolRegistrar,
+};
 
 const TURN_CONTROL_TOOLS: &[&str] = &[
     "cognition_turn_begin_work",
@@ -58,36 +61,29 @@ impl CoderToolIntent {
     }
 }
 
-#[derive(Debug, JsonSchema)]
+impl<'de> Deserialize<'de> for CoderToolIntent {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        super::coder_activity::validate_intent(&raw)
+            .map(Self)
+            .map_err(D::Error::custom)
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct CoderCallMetadata {
     /// One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).
     #[schemars(length(max = 320))]
     intent: CoderToolIntent,
 }
 
-#[derive(Debug, Deserialize)]
-struct CoderCallEnvelope {
-    #[serde(default, deserialize_with = "deserialize_optional_coder_intent")]
-    intent: Option<CoderToolIntent>,
-    #[serde(flatten)]
-    input: HashMap<String, Value>,
-}
-
-fn deserialize_optional_coder_intent<'de, D>(
-    deserializer: D,
-) -> std::result::Result<Option<CoderToolIntent>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Value::deserialize(deserializer)?;
-    let Some(raw) = value.as_str() else {
-        return Ok(None);
-    };
-    super::coder_activity::validate_intent(raw)
-        .map(CoderToolIntent)
-        .map(Some)
-        .map_err(D::Error::custom)
-}
+static CODER_MODE_ADAPTER: Lazy<ModeToolAdapter<CoderCallMetadata>> = Lazy::new(|| {
+    ModeToolAdapter::new(crate::tool_catalog::CODER_MODE_ID)
+        .expect("Coder mode metadata contract must normalize")
+});
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct EngineeringPointersInput {
@@ -190,6 +186,19 @@ const CODER_DISCOVERABLE_DOMAINS: &[&str] = &[
     "workspace",
 ];
 
+const CODER_DISCOVERABLE_DOMAIN_IDS: &[ToolDomainId] = &[
+    ToolDomainId::new("intelligence"),
+    ToolDomainId::new("semantic_actions"),
+    ToolDomainId::new("causal"),
+    ToolDomainId::new("world_model"),
+    ToolDomainId::new("experiments"),
+    ToolDomainId::new("history"),
+    ToolDomainId::new("memory"),
+    ToolDomainId::new("research"),
+    ToolDomainId::new("capabilities"),
+    ToolDomainId::new("workspace"),
+];
+
 const CODER_RUNTIME_TOOLS: &[&str] = &[
     COGNITION_CODER_TOOLS_DISCOVER,
     COGNITION_ENGINEERING_POINTERS,
@@ -285,7 +294,8 @@ fn automatic_memory_boundary(
     }
 }
 
-fn coder_tool_allowed(tool_name: &str, policy: &WorkPolicy) -> bool {
+fn coder_tool_allowed(tool_id: ToolId, policy: &WorkPolicy) -> bool {
+    let tool_name = tool_id.as_str();
     let os_shell = matches!(
         tool_name,
         crate::shell_tools::COGNITION_SHELL_RUN | crate::shell_tools::COGNITION_SHELL_STATUS
@@ -960,12 +970,13 @@ impl Drop for CoderTurnLease {
 #[derive(Clone)]
 pub struct CoderBoundToolRegistry {
     inner: Arc<dyn ToolRegistry>,
+    catalog: Option<Arc<ToolCatalog>>,
     authority: Weak<CoderTurnLease>,
     entry: Arc<CoderEntryContext>,
     memory_scope: super::coder_memory::CoderMemoryScope,
     memory_retry_queue: Arc<Mutex<super::coder_memory::CoderMemoryRetryQueue>>,
     policy: WorkPolicy,
-    visible_tools: Arc<StdMutex<HashSet<String>>>,
+    visible_tools: Arc<StdMutex<HashSet<ToolId>>>,
     memory_cursor: Arc<StdMutex<Option<String>>>,
     change_sets: Arc<StdMutex<super::coder_semantic_actions::CoderChangeSetStore>>,
     shell_sessions: Arc<Mutex<HashSet<String>>>,
@@ -978,34 +989,42 @@ impl CoderBoundToolRegistry {
         entry: Arc<CoderEntryContext>,
         policy: WorkPolicy,
     ) -> Self {
+        Self::new_inner(inner, None, authority, entry, policy)
+    }
+
+    pub fn new_with_catalog(
+        inner: Arc<dyn ToolRegistry>,
+        catalog: Arc<ToolCatalog>,
+        authority: &Arc<CoderTurnLease>,
+        entry: Arc<CoderEntryContext>,
+        policy: WorkPolicy,
+    ) -> Self {
+        Self::new_inner(inner, Some(catalog), authority, entry, policy)
+    }
+
+    fn new_inner(
+        inner: Arc<dyn ToolRegistry>,
+        catalog: Option<Arc<ToolCatalog>>,
+        authority: &Arc<CoderTurnLease>,
+        entry: Arc<CoderEntryContext>,
+        policy: WorkPolicy,
+    ) -> Self {
         let memory_scope = super::coder_memory::CoderMemoryScope::for_entry(&entry);
         let memory_retry_queue = shared_memory_retry_queue(&memory_scope);
-        let mut visible_tools = crate::coding_tools::CODING_COGNITION_TOOLS
-            .iter()
-            .chain(TURN_CONTROL_TOOLS.iter())
-            .chain(CODER_PEER_SPAWN_TOOLS.iter())
-            .chain(super::coder_memory::CODER_MEMORY_TOOL_NAMES.iter())
-            .chain(
-                [
-                    COGNITION_CODER_TOOLS_DISCOVER,
-                    COGNITION_ENGINEERING_POINTERS,
-                    COGNITION_ENGINEERING_POINTER_FOLLOW,
-                    COGNITION_CODER_EVIDENCE_READ,
-                ]
-                .iter(),
-            )
-            .map(|name| (*name).to_string())
-            .filter(|name| coder_tool_allowed(name, &policy))
+        let mut visible_tools = coder_initial_tool_ids()
+            .into_iter()
+            .filter(|id| coder_tool_allowed(*id, &policy))
             .collect::<HashSet<_>>();
         if entry.editor.active_path.is_some() || entry.editor.containing_symbol.is_some() {
             visible_tools.extend(
                 crate::code_intelligence_tools::CODE_COGNITION_TOOLS
                     .iter()
-                    .map(|name| (*name).to_string()),
+                    .map(|name| ToolId::new(name)),
             );
         }
         Self {
             inner,
+            catalog,
             authority: Arc::downgrade(authority),
             entry,
             memory_scope,
@@ -1016,6 +1035,18 @@ impl CoderBoundToolRegistry {
             change_sets: Arc::new(StdMutex::new(Default::default())),
             shell_sessions: Arc::new(Mutex::new(HashSet::new())),
         }
+    }
+
+    fn resolve_wire_tool_id(&self, wire_name: &str) -> Result<ToolId> {
+        self.catalog
+            .as_ref()
+            .and_then(|catalog| catalog.resolve_wire_id(wire_name).ok())
+            .or_else(|| resolve_known_coder_tool_id(wire_name))
+            .ok_or_else(|| {
+                StasisError::PortFailure(format!(
+                    "tool is absent from the assembled Coder catalog: {wire_name}"
+                ))
+            })
     }
 
     fn authority(&self) -> Result<Arc<CoderTurnLease>> {
@@ -1045,7 +1076,7 @@ impl CoderBoundToolRegistry {
         )
         .is_ok_and(|count| count >= 2)
         {
-            let _ = self.unlock_domain("experiments")?;
+            let _ = self.unlock_domain(ToolDomainId::new("experiments"))?;
         }
         Ok(format!(
             "{shared}\n\n{}\n\n{}",
@@ -1066,7 +1097,7 @@ impl CoderBoundToolRegistry {
                 StasisError::PortFailure(format!("Coder visible tool lock poisoned: {err}"))
             })?
             .iter()
-            .cloned()
+            .map(|id| id.as_str().to_string())
             .collect::<Vec<_>>();
         visible.sort();
         Ok(visible)
@@ -1085,8 +1116,8 @@ impl CoderBoundToolRegistry {
         })?;
         *visible = visible_tools
             .iter()
-            .filter(|name| !name.trim().is_empty() && coder_tool_allowed(name, &self.policy))
-            .cloned()
+            .filter_map(|name| self.resolve_wire_tool_id(name).ok())
+            .filter(|id| coder_tool_allowed(*id, &self.policy))
             .collect();
         drop(visible);
         *self.memory_cursor.lock().map_err(|err| {
@@ -1185,8 +1216,8 @@ impl CoderBoundToolRegistry {
         })
     }
 
-    fn unlock_domain(&self, domain: &str) -> Result<Vec<String>> {
-        let names = coder_domain_tool_names(domain).ok_or_else(|| {
+    fn unlock_domain(&self, domain: ToolDomainId) -> Result<Vec<String>> {
+        let ids = coder_domain_tool_ids(domain).ok_or_else(|| {
             StasisError::PortFailure(format!(
                 "unknown Coder tool domain '{domain}'; expected one of {}",
                 CODER_DISCOVERABLE_DOMAINS.join(", ")
@@ -1196,9 +1227,9 @@ impl CoderBoundToolRegistry {
             StasisError::PortFailure(format!("Coder visible tool lock poisoned: {err}"))
         })?;
         let mut unlocked = Vec::new();
-        for name in names {
-            if coder_tool_allowed(name, &self.policy) && visible.insert(name.to_string()) {
-                unlocked.push(name.to_string());
+        for id in ids {
+            if coder_tool_allowed(id, &self.policy) && visible.insert(id) {
+                unlocked.push(id.as_str().to_string());
             }
         }
         Ok(unlocked)
@@ -1216,7 +1247,7 @@ impl CoderBoundToolRegistry {
             )
         });
         if needs_intelligence {
-            let _ = self.unlock_domain("intelligence")?;
+            let _ = self.unlock_domain(ToolDomainId::new("intelligence"))?;
         }
         let needs_semantic_actions = pointers.iter().any(|pointer| {
             matches!(
@@ -1226,7 +1257,7 @@ impl CoderBoundToolRegistry {
             )
         });
         if needs_semantic_actions {
-            let _ = self.unlock_domain("semantic_actions")?;
+            let _ = self.unlock_domain(ToolDomainId::new("semantic_actions"))?;
         }
         let needs_causal = pointers.iter().any(|pointer| {
             matches!(
@@ -1236,7 +1267,7 @@ impl CoderBoundToolRegistry {
             )
         });
         if needs_causal {
-            let _ = self.unlock_domain("causal")?;
+            let _ = self.unlock_domain(ToolDomainId::new("causal"))?;
         }
         Ok(())
     }
@@ -1279,19 +1310,19 @@ impl CoderBoundToolRegistry {
             );
         }
         if needs_intelligence {
-            let _ = self.unlock_domain("intelligence")?;
+            let _ = self.unlock_domain(ToolDomainId::new("intelligence"))?;
         }
         if needs_world_model {
-            let _ = self.unlock_domain("world_model")?;
+            let _ = self.unlock_domain(ToolDomainId::new("world_model"))?;
         }
         if needs_semantic_actions {
-            let _ = self.unlock_domain("semantic_actions")?;
+            let _ = self.unlock_domain(ToolDomainId::new("semantic_actions"))?;
         }
         if needs_causal {
-            let _ = self.unlock_domain("causal")?;
+            let _ = self.unlock_domain(ToolDomainId::new("causal"))?;
         }
         if needs_experiments {
-            let _ = self.unlock_domain("experiments")?;
+            let _ = self.unlock_domain(ToolDomainId::new("experiments"))?;
         }
         Ok(())
     }
@@ -1305,7 +1336,13 @@ impl CoderBoundToolRegistry {
                     .map(str::trim)
                     .filter(|value| !value.is_empty())
                     .ok_or_else(|| StasisError::PortFailure("domain is required".into()))?;
-                let unlocked = self.unlock_domain(domain)?;
+                let domain_id = resolve_coder_domain_id(domain).ok_or_else(|| {
+                    StasisError::PortFailure(format!(
+                        "unknown Coder tool domain '{domain}'; expected one of {}",
+                        CODER_DISCOVERABLE_DOMAINS.join(", ")
+                    ))
+                })?;
+                let unlocked = self.unlock_domain(domain_id)?;
                 Ok(json!({
                     "ok": true,
                     "domain": domain,
@@ -1831,7 +1868,7 @@ impl CoderBoundToolRegistry {
                     commit.kind.as_str(),
                     "experiment" | "acceptance_criterion" | "next_action"
                 ) {
-                    let _ = self.unlock_domain("experiments")?;
+                    let _ = self.unlock_domain(ToolDomainId::new("experiments"))?;
                 }
                 Ok(self
                     .persist_or_queue_memory_commit(authority, commit, "model_commit")
@@ -2174,24 +2211,28 @@ impl CoderBoundToolRegistry {
     }
 }
 
-fn coder_domain_tool_names(domain: &str) -> Option<Vec<&'static str>> {
-    match domain {
-        "intelligence" => Some(crate::code_intelligence_tools::CODE_COGNITION_TOOLS.to_vec()),
-        "semantic_actions" => {
-            Some(super::coder_semantic_actions::SEMANTIC_ACTION_TOOL_NAMES.to_vec())
-        }
-        "causal" => Some(vec![super::coder_causal::COGNITION_CODER_CAUSAL_QUERY]),
-        "world_model" => Some(crate::detamu_tools::DETAMU_COGNITION_TOOLS.to_vec()),
-        "experiments" => Some(vec![
-            super::coder_experiments::COGNITION_CODER_EXPERIMENT_COMPARE,
-        ]),
-        "history" => Some(vec![COGNITION_ENGINEERING_HISTORY]),
-        "memory" => Some(CODER_ADVANCED_MEMORY_TOOLS.to_vec()),
-        "research" => Some(CODER_RESEARCH_TOOLS.to_vec()),
-        "capabilities" => Some(CODER_CAPABILITY_TOOLS.to_vec()),
-        "workspace" => Some(CODER_WORKSPACE_TOOLS.to_vec()),
-        _ => None,
-    }
+fn coder_domain_tool_ids(domain: ToolDomainId) -> Option<Vec<ToolId>> {
+    let names: &[&'static str] = match domain.as_str() {
+        "intelligence" => crate::code_intelligence_tools::CODE_COGNITION_TOOLS,
+        "semantic_actions" => super::coder_semantic_actions::SEMANTIC_ACTION_TOOL_NAMES,
+        "causal" => &[super::coder_causal::COGNITION_CODER_CAUSAL_QUERY],
+        "world_model" => crate::detamu_tools::DETAMU_COGNITION_TOOLS,
+        "experiments" => &[super::coder_experiments::COGNITION_CODER_EXPERIMENT_COMPARE],
+        "history" => &[COGNITION_ENGINEERING_HISTORY],
+        "memory" => CODER_ADVANCED_MEMORY_TOOLS,
+        "research" => CODER_RESEARCH_TOOLS,
+        "capabilities" => CODER_CAPABILITY_TOOLS,
+        "workspace" => CODER_WORKSPACE_TOOLS,
+        _ => return None,
+    };
+    Some(names.iter().map(|name| ToolId::new(name)).collect())
+}
+
+fn resolve_coder_domain_id(wire_domain: &str) -> Option<ToolDomainId> {
+    CODER_DISCOVERABLE_DOMAIN_IDS
+        .iter()
+        .copied()
+        .find(|domain| domain.as_str() == wire_domain)
 }
 
 impl super::coder_evidence::CompactEvidenceReceiptSink for CoderBoundToolRegistry {
@@ -2237,20 +2278,34 @@ impl ToolRegistry for CoderBoundToolRegistry {
                 StasisError::PortFailure(format!("Coder visible tool lock poisoned: {err}"))
             })?
             .clone();
-        let mut tools = self.inner.list_tools().await?;
-        tools.extend(coder_runtime_tool_definitions());
-        Ok(tools
-            .into_iter()
-            .filter(|tool| {
-                coder_tool_allowed(tool.name.as_str(), &self.policy)
-                    && visible.contains(tool.name.as_str())
+        let tools = if let Some(catalog) = &self.catalog {
+            catalog.definitions_matching(|entry| {
+                entry
+                    .placement
+                    .exposes_mode(crate::tool_catalog::CODER_MODE_ID)
             })
-            .map(|tool| with_coder_tool_advertisement(with_required_coder_intent(tool)))
-            .collect())
+        } else {
+            let mut tools = self.inner.list_tools().await?;
+            tools.extend(coder_runtime_tool_definitions());
+            tools
+        };
+        tools
+            .into_iter()
+            .filter_map(|tool| {
+                let id = self.resolve_wire_tool_id(tool.name.as_str()).ok()?;
+                (coder_tool_allowed(id, &self.policy) && visible.contains(&id)).then_some(tool)
+            })
+            .map(|tool| {
+                with_required_coder_intent(with_coder_tool_advertisement(tool)).map_err(|error| {
+                    StasisError::PortFailure(format!("cannot compile Coder tool surface: {error}"))
+                })
+            })
+            .collect()
     }
 
     async fn invoke_tool(&self, tool_name: &str, input: Value) -> Result<Value> {
-        if !coder_tool_allowed(tool_name, &self.policy) {
+        let tool_id = self.resolve_wire_tool_id(tool_name)?;
+        if !coder_tool_allowed(tool_id, &self.policy) {
             return Err(StasisError::PortFailure(format!(
                 "tool is outside the Coder mode contract: {tool_name}"
             )));
@@ -2261,7 +2316,8 @@ impl ToolRegistry for CoderBoundToolRegistry {
             .map_err(|err| {
                 StasisError::PortFailure(format!("Coder visible tool lock poisoned: {err}"))
             })?
-            .contains(tool_name);
+            .contains(&tool_id);
+        let tool_name = tool_id.as_str();
         let authority = self.authority()?;
         authority.heartbeat()?;
         let (metadata, input) = take_coder_call(input)?;
@@ -2534,54 +2590,26 @@ fn coder_runtime_tool_definitions() -> Vec<Tool> {
     tools
 }
 
-fn with_required_coder_intent(mut tool: Tool) -> Tool {
-    let metadata_schema = crate::typed_tools::normalize_input_schema::<CoderCallMetadata>()
-        .expect("Coder call metadata schema must normalize");
-    let metadata_properties = metadata_schema
-        .get("properties")
+fn with_required_coder_intent(
+    tool: Tool,
+) -> std::result::Result<Tool, crate::typed_tools::ModeToolAdapterError> {
+    let replaces_base_intent = tool.name.as_str()
+        == crate::agent_runtime::turn_worker_tools::COGNITION_SPAWN_TURN_WORKER
+        || crate::turn_control_tools::is_begin_work_tool_name(tool.name.as_str());
+    let base_has_intent = tool
+        .schema
+        .as_ref()
+        .and_then(|schema| schema.get("properties"))
         .and_then(Value::as_object)
-        .expect("Coder call metadata properties");
-    let metadata_required = metadata_schema
-        .get("required")
-        .and_then(Value::as_array)
-        .expect("Coder call metadata required fields");
-    let schema = tool.schema.get_or_insert_with(|| {
-        json!({
-            "type": "object",
-            "properties": {},
-            "required": []
-        })
-    });
-    if !schema.is_object() {
-        *schema = json!({ "type": "object", "properties": {}, "required": [] });
+        .is_some_and(|properties| properties.contains_key("intent"));
+    if replaces_base_intent && base_has_intent {
+        CODER_MODE_ADAPTER.compose_tool_with_projection(
+            tool,
+            &crate::typed_tools::ModeInputProjection::replacing(["intent"]),
+        )
+    } else {
+        CODER_MODE_ADAPTER.compose_tool(tool)
     }
-    let object = schema.as_object_mut().expect("Coder tool schema object");
-    object
-        .entry("type")
-        .or_insert_with(|| Value::String("object".into()));
-    let properties = object
-        .entry("properties")
-        .or_insert_with(|| Value::Object(Default::default()));
-    if !properties.is_object() {
-        *properties = Value::Object(Default::default());
-    }
-    let properties = properties.as_object_mut().expect("Coder tool properties");
-    for (name, property_schema) in metadata_properties {
-        properties.insert(name.clone(), property_schema.clone());
-    }
-    let required = object
-        .entry("required")
-        .or_insert_with(|| Value::Array(Vec::new()));
-    if !required.is_array() {
-        *required = Value::Array(Vec::new());
-    }
-    let required = required.as_array_mut().expect("Coder required fields");
-    for field in metadata_required {
-        if !required.contains(field) {
-            required.push(field.clone());
-        }
-    }
-    tool
 }
 
 fn with_coder_tool_advertisement(tool: Tool) -> Tool {
@@ -2608,24 +2636,80 @@ fn with_coder_tool_advertisement(tool: Tool) -> Tool {
     }
 }
 
+pub(crate) fn register_catalog_placements(index: &mut ToolPlacementIndex) {
+    for id in coder_initial_tool_ids() {
+        index.add_exposure(
+            id,
+            ToolExposureRef::new(
+                crate::tool_catalog::CODER_MODE_ID,
+                crate::tool_catalog::INITIAL_SURFACE_ID,
+            ),
+        );
+    }
+    for name in crate::code_intelligence_tools::CODE_COGNITION_TOOLS {
+        index.add_exposure(
+            ToolId::new(name),
+            ToolExposureRef::new(
+                crate::tool_catalog::CODER_MODE_ID,
+                crate::tool_catalog::EDITOR_CONTEXT_SURFACE_ID,
+            ),
+        );
+    }
+    for domain in CODER_DISCOVERABLE_DOMAIN_IDS {
+        for id in coder_domain_tool_ids(*domain).expect("known Coder domain") {
+            index.add_exposure(
+                id,
+                ToolExposureRef::domain(
+                    crate::tool_catalog::CODER_MODE_ID,
+                    crate::tool_catalog::DOMAIN_SURFACE_ID,
+                    *domain,
+                ),
+            );
+        }
+    }
+}
+
+pub(crate) fn register_catalog_runtime_adapters(
+    registrar: &mut ToolRegistrar,
+) -> std::result::Result<(), crate::typed_tools::ToolCatalogError> {
+    for tool in coder_runtime_tool_definitions() {
+        let id = resolve_known_coder_tool_id(tool.name.as_str()).ok_or_else(|| {
+            crate::typed_tools::ToolCatalogError::UnknownTool(tool.name.as_str().to_string())
+        })?;
+        let output_schema = (id == COGNITION_ENGINEERING_POINTERS_ID)
+            .then(crate::typed_tools::normalize_output_schema::<EngineeringPointersOutput>)
+            .transpose()
+            .map_err(|_| crate::typed_tools::ToolCatalogError::ContractDrift {
+                id,
+                field: "output schema normalization",
+            })?;
+        registrar.register_runtime_adapter(id, tool, output_schema)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
-pub(crate) fn contract_projected_tools(mut base_tools: Vec<Tool>) -> Vec<Tool> {
-    base_tools.extend(coder_runtime_tool_definitions());
-    let visible_names = coder_contract_visible_names();
+pub(crate) fn contract_projected_tools(catalog: &ToolCatalog) -> Vec<Tool> {
     let policy = WorkPolicy::default();
-    base_tools
-        .into_iter()
-        .filter(|tool| {
-            visible_names.contains(tool.name.as_str())
-                && coder_tool_allowed(tool.name.as_str(), &policy)
+    catalog
+        .definitions_matching(|entry| {
+            entry
+                .placement
+                .exposes_mode(crate::tool_catalog::CODER_MODE_ID)
+                && coder_tool_allowed(entry.id, &policy)
         })
-        .map(|tool| with_coder_tool_advertisement(with_required_coder_intent(tool)))
+        .into_iter()
+        .map(|tool| with_required_coder_intent(tool).expect("compile Coder metadata"))
+        .map(with_coder_tool_advertisement)
         .collect()
 }
 
 #[cfg(test)]
 pub(crate) fn contract_policy_references() -> HashSet<String> {
-    let mut names = coder_contract_visible_names();
+    let mut names = coder_visible_tool_ids()
+        .into_iter()
+        .map(|id| id.as_str().to_string())
+        .collect::<HashSet<_>>();
     names.extend(
         GENERAL_MODE_RUNTIME_TOOLS
             .iter()
@@ -2637,26 +2721,22 @@ pub(crate) fn contract_policy_references() -> HashSet<String> {
 }
 
 #[cfg(test)]
-pub(crate) fn contract_placement_labels(tool_name: &str) -> Vec<String> {
-    let mut placements = Vec::new();
-    if coder_contract_initial_names().contains(tool_name) {
-        placements.push("coder:initial".to_string());
-    }
-    if crate::code_intelligence_tools::CODE_COGNITION_TOOLS.contains(&tool_name) {
-        placements.push("coder:editor_context".to_string());
-    }
-    for domain in CODER_DISCOVERABLE_DOMAINS {
-        if coder_domain_tool_names(domain).is_some_and(|names| names.contains(&tool_name)) {
-            placements.push(format!("coder:domain:{domain}"));
-        }
-    }
+pub(crate) fn contract_placement_labels(catalog: &ToolCatalog, tool_name: &str) -> Vec<String> {
+    let mut placements = catalog
+        .resolve_wire_id(tool_name)
+        .ok()
+        .and_then(|id| catalog.get(id))
+        .into_iter()
+        .flat_map(|entry| entry.placement.exposures.iter())
+        .filter(|exposure| exposure.mode == crate::tool_catalog::CODER_MODE_ID)
+        .map(|exposure| exposure.label())
+        .collect::<Vec<_>>();
     placements.sort();
     placements.dedup();
     placements
 }
 
-#[cfg(test)]
-fn coder_contract_initial_names() -> HashSet<&'static str> {
+fn coder_initial_tool_ids() -> HashSet<ToolId> {
     crate::coding_tools::CODING_COGNITION_TOOLS
         .iter()
         .chain(TURN_CONTROL_TOOLS.iter())
@@ -2672,29 +2752,37 @@ fn coder_contract_initial_names() -> HashSet<&'static str> {
             .iter(),
         )
         .copied()
+        .map(ToolId::new)
         .collect()
 }
 
-#[cfg(test)]
-fn coder_contract_visible_names() -> HashSet<String> {
-    let mut names = coder_contract_initial_names()
-        .into_iter()
-        .map(str::to_string)
-        .collect::<HashSet<_>>();
-    names.extend(
+fn coder_visible_tool_ids() -> HashSet<ToolId> {
+    let mut ids = coder_initial_tool_ids();
+    ids.extend(
         crate::code_intelligence_tools::CODE_COGNITION_TOOLS
             .iter()
-            .map(|name| (*name).to_string()),
+            .map(|name| ToolId::new(name)),
     );
-    for domain in CODER_DISCOVERABLE_DOMAINS {
-        names.extend(
-            coder_domain_tool_names(domain)
-                .into_iter()
-                .flatten()
-                .map(str::to_string),
-        );
+    for domain in CODER_DISCOVERABLE_DOMAIN_IDS {
+        ids.extend(coder_domain_tool_ids(*domain).into_iter().flatten());
     }
-    names
+    ids
+}
+
+fn resolve_known_coder_tool_id(wire_name: &str) -> Option<ToolId> {
+    crate::tool_names::registered_cognition_tools()
+        .map(ToolId::new)
+        .chain(coder_visible_tool_ids())
+        .chain(GENERAL_MODE_RUNTIME_TOOLS.iter().copied().map(ToolId::new))
+        .chain(
+            [
+                crate::shell_tools::COGNITION_SHELL_RUN,
+                crate::shell_tools::COGNITION_SHELL_STATUS,
+            ]
+            .into_iter()
+            .map(ToolId::new),
+        )
+        .find(|id| id.as_str() == wire_name)
 }
 
 /// Map Coder `cognition_turn_begin_work` args onto `cognition_spawn_turn_worker`.
@@ -2772,20 +2860,21 @@ fn ensure_spawn_worker_intent(
 }
 
 fn take_coder_call(input: Value) -> Result<(CoderCallMetadata, Value)> {
-    if !input.is_object() {
-        return Err(StasisError::PortFailure(
-            "Coder tools require an object input".into(),
-        ));
-    }
-    let envelope = serde_json::from_value::<CoderCallEnvelope>(input)
-        .map_err(|error| StasisError::PortFailure(error.to_string()))?;
-    let intent = envelope
-        .intent
-        .ok_or_else(|| StasisError::PortFailure("Coder tool intent is required".into()))?;
-    Ok((
-        CoderCallMetadata { intent },
-        Value::Object(envelope.input.into_iter().collect()),
-    ))
+    CODER_MODE_ADAPTER.split_call(input).map_err(|error| {
+        let message = match &error {
+            crate::typed_tools::ModeToolAdapterError::CallInputMustBeObject => {
+                "Coder tools require an object input".to_string()
+            }
+            crate::typed_tools::ModeToolAdapterError::InvalidMetadata(message)
+                if message.contains("missing field `intent`")
+                    || message.contains("invalid type") =>
+            {
+                "Coder tool intent is required".to_string()
+            }
+            _ => error.to_string(),
+        };
+        StasisError::PortFailure(message)
+    })
 }
 
 fn tool_targets(tool_name: &str, input: &Value, lease: &ExecutionLease) -> Vec<String> {
@@ -3827,22 +3916,15 @@ mod tests {
             .discard(&work_id, &Forge::system_actor())
             .expect("discard undertaking");
 
-        let report = finalize_coder_memory_lineage(
-            inner.clone(),
-            fixture.forge.clone(),
-            &item,
-            None,
-        )
-        .await;
+        let report =
+            finalize_coder_memory_lineage(inner.clone(), fixture.forge.clone(), &item, None).await;
         assert_eq!(report["ok"], true);
         assert_eq!(report["terminal_state"], "discarded");
         assert_eq!(report["archived_environments"], 1);
 
         let nodes = inner.memory_nodes.lock().expect("memory nodes");
         assert_eq!(nodes.len(), 1);
-        let tags = nodes[0]["semantic_tags"]
-            .as_array()
-            .expect("archive tags");
+        let tags = nodes[0]["semantic_tags"].as_array().expect("archive tags");
         assert!(tags.iter().any(|tag| tag == "lineage:archived"));
         assert!(tags.iter().any(|tag| tag == "terminal:discarded"));
         assert!(tags.iter().any(|tag| tag == "kind:checkpoint"));
@@ -4139,7 +4221,8 @@ mod tests {
 
         let projected = with_required_coder_intent(
             Tool::new(COGNITION_ENGINEERING_POINTERS).with_schema(base_schema),
-        );
+        )
+        .expect("compose Coder metadata");
         let projected_schema = projected.schema.expect("projected pointer schema");
         assert_eq!(projected_schema["properties"]["intent"]["maxLength"], 320);
         assert!(
@@ -4395,11 +4478,16 @@ mod tests {
                 )
                 .await
                 .expect("discover final-slice domain");
-            assert!(discovered["newly_visible"]
-                .as_array()
-                .is_some_and(|tools| tools.iter().any(|tool| tool.as_str() == Some(expected_tool))));
+            assert!(discovered["newly_visible"].as_array().is_some_and(|tools| {
+                tools
+                    .iter()
+                    .any(|tool| tool.as_str() == Some(expected_tool))
+            }));
         }
-        let after = registry.list_tools().await.expect("semantic and causal tools");
+        let after = registry
+            .list_tools()
+            .await
+            .expect("semantic and causal tools");
         let apply = after
             .iter()
             .find(|tool| {
@@ -4521,23 +4609,29 @@ mod tests {
     fn coder_tool_allowed_denies_os_shell_and_allows_coder_shell() {
         let policy = WorkPolicy::default();
         assert!(!coder_tool_allowed(
-            crate::shell_tools::COGNITION_SHELL_RUN,
+            ToolId::new(crate::shell_tools::COGNITION_SHELL_RUN),
             &policy
         ));
         assert!(!coder_tool_allowed(
-            crate::shell_tools::COGNITION_SHELL_STATUS,
+            ToolId::new(crate::shell_tools::COGNITION_SHELL_STATUS),
             &policy
         ));
         assert!(coder_tool_allowed(
-            crate::coding_tools::COGNITION_CODER_SHELL_RUN,
+            ToolId::new(crate::coding_tools::COGNITION_CODER_SHELL_RUN),
             &policy
         ));
         assert!(coder_tool_allowed(
-            crate::coding_tools::COGNITION_CODER_SHELL_STATUS,
+            ToolId::new(crate::coding_tools::COGNITION_CODER_SHELL_STATUS),
             &policy
         ));
-        assert!(coder_tool_allowed("cognition_spawn_turn_worker", &policy));
-        assert!(!coder_tool_allowed("cognition_workshop_steer", &policy));
+        assert!(coder_tool_allowed(
+            ToolId::new("cognition_spawn_turn_worker"),
+            &policy
+        ));
+        assert!(!coder_tool_allowed(
+            ToolId::new("cognition_workshop_steer"),
+            &policy
+        ));
     }
 
     #[test]

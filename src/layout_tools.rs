@@ -14,7 +14,7 @@ pub const COGNITION_LAYOUT_APPLY: &str = "cognition_layout_apply";
 pub const COGNITION_LAYOUT_RESET: &str = "cognition_layout_reset";
 
 pub fn register_layout_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
 ) -> StasisResult<()> {
     registry.register_tool(CognitionLayoutGetTool)?;
     registry.register_tool(CognitionLayoutApplyTool)?;

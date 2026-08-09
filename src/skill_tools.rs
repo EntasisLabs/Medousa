@@ -42,7 +42,7 @@ pub fn is_skill_cognition_tool(name: &str) -> bool {
 }
 
 pub fn register_skill_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
     runtime: Arc<RuntimeComposition>,
     event_tx: mpsc::Sender<TuiEvent>,
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,

@@ -234,7 +234,7 @@ impl StasisTool for CognitionCodeSymbolsTool {
 }
 
 pub fn register_code_intelligence_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
 ) -> stasis::prelude::Result<()> {
     registry.register_tool(CognitionCodeHoverTool)?;
     registry.register_tool(CognitionCodeDefinitionTool)?;

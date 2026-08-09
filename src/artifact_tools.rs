@@ -33,7 +33,7 @@ pub fn is_artifact_cognition_tool(name: &str) -> bool {
 }
 
 pub fn register_artifact_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
     event_tx: mpsc::Sender<TuiEvent>,
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 ) -> StasisResult<()> {

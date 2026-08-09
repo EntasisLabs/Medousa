@@ -74,7 +74,7 @@ fn component_def_schema() -> Value {
 }
 
 pub fn register_environment_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 ) -> StasisResult<()> {
     crate::environment_wiki_tools::register_environment_wiki_tools(registry)?;

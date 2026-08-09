@@ -28,7 +28,7 @@ pub struct ManuscriptOverlayProposal {
 }
 
 pub fn register_manuscript_overlay_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
 ) -> StasisResult<()> {
     registry.register_tool(CognitionManuscriptOverlayProposeTool)?;
     registry.register_tool(CognitionManuscriptOverlayListTool)?;

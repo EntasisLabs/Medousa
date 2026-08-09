@@ -312,7 +312,7 @@ impl CognitionBrowserActTool {
 }
 
 pub fn register_browser_act_tool(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
     event_tx: mpsc::Sender<TuiEvent>,
 ) -> stasis::prelude::Result<()> {

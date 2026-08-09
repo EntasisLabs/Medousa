@@ -2665,6 +2665,7 @@ pub struct TuiRuntime {
     pub runtime: Arc<RuntimeComposition>,
     pub tool_loop_pipeline: MedousaToolLoopPipeline,
     pub tool_registry: Arc<dyn ToolRegistry>,
+    pub tool_catalog: Arc<crate::typed_tools::ToolCatalog>,
     pub capability_registry: Arc<RwLock<CapabilityRegistry>>,
     pub mcp_gateway_client: Arc<McpGatewayClient>,
     pub workflow_registry: Arc<crate::workflow::WorkflowRegistry>,

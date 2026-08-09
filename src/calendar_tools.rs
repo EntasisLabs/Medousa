@@ -12,7 +12,7 @@ use crate::daemon_api::{CalendarImportRequest, CalendarWriteRequest};
 use crate::events::TuiEvent;
 
 pub fn register_calendar_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
     event_tx: mpsc::Sender<TuiEvent>,
 ) -> StasisResult<()> {
     registry.register_tool(CognitionCalendarListTool::new(event_tx.clone()))?;

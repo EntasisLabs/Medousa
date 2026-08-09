@@ -15,7 +15,7 @@ pub const COGNITION_GRAPHEME_SCRIPT_SEARCH: &str = "cognition_grapheme_script_se
 pub const COGNITION_GRAPHEME_SCRIPT_LOAD: &str = "cognition_grapheme_script_load";
 
 pub fn register_grapheme_script_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
     event_tx: mpsc::Sender<TuiEvent>,
 ) -> StasisResult<()> {
     registry.register_tool(CognitionGraphemeScriptSaveTool {

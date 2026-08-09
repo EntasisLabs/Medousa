@@ -10,7 +10,7 @@ use crate::identity_manuscript::{
 };
 
 pub fn register_manuscript_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
 ) -> stasis::prelude::Result<()> {
     registry.register_tool(CognitionManuscriptListTool)?;
     registry.register_tool(CognitionManuscriptResolveTool)?;

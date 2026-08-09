@@ -22,7 +22,7 @@ pub const COGNITION_FEED_SUBSCRIBE: &str = "cognition_feed_subscribe";
 pub const COGNITION_FEED_PUBLISH: &str = "cognition_feed_publish";
 
 pub fn register_feed_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
     capability_registry: Arc<RwLock<CapabilityRegistry>>,
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 ) -> StasisResult<()> {

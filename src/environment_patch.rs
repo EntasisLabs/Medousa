@@ -349,7 +349,7 @@ pub fn patch_response_extras(spec: &EnvironmentSpec, surface_id: &str) -> serde_
 }
 
 pub fn register_environment_patch_tool(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
 ) -> StasisResult<()> {
     registry.register_tool(CognitionEnvironmentPatchTool)
 }

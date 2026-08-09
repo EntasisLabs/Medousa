@@ -19,7 +19,7 @@ pub const COGNITION_TOOL_HISTORY_SUMMARY: &str = "cognition_tool_history_summary
 pub const COGNITION_TOOL_HISTORY_DETAIL: &str = "cognition_tool_history_detail";
 
 pub fn register_tool_history_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 ) -> StasisResult<()> {
     registry.register_tool(CognitionToolHistorySummaryTool {

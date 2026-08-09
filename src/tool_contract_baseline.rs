@@ -23,18 +23,6 @@ use crate::tool_bootstrap::{
 const BASELINE_FORMAT_VERSION: u32 = 1;
 const BASELINE_PATH: &str = "tests/fixtures/first_party_tool_contracts.json";
 
-/// Stasis 0.8 does not carry `StasisTool::output_schema` into `genai::Tool`.
-/// Manual Medousa implementations do not override it, so migrated typed
-/// contracts are recorded explicitly until the typed catalog owns this bit.
-const OUTPUT_SCHEMA_CONTRACTS: &[(&str, &str)] = &[
-    ("coder_bound", "cognition_engineering_pointers"),
-    ("coder_bound", "cognition_vault_list"),
-    ("general_runtime", "cognition_utility_day_of_week"),
-    ("general_runtime", "cognition_utility_time_now"),
-    ("general_runtime", "cognition_utility_uuid"),
-    ("general_runtime", "cognition_vault_list"),
-];
-
 /// Static policy references that intentionally resolve outside first-party
 /// assembled registries. There are none today; keeping the classification
 /// explicit prevents future exceptions from becoming silent strings.
@@ -101,10 +89,10 @@ fn snapshot_tool(
     tool: Tool,
     title: Option<String>,
     mut placements: Vec<String>,
+    output_schema_present: bool,
 ) -> ContractSnapshot {
     placements.sort();
     placements.dedup();
-    let output_schema_present = OUTPUT_SCHEMA_CONTRACTS.contains(&(registry, tool.name.as_str()));
     ContractSnapshot {
         registry: registry.to_string(),
         name: tool.name.as_str().to_string(),
@@ -147,36 +135,25 @@ fn normalize_json(value: Value, parent_key: Option<&str>) -> Value {
     }
 }
 
-fn general_placements(tool_name: &str) -> Vec<String> {
-    let mut placements = Vec::new();
-    if HOST_BOOTSTRAP_TOOLS.contains(&tool_name) {
-        placements.push("general:bootstrap".to_string());
-    }
-    if WORKER_BOOTSTRAP_TOOLS.contains(&tool_name) {
-        placements.push("workshop:bootstrap".to_string());
-    }
-
-    let host = host_bus_tool_names();
-    if tool_allowed(tool_name, &host) {
-        placements.push("general:authorized".to_string());
-    }
-    for (intent, label) in worker_intents() {
-        let allowed = allowed_tool_names_for_intent(intent);
-        if tool_allowed(tool_name, &allowed) {
-            placements.push(format!("workshop:authorized:{label}"));
-        }
-    }
-    for entry in host_tool_domain_catalog() {
-        if entry.tools.contains(&tool_name) {
-            placements.push(format!("general:domain:{}", entry.domain));
-        }
-    }
-    for entry in worker_tool_domain_catalog() {
-        if entry.tools.contains(&tool_name) {
-            placements.push(format!("workshop:domain:{}", entry.domain));
-        }
-    }
-    placements
+fn catalog_placements(
+    catalog: &crate::typed_tools::ToolCatalog,
+    tool_name: &str,
+    mode: Option<crate::typed_tools::ToolModeId>,
+) -> Vec<String> {
+    catalog
+        .resolve_wire_id(tool_name)
+        .ok()
+        .and_then(|id| catalog.get(id))
+        .into_iter()
+        .flat_map(|entry| entry.placement.exposures.iter())
+        .filter(|exposure| {
+            mode.map_or(
+                exposure.mode != crate::tool_catalog::CODER_MODE_ID,
+                |mode| exposure.mode == mode,
+            )
+        })
+        .map(|exposure| exposure.label())
+        .collect()
 }
 
 fn worker_intents() -> [(TurnWorkerIntent, &'static str); 4] {
@@ -205,21 +182,32 @@ async fn assembled_contract_baseline() -> ContractBaseline {
     )
     .await
     .expect("assemble in-memory first-party tool registry");
-    let general_tools = runtime
+    let registered_tools = runtime
         .tool_registry
         .list_tools()
         .await
         .expect("list assembled first-party tools");
+    let general_tools = crate::tool_catalog::compile_general_surface(&runtime.tool_catalog)
+        .expect("compile General surface from assembled catalog");
+    assert_catalog_matches_registered_surface(&general_tools, &registered_tools);
 
     audit_static_inventory(&general_tools);
-    audit_policy_references(&general_tools);
+    audit_policy_references(&runtime.tool_catalog, &general_tools);
 
     let mut contracts = general_tools
         .iter()
         .cloned()
         .map(|tool| {
-            let placements = general_placements(tool.name.as_str());
-            snapshot_tool("general_runtime", tool, None, placements)
+            let placements = catalog_placements(&runtime.tool_catalog, tool.name.as_str(), None);
+            let output_schema_present =
+                catalog_output_schema_present(&runtime.tool_catalog, tool.name.as_str());
+            snapshot_tool(
+                "general_runtime",
+                tool,
+                None,
+                placements,
+                output_schema_present,
+            )
         })
         .collect::<Vec<_>>();
 
@@ -227,18 +215,27 @@ async fn assembled_contract_baseline() -> ContractBaseline {
         crate::agent_runtime::coder_setup_tools::contract_tool_definitions()
             .into_iter()
             .map(|tool| {
-                snapshot_tool("coder_setup", tool, None, vec!["coder:unbound".to_string()])
+                snapshot_tool(
+                    "coder_setup",
+                    tool,
+                    None,
+                    vec!["coder:unbound".to_string()],
+                    false,
+                )
             }),
     );
 
     contracts.extend(
-        crate::agent_runtime::coder_tools::contract_projected_tools(general_tools)
+        crate::agent_runtime::coder_tools::contract_projected_tools(&runtime.tool_catalog)
             .into_iter()
             .map(|tool| {
                 let placements = crate::agent_runtime::coder_tools::contract_placement_labels(
+                    &runtime.tool_catalog,
                     tool.name.as_str(),
                 );
-                snapshot_tool("coder_bound", tool, None, placements)
+                let output_schema_present =
+                    catalog_output_schema_present(&runtime.tool_catalog, tool.name.as_str());
+                snapshot_tool("coder_bound", tool, None, placements, output_schema_present)
             }),
     );
 
@@ -251,6 +248,7 @@ async fn assembled_contract_baseline() -> ContractBaseline {
             tool,
             Some(spec.title.to_string()),
             vec!["external_agent:read_only".to_string()],
+            false,
         )
     }));
 
@@ -271,6 +269,39 @@ async fn assembled_contract_baseline() -> ContractBaseline {
     }
 }
 
+fn assert_catalog_matches_registered_surface(catalog_tools: &[Tool], registered_tools: &[Tool]) {
+    let normalize = |tools: &[Tool]| {
+        tools
+            .iter()
+            .map(|tool| {
+                (
+                    tool.name.as_str().to_string(),
+                    tool.description.clone(),
+                    tool.schema
+                        .clone()
+                        .map(|schema| normalize_json(schema, None).to_string()),
+                )
+            })
+            .collect::<BTreeSet<_>>()
+    };
+    assert_eq!(
+        normalize(catalog_tools),
+        normalize(registered_tools),
+        "the assembled typed catalog must exactly match the registered General surface"
+    );
+}
+
+fn catalog_output_schema_present(
+    catalog: &crate::typed_tools::ToolCatalog,
+    tool_name: &str,
+) -> bool {
+    catalog
+        .resolve_wire_id(tool_name)
+        .ok()
+        .and_then(|id| catalog.get(id))
+        .is_some_and(|entry| entry.contract.output_schema.is_some())
+}
+
 fn audit_static_inventory(general_tools: &[Tool]) {
     let mut assembled = general_tools
         .iter()
@@ -285,7 +316,7 @@ fn audit_static_inventory(general_tools: &[Tool]) {
     );
 }
 
-fn audit_policy_references(general_tools: &[Tool]) {
+fn audit_policy_references(catalog: &crate::typed_tools::ToolCatalog, general_tools: &[Tool]) {
     let mut actual = general_tools
         .iter()
         .map(|tool| tool.name.as_str().to_string())
@@ -296,7 +327,7 @@ fn audit_policy_references(general_tools: &[Tool]) {
             .map(|tool| tool.name.as_str().to_string()),
     );
     actual.extend(
-        crate::agent_runtime::coder_tools::contract_projected_tools(general_tools.to_vec())
+        crate::agent_runtime::coder_tools::contract_projected_tools(catalog)
             .into_iter()
             .map(|tool| tool.name.as_str().to_string()),
     );
@@ -465,6 +496,7 @@ fn normalized_snapshot_detects_contract_and_placement_drift() {
         base_tool.clone(),
         None,
         vec!["general:authorized".to_string()],
+        false,
     );
 
     let mutations = [
@@ -482,12 +514,14 @@ fn normalized_snapshot_detects_contract_and_placement_drift() {
                 })),
             None,
             vec!["general:authorized".to_string()],
+            false,
         ),
         snapshot_tool(
             "sample",
             base_tool.clone().with_description("Changed description"),
             None,
             vec!["general:authorized".to_string()],
+            false,
         ),
         snapshot_tool(
             "sample",
@@ -498,6 +532,7 @@ fn normalized_snapshot_detects_contract_and_placement_drift() {
             })),
             None,
             vec!["general:authorized".to_string()],
+            false,
         ),
         snapshot_tool(
             "sample",
@@ -511,12 +546,14 @@ fn normalized_snapshot_detects_contract_and_placement_drift() {
             })),
             None,
             vec!["general:authorized".to_string()],
+            false,
         ),
         snapshot_tool(
             "sample",
             base_tool,
             None,
             vec!["workshop:authorized:general".to_string()],
+            false,
         ),
     ];
     for mutation in mutations {

@@ -26,7 +26,7 @@ pub fn surface_supports_ui_artifacts(surface: Option<&TurnSurfaceContext>) -> bo
 }
 
 pub fn register_ui_present_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 ) -> stasis::prelude::Result<()> {
     registry.register_tool(CognitionUiPresentTool::new(turn_scope))?;

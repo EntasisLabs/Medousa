@@ -21,12 +21,12 @@ const READ_BUDGET_CHARS: usize = 12_000;
 const COGNITION_VAULT_LIST_ID: ToolId = ToolId::new("cognition_vault_list");
 
 pub fn register_vault_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
     event_tx: mpsc::Sender<TuiEvent>,
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
     fallback_chat_session_id: String,
 ) -> StasisResult<()> {
-    registry.register_tool(CognitionVaultListTool::new(event_tx.clone()))?;
+    registry.register_typed_tool(CognitionVaultListTool::new(event_tx.clone()))?;
     registry.register_tool(CognitionVaultReadTool::new(event_tx.clone()))?;
     registry.register_tool(CognitionVaultGrepTool::new(event_tx.clone()))?;
     registry.register_tool(CognitionVaultSearchTool::new(event_tx.clone()))?;

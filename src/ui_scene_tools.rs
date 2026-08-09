@@ -27,7 +27,7 @@ pub fn is_ui_scene_cognition_tool(name: &str) -> bool {
 }
 
 pub fn register_ui_scene_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 ) -> stasis::prelude::Result<()> {
     registry.register_tool(CognitionUiSceneTool::new(turn_scope))?;

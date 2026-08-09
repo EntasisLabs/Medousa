@@ -18,7 +18,7 @@ pub const COGNITION_CONTEXT_FOLLOW_POINTER: &str = "cognition_context_follow_poi
 pub const COGNITION_CONTEXT_LIST_POINTERS: &str = "cognition_context_list_pointers";
 
 pub fn register_context_pointer_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 ) -> StasisResult<()> {
     registry.register_tool(CognitionContextFollowPointerTool {

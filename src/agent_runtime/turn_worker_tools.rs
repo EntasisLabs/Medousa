@@ -311,7 +311,7 @@ impl StasisTool for CognitionTurnWorkerCancelTool {
 }
 
 pub fn register_turn_worker_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
     scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
 ) -> stasis::prelude::Result<()> {
     registry.register_tool(CognitionSpawnTurnWorkerTool::new(scheduler.clone()))?;
