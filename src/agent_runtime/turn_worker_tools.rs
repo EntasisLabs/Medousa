@@ -7,6 +7,7 @@ use stasis::domain::errors::StasisError;
 use crate::agent_runtime::turn_worker::{
     SpawnTurnWorkerOutput, TurnWorkRecord, TurnWorkStatus, TurnWorkerIntent, turn_worker_store,
 };
+use crate::semantic_values::TrimmedText;
 use crate::typed_tools::{ToolId, medousa_tool};
 use std::sync::Arc;
 
@@ -138,6 +139,59 @@ impl<'de> Deserialize<'de> for SpawnTurnWorkerInput {
     }
 }
 
+#[derive(Debug)]
+struct SpawnTurnWorkerCommand {
+    explicit_intent: Option<TurnWorkerIntent>,
+    task: String,
+    user_ack: String,
+    manuscript_id: Option<String>,
+    stage_role: Option<String>,
+    model_hint: Option<String>,
+}
+
+impl TryFrom<SpawnTurnWorkerInput> for SpawnTurnWorkerCommand {
+    type Error = StasisError;
+
+    fn try_from(input: SpawnTurnWorkerInput) -> Result<Self, Self::Error> {
+        let explicit_intent = input
+            .intent
+            .and_then(|value| TrimmedText::new(value).ok().map(TrimmedText::into_string))
+            .map(|raw| {
+                TurnWorkerIntent::parse(&raw).ok_or_else(|| {
+                    StasisError::PortFailure(format!(
+                        "cognition_spawn_turn_worker: unknown intent '{raw}'"
+                    ))
+                })
+            })
+            .transpose()?;
+        let task = required_worker_text(input.task, "task")?;
+        let user_ack = required_worker_text(input.user_ack, "user_ack")?;
+
+        Ok(Self {
+            explicit_intent,
+            task,
+            user_ack,
+            manuscript_id: optional_worker_text(input.manuscript_id),
+            stage_role: optional_worker_text(input.stage_role),
+            model_hint: optional_worker_text(input.model_hint),
+        })
+    }
+}
+
+fn required_worker_text(value: Option<String>, field: &str) -> Result<String, StasisError> {
+    TrimmedText::new(value.unwrap_or_default())
+        .map(TrimmedText::into_string)
+        .map_err(|_| {
+            StasisError::PortFailure(format!(
+                "cognition_spawn_turn_worker: {field} is required"
+            ))
+        })
+}
+
+fn optional_worker_text(value: Option<String>) -> Option<String> {
+    value.and_then(|value| TrimmedText::new(value).ok().map(TrimmedText::into_string))
+}
+
 #[medousa_tool(id = COGNITION_SPAWN_TURN_WORKER_ID)]
 impl CognitionSpawnTurnWorkerTool {
     /// Delegate heavy work to a background turn worker (web/Grapheme execution, memory rituals). Returns immediately; the worker runs tools with a focused policy, then a synthesis pass delivers the final user-facing answer. Intents: memory.avec_calibrate | memory.context | research | general. Optional manuscript_id loads a YAML specialty (voice, tool allowlist, identity pins, OpenShell/skill tools). Manuscript spec.worker.stage_role selects a StageRoutingMatrix route (extractor, verifier, …); spec.worker.model_hint overrides provider/model. Spawn-time stage_role/model_hint win over manuscript defaults. Prefer omitting model_hint (or set model_hint=auto) so workshop StageRoutingMatrix / host preferences choose provider+model. Only pass provider:model when the user explicitly asked for that combo. Bare model ids infer the provider when unambiguous; otherwise they inherit the host turn provider — never the process default. Use manuscript_id=echo-skill or openshell-researcher for sandbox script execution. Put resolved capability/module/op and any host evidence into task — workers do not see parent chat.
@@ -145,27 +199,21 @@ impl CognitionSpawnTurnWorkerTool {
         &self,
         input: SpawnTurnWorkerInput,
     ) -> stasis::prelude::Result<SpawnTurnWorkerOutput> {
-        let manuscript = input
+        let command = SpawnTurnWorkerCommand::try_from(input)?;
+        let manuscript = command
             .manuscript_id
             .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
             .map(crate::identity_manuscript::build_manuscript_context)
             .transpose()
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
 
-        let intent_raw = input.intent.as_deref().map(str::trim);
         let intent = match (
-            intent_raw.filter(|value| !value.is_empty()),
+            command.explicit_intent,
             manuscript
                 .as_ref()
                 .and_then(|ctx| ctx.worker_intent.as_deref()),
         ) {
-            (Some(raw), _) => TurnWorkerIntent::parse(raw).ok_or_else(|| {
-                StasisError::PortFailure(format!(
-                    "cognition_spawn_turn_worker: unknown intent '{raw}'"
-                ))
-            })?,
+            (Some(intent), _) => intent,
             (None, Some(ms_intent)) => TurnWorkerIntent::parse(ms_intent).ok_or_else(|| {
                 StasisError::PortFailure(format!(
                     "cognition_spawn_turn_worker: manuscript worker intent '{ms_intent}' is invalid"
@@ -177,41 +225,16 @@ impl CognitionSpawnTurnWorkerTool {
                 ));
             }
         };
-        let task = input
-            .task
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| {
-                StasisError::PortFailure(
-                    "cognition_spawn_turn_worker: task is required".to_string(),
-                )
-            })?;
-        let user_ack = input
-            .user_ack
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| {
-                StasisError::PortFailure(
-                    "cognition_spawn_turn_worker: user_ack is required".to_string(),
-                )
-            })?;
-
-        let stage_role = input
-            .stage_role
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
-        let model_hint = input
-            .model_hint
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
 
         self.scheduler
             .spawn_worker(
-                intent, task, user_ack, None, manuscript, stage_role, model_hint,
+                intent,
+                &command.task,
+                &command.user_ack,
+                None,
+                manuscript,
+                command.stage_role.as_deref(),
+                command.model_hint.as_deref(),
             )
             .await
     }
@@ -471,4 +494,54 @@ pub fn steer_bound_workshop_for_session(
         queued: updated.steer_messages.len(),
         speaker_profile_id: speaker,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spawn_command_parses_intent_and_normalizes_identifiers() {
+        let command = SpawnTurnWorkerCommand::try_from(SpawnTurnWorkerInput {
+            intent: Some("  research  ".to_string()),
+            task: Some("  inspect the feed  ".to_string()),
+            user_ack: Some("  I am on it  ".to_string()),
+            manuscript_id: Some("  research-specialist  ".to_string()),
+            stage_role: Some("  verifier  ".to_string()),
+            model_hint: Some("  auto  ".to_string()),
+        })
+        .expect("spawn command");
+
+        assert_eq!(command.explicit_intent, Some(TurnWorkerIntent::Research));
+        assert_eq!(command.task, "inspect the feed");
+        assert_eq!(command.user_ack, "I am on it");
+        assert_eq!(command.manuscript_id.as_deref(), Some("research-specialist"));
+        assert_eq!(command.stage_role.as_deref(), Some("verifier"));
+        assert_eq!(command.model_hint.as_deref(), Some("auto"));
+    }
+
+    #[test]
+    fn spawn_command_rejects_blank_required_text_and_unknown_intent() {
+        let blank = SpawnTurnWorkerCommand::try_from(SpawnTurnWorkerInput {
+            intent: Some("general".to_string()),
+            task: Some(" ".to_string()),
+            user_ack: Some("ack".to_string()),
+            manuscript_id: None,
+            stage_role: None,
+            model_hint: None,
+        })
+        .unwrap_err();
+        assert!(blank.to_string().contains("task is required"));
+
+        let unknown = SpawnTurnWorkerCommand::try_from(SpawnTurnWorkerInput {
+            intent: Some("unknown".to_string()),
+            task: Some("task".to_string()),
+            user_ack: Some("ack".to_string()),
+            manuscript_id: None,
+            stage_role: None,
+            model_hint: None,
+        })
+        .unwrap_err();
+        assert!(unknown.to_string().contains("unknown intent 'unknown'"));
+    }
 }
