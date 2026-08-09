@@ -5,6 +5,8 @@ use std::sync::{Arc, OnceLock};
 use async_trait::async_trait;
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Utc};
 use locus_core_rs::NodeStore;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::sync::{RwLock, mpsc};
 use uuid::Uuid;
@@ -46,6 +48,7 @@ use crate::turn_continuation::{
     self, ContinuationAwaitMode, TurnContinuationScope, continuation_tool_metadata,
     wire_turn_child_job,
 };
+use crate::typed_tools::{ToolId, medousa_tool};
 
 async fn run_grapheme_cli(args: Vec<String>) -> stasis::prelude::Result<Value> {
     let cmdline = format!("grapheme {}", args.join(" "));
@@ -1564,69 +1567,76 @@ impl StasisTool for CognitionGraphemePromoteLastRunToRecurringTool {
     }
 }
 
+const COGNITION_UTILITY_TIME_NOW_ID: ToolId = ToolId::new("cognition_utility_time_now");
+const COGNITION_UTILITY_DAY_OF_WEEK_ID: ToolId = ToolId::new("cognition_utility_day_of_week");
+const COGNITION_UTILITY_UUID_ID: ToolId = ToolId::new("cognition_utility_uuid");
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UtilityTimeNowInput {}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct UtilityTimeNowOutput {
+    pub utc_rfc3339: String,
+    pub local_rfc3339: String,
+    pub weekday: String,
+    pub unix_seconds: i64,
+    pub unix_millis: i64,
+    pub local_offset_seconds: i32,
+}
+
 pub struct CognitionUtilityTimeNowTool;
 
-#[async_trait]
-impl StasisTool for CognitionUtilityTimeNowTool {
-    fn name(&self) -> &'static str {
-        "cognition_utility_time_now"
-    }
-
-    fn description(&self) -> Option<&'static str> {
-        Some("Return current time in UTC and local timezone, including weekday and unix timestamp.")
-    }
-
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {}
-        }))
-    }
-
-    async fn invoke(&self, _input: Value) -> stasis::prelude::Result<Value> {
+#[medousa_tool(id = COGNITION_UTILITY_TIME_NOW_ID)]
+impl CognitionUtilityTimeNowTool {
+    /// Return current time in UTC and local timezone, including weekday and unix timestamp.
+    async fn invoke_typed(
+        &self,
+        _input: UtilityTimeNowInput,
+    ) -> stasis::prelude::Result<UtilityTimeNowOutput> {
         let now_utc = Utc::now();
         let now_local = Local::now();
 
-        Ok(json!({
-            "utc_rfc3339": now_utc.to_rfc3339(),
-            "local_rfc3339": now_local.to_rfc3339(),
-            "weekday": now_local.weekday().to_string(),
-            "unix_seconds": now_utc.timestamp(),
-            "unix_millis": now_utc.timestamp_millis(),
-            "local_offset_seconds": now_local.offset().local_minus_utc()
-        }))
+        Ok(UtilityTimeNowOutput {
+            utc_rfc3339: now_utc.to_rfc3339(),
+            local_rfc3339: now_local.to_rfc3339(),
+            weekday: now_local.weekday().to_string(),
+            unix_seconds: now_utc.timestamp(),
+            unix_millis: now_utc.timestamp_millis(),
+            local_offset_seconds: now_local.offset().local_minus_utc(),
+        })
     }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UtilityDayOfWeekInput {
+    /// Optional date in YYYY-MM-DD
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    pub date: Option<String>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct UtilityDayOfWeekOutput {
+    pub date: String,
+    pub weekday: String,
+    pub weekday_number_from_monday: u32,
+    pub weekday_number_from_sunday: u32,
 }
 
 pub struct CognitionUtilityDayOfWeekTool;
 
-#[async_trait]
-impl StasisTool for CognitionUtilityDayOfWeekTool {
-    fn name(&self) -> &'static str {
-        "cognition_utility_day_of_week"
-    }
-
-    fn description(&self) -> Option<&'static str> {
-        Some("Return weekday for a YYYY-MM-DD date, or for today when date is omitted.")
-    }
-
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "date": {
-                    "type": "string",
-                    "description": "Optional date in YYYY-MM-DD"
-                }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let date_opt = input.get("date").and_then(|v| v.as_str());
-
-        let date = if let Some(date_str) = date_opt {
-            NaiveDate::parse_from_str(date_str, "%Y-%m-%d").map_err(|e| {
+#[medousa_tool(id = COGNITION_UTILITY_DAY_OF_WEEK_ID)]
+impl CognitionUtilityDayOfWeekTool {
+    /// Return weekday for a YYYY-MM-DD date, or for today when date is omitted.
+    async fn invoke_typed(
+        &self,
+        input: UtilityDayOfWeekInput,
+    ) -> stasis::prelude::Result<UtilityDayOfWeekOutput> {
+        let date = if let Some(date_str) = input.date {
+            NaiveDate::parse_from_str(&date_str, "%Y-%m-%d").map_err(|e| {
                 StasisError::PortFailure(format!(
                     "cognition_utility_day_of_week: invalid date '{}': {}",
                     date_str, e
@@ -1636,53 +1646,54 @@ impl StasisTool for CognitionUtilityDayOfWeekTool {
             Local::now().date_naive()
         };
 
-        Ok(json!({
-            "date": date.format("%Y-%m-%d").to_string(),
-            "weekday": date.weekday().to_string(),
-            "weekday_number_from_monday": date.weekday().number_from_monday(),
-            "weekday_number_from_sunday": date.weekday().number_from_sunday()
-        }))
+        Ok(UtilityDayOfWeekOutput {
+            date: date.format("%Y-%m-%d").to_string(),
+            weekday: date.weekday().to_string(),
+            weekday_number_from_monday: date.weekday().number_from_monday(),
+            weekday_number_from_sunday: date.weekday().number_from_sunday(),
+        })
     }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UtilityUuidInput {
+    /// Optional prefix for derived keys
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<String>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct UtilityUuidOutput {
+    pub uuid: String,
+    pub uuid_simple: String,
+    pub correlation_id: String,
+    pub trace_id: String,
+    pub idempotency_key: String,
 }
 
 pub struct CognitionUtilityUuidTool;
 
-#[async_trait]
-impl StasisTool for CognitionUtilityUuidTool {
-    fn name(&self) -> &'static str {
-        "cognition_utility_uuid"
-    }
-
-    fn description(&self) -> Option<&'static str> {
-        Some("Generate UUID helper values for correlation, trace, and idempotency keys.")
-    }
-
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "prefix": {
-                    "type": "string",
-                    "description": "Optional prefix for derived keys"
-                }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
+#[medousa_tool(id = COGNITION_UTILITY_UUID_ID)]
+impl CognitionUtilityUuidTool {
+    /// Generate UUID helper values for correlation, trace, and idempotency keys.
+    async fn invoke_typed(
+        &self,
+        input: UtilityUuidInput,
+    ) -> stasis::prelude::Result<UtilityUuidOutput> {
         let id = Uuid::new_v4();
-        let prefix = input
-            .get("prefix")
-            .and_then(|v| v.as_str())
-            .unwrap_or("cognition");
+        let prefix = input.prefix.as_deref().unwrap_or("cognition");
 
-        Ok(json!({
-            "uuid": id.to_string(),
-            "uuid_simple": id.simple().to_string(),
-            "correlation_id": format!("{}-{}", prefix, id.simple()),
-            "trace_id": format!("{}-trace-{}", prefix, id.simple()),
-            "idempotency_key": format!("idem-{}-{}", prefix, id.simple())
-        }))
+        Ok(UtilityUuidOutput {
+            uuid: id.to_string(),
+            uuid_simple: id.simple().to_string(),
+            correlation_id: format!("{}-{}", prefix, id.simple()),
+            trace_id: format!("{}-trace-{}", prefix, id.simple()),
+            idempotency_key: format!("idem-{}-{}", prefix, id.simple()),
+        })
     }
 }
 
@@ -2711,11 +2722,12 @@ mod tests {
     use async_trait::async_trait;
     use genai::chat::Tool;
     use serde_json::json;
-    use stasis::application::orchestration::tool_registry::ToolRegistry;
+    use stasis::application::orchestration::tool_registry::{StasisTool, ToolRegistry};
 
     use super::{
-        EngineExecutionLane, PolicyAwareToolRegistry, extract_module_ops_from_source,
-        referenced_module_ops_for_tool_call,
+        CognitionUtilityDayOfWeekTool, CognitionUtilityTimeNowTool, CognitionUtilityUuidTool,
+        EngineExecutionLane, PolicyAwareToolRegistry, UtilityDayOfWeekInput, UtilityTimeNowInput,
+        UtilityUuidInput, extract_module_ops_from_source, referenced_module_ops_for_tool_call,
     };
 
     #[derive(Default)]
@@ -2812,5 +2824,65 @@ mod tests {
             .expect("scheduled lane should allow recurring registration action");
 
         assert_eq!(result["status"], "ok");
+    }
+
+    #[tokio::test]
+    async fn typed_utility_handlers_preserve_outputs_and_legacy_optional_inputs() {
+        let weekday = CognitionUtilityDayOfWeekTool
+            .invoke_typed(UtilityDayOfWeekInput {
+                date: Some("2026-08-09".to_string()),
+            })
+            .await
+            .expect("known weekday");
+        assert_eq!(weekday.date, "2026-08-09");
+        assert_eq!(weekday.weekday, "Sun");
+        assert_eq!(weekday.weekday_number_from_monday, 7);
+        assert_eq!(weekday.weekday_number_from_sunday, 1);
+
+        let error = CognitionUtilityDayOfWeekTool
+            .invoke_typed(UtilityDayOfWeekInput {
+                date: Some("not-a-date".to_string()),
+            })
+            .await
+            .expect_err("invalid date");
+        assert!(
+            error
+                .to_string()
+                .contains("cognition_utility_day_of_week: invalid date 'not-a-date'")
+        );
+
+        let legacy_weekday =
+            StasisTool::invoke(&CognitionUtilityDayOfWeekTool, json!({ "date": 20260809 }))
+                .await
+                .expect("legacy non-string date remains equivalent to omission");
+        assert!(legacy_weekday["weekday"].is_string());
+
+        let uuid = CognitionUtilityUuidTool
+            .invoke_typed(UtilityUuidInput {
+                prefix: Some("phase-two".to_string()),
+            })
+            .await
+            .expect("typed UUID");
+        assert!(uuid.correlation_id.starts_with("phase-two-"));
+        assert!(uuid.trace_id.starts_with("phase-two-trace-"));
+        assert!(uuid.idempotency_key.starts_with("idem-phase-two-"));
+        assert_eq!(uuid.uuid_simple.len(), 32);
+
+        let legacy_uuid = StasisTool::invoke(&CognitionUtilityUuidTool, json!({ "prefix": false }))
+            .await
+            .expect("legacy non-string prefix remains equivalent to omission");
+        assert!(
+            legacy_uuid["correlation_id"]
+                .as_str()
+                .is_some_and(|value| value.starts_with("cognition-"))
+        );
+
+        let time = CognitionUtilityTimeNowTool
+            .invoke_typed(UtilityTimeNowInput {})
+            .await
+            .expect("typed current time");
+        assert!(!time.utc_rfc3339.is_empty());
+        assert!(!time.local_rfc3339.is_empty());
+        assert!(time.unix_millis / 1_000 >= time.unix_seconds - 1);
     }
 }

@@ -14,6 +14,9 @@ use medousa_forge::model::{
     WorkItem, WorkPolicy, WorkState,
 };
 use once_cell::sync::Lazy;
+use schemars::JsonSchema;
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
 use stasis::application::orchestration::tool_registry::ToolRegistry;
@@ -24,6 +27,7 @@ use tokio::sync::Mutex;
 use super::coder_activity::{CoderActivityStore, CoderAgentIdentity, CoderToolActivityAdmission};
 use super::coder_claims::CoderClaimScope;
 use super::coder_mode::CoderEntryContext;
+use crate::typed_tools::ToolId;
 
 const TURN_CONTROL_TOOLS: &[&str] = &[
     "cognition_turn_begin_work",
@@ -39,6 +43,72 @@ pub const COGNITION_ENGINEERING_POINTERS: &str = "cognition_engineering_pointers
 pub const COGNITION_ENGINEERING_POINTER_FOLLOW: &str = "cognition_engineering_pointer_follow";
 pub const COGNITION_ENGINEERING_HISTORY: &str = "cognition_engineering_history";
 pub const COGNITION_CODER_EVIDENCE_READ: &str = "cognition_coder_evidence_read";
+
+const COGNITION_ENGINEERING_POINTERS_ID: ToolId = ToolId::new(COGNITION_ENGINEERING_POINTERS);
+const ENGINEERING_POINTERS_DESCRIPTION: &str =
+    "List ranked engineering pointers for this undertaking without replaying full history.";
+
+#[derive(Debug, Clone, PartialEq, Eq, JsonSchema)]
+#[schemars(transparent)]
+struct CoderToolIntent(#[schemars(length(max = 320))] String);
+
+impl CoderToolIntent {
+    fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, JsonSchema)]
+struct CoderCallMetadata {
+    /// One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).
+    #[schemars(length(max = 320))]
+    intent: CoderToolIntent,
+}
+
+#[derive(Debug, Deserialize)]
+struct CoderCallEnvelope {
+    #[serde(default, deserialize_with = "deserialize_optional_coder_intent")]
+    intent: Option<CoderToolIntent>,
+    #[serde(flatten)]
+    input: HashMap<String, Value>,
+}
+
+fn deserialize_optional_coder_intent<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<CoderToolIntent>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    let Some(raw) = value.as_str() else {
+        return Ok(None);
+    };
+    super::coder_activity::validate_intent(raw)
+        .map(CoderToolIntent)
+        .map(Some)
+        .map_err(D::Error::custom)
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct EngineeringPointersInput {
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+    )]
+    #[schemars(
+        with = "usize",
+        range(min = 1, max = 24),
+        skip_serializing_if = "Option::is_none"
+    )]
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct EngineeringPointersOutput {
+    ok: bool,
+    count: usize,
+    pointers: Vec<super::coder_pointers::CoderEngineeringPointer>,
+}
 
 const GENERAL_MODE_RUNTIME_TOOLS: &[&str] = &[
     "cognition_job_enqueue",
@@ -1101,6 +1171,20 @@ impl CoderBoundToolRegistry {
         ))
     }
 
+    fn invoke_engineering_pointers(
+        &self,
+        input: EngineeringPointersInput,
+    ) -> Result<EngineeringPointersOutput> {
+        let limit = input.limit.unwrap_or(12).clamp(1, 24);
+        let pointers = self.ranked_pointers(limit)?;
+        self.refresh_visible_from_pointers(&pointers)?;
+        Ok(EngineeringPointersOutput {
+            ok: true,
+            count: pointers.len(),
+            pointers,
+        })
+    }
+
     fn unlock_domain(&self, domain: &str) -> Result<Vec<String>> {
         let names = coder_domain_tool_names(domain).ok_or_else(|| {
             StasisError::PortFailure(format!(
@@ -1230,15 +1314,12 @@ impl CoderBoundToolRegistry {
                 }))
             }
             COGNITION_ENGINEERING_POINTERS => {
-                let limit = input
-                    .get("limit")
-                    .and_then(Value::as_u64)
-                    .map(|value| value as usize)
-                    .unwrap_or(12)
-                    .clamp(1, 24);
-                let pointers = self.ranked_pointers(limit)?;
-                self.refresh_visible_from_pointers(&pointers)?;
-                Ok(json!({ "ok": true, "count": pointers.len(), "pointers": pointers }))
+                let input = crate::typed_tools::deserialize_input::<EngineeringPointersInput>(
+                    COGNITION_ENGINEERING_POINTERS_ID,
+                    input.clone(),
+                )?;
+                let output = self.invoke_engineering_pointers(input)?;
+                crate::typed_tools::serialize_output(COGNITION_ENGINEERING_POINTERS_ID, output)
             }
             COGNITION_ENGINEERING_POINTER_FOLLOW => {
                 let pointer_id = input
@@ -2183,11 +2264,10 @@ impl ToolRegistry for CoderBoundToolRegistry {
             .contains(tool_name);
         let authority = self.authority()?;
         authority.heartbeat()?;
-        let spawn_intent_hint = input
-            .get("intent")
-            .and_then(Value::as_str)
-            .and_then(crate::agent_runtime::turn_worker::TurnWorkerIntent::parse);
-        let (intent, input) = take_coder_intent(input)?;
+        let (metadata, input) = take_coder_call(input)?;
+        let intent = metadata.intent;
+        let spawn_intent_hint =
+            crate::agent_runtime::turn_worker::TurnWorkerIntent::parse(intent.as_str());
         let input = self.enrich_semantic_input(tool_name, input)?;
         let targets = tool_targets(tool_name, &input, authority.lease());
         let claims = super::coder_claims::infer_tool_claims(
@@ -2197,34 +2277,44 @@ impl ToolRegistry for CoderBoundToolRegistry {
             &self.entry.worktree,
         );
         let memory_boundary = automatic_memory_boundary(tool_name, &claims);
-        let admission =
-            match authority.begin_tool_activity(tool_name, &intent, targets.clone(), claims) {
-                Ok(admission) => admission,
-                Err(error) => {
-                    if let Ok(conflict) = serde_json::from_str::<Value>(&error) {
-                        authority.append_receipt(json!({
-                            "kind": "medousa_coder_tool",
-                            "call_id": conflict.get("call_id"),
-                            "tool": tool_name,
-                            "intent": intent,
-                            "ok": false,
-                            "detail": conflict,
-                        }));
-                        return Ok(conflict);
-                    }
-                    return Err(StasisError::PortFailure(error));
+        let admission = match authority.begin_tool_activity(
+            tool_name,
+            intent.as_str(),
+            targets.clone(),
+            claims,
+        ) {
+            Ok(admission) => admission,
+            Err(error) => {
+                if let Ok(conflict) = serde_json::from_str::<Value>(&error) {
+                    authority.append_receipt(json!({
+                        "kind": "medousa_coder_tool",
+                        "call_id": conflict.get("call_id"),
+                        "tool": tool_name,
+                        "intent": intent.as_str(),
+                        "ok": false,
+                        "detail": conflict,
+                    }));
+                    return Ok(conflict);
                 }
-            };
+                return Err(StasisError::PortFailure(error));
+            }
+        };
         let call_id = admission.call_id;
         let _claim_heartbeat = ClaimHeartbeatGuard::start(&authority, &call_id);
         if !visible {
             let err = StasisError::PortFailure(format!(
                 "Coder tool is authorized but not visible; unlock its domain with {COGNITION_CODER_TOOLS_DISCOVER}: {tool_name}"
             ));
-            authority.finish_tool_activity(&call_id, tool_name, &intent, targets, Err(&err));
+            authority.finish_tool_activity(
+                &call_id,
+                tool_name,
+                intent.as_str(),
+                targets,
+                Err(&err),
+            );
             authority.append_receipt(tool_receipt(
                 tool_name,
-                &intent,
+                intent.as_str(),
                 &call_id,
                 &input,
                 Err(&err),
@@ -2234,10 +2324,16 @@ impl ToolRegistry for CoderBoundToolRegistry {
         let input = match self.bind_input(tool_name, input) {
             Ok(input) => input,
             Err(err) => {
-                authority.finish_tool_activity(&call_id, tool_name, &intent, targets, Err(&err));
+                authority.finish_tool_activity(
+                    &call_id,
+                    tool_name,
+                    intent.as_str(),
+                    targets,
+                    Err(&err),
+                );
                 authority.append_receipt(tool_receipt(
                     tool_name,
-                    &intent,
+                    intent.as_str(),
                     &call_id,
                     &Value::Null,
                     Err(&err),
@@ -2248,10 +2344,16 @@ impl ToolRegistry for CoderBoundToolRegistry {
         let mut input = input;
         self.prefer_turn_shell_session(tool_name, &mut input).await;
         if let Err(err) = self.validate_shell_session(tool_name, &input).await {
-            authority.finish_tool_activity(&call_id, tool_name, &intent, targets, Err(&err));
+            authority.finish_tool_activity(
+                &call_id,
+                tool_name,
+                intent.as_str(),
+                targets,
+                Err(&err),
+            );
             authority.append_receipt(tool_receipt(
                 tool_name,
-                &intent,
+                intent.as_str(),
                 &call_id,
                 &input,
                 Err(&err),
@@ -2328,10 +2430,16 @@ impl ToolRegistry for CoderBoundToolRegistry {
         if let Ok(output) = &result {
             self.record_shell_session(tool_name, output).await;
         }
-        authority.finish_tool_activity(&call_id, tool_name, &intent, targets, result.as_ref());
+        authority.finish_tool_activity(
+            &call_id,
+            tool_name,
+            intent.as_str(),
+            targets,
+            result.as_ref(),
+        );
         authority.append_receipt(tool_receipt(
             tool_name,
-            &intent,
+            intent.as_str(),
             &call_id,
             &input,
             result.as_ref(),
@@ -2342,7 +2450,7 @@ impl ToolRegistry for CoderBoundToolRegistry {
                 CoderMemoryCheckpoint {
                     boundary,
                     tool_name,
-                    intent: &intent,
+                    intent: intent.as_str(),
                     call_id: &call_id,
                     input: &input,
                     result: result.as_ref(),
@@ -2371,15 +2479,11 @@ fn coder_runtime_tool_definitions() -> Vec<Tool> {
                 "required": ["domain"]
             })),
         Tool::new(COGNITION_ENGINEERING_POINTERS)
-            .with_description(
-                "List ranked engineering pointers for this undertaking without replaying full history.",
-            )
-            .with_schema(json!({
-                "type": "object",
-                "properties": {
-                    "limit": { "type": "integer", "minimum": 1, "maximum": 24 }
-                }
-            })),
+            .with_description(ENGINEERING_POINTERS_DESCRIPTION)
+            .with_schema(
+                crate::typed_tools::normalize_input_schema::<EngineeringPointersInput>()
+                    .expect("engineering pointers input schema must normalize"),
+            ),
         Tool::new(COGNITION_ENGINEERING_POINTER_FOLLOW)
             .with_description(
                 "Resolve one engineering pointer into its bounded causal lifecycle and evidence receipt.",
@@ -2431,6 +2535,16 @@ fn coder_runtime_tool_definitions() -> Vec<Tool> {
 }
 
 fn with_required_coder_intent(mut tool: Tool) -> Tool {
+    let metadata_schema = crate::typed_tools::normalize_input_schema::<CoderCallMetadata>()
+        .expect("Coder call metadata schema must normalize");
+    let metadata_properties = metadata_schema
+        .get("properties")
+        .and_then(Value::as_object)
+        .expect("Coder call metadata properties");
+    let metadata_required = metadata_schema
+        .get("required")
+        .and_then(Value::as_array)
+        .expect("Coder call metadata required fields");
     let schema = tool.schema.get_or_insert_with(|| {
         json!({
             "type": "object",
@@ -2451,17 +2565,10 @@ fn with_required_coder_intent(mut tool: Tool) -> Tool {
     if !properties.is_object() {
         *properties = Value::Object(Default::default());
     }
-    properties
-        .as_object_mut()
-        .expect("Coder tool properties")
-        .insert(
-            "intent".into(),
-            json!({
-                "type": "string",
-                "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-                "maxLength": 320
-            }),
-        );
+    let properties = properties.as_object_mut().expect("Coder tool properties");
+    for (name, property_schema) in metadata_properties {
+        properties.insert(name.clone(), property_schema.clone());
+    }
     let required = object
         .entry("required")
         .or_insert_with(|| Value::Array(Vec::new()));
@@ -2469,11 +2576,10 @@ fn with_required_coder_intent(mut tool: Tool) -> Tool {
         *required = Value::Array(Vec::new());
     }
     let required = required.as_array_mut().expect("Coder required fields");
-    if !required
-        .iter()
-        .any(|field| field.as_str() == Some("intent"))
-    {
-        required.push(Value::String("intent".into()));
+    for field in metadata_required {
+        if !required.contains(field) {
+            required.push(field.clone());
+        }
     }
     tool
 }
@@ -2665,16 +2771,21 @@ fn ensure_spawn_worker_intent(
     }
 }
 
-fn take_coder_intent(mut input: Value) -> Result<(String, Value)> {
-    let map = input
-        .as_object_mut()
-        .ok_or_else(|| StasisError::PortFailure("Coder tools require an object input".into()))?;
-    let raw = map
-        .remove("intent")
-        .and_then(|value| value.as_str().map(str::to_string))
+fn take_coder_call(input: Value) -> Result<(CoderCallMetadata, Value)> {
+    if !input.is_object() {
+        return Err(StasisError::PortFailure(
+            "Coder tools require an object input".into(),
+        ));
+    }
+    let envelope = serde_json::from_value::<CoderCallEnvelope>(input)
+        .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+    let intent = envelope
+        .intent
         .ok_or_else(|| StasisError::PortFailure("Coder tool intent is required".into()))?;
-    let intent = super::coder_activity::validate_intent(&raw).map_err(StasisError::PortFailure)?;
-    Ok((intent, input))
+    Ok((
+        CoderCallMetadata { intent },
+        Value::Object(envelope.input.into_iter().collect()),
+    ))
 }
 
 fn tool_targets(tool_name: &str, input: &Value, lease: &ExecutionLease) -> Vec<String> {
@@ -3990,6 +4101,109 @@ mod tests {
             .expect_err("missing intent");
         assert!(error.to_string().contains("intent is required"));
         assert!(inner.invoked_tools.lock().expect("tools lock").is_empty());
+    }
+
+    #[test]
+    fn typed_coder_envelope_separates_metadata_from_pointer_input() {
+        let (metadata, input) = take_coder_call(json!({
+            "intent": "  Inspect   the ranked engineering context  ",
+            "limit": 4
+        }))
+        .expect("typed Coder envelope");
+        let intent = metadata.intent;
+        assert_eq!(intent.as_str(), "Inspect the ranked engineering context");
+        assert_eq!(input, json!({ "limit": 4 }));
+        assert!(input.get("intent").is_none());
+
+        let base_schema = crate::typed_tools::normalize_input_schema::<EngineeringPointersInput>()
+            .expect("pointer schema");
+        assert_eq!(
+            base_schema["properties"]
+                .as_object()
+                .expect("pointer properties")
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            vec!["limit"]
+        );
+        for runtime_owned in [
+            "intent",
+            "work_id",
+            "attempt_id",
+            "lease_id",
+            "lease_generation",
+            "root",
+        ] {
+            assert!(base_schema["properties"].get(runtime_owned).is_none());
+        }
+
+        let projected = with_required_coder_intent(
+            Tool::new(COGNITION_ENGINEERING_POINTERS).with_schema(base_schema),
+        );
+        let projected_schema = projected.schema.expect("projected pointer schema");
+        assert_eq!(projected_schema["properties"]["intent"]["maxLength"], 320);
+        assert!(
+            projected_schema["required"]
+                .as_array()
+                .expect("required metadata")
+                .iter()
+                .any(|field| field == "intent")
+        );
+        crate::typed_tools::normalize_output_schema::<EngineeringPointersOutput>()
+            .expect("typed pointer output schema");
+
+        for invalid in [json!({ "limit": 4 }), json!({ "intent": 42, "limit": 4 })] {
+            let error = take_coder_call(invalid).expect_err("intent must be a string");
+            assert!(error.to_string().contains("Coder tool intent is required"));
+        }
+    }
+
+    #[tokio::test]
+    async fn typed_pointer_call_records_one_intent_across_its_lifecycle() {
+        let fixture = fixture();
+        let authority = authority(&fixture);
+        let inner = Arc::new(RecordingRegistry::default());
+        let registry = CoderBoundToolRegistry::new(
+            inner.clone(),
+            &authority,
+            fixture.entry.clone(),
+            fixture.policy.clone(),
+        );
+        let intent = "Inspect ranked engineering context before the next change";
+
+        let output = registry
+            .invoke_tool(
+                COGNITION_ENGINEERING_POINTERS,
+                json!({ "intent": intent, "limit": 4 }),
+            )
+            .await
+            .expect("typed pointer call");
+        assert_eq!(output["ok"], true);
+        assert!(output["pointers"].is_array());
+        assert!(
+            inner.invoked_tools.lock().expect("tools lock").is_empty(),
+            "mode metadata and runtime handling must not leak into the base registry"
+        );
+
+        let events = fixture
+            .activity
+            .events_for_work(&fixture.entry.work_id)
+            .expect("pointer lifecycle");
+        let pointer_events = events
+            .iter()
+            .filter(|event| event.tool.as_deref() == Some(COGNITION_ENGINEERING_POINTERS))
+            .collect::<Vec<_>>();
+        assert!(pointer_events.iter().any(|event| {
+            event.kind == super::super::coder_activity::CoderActivityKind::ToolPlanned
+        }));
+        assert!(pointer_events.iter().any(|event| {
+            event.kind == super::super::coder_activity::CoderActivityKind::ToolCompleted
+        }));
+        assert!(
+            pointer_events
+                .iter()
+                .all(|event| event.intent.as_deref() == Some(intent))
+        );
     }
 
     #[tokio::test]

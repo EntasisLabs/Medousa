@@ -24,9 +24,16 @@ const BASELINE_FORMAT_VERSION: u32 = 1;
 const BASELINE_PATH: &str = "tests/fixtures/first_party_tool_contracts.json";
 
 /// Stasis 0.8 does not carry `StasisTool::output_schema` into `genai::Tool`.
-/// No current manual Medousa implementation overrides it, so the Phase 0
-/// declaration is empty. Phase 1 moves this bit into the typed contract.
-const OUTPUT_SCHEMA_CONTRACTS: &[(&str, &str)] = &[];
+/// Manual Medousa implementations do not override it, so migrated typed
+/// contracts are recorded explicitly until the typed catalog owns this bit.
+const OUTPUT_SCHEMA_CONTRACTS: &[(&str, &str)] = &[
+    ("coder_bound", "cognition_engineering_pointers"),
+    ("coder_bound", "cognition_vault_list"),
+    ("general_runtime", "cognition_utility_day_of_week"),
+    ("general_runtime", "cognition_utility_time_now"),
+    ("general_runtime", "cognition_utility_uuid"),
+    ("general_runtime", "cognition_vault_list"),
+];
 
 /// Static policy references that intentionally resolve outside first-party
 /// assembled registries. There are none today; keeping the classification

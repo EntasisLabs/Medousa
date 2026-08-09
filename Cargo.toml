@@ -53,7 +53,7 @@ name = "medousa_tui"
 path = "src/bin/medousa_tui.rs"
 
 [dependencies]
-medousa-types = { path = "crates/medousa-types" }
+medousa-types = { path = "crates/medousa-types", features = ["json-schema"] }
 medousa-tool-macros = { path = "crates/medousa-tool-macros" }
 medousa-adapter-common = { path = "crates/medousa-adapter-common" }
 medousa-mcp-gateway = { path = "adapters/medousa-mcp-gateway" }
@@ -92,7 +92,6 @@ grapheme-sdk = "0.6.1"
 grapheme-compiler = "0.6.1"
 grapheme-runtime = "0.6.1"
 grapheme-lsp = "0.6.1"
-stasis-rs-macros = { version = "0.1.0"}
 schemars = "0.8"
 genai = "0.6.5"
 keyring = "2.3"

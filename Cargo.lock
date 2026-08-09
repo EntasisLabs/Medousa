@@ -7516,7 +7516,6 @@ dependencies = [
  "sha2 0.10.9",
  "slack-morphism",
  "stasis-rs",
- "stasis-rs-macros",
  "surrealdb",
  "surrealdb-types",
  "sysinfo 0.33.1",

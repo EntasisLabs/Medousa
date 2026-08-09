@@ -3,18 +3,22 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use schemars::JsonSchema;
+use serde::{Deserialize, Deserializer};
 use serde_json::{Value, json};
 use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 use tokio::sync::{RwLock, mpsc};
 
-use crate::daemon_api::VaultWriteRequest;
+use crate::daemon_api::{VaultNotesListResponse, VaultWriteRequest};
 use crate::events::TuiEvent;
 use crate::locus_semantic_tags::parse_semantic_tags_from_value;
 use crate::turn_continuation::TurnContinuationScope;
+use crate::typed_tools::{ToolId, medousa_tool};
 use crate::vault::VaultService;
 
 const READ_BUDGET_CHARS: usize = 12_000;
+const COGNITION_VAULT_LIST_ID: ToolId = ToolId::new("cognition_vault_list");
 
 pub fn register_vault_tools(
     registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
@@ -54,55 +58,73 @@ impl CognitionVaultListTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionVaultListTool {
-    fn name(&self) -> &'static str {
-        "cognition_vault_list"
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct VaultListInput {
+    /// Optional path prefix filter
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+    )]
+    #[schemars(
+        with = "usize",
+        range(min = 1, max = 200),
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub limit: Option<usize>,
+    /// Indexed-style tag filter (match-all), aligned with Locus tags
+    #[serde(default, deserialize_with = "deserialize_lenient_semantic_tags")]
+    #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
+    pub semantic_tags: Option<Vec<String>>,
+    /// Filter notes with tags sharing this prefix
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    pub tag_prefix: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("List vault notes (path + title + semantic tags). Optional tag filter (match-all).")
-    }
+fn deserialize_lenient_semantic_tags<'de, D>(
+    deserializer: D,
+) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    Ok(parse_semantic_tags_from_value(Some(&value)))
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "prefix": { "type": "string", "description": "Optional path prefix filter" },
-                "limit": { "type": "integer", "minimum": 1, "maximum": 200 },
-                "semantic_tags": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Indexed-style tag filter (match-all), aligned with Locus tags"
-                },
-                "tag_prefix": { "type": "string", "description": "Filter notes with tags sharing this prefix" }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let prefix = input.get("prefix").and_then(Value::as_str);
-        let limit = input
-            .get("limit")
-            .and_then(Value::as_u64)
-            .map(|value| value as usize)
-            .unwrap_or(50);
-        let tags = parse_semantic_tags_from_value(input.get("semantic_tags"))
-            .map(|tags| tags.join(","));
+#[medousa_tool(id = COGNITION_VAULT_LIST_ID)]
+impl CognitionVaultListTool {
+    /// List vault notes (path + title + semantic tags). Optional tag filter (match-all).
+    async fn invoke_typed(
+        &self,
+        input: VaultListInput,
+    ) -> stasis::prelude::Result<VaultNotesListResponse> {
+        let tags = input.semantic_tags.map(|tags| tags.join(","));
         let tag_prefix = input
-            .get("tag_prefix")
-            .and_then(Value::as_str)
+            .tag_prefix
+            .as_deref()
             .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
-        emit_invoked(&self.event_tx, self.name(), prefix.unwrap_or("*"));
-        let response = VaultService::list_notes(
-            prefix,
-            limit,
-            tags.as_deref(),
-            tag_prefix.as_deref(),
+            .filter(|value| !value.is_empty());
+        emit_invoked(
+            &self.event_tx,
+            COGNITION_VAULT_LIST_ID.as_str(),
+            input.prefix.as_deref().unwrap_or("*"),
         );
-        serde_json::to_value(response).map_err(|err| StasisError::PortFailure(err.to_string()))
+        let response = VaultService::list_notes(
+            input.prefix.as_deref(),
+            input.limit.unwrap_or(50),
+            tags.as_deref(),
+            tag_prefix,
+        );
+        Ok(response)
     }
 }
 
@@ -593,5 +615,65 @@ impl StasisTool for CognitionVaultMoveTool {
         let response = VaultService::relocate_note(from_path, to_path)
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
         serde_json::to_value(response).map_err(|err| StasisError::PortFailure(err.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+    use stasis::application::orchestration::tool_registry::StasisTool;
+
+    use super::{COGNITION_VAULT_LIST_ID, CognitionVaultListTool, VaultListInput};
+    use crate::events::TuiEvent;
+
+    #[test]
+    fn typed_vault_list_keeps_injected_events_and_lenient_wire_inputs() {
+        crate::vault::service::with_temp_vault(|| {
+            let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(1);
+            let tool = CognitionVaultListTool::new(event_tx);
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("test runtime");
+
+            let input = crate::typed_tools::deserialize_input::<VaultListInput>(
+                COGNITION_VAULT_LIST_ID,
+                json!({
+                    "prefix": 42,
+                    "limit": "many",
+                    "semantic_tags": "alpha, beta",
+                    "tag_prefix": false
+                }),
+            )
+            .expect("legacy optional forms");
+            assert_eq!(input.prefix, None);
+            assert_eq!(input.limit, None);
+            assert_eq!(
+                input.semantic_tags,
+                Some(vec!["alpha".to_string(), "beta".to_string()])
+            );
+            assert_eq!(input.tag_prefix, None);
+
+            let output = runtime
+                .block_on(tool.invoke_typed(input))
+                .expect("typed list response");
+            assert!(output.notes.is_empty());
+
+            match event_rx.try_recv().expect("injected event sender used") {
+                TuiEvent::ToolInvoked {
+                    tool_name,
+                    input_summary,
+                } => {
+                    assert_eq!(tool_name, COGNITION_VAULT_LIST_ID.as_str());
+                    assert_eq!(input_summary, "*");
+                }
+                other => panic!("unexpected event: {other:?}"),
+            }
+
+            let boundary = runtime
+                .block_on(StasisTool::invoke(&tool, json!({ "limit": 1 })))
+                .expect("generated Stasis boundary");
+            assert!(boundary["notes"].is_array());
+        });
     }
 }

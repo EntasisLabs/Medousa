@@ -48,10 +48,16 @@ pub fn build_contract<T: TypedTool>() -> Result<ToolContract, ContractError> {
 }
 
 pub fn normalize_input_schema<T: JsonSchema>() -> Result<Value, SchemaNormalizationError> {
-    let schema = normalize_schema::<T>()?;
+    let mut schema = normalize_schema::<T>()?;
     if schema.get("type").and_then(Value::as_str) != Some("object") {
         return Err(SchemaNormalizationError::InputMustBeObject);
     }
+    schema
+        .as_object_mut()
+        .expect("object input schema")
+        .entry("properties")
+        .or_insert_with(|| Value::Object(Map::new()));
+    sort_object_keys(&mut schema);
     Ok(schema)
 }
 
@@ -78,8 +84,40 @@ fn normalize_schema<T: JsonSchema>() -> Result<Value, SchemaNormalizationError> 
 
     inline_references(&mut schema, &definitions, &mut Vec::new())?;
     collapse_single_all_of(&mut schema);
+    normalize_numeric_schema(&mut schema);
     sort_object_keys(&mut schema);
     Ok(schema)
+}
+
+fn normalize_numeric_schema(value: &mut Value) {
+    match value {
+        Value::Array(values) => {
+            for value in values {
+                normalize_numeric_schema(value);
+            }
+        }
+        Value::Object(object) => {
+            for value in object.values_mut() {
+                normalize_numeric_schema(value);
+            }
+
+            if matches!(
+                object.get("type").and_then(Value::as_str),
+                Some("integer" | "number")
+            ) {
+                object.remove("format");
+            }
+        }
+        Value::Number(number) => {
+            let Some(float) = number.as_f64() else {
+                return;
+            };
+            if float.fract() == 0.0 && float >= i64::MIN as f64 && float <= i64::MAX as f64 {
+                *number = serde_json::Number::from(float as i64);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn collect_definitions(

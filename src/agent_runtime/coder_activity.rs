@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use once_cell::sync::Lazy;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -51,7 +52,7 @@ impl CoderAgentIdentity {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CoderActivityKind {
     AgentJoined,

@@ -4,10 +4,12 @@
 //! lives outside this module.
 
 mod catalog;
+mod compat;
 mod contract;
 mod stasis_adapter;
 
 pub use catalog::{ToolId, ToolIdError, ToolIdSource, resolve_tool_id};
+pub use compat::{deserialize_lenient_optional_string, deserialize_lenient_optional_usize};
 pub use contract::{
     ContractError, ExternalJson, OpaqueToolPayload, SchemaNormalizationError, ToolContract,
     TypedTool, build_contract, normalize_input_schema, normalize_output_schema,

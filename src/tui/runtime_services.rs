@@ -376,7 +376,6 @@ pub(crate) async fn assemble_tui_runtime(
         session_id.to_string(),
         turn_scope.clone(),
     ))?;
-    crate::turn_control_stasis::register_turn_control_stasis_tools(&mut tool_registry)?;
     tool_registry.register_tool(CognitionRuntimeRecurringPreviewTool::new(event_tx.clone()))?;
     tool_registry.register_tool(CognitionRuntimeJobStatusTool::new(runtime.clone()))?;
     tool_registry.register_tool(CognitionRuntimeJobsListTool::new(runtime.clone()))?;

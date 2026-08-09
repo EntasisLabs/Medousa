@@ -28,9 +28,6 @@ pub const LEGACY_MANUAL_TOOL_CONTRACTS: &[&str] = &[
     "cognition_memory_store",
     "cognition_memory_evict",
     "cognition_memory_tags",
-    "cognition_utility_time_now",
-    "cognition_utility_day_of_week",
-    "cognition_utility_uuid",
     "cognition_spawn_turn_worker",
     "cognition_turn_worker_status",
     "cognition_turn_worker_cancel",
@@ -76,7 +73,6 @@ pub const LEGACY_MANUAL_TOOL_CONTRACTS: &[&str] = &[
     "cognition_skill_discover",
     "cognition_skill_propose",
     "cognition_skill_probe",
-    "cognition_vault_list",
     "cognition_vault_read",
     "cognition_vault_search",
     "cognition_vault_write",
@@ -152,7 +148,12 @@ pub const LEGACY_MANUAL_TOOL_CONTRACTS: &[&str] = &[
 ];
 
 /// Typed contracts already excluded from the manual migration allowlist.
-pub const TYPED_TOOL_CONTRACTS: &[&str] = &["cognition_turn_control_ping"];
+pub const TYPED_TOOL_CONTRACTS: &[&str] = &[
+    "cognition_utility_day_of_week",
+    "cognition_utility_time_now",
+    "cognition_utility_uuid",
+    "cognition_vault_list",
+];
 
 pub fn registered_cognition_tools() -> impl Iterator<Item = &'static str> {
     LEGACY_MANUAL_TOOL_CONTRACTS
