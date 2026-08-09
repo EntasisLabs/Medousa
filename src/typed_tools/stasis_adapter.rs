@@ -8,7 +8,11 @@ use crate::tool_error::ToolError;
 
 pub fn deserialize_input<T: DeserializeOwned>(tool_id: ToolId, input: Value) -> StasisResult<T> {
     serde_json::from_value(input).map_err(|error| {
-        ToolError::input(tool_id.as_str(), format!("invalid input: {error}")).into()
+        ToolError::input(
+            tool_id.as_str(),
+            format!("invalid input for typed tool `{tool_id}`: {error}"),
+        )
+        .into()
     })
 }
 
