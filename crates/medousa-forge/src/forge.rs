@@ -286,6 +286,19 @@ impl Forge {
         Ok(item)
     }
 
+    /// Load the immutable evidence manifest for one exact sealed attempt.
+    ///
+    /// Callers receive only the canonical manifest projection; live sibling
+    /// worktrees and mutable attempt state are never inspected by this API.
+    pub fn evidence_manifest_for_attempt(
+        &self,
+        work_id: &WorkId,
+        attempt_id: &AttemptId,
+    ) -> Result<EvidenceManifest> {
+        let item = self.load(work_id)?;
+        self.read_attempt_evidence_manifest(&item, attempt_id)
+    }
+
     pub fn list(&self) -> Result<Vec<WorkItem>> {
         let mut items = Vec::new();
         for id in self.store.list_item_ids()? {
@@ -1842,9 +1855,20 @@ impl Forge {
         item: &WorkItem,
         decision: &ReviewDecision,
     ) -> Result<EvidenceManifest> {
+        self.read_attempt_evidence_manifest(item, &decision.attempt_id)
+    }
+
+    fn read_attempt_evidence_manifest(
+        &self,
+        item: &WorkItem,
+        attempt_id: &AttemptId,
+    ) -> Result<EvidenceManifest> {
         let attempt = item
-            .attempt(&decision.attempt_id)
-            .ok_or_else(|| ForgeError::AttemptNotFound(decision.attempt_id.clone()))?;
+            .attempt(attempt_id)
+            .ok_or_else(|| ForgeError::AttemptNotFound(attempt_id.clone()))?;
+        let evidence_id = attempt.evidence_id.as_ref().ok_or_else(|| {
+            ForgeError::Store(format!("attempt {attempt_id} has no sealed evidence"))
+        })?;
         let path = self
             .store
             .item_dir(&item.id)
@@ -1853,7 +1877,18 @@ impl Forge {
             .join("evidence")
             .join("manifest.json");
         let raw = std::fs::read_to_string(&path)?;
-        Ok(serde_json::from_str(&raw)?)
+        let manifest: EvidenceManifest = serde_json::from_str(&raw)?;
+        if &manifest.attempt_id != attempt_id || &manifest.evidence_id != evidence_id {
+            return Err(ForgeError::Store(format!(
+                "sealed evidence identity does not match attempt {attempt_id}"
+            )));
+        }
+        if manifest.bundle_digest.is_none() {
+            return Err(ForgeError::Store(format!(
+                "sealed evidence for attempt {attempt_id} has no bundle digest"
+            )));
+        }
+        Ok(manifest)
     }
 
     // ------------------------------------------------------------------

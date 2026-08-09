@@ -1,6 +1,6 @@
 # Coder cognitive runtime
 
-> Status: Approved direction; slices 1–6 complete, Slice 7 started
+> Status: Approved direction; slices 1–7 complete, Slice 8 pending
 > Parent: [Agent runtime modes](agent-runtime-modes-plan.md)
 
 ## Product decision
@@ -447,7 +447,7 @@ Implemented:
   seconds, expire after two minutes without renewal, disappear when the agent
   leaves, and are bounded to prevent unbounded activity-index growth.
 
-### Slice 7 — engineering notebook and experiments
+### Slice 7 — engineering notebook and experiments (complete)
 
 The approved durability, worktree-scoped Locus/STTP memory, exact recovery, and
 dynamic model-visible tool-surface contract now lives in
@@ -458,6 +458,26 @@ dynamic model-visible tool-surface contract now lives in
 - Support branchable speculative states and comparison between change sets.
 - Checkpoint semantic cognition independently from conversation length while
   preserving exact turn protocol state in a separate active-turn checkpoint.
+
+Implemented:
+
+- The worktree-scoped STTP vocabulary now includes explicit `experiment`,
+  `acceptance_criterion`, and `next_action` nodes without adding any required
+  model-authored structure beyond `kind` and `summary`.
+- Forge attempt environments provide branchable speculative states. Their
+  explicit notebook nodes inherit only across the recorded fork cutoff;
+  unverified sibling conclusions are never ambiently merged.
+- The discoverable `experiments` pack exposes a runtime-owned sealed-candidate
+  comparison. It accepts two to four exact attempts (or selects the latest
+  sealed candidates), reads immutable evidence manifests, and computes
+  pairwise tree deltas between exact sealed Git heads.
+- Candidate notebook projections use daemon-derived Locus scopes and the
+  evidence seal timestamp as a closed temporal boundary. A Locus outage
+  degrades notebook context per candidate without losing the Forge/Git
+  comparison.
+- Comparison output is bounded to evidence metadata, path/status summaries,
+  semantic notebook nodes, and exact-OID deltas. It never reads live sibling
+  worktrees or returns raw patches, source bodies, or sibling paths.
 
 ### Slice 8 — semantic actions and causal runtime
 

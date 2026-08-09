@@ -35,6 +35,7 @@ pub mod host_context;
 pub mod coder_activity;
 pub mod coder_claims;
 pub mod coder_evidence;
+pub mod coder_experiments;
 pub mod coder_memory;
 pub mod coder_mode;
 pub mod coder_pointers;

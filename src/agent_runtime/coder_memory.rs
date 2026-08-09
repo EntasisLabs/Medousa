@@ -34,6 +34,9 @@ const MEMORY_KINDS: &[&str] = &[
     "goal",
     "discovery",
     "hypothesis",
+    "experiment",
+    "acceptance_criterion",
+    "next_action",
     "decision",
     "change",
     "verification",
@@ -71,6 +74,9 @@ const MAX_PENDING_LIFECYCLE_TASKS: usize = 64;
 const MAX_LIFECYCLE_TASK_BYTES: u64 = 64 * 1024;
 const INHERITED_MEMORY_KINDS: &[&str] = &[
     "goal",
+    "experiment",
+    "acceptance_criterion",
+    "next_action",
     "decision",
     "verification",
     "open_gap",
@@ -1946,6 +1952,67 @@ mod tests {
         );
         assert!(recalled_content(&commit.raw_node).contains("brace { }"));
         assert!(recalled_content(&commit.raw_node).contains("protocol markers ⊕⟨"));
+    }
+
+    #[test]
+    fn experiment_notebook_kinds_keep_the_compact_commit_contract() {
+        let commit_tool = tool_definitions()
+            .into_iter()
+            .find(|tool| tool.name.as_str() == COGNITION_CODER_MEMORY_COMMIT)
+            .expect("memory commit tool");
+        assert_eq!(
+            commit_tool
+                .schema
+                .as_ref()
+                .and_then(|schema| schema.get("required")),
+            Some(&json!(["kind", "summary"]))
+        );
+        let kinds = commit_tool
+            .schema
+            .as_ref()
+            .and_then(|schema| schema.pointer("/properties/kind/enum"))
+            .and_then(Value::as_array)
+            .expect("memory kinds");
+        let scope = CoderMemoryScope::for_entry(&entry("worktree/demo-a1", 1));
+        let identity = CoderAgentIdentity::for_turn("chat-1", 8, "attempt-1");
+        for kind in ["experiment", "acceptance_criterion", "next_action"] {
+            assert!(
+                kinds
+                    .iter()
+                    .any(|candidate| candidate.as_str() == Some(kind))
+            );
+            build_commit(
+                &json!({ "kind": kind, "summary": format!("Record {kind}") }),
+                &scope,
+                &identity,
+                "head-1",
+            )
+            .expect("compact experiment commit");
+            let inherited = json!({
+                "timestamp": "2026-08-08T00:00:00Z",
+                "semantic_tags": [format!("kind:{kind}")]
+            });
+            let mut child_scope = scope.clone();
+            child_scope.parent = Some(CoderMemoryParentScope {
+                session_id: "parent-session".into(),
+                branch: "worktree/demo-parent".into(),
+                branch_digest: "parent".into(),
+                environment_generation: 1,
+                inherited_before_utc: "2026-08-08T01:00:00Z".into(),
+            });
+            assert!(inherited_node_allowed(&child_scope, &inherited));
+            let accepted = json!({
+                "semantic_tags": [
+                    format!("kind:{kind}"),
+                    "knowledge:accepted",
+                    "memory-scope:undertaking"
+                ]
+            });
+            assert!(!accepted_node_allowed(
+                &accepted,
+                "memory-scope:undertaking"
+            ));
+        }
     }
 
     #[test]

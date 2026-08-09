@@ -1,6 +1,6 @@
 # Coder durability, worktree memory, and dynamic tools
 
-> **Status:** Approved direction; Slices 1–5 implemented
+> **Status:** Approved direction; Slices 1–5 and experiment notebook extension implemented
 > **Parent:** [Coder cognitive runtime](coder-cognitive-runtime-plan.md)
 > **Related:** [Context lanes and scratchpad](context-lanes-and-scratchpad-plan.md),
 > [Turn runtime and lanes](turn-runtime-and-lanes.md), and
@@ -97,6 +97,9 @@ Coder uses a small vocabulary of temporal node kinds:
 | `goal` | Current user objective and acceptance conditions |
 | `discovery` | Evidence-grounded fact about code or behavior |
 | `hypothesis` | Tentative explanation that still needs verification |
+| `experiment` | One bounded speculative approach and the evidence it is meant to produce |
+| `acceptance_criterion` | An explicit condition used to judge candidate outcomes |
+| `next_action` | The next concrete engineering action at a recovery or handoff boundary |
 | `decision` | Chosen approach, rationale, and rejected alternatives |
 | `change` | Intent and bounded summary of an applied change set |
 | `verification` | Command/check, result, and repository state observed |
@@ -253,6 +256,7 @@ signal:
 |---|---|
 | `intelligence` | Symbols, definitions, hover, diagnostics |
 | `world_model` | Detamu repository/change/impact observations |
+| `experiments` | Sealed Forge candidate and engineering-notebook comparison |
 | `history` | Bounded engineering history |
 | `memory` | Advanced generic Locus diagnostics |
 | `research` | Web and browser tools available on the surface |
@@ -401,8 +405,9 @@ so lineage does not require a migration rewrite.
 Coder recall merges four independently pinned sources: the current environment,
 the parent environment as it existed at the fork cutoff, accepted undertaking
 knowledge, and accepted repository knowledge. Parent inheritance is restricted
-to goals, decisions, verification, open gaps, checkpoints, and handoffs. The
-runtime never queries a live sibling environment.
+to goals, experiments, acceptance criteria, next actions, decisions,
+verification, open gaps, checkpoints, and handoffs. The runtime never queries
+a live sibling environment.
 
 Acceptance promotes decisions and verification to the stable undertaking
 scope; verification also promotes to the repository scope. Promotion stores a
@@ -417,6 +422,23 @@ their governed environment scopes. Archival is non-destructive: Forge and Git
 remain authoritative, while terminal scopes are excluded from active ambient
 recall without deleting their audit history.
 
+### Engineering notebook experiment extension (implemented)
+
+- Add explicit experiment, acceptance-criterion, and next-action kinds to the
+  same compact memory commit schema; `kind` and `summary` remain the only
+  required semantic fields.
+- Carry those working-state nodes across an explicit Forge fork cutoff while
+  keeping acceptance promotion limited to verified decisions and verification.
+- Reveal a sealed-candidate comparison tool through the dynamic `experiments`
+  pack, automatically when notebook state or multiple sealed candidates make
+  it relevant.
+- Compare two to four candidates through evidence manifests and exact sealed
+  Git heads. Candidate memory is read from its runtime-owned environment scope
+  only through the evidence seal time.
+- Bound path and notebook projections and degrade unavailable Locus reads per
+  candidate. Never inspect a live sibling worktree or expose raw patches,
+  source bodies, or sibling filesystem paths.
+
 ## Acceptance and observability
 
 - A large global registry produces a bounded initial Coder tool surface.
@@ -428,6 +450,9 @@ recall without deleting their audit history.
 - A second agent can recall the first agent's explicit working-state nodes
   without receiving its transcript or private reasoning.
 - Changed HEAD/content marks incompatible recalled facts stale.
+- Two or more sealed speculative attempts can be compared by exact Git tree,
+  bounded evidence summary, and their temporally pinned notebook state without
+  exposing live sibling state.
 - Reaching the Coder ceiling produces a checkpoint and truthful status, not an
   unknown-error inference retry.
 - Metrics track schema tokens, repeated reads, recovery latency, stale recalls,

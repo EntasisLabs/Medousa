@@ -110,6 +110,7 @@ const CODER_WORKSPACE_TOOLS: &[&str] = &[
 const CODER_DISCOVERABLE_DOMAINS: &[&str] = &[
     "intelligence",
     "world_model",
+    "experiments",
     "history",
     "memory",
     "research",
@@ -962,6 +963,14 @@ impl CoderBoundToolRegistry {
         }
         let memory = self.environment_memory_overview(&authority, 10).await?;
         self.refresh_visible_from_memory_overview(&memory)?;
+        if super::coder_experiments::sealed_candidate_count(
+            authority.forge.as_ref(),
+            &self.entry.work_id,
+        )
+        .is_ok_and(|count| count >= 2)
+        {
+            let _ = self.unlock_domain("experiments")?;
+        }
         Ok(format!(
             "{shared}\n\n{}\n\n{}",
             super::coder_pointers::engineering_pointer_prompt_appendix(&pointers),
@@ -1090,6 +1099,9 @@ impl CoderBoundToolRegistry {
         let names: Vec<&str> = match domain {
             "intelligence" => crate::code_intelligence_tools::CODE_COGNITION_TOOLS.to_vec(),
             "world_model" => crate::detamu_tools::DETAMU_COGNITION_TOOLS.to_vec(),
+            "experiments" => {
+                vec![super::coder_experiments::COGNITION_CODER_EXPERIMENT_COMPARE]
+            }
             "history" => vec![COGNITION_ENGINEERING_HISTORY],
             "memory" => CODER_ADVANCED_MEMORY_TOOLS.to_vec(),
             "research" => CODER_RESEARCH_TOOLS.to_vec(),
@@ -1146,6 +1158,7 @@ impl CoderBoundToolRegistry {
             );
         let mut needs_intelligence = false;
         let mut needs_world_model = false;
+        let mut needs_experiments = false;
         for node in nodes {
             let kind = node.get("kind").and_then(Value::as_str);
             let has_symbols = node
@@ -1158,12 +1171,19 @@ impl CoderBoundToolRegistry {
                 kind,
                 Some("change" | "verification" | "checkpoint" | "handoff")
             );
+            needs_experiments |= matches!(
+                kind,
+                Some("experiment" | "acceptance_criterion" | "next_action")
+            );
         }
         if needs_intelligence {
             let _ = self.unlock_domain("intelligence")?;
         }
         if needs_world_model {
             let _ = self.unlock_domain("world_model")?;
+        }
+        if needs_experiments {
+            let _ = self.unlock_domain("experiments")?;
         }
         Ok(())
     }
@@ -1702,6 +1722,12 @@ impl CoderBoundToolRegistry {
                     &authority.identity,
                     &current_head,
                 )?;
+                if matches!(
+                    commit.kind.as_str(),
+                    "experiment" | "acceptance_criterion" | "next_action"
+                ) {
+                    let _ = self.unlock_domain("experiments")?;
+                }
                 Ok(self
                     .persist_or_queue_memory_commit(authority, commit, "model_commit")
                     .await)
@@ -2153,6 +2179,14 @@ impl ToolRegistry for CoderBoundToolRegistry {
         let result = if super::coder_memory::CODER_MEMORY_TOOL_NAMES.contains(&tool_name) {
             self.invoke_coder_memory_tool(&authority, tool_name, &input)
                 .await
+        } else if tool_name == super::coder_experiments::COGNITION_CODER_EXPERIMENT_COMPARE {
+            super::coder_experiments::compare_sealed_candidates(
+                authority.forge.as_ref(),
+                self.inner.as_ref(),
+                &self.entry,
+                &input,
+            )
+            .await
         } else if CODER_RUNTIME_TOOLS.contains(&tool_name) {
             self.invoke_runtime_tool(tool_name, &input)
         } else if crate::turn_control_tools::is_begin_work_tool_name(tool_name) {
@@ -2273,6 +2307,7 @@ fn coder_runtime_tool_definitions() -> Vec<Tool> {
                 "required": ["reference"]
             })),
     ];
+    tools.push(super::coder_experiments::tool_definition());
     tools.extend(super::coder_memory::tool_definitions());
     tools
 }
@@ -3861,6 +3896,83 @@ mod tests {
             after
                 .iter()
                 .all(|tool| tool.name.as_str() != "cognition_runtime_jobs_cancel")
+        );
+
+        let experiments = registry
+            .invoke_tool(
+                COGNITION_CODER_TOOLS_DISCOVER,
+                json!({
+                    "intent": "Reveal sealed candidate comparison for the experiment review",
+                    "domain": "experiments"
+                }),
+            )
+            .await
+            .expect("discover experiments");
+        assert!(
+            experiments["newly_visible"]
+                .as_array()
+                .is_some_and(|tools| {
+                    tools.iter().any(|tool| {
+                        tool.as_str()
+                            == Some(
+                                super::super::coder_experiments::COGNITION_CODER_EXPERIMENT_COMPARE,
+                            )
+                    })
+                })
+        );
+        let after = registry.list_tools().await.expect("experiment tools");
+        let compare = after
+            .iter()
+            .find(|tool| {
+                tool.name.as_str()
+                    == super::super::coder_experiments::COGNITION_CODER_EXPERIMENT_COMPARE
+            })
+            .expect("comparison tool visible");
+        let required = compare
+            .schema
+            .as_ref()
+            .and_then(|schema| schema.get("required"))
+            .and_then(Value::as_array)
+            .expect("comparison required fields");
+        assert_eq!(required, &vec![Value::String("intent".into())]);
+    }
+
+    #[tokio::test]
+    async fn experiment_notebook_state_auto_reveals_only_the_comparison_tool() {
+        let fixture = fixture();
+        let authority = authority(&fixture);
+        let registry = CoderBoundToolRegistry::new(
+            Arc::new(RecordingRegistry::default()),
+            &authority,
+            fixture.entry.clone(),
+            fixture.policy.clone(),
+        );
+        let before = registry.list_tools().await.expect("initial tools");
+        assert!(before.iter().all(|tool| {
+            tool.name.as_str()
+                != super::super::coder_experiments::COGNITION_CODER_EXPERIMENT_COMPARE
+        }));
+
+        registry
+            .invoke_tool(
+                super::super::coder_memory::COGNITION_CODER_MEMORY_COMMIT,
+                json!({
+                    "intent": "Record the criterion before comparing candidates",
+                    "kind": "acceptance_criterion",
+                    "summary": "Tests stay green"
+                }),
+            )
+            .await
+            .expect("commit experiment notebook state");
+        let after = registry.list_tools().await.expect("experiment tools");
+        assert!(after.iter().any(|tool| {
+            tool.name.as_str()
+                == super::super::coder_experiments::COGNITION_CODER_EXPERIMENT_COMPARE
+        }));
+        assert!(
+            after
+                .iter()
+                .all(|tool| tool.name.as_str() != COGNITION_ENGINEERING_HISTORY)
         );
     }
 
