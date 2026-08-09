@@ -5,7 +5,6 @@ use std::sync::Arc;
 use chrono::Utc;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use stasis::domain::runtime::job::{BackoffPolicy, NewJob};
 use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
 use tokio::sync::{RwLock, mpsc};
 use uuid::Uuid;
@@ -14,6 +13,8 @@ use crate::events::TuiEvent;
 use crate::identity_manuscript::build_manuscript_context;
 use crate::openshell_handoff::collect_openshell_doctor_report;
 use crate::openshell_sandbox_run::{OPENSHELL_SANDBOX_RUN_JOB_TYPE, OpenshellSandboxRunPayload};
+use crate::runtime_composition_ext::RuntimeCompositionExt;
+use crate::runtime_job_spec::ToolJobSpec;
 use crate::skill_execution::{
     SkillAdoptionProposal, SkillScriptEntry, SkillScriptRiskClass, SkillSecurityLevel,
     build_sandbox_payload_for_skill, discover_skill_for_manuscript, evaluate_skill_adoption,
@@ -560,21 +561,16 @@ async fn enqueue_openshell_job(
     let payload_ref = payload.to_payload_ref()?;
     let job_id = format!("skill-probe-{}", Uuid::new_v4().simple());
     let now = Utc::now();
-    let mut job = NewJob {
-        id: job_id.clone(),
-        queue: "default".to_string(),
-        job_type: OPENSHELL_SANDBOX_RUN_JOB_TYPE.to_string(),
+    let mut job = ToolJobSpec::new(
+        job_id.clone(),
+        "default",
+        OPENSHELL_SANDBOX_RUN_JOB_TYPE,
         payload_ref,
-        priority: 100,
-        max_attempts: 1,
-        idempotency_key: format!("idem-{job_id}"),
-        correlation_id: job_id.clone(),
-        causation_id: causation.to_string(),
-        trace_id: job_id.clone(),
-        sttp_input_node_id: "sttp:in:skill:probe".to_string(),
-        scheduled_at: now,
-        backoff_policy: BackoffPolicy::default(),
-    };
+        causation,
+        "sttp:in:skill:probe",
+        now,
+    )
+    .build();
     if let Some(scope) = turn_scope.read().await.clone() {
         wire_turn_child_job(
             &mut job,
@@ -585,10 +581,7 @@ async fn enqueue_openshell_job(
         )
         .await;
     }
-    match &**runtime {
-        RuntimeComposition::InMemory(rt) => rt.enqueue(job).await?,
-        RuntimeComposition::Surreal(rt) => rt.enqueue(job).await?,
-    }
+    runtime.enqueue_job(job).await?;
     let _ = event_tx
         .send(TuiEvent::JobEnqueued {
             job_id: job_id.clone(),

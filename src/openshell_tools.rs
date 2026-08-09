@@ -7,7 +7,6 @@ use schemars::JsonSchema;
 use schemars::schema::{ArrayValidation, InstanceType, Schema, SchemaObject, SingleOrVec};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use stasis::domain::runtime::job::{BackoffPolicy, NewJob};
 use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
 use tokio::sync::{RwLock, mpsc};
 use uuid::Uuid;
@@ -16,6 +15,8 @@ use crate::events::TuiEvent;
 use crate::identity_manuscript::build_manuscript_context;
 use crate::openshell_handoff::collect_openshell_doctor_report;
 use crate::openshell_sandbox_run::{OPENSHELL_SANDBOX_RUN_JOB_TYPE, OpenshellSandboxRunPayload};
+use crate::runtime_composition_ext::RuntimeCompositionExt;
+use crate::runtime_job_spec::ToolJobSpec;
 use crate::turn_continuation::{
     ContinuationAwaitMode, TurnContinuationScope, continuation_tool_metadata, wire_turn_child_job,
 };
@@ -419,21 +420,16 @@ impl CognitionOpenshellSandboxRunTool {
 
         let job_id = format!("openshell-{}", Uuid::new_v4().simple());
         let now = Utc::now();
-        let mut job = NewJob {
-            id: job_id.clone(),
-            queue: "default".to_string(),
-            job_type: OPENSHELL_SANDBOX_RUN_JOB_TYPE.to_string(),
+        let mut job = ToolJobSpec::new(
+            job_id.clone(),
+            "default",
+            OPENSHELL_SANDBOX_RUN_JOB_TYPE,
             payload_ref,
-            priority: 100,
-            max_attempts: 1,
-            idempotency_key: format!("idem-{job_id}"),
-            correlation_id: job_id.clone(),
-            causation_id: "cognition_openshell".to_string(),
-            trace_id: job_id.clone(),
-            sttp_input_node_id: "sttp:in:openshell:sandbox_run".to_string(),
-            scheduled_at: now,
-            backoff_policy: BackoffPolicy::default(),
-        };
+            "cognition_openshell",
+            "sttp:in:openshell:sandbox_run",
+            now,
+        )
+        .build();
 
         if let Some(scope) = self.turn_scope.read().await.clone() {
             wire_turn_child_job(
@@ -446,10 +442,7 @@ impl CognitionOpenshellSandboxRunTool {
             .await;
         }
 
-        match &*self.runtime {
-            RuntimeComposition::InMemory(rt) => rt.enqueue(job).await?,
-            RuntimeComposition::Surreal(rt) => rt.enqueue(job).await?,
-        }
+        self.runtime.enqueue_job(job).await?;
 
         let _ = self
             .event_tx

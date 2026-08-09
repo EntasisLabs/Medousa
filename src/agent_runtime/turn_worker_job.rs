@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use stasis::application::runtime::in_memory_runtime::{JobExecutionOutcome, JobHandler};
-use stasis::domain::runtime::job::{BackoffPolicy, Job, JobState, NewJob};
+use stasis::domain::runtime::job::{Job, JobState};
 use stasis::ports::outbound::runtime::job_store::JobStore;
 use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
 
@@ -18,6 +18,7 @@ use crate::agent_runtime::turn_worker::{
 };
 use crate::session::{ConversationTurn, append_turn};
 use crate::tools::TuiRuntime;
+use crate::{runtime_composition_ext::RuntimeCompositionExt, runtime_job_spec::ToolJobSpec};
 
 pub const TURN_WORKER_JOB_TYPE: &str = "workflow.medousa.turn_worker";
 
@@ -58,30 +59,23 @@ pub async fn enqueue_turn_worker_job(
     };
     let payload_ref = payload.to_payload_ref()?;
     let now = Utc::now();
-    let job = NewJob {
-        id: work_id.to_string(),
-        queue: crate::daemon::worker_host::AGENT_QUEUE.to_string(),
-        job_type: TURN_WORKER_JOB_TYPE.to_string(),
+    let job = ToolJobSpec::new(
+        work_id,
+        crate::daemon::worker_host::AGENT_QUEUE,
+        TURN_WORKER_JOB_TYPE,
         payload_ref,
-        priority: 100,
-        max_attempts: 3,
-        idempotency_key: format!("idem-{work_id}"),
-        correlation_id: work_id.to_string(),
-        causation_id: "cognition_spawn_turn_worker".to_string(),
-        trace_id: work_id.to_string(),
-        sttp_input_node_id: "sttp:in:medousa:turn_worker".to_string(),
-        scheduled_at: now,
-        backoff_policy: BackoffPolicy::default(),
-    };
+        "cognition_spawn_turn_worker",
+        "sttp:in:medousa:turn_worker",
+        now,
+    )
+    .max_attempts(3)
+    .build();
 
     turn_worker_store().update(work_id, |record| {
         record.stasis_job_id = Some(work_id.to_string());
     });
 
-    match composition {
-        RuntimeComposition::InMemory(rt) => rt.enqueue(job).await?,
-        RuntimeComposition::Surreal(rt) => rt.enqueue(job).await?,
-    }
+    composition.enqueue_job(job).await?;
     Ok(())
 }
 
