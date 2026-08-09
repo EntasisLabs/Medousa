@@ -2,25 +2,33 @@
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use schemars::JsonSchema;
+use serde::Deserialize;
 use serde_json::{Value, json};
 use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 use tokio::sync::mpsc;
 
 use crate::calendar::CalendarService;
-use crate::daemon_api::{CalendarImportRequest, CalendarWriteRequest};
+use crate::daemon_api::{
+    CalendarExportResponse, CalendarImportRequest, CalendarListResponse, CalendarWriteRequest,
+};
 use crate::events::TuiEvent;
+use crate::typed_tools::{ToolId, medousa_tool};
+
+const COGNITION_CALENDAR_LIST_ID: ToolId = ToolId::new("cognition_calendar_list");
+const COGNITION_CALENDAR_EXPORT_ID: ToolId = ToolId::new("cognition_calendar_export");
 
 pub fn register_calendar_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
     event_tx: mpsc::Sender<TuiEvent>,
 ) -> StasisResult<()> {
-    registry.register_tool(CognitionCalendarListTool::new(event_tx.clone()))?;
+    registry.register_typed_tool(CognitionCalendarListTool::new(event_tx.clone()))?;
     registry.register_tool(CognitionCalendarCreateTool::new(event_tx.clone()))?;
     registry.register_tool(CognitionCalendarUpdateTool::new(event_tx.clone()))?;
     registry.register_tool(CognitionCalendarDeleteTool::new(event_tx.clone()))?;
     registry.register_tool(CognitionCalendarImportTool::new(event_tx.clone()))?;
-    registry.register_tool(CognitionCalendarExportTool::new(event_tx))?;
+    registry.register_typed_tool(CognitionCalendarExportTool::new(event_tx))?;
     Ok(())
 }
 
@@ -32,7 +40,11 @@ fn emit_invoked(event_tx: &mpsc::Sender<TuiEvent>, tool_name: &str, summary: &st
 }
 
 fn parse_rfc3339(value: Option<&Value>, field: &str) -> StasisResult<Option<DateTime<Utc>>> {
-    let Some(raw) = value.and_then(Value::as_str).map(str::trim).filter(|v| !v.is_empty()) else {
+    parse_rfc3339_str(value.and_then(Value::as_str), field)
+}
+
+fn parse_rfc3339_str(raw: Option<&str>, field: &str) -> StasisResult<Option<DateTime<Utc>>> {
+    let Some(raw) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
         return Ok(None);
     };
     DateTime::parse_from_rfc3339(raw)
@@ -143,41 +155,51 @@ impl CognitionCalendarListTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionCalendarListTool {
-    fn name(&self) -> &'static str {
-        "cognition_calendar_list"
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CalendarListInput {
+    /// RFC3339 range start (inclusive)
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    from: Option<String>,
+    /// RFC3339 range end (exclusive)
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    to: Option<String>,
+    /// Vault-relative .ics path (default calendar/personal.ics)
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "List personal calendar events in a time range (RRULE expanded). Default store: calendar/personal.ics.",
-        )
-    }
-
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "from": { "type": "string", "description": "RFC3339 range start (inclusive)" },
-                "to": { "type": "string", "description": "RFC3339 range end (exclusive)" },
-                "path": { "type": "string", "description": "Vault-relative .ics path (default calendar/personal.ics)" }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let from = parse_rfc3339(input.get("from"), "from")?;
-        let to = parse_rfc3339(input.get("to"), "to")?;
-        let path = optional_string(&input, "path");
+#[medousa_tool(id = COGNITION_CALENDAR_LIST_ID)]
+impl CognitionCalendarListTool {
+    /// List personal calendar events in a time range (RRULE expanded). Default store: calendar/personal.ics.
+    async fn invoke_typed(
+        &self,
+        input: CalendarListInput,
+    ) -> stasis::prelude::Result<CalendarListResponse> {
+        let from = parse_rfc3339_str(input.from.as_deref(), "from")?;
+        let to = parse_rfc3339_str(input.to.as_deref(), "to")?;
+        let path = input
+            .path
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
         emit_invoked(
             &self.event_tx,
-            self.name(),
+            COGNITION_CALENDAR_LIST_ID.as_str(),
             path.as_deref().unwrap_or("calendar/personal.ics"),
         );
-        let response = CalendarService::list_events(path.as_deref(), from, to)
-            .map_err(|err| StasisError::PortFailure(err.to_string()))?;
-        serde_json::to_value(response).map_err(|err| StasisError::PortFailure(err.to_string()))
+        CalendarService::list_events(path.as_deref(), from, to)
+            .map_err(|err| StasisError::PortFailure(err.to_string()))
     }
 }
 
@@ -376,34 +398,34 @@ impl CognitionCalendarExportTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionCalendarExportTool {
-    fn name(&self) -> &'static str {
-        "cognition_calendar_export"
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CalendarExportInput {
+    /// Vault-relative .ics path (default calendar/personal.ics)
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("Export the vault calendar as raw ICS text.")
-    }
-
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "path": { "type": "string", "description": "Vault-relative .ics path (default calendar/personal.ics)" }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let path = optional_string(&input, "path");
+#[medousa_tool(id = COGNITION_CALENDAR_EXPORT_ID)]
+impl CognitionCalendarExportTool {
+    /// Export the vault calendar as raw ICS text.
+    async fn invoke_typed(
+        &self,
+        input: CalendarExportInput,
+    ) -> stasis::prelude::Result<CalendarExportResponse> {
+        let path = input
+            .path
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
         emit_invoked(
             &self.event_tx,
-            self.name(),
+            COGNITION_CALENDAR_EXPORT_ID.as_str(),
             path.as_deref().unwrap_or("calendar/personal.ics"),
         );
-        let response = CalendarService::export(path.as_deref())
-            .map_err(|err| StasisError::PortFailure(err.to_string()))?;
-        serde_json::to_value(response).map_err(|err| StasisError::PortFailure(err.to_string()))
+        CalendarService::export(path.as_deref())
+            .map_err(|err| StasisError::PortFailure(err.to_string()))
     }
 }

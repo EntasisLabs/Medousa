@@ -4,13 +4,13 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use schemars::JsonSchema;
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Value, json};
 use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 use tokio::sync::{RwLock, mpsc};
 
-use crate::daemon_api::{VaultNotesListResponse, VaultWriteRequest};
+use crate::daemon_api::{VaultNote, VaultNotesListResponse, VaultSearchResponse, VaultWriteRequest};
 use crate::events::TuiEvent;
 use crate::locus_semantic_tags::parse_semantic_tags_from_value;
 use crate::turn_continuation::TurnContinuationScope;
@@ -19,6 +19,10 @@ use crate::vault::VaultService;
 
 const READ_BUDGET_CHARS: usize = 12_000;
 const COGNITION_VAULT_LIST_ID: ToolId = ToolId::new("cognition_vault_list");
+const COGNITION_VAULT_READ_ID: ToolId = ToolId::new("cognition_vault_read");
+const COGNITION_VAULT_GREP_ID: ToolId = ToolId::new("cognition_vault_grep");
+const COGNITION_VAULT_SEARCH_ID: ToolId = ToolId::new("cognition_vault_search");
+const COGNITION_VAULT_TAGS_ID: ToolId = ToolId::new("cognition_vault_tags");
 
 pub fn register_vault_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
@@ -27,10 +31,10 @@ pub fn register_vault_tools(
     fallback_chat_session_id: String,
 ) -> StasisResult<()> {
     registry.register_typed_tool(CognitionVaultListTool::new(event_tx.clone()))?;
-    registry.register_tool(CognitionVaultReadTool::new(event_tx.clone()))?;
-    registry.register_tool(CognitionVaultGrepTool::new(event_tx.clone()))?;
-    registry.register_tool(CognitionVaultSearchTool::new(event_tx.clone()))?;
-    registry.register_tool(CognitionVaultTagsTool::new(event_tx.clone()))?;
+    registry.register_typed_tool(CognitionVaultReadTool::new(event_tx.clone()))?;
+    registry.register_typed_tool(CognitionVaultGrepTool::new(event_tx.clone()))?;
+    registry.register_typed_tool(CognitionVaultSearchTool::new(event_tx.clone()))?;
+    registry.register_typed_tool(CognitionVaultTagsTool::new(event_tx.clone()))?;
     registry.register_tool(CognitionVaultWriteTool::new(
         event_tx.clone(),
         turn_scope.clone(),
@@ -138,45 +142,113 @@ impl CognitionVaultReadTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionVaultReadTool {
-    fn name(&self) -> &'static str {
-        "cognition_vault_read"
-    }
+#[derive(Debug, JsonSchema)]
+pub struct VaultReadInput {
+    #[schemars(required, with = "String")]
+    path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        with = "usize",
+        range(min = 256, max = 20000),
+        skip_serializing_if = "Option::is_none"
+    )]
+    max_chars: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        with = "usize",
+        range(min = 1),
+        skip_serializing_if = "Option::is_none"
+    )]
+    line_start: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        with = "usize",
+        range(min = 1),
+        skip_serializing_if = "Option::is_none"
+    )]
+    line_end: Option<usize>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("Read a vault note body (budget-capped).")
-    }
+impl<'de> Deserialize<'de> for VaultReadInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            path: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+            )]
+            max_chars: Option<usize>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+            )]
+            line_start: Option<usize>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+            )]
+            line_end: Option<usize>,
+        }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["path"],
-            "properties": {
-                "path": { "type": "string" },
-                "max_chars": { "type": "integer", "minimum": 256, "maximum": 20000 },
-                "line_start": { "type": "integer", "minimum": 1 },
-                "line_end": { "type": "integer", "minimum": 1 }
-            }
-        }))
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            path: input.path,
+            max_chars: input.max_chars,
+            line_start: input.line_start,
+            line_end: input.line_end,
+        })
     }
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum VaultReadOutput {
+    Excerpt {
+        note: VaultNote,
+        content: String,
+        truncated: bool,
+        total_lines: usize,
+        total_chars: usize,
+        line_start: usize,
+        line_end: usize,
+    },
+    Whole {
+        note: VaultNote,
+        content: String,
+        truncated: bool,
+        total_lines: usize,
+        total_chars: usize,
+    },
+}
+
+#[medousa_tool(id = COGNITION_VAULT_READ_ID)]
+impl CognitionVaultReadTool {
+    /// Read a vault note body (budget-capped).
+    async fn invoke_typed(
+        &self,
+        input: VaultReadInput,
+    ) -> stasis::prelude::Result<VaultReadOutput> {
         let path = input
-            .get("path")
-            .and_then(Value::as_str)
+            .path
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .ok_or_else(|| StasisError::PortFailure("path is required".to_string()))?;
         let max_chars = input
-            .get("max_chars")
-            .and_then(Value::as_u64)
-            .map(|value| value as usize)
+            .max_chars
             .unwrap_or(READ_BUDGET_CHARS)
             .clamp(256, 20_000);
-        let line_start = input.get("line_start").and_then(Value::as_u64).map(|v| v as usize);
-        let line_end = input.get("line_end").and_then(Value::as_u64).map(|v| v as usize);
-        emit_invoked(&self.event_tx, self.name(), path);
+        let line_start = input.line_start;
+        let line_end = input.line_end;
+        emit_invoked(&self.event_tx, COGNITION_VAULT_READ_ID.as_str(), path);
         let note = VaultService::get_note(path)
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
         if line_start.is_some() || line_end.is_some() {
@@ -186,24 +258,26 @@ impl StasisTool for CognitionVaultReadTool {
                 line_end,
                 max_chars,
             );
-            return Ok(json!({
-                "note": note.note,
-                "content": excerpt.content,
-                "truncated": excerpt.truncated,
-                "total_lines": excerpt.total_lines,
-                "total_chars": excerpt.total_chars,
-                "line_start": excerpt.line_start,
-                "line_end": excerpt.line_end,
-            }));
+            return Ok(VaultReadOutput::Excerpt {
+                note: note.note,
+                content: excerpt.content,
+                truncated: excerpt.truncated,
+                total_lines: excerpt.total_lines,
+                total_chars: excerpt.total_chars,
+                line_start: excerpt.line_start,
+                line_end: excerpt.line_end,
+            });
         }
+        let total_lines = note.content.lines().count();
+        let total_chars = note.content.chars().count();
         let truncated = truncate_chars(&note.content, max_chars);
-        Ok(json!({
-            "note": note.note,
-            "content": truncated.body,
-            "truncated": truncated.truncated,
-            "total_lines": note.content.lines().count(),
-            "total_chars": note.content.chars().count(),
-        }))
+        Ok(VaultReadOutput::Whole {
+            note: note.note,
+            content: truncated.body,
+            truncated: truncated.truncated,
+            total_lines,
+            total_chars,
+        })
     }
 }
 
@@ -217,61 +291,94 @@ impl CognitionVaultGrepTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionVaultGrepTool {
-    fn name(&self) -> &'static str {
-        "cognition_vault_grep"
-    }
+#[derive(Debug, JsonSchema)]
+pub struct VaultGrepInput {
+    #[schemars(required, with = "String")]
+    path: Option<String>,
+    #[schemars(required, with = "String")]
+    pattern: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        with = "usize",
+        range(min = 0, max = 10),
+        skip_serializing_if = "Option::is_none"
+    )]
+    context_lines: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        with = "usize",
+        range(min = 1, max = 200),
+        skip_serializing_if = "Option::is_none"
+    )]
+    limit: Option<usize>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Search inside a vault note (literal case-insensitive match with line numbers). \
-             Use cognition_vault_search to discover notes; use grep for surgical edits.",
-        )
-    }
+impl<'de> Deserialize<'de> for VaultGrepInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            path: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            pattern: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+            )]
+            context_lines: Option<usize>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+            )]
+            limit: Option<usize>,
+        }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["path", "pattern"],
-            "properties": {
-                "path": { "type": "string" },
-                "pattern": { "type": "string" },
-                "context_lines": { "type": "integer", "minimum": 0, "maximum": 10 },
-                "limit": { "type": "integer", "minimum": 1, "maximum": 200 }
-            }
-        }))
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            path: input.path,
+            pattern: input.pattern,
+            context_lines: input.context_lines,
+            limit: input.limit,
+        })
     }
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+#[medousa_tool(id = COGNITION_VAULT_GREP_ID)]
+impl CognitionVaultGrepTool {
+    /// Search inside a vault note (literal case-insensitive match with line numbers). Use cognition_vault_search to discover notes; use grep for surgical edits.
+    async fn invoke_typed(
+        &self,
+        input: VaultGrepInput,
+    ) -> stasis::prelude::Result<crate::line_grep::LineGrepResult> {
         let path = input
-            .get("path")
-            .and_then(Value::as_str)
+            .path
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .ok_or_else(|| StasisError::PortFailure("path is required".to_string()))?;
         let pattern = input
-            .get("pattern")
-            .and_then(Value::as_str)
+            .pattern
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .ok_or_else(|| StasisError::PortFailure("pattern is required".to_string()))?;
-        let context_lines = input
-            .get("context_lines")
-            .and_then(Value::as_u64)
-            .unwrap_or(2)
-            .clamp(0, 10) as usize;
-        let limit = input
-            .get("limit")
-            .and_then(Value::as_u64)
-            .unwrap_or(20)
-            .clamp(1, 200) as usize;
-        emit_invoked(&self.event_tx, self.name(), path);
+        let context_lines = input.context_lines.unwrap_or(2).clamp(0, 10);
+        let limit = input.limit.unwrap_or(20).clamp(1, 200);
+        emit_invoked(&self.event_tx, COGNITION_VAULT_GREP_ID.as_str(), path);
         let note = VaultService::get_note(path)
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
         let result = crate::line_grep::grep_lines(&note.content, pattern, context_lines, limit)
             .map_err(StasisError::PortFailure)?;
-        serde_json::to_value(result).map_err(|err| StasisError::PortFailure(err.to_string()))
+        Ok(result)
     }
 }
 
@@ -285,56 +392,56 @@ impl CognitionVaultSearchTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionVaultSearchTool {
-    fn name(&self) -> &'static str {
-        "cognition_vault_search"
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct VaultSearchInput {
+    /// Full-text query (optional if semantic_tags set)
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    q: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_lenient_semantic_tags")]
+    #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
+    semantic_tags: Option<Vec<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+    )]
+    #[schemars(
+        with = "usize",
+        range(min = 1, max = 50),
+        skip_serializing_if = "Option::is_none"
+    )]
+    limit: Option<usize>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("Search vault notes by full text and/or semantic tags (match-all).")
-    }
-
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "q": { "type": "string", "description": "Full-text query (optional if semantic_tags set)" },
-                "semantic_tags": {
-                    "type": "array",
-                    "items": { "type": "string" }
-                },
-                "limit": { "type": "integer", "minimum": 1, "maximum": 50 }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+#[medousa_tool(id = COGNITION_VAULT_SEARCH_ID)]
+impl CognitionVaultSearchTool {
+    /// Search vault notes by full text and/or semantic tags (match-all).
+    async fn invoke_typed(
+        &self,
+        input: VaultSearchInput,
+    ) -> stasis::prelude::Result<VaultSearchResponse> {
         let query = input
-            .get("q")
-            .and_then(Value::as_str)
+            .q
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty());
-        let tags = parse_semantic_tags_from_value(input.get("semantic_tags"))
-            .map(|tags| tags.join(","));
+        let tags = input.semantic_tags.map(|tags| tags.join(","));
         if query.is_none() && tags.is_none() {
             return Err(StasisError::PortFailure(
                 "q or semantic_tags is required".to_string(),
             ));
         }
-        let limit = input
-            .get("limit")
-            .and_then(Value::as_u64)
-            .map(|value| value as usize)
-            .unwrap_or(20);
+        let limit = input.limit.unwrap_or(20);
         emit_invoked(
             &self.event_tx,
-            self.name(),
+            COGNITION_VAULT_SEARCH_ID.as_str(),
             query.unwrap_or("tags-only"),
         );
-        let response = VaultService::search(query, limit, tags.as_deref())
-            .map_err(|err| StasisError::PortFailure(err.to_string()))?;
-        serde_json::to_value(response).map_err(|err| StasisError::PortFailure(err.to_string()))
+        VaultService::search(query, limit, tags.as_deref())
+            .map_err(|err| StasisError::PortFailure(err.to_string()))
     }
 }
 
@@ -348,44 +455,57 @@ impl CognitionVaultTagsTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionVaultTagsTool {
-    fn name(&self) -> &'static str {
-        "cognition_vault_tags"
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct VaultTagsInput {
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    prefix: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+    )]
+    #[schemars(
+        with = "usize",
+        range(min = 1, max = 500),
+        skip_serializing_if = "Option::is_none"
+    )]
+    limit: Option<usize>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("List semantic tags used across vault notes (shared vocabulary with Locus memory).")
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct VaultTagsOutput {
+    tags: Vec<String>,
+    count: usize,
+    usage: String,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "prefix": { "type": "string" },
-                "limit": { "type": "integer", "minimum": 1, "maximum": 500 }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+#[medousa_tool(id = COGNITION_VAULT_TAGS_ID)]
+impl CognitionVaultTagsTool {
+    /// List semantic tags used across vault notes (shared vocabulary with Locus memory).
+    async fn invoke_typed(
+        &self,
+        input: VaultTagsInput,
+    ) -> stasis::prelude::Result<VaultTagsOutput> {
         let prefix = input
-            .get("prefix")
-            .and_then(Value::as_str)
+            .prefix
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty());
-        let limit = input
-            .get("limit")
-            .and_then(Value::as_u64)
-            .unwrap_or(100)
-            .clamp(1, 500) as usize;
-        emit_invoked(&self.event_tx, self.name(), prefix.unwrap_or("all"));
+        let limit = input.limit.unwrap_or(100).clamp(1, 500);
+        emit_invoked(
+            &self.event_tx,
+            COGNITION_VAULT_TAGS_ID.as_str(),
+            prefix.unwrap_or("all"),
+        );
         let response = VaultService::list_tags(prefix, limit);
-        Ok(json!({
-            "tags": response.tags,
-            "count": response.count,
-            "usage": "Use semantic_tags on cognition_vault_list/search/write or match Locus via cognition_memory_tags.",
-        }))
+        Ok(VaultTagsOutput {
+            tags: response.tags,
+            count: response.count,
+            usage: "Use semantic_tags on cognition_vault_list/search/write or match Locus via cognition_memory_tags.".to_string(),
+        })
     }
 }
 

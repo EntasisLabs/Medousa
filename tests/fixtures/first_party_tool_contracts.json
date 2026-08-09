@@ -36,7 +36,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:domain:workspace"
       ]
@@ -67,7 +67,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:domain:workspace"
       ]
@@ -106,7 +106,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:domain:workspace"
       ]
@@ -256,7 +256,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:domain:research"
       ]
@@ -288,7 +288,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:domain:research"
       ]
@@ -382,7 +382,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:domain:capabilities"
       ]
@@ -413,7 +413,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:domain:capabilities"
       ]
@@ -1770,7 +1770,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:domain:capabilities"
       ]
@@ -1833,7 +1833,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:domain:capabilities"
       ]
@@ -2545,7 +2545,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:initial"
       ]
@@ -2585,7 +2585,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:domain:workspace"
       ]
@@ -2666,7 +2666,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:domain:workspace"
       ]
@@ -2703,7 +2703,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:domain:workspace"
       ]
@@ -2930,7 +2930,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:bootstrap",
         "general:domain:documents",
@@ -2958,7 +2958,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:bootstrap",
         "general:domain:documents",
@@ -2996,7 +2996,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:bootstrap",
         "general:domain:documents",
@@ -3139,7 +3139,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:domain:browser",
@@ -3167,7 +3167,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:domain:browser",
@@ -3295,7 +3295,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:domain:calendar",
@@ -3358,7 +3358,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:bootstrap",
@@ -3529,7 +3529,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:domain:catalog"
@@ -3552,7 +3552,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:domain:catalog",
@@ -3581,7 +3581,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:bootstrap",
@@ -4136,7 +4136,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:domain:environment",
         "workshop:authorized:general",
@@ -4152,7 +4152,7 @@
         "properties": {},
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:domain:environment",
         "workshop:authorized:general",
@@ -4291,7 +4291,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:domain:environment",
         "workshop:authorized:general",
@@ -5263,7 +5263,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:domain:catalog",
         "workshop:authorized:general",
@@ -5286,7 +5286,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:domain:catalog",
         "workshop:authorized:general",
@@ -5373,7 +5373,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:domain:catalog",
         "workshop:authorized:general",
@@ -5960,7 +5960,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -6048,7 +6048,7 @@
         "properties": {},
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "workshop:authorized:research",
         "workshop:domain:discover"
@@ -6550,7 +6550,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:domain:runtime"
@@ -6601,7 +6601,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:domain:runtime"
@@ -6623,7 +6623,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:domain:runtime"
@@ -6664,7 +6664,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:domain:runtime"
@@ -6684,7 +6684,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:domain:runtime"
@@ -6743,7 +6743,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:domain:runtime"
@@ -7154,7 +7154,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:domain:runtime"
@@ -7493,7 +7493,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:domain:history"
@@ -7526,7 +7526,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:bootstrap"
@@ -7565,7 +7565,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:bootstrap",
@@ -7838,7 +7838,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:bootstrap"
@@ -8138,7 +8138,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:bootstrap",
         "general:domain:documents",
@@ -8240,7 +8240,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:domain:documents",
@@ -8274,7 +8274,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:bootstrap",
@@ -8301,7 +8301,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:domain:vault",
         "workshop:domain:vault"

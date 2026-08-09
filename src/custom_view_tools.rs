@@ -5,11 +5,13 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use chrono::Utc;
 use medousa_types::environment::{
-    EnvironmentPatchOp, SurfaceKind, SurfaceLayout,
+    EnvironmentPatchOp, EnvironmentStatusResponse, SurfaceKind, SurfaceLayout,
 };
 use medousa_types::environment_validate::validate_environment_spec;
 use medousa_types::feed::is_valid_feed_id;
 use medousa_types::layout::LayoutNode;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
@@ -22,10 +24,12 @@ use crate::environment_tools::make_presentation_component;
 use crate::events::TuiEvent;
 use crate::runtime_tools::CognitionRuntimeRecurringRegisterTool;
 use crate::turn_continuation::TurnContinuationScope;
+use crate::typed_tools::{ToolId, medousa_tool};
 use crate::ui_present_tools::CognitionUiPresentTool;
 
 pub const COGNITION_CUSTOM_VIEW_DOCTOR: &str = "cognition_custom_view_doctor";
 pub const COGNITION_CUSTOM_VIEW_COMPOSE: &str = "cognition_custom_view_compose";
+const COGNITION_CUSTOM_VIEW_DOCTOR_ID: ToolId = ToolId::new(COGNITION_CUSTOM_VIEW_DOCTOR);
 
 pub fn register_custom_view_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
@@ -34,7 +38,7 @@ pub fn register_custom_view_tools(
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 ) -> StasisResult<()> {
     crate::environment_patch::register_environment_patch_tool(registry)?;
-    registry.register_tool(CognitionCustomViewDoctorTool::new(runtime.clone()))?;
+    registry.register_typed_tool(CognitionCustomViewDoctorTool::new(runtime.clone()))?;
     registry.register_tool(CognitionCustomViewComposeTool::new(
         runtime,
         event_tx,
@@ -53,80 +57,92 @@ impl CognitionCustomViewDoctorTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionCustomViewDoctorTool {
-    fn name(&self) -> &'static str {
-        COGNITION_CUSTOM_VIEW_DOCTOR
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CustomViewDoctorInput {
+    /// Optional single custom surface id; omit to inspect all
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    surface_id: Option<String>,
+    /// Optional presentation component id to narrow runtime diagnostics
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    component_id: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    profile_id: Option<String>,
+    /// Optional chat session for artifact HTML resolution
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    session_id: Option<String>,
+    /// Include MedousaStore lint and runtime log tail (default true)
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
+    )]
+    #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
+    include_runtime: Option<bool>,
+    /// Lint artifact HTML for sandbox anti-patterns (default true)
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
+    )]
+    #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
+    include_static_lint: Option<bool>,
+    /// Run active store self-test when Home client is open (default false)
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
+    )]
+    #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
+    probe: Option<bool>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Diagnose custom environment surfaces: nav, feeds, recurring bindings, widget runtime logs, store lint, and static HTML checks.",
-        )
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(transparent)]
+pub struct CustomViewDoctorOutput {
+    #[schemars(with = "serde_json::Value")]
+    status: EnvironmentStatusResponse,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "surface_id": {
-                    "type": "string",
-                    "description": "Optional single custom surface id; omit to inspect all"
-                },
-                "component_id": {
-                    "type": "string",
-                    "description": "Optional presentation component id to narrow runtime diagnostics"
-                },
-                "profile_id": { "type": "string" },
-                "session_id": {
-                    "type": "string",
-                    "description": "Optional chat session for artifact HTML resolution"
-                },
-                "include_runtime": {
-                    "type": "boolean",
-                    "description": "Include MedousaStore lint and runtime log tail (default true)"
-                },
-                "include_static_lint": {
-                    "type": "boolean",
-                    "description": "Lint artifact HTML for sandbox anti-patterns (default true)"
-                },
-                "probe": {
-                    "type": "boolean",
-                    "description": "Run active store self-test when Home client is open (default false)"
-                }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+#[medousa_tool(id = COGNITION_CUSTOM_VIEW_DOCTOR_ID)]
+impl CognitionCustomViewDoctorTool {
+    /// Diagnose custom environment surfaces: nav, feeds, recurring bindings, widget runtime logs, store lint, and static HTML checks.
+    async fn invoke_typed(
+        &self,
+        input: CustomViewDoctorInput,
+    ) -> stasis::prelude::Result<CustomViewDoctorOutput> {
         let profile_id = resolve_profile_id(
-            input
-                .get("profile_id")
-                .and_then(Value::as_str),
+            input.profile_id.as_deref(),
         );
         let surface_filter = input
-            .get("surface_id")
-            .and_then(Value::as_str)
+            .surface_id
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty());
         let component_id = input
-            .get("component_id")
-            .and_then(Value::as_str)
+            .component_id
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string);
-        let include_runtime = input
-            .get("include_runtime")
-            .and_then(Value::as_bool)
-            .unwrap_or(true);
-        let include_static_lint = input
-            .get("include_static_lint")
-            .and_then(Value::as_bool)
-            .unwrap_or(true);
-        let probe = input.get("probe").and_then(Value::as_bool).unwrap_or(false);
+        let include_runtime = input.include_runtime.unwrap_or(true);
+        let include_static_lint = input.include_static_lint.unwrap_or(true);
+        let probe = input.probe.unwrap_or(false);
         let session_id = input
-            .get("session_id")
-            .and_then(Value::as_str)
+            .session_id
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string);
@@ -149,9 +165,7 @@ impl StasisTool for CognitionCustomViewDoctorTool {
         .await
         .map_err(|err| StasisError::PortFailure(err.to_string()))?;
 
-        serde_json::to_value(status).map_err(|err| {
-            StasisError::PortFailure(format!("cognition_custom_view_doctor: encode error: {err}"))
-        })
+        Ok(CustomViewDoctorOutput { status })
     }
 }
 

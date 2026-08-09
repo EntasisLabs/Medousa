@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use chrono::Utc;
+use schemars::JsonSchema;
 use serde::Serialize;
 
 use super::entry::GraphemeScriptEntry;
@@ -13,7 +14,7 @@ const TAG_WEIGHT: f32 = 0.15;
 const BODY_WEIGHT: f32 = 0.15;
 const RECENCY_WEIGHT: f32 = 0.10;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct GraphemeScriptHit {
     pub id: String,
     pub name: String,

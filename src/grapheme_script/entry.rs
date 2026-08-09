@@ -1,9 +1,10 @@
 //! Grapheme script index records.
 
 use chrono::{DateTime, Utc};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub struct GraphemeScriptEntry {
     pub id: String,
     pub name: String,

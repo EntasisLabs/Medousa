@@ -1,18 +1,25 @@
 use std::sync::Arc;
 
+use crate::identity_store_ext::MedousaIdentityMemoryStore;
+use crate::medousa_tool_loop::MedousaToolLoopPipeline;
 use locus_core_rs::NodeStore;
 use stasis::application::orchestration::prompt_pipeline::PromptExecutionPipeline;
-use stasis::application::use_cases::identity_memory_service::IdentityMemoryService;
-use crate::medousa_tool_loop::MedousaToolLoopPipeline;
 use stasis::application::orchestration::tool_registry::ToolRegistry;
+use stasis::application::use_cases::identity_memory_service::IdentityMemoryService;
 use stasis::ports::outbound::ai_chat_client::AiChatClient;
-use crate::identity_store_ext::MedousaIdentityMemoryStore;
 use stasis::prelude::RuntimeBackend;
 use stasis::prelude_ext::{MemoryContextReader, MemoryContextWriter};
 use tokio::sync::mpsc;
 
-use crate::engine_context::EngineExecutionLane;
+use crate::bridge_tools::{
+    CognitionCapabilityInvokeTool, CognitionGraphemeTemplateRunTool, CognitionMcpPromoteToJobTool,
+    CognitionWebSearchTool,
+};
+use crate::capability_catalog::CapabilityRegistry;
 use crate::client_tools::{ClientRegistry, ClientToolRegistry};
+use crate::engine_context::EngineExecutionLane;
+use crate::events::TuiEvent;
+use crate::grapheme_sttp_compaction::GraphemeCompactionModelTarget;
 use crate::identity_memory::{
     resolve_identity_channel_id, resolve_identity_persona_id, resolve_tool_identity_user_id,
 };
@@ -20,14 +27,13 @@ use crate::identity_tools::{
     CognitionIdentityCommitTool, CognitionIdentityContextTool, CognitionIdentityProposeTool,
     CognitionIdentityRecallTool, CognitionIdentityRememberTool,
 };
-use crate::events::TuiEvent;
-use crate::grapheme_sttp_compaction::GraphemeCompactionModelTarget;
+use crate::mcp_gateway_client::McpGatewayClient;
 use crate::runtime::stasis_wire::{LocalStasisWireConfig, build_local_stasis_composition};
 use crate::runtime_tools::{
     CognitionRuntimeDeliveryStatusTool, CognitionRuntimeJobsCancelTool,
     CognitionRuntimeJobsListTool, CognitionRuntimeRecurringCancelTool,
-    CognitionRuntimeRecurringListTool, CognitionRuntimeRecurringPauseTool,
-    CognitionRuntimeRecurringDoctorTool, CognitionRuntimeRecurringRegisterTool,
+    CognitionRuntimeRecurringDoctorTool, CognitionRuntimeRecurringListTool,
+    CognitionRuntimeRecurringPauseTool, CognitionRuntimeRecurringRegisterTool,
     CognitionRuntimeWorkflowCancelTool, CognitionRuntimeWorkflowPlanTool,
     CognitionRuntimeWorkflowRunTool, CognitionRuntimeWorkflowScheduleTool,
     CognitionRuntimeWorkflowStatusTool,
@@ -46,18 +52,12 @@ use crate::tools::{
     CognitionUtilityDayOfWeekTool, CognitionUtilityTimeNowTool, CognitionUtilityUuidTool,
     PolicyAwareToolRegistry, TuiRuntime,
 };
-use crate::bridge_tools::{
-    CognitionCapabilityInvokeTool, CognitionGraphemeTemplateRunTool, CognitionWebSearchTool,
-    CognitionMcpPromoteToJobTool,
-};
-use crate::capability_catalog::CapabilityRegistry;
-use crate::mcp_gateway_client::McpGatewayClient;
+use crate::turn_continuation::TurnContinuationScope;
 use crate::turn_control_tools::{
     CognitionTurnBeginWorkTool, CognitionTurnCheckpointTool, CognitionTurnFinishTool,
     CognitionTurnPrepareFinalTool, CognitionTurnProposeModeTool,
     CognitionTurnRequestMoreRoundsTool, CognitionTurnUpdateUserTool,
 };
-use crate::turn_continuation::TurnContinuationScope;
 use crate::typed_tools::{ToolCatalogHandle, ToolRegistrar, ToolRegistration};
 use crate::workflow;
 use tokio::sync::RwLock;
@@ -71,12 +71,11 @@ pub(crate) fn build_tool_loop_pipeline_for_target(
     let resolved_provider = crate::resolve_llm_provider(Some(provider));
     let resolved_model = crate::resolve_llm_model(Some(model));
     let resolved_base_url = crate::resolve_llm_base_url(Some(&resolved_provider), base_url);
-    let chat_client: Arc<dyn AiChatClient> =
-        Arc::new(crate::build_genai_chat_client(
-            &resolved_provider,
-            &resolved_model,
-            resolved_base_url.as_deref(),
-        ));
+    let chat_client: Arc<dyn AiChatClient> = Arc::new(crate::build_genai_chat_client(
+        &resolved_provider,
+        &resolved_model,
+        resolved_base_url.as_deref(),
+    ));
     let prompt_pipeline = PromptExecutionPipeline::new(chat_client);
     MedousaToolLoopPipeline::new(prompt_pipeline, tool_registry)
 }
@@ -135,7 +134,9 @@ pub(crate) async fn assemble_tui_runtime(
     memory_writer: Arc<dyn MemoryContextWriter>,
     locus_store: Arc<dyn NodeStore>,
     semantic_index: Arc<dyn locus_core_rs::SemanticIndexStore>,
-    memory_operations: Arc<dyn stasis::ports::outbound::memory::memory_operations::MemoryOperations>,
+    memory_operations: Arc<
+        dyn stasis::ports::outbound::memory::memory_operations::MemoryOperations,
+    >,
     provider: Option<&str>,
     model: Option<&str>,
     base_url: Option<&str>,
@@ -149,12 +150,11 @@ pub(crate) async fn assemble_tui_runtime(
     let resolved_model = crate::resolve_llm_model(model);
     let resolved_base_url = crate::resolve_llm_base_url(Some(&resolved_provider), base_url);
 
-    let chat_client: Arc<dyn AiChatClient> =
-        Arc::new(crate::build_genai_chat_client(
-            &resolved_provider,
-            &resolved_model,
-            resolved_base_url.as_deref(),
-        ));
+    let chat_client: Arc<dyn AiChatClient> = Arc::new(crate::build_genai_chat_client(
+        &resolved_provider,
+        &resolved_model,
+        resolved_base_url.as_deref(),
+    ));
 
     let workflow_registry = workflow::shared_workflow_registry();
     let catalog_handle = ToolCatalogHandle::default();
@@ -177,11 +177,9 @@ pub(crate) async fn assemble_tui_runtime(
         compaction_target.clone(),
         turn_scope.clone(),
     ))?;
-    let identity_service = Arc::new(IdentityMemoryService::new(
-        identity_memory_store.clone() as Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>,
-    ));
-    let identity_user_id =
-        resolve_tool_identity_user_id(session_id, workshop_operator_identity);
+    let identity_service = Arc::new(IdentityMemoryService::new(identity_memory_store.clone()
+        as Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>));
+    let identity_user_id = resolve_tool_identity_user_id(session_id, workshop_operator_identity);
     let identity_persona_id = resolve_identity_persona_id();
     let identity_channel_id = resolve_identity_channel_id(Some("interactive"));
     tool_registry.register_tool(CognitionIdentityContextTool::new(
@@ -225,18 +223,9 @@ pub(crate) async fn assemble_tui_runtime(
     crate::code_intelligence_tools::register_code_intelligence_tools(&mut tool_registry)?;
     crate::coding_tools::register_coding_tools(&mut tool_registry)?;
     crate::detamu_tools::register_detamu_tools(&mut tool_registry)?;
-    crate::ui_present_tools::register_ui_present_tools(
-        &mut tool_registry,
-        turn_scope.clone(),
-    )?;
-    crate::ui_scene_tools::register_ui_scene_tools(
-        &mut tool_registry,
-        turn_scope.clone(),
-    )?;
-    crate::ui_build_tools::register_ui_build_tools(
-        &mut tool_registry,
-        turn_scope.clone(),
-    )?;
+    crate::ui_present_tools::register_ui_present_tools(&mut tool_registry, turn_scope.clone())?;
+    crate::ui_scene_tools::register_ui_scene_tools(&mut tool_registry, turn_scope.clone())?;
+    crate::ui_build_tools::register_ui_build_tools(&mut tool_registry, turn_scope.clone())?;
     crate::artifact_tools::register_artifact_tools(
         &mut tool_registry,
         event_tx.clone(),
@@ -379,15 +368,16 @@ pub(crate) async fn assemble_tui_runtime(
         session_id.to_string(),
         turn_scope.clone(),
     ))?;
-    tool_registry.register_tool(CognitionRuntimeRecurringPreviewTool::new(event_tx.clone()))?;
-    tool_registry.register_tool(CognitionRuntimeJobStatusTool::new(runtime.clone()))?;
-    tool_registry.register_tool(CognitionRuntimeJobsListTool::new(runtime.clone()))?;
+    tool_registry
+        .register_typed_tool(CognitionRuntimeRecurringPreviewTool::new(event_tx.clone()))?;
+    tool_registry.register_typed_tool(CognitionRuntimeJobStatusTool::new(runtime.clone()))?;
+    tool_registry.register_typed_tool(CognitionRuntimeJobsListTool::new(runtime.clone()))?;
     tool_registry.register_tool(CognitionRuntimeJobsCancelTool::new(
         runtime.clone(),
         event_tx.clone(),
     ))?;
-    tool_registry.register_tool(CognitionRuntimeRecurringListTool::new(runtime.clone()))?;
-    tool_registry.register_tool(CognitionRuntimeRecurringDoctorTool::new(runtime.clone()))?;
+    tool_registry.register_typed_tool(CognitionRuntimeRecurringListTool::new(runtime.clone()))?;
+    tool_registry.register_typed_tool(CognitionRuntimeRecurringDoctorTool::new(runtime.clone()))?;
     tool_registry.register_tool(CognitionRuntimeRecurringRegisterTool::new(
         runtime.clone(),
         event_tx.clone(),
@@ -401,7 +391,7 @@ pub(crate) async fn assemble_tui_runtime(
         runtime.clone(),
         event_tx.clone(),
     ))?;
-    tool_registry.register_tool(CognitionRuntimeDeliveryStatusTool::new(runtime.clone()))?;
+    tool_registry.register_typed_tool(CognitionRuntimeDeliveryStatusTool::new(runtime.clone()))?;
     tool_registry.register_tool(CognitionRuntimeWorkflowRunTool::new(
         runtime.clone(),
         workflow_registry.clone(),
@@ -414,7 +404,7 @@ pub(crate) async fn assemble_tui_runtime(
         event_tx.clone(),
         turn_scope.clone(),
     ))?;
-    tool_registry.register_tool(CognitionRuntimeWorkflowStatusTool::new(
+    tool_registry.register_typed_tool(CognitionRuntimeWorkflowStatusTool::new(
         runtime.clone(),
         workflow_registry.clone(),
     ))?;
@@ -427,16 +417,18 @@ pub(crate) async fn assemble_tui_runtime(
 
     let capability_registry = Arc::new(RwLock::new(CapabilityRegistry::with_loaded_manifest()));
     let mcp_gateway_client = Arc::new(McpGatewayClient::from_env());
-    tool_registry.register_tool(CognitionCapabilityResolveTool::new(
+    tool_registry.register_typed_tool(CognitionCapabilityResolveTool::new(
         capability_registry.clone(),
         event_tx.clone(),
     ))?;
-    tool_registry.register_tool(CognitionCapabilityListTool::new(capability_registry.clone()))?;
-    tool_registry.register_tool(CognitionCapabilitySearchTool::new(
+    tool_registry.register_typed_tool(CognitionCapabilityListTool::new(
+        capability_registry.clone(),
+    ))?;
+    tool_registry.register_typed_tool(CognitionCapabilitySearchTool::new(
         capability_registry.clone(),
         event_tx.clone(),
     ))?;
-    tool_registry.register_tool(CognitionMcpDiscoverTool::new(
+    tool_registry.register_typed_tool(CognitionMcpDiscoverTool::new(
         mcp_gateway_client.clone(),
         session_id.to_string(),
         turn_scope.clone(),
@@ -448,7 +440,7 @@ pub(crate) async fn assemble_tui_runtime(
         turn_scope.clone(),
         event_tx.clone(),
     ))?;
-    tool_registry.register_tool(CognitionMcpServersTool::new(mcp_gateway_client.clone()))?;
+    tool_registry.register_typed_tool(CognitionMcpServersTool::new(mcp_gateway_client.clone()))?;
     tool_registry.register_tool(CognitionCapabilityInvokeTool::new(
         capability_registry.clone(),
         runtime.clone(),
@@ -514,7 +506,8 @@ pub(crate) async fn assemble_tui_runtime(
         allowed_grapheme_modules,
         EngineExecutionLane::Interactive,
     ));
-    let tool_loop_pipeline = MedousaToolLoopPipeline::new(prompt_pipeline, guarded_registry.clone());
+    let tool_loop_pipeline =
+        MedousaToolLoopPipeline::new(prompt_pipeline, guarded_registry.clone());
 
     Ok(TuiRuntime {
         runtime,
@@ -527,8 +520,8 @@ pub(crate) async fn assemble_tui_runtime(
         locus_store,
         semantic_index,
         medousa_identity_store: identity_memory_store.clone(),
-        identity_memory_store: identity_memory_store
-            .clone() as Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>,
+        identity_memory_store: identity_memory_store.clone()
+            as Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>,
         memory_reader,
         memory_writer,
         memory_operations,

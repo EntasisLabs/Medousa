@@ -19,6 +19,7 @@ pub const COGNITION_TURN_WORKER_CANCEL: &str = "cognition_turn_worker_cancel";
 pub const COGNITION_WORKSHOP_STEER: &str = "cognition_workshop_steer";
 
 const COGNITION_TURN_WORKER_CANCEL_ID: ToolId = ToolId::new(COGNITION_TURN_WORKER_CANCEL);
+const COGNITION_TURN_WORKER_STATUS_ID: ToolId = ToolId::new(COGNITION_TURN_WORKER_STATUS);
 
 pub fn is_spawn_turn_worker_tool_name(name: &str) -> bool {
     name.trim() == COGNITION_SPAWN_TURN_WORKER
@@ -200,39 +201,59 @@ impl CognitionTurnWorkerStatusTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionTurnWorkerStatusTool {
-    fn name(&self) -> &'static str {
-        COGNITION_TURN_WORKER_STATUS
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TurnWorkerStatusInput {
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    work_id: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    session_id: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "List or fetch status of background turn workers. On an active host turn, omit session_id to use the current session.",
-        )
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum TurnWorkerStatusOutput {
+    Record {
+        ok: bool,
+        #[schemars(with = "serde_json::Value")]
+        record: Box<TurnWorkRecord>,
+    },
+    List {
+        ok: bool,
+        session_id: String,
+        active_count: usize,
+        #[schemars(with = "Vec<serde_json::Value>")]
+        records: Vec<TurnWorkRecord>,
+    },
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "work_id": { "type": "string" },
-                "session_id": { "type": "string" }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
+#[medousa_tool(id = COGNITION_TURN_WORKER_STATUS_ID)]
+impl CognitionTurnWorkerStatusTool {
+    /// List or fetch status of background turn workers. On an active host turn, omit session_id to use the current session.
+    async fn invoke_typed(
+        &self,
+        input: TurnWorkerStatusInput,
+    ) -> stasis::prelude::Result<TurnWorkerStatusOutput> {
         let store = turn_worker_store();
-        if let Some(work_id) = input.get("work_id").and_then(|v| v.as_str()) {
+        if let Some(work_id) = input.work_id.as_deref() {
             let record = store
                 .get(work_id)
                 .ok_or_else(|| StasisError::PortFailure(format!("work_id not found: {work_id}")))?;
-            return Ok(json!({ "ok": true, "record": record }));
+            return Ok(TurnWorkerStatusOutput::Record {
+                ok: true,
+                record: Box::new(record),
+            });
         }
         let session_id = match input
-            .get("session_id")
-            .and_then(|v| v.as_str())
+            .session_id
+            .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty())
         {
@@ -258,12 +279,12 @@ impl StasisTool for CognitionTurnWorkerStatusTool {
                 )
             })
             .count();
-        Ok(json!({
-            "ok": true,
-            "session_id": session_id,
-            "active_count": active,
-            "records": records,
-        }))
+        Ok(TurnWorkerStatusOutput::List {
+            ok: true,
+            session_id,
+            active_count: active,
+            records,
+        })
     }
 }
 
@@ -311,7 +332,7 @@ pub fn register_turn_worker_tools(
 ) -> stasis::prelude::Result<()> {
     registry.register_tool(CognitionSpawnTurnWorkerTool::new(scheduler.clone()))?;
     registry.register_tool(CognitionWorkshopSteerTool::new(scheduler.clone()))?;
-    registry.register_tool(CognitionTurnWorkerStatusTool::new(scheduler))?;
+    registry.register_typed_tool(CognitionTurnWorkerStatusTool::new(scheduler))?;
     registry.register_typed_tool(CognitionTurnWorkerCancelTool)?;
     Ok(())
 }

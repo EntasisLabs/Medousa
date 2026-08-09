@@ -6,10 +6,11 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Where a capability binding is implemented.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CapabilitySource {
     Grapheme,
@@ -195,7 +196,7 @@ pub struct CapabilityManifest {
 }
 
 /// Resolved binding ready for agent consumption.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CapabilityBinding {
     pub source: CapabilitySource,
     /// Canonical ref: `module.op` for Grapheme, `server_id.tool_name` for MCP.
@@ -267,7 +268,7 @@ pub struct CapabilityResolveRequest {
     pub query: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CapabilityImplementations {
     #[serde(default)]
     pub grapheme: Vec<CapabilityBinding>,
@@ -275,14 +276,14 @@ pub struct CapabilityImplementations {
     pub mcp: Vec<CapabilityBinding>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CapabilityRecommendation {
     pub source: CapabilitySource,
     pub reference: String,
     pub reason: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CapabilityResolveResponse {
     pub capability: CapabilityId,
     pub title: String,
@@ -295,7 +296,7 @@ pub struct CapabilityResolveResponse {
     pub gateway_unreachable: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CapabilitySearchMatch {
     pub capability: CapabilityId,
     pub title: String,
@@ -315,13 +316,13 @@ fn default_search_limit() -> usize {
     10
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CapabilitySearchResponse {
     pub query: String,
     pub matches: Vec<CapabilitySearchMatch>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CapabilityBindingSummary {
     pub source: String,
     pub reference: String,
@@ -332,7 +333,7 @@ pub struct CapabilityBindingSummary {
     pub invoke_via: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CapabilityListEntry {
     pub id: CapabilityId,
     pub title: String,
@@ -346,7 +347,7 @@ pub struct CapabilityListEntry {
     pub bindings_summary: Vec<CapabilityBindingSummary>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CapabilityListResponse {
     pub capabilities: Vec<CapabilityListEntry>,
 }

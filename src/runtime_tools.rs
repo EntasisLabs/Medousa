@@ -6,14 +6,16 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use chrono::Utc;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::application::runtime::runtime_factory::RuntimeComposition;
 use stasis::domain::runtime::job::{Job, JobState};
 use stasis::domain::runtime::recurring::RecurringDefinition;
 use stasis::ports::outbound::runtime::job_store::JobStore;
 use stasis::ports::outbound::runtime::outbox_store::OutboxStore;
 use stasis::ports::outbound::runtime::recurring_store::RecurringStore;
-use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::prelude::StasisError;
 use stasis::sdk::runtime_sdk::{RuntimeSdk, RuntimeStatsSnapshot};
 use tokio::sync::{RwLock, mpsc};
@@ -22,25 +24,33 @@ use uuid::Uuid;
 use crate::events::TuiEvent;
 use crate::recurring_delivery::{
     DeliveryResolveContext, ambient_from_turn_scope, bind_recurring_delivery_for_registration,
-    delivery_binding_for_recurring, delivery_binding_to_json,
+    delivery_binding_for_recurring,
 };
 use crate::recurring_feed::{bind_recurring_feed_for_registration, feeds_spec_schema_fragment};
 use crate::tools::validate_grapheme_source_for_schedule;
 use crate::turn_continuation::{
-    ContinuationAwaitMode, TurnContinuationScope, continuation_tool_metadata,
+    ContinuationAwaitMode, StoredDeliveryTarget, TurnContinuationScope, continuation_tool_metadata,
     find_active_job_by_correlation_id, materialize_recurring_now, patch_existing_job_correlation,
     register_turn_child_job,
 };
+use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
 use crate::workflow::{
-    MedousaWorkflowPayload, WORKFLOW_SEQUENTIAL_JOB_TYPE, WorkflowRecord,
-    WorkflowRegistry, WorkflowRunRequest, WorkflowStatus, WorkflowEnqueueContinuation,
+    MedousaWorkflowPayload, WORKFLOW_SEQUENTIAL_JOB_TYPE, WorkflowEnqueueContinuation,
+    WorkflowRecord, WorkflowRegistry, WorkflowRunRequest, WorkflowStatus, WorkflowStepResult,
     encode_workflow_payload, enqueue_workflow_job, new_workflow_id, preflight_grapheme_steps,
     validate_workflow_request, workflow_job_type_for_strategy,
 };
 use crate::workflow_plan::{WorkflowPlanRequest, plan_workflow_from_goal};
 
-const CRON_EXPR_SCHEMA_HINT: &str =
-    "7-field cron: sec min hour day-of-month month day-of-week year (e.g. every 4h: 0 0 */4 * * * *)";
+const CRON_EXPR_SCHEMA_HINT: &str = "7-field cron: sec min hour day-of-month month day-of-week year (e.g. every 4h: 0 0 */4 * * * *)";
+const COGNITION_RUNTIME_JOBS_LIST_ID: ToolId = ToolId::new("cognition_runtime_jobs_list");
+const COGNITION_RUNTIME_RECURRING_LIST_ID: ToolId = ToolId::new("cognition_runtime_recurring_list");
+const COGNITION_RUNTIME_RECURRING_DOCTOR_ID: ToolId =
+    ToolId::new("cognition_runtime_recurring_doctor");
+const COGNITION_RUNTIME_DELIVERY_STATUS_ID: ToolId =
+    ToolId::new("cognition_runtime_delivery_status");
+const COGNITION_RUNTIME_WORKFLOW_STATUS_ID: ToolId =
+    ToolId::new("cognition_runtime_workflow_status");
 
 fn job_state_label(state: &JobState) -> &'static str {
     match state {
@@ -67,39 +77,104 @@ fn parse_job_state_filter(value: &str) -> Option<JobState> {
     }
 }
 
-fn job_to_json(job: &Job) -> Value {
-    json!({
-        "job_id": job.id,
-        "queue": job.queue,
-        "job_type": job.job_type,
-        "payload_ref": job.payload_ref,
-        "state": job_state_label(&job.state),
-        "priority": job.priority,
-        "attempts": job.attempts,
-        "max_attempts": job.max_attempts,
-        "correlation_id": job.correlation_id,
-        "trace_id": job.trace_id,
-        "scheduled_at_utc": job.scheduled_at.to_rfc3339(),
-        "started_at_utc": job.started_at.map(|t| t.to_rfc3339()),
-        "finished_at_utc": job.finished_at.map(|t| t.to_rfc3339()),
-        "last_error": job.last_error,
-    })
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct RuntimeJobSummary {
+    job_id: String,
+    queue: String,
+    job_type: String,
+    payload_ref: String,
+    state: String,
+    priority: i32,
+    attempts: u32,
+    max_attempts: u32,
+    correlation_id: String,
+    trace_id: String,
+    scheduled_at_utc: String,
+    started_at_utc: Option<String>,
+    finished_at_utc: Option<String>,
+    last_error: Option<String>,
 }
 
-fn recurring_to_json(definition: &RecurringDefinition) -> Value {
-    json!({
-        "recurring_id": definition.id,
-        "queue": definition.queue,
-        "job_type": definition.job_type,
-        "payload_template_ref": definition.payload_template_ref,
-        "cron_expr": definition.cron_expr,
-        "timezone": definition.timezone,
-        "jitter_seconds": definition.jitter_seconds,
-        "enabled": definition.enabled,
-        "max_attempts": definition.max_attempts,
-        "next_run_at_utc": definition.next_run_at.to_rfc3339(),
-        "last_run_at_utc": definition.last_run_at.map(|t| t.to_rfc3339()),
-    })
+fn job_summary(job: &Job) -> RuntimeJobSummary {
+    RuntimeJobSummary {
+        job_id: job.id.clone(),
+        queue: job.queue.clone(),
+        job_type: job.job_type.clone(),
+        payload_ref: job.payload_ref.clone(),
+        state: job_state_label(&job.state).to_string(),
+        priority: job.priority,
+        attempts: job.attempts,
+        max_attempts: job.max_attempts,
+        correlation_id: job.correlation_id.clone(),
+        trace_id: job.trace_id.clone(),
+        scheduled_at_utc: job.scheduled_at.to_rfc3339(),
+        started_at_utc: job.started_at.map(|time| time.to_rfc3339()),
+        finished_at_utc: job.finished_at.map(|time| time.to_rfc3339()),
+        last_error: job.last_error.clone(),
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct RuntimeDeliveryBinding {
+    channel: String,
+    channel_id: String,
+    user_id: String,
+    session_id: String,
+    stream_id: Option<String>,
+}
+
+impl From<&StoredDeliveryTarget> for RuntimeDeliveryBinding {
+    fn from(target: &StoredDeliveryTarget) -> Self {
+        Self {
+            channel: target.channel.clone(),
+            channel_id: target.channel_id.clone(),
+            user_id: target.user_id.clone(),
+            session_id: target.session_id.clone(),
+            stream_id: target.stream_id.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct RuntimeRecurringSummary {
+    recurring_id: String,
+    queue: String,
+    job_type: String,
+    payload_template_ref: String,
+    cron_expr: String,
+    timezone: String,
+    jitter_seconds: i64,
+    enabled: bool,
+    max_attempts: u32,
+    next_run_at_utc: String,
+    last_run_at_utc: Option<String>,
+    manuscript_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    delivery: Option<RuntimeDeliveryBinding>,
+}
+
+fn recurring_summary(
+    definition: &RecurringDefinition,
+    delivery: Option<&StoredDeliveryTarget>,
+) -> RuntimeRecurringSummary {
+    RuntimeRecurringSummary {
+        recurring_id: definition.id.clone(),
+        queue: definition.queue.clone(),
+        job_type: definition.job_type.clone(),
+        payload_template_ref: definition.payload_template_ref.clone(),
+        cron_expr: definition.cron_expr.clone(),
+        timezone: definition.timezone.clone(),
+        jitter_seconds: definition.jitter_seconds,
+        enabled: definition.enabled,
+        max_attempts: definition.max_attempts,
+        next_run_at_utc: definition.next_run_at.to_rfc3339(),
+        last_run_at_utc: definition.last_run_at.map(|time| time.to_rfc3339()),
+        manuscript_id: crate::recurring_agent_turn::manuscript_id_from_recurring_payload(
+            &definition.job_type,
+            &definition.payload_template_ref,
+        ),
+        delivery: delivery.map(RuntimeDeliveryBinding::from),
+    }
 }
 
 async fn list_jobs_by_state(
@@ -112,7 +187,10 @@ async fn list_jobs_by_state(
     }
 }
 
-async fn get_job(runtime: &RuntimeComposition, job_id: &str) -> stasis::prelude::Result<Option<Job>> {
+async fn get_job(
+    runtime: &RuntimeComposition,
+    job_id: &str,
+) -> stasis::prelude::Result<Option<Job>> {
     match runtime {
         RuntimeComposition::InMemory(rt) => rt.job_store.get(job_id).await,
         RuntimeComposition::Surreal(rt) => rt.job_store.get(job_id).await,
@@ -155,16 +233,29 @@ async fn register_recurring_definition(
     }
 }
 
-fn stats_to_json(snapshot: RuntimeStatsSnapshot) -> Value {
-    json!({
-        "enqueued_jobs": snapshot.enqueued_jobs,
-        "running_jobs": snapshot.running_jobs,
-        "succeeded_jobs": snapshot.succeeded_jobs,
-        "failed_jobs": snapshot.failed_jobs,
-        "dead_letter_jobs": snapshot.dead_letter_jobs,
-        "pending_outbox_events": snapshot.pending_outbox_events,
-        "recurring_definitions": snapshot.recurring_definitions,
-    })
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct RuntimeStatsOutput {
+    enqueued_jobs: usize,
+    running_jobs: usize,
+    succeeded_jobs: usize,
+    failed_jobs: usize,
+    dead_letter_jobs: usize,
+    pending_outbox_events: usize,
+    recurring_definitions: usize,
+}
+
+impl From<RuntimeStatsSnapshot> for RuntimeStatsOutput {
+    fn from(snapshot: RuntimeStatsSnapshot) -> Self {
+        Self {
+            enqueued_jobs: snapshot.enqueued_jobs,
+            running_jobs: snapshot.running_jobs,
+            succeeded_jobs: snapshot.succeeded_jobs,
+            failed_jobs: snapshot.failed_jobs,
+            dead_letter_jobs: snapshot.dead_letter_jobs,
+            pending_outbox_events: snapshot.pending_outbox_events,
+            recurring_definitions: snapshot.recurring_definitions,
+        }
+    }
 }
 
 // ── cognition_runtime_jobs_list ───────────────────────────────────────────────
@@ -179,54 +270,56 @@ impl CognitionRuntimeJobsListTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionRuntimeJobsListTool {
-    fn name(&self) -> &'static str {
-        "cognition_runtime_jobs_list"
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RuntimeJobsListInput {
+    /// Optional filter: enqueued, leased, running, succeeded, failed, dead_letter, canceled
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    state: Option<String>,
+    /// Optional correlation_id filter (exact match)
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    correlation_id: Option<String>,
+    /// Max jobs to return (1-100, default 20)
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+    )]
+    #[schemars(
+        with = "usize",
+        range(min = 1, max = 100),
+        skip_serializing_if = "Option::is_none"
+    )]
+    limit: Option<usize>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "List runtime jobs with optional state and correlation_id filters. \
-             Defaults to enqueued and running jobs.",
-        )
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct RuntimeJobsListOutput {
+    count: usize,
+    jobs: Vec<RuntimeJobSummary>,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "state": {
-                    "type": "string",
-                    "description": "Optional filter: enqueued, leased, running, succeeded, failed, dead_letter, canceled"
-                },
-                "correlation_id": {
-                    "type": "string",
-                    "description": "Optional correlation_id filter (exact match)"
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Max jobs to return (1-100, default 20)",
-                    "minimum": 1,
-                    "maximum": 100
-                }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let limit = input
-            .get("limit")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(20)
-            .clamp(1, 100) as usize;
+#[medousa_tool(id = COGNITION_RUNTIME_JOBS_LIST_ID)]
+impl CognitionRuntimeJobsListTool {
+    /// List runtime jobs with optional state and correlation_id filters. Defaults to enqueued and running jobs.
+    async fn invoke_typed(
+        &self,
+        input: RuntimeJobsListInput,
+    ) -> stasis::prelude::Result<RuntimeJobsListOutput> {
+        let limit = input.limit.unwrap_or(20).clamp(1, 100);
         let correlation_id = input
-            .get("correlation_id")
-            .and_then(|v| v.as_str())
+            .correlation_id
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty());
 
-        let states = if let Some(state_raw) = input.get("state").and_then(|v| v.as_str()) {
+        let states = if let Some(state_raw) = input.state.as_deref() {
             let state = parse_job_state_filter(state_raw).ok_or_else(|| {
                 StasisError::PortFailure(format!(
                     "cognition_runtime_jobs_list: unknown state '{state_raw}'"
@@ -250,10 +343,10 @@ impl StasisTool for CognitionRuntimeJobsListTool {
         jobs.sort_by_key(|b| std::cmp::Reverse(b.scheduled_at));
         jobs.truncate(limit);
 
-        Ok(json!({
-            "count": jobs.len(),
-            "jobs": jobs.iter().map(job_to_json).collect::<Vec<_>>()
-        }))
+        Ok(RuntimeJobsListOutput {
+            count: jobs.len(),
+            jobs: jobs.iter().map(job_summary).collect(),
+        })
     }
 }
 
@@ -352,58 +445,63 @@ impl CognitionRuntimeRecurringListTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionRuntimeRecurringListTool {
-    fn name(&self) -> &'static str {
-        "cognition_runtime_recurring_list"
+#[derive(Debug, JsonSchema)]
+pub struct RuntimeRecurringListInput {
+    /// When true, return only enabled schedules
+    #[schemars(default)]
+    enabled_only: bool,
+}
+
+impl<'de> Deserialize<'de> for RuntimeRecurringListInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
+            )]
+            enabled_only: Option<bool>,
+        }
+
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            enabled_only: input.enabled_only.unwrap_or(false),
+        })
     }
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("List registered recurring job definitions with optional channel delivery bindings.")
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct RuntimeRecurringListOutput {
+    count: usize,
+    recurring: Vec<RuntimeRecurringSummary>,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "enabled_only": {
-                    "type": "boolean",
-                    "description": "When true, return only enabled schedules",
-                    "default": false
-                }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let enabled_only = input
-            .get("enabled_only")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
+#[medousa_tool(id = COGNITION_RUNTIME_RECURRING_LIST_ID)]
+impl CognitionRuntimeRecurringListTool {
+    /// List registered recurring job definitions with optional channel delivery bindings.
+    async fn invoke_typed(
+        &self,
+        input: RuntimeRecurringListInput,
+    ) -> stasis::prelude::Result<RuntimeRecurringListOutput> {
         let mut definitions = list_recurring_definitions(self.runtime.as_ref()).await?;
-        if enabled_only {
+        if input.enabled_only {
             definitions.retain(|definition| definition.enabled);
         }
         definitions.sort_by(|a, b| a.id.cmp(&b.id));
 
         let mut rows = Vec::with_capacity(definitions.len());
         for definition in &definitions {
-            let mut row = recurring_to_json(definition);
-            row["manuscript_id"] = json!(crate::recurring_agent_turn::manuscript_id_from_recurring_payload(
-                &definition.job_type,
-                &definition.payload_template_ref,
-            ));
-            if let Some(binding) = delivery_binding_for_recurring(&definition.id).await {
-                row["delivery"] = delivery_binding_to_json(&binding);
-            }
-            rows.push(row);
+            let delivery = delivery_binding_for_recurring(&definition.id).await;
+            rows.push(recurring_summary(definition, delivery.as_ref()));
         }
 
-        Ok(json!({
-            "count": definitions.len(),
-            "recurring": rows
-        }))
+        Ok(RuntimeRecurringListOutput {
+            count: definitions.len(),
+            recurring: rows,
+        })
     }
 }
 
@@ -419,34 +517,73 @@ impl CognitionRuntimeRecurringDoctorTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionRuntimeRecurringDoctorTool {
-    fn name(&self) -> &'static str {
-        "cognition_runtime_recurring_doctor"
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RuntimeRecurringDoctorInput {
+    /// Optional single recurring id; omit to inspect all
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    recurring_id: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Diagnose recurring schedules: cron, next run, enabled state, and channel delivery bindings.",
-        )
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct RuntimeFeedBinding {
+    feed_ids: Vec<String>,
+    payload_mode: String,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "recurring_id": {
-                    "type": "string",
-                    "description": "Optional single recurring id; omit to inspect all"
-                }
-            }
-        }))
+impl From<&crate::recurring_feed::RecurringFeedBinding> for RuntimeFeedBinding {
+    fn from(binding: &crate::recurring_feed::RecurringFeedBinding) -> Self {
+        Self {
+            feed_ids: binding.feed_ids.clone(),
+            payload_mode: binding.payload_mode.as_str().to_string(),
+        }
     }
+}
 
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct RuntimeRecurringDoctorEntry {
+    recurring_id: String,
+    queue: String,
+    job_type: String,
+    payload_template_ref: String,
+    cron_expr: String,
+    timezone: String,
+    jitter_seconds: i64,
+    enabled: bool,
+    max_attempts: u32,
+    next_run_at_utc: String,
+    last_run_at_utc: Option<String>,
+    manuscript_id: Option<String>,
+    delivery: Option<RuntimeDeliveryBinding>,
+    cron_valid: bool,
+    delivery_bound: bool,
+    push_ready: bool,
+    feeds_bound: bool,
+    feeds_binding: Option<RuntimeFeedBinding>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct RuntimeRecurringDoctorOutput {
+    count: usize,
+    missing_delivery_bindings: usize,
+    cron_warnings: usize,
+    recurring: Vec<RuntimeRecurringDoctorEntry>,
+    hints: Vec<String>,
+}
+
+#[medousa_tool(id = COGNITION_RUNTIME_RECURRING_DOCTOR_ID)]
+impl CognitionRuntimeRecurringDoctorTool {
+    /// Diagnose recurring schedules: cron, next run, enabled state, and channel delivery bindings.
+    async fn invoke_typed(
+        &self,
+        input: RuntimeRecurringDoctorInput,
+    ) -> stasis::prelude::Result<RuntimeRecurringDoctorOutput> {
         let filter_id = input
-            .get("recurring_id")
-            .and_then(|v| v.as_str())
+            .recurring_id
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string);
@@ -476,39 +613,44 @@ impl StasisTool for CognitionRuntimeRecurringDoctorTool {
                 cron_warnings += 1;
             }
 
-            let mut row = recurring_to_json(definition);
-            row["manuscript_id"] = json!(crate::recurring_agent_turn::manuscript_id_from_recurring_payload(
-                &definition.job_type,
-                &definition.payload_template_ref,
-            ));
-            row["delivery"] = delivery
-                .as_ref()
-                .map(delivery_binding_to_json)
-                .unwrap_or(Value::Null);
-            row["cron_valid"] = json!(cron_ok);
-            row["delivery_bound"] = json!(delivery.is_some());
-            row["push_ready"] = json!(delivery.is_some() && definition.enabled);
             let feed_binding =
                 crate::recurring_feed::feed_binding_for_recurring(&definition.id).await;
-            row["feeds_bound"] = json!(feed_binding.is_some());
-            row["feeds_binding"] = feed_binding
-                .as_ref()
-                .map(crate::custom_view_status::recurring_feed_binding_json)
-                .unwrap_or(Value::Null);
-            entries.push(row);
+            entries.push(RuntimeRecurringDoctorEntry {
+                recurring_id: definition.id.clone(),
+                queue: definition.queue.clone(),
+                job_type: definition.job_type.clone(),
+                payload_template_ref: definition.payload_template_ref.clone(),
+                cron_expr: definition.cron_expr.clone(),
+                timezone: definition.timezone.clone(),
+                jitter_seconds: definition.jitter_seconds,
+                enabled: definition.enabled,
+                max_attempts: definition.max_attempts,
+                next_run_at_utc: definition.next_run_at.to_rfc3339(),
+                last_run_at_utc: definition.last_run_at.map(|time| time.to_rfc3339()),
+                manuscript_id: crate::recurring_agent_turn::manuscript_id_from_recurring_payload(
+                    &definition.job_type,
+                    &definition.payload_template_ref,
+                ),
+                delivery: delivery.as_ref().map(RuntimeDeliveryBinding::from),
+                cron_valid: cron_ok,
+                delivery_bound: delivery.is_some(),
+                push_ready: delivery.is_some() && definition.enabled,
+                feeds_bound: feed_binding.is_some(),
+                feeds_binding: feed_binding.as_ref().map(RuntimeFeedBinding::from),
+            });
         }
 
-        Ok(json!({
-            "count": entries.len(),
-            "missing_delivery_bindings": missing_delivery,
-            "cron_warnings": cron_warnings,
-            "recurring": entries,
-            "hints": [
-                "Set delivery.telegram_chat_id or delivery.mode=linked_channel when registering from TUI after Telegram ingest on the same session.",
-                "Use delivery.mode=current_channel during an active ingest agent turn.",
-                "Cron uses 7 fields: sec min hour dom month dow year (e.g. 0 0 */4 * * * *)."
-            ]
-        }))
+        Ok(RuntimeRecurringDoctorOutput {
+            count: entries.len(),
+            missing_delivery_bindings: missing_delivery,
+            cron_warnings,
+            recurring: entries,
+            hints: vec![
+                "Set delivery.telegram_chat_id or delivery.mode=linked_channel when registering from TUI after Telegram ingest on the same session.".to_string(),
+                "Use delivery.mode=current_channel during an active ingest agent turn.".to_string(),
+                "Cron uses 7 fields: sec min hour dom month dow year (e.g. 0 0 */4 * * * *).".to_string(),
+            ],
+        })
     }
 }
 
@@ -851,9 +993,7 @@ async fn set_recurring_enabled_for_runtime(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| {
-            StasisError::PortFailure(format!(
-                "{tool_name}: recurring_id is required"
-            ))
+            StasisError::PortFailure(format!("{tool_name}: recurring_id is required"))
         })?;
 
     let definitions = list_recurring_definitions(runtime).await?;
@@ -904,39 +1044,46 @@ impl CognitionRuntimeDeliveryStatusTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionRuntimeDeliveryStatusTool {
-    fn name(&self) -> &'static str {
-        "cognition_runtime_delivery_status"
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RuntimeDeliveryStatusInput {
+    /// Max pending outbox rows to preview (1-50, default 10)
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+    )]
+    #[schemars(
+        with = "usize",
+        range(min = 1, max = 50),
+        skip_serializing_if = "Option::is_none"
+    )]
+    pending_limit: Option<usize>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Summarize runtime queue, outbox, and recurring workload counts. \
-             Includes pending outbox event previews when available.",
-        )
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct PendingOutboxPreview {
+    event_id: String,
+    status: String,
+    event_type: String,
+    job_id: String,
+    correlation_id: String,
+    occurred_at_utc: String,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "pending_limit": {
-                    "type": "integer",
-                    "description": "Max pending outbox rows to preview (1-50, default 10)",
-                    "minimum": 1,
-                    "maximum": 50
-                }
-            }
-        }))
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct RuntimeDeliveryStatusOutput {
+    stats: RuntimeStatsOutput,
+    pending_outbox_preview: Vec<PendingOutboxPreview>,
+    now_utc: String,
+}
 
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let pending_limit = input
-            .get("pending_limit")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(10)
-            .clamp(1, 50) as usize;
+#[medousa_tool(id = COGNITION_RUNTIME_DELIVERY_STATUS_ID)]
+impl CognitionRuntimeDeliveryStatusTool {
+    /// Summarize runtime queue, outbox, and recurring workload counts. Includes pending outbox event previews when available.
+    async fn invoke_typed(
+        &self,
+        input: RuntimeDeliveryStatusInput,
+    ) -> stasis::prelude::Result<RuntimeDeliveryStatusOutput> {
+        let pending_limit = input.pending_limit.unwrap_or(10).clamp(1, 50);
 
         let sdk = RuntimeSdk::new(self.runtime.as_ref().clone());
         let snapshot = sdk.stats_snapshot(pending_limit).await?;
@@ -948,23 +1095,21 @@ impl StasisTool for CognitionRuntimeDeliveryStatusTool {
 
         let pending_preview = pending
             .iter()
-            .map(|event| {
-                json!({
-                    "event_id": event.event_id,
-                    "status": format!("{:?}", event.status),
-                    "event_type": format!("{:?}", event.event.event_type),
-                    "job_id": event.event.job_id,
-                    "correlation_id": event.event.correlation_id,
-                    "occurred_at_utc": event.event.occurred_at.to_rfc3339(),
-                })
+            .map(|event| PendingOutboxPreview {
+                event_id: event.event_id.clone(),
+                status: format!("{:?}", event.status),
+                event_type: format!("{:?}", event.event.event_type),
+                job_id: event.event.job_id.clone(),
+                correlation_id: event.event.correlation_id.clone(),
+                occurred_at_utc: event.event.occurred_at.to_rfc3339(),
             })
             .collect::<Vec<_>>();
 
-        Ok(json!({
-            "stats": stats_to_json(snapshot),
-            "pending_outbox_preview": pending_preview,
-            "now_utc": Utc::now().to_rfc3339()
-        }))
+        Ok(RuntimeDeliveryStatusOutput {
+            stats: snapshot.into(),
+            pending_outbox_preview: pending_preview,
+            now_utc: Utc::now().to_rfc3339(),
+        })
     }
 }
 
@@ -972,9 +1117,7 @@ impl StasisTool for CognitionRuntimeDeliveryStatusTool {
 
 fn parse_workflow_run_request(input: &Value) -> stasis::prelude::Result<WorkflowRunRequest> {
     serde_json::from_value(input.clone()).map_err(|error| {
-        StasisError::PortFailure(format!(
-            "invalid workflow request json: {error}"
-        ))
+        StasisError::PortFailure(format!("invalid workflow request json: {error}"))
     })
 }
 
@@ -1016,24 +1159,6 @@ fn build_workflow_payload(
         lane: lane.to_string(),
         steps: request.steps.clone(),
     }
-}
-
-
-fn workflow_record_to_json(record: &WorkflowRecord, root_job: Option<&Job>) -> Value {
-    json!({
-        "workflow_id": record.workflow_id,
-        "name": record.name,
-        "status": record.status.as_str(),
-        "strategy": record.strategy,
-        "mode": record.mode,
-        "on_failure": record.on_failure,
-        "note": record.note,
-        "root_job_id": record.root_job_id,
-        "root_job_state": root_job.map(|job| job_state_label(&job.state)),
-        "scheduled_recurring_id": record.scheduled_recurring_id,
-        "created_at_utc": record.created_at.to_rfc3339(),
-        "step_results": record.step_results,
-    })
 }
 
 // ── cognition_runtime_workflow_run ────────────────────────────────────────────
@@ -1101,7 +1226,9 @@ impl StasisTool for CognitionRuntimeWorkflowRunTool {
     async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
         let request = parse_workflow_run_request(&input)?;
         validate_workflow_request(&request)?;
-        if let Some(rejection) = validate_grapheme_steps_for_workflow(self.runtime.as_ref(), &request).await? {
+        if let Some(rejection) =
+            validate_grapheme_steps_for_workflow(self.runtime.as_ref(), &request).await?
+        {
             return Ok(rejection);
         }
 
@@ -1112,18 +1239,15 @@ impl StasisTool for CognitionRuntimeWorkflowRunTool {
             .unwrap_or("default");
         let payload = build_workflow_payload(&workflow_id, &request, "interactive");
         let scope = self.turn_scope.read().await.clone();
-        let continuation = scope.as_ref().map(|turn_scope| WorkflowEnqueueContinuation {
-            turn_scope,
-            tool_name: self.name(),
-            await_mode: ContinuationAwaitMode::Async,
-        });
-        let job_id = enqueue_workflow_job(
-            self.runtime.as_ref(),
-            &payload,
-            queue,
-            continuation,
-        )
-        .await?;
+        let continuation = scope
+            .as_ref()
+            .map(|turn_scope| WorkflowEnqueueContinuation {
+                turn_scope,
+                tool_name: self.name(),
+                await_mode: ContinuationAwaitMode::Async,
+            });
+        let job_id =
+            enqueue_workflow_job(self.runtime.as_ref(), &payload, queue, continuation).await?;
         let job_type = workflow_job_type_for_strategy(&request.strategy)
             .unwrap_or(WORKFLOW_SEQUENTIAL_JOB_TYPE);
 
@@ -1239,7 +1363,9 @@ impl StasisTool for CognitionRuntimeWorkflowScheduleTool {
     async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
         let request = parse_workflow_run_request(&input)?;
         validate_workflow_request(&request)?;
-        if let Some(rejection) = validate_grapheme_steps_for_workflow(self.runtime.as_ref(), &request).await? {
+        if let Some(rejection) =
+            validate_grapheme_steps_for_workflow(self.runtime.as_ref(), &request).await?
+        {
             return Ok(rejection);
         }
 
@@ -1429,30 +1555,90 @@ impl CognitionRuntimeWorkflowStatusTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionRuntimeWorkflowStatusTool {
-    fn name(&self) -> &'static str {
-        "cognition_runtime_workflow_status"
-    }
+#[derive(Debug, JsonSchema)]
+pub struct RuntimeWorkflowStatusInput {
+    /// Workflow identifier
+    #[schemars(required, with = "String")]
+    workflow_id: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("Aggregate status for a workflow by workflow_id.")
-    }
+impl<'de> Deserialize<'de> for RuntimeWorkflowStatusInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            workflow_id: Option<String>,
+        }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "workflow_id": { "type": "string", "description": "Workflow identifier" }
-            },
-            "required": ["workflow_id"]
-        }))
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            workflow_id: input.workflow_id,
+        })
     }
+}
 
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct RuntimeWorkflowStepResult {
+    id: String,
+    kind: String,
+    status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output: Option<ExternalJson>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+impl From<&WorkflowStepResult> for RuntimeWorkflowStepResult {
+    fn from(result: &WorkflowStepResult) -> Self {
+        Self {
+            id: result.id.clone(),
+            kind: result.kind.clone(),
+            status: result.status.clone(),
+            output: result.output.clone().map(ExternalJson::new),
+            error: result.error.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct RuntimeWorkflowStatusFound {
+    workflow_id: String,
+    name: Option<String>,
+    status: String,
+    strategy: String,
+    mode: String,
+    on_failure: String,
+    note: Option<String>,
+    root_job_id: String,
+    root_job_state: Option<String>,
+    scheduled_recurring_id: Option<String>,
+    created_at_utc: String,
+    step_results: Vec<RuntimeWorkflowStepResult>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum RuntimeWorkflowStatusOutput {
+    Found(Box<RuntimeWorkflowStatusFound>),
+    NotFound { workflow_id: String, status: String },
+}
+
+#[medousa_tool(id = COGNITION_RUNTIME_WORKFLOW_STATUS_ID)]
+impl CognitionRuntimeWorkflowStatusTool {
+    /// Aggregate status for a workflow by workflow_id.
+    async fn invoke_typed(
+        &self,
+        input: RuntimeWorkflowStatusInput,
+    ) -> stasis::prelude::Result<RuntimeWorkflowStatusOutput> {
         let workflow_id = input
-            .get("workflow_id")
-            .and_then(|v| v.as_str())
+            .workflow_id
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .ok_or_else(|| {
@@ -1462,10 +1648,10 @@ impl StasisTool for CognitionRuntimeWorkflowStatusTool {
             })?;
 
         let Some(record) = self.registry.get(workflow_id).await else {
-            return Ok(json!({
-                "workflow_id": workflow_id,
-                "status": "not_found"
-            }));
+            return Ok(RuntimeWorkflowStatusOutput::NotFound {
+                workflow_id: workflow_id.to_string(),
+                status: "not_found".to_string(),
+            });
         };
 
         let root_job = if record.root_job_id.is_empty() {
@@ -1474,7 +1660,28 @@ impl StasisTool for CognitionRuntimeWorkflowStatusTool {
             get_job(self.runtime.as_ref(), &record.root_job_id).await?
         };
 
-        Ok(workflow_record_to_json(&record, root_job.as_ref()))
+        Ok(RuntimeWorkflowStatusOutput::Found(Box::new(
+            RuntimeWorkflowStatusFound {
+                workflow_id: record.workflow_id,
+                name: record.name,
+                status: record.status.as_str().to_string(),
+                strategy: record.strategy,
+                mode: record.mode,
+                on_failure: record.on_failure,
+                note: record.note,
+                root_job_id: record.root_job_id,
+                root_job_state: root_job
+                    .as_ref()
+                    .map(|job| job_state_label(&job.state).to_string()),
+                scheduled_recurring_id: record.scheduled_recurring_id,
+                created_at_utc: record.created_at.to_rfc3339(),
+                step_results: record
+                    .step_results
+                    .iter()
+                    .map(RuntimeWorkflowStepResult::from)
+                    .collect(),
+            },
+        )))
     }
 }
 
@@ -1507,9 +1714,7 @@ impl StasisTool for CognitionRuntimeWorkflowCancelTool {
     }
 
     fn description(&self) -> Option<&'static str> {
-        Some(
-            "Cancel a workflow: disable scheduled recurring (if any) and cancel pending root job.",
-        )
+        Some("Cancel a workflow: disable scheduled recurring (if any) and cancel pending root job.")
     }
 
     fn input_schema(&self) -> Option<Value> {
@@ -1547,34 +1752,36 @@ impl StasisTool for CognitionRuntimeWorkflowCancelTool {
             if let Some(mut definition) = definitions
                 .into_iter()
                 .find(|definition| definition.id == recurring_id)
-                && definition.enabled {
-                    definition.enabled = false;
-                    save_recurring_definition(self.runtime.as_ref(), definition).await?;
-                    recurring_disabled = true;
-                }
+                && definition.enabled
+            {
+                definition.enabled = false;
+                save_recurring_definition(self.runtime.as_ref(), definition).await?;
+                recurring_disabled = true;
+            }
         }
 
         let mut job_status = json!(null);
         if !record.root_job_id.is_empty()
-            && let Some(mut job) = get_job(self.runtime.as_ref(), &record.root_job_id).await? {
-                let previous_state = job_state_label(&job.state).to_string();
-                if matches!(job.state, JobState::Enqueued | JobState::Leased) {
-                    job.state = JobState::Canceled;
-                    job.finished_at = Some(Utc::now());
-                    save_job(self.runtime.as_ref(), job).await?;
-                    job_status = json!({
-                        "job_id": record.root_job_id,
-                        "status": "canceled",
-                        "previous_state": previous_state
-                    });
-                } else {
-                    job_status = json!({
-                        "job_id": record.root_job_id,
-                        "status": "not_cancelable",
-                        "state": previous_state
-                    });
-                }
+            && let Some(mut job) = get_job(self.runtime.as_ref(), &record.root_job_id).await?
+        {
+            let previous_state = job_state_label(&job.state).to_string();
+            if matches!(job.state, JobState::Enqueued | JobState::Leased) {
+                job.state = JobState::Canceled;
+                job.finished_at = Some(Utc::now());
+                save_job(self.runtime.as_ref(), job).await?;
+                job_status = json!({
+                    "job_id": record.root_job_id,
+                    "status": "canceled",
+                    "previous_state": previous_state
+                });
+            } else {
+                job_status = json!({
+                    "job_id": record.root_job_id,
+                    "status": "not_cancelable",
+                    "state": previous_state
+                });
             }
+        }
 
         self.registry.mark_canceled(workflow_id).await;
 
@@ -1706,14 +1913,14 @@ mod tests {
 
         let tool = CognitionRuntimeJobsListTool::new(Arc::new(runtime));
         let response = tool
-            .invoke(json!({ "limit": 10 }))
+            .invoke_typed(RuntimeJobsListInput {
+                state: None,
+                correlation_id: None,
+                limit: Some(10),
+            })
             .await
             .expect("list jobs");
-        let jobs = response
-            .get("jobs")
-            .and_then(|value| value.as_array())
-            .expect("jobs array");
-        assert!(jobs.iter().any(|job| job.get("job_id") == Some(&json!(job_id))));
+        assert!(response.jobs.iter().any(|job| job.job_id == job_id));
     }
 
     #[tokio::test]
@@ -1743,8 +1950,7 @@ mod tests {
         .expect("enqueue");
 
         let (event_tx, _event_rx) = mpsc::channel(4);
-        let cancel_tool =
-            CognitionRuntimeJobsCancelTool::new(Arc::new(runtime.clone()), event_tx);
+        let cancel_tool = CognitionRuntimeJobsCancelTool::new(Arc::new(runtime.clone()), event_tx);
         let cancel_response = cancel_tool
             .invoke(json!({ "job_id": job_id }))
             .await

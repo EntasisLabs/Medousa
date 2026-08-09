@@ -71,8 +71,21 @@ pub async fn require_active_chat_session_id_from_input(
     turn_scope: &RwLock<Option<TurnContinuationScope>>,
     tool_label: &str,
 ) -> StasisResult<String> {
-    let session_id = if let Some(explicit) = explicit_chat_session_id_from_input(input) {
-        explicit
+    let explicit = explicit_chat_session_id_from_input(input);
+    require_active_chat_session_id(explicit.as_deref(), turn_scope, tool_label).await
+}
+
+/// Resolve an optional typed session id against the active turn scope.
+pub async fn require_active_chat_session_id(
+    explicit_session_id: Option<&str>,
+    turn_scope: &RwLock<Option<TurnContinuationScope>>,
+    tool_label: &str,
+) -> StasisResult<String> {
+    let session_id = if let Some(explicit) = explicit_session_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        explicit.to_string()
     } else {
         turn_scope
             .read()

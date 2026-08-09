@@ -3,6 +3,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+use schemars::JsonSchema;
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Value, json};
 use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::prelude::{Result as StasisResult, StasisError};
@@ -11,12 +14,16 @@ use tokio::sync::{RwLock, mpsc};
 use crate::events::TuiEvent;
 use crate::runtime_session::{require_active_chat_session_id_async, runtime_bootstrap_session_id};
 use crate::turn_continuation::TurnContinuationScope;
+use crate::typed_tools::{ToolId, medousa_tool};
 
 pub const COGNITION_ARTIFACT_LIST: &str = "cognition_artifact_list";
 pub const COGNITION_ARTIFACT_READ: &str = "cognition_artifact_read";
 pub const COGNITION_ARTIFACT_GREP: &str = "cognition_artifact_grep";
 pub const COGNITION_ARTIFACT_WRITE: &str = "cognition_artifact_write";
 pub const COGNITION_ARTIFACT_DELETE: &str = "cognition_artifact_delete";
+const COGNITION_ARTIFACT_LIST_ID: ToolId = ToolId::new(COGNITION_ARTIFACT_LIST);
+const COGNITION_ARTIFACT_READ_ID: ToolId = ToolId::new(COGNITION_ARTIFACT_READ);
+const COGNITION_ARTIFACT_GREP_ID: ToolId = ToolId::new(COGNITION_ARTIFACT_GREP);
 
 pub const ARTIFACT_COGNITION_TOOLS: &[&str] = &[
     COGNITION_ARTIFACT_LIST,
@@ -37,9 +44,9 @@ pub fn register_artifact_tools(
     event_tx: mpsc::Sender<TuiEvent>,
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 ) -> StasisResult<()> {
-    registry.register_tool(CognitionArtifactListTool::new(event_tx.clone(), turn_scope.clone()))?;
-    registry.register_tool(CognitionArtifactReadTool::new(event_tx.clone(), turn_scope.clone()))?;
-    registry.register_tool(CognitionArtifactGrepTool::new(event_tx.clone(), turn_scope.clone()))?;
+    registry.register_typed_tool(CognitionArtifactListTool::new(event_tx.clone(), turn_scope.clone()))?;
+    registry.register_typed_tool(CognitionArtifactReadTool::new(event_tx.clone(), turn_scope.clone()))?;
+    registry.register_typed_tool(CognitionArtifactGrepTool::new(event_tx.clone(), turn_scope.clone()))?;
     registry.register_tool(CognitionArtifactWriteTool::new(event_tx.clone(), turn_scope.clone()))?;
     registry.register_tool(CognitionArtifactDeleteTool::new(event_tx, turn_scope))?;
     Ok(())
@@ -105,44 +112,66 @@ impl CognitionArtifactListTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionArtifactListTool {
-    fn name(&self) -> &'static str {
-        COGNITION_ARTIFACT_LIST
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ArtifactListInput {
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+    )]
+    #[schemars(
+        with = "usize",
+        range(min = 1, max = 100),
+        skip_serializing_if = "Option::is_none"
+    )]
+    limit: Option<usize>,
+    /// Optional filter on title or artifact_id
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    query: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "List HTML presentation artifacts for the current chat session (newest first). \
-             Workflow: list → grep/read → cognition_artifact_write to revise.",
-        )
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+struct ArtifactListItem {
+    artifact_id: String,
+    label: Option<String>,
+    presentation: Option<String>,
+    byte_size: usize,
+    #[schemars(with = "String")]
+    stored_at_utc: DateTime<Utc>,
+    supersedes_artifact_id: Option<String>,
+    root_artifact_id: Option<String>,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
-                "query": { "type": "string", "description": "Optional filter on title or artifact_id" }
-            }
-        }))
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ArtifactListOutput {
+    artifacts: Vec<ArtifactListItem>,
+    count: usize,
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+#[medousa_tool(id = COGNITION_ARTIFACT_LIST_ID)]
+impl CognitionArtifactListTool {
+    /// List HTML presentation artifacts for the current chat session (newest first). Workflow: list → grep/read → cognition_artifact_write to revise.
+    async fn invoke_typed(
+        &self,
+        input: ArtifactListInput,
+    ) -> stasis::prelude::Result<ArtifactListOutput> {
         self.ctx.require_ui_artifacts().await?;
-        let session_id = self.ctx.session_id(self.name()).await?;
-        let limit = input
-            .get("limit")
-            .and_then(Value::as_u64)
-            .unwrap_or(20)
-            .clamp(1, 100) as usize;
+        let session_id = self.ctx.session_id(COGNITION_ARTIFACT_LIST).await?;
+        let limit = input.limit.unwrap_or(20).clamp(1, 100);
         let query_owned = input
-            .get("query")
-            .and_then(Value::as_str)
+            .query
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string);
-        emit_invoked(&self.event_tx, self.name(), query_owned.as_deref().unwrap_or("*"));
+        emit_invoked(
+            &self.event_tx,
+            COGNITION_ARTIFACT_LIST,
+            query_owned.as_deref().unwrap_or("*"),
+        );
         let records = tokio::task::spawn_blocking(move || {
             crate::artifact_store::list_ui_artifacts(
                 Some(&session_id),
@@ -152,21 +181,20 @@ impl StasisTool for CognitionArtifactListTool {
         })
         .await
         .map_err(|err| StasisError::PortFailure(format!("artifact list join error: {err}")))?;
-        let artifacts: Vec<Value> = records
+        let artifacts: Vec<ArtifactListItem> = records
             .into_iter()
-            .map(|record| {
-                json!({
-                    "artifact_id": record.artifact_id,
-                    "label": record.label,
-                    "presentation": record.presentation,
-                    "byte_size": record.byte_size,
-                    "stored_at_utc": record.stored_at_utc,
-                    "supersedes_artifact_id": record.supersedes_artifact_id,
-                    "root_artifact_id": record.root_artifact_id,
-                })
+            .map(|record| ArtifactListItem {
+                artifact_id: record.artifact_id,
+                label: record.label,
+                presentation: record.presentation,
+                byte_size: record.byte_size,
+                stored_at_utc: record.stored_at_utc,
+                supersedes_artifact_id: record.supersedes_artifact_id,
+                root_artifact_id: record.root_artifact_id,
             })
             .collect();
-        Ok(json!({ "artifacts": artifacts, "count": artifacts.len() }))
+        let count = artifacts.len();
+        Ok(ArtifactListOutput { artifacts, count })
     }
 }
 
@@ -187,51 +215,106 @@ impl CognitionArtifactReadTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionArtifactReadTool {
-    fn name(&self) -> &'static str {
-        COGNITION_ARTIFACT_READ
-    }
+#[derive(Debug, JsonSchema)]
+pub struct ArtifactReadInput {
+    #[schemars(required, with = "String")]
+    artifact_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        with = "usize",
+        range(min = 1),
+        skip_serializing_if = "Option::is_none"
+    )]
+    line_start: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        with = "usize",
+        range(min = 1),
+        skip_serializing_if = "Option::is_none"
+    )]
+    line_end: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        with = "usize",
+        range(min = 256, max = 20000),
+        skip_serializing_if = "Option::is_none"
+    )]
+    max_chars: Option<usize>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Read HTML source for a presentation artifact (budget-capped). \
-             Optional line_start/line_end for surgical edits.",
-        )
-    }
+impl<'de> Deserialize<'de> for ArtifactReadInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            artifact_id: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+            )]
+            line_start: Option<usize>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+            )]
+            line_end: Option<usize>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+            )]
+            max_chars: Option<usize>,
+        }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["artifact_id"],
-            "properties": {
-                "artifact_id": { "type": "string" },
-                "line_start": { "type": "integer", "minimum": 1 },
-                "line_end": { "type": "integer", "minimum": 1 },
-                "max_chars": { "type": "integer", "minimum": 256, "maximum": 20000 }
-            }
-        }))
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            artifact_id: input.artifact_id,
+            line_start: input.line_start,
+            line_end: input.line_end,
+            max_chars: input.max_chars,
+        })
     }
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ArtifactReadOutput {
+    artifact_id: String,
+    content: String,
+    truncated: bool,
+    total_lines: usize,
+    total_chars: usize,
+    line_start: usize,
+    line_end: usize,
+}
+
+#[medousa_tool(id = COGNITION_ARTIFACT_READ_ID)]
+impl CognitionArtifactReadTool {
+    /// Read HTML source for a presentation artifact (budget-capped). Optional line_start/line_end for surgical edits.
+    async fn invoke_typed(
+        &self,
+        input: ArtifactReadInput,
+    ) -> stasis::prelude::Result<ArtifactReadOutput> {
         self.ctx.require_ui_artifacts().await?;
-        let session_id = self.ctx.session_id(self.name()).await?;
+        let session_id = self.ctx.session_id(COGNITION_ARTIFACT_READ).await?;
         let artifact_id = input
-            .get("artifact_id")
-            .and_then(Value::as_str)
+            .artifact_id
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .ok_or_else(|| StasisError::PortFailure("artifact_id is required".to_string()))?
             .to_string();
-        let line_start = input.get("line_start").and_then(Value::as_u64).map(|v| v as usize);
-        let line_end = input.get("line_end").and_then(Value::as_u64).map(|v| v as usize);
+        let line_start = input.line_start;
+        let line_end = input.line_end;
         let max_chars = input
-            .get("max_chars")
-            .and_then(Value::as_u64)
-            .map(|value| value as usize)
+            .max_chars
             .unwrap_or(READ_BUDGET_CHARS)
             .clamp(256, 20_000);
-        emit_invoked(&self.event_tx, self.name(), &artifact_id);
+        emit_invoked(&self.event_tx, COGNITION_ARTIFACT_READ, &artifact_id);
         let artifact_id_for_response = artifact_id.clone();
         let excerpt = tokio::task::spawn_blocking(move || {
             crate::artifact_store::read_ui_artifact_excerpt(
@@ -245,15 +328,15 @@ impl StasisTool for CognitionArtifactReadTool {
         .await
         .map_err(|err| StasisError::PortFailure(format!("artifact read join error: {err}")))?
         .map_err(StasisError::PortFailure)?;
-        Ok(json!({
-            "artifact_id": artifact_id_for_response,
-            "content": excerpt.content,
-            "truncated": excerpt.truncated,
-            "total_lines": excerpt.total_lines,
-            "total_chars": excerpt.total_chars,
-            "line_start": excerpt.line_start,
-            "line_end": excerpt.line_end,
-        }))
+        Ok(ArtifactReadOutput {
+            artifact_id: artifact_id_for_response,
+            content: excerpt.content,
+            truncated: excerpt.truncated,
+            total_lines: excerpt.total_lines,
+            total_chars: excerpt.total_chars,
+            line_start: excerpt.line_start,
+            line_end: excerpt.line_end,
+        })
     }
 }
 
@@ -274,60 +357,93 @@ impl CognitionArtifactGrepTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionArtifactGrepTool {
-    fn name(&self) -> &'static str {
-        COGNITION_ARTIFACT_GREP
-    }
+#[derive(Debug, JsonSchema)]
+pub struct ArtifactGrepInput {
+    #[schemars(required, with = "String")]
+    artifact_id: Option<String>,
+    #[schemars(required, with = "String")]
+    pattern: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        with = "usize",
+        range(min = 0, max = 10),
+        skip_serializing_if = "Option::is_none"
+    )]
+    context_lines: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        with = "usize",
+        range(min = 1, max = 200),
+        skip_serializing_if = "Option::is_none"
+    )]
+    limit: Option<usize>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Search inside an HTML artifact source (literal case-insensitive match with line numbers). \
-             Use before cognition_artifact_write to locate CSS/HTML snippets.",
-        )
-    }
+impl<'de> Deserialize<'de> for ArtifactGrepInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            artifact_id: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            pattern: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+            )]
+            context_lines: Option<usize>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+            )]
+            limit: Option<usize>,
+        }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["artifact_id", "pattern"],
-            "properties": {
-                "artifact_id": { "type": "string" },
-                "pattern": { "type": "string" },
-                "context_lines": { "type": "integer", "minimum": 0, "maximum": 10 },
-                "limit": { "type": "integer", "minimum": 1, "maximum": 200 }
-            }
-        }))
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            artifact_id: input.artifact_id,
+            pattern: input.pattern,
+            context_lines: input.context_lines,
+            limit: input.limit,
+        })
     }
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+#[medousa_tool(id = COGNITION_ARTIFACT_GREP_ID)]
+impl CognitionArtifactGrepTool {
+    /// Search inside an HTML artifact source (literal case-insensitive match with line numbers). Use before cognition_artifact_write to locate CSS/HTML snippets.
+    async fn invoke_typed(
+        &self,
+        input: ArtifactGrepInput,
+    ) -> stasis::prelude::Result<crate::line_grep::LineGrepResult> {
         self.ctx.require_ui_artifacts().await?;
-        let session_id = self.ctx.session_id(self.name()).await?;
+        let session_id = self.ctx.session_id(COGNITION_ARTIFACT_GREP).await?;
         let artifact_id = input
-            .get("artifact_id")
-            .and_then(Value::as_str)
+            .artifact_id
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .ok_or_else(|| StasisError::PortFailure("artifact_id is required".to_string()))?
             .to_string();
         let pattern = input
-            .get("pattern")
-            .and_then(Value::as_str)
+            .pattern
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .ok_or_else(|| StasisError::PortFailure("pattern is required".to_string()))?
             .to_string();
-        let context_lines = input
-            .get("context_lines")
-            .and_then(Value::as_u64)
-            .unwrap_or(2)
-            .clamp(0, 10) as usize;
-        let limit = input
-            .get("limit")
-            .and_then(Value::as_u64)
-            .unwrap_or(20)
-            .clamp(1, 200) as usize;
-        emit_invoked(&self.event_tx, self.name(), &artifact_id);
+        let context_lines = input.context_lines.unwrap_or(2).clamp(0, 10);
+        let limit = input.limit.unwrap_or(20).clamp(1, 200);
+        emit_invoked(&self.event_tx, COGNITION_ARTIFACT_GREP, &artifact_id);
         let result = tokio::task::spawn_blocking(move || {
             crate::artifact_store::grep_ui_artifact(
                 &session_id,
@@ -340,7 +456,7 @@ impl StasisTool for CognitionArtifactGrepTool {
         .await
         .map_err(|err| StasisError::PortFailure(format!("artifact grep join error: {err}")))?
         .map_err(StasisError::PortFailure)?;
-        serde_json::to_value(result).map_err(|err| StasisError::PortFailure(err.to_string()))
+        Ok(result)
     }
 }
 
