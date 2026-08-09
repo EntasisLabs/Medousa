@@ -31,6 +31,8 @@ pub(crate) async fn handle_slash_command(
             );
             push_obs_alert(state, "  /usage    context window / token breakdown".to_string());
             push_obs_alert(state, "  /notes    open vault library picker (Ctrl+; o)".to_string());
+            push_obs_alert(state, "  /code     open Forge code desk (Ctrl+; f)".to_string());
+            push_obs_alert(state, "  /review   open Forge review desk (Ctrl+; r)".to_string());
             push_obs_alert(state, "  /close    quit medousa_tui".to_string());
         }
         "/notes" | "/library" => {
@@ -47,6 +49,32 @@ pub(crate) async fn handle_slash_command(
                 }
             } else {
                 let _ = notes_runtime::open_note_path(state, rest).await;
+            }
+        }
+        "/forge" | "/code" => {
+            let rest = parts.collect::<Vec<_>>().join(" ");
+            let rest = rest.trim();
+            if rest.is_empty() {
+                forge_runtime::open_forge_picker(
+                    state,
+                    forge_runtime::ForgePickerTarget::Code,
+                )
+                .await;
+            } else {
+                let _ = forge_runtime::open_code_work(state, rest, rest).await;
+            }
+        }
+        "/review" => {
+            let rest = parts.collect::<Vec<_>>().join(" ");
+            let rest = rest.trim();
+            if rest.is_empty() {
+                forge_runtime::open_forge_picker(
+                    state,
+                    forge_runtime::ForgePickerTarget::Review,
+                )
+                .await;
+            } else {
+                let _ = forge_runtime::open_review_work(state, rest, rest).await;
             }
         }
         "/new" => {

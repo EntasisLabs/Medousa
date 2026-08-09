@@ -173,7 +173,7 @@ ask-about-note hands context to a chat pane.
 - `Ctrl+A` ask-about-note → new chat tab with note snippet prefilled
 - Follow-ups: backlinks panel, conflict UI polish, tree sidebar
 
-### Phase 3 — Code + Review
+### Phase 3 — Code + Review ✅ (v1)
 
 - bind a Forge undertaking / worktree (list + select)
 - `code` tab: file tree under worktree + buffer; syntax highlight via existing
@@ -189,6 +189,12 @@ Optional later: wire coding-domain tools when a code/review pane is focused
 
 **Acceptance:** open work → edit file → see agent/human diff in Review → seal
 path works without opening Home.
+
+**Landed (v1):**
+- `Ctrl+; f` / `/code` Forge picker → code desk (tree + buffer, lease-fenced save)
+- `Ctrl+; r` / `/review` → stacked file diffs, `a` approve / `f` finish / `u` restore
+- `Ctrl+R` from code → review; `c` from review → code
+- Follow-ups: seal from TUI, syntax highlight, conflict DiffStack polish
 
 ### Phase 4 — Terminal panes
 

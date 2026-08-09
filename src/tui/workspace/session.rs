@@ -127,6 +127,24 @@ impl ShellTab {
             _ => None,
         }
     }
+
+    pub fn code_work_id(&self) -> Option<&str> {
+        match self {
+            Self::Code { work_id, .. } => work_id.as_deref(),
+            _ => None,
+        }
+    }
+
+    pub fn review_work_id(&self) -> Option<&str> {
+        match self {
+            Self::Review { work_id, .. } => Some(work_id.as_str()),
+            _ => None,
+        }
+    }
+
+    pub fn forge_work_id(&self) -> Option<&str> {
+        self.code_work_id().or_else(|| self.review_work_id())
+    }
 }
 
 pub type ChatTab = ShellTab;
@@ -189,6 +207,27 @@ pub fn new_notes_tab(path: impl Into<String>, title: impl Into<String>) -> Shell
         id: new_tab_id("notes"),
         path,
         title,
+    }
+}
+
+pub fn new_code_tab(
+    work_id: impl Into<String>,
+    path: impl Into<String>,
+    title: impl Into<String>,
+) -> ShellTab {
+    ShellTab::Code {
+        id: new_tab_id("code"),
+        path: path.into(),
+        work_id: Some(work_id.into()),
+        title: title.into(),
+    }
+}
+
+pub fn new_review_tab(work_id: impl Into<String>, title: impl Into<String>) -> ShellTab {
+    ShellTab::Review {
+        id: new_tab_id("review"),
+        work_id: work_id.into(),
+        title: title.into(),
     }
 }
 
@@ -418,6 +457,71 @@ impl WorkspaceShell {
                 .flat_map(|g| g.tab_ids.iter().cloned())
                 .collect();
             layout.tabs.retain(|t| live.contains(t.id()));
+        }
+        true
+    }
+
+    pub fn open_code_tab_in_active(
+        &mut self,
+        work_id: &str,
+        path: &str,
+        title: &str,
+    ) -> bool {
+        let layout = self.layout_mut();
+        if layout.tabs.len() >= MAX_TABS {
+            return false;
+        }
+        let active_group_id = layout.active_group_id.clone();
+        if let Some(existing) = layout.tabs.iter().find(|t| {
+            t.code_work_id() == Some(work_id)
+                && layout
+                    .groups
+                    .iter()
+                    .find(|g| g.id == active_group_id)
+                    .is_some_and(|g| g.tab_ids.iter().any(|id| id == t.id()))
+        }) {
+            let existing_id = existing.id().to_string();
+            if let Some(group) = layout.groups.iter_mut().find(|g| g.id == active_group_id) {
+                group.active_tab_id.replace(existing_id);
+            }
+            return true;
+        }
+        let tab = new_code_tab(work_id, path, title);
+        let tab_id = tab.id().to_string();
+        layout.tabs.push(tab);
+        if let Some(group) = layout.groups.iter_mut().find(|g| g.id == active_group_id) {
+            group.tab_ids.push(tab_id.clone());
+            group.active_tab_id = Some(tab_id);
+        }
+        true
+    }
+
+    pub fn open_review_tab_in_active(&mut self, work_id: &str, title: &str) -> bool {
+        let layout = self.layout_mut();
+        if layout.tabs.len() >= MAX_TABS {
+            return false;
+        }
+        let active_group_id = layout.active_group_id.clone();
+        if let Some(existing) = layout.tabs.iter().find(|t| {
+            t.review_work_id() == Some(work_id)
+                && layout
+                    .groups
+                    .iter()
+                    .find(|g| g.id == active_group_id)
+                    .is_some_and(|g| g.tab_ids.iter().any(|id| id == t.id()))
+        }) {
+            let existing_id = existing.id().to_string();
+            if let Some(group) = layout.groups.iter_mut().find(|g| g.id == active_group_id) {
+                group.active_tab_id.replace(existing_id);
+            }
+            return true;
+        }
+        let tab = new_review_tab(work_id, title);
+        let tab_id = tab.id().to_string();
+        layout.tabs.push(tab);
+        if let Some(group) = layout.groups.iter_mut().find(|g| g.id == active_group_id) {
+            group.tab_ids.push(tab_id.clone());
+            group.active_tab_id = Some(tab_id);
         }
         true
     }

@@ -102,6 +102,8 @@ mod workers;
 mod workspace_runtime;
 #[path = "medousa_tui/notes_runtime.rs"]
 mod notes_runtime;
+#[path = "medousa_tui/forge_runtime.rs"]
+mod forge_runtime;
 
 use agent_runtime::{start_prompt_run, stop_active_generation};
 use editor_runtime::{load_editor_file, run_editor_source_via_runtime, save_editor_buffer};
@@ -253,6 +255,15 @@ struct TuiState {
     notes_picker_hits: Vec<NotesPickerHit>,
     /// Open note buffers keyed by vault path.
     note_buffers: HashMap<String, NoteBuffer>,
+    /// Forge undertakings picker.
+    forge_picker_hits: Vec<forge_runtime::ForgeItemHit>,
+    forge_picker_selected: usize,
+    forge_picker_query: String,
+    forge_picker_target: forge_runtime::ForgePickerTarget,
+    /// Code desks keyed by work_id.
+    code_workspaces: HashMap<String, forge_runtime::CodeWorkspace>,
+    /// Review desks keyed by work_id.
+    review_workspaces: HashMap<String, forge_runtime::ReviewWorkspace>,
 }
 
 pub(crate) fn build_tui_platform_config(state: &TuiState) -> TuiPlatformBuildConfig {
@@ -335,6 +346,9 @@ enum UiMode {
     Chat,
     Notes,
     NotesPicker,
+    Code,
+    Review,
+    ForgePicker,
     History,
     CommandPalette,
     Settings,
@@ -790,6 +804,12 @@ async fn main() -> Result<()> {
         notes_picker_scroll: 0,
         notes_picker_hits: Vec::new(),
         note_buffers: HashMap::new(),
+        forge_picker_hits: Vec::new(),
+        forge_picker_selected: 0,
+        forge_picker_query: String::new(),
+        forge_picker_target: forge_runtime::ForgePickerTarget::Code,
+        code_workspaces: HashMap::new(),
+        review_workspaces: HashMap::new(),
     };
 
     if local_runtime_only {
@@ -1477,6 +1497,12 @@ mod tests {
             notes_picker_scroll: 0,
             notes_picker_hits: Vec::new(),
             note_buffers: HashMap::new(),
+            forge_picker_hits: Vec::new(),
+            forge_picker_selected: 0,
+            forge_picker_query: String::new(),
+            forge_picker_target: super::forge_runtime::ForgePickerTarget::Code,
+            code_workspaces: HashMap::new(),
+            review_workspaces: HashMap::new(),
         }
     }
 
