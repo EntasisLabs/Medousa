@@ -12,9 +12,6 @@ use serde_json::Value;
 use stasis::application::runtime::runtime_factory::RuntimeComposition;
 use stasis::domain::runtime::job::{Job, JobState};
 use stasis::domain::runtime::recurring::RecurringDefinition;
-use stasis::ports::outbound::runtime::job_store::JobStore;
-use stasis::ports::outbound::runtime::outbox_store::OutboxStore;
-use stasis::ports::outbound::runtime::recurring_store::RecurringStore;
 use stasis::prelude::StasisError;
 use stasis::sdk::runtime_sdk::{RuntimeSdk, RuntimeStatsSnapshot};
 use tokio::sync::{RwLock, mpsc};
@@ -26,6 +23,8 @@ use crate::recurring_delivery::{
     bind_recurring_delivery_spec_for_registration, delivery_binding_for_recurring,
 };
 use crate::recurring_feed::{RecurringFeedSpec, bind_recurring_feed_spec_for_registration};
+use crate::recurring_schedule::RecurringScheduleSpec;
+use crate::runtime_composition_ext::RuntimeCompositionExt;
 use crate::tools::validate_grapheme_source_for_schedule;
 use crate::turn_continuation::{
     ContinuationAwaitMode, StoredDeliveryTarget, TurnContinuationScope, continuation_tool_metadata,
@@ -192,56 +191,38 @@ async fn list_jobs_by_state(
     runtime: &RuntimeComposition,
     state: JobState,
 ) -> stasis::prelude::Result<Vec<Job>> {
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt.job_store.list_by_state(state).await,
-        RuntimeComposition::Surreal(rt) => rt.job_store.list_by_state(state).await,
-    }
+    runtime.list_jobs_by_state(state).await
 }
 
 async fn get_job(
     runtime: &RuntimeComposition,
     job_id: &str,
 ) -> stasis::prelude::Result<Option<Job>> {
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt.job_store.get(job_id).await,
-        RuntimeComposition::Surreal(rt) => rt.job_store.get(job_id).await,
-    }
+    runtime.get_job(job_id).await
 }
 
 async fn save_job(runtime: &RuntimeComposition, job: Job) -> stasis::prelude::Result<()> {
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt.job_store.save(job).await,
-        RuntimeComposition::Surreal(rt) => rt.job_store.save(job).await,
-    }
+    runtime.save_job(job).await
 }
 
 async fn list_recurring_definitions(
     runtime: &RuntimeComposition,
 ) -> stasis::prelude::Result<Vec<RecurringDefinition>> {
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt.recurring_store.list().await,
-        RuntimeComposition::Surreal(rt) => rt.recurring_store.list().await,
-    }
+    runtime.list_recurring().await
 }
 
 async fn save_recurring_definition(
     runtime: &RuntimeComposition,
     definition: RecurringDefinition,
 ) -> stasis::prelude::Result<()> {
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt.recurring_store.save(definition).await,
-        RuntimeComposition::Surreal(rt) => rt.recurring_store.save(definition).await,
-    }
+    runtime.save_recurring(definition).await
 }
 
 async fn register_recurring_definition(
     runtime: &RuntimeComposition,
     definition: RecurringDefinition,
 ) -> stasis::prelude::Result<()> {
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt.register_recurring(definition).await,
-        RuntimeComposition::Surreal(rt) => rt.register_recurring(definition).await,
-    }
+    runtime.register_recurring(definition).await
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -890,6 +871,48 @@ impl<'de> Deserialize<'de> for RuntimeRecurringRegisterInput {
     }
 }
 
+impl RuntimeRecurringRegisterInput {
+    pub(crate) fn grapheme(source: impl Into<String>, cron_expr: impl Into<String>) -> Self {
+        Self {
+            source: Some(source.into()),
+            job_type: Some(default_grapheme_job_type()),
+            payload_template_ref: None,
+            cron_expr: Some(cron_expr.into()),
+            timezone: Some(default_runtime_timezone()),
+            queue: Some(default_runtime_queue()),
+            recurring_id: None,
+            jitter_seconds: Some(default_zero_i64()),
+            max_attempts: Some(default_one_u64()),
+            enabled: Some(default_true()),
+            start_immediately: Some(default_false()),
+            delivery: None,
+            feeds: None,
+        }
+    }
+
+    pub(crate) fn job(
+        job_type: impl Into<String>,
+        payload_template_ref: impl Into<String>,
+        cron_expr: impl Into<String>,
+    ) -> Self {
+        Self {
+            source: None,
+            job_type: Some(job_type.into()),
+            payload_template_ref: Some(payload_template_ref.into()),
+            cron_expr: Some(cron_expr.into()),
+            timezone: Some(default_runtime_timezone()),
+            queue: Some(default_runtime_queue()),
+            recurring_id: None,
+            jitter_seconds: Some(default_zero_i64()),
+            max_attempts: Some(default_one_u64()),
+            enabled: Some(default_true()),
+            start_immediately: Some(default_false()),
+            delivery: None,
+            feeds: None,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(untagged)]
 pub enum RuntimeRecurringRegisterOutput {
@@ -980,28 +1003,19 @@ impl CognitionRuntimeRecurringRegisterTool {
         let enabled = input.enabled.unwrap_or(true);
         let start_immediately = input.start_immediately.unwrap_or(false);
 
-        let now = Utc::now();
-        let mut definition = RecurringDefinition {
-            id: recurring_id.clone(),
-            queue: queue.to_string(),
-            job_type: job_type.to_string(),
+        let definition = RecurringScheduleSpec::new(
+            recurring_id.clone(),
+            queue,
+            job_type,
             payload_template_ref,
-            cron_expr: cron_expr.to_string(),
-            timezone: timezone.to_string(),
-            jitter_seconds,
-            enabled,
-            max_attempts,
-            next_run_at: now,
-            last_run_at: None,
-            lease_owner: None,
-            lease_expires_at: None,
-        };
-
-        if start_immediately {
-            definition.next_run_at = now;
-        } else {
-            definition.next_run_at = definition.compute_next_run_at(now)?;
-        }
+            cron_expr,
+            timezone,
+        )
+        .jitter_seconds(jitter_seconds)
+        .enabled(enabled)
+        .max_attempts(max_attempts)
+        .start_immediately(start_immediately)
+        .build(Utc::now())?;
 
         let scope = self.turn_scope.read().await.clone();
         let ambient = ambient_from_turn_scope(scope.as_ref());
@@ -1270,10 +1284,10 @@ impl CognitionRuntimeDeliveryStatusTool {
         let sdk = RuntimeSdk::new(self.runtime.as_ref().clone());
         let snapshot = sdk.stats_snapshot(pending_limit).await?;
 
-        let pending = match self.runtime.as_ref() {
-            RuntimeComposition::InMemory(rt) => rt.outbox_store.list_pending(pending_limit).await?,
-            RuntimeComposition::Surreal(rt) => rt.outbox_store.list_pending(pending_limit).await?,
-        };
+        let pending = self
+            .runtime
+            .list_pending_outbox_events(pending_limit)
+            .await?;
 
         let pending_preview = pending
             .iter()
@@ -1728,27 +1742,19 @@ impl CognitionRuntimeWorkflowScheduleTool {
             .unwrap_or_else(|| format!("wf-recur-{}", Uuid::new_v4().simple()));
 
         let now = Utc::now();
-        let mut definition = RecurringDefinition {
-            id: recurring_id.clone(),
-            queue: input.queue.clone(),
-            job_type: WORKFLOW_SEQUENTIAL_JOB_TYPE.to_string(),
+        let definition = RecurringScheduleSpec::new(
+            recurring_id.clone(),
+            input.queue.clone(),
+            WORKFLOW_SEQUENTIAL_JOB_TYPE,
             payload_template_ref,
-            cron_expr: cron_expr.to_string(),
-            timezone: input.timezone.clone(),
-            jitter_seconds: input.jitter_seconds,
-            enabled: input.enabled,
-            max_attempts: input.max_attempts as u32,
-            next_run_at: now,
-            last_run_at: None,
-            lease_owner: None,
-            lease_expires_at: None,
-        };
-
-        if input.start_immediately {
-            definition.next_run_at = now;
-        } else {
-            definition.next_run_at = definition.compute_next_run_at(now)?;
-        }
+            cron_expr,
+            input.timezone.clone(),
+        )
+        .jitter_seconds(input.jitter_seconds)
+        .enabled(input.enabled)
+        .max_attempts(input.max_attempts as u32)
+        .start_immediately(input.start_immediately)
+        .build(now)?;
 
         let scope = self.turn_scope.read().await.clone();
         let ambient = ambient_from_turn_scope(scope.as_ref());
@@ -2265,6 +2271,22 @@ mod tests {
     use stasis::sdk::runtime_sdk::RuntimeSdk;
 
     use super::*;
+
+    #[test]
+    fn recurring_input_constructors_keep_wire_defaults() {
+        let grapheme = RuntimeRecurringRegisterInput::grapheme("source", "cron");
+        assert_eq!(grapheme.source.as_deref(), Some("source"));
+        assert_eq!(grapheme.job_type.as_deref(), Some("workflow.grapheme.run"));
+        assert_eq!(grapheme.timezone.as_deref(), Some("UTC"));
+        assert_eq!(grapheme.queue.as_deref(), Some("default"));
+        assert_eq!(grapheme.enabled, Some(true));
+
+        let job = RuntimeRecurringRegisterInput::job("job.type", "payload", "cron");
+        assert!(job.source.is_none());
+        assert_eq!(job.job_type.as_deref(), Some("job.type"));
+        assert_eq!(job.payload_template_ref.as_deref(), Some("payload"));
+        assert_eq!(job.start_immediately, Some(false));
+    }
 
     #[tokio::test]
     async fn jobs_list_returns_enqueued_job() {

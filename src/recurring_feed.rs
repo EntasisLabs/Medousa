@@ -15,6 +15,8 @@ use surrealdb::engine::any::Any;
 use surrealdb_types::SurrealValue;
 use tokio::sync::RwLock as AsyncRwLock;
 
+use crate::typed_tools::CompatOption;
+
 const TABLE: &str = "recurring_feed_binding";
 
 const SCHEMA_STATEMENTS: &[&str] = &[
@@ -98,6 +100,45 @@ pub struct RecurringFeedSpec {
     pub payload_mode: FeedPayloadMode,
 }
 
+impl TryFrom<&RecurringFeedSpec> for RecurringFeedBinding {
+    type Error = StasisError;
+
+    fn try_from(spec: &RecurringFeedSpec) -> Result<Self, Self::Error> {
+        if spec.feed_ids.is_empty() {
+            return Err(StasisError::PortFailure(
+                "feeds.feed_ids must contain at least one feed id".to_string(),
+            ));
+        }
+
+        let mut feed_ids = Vec::with_capacity(spec.feed_ids.len());
+        for raw_feed_id in &spec.feed_ids {
+            let feed_id = raw_feed_id.trim();
+            if feed_id.is_empty() {
+                return Err(StasisError::PortFailure(
+                    "feeds.feed_ids entries must be strings".to_string(),
+                ));
+            }
+            if !is_valid_feed_id(feed_id) {
+                return Err(StasisError::PortFailure(format!(
+                    "invalid feed_id={feed_id}; use lowercase dotted ids like trip.london.trains"
+                )));
+            }
+            feed_ids.push(feed_id.to_string());
+        }
+
+        Ok(Self {
+            feed_ids,
+            payload_mode: spec.payload_mode,
+        })
+    }
+}
+
+impl RecurringFeedSpec {
+    pub fn try_into_binding(&self) -> StasisResult<RecurringFeedBinding> {
+        self.try_into().map_err(Into::into)
+    }
+}
+
 pub async fn bind_recurring_feed_for_registration(
     recurring_id: &str,
     input: &Value,
@@ -113,10 +154,7 @@ pub async fn bind_recurring_feed_spec_for_registration(
     let Some(feeds) = feeds else {
         return Ok((false, None));
     };
-    let value = serde_json::to_value(feeds).map_err(|error| {
-        StasisError::PortFailure(format!("failed to encode recurring feed spec: {error}"))
-    })?;
-    let binding = parse_feeds_spec(&value)?;
+    let binding = feeds.try_into_binding()?;
     recurring_feed_store()
         .upsert(recurring_id, &binding)
         .await
@@ -146,44 +184,27 @@ pub async fn persist_recurring_feed_binding(
 }
 
 pub fn parse_feeds_spec(value: &Value) -> StasisResult<RecurringFeedBinding> {
-    let feed_ids_raw = value
-        .get("feed_ids")
-        .and_then(|v| v.as_array())
-        .ok_or_else(|| {
-            StasisError::PortFailure(
-                "feeds.feed_ids is required and must be a non-empty array".to_string(),
-            )
-        })?;
-
-    if feed_ids_raw.is_empty() {
-        return Err(StasisError::PortFailure(
-            "feeds.feed_ids must contain at least one feed id".to_string(),
-        ));
+    #[derive(Debug, Deserialize)]
+    struct LegacyRecurringFeedSpec {
+        #[serde(default)]
+        feed_ids: Option<Vec<String>>,
+        #[serde(default)]
+        payload_mode: CompatOption<String>,
     }
 
-    let mut feed_ids = Vec::with_capacity(feed_ids_raw.len());
-    for entry in feed_ids_raw {
-        let feed_id = entry
-            .as_str()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| {
-                StasisError::PortFailure("feeds.feed_ids entries must be strings".to_string())
-            })?;
-        if !is_valid_feed_id(feed_id) {
-            return Err(StasisError::PortFailure(format!(
-                "invalid feed_id={feed_id}; use lowercase dotted ids like trip.london.trains"
-            )));
-        }
-        feed_ids.push(feed_id.to_string());
-    }
-
-    let payload_mode = FeedPayloadMode::parse(value.get("payload_mode").and_then(|v| v.as_str()));
-
-    Ok(RecurringFeedBinding {
+    let wire: LegacyRecurringFeedSpec = serde_json::from_value(value.clone()).map_err(|error| {
+        StasisError::PortFailure(format!("invalid recurring feed spec: {error}"))
+    })?;
+    let feed_ids = wire.feed_ids.ok_or_else(|| {
+        StasisError::PortFailure(
+            "feeds.feed_ids is required and must be a non-empty array".to_string(),
+        )
+    })?;
+    let spec = RecurringFeedSpec {
         feed_ids,
-        payload_mode,
-    })
+        payload_mode: FeedPayloadMode::parse(wire.payload_mode.as_ref().map(String::as_str)),
+    };
+    spec.try_into_binding()
 }
 
 pub async fn feed_binding_for_recurring(recurring_id: &str) -> Option<RecurringFeedBinding> {
@@ -398,5 +419,17 @@ mod tests {
         }))
         .unwrap_err();
         assert!(err.to_string().contains("invalid feed_id"));
+    }
+
+    #[test]
+    fn typed_feed_spec_converts_without_json_roundtrip() {
+        let spec = RecurringFeedSpec {
+            feed_ids: vec!["  trip.london.trains  ".to_string()],
+            payload_mode: FeedPayloadMode::Summary,
+        };
+
+        let binding = spec.try_into_binding().expect("typed feed binding");
+        assert_eq!(binding.feed_ids, vec!["trip.london.trains"]);
+        assert_eq!(binding.payload_mode, FeedPayloadMode::Summary);
     }
 }

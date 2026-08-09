@@ -626,24 +626,38 @@ impl CognitionCustomViewComposeTool {
                 poll_url
                     .map(|poll_url| format!("http_poll url=\"{}\"", poll_url.replace('"', "\\\"")))
             });
-            let recurring_input = RuntimeRecurringRegisterInput {
-                source,
-                job_type,
-                payload_template_ref,
-                cron_expr,
-                timezone,
-                queue,
-                recurring_id: recurring_id.or_else(|| Some(format!("{surface_id}-{component_id}"))),
-                jitter_seconds,
-                max_attempts,
-                enabled,
-                start_immediately,
-                delivery,
-                feeds: Some(feeds.unwrap_or(RecurringFeedSpec {
-                    feed_ids: feed_ids.clone(),
-                    payload_mode: Default::default(),
-                })),
+            let mut recurring_input = if job_type
+                .as_deref()
+                .is_some_and(|value| value != "workflow.grapheme.run")
+            {
+                RuntimeRecurringRegisterInput::job(
+                    job_type.clone().unwrap_or_default(),
+                    payload_template_ref.clone().unwrap_or_default(),
+                    cron_expr.clone().unwrap_or_default(),
+                )
+            } else {
+                RuntimeRecurringRegisterInput::grapheme(
+                    source.clone().unwrap_or_default(),
+                    cron_expr.clone().unwrap_or_default(),
+                )
             };
+            recurring_input.source = source;
+            recurring_input.job_type = job_type;
+            recurring_input.payload_template_ref = payload_template_ref;
+            recurring_input.cron_expr = cron_expr;
+            recurring_input.timezone = timezone;
+            recurring_input.queue = queue;
+            recurring_input.recurring_id =
+                recurring_id.or_else(|| Some(format!("{surface_id}-{component_id}")));
+            recurring_input.jitter_seconds = jitter_seconds;
+            recurring_input.max_attempts = max_attempts;
+            recurring_input.enabled = enabled;
+            recurring_input.start_immediately = start_immediately;
+            recurring_input.delivery = delivery;
+            recurring_input.feeds = Some(feeds.unwrap_or(RecurringFeedSpec {
+                feed_ids: feed_ids.clone(),
+                payload_mode: Default::default(),
+            }));
             let register_tool = CognitionRuntimeRecurringRegisterTool::new(
                 self.runtime.clone(),
                 self.event_tx.clone(),

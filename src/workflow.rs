@@ -29,6 +29,7 @@ use crate::identity_memory;
 use crate::mcp_gateway_api::{McpInvokeRequest, McpTurnContext, McpTurnLane};
 use crate::mcp_gateway_client::McpGatewayClient;
 use crate::mcp_turn_token::mint_mcp_turn_token;
+use crate::runtime_composition_ext::RuntimeCompositionExt;
 use crate::tools::validate_grapheme_source_for_schedule;
 use crate::turn_continuation::{ContinuationAwaitMode, TurnContinuationScope, wire_turn_child_job};
 
@@ -892,10 +893,7 @@ pub async fn enqueue_workflow_job(
         .await;
     }
 
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt.enqueue(job).await?,
-        RuntimeComposition::Surreal(rt) => rt.enqueue(job).await?,
-    }
+    runtime.enqueue_job(job).await?;
     Ok(job_id)
 }
 

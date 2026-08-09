@@ -18,7 +18,7 @@ use stasis::domain::runtime::job_attempt::JobAttemptOutcome;
 use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
 use stasis::ports::outbound::runtime::job_attempt_store::JobAttemptStore;
 use stasis::prelude::{
-    BackoffPolicy, NewJob, RecurringDefinition, RuntimeBackend, RuntimeComposition, StasisError,
+    BackoffPolicy, NewJob, RuntimeBackend, RuntimeComposition, StasisError,
 };
 use stasis::prelude_ext::{MemoryContextReader, MemoryContextWriter};
 
@@ -42,6 +42,8 @@ use crate::recurring_delivery::{
     bind_recurring_delivery_spec_for_registration,
 };
 use crate::recurring_feed::{RecurringFeedSpec, bind_recurring_feed_spec_for_registration};
+use crate::recurring_schedule::RecurringScheduleSpec;
+use crate::runtime_composition_ext::RuntimeCompositionExt;
 use crate::tui::runtime_services::{
     build_tool_loop_pipeline_for_target, build_tui_runtime_services,
 };
@@ -1449,25 +1451,19 @@ impl CognitionGraphemePromoteToRecurringTool {
         let now = Utc::now();
         let payload_template_ref = format!("grapheme:inline:{source}");
 
-        let mut definition = RecurringDefinition {
-            id: recurring_id.clone(),
-            queue: input.queue.clone(),
-            job_type: "workflow.grapheme.run".to_string(),
+        let definition = RecurringScheduleSpec::new(
+            recurring_id.clone(),
+            input.queue.clone(),
+            "workflow.grapheme.run",
             payload_template_ref,
-            cron_expr: cron_expr.to_string(),
-            timezone: input.timezone.clone(),
-            jitter_seconds: input.jitter_seconds,
-            enabled: input.enabled,
-            max_attempts: input.max_attempts as u32,
-            next_run_at: now,
-            last_run_at: None,
-            lease_owner: None,
-            lease_expires_at: None,
-        };
-
-        if !input.start_immediately {
-            definition.next_run_at = definition.compute_next_run_at(now)?;
-        }
+            cron_expr.to_string(),
+            input.timezone.clone(),
+        )
+        .jitter_seconds(input.jitter_seconds)
+        .enabled(input.enabled)
+        .max_attempts(input.max_attempts as u32)
+        .start_immediately(input.start_immediately)
+        .build(now)?;
 
         let scope = self.turn_scope.read().await.clone();
         let ambient = ambient_from_turn_scope(scope.as_ref());
@@ -1489,10 +1485,7 @@ impl CognitionGraphemePromoteToRecurringTool {
         let (feeds_bound, _) =
             bind_recurring_feed_spec_for_registration(&recurring_id, input.feeds.as_ref()).await?;
 
-        match &*self.runtime {
-            RuntimeComposition::InMemory(rt) => rt.register_recurring(definition).await?,
-            RuntimeComposition::Surreal(rt) => rt.register_recurring(definition).await?,
-        }
+        self.runtime.register_recurring(definition).await?;
 
         let _ = self
             .event_tx
@@ -1666,25 +1659,19 @@ impl CognitionGraphemePromoteLastRunToRecurringTool {
         let now = Utc::now();
         let payload_template_ref = format!("grapheme:inline:{source}");
 
-        let mut definition = RecurringDefinition {
-            id: recurring_id.clone(),
-            queue: input.queue.clone(),
-            job_type: "workflow.grapheme.run".to_string(),
+        let definition = RecurringScheduleSpec::new(
+            recurring_id.clone(),
+            input.queue.clone(),
+            "workflow.grapheme.run",
             payload_template_ref,
-            cron_expr: cron_expr.to_string(),
-            timezone: input.timezone.clone(),
-            jitter_seconds: input.jitter_seconds,
-            enabled: input.enabled,
-            max_attempts: input.max_attempts as u32,
-            next_run_at: now,
-            last_run_at: None,
-            lease_owner: None,
-            lease_expires_at: None,
-        };
-
-        if !input.start_immediately {
-            definition.next_run_at = definition.compute_next_run_at(now)?;
-        }
+            cron_expr.to_string(),
+            input.timezone.clone(),
+        )
+        .jitter_seconds(input.jitter_seconds)
+        .enabled(input.enabled)
+        .max_attempts(input.max_attempts as u32)
+        .start_immediately(input.start_immediately)
+        .build(now)?;
 
         let scope = self.turn_scope.read().await.clone();
         let ambient = ambient_from_turn_scope(scope.as_ref());
@@ -1706,10 +1693,7 @@ impl CognitionGraphemePromoteLastRunToRecurringTool {
         let (feeds_bound, _) =
             bind_recurring_feed_spec_for_registration(&recurring_id, input.feeds.as_ref()).await?;
 
-        match &*self.runtime {
-            RuntimeComposition::InMemory(rt) => rt.register_recurring(definition).await?,
-            RuntimeComposition::Surreal(rt) => rt.register_recurring(definition).await?,
-        }
+        self.runtime.register_recurring(definition).await?;
 
         let _ = self
             .event_tx
@@ -1994,21 +1978,15 @@ impl CognitionRuntimeRecurringPreviewTool {
             Utc::now()
         };
 
-        let definition = RecurringDefinition {
-            id: "preview-only".to_string(),
-            queue: "default".to_string(),
-            job_type: "workflow.grapheme.run".to_string(),
-            payload_template_ref: "grapheme:inline:preview".to_string(),
-            cron_expr: cron_expr.clone(),
-            timezone: timezone.clone(),
-            jitter_seconds: 0,
-            enabled: true,
-            max_attempts: 1,
-            next_run_at: base_time,
-            last_run_at: None,
-            lease_owner: None,
-            lease_expires_at: None,
-        };
+        let definition = RecurringScheduleSpec::new(
+            "preview-only",
+            "default",
+            "workflow.grapheme.run",
+            "grapheme:inline:preview",
+            cron_expr.clone(),
+            timezone.clone(),
+        )
+        .build(base_time)?;
 
         let mut cursor = base_time;
         let mut preview = Vec::with_capacity(count);

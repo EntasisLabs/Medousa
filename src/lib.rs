@@ -7,6 +7,7 @@ pub mod channel_delivery;
 pub mod comms;
 pub mod recurring_delivery;
 pub mod recurring_feed;
+pub mod recurring_schedule;
 pub mod feed_sink;
 pub mod recurring_agent_turn;
 pub mod recurring_handlers;

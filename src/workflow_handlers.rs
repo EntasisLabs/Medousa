@@ -9,9 +9,6 @@ use axum::{Json, Router};
 use chrono::Utc;
 use stasis::application::runtime::runtime_factory::RuntimeComposition;
 use stasis::domain::runtime::job::{Job, JobState};
-use stasis::domain::runtime::recurring::RecurringDefinition;
-use stasis::ports::outbound::runtime::job_attempt_store::JobAttemptStore;
-use stasis::ports::outbound::runtime::job_store::JobStore;
 use uuid::Uuid;
 
 use crate::daemon_api::{
@@ -21,6 +18,8 @@ use crate::daemon_api::{
     WorkflowStepResultDto, WorkflowsListQuery, WorkflowsListResponse,
 };
 use crate::recurring_delivery::{DeliveryResolveContext, bind_recurring_delivery_for_registration};
+use crate::recurring_schedule::RecurringScheduleSpec;
+use crate::runtime_composition_ext::RuntimeCompositionExt;
 use crate::workflow::{
     MedousaWorkflowPayload, WorkflowRecord, WorkflowStatus, WORKFLOW_SEQUENTIAL_JOB_TYPE,
     decode_workflow_payload, encode_workflow_payload, enqueue_workflow_job, new_workflow_id,
@@ -38,30 +37,21 @@ async fn get_job(
     runtime: &RuntimeComposition,
     job_id: &str,
 ) -> stasis::prelude::Result<Option<Job>> {
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt.job_store.get(job_id).await,
-        RuntimeComposition::Surreal(rt) => rt.job_store.get(job_id).await,
-    }
+    runtime.get_job(job_id).await
 }
 
 async fn list_jobs_by_state(
     runtime: &RuntimeComposition,
     state: JobState,
 ) -> stasis::prelude::Result<Vec<Job>> {
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt.job_store.list_by_state(state).await,
-        RuntimeComposition::Surreal(rt) => rt.job_store.list_by_state(state).await,
-    }
+    runtime.list_jobs_by_state(state).await
 }
 
 async fn register_recurring_definition(
     runtime: &RuntimeComposition,
-    definition: RecurringDefinition,
+    definition: stasis::domain::runtime::recurring::RecurringDefinition,
 ) -> stasis::prelude::Result<()> {
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt.register_recurring(definition).await,
-        RuntimeComposition::Surreal(rt) => rt.register_recurring(definition).await,
-    }
+    runtime.register_recurring(definition).await
 }
 
 fn job_state_label(state: &JobState) -> &'static str {
@@ -314,24 +304,19 @@ pub async fn schedule_workflow(
     let job_type = workflow_job_type_for_strategy(&request.workflow.strategy)
         .unwrap_or(WORKFLOW_SEQUENTIAL_JOB_TYPE)
         .to_string();
-    let mut definition = RecurringDefinition {
-        id: recurring_id.clone(),
-        queue: queue.to_string(),
+    let definition = RecurringScheduleSpec::new(
+        recurring_id.clone(),
+        queue,
         job_type,
         payload_template_ref,
-        cron_expr: cron_expr.to_string(),
-        timezone: timezone.to_string(),
-        jitter_seconds: 0,
-        enabled,
-        max_attempts: 1,
-        next_run_at: now,
-        last_run_at: None,
-        lease_owner: None,
-        lease_expires_at: None,
-    };
-    definition.next_run_at = definition
-        .compute_next_run_at(now)
-        .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
+        cron_expr,
+        timezone,
+    )
+    .enabled(enabled)
+    .max_attempts(1)
+    .start_policy(crate::recurring_schedule::RecurringStartPolicy::NextScheduled)
+    .build(now)
+    .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
 
     let delivery_input = serde_json::json!({
         "delivery": request.delivery,
@@ -433,11 +418,10 @@ async fn job_to_run_entry(
     runtime: &RuntimeComposition,
     job: &Job,
 ) -> Result<RecurringRunEntry, (StatusCode, String)> {
-    let attempts = match runtime {
-        RuntimeComposition::InMemory(rt) => rt.job_attempt_store.list_by_job_id(&job.id).await,
-        RuntimeComposition::Surreal(rt) => rt.job_attempt_store.list_by_job_id(&job.id).await,
-    }
-    .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+    let attempts = runtime
+        .list_job_attempts(&job.id)
+        .await
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
 
     let latest = attempts.last();
     let output_text = latest.and_then(|attempt| attempt.diagnostics.clone());
