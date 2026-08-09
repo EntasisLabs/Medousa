@@ -1,3 +1,29 @@
+use tokio::sync::mpsc;
+
+/// Mechanical best-effort event publication for tool/application helpers.
+pub trait ToolEventSenderExt {
+    fn tool_invoked(&self, tool_name: impl Into<String>, input_summary: impl Into<String>) -> bool;
+    fn job_enqueued(&self, job_id: impl Into<String>, job_type: impl Into<String>) -> bool;
+}
+
+impl ToolEventSenderExt for mpsc::Sender<TuiEvent> {
+    fn tool_invoked(&self, tool_name: impl Into<String>, input_summary: impl Into<String>) -> bool {
+        self.try_send(TuiEvent::ToolInvoked {
+            tool_name: tool_name.into(),
+            input_summary: input_summary.into(),
+        })
+        .is_ok()
+    }
+
+    fn job_enqueued(&self, job_id: impl Into<String>, job_type: impl Into<String>) -> bool {
+        self.try_send(TuiEvent::JobEnqueued {
+            job_id: job_id.into(),
+            job_type: job_type.into(),
+        })
+        .is_ok()
+    }
+}
+
 /// Events emitted by cognition tools and background agent tasks back to the TUI event loop.
 #[derive(Debug, Clone)]
 pub enum TuiEvent {
@@ -102,4 +128,35 @@ pub enum TuiEvent {
         reason: String,
         progress_summary: Option<String>,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::sync::mpsc;
+
+    use super::{ToolEventSenderExt, TuiEvent};
+
+    #[tokio::test]
+    async fn tool_events_are_best_effort_and_structured() {
+        let (sender, mut receiver) = mpsc::channel(2);
+        assert!(sender.tool_invoked("tool.test", "summary"));
+        assert!(sender.job_enqueued("job-1", "test.job"));
+
+        assert!(matches!(
+            receiver.recv().await,
+            Some(TuiEvent::ToolInvoked { tool_name, .. }) if tool_name == "tool.test"
+        ));
+        assert!(matches!(
+            receiver.recv().await,
+            Some(TuiEvent::JobEnqueued { job_id, .. }) if job_id == "job-1"
+        ));
+    }
+
+    #[test]
+    fn closed_event_receivers_are_ignored() {
+        let (sender, receiver) = mpsc::channel(1);
+        drop(receiver);
+        assert!(!sender.tool_invoked("tool.test", "summary"));
+        assert!(!sender.job_enqueued("job-1", "test.job"));
+    }
 }
