@@ -74,7 +74,7 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | GET (SSE) | `/v1/forge/items/{id}/task-runs/{run_id}/events?since=…` | Stream task output chunks, incremental locations, readiness, and terminal state (`?since=` replay) |
 | POST | `/v1/forge/items/{id}/task-runs/{run_id}/preview` | Mint a tokenized private preview path for a ready run |
 | ANY | `/v1/forge/preview/{token}/…` | Reverse-proxy to workshop `127.0.0.1:{port}` (token-gated; no public app bind) |
-| GET | `/v1/forge/items/{id}/tests` | Discover addressable project tests |
+| GET | `/v1/forge/items/{id}/tests?attempt_id=…` | Discover addressable project tests, optionally pinned to one exact attempt |
 | GET | `/v1/forge/items/{id}/review/file?path=…` | Exact baseline-to-reviewed file comparison with structured hunks |
 | POST | `/v1/forge/items/{id}/review/file` | Reopen work and restore one text file to its baseline while retaining the reviewed checkpoint |
 | GET, POST | `/v1/forge/items/{id}/review/comments` | List or add line-anchored review comments bound to sealed evidence |

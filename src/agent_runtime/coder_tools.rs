@@ -109,6 +109,8 @@ const CODER_WORKSPACE_TOOLS: &[&str] = &[
 
 const CODER_DISCOVERABLE_DOMAINS: &[&str] = &[
     "intelligence",
+    "semantic_actions",
+    "causal",
     "world_model",
     "experiments",
     "history",
@@ -189,7 +191,9 @@ fn automatic_memory_boundary(
     tool_name: &str,
     claims: &[CoderClaimScope],
 ) -> Option<CoderMemoryBoundary> {
-    if tool_name == crate::coding_tools::COGNITION_CODE_APPLY_PATCH {
+    if tool_name == crate::coding_tools::COGNITION_CODE_APPLY_PATCH
+        || tool_name == super::coder_semantic_actions::COGNITION_CODER_CHANGE_SET_APPLY
+    {
         Some(CoderMemoryBoundary::Change)
     } else if tool_name == crate::code_intelligence_tools::COGNITION_CODE_DIAGNOSTICS
         || claims
@@ -893,6 +897,7 @@ pub struct CoderBoundToolRegistry {
     policy: WorkPolicy,
     visible_tools: Arc<StdMutex<HashSet<String>>>,
     memory_cursor: Arc<StdMutex<Option<String>>>,
+    change_sets: Arc<StdMutex<super::coder_semantic_actions::CoderChangeSetStore>>,
     shell_sessions: Arc<Mutex<HashSet<String>>>,
 }
 
@@ -938,6 +943,7 @@ impl CoderBoundToolRegistry {
             policy,
             visible_tools: Arc::new(StdMutex::new(visible_tools)),
             memory_cursor: Arc::new(StdMutex::new(None)),
+            change_sets: Arc::new(StdMutex::new(Default::default())),
             shell_sessions: Arc::new(Mutex::new(HashSet::new())),
         }
     }
@@ -1098,6 +1104,10 @@ impl CoderBoundToolRegistry {
     fn unlock_domain(&self, domain: &str) -> Result<Vec<String>> {
         let names: Vec<&str> = match domain {
             "intelligence" => crate::code_intelligence_tools::CODE_COGNITION_TOOLS.to_vec(),
+            "semantic_actions" => {
+                super::coder_semantic_actions::SEMANTIC_ACTION_TOOL_NAMES.to_vec()
+            }
+            "causal" => vec![super::coder_causal::COGNITION_CODER_CAUSAL_QUERY],
             "world_model" => crate::detamu_tools::DETAMU_COGNITION_TOOLS.to_vec(),
             "experiments" => {
                 vec![super::coder_experiments::COGNITION_CODER_EXPERIMENT_COMPARE]
@@ -1140,6 +1150,26 @@ impl CoderBoundToolRegistry {
         if needs_intelligence {
             let _ = self.unlock_domain("intelligence")?;
         }
+        let needs_semantic_actions = pointers.iter().any(|pointer| {
+            matches!(
+                pointer.kind,
+                super::coder_pointers::CoderPointerKind::Symbol
+                    | super::coder_pointers::CoderPointerKind::ChangeSet
+            )
+        });
+        if needs_semantic_actions {
+            let _ = self.unlock_domain("semantic_actions")?;
+        }
+        let needs_causal = pointers.iter().any(|pointer| {
+            matches!(
+                pointer.status,
+                super::coder_activity::CoderActivityKind::ToolBlocked
+                    | super::coder_activity::CoderActivityKind::ToolFailed
+            )
+        });
+        if needs_causal {
+            let _ = self.unlock_domain("causal")?;
+        }
         Ok(())
     }
 
@@ -1157,6 +1187,8 @@ impl CoderBoundToolRegistry {
                     .flatten(),
             );
         let mut needs_intelligence = false;
+        let mut needs_semantic_actions = false;
+        let mut needs_causal = false;
         let mut needs_world_model = false;
         let mut needs_experiments = false;
         for node in nodes {
@@ -1171,6 +1203,8 @@ impl CoderBoundToolRegistry {
                 kind,
                 Some("change" | "verification" | "checkpoint" | "handoff")
             );
+            needs_semantic_actions |= matches!(kind, Some("change" | "decision" | "verification"));
+            needs_causal |= matches!(kind, Some("hypothesis" | "verification" | "open_gap"));
             needs_experiments |= matches!(
                 kind,
                 Some("experiment" | "acceptance_criterion" | "next_action")
@@ -1181,6 +1215,12 @@ impl CoderBoundToolRegistry {
         }
         if needs_world_model {
             let _ = self.unlock_domain("world_model")?;
+        }
+        if needs_semantic_actions {
+            let _ = self.unlock_domain("semantic_actions")?;
+        }
+        if needs_causal {
+            let _ = self.unlock_domain("causal")?;
         }
         if needs_experiments {
             let _ = self.unlock_domain("experiments")?;
@@ -1874,6 +1914,18 @@ impl CoderBoundToolRegistry {
             }
         } else if crate::code_intelligence_tools::is_code_cognition_tool(tool_name) {
             self.validate_lsp_uri(map.get("uri"))?;
+            reject_mismatched_string(map.get("work_id"), &self.entry.work_id, "work_id")?;
+            let authority = self.authority()?;
+            reject_mismatched_string(
+                map.get("attempt_id"),
+                authority.lease().attempt_id.as_str(),
+                "attempt_id",
+            )?;
+            map.insert("work_id".into(), Value::String(self.entry.work_id.clone()));
+            map.insert(
+                "attempt_id".into(),
+                Value::String(authority.lease().attempt_id.to_string()),
+            );
         } else if crate::detamu_tools::is_detamu_cognition_tool(tool_name) {
             if map.contains_key("world") || map.contains_key("version") {
                 return Err(StasisError::PortFailure(
@@ -1883,6 +1935,31 @@ impl CoderBoundToolRegistry {
             reject_mismatched_string(map.get("work_id"), &self.entry.work_id, "work_id")?;
             map.insert("work_id".into(), Value::String(self.entry.work_id.clone()));
         }
+        Ok(input)
+    }
+
+    fn enrich_semantic_input(&self, tool_name: &str, mut input: Value) -> Result<Value> {
+        if tool_name != super::coder_semantic_actions::COGNITION_CODER_CHANGE_SET_APPLY {
+            return Ok(input);
+        }
+        let map = input.as_object_mut().ok_or_else(|| {
+            StasisError::PortFailure("Coder tools require an object input".into())
+        })?;
+        let change_set_id = map
+            .get("change_set_id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| StasisError::PortFailure("change_set_id is required".into()))?;
+        let paths = self
+            .change_sets
+            .lock()
+            .map_err(|error| {
+                StasisError::PortFailure(format!("change-set store is unavailable: {error}"))
+            })?
+            .paths_for(change_set_id)
+            .unwrap_or_default();
+        map.insert("paths".into(), json!(paths));
         Ok(input)
     }
 
@@ -2107,6 +2184,7 @@ impl ToolRegistry for CoderBoundToolRegistry {
             .and_then(Value::as_str)
             .and_then(crate::agent_runtime::turn_worker::TurnWorkerIntent::parse);
         let (intent, input) = take_coder_intent(input)?;
+        let input = self.enrich_semantic_input(tool_name, input)?;
         let targets = tool_targets(tool_name, &input, authority.lease());
         let claims = super::coder_claims::infer_tool_claims(
             tool_name,
@@ -2184,6 +2262,40 @@ impl ToolRegistry for CoderBoundToolRegistry {
                 authority.forge.as_ref(),
                 self.inner.as_ref(),
                 &self.entry,
+                &input,
+            )
+            .await
+        } else if tool_name == super::coder_semantic_actions::COGNITION_CODER_SYMBOL_REFACTOR {
+            super::coder_semantic_actions::invoke_symbol_refactor(
+                authority.forge.as_ref(),
+                self.change_sets.as_ref(),
+                &self.entry,
+                authority.lease(),
+                &self.policy,
+                &input,
+            )
+            .await
+        } else if tool_name == super::coder_semantic_actions::COGNITION_CODER_CHANGE_SET_APPLY {
+            super::coder_semantic_actions::apply_change_set(
+                self.change_sets.as_ref(),
+                authority.lease(),
+                &input,
+            )
+            .await
+        } else if tool_name == super::coder_semantic_actions::COGNITION_CODER_AFFECTED_TESTS {
+            super::coder_semantic_actions::affected_tests(
+                authority.forge.as_ref(),
+                &self.entry,
+                authority.lease(),
+                &input,
+            )
+            .await
+        } else if tool_name == super::coder_causal::COGNITION_CODER_CAUSAL_QUERY {
+            super::coder_causal::invoke_causal_query(
+                authority.forge.as_ref(),
+                self.inner.as_ref(),
+                &self.entry,
+                &self.engineering_events()?,
                 &input,
             )
             .await
@@ -2308,6 +2420,8 @@ fn coder_runtime_tool_definitions() -> Vec<Tool> {
             })),
     ];
     tools.push(super::coder_experiments::tool_definition());
+    tools.push(super::coder_causal::tool_definition());
+    tools.extend(super::coder_semantic_actions::tool_definitions());
     tools.extend(super::coder_memory::tool_definitions());
     tools
 }
@@ -2478,6 +2592,17 @@ fn tool_targets(tool_name: &str, input: &Value, lease: &ExecutionLease) -> Vec<S
     if let Some(uri) = input.get("uri").and_then(Value::as_str) {
         targets.push(uri.trim().to_string());
     }
+    if let Some(paths) = input.get("paths").and_then(Value::as_array) {
+        targets.extend(
+            paths
+                .iter()
+                .filter_map(Value::as_str)
+                .map(|path| format!("file://{}", path.trim())),
+        );
+    }
+    if let Some(change_set_id) = input.get("change_set_id").and_then(Value::as_str) {
+        targets.push(change_set_id.trim().to_string());
+    }
     if super::coder_memory::CODER_MEMORY_TOOL_NAMES.contains(&tool_name)
         || tool_name.starts_with("cognition_memory_")
     {
@@ -2498,6 +2623,9 @@ fn tool_targets(tool_name: &str, input: &Value, lease: &ExecutionLease) -> Vec<S
     }
     if tool_name == COGNITION_ENGINEERING_HISTORY {
         targets.push(format!("work://{}/history", lease.work_id));
+    }
+    if tool_name == super::coder_causal::COGNITION_CODER_CAUSAL_QUERY {
+        targets.push(format!("work://{}/causal", lease.work_id));
     }
     targets.sort();
     targets.dedup();
@@ -2611,6 +2739,10 @@ fn tool_receipt(
                 "path": output.get("path"),
                 "digest": output.get("digest"),
                 "session_id": output.get("session_id"),
+                "stable_object_id": output.pointer("/change_set/id")
+                    .or_else(|| output.pointer("/action/id"))
+                    .or_else(|| output.pointer("/selection/id"))
+                    .or_else(|| output.get("workflow")),
             }),
         ),
         Err(err) => (false, json!({ "error": truncate(&err.to_string(), 500) })),
@@ -3935,6 +4067,59 @@ mod tests {
             .and_then(Value::as_array)
             .expect("comparison required fields");
         assert_eq!(required, &vec![Value::String("intent".into())]);
+
+        for (domain, expected_tool) in [
+            (
+                "semantic_actions",
+                super::super::coder_semantic_actions::COGNITION_CODER_SYMBOL_REFACTOR,
+            ),
+            (
+                "causal",
+                super::super::coder_causal::COGNITION_CODER_CAUSAL_QUERY,
+            ),
+        ] {
+            let discovered = registry
+                .invoke_tool(
+                    COGNITION_CODER_TOOLS_DISCOVER,
+                    json!({
+                        "intent": format!("Reveal the governed {domain} workflow"),
+                        "domain": domain,
+                    }),
+                )
+                .await
+                .expect("discover final-slice domain");
+            assert!(discovered["newly_visible"]
+                .as_array()
+                .is_some_and(|tools| tools.iter().any(|tool| tool.as_str() == Some(expected_tool))));
+        }
+        let after = registry.list_tools().await.expect("semantic and causal tools");
+        let apply = after
+            .iter()
+            .find(|tool| {
+                tool.name.as_str()
+                    == super::super::coder_semantic_actions::COGNITION_CODER_CHANGE_SET_APPLY
+            })
+            .expect("change-set apply visible");
+        let properties = apply
+            .schema
+            .as_ref()
+            .and_then(|schema| schema.get("properties"))
+            .and_then(Value::as_object)
+            .expect("change-set schema properties");
+        for runtime_owned in [
+            "paths",
+            "preconditions",
+            "operations",
+            "lease_id",
+            "generation",
+            "work_id",
+            "attempt_id",
+        ] {
+            assert!(
+                !properties.contains_key(runtime_owned),
+                "runtime-owned semantic field leaked into model schema: {runtime_owned}"
+            );
+        }
     }
 
     #[tokio::test]
@@ -4158,6 +4343,42 @@ mod tests {
             )
             .expect_err("mismatched work_id");
         assert!(err.to_string().contains("work_id"));
+    }
+
+    #[test]
+    fn code_intelligence_binding_pins_the_exact_attempt() {
+        let fixture = fixture();
+        let authority = authority(&fixture);
+        let registry = CoderBoundToolRegistry::new(
+            Arc::new(RecordingRegistry::default()),
+            &authority,
+            fixture.entry.clone(),
+            fixture.policy.clone(),
+        );
+        let uri = reqwest::Url::from_file_path(fixture.entry.worktree.join("src/lib.rs"))
+            .expect("file URI")
+            .to_string();
+        let bound = registry
+            .bind_input(
+                crate::code_intelligence_tools::COGNITION_CODE_DIAGNOSTICS,
+                json!({ "uri": uri }),
+            )
+            .expect("bound intelligence input");
+        assert_eq!(bound["work_id"], fixture.entry.work_id);
+        assert_eq!(
+            bound["attempt_id"],
+            authority.lease().attempt_id.to_string()
+        );
+        let mismatch = registry
+            .bind_input(
+                crate::code_intelligence_tools::COGNITION_CODE_DIAGNOSTICS,
+                json!({
+                    "uri": bound["uri"],
+                    "attempt_id": "attempt-from-a-sibling"
+                }),
+            )
+            .expect_err("sibling attempt rejected");
+        assert!(mismatch.to_string().contains("attempt_id"));
     }
 
     #[tokio::test]

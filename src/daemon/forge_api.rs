@@ -6173,11 +6173,27 @@ fn discover_project_tests(root: &FsPath, tasks: &[ProjectTask]) -> Vec<ProjectTe
 async fn list_project_tests(
     State(state): State<AppState>,
     Path(work_id): Path<String>,
+    Query(query): Query<ReviewSelectionQuery>,
 ) -> ApiResult<Json<Vec<ProjectTest>>> {
     let id = parse_work_id(&work_id)?;
     let item = forge(&state).load(&id).map_err(map_err)?;
-    let root = item
-        .workspace_environment()
+    let selected_attempt = query
+        .attempt_id
+        .as_deref()
+        .map(|attempt_id| medousa_forge::model::AttemptId::from(attempt_id.to_string()));
+    if selected_attempt
+        .as_ref()
+        .is_some_and(|attempt_id| item.attempt(attempt_id).is_none())
+    {
+        return Err(request_error(
+            StatusCode::NOT_FOUND,
+            "test-discovery attempt does not belong to this undertaking",
+        ));
+    }
+    let root = selected_attempt
+        .as_ref()
+        .and_then(|attempt_id| item.environment_for_attempt(attempt_id))
+        .or_else(|| item.workspace_environment())
         .ok_or_else(|| {
             request_error(
                 StatusCode::CONFLICT,

@@ -301,12 +301,13 @@ fn pointer_kind(event: &CoderActivityEvent) -> CoderPointerKind {
         .to_ascii_lowercase();
     if tool.contains("diagnostic") {
         CoderPointerKind::DiagnosticSet
-    } else if tool.contains("apply_patch") {
+    } else if tool.contains("apply_patch") || tool.contains("change_set_apply") {
         CoderPointerKind::ChangeSet
-    } else if tool.contains("shell")
-        && ["test", "build", "check", "verify", "lint", "compile"]
-            .iter()
-            .any(|needle| intent.contains(needle))
+    } else if tool.contains("affected_tests")
+        || (tool.contains("shell")
+            && ["test", "build", "check", "verify", "lint", "compile"]
+                .iter()
+                .any(|needle| intent.contains(needle)))
     {
         CoderPointerKind::Verification
     } else if tool.contains("shell") {

@@ -25,7 +25,14 @@ fn daemon_base() -> String {
     crate::daemon_self_url::daemon_self_base_url()
 }
 
-async fn proxy(path: &str, uri: &str, line: Option<u32>, character: Option<u32>) -> StasisResult<Value> {
+async fn proxy(
+    path: &str,
+    uri: &str,
+    line: Option<u32>,
+    character: Option<u32>,
+    work_id: Option<&str>,
+    attempt_id: Option<&str>,
+) -> StasisResult<Value> {
     let client = reqwest::Client::new();
     let mut url = reqwest::Url::parse(&format!("{}{path}", daemon_base().trim_end_matches('/')))
         .map_err(|e| StasisError::PortFailure(e.to_string()))?;
@@ -37,6 +44,12 @@ async fn proxy(path: &str, uri: &str, line: Option<u32>, character: Option<u32>)
         }
         if let Some(character) = character {
             q.append_pair("character", &character.to_string());
+        }
+        if let Some(work_id) = work_id {
+            q.append_pair("work_id", work_id);
+        }
+        if let Some(attempt_id) = attempt_id {
+            q.append_pair("attempt_id", attempt_id);
         }
     }
     let resp = client
@@ -74,6 +87,35 @@ fn line_char(input: &Value) -> (Option<u32>, Option<u32>) {
     (line, character)
 }
 
+fn pinned_authority(input: &Value) -> (Option<&str>, Option<&str>) {
+    (
+        input.get("work_id").and_then(Value::as_str),
+        input.get("attempt_id").and_then(Value::as_str),
+    )
+}
+
+pub(crate) async fn request_code_action(input: Value) -> StasisResult<Value> {
+    let client = reqwest::Client::new();
+    let url = format!("{}/v1/code/request", daemon_base().trim_end_matches('/'));
+    let response = client
+        .post(url)
+        .json(&input)
+        .send()
+        .await
+        .map_err(|error| StasisError::PortFailure(format!("coding engine proxy: {error}")))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(StasisError::PortFailure(format!(
+            "coding engine {status}: {body}"
+        )));
+    }
+    response
+        .json()
+        .await
+        .map_err(|error| StasisError::PortFailure(error.to_string()))
+}
+
 fn uri_schema() -> Value {
     json!({
         "type": "object",
@@ -105,7 +147,8 @@ impl StasisTool for CognitionCodeHoverTool {
     async fn invoke(&self, input: Value) -> StasisResult<Value> {
         let uri = require_uri(&input)?;
         let (line, character) = line_char(&input);
-        proxy("/v1/code/hover", &uri, line, character).await
+        let (work_id, attempt_id) = pinned_authority(&input);
+        proxy("/v1/code/hover", &uri, line, character, work_id, attempt_id).await
     }
 }
 
@@ -123,7 +166,16 @@ impl StasisTool for CognitionCodeDefinitionTool {
     async fn invoke(&self, input: Value) -> StasisResult<Value> {
         let uri = require_uri(&input)?;
         let (line, character) = line_char(&input);
-        proxy("/v1/code/definition", &uri, line, character).await
+        let (work_id, attempt_id) = pinned_authority(&input);
+        proxy(
+            "/v1/code/definition",
+            &uri,
+            line,
+            character,
+            work_id,
+            attempt_id,
+        )
+        .await
     }
 }
 
@@ -141,7 +193,16 @@ impl StasisTool for CognitionCodeDiagnosticsTool {
     async fn invoke(&self, input: Value) -> StasisResult<Value> {
         let uri = require_uri(&input)?;
         let (line, character) = line_char(&input);
-        proxy("/v1/code/diagnostics", &uri, line, character).await
+        let (work_id, attempt_id) = pinned_authority(&input);
+        proxy(
+            "/v1/code/diagnostics",
+            &uri,
+            line,
+            character,
+            work_id,
+            attempt_id,
+        )
+        .await
     }
 }
 
@@ -159,7 +220,16 @@ impl StasisTool for CognitionCodeSymbolsTool {
     async fn invoke(&self, input: Value) -> StasisResult<Value> {
         let uri = require_uri(&input)?;
         let (line, character) = line_char(&input);
-        proxy("/v1/code/symbols", &uri, line, character).await
+        let (work_id, attempt_id) = pinned_authority(&input);
+        proxy(
+            "/v1/code/symbols",
+            &uri,
+            line,
+            character,
+            work_id,
+            attempt_id,
+        )
+        .await
     }
 }
 

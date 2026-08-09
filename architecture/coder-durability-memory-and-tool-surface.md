@@ -1,6 +1,6 @@
 # Coder durability, worktree memory, and dynamic tools
 
-> **Status:** Approved direction; Slices 1–5 and experiment notebook extension implemented
+> **Status:** Implemented; durability, experiments, semantic actions, and causal runtime shipped
 > **Parent:** [Coder cognitive runtime](coder-cognitive-runtime-plan.md)
 > **Related:** [Context lanes and scratchpad](context-lanes-and-scratchpad-plan.md),
 > [Turn runtime and lanes](turn-runtime-and-lanes.md), and
@@ -255,6 +255,8 @@ signal:
 | Pack | Examples |
 |---|---|
 | `intelligence` | Symbols, definitions, hover, diagnostics |
+| `semantic_actions` | Symbol references, rename previews, Forge-fenced change sets, affected tests |
+| `causal` | Stable why, observation-only replay, and trace regression workflows |
 | `world_model` | Detamu repository/change/impact observations |
 | `experiments` | Sealed Forge candidate and engineering-notebook comparison |
 | `history` | Bounded engineering history |
@@ -439,6 +441,21 @@ recall without deleting their audit history.
   candidate. Never inspect a live sibling worktree or expose raw patches,
   source bodies, or sibling filesystem paths.
 
+### Semantic action and causal extension (implemented)
+
+- Pin language operations to the exact execution attempt rather than the
+  undertaking's latest projected worktree.
+- Normalize language-server refactors into stable, preview-only change sets;
+  apply only runtime-issued ids through Forge's existing lease and digest
+  transaction.
+- Select bounded affected-test targets from the exact attempt without executing
+  them or inventing commands.
+- Project tool calls and lifecycle events as stable causal traces. Historical
+  replay reconstructs evidence only; it never repeats a side effect.
+- Compose counterfactual queries from sealed Forge candidates and regression
+  queries from explicit trace state without treating model inference as causal
+  proof.
+
 ## Acceptance and observability
 
 - A large global registry produces a bounded initial Coder tool surface.
@@ -453,6 +470,11 @@ recall without deleting their audit history.
 - Two or more sealed speculative attempts can be compared by exact Git tree,
   bounded evidence summary, and their temporally pinned notebook state without
   exposing live sibling state.
+- A symbol rename can be previewed as one complete stable object and applied
+  only once to the same leased attempt; stale or uncertain applications require
+  reconciliation rather than replay.
+- Why, replay, and regression queries return bounded stable traces grounded in
+  the activity ledger, with no hidden-reasoning claim or automatic tool rerun.
 - Reaching the Coder ceiling produces a checkpoint and truthful status, not an
   unknown-error inference retry.
 - Metrics track schema tokens, repeated reads, recovery latency, stale recalls,

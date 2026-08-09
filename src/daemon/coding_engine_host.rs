@@ -138,6 +138,30 @@ fn worktree_for_work(
         .and_then(|item| item.workspace_environment().map(|env| env.worktree.clone()))
 }
 
+/// Resolve one exact attempt when an execution boundary supplies it. Falling
+/// back to the undertaking projection is retained for Home and older clients,
+/// but Coder tools must address their leased attempt so concurrent siblings do
+/// not silently query a different worktree.
+fn worktree_for_request(
+    forge: &medousa_forge::forge::Forge,
+    work_id: &str,
+    attempt_id: Option<&str>,
+) -> Option<PathBuf> {
+    let Some(attempt_id) = attempt_id
+        .map(str::trim)
+        .filter(|attempt_id| !attempt_id.is_empty())
+    else {
+        return worktree_for_work(forge, work_id);
+    };
+    let id = medousa_forge::model::WorkId::from(work_id.trim().to_owned());
+    let attempt_id = medousa_forge::model::AttemptId::from(attempt_id.to_owned());
+    forge.load(&id).ok().and_then(|item| {
+        item.attempt(&attempt_id)?;
+        item.environment_for_attempt(&attempt_id)
+            .map(|environment| environment.worktree.clone())
+    })
+}
+
 #[derive(Debug, Deserialize)]
 struct EngineHealth {
     name: String,
@@ -542,12 +566,31 @@ async fn proxy_agent_get(
     let mut forwarded = q.clone();
     // Workshop paths are daemon authority, never caller authority.
     forwarded.remove("workspace_root");
+    let attempt_id = forwarded.remove("attempt_id");
+    if attempt_id.as_deref().is_some_and(|value| value.trim().is_empty()) {
+        return Err((
+            axum::http::StatusCode::BAD_REQUEST,
+            "attempt_id must be non-empty".to_string(),
+        ));
+    }
     if let Some(work_id) = forwarded.remove("work_id") {
-        let root = worktree_for_work(state.forge.as_ref(), &work_id).ok_or((
-            axum::http::StatusCode::CONFLICT,
-            "unknown or unprepared undertaking".to_string(),
-        ))?;
+        if work_id.trim().is_empty() {
+            return Err((
+                axum::http::StatusCode::BAD_REQUEST,
+                "work_id must be non-empty".to_string(),
+            ));
+        }
+        let root = worktree_for_request(state.forge.as_ref(), &work_id, attempt_id.as_deref())
+            .ok_or((
+                axum::http::StatusCode::CONFLICT,
+                "unknown undertaking, attempt, or governed worktree".to_string(),
+            ))?;
         forwarded.insert("workspace_root".into(), root.to_string_lossy().into_owned());
+    } else if attempt_id.is_some() {
+        return Err((
+            axum::http::StatusCode::BAD_REQUEST,
+            "attempt_id requires work_id".to_string(),
+        ));
     }
     let mut url = reqwest::Url::parse(&format!("{}{path}", info.url))
         .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
@@ -589,14 +632,37 @@ async fn proxy_agent_post(
     if !info.available {
         return Err((axum::http::StatusCode::SERVICE_UNAVAILABLE, info.message));
     }
-    let work_id = body.as_object_mut().and_then(|object| {
-        object.remove("workspace_root");
-        object.remove("work_id")
-    });
-    if let Some(work_id) = work_id.and_then(|value| value.as_str().map(str::to_owned)) {
-        let root = worktree_for_work(state.forge.as_ref(), &work_id).ok_or((
+    let (work_id, attempt_id) = body
+        .as_object_mut()
+        .map(|object| {
+            object.remove("workspace_root");
+            (object.remove("work_id"), object.remove("attempt_id"))
+        })
+        .unwrap_or_default();
+    let work_id = match work_id {
+        Some(serde_json::Value::String(value)) if !value.trim().is_empty() => Some(value),
+        Some(_) => {
+            return Err((
+                axum::http::StatusCode::BAD_REQUEST,
+                "work_id must be a non-empty string".to_string(),
+            ));
+        }
+        None => None,
+    };
+    let attempt_id = match attempt_id {
+        Some(serde_json::Value::String(value)) if !value.trim().is_empty() => Some(value),
+        Some(_) => {
+            return Err((
+                axum::http::StatusCode::BAD_REQUEST,
+                "attempt_id must be a non-empty string".to_string(),
+            ));
+        }
+        None => None,
+    };
+    if let Some(work_id) = work_id {
+        let root = worktree_for_request(state.forge.as_ref(), &work_id, attempt_id.as_deref()).ok_or((
             axum::http::StatusCode::CONFLICT,
-            "unknown or unprepared undertaking".to_string(),
+            "unknown undertaking, attempt, or governed worktree".to_string(),
         ))?;
         if let Some(object) = body.as_object_mut() {
             object.insert(
@@ -604,6 +670,11 @@ async fn proxy_agent_post(
                 serde_json::Value::String(root.to_string_lossy().into_owned()),
             );
         }
+    } else if attempt_id.is_some() {
+        return Err((
+            axum::http::StatusCode::BAD_REQUEST,
+            "attempt_id requires work_id".to_string(),
+        ));
     }
     let client = reqwest::Client::new();
     let resp = client
@@ -661,9 +732,14 @@ pub fn workspace_is_under(root: &Path, candidate: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{lsp_upstream_url, proxy_upstream_status};
+    use super::{lsp_upstream_url, proxy_upstream_status, worktree_for_request};
     use axum::http::StatusCode;
+    use medousa_forge::forge::Forge;
+    use medousa_forge::git::{CheckpointAuthor, GitEngine};
+    use medousa_forge::model::{AttemptId, ExecutorDescriptor};
+    use serde_json::Value;
     use std::path::Path;
+    use tempfile::TempDir;
 
     #[test]
     fn coding_engine_client_errors_preserve_their_status() {
@@ -703,6 +779,84 @@ mod tests {
         assert_eq!(
             query.get("document_uri").unwrap(),
             "file:///work%20trees/project/packages/app/src/main.ts"
+        );
+    }
+
+    #[test]
+    fn coding_engine_attempt_resolution_never_falls_back_to_a_sibling() {
+        let repo = TempDir::new().expect("repo");
+        let forge_root = TempDir::new().expect("forge root");
+        let git = GitEngine::detect().expect("git");
+        assert!(
+            std::process::Command::new("git")
+                .args(["init", "-b", "main", "--template="])
+                .current_dir(repo.path())
+                .status()
+                .expect("git init")
+                .success()
+        );
+        std::fs::write(repo.path().join("seed.txt"), "seed\n").expect("seed");
+        assert!(
+            std::process::Command::new("git")
+                .args(["add", "-A"])
+                .current_dir(repo.path())
+                .status()
+                .expect("git add")
+                .success()
+        );
+        git.commit_checkpoint(repo.path(), "initial", &CheckpointAuthor::default())
+            .expect("initial commit");
+        let forge = Forge::open(forge_root.path()).expect("forge");
+        let item = forge
+            .register(
+                "Exact coding worktree",
+                "Keep language actions attempt-scoped",
+                repo.path(),
+                "main",
+                "user-1",
+                &Forge::system_actor(),
+            )
+            .expect("register");
+        forge
+            .provision(&item.id, &Forge::system_actor())
+            .expect("provision");
+        let executor = || ExecutorDescriptor {
+            kind: "test-coder".into(),
+            detail: Value::Null,
+        };
+        let (item, first) = forge
+            .begin_isolated_attempt(&item.id, executor(), None, &Forge::system_actor())
+            .expect("first attempt");
+        let (item, second) = forge
+            .begin_isolated_attempt(&item.id, executor(), None, &Forge::system_actor())
+            .expect("second attempt");
+        let first_root = worktree_for_request(
+            &forge,
+            item.id.as_str(),
+            Some(first.attempt_id.as_str()),
+        )
+        .expect("first root");
+        let second_root = worktree_for_request(
+            &forge,
+            item.id.as_str(),
+            Some(second.attempt_id.as_str()),
+        )
+        .expect("second root");
+        assert_ne!(first_root, second_root);
+        assert_eq!(
+            first_root,
+            item.environment_for_attempt(&first.attempt_id)
+                .expect("first environment")
+                .worktree
+        );
+        assert!(
+            worktree_for_request(
+                &forge,
+                item.id.as_str(),
+                Some(AttemptId::from("missing".to_string()).as_str()),
+            )
+            .is_none(),
+            "an unknown attempt must not fall back to staging or a sibling"
         );
     }
 }

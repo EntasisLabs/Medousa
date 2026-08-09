@@ -1,6 +1,6 @@
 # Coder cognitive runtime
 
-> Status: Approved direction; slices 1–7 complete, Slice 8 pending
+> Status: Implemented; slices 1–8 complete
 > Parent: [Agent runtime modes](agent-runtime-modes-plan.md)
 
 ## Product decision
@@ -486,6 +486,37 @@ Implemented:
 - Model traces and state transitions as stable objects.
 - Support causal `why`, replay, counterfactual experiment, and regression
   comparison workflows.
+
+Implemented:
+
+- Coder language-intelligence and semantic-action requests now carry the exact
+  leased attempt id as well as the undertaking id. The daemon rejects an
+  unknown or mismatched attempt instead of resolving through the latest sibling
+  worktree.
+- The discoverable `semantic_actions` pack exposes symbol references, rename
+  preview, structured change-set application, and affected-test selection.
+  Models provide a repository-relative symbol location and simple intent; the
+  runtime derives file URIs, worktree authority, lease identity, path claims,
+  and transaction preconditions.
+- Rename remains proposal-first. The runtime normalizes the complete LSP
+  `WorkspaceEdit`, including ordered text/create/rename/delete operations and
+  UTF-16 positions, validates Forge path policy, and returns a bounded stable
+  change-set object without source bodies. Only a runtime-issued change-set id
+  can reach Forge's lease- and digest-fenced workspace transaction.
+- Change sets have an explicit `previewed → applying → applied|uncertain`
+  lifecycle. An applied, in-flight, or uncertain object cannot be replayed;
+  recovery must reconcile current repository state and request a fresh preview.
+- Affected-test selection reads the exact attempt's daemon-discovered test
+  catalog, ranks bounded candidates against dirty or supplied paths and an
+  optional symbol, and returns stable verification targets without running
+  them.
+- The discoverable `causal` pack projects activity calls as stable traces and
+  events as stable state transitions. `why` is grounded only in declared
+  intent and ledger evidence; replay is observation-only and always requires a
+  fresh explicit action; regression compares two trace outcomes; and
+  counterfactual delegates to immutable sealed-candidate evidence.
+- Activity and command-log summaries retain the stable semantic object id while
+  continuing to exclude raw source and full tool payloads.
 
 ## Success measures
 

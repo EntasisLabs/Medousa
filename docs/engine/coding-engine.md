@@ -21,9 +21,12 @@ routes:
 - `GET /v1/code/hover` and `/v1/code/definition`
 - `POST /v1/code/request`
 
-Every route accepts a Forge `work_id`. The daemon resolves that identifier to
-the governed working copy and replaces it with an internal `workspace_root`;
-clients must not send workshop paths as authority.
+Every route accepts a Forge `work_id`. Execution-scoped callers may also send
+`attempt_id`; when present, the daemon resolves that exact attempt and rejects
+unknown or mismatched ids instead of falling back to another active attempt.
+Without `attempt_id`, the existing user-facing undertaking projection remains
+the default. The daemon replaces these identifiers with an internal
+`workspace_root`; clients must not send workshop paths as authority.
 
 `POST /v1/code/request` accepts the whitelisted actions `references`, `rename`,
 `format`, `code_actions`, and `organize_imports`. Results remain native LSP
@@ -117,6 +120,14 @@ user applies it. Application uses
 an explicit digest-or-absence precondition for every touched path. The daemon
 validates the whole operation sequence before mutation, applies it in order,
 and restores every original path if an I/O or response failure occurs.
+
+Native Coder uses the same authority boundary. Its discoverable semantic-action
+surface derives an exact-attempt document URI, previews a complete LSP rename
+as a stable change-set object, and excludes source bodies from the model-facing
+projection. Applying that runtime-issued id sends the normalized operation list
+through the same Forge workspace-edit endpoint. The runtime treats an in-flight
+or uncertain application as non-replayable; it must reconcile and preview again
+rather than repeat a possibly completed side effect.
 
 For rolling upgrades, Home falls back to the older digest-fenced
 `PUT …/source/batch` contract only when the proposal contains text writes and
