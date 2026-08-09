@@ -1,19 +1,24 @@
 //! Host-bus delegation tools (spawn / status / cancel).
 
 use async_trait::async_trait;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::domain::errors::StasisError;
 
 use crate::agent_runtime::turn_worker::{
-    TurnWorkerIntent, TurnWorkStatus, turn_worker_store,
+    TurnWorkRecord, TurnWorkStatus, TurnWorkerIntent, turn_worker_store,
 };
+use crate::typed_tools::{ToolId, medousa_tool};
 use std::sync::Arc;
 
 pub const COGNITION_SPAWN_TURN_WORKER: &str = "cognition_spawn_turn_worker";
 pub const COGNITION_TURN_WORKER_STATUS: &str = "cognition_turn_worker_status";
 pub const COGNITION_TURN_WORKER_CANCEL: &str = "cognition_turn_worker_cancel";
 pub const COGNITION_WORKSHOP_STEER: &str = "cognition_workshop_steer";
+
+const COGNITION_TURN_WORKER_CANCEL_ID: ToolId = ToolId::new(COGNITION_TURN_WORKER_CANCEL);
 
 pub fn is_spawn_turn_worker_tool_name(name: &str) -> bool {
     name.trim() == COGNITION_SPAWN_TURN_WORKER
@@ -151,7 +156,9 @@ impl StasisTool for CognitionSpawnTurnWorkerTool {
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .ok_or_else(|| {
-                StasisError::PortFailure("cognition_spawn_turn_worker: task is required".to_string())
+                StasisError::PortFailure(
+                    "cognition_spawn_turn_worker: task is required".to_string(),
+                )
             })?;
         let user_ack = input
             .get("user_ack")
@@ -177,13 +184,7 @@ impl StasisTool for CognitionSpawnTurnWorkerTool {
 
         self.scheduler
             .spawn_worker(
-                intent,
-                task,
-                user_ack,
-                None,
-                manuscript,
-                stage_role,
-                model_hint,
+                intent, task, user_ack, None, manuscript, stage_role, model_hint,
             )
             .await
     }
@@ -224,9 +225,9 @@ impl StasisTool for CognitionTurnWorkerStatusTool {
     async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
         let store = turn_worker_store();
         if let Some(work_id) = input.get("work_id").and_then(|v| v.as_str()) {
-            let record = store.get(work_id).ok_or_else(|| {
-                StasisError::PortFailure(format!("work_id not found: {work_id}"))
-            })?;
+            let record = store
+                .get(work_id)
+                .ok_or_else(|| StasisError::PortFailure(format!("work_id not found: {work_id}")))?;
             return Ok(json!({ "ok": true, "record": record }));
         }
         let session_id = match input
@@ -268,45 +269,39 @@ impl StasisTool for CognitionTurnWorkerStatusTool {
 
 pub struct CognitionTurnWorkerCancelTool;
 
-#[async_trait]
-impl StasisTool for CognitionTurnWorkerCancelTool {
-    fn name(&self) -> &'static str {
-        COGNITION_TURN_WORKER_CANCEL
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TurnWorkerCancelInput {
+    pub work_id: String,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("Mark a pending or running turn worker as cancelled (best-effort; in-flight worker may still finish).")
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct TurnWorkerCancelOutput {
+    pub ok: bool,
+    /// Evolving durable worker record; its wire projection remains owned by the worker store.
+    #[schemars(with = "serde_json::Value")]
+    pub record: TurnWorkRecord,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "work_id": { "type": "string" }
-            },
-            "required": ["work_id"]
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let work_id = input
-            .get("work_id")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                StasisError::PortFailure("cognition_turn_worker_cancel: work_id required".to_string())
-            })?;
+#[medousa_tool(id = COGNITION_TURN_WORKER_CANCEL_ID)]
+impl CognitionTurnWorkerCancelTool {
+    /// Mark a pending or running turn worker as cancelled (best-effort; in-flight worker may still finish).
+    async fn invoke_typed(
+        &self,
+        input: TurnWorkerCancelInput,
+    ) -> stasis::prelude::Result<TurnWorkerCancelOutput> {
+        let work_id = input.work_id;
         let store = turn_worker_store();
         let updated = store
-            .update(work_id, |r| {
-                if matches!(
-                    r.status,
-                    TurnWorkStatus::Pending | TurnWorkStatus::Running
-                ) {
+            .update(&work_id, |r| {
+                if matches!(r.status, TurnWorkStatus::Pending | TurnWorkStatus::Running) {
                     r.status = TurnWorkStatus::Cancelled;
                 }
             })
             .ok_or_else(|| StasisError::PortFailure(format!("work_id not found: {work_id}")))?;
-        Ok(json!({ "ok": true, "record": updated }))
+        Ok(TurnWorkerCancelOutput {
+            ok: true,
+            record: updated,
+        })
     }
 }
 
@@ -317,7 +312,7 @@ pub fn register_turn_worker_tools(
     registry.register_tool(CognitionSpawnTurnWorkerTool::new(scheduler.clone()))?;
     registry.register_tool(CognitionWorkshopSteerTool::new(scheduler.clone()))?;
     registry.register_tool(CognitionTurnWorkerStatusTool::new(scheduler))?;
-    registry.register_tool(CognitionTurnWorkerCancelTool)?;
+    registry.register_typed_tool(CognitionTurnWorkerCancelTool)?;
     Ok(())
 }
 

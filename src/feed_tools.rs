@@ -6,20 +6,26 @@ use async_trait::async_trait;
 use chrono::Utc;
 use medousa_types::environment::SurfaceKind;
 use medousa_types::environment_validate::validate_environment_spec;
-use medousa_types::feed::{FeedRef, FeedSource, is_valid_feed_id};
-use serde_json::{json, Value};
+use medousa_types::feed::{FeedEvent, FeedRef, FeedSource, is_valid_feed_id};
+use schemars::JsonSchema;
+use schemars::schema::{InstanceType, Schema, SchemaObject};
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::{Value, json};
 use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::prelude::{Result as StasisResult, StasisError};
 use tokio::sync::RwLock;
 
 use crate::capability_catalog::CapabilityRegistry;
 use crate::environment_store::{environment_hub, resolve_profile_id};
-use crate::feed_bus::{publish, FeedPublishRequest};
+use crate::feed_bus::{FeedPublishRequest, publish};
 use crate::turn_continuation::TurnContinuationScope;
+use crate::typed_tools::{ToolId, medousa_tool};
 
 pub const COGNITION_INTENT_RESOLVE: &str = "cognition_intent_resolve";
 pub const COGNITION_FEED_SUBSCRIBE: &str = "cognition_feed_subscribe";
 pub const COGNITION_FEED_PUBLISH: &str = "cognition_feed_publish";
+
+const COGNITION_FEED_PUBLISH_ID: ToolId = ToolId::new(COGNITION_FEED_PUBLISH);
 
 pub fn register_feed_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
@@ -28,7 +34,7 @@ pub fn register_feed_tools(
 ) -> StasisResult<()> {
     registry.register_tool(CognitionIntentResolveTool::new(capability_registry.clone()))?;
     registry.register_tool(CognitionFeedSubscribeTool::new(turn_scope))?;
-    registry.register_tool(CognitionFeedPublishTool)?;
+    registry.register_typed_tool(CognitionFeedPublishTool)?;
     Ok(())
 }
 
@@ -229,93 +235,148 @@ impl StasisTool for CognitionFeedSubscribeTool {
 
 struct CognitionFeedPublishTool;
 
-#[async_trait]
-impl StasisTool for CognitionFeedPublishTool {
-    fn name(&self) -> &'static str {
-        COGNITION_FEED_PUBLISH
-    }
+#[derive(Debug, Default)]
+struct CompatibleFeedRefs(Vec<FeedRef>);
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Publish a bounded feed event for subscribed environment components. Prefer internal publishers for workshop pulse.",
-        )
+impl CompatibleFeedRefs {
+    #[allow(dead_code)]
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["feed_id", "summary"],
-            "properties": {
-                "feed_id": { "type": "string" },
-                "summary": { "type": "string" },
-                "refs": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "required": ["ref_type", "ref_id"],
-                        "properties": {
-                            "ref_type": { "type": "string" },
-                            "ref_id": { "type": "string" }
-                        }
+fn deserialize_compatible_feed_refs<'de, D>(deserializer: D) -> Result<CompatibleFeedRefs, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    let refs = value
+        .as_array()
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| {
+                    let ref_type = entry.get("ref_type")?.as_str()?.trim();
+                    let ref_id = entry.get("ref_id")?.as_str()?.trim();
+                    if ref_type.is_empty() || ref_id.is_empty() {
+                        return None;
                     }
-                },
-                "payload_slice": {
-                    "type": "object",
-                    "description": "Optional bounded UI slice (max 2 KB JSON)"
-                },
-                "profile_id": { "type": "string" }
-            }
-        }))
+                    Some(FeedRef {
+                        ref_type: ref_type.to_string(),
+                        ref_id: ref_id.to_string(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(CompatibleFeedRefs(refs))
+}
+
+#[derive(Debug, Default)]
+enum CompatiblePayloadSlice {
+    #[default]
+    Missing,
+    Value(Value),
+}
+
+impl CompatiblePayloadSlice {
+    fn into_option(self) -> Option<Value> {
+        match self {
+            Self::Missing => None,
+            Self::Value(value) => Some(value),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for CompatiblePayloadSlice {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Value::deserialize(deserializer).map(Self::Value)
+    }
+}
+
+impl JsonSchema for CompatiblePayloadSlice {
+    fn schema_name() -> String {
+        "CompatiblePayloadSlice".to_string()
     }
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let profile_id = profile_from_input(&input);
-        let feed_id = input
-            .get("feed_id")
-            .and_then(Value::as_str)
-            .ok_or_else(|| StasisError::PortFailure("feed_id required".to_string()))?;
-        let summary = input
-            .get("summary")
-            .and_then(Value::as_str)
-            .ok_or_else(|| StasisError::PortFailure("summary required".to_string()))?;
-        let refs = input
-            .get("refs")
-            .and_then(Value::as_array)
-            .map(|entries| {
-                entries
-                    .iter()
-                    .filter_map(|entry| {
-                        let ref_type = entry.get("ref_type")?.as_str()?.trim();
-                        let ref_id = entry.get("ref_id")?.as_str()?.trim();
-                        if ref_type.is_empty() || ref_id.is_empty() {
-                            return None;
-                        }
-                        Some(FeedRef {
-                            ref_type: ref_type.to_string(),
-                            ref_id: ref_id.to_string(),
-                        })
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        let payload_slice = input.get("payload_slice").cloned();
+    fn is_referenceable() -> bool {
+        false
+    }
+
+    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> Schema {
+        Schema::Object(SchemaObject {
+            instance_type: Some(InstanceType::Object.into()),
+            ..SchemaObject::default()
+        })
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct FeedPublishInput {
+    feed_id: String,
+    summary: String,
+    #[serde(default, deserialize_with = "deserialize_compatible_feed_refs")]
+    #[schemars(
+        with = "Vec<FeedRef>",
+        skip_serializing_if = "CompatibleFeedRefs::is_empty"
+    )]
+    refs: CompatibleFeedRefs,
+    /// Optional bounded UI slice (max 2 KB JSON)
+    #[serde(default)]
+    #[schemars(skip_serializing_if = "CompatiblePayloadSlice::is_missing")]
+    payload_slice: CompatiblePayloadSlice,
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    profile_id: Option<String>,
+}
+
+impl CompatiblePayloadSlice {
+    #[allow(dead_code)]
+    fn is_missing(&self) -> bool {
+        matches!(self, Self::Missing)
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct FeedPublishOutput {
+    ok: bool,
+    event: FeedEvent,
+}
+
+#[medousa_tool(id = COGNITION_FEED_PUBLISH_ID)]
+impl CognitionFeedPublishTool {
+    /// Publish a bounded feed event for subscribed environment components. Prefer internal publishers for workshop pulse.
+    async fn invoke_typed(
+        &self,
+        input: FeedPublishInput,
+    ) -> stasis::prelude::Result<FeedPublishOutput> {
+        let profile_id = resolve_profile_id(
+            input
+                .profile_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
+        );
 
         let event = publish(FeedPublishRequest {
             profile_id: Some(profile_id),
-            feed_id: feed_id.to_string(),
+            feed_id: input.feed_id,
             source: FeedSource::Agent,
-            summary: summary.to_string(),
-            refs,
-            payload_slice,
+            summary: input.summary,
+            refs: input.refs.0,
+            payload_slice: input.payload_slice.into_option(),
             payload_max_bytes: None,
         })
         .await
         .map_err(|err| StasisError::PortFailure(err.to_string()))?;
 
-        Ok(json!({
-            "ok": true,
-            "event": event,
-        }))
+        Ok(FeedPublishOutput { ok: true, event })
     }
 }
 

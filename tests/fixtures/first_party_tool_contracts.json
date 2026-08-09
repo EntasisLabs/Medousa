@@ -459,7 +459,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:initial"
       ]
@@ -494,7 +494,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:domain:intelligence",
         "coder:editor_context"
@@ -530,7 +530,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:domain:intelligence",
         "coder:editor_context"
@@ -566,7 +566,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:domain:intelligence",
         "coder:editor_context"
@@ -618,7 +618,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:initial"
       ]
@@ -650,7 +650,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:initial"
       ]
@@ -685,7 +685,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:domain:intelligence",
         "coder:editor_context"
@@ -1106,7 +1106,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:initial"
       ]
@@ -1140,7 +1140,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:initial"
       ]
@@ -1263,7 +1263,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:domain:world_model"
       ]
@@ -1302,7 +1302,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:domain:world_model"
       ]
@@ -1350,7 +1350,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:domain:world_model"
       ]
@@ -1392,7 +1392,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:domain:world_model"
       ]
@@ -1418,7 +1418,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:domain:world_model"
       ]
@@ -2035,7 +2035,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:domain:memory"
       ]
@@ -2141,7 +2141,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:initial"
       ]
@@ -2195,7 +2195,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:initial"
       ]
@@ -2237,7 +2237,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:initial"
       ]
@@ -2348,7 +2348,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:initial"
       ]
@@ -2379,7 +2379,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:initial"
       ]
@@ -2464,7 +2464,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:initial"
       ]
@@ -2491,7 +2491,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:initial"
       ]
@@ -2517,7 +2517,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "coder:initial"
       ]
@@ -3625,7 +3625,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "workshop:domain:coding"
       ]
@@ -3654,7 +3654,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3685,7 +3685,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3716,7 +3716,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3763,7 +3763,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "workshop:domain:coding"
       ]
@@ -3789,7 +3789,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "workshop:domain:coding"
       ]
@@ -3818,7 +3818,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3861,7 +3861,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "workshop:domain:coding"
       ]
@@ -3887,7 +3887,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "workshop:domain:coding"
       ]
@@ -4008,7 +4008,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:domain:environment",
         "workshop:authorized:general",
@@ -4034,7 +4034,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:domain:environment",
         "workshop:authorized:general",
@@ -4054,7 +4054,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:domain:environment",
         "workshop:authorized:general",
@@ -4317,7 +4317,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "workshop:domain:detamu"
       ]
@@ -4348,7 +4348,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "workshop:domain:detamu"
       ]
@@ -4388,7 +4388,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "workshop:domain:detamu"
       ]
@@ -4424,7 +4424,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "workshop:domain:detamu"
       ]
@@ -4442,7 +4442,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "workshop:domain:detamu"
       ]
@@ -4466,7 +4466,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:domain:environment",
         "workshop:authorized:general",
@@ -4490,7 +4490,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:domain:environment",
         "workshop:authorized:general",
@@ -4510,7 +4510,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:domain:environment",
         "workshop:authorized:general",
@@ -4548,7 +4548,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:domain:environment",
         "workshop:authorized:general",
@@ -4664,7 +4664,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:domain:environment",
         "workshop:authorized:general",
@@ -4706,7 +4706,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:domain:environment",
         "workshop:authorized:general",
@@ -4758,7 +4758,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:domain:environment",
         "workshop:authorized:general",
@@ -5774,7 +5774,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:domain:environment",
         "workshop:authorized:general",
@@ -5800,7 +5800,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:domain:environment",
         "workshop:authorized:general",
@@ -5826,7 +5826,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:domain:environment",
         "workshop:authorized:general",
@@ -5851,7 +5851,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:domain:catalog"
@@ -5871,7 +5871,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:domain:overlay"
       ]
@@ -5905,7 +5905,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:domain:overlay"
       ]
@@ -5930,7 +5930,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:domain:catalog"
@@ -6379,7 +6379,7 @@
         "properties": {},
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:domain:memory",
@@ -6527,7 +6527,7 @@
         "properties": {},
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:domain:skill",
@@ -7224,7 +7224,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "workshop:domain:coding"
       ]
@@ -7270,7 +7270,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "workshop:domain:coding"
       ]
@@ -7304,7 +7304,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "workshop:domain:coding"
       ]
@@ -7317,7 +7317,7 @@
         "properties": {},
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -7341,7 +7341,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:domain:skill",
@@ -7413,7 +7413,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:domain:skill",
@@ -7632,7 +7632,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:bootstrap",
@@ -7662,7 +7662,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:bootstrap",
@@ -7686,7 +7686,7 @@
         },
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "workshop:authorized:general",
         "workshop:authorized:memory_avec_calibrate",
@@ -7767,7 +7767,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "workshop:authorized:general",
@@ -7792,7 +7792,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized",
         "general:bootstrap",
@@ -7818,7 +7818,7 @@
         ],
         "type": "object"
       },
-      "output_schema_present": false,
+      "output_schema_present": true,
       "placements": [
         "general:authorized"
       ]

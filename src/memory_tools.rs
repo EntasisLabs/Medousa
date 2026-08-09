@@ -5,29 +5,33 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use locus_core_rs::{CalibrationService, ContextQueryService, MoodCatalogService, NodeStore};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 use stasis::memory_prelude::{MemoryRecallRequest, MemoryScope, MemoryStoreRequest};
 use stasis::memory_prelude_ext::MemoryContextReader;
+use stasis::ports::outbound::memory::memory_context_writer::MemoryContextWriter;
 use stasis::ports::outbound::memory::memory_models::{
     MemoryAvecState, MemoryEvictMode, MemoryEvictRequest, MemoryFallbackPolicy, MemoryFilter,
     MemoryFindRequest, MemorySortDirection, MemorySortField, MemoryStrictnessMode,
 };
-use stasis::ports::outbound::memory::memory_context_writer::MemoryContextWriter;
 use stasis::ports::outbound::memory::memory_operations::MemoryOperations;
 use tokio::sync::{RwLock, mpsc};
 
 use crate::events::TuiEvent;
 use crate::locus_memory::{
-    CANONICAL_STTP_SCHEMA_EXAMPLE, LOCUS_DEFAULT_TENANT, derive_locus_tenant_id,
-    ingest_profile_name, normalize_context_keywords, normalize_tiers,
-    resolve_locus_ingest_profile, resolve_memory_tool_session_id,
-    memory_node_to_json, schema_first_guidance, semantic_index_schema_guidance,
-    sttp_node_to_json, store_failure_payload,
-    validate_limit, avec_to_json,
+    CANONICAL_STTP_SCHEMA_EXAMPLE, LOCUS_DEFAULT_TENANT, avec_to_json, derive_locus_tenant_id,
+    ingest_profile_name, memory_node_to_json, normalize_context_keywords, normalize_tiers,
+    resolve_locus_ingest_profile, resolve_memory_tool_session_id, store_failure_payload,
+    sttp_node_to_json, typed_schema_first_guidance, typed_semantic_index_schema_guidance,
+    validate_limit,
 };
 use crate::turn_continuation::TurnContinuationScope;
+use crate::typed_tools::{ToolId, medousa_tool};
+
+const COGNITION_MEMORY_SCHEMA_ID: ToolId = ToolId::new("cognition_memory_schema");
 
 const DEFAULT_RECALL_AVEC: (f32, f32, f32, f32) = (0.82, 0.31, 0.88, 0.74);
 
@@ -97,42 +101,47 @@ impl CognitionMemorySchemaTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionMemorySchemaTool {
-    fn name(&self) -> &'static str {
-        "cognition_memory_schema"
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct MemorySchemaInput {}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Return a canonical STTP node example and the active ingest profile before storing memory."
-        )
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct MemorySchemaOutput {
+    pub canonical_example: String,
+    pub ingest_profile_policy: String,
+    pub semantic_index: crate::locus_memory::SemanticIndexSchemaGuidance,
+    pub workflow: Vec<String>,
+    pub model_guidance: crate::locus_memory::SchemaFirstGuidance,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({ "type": "object", "properties": {} }))
-    }
-
-    async fn invoke(&self, _input: Value) -> StasisResult<Value> {
+#[medousa_tool(id = COGNITION_MEMORY_SCHEMA_ID)]
+impl CognitionMemorySchemaTool {
+    /// Return a canonical STTP node example and the active ingest profile before storing memory.
+    async fn invoke_typed(
+        &self,
+        _input: MemorySchemaInput,
+    ) -> stasis::prelude::Result<MemorySchemaOutput> {
         let profile = resolve_locus_ingest_profile();
-        Ok(json!({
-            "canonical_example": CANONICAL_STTP_SCHEMA_EXAMPLE,
-            "ingest_profile_policy": ingest_profile_name(profile),
-            "semantic_index": semantic_index_schema_guidance(),
-            "workflow": [
+        Ok(MemorySchemaOutput {
+            canonical_example: CANONICAL_STTP_SCHEMA_EXAMPLE.to_string(),
+            ingest_profile_policy: ingest_profile_name(profile).to_string(),
+            semantic_index: typed_semantic_index_schema_guidance(),
+            workflow: [
                 "call cognition_memory_schema",
                 "optionally cognition_memory_calibrate and cognition_memory_moods",
                 "cognition_memory_store with full STTP node string — put semantic_tags in provenance.prime (or pass cognition_memory_store.semantic_tags to merge workshop tags)",
                 "optional provenance.semantic_links for typed cross-node relations",
                 "cognition_memory_context or cognition_memory_list with semantic_tags for indexed recall",
                 "cognition_memory_tags to browse the tag vocabulary",
-                "cognition_memory_context for AVEC-ranked retrieval"
-            ],
-            "model_guidance": schema_first_guidance(
+                "cognition_memory_context for AVEC-ranked retrieval",
+            ]
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
+            model_guidance: typed_schema_first_guidance(
                 "Build a complete four-layer STTP node before store; include semantic_tags in prime when you want indexed recall.",
                 ingest_profile_name(profile),
             ),
-        }))
+        })
     }
 }
 
@@ -165,7 +174,6 @@ impl CognitionMemoryStoreTool {
             event_tx,
         }
     }
-
 }
 
 #[async_trait]
@@ -177,7 +185,7 @@ impl StasisTool for CognitionMemoryStoreTool {
     fn description(&self) -> Option<&'static str> {
         Some(
             "Store a complete STTP node in Locus memory. Requires `node` (full STTP string). \
-             Optional `session_id` defaults to the current turn session."
+             Optional `session_id` defaults to the current turn session.",
         )
     }
 
@@ -261,8 +269,10 @@ impl StasisTool for CognitionMemoryStoreTool {
             }
         }
         let tagged_node = crate::locus_semantic_tags::inject_semantic_tags(node, &tags);
-        let raw_node =
-            crate::locus_memory::enrich_sttp_node_with_vibe_signature(&tagged_node, &vibe_signature);
+        let raw_node = crate::locus_memory::enrich_sttp_node_with_vibe_signature(
+            &tagged_node,
+            &vibe_signature,
+        );
 
         let response = self
             .writer
@@ -362,19 +372,23 @@ impl StasisTool for CognitionMemoryCalibrateTool {
         let stability = input
             .get("stability")
             .and_then(|v| v.as_f64())
-            .ok_or_else(|| StasisError::PortFailure("stability required".into()))? as f32;
+            .ok_or_else(|| StasisError::PortFailure("stability required".into()))?
+            as f32;
         let friction = input
             .get("friction")
             .and_then(|v| v.as_f64())
-            .ok_or_else(|| StasisError::PortFailure("friction required".into()))? as f32;
+            .ok_or_else(|| StasisError::PortFailure("friction required".into()))?
+            as f32;
         let logic = input
             .get("logic")
             .and_then(|v| v.as_f64())
-            .ok_or_else(|| StasisError::PortFailure("logic required".into()))? as f32;
+            .ok_or_else(|| StasisError::PortFailure("logic required".into()))?
+            as f32;
         let autonomy = input
             .get("autonomy")
             .and_then(|v| v.as_f64())
-            .ok_or_else(|| StasisError::PortFailure("autonomy required".into()))? as f32;
+            .ok_or_else(|| StasisError::PortFailure("autonomy required".into()))?
+            as f32;
         let trigger = input
             .get("trigger")
             .and_then(|v| v.as_str())
@@ -478,29 +492,35 @@ impl StasisTool for CognitionMemoryContextTool {
         let stability = input
             .get("stability")
             .and_then(|v| v.as_f64())
-            .ok_or_else(|| StasisError::PortFailure("stability required".into()))? as f32;
+            .ok_or_else(|| StasisError::PortFailure("stability required".into()))?
+            as f32;
         let friction = input
             .get("friction")
             .and_then(|v| v.as_f64())
-            .ok_or_else(|| StasisError::PortFailure("friction required".into()))? as f32;
+            .ok_or_else(|| StasisError::PortFailure("friction required".into()))?
+            as f32;
         let logic = input
             .get("logic")
             .and_then(|v| v.as_f64())
-            .ok_or_else(|| StasisError::PortFailure("logic required".into()))? as f32;
+            .ok_or_else(|| StasisError::PortFailure("logic required".into()))?
+            as f32;
         let autonomy = input
             .get("autonomy")
             .and_then(|v| v.as_f64())
-            .ok_or_else(|| StasisError::PortFailure("autonomy required".into()))? as f32;
+            .ok_or_else(|| StasisError::PortFailure("autonomy required".into()))?
+            as f32;
 
         let limit = input
             .get("limit")
             .and_then(|v| v.as_u64())
             .map(|n| n as usize)
             .unwrap_or(5);
-        let limit = validate_limit(limit, "limit")
-            .map_err(StasisError::PortFailure)?;
+        let limit = validate_limit(limit, "limit").map_err(StasisError::PortFailure)?;
 
-        let global = input.get("session_id").map(|v| v.is_null()).unwrap_or(false);
+        let global = input
+            .get("session_id")
+            .map(|v| v.is_null())
+            .unwrap_or(false);
         let session_scope = if global {
             None
         } else {
@@ -528,14 +548,11 @@ impl StasisTool for CognitionMemoryContextTool {
             .unwrap_or_default();
         let keywords = normalize_context_keywords(Some(&keywords));
 
-        let from_utc = parse_utc_optional(
-            input.get("from_utc").and_then(|v| v.as_str()),
-            "from_utc",
-        )
-        .map_err(StasisError::PortFailure)?;
-        let to_utc =
-            parse_utc_optional(input.get("to_utc").and_then(|v| v.as_str()), "to_utc")
+        let from_utc =
+            parse_utc_optional(input.get("from_utc").and_then(|v| v.as_str()), "from_utc")
                 .map_err(StasisError::PortFailure)?;
+        let to_utc = parse_utc_optional(input.get("to_utc").and_then(|v| v.as_str()), "to_utc")
+            .map_err(StasisError::PortFailure)?;
         let tiers = input
             .get("tiers")
             .and_then(|v| v.as_array())
@@ -706,7 +723,10 @@ impl StasisTool for CognitionMemoryListTool {
             .unwrap_or(50);
         let limit = validate_limit(limit, "limit").map_err(StasisError::PortFailure)?;
 
-        let global = input.get("session_id").map(|v| v.is_null()).unwrap_or(false);
+        let global = input
+            .get("session_id")
+            .map(|v| v.is_null())
+            .unwrap_or(false);
         let session_id = if global {
             None
         } else {
@@ -854,7 +874,11 @@ impl StasisTool for CognitionMemoryRecallTool {
         let query = input.get("query").and_then(|v| v.as_str()).ok_or_else(|| {
             StasisError::PortFailure("cognition_memory_recall: query is required".to_string())
         })?;
-        let limit = input.get("limit").and_then(|v| v.as_u64()).unwrap_or(5).min(20) as usize;
+        let limit = input
+            .get("limit")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(5)
+            .min(20) as usize;
 
         emit_invoked(&self.event_tx, self.name(), query).await;
 
@@ -862,13 +886,15 @@ impl StasisTool for CognitionMemoryRecallTool {
         let session_id = match input.get("session_id") {
             Some(value) if value.is_null() => serde_json::Value::Null,
             Some(value) => value.clone(),
-            None => json!(resolve_memory_tool_session_id(
-                &input,
-                &self.context_tool.turn_scope,
-                &self.context_tool.fallback_chat_session_id,
-                self.context_tool.workshop_dynamic,
-            )
-            .await),
+            None => json!(
+                resolve_memory_tool_session_id(
+                    &input,
+                    &self.context_tool.turn_scope,
+                    &self.context_tool.fallback_chat_session_id,
+                    self.context_tool.workshop_dynamic,
+                )
+                .await
+            ),
         };
         let wrapped = json!({
             "stability": s,
@@ -1037,10 +1063,22 @@ impl StasisTool for CognitionMemoryMoodsTool {
     async fn invoke(&self, input: Value) -> StasisResult<Value> {
         let target_mood = input.get("target_mood").and_then(|v| v.as_str());
         let blend = input.get("blend").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
-        let current_stability = input.get("current_stability").and_then(|v| v.as_f64()).map(|v| v as f32);
-        let current_friction = input.get("current_friction").and_then(|v| v.as_f64()).map(|v| v as f32);
-        let current_logic = input.get("current_logic").and_then(|v| v.as_f64()).map(|v| v as f32);
-        let current_autonomy = input.get("current_autonomy").and_then(|v| v.as_f64()).map(|v| v as f32);
+        let current_stability = input
+            .get("current_stability")
+            .and_then(|v| v.as_f64())
+            .map(|v| v as f32);
+        let current_friction = input
+            .get("current_friction")
+            .and_then(|v| v.as_f64())
+            .map(|v| v as f32);
+        let current_logic = input
+            .get("current_logic")
+            .and_then(|v| v.as_f64())
+            .map(|v| v as f32);
+        let current_autonomy = input
+            .get("current_autonomy")
+            .and_then(|v| v.as_f64())
+            .map(|v| v as f32);
 
         emit_invoked(&self.event_tx, self.name(), "moods").await;
 
@@ -1106,7 +1144,12 @@ impl CognitionMemoryEvictTool {
 }
 
 fn parse_evict_mode(value: Option<&str>) -> MemoryEvictMode {
-    match value.unwrap_or("by_filter").trim().to_ascii_lowercase().as_str() {
+    match value
+        .unwrap_or("by_filter")
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
         "purge_session" => MemoryEvictMode::PurgeSession,
         "by_node_ids" => MemoryEvictMode::ByNodeIds,
         "by_sync_keys" => MemoryEvictMode::BySyncKeys,
@@ -1173,8 +1216,14 @@ impl StasisTool for CognitionMemoryEvictTool {
 
     async fn invoke(&self, input: Value) -> StasisResult<Value> {
         let mode = parse_evict_mode(input.get("mode").and_then(|v| v.as_str()));
-        let dry_run = input.get("dry_run").and_then(|v| v.as_bool()).unwrap_or(true);
-        let force = input.get("force").and_then(|v| v.as_bool()).unwrap_or(false);
+        let dry_run = input
+            .get("dry_run")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        let force = input
+            .get("force")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         let max_nodes = input
             .get("max_nodes")
             .and_then(|v| v.as_u64())
@@ -1206,20 +1255,26 @@ impl StasisTool for CognitionMemoryEvictTool {
             );
         }
 
-        let node_ids = input.get("node_ids").and_then(|v| v.as_array()).map(|items| {
-            items
-                .iter()
-                .filter_map(|v| v.as_str().map(str::trim).filter(|s| !s.is_empty()))
-                .map(str::to_string)
-                .collect::<Vec<_>>()
-        });
-        let sync_keys = input.get("sync_keys").and_then(|v| v.as_array()).map(|items| {
-            items
-                .iter()
-                .filter_map(|v| v.as_str().map(str::trim).filter(|s| !s.is_empty()))
-                .map(str::to_string)
-                .collect::<Vec<_>>()
-        });
+        let node_ids = input
+            .get("node_ids")
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|v| v.as_str().map(str::trim).filter(|s| !s.is_empty()))
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            });
+        let sync_keys = input
+            .get("sync_keys")
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|v| v.as_str().map(str::trim).filter(|s| !s.is_empty()))
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            });
 
         emit_invoked(
             &self.event_tx,

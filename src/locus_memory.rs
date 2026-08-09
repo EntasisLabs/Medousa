@@ -7,6 +7,8 @@ use chrono::Duration;
 use locus_core_rs::{
     ParseProfile, StoreContextService, StoreRetryPolicy, SttpNodeParser, TreeSitterValidator,
 };
+use schemars::JsonSchema;
+use serde::Serialize;
 use serde_json::{Value, json};
 use stasis::domain::errors::Result as StasisResult;
 use stasis::ports::outbound::memory::memory_context_writer::MemoryContextWriter;
@@ -58,7 +60,8 @@ pub fn parse_scoped_locus_session(session_id: &str) -> Option<(String, String)> 
 /// Scope the current chat session under the active workshop profile.
 pub fn resolve_workshop_locus_session(chat_session_id: &str) -> String {
     let profile_id = crate::user_profiles::resolve_workshop_identity_user_id();
-    let slug = crate::user_profiles::profile_slug_from_id(&profile_id).unwrap_or(LOCUS_DEFAULT_TENANT);
+    let slug =
+        crate::user_profiles::profile_slug_from_id(&profile_id).unwrap_or(LOCUS_DEFAULT_TENANT);
     scoped_locus_session(slug, chat_session_id)
 }
 
@@ -97,22 +100,49 @@ pub const CANONICAL_STTP_SCHEMA_EXAMPLE: &str = r#"Canonical STTP node example (
 ◈⟨ ⏣0{ focus(.99): "grammar update", decision(.96): { parser_mode(.95): "strict_and_tolerant" } } ⟩
 ⍉⟨ ⏣0{ rho: 0.95, kappa: 0.94, psi: 2.93, compression_avec: { stability: 0.90, friction: 0.20, logic: 0.98, autonomy: 0.85, psi: 2.93 } } ⟩"#;
 
-pub fn semantic_index_schema_guidance() -> Value {
-    json!({
-        "semantic_tags": {
-            "sttp_location": "provenance.prime.semantic_tags",
-            "format": "array<string> — lowercase strings, deduped at index time",
-            "omit_when_absent": "omit the field or use an empty array; do not use null (locus-core 0.4.2+ treats null as absent)",
-            "medousa_store_tool": "cognition_memory_store.semantic_tags merges workshop defaults + extras into prime when the node string omits semantic_tags",
-            "recall": "cognition_memory_context / cognition_memory_list / cognition_memory_recall with semantic_tags (match-all) or cognition_memory_tags for vocabulary browse"
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct SemanticTagsSchemaGuidance {
+    pub sttp_location: String,
+    pub format: String,
+    pub omit_when_absent: String,
+    pub medousa_store_tool: String,
+    pub recall: String,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct SemanticLinksSchemaGuidance {
+    pub sttp_location: String,
+    pub format: String,
+    pub optional: bool,
+    pub omit_when_absent: String,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct SemanticIndexSchemaGuidance {
+    pub semantic_tags: SemanticTagsSchemaGuidance,
+    pub semantic_links: SemanticLinksSchemaGuidance,
+}
+
+pub fn typed_semantic_index_schema_guidance() -> SemanticIndexSchemaGuidance {
+    SemanticIndexSchemaGuidance {
+        semantic_tags: SemanticTagsSchemaGuidance {
+            sttp_location: "provenance.prime.semantic_tags".to_string(),
+            format: "array<string> — lowercase strings, deduped at index time".to_string(),
+            omit_when_absent: "omit the field or use an empty array; do not use null (locus-core 0.4.2+ treats null as absent)".to_string(),
+            medousa_store_tool: "cognition_memory_store.semantic_tags merges workshop defaults + extras into prime when the node string omits semantic_tags".to_string(),
+            recall: "cognition_memory_context / cognition_memory_list / cognition_memory_recall with semantic_tags (match-all) or cognition_memory_tags for vocabulary browse".to_string(),
         },
-        "semantic_links": {
-            "sttp_location": "provenance.semantic_links",
-            "format": "[{ rel: string, target: string, confidence: float }]",
-            "optional": true,
-            "omit_when_absent": "omit the field when unused; null is treated as absent"
-        }
-    })
+        semantic_links: SemanticLinksSchemaGuidance {
+            sttp_location: "provenance.semantic_links".to_string(),
+            format: "[{ rel: string, target: string, confidence: float }]".to_string(),
+            optional: true,
+            omit_when_absent: "omit the field when unused; null is treated as absent".to_string(),
+        },
+    }
+}
+
+pub fn semantic_index_schema_guidance() -> Value {
+    json!(typed_semantic_index_schema_guidance())
 }
 
 /// Default interactive ingest: tolerant (matches recommended MCP dev profile).
@@ -185,7 +215,10 @@ impl MedousaLocusContextWriter {
 
 #[async_trait]
 impl MemoryContextWriter for MedousaLocusContextWriter {
-    async fn store_context(&self, request: &MemoryStoreRequest) -> StasisResult<MemoryStoreResponse> {
+    async fn store_context(
+        &self,
+        request: &MemoryStoreRequest,
+    ) -> StasisResult<MemoryStoreResponse> {
         let result = self
             .service
             .store_async(&request.raw_node, &request.session_id)
@@ -247,17 +280,29 @@ pub fn persistence_failure_guidance(summary: &str) -> Value {
     })
 }
 
-pub fn schema_first_guidance(summary: &str, profile_name: &str) -> Value {
-    json!({
-        "summary": summary,
-        "recommended_first_tool": "cognition_memory_schema",
-        "recommended_next_steps": [
-            "call cognition_memory_schema",
-            "verify payload layers provenance->envelope->content->metrics",
-            "ensure STTP symbols and AVEC blocks are present before retry"
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct SchemaFirstGuidance {
+    pub summary: String,
+    pub recommended_first_tool: String,
+    pub recommended_next_steps: Vec<String>,
+    pub ingest_profile_policy: String,
+}
+
+pub fn typed_schema_first_guidance(summary: &str, profile_name: &str) -> SchemaFirstGuidance {
+    SchemaFirstGuidance {
+        summary: summary.to_string(),
+        recommended_first_tool: "cognition_memory_schema".to_string(),
+        recommended_next_steps: vec![
+            "call cognition_memory_schema".to_string(),
+            "verify payload layers provenance->envelope->content->metrics".to_string(),
+            "ensure STTP symbols and AVEC blocks are present before retry".to_string(),
         ],
-        "ingest_profile_policy": profile_name,
-    })
+        ingest_profile_policy: profile_name.to_string(),
+    }
+}
+
+pub fn schema_first_guidance(summary: &str, profile_name: &str) -> Value {
+    json!(typed_schema_first_guidance(summary, profile_name))
 }
 
 pub fn store_failure_guidance(message: &str, profile_name: &str) -> Value {
@@ -358,14 +403,15 @@ pub fn enrich_sttp_node_with_vibe_signature(raw_node: &str, vibe_signature: &str
         .collect();
 
     if let Some(marker) = raw_node.find("◈⟨")
-        && let Some(open) = raw_node[marker..].find('{') {
-            let insert_at = marker + open + 1;
-            let mut out = String::with_capacity(raw_node.len() + escaped.len() + 32);
-            out.push_str(&raw_node[..insert_at]);
-            out.push_str(&format!(" vibe_signature(.97): \"{escaped}\", "));
-            out.push_str(&raw_node[insert_at..]);
-            return out;
-        }
+        && let Some(open) = raw_node[marker..].find('{')
+    {
+        let insert_at = marker + open + 1;
+        let mut out = String::with_capacity(raw_node.len() + escaped.len() + 32);
+        out.push_str(&raw_node[..insert_at]);
+        out.push_str(&format!(" vibe_signature(.97): \"{escaped}\", "));
+        out.push_str(&raw_node[insert_at..]);
+        return out;
+    }
 
     raw_node.to_string()
 }
@@ -466,13 +512,18 @@ mod tests {
             parse_ingest_profile("strict-typed-ir"),
             Some(ParseProfile::StrictTypedIr)
         );
-        assert_eq!(parse_ingest_profile("tolerant"), Some(ParseProfile::Tolerant));
+        assert_eq!(
+            parse_ingest_profile("tolerant"),
+            Some(ParseProfile::Tolerant)
+        );
     }
 
     #[test]
     fn recall_session_id_null_or_omitted_is_global() {
         assert!(recall_session_id_for_context(&serde_json::json!({})).is_null());
-        assert!(recall_session_id_for_context(&serde_json::json!({ "session_id": null })).is_null());
+        assert!(
+            recall_session_id_for_context(&serde_json::json!({ "session_id": null })).is_null()
+        );
     }
 
     #[test]
@@ -489,7 +540,10 @@ mod tests {
             scoped_locus_session("work", "abc-123"),
             "tenant:work::session:abc-123"
         );
-        assert_eq!(derive_locus_tenant_id("tenant:work::session:abc-123"), "work");
+        assert_eq!(
+            derive_locus_tenant_id("tenant:work::session:abc-123"),
+            "work"
+        );
     }
 
     #[test]
@@ -517,7 +571,9 @@ mod tests {
                 .and_then(|v| v.as_array())
                 .and_then(|steps| steps.first())
                 .and_then(|v| v.as_str()),
-            Some("read the SurrealDB error in validation_error — it is the root cause, not a decode wrapper")
+            Some(
+                "read the SurrealDB error in validation_error — it is the root cause, not a decode wrapper"
+            )
         );
     }
 
@@ -526,7 +582,9 @@ mod tests {
         let message = "ParseFailure: missing content layer";
         let guidance = store_failure_guidance(message, "tolerant");
         assert_eq!(
-            guidance.get("recommended_first_tool").and_then(|v| v.as_str()),
+            guidance
+                .get("recommended_first_tool")
+                .and_then(|v| v.as_str()),
             Some("cognition_memory_schema")
         );
     }
@@ -541,10 +599,12 @@ mod tests {
     fn semantic_index_guidance_documents_store_and_recall() {
         let guidance = semantic_index_schema_guidance();
         assert!(guidance.get("semantic_tags").is_some());
-        assert!(guidance["semantic_tags"]
-            .get("medousa_store_tool")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .contains("cognition_memory_store"));
+        assert!(
+            guidance["semantic_tags"]
+                .get("medousa_store_tool")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .contains("cognition_memory_store")
+        );
     }
 }

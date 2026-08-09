@@ -5,29 +5,34 @@ use medousa_types::environment::{
     EnvironmentPatchOp, EnvironmentPatchResponse, EnvironmentPendingProposal, EnvironmentSpec,
     EnvironmentTheme, SurfaceKind,
 };
-use medousa_types::environment_validate::validate_environment_spec;
 use medousa_types::environment_icons::is_valid_surface_icon;
 use medousa_types::environment_themes::{is_valid_brand_color, is_valid_color_theme_id};
+use medousa_types::environment_validate::validate_environment_spec;
 use medousa_types::feed::is_valid_feed_id;
 
-use async_trait::async_trait;
-use medousa_types::environment::EnvironmentPatchRequest;
-use serde_json::Value;
-use stasis::application::orchestration::tool_registry::StasisTool;
+use schemars::JsonSchema;
+use schemars::schema::Schema;
+use serde::{Deserialize, Serialize};
 use stasis::prelude::{Result as StasisResult, StasisError};
 
 use crate::custom_view_status::{active_preset_surface_ids, surface_nav_visible};
-use crate::environment_store::{environment_hub, resolve_profile_id, EnvironmentHub};
+use crate::environment_store::{EnvironmentHub, environment_hub, resolve_profile_id};
 use crate::environment_tools::make_custom_surface;
+use crate::typed_tools::{ToolId, medousa_tool};
 
 pub const COGNITION_ENVIRONMENT_PATCH: &str = "cognition_environment_patch";
+
+const COGNITION_ENVIRONMENT_PATCH_ID: ToolId = ToolId::new(COGNITION_ENVIRONMENT_PATCH);
 
 pub fn patch_requires_proposal(ops: &[EnvironmentPatchOp]) -> bool {
     ops.iter()
         .any(|op| matches!(op, EnvironmentPatchOp::RewriteActivePresetSurfaces { .. }))
 }
 
-pub fn apply_patch_ops(spec: &mut EnvironmentSpec, ops: &[EnvironmentPatchOp]) -> Result<Vec<String>, String> {
+pub fn apply_patch_ops(
+    spec: &mut EnvironmentSpec,
+    ops: &[EnvironmentPatchOp],
+) -> Result<Vec<String>, String> {
     let mut applied = Vec::new();
     for op in ops {
         match op {
@@ -66,7 +71,10 @@ pub fn apply_patch_ops(spec: &mut EnvironmentSpec, ops: &[EnvironmentPatchOp]) -
             }
             EnvironmentPatchOp::AddComponent { component } => {
                 if spec.components.iter().any(|entry| entry.id == component.id) {
-                    return Err(format!("add_component: component '{}' already exists", component.id));
+                    return Err(format!(
+                        "add_component: component '{}' already exists",
+                        component.id
+                    ));
                 }
                 spec.components.push(component.clone());
                 applied.push(format!("add_component:{}", component.id));
@@ -85,29 +93,32 @@ pub fn apply_patch_ops(spec: &mut EnvironmentSpec, ops: &[EnvironmentPatchOp]) -
                     .iter()
                     .position(|component| component.id == *component_id)
                 else {
-                    return Err(format!("set_component_feeds: unknown component '{component_id}'"));
+                    return Err(format!(
+                        "set_component_feeds: unknown component '{component_id}'"
+                    ));
                 };
                 spec.components[index].feeds = feed_ids.clone();
                 spec.components[index].updated_at = Some(Utc::now());
                 applied.push(format!("set_component_feeds:{component_id}"));
             }
             EnvironmentPatchOp::RewriteActivePresetSurfaces { surfaces } => {
-                let presets = spec
-                    .layout_presets
-                    .as_mut()
-                    .ok_or_else(|| "rewrite_active_preset_surfaces: spec has no layout presets".to_string())?;
-                let active_index = presets
-                    .iter()
-                    .position(|preset| preset.active)
-                    .ok_or_else(|| {
-                        "rewrite_active_preset_surfaces: no active layout preset".to_string()
-                    })?;
+                let presets = spec.layout_presets.as_mut().ok_or_else(|| {
+                    "rewrite_active_preset_surfaces: spec has no layout presets".to_string()
+                })?;
+                let active_index =
+                    presets
+                        .iter()
+                        .position(|preset| preset.active)
+                        .ok_or_else(|| {
+                            "rewrite_active_preset_surfaces: no active layout preset".to_string()
+                        })?;
                 presets[active_index].surfaces = surfaces.clone();
                 applied.push("rewrite_active_preset_surfaces".to_string());
             }
             EnvironmentPatchOp::UpdateSurface { id, label, icon } => {
                 let id = id.trim();
-                let Some(surface) = spec.surfaces.iter_mut().find(|surface| surface.id == id) else {
+                let Some(surface) = spec.surfaces.iter_mut().find(|surface| surface.id == id)
+                else {
                     return Err(format!("update_surface: unknown surface '{id}'"));
                 };
                 if let Some(label) = label {
@@ -141,7 +152,9 @@ pub fn apply_patch_ops(spec: &mut EnvironmentSpec, ops: &[EnvironmentPatchOp]) -
                     if id.is_empty() {
                         theme.color_theme_id = None;
                     } else if !is_valid_color_theme_id(id) {
-                        return Err(format!("set_environment_theme: invalid colorThemeId '{id}'"));
+                        return Err(format!(
+                            "set_environment_theme: invalid colorThemeId '{id}'"
+                        ));
                     } else {
                         theme.color_theme_id = Some(id.to_string());
                     }
@@ -152,7 +165,7 @@ pub fn apply_patch_ops(spec: &mut EnvironmentSpec, ops: &[EnvironmentPatchOp]) -
                         theme.brand_color = None;
                     } else if !is_valid_brand_color(brand) {
                         return Err(
-                            "set_environment_theme: brandColor must be #RGB or #RRGGBB".to_string(),
+                            "set_environment_theme: brandColor must be #RGB or #RRGGBB".to_string()
                         );
                     } else {
                         let normalized = if brand.starts_with('#') {
@@ -176,10 +189,7 @@ pub fn apply_patch_ops(spec: &mut EnvironmentSpec, ops: &[EnvironmentPatchOp]) -
                 if let Some(presets) = spec.layout_presets.as_mut() {
                     let active_id = spec.active_preset_id.clone();
                     if let Some(active) = presets.iter_mut().find(|preset| {
-                        preset.active
-                            || active_id
-                                .as_deref()
-                                .is_some_and(|id| preset.id == id)
+                        preset.active || active_id.as_deref().is_some_and(|id| preset.id == id)
                     }) {
                         active.theme = theme_snapshot;
                     }
@@ -192,7 +202,9 @@ pub fn apply_patch_ops(spec: &mut EnvironmentSpec, ops: &[EnvironmentPatchOp]) -
                     return Err(format!("remove_custom_surface: unknown surface '{id}'"));
                 };
                 if surface.kind != SurfaceKind::Custom {
-                    return Err(format!("remove_custom_surface: '{id}' is not a custom surface"));
+                    return Err(format!(
+                        "remove_custom_surface: '{id}' is not a custom surface"
+                    ));
                 }
                 spec.surfaces.retain(|surface| surface.id != id);
                 if let Some(presets) = spec.layout_presets.as_mut() {
@@ -200,7 +212,8 @@ pub fn apply_patch_ops(spec: &mut EnvironmentSpec, ops: &[EnvironmentPatchOp]) -
                         preset.surfaces.retain(|surface_id| surface_id != id);
                     }
                 }
-                spec.components.retain(|component| component.surface_id != id);
+                spec.components
+                    .retain(|component| component.surface_id != id);
                 applied.push(format!("remove_custom_surface:{id}"));
             }
             EnvironmentPatchOp::RemoveComponent { component_id } => {
@@ -210,9 +223,12 @@ pub fn apply_patch_ops(spec: &mut EnvironmentSpec, ops: &[EnvironmentPatchOp]) -
                     .iter()
                     .any(|component| component.id == component_id)
                 {
-                    return Err(format!("remove_component: unknown component '{component_id}'"));
+                    return Err(format!(
+                        "remove_component: unknown component '{component_id}'"
+                    ));
                 }
-                spec.components.retain(|component| component.id != component_id);
+                spec.components
+                    .retain(|component| component.id != component_id);
                 applied.push(format!("remove_component:{component_id}"));
             }
         }
@@ -220,7 +236,10 @@ pub fn apply_patch_ops(spec: &mut EnvironmentSpec, ops: &[EnvironmentPatchOp]) -
     Ok(applied)
 }
 
-fn add_surface_to_active_preset(spec: &mut EnvironmentSpec, surface_id: &str) -> Result<(), String> {
+fn add_surface_to_active_preset(
+    spec: &mut EnvironmentSpec,
+    surface_id: &str,
+) -> Result<(), String> {
     if !spec.surfaces.iter().any(|surface| surface.id == surface_id) {
         return Err(format!(
             "add_to_active_preset: unknown surface '{surface_id}'"
@@ -234,7 +253,11 @@ fn add_surface_to_active_preset(spec: &mut EnvironmentSpec, surface_id: &str) ->
         .iter()
         .position(|preset| preset.active)
         .ok_or_else(|| "add_to_active_preset: no active layout preset".to_string())?;
-    if !presets[active_index].surfaces.iter().any(|id| id == surface_id) {
+    if !presets[active_index]
+        .surfaces
+        .iter()
+        .any(|id| id == surface_id)
+    {
         presets[active_index].surfaces.push(surface_id.to_string());
     }
     Ok(())
@@ -290,7 +313,9 @@ pub async fn execute_environment_patch(
             EnvironmentPatchOp::AddToActivePreset { surface_id } => {
                 format!("add_to_active_preset:{surface_id}")
             }
-            EnvironmentPatchOp::AddComponent { component } => format!("add_component:{}", component.id),
+            EnvironmentPatchOp::AddComponent { component } => {
+                format!("add_component:{}", component.id)
+            }
             EnvironmentPatchOp::SetComponentFeeds { component_id, .. } => {
                 format!("set_component_feeds:{component_id}")
             }
@@ -351,25 +376,29 @@ pub fn patch_response_extras(spec: &EnvironmentSpec, surface_id: &str) -> serde_
 pub fn register_environment_patch_tool(
     registry: &mut impl crate::typed_tools::ToolRegistration,
 ) -> StasisResult<()> {
-    registry.register_tool(CognitionEnvironmentPatchTool)
+    registry.register_typed_tool(CognitionEnvironmentPatchTool)
 }
 
 struct CognitionEnvironmentPatchTool;
 
-#[async_trait]
-impl StasisTool for CognitionEnvironmentPatchTool {
-    fn name(&self) -> &'static str {
-        COGNITION_ENVIRONMENT_PATCH
+#[derive(Debug, Deserialize)]
+struct EnvironmentPatchInput {
+    #[serde(default)]
+    profile_id: Option<String>,
+    ops: Vec<EnvironmentPatchOp>,
+}
+
+impl JsonSchema for EnvironmentPatchInput {
+    fn schema_name() -> String {
+        "EnvironmentPatchInput".to_string()
     }
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Apply incremental environment spec ops. New custom surfaces, update_surface, set_environment_theme, and preset membership go live immediately; preset rewrites require operator approval.",
-        )
+    fn is_referenceable() -> bool {
+        false
     }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(serde_json::json!({
+    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> Schema {
+        serde_json::from_value(serde_json::json!({
             "type": "object",
             "required": ["ops"],
             "properties": {
@@ -387,25 +416,33 @@ impl StasisTool for CognitionEnvironmentPatchTool {
                 }
             }
         }))
+        .expect("valid environment patch compatibility schema")
     }
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let request: EnvironmentPatchRequest = serde_json::from_value(input).map_err(|err| {
-            StasisError::PortFailure(format!("cognition_environment_patch: invalid input: {err}"))
-        })?;
-        let profile_id = resolve_profile_id(request.profile_id.as_deref());
-        let response = execute_environment_patch(
-            environment_hub(),
-            &profile_id,
-            &request.ops,
-            "agent",
-        )
-        .await
-        .map_err(|err| StasisError::PortFailure(err.to_string()))?;
-        let mut value = serde_json::to_value(response).map_err(|err| {
-            StasisError::PortFailure(format!("cognition_environment_patch: encode error: {err}"))
-        })?;
-        if let Some(first_surface) = request.ops.iter().find_map(|op| match op {
+#[derive(Debug, Serialize, JsonSchema)]
+struct EnvironmentPatchOutput {
+    #[serde(flatten)]
+    response: EnvironmentPatchResponse,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nav_visible: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hint: Option<String>,
+}
+
+#[medousa_tool(id = COGNITION_ENVIRONMENT_PATCH_ID)]
+impl CognitionEnvironmentPatchTool {
+    /// Apply incremental environment spec ops. New custom surfaces, update_surface, set_environment_theme, and preset membership go live immediately; preset rewrites require operator approval.
+    async fn invoke_typed(
+        &self,
+        input: EnvironmentPatchInput,
+    ) -> stasis::prelude::Result<EnvironmentPatchOutput> {
+        let profile_id = resolve_profile_id(input.profile_id.as_deref());
+        let response =
+            execute_environment_patch(environment_hub(), &profile_id, &input.ops, "agent")
+                .await
+                .map_err(|err| StasisError::PortFailure(err.to_string()))?;
+        let first_surface = input.ops.iter().find_map(|op| match op {
             medousa_types::environment::EnvironmentPatchOp::AddCustomSurface { id, .. } => {
                 Some(id.clone())
             }
@@ -413,15 +450,25 @@ impl StasisTool for CognitionEnvironmentPatchTool {
                 Some(surface_id.clone())
             }
             _ => None,
-        })
+        });
+        let (nav_visible, hint) = if let Some(first_surface) = first_surface
             && let Ok(record) = environment_hub().get(&profile_id).await
-                && let Some(obj) = value.as_object_mut()
-                    && let Some(extra) = patch_response_extras(&record.spec, &first_surface).as_object() {
-                        for (key, val) in extra {
-                            obj.insert(key.clone(), val.clone());
-                        }
-                    }
-        Ok(value)
+        {
+            let nav_visible = surface_nav_visible(&record.spec, &first_surface);
+            let hint = (!nav_visible).then(|| {
+                format!(
+                    "Surface '{first_surface}' is not in the active layout preset — call cognition_environment_patch with add_to_active_preset or cognition_custom_view_compose."
+                )
+            });
+            (Some(nav_visible), hint)
+        } else {
+            (None, None)
+        };
+        Ok(EnvironmentPatchOutput {
+            response,
+            nav_visible,
+            hint,
+        })
     }
 }
 

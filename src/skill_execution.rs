@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -13,7 +14,7 @@ use crate::openshell_sandbox_run::OpenshellSandboxRunPayload;
 
 const SKILL_SCRIPT_DIRS: &[&str] = &["scripts", "bin"];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SkillSecurityLevel {
     /// Inspect SKILL.md and script inventory only — no execution.
@@ -26,7 +27,7 @@ pub enum SkillSecurityLevel {
     Deny,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SkillScriptRiskClass {
     ReadOnly,
@@ -36,7 +37,7 @@ pub enum SkillScriptRiskClass {
     Destructive,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SkillScriptEntry {
     pub relative_path: String,
     pub risk_class: SkillScriptRiskClass,
@@ -44,7 +45,7 @@ pub struct SkillScriptEntry {
     pub rationale: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SkillDiscoveryReport {
     pub skill_id: String,
     pub assets_dir: String,
@@ -54,7 +55,7 @@ pub struct SkillDiscoveryReport {
     pub has_scripts: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SkillAdoptionProposal {
     pub skill_id: String,
     pub requested_level: SkillSecurityLevel,

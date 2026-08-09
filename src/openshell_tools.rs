@@ -4,6 +4,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use chrono::Utc;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::domain::runtime::job::{BackoffPolicy, NewJob};
@@ -14,20 +16,19 @@ use uuid::Uuid;
 use crate::events::TuiEvent;
 use crate::identity_manuscript::build_manuscript_context;
 use crate::openshell_handoff::collect_openshell_doctor_report;
-use crate::openshell_sandbox_run::{
-    OpenshellSandboxRunPayload, OPENSHELL_SANDBOX_RUN_JOB_TYPE,
-};
+use crate::openshell_sandbox_run::{OPENSHELL_SANDBOX_RUN_JOB_TYPE, OpenshellSandboxRunPayload};
 use crate::turn_continuation::{
     ContinuationAwaitMode, TurnContinuationScope, continuation_tool_metadata, wire_turn_child_job,
 };
+use crate::typed_tools::{ToolId, medousa_tool};
 
 pub const COGNITION_OPENSHELL_STATUS: &str = "cognition_openshell_status";
 pub const COGNITION_OPENSHELL_SANDBOX_RUN: &str = "cognition_openshell_sandbox_run";
 
-pub const OPENSHELL_COGNITION_TOOLS: &[&str] = &[
-    COGNITION_OPENSHELL_STATUS,
-    COGNITION_OPENSHELL_SANDBOX_RUN,
-];
+const COGNITION_OPENSHELL_STATUS_ID: ToolId = ToolId::new(COGNITION_OPENSHELL_STATUS);
+
+pub const OPENSHELL_COGNITION_TOOLS: &[&str] =
+    &[COGNITION_OPENSHELL_STATUS, COGNITION_OPENSHELL_SANDBOX_RUN];
 
 pub fn is_openshell_cognition_tool(name: &str) -> bool {
     name.starts_with("cognition_openshell_")
@@ -39,55 +40,60 @@ pub fn register_openshell_tools(
     event_tx: mpsc::Sender<TuiEvent>,
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 ) -> stasis::prelude::Result<()> {
-    registry.register_tool(CognitionOpenshellStatusTool)?;
+    registry.register_typed_tool(CognitionOpenshellStatusTool)?;
     registry.register_tool(CognitionOpenshellSandboxRunTool::new(
-        runtime,
-        event_tx,
-        turn_scope,
+        runtime, event_tx, turn_scope,
     ))?;
     Ok(())
 }
 
 pub struct CognitionOpenshellStatusTool;
 
-#[async_trait]
-impl StasisTool for CognitionOpenshellStatusTool {
-    fn name(&self) -> &'static str {
-        COGNITION_OPENSHELL_STATUS
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct OpenshellStatusInput {}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Probe local OpenShell gateway health (TCP, /readyz, CLI binaries, Podman socket, policy templates). \
-             Read-only — does not create sandboxes.",
-        )
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct OpenshellStatusOutput {
+    pub gateway_url: String,
+    pub gateway_reachable: bool,
+    pub readyz_ok: bool,
+    pub cli_installed: bool,
+    pub cli_version: Option<String>,
+    pub gateway_binary: Option<String>,
+    pub sandbox_binary: Option<String>,
+    pub podman_socket: String,
+    pub podman_socket_active: bool,
+    pub active_gateway_name: Option<String>,
+    pub policy_templates_dir: String,
+    pub policy_template_count: usize,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {}
-        }))
-    }
-
-    async fn invoke(&self, _input: Value) -> StasisResult<Value> {
+#[medousa_tool(id = COGNITION_OPENSHELL_STATUS_ID)]
+impl CognitionOpenshellStatusTool {
+    /// Probe local OpenShell gateway health (TCP, /readyz, CLI binaries, Podman socket, policy templates). Read-only — does not create sandboxes.
+    async fn invoke_typed(
+        &self,
+        _input: OpenshellStatusInput,
+    ) -> stasis::prelude::Result<OpenshellStatusOutput> {
         let report = tokio::task::spawn_blocking(collect_openshell_doctor_report)
             .await
-            .map_err(|err| StasisError::PortFailure(format!("openshell status join error: {err}")))?;
-        Ok(json!({
-            "gateway_url": report.gateway_url,
-            "gateway_reachable": report.gateway_reachable,
-            "readyz_ok": report.readyz_ok,
-            "cli_installed": report.cli_installed,
-            "cli_version": report.cli_version,
-            "gateway_binary": report.gateway_binary.map(|path| path.display().to_string()),
-            "sandbox_binary": report.sandbox_binary.map(|path| path.display().to_string()),
-            "podman_socket": report.podman_socket.display().to_string(),
-            "podman_socket_active": report.podman_socket_active,
-            "active_gateway_name": report.active_gateway_name,
-            "policy_templates_dir": report.policy_templates_dir.display().to_string(),
-            "policy_template_count": report.policy_template_count,
-        }))
+            .map_err(|err| {
+                StasisError::PortFailure(format!("openshell status join error: {err}"))
+            })?;
+        Ok(OpenshellStatusOutput {
+            gateway_url: report.gateway_url,
+            gateway_reachable: report.gateway_reachable,
+            readyz_ok: report.readyz_ok,
+            cli_installed: report.cli_installed,
+            cli_version: report.cli_version,
+            gateway_binary: report.gateway_binary.map(|path| path.display().to_string()),
+            sandbox_binary: report.sandbox_binary.map(|path| path.display().to_string()),
+            podman_socket: report.podman_socket.display().to_string(),
+            podman_socket_active: report.podman_socket_active,
+            active_gateway_name: report.active_gateway_name,
+            policy_templates_dir: report.policy_templates_dir.display().to_string(),
+            policy_template_count: report.policy_template_count,
+        })
     }
 }
 
@@ -225,7 +231,9 @@ impl StasisTool for CognitionOpenshellSandboxRunTool {
 
         let report = tokio::task::spawn_blocking(collect_openshell_doctor_report)
             .await
-            .map_err(|err| StasisError::PortFailure(format!("openshell preflight join error: {err}")))?;
+            .map_err(|err| {
+                StasisError::PortFailure(format!("openshell preflight join error: {err}"))
+            })?;
         if !report.readyz_ok {
             return Ok(json!({
                 "status": "rejected",
@@ -248,9 +256,7 @@ impl StasisTool for CognitionOpenshellSandboxRunTool {
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string);
-        let timeout_secs = input
-            .get("timeout_secs")
-            .and_then(|value| value.as_u64());
+        let timeout_secs = input.get("timeout_secs").and_then(|value| value.as_u64());
         let correlation_id = input
             .get("correlation_id")
             .and_then(|value| value.as_str())
@@ -351,25 +357,20 @@ impl StasisTool for CognitionOpenshellSandboxRunTool {
             "skill_script": payload.skill_script,
         });
         if let Some(scope) = self.turn_scope.read().await.clone()
-            && let Some(obj) = response.as_object_mut() {
-                obj.insert(
-                    "continuation".to_string(),
-                    continuation_tool_metadata(
-                        &scope,
-                        &job_id,
-                        ContinuationAwaitMode::Async,
-                    ),
-                );
-            }
+            && let Some(obj) = response.as_object_mut()
+        {
+            obj.insert(
+                "continuation".to_string(),
+                continuation_tool_metadata(&scope, &job_id, ContinuationAwaitMode::Async),
+            );
+        }
         Ok(response)
     }
 }
 
 fn parse_command_argv(input: &Value) -> StasisResult<Vec<String>> {
     let command_value = input.get("command").ok_or_else(|| {
-        StasisError::PortFailure(
-            "cognition_openshell_sandbox_run: command is required".to_string(),
-        )
+        StasisError::PortFailure("cognition_openshell_sandbox_run: command is required".to_string())
     })?;
     if let Some(text) = command_value.as_str() {
         let trimmed = text.trim();
@@ -378,12 +379,21 @@ fn parse_command_argv(input: &Value) -> StasisResult<Vec<String>> {
                 "cognition_openshell_sandbox_run: command must be non-empty".to_string(),
             ));
         }
-        return Ok(vec!["sh".to_string(), "-lc".to_string(), trimmed.to_string()]);
+        return Ok(vec![
+            "sh".to_string(),
+            "-lc".to_string(),
+            trimmed.to_string(),
+        ]);
     }
     if let Some(parts) = command_value.as_array() {
         let argv: Vec<String> = parts
             .iter()
-            .filter_map(|value| value.as_str().map(str::trim).filter(|part| !part.is_empty()))
+            .filter_map(|value| {
+                value
+                    .as_str()
+                    .map(str::trim)
+                    .filter(|part| !part.is_empty())
+            })
             .map(str::to_string)
             .collect();
         if argv.is_empty() {

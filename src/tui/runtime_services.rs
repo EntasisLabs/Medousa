@@ -278,7 +278,7 @@ pub(crate) async fn assemble_tui_runtime(
         turn_scope.clone(),
     )?;
 
-    tool_registry.register_tool(CognitionMemorySchemaTool::new())?;
+    tool_registry.register_typed_tool(CognitionMemorySchemaTool::new())?;
     tool_registry.register_tool(CognitionMemoryMoodsTool::new(event_tx.clone()))?;
     tool_registry.register_tool(CognitionMemoryCalibrateTool::new(
         locus_store.clone(),
@@ -370,11 +370,11 @@ pub(crate) async fn assemble_tui_runtime(
     )?;
 
     tool_registry.register_tool(CognitionTurnBeginWorkTool::new(worker_scheduler.clone()))?;
-    tool_registry.register_tool(CognitionTurnUpdateUserTool)?;
-    tool_registry.register_tool(CognitionTurnCheckpointTool)?;
-    tool_registry.register_tool(CognitionTurnPrepareFinalTool)?;
-    tool_registry.register_tool(CognitionTurnFinishTool)?;
-    tool_registry.register_tool(CognitionTurnRequestMoreRoundsTool)?;
+    tool_registry.register_typed_tool(CognitionTurnUpdateUserTool)?;
+    tool_registry.register_typed_tool(CognitionTurnCheckpointTool)?;
+    tool_registry.register_typed_tool(CognitionTurnPrepareFinalTool)?;
+    tool_registry.register_typed_tool(CognitionTurnFinishTool)?;
+    tool_registry.register_typed_tool(CognitionTurnRequestMoreRoundsTool)?;
     tool_registry.register_tool(CognitionTurnProposeModeTool::new(
         session_id.to_string(),
         turn_scope.clone(),

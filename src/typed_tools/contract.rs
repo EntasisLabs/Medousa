@@ -84,9 +84,35 @@ fn normalize_schema<T: JsonSchema>() -> Result<Value, SchemaNormalizationError> 
 
     inline_references(&mut schema, &definitions, &mut Vec::new())?;
     collapse_single_all_of(&mut schema);
+    normalize_single_examples(&mut schema);
     normalize_numeric_schema(&mut schema);
     sort_object_keys(&mut schema);
     Ok(schema)
+}
+
+fn normalize_single_examples(value: &mut Value) {
+    match value {
+        Value::Array(values) => {
+            for value in values {
+                normalize_single_examples(value);
+            }
+        }
+        Value::Object(object) => {
+            for value in object.values_mut() {
+                normalize_single_examples(value);
+            }
+
+            let single_example = match object.get("examples") {
+                Some(Value::Array(examples)) if examples.len() == 1 => examples.first().cloned(),
+                _ => None,
+            };
+            if let Some(example) = single_example {
+                object.remove("examples");
+                object.insert("example".to_string(), example);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn normalize_numeric_schema(value: &mut Value) {

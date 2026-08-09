@@ -1,14 +1,21 @@
 //! Cognition tools that query the LSP Interoperability Orchestrator (medousa-code).
 
-use async_trait::async_trait;
-use serde_json::{json, Value};
-use stasis::application::orchestration::tool_registry::StasisTool;
+use schemars::JsonSchema;
+use serde::Deserialize;
+use serde_json::Value;
 use stasis::prelude::{Result as StasisResult, StasisError};
+
+use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
 
 pub const COGNITION_CODE_HOVER: &str = "cognition_code_hover";
 pub const COGNITION_CODE_DEFINITION: &str = "cognition_code_definition";
 pub const COGNITION_CODE_DIAGNOSTICS: &str = "cognition_code_diagnostics";
 pub const COGNITION_CODE_SYMBOLS: &str = "cognition_code_symbols";
+
+const COGNITION_CODE_HOVER_ID: ToolId = ToolId::new(COGNITION_CODE_HOVER);
+const COGNITION_CODE_DEFINITION_ID: ToolId = ToolId::new(COGNITION_CODE_DEFINITION);
+const COGNITION_CODE_DIAGNOSTICS_ID: ToolId = ToolId::new(COGNITION_CODE_DIAGNOSTICS);
+const COGNITION_CODE_SYMBOLS_ID: ToolId = ToolId::new(COGNITION_CODE_SYMBOLS);
 
 pub const CODE_COGNITION_TOOLS: &[&str] = &[
     COGNITION_CODE_HOVER,
@@ -69,31 +76,6 @@ async fn proxy(
         .map_err(|e| StasisError::PortFailure(e.to_string()))
 }
 
-fn require_uri(input: &Value) -> StasisResult<String> {
-    input
-        .get("uri")
-        .and_then(|v| v.as_str())
-        .map(str::to_string)
-        .filter(|s| !s.trim().is_empty())
-        .ok_or_else(|| StasisError::PortFailure("uri is required (file://…)".into()))
-}
-
-fn line_char(input: &Value) -> (Option<u32>, Option<u32>) {
-    let line = input.get("line").and_then(|v| v.as_u64()).map(|n| n as u32);
-    let character = input
-        .get("character")
-        .and_then(|v| v.as_u64())
-        .map(|n| n as u32);
-    (line, character)
-}
-
-fn pinned_authority(input: &Value) -> (Option<&str>, Option<&str>) {
-    (
-        input.get("work_id").and_then(Value::as_str),
-        input.get("attempt_id").and_then(Value::as_str),
-    )
-}
-
 pub(crate) async fn request_code_action(input: Value) -> StasisResult<Value> {
     let client = reqwest::Client::new();
     let url = format!("{}/v1/code/request", daemon_base().trim_end_matches('/'));
@@ -116,129 +98,125 @@ pub(crate) async fn request_code_action(input: Value) -> StasisResult<Value> {
         .map_err(|error| StasisError::PortFailure(error.to_string()))
 }
 
-fn uri_schema() -> Value {
-    json!({
-        "type": "object",
-        "properties": {
-            "uri": { "type": "string", "description": "file:// document URI" },
-            "line": { "type": "integer", "description": "0-based line" },
-            "character": { "type": "integer", "description": "0-based character" }
-        },
-        "required": ["uri"]
-    })
-}
-
 pub struct CognitionCodeHoverTool;
 pub struct CognitionCodeDefinitionTool;
 pub struct CognitionCodeDiagnosticsTool;
 pub struct CognitionCodeSymbolsTool;
 
-#[async_trait]
-impl StasisTool for CognitionCodeHoverTool {
-    fn name(&self) -> &'static str {
-        COGNITION_CODE_HOVER
-    }
-    fn description(&self) -> Option<&'static str> {
-        Some("Hover info from the LSP Interoperability Orchestrator (medousa-code).")
-    }
-    fn input_schema(&self) -> Option<Value> {
-        Some(uri_schema())
-    }
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let uri = require_uri(&input)?;
-        let (line, character) = line_char(&input);
-        let (work_id, attempt_id) = pinned_authority(&input);
-        proxy("/v1/code/hover", &uri, line, character, work_id, attempt_id).await
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CodeLocationInput {
+    /// file:// document URI
+    pub uri: String,
+    /// 0-based line
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_u64"
+    )]
+    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
+    pub line: Option<u64>,
+    /// 0-based character
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_u64"
+    )]
+    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
+    pub character: Option<u64>,
+    /// Runtime-bound Forge authority, hidden from the advertised base contract.
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(skip)]
+    pub work_id: Option<String>,
+    /// Runtime-bound attempt authority, hidden from the advertised base contract.
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(skip)]
+    pub attempt_id: Option<String>,
 }
 
-#[async_trait]
-impl StasisTool for CognitionCodeDefinitionTool {
-    fn name(&self) -> &'static str {
-        COGNITION_CODE_DEFINITION
+impl CodeLocationInput {
+    fn validated_uri(&self) -> StasisResult<&str> {
+        (!self.uri.trim().is_empty())
+            .then_some(self.uri.as_str())
+            .ok_or_else(|| StasisError::PortFailure("uri is required (file://…)".into()))
     }
-    fn description(&self) -> Option<&'static str> {
-        Some("Go-to-definition via the coding engine Orchestrator.")
+
+    fn line_char(&self) -> (Option<u32>, Option<u32>) {
+        (
+            self.line.map(|value| value as u32),
+            self.character.map(|value| value as u32),
+        )
     }
-    fn input_schema(&self) -> Option<Value> {
-        Some(uri_schema())
-    }
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let uri = require_uri(&input)?;
-        let (line, character) = line_char(&input);
-        let (work_id, attempt_id) = pinned_authority(&input);
+
+    async fn invoke_proxy(self, path: &str) -> StasisResult<ExternalJson> {
+        let uri = self.validated_uri()?.to_string();
+        let (line, character) = self.line_char();
         proxy(
-            "/v1/code/definition",
+            path,
             &uri,
             line,
             character,
-            work_id,
-            attempt_id,
+            self.work_id.as_deref(),
+            self.attempt_id.as_deref(),
         )
         .await
+        .map(ExternalJson::new)
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionCodeDiagnosticsTool {
-    fn name(&self) -> &'static str {
-        COGNITION_CODE_DIAGNOSTICS
-    }
-    fn description(&self) -> Option<&'static str> {
-        Some("Open-document diagnostics status from the coding engine.")
-    }
-    fn input_schema(&self) -> Option<Value> {
-        Some(uri_schema())
-    }
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let uri = require_uri(&input)?;
-        let (line, character) = line_char(&input);
-        let (work_id, attempt_id) = pinned_authority(&input);
-        proxy(
-            "/v1/code/diagnostics",
-            &uri,
-            line,
-            character,
-            work_id,
-            attempt_id,
-        )
-        .await
+#[medousa_tool(id = COGNITION_CODE_HOVER_ID)]
+impl CognitionCodeHoverTool {
+    /// Hover info from the LSP Interoperability Orchestrator (medousa-code).
+    async fn invoke_typed(
+        &self,
+        input: CodeLocationInput,
+    ) -> stasis::prelude::Result<ExternalJson> {
+        input.invoke_proxy("/v1/code/hover").await
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionCodeSymbolsTool {
-    fn name(&self) -> &'static str {
-        COGNITION_CODE_SYMBOLS
+#[medousa_tool(id = COGNITION_CODE_DEFINITION_ID)]
+impl CognitionCodeDefinitionTool {
+    /// Go-to-definition via the coding engine Orchestrator.
+    async fn invoke_typed(
+        &self,
+        input: CodeLocationInput,
+    ) -> stasis::prelude::Result<ExternalJson> {
+        input.invoke_proxy("/v1/code/definition").await
     }
-    fn description(&self) -> Option<&'static str> {
-        Some("Document symbols via the coding engine Orchestrator.")
+}
+
+#[medousa_tool(id = COGNITION_CODE_DIAGNOSTICS_ID)]
+impl CognitionCodeDiagnosticsTool {
+    /// Open-document diagnostics status from the coding engine.
+    async fn invoke_typed(
+        &self,
+        input: CodeLocationInput,
+    ) -> stasis::prelude::Result<ExternalJson> {
+        input.invoke_proxy("/v1/code/diagnostics").await
     }
-    fn input_schema(&self) -> Option<Value> {
-        Some(uri_schema())
-    }
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let uri = require_uri(&input)?;
-        let (line, character) = line_char(&input);
-        let (work_id, attempt_id) = pinned_authority(&input);
-        proxy(
-            "/v1/code/symbols",
-            &uri,
-            line,
-            character,
-            work_id,
-            attempt_id,
-        )
-        .await
+}
+
+#[medousa_tool(id = COGNITION_CODE_SYMBOLS_ID)]
+impl CognitionCodeSymbolsTool {
+    /// Document symbols via the coding engine Orchestrator.
+    async fn invoke_typed(
+        &self,
+        input: CodeLocationInput,
+    ) -> stasis::prelude::Result<ExternalJson> {
+        input.invoke_proxy("/v1/code/symbols").await
     }
 }
 
 pub fn register_code_intelligence_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
 ) -> stasis::prelude::Result<()> {
-    registry.register_tool(CognitionCodeHoverTool)?;
-    registry.register_tool(CognitionCodeDefinitionTool)?;
-    registry.register_tool(CognitionCodeDiagnosticsTool)?;
-    registry.register_tool(CognitionCodeSymbolsTool)?;
+    registry.register_typed_tool(CognitionCodeHoverTool)?;
+    registry.register_typed_tool(CognitionCodeDefinitionTool)?;
+    registry.register_typed_tool(CognitionCodeDiagnosticsTool)?;
+    registry.register_typed_tool(CognitionCodeSymbolsTool)?;
     Ok(())
 }

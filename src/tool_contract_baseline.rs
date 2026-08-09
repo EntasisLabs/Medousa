@@ -192,6 +192,7 @@ async fn assembled_contract_baseline() -> ContractBaseline {
     assert_catalog_matches_registered_surface(&general_tools, &registered_tools);
 
     audit_static_inventory(&general_tools);
+    audit_typed_contract_inventory(&runtime.tool_catalog);
     audit_policy_references(&runtime.tool_catalog, &general_tools);
 
     let mut contracts = general_tools
@@ -313,6 +314,22 @@ fn audit_static_inventory(general_tools: &[Tool]) {
     assert_eq!(
         assembled, declared,
         "manual/typed inventory must exactly match General plus Coder setup assembly"
+    );
+}
+
+fn audit_typed_contract_inventory(catalog: &crate::typed_tools::ToolCatalog) {
+    let actual = catalog
+        .entries()
+        .filter(|entry| entry.contract.kind == crate::typed_tools::RegisteredToolKind::Typed)
+        .map(|entry| entry.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let declared = crate::tool_names::TYPED_TOOL_CONTRACTS
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        actual, declared,
+        "typed tool inventory must exactly match catalog registrations"
     );
 }
 

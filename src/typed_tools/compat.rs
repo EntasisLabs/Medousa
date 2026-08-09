@@ -23,3 +23,19 @@ where
     let value = Value::deserialize(deserializer)?;
     Ok(value.as_u64().and_then(|value| usize::try_from(value).ok()))
 }
+
+pub fn deserialize_lenient_optional_bool<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    Ok(value.as_bool())
+}
+
+pub fn deserialize_lenient_optional_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    Ok(value.as_u64())
+}

@@ -143,6 +143,25 @@ fn macro_projects_id_description_and_normalized_schemas() {
     assert!(!output_schema.to_string().contains("$ref"));
 }
 
+fn input_contract_example() -> serde_json::Value {
+    json!({ "value": "example", "options": { "uppercase": false } })
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[schemars(example = "input_contract_example")]
+#[allow(dead_code)]
+struct ExampleInputContract {
+    value: String,
+    options: EchoOptions,
+}
+
+#[test]
+fn schema_normalizer_preserves_provider_singular_example_shape() {
+    let schema = normalize_input_schema::<ExampleInputContract>().expect("example schema");
+    assert_eq!(schema["example"], input_contract_example());
+    assert!(schema.get("examples").is_none());
+}
+
 #[tokio::test]
 async fn boundary_errors_include_the_typed_tool_id() {
     let error = StasisTool::invoke(&StatefulEchoTool::new("unused:"), json!({"value": 42}))

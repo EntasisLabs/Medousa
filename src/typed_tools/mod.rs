@@ -16,7 +16,10 @@ pub use catalog::{
     ToolPlacement, ToolPlacementIndex, ToolPolicyId, ToolRegistrar, ToolRegistration,
     ToolSurfaceId, resolve_tool_id,
 };
-pub use compat::{deserialize_lenient_optional_string, deserialize_lenient_optional_usize};
+pub use compat::{
+    deserialize_lenient_optional_bool, deserialize_lenient_optional_string,
+    deserialize_lenient_optional_u64, deserialize_lenient_optional_usize,
+};
 pub use contract::{
     ContractError, ExternalJson, OpaqueToolPayload, SchemaNormalizationError, ToolContract,
     TypedTool, build_contract, normalize_input_schema, normalize_output_schema,

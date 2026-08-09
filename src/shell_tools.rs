@@ -3,16 +3,21 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use schemars::JsonSchema;
+use serde::Deserialize;
 use serde_json::{Value, json};
 use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
 
 use crate::shell_grapheme::synthesize_shell_run_source;
-use crate::shell_sandbox::{probe_shell_sandbox, shell_agent_tools_enabled};
+use crate::shell_sandbox::{ShellSandboxStatus, probe_shell_sandbox, shell_agent_tools_enabled};
 use crate::tools::run_grapheme_via_runtime;
+use crate::typed_tools::{ToolId, medousa_tool};
 
 pub const COGNITION_SHELL_STATUS: &str = "cognition_shell_status";
 pub const COGNITION_SHELL_RUN: &str = "cognition_shell_run";
+
+const COGNITION_SHELL_STATUS_ID: ToolId = ToolId::new(COGNITION_SHELL_STATUS);
 
 pub const SHELL_COGNITION_TOOLS: &[&str] = &[COGNITION_SHELL_STATUS, COGNITION_SHELL_RUN];
 
@@ -38,36 +43,28 @@ pub fn register_shell_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
     runtime: Arc<RuntimeComposition>,
 ) -> stasis::prelude::Result<()> {
-    registry.register_tool(CognitionShellStatusTool)?;
+    registry.register_typed_tool(CognitionShellStatusTool)?;
     registry.register_tool(CognitionShellRunTool::new(runtime))?;
     Ok(())
 }
 
 pub struct CognitionShellStatusTool;
 
-#[async_trait]
-impl StasisTool for CognitionShellStatusTool {
-    fn name(&self) -> &'static str {
-        COGNITION_SHELL_STATUS
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ShellStatusInput {}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Probe Medousa OS-native shell sandbox readiness (Seatbelt / bubblewrap / systemd-run). \
-             Does not execute commands.",
-        )
-    }
-
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({ "type": "object", "properties": {} }))
-    }
-
-    async fn invoke(&self, _input: Value) -> StasisResult<Value> {
+#[medousa_tool(id = COGNITION_SHELL_STATUS_ID)]
+impl CognitionShellStatusTool {
+    /// Probe Medousa OS-native shell sandbox readiness (Seatbelt / bubblewrap / systemd-run). Does not execute commands.
+    async fn invoke_typed(
+        &self,
+        _input: ShellStatusInput,
+    ) -> stasis::prelude::Result<ShellSandboxStatus> {
         ensure_shell_agent_tools_enabled()?;
         let status = tokio::task::spawn_blocking(probe_shell_sandbox)
             .await
             .map_err(|err| StasisError::PortFailure(format!("shell status join error: {err}")))?;
-        Ok(serde_json::to_value(status).unwrap_or(Value::Null))
+        Ok(status)
     }
 }
 
@@ -128,8 +125,7 @@ impl StasisTool for CognitionShellRunTool {
 
     async fn invoke(&self, input: Value) -> StasisResult<Value> {
         ensure_shell_agent_tools_enabled()?;
-        let source = synthesize_shell_run_source(&input)
-            .map_err(StasisError::PortFailure)?;
+        let source = synthesize_shell_run_source(&input).map_err(StasisError::PortFailure)?;
         let result = run_grapheme_via_runtime(&self.runtime, &source, COGNITION_SHELL_RUN).await?;
 
         // Surface shell.run fields when the grapheme diagnostics carry final_state.
@@ -144,7 +140,10 @@ impl StasisTool for CognitionShellRunTool {
 }
 
 fn extract_shell_result(runtime_result: &Value) -> Value {
-    let diagnostics = runtime_result.get("diagnostics").cloned().unwrap_or(Value::Null);
+    let diagnostics = runtime_result
+        .get("diagnostics")
+        .cloned()
+        .unwrap_or(Value::Null);
     if let Some(final_state) = diagnostics.get("final_state") {
         return final_state.clone();
     }

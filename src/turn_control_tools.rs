@@ -1,9 +1,13 @@
 //! Control-plane tools for agent turn boundaries (explicit finalize signaling).
 
 use async_trait::async_trait;
+use schemars::JsonSchema;
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Value, json};
 use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
 use stasis::application::orchestration::tool_registry::StasisTool;
+
+use crate::typed_tools::{ToolId, medousa_tool};
 
 /// Canonical registry name (snake_case).
 pub const COGNITION_TURN_PREPARE_FINAL: &str = "cognition_turn_prepare_final";
@@ -39,6 +43,13 @@ pub const COGNITION_TURN_UPDATE_USER_DOTTED: &str = "cognition.turn.update_user"
 pub const COGNITION_TURN_PROPOSE_MODE: &str = "cognition_turn_propose_mode";
 
 pub const COGNITION_TURN_PROPOSE_MODE_DOTTED: &str = "cognition.turn.propose_mode";
+
+const COGNITION_TURN_UPDATE_USER_ID: ToolId = ToolId::new(COGNITION_TURN_UPDATE_USER);
+const COGNITION_TURN_PREPARE_FINAL_ID: ToolId = ToolId::new(COGNITION_TURN_PREPARE_FINAL);
+const COGNITION_TURN_FINISH_ID: ToolId = ToolId::new(COGNITION_TURN_FINISH);
+const COGNITION_TURN_CHECKPOINT_ID: ToolId = ToolId::new(COGNITION_TURN_CHECKPOINT);
+const COGNITION_TURN_REQUEST_MORE_ROUNDS_ID: ToolId =
+    ToolId::new(COGNITION_TURN_REQUEST_MORE_ROUNDS);
 
 /// Principal-facing body when the model ends with prose after tools without `cognition_turn_finish`.
 pub const PROSE_REQUIRES_FINISH_STUB: &str = "I finished the tool work but didn't commit a final answer. Reply to continue and I'll \
@@ -279,6 +290,12 @@ fn message_from_turn_control_message_payload(payload: &Value) -> Option<String> 
         .map(str::to_string)
 }
 
+fn trimmed_nonempty(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
 /// Extract the principal-facing checkpoint from a tool batch, if `cognition_turn_checkpoint` ran.
 pub fn checkpoint_turn_from_invocations(invocations: &[ToolInvocation]) -> Option<String> {
     for inv in invocations.iter().rev() {
@@ -408,48 +425,69 @@ pub fn workshop_entered_from_invocations(
 /// Short principal-facing status while the turn continues (not a final answer).
 pub struct CognitionTurnUpdateUserTool;
 
-#[async_trait]
-impl StasisTool for CognitionTurnUpdateUserTool {
-    fn name(&self) -> &'static str {
-        COGNITION_TURN_UPDATE_USER
-    }
+#[derive(Debug, JsonSchema)]
+pub struct TurnUpdateUserInput {
+    /// Short principal-facing status line
+    #[schemars(required, with = "String")]
+    message: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Tell the principal what you are doing right now — retries, quick course-corrections, \
-             \"pulling schemas\", \"one sec\". Call in the same model round as your next tool. \
-             Does not end the turn. Prefer this over naked chat prose (prose without tools fights \
-             the turn loop). For heavy/long-running work starting, use cognition_turn_begin_work instead.",
-        )
-    }
+impl<'de> Deserialize<'de> for TurnUpdateUserInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            message: Option<String>,
+        }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["message"],
-            "properties": {
-                "message": {
-                    "type": "string",
-                    "description": "Short principal-facing status line"
-                }
-            }
-        }))
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            message: input.message,
+        })
     }
+}
 
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let Some(message) = message_from_turn_control_message_payload(&input) else {
-            return Ok(json!({
-                "ok": false,
-                "update_user": false,
-                "error": "message is required and must be non-empty",
-            }));
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum TurnUpdateUserOutput {
+    Success {
+        ok: bool,
+        update_user: bool,
+        message: String,
+    },
+    Failure {
+        ok: bool,
+        update_user: bool,
+        error: String,
+    },
+}
+
+#[medousa_tool(id = COGNITION_TURN_UPDATE_USER_ID)]
+impl CognitionTurnUpdateUserTool {
+    /// Tell the principal what you are doing right now — retries, quick course-corrections, "pulling schemas", "one sec". Call in the same model round as your next tool. Does not end the turn. Prefer this over naked chat prose (prose without tools fights the turn loop). For heavy/long-running work starting, use cognition_turn_begin_work instead.
+    async fn invoke_typed(
+        &self,
+        input: TurnUpdateUserInput,
+    ) -> stasis::prelude::Result<TurnUpdateUserOutput> {
+        let Some(message) = trimmed_nonempty(input.message) else {
+            return Ok(TurnUpdateUserOutput::Failure {
+                ok: false,
+                update_user: false,
+                error: "message is required and must be non-empty".to_string(),
+            });
         };
 
-        Ok(json!({
-            "ok": true,
-            "update_user": true,
-            "message": message,
-        }))
+        Ok(TurnUpdateUserOutput::Success {
+            ok: true,
+            update_user: true,
+            message,
+        })
     }
 }
 
@@ -564,248 +602,320 @@ impl StasisTool for CognitionTurnProposeModeTool {
 /// Signal that the **next** assistant message (text-only) should be the user-facing final answer.
 pub struct CognitionTurnPrepareFinalTool;
 
-#[async_trait]
-impl StasisTool for CognitionTurnPrepareFinalTool {
-    fn name(&self) -> &'static str {
-        COGNITION_TURN_PREPARE_FINAL
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TurnPrepareFinalInput {
+    /// Optional short note for logs (not shown to the user)
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Deprecated — prefer cognition_turn_finish with the complete answer. \
-             Workshop workers may still call this; host turns should use cognition_turn_update_user for \
-             quick status, cognition_turn_begin_work before heavy work, and cognition_turn_finish to commit.",
-        )
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct TurnPrepareFinalOutput {
+    ok: bool,
+    prepare_final: bool,
+    deprecated: bool,
+    message: String,
+    reason: Option<String>,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "reason": {
-                    "type": "string",
-                    "description": "Optional short note for logs (not shown to the user)"
-                }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let reason = input
-            .get("reason")
-            .and_then(|value| value.as_str())
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
-
-        Ok(json!({
-            "ok": true,
-            "prepare_final": true,
-            "deprecated": true,
-            "message": "Deprecated — call cognition_turn_finish with the complete principal-facing reply. Workshop lane may still send one final prose round.",
-            "reason": reason,
-        }))
+#[medousa_tool(id = COGNITION_TURN_PREPARE_FINAL_ID)]
+impl CognitionTurnPrepareFinalTool {
+    /// Deprecated — prefer cognition_turn_finish with the complete answer. Workshop workers may still call this; host turns should use cognition_turn_update_user for quick status, cognition_turn_begin_work before heavy work, and cognition_turn_finish to commit.
+    async fn invoke_typed(
+        &self,
+        input: TurnPrepareFinalInput,
+    ) -> stasis::prelude::Result<TurnPrepareFinalOutput> {
+        Ok(TurnPrepareFinalOutput {
+            ok: true,
+            prepare_final: true,
+            deprecated: true,
+            message: "Deprecated — call cognition_turn_finish with the complete principal-facing reply. Workshop lane may still send one final prose round.".to_string(),
+            reason: trimmed_nonempty(input.reason),
+        })
     }
 }
 
 /// End the turn immediately with the final user-facing answer (bypasses gatekeeper continue).
 pub struct CognitionTurnFinishTool;
 
-#[async_trait]
-impl StasisTool for CognitionTurnFinishTool {
-    fn name(&self) -> &'static str {
-        COGNITION_TURN_FINISH
-    }
+#[derive(Debug, JsonSchema)]
+pub struct TurnFinishInput {
+    /// Complete principal-facing final answer for this turn
+    #[schemars(required, with = "String")]
+    message: Option<String>,
+    /// Optional short note for logs (not shown to the user)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Deliver the complete principal-facing final answer now and end this turn immediately. \
-             Use it as an explicit hard stop after tool work; synthesis-bound workers require it \
-             for direct pass-through, while principal-facing turns may also commit after two \
-             consecutive non-tool responses. \
-             Mid-task handoffs use cognition_turn_checkpoint.",
-        )
-    }
+impl<'de> Deserialize<'de> for TurnFinishInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            message: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            reason: Option<String>,
+        }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["message"],
-            "properties": {
-                "message": {
-                    "type": "string",
-                    "description": "Complete principal-facing final answer for this turn"
-                },
-                "reason": {
-                    "type": "string",
-                    "description": "Optional short note for logs (not shown to the user)"
-                }
-            }
-        }))
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            message: input.message,
+            reason: input.reason,
+        })
     }
+}
 
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let Some(message) = message_from_finish_turn_payload(&input) else {
-            return Ok(json!({
-                "ok": false,
-                "finish_turn": false,
-                "error": "message is required and must be non-empty",
-            }));
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum TurnFinishOutput {
+    Success {
+        ok: bool,
+        finish_turn: bool,
+        message: String,
+        reason: Option<String>,
+    },
+    Failure {
+        ok: bool,
+        finish_turn: bool,
+        error: String,
+    },
+}
+
+#[medousa_tool(id = COGNITION_TURN_FINISH_ID)]
+impl CognitionTurnFinishTool {
+    /// Deliver the complete principal-facing final answer now and end this turn immediately. Use it as an explicit hard stop after tool work; synthesis-bound workers require it for direct pass-through, while principal-facing turns may also commit after two consecutive non-tool responses. Mid-task handoffs use cognition_turn_checkpoint.
+    async fn invoke_typed(
+        &self,
+        input: TurnFinishInput,
+    ) -> stasis::prelude::Result<TurnFinishOutput> {
+        let Some(message) = trimmed_nonempty(input.message) else {
+            return Ok(TurnFinishOutput::Failure {
+                ok: false,
+                finish_turn: false,
+                error: "message is required and must be non-empty".to_string(),
+            });
         };
-        let reason = input
-            .get("reason")
-            .and_then(|value| value.as_str())
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
 
-        Ok(json!({
-            "ok": true,
-            "finish_turn": true,
-            "message": message,
-            "reason": reason,
-        }))
+        Ok(TurnFinishOutput::Success {
+            ok: true,
+            finish_turn: true,
+            message,
+            reason: trimmed_nonempty(input.reason),
+        })
     }
 }
 
 /// Hand a mid-task update to the principal and end this agent turn (await their reply to continue).
 pub struct CognitionTurnCheckpointTool;
 
-#[async_trait]
-impl StasisTool for CognitionTurnCheckpointTool {
-    fn name(&self) -> &'static str {
-        COGNITION_TURN_CHECKPOINT
-    }
+#[derive(Debug, JsonSchema)]
+pub struct TurnCheckpointInput {
+    /// Principal-facing update: what you did, what you found, and what happens next or what you need from them
+    #[schemars(required, with = "String")]
+    message: Option<String>,
+    /// Optional: what you need from the principal before more tool work (decision, confirmation, missing detail)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    awaiting: Option<String>,
+    /// Optional short note for logs (not shown to the principal)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Share a substantive mid-task update with the principal and hand the turn back to them. \
-             The conversation is not over — you may continue after they reply. \
-             Use when tool work produced real progress but you are not done (not a final answer). \
-             Prefer this over streaming long interim prose that the runtime may loop on.",
-        )
-    }
+impl<'de> Deserialize<'de> for TurnCheckpointInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            message: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            awaiting: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            reason: Option<String>,
+        }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["message"],
-            "properties": {
-                "message": {
-                    "type": "string",
-                    "description": "Principal-facing update: what you did, what you found, and what happens next or what you need from them"
-                },
-                "awaiting": {
-                    "type": "string",
-                    "description": "Optional: what you need from the principal before more tool work (decision, confirmation, missing detail)"
-                },
-                "reason": {
-                    "type": "string",
-                    "description": "Optional short note for logs (not shown to the principal)"
-                }
-            }
-        }))
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            message: input.message,
+            awaiting: input.awaiting,
+            reason: input.reason,
+        })
     }
+}
 
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let Some(message) = message_from_turn_control_message_payload(&input) else {
-            return Ok(json!({
-                "ok": false,
-                "checkpoint_turn": false,
-                "error": "message is required and must be non-empty",
-            }));
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum TurnCheckpointOutput {
+    Success {
+        ok: bool,
+        checkpoint_turn: bool,
+        message: String,
+        awaiting: Option<String>,
+        reason: Option<String>,
+    },
+    Failure {
+        ok: bool,
+        checkpoint_turn: bool,
+        error: String,
+    },
+}
+
+#[medousa_tool(id = COGNITION_TURN_CHECKPOINT_ID)]
+impl CognitionTurnCheckpointTool {
+    /// Share a substantive mid-task update with the principal and hand the turn back to them. The conversation is not over — you may continue after they reply. Use when tool work produced real progress but you are not done (not a final answer). Prefer this over streaming long interim prose that the runtime may loop on.
+    async fn invoke_typed(
+        &self,
+        input: TurnCheckpointInput,
+    ) -> stasis::prelude::Result<TurnCheckpointOutput> {
+        let Some(message) = trimmed_nonempty(input.message) else {
+            return Ok(TurnCheckpointOutput::Failure {
+                ok: false,
+                checkpoint_turn: false,
+                error: "message is required and must be non-empty".to_string(),
+            });
         };
-        let awaiting = input
-            .get("awaiting")
-            .and_then(|value| value.as_str())
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
-        let reason = input
-            .get("reason")
-            .and_then(|value| value.as_str())
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
 
-        Ok(json!({
-            "ok": true,
-            "checkpoint_turn": true,
-            "message": message,
-            "awaiting": awaiting,
-            "reason": reason,
-        }))
+        Ok(TurnCheckpointOutput::Success {
+            ok: true,
+            checkpoint_turn: true,
+            message,
+            awaiting: trimmed_nonempty(input.awaiting),
+            reason: trimmed_nonempty(input.reason),
+        })
     }
 }
 
 /// Pause the turn and ask the operator for more tool rounds.
 pub struct CognitionTurnRequestMoreRoundsTool;
 
-#[async_trait]
-impl StasisTool for CognitionTurnRequestMoreRoundsTool {
-    fn name(&self) -> &'static str {
-        COGNITION_TURN_REQUEST_MORE_ROUNDS
-    }
-
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Request additional tool rounds when the current budget is too tight. \
-             Pauses until the principal approves or denies. Include reason and progress summary.",
+#[derive(Debug, JsonSchema)]
+pub struct TurnRequestMoreRoundsInput {
+    /// How many additional model/tool rounds you need
+    #[schemars(
+        required,
+        with = "i64",
+        range(
+            min = 1,
+            max = "crate::turn_budget_request::MAX_REQUESTED_ROUNDS_PER_ASK"
         )
-    }
+    )]
+    requested_rounds: Option<usize>,
+    /// Why the current budget is insufficient
+    #[schemars(required, with = "String")]
+    reason: Option<String>,
+    /// What is done and what remains
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    progress_summary: Option<String>,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["requested_rounds", "reason"],
-            "properties": {
-                "requested_rounds": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": crate::turn_budget_request::MAX_REQUESTED_ROUNDS_PER_ASK,
-                    "description": "How many additional model/tool rounds you need"
-                },
-                "reason": {
-                    "type": "string",
-                    "description": "Why the current budget is insufficient"
-                },
-                "progress_summary": {
-                    "type": "string",
-                    "description": "What is done and what remains"
-                }
-            }
-        }))
-    }
+impl<'de> Deserialize<'de> for TurnRequestMoreRoundsInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+            )]
+            requested_rounds: Option<usize>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            reason: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            progress_summary: Option<String>,
+        }
 
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            requested_rounds: input.requested_rounds,
+            reason: input.reason,
+            progress_summary: input.progress_summary,
+        })
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum TurnRequestMoreRoundsOutput {
+    Success {
+        ok: bool,
+        budget_request: bool,
+        requested_rounds: usize,
+        reason: String,
+        progress_summary: Option<String>,
+        message: String,
+    },
+    Failure {
+        ok: bool,
+        budget_request: bool,
+        error: String,
+    },
+}
+
+#[medousa_tool(id = COGNITION_TURN_REQUEST_MORE_ROUNDS_ID)]
+impl CognitionTurnRequestMoreRoundsTool {
+    /// Request additional tool rounds when the current budget is too tight. Pauses until the principal approves or denies. Include reason and progress summary.
+    async fn invoke_typed(
+        &self,
+        input: TurnRequestMoreRoundsInput,
+    ) -> stasis::prelude::Result<TurnRequestMoreRoundsOutput> {
         let requested_rounds = input
-            .get("requested_rounds")
-            .and_then(|value| value.as_u64())
-            .map(|value| value as usize)
+            .requested_rounds
             .unwrap_or(0)
             .clamp(1, crate::turn_budget_request::MAX_REQUESTED_ROUNDS_PER_ASK);
-        let reason = input
-            .get("reason")
-            .and_then(|value| value.as_str())
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
-        let Some(reason) = reason else {
-            return Ok(json!({
-                "ok": false,
-                "budget_request": false,
-                "error": "reason is required",
-            }));
+        let Some(reason) = trimmed_nonempty(input.reason) else {
+            return Ok(TurnRequestMoreRoundsOutput::Failure {
+                ok: false,
+                budget_request: false,
+                error: "reason is required".to_string(),
+            });
         };
-        let progress_summary = input
-            .get("progress_summary")
-            .and_then(|value| value.as_str())
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
 
-        Ok(json!({
-            "ok": true,
-            "budget_request": true,
-            "requested_rounds": requested_rounds,
-            "reason": reason,
-            "progress_summary": progress_summary,
-            "message": "Turn paused — awaiting principal approval for additional tool rounds.",
-        }))
+        Ok(TurnRequestMoreRoundsOutput::Success {
+            ok: true,
+            budget_request: true,
+            requested_rounds,
+            reason,
+            progress_summary: trimmed_nonempty(input.progress_summary),
+            message: "Turn paused — awaiting principal approval for additional tool rounds."
+                .to_string(),
+        })
     }
 }
 
