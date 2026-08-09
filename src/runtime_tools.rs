@@ -25,6 +25,7 @@ use crate::recurring_delivery::{
 use crate::recurring_feed::{RecurringFeedSpec, bind_recurring_feed_spec_for_registration};
 use crate::recurring_schedule::RecurringScheduleSpec;
 use crate::runtime_composition_ext::RuntimeCompositionExt;
+use crate::semantic_values::TrimmedText;
 use crate::tools::validate_grapheme_source_for_schedule;
 use crate::turn_continuation::{
     ContinuationAwaitMode, StoredDeliveryTarget, TurnContinuationScope, continuation_tool_metadata,
@@ -291,6 +292,40 @@ pub struct RuntimeJobsListInput {
     limit: Option<usize>,
 }
 
+#[derive(Debug)]
+struct RuntimeJobsListCommand {
+    state: Option<JobState>,
+    correlation_id: Option<String>,
+    limit: usize,
+}
+
+impl TryFrom<RuntimeJobsListInput> for RuntimeJobsListCommand {
+    type Error = StasisError;
+
+    fn try_from(input: RuntimeJobsListInput) -> Result<Self, Self::Error> {
+        let state = input
+            .state
+            .as_deref()
+            .map(|raw| {
+                parse_job_state_filter(raw).ok_or_else(|| {
+                    StasisError::PortFailure(format!(
+                        "cognition_runtime_jobs_list: unknown state '{raw}'"
+                    ))
+                })
+            })
+            .transpose()?;
+        let correlation_id = input
+            .correlation_id
+            .and_then(|value| TrimmedText::new(value).ok().map(TrimmedText::into_string));
+
+        Ok(Self {
+            state,
+            correlation_id,
+            limit: input.limit.unwrap_or(20).clamp(1, 100),
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct RuntimeJobsListOutput {
     count: usize,
@@ -304,19 +339,9 @@ impl CognitionRuntimeJobsListTool {
         &self,
         input: RuntimeJobsListInput,
     ) -> stasis::prelude::Result<RuntimeJobsListOutput> {
-        let limit = input.limit.unwrap_or(20).clamp(1, 100);
-        let correlation_id = input
-            .correlation_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
+        let command = RuntimeJobsListCommand::try_from(input)?;
 
-        let states = if let Some(state_raw) = input.state.as_deref() {
-            let state = parse_job_state_filter(state_raw).ok_or_else(|| {
-                StasisError::PortFailure(format!(
-                    "cognition_runtime_jobs_list: unknown state '{state_raw}'"
-                ))
-            })?;
+        let states = if let Some(state) = command.state {
             vec![state]
         } else {
             vec![JobState::Enqueued, JobState::Leased, JobState::Running]
@@ -328,18 +353,28 @@ impl CognitionRuntimeJobsListTool {
             jobs.append(&mut batch);
         }
 
-        if let Some(correlation_id) = correlation_id {
+        if let Some(correlation_id) = command.correlation_id.as_deref() {
             jobs.retain(|job| job.correlation_id == correlation_id);
         }
 
         jobs.sort_by_key(|b| std::cmp::Reverse(b.scheduled_at));
-        jobs.truncate(limit);
+        jobs.truncate(command.limit);
 
         Ok(RuntimeJobsListOutput {
             count: jobs.len(),
             jobs: jobs.iter().map(job_summary).collect(),
         })
     }
+}
+
+fn required_runtime_identifier(
+    value: Option<String>,
+    tool_name: &str,
+    field: &str,
+) -> stasis::prelude::Result<String> {
+    TrimmedText::new(value.unwrap_or_default())
+        .map(TrimmedText::into_string)
+        .map_err(|_| StasisError::PortFailure(format!("{tool_name}: {field} is required")))
 }
 
 // ── cognition_runtime_jobs_cancel ─────────────────────────────────────────────
@@ -408,18 +443,13 @@ impl CognitionRuntimeJobsCancelTool {
         &self,
         input: RuntimeJobsCancelInput,
     ) -> stasis::prelude::Result<RuntimeJobsCancelOutput> {
-        let job_id = input
-            .job_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| {
-                StasisError::PortFailure(
-                    "cognition_runtime_jobs_cancel: job_id is required".to_string(),
-                )
-            })?;
+        let job_id = required_runtime_identifier(
+            input.job_id,
+            COGNITION_RUNTIME_JOBS_CANCEL_ID.as_str(),
+            "job_id",
+        )?;
 
-        let Some(mut job) = get_job(self.runtime.as_ref(), job_id).await? else {
+        let Some(mut job) = get_job(self.runtime.as_ref(), &job_id).await? else {
             return Ok(RuntimeJobsCancelOutput::NotFound {
                 job_id: job_id.to_string(),
                 status: "not_found".to_string(),
@@ -1958,18 +1988,13 @@ impl CognitionRuntimeWorkflowStatusTool {
         &self,
         input: RuntimeWorkflowStatusInput,
     ) -> stasis::prelude::Result<RuntimeWorkflowStatusOutput> {
-        let workflow_id = input
-            .workflow_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| {
-                StasisError::PortFailure(
-                    "cognition_runtime_workflow_status: workflow_id is required".to_string(),
-                )
-            })?;
+        let workflow_id = required_runtime_identifier(
+            input.workflow_id,
+            COGNITION_RUNTIME_WORKFLOW_STATUS_ID.as_str(),
+            "workflow_id",
+        )?;
 
-        let Some(record) = self.registry.get(workflow_id).await else {
+        let Some(record) = self.registry.get(&workflow_id).await else {
             return Ok(RuntimeWorkflowStatusOutput::NotFound {
                 workflow_id: workflow_id.to_string(),
                 status: "not_found".to_string(),
@@ -2094,18 +2119,13 @@ impl CognitionRuntimeWorkflowCancelTool {
         &self,
         input: RuntimeWorkflowCancelInput,
     ) -> stasis::prelude::Result<RuntimeWorkflowCancelOutput> {
-        let workflow_id = input
-            .workflow_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| {
-                StasisError::PortFailure(
-                    "cognition_runtime_workflow_cancel: workflow_id is required".to_string(),
-                )
-            })?;
+        let workflow_id = required_runtime_identifier(
+            input.workflow_id,
+            COGNITION_RUNTIME_WORKFLOW_CANCEL_ID.as_str(),
+            "workflow_id",
+        )?;
 
-        let Some(record) = self.registry.get(workflow_id).await else {
+        let Some(record) = self.registry.get(&workflow_id).await else {
             return Ok(RuntimeWorkflowCancelOutput::NotFound {
                 workflow_id: workflow_id.to_string(),
                 status: "not_found".to_string(),
@@ -2149,7 +2169,7 @@ impl CognitionRuntimeWorkflowCancelTool {
             }
         }
 
-        self.registry.mark_canceled(workflow_id).await;
+        self.registry.mark_canceled(&workflow_id).await;
 
         let _ = self
             .event_tx
@@ -2271,6 +2291,33 @@ mod tests {
     use stasis::sdk::runtime_sdk::RuntimeSdk;
 
     use super::*;
+
+    #[test]
+    fn runtime_jobs_list_command_normalizes_filters_once() {
+        let command = RuntimeJobsListCommand::try_from(RuntimeJobsListInput {
+            state: Some("  running  ".to_string()),
+            correlation_id: Some("  workflow-1  ".to_string()),
+            limit: Some(0),
+        })
+        .expect("job list command");
+
+        assert_eq!(command.state, Some(JobState::Running));
+        assert_eq!(command.correlation_id.as_deref(), Some("workflow-1"));
+        assert_eq!(command.limit, 1);
+    }
+
+    #[test]
+    fn required_runtime_identifier_keeps_tool_context() {
+        let error = required_runtime_identifier(
+            Some("  ".to_string()),
+            "cognition_runtime_jobs_cancel",
+            "job_id",
+        )
+        .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("cognition_runtime_jobs_cancel: job_id is required"));
+    }
 
     #[test]
     fn recurring_input_constructors_keep_wire_defaults() {
