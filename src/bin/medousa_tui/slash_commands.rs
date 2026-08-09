@@ -33,6 +33,10 @@ pub(crate) async fn handle_slash_command(
             push_obs_alert(state, "  /notes    open vault library picker (Ctrl+; o)".to_string());
             push_obs_alert(state, "  /code     open Forge code desk (Ctrl+; f)".to_string());
             push_obs_alert(state, "  /review   open Forge review desk (Ctrl+; r)".to_string());
+            push_obs_alert(
+                state,
+                "  /terminal open workshop shell pane (Ctrl+; t / T)".to_string(),
+            );
             push_obs_alert(state, "  /close    quit medousa_tui".to_string());
         }
         "/notes" | "/library" => {
@@ -75,6 +79,17 @@ pub(crate) async fn handle_slash_command(
                 .await;
             } else {
                 let _ = forge_runtime::open_review_work(state, rest, rest).await;
+            }
+        }
+        "/terminal" | "/term" | "/shell" => {
+            let rest = parts.collect::<Vec<_>>().join(" ");
+            let rest = rest.trim();
+            if rest.is_empty() {
+                let _ = terminal_runtime::open_new_terminal(state).await;
+            } else if rest == "list" || rest == "picker" {
+                terminal_runtime::open_terminal_picker(state).await;
+            } else {
+                let _ = terminal_runtime::attach_or_create_terminal(state, Some(rest), None).await;
             }
         }
         "/new" => {

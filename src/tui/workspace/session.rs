@@ -143,7 +143,23 @@ impl ShellTab {
     }
 
     pub fn forge_work_id(&self) -> Option<&str> {
-        self.code_work_id().or_else(|| self.review_work_id())
+        self.code_work_id()
+            .or_else(|| self.review_work_id())
+            .or_else(|| self.terminal_work_id())
+    }
+
+    pub fn terminal_session_id(&self) -> Option<&str> {
+        match self {
+            Self::Terminal { session_id, .. } => Some(session_id.as_str()),
+            _ => None,
+        }
+    }
+
+    pub fn terminal_work_id(&self) -> Option<&str> {
+        match self {
+            Self::Terminal { work_id, .. } => work_id.as_deref(),
+            _ => None,
+        }
     }
 }
 
@@ -229,6 +245,24 @@ pub fn new_review_tab(work_id: impl Into<String>, title: impl Into<String>) -> S
         work_id: work_id.into(),
         title: title.into(),
     }
+}
+
+pub fn new_terminal_tab(
+    session_id: impl Into<String>,
+    work_id: Option<String>,
+    title: impl Into<String>,
+) -> ShellTab {
+    ShellTab::Terminal {
+        id: new_tab_id("term"),
+        session_id: session_id.into(),
+        work_id,
+        title: title.into(),
+    }
+}
+
+pub fn short_terminal_title(session_id: &str) -> String {
+    let short = &session_id[..session_id.len().min(8)];
+    format!("term:{short}")
 }
 
 impl WorkspaceShell {
@@ -322,6 +356,12 @@ impl WorkspaceShell {
     }
 
     pub fn split_active(&mut self, direction: SplitDirection, new_session_id: &str) -> bool {
+        let tab = new_chat_tab(new_session_id, short_session_title(new_session_id));
+        self.split_active_with_tab(direction, tab)
+    }
+
+    /// Split the focused leaf and place `tab` in the new pane (Home: splits = new sessions).
+    pub fn split_active_with_tab(&mut self, direction: SplitDirection, tab: ShellTab) -> bool {
         if self.pane_count() >= MAX_SHELL_PANES {
             return false;
         }
@@ -336,7 +376,6 @@ impl WorkspaceShell {
             return false;
         };
 
-        let tab = new_chat_tab(new_session_id, short_session_title(new_session_id));
         let tab_id = tab.id().to_string();
         let layout = self.layout_mut();
         if layout.tabs.len() >= MAX_TABS {
@@ -580,6 +619,41 @@ impl WorkspaceShell {
         }
 
         let tab = new_chat_tab(session_id, title);
+        let tab_id = tab.id().to_string();
+        layout.tabs.push(tab);
+        if let Some(group) = layout.groups.iter_mut().find(|g| g.id == active_group_id) {
+            group.tab_ids.push(tab_id.clone());
+            group.active_tab_id = Some(tab_id);
+        }
+        true
+    }
+
+    pub fn open_terminal_tab_in_active(
+        &mut self,
+        session_id: &str,
+        work_id: Option<&str>,
+        title: &str,
+    ) -> bool {
+        let layout = self.layout_mut();
+        if layout.tabs.len() >= MAX_TABS {
+            return false;
+        }
+        let active_group_id = layout.active_group_id.clone();
+        if let Some(existing) = layout.tabs.iter().find(|t| {
+            t.terminal_session_id() == Some(session_id)
+                && layout
+                    .groups
+                    .iter()
+                    .find(|g| g.id == active_group_id)
+                    .is_some_and(|g| g.tab_ids.iter().any(|id| id == t.id()))
+        }) {
+            let existing_id = existing.id().to_string();
+            if let Some(group) = layout.groups.iter_mut().find(|g| g.id == active_group_id) {
+                group.active_tab_id.replace(existing_id);
+            }
+            return true;
+        }
+        let tab = new_terminal_tab(session_id, work_id.map(str::to_string), title);
         let tab_id = tab.id().to_string();
         layout.tabs.push(tab);
         if let Some(group) = layout.groups.iter_mut().find(|g| g.id == active_group_id) {

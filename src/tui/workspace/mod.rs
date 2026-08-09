@@ -15,7 +15,7 @@ pub use session::{
     ChatTab, EditorGroup, FocusDir, MAX_SHELL_DESKTOPS, MAX_SHELL_PANES, MAX_TABS, ShellDesktop,
     ShellDesktopLayout, ShellTab, ShellTabKind, SplitDirection, SplitEdge, WorkspaceShell,
     new_chat_tab, new_code_tab, new_group_id, new_notes_tab, new_review_tab, new_tab_id,
-    short_session_title,
+    new_terminal_tab, short_session_title, short_terminal_title,
 };
 pub use split_tree::{
     RATIO_DEFAULT, RATIO_MAX, RATIO_MIN, SplitBranchDirection, SplitNode, clamp_ratio,

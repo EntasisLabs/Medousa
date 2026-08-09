@@ -71,6 +71,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, state: &mut TuiState) {
             UiMode::Notes => Some(ShellTabKind::Notes),
             UiMode::Code => Some(ShellTabKind::Code),
             UiMode::Review => Some(ShellTabKind::Review),
+            UiMode::Terminal => Some(ShellTabKind::Terminal),
             _ => None,
         },
     );
@@ -83,6 +84,9 @@ pub(crate) fn render(frame: &mut ratatui::Frame, state: &mut TuiState) {
         ),
         Some(ShellTabKind::Review) => format!(
             " Review  [] files · a approve · f finish · u restore · c code  panes:{pane_n}{prefix_hint}  |  obs:{obs_count} "
+        ),
+        Some(ShellTabKind::Terminal) => format!(
+            " Terminal  keys→PTY · Ctrl+C interrupt · Ctrl+Q quit · Ctrl+; t new  panes:{pane_n}{prefix_hint}  |  obs:{obs_count} "
         ),
         _ => format!(
             " {}  depth:{}  session:{session_short}  panes:{pane_n} desk:{desk_idx}/{desk_n}{}{}  |  obs:{obs_count} jobs:{jobs_count} drops:{drops}  [Ctrl+O] ",
@@ -127,6 +131,19 @@ pub(crate) fn render(frame: &mut ratatui::Frame, state: &mut TuiState) {
                 .unwrap_or("(no files)");
             format!("  {file}")
         }
+        Some(ShellTabKind::Terminal) => {
+            let sid = state
+                .workspace
+                .active_tab()
+                .and_then(|t| t.terminal_session_id())
+                .unwrap_or("");
+            let pane = state.terminal_panes.get(sid);
+            let status = pane.map(|p| p.status.as_str()).unwrap_or("missing");
+            let geom = pane
+                .map(|p| format!("{}x{}", p.cols, p.rows))
+                .unwrap_or_else(|| "?x?".to_string());
+            format!("  {sid}  [{status}]  {geom}")
+        }
         _ => format!("  {}_", state.input_buffer),
     };
     let input_border = if state.prefix_active {
@@ -152,6 +169,8 @@ pub(crate) fn render(frame: &mut ratatui::Frame, state: &mut TuiState) {
         render_notes_picker_overlay(frame, state);
     } else if state.mode == UiMode::ForgePicker {
         render_forge_picker_overlay(frame, state);
+    } else if state.mode == UiMode::TerminalPicker {
+        render_terminal_picker_overlay(frame, state);
     } else if state.mode == UiMode::History {
         render_history_overlay(frame, state);
     } else if state.mode == UiMode::CommandPalette {
@@ -212,6 +231,7 @@ fn render_group_pane(
         ShellTabKind::Notes => render_notes_pane(frame, state, area, group_id, focused),
         ShellTabKind::Code => render_code_pane(frame, state, area, group_id, focused),
         ShellTabKind::Review => render_review_pane(frame, state, area, group_id, focused),
+        ShellTabKind::Terminal => render_terminal_pane(frame, state, area, group_id, focused),
         _ => render_chat_pane(frame, state, area, group_id, focused),
     }
 }
@@ -589,6 +609,158 @@ fn render_review_pane(
         .wrap(Wrap { trim: false })
         .scroll((review.scroll, 0));
     frame.render_widget(widget, area);
+}
+
+fn render_terminal_pane(
+    frame: &mut ratatui::Frame,
+    state: &mut TuiState,
+    area: Rect,
+    group_id: &str,
+    focused: bool,
+) {
+    let session_id = state
+        .workspace
+        .group_active_tab(group_id)
+        .and_then(|t| t.terminal_session_id().map(str::to_string))
+        .unwrap_or_default();
+    let title = state
+        .workspace
+        .group_active_tab(group_id)
+        .map(|t| t.title().to_string())
+        .unwrap_or_else(|| "Terminal".to_string());
+
+    let inner = Rect {
+        x: area.x.saturating_add(1),
+        y: area.y.saturating_add(1),
+        width: area.width.saturating_sub(2),
+        height: area.height.saturating_sub(2),
+    };
+    if !session_id.is_empty() && inner.width > 0 && inner.height > 0 {
+        super::terminal_runtime::ensure_geometry(state, &session_id, inner.width, inner.height);
+    }
+
+    let border = if focused {
+        Style::default().fg(ui_accent_primary())
+    } else {
+        Style::default().fg(ui_border())
+    };
+    let status = state
+        .terminal_panes
+        .get(&session_id)
+        .map(|p| {
+            if p.connected {
+                "●"
+            } else {
+                "○"
+            }
+        })
+        .unwrap_or("?");
+    let block = Block::default()
+        .title(if focused {
+            format!(" {title}  {status} ")
+        } else {
+            format!(" {title} ")
+        })
+        .borders(Borders::ALL)
+        .border_style(border)
+        .style(Style::default().bg(ui_panel_bg()));
+    frame.render_widget(block, area);
+
+    let Some(pane) = state.terminal_panes.get(&session_id) else {
+        let msg = Paragraph::new("(terminal not attached — Ctrl+; t)")
+            .style(Style::default().fg(Color::DarkGray).bg(ui_panel_bg()));
+        frame.render_widget(msg, inner);
+        return;
+    };
+
+    let Ok(grid) = pane.grid.lock() else {
+        return;
+    };
+    let (cursor_col, cursor_row) = grid.cursor();
+    let cols = grid.cols().min(inner.width) as usize;
+    let rows = grid.rows().min(inner.height) as usize;
+    let mut lines: Vec<Line> = Vec::with_capacity(rows);
+    for row in 0..rows {
+        let mut spans: Vec<Span> = Vec::with_capacity(cols);
+        for col in 0..cols {
+            let cell = grid.cell_at(col as u16, row as u16);
+            let mut style = Style::default().fg(Color::White).bg(ui_panel_bg());
+            if cell.bold {
+                style = style.add_modifier(Modifier::BOLD);
+            }
+            if cell.reverse {
+                style = style.add_modifier(Modifier::REVERSED);
+            }
+            if focused && col as u16 == cursor_col && row as u16 == cursor_row {
+                style = style.bg(Color::White).fg(ui_panel_bg());
+            }
+            spans.push(Span::styled(cell.ch.to_string(), style));
+        }
+        lines.push(Line::from(spans));
+    }
+    drop(grid);
+    let widget = Paragraph::new(Text::from(lines)).style(Style::default().bg(ui_panel_bg()));
+    frame.render_widget(widget, inner);
+}
+
+fn render_terminal_picker_overlay(frame: &mut ratatui::Frame, state: &TuiState) {
+    let area = frame.area();
+    let popup = centered_rect(area, 76, 70);
+    frame.render_widget(Clear, popup);
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from(Span::styled(
+        format!(" Shell sessions  /{} ", state.terminal_picker_query),
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )));
+    lines.push(Line::from(Span::styled(
+        "Type to filter · Enter attach · Ctrl+N new · Esc close · Ctrl+; T",
+        Style::default().fg(Color::DarkGray),
+    )));
+    lines.push(Line::from(""));
+    if state.terminal_picker_hits.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "No sessions (Enter or Ctrl+N creates one — is medousa-session installed?)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        for (idx, hit) in state.terminal_picker_hits.iter().enumerate() {
+            let selected = idx == state.terminal_picker_selected;
+            let marker = if selected { ">" } else { " " };
+            let style = if selected {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            let work = hit
+                .work_id
+                .as_deref()
+                .map(|w| format!(" work:{w}"))
+                .unwrap_or_default();
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "{marker} {}  {} [{}]{work}",
+                    &hit.session_id[..hit.session_id.len().min(12)],
+                    hit.cwd,
+                    hit.root_kind
+                ),
+                style,
+            )));
+        }
+    }
+    let widget = Paragraph::new(Text::from(lines))
+        .block(
+            Block::default()
+                .title(" Attach terminal ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(ui_accent_primary()))
+                .style(Style::default().bg(ui_modal_bg())),
+        )
+        .wrap(Wrap { trim: false });
+    frame.render_widget(widget, popup);
 }
 
 fn render_forge_picker_overlay(frame: &mut ratatui::Frame, state: &TuiState) {

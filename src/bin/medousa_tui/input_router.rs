@@ -103,6 +103,12 @@ pub(crate) async fn handle_key_event(
     if state.mode == UiMode::Review {
         return super::forge_runtime::handle_review_key(key, state).await;
     }
+    if state.mode == UiMode::TerminalPicker {
+        return super::terminal_runtime::handle_terminal_picker_key(key, state).await;
+    }
+    if state.mode == UiMode::Terminal {
+        return super::terminal_runtime::handle_terminal_key(key, state).await;
+    }
 
     if key.code == KeyCode::Esc {
         if state.mode == UiMode::RuntimeEnv {

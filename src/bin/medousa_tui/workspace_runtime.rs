@@ -196,6 +196,7 @@ pub(crate) async fn focus_group(state: &mut TuiState, group_id: &str) {
             medousa::tui::workspace::ShellTabKind::Notes
                 | medousa::tui::workspace::ShellTabKind::Code
                 | medousa::tui::workspace::ShellTabKind::Review
+                | medousa::tui::workspace::ShellTabKind::Terminal
         )
     ) {
         // Non-chat pane: chat lane stays stashed; mode follows tab kind.
@@ -208,6 +209,13 @@ pub(crate) async fn split_active(
     state: &mut TuiState,
     direction: SplitDirection,
 ) -> EventOutcome {
+    // Home rule: splitting a terminal pane creates a new shell session, not a chat.
+    if state.workspace.active_tab().map(|t| t.kind())
+        == Some(medousa::tui::workspace::ShellTabKind::Terminal)
+    {
+        return super::terminal_runtime::split_with_new_terminal(state, direction).await;
+    }
+
     let new_session = Uuid::new_v4().simple().to_string();
     stash_focused_lane(state);
     if !state.workspace.split_active(direction, &new_session) {
@@ -269,6 +277,8 @@ pub(crate) async fn close_active_pane(state: &mut TuiState) -> EventOutcome {
     state
         .turn_sessions
         .retain(|_, sid| live_sessions.contains(sid));
+    super::terminal_runtime::detach_orphaned_terminals(state);
+    sync_mode_from_active_tab(state);
     medousa::session::save_last_session_id(&state.session_id);
     persist_workspace(state);
     EventOutcome::Continue
@@ -388,6 +398,14 @@ pub(crate) async fn handle_prefix_key(key: KeyEvent, state: &mut TuiState) -> Ev
             .await;
             EventOutcome::Continue
         }
+        KeyCode::Char('t') => {
+            let _ = super::terminal_runtime::open_new_terminal(state).await;
+            EventOutcome::Continue
+        }
+        KeyCode::Char('T') => {
+            super::terminal_runtime::open_terminal_picker(state).await;
+            EventOutcome::Continue
+        }
         KeyCode::Char('n') => {
             if state.workspace.cycle_tab(true) {
                 if let Some(sid) = state
@@ -435,7 +453,7 @@ pub(crate) async fn handle_prefix_key(key: KeyEvent, state: &mut TuiState) -> Ev
         KeyCode::Char('?') => {
             super::push_obs(
                 state,
-                "panes: Ctrl+; then % \" h j k l z x c o f r n p 1-4".to_string(),
+                "panes: Ctrl+; then % \" h j k l z x c o f r t T n p 1-4".to_string(),
             );
             EventOutcome::Continue
         }
@@ -443,7 +461,7 @@ pub(crate) async fn handle_prefix_key(key: KeyEvent, state: &mut TuiState) -> Ev
         _ => {
             super::push_obs(
                 state,
-                "prefix: % \" h/j/k/l z x c o f r n/p 1-4 ?".to_string(),
+                "prefix: % \" h/j/k/l z x c o f r t/T n/p 1-4 ?".to_string(),
             );
             EventOutcome::Continue
         }
@@ -480,7 +498,7 @@ async fn switch_desktop(state: &mut TuiState, index: usize) -> EventOutcome {
 pub(crate) fn handle_prefix_trigger(key: KeyEvent, state: &mut TuiState) -> bool {
     if !matches!(
         state.mode,
-        UiMode::Chat | UiMode::Notes | UiMode::Code | UiMode::Review
+        UiMode::Chat | UiMode::Notes | UiMode::Code | UiMode::Review | UiMode::Terminal
     ) {
         return false;
     }
@@ -512,10 +530,11 @@ pub(crate) fn sync_mode_from_active_tab(state: &mut TuiState) {
         Some(medousa::tui::workspace::ShellTabKind::Notes) => state.mode = UiMode::Notes,
         Some(medousa::tui::workspace::ShellTabKind::Code) => state.mode = UiMode::Code,
         Some(medousa::tui::workspace::ShellTabKind::Review) => state.mode = UiMode::Review,
+        Some(medousa::tui::workspace::ShellTabKind::Terminal) => state.mode = UiMode::Terminal,
         Some(medousa::tui::workspace::ShellTabKind::Chat) => {
             if matches!(
                 state.mode,
-                UiMode::Notes | UiMode::Code | UiMode::Review
+                UiMode::Notes | UiMode::Code | UiMode::Review | UiMode::Terminal
             ) {
                 state.mode = UiMode::Chat;
             }

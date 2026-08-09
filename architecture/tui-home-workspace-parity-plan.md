@@ -1,6 +1,6 @@
 # TUI ↔ Home workspace parity
 
-> **Status:** Implementing (P0 + P1 in progress)  
+> **Status:** Implementing (P0–P4 landed; P5 next)  
 > **Date:** 2026-08-07  
 > **Related:** [component-tui.md](component-tui.md), [coding-session-terminal.md](coding-session-terminal.md),
 > [code-surface-bridge-plan.md](code-surface-bridge-plan.md), [medousa-anywhere-plan.md](medousa-anywhere-plan.md),
@@ -48,7 +48,7 @@ pixel or feature completeness.
 | Notes / Library | `vault.svelte.ts`, `VaultEditor` | `/v1/vault/*` (+ CLI `medousa vault`) | No Library surface (script editor only) |
 | Code buffers | `codeWorkspace`, CodeMirror desk | Forge + `/v1/code/lsp`, coding tools | No Forge desk |
 | Review | `ForgeReviewSurface`, `DiffStack` | `/v1/forge/*` review/seal/disposition | No Review surface |
-| Terminal tabs | `TerminalPane`, Tauri VT bridge | `medousa-session` `/v1/sessions/shell*` | No attachable PTY panes |
+| Terminal tabs | `TerminalPane`, Tauri VT bridge | `medousa-session` `/v1/sessions/shell*` | Attachable PTY panes (vte grid) |
 | Tmux-like WM | `shellTabs.svelte.ts`, `shellSplitTree.ts` | **Client-only** layout | Overlay modes, not a split tree |
 | Workshop switch | Connection / workshops store | local / portal / paired daemon | `--daemon-url` (+ local runtime fallback) |
 
@@ -196,7 +196,7 @@ path works without opening Home.
 - `Ctrl+R` from code → review; `c` from review → code
 - Follow-ups: seal from TUI, syntax highlight, conflict DiffStack polish
 
-### Phase 4 — Terminal panes
+### Phase 4 — Terminal panes ✅ (v1)
 
 - tab kind `terminal` attaches to `medousa-session` (create or attach-existing)
 - split terminal = **new session** (Home rule), optional Forge `work_id` cwd
@@ -206,6 +206,13 @@ path works without opening Home.
 
 **Acceptance:** two terminal panes + one chat pane; agent shell tools can target
 the same session ids the TUI attached.
+
+**Landed (v1):**
+- `src/tui/vt_grid.rs` — `vte` Perform + cell grid (cursor / scroll / CSI subset)
+- `terminal_runtime.rs` — create/list/attach WS, stdin/resize, restore on restart
+- `Ctrl+; t` new · `Ctrl+; T` / `/terminal list` picker · `/terminal [id]`
+- split while Terminal-focused creates a new shell session pane
+- Follow-ups: richer SGR/colors, scrollback pager, lease-staged command log
 
 ### Phase 5 — Workshop connection polish
 

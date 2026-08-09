@@ -104,6 +104,8 @@ mod workspace_runtime;
 mod notes_runtime;
 #[path = "medousa_tui/forge_runtime.rs"]
 mod forge_runtime;
+#[path = "medousa_tui/terminal_runtime.rs"]
+mod terminal_runtime;
 
 use agent_runtime::{start_prompt_run, stop_active_generation};
 use editor_runtime::{load_editor_file, run_editor_source_via_runtime, save_editor_buffer};
@@ -264,6 +266,14 @@ struct TuiState {
     code_workspaces: HashMap<String, forge_runtime::CodeWorkspace>,
     /// Review desks keyed by work_id.
     review_workspaces: HashMap<String, forge_runtime::ReviewWorkspace>,
+    /// Terminal panes keyed by shell session_id.
+    terminal_panes: HashMap<String, terminal_runtime::TerminalPane>,
+    /// Attach-task → UI notifications (stdout dirty / status).
+    terminal_event_tx: mpsc::Sender<terminal_runtime::TerminalUiEvent>,
+    /// Existing shell sessions picker.
+    terminal_picker_hits: Vec<terminal_runtime::ShellSessionSummary>,
+    terminal_picker_selected: usize,
+    terminal_picker_query: String,
 }
 
 pub(crate) fn build_tui_platform_config(state: &TuiState) -> TuiPlatformBuildConfig {
@@ -349,6 +359,8 @@ enum UiMode {
     Code,
     Review,
     ForgePicker,
+    Terminal,
+    TerminalPicker,
     History,
     CommandPalette,
     Settings,
@@ -627,6 +639,8 @@ async fn main() -> Result<()> {
     let (event_tx, mut event_rx) = mpsc::channel::<TuiEvent>(256);
     let (worker_cmd_tx, worker_cmd_rx) = mpsc::channel::<WorkerCommand>(32);
     let (worker_result_tx, mut worker_result_rx) = mpsc::channel::<WorkerResult>(64);
+    let (terminal_event_tx, mut terminal_event_rx) =
+        mpsc::channel::<terminal_runtime::TerminalUiEvent>(256);
 
     tokio::spawn(worker_loop(worker_cmd_rx, worker_result_tx));
 
@@ -810,7 +824,14 @@ async fn main() -> Result<()> {
         forge_picker_target: forge_runtime::ForgePickerTarget::Code,
         code_workspaces: HashMap::new(),
         review_workspaces: HashMap::new(),
+        terminal_panes: terminal_runtime::empty_terminal_panes(),
+        terminal_event_tx,
+        terminal_picker_hits: Vec::new(),
+        terminal_picker_selected: 0,
+        terminal_picker_query: String::new(),
     };
+
+    terminal_runtime::restore_terminal_tabs(&mut state).await;
 
     if local_runtime_only {
         push_obs(
@@ -877,6 +898,11 @@ async fn main() -> Result<()> {
             Some(worker_result) = worker_result_rx.recv() => {
                 mark_ui_activity(&mut state);
                 handle_worker_result(worker_result, &mut state);
+                state.ui_dirty = true;
+            }
+            Some(term_event) = terminal_event_rx.recv() => {
+                mark_ui_activity(&mut state);
+                terminal_runtime::handle_terminal_event(term_event, &mut state);
                 state.ui_dirty = true;
             }
             _ = tokio::time::sleep(wake_after) => {}
@@ -1503,6 +1529,11 @@ mod tests {
             forge_picker_target: super::forge_runtime::ForgePickerTarget::Code,
             code_workspaces: HashMap::new(),
             review_workspaces: HashMap::new(),
+            terminal_panes: super::terminal_runtime::empty_terminal_panes(),
+            terminal_event_tx: mpsc::channel::<super::terminal_runtime::TerminalUiEvent>(8).0,
+            terminal_picker_hits: Vec::new(),
+            terminal_picker_selected: 0,
+            terminal_picker_query: String::new(),
         }
     }
 
