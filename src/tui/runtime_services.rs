@@ -182,7 +182,7 @@ pub(crate) async fn assemble_tui_runtime(
     let identity_user_id = resolve_tool_identity_user_id(session_id, workshop_operator_identity);
     let identity_persona_id = resolve_identity_persona_id();
     let identity_channel_id = resolve_identity_channel_id(Some("interactive"));
-    tool_registry.register_tool(CognitionIdentityContextTool::new(
+    tool_registry.register_typed_tool(CognitionIdentityContextTool::new(
         identity_service.clone(),
         identity_user_id.clone(),
         identity_persona_id,
@@ -190,22 +190,22 @@ pub(crate) async fn assemble_tui_runtime(
         workshop_operator_identity,
         event_tx.clone(),
     ))?;
-    tool_registry.register_tool(CognitionIdentityProposeTool::new(
+    tool_registry.register_typed_tool(CognitionIdentityProposeTool::new(
         identity_service.clone(),
         event_tx.clone(),
     ))?;
-    tool_registry.register_tool(CognitionIdentityCommitTool::new(
+    tool_registry.register_typed_tool(CognitionIdentityCommitTool::new(
         identity_service,
         Some(memory_writer.clone()),
         event_tx.clone(),
     ))?;
-    tool_registry.register_tool(CognitionIdentityRecallTool::new(
+    tool_registry.register_typed_tool(CognitionIdentityRecallTool::new(
         identity_memory_store.clone(),
         identity_user_id.clone(),
         workshop_operator_identity,
         event_tx.clone(),
     ))?;
-    tool_registry.register_tool(CognitionIdentityRememberTool::new(
+    tool_registry.register_typed_tool(CognitionIdentityRememberTool::new(
         identity_memory_store.clone(),
         Some(memory_writer.clone()),
         identity_user_id.clone(),
@@ -268,22 +268,22 @@ pub(crate) async fn assemble_tui_runtime(
     )?;
 
     tool_registry.register_typed_tool(CognitionMemorySchemaTool::new())?;
-    tool_registry.register_tool(CognitionMemoryMoodsTool::new(event_tx.clone()))?;
-    tool_registry.register_tool(CognitionMemoryCalibrateTool::new(
+    tool_registry.register_typed_tool(CognitionMemoryMoodsTool::new(event_tx.clone()))?;
+    tool_registry.register_typed_tool(CognitionMemoryCalibrateTool::new(
         locus_store.clone(),
         session_id.to_string(),
         workshop_operator_identity,
         turn_scope.clone(),
         event_tx.clone(),
     ))?;
-    tool_registry.register_tool(CognitionMemoryStoreTool::new(
+    tool_registry.register_typed_tool(CognitionMemoryStoreTool::new(
         memory_writer.clone(),
         session_id.to_string(),
         workshop_operator_identity,
         turn_scope.clone(),
         event_tx.clone(),
     ))?;
-    tool_registry.register_tool(CognitionMemoryContextTool::new(
+    tool_registry.register_typed_tool(CognitionMemoryContextTool::new(
         locus_store.clone(),
         memory_reader.clone(),
         session_id.to_string(),
@@ -291,7 +291,7 @@ pub(crate) async fn assemble_tui_runtime(
         turn_scope.clone(),
         event_tx.clone(),
     ))?;
-    tool_registry.register_tool(CognitionMemoryListTool::new(
+    tool_registry.register_typed_tool(CognitionMemoryListTool::new(
         locus_store.clone(),
         memory_reader.clone(),
         session_id.to_string(),
@@ -299,7 +299,7 @@ pub(crate) async fn assemble_tui_runtime(
         turn_scope.clone(),
         event_tx.clone(),
     ))?;
-    tool_registry.register_tool(CognitionMemoryRecallTool::new(
+    tool_registry.register_typed_tool(CognitionMemoryRecallTool::new(
         locus_store.clone(),
         memory_reader.clone(),
         session_id.to_string(),
@@ -307,14 +307,14 @@ pub(crate) async fn assemble_tui_runtime(
         turn_scope.clone(),
         event_tx.clone(),
     ))?;
-    tool_registry.register_tool(CognitionMemoryEvictTool::new(
+    tool_registry.register_typed_tool(CognitionMemoryEvictTool::new(
         memory_operations.clone(),
         session_id.to_string(),
         workshop_operator_identity,
         turn_scope.clone(),
         event_tx.clone(),
     ))?;
-    tool_registry.register_tool(CognitionMemoryTagsTool::new(
+    tool_registry.register_typed_tool(CognitionMemoryTagsTool::new(
         semantic_index.clone(),
         session_id.to_string(),
         workshop_operator_identity,

@@ -1,15 +1,21 @@
 //! Host-bus identity tools: read context, propose patches, commit under policy (AX-4c).
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use serde_json::{Value, json};
-use stasis::application::orchestration::tool_registry::StasisTool;
+use schemars::JsonSchema;
+use schemars::schema::{InstanceType, Schema, SchemaObject};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use stasis::application::use_cases::identity_memory_service::IdentityMemoryService;
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 use stasis::ports::outbound::memory::identity_memory_models::{
-    CommitEntityUpdateRequest, IdentityContextMode, ProposeEntityUpdateRequest,
+    ChannelProfileEntity, CommitEntityUpdateRequest, CommitEntityUpdateResponse, CommitOutcomeCode,
+    ContactEntity, FlattenedPolicyClaim, GetIdentityContextResponse, IdentityContextMode,
+    IdentityEntityType, PersonaEntity, PolicyProfileEntity, ProposeEntityUpdateRequest,
+    ProposeEntityUpdateResponse, RelationshipEntity, RelationshipStatus, UpdateSource, UpdateTier,
+    UserEntity,
 };
 use tokio::sync::mpsc;
 
@@ -20,7 +26,7 @@ use crate::identity_memory::{
 use stasis::ports::outbound::memory::memory_context_writer::MemoryContextWriter;
 
 use crate::cognitive_identity::{
-    load_cognitive_identity_snapshot, recall_identity_facts,
+    IdentityRecallHit, load_cognitive_identity_snapshot, recall_identity_facts,
 };
 use crate::cognitive_identity_writer::{
     CognitiveFactKind, CognitiveIdentityWriter, attributes_map_to_tags,
@@ -31,6 +37,90 @@ use crate::identity_write_policy::{
     evaluate_identity_commit, load_identity_product_config, parse_identity_entity_type,
     parse_update_source,
 };
+use crate::typed_tools::{ToolId, medousa_tool};
+
+const COGNITION_IDENTITY_CONTEXT_ID: ToolId = ToolId::new("cognition_identity_context");
+const COGNITION_IDENTITY_PROPOSE_ID: ToolId = ToolId::new("cognition_identity_propose");
+const COGNITION_IDENTITY_RECALL_ID: ToolId = ToolId::new("cognition_identity_recall");
+const COGNITION_IDENTITY_REMEMBER_ID: ToolId = ToolId::new("cognition_identity_remember");
+const COGNITION_IDENTITY_COMMIT_ID: ToolId = ToolId::new("cognition_identity_commit");
+
+#[derive(Debug, Deserialize)]
+#[serde(transparent)]
+struct CompatibleObject(Value);
+
+impl CompatibleObject {
+    fn as_value(&self) -> &Value {
+        &self.0
+    }
+
+    fn into_value(self) -> Value {
+        self.0
+    }
+}
+
+impl JsonSchema for CompatibleObject {
+    fn schema_name() -> String {
+        "CompatibleObject".to_string()
+    }
+
+    fn is_referenceable() -> bool {
+        false
+    }
+
+    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> Schema {
+        Schema::Object(SchemaObject {
+            instance_type: Some(InstanceType::Object.into()),
+            ..SchemaObject::default()
+        })
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum IdentityContextModeSchema {
+    Full,
+    Policy,
+    Cognitive,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum IdentityUpdateSourceSchema {
+    UserDirect,
+    ModelInferred,
+    SystemEvent,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum IdentityRecallFactKindSchema {
+    Preference,
+    Person,
+    Note,
+    Any,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum IdentityFactKindSchema {
+    Preference,
+    Person,
+    Note,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum IdentityUpdateTierSchema {
+    AutoCommit,
+    ConfirmRequired,
+    ApprovalRequired,
+}
 
 async fn emit_invoked(event_tx: &mpsc::Sender<TuiEvent>, tool_name: &str, summary: &str) {
     let _ = event_tx
@@ -76,11 +166,11 @@ fn parse_utc_optional(value: Option<&str>, field: &str) -> Result<Option<DateTim
 // ── cognition_identity_context ────────────────────────────────────────────────
 
 fn resolve_effective_identity_user_id(
-    input: &Value,
+    requested_user_id: Option<&str>,
     default_user_id: &str,
     workshop_dynamic: bool,
 ) -> String {
-    optional_str(input.get("user_id").and_then(Value::as_str)).unwrap_or_else(|| {
+    optional_str(requested_user_id).unwrap_or_else(|| {
         if workshop_dynamic {
             crate::user_profiles::resolve_workshop_identity_user_id()
         } else {
@@ -118,53 +208,376 @@ impl CognitionIdentityContextTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionIdentityContextTool {
-    fn name(&self) -> &'static str {
-        "cognition_identity_context"
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct IdentityContextInput {
+    /// Override identity user id
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    user_id: Option<String>,
+    /// Override persona id
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    persona_id: Option<String>,
+    /// Override channel id
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    channel_id: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+    )]
+    #[schemars(
+        with = "usize",
+        range(min = 1, max = 64),
+        skip_serializing_if = "Option::is_none"
+    )]
+    relationship_limit: Option<usize>,
+    /// Identity context slice (default: cognitive)
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(
+        with = "IdentityContextModeSchema",
+        skip_serializing_if = "Option::is_none"
+    )]
+    mode: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Read identity graph context (persona, user, channels, relationships) for this turn.",
+#[derive(Debug, Serialize, JsonSchema)]
+struct IdentityPersonaOutput {
+    persona_id: String,
+    display_name: String,
+    status: String,
+    version: i32,
+    updated_at: DateTime<Utc>,
+}
+
+impl From<PersonaEntity> for IdentityPersonaOutput {
+    fn from(value: PersonaEntity) -> Self {
+        Self {
+            persona_id: value.persona_id,
+            display_name: value.display_name,
+            status: value.status,
+            version: value.version,
+            updated_at: value.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct IdentityUserOutput {
+    user_id: String,
+    timezone: String,
+    language_variant: Option<String>,
+    preferences: BTreeMap<String, Value>,
+    status: String,
+    version: i32,
+    updated_at: DateTime<Utc>,
+}
+
+impl From<UserEntity> for IdentityUserOutput {
+    fn from(value: UserEntity) -> Self {
+        Self {
+            user_id: value.user_id,
+            timezone: value.timezone,
+            language_variant: value.language_variant,
+            preferences: value.preferences,
+            status: value.status,
+            version: value.version,
+            updated_at: value.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct IdentityContactOutput {
+    contact_id: String,
+    display_name: String,
+    aliases: Vec<String>,
+    status: String,
+    version: i32,
+    updated_at: DateTime<Utc>,
+}
+
+impl From<ContactEntity> for IdentityContactOutput {
+    fn from(value: ContactEntity) -> Self {
+        Self {
+            contact_id: value.contact_id,
+            display_name: value.display_name,
+            aliases: value.aliases,
+            status: value.status,
+            version: value.version,
+            updated_at: value.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct IdentityChannelOutput {
+    channel_id: String,
+    channel_type: String,
+    proactive_allowed: bool,
+    status: String,
+    version: i32,
+    updated_at: DateTime<Utc>,
+}
+
+impl From<ChannelProfileEntity> for IdentityChannelOutput {
+    fn from(value: ChannelProfileEntity) -> Self {
+        Self {
+            channel_id: value.channel_id,
+            channel_type: value.channel_type,
+            proactive_allowed: value.proactive_allowed,
+            status: value.status,
+            version: value.version,
+            updated_at: value.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct IdentityEntityRefOutput {
+    entity_type: String,
+    entity_id: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct IdentityAutonomyScopeOutput {
+    allow: Vec<String>,
+    deny: Vec<String>,
+    approval_required: Vec<String>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct IdentityInterruptionPolicyOutput {
+    quiet_hours: Option<String>,
+    allow_urgent_only: Option<bool>,
+    urgent_threshold: Option<f32>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct IdentityEscalationPolicyOutput {
+    mode: Option<String>,
+    fallback: Option<String>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+enum IdentityRelationshipStatusOutput {
+    Proposed,
+    Active,
+    Suspended,
+    Deprecated,
+    Revoked,
+}
+
+impl From<RelationshipStatus> for IdentityRelationshipStatusOutput {
+    fn from(value: RelationshipStatus) -> Self {
+        match value {
+            RelationshipStatus::Proposed => Self::Proposed,
+            RelationshipStatus::Active => Self::Active,
+            RelationshipStatus::Suspended => Self::Suspended,
+            RelationshipStatus::Deprecated => Self::Deprecated,
+            RelationshipStatus::Revoked => Self::Revoked,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+enum IdentityUpdateSourceOutput {
+    UserDirect,
+    ModelInferred,
+    SystemEvent,
+}
+
+impl From<UpdateSource> for IdentityUpdateSourceOutput {
+    fn from(value: UpdateSource) -> Self {
+        match value {
+            UpdateSource::UserDirect => Self::UserDirect,
+            UpdateSource::ModelInferred => Self::ModelInferred,
+            UpdateSource::SystemEvent => Self::SystemEvent,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct IdentityRelationshipOutput {
+    relationship_id: String,
+    source_entity_ref: IdentityEntityRefOutput,
+    target_entity_ref: IdentityEntityRefOutput,
+    relationship_kind: String,
+    status: IdentityRelationshipStatusOutput,
+    trust_level: f32,
+    confidence: f32,
+    strength_score: f32,
+    recency_score: f32,
+    autonomy_scope: IdentityAutonomyScopeOutput,
+    approval_profile_id: Option<String>,
+    interruption_policy: IdentityInterruptionPolicyOutput,
+    escalation_policy: IdentityEscalationPolicyOutput,
+    policy_tags: Vec<String>,
+    provenance: IdentityUpdateSourceOutput,
+    parent_relationship_id: Option<String>,
+    governing_relationship_ids: Vec<String>,
+    derived_from_relationship_id: Option<String>,
+    last_transition_reason: Option<String>,
+    transition_receipt_id: Option<String>,
+    version: i32,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+impl From<RelationshipEntity> for IdentityRelationshipOutput {
+    fn from(value: RelationshipEntity) -> Self {
+        Self {
+            relationship_id: value.relationship_id,
+            source_entity_ref: IdentityEntityRefOutput {
+                entity_type: value.source_entity_ref.entity_type,
+                entity_id: value.source_entity_ref.entity_id,
+            },
+            target_entity_ref: IdentityEntityRefOutput {
+                entity_type: value.target_entity_ref.entity_type,
+                entity_id: value.target_entity_ref.entity_id,
+            },
+            relationship_kind: value.relationship_kind.as_str().to_string(),
+            status: value.status.into(),
+            trust_level: value.trust_level,
+            confidence: value.confidence,
+            strength_score: value.strength_score,
+            recency_score: value.recency_score,
+            autonomy_scope: IdentityAutonomyScopeOutput {
+                allow: value.autonomy_scope.allow,
+                deny: value.autonomy_scope.deny,
+                approval_required: value.autonomy_scope.approval_required,
+            },
+            approval_profile_id: value.approval_profile_id,
+            interruption_policy: IdentityInterruptionPolicyOutput {
+                quiet_hours: value.interruption_policy.quiet_hours,
+                allow_urgent_only: value.interruption_policy.allow_urgent_only,
+                urgent_threshold: value.interruption_policy.urgent_threshold,
+            },
+            escalation_policy: IdentityEscalationPolicyOutput {
+                mode: value.escalation_policy.mode,
+                fallback: value.escalation_policy.fallback,
+            },
+            policy_tags: value.policy_tags,
+            provenance: value.provenance.into(),
+            parent_relationship_id: value.parent_relationship_id,
+            governing_relationship_ids: value.governing_relationship_ids,
+            derived_from_relationship_id: value.derived_from_relationship_id,
+            last_transition_reason: value.last_transition_reason,
+            transition_receipt_id: value.transition_receipt_id,
+            version: value.version,
+            created_at: value.created_at,
+            updated_at: value.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct IdentityPolicyProfileOutput {
+    policy_profile_id: String,
+    graph_max_depth: usize,
+    trust_delta_max_per_window: f32,
+    status: String,
+    version: i32,
+    updated_at: DateTime<Utc>,
+}
+
+impl From<PolicyProfileEntity> for IdentityPolicyProfileOutput {
+    fn from(value: PolicyProfileEntity) -> Self {
+        Self {
+            policy_profile_id: value.policy_profile_id,
+            graph_max_depth: value.graph_max_depth,
+            trust_delta_max_per_window: value.trust_delta_max_per_window,
+            status: value.status,
+            version: value.version,
+            updated_at: value.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct IdentityFlattenedClaimOutput {
+    claim_id: String,
+    source_relationship_ids: Vec<String>,
+    summary: String,
+    confidence: f32,
+    timestamp: DateTime<Utc>,
+}
+
+impl From<FlattenedPolicyClaim> for IdentityFlattenedClaimOutput {
+    fn from(value: FlattenedPolicyClaim) -> Self {
+        Self {
+            claim_id: value.claim_id,
+            source_relationship_ids: value.source_relationship_ids,
+            summary: value.summary,
+            confidence: value.confidence,
+            timestamp: value.timestamp,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct IdentityContextOutput {
+    persona: Option<IdentityPersonaOutput>,
+    user: Option<IdentityUserOutput>,
+    channel: Option<IdentityChannelOutput>,
+    contacts: Vec<IdentityContactOutput>,
+    relationships: Vec<IdentityRelationshipOutput>,
+    policy_profiles: Vec<IdentityPolicyProfileOutput>,
+    graph_depth_used: usize,
+    flattened_claims: Vec<IdentityFlattenedClaimOutput>,
+}
+
+impl From<GetIdentityContextResponse> for IdentityContextOutput {
+    fn from(value: GetIdentityContextResponse) -> Self {
+        Self {
+            persona: value.persona.map(Into::into),
+            user: value.user.map(Into::into),
+            channel: value.channel.map(Into::into),
+            contacts: value.contacts.into_iter().map(Into::into).collect(),
+            relationships: value.relationships.into_iter().map(Into::into).collect(),
+            policy_profiles: value.policy_profiles.into_iter().map(Into::into).collect(),
+            graph_depth_used: value.graph_depth_used,
+            flattened_claims: value.flattened_claims.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[medousa_tool(id = COGNITION_IDENTITY_CONTEXT_ID)]
+impl CognitionIdentityContextTool {
+    /// Read identity graph context (persona, user, channels, relationships) for this turn.
+    async fn invoke_typed(
+        &self,
+        input: IdentityContextInput,
+    ) -> stasis::prelude::Result<IdentityContextOutput> {
+        emit_invoked(
+            &self.event_tx,
+            COGNITION_IDENTITY_CONTEXT_ID.as_str(),
+            "identity context",
         )
-    }
-
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "user_id": { "type": "string", "description": "Override identity user id" },
-                "persona_id": { "type": "string", "description": "Override persona id" },
-                "channel_id": { "type": "string", "description": "Override channel id" },
-                "relationship_limit": { "type": "integer", "minimum": 1, "maximum": 64 },
-                "mode": {
-                    "type": "string",
-                    "enum": ["full", "policy", "cognitive"],
-                    "description": "Identity context slice (default: cognitive)"
-                }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        emit_invoked(&self.event_tx, self.name(), "identity context").await;
+        .await;
         let user_id = resolve_effective_identity_user_id(
-            &input,
+            input.user_id.as_deref(),
             &self.default_user_id,
             self.workshop_dynamic,
         );
-        let persona_id = optional_str(input.get("persona_id").and_then(Value::as_str))
+        let persona_id = optional_str(input.persona_id.as_deref())
             .unwrap_or_else(|| self.default_persona_id.clone());
-        let channel_id = optional_str(input.get("channel_id").and_then(Value::as_str))
+        let channel_id = optional_str(input.channel_id.as_deref())
             .unwrap_or_else(|| self.default_channel_id.clone());
-        let relationship_limit = input
-            .get("relationship_limit")
-            .and_then(Value::as_u64)
-            .map(|n| n as usize)
-            .unwrap_or(8)
-            .clamp(1, 64);
-        let mode = parse_identity_context_mode(input.get("mode").and_then(Value::as_str))?;
+        let relationship_limit = input.relationship_limit.unwrap_or(8).clamp(1, 64);
+        let mode = parse_identity_context_mode(input.mode.as_deref())?;
 
         let response = self
             .service
@@ -177,9 +590,7 @@ impl StasisTool for CognitionIdentityContextTool {
             ))
             .await?;
 
-        Ok(serde_json::to_value(response).map_err(|e| {
-            StasisError::PortFailure(format!("cognition_identity_context encode: {e}"))
-        })?)
+        Ok(response.into())
     }
 }
 
@@ -196,82 +607,185 @@ impl CognitionIdentityProposeTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionIdentityProposeTool {
-    fn name(&self) -> &'static str {
-        "cognition_identity_propose"
-    }
+#[derive(Debug, JsonSchema)]
+pub struct IdentityProposeInput {
+    /// persona | user | contact | relationship | channel | policy
+    #[schemars(required, with = "String")]
+    entity_type: Option<String>,
+    #[schemars(required, with = "String")]
+    entity_id: Option<String>,
+    /// Flat or nested JSON patch object
+    #[schemars(required, with = "CompatibleObject")]
+    patch: Option<CompatibleObject>,
+    #[schemars(
+        with = "IdentityUpdateSourceSchema",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source: Option<String>,
+    #[schemars(
+        with = "f64",
+        range(min = 0, max = 1),
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    confidence: Option<f64>,
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    actor: Option<String>,
+    /// RFC3339 UTC
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    expires_at: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Propose a durable identity patch (persona, user, relationship). Returns proposal_ids and tiers; use cognition_identity_commit when policy allows.",
-        )
-    }
+impl<'de> Deserialize<'de> for IdentityProposeInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            entity_type: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            entity_id: Option<String>,
+            #[serde(default)]
+            patch: Option<CompatibleObject>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            source: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
+            )]
+            confidence: Option<f64>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            reason: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            actor: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            expires_at: Option<String>,
+        }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["entity_type", "entity_id", "patch"],
-            "properties": {
-                "entity_type": {
-                    "type": "string",
-                    "description": "persona | user | contact | relationship | channel | policy"
-                },
-                "entity_id": { "type": "string" },
-                "patch": { "type": "object", "description": "Flat or nested JSON patch object" },
-                "source": {
-                    "type": "string",
-                    "enum": ["user_direct", "model_inferred", "system_event"]
-                },
-                "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
-                "reason": { "type": "string" },
-                "actor": { "type": "string" },
-                "expires_at": { "type": "string", "description": "RFC3339 UTC" }
-            }
-        }))
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            entity_type: input.entity_type,
+            entity_id: input.entity_id,
+            patch: input.patch,
+            source: input.source,
+            confidence: input.confidence,
+            reason: input.reason,
+            actor: input.actor,
+            expires_at: input.expires_at,
+        })
     }
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+#[derive(Debug, Serialize, JsonSchema)]
+enum IdentityUpdateTierOutput {
+    AutoCommit,
+    ConfirmRequired,
+    ApprovalRequired,
+}
+
+impl From<UpdateTier> for IdentityUpdateTierOutput {
+    fn from(value: UpdateTier) -> Self {
+        match value {
+            UpdateTier::AutoCommit => Self::AutoCommit,
+            UpdateTier::ConfirmRequired => Self::ConfirmRequired,
+            UpdateTier::ApprovalRequired => Self::ApprovalRequired,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct IdentityProposeOutput {
+    proposal_ids: Vec<String>,
+    tiers: Vec<IdentityUpdateTierOutput>,
+    requires_approval: bool,
+    split_patch: bool,
+    policy_notes: Vec<String>,
+}
+
+impl From<ProposeEntityUpdateResponse> for IdentityProposeOutput {
+    fn from(value: ProposeEntityUpdateResponse) -> Self {
+        Self {
+            proposal_ids: value.proposal_ids,
+            tiers: value.tiers.into_iter().map(Into::into).collect(),
+            requires_approval: value.requires_approval,
+            split_patch: value.split_patch,
+            policy_notes: value.policy_notes,
+        }
+    }
+}
+
+#[medousa_tool(id = COGNITION_IDENTITY_PROPOSE_ID)]
+impl CognitionIdentityProposeTool {
+    /// Propose a durable identity patch (persona, user, relationship). Returns proposal_ids and tiers; use cognition_identity_commit when policy allows.
+    async fn invoke_typed(
+        &self,
+        input: IdentityProposeInput,
+    ) -> stasis::prelude::Result<IdentityProposeOutput> {
         let entity_type_raw = input
-            .get("entity_type")
-            .and_then(Value::as_str)
+            .entity_type
+            .as_deref()
             .ok_or_else(|| StasisError::PortFailure("entity_type is required".to_string()))?;
         let entity_id = input
-            .get("entity_id")
-            .and_then(Value::as_str)
+            .entity_id
+            .as_deref()
             .ok_or_else(|| StasisError::PortFailure("entity_id is required".to_string()))?;
-        let patch = input.get("patch").cloned().filter(Value::is_object).ok_or_else(|| {
-            StasisError::PortFailure("patch must be a JSON object".to_string())
-        })?;
+        let patch = input
+            .patch
+            .map(CompatibleObject::into_value)
+            .filter(Value::is_object)
+            .ok_or_else(|| StasisError::PortFailure("patch must be a JSON object".to_string()))?;
 
-        let entity_type = parse_identity_entity_type(entity_type_raw).map_err(StasisError::PortFailure)?;
-        let source = parse_update_source(input.get("source").and_then(Value::as_str))
-            .map_err(StasisError::PortFailure)?;
+        let entity_type =
+            parse_identity_entity_type(entity_type_raw).map_err(StasisError::PortFailure)?;
+        let source =
+            parse_update_source(input.source.as_deref()).map_err(StasisError::PortFailure)?;
         let confidence = input
-            .get("confidence")
-            .and_then(Value::as_f64)
+            .confidence
             .map(|v| v as f32)
             .unwrap_or(0.75)
             .clamp(0.0, 1.0);
         let reason = input
-            .get("reason")
-            .and_then(Value::as_str)
+            .reason
+            .as_deref()
             .unwrap_or("agent identity propose")
             .to_string();
         let actor = input
-            .get("actor")
-            .and_then(Value::as_str)
+            .actor
+            .as_deref()
             .unwrap_or("medousa-agent")
             .to_string();
-        let expires_at = parse_utc_optional(
-            input.get("expires_at").and_then(Value::as_str),
-            "expires_at",
-        )
-        .map_err(StasisError::PortFailure)?;
+        let expires_at = parse_utc_optional(input.expires_at.as_deref(), "expires_at")
+            .map_err(StasisError::PortFailure)?;
 
         emit_invoked(
             &self.event_tx,
-            self.name(),
+            COGNITION_IDENTITY_PROPOSE_ID.as_str(),
             &format!("{entity_type_raw}:{entity_id}"),
         )
         .await;
@@ -291,9 +805,7 @@ impl StasisTool for CognitionIdentityProposeTool {
             })
             .await?;
 
-        Ok(serde_json::to_value(response).map_err(|e| {
-            StasisError::PortFailure(format!("cognition_identity_propose encode: {e}"))
-        })?)
+        Ok(response.into())
     }
 }
 
@@ -322,105 +834,152 @@ impl CognitionIdentityRecallTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionIdentityRecallTool {
-    fn name(&self) -> &'static str {
-        "cognition_identity_recall"
-    }
+#[derive(Debug, JsonSchema)]
+pub struct IdentityRecallInput {
+    #[schemars(required, with = "String")]
+    query: Option<String>,
+    /// Optional filter; defaults to any
+    #[schemars(
+        with = "IdentityRecallFactKindSchema",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    fact_kind: Option<String>,
+    #[schemars(
+        with = "usize",
+        range(min = 1, max = 20),
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    limit: Option<usize>,
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    user_id: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Search durable identity memory (preferences, people, notes) by keyword. Use when the turn-start digest lacks detail.",
-        )
-    }
+impl<'de> Deserialize<'de> for IdentityRecallInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            query: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            fact_kind: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+            )]
+            limit: Option<usize>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            user_id: Option<String>,
+        }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["query"],
-            "properties": {
-                "query": { "type": "string" },
-                "fact_kind": {
-                    "type": "string",
-                    "enum": ["preference", "person", "note", "any"],
-                    "description": "Optional filter; defaults to any"
-                },
-                "limit": { "type": "integer", "minimum": 1, "maximum": 20 },
-                "user_id": { "type": "string" }
-            }
-        }))
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            query: input.query,
+            fact_kind: input.fact_kind,
+            limit: input.limit,
+            user_id: input.user_id,
+        })
     }
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum IdentityRecallOutput {
+    Success {
+        query: String,
+        hits: Vec<IdentityRecallHit>,
+        total_candidates: usize,
+        store_preferences_count: usize,
+        user_version: Option<i32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        hint: Option<String>,
+    },
+    Error {
+        query: String,
+        hits: Vec<IdentityRecallHit>,
+        total_candidates: usize,
+        error: String,
+    },
+}
+
+#[medousa_tool(id = COGNITION_IDENTITY_RECALL_ID)]
+impl CognitionIdentityRecallTool {
+    /// Search durable identity memory (preferences, people, notes) by keyword. Use when the turn-start digest lacks detail.
+    async fn invoke_typed(
+        &self,
+        input: IdentityRecallInput,
+    ) -> stasis::prelude::Result<IdentityRecallOutput> {
         let query = input
-            .get("query")
-            .and_then(Value::as_str)
+            .query
+            .as_deref()
             .ok_or_else(|| StasisError::PortFailure("query is required".to_string()))?;
-        let fact_kind = input.get("fact_kind").and_then(Value::as_str);
-        let limit = input
-            .get("limit")
-            .and_then(Value::as_u64)
-            .unwrap_or(8)
-            .clamp(1, 20) as usize;
+        let fact_kind = input.fact_kind.as_deref();
+        let limit = input.limit.unwrap_or(8).clamp(1, 20);
         let user_id = resolve_effective_identity_user_id(
-            &input,
+            input.user_id.as_deref(),
             &self.default_user_id,
             self.workshop_dynamic,
         );
 
-        emit_invoked(&self.event_tx, self.name(), query).await;
+        emit_invoked(&self.event_tx, COGNITION_IDENTITY_RECALL_ID.as_str(), query).await;
 
         let store_dyn = self.store.clone()
             as Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>;
-        let snapshot = load_cognitive_identity_snapshot(
-            Some(&store_dyn),
-            &user_id,
-            Some("interactive"),
-            32,
-        )
-        .await;
+        let snapshot =
+            load_cognitive_identity_snapshot(Some(&store_dyn), &user_id, Some("interactive"), 32)
+                .await;
 
         if let Some(err) = snapshot.error {
-            return Ok(json!({
-                "query": query,
-                "hits": [],
-                "total_candidates": 0,
-                "error": err,
-            }));
+            return Ok(IdentityRecallOutput::Error {
+                query: query.to_string(),
+                hits: Vec::new(),
+                total_candidates: 0,
+                error: err,
+            });
         }
 
         let result = recall_identity_facts(&snapshot, query, fact_kind, limit);
         let hits_empty = result.hits.is_empty();
-        let mut payload = serde_json::to_value(&result).map_err(|e| {
-            StasisError::PortFailure(format!("cognition_identity_recall encode: {e}"))
-        })?;
-        if let Some(obj) = payload.as_object_mut() {
-            let preferences_count = snapshot
-                .user
-                .as_ref()
-                .map(|user| user.preferences.len())
-                .unwrap_or(0);
-            obj.insert(
-                "store_preferences_count".to_string(),
-                json!(preferences_count),
-            );
-            obj.insert(
-                "user_version".to_string(),
-                json!(snapshot.user.as_ref().map(|user| user.version)),
-            );
-            if hits_empty && preferences_count > 0 {
-                obj.insert(
-                    "hint".to_string(),
-                    json!("Identity store has preferences but none matched this query — try a broader query or fact_kind=any"),
-                );
-            } else if hits_empty && preferences_count == 0 {
-                obj.insert(
-                    "hint".to_string(),
-                    json!("No preferences in identity store for this user — remember may not have persisted; check Automations → History receipts"),
-                );
-            }
-        }
-        Ok(payload)
+        let preferences_count = snapshot
+            .user
+            .as_ref()
+            .map(|user| user.preferences.len())
+            .unwrap_or(0);
+        let hint = if hits_empty && preferences_count > 0 {
+            Some(
+                "Identity store has preferences but none matched this query — try a broader query or fact_kind=any"
+                    .to_string(),
+            )
+        } else if hits_empty && preferences_count == 0 {
+            Some(
+                "No preferences in identity store for this user — remember may not have persisted; check Automations → History receipts"
+                    .to_string(),
+            )
+        } else {
+            None
+        };
+        Ok(IdentityRecallOutput::Success {
+            query: result.query,
+            hits: result.hits,
+            total_candidates: result.total_candidates,
+            store_preferences_count: preferences_count,
+            user_version: snapshot.user.as_ref().map(|user| user.version),
+            hint,
+        })
     }
 }
 
@@ -480,101 +1039,172 @@ fn parse_attributes_tags(value: Option<&Value>) -> Vec<String> {
     Vec::new()
 }
 
-#[async_trait]
-impl StasisTool for CognitionIdentityRememberTool {
-    fn name(&self) -> &'static str {
-        "cognition_identity_remember"
-    }
+#[derive(Debug, JsonSchema)]
+pub struct IdentityRememberInput {
+    /// preference = user key/value; person = contact + relationship; note = preference key or freeform note
+    #[schemars(required, with = "IdentityFactKindSchema")]
+    fact_kind: Option<String>,
+    /// Preference key (beverage), person display name (Mario), or note subject
+    #[schemars(required, with = "String")]
+    subject: Option<String>,
+    /// Human-readable fact, e.g. User prefers matcha over coffee
+    #[schemars(required, with = "String")]
+    statement: Option<String>,
+    /// Optional structured tags for people (role, employer, …) — rendered as policy_tags
+    #[schemars(with = "CompatibleObject", skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    attributes: Option<CompatibleObject>,
+    /// Optional contact aliases (person facts only)
+    #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    aliases: Option<Vec<String>>,
+    /// Defaults to user_direct when operator stated the fact
+    #[schemars(
+        with = "IdentityUpdateSourceSchema",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source: Option<String>,
+    #[schemars(
+        with = "f64",
+        range(min = 0, max = 1),
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    confidence: Option<f64>,
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+    /// Override default identity user id
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    user_id: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Remember a durable personal fact in identity memory (preferences, people, notes). Prefer over cognition_memory_store for operator world-model facts.",
-        )
-    }
+impl<'de> Deserialize<'de> for IdentityRememberInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            fact_kind: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            subject: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            statement: Option<String>,
+            #[serde(default)]
+            attributes: Option<CompatibleObject>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string_list"
+            )]
+            aliases: Option<Vec<String>>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            source: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
+            )]
+            confidence: Option<f64>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            reason: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            user_id: Option<String>,
+        }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["fact_kind", "subject", "statement"],
-            "properties": {
-                "fact_kind": {
-                    "type": "string",
-                    "enum": ["preference", "person", "note"],
-                    "description": "preference = user key/value; person = contact + relationship; note = preference key or freeform note"
-                },
-                "subject": {
-                    "type": "string",
-                    "description": "Preference key (beverage), person display name (Mario), or note subject"
-                },
-                "statement": {
-                    "type": "string",
-                    "description": "Human-readable fact, e.g. User prefers matcha over coffee"
-                },
-                "attributes": {
-                    "type": "object",
-                    "description": "Optional structured tags for people (role, employer, …) — rendered as policy_tags"
-                },
-                "aliases": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Optional contact aliases (person facts only)"
-                },
-                "source": {
-                    "type": "string",
-                    "enum": ["user_direct", "model_inferred", "system_event"],
-                    "description": "Defaults to user_direct when operator stated the fact"
-                },
-                "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
-                "reason": { "type": "string" },
-                "user_id": { "type": "string", "description": "Override default identity user id" }
-            }
-        }))
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            fact_kind: input.fact_kind,
+            subject: input.subject,
+            statement: input.statement,
+            attributes: input.attributes,
+            aliases: input.aliases,
+            source: input.source,
+            confidence: input.confidence,
+            reason: input.reason,
+            user_id: input.user_id,
+        })
     }
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct IdentityRememberOutput {
+    committed: bool,
+    persisted_verified: bool,
+    user_version: Option<i32>,
+    proposal_ids: Vec<String>,
+    requires_confirmation: bool,
+    sttp_bridge_stored: bool,
+    digest_preview: Option<String>,
+    rationale: Option<String>,
+    fact_kind: String,
+    subject: String,
+}
+
+#[medousa_tool(id = COGNITION_IDENTITY_REMEMBER_ID)]
+impl CognitionIdentityRememberTool {
+    /// Remember a durable personal fact in identity memory (preferences, people, notes). Prefer over cognition_memory_store for operator world-model facts.
+    async fn invoke_typed(
+        &self,
+        input: IdentityRememberInput,
+    ) -> stasis::prelude::Result<IdentityRememberOutput> {
         let fact_kind_raw = input
-            .get("fact_kind")
-            .and_then(Value::as_str)
+            .fact_kind
+            .as_deref()
             .ok_or_else(|| StasisError::PortFailure("fact_kind is required".to_string()))?;
         let subject = input
-            .get("subject")
-            .and_then(Value::as_str)
+            .subject
+            .as_deref()
             .ok_or_else(|| StasisError::PortFailure("subject is required".to_string()))?;
         let statement = input
-            .get("statement")
-            .and_then(Value::as_str)
+            .statement
+            .as_deref()
             .ok_or_else(|| StasisError::PortFailure("statement is required".to_string()))?;
 
-        let fact_kind =
-            parse_fact_kind(fact_kind_raw).map_err(StasisError::PortFailure)?;
-        let source = match input.get("source").and_then(Value::as_str) {
-            None => stasis::ports::outbound::memory::identity_memory_models::UpdateSource::UserDirect,
+        let fact_kind = parse_fact_kind(fact_kind_raw).map_err(StasisError::PortFailure)?;
+        let source = match input.source.as_deref() {
+            None => UpdateSource::UserDirect,
             Some(raw) => parse_update_source(Some(raw)).map_err(StasisError::PortFailure)?,
         };
         let confidence = input
-            .get("confidence")
-            .and_then(Value::as_f64)
+            .confidence
             .map(|v| v as f32)
-            .unwrap_or(if source == stasis::ports::outbound::memory::identity_memory_models::UpdateSource::UserDirect {
+            .unwrap_or(if source == UpdateSource::UserDirect {
                 1.0
             } else {
                 0.85
             })
             .clamp(0.0, 1.0);
-        let reason = input
-            .get("reason")
-            .and_then(Value::as_str)
-            .unwrap_or(statement)
-            .to_string();
+        let reason = input.reason.as_deref().unwrap_or(statement).to_string();
         let user_id = resolve_effective_identity_user_id(
-            &input,
+            input.user_id.as_deref(),
             &self.default_user_id,
             self.workshop_dynamic,
         );
 
         emit_invoked(
             &self.event_tx,
-            self.name(),
+            COGNITION_IDENTITY_REMEMBER_ID.as_str(),
             &format!("{fact_kind_raw}:{subject}"),
         )
         .await;
@@ -593,18 +1223,10 @@ impl StasisTool for CognitionIdentityRememberTool {
                     .await?
             }
             CognitiveFactKind::Person => {
-                let attributes = parse_attributes_tags(input.get("attributes"));
-                let aliases: Vec<String> = input
-                    .get("aliases")
-                    .and_then(Value::as_array)
-                    .map(|items| {
-                        items
-                            .iter()
-                            .filter_map(Value::as_str)
-                            .map(ToString::to_string)
-                            .collect()
-                    })
-                    .unwrap_or_default();
+                let attributes = parse_attributes_tags(
+                    input.attributes.as_ref().map(CompatibleObject::as_value),
+                );
+                let aliases = input.aliases.unwrap_or_default();
                 self.writer
                     .remember_contact(
                         &user_id,
@@ -625,18 +1247,18 @@ impl StasisTool for CognitionIdentityRememberTool {
             }
         };
 
-        Ok(json!({
-            "committed": result.committed,
-            "persisted_verified": result.persisted_verified,
-            "user_version": result.user_version,
-            "proposal_ids": result.proposal_ids,
-            "requires_confirmation": result.requires_confirmation,
-            "sttp_bridge_stored": result.sttp_bridge_stored,
-            "digest_preview": result.digest_preview,
-            "rationale": result.rationale,
-            "fact_kind": fact_kind_raw,
-            "subject": subject,
-        }))
+        Ok(IdentityRememberOutput {
+            committed: result.committed,
+            persisted_verified: result.persisted_verified,
+            user_version: result.user_version,
+            proposal_ids: result.proposal_ids,
+            requires_confirmation: result.requires_confirmation,
+            sttp_bridge_stored: result.sttp_bridge_stored,
+            digest_preview: result.digest_preview,
+            rationale: result.rationale,
+            fact_kind: fact_kind_raw.to_string(),
+            subject: subject.to_string(),
+        })
     }
 }
 
@@ -662,103 +1284,265 @@ impl CognitionIdentityCommitTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionIdentityCommitTool {
-    fn name(&self) -> &'static str {
-        "cognition_identity_commit"
-    }
+#[derive(Debug, JsonSchema)]
+pub struct IdentityCommitInput {
+    #[schemars(required, with = "String")]
+    proposal_id: Option<String>,
+    #[schemars(required, with = "i64")]
+    expected_version: Option<i64>,
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    approver: Option<String>,
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    entity_type: Option<String>,
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    entity_id: Option<String>,
+    #[schemars(with = "CompatibleObject", skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    patch: Option<CompatibleObject>,
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source: Option<String>,
+    #[schemars(with = "f64", skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    confidence: Option<f64>,
+    #[schemars(
+        with = "IdentityUpdateTierSchema",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tier: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Commit a proposed identity patch when tier and Medousa policy allow. Pass expected_version from context; set approver for approval_required tiers.",
-        )
-    }
+impl<'de> Deserialize<'de> for IdentityCommitInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            proposal_id: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_i64"
+            )]
+            expected_version: Option<i64>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            approver: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            entity_type: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            entity_id: Option<String>,
+            #[serde(default)]
+            patch: Option<CompatibleObject>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            source: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
+            )]
+            confidence: Option<f64>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            tier: Option<String>,
+        }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["proposal_id", "expected_version"],
-            "properties": {
-                "proposal_id": { "type": "string" },
-                "expected_version": { "type": "integer" },
-                "approver": { "type": "string" },
-                "entity_type": { "type": "string" },
-                "entity_id": { "type": "string" },
-                "patch": { "type": "object" },
-                "source": { "type": "string" },
-                "confidence": { "type": "number" },
-                "tier": { "type": "string", "enum": ["auto_commit", "confirm_required", "approval_required"] }
-            }
-        }))
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            proposal_id: input.proposal_id,
+            expected_version: input.expected_version,
+            approver: input.approver,
+            entity_type: input.entity_type,
+            entity_id: input.entity_id,
+            patch: input.patch,
+            source: input.source,
+            confidence: input.confidence,
+            tier: input.tier,
+        })
     }
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+#[derive(Debug, Serialize, JsonSchema)]
+pub enum IdentityEntityTypeOutput {
+    PersonaEntity,
+    UserEntity,
+    ContactEntity,
+    ChannelProfileEntity,
+    PolicyProfileEntity,
+    RelationshipEntity,
+}
+
+impl From<IdentityEntityType> for IdentityEntityTypeOutput {
+    fn from(value: IdentityEntityType) -> Self {
+        match value {
+            IdentityEntityType::PersonaEntity => Self::PersonaEntity,
+            IdentityEntityType::UserEntity => Self::UserEntity,
+            IdentityEntityType::ContactEntity => Self::ContactEntity,
+            IdentityEntityType::ChannelProfileEntity => Self::ChannelProfileEntity,
+            IdentityEntityType::PolicyProfileEntity => Self::PolicyProfileEntity,
+            IdentityEntityType::RelationshipEntity => Self::RelationshipEntity,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub enum IdentityCommitOutcomeOutput {
+    Ok,
+    StaleState,
+    ApprovalRequired,
+    PolicyDenied,
+    InvalidPatch,
+    ExpiredProposal,
+    NotFound,
+}
+
+impl From<CommitOutcomeCode> for IdentityCommitOutcomeOutput {
+    fn from(value: CommitOutcomeCode) -> Self {
+        match value {
+            CommitOutcomeCode::Ok => Self::Ok,
+            CommitOutcomeCode::StaleState => Self::StaleState,
+            CommitOutcomeCode::ApprovalRequired => Self::ApprovalRequired,
+            CommitOutcomeCode::PolicyDenied => Self::PolicyDenied,
+            CommitOutcomeCode::InvalidPatch => Self::InvalidPatch,
+            CommitOutcomeCode::ExpiredProposal => Self::ExpiredProposal,
+            CommitOutcomeCode::NotFound => Self::NotFound,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum IdentityCommitOutput {
+    Committed {
+        committed: bool,
+        code: Option<IdentityCommitOutcomeOutput>,
+        entity_type: Option<IdentityEntityTypeOutput>,
+        entity_id: Option<String>,
+        new_version: Option<i32>,
+        receipt_id: Option<String>,
+        transition_event_id: Option<String>,
+        sttp_bridge_node: Option<String>,
+        sttp_bridge_reason: Option<String>,
+        rationale: Option<String>,
+        sttp_bridge_stored: bool,
+    },
+    PolicyDenied {
+        committed: bool,
+        policy_denied: bool,
+        rationale: Option<String>,
+    },
+}
+
+impl IdentityCommitOutput {
+    fn from_response(response: CommitEntityUpdateResponse, sttp_bridge_stored: bool) -> Self {
+        Self::Committed {
+            committed: response.committed,
+            code: response.code.map(Into::into),
+            entity_type: response.entity_type.map(Into::into),
+            entity_id: response.entity_id,
+            new_version: response.new_version,
+            receipt_id: response.receipt_id,
+            transition_event_id: response.transition_event_id,
+            sttp_bridge_node: response.sttp_bridge_node,
+            sttp_bridge_reason: response.sttp_bridge_reason,
+            rationale: response.rationale,
+            sttp_bridge_stored,
+        }
+    }
+}
+
+#[medousa_tool(id = COGNITION_IDENTITY_COMMIT_ID)]
+impl CognitionIdentityCommitTool {
+    /// Commit a proposed identity patch when tier and Medousa policy allow. Pass expected_version from context; set approver for approval_required tiers.
+    async fn invoke_typed(
+        &self,
+        input: IdentityCommitInput,
+    ) -> stasis::prelude::Result<IdentityCommitOutput> {
         let proposal_id = input
-            .get("proposal_id")
-            .and_then(Value::as_str)
+            .proposal_id
+            .as_deref()
             .ok_or_else(|| StasisError::PortFailure("proposal_id is required".to_string()))?;
         let expected_version = input
-            .get("expected_version")
-            .and_then(Value::as_i64)
-            .ok_or_else(|| {
-                StasisError::PortFailure("expected_version is required".to_string())
-            })? as i32;
-        let approver = optional_str(input.get("approver").and_then(Value::as_str));
+            .expected_version
+            .ok_or_else(|| StasisError::PortFailure("expected_version is required".to_string()))?
+            as i32;
+        let approver = optional_str(input.approver.as_deref());
 
-        emit_invoked(&self.event_tx, self.name(), proposal_id).await;
+        emit_invoked(
+            &self.event_tx,
+            COGNITION_IDENTITY_COMMIT_ID.as_str(),
+            proposal_id,
+        )
+        .await;
 
         let config = load_identity_product_config();
 
         if let (Some(entity_type_raw), Some(entity_id), Some(patch)) = (
-            input.get("entity_type").and_then(Value::as_str),
-            input.get("entity_id").and_then(Value::as_str),
-            input.get("patch"),
-        )
-            && patch.is_object() {
-                let entity_type =
-                    parse_identity_entity_type(entity_type_raw).map_err(StasisError::PortFailure)?;
-                let source = parse_update_source(input.get("source").and_then(Value::as_str))
-                    .map_err(StasisError::PortFailure)?;
-                let confidence = input
-                    .get("confidence")
-                    .and_then(Value::as_f64)
-                    .map(|v| v as f32)
-                    .unwrap_or(0.75);
-                let tier = input
-                    .get("tier")
-                    .and_then(Value::as_str)
-                    .map(|raw| match raw {
-                        "confirm_required" => stasis::ports::outbound::memory::identity_memory_models::UpdateTier::ConfirmRequired,
-                        "approval_required" => stasis::ports::outbound::memory::identity_memory_models::UpdateTier::ApprovalRequired,
-                        _ => stasis::ports::outbound::memory::identity_memory_models::UpdateTier::AutoCommit,
-                    })
-                    .unwrap_or(stasis::ports::outbound::memory::identity_memory_models::UpdateTier::AutoCommit);
+            input.entity_type.as_deref(),
+            input.entity_id.as_deref(),
+            input.patch.as_ref(),
+        ) && patch.as_value().is_object()
+        {
+            let entity_type =
+                parse_identity_entity_type(entity_type_raw).map_err(StasisError::PortFailure)?;
+            let source =
+                parse_update_source(input.source.as_deref()).map_err(StasisError::PortFailure)?;
+            let confidence = input.confidence.map(|v| v as f32).unwrap_or(0.75);
+            let tier = input
+                .tier
+                .as_deref()
+                .map(|raw| match raw {
+                    "confirm_required" => UpdateTier::ConfirmRequired,
+                    "approval_required" => UpdateTier::ApprovalRequired,
+                    _ => UpdateTier::AutoCommit,
+                })
+                .unwrap_or(UpdateTier::AutoCommit);
 
-                let proposal_req = ProposeEntityUpdateRequest {
-                    entity_type,
-                    entity_id: entity_id.to_string(),
-                    patch: patch.clone(),
-                    source,
-                    confidence,
-                    reason: "commit gate".to_string(),
-                    actor: "medousa-agent".to_string(),
-                    receipt_id: None,
-                    expires_at: None,
-                };
-                let commit_req = CommitEntityUpdateRequest {
-                    proposal_id: proposal_id.to_string(),
-                    expected_version,
-                    approver: approver.clone(),
-                };
-                let gate = evaluate_identity_commit(&config, &proposal_req, tier, &commit_req);
-                if !gate.allowed {
-                    return Ok(json!({
-                        "committed": false,
-                        "policy_denied": true,
-                        "rationale": gate.reason,
-                    }));
-                }
+            let proposal_req = ProposeEntityUpdateRequest {
+                entity_type,
+                entity_id: entity_id.to_string(),
+                patch: patch.as_value().clone(),
+                source,
+                confidence,
+                reason: "commit gate".to_string(),
+                actor: "medousa-agent".to_string(),
+                receipt_id: None,
+                expires_at: None,
+            };
+            let commit_req = CommitEntityUpdateRequest {
+                proposal_id: proposal_id.to_string(),
+                expected_version,
+                approver: approver.clone(),
+            };
+            let gate = evaluate_identity_commit(&config, &proposal_req, tier, &commit_req);
+            if !gate.allowed {
+                return Ok(IdentityCommitOutput::PolicyDenied {
+                    committed: false,
+                    policy_denied: true,
+                    rationale: gate.reason,
+                });
             }
+        }
 
         let response = self
             .service
@@ -770,25 +1554,17 @@ impl StasisTool for CognitionIdentityCommitTool {
             .await?;
 
         let sttp_bridge_stored = if response.committed {
-            maybe_store_identity_sttp_bridge(
-                self.memory_writer.as_ref(),
-                &config,
-                &response,
-            )
-            .await
-            .unwrap_or(false)
+            maybe_store_identity_sttp_bridge(self.memory_writer.as_ref(), &config, &response)
+                .await
+                .unwrap_or(false)
         } else {
             false
         };
 
-        let mut payload = serde_json::to_value(&response).map_err(|e| {
-            StasisError::PortFailure(format!("cognition_identity_commit encode: {e}"))
-        })?;
-        if let Some(obj) = payload.as_object_mut() {
-            obj.insert("sttp_bridge_stored".to_string(), json!(sttp_bridge_stored));
-        }
-
-        Ok(payload)
+        Ok(IdentityCommitOutput::from_response(
+            response,
+            sttp_bridge_stored,
+        ))
     }
 }
 
@@ -809,11 +1585,43 @@ pub fn default_identity_tool_ids(
 #[cfg(test)]
 mod remember_tests {
     use super::*;
-    use crate::cognitive_identity::{compile_relational_memory_digest, load_cognitive_identity_snapshot};
+    use crate::cognitive_identity::{
+        compile_relational_memory_digest, load_cognitive_identity_snapshot,
+    };
     use crate::identity_memory::{build_seeded_medousa_identity_store, resolve_identity_user_id};
+    use serde_json::json;
     use stasis::application::orchestration::tool_registry::StasisTool;
     use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
     use tokio::sync::mpsc;
+
+    #[test]
+    fn typed_identity_outputs_preserve_stasis_wire_shapes() {
+        let context = GetIdentityContextResponse::default();
+        assert_eq!(
+            serde_json::to_value(IdentityContextOutput::from(context.clone()))
+                .expect("typed context"),
+            serde_json::to_value(context).expect("stasis context")
+        );
+
+        let proposed = ProposeEntityUpdateResponse::default();
+        assert_eq!(
+            serde_json::to_value(IdentityProposeOutput::from(proposed.clone()))
+                .expect("typed proposal"),
+            serde_json::to_value(proposed).expect("stasis proposal")
+        );
+
+        let committed = CommitEntityUpdateResponse::default();
+        let mut expected = serde_json::to_value(committed.clone()).expect("stasis commit");
+        expected
+            .as_object_mut()
+            .expect("commit object")
+            .insert("sttp_bridge_stored".to_string(), Value::Bool(false));
+        assert_eq!(
+            serde_json::to_value(IdentityCommitOutput::from_response(committed, false))
+                .expect("typed commit"),
+            expected
+        );
+    }
 
     #[tokio::test]
     async fn recall_tool_finds_remembered_preference_and_person() {
@@ -877,30 +1685,39 @@ mod remember_tests {
         );
 
         let pref = tool
-            .invoke(json!({
-                "fact_kind": "preference",
-                "subject": "beverage",
-                "statement": "matcha",
-                "source": "user_direct"
-            }))
+            .invoke_typed(IdentityRememberInput {
+                fact_kind: Some("preference".to_string()),
+                subject: Some("beverage".to_string()),
+                statement: Some("matcha".to_string()),
+                attributes: None,
+                aliases: None,
+                source: Some("user_direct".to_string()),
+                confidence: None,
+                reason: None,
+                user_id: None,
+            })
             .await
             .expect("preference remember");
-        assert_eq!(pref.get("committed").and_then(Value::as_bool), Some(true));
+        assert!(pref.committed);
 
         let person = tool
-            .invoke(json!({
-                "fact_kind": "person",
-                "subject": "Mario",
-                "statement": "Mario is an engineer at Google",
-                "attributes": { "role": "engineer", "employer": "google" },
-                "source": "user_direct"
-            }))
+            .invoke_typed(IdentityRememberInput {
+                fact_kind: Some("person".to_string()),
+                subject: Some("Mario".to_string()),
+                statement: Some("Mario is an engineer at Google".to_string()),
+                attributes: Some(CompatibleObject(json!({
+                    "role": "engineer",
+                    "employer": "google"
+                }))),
+                aliases: None,
+                source: Some("user_direct".to_string()),
+                confidence: None,
+                reason: None,
+                user_id: None,
+            })
             .await
             .expect("person remember");
-        assert!(
-            person.get("committed").and_then(Value::as_bool) == Some(true)
-                || person.get("requires_confirmation").and_then(Value::as_bool) == Some(true)
-        );
+        assert!(person.committed || person.requires_confirmation);
 
         let store_dyn = store as Arc<dyn IdentityMemoryStore>;
         let snapshot =

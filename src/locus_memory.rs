@@ -76,8 +76,27 @@ pub async fn resolve_memory_tool_session_id(
     bootstrap_fallback: &str,
     workshop_dynamic: bool,
 ) -> String {
-    if let Some(explicit) = crate::runtime_session::explicit_chat_session_id_from_input(input) {
-        return explicit;
+    let explicit = crate::runtime_session::explicit_chat_session_id_from_input(input);
+    resolve_memory_tool_session_id_typed(
+        explicit.as_deref(),
+        turn_scope,
+        bootstrap_fallback,
+        workshop_dynamic,
+    )
+    .await
+}
+
+pub async fn resolve_memory_tool_session_id_typed(
+    explicit_session_id: Option<&str>,
+    turn_scope: &RwLock<Option<TurnContinuationScope>>,
+    bootstrap_fallback: &str,
+    workshop_dynamic: bool,
+) -> String {
+    if let Some(explicit) = explicit_session_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return explicit.to_string();
     }
 
     let scoped_chat_session_id = crate::runtime_session::resolve_active_chat_session_id_async(

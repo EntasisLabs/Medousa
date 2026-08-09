@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::Value;
 use stasis::ports::outbound::memory::identity_memory_models::{
@@ -80,7 +81,7 @@ pub struct RankedDigest {
     pub stats: DigestCompileStats,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct IdentityRecallHit {
     pub fact_kind: String,
     pub subject: String,
@@ -91,7 +92,7 @@ pub struct IdentityRecallHit {
     pub entity_id: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct IdentityRecallResult {
     pub query: String,
     pub hits: Vec<IdentityRecallHit>,

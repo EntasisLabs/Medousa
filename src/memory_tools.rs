@@ -2,51 +2,158 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use locus_core_rs::{CalibrationService, ContextQueryService, MoodCatalogService, NodeStore};
 use schemars::JsonSchema;
+use schemars::schema::Schema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use stasis::application::orchestration::tool_registry::StasisTool;
-use stasis::domain::errors::{Result as StasisResult, StasisError};
+use stasis::domain::errors::StasisError;
 use stasis::memory_prelude::{MemoryRecallRequest, MemoryScope, MemoryStoreRequest};
 use stasis::memory_prelude_ext::MemoryContextReader;
 use stasis::ports::outbound::memory::memory_context_writer::MemoryContextWriter;
 use stasis::ports::outbound::memory::memory_models::{
     MemoryAvecState, MemoryEvictMode, MemoryEvictRequest, MemoryFallbackPolicy, MemoryFilter,
-    MemoryFindRequest, MemorySortDirection, MemorySortField, MemoryStrictnessMode,
+    MemoryFindRequest, MemoryNode, MemorySortDirection, MemorySortField, MemoryStrictnessMode,
 };
 use stasis::ports::outbound::memory::memory_operations::MemoryOperations;
 use tokio::sync::{RwLock, mpsc};
 
 use crate::events::TuiEvent;
 use crate::locus_memory::{
-    CANONICAL_STTP_SCHEMA_EXAMPLE, LOCUS_DEFAULT_TENANT, avec_to_json, derive_locus_tenant_id,
-    ingest_profile_name, memory_node_to_json, normalize_context_keywords, normalize_tiers,
-    resolve_locus_ingest_profile, resolve_memory_tool_session_id, store_failure_payload,
-    sttp_node_to_json, typed_schema_first_guidance, typed_semantic_index_schema_guidance,
-    validate_limit,
+    CANONICAL_STTP_SCHEMA_EXAMPLE, LOCUS_DEFAULT_TENANT, derive_locus_tenant_id,
+    infer_store_error_code, ingest_profile_name, normalize_context_keywords, normalize_tiers,
+    resolve_locus_ingest_profile, resolve_memory_tool_session_id_typed, store_failure_guidance,
+    typed_schema_first_guidance, typed_semantic_index_schema_guidance, validate_limit,
 };
 use crate::turn_continuation::TurnContinuationScope;
 use crate::typed_tools::{ToolId, medousa_tool};
 
 const COGNITION_MEMORY_SCHEMA_ID: ToolId = ToolId::new("cognition_memory_schema");
+const COGNITION_MEMORY_STORE_ID: ToolId = ToolId::new("cognition_memory_store");
+const COGNITION_MEMORY_CALIBRATE_ID: ToolId = ToolId::new("cognition_memory_calibrate");
+const COGNITION_MEMORY_CONTEXT_ID: ToolId = ToolId::new("cognition_memory_context");
+const COGNITION_MEMORY_LIST_ID: ToolId = ToolId::new("cognition_memory_list");
+const COGNITION_MEMORY_RECALL_ID: ToolId = ToolId::new("cognition_memory_recall");
+const COGNITION_MEMORY_TAGS_ID: ToolId = ToolId::new("cognition_memory_tags");
+const COGNITION_MEMORY_MOODS_ID: ToolId = ToolId::new("cognition_memory_moods");
+const COGNITION_MEMORY_EVICT_ID: ToolId = ToolId::new("cognition_memory_evict");
 
 const DEFAULT_RECALL_AVEC: (f32, f32, f32, f32) = (0.82, 0.31, 0.88, 0.74);
 
+#[derive(Debug, Default)]
+enum MemorySessionScopeInput {
+    #[default]
+    Missing,
+    Global,
+    Explicit(String),
+    Invalid,
+}
+
+impl MemorySessionScopeInput {
+    fn is_missing(&self) -> bool {
+        matches!(self, Self::Missing)
+    }
+
+    fn is_global(&self) -> bool {
+        matches!(self, Self::Global)
+    }
+
+    fn was_present(&self) -> bool {
+        !matches!(self, Self::Missing)
+    }
+
+    fn explicit(&self) -> Option<&str> {
+        match self {
+            Self::Explicit(value) => Some(value),
+            Self::Missing | Self::Global | Self::Invalid => None,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for MemorySessionScopeInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        Ok(match value {
+            Value::Null => Self::Global,
+            Value::String(value) => Self::Explicit(value),
+            _ => Self::Invalid,
+        })
+    }
+}
+
+impl JsonSchema for MemorySessionScopeInput {
+    fn schema_name() -> String {
+        "MemorySessionScopeInput".to_string()
+    }
+
+    fn is_referenceable() -> bool {
+        false
+    }
+
+    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> Schema {
+        serde_json::from_value(json!({ "type": ["string", "null"] }))
+            .expect("valid nullable memory session schema")
+    }
+}
+
+#[derive(Debug, Default)]
+struct CompatibleSemanticTags(Option<Vec<String>>);
+
+impl CompatibleSemanticTags {
+    fn as_deref(&self) -> Option<&[String]> {
+        self.0.as_deref()
+    }
+}
+
+impl<'de> Deserialize<'de> for CompatibleSemanticTags {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        let tags = if let Some(items) = value.as_array() {
+            crate::locus_semantic_tags::normalize_semantic_tags(
+                items.iter().filter_map(Value::as_str),
+            )
+        } else if let Some(raw) = value.as_str() {
+            crate::locus_semantic_tags::normalize_semantic_tags(raw.split(',').map(str::trim))
+        } else {
+            Vec::new()
+        };
+        Ok(Self((!tags.is_empty()).then_some(tags)))
+    }
+}
+
+impl JsonSchema for CompatibleSemanticTags {
+    fn schema_name() -> String {
+        "CompatibleSemanticTags".to_string()
+    }
+
+    fn is_referenceable() -> bool {
+        false
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> Schema {
+        Vec::<String>::json_schema(generator)
+    }
+}
+
 async fn resolve_optional_locus_session_scope(
-    input: &Value,
+    session: &MemorySessionScopeInput,
     turn_scope: &RwLock<Option<TurnContinuationScope>>,
     fallback_chat_session_id: &str,
     workshop_dynamic: bool,
 ) -> Option<String> {
-    if input.get("session_id").is_some_and(Value::is_null) {
+    if session.is_global() {
         return None;
     }
     Some(
-        resolve_memory_tool_session_id(
-            input,
+        resolve_memory_tool_session_id_typed(
+            session.explicit(),
             turn_scope,
             fallback_chat_session_id,
             workshop_dynamic,
@@ -73,16 +180,137 @@ fn parse_utc_optional(value: Option<&str>, field: &str) -> Result<Option<DateTim
     }
 }
 
-fn retrieve_result_to_json(result: locus_core_rs::RetrieveResult) -> Value {
-    json!({
-        "retrieved": result.retrieved,
-        "psi_range": {
-            "min": result.psi_range.min,
-            "max": result.psi_range.max,
-            "average": result.psi_range.average,
-        },
-        "nodes": result.nodes.iter().map(sttp_node_to_json).collect::<Vec<_>>(),
-    })
+fn optional_nonempty(value: &str) -> Option<&str> {
+    let value = value.trim();
+    (!value.is_empty()).then_some(value)
+}
+
+fn memory_filter(
+    semantic_tags: Option<&CompatibleSemanticTags>,
+    tag_prefix: Option<&str>,
+) -> MemoryFilter {
+    let mut filter = MemoryFilter::default();
+    filter.indexed_tags = semantic_tags
+        .and_then(CompatibleSemanticTags::as_deref)
+        .map(<[String]>::to_vec);
+    filter.tag_prefix = tag_prefix
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_ascii_lowercase);
+    filter
+}
+
+fn has_tag_filters(filter: &MemoryFilter) -> bool {
+    filter.indexed_tags.is_some() || filter.tag_prefix.is_some()
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct MemoryAvecOutput {
+    stability: f32,
+    friction: f32,
+    logic: f32,
+    autonomy: f32,
+    psi: f32,
+}
+
+impl MemoryAvecOutput {
+    fn from_locus(value: locus_core_rs::AvecState) -> Self {
+        Self {
+            stability: value.stability,
+            friction: value.friction,
+            logic: value.logic,
+            autonomy: value.autonomy,
+            psi: value.psi(),
+        }
+    }
+
+    fn from_stasis(value: MemoryAvecState) -> Self {
+        Self {
+            stability: value.stability,
+            friction: value.friction,
+            logic: value.logic,
+            autonomy: value.autonomy,
+            psi: value.stability + value.friction + value.logic + value.autonomy,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct SttpNodeOutput {
+    raw: String,
+    session_id: String,
+    tier: String,
+    timestamp: String,
+    context_summary: Option<String>,
+    semantic_tags: Option<Vec<String>>,
+    psi: f32,
+    rho: f32,
+    kappa: f32,
+    sync_key: String,
+    user_avec: MemoryAvecOutput,
+    model_avec: MemoryAvecOutput,
+}
+
+impl From<&locus_core_rs::SttpNode> for SttpNodeOutput {
+    fn from(value: &locus_core_rs::SttpNode) -> Self {
+        Self {
+            raw: value.raw.clone(),
+            session_id: value.session_id.clone(),
+            tier: value.tier.clone(),
+            timestamp: value.timestamp.to_rfc3339(),
+            context_summary: value.context_summary.clone(),
+            semantic_tags: value.semantic_tags.clone(),
+            psi: value.psi,
+            rho: value.rho,
+            kappa: value.kappa,
+            sync_key: value.sync_key.clone(),
+            user_avec: MemoryAvecOutput::from_locus(value.user_avec),
+            model_avec: MemoryAvecOutput::from_locus(value.model_avec),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct MemoryNodeOutput {
+    raw: String,
+    session_id: String,
+    tier: String,
+    timestamp: String,
+    context_summary: Option<String>,
+    compression_depth: i32,
+    parent_node_id: Option<String>,
+    sync_key: String,
+    semantic_tags: Option<Vec<String>>,
+    psi: f32,
+    rho: f32,
+    kappa: f32,
+    user_avec: MemoryAvecOutput,
+    model_avec: MemoryAvecOutput,
+    compression_avec: Option<MemoryAvecOutput>,
+    updated_at: String,
+}
+
+impl From<&MemoryNode> for MemoryNodeOutput {
+    fn from(value: &MemoryNode) -> Self {
+        Self {
+            raw: value.raw.clone(),
+            session_id: value.session_id.clone(),
+            tier: value.tier.clone(),
+            timestamp: value.timestamp.to_rfc3339(),
+            context_summary: value.context_summary.clone(),
+            compression_depth: value.compression_depth,
+            parent_node_id: value.parent_node_id.clone(),
+            sync_key: value.sync_key.clone(),
+            semantic_tags: value.semantic_tags.clone(),
+            psi: value.psi,
+            rho: value.rho,
+            kappa: value.kappa,
+            user_avec: MemoryAvecOutput::from_stasis(value.user_avec),
+            model_avec: MemoryAvecOutput::from_stasis(value.model_avec),
+            compression_avec: value.compression_avec.map(MemoryAvecOutput::from_stasis),
+            updated_at: value.updated_at.to_rfc3339(),
+        }
+    }
 }
 
 // ── cognition_memory_schema ───────────────────────────────────────────────────
@@ -176,55 +404,117 @@ impl CognitionMemoryStoreTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionMemoryStoreTool {
-    fn name(&self) -> &'static str {
-        "cognition_memory_store"
-    }
+#[derive(Debug, JsonSchema)]
+pub struct MemoryStoreInput {
+    /// Full STTP node payload with ⊕ ⦿ ◈ ⍉ layers
+    #[schemars(required, with = "String")]
+    node: Option<String>,
+    /// Locus session id (defaults to current turn session)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    session_id: Option<String>,
+    /// Optional Locus semantic tags merged into the STTP prime block
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
+    semantic_tags: Option<Vec<String>>,
+    /// Deprecated: use `node` with full STTP instead
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    content: Option<String>,
+    #[schemars(skip)]
+    vibe_signature: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Store a complete STTP node in Locus memory. Requires `node` (full STTP string). \
-             Optional `session_id` defaults to the current turn session.",
-        )
-    }
+impl<'de> Deserialize<'de> for MemoryStoreInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            node: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            session_id: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string_list"
+            )]
+            semantic_tags: Option<Vec<String>>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            content: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            vibe_signature: Option<String>,
+        }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "node": {
-                    "type": "string",
-                    "description": "Full STTP node payload with ⊕ ⦿ ◈ ⍉ layers"
-                },
-                "session_id": {
-                    "type": "string",
-                    "description": "Locus session id (defaults to current turn session)"
-                },
-                "semantic_tags": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Optional Locus semantic tags merged into the STTP prime block"
-                },
-                "content": {
-                    "type": "string",
-                    "description": "Deprecated: use `node` with full STTP instead"
-                }
-            },
-            "required": ["node"]
-        }))
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            node: input.node,
+            session_id: input.session_id,
+            semantic_tags: input.semantic_tags,
+            content: input.content,
+            vibe_signature: input.vibe_signature,
+        })
     }
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct MemoryStoreErrorOutput {
+    code: String,
+    message: String,
+    model_guidance: Value,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum MemoryStoreOutput {
+    Stored {
+        node_id: String,
+        psi: f32,
+        valid: bool,
+        stored: bool,
+        validation_error: Option<String>,
+        profile_policy: String,
+    },
+    Rejected {
+        node_id: String,
+        psi: f32,
+        valid: bool,
+        stored: bool,
+        validation_error: String,
+        profile_policy: String,
+        error: MemoryStoreErrorOutput,
+    },
+}
+
+#[medousa_tool(id = COGNITION_MEMORY_STORE_ID)]
+impl CognitionMemoryStoreTool {
+    /// Store a complete STTP node in Locus memory. Requires `node` (full STTP string). Optional `session_id` defaults to the current turn session.
+    async fn invoke_typed(
+        &self,
+        input: MemoryStoreInput,
+    ) -> stasis::prelude::Result<MemoryStoreOutput> {
         let node = input
-            .get("node")
-            .and_then(|v| v.as_str())
+            .node
+            .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .or_else(|| {
                 input
-                    .get("content")
-                    .and_then(|v| v.as_str())
+                    .content
+                    .as_deref()
                     .map(str::trim)
                     .filter(|s| !s.is_empty())
             })
@@ -236,19 +526,24 @@ impl StasisTool for CognitionMemoryStoreTool {
                 )
             })?;
 
-        let session_id = resolve_memory_tool_session_id(
-            &input,
+        let session_id = resolve_memory_tool_session_id_typed(
+            input.session_id.as_deref(),
             &self.turn_scope,
             &self.fallback_chat_session_id,
             self.workshop_dynamic,
         )
         .await;
 
-        emit_invoked(&self.event_tx, self.name(), &session_id).await;
+        emit_invoked(
+            &self.event_tx,
+            COGNITION_MEMORY_STORE_ID.as_str(),
+            &session_id,
+        )
+        .await;
 
         let vibe_signature = input
-            .get("vibe_signature")
-            .and_then(|v| v.as_str())
+            .vibe_signature
+            .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .map(str::to_string)
@@ -261,9 +556,9 @@ impl StasisTool for CognitionMemoryStoreTool {
                 )
             });
         let mut tags = crate::locus_semantic_tags::default_workshop_semantic_tags(&session_id);
-        if let Some(extra) = input.get("semantic_tags").and_then(|v| v.as_array()) {
-            for item in extra {
-                if let Some(tag) = item.as_str().map(str::trim).filter(|s| !s.is_empty()) {
+        if let Some(extra) = input.semantic_tags {
+            for tag in extra {
+                if let Some(tag) = optional_nonempty(&tag) {
                     tags.push(tag.to_string());
                 }
             }
@@ -283,25 +578,31 @@ impl StasisTool for CognitionMemoryStoreTool {
             .await?;
 
         if response.valid {
-            Ok(json!({
-                "node_id": response.node_id,
-                "psi": response.psi,
-                "valid": true,
-                "stored": true,
-                "validation_error": response.validation_error,
-                "profile_policy": self.profile_name,
-            }))
+            Ok(MemoryStoreOutput::Stored {
+                node_id: response.node_id,
+                psi: response.psi,
+                valid: true,
+                stored: true,
+                validation_error: response.validation_error,
+                profile_policy: self.profile_name.to_string(),
+            })
         } else {
             let message = response
                 .validation_error
                 .unwrap_or_else(|| "store rejected context".to_string());
-            Ok(store_failure_payload(
-                response.node_id,
-                response.psi,
-                false,
-                message,
-                self.profile_name,
-            ))
+            Ok(MemoryStoreOutput::Rejected {
+                node_id: response.node_id,
+                psi: response.psi,
+                valid: false,
+                stored: false,
+                validation_error: message.clone(),
+                profile_policy: self.profile_name.to_string(),
+                error: MemoryStoreErrorOutput {
+                    code: infer_store_error_code(&message).to_string(),
+                    message: message.clone(),
+                    model_guidance: store_failure_guidance(&message, self.profile_name),
+                },
+            })
         }
     }
 }
@@ -334,67 +635,123 @@ impl CognitionMemoryCalibrateTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionMemoryCalibrateTool {
-    fn name(&self) -> &'static str {
-        "cognition_memory_calibrate"
-    }
+#[derive(Debug, JsonSchema)]
+pub struct MemoryCalibrateInput {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    session_id: Option<String>,
+    #[schemars(required, with = "f64")]
+    stability: Option<f64>,
+    #[schemars(required, with = "f64")]
+    friction: Option<f64>,
+    #[schemars(required, with = "f64")]
+    logic: Option<f64>,
+    #[schemars(required, with = "f64")]
+    autonomy: Option<f64>,
+    /// e.g. manual, session_start
+    #[schemars(required, with = "String")]
+    trigger: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Measure AVEC drift for a session. Call at session start and after heavy reasoning before store/retrieve.",
-        )
-    }
+impl<'de> Deserialize<'de> for MemoryCalibrateInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            session_id: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
+            )]
+            stability: Option<f64>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
+            )]
+            friction: Option<f64>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
+            )]
+            logic: Option<f64>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
+            )]
+            autonomy: Option<f64>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            trigger: Option<String>,
+        }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "session_id": { "type": "string" },
-                "stability": { "type": "number" },
-                "friction": { "type": "number" },
-                "logic": { "type": "number" },
-                "autonomy": { "type": "number" },
-                "trigger": { "type": "string", "description": "e.g. manual, session_start" }
-            },
-            "required": ["stability", "friction", "logic", "autonomy", "trigger"]
-        }))
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            session_id: input.session_id,
+            stability: input.stability,
+            friction: input.friction,
+            logic: input.logic,
+            autonomy: input.autonomy,
+            trigger: input.trigger,
+        })
     }
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let session_id = resolve_memory_tool_session_id(
-            &input,
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct MemoryCalibrateOutput {
+    previous_avec: MemoryAvecOutput,
+    delta: f32,
+    drift_classification: String,
+    trigger: String,
+    trigger_history: Vec<String>,
+    is_first_calibration: bool,
+}
+
+#[medousa_tool(id = COGNITION_MEMORY_CALIBRATE_ID)]
+impl CognitionMemoryCalibrateTool {
+    /// Measure AVEC drift for a session. Call at session start and after heavy reasoning before store/retrieve.
+    async fn invoke_typed(
+        &self,
+        input: MemoryCalibrateInput,
+    ) -> stasis::prelude::Result<MemoryCalibrateOutput> {
+        let session_id = resolve_memory_tool_session_id_typed(
+            input.session_id.as_deref(),
             &self.turn_scope,
             &self.fallback_chat_session_id,
             self.workshop_dynamic,
         )
         .await;
         let stability = input
-            .get("stability")
-            .and_then(|v| v.as_f64())
+            .stability
             .ok_or_else(|| StasisError::PortFailure("stability required".into()))?
             as f32;
         let friction = input
-            .get("friction")
-            .and_then(|v| v.as_f64())
+            .friction
             .ok_or_else(|| StasisError::PortFailure("friction required".into()))?
             as f32;
         let logic = input
-            .get("logic")
-            .and_then(|v| v.as_f64())
+            .logic
             .ok_or_else(|| StasisError::PortFailure("logic required".into()))?
             as f32;
         let autonomy = input
-            .get("autonomy")
-            .and_then(|v| v.as_f64())
+            .autonomy
             .ok_or_else(|| StasisError::PortFailure("autonomy required".into()))?
             as f32;
-        let trigger = input
-            .get("trigger")
-            .and_then(|v| v.as_str())
-            .unwrap_or("manual");
+        let trigger = input.trigger.as_deref().unwrap_or("manual");
 
-        emit_invoked(&self.event_tx, self.name(), &session_id).await;
+        emit_invoked(
+            &self.event_tx,
+            COGNITION_MEMORY_CALIBRATE_ID.as_str(),
+            &session_id,
+        )
+        .await;
 
         let result = self
             .calibration
@@ -402,14 +759,14 @@ impl StasisTool for CognitionMemoryCalibrateTool {
             .await
             .map_err(|e| StasisError::PortFailure(format!("cognition_memory_calibrate: {e}")))?;
 
-        Ok(json!({
-            "previous_avec": avec_to_json(result.previous_avec),
-            "delta": result.delta,
-            "drift_classification": format!("{:?}", result.drift_classification),
-            "trigger": result.trigger,
-            "trigger_history": result.trigger_history,
-            "is_first_calibration": result.is_first_calibration,
-        }))
+        Ok(MemoryCalibrateOutput {
+            previous_avec: MemoryAvecOutput::from_locus(result.previous_avec),
+            delta: result.delta,
+            drift_classification: format!("{:?}", result.drift_classification),
+            trigger: result.trigger,
+            trigger_history: result.trigger_history,
+            is_first_calibration: result.is_first_calibration,
+        })
     }
 }
 
@@ -444,135 +801,237 @@ impl CognitionMemoryContextTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionMemoryContextTool {
-    fn name(&self) -> &'static str {
-        "cognition_memory_context"
-    }
+#[derive(Debug, JsonSchema)]
+pub struct MemoryContextInput {
+    #[serde(default, skip_serializing_if = "MemorySessionScopeInput::is_missing")]
+    #[schemars(
+        with = "MemorySessionScopeInput",
+        skip_serializing_if = "MemorySessionScopeInput::is_missing"
+    )]
+    session_id: MemorySessionScopeInput,
+    #[schemars(required, with = "f64")]
+    stability: Option<f64>,
+    #[schemars(required, with = "f64")]
+    friction: Option<f64>,
+    #[schemars(required, with = "f64")]
+    logic: Option<f64>,
+    #[schemars(required, with = "f64")]
+    autonomy: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
+    context_keywords: Option<Vec<String>>,
+    /// Indexed Locus tags (match-all). Example: ["session", "profile:work"]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        with = "CompatibleSemanticTags",
+        skip_serializing_if = "Option::is_none"
+    )]
+    semantic_tags: Option<CompatibleSemanticTags>,
+    /// Match nodes whose indexed tags share this prefix (e.g. profile:)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    tag_prefix: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        with = "usize",
+        range(min = 1, max = 200),
+        skip_serializing_if = "Option::is_none"
+    )]
+    limit: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "f64", skip_serializing_if = "Option::is_none")]
+    alpha: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "f64", skip_serializing_if = "Option::is_none")]
+    beta: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    from_utc: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    to_utc: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
+    tiers: Option<Vec<String>>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Primary memory retrieval by AVEC resonance. Requires stability/friction/logic/autonomy. Optional \
-             context_keywords and semantic_tags (indexed, match-all). Use tag_prefix for prefix vocabulary search. \
-             Set session_id to null for global retrieval across sessions.",
-        )
-    }
+impl<'de> Deserialize<'de> for MemoryContextInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(default)]
+            session_id: MemorySessionScopeInput,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
+            )]
+            stability: Option<f64>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
+            )]
+            friction: Option<f64>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
+            )]
+            logic: Option<f64>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
+            )]
+            autonomy: Option<f64>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string_list"
+            )]
+            context_keywords: Option<Vec<String>>,
+            #[serde(default)]
+            semantic_tags: Option<CompatibleSemanticTags>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            tag_prefix: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+            )]
+            limit: Option<usize>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
+            )]
+            alpha: Option<f64>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
+            )]
+            beta: Option<f64>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            from_utc: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            to_utc: Option<String>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string_list"
+            )]
+            tiers: Option<Vec<String>>,
+        }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "session_id": { "type": ["string", "null"] },
-                "stability": { "type": "number" },
-                "friction": { "type": "number" },
-                "logic": { "type": "number" },
-                "autonomy": { "type": "number" },
-                "context_keywords": { "type": "array", "items": { "type": "string" } },
-                "semantic_tags": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Indexed Locus tags (match-all). Example: [\"session\", \"profile:work\"]"
-                },
-                "tag_prefix": {
-                    "type": "string",
-                    "description": "Match nodes whose indexed tags share this prefix (e.g. profile:)"
-                },
-                "limit": { "type": "integer", "minimum": 1, "maximum": 200 },
-                "alpha": { "type": "number" },
-                "beta": { "type": "number" },
-                "from_utc": { "type": "string" },
-                "to_utc": { "type": "string" },
-                "tiers": { "type": "array", "items": { "type": "string" } }
-            },
-            "required": ["stability", "friction", "logic", "autonomy"]
-        }))
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            session_id: input.session_id,
+            stability: input.stability,
+            friction: input.friction,
+            logic: input.logic,
+            autonomy: input.autonomy,
+            context_keywords: input.context_keywords,
+            semantic_tags: input.semantic_tags,
+            tag_prefix: input.tag_prefix,
+            limit: input.limit,
+            alpha: input.alpha,
+            beta: input.beta,
+            from_utc: input.from_utc,
+            to_utc: input.to_utc,
+            tiers: input.tiers,
+        })
     }
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct MemoryPsiRangeOutput {
+    min: f32,
+    max: f32,
+    average: f32,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum MemoryContextOutput {
+    Retrieved {
+        retrieved: usize,
+        psi_range: MemoryPsiRangeOutput,
+        nodes: Vec<SttpNodeOutput>,
+    },
+    Recalled {
+        retrieved: usize,
+        nodes: Vec<MemoryNodeOutput>,
+        retrieval_path: Option<String>,
+        fallback_triggered: bool,
+        fallback_reason: Option<String>,
+        node_sync_keys: Vec<String>,
+        has_more: bool,
+    },
+}
+
+#[medousa_tool(id = COGNITION_MEMORY_CONTEXT_ID)]
+impl CognitionMemoryContextTool {
+    /// Primary memory retrieval by AVEC resonance. Requires stability/friction/logic/autonomy. Optional context_keywords and semantic_tags (indexed, match-all). Use tag_prefix for prefix vocabulary search. Set session_id to null for global retrieval across sessions.
+    async fn invoke_typed(
+        &self,
+        input: MemoryContextInput,
+    ) -> stasis::prelude::Result<MemoryContextOutput> {
         let stability = input
-            .get("stability")
-            .and_then(|v| v.as_f64())
+            .stability
             .ok_or_else(|| StasisError::PortFailure("stability required".into()))?
             as f32;
         let friction = input
-            .get("friction")
-            .and_then(|v| v.as_f64())
+            .friction
             .ok_or_else(|| StasisError::PortFailure("friction required".into()))?
             as f32;
         let logic = input
-            .get("logic")
-            .and_then(|v| v.as_f64())
+            .logic
             .ok_or_else(|| StasisError::PortFailure("logic required".into()))?
             as f32;
         let autonomy = input
-            .get("autonomy")
-            .and_then(|v| v.as_f64())
+            .autonomy
             .ok_or_else(|| StasisError::PortFailure("autonomy required".into()))?
             as f32;
 
-        let limit = input
-            .get("limit")
-            .and_then(|v| v.as_u64())
-            .map(|n| n as usize)
-            .unwrap_or(5);
+        let limit = input.limit.unwrap_or(5);
         let limit = validate_limit(limit, "limit").map_err(StasisError::PortFailure)?;
 
-        let global = input
-            .get("session_id")
-            .map(|v| v.is_null())
-            .unwrap_or(false);
-        let session_scope = if global {
-            None
-        } else {
-            Some(
-                resolve_optional_locus_session_scope(
-                    &input,
-                    &self.turn_scope,
-                    &self.fallback_chat_session_id,
-                    self.workshop_dynamic,
-                )
-                .await
-                .expect("non-global session scope"),
-            )
-        };
+        let session_scope = resolve_optional_locus_session_scope(
+            &input.session_id,
+            &self.turn_scope,
+            &self.fallback_chat_session_id,
+            self.workshop_dynamic,
+        )
+        .await;
         let session_scope = session_scope.as_deref();
 
-        let keywords: Vec<String> = input
-            .get("context_keywords")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(str::to_string))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let keywords = normalize_context_keywords(Some(&keywords));
+        let keywords = normalize_context_keywords(input.context_keywords.as_deref());
 
-        let from_utc =
-            parse_utc_optional(input.get("from_utc").and_then(|v| v.as_str()), "from_utc")
-                .map_err(StasisError::PortFailure)?;
-        let to_utc = parse_utc_optional(input.get("to_utc").and_then(|v| v.as_str()), "to_utc")
+        let from_utc = parse_utc_optional(input.from_utc.as_deref(), "from_utc")
             .map_err(StasisError::PortFailure)?;
-        let tiers = input
-            .get("tiers")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(str::to_string))
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        let tiers_norm = normalize_tiers(&tiers);
+        let to_utc = parse_utc_optional(input.to_utc.as_deref(), "to_utc")
+            .map_err(StasisError::PortFailure)?;
+        let tiers_norm = normalize_tiers(input.tiers.as_deref().unwrap_or_default());
         let tiers_ref = if tiers_norm.is_empty() {
             None
         } else {
             Some(tiers_norm.as_slice())
         };
 
-        emit_invoked(&self.event_tx, self.name(), "context").await;
+        emit_invoked(
+            &self.event_tx,
+            COGNITION_MEMORY_CONTEXT_ID.as_str(),
+            "context",
+        )
+        .await;
 
-        let tag_filter = crate::locus_semantic_tags::memory_filter_from_tag_input(&input);
-        let has_tag_filters = crate::locus_semantic_tags::input_has_tag_filters(&input);
+        let tag_filter = memory_filter(input.semantic_tags.as_ref(), input.tag_prefix.as_deref());
+        let has_tag_filters = has_tag_filters(&tag_filter);
 
         if keywords.is_empty() && !has_tag_filters {
             let result = self
@@ -589,11 +1048,19 @@ impl StasisTool for CognitionMemoryContextTool {
                     limit,
                 )
                 .await;
-            return Ok(retrieve_result_to_json(result));
+            return Ok(MemoryContextOutput::Retrieved {
+                retrieved: result.retrieved,
+                psi_range: MemoryPsiRangeOutput {
+                    min: result.psi_range.min,
+                    max: result.psi_range.max,
+                    average: result.psi_range.average,
+                },
+                nodes: result.nodes.iter().map(Into::into).collect(),
+            });
         }
 
-        let alpha = input.get("alpha").and_then(|v| v.as_f64()).unwrap_or(0.7) as f32;
-        let beta = input.get("beta").and_then(|v| v.as_f64()).unwrap_or(0.3) as f32;
+        let alpha = input.alpha.unwrap_or(0.7) as f32;
+        let beta = input.beta.unwrap_or(0.3) as f32;
         let query_text = if keywords.is_empty() {
             None
         } else {
@@ -639,15 +1106,15 @@ impl StasisTool for CognitionMemoryContextTool {
             .await
             .map_err(|e| StasisError::PortFailure(format!("cognition_memory_context: {e}")))?;
 
-        Ok(json!({
-            "retrieved": response.retrieved,
-            "nodes": response.nodes.iter().map(memory_node_to_json).collect::<Vec<_>>(),
-            "retrieval_path": response.retrieval_path,
-            "fallback_triggered": response.fallback_triggered,
-            "fallback_reason": response.fallback_reason,
-            "node_sync_keys": response.node_sync_keys,
-            "has_more": response.has_more,
-        }))
+        Ok(MemoryContextOutput::Recalled {
+            retrieved: response.retrieved,
+            nodes: response.nodes.iter().map(Into::into).collect(),
+            retrieval_path: response.retrieval_path,
+            fallback_triggered: response.fallback_triggered,
+            fallback_reason: response.fallback_reason,
+            node_sync_keys: response.node_sync_keys,
+            has_more: response.has_more,
+        })
     }
 }
 
@@ -682,79 +1149,85 @@ impl CognitionMemoryListTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionMemoryListTool {
-    fn name(&self) -> &'static str {
-        "cognition_memory_list"
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct MemoryListInput {
+    #[serde(default)]
+    #[schemars(
+        with = "MemorySessionScopeInput",
+        skip_serializing_if = "MemorySessionScopeInput::is_missing"
+    )]
+    session_id: MemorySessionScopeInput,
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+    )]
+    #[schemars(
+        with = "usize",
+        range(min = 1, max = 200),
+        skip_serializing_if = "Option::is_none"
+    )]
+    limit: Option<usize>,
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string_list"
+    )]
+    #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
+    context_keywords: Option<Vec<String>>,
+    /// Indexed Locus tags (match-all)
+    #[serde(default)]
+    #[schemars(
+        with = "CompatibleSemanticTags",
+        skip_serializing_if = "Option::is_none"
+    )]
+    semantic_tags: Option<CompatibleSemanticTags>,
+    /// Match nodes whose indexed tags share this prefix
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    tag_prefix: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Memory inventory, newest-first. Optional context_keywords filter on context_summary. \
-             Optional semantic_tags (indexed, match-all) or tag_prefix. Omit session_id or pass null for global listing.",
-        )
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum MemoryListOutput {
+    Listed {
+        retrieved: usize,
+        nodes: Vec<SttpNodeOutput>,
+    },
+    Found {
+        retrieved: usize,
+        nodes: Vec<MemoryNodeOutput>,
+        find_sync_keys: Vec<String>,
+        has_more: bool,
+    },
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "session_id": { "type": ["string", "null"] },
-                "limit": { "type": "integer", "minimum": 1, "maximum": 200 },
-                "context_keywords": { "type": "array", "items": { "type": "string" } },
-                "semantic_tags": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Indexed Locus tags (match-all)"
-                },
-                "tag_prefix": {
-                    "type": "string",
-                    "description": "Match nodes whose indexed tags share this prefix"
-                }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let limit = input
-            .get("limit")
-            .and_then(|v| v.as_u64())
-            .map(|n| n as usize)
-            .unwrap_or(50);
+#[medousa_tool(id = COGNITION_MEMORY_LIST_ID)]
+impl CognitionMemoryListTool {
+    /// Memory inventory, newest-first. Optional context_keywords filter on context_summary. Optional semantic_tags (indexed, match-all) or tag_prefix. Omit session_id or pass null for global listing.
+    async fn invoke_typed(
+        &self,
+        input: MemoryListInput,
+    ) -> stasis::prelude::Result<MemoryListOutput> {
+        let limit = input.limit.unwrap_or(50);
         let limit = validate_limit(limit, "limit").map_err(StasisError::PortFailure)?;
 
-        let global = input
-            .get("session_id")
-            .map(|v| v.is_null())
-            .unwrap_or(false);
-        let session_id = if global {
-            None
-        } else {
-            resolve_optional_locus_session_scope(
-                &input,
-                &self.turn_scope,
-                &self.fallback_chat_session_id,
-                self.workshop_dynamic,
-            )
-            .await
-        };
+        let session_id = resolve_optional_locus_session_scope(
+            &input.session_id,
+            &self.turn_scope,
+            &self.fallback_chat_session_id,
+            self.workshop_dynamic,
+        )
+        .await;
 
-        let keywords = normalize_context_keywords(
-            input
-                .get("context_keywords")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(str::to_string))
-                        .collect::<Vec<_>>()
-                })
-                .as_deref(),
-        );
+        let keywords = normalize_context_keywords(input.context_keywords.as_deref());
 
-        emit_invoked(&self.event_tx, self.name(), "list").await;
+        emit_invoked(&self.event_tx, COGNITION_MEMORY_LIST_ID.as_str(), "list").await;
 
-        let tag_filter = crate::locus_semantic_tags::memory_filter_from_tag_input(&input);
-        let has_tag_filters = crate::locus_semantic_tags::input_has_tag_filters(&input);
+        let tag_filter = memory_filter(input.semantic_tags.as_ref(), input.tag_prefix.as_deref());
+        let has_tag_filters = has_tag_filters(&tag_filter);
 
         if keywords.is_empty() && !has_tag_filters {
             let listed = self
@@ -762,10 +1235,10 @@ impl StasisTool for CognitionMemoryListTool {
                 .list_nodes_async(limit, session_id.as_deref())
                 .await
                 .map_err(|e| StasisError::PortFailure(format!("cognition_memory_list: {e}")))?;
-            return Ok(json!({
-                "retrieved": listed.retrieved,
-                "nodes": listed.nodes.iter().map(sttp_node_to_json).collect::<Vec<_>>(),
-            }));
+            return Ok(MemoryListOutput::Listed {
+                retrieved: listed.retrieved,
+                nodes: listed.nodes.iter().map(Into::into).collect(),
+            });
         }
 
         let query_limit = limit.saturating_mul(5).clamp(1, 200);
@@ -797,15 +1270,15 @@ impl StasisTool for CognitionMemoryListTool {
             .nodes
             .iter()
             .take(limit)
-            .map(memory_node_to_json)
+            .map(Into::into)
             .collect::<Vec<_>>();
 
-        Ok(json!({
-            "retrieved": nodes.len(),
-            "nodes": nodes,
-            "find_sync_keys": found.node_sync_keys,
-            "has_more": found.has_more,
-        }))
+        Ok(MemoryListOutput::Found {
+            retrieved: nodes.len(),
+            nodes,
+            find_sync_keys: found.node_sync_keys,
+            has_more: found.has_more,
+        })
     }
 }
 
@@ -839,75 +1312,106 @@ impl CognitionMemoryRecallTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionMemoryRecallTool {
-    fn name(&self) -> &'static str {
-        "cognition_memory_recall"
-    }
+#[derive(Debug, JsonSchema)]
+pub struct MemoryRecallInput {
+    #[schemars(required, with = "String")]
+    query: Option<String>,
+    #[serde(default, skip_serializing_if = "MemorySessionScopeInput::is_missing")]
+    #[schemars(
+        with = "MemorySessionScopeInput",
+        skip_serializing_if = "MemorySessionScopeInput::is_missing"
+    )]
+    session_id: MemorySessionScopeInput,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        with = "usize",
+        range(min = 1, max = 20),
+        skip_serializing_if = "Option::is_none"
+    )]
+    limit: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        with = "CompatibleSemanticTags",
+        skip_serializing_if = "Option::is_none"
+    )]
+    semantic_tags: Option<CompatibleSemanticTags>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    tag_prefix: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Retrieve memory by natural-language keywords (legacy). Prefer cognition_memory_context \
-             with explicit AVEC when possible. Optional semantic_tags or tag_prefix for indexed filtering. \
-             Pass session_id to scope to one session, or null to search across all sessions.",
-        )
-    }
+impl<'de> Deserialize<'de> for MemoryRecallInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            query: Option<String>,
+            #[serde(default)]
+            session_id: MemorySessionScopeInput,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+            )]
+            limit: Option<usize>,
+            #[serde(default)]
+            semantic_tags: Option<CompatibleSemanticTags>,
+            #[serde(
+                default,
+                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+            )]
+            tag_prefix: Option<String>,
+        }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "query": { "type": "string" },
-                "session_id": { "type": ["string", "null"] },
-                "limit": { "type": "integer", "minimum": 1, "maximum": 20 },
-                "semantic_tags": {
-                    "type": "array",
-                    "items": { "type": "string" }
-                },
-                "tag_prefix": { "type": "string" }
-            },
-            "required": ["query"]
-        }))
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            query: input.query,
+            session_id: input.session_id,
+            limit: input.limit,
+            semantic_tags: input.semantic_tags,
+            tag_prefix: input.tag_prefix,
+        })
     }
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let query = input.get("query").and_then(|v| v.as_str()).ok_or_else(|| {
+#[medousa_tool(id = COGNITION_MEMORY_RECALL_ID)]
+impl CognitionMemoryRecallTool {
+    /// Retrieve memory by natural-language keywords (legacy). Prefer cognition_memory_context with explicit AVEC when possible. Optional semantic_tags or tag_prefix for indexed filtering. Pass session_id to scope to one session, or null to search across all sessions.
+    async fn invoke_typed(
+        &self,
+        input: MemoryRecallInput,
+    ) -> stasis::prelude::Result<MemoryContextOutput> {
+        let query = input.query.as_deref().ok_or_else(|| {
             StasisError::PortFailure("cognition_memory_recall: query is required".to_string())
         })?;
-        let limit = input
-            .get("limit")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(5)
-            .min(20) as usize;
+        let limit = input.limit.unwrap_or(5).min(20);
 
-        emit_invoked(&self.event_tx, self.name(), query).await;
+        emit_invoked(&self.event_tx, COGNITION_MEMORY_RECALL_ID.as_str(), query).await;
 
         let (s, f, l, a) = DEFAULT_RECALL_AVEC;
-        let session_id = match input.get("session_id") {
-            Some(value) if value.is_null() => serde_json::Value::Null,
-            Some(value) => value.clone(),
-            None => json!(
-                resolve_memory_tool_session_id(
-                    &input,
-                    &self.context_tool.turn_scope,
-                    &self.context_tool.fallback_chat_session_id,
-                    self.context_tool.workshop_dynamic,
-                )
-                .await
-            ),
-        };
-        let wrapped = json!({
-            "stability": s,
-            "friction": f,
-            "logic": l,
-            "autonomy": a,
-            "context_keywords": [query],
-            "limit": limit,
-            "session_id": session_id,
-            "semantic_tags": input.get("semantic_tags").cloned(),
-            "tag_prefix": input.get("tag_prefix").cloned(),
-        });
-        self.context_tool.invoke(wrapped).await
+        self.context_tool
+            .invoke_typed(MemoryContextInput {
+                session_id: input.session_id,
+                stability: Some(s as f64),
+                friction: Some(f as f64),
+                logic: Some(l as f64),
+                autonomy: Some(a as f64),
+                context_keywords: Some(vec![query.to_string()]),
+                semantic_tags: input.semantic_tags,
+                tag_prefix: input.tag_prefix,
+                limit: Some(limit),
+                alpha: None,
+                beta: None,
+                from_utc: None,
+                to_utc: None,
+                tiers: None,
+            })
+            .await
     }
 }
 
@@ -939,50 +1443,64 @@ impl CognitionMemoryTagsTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionMemoryTagsTool {
-    fn name(&self) -> &'static str {
-        "cognition_memory_tags"
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct MemoryTagsInput {
+    /// Optional session to derive tenant scope
+    #[serde(default)]
+    #[schemars(
+        with = "MemorySessionScopeInput",
+        skip_serializing_if = "MemorySessionScopeInput::is_missing"
+    )]
+    session_id: MemorySessionScopeInput,
+    /// Filter tags by prefix (case-insensitive)
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    prefix: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+    )]
+    #[schemars(
+        with = "usize",
+        range(min = 1, max = 500),
+        skip_serializing_if = "Option::is_none"
+    )]
+    limit: Option<usize>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "List indexed Locus semantic tags for the active profile tenant. Optional prefix narrows \
-             vocabulary (e.g. profile:, chat:, medousa). Use before recall/list to pick tag filters.",
-        )
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct MemoryTagsOutput {
+    tenant_id: String,
+    prefix: Option<String>,
+    tags: Vec<String>,
+    count: usize,
+    usage: String,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "session_id": {
-                    "type": ["string", "null"],
-                    "description": "Optional session to derive tenant scope"
-                },
-                "prefix": {
-                    "type": "string",
-                    "description": "Filter tags by prefix (case-insensitive)"
-                },
-                "limit": { "type": "integer", "minimum": 1, "maximum": 500 }
-            }
-        }))
-    }
+#[medousa_tool(id = COGNITION_MEMORY_TAGS_ID)]
+impl CognitionMemoryTagsTool {
+    /// List indexed Locus semantic tags for the active profile tenant. Optional prefix narrows vocabulary (e.g. profile:, chat:, medousa). Use before recall/list to pick tag filters.
+    async fn invoke_typed(
+        &self,
+        input: MemoryTagsInput,
+    ) -> stasis::prelude::Result<MemoryTagsOutput> {
+        let limit = input.limit.unwrap_or(100).clamp(1, 500);
+        let prefix = input
+            .prefix
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_ascii_lowercase);
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let limit = input
-            .get("limit")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(100)
-            .clamp(1, 500) as usize;
-        let prefix = crate::locus_semantic_tags::parse_tag_prefix_from_value(input.get("prefix"));
-
-        let session_scope = if input.get("session_id").is_some_and(Value::is_null) {
+        let session_scope = if input.session_id.is_global() {
             None
-        } else if input.get("session_id").is_some() {
+        } else if input.session_id.was_present() {
             Some(
-                resolve_memory_tool_session_id(
-                    &input,
+                resolve_memory_tool_session_id_typed(
+                    input.session_id.explicit(),
                     &self.turn_scope,
                     &self.fallback_chat_session_id,
                     self.workshop_dynamic,
@@ -997,7 +1515,7 @@ impl StasisTool for CognitionMemoryTagsTool {
 
         emit_invoked(
             &self.event_tx,
-            self.name(),
+            COGNITION_MEMORY_TAGS_ID.as_str(),
             prefix.as_deref().unwrap_or("all"),
         )
         .await;
@@ -1008,13 +1526,13 @@ impl StasisTool for CognitionMemoryTagsTool {
             .await
             .map_err(|err| StasisError::PortFailure(format!("cognition_memory_tags: {err}")))?;
 
-        Ok(json!({
-            "tenant_id": tenant,
-            "prefix": prefix,
-            "tags": tags,
-            "count": tags.len(),
-            "usage": "Pass tags to cognition_memory_context, cognition_memory_list, or cognition_memory_recall via semantic_tags (match-all).",
-        }))
+        Ok(MemoryTagsOutput {
+            tenant_id: tenant,
+            prefix,
+            count: tags.len(),
+            tags,
+            usage: "Pass tags to cognition_memory_context, cognition_memory_list, or cognition_memory_recall via semantic_tags (match-all).".to_string(),
+        })
     }
 }
 
@@ -1034,53 +1552,84 @@ impl CognitionMemoryMoodsTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionMemoryMoodsTool {
-    fn name(&self) -> &'static str {
-        "cognition_memory_moods"
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct MemoryMoodsInput {
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    target_mood: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
+    )]
+    #[schemars(with = "f64", skip_serializing_if = "Option::is_none")]
+    blend: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
+    )]
+    #[schemars(with = "f64", skip_serializing_if = "Option::is_none")]
+    current_stability: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
+    )]
+    #[schemars(with = "f64", skip_serializing_if = "Option::is_none")]
+    current_friction: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
+    )]
+    #[schemars(with = "f64", skip_serializing_if = "Option::is_none")]
+    current_logic: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
+    )]
+    #[schemars(with = "f64", skip_serializing_if = "Option::is_none")]
+    current_autonomy: Option<f64>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "AVEC mood presets and blend preview. Use before store/retrieve when reasoning posture is unset.",
-        )
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct MemoryMoodPresetOutput {
+    name: String,
+    description: String,
+    avec: MemoryAvecOutput,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "target_mood": { "type": "string" },
-                "blend": { "type": "number" },
-                "current_stability": { "type": "number" },
-                "current_friction": { "type": "number" },
-                "current_logic": { "type": "number" },
-                "current_autonomy": { "type": "number" }
-            }
-        }))
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct MemoryMoodSwapOutput {
+    target_mood: String,
+    blend: f32,
+    current: MemoryAvecOutput,
+    target: MemoryAvecOutput,
+    blended: MemoryAvecOutput,
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let target_mood = input.get("target_mood").and_then(|v| v.as_str());
-        let blend = input.get("blend").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
-        let current_stability = input
-            .get("current_stability")
-            .and_then(|v| v.as_f64())
-            .map(|v| v as f32);
-        let current_friction = input
-            .get("current_friction")
-            .and_then(|v| v.as_f64())
-            .map(|v| v as f32);
-        let current_logic = input
-            .get("current_logic")
-            .and_then(|v| v.as_f64())
-            .map(|v| v as f32);
-        let current_autonomy = input
-            .get("current_autonomy")
-            .and_then(|v| v.as_f64())
-            .map(|v| v as f32);
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct MemoryMoodsOutput {
+    presets: Vec<MemoryMoodPresetOutput>,
+    apply_guide: String,
+    swap_preview: Option<MemoryMoodSwapOutput>,
+}
 
-        emit_invoked(&self.event_tx, self.name(), "moods").await;
+#[medousa_tool(id = COGNITION_MEMORY_MOODS_ID)]
+impl CognitionMemoryMoodsTool {
+    /// AVEC mood presets and blend preview. Use before store/retrieve when reasoning posture is unset.
+    async fn invoke_typed(
+        &self,
+        input: MemoryMoodsInput,
+    ) -> stasis::prelude::Result<MemoryMoodsOutput> {
+        let target_mood = input.target_mood.as_deref();
+        let blend = input.blend.unwrap_or(1.0) as f32;
+        let current_stability = input.current_stability.map(|value| value as f32);
+        let current_friction = input.current_friction.map(|value| value as f32);
+        let current_logic = input.current_logic.map(|value| value as f32);
+        let current_autonomy = input.current_autonomy.map(|value| value as f32);
+
+        emit_invoked(&self.event_tx, COGNITION_MEMORY_MOODS_ID.as_str(), "moods").await;
 
         let result = self.moods.get(
             target_mood,
@@ -1091,27 +1640,27 @@ impl StasisTool for CognitionMemoryMoodsTool {
             current_autonomy,
         );
 
-        let swap_preview = result.swap_preview.as_ref().map(|preview| {
-            json!({
-                "target_mood": preview.target_mood,
-                "blend": preview.blend,
-                "current": avec_to_json(preview.current),
-                "target": avec_to_json(preview.target),
-                "blended": avec_to_json(preview.blended),
-            })
+        let swap_preview = result.swap_preview.map(|preview| MemoryMoodSwapOutput {
+            target_mood: preview.target_mood,
+            blend: preview.blend,
+            current: MemoryAvecOutput::from_locus(preview.current),
+            target: MemoryAvecOutput::from_locus(preview.target),
+            blended: MemoryAvecOutput::from_locus(preview.blended),
         });
 
-        Ok(json!({
-            "presets": result.presets.iter().map(|preset| {
-                json!({
-                    "name": preset.name,
-                    "description": preset.description,
-                    "avec": avec_to_json(preset.avec),
+        Ok(MemoryMoodsOutput {
+            presets: result
+                .presets
+                .into_iter()
+                .map(|preset| MemoryMoodPresetOutput {
+                    name: preset.name,
+                    description: preset.description,
+                    avec: MemoryAvecOutput::from_locus(preset.avec),
                 })
-            }).collect::<Vec<_>>(),
-            "apply_guide": result.apply_guide,
-            "swap_preview": swap_preview,
-        }))
+                .collect(),
+            apply_guide: result.apply_guide,
+            swap_preview,
+        })
     }
 }
 
@@ -1143,6 +1692,105 @@ impl CognitionMemoryEvictTool {
     }
 }
 
+#[cfg(test)]
+mod compatibility_tests {
+    use super::*;
+
+    #[test]
+    fn typed_memory_node_output_preserves_legacy_wire_shape() {
+        let node = MemoryNode::default();
+        assert_eq!(
+            serde_json::to_value(MemoryNodeOutput::from(&node)).expect("typed node"),
+            crate::locus_memory::memory_node_to_json(&node)
+        );
+    }
+
+    #[test]
+    fn typed_store_rejection_preserves_legacy_wire_shape() {
+        let node_id = "node-a".to_string();
+        let message = "Strict profile rejected node".to_string();
+        let profile = "strict";
+        let typed = MemoryStoreOutput::Rejected {
+            node_id: node_id.clone(),
+            psi: 1.25,
+            valid: false,
+            stored: false,
+            validation_error: message.clone(),
+            profile_policy: profile.to_string(),
+            error: MemoryStoreErrorOutput {
+                code: infer_store_error_code(&message).to_string(),
+                message: message.clone(),
+                model_guidance: store_failure_guidance(&message, profile),
+            },
+        };
+
+        assert_eq!(
+            serde_json::to_value(typed).expect("typed rejection"),
+            crate::locus_memory::store_failure_payload(node_id, 1.25, false, message, profile)
+        );
+    }
+
+    #[test]
+    fn store_input_keeps_deprecated_content_and_hidden_vibe_aliases() {
+        let input: MemoryStoreInput = serde_json::from_value(json!({
+            "content": "legacy STTP",
+            "vibe_signature": "steady",
+            "semantic_tags": ["One", 7, "Two"]
+        }))
+        .expect("compatible store input");
+
+        assert!(input.node.is_none());
+        assert_eq!(input.content.as_deref(), Some("legacy STTP"));
+        assert_eq!(input.vibe_signature.as_deref(), Some("steady"));
+        assert_eq!(
+            input.semantic_tags,
+            Some(vec!["One".to_string(), "Two".to_string()])
+        );
+    }
+
+    #[test]
+    fn session_scope_distinguishes_missing_null_explicit_and_invalid() {
+        let missing: MemoryListInput = serde_json::from_value(json!({})).expect("missing");
+        let global: MemoryListInput =
+            serde_json::from_value(json!({ "session_id": null })).expect("global");
+        let explicit: MemoryListInput =
+            serde_json::from_value(json!({ "session_id": "session-a" })).expect("explicit");
+        let invalid: MemoryListInput =
+            serde_json::from_value(json!({ "session_id": 7 })).expect("invalid");
+
+        assert!(matches!(
+            missing.session_id,
+            MemorySessionScopeInput::Missing
+        ));
+        assert!(matches!(global.session_id, MemorySessionScopeInput::Global));
+        assert!(matches!(
+            explicit.session_id,
+            MemorySessionScopeInput::Explicit(ref value) if value == "session-a"
+        ));
+        assert!(matches!(
+            invalid.session_id,
+            MemorySessionScopeInput::Invalid
+        ));
+    }
+
+    #[test]
+    fn recall_input_keeps_legacy_comma_separated_semantic_tags() {
+        let input: MemoryRecallInput = serde_json::from_value(json!({
+            "query": "decision",
+            "semantic_tags": "Session, profile:Work, session"
+        }))
+        .expect("compatible recall input");
+
+        assert_eq!(
+            input
+                .semantic_tags
+                .as_ref()
+                .and_then(CompatibleSemanticTags::as_deref),
+            Some(["profile:work".to_string(), "session".to_string()].as_slice())
+        );
+    }
+}
+
 fn parse_evict_mode(value: Option<&str>) -> MemoryEvictMode {
     match value
         .unwrap_or("by_filter")
@@ -1157,81 +1805,104 @@ fn parse_evict_mode(value: Option<&str>) -> MemoryEvictMode {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionMemoryEvictTool {
-    fn name(&self) -> &'static str {
-        "cognition_memory_evict"
-    }
+#[allow(dead_code)]
+#[derive(Debug, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum MemoryEvictModeSchema {
+    ByFilter,
+    PurgeSession,
+    ByNodeIds,
+    BySyncKeys,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Evict Locus memory nodes (dry-run by default). Supports by_filter, purge_session, \
-             by_node_ids, and by_sync_keys modes.",
-        )
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct MemoryEvictInput {
+    /// Eviction strategy (default: by_filter)
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(
+        with = "MemoryEvictModeSchema",
+        skip_serializing_if = "Option::is_none"
+    )]
+    mode: Option<String>,
+    /// Preview deletions without applying (default: true)
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
+    )]
+    #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
+    dry_run: Option<bool>,
+    /// Bypass inbound-reference blocks (default: false)
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
+    )]
+    #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
+    force: Option<bool>,
+    /// Locus session scope (defaults to current turn session)
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    )]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    session_id: Option<String>,
+    /// Filter tiers for by_filter mode
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string_list"
+    )]
+    #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
+    tiers: Option<Vec<String>>,
+    /// Node ids for by_node_ids mode
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string_list"
+    )]
+    #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
+    node_ids: Option<Vec<String>>,
+    /// Sync keys for by_sync_keys mode
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string_list"
+    )]
+    #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
+    sync_keys: Option<Vec<String>>,
+    /// Safety cap on nodes touched (default: 5000)
+    #[serde(
+        default,
+        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+    )]
+    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
+    max_nodes: Option<usize>,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "mode": {
-                    "type": "string",
-                    "enum": ["by_filter", "purge_session", "by_node_ids", "by_sync_keys"],
-                    "description": "Eviction strategy (default: by_filter)"
-                },
-                "dry_run": {
-                    "type": "boolean",
-                    "description": "Preview deletions without applying (default: true)"
-                },
-                "force": {
-                    "type": "boolean",
-                    "description": "Bypass inbound-reference blocks (default: false)"
-                },
-                "session_id": {
-                    "type": "string",
-                    "description": "Locus session scope (defaults to current turn session)"
-                },
-                "tiers": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Filter tiers for by_filter mode"
-                },
-                "node_ids": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Node ids for by_node_ids mode"
-                },
-                "sync_keys": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Sync keys for by_sync_keys mode"
-                },
-                "max_nodes": {
-                    "type": "integer",
-                    "description": "Safety cap on nodes touched (default: 5000)"
-                }
-            }
-        }))
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct MemoryEvictOutput {
+    dry_run: bool,
+    deleted: usize,
+    blocked: usize,
+    not_found: usize,
+    skipped: usize,
+    would_delete: Vec<String>,
+    session_id: String,
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let mode = parse_evict_mode(input.get("mode").and_then(|v| v.as_str()));
-        let dry_run = input
-            .get("dry_run")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-        let force = input
-            .get("force")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let max_nodes = input
-            .get("max_nodes")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(5000)
-            .clamp(1, 50_000) as usize;
+#[medousa_tool(id = COGNITION_MEMORY_EVICT_ID)]
+impl CognitionMemoryEvictTool {
+    /// Evict Locus memory nodes (dry-run by default). Supports by_filter, purge_session, by_node_ids, and by_sync_keys modes.
+    async fn invoke_typed(
+        &self,
+        input: MemoryEvictInput,
+    ) -> stasis::prelude::Result<MemoryEvictOutput> {
+        let mode = parse_evict_mode(input.mode.as_deref());
+        let dry_run = input.dry_run.unwrap_or(true);
+        let force = input.force.unwrap_or(false);
+        let max_nodes = input.max_nodes.unwrap_or(5000).clamp(1, 50_000);
 
-        let locus_session = resolve_memory_tool_session_id(
-            &input,
+        let locus_session = resolve_memory_tool_session_id_typed(
+            input.session_id.as_deref(),
             &self.turn_scope,
             &self.fallback_chat_session_id,
             self.workshop_dynamic,
@@ -1245,40 +1916,31 @@ impl StasisTool for CognitionMemoryEvictTool {
         if tenant != LOCUS_DEFAULT_TENANT {
             scope.tenant_id = Some(tenant);
         }
-        if let Some(tiers) = input.get("tiers").and_then(|v| v.as_array()) {
+        if let Some(tiers) = input.tiers {
             scope.tiers = Some(
                 tiers
-                    .iter()
-                    .filter_map(|v| v.as_str().map(str::trim).filter(|s| !s.is_empty()))
-                    .map(str::to_string)
+                    .into_iter()
+                    .filter_map(|value| optional_nonempty(&value).map(str::to_string))
                     .collect(),
             );
         }
 
-        let node_ids = input
-            .get("node_ids")
-            .and_then(|v| v.as_array())
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(|v| v.as_str().map(str::trim).filter(|s| !s.is_empty()))
-                    .map(str::to_string)
-                    .collect::<Vec<_>>()
-            });
-        let sync_keys = input
-            .get("sync_keys")
-            .and_then(|v| v.as_array())
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(|v| v.as_str().map(str::trim).filter(|s| !s.is_empty()))
-                    .map(str::to_string)
-                    .collect::<Vec<_>>()
-            });
+        let node_ids = input.node_ids.map(|items| {
+            items
+                .into_iter()
+                .filter_map(|value| optional_nonempty(&value).map(str::to_string))
+                .collect::<Vec<_>>()
+        });
+        let sync_keys = input.sync_keys.map(|items| {
+            items
+                .into_iter()
+                .filter_map(|value| optional_nonempty(&value).map(str::to_string))
+                .collect::<Vec<_>>()
+        });
 
         emit_invoked(
             &self.event_tx,
-            self.name(),
+            COGNITION_MEMORY_EVICT_ID.as_str(),
             &format!("{mode:?} dry_run={dry_run}"),
         )
         .await;
@@ -1299,14 +1961,14 @@ impl StasisTool for CognitionMemoryEvictTool {
             })
             .await?;
 
-        Ok(json!({
-            "dry_run": response.dry_run,
-            "deleted": response.deleted,
-            "blocked": response.blocked,
-            "not_found": response.not_found,
-            "skipped": response.skipped,
-            "would_delete": response.would_delete,
-            "session_id": locus_session,
-        }))
+        Ok(MemoryEvictOutput {
+            dry_run: response.dry_run,
+            deleted: response.deleted,
+            blocked: response.blocked,
+            not_found: response.not_found,
+            skipped: response.skipped,
+            would_delete: response.would_delete,
+            session_id: locus_session,
+        })
     }
 }

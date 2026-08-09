@@ -17,8 +17,10 @@ pub use catalog::{
     ToolSurfaceId, resolve_tool_id,
 };
 pub use compat::{
-    deserialize_lenient_optional_bool, deserialize_lenient_optional_string,
-    deserialize_lenient_optional_u64, deserialize_lenient_optional_usize,
+    deserialize_lenient_optional_bool, deserialize_lenient_optional_f64,
+    deserialize_lenient_optional_i64, deserialize_lenient_optional_string,
+    deserialize_lenient_optional_string_list, deserialize_lenient_optional_u64,
+    deserialize_lenient_optional_usize,
 };
 pub use contract::{
     ContractError, ExternalJson, OpaqueToolPayload, SchemaNormalizationError, ToolContract,
