@@ -12,6 +12,7 @@ members = [
     ".",
     "crates/medousa-types",
     "crates/medousa-types-schema",
+    "crates/medousa-tool-macros",
     "crates/medousa-engine",
     "crates/medousa-sdk",
     "crates/medousa-sdk-iroh",
@@ -53,6 +54,7 @@ path = "src/bin/medousa_tui.rs"
 
 [dependencies]
 medousa-types = { path = "crates/medousa-types" }
+medousa-tool-macros = { path = "crates/medousa-tool-macros" }
 medousa-adapter-common = { path = "crates/medousa-adapter-common" }
 medousa-mcp-gateway = { path = "adapters/medousa-mcp-gateway" }
 medousa-install-support = { path = "crates/medousa-install-support" }

@@ -1,0 +1,5 @@
+error: `medousa_tool` impl must contain exactly one `invoke_typed` method
+ --> tests/ui/fail_missing_handler.rs:9:1
+  |
+9 | impl MissingHandler {}
+  | ^^^^^^^^^^^^^^^^^^^^^^

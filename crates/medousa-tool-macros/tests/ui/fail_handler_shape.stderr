@@ -1,0 +1,5 @@
+error: `invoke_typed` must accept exactly `&self` and one typed input
+  --> tests/ui/fail_handler_shape.rs:11:27
+   |
+11 |     async fn invoke_typed(&self) -> Result<String, ()> {
+   |                           ^^^^^

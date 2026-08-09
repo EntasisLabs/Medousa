@@ -1,0 +1,28 @@
+//! Typed first-party tool contracts and their external runtime adapters.
+//!
+//! Product policy such as mode exposure, authority, and placement deliberately
+//! lives outside this module.
+
+mod catalog;
+mod contract;
+mod stasis_adapter;
+
+pub use catalog::{ToolId, ToolIdError, ToolIdSource, resolve_tool_id};
+pub use contract::{
+    ContractError, ExternalJson, OpaqueToolPayload, SchemaNormalizationError, ToolContract,
+    TypedTool, build_contract, normalize_input_schema, normalize_output_schema,
+};
+pub use medousa_tool_macros::medousa_tool;
+pub use stasis_adapter::{deserialize_input, serialize_output};
+
+#[doc(hidden)]
+pub mod __private {
+    pub use async_trait;
+    pub use serde_json::Value;
+    pub use stasis::application::orchestration::tool_registry::StasisTool;
+    pub use stasis::domain::errors::Result as StasisResult;
+    pub use std::sync::OnceLock;
+}
+
+#[cfg(test)]
+mod tests;

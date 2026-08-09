@@ -1,0 +1,5 @@
+error: `invoke_typed` requires a doc comment used as the tool description
+  --> tests/ui/fail_missing_docs.rs:10:14
+   |
+10 |     async fn invoke_typed(&self, input: String) -> Result<String, ()> {
+   |              ^^^^^^^^^^^^

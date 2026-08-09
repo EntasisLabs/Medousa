@@ -1,0 +1,5 @@
+error: `medousa_tool` does not support generic impls
+ --> tests/ui/fail_generic_impl.rs:9:5
+  |
+9 | impl<T> GenericTool<T> {
+  |     ^^^

@@ -1,0 +1,7 @@
+error: `medousa_tool` must annotate an inherent impl, not a trait impl
+  --> tests/ui/fail_trait_impl.rs:13:1
+   |
+13 | / impl Handler for TraitTool {
+14 | |     fn marker(&self) {}
+15 | | }
+   | |_^

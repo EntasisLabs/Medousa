@@ -1,0 +1,5 @@
+error: `invoke_typed` must use an immutable `&self` receiver
+  --> tests/ui/fail_receiver.rs:11:27
+   |
+11 |     async fn invoke_typed(&mut self, input: String) -> Result<String, ()> {
+   |                           ^^^^^^^^^
