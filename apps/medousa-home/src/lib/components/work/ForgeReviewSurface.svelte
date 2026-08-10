@@ -8,7 +8,7 @@
     projectTitle?: string | null;
     busy?: boolean;
     onOpenFile: (path: string, line?: number) => void | Promise<void>;
-    onRestore: (comparison: ReviewFileDiff) => Promise<void>;
+    onRestore?: (comparison: ReviewFileDiff) => Promise<void>;
     onSelectCandidate?: (attemptId: string) => void | Promise<void>;
     onComment?: (input: {
       path: string;

@@ -32,7 +32,6 @@
     openTrackedTerminal,
     startTrackedAgent,
   } from "$lib/utils/undertakingWorkspace";
-  import DiffSummaryCard from "$lib/components/diff/DiffSummaryCard.svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
   import { attachComposerMenuDismiss } from "$lib/utils/composerMenuDismiss";
@@ -52,9 +51,6 @@
   );
   const review = $derived(
     active && undertakings.review?.work_id === active.workId ? undertakings.review : null,
-  );
-  const reviewCardPaths = $derived(
-    (review?.changed_files ?? []).map((file) => ({ path: file.path })),
   );
   let busy = $state(false);
   let error = $state<string | null>(null);
@@ -162,11 +158,6 @@
       return;
     }
     void lmeWorkspace.openCodeWorkspace(active.workId, active.title);
-  }
-
-  function openReviewTab() {
-    if (!active) return;
-    void lmeWorkspace.openCodeReview(active.workId, `Review · ${active.title}`);
   }
 
   $effect(() => {
@@ -356,15 +347,6 @@
       </p>
     {/if}
   </OverflowMenu>
-  {#if !header && review && review.changed_files.length > 0}
-    <DiffSummaryCard
-      fileCount={review.changed_files.length}
-      additions={0}
-      deletions={0}
-      paths={reviewCardPaths}
-      onViewAll={openReviewTab}
-    />
-  {/if}
   </div>
 {:else if activeMode === "coder"}
   <div class="flex min-w-0 max-w-full items-center gap-2">

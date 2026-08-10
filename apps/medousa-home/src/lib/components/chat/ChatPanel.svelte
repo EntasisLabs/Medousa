@@ -2,6 +2,7 @@
   import { onDestroy, tick } from "svelte";
   import { ArrowDown, LoaderCircle } from "@lucide/svelte";
   import ChatAsyncToolsHint from "$lib/components/chat/ChatAsyncToolsHint.svelte";
+  import ChatChangeReceipt from "$lib/components/chat/ChatChangeReceipt.svelte";
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
   import MarkdownHeadingOutline from "$lib/components/ui/MarkdownHeadingOutline.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
@@ -17,6 +18,7 @@
   import ScriptChatContextChip from "$lib/components/grapheme/ScriptChatContextChip.svelte";
   import UndertakingContextChip from "$lib/components/work/UndertakingContextChip.svelte";
   import { undertakings } from "$lib/stores/undertakings.svelte";
+  import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { activeCodeContext } from "$lib/utils/undertakingWorkspace";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
@@ -175,6 +177,11 @@
 
   /** Stable principal — ignores temporary session swaps during background SSE. */
   const panelSessionId = $derived(chat.focusedSessionId);
+  const chatCodeProject = $derived.by(() => {
+    const active = undertakings.active;
+    if (!active?.boundChatSessionIds.includes(panelSessionId)) return null;
+    return active;
+  });
   const panelMessages = $derived(chat.messagesFor(panelSessionId));
   /**
    * Worker-lane turns stay in the principal thread: they carry the sub-agent's
@@ -341,6 +348,31 @@
     automationsNav.openSection("flows");
     layout.navigateDesktop("automations", { bump: true });
     if (mobile) layout.openMore("automations");
+  }
+
+  async function openChatCodeReview(path?: string, line?: number) {
+    const project = chatCodeProject;
+    if (!project) return;
+    if (path) {
+      await lmeWorkspace.openCodeFile(project.workId, path, { line: line ?? 1 });
+      return;
+    }
+    if (project.humanPhase === "review") {
+      await lmeWorkspace.openCodeReview(project.workId, `Review · ${project.title}`);
+      return;
+    }
+    await lmeWorkspace.openCodeWorkspace(project.workId, project.title);
+  }
+
+  function requestChatCodeRevision(prompt?: string) {
+    const project = chatCodeProject;
+    if (!project) return;
+    chat.draft = prompt ?? `Revise the current changes in ${project.title}. `;
+    void tick().then(() => {
+      composerTextareaEl?.focus();
+      composerTextareaEl?.setSelectionRange(chat.draft.length, chat.draft.length);
+      window.dispatchEvent(new CustomEvent("medousa-chat-composer-focus"));
+    });
   }
 
   async function handleSaveToVault(assistant: ChatMessage, user?: ChatMessage | null) {
@@ -1413,6 +1445,20 @@
       <div class="flex min-h-[200px] items-center justify-center">
         <LoaderCircle size={22} class="animate-spin text-content-quiet/80" aria-label="Loading" />
       </div>
+      {/if}
+      {#if chatCodeProject && !embedded}
+        <ChatChangeReceipt
+          workId={chatCodeProject.workId}
+          projectTitle={chatCodeProject.title}
+          phase={chatCodeProject.humanPhase}
+          review={undertakings.review?.work_id === chatCodeProject.workId
+            ? undertakings.review
+            : null}
+          eventRevision={undertakings.eventRevision}
+          onOpenCode={openChatCodeReview}
+          onRequestRevision={requestChatCodeRevision}
+          onReviewChanged={() => undertakings.select(chatCodeProject.workId)}
+        />
       {/if}
     </div>
     {#if !useMobileChatLayout && !presenceComposerCentered}
