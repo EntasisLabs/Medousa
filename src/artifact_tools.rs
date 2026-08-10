@@ -12,7 +12,7 @@ use crate::events::TuiEvent;
 use crate::runtime_session::{require_active_chat_session_id_async, runtime_bootstrap_session_id};
 use crate::semantic_values::{RequiredContent, TrimmedText};
 use crate::turn_continuation::TurnContinuationScope;
-use crate::typed_tools::{ToolId, medousa_tool};
+use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_ARTIFACT_LIST: &str = "cognition_artifact_list";
 pub const COGNITION_ARTIFACT_READ: &str = "cognition_artifact_read";
@@ -134,23 +134,20 @@ impl CognitionArtifactListTool {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ArtifactListInput {
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-    )]
+    #[serde(default)]
     #[schemars(
         with = "usize",
         range(min = 1, max = 100),
-        skip_serializing_if = "Option::is_none"
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    limit: Option<usize>,
+    limit: CompatOption<usize>,
     /// Optional filter on title or artifact_id
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    query: Option<String>,
+    query: CompatOption<String>,
 }
 
 #[derive(Debug)]
@@ -164,9 +161,10 @@ impl TryFrom<ArtifactListInput> for ArtifactListCommand {
 
     fn try_from(input: ArtifactListInput) -> Result<Self, Self::Error> {
         Ok(Self {
-            limit: input.limit.unwrap_or(20).clamp(1, 100),
+            limit: input.limit.into_option().unwrap_or(20).clamp(1, 100),
             query: input
                 .query
+                .into_option()
                 .as_deref()
                 .and_then(|value| TrimmedText::new(value).ok()),
         })
@@ -285,34 +283,22 @@ impl<'de> Deserialize<'de> for ArtifactReadInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            artifact_id: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-            )]
-            line_start: Option<usize>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-            )]
-            line_end: Option<usize>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-            )]
-            max_chars: Option<usize>,
+            #[serde(default)]
+            artifact_id: CompatOption<String>,
+            #[serde(default)]
+            line_start: CompatOption<usize>,
+            #[serde(default)]
+            line_end: CompatOption<usize>,
+            #[serde(default)]
+            max_chars: CompatOption<usize>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            artifact_id: input.artifact_id,
-            line_start: input.line_start,
-            line_end: input.line_end,
-            max_chars: input.max_chars,
+            artifact_id: input.artifact_id.into_option(),
+            line_start: input.line_start.into_option(),
+            line_end: input.line_end.into_option(),
+            max_chars: input.max_chars.into_option(),
         })
     }
 }
@@ -438,34 +424,22 @@ impl<'de> Deserialize<'de> for ArtifactGrepInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            artifact_id: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            pattern: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-            )]
-            context_lines: Option<usize>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-            )]
-            limit: Option<usize>,
+            #[serde(default)]
+            artifact_id: CompatOption<String>,
+            #[serde(default)]
+            pattern: CompatOption<String>,
+            #[serde(default)]
+            context_lines: CompatOption<usize>,
+            #[serde(default)]
+            limit: CompatOption<usize>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            artifact_id: input.artifact_id,
-            pattern: input.pattern,
-            context_lines: input.context_lines,
-            limit: input.limit,
+            artifact_id: input.artifact_id.into_option(),
+            pattern: input.pattern.into_option(),
+            context_lines: input.context_lines.into_option(),
+            limit: input.limit.into_option(),
         })
     }
 }
@@ -581,46 +555,28 @@ impl<'de> Deserialize<'de> for ArtifactWriteInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            title: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            html: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            presentation: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            artifact_id: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            if_match_hash64: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_u64"
-            )]
-            height: Option<u64>,
+            #[serde(default)]
+            title: CompatOption<String>,
+            #[serde(default)]
+            html: CompatOption<String>,
+            #[serde(default)]
+            presentation: CompatOption<String>,
+            #[serde(default)]
+            artifact_id: CompatOption<String>,
+            #[serde(default)]
+            if_match_hash64: CompatOption<String>,
+            #[serde(default)]
+            height: CompatOption<u64>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            title: input.title,
-            html: input.html,
-            presentation: input.presentation,
-            artifact_id: input.artifact_id,
-            if_match_hash64: input.if_match_hash64,
-            height: input.height,
+            title: input.title.into_option(),
+            html: input.html.into_option(),
+            presentation: input.presentation.into_option(),
+            artifact_id: input.artifact_id.into_option(),
+            if_match_hash64: input.if_match_hash64.into_option(),
+            height: input.height.into_option(),
         })
     }
 }
@@ -864,6 +820,35 @@ mod tests {
         .expect_err("blank html should fail");
         assert!(error.to_string().contains("html is required"));
     }
+
+    #[test]
+    fn artifact_wire_optionals_remain_lenient_for_legacy_values() {
+        let list: ArtifactListInput = serde_json::from_value(serde_json::json!({
+            "limit": "100",
+            "query": 42,
+        }))
+        .expect("list input");
+        assert!(list.limit.into_option().is_none());
+        assert!(list.query.into_option().is_none());
+
+        let write: ArtifactWriteInput = serde_json::from_value(serde_json::json!({
+            "title": 42,
+            "html": false,
+            "presentation": ["panel"],
+            "height": "1200",
+        }))
+        .expect("write input");
+        assert!(write.title.is_none());
+        assert!(write.html.is_none());
+        assert!(write.presentation.is_none());
+        assert!(write.height.is_none());
+
+        let delete: ArtifactDeleteInput = serde_json::from_value(serde_json::json!({
+            "artifact_id": false,
+        }))
+        .expect("delete input");
+        assert!(delete.artifact_id.is_none());
+    }
 }
 
 #[derive(Debug, JsonSchema)]
@@ -880,15 +865,12 @@ impl<'de> Deserialize<'de> for ArtifactDeleteInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            artifact_id: Option<String>,
+            #[serde(default)]
+            artifact_id: CompatOption<String>,
         }
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            artifact_id: input.artifact_id,
+            artifact_id: input.artifact_id.into_option(),
         })
     }
 }
