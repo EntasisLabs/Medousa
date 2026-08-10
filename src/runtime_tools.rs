@@ -1579,16 +1579,54 @@ pub struct RuntimeWorkflowRunInput {
     queue: String,
 }
 
-impl RuntimeWorkflowRunInput {
+#[derive(Debug)]
+struct RuntimeWorkflowRunCommand {
+    name: Option<TrimmedText>,
+    strategy: WorkflowStrategyInput,
+    mode: TrimmedText,
+    steps: Vec<WorkflowStepSpec>,
+    on_failure: WorkflowFailureInput,
+    note: Option<String>,
+    queue: TrimmedText,
+}
+
+impl TryFrom<RuntimeWorkflowRunInput> for RuntimeWorkflowRunCommand {
+    type Error = StasisError;
+
+    fn try_from(input: RuntimeWorkflowRunInput) -> Result<Self, Self::Error> {
+        let required = |value: String, field: &str| {
+            TrimmedText::new(value).map_err(|_| {
+                StasisError::PortFailure(format!(
+                    "cognition_runtime_workflow_run: {field} is required"
+                ))
+            })
+        };
+        let name = input.name.and_then(|value| TrimmedText::new(value).ok());
+        let mode = required(input.mode, "mode")?;
+        let queue = required(input.queue, "queue")?;
+
+        Ok(Self {
+            name,
+            strategy: input.strategy,
+            mode,
+            steps: input.steps.0,
+            on_failure: input.on_failure,
+            note: input.note,
+            queue,
+        })
+    }
+}
+
+impl RuntimeWorkflowRunCommand {
     fn request(&self) -> WorkflowRunRequest {
         WorkflowRunRequest {
-            name: self.name.clone(),
+            name: self.name.as_ref().map(ToString::to_string),
             strategy: self.strategy.as_str().to_string(),
-            mode: self.mode.clone(),
-            steps: self.steps.0.clone(),
+            mode: self.mode.to_string(),
+            steps: self.steps.clone(),
             on_failure: self.on_failure.as_str().to_string(),
             note: self.note.clone(),
-            queue: Some(self.queue.clone()),
+            queue: Some(self.queue.to_string()),
         }
     }
 }
@@ -1619,7 +1657,8 @@ impl CognitionRuntimeWorkflowRunTool {
         &self,
         input: RuntimeWorkflowRunInput,
     ) -> stasis::prelude::Result<RuntimeWorkflowRunOutput> {
-        let request = input.request();
+        let command = RuntimeWorkflowRunCommand::try_from(input)?;
+        let request = command.request();
         validate_workflow_request(&request)?;
         if let Some(rejection) =
             validate_grapheme_steps_for_workflow(self.runtime.as_ref(), &request).await?
@@ -1637,9 +1676,13 @@ impl CognitionRuntimeWorkflowRunTool {
                 tool_name: COGNITION_RUNTIME_WORKFLOW_RUN_ID.as_str(),
                 await_mode: ContinuationAwaitMode::Async,
             });
-        let job_id =
-            enqueue_workflow_job(self.runtime.as_ref(), &payload, &input.queue, continuation)
-                .await?;
+        let job_id = enqueue_workflow_job(
+            self.runtime.as_ref(),
+            &payload,
+            command.queue.as_str(),
+            continuation,
+        )
+        .await?;
         let job_type = workflow_job_type_for_strategy(&request.strategy)
             .unwrap_or(WORKFLOW_SEQUENTIAL_JOB_TYPE);
 
@@ -2572,6 +2615,33 @@ mod tests {
                 .to_string()
                 .contains("cognition_runtime_workflow_schedule: queue is required")
         );
+    }
+
+    #[test]
+    fn workflow_run_command_normalizes_request_fields_once() {
+        let command = RuntimeWorkflowRunCommand::try_from(RuntimeWorkflowRunInput {
+            name: Some(" Run name ".into()),
+            strategy: WorkflowStrategyInput::Handoff,
+            mode: " default ".into(),
+            steps: CompatibleWorkflowSteps(vec![WorkflowStepSpec::Prompt {
+                id: "step-1".into(),
+                user_prompt: "hello".into(),
+                system_prompt: None,
+            }]),
+            on_failure: WorkflowFailureInput::Continue,
+            note: Some("  keep note\n".into()),
+            queue: " queue-a ".into(),
+        })
+        .expect("workflow run command");
+
+        let request = command.request();
+        assert_eq!(command.name.as_ref().unwrap().as_str(), "Run name");
+        assert_eq!(command.mode.as_str(), "default");
+        assert_eq!(command.queue.as_str(), "queue-a");
+        assert_eq!(request.strategy, "handoff");
+        assert_eq!(request.queue.as_deref(), Some("queue-a"));
+        assert_eq!(request.note.as_deref(), Some("  keep note\n"));
+        assert_eq!(request.steps.len(), 1);
     }
 
     #[tokio::test]
