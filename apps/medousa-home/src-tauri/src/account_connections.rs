@@ -462,7 +462,7 @@ pub async fn account_cli_install(account: String) -> Result<AccountCliInstallRes
                 Err(err) => {
                     detail = format!(
                         "{detail} (Codex ACP adapter not installed yet: {err}. \
-                         Medousa will try `npx -y @agentclientprotocol/codex-acp` at runtime.)"
+                         Medousa will try `npx -y @agentclientprotocol/codex-acp@1.1.14` at runtime.)"
                     );
                 }
             }
@@ -522,7 +522,7 @@ if (-not $bash) { throw "Cursor Agent CLI install needs bash (Git Bash or WSL) o
                 Err(err) => {
                     detail = format!(
                         "{detail} (Codex ACP adapter not installed yet: {err}. \
-                         Medousa will try `npx -y @agentclientprotocol/codex-acp` at runtime.)"
+                         Medousa will try `npx -y @agentclientprotocol/codex-acp@1.1.14` at runtime.)"
                     );
                 }
             }
@@ -537,7 +537,7 @@ if (-not $bash) { throw "Cursor Agent CLI install needs bash (Git Bash or WSL) o
     .map_err(|err| format!("install task failed: {err}"))?
 }
 
-/// Install `@agentclientprotocol/codex-acp` so ChatGPT runtime can speak ACP.
+/// Install the protocol-tested Codex ACP adapter so ChatGPT runtime can speak ACP.
 fn ensure_codex_acp_adapter() -> Result<String, String> {
     ensure_vendor_cli_path();
     if command_on_path("codex-acp") {
@@ -549,7 +549,7 @@ fn ensure_codex_acp_adapter() -> Result<String, String> {
         .ok_or_else(|| "npm not found".to_string())?;
     let mut command = Command::new(npm);
     command
-        .args(["install", "-g", "@agentclientprotocol/codex-acp"])
+        .args(["install", "-g", "@agentclientprotocol/codex-acp@1.1.14"])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
@@ -595,8 +595,21 @@ pub async fn account_chatgpt_begin_device_login() -> Result<DeviceAuthStart, Str
     let output = Command::new(&command).args(["login", "status"]).output();
     if let Ok(status) = output {
         let text = String::from_utf8_lossy(&status.stdout);
-        if text.to_lowercase().contains("logged in") && !text.to_lowercase().contains("not") {
+        let normalized = text.to_lowercase();
+        if normalized.contains("logged in using chatgpt") {
             return Err("Already signed in to ChatGPT — refresh status instead".into());
+        }
+        if normalized.contains("api key") || normalized.contains("apikey") {
+            let logout = Command::new(&command)
+                .arg("logout")
+                .output()
+                .map_err(|err| format!("couldn't replace Codex API-key login: {err}"))?;
+            if !logout.status.success() {
+                return Err(
+                    "Codex is using an API key and could not sign out — run `codex logout`, then connect ChatGPT again"
+                        .into(),
+                );
+            }
         }
     }
 

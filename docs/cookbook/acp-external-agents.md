@@ -43,7 +43,7 @@ Home: Tauri commands → `client().agents()` only (`daemon/agents.rs`).
 
 ## ACP crate
 
-`crates/medousa-acp-client` — `ExternalAcpClient` spawns Cursor (`agent acp`) or the Codex ACP adapter (`codex-acp`, or `npx -y @agentclientprotocol/codex-acp` — stock `codex` has no `acp` subcommand). Missing CLI → stub bridge. Spawn/handshake failures return errors (no silent stub). Handshake: `initialize` → `session/new` → `session/prompt`; streams `session/update` chunks and replies to `session/request_permission`. Force stub: `MEDOUSA_ACP_FORCE_STUB=1`. Demo permissions: `MEDOUSA_ACP_STUB_PERMISSION=1`. Permission wait timeout (default-deny): `MEDOUSA_ACP_PERMISSION_TIMEOUT_SECS` (default `300`).
+`crates/medousa-acp-client` — `ExternalAcpClient` spawns Cursor (`agent acp`) or the Codex ACP adapter (`codex-acp`, or the pinned `npx -y @agentclientprotocol/codex-acp@1.1.14` fallback — stock `codex` has no `acp` subcommand). Missing CLI → stub bridge. Spawn/handshake failures return errors (no silent stub). Handshake: `initialize` → `session/new` → optional `session/set_config_option` → `session/prompt`; streams `session/update` chunks and replies to `session/request_permission`. Force stub: `MEDOUSA_ACP_FORCE_STUB=1`. Demo permissions: `MEDOUSA_ACP_STUB_PERMISSION=1`. Permission wait timeout (default-deny): `MEDOUSA_ACP_PERMISSION_TIMEOUT_SECS` (default `300`).
 
 ## Account sign-in (0.7.0)
 
@@ -51,7 +51,7 @@ External runtimes need the vendor CLI signed in **before** `create_session`. Med
 
 | Runtime | Install | Sign-in | Sign-out |
 |---------|---------|---------|----------|
-| **ChatGPT / Codex** | Connections → **Install** (official Codex installer). ACP uses `codex-acp` / `npx -y @agentclientprotocol/codex-acp` | `codex login` (browser) or `codex login --device-auth` | `codex logout` |
+| **ChatGPT / Codex** | Connections → **Install** (official Codex installer). ACP uses `codex-acp` / pinned `npx -y @agentclientprotocol/codex-acp@1.1.14` | `codex login` (browser) or `codex login --device-auth` | `codex logout` |
 | **Cursor** | Connections → **Install** (official Cursor Agent installer) | Prefer `cursor agent login` (falls back to `agent login`); same auth store | `cursor agent logout` / `agent logout` |
 
 Home: **Settings → Connections** installs missing CLIs via the vendor installers, runs login via Tauri (`account_connections.rs`), and probes status without reading tokens. The daemon surfaces it on each runtime:

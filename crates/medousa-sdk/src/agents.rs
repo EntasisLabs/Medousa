@@ -3,7 +3,8 @@ use medousa_types::{
     AgentPermissionRequestListResponse, AgentPermissionResolveRequest,
     AgentPermissionResolveResponse, AgentRuntimeListResponse, AgentSessionPromptRequest,
     AgentSessionPromptResponse, CancelAgentSessionResponse, CreateAgentSessionRequest,
-    CreateAgentSessionResponse, InteractiveTurnStreamEvent,
+    CreateAgentSessionResponse, InteractiveTurnStreamEvent, SetAgentSessionConfigOptionRequest,
+    SetAgentSessionConfigOptionResponse,
 };
 
 #[cfg(all(feature = "async", feature = "sse"))]
@@ -56,10 +57,23 @@ impl AgentsApi<'_> {
     ) -> Result<AgentSessionPromptResponse, crate::SdkError> {
         let body =
             serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
-        let path = format!(
-            "/v1/agents/sessions/{}/prompt",
-            agent_session_id.trim()
-        );
+        let path = format!("/v1/agents/sessions/{}/prompt", agent_session_id.trim());
+        let value = self
+            .client
+            .transport()
+            .post_json(self.client.base_url(), &path, body)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn set_config_option(
+        &self,
+        agent_session_id: &str,
+        request: &SetAgentSessionConfigOptionRequest,
+    ) -> Result<SetAgentSessionConfigOptionResponse, crate::SdkError> {
+        let body =
+            serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let path = format!("/v1/agents/sessions/{}/config", agent_session_id.trim());
         let value = self
             .client
             .transport()
@@ -72,10 +86,7 @@ impl AgentsApi<'_> {
         &self,
         agent_session_id: &str,
     ) -> Result<CancelAgentSessionResponse, crate::SdkError> {
-        let path = format!(
-            "/v1/agents/sessions/{}/cancel",
-            agent_session_id.trim()
-        );
+        let path = format!("/v1/agents/sessions/{}/cancel", agent_session_id.trim());
         let value = self
             .client
             .transport()
@@ -155,10 +166,7 @@ impl AgentsApi<'_> {
     ) -> Result<AgentPermissionResolveResponse, crate::SdkError> {
         let body =
             serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
-        let path = format!(
-            "/v1/agents/permission-requests/{}/deny",
-            request_id.trim()
-        );
+        let path = format!("/v1/agents/permission-requests/{}/deny", request_id.trim());
         let value = self
             .client
             .transport()

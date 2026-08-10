@@ -10,6 +10,7 @@
 
 const STORAGE_KEY = "medousa-home-agent-runtime-v1";
 const AGENT_SESSION_KEY = "medousa-home-agent-session-v1";
+const AGENT_CONFIG_KEY = "medousa-home-agent-config-v1";
 
 export type ChatAgentRuntime = "medousa" | "cursor" | "codex";
 
@@ -94,6 +95,35 @@ export function clearSessionAgentSessionId(sessionId: string) {
   setSessionAgentSessionId(sessionId, null);
 }
 
+export function getSessionAgentConfigOptions(sessionId: string): unknown[] {
+  if (typeof localStorage === "undefined") return [];
+  try {
+    const all = JSON.parse(localStorage.getItem(AGENT_CONFIG_KEY) ?? "{}") as Record<
+      string,
+      unknown
+    >;
+    const value = all[sessionId.trim()];
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+
+export function setSessionAgentConfigOptions(sessionId: string, options: unknown[]) {
+  if (typeof localStorage === "undefined" || !sessionId.trim()) return;
+  try {
+    const all = JSON.parse(localStorage.getItem(AGENT_CONFIG_KEY) ?? "{}") as Record<
+      string,
+      unknown
+    >;
+    if (options.length > 0) all[sessionId.trim()] = options;
+    else delete all[sessionId.trim()];
+    localStorage.setItem(AGENT_CONFIG_KEY, JSON.stringify(all));
+  } catch {
+    // Storage is a convenience cache; the daemon remains authoritative.
+  }
+}
+
 export function setSessionAgentRuntime(
   sessionId: string,
   runtime: ChatAgentRuntime,
@@ -111,6 +141,7 @@ export function setSessionAgentRuntime(
   // Switching runtime (including back to Medousa) drops the ACP session id.
   if (previous !== runtime) {
     clearSessionAgentSessionId(trimmed);
+    setSessionAgentConfigOptions(trimmed, []);
   }
 }
 

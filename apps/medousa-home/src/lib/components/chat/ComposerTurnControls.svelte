@@ -20,9 +20,10 @@
 
   interface Props {
     disabled?: boolean;
+    showNativeControls?: boolean;
   }
 
-  let { disabled = false }: Props = $props();
+  let { disabled = false, showNativeControls = true }: Props = $props();
 
   let openMenu = $state<TurnMenu | null>(null);
   let rootEl = $state<HTMLDivElement | null>(null);
@@ -135,39 +136,41 @@
     <ChevronDown size={12} strokeWidth={2} class="composer-turn-trigger-chevron shrink-0" />
   </button>
 
-  <button
-    bind:this={stanceTriggerEl}
-    type="button"
-    class="composer-turn-trigger"
-    class:composer-turn-trigger-open={openMenu === "stance"}
-    disabled={pickerDisabled}
-    aria-haspopup="listbox"
-    aria-expanded={openMenu === "stance"}
-    aria-label="Stance — {depthLabel}"
-    title="Stance — {depthLabel}"
-    onclick={() => toggle("stance")}
-  >
-    <Compass size={13} strokeWidth={1.85} class="composer-turn-trigger-icon" />
-    <span class="composer-turn-trigger-label">{depthLabel}</span>
-    <ChevronDown size={12} strokeWidth={2} class="composer-turn-trigger-chevron shrink-0" />
-  </button>
+  {#if showNativeControls}
+    <button
+      bind:this={stanceTriggerEl}
+      type="button"
+      class="composer-turn-trigger"
+      class:composer-turn-trigger-open={openMenu === "stance"}
+      disabled={pickerDisabled}
+      aria-haspopup="listbox"
+      aria-expanded={openMenu === "stance"}
+      aria-label="Stance — {depthLabel}"
+      title="Stance — {depthLabel}"
+      onclick={() => toggle("stance")}
+    >
+      <Compass size={13} strokeWidth={1.85} class="composer-turn-trigger-icon" />
+      <span class="composer-turn-trigger-label">{depthLabel}</span>
+      <ChevronDown size={12} strokeWidth={2} class="composer-turn-trigger-chevron shrink-0" />
+    </button>
 
-  <button
-    bind:this={reasoningTriggerEl}
-    type="button"
-    class="composer-turn-trigger"
-    class:composer-turn-trigger-open={openMenu === "reasoning"}
-    disabled={pickerDisabled}
-    aria-haspopup="listbox"
-    aria-expanded={openMenu === "reasoning"}
-    aria-label="Reasoning — {reasoningLabel}"
-    title="Reasoning — {reasoningLabel}"
-    onclick={() => toggle("reasoning")}
-  >
-    <Brain size={13} strokeWidth={1.85} class="composer-turn-trigger-icon" />
-    <span class="composer-turn-trigger-label">{reasoningLabel}</span>
-    <ChevronDown size={12} strokeWidth={2} class="composer-turn-trigger-chevron shrink-0" />
-  </button>
+    <button
+      bind:this={reasoningTriggerEl}
+      type="button"
+      class="composer-turn-trigger"
+      class:composer-turn-trigger-open={openMenu === "reasoning"}
+      disabled={pickerDisabled}
+      aria-haspopup="listbox"
+      aria-expanded={openMenu === "reasoning"}
+      aria-label="Reasoning — {reasoningLabel}"
+      title="Reasoning — {reasoningLabel}"
+      onclick={() => toggle("reasoning")}
+    >
+      <Brain size={13} strokeWidth={1.85} class="composer-turn-trigger-icon" />
+      <span class="composer-turn-trigger-label">{reasoningLabel}</span>
+      <ChevronDown size={12} strokeWidth={2} class="composer-turn-trigger-chevron shrink-0" />
+    </button>
+  {/if}
 
   {#if openMenu === "voice"}
     <BodyPortal>
@@ -201,7 +204,7 @@
         </div>
       </div>
     </BodyPortal>
-  {:else if openMenu === "stance"}
+  {:else if showNativeControls && openMenu === "stance"}
     <BodyPortal>
       <div
         bind:this={menuEl}
@@ -233,7 +236,7 @@
         </div>
       </div>
     </BodyPortal>
-  {:else if openMenu === "reasoning"}
+  {:else if showNativeControls && openMenu === "reasoning"}
     <BodyPortal>
       <div
         bind:this={menuEl}

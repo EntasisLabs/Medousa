@@ -631,6 +631,7 @@ pub fn run() {
             daemon::agents::agents_list_runtimes,
             daemon::agents::agents_create_session,
             daemon::agents::agents_prompt,
+            daemon::agents::agents_set_config_option,
             daemon::agents::agents_cancel,
             daemon::agents::agents_list_permission_requests,
             daemon::agents::agents_approve_permission,

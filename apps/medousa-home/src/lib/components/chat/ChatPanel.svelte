@@ -9,6 +9,7 @@
   import ComposerSkillPills from "$lib/components/chat/ComposerSkillPills.svelte";
   import ComposerSkillSlashMenu from "$lib/components/chat/ComposerSkillSlashMenu.svelte";
   import ComposerTurnControls from "$lib/components/chat/ComposerTurnControls.svelte";
+  import AgentSessionControls from "$lib/components/chat/AgentSessionControls.svelte";
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
   import ModeProposalBar from "$lib/components/chat/ModeProposalBar.svelte";
   import AgentPermissionBar from "$lib/components/chat/AgentPermissionBar.svelte";
@@ -40,15 +41,19 @@
     getSessionAgentMode,
     getSessionCodeBinding,
     promptAgentSession,
+    setAgentSessionConfigOption,
     steerBoundWorkshop,
+    type AgentSessionConfigOption,
   } from "$lib/daemon";
   import {
     agentSessionStreamUrl,
     clearSessionAgentSessionId,
     getSessionAgentRuntime,
     getSessionAgentSessionId,
+    getSessionAgentConfigOptions,
     setSessionAgentRuntime,
     setSessionAgentSessionId,
+    setSessionAgentConfigOptions,
     type ChatAgentRuntime,
   } from "$lib/utils/sessionAgentRuntime";
   import type { TurnTicketResponse } from "$lib/types/session";
@@ -752,22 +757,6 @@
       let streamUrl = agentSessionId ? agentSessionStreamUrl(agentSessionId) : "";
       let streamReady = true;
       let acceptedAt = new Date().toISOString();
-      let promptDispatched = false;
-
-      if (agentSessionId) {
-        try {
-          await promptAgentSession(agentSessionId, prompt, activeCodeContext(chat.sessionId));
-          promptDispatched = true;
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          // Stale local id (daemon restart / cancel) — recreate once.
-          if (!/unknown agent session|not found|404/i.test(message)) {
-            throw err;
-          }
-          clearSessionAgentSessionId(chat.sessionId);
-          agentSessionId = null;
-        }
-      }
 
       if (!agentSessionId) {
         // Only pass work_id when this chat is already bound to an undertaking
@@ -787,6 +776,8 @@
         });
         agentSessionId = acceptedAgent.agent_session_id;
         setSessionAgentSessionId(chat.sessionId, agentSessionId);
+        agentConfigOptions = acceptedAgent.config_options ?? [];
+        setSessionAgentConfigOptions(chat.sessionId, agentConfigOptions);
         streamUrl = acceptedAgent.stream_url;
         streamReady = acceptedAgent.stream_ready;
         acceptedAt = acceptedAgent.accepted_at_utc ?? acceptedAt;
@@ -814,8 +805,16 @@
         ticket.session_id,
         ticket.stream_url,
       );
-      if (!promptDispatched) {
+      try {
         await promptAgentSession(agentSessionId, prompt, activeCodeContext(chat.sessionId));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (/unknown agent session|not found|404/i.test(message)) {
+          clearSessionAgentSessionId(chat.sessionId);
+          setSessionAgentConfigOptions(chat.sessionId, []);
+          agentConfigOptions = [];
+        }
+        throw err;
       }
       return;
     }
@@ -859,9 +858,16 @@
   let sessionRuntime = $state<ChatAgentRuntime>(
     getSessionAgentRuntime(chat.sessionId),
   );
+  let agentConfigOptions = $state<AgentSessionConfigOption[]>(
+    getSessionAgentConfigOptions(chat.sessionId) as AgentSessionConfigOption[],
+  );
+  let preparingAgent = $state(false);
 
   $effect(() => {
     sessionRuntime = getSessionAgentRuntime(chat.sessionId);
+    agentConfigOptions = getSessionAgentConfigOptions(
+      chat.sessionId,
+    ) as AgentSessionConfigOption[];
   });
 
   function onRuntimeChange(value: ChatAgentRuntime) {
@@ -873,6 +879,47 @@
         // Best-effort — local id already cleared by setSessionAgentRuntime.
       });
     }
+    agentConfigOptions = [];
+    if (value !== "medousa") {
+      void prepareAgentSession(value).catch(() => {
+        // Sending the first message retries creation and surfaces the error in
+        // the normal composer failure path.
+      });
+    }
+  }
+
+  async function prepareAgentSession(runtimeChoice: Exclude<ChatAgentRuntime, "medousa">) {
+    const sessionId = chat.sessionId;
+    if (preparingAgent || getSessionAgentSessionId(sessionId)) return;
+    preparingAgent = true;
+    try {
+      const workId = undertakings.active?.boundChatSessionIds.includes(sessionId)
+        ? undertakings.active.workId
+        : null;
+      const accepted = await createAgentSession({
+        session_id: sessionId,
+        runtime: runtimeChoice,
+        work_id: workId,
+      });
+      if (getSessionAgentRuntime(sessionId) !== runtimeChoice) {
+        void cancelAgentSession(accepted.agent_session_id);
+        return;
+      }
+      setSessionAgentSessionId(sessionId, accepted.agent_session_id);
+      const options = accepted.config_options ?? [];
+      setSessionAgentConfigOptions(sessionId, options);
+      if (chat.sessionId === sessionId) agentConfigOptions = options;
+    } finally {
+      preparingAgent = false;
+    }
+  }
+
+  async function updateAgentConfig(configId: string, value: unknown) {
+    const agentSessionId = getSessionAgentSessionId(chat.sessionId);
+    if (!agentSessionId) return;
+    const response = await setAgentSessionConfigOption(agentSessionId, configId, value);
+    agentConfigOptions = response.config_options;
+    setSessionAgentConfigOptions(chat.sessionId, agentConfigOptions);
   }
 
   type FailedSend = {
@@ -1594,7 +1641,15 @@
           {/if}
           <ComposerTurnControls
             disabled={connection.offline || chat.composerBlocked}
+            showNativeControls={sessionRuntime === "medousa"}
           />
+          {#if sessionRuntime !== "medousa"}
+            <AgentSessionControls
+              options={agentConfigOptions}
+              disabled={connection.offline || chat.composerBlocked || preparingAgent}
+              onChange={updateAgentConfig}
+            />
+          {/if}
         </div>
       {/if}
       <ComposerSkillSlashMenu

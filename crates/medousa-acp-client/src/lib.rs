@@ -5,7 +5,7 @@
 //!
 //! Stub session + Cursor/Codex process adapters (spawn when binary exists;
 //! real `session/new` → `session/prompt` → `session/update` pump).
-//! Cursor: `agent acp`. Codex: `codex-acp` or `npx -y @agentclientprotocol/codex-acp`
+//! Cursor: `agent acp`. Codex: `codex-acp` or `npx -y @agentclientprotocol/codex-acp@1.1.14`
 //! (stock `codex` has no `acp` subcommand). Missing CLI → stub; spawn/handshake
 //! failures surface as errors (no silent stub). Force stub: `MEDOUSA_ACP_FORCE_STUB=1`.
 
@@ -66,8 +66,8 @@ pub struct AcpAgentConfig {
 
 impl AcpAgentConfig {
     pub fn cursor_default() -> Self {
-        let command = std::env::var("MEDOUSA_ACP_CURSOR_COMMAND")
-            .unwrap_or_else(|_| "agent".into());
+        let command =
+            std::env::var("MEDOUSA_ACP_CURSOR_COMMAND").unwrap_or_else(|_| "agent".into());
         let args = if std::env::var("MEDOUSA_ACP_CURSOR_ARGS").is_ok() {
             env_args("MEDOUSA_ACP_CURSOR_ARGS", &["acp"])
         } else {
@@ -107,7 +107,8 @@ impl AcpAgentConfig {
     }
 }
 
-/// Prefer an installed `codex-acp` binary; otherwise `npx -y @agentclientprotocol/codex-acp`.
+/// Prefer an installed `codex-acp` binary; otherwise use the protocol-tested
+/// adapter version rather than floating on npm latest.
 fn resolve_codex_acp_launch() -> (String, Vec<String>) {
     if let Some(path) = resolve_command_path("codex-acp") {
         return (path.display().to_string(), Vec::new());
@@ -115,10 +116,7 @@ fn resolve_codex_acp_launch() -> (String, Vec<String>) {
     if let Some(npx) = resolve_command_path("npx") {
         return (
             npx.display().to_string(),
-            vec![
-                "-y".into(),
-                "@agentclientprotocol/codex-acp".into(),
-            ],
+            vec!["-y".into(), "@agentclientprotocol/codex-acp@1.1.14".into()],
         );
     }
     // Last resort — will fail with a clear spawn/handshake error.
@@ -179,7 +177,9 @@ fn dir_has_files(dir: &PathBuf) -> bool {
 
 fn path_has_content(path: &PathBuf) -> bool {
     if path.is_file() {
-        return std::fs::metadata(path).map(|m| m.len() > 0).unwrap_or(false);
+        return std::fs::metadata(path)
+            .map(|m| m.len() > 0)
+            .unwrap_or(false);
     }
     if path.is_dir() {
         return dir_has_files(path);
@@ -190,19 +190,26 @@ fn path_has_content(path: &PathBuf) -> bool {
 /// Codex CLI stores ChatGPT login under `~/.codex/auth.json` (with optional
 /// config/credentials siblings). We only check existence, never parse.
 fn codex_auth_probe(binary_present: bool) -> RuntimeAuthProbe {
+    if binary_present && let Some((status, detail)) = codex_auth_from_cli_status() {
+        return RuntimeAuthProbe {
+            status,
+            binary_present: true,
+            detail: Some(detail),
+        };
+    }
     let codex_dir = home_dir().map(|home| home.join(".codex"));
     let auth_file = codex_dir.as_ref().map(|dir| dir.join("auth.json"));
     let creds_dir = codex_dir.as_ref().map(|dir| dir.join("credentials"));
-    let signed_in = auth_file
-        .as_ref()
-        .map(path_has_content)
-        .unwrap_or(false)
+    let signed_in = auth_file.as_ref().map(path_has_content).unwrap_or(false)
         || creds_dir.as_ref().map(path_has_content).unwrap_or(false);
 
     let (status, detail) = if signed_in {
         (
-            RuntimeAuthStatus::SignedIn,
-            Some("ChatGPT sign-in found in ~/.codex".into()),
+            RuntimeAuthStatus::SignedOut,
+            Some(
+                "Codex credentials exist, but ChatGPT subscription auth could not be verified — run `codex login status`"
+                    .into(),
+            ),
         )
     } else if codex_dir.as_ref().map(|d| d.is_dir()).unwrap_or(false) {
         (
@@ -225,6 +232,45 @@ fn codex_auth_probe(binary_present: bool) -> RuntimeAuthProbe {
         binary_present,
         detail,
     }
+}
+
+fn codex_auth_from_cli_status() -> Option<(RuntimeAuthStatus, String)> {
+    ensure_vendor_cli_path();
+    let program = resolve_command_path("codex")?;
+    let output = std::process::Command::new(program)
+        .args(["login", "status"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .ok()?;
+    let text = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    Some(parse_codex_login_status(output.status.success(), &text))
+}
+
+fn parse_codex_login_status(success: bool, raw: &str) -> (RuntimeAuthStatus, String) {
+    let normalized = raw.to_ascii_lowercase();
+    if success && normalized.contains("logged in using chatgpt") {
+        return (
+            RuntimeAuthStatus::SignedIn,
+            "ChatGPT subscription connected".into(),
+        );
+    }
+    if normalized.contains("api key") || normalized.contains("apikey") {
+        return (
+            RuntimeAuthStatus::SignedOut,
+            "Codex is using an API key — sign out and connect ChatGPT to use subscription access"
+                .into(),
+        );
+    }
+    (
+        RuntimeAuthStatus::SignedOut,
+        "ChatGPT subscription is not connected — run `codex login`".into(),
+    )
 }
 
 /// Cursor Agent CLI keeps tokens in the OS keychain / secure storage — not a
@@ -314,8 +360,7 @@ fn cursor_auth_probe(binary_present: bool) -> RuntimeAuthProbe {
 /// Ask the Cursor Agent CLI — tokens live in keychain, so this is the reliable check.
 fn cursor_auth_from_cli_status() -> Option<(RuntimeAuthStatus, Option<String>)> {
     ensure_vendor_cli_path();
-    let program = resolve_command_path("agent")
-        .or_else(|| resolve_command_path("cursor-agent"))?;
+    let program = resolve_command_path("agent").or_else(|| resolve_command_path("cursor-agent"))?;
     let output = std::process::Command::new(&program)
         .args(["status", "--format", "json"])
         .stdin(std::process::Stdio::null())
@@ -424,11 +469,17 @@ pub fn runtime_auth_probe(kind: AgentRuntimeKind) -> RuntimeAuthProbe {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AcpEvent {
-    MessageDelta { text: String },
-    MessageDone { text: String },
+    MessageDelta {
+        text: String,
+    },
+    MessageDone {
+        text: String,
+    },
     /// Thinking/reasoning trace (`agent_thought_chunk`) — routed to the
     /// collapsed "thinking" tray, not the answer body.
-    ReasoningDelta { text: String },
+    ReasoningDelta {
+        text: String,
+    },
     ToolCall {
         id: String,
         name: String,
@@ -438,7 +489,9 @@ pub enum AcpEvent {
         id: String,
         summary: String,
     },
-    Error { message: String },
+    Error {
+        message: String,
+    },
     Done,
 }
 
@@ -487,11 +540,7 @@ impl AcpClient for StubAcpClient {
         if matches!(config.kind, AgentRuntimeKind::Medousa) {
             bail!("use native Medousa turn path for medousa runtime");
         }
-        let id = AcpSessionId(format!(
-            "stub-{}-{}",
-            config.kind.as_str(),
-            uuid_v4_lite()
-        ));
+        let id = AcpSessionId(format!("stub-{}-{}", config.kind.as_str(), uuid_v4_lite()));
         let mut guard = self.sessions.lock().expect("stub sessions");
         guard.insert(
             id.0.clone(),
@@ -674,7 +723,12 @@ pub fn common_vendor_bin_dirs() -> Vec<PathBuf> {
         }
         #[cfg(windows)]
         {
-            dirs.push(home.join("AppData").join("Local").join("Programs").join("codex"));
+            dirs.push(
+                home.join("AppData")
+                    .join("Local")
+                    .join("Programs")
+                    .join("codex"),
+            );
             dirs.push(home.join("AppData").join("Roaming").join("npm"));
         }
     }
@@ -725,8 +779,8 @@ pub fn runtime_availability(kind: AgentRuntimeKind) -> (bool, Option<String>, Op
                 Ok(c) => c,
                 Err(err) => return (false, None, Some(err.to_string())),
             };
-            let available = command_available(&cfg.command)
-                || PathBuf::from(&cfg.command).is_file();
+            let available =
+                command_available(&cfg.command) || PathBuf::from(&cfg.command).is_file();
             let detail = if available {
                 Some(format!(
                     "command '{}' {} ready",
@@ -769,6 +823,9 @@ struct ProcessSession {
     pending_prompt_id: Option<u64>,
     /// Permission JSON-RPC id → allow option ids (first is preferred).
     permission_allow_options: HashMap<String, Vec<String>>,
+    /// Provider-advertised ACP session controls from `session/new`, resume, or
+    /// `session/set_config_option`.
+    config_options: Vec<Value>,
 }
 
 /// Spawns Cursor/Codex ACP stdio when the binary exists; otherwise errors loudly.
@@ -816,6 +873,28 @@ impl ExternalAcpClient {
                     None
                 }
             })
+    }
+
+    pub async fn session_config_options(&self, session: &AcpSessionId) -> Vec<Value> {
+        let guard = self.processes.lock().await;
+        guard
+            .get(&session.0)
+            .map(|proc| proc.config_options.clone())
+            .unwrap_or_default()
+    }
+
+    pub async fn set_session_config_option(
+        &self,
+        session: &AcpSessionId,
+        config_id: &str,
+        value: Value,
+    ) -> Result<Vec<Value>> {
+        let mut guard = self.processes.lock().await;
+        let proc = guard
+            .get_mut(&session.0)
+            .ok_or_else(|| anyhow::anyhow!("unknown ACP session {}", session.0))?;
+        send_set_session_config_option(proc, config_id, value).await?;
+        Ok(proc.config_options.clone())
     }
 
     /// Create a new ACP session, or resume a prior wire `sessionId` when the
@@ -870,11 +949,7 @@ impl ExternalAcpClient {
 
         match handshake {
             Ok(resumed) => {
-                let id = AcpSessionId(format!(
-                    "acp-{}-{}",
-                    config.kind.as_str(),
-                    uuid_v4_lite()
-                ));
+                let id = AcpSessionId(format!("acp-{}-{}", config.kind.as_str(), uuid_v4_lite()));
                 let wire = proc.acp_session_id.clone();
                 self.processes.lock().await.insert(id.0.clone(), proc);
                 Ok((id, wire, resumed))
@@ -905,11 +980,8 @@ impl ExternalAcpClient {
                             launch.args.join(" ")
                         );
                     }
-                    let id = AcpSessionId(format!(
-                        "acp-{}-{}",
-                        config.kind.as_str(),
-                        uuid_v4_lite()
-                    ));
+                    let id =
+                        AcpSessionId(format!("acp-{}-{}", config.kind.as_str(), uuid_v4_lite()));
                     let wire = fresh.acp_session_id.clone();
                     self.processes.lock().await.insert(id.0.clone(), fresh);
                     return Ok((id, wire, false));
@@ -950,11 +1022,7 @@ impl AcpClient for ExternalAcpClient {
 
         match spawn_acp_process(&launch).await {
             Ok(mut proc) => {
-                let id = AcpSessionId(format!(
-                    "acp-{}-{}",
-                    config.kind.as_str(),
-                    uuid_v4_lite()
-                ));
+                let id = AcpSessionId(format!("acp-{}-{}", config.kind.as_str(), uuid_v4_lite()));
                 if let Err(err) = handshake_session(&mut proc).await {
                     let _ = proc.child.kill().await;
                     bail!(
@@ -1051,8 +1119,8 @@ impl AcpClient for ExternalAcpClient {
 
 async fn spawn_acp_process(config: &AcpAgentConfig) -> Result<ProcessSession> {
     ensure_vendor_cli_path();
-    let program = resolve_command_path(&config.command)
-        .unwrap_or_else(|| PathBuf::from(&config.command));
+    let program =
+        resolve_command_path(&config.command).unwrap_or_else(|| PathBuf::from(&config.command));
     let mut cmd = Command::new(&program);
     cmd.args(&config.args)
         .stdin(Stdio::piped())
@@ -1062,6 +1130,15 @@ async fn spawn_acp_process(config: &AcpAgentConfig) -> Result<ProcessSession> {
     // Child inherits the enriched PATH so nested tools (npx → node, etc.) resolve.
     if let Ok(path) = std::env::var("PATH") {
         cmd.env("PATH", path);
+    }
+    if matches!(config.kind, AgentRuntimeKind::Codex) {
+        // "ChatGPT / Codex" is a subscription-backed runtime. Never allow a
+        // native Medousa OpenAI key to silently change its billing route.
+        cmd.env_remove("OPENAI_API_KEY")
+            .env_remove("CODEX_API_KEY")
+            .env_remove("MODEL_PROVIDER")
+            .env("DEFAULT_AUTH_REQUEST", r#"{"methodId":"chat-gpt"}"#)
+            .env("CODEX_CONFIG", codex_subscription_config());
     }
     if let Some(cwd) = &config.cwd {
         cmd.current_dir(cwd);
@@ -1073,7 +1150,10 @@ async fn spawn_acp_process(config: &AcpAgentConfig) -> Result<ProcessSession> {
             config.args
         )
     })?;
-    let stdin = child.stdin.take().ok_or_else(|| anyhow::anyhow!("no stdin"))?;
+    let stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("no stdin"))?;
     let stdout = child
         .stdout
         .take()
@@ -1089,7 +1169,21 @@ async fn spawn_acp_process(config: &AcpAgentConfig) -> Result<ProcessSession> {
         cwd: config.cwd.clone(),
         pending_prompt_id: None,
         permission_allow_options: HashMap::new(),
+        config_options: Vec::new(),
     })
+}
+
+fn codex_subscription_config() -> String {
+    codex_subscription_config_from(std::env::var("CODEX_CONFIG").ok().as_deref())
+}
+
+fn codex_subscription_config_from(existing: Option<&str>) -> String {
+    let mut config = existing
+        .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    config.insert("forced_login_method".into(), json!("chatgpt"));
+    Value::Object(config).to_string()
 }
 
 async fn handshake_session(proc: &mut ProcessSession) -> Result<()> {
@@ -1100,7 +1194,10 @@ async fn handshake_session(proc: &mut ProcessSession) -> Result<()> {
 
 /// Initialize then try `session/resume`, falling back to `session/load`.
 /// Returns `true` when resume/load succeeded.
-async fn handshake_session_resume(proc: &mut ProcessSession, wire_session_id: &str) -> Result<bool> {
+async fn handshake_session_resume(
+    proc: &mut ProcessSession,
+    wire_session_id: &str,
+) -> Result<bool> {
     send_initialize(proc).await?;
     if send_session_resume(proc, wire_session_id, "session/resume")
         .await
@@ -1128,7 +1225,11 @@ async fn send_session_resume(
     let cwd = proc
         .cwd
         .clone()
-        .or_else(|| std::env::current_dir().ok().map(|p| p.display().to_string()))
+        .or_else(|| {
+            std::env::current_dir()
+                .ok()
+                .map(|p| p.display().to_string())
+        })
         .unwrap_or_else(|| ".".into());
     let req = json!({
         "jsonrpc": "2.0",
@@ -1158,6 +1259,7 @@ async fn send_session_resume(
                 .map(str::to_string)
                 .or_else(|| Some(wire_session_id.to_string()));
             proc.acp_session_id = session_id;
+            proc.config_options = response_config_options(&value);
             if proc.acp_session_id.is_none() {
                 bail!("{method} response missing sessionId");
             }
@@ -1184,7 +1286,10 @@ async fn send_initialize(proc: &mut ProcessSession) -> Result<()> {
             },
             "clientCapabilities": {
                 "fs": { "readTextFile": true },
-                "permission": true
+                "permission": true,
+                "_meta": {
+                    "parameterizedModelPicker": true
+                }
             }
         }
     });
@@ -1215,7 +1320,11 @@ async fn send_session_new(proc: &mut ProcessSession) -> Result<()> {
     let cwd = proc
         .cwd
         .clone()
-        .or_else(|| std::env::current_dir().ok().map(|p| p.display().to_string()))
+        .or_else(|| {
+            std::env::current_dir()
+                .ok()
+                .map(|p| p.display().to_string())
+        })
         .unwrap_or_else(|| ".".into());
     let req = json!({
         "jsonrpc": "2.0",
@@ -1235,11 +1344,15 @@ async fn send_session_new(proc: &mut ProcessSession) -> Result<()> {
             continue;
         };
         if value.get("id").and_then(|v| v.as_u64()) == Some(id) {
+            if let Some(err) = value.get("error") {
+                bail!("session/new rejected: {err}");
+            }
             let session_id = value
                 .pointer("/result/sessionId")
                 .and_then(|v| v.as_str())
                 .map(str::to_string);
             proc.acp_session_id = session_id;
+            proc.config_options = response_config_options(&value);
             if proc.acp_session_id.is_none() {
                 bail!("session/new response missing sessionId");
             }
@@ -1250,6 +1363,55 @@ async fn send_session_new(proc: &mut ProcessSession) -> Result<()> {
         }
     }
     bail!("timed out waiting for session/new")
+}
+
+fn response_config_options(response: &Value) -> Vec<Value> {
+    response
+        .pointer("/result/configOptions")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+}
+
+async fn send_set_session_config_option(
+    proc: &mut ProcessSession,
+    config_id: &str,
+    value: Value,
+) -> Result<()> {
+    let Some(session_id) = proc.acp_session_id.clone() else {
+        bail!("ACP session has no sessionId — handshake incomplete");
+    };
+    let id = alloc_id(proc);
+    let req = json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": "session/set_config_option",
+        "params": {
+            "sessionId": session_id,
+            "configId": config_id,
+            "value": value
+        }
+    });
+    write_line(proc, &req).await?;
+    for _ in 0..20 {
+        let Some(line) = read_line_timeout(proc, 3).await? else {
+            break;
+        };
+        let Ok(response) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if response.get("id").and_then(Value::as_u64) == Some(id) {
+            if let Some(err) = response.get("error") {
+                bail!("session/set_config_option rejected: {err}");
+            }
+            proc.config_options = response_config_options(&response);
+            return Ok(());
+        }
+        if let Some(event) = map_inbound_line(proc, &response) {
+            proc.queue.push(event);
+        }
+    }
+    bail!("timed out waiting for session/set_config_option")
 }
 
 async fn send_prompt(proc: &mut ProcessSession, text: &str) -> Result<()> {
@@ -1325,11 +1487,8 @@ async fn write_line(proc: &mut ProcessSession, value: &Value) -> Result<()> {
 }
 
 async fn read_line_timeout(proc: &mut ProcessSession, secs: u64) -> Result<Option<String>> {
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(secs),
-        proc.lines.next_line(),
-    )
-    .await;
+    let result =
+        tokio::time::timeout(std::time::Duration::from_secs(secs), proc.lines.next_line()).await;
     match result {
         Ok(Ok(line)) => Ok(line),
         Ok(Err(err)) => Err(err.into()),
@@ -1338,11 +1497,8 @@ async fn read_line_timeout(proc: &mut ProcessSession, secs: u64) -> Result<Optio
 }
 
 async fn drain_stdout(proc: &mut ProcessSession) -> Result<Option<AcpEvent>> {
-    let result = tokio::time::timeout(
-        std::time::Duration::from_millis(80),
-        proc.lines.next_line(),
-    )
-    .await;
+    let result =
+        tokio::time::timeout(std::time::Duration::from_millis(80), proc.lines.next_line()).await;
     let Ok(Ok(Some(line))) = result else {
         return Ok(None);
     };
@@ -1573,5 +1729,45 @@ mod tests {
             assert!(cfg.command.contains("npx"));
             assert!(cfg.args.iter().any(|a| a.contains("codex-acp")));
         }
+    }
+
+    #[test]
+    fn codex_login_status_requires_chatgpt_subscription() {
+        assert_eq!(
+            parse_codex_login_status(true, "Logged in using ChatGPT").0,
+            RuntimeAuthStatus::SignedIn
+        );
+        let api = parse_codex_login_status(true, "Logged in using an API key");
+        assert_eq!(api.0, RuntimeAuthStatus::SignedOut);
+        assert!(api.1.contains("API key"));
+    }
+
+    #[test]
+    fn codex_subscription_config_preserves_settings_and_forces_chatgpt() {
+        let value: Value = serde_json::from_str(&codex_subscription_config_from(Some(
+            r#"{"model":"gpt-test","forced_login_method":"api"}"#,
+        )))
+        .expect("valid config");
+        assert_eq!(value.get("model"), Some(&json!("gpt-test")));
+        assert_eq!(value.get("forced_login_method"), Some(&json!("chatgpt")));
+    }
+
+    #[test]
+    fn reads_session_config_options_from_acp_response() {
+        let response = json!({
+            "result": {
+                "sessionId": "session-1",
+                "configOptions": [{
+                    "id": "reasoning_effort",
+                    "name": "Reasoning effort",
+                    "type": "select",
+                    "currentValue": "high",
+                    "options": []
+                }]
+            }
+        });
+        let options = response_config_options(&response);
+        assert_eq!(options.len(), 1);
+        assert_eq!(options[0].get("id"), Some(&json!("reasoning_effort")));
     }
 }
