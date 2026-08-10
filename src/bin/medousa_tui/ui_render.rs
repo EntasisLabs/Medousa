@@ -76,11 +76,25 @@ pub(crate) fn render(frame: &mut ratatui::Frame, state: &mut TuiState) {
         },
     );
     let input_title = match active_kind {
-        Some(ShellTabKind::Notes) => format!(
-            " Note edit  Ctrl+S save · Ctrl+A ask · Ctrl+; o library  panes:{pane_n} desk:{desk_idx}/{desk_n}{prefix_hint}  |  obs:{obs_count} "
-        ),
+        Some(ShellTabKind::Notes) => {
+            let conflict = state
+                .workspace
+                .active_tab()
+                .and_then(|t| t.notes_path())
+                .and_then(|p| state.note_buffers.get(p))
+                .is_some_and(|n| n.conflict);
+            if conflict {
+                format!(
+                    " Note CONFLICT  Ctrl+R reload · Ctrl+Y keep mine · Ctrl+S retry  panes:{pane_n}{prefix_hint}  |  obs:{obs_count} "
+                )
+            } else {
+                format!(
+                    " Note edit  Ctrl+S save · Ctrl+A ask · Ctrl+; o library  panes:{pane_n} desk:{desk_idx}/{desk_n}{prefix_hint}  |  obs:{obs_count} "
+                )
+            }
+        }
         Some(ShellTabKind::Code) => format!(
-            " Code  Tab tree/buffer · Enter open · Ctrl+S save · Ctrl+R review  panes:{pane_n}{prefix_hint}  |  obs:{obs_count} "
+            " Code  Tab tree/buffer · Enter open · Ctrl+S save · Ctrl+E seal · Ctrl+R review  panes:{pane_n}{prefix_hint}  |  obs:{obs_count} "
         ),
         Some(ShellTabKind::Review) => format!(
             " Review  [] files · a approve · f finish · u restore · c code  panes:{pane_n}{prefix_hint}  |  obs:{obs_count} "
@@ -104,12 +118,15 @@ pub(crate) fn render(frame: &mut ratatui::Frame, state: &mut TuiState) {
                 .active_tab()
                 .and_then(|t| t.notes_path())
                 .unwrap_or("");
-            let dirty = state
-                .note_buffers
-                .get(path)
-                .map(|n| n.dirty)
-                .unwrap_or(false);
-            format!("  {}{}", path, if dirty { " *" } else { "" })
+            let note = state.note_buffers.get(path);
+            let dirty = note.map(|n| n.dirty).unwrap_or(false);
+            let conflict = note.map(|n| n.conflict).unwrap_or(false);
+            format!(
+                "  {}{}{}",
+                path,
+                if dirty { " *" } else { "" },
+                if conflict { " ⚠ conflict" } else { "" }
+            )
         }
         Some(ShellTabKind::Code) => {
             let work_id = state
@@ -374,7 +391,7 @@ fn render_notes_pane(
         .group_active_tab(group_id)
         .and_then(|t| t.notes_path().map(str::to_string))
         .unwrap_or_default();
-    let (title, body, status, dirty, scroll) = state
+    let (title, body, status, dirty, conflict, scroll) = state
         .note_buffers
         .get(&path)
         .map(|n| {
@@ -383,6 +400,7 @@ fn render_notes_pane(
                 n.buffer.as_text().to_string(),
                 n.status.clone(),
                 n.dirty,
+                n.conflict,
                 n.scroll,
             )
         })
@@ -392,13 +410,17 @@ fn render_notes_pane(
                 String::from("(note not loaded)"),
                 String::new(),
                 false,
+                false,
                 0,
             )
         });
     let dirty_mark = if dirty { "*" } else { "" };
+    let conflict_mark = if conflict { " ⚠" } else { "" };
     let focus_mark = if focused { " ●" } else { "" };
-    let block_title = format!(" Note {title}{dirty_mark}{focus_mark}  {status} ");
-    let border = if focused {
+    let block_title = format!(" Note {title}{dirty_mark}{conflict_mark}{focus_mark}  {status} ");
+    let border = if conflict && focused {
+        Style::default().fg(ui_accent_warn())
+    } else if focused {
         Style::default().fg(ui_accent_primary())
     } else {
         Style::default().fg(ui_border())
@@ -685,28 +707,67 @@ fn render_terminal_pane(
     let (cursor_col, cursor_row) = grid.cursor();
     let cols = grid.cols().min(inner.width) as usize;
     let rows = grid.rows().min(inner.height) as usize;
+    let default_fg = Color::Rgb(0xe7, 0xe5, 0xe4);
+    let default_bg = ui_panel_bg();
     let mut lines: Vec<Line> = Vec::with_capacity(rows);
     for row in 0..rows {
         let mut spans: Vec<Span> = Vec::with_capacity(cols);
         for col in 0..cols {
             let cell = grid.cell_at(col as u16, row as u16);
-            let mut style = Style::default().fg(Color::White).bg(ui_panel_bg());
+            let mut fg = cell
+                .fg
+                .map(ansi_indexed_color)
+                .unwrap_or(default_fg);
+            let mut bg = cell
+                .bg
+                .map(ansi_indexed_color)
+                .unwrap_or(default_bg);
+            // Bold on dim indexed colors → bright sibling (xterm-ish).
+            if cell.bold
+                && let Some(idx) = cell.fg
+                && idx < 8
+            {
+                fg = ansi_indexed_color(idx + 8);
+            }
+            if cell.reverse {
+                std::mem::swap(&mut fg, &mut bg);
+            }
+            let mut style = Style::default().fg(fg).bg(bg);
             if cell.bold {
                 style = style.add_modifier(Modifier::BOLD);
             }
-            if cell.reverse {
-                style = style.add_modifier(Modifier::REVERSED);
-            }
             if focused && col as u16 == cursor_col && row as u16 == cursor_row {
-                style = style.bg(Color::White).fg(ui_panel_bg());
+                style = style.bg(default_fg).fg(default_bg);
             }
             spans.push(Span::styled(cell.ch.to_string(), style));
         }
         lines.push(Line::from(spans));
     }
     drop(grid);
-    let widget = Paragraph::new(Text::from(lines)).style(Style::default().bg(ui_panel_bg()));
+    let widget = Paragraph::new(Text::from(lines)).style(Style::default().bg(default_bg));
     frame.render_widget(widget, inner);
+}
+
+/// Home TerminalPane xterm theme (16-color) — keep TUI and GUI shells aligned.
+fn ansi_indexed_color(index: u8) -> Color {
+    match index {
+        0 => Color::Rgb(0x1c, 0x19, 0x17),  // black
+        1 => Color::Rgb(0xf8, 0x71, 0x71),  // red
+        2 => Color::Rgb(0x86, 0xef, 0xac),  // green
+        3 => Color::Rgb(0xfd, 0xe0, 0x47),  // yellow
+        4 => Color::Rgb(0x93, 0xc5, 0xfd),  // blue
+        5 => Color::Rgb(0xc4, 0xb5, 0xfd),  // magenta
+        6 => Color::Rgb(0x67, 0xe8, 0xf9),  // cyan
+        7 => Color::Rgb(0xe7, 0xe5, 0xe4),  // white
+        8 => Color::Rgb(0x78, 0x71, 0x6c),  // bright black
+        9 => Color::Rgb(0xfc, 0xa5, 0xa5),  // bright red
+        10 => Color::Rgb(0xbb, 0xf7, 0xd0), // bright green
+        11 => Color::Rgb(0xfe, 0xf0, 0x8a), // bright yellow
+        12 => Color::Rgb(0xbf, 0xdb, 0xfe), // bright blue
+        13 => Color::Rgb(0xdd, 0xd6, 0xfe), // bright magenta
+        14 => Color::Rgb(0xa5, 0xf3, 0xfc), // bright cyan
+        _ => Color::Rgb(0xfa, 0xfa, 0xf9),  // bright white
+    }
 }
 
 fn render_connection_picker_overlay(frame: &mut ratatui::Frame, state: &TuiState) {

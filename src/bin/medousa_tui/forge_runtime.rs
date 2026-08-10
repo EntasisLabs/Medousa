@@ -460,6 +460,96 @@ async fn ensure_lease(state: &mut TuiState, work_id: &str) -> Result<(), String>
     Ok(())
 }
 
+/// Seal the active code desk lease → evidence for Review (Home `sealLease` parity).
+pub(crate) async fn seal_active_code(state: &mut TuiState) {
+    let Some(work_id) = state
+        .workspace
+        .active_tab()
+        .and_then(|t| t.code_work_id().map(str::to_string))
+    else {
+        super::push_obs(state, "⚠ no code tab focused".to_string());
+        return;
+    };
+    if state
+        .code_workspaces
+        .get(&work_id)
+        .is_some_and(|ws| ws.dirty)
+    {
+        save_active_code(state).await;
+        if state
+            .code_workspaces
+            .get(&work_id)
+            .is_some_and(|ws| ws.dirty)
+        {
+            super::push_obs(state, "⚠ save before seal failed — fix and retry".to_string());
+            return;
+        }
+    }
+    if let Err(err) = ensure_lease(state, &work_id).await {
+        super::push_obs(state, format!("⚠ begin attempt failed: {err}"));
+        return;
+    }
+    let Some(ws) = state.code_workspaces.get(&work_id) else {
+        return;
+    };
+    let (Some(lease_id), Some(generation)) = (ws.lease_id.clone(), ws.lease_generation) else {
+        super::push_obs(state, "⚠ no lease to seal".to_string());
+        return;
+    };
+    let title = ws.title.clone();
+    let api = format!("/v1/forge/leases/{lease_id}/complete");
+    match forge_post::<serde_json::Value>(
+        &state.daemon_url,
+        &api,
+        json!({ "generation": generation }),
+    )
+    .await
+    {
+        Ok(_) => {
+            if let Some(ws) = state.code_workspaces.get_mut(&work_id) {
+                ws.lease_id = None;
+                ws.lease_generation = None;
+                ws.status = "sealed → review".to_string();
+            }
+            super::push_obs(state, format!("✓ sealed {title} — opening review"));
+            let _ = open_review_work(state, &work_id, &title).await;
+        }
+        Err(err) => {
+            // Retry once with ack_risks when policy demands it.
+            if err.to_ascii_lowercase().contains("ack")
+                || err.to_ascii_lowercase().contains("risk")
+            {
+                match forge_post::<serde_json::Value>(
+                    &state.daemon_url,
+                    &api,
+                    json!({ "generation": generation, "ack_risks": true }),
+                )
+                .await
+                {
+                    Ok(_) => {
+                        if let Some(ws) = state.code_workspaces.get_mut(&work_id) {
+                            ws.lease_id = None;
+                            ws.lease_generation = None;
+                            ws.status = "sealed → review".to_string();
+                        }
+                        super::push_obs(
+                            state,
+                            format!("✓ sealed {title} (acked risks) — opening review"),
+                        );
+                        let _ = open_review_work(state, &work_id, &title).await;
+                        return;
+                    }
+                    Err(err2) => {
+                        super::push_obs(state, format!("⚠ seal failed: {err2}"));
+                        return;
+                    }
+                }
+            }
+            super::push_obs(state, format!("⚠ seal failed: {err}"));
+        }
+    }
+}
+
 pub(crate) async fn save_active_code(state: &mut TuiState) {
     let Some(work_id) = state
         .workspace
@@ -741,6 +831,11 @@ pub(crate) async fn handle_code_key(
 
     if key.code == KeyCode::Char('s') && key.modifiers.contains(KeyModifiers::CONTROL) {
         save_active_code(state).await;
+        return EventOutcome::Continue;
+    }
+    if key.code == KeyCode::Char('e') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        // Seal lease → evidence (Home seal path). Avoids Ctrl+S clash.
+        seal_active_code(state).await;
         return EventOutcome::Continue;
     }
     if key.code == KeyCode::Char('r') && key.modifiers.contains(KeyModifiers::CONTROL) {

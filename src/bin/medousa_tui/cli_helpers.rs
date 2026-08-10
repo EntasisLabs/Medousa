@@ -61,7 +61,10 @@ pub(crate) fn print_help() {
     println!("  Ctrl+; T     Attach existing shell session");
     println!("  Ctrl+; w     Connection picker (workshop / daemon)");
     println!("  Ctrl+S       Save focused note/code file");
+    println!("  Ctrl+E       Seal focused Forge code lease → review");
     println!("  Ctrl+A       Ask about focused note (new chat tab)");
+    println!("  Ctrl+R       Reload note from vault (notes conflict)");
+    println!("  Ctrl+Y       Keep mine / overwrite note (notes conflict)");
     println!("  Ctrl+C       Quit (in terminal pane: send to PTY; Ctrl+Q quits)");
     println!();
     println!("HISTORY:");

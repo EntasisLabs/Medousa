@@ -108,6 +108,7 @@ pub(crate) async fn open_note_path(state: &mut TuiState, path: &str) -> bool {
                 buffer: TextBuffer::from_text(resp.content),
                 content_hash: resp.note.content_hash,
                 dirty: false,
+                conflict: false,
                 status: "loaded".to_string(),
                 scroll: 0,
                 preferred_col: None,
@@ -151,6 +152,7 @@ pub(crate) async fn create_note(state: &mut TuiState, path: &str, content: &str)
                     buffer: TextBuffer::from_text(body),
                     content_hash: resp.note.content_hash,
                     dirty: false,
+                    conflict: false,
                     status: "created".to_string(),
                     scroll: 0,
                     preferred_col: None,
@@ -171,7 +173,16 @@ pub(crate) async fn create_note(state: &mut TuiState, path: &str, content: &str)
     }
 }
 
-pub(crate) async fn save_active_note(state: &mut TuiState) {
+fn is_vault_conflict_error(err: &str) -> bool {
+    let lower = err.to_ascii_lowercase();
+    lower.contains("412")
+        || lower.contains("precondition")
+        || lower.contains("if-match")
+        || lower.contains("content_hash mismatch")
+        || lower.contains("content-hash mismatch")
+}
+
+async fn put_active_note(state: &mut TuiState, force: bool) {
     let Some(path) = state
         .workspace
         .active_tab()
@@ -184,12 +195,16 @@ pub(crate) async fn save_active_note(state: &mut TuiState) {
         super::push_obs(state, "⚠ note buffer missing".to_string());
         return;
     };
-    if !note.dirty {
+    if !note.dirty && !force {
         super::push_obs(state, "note unchanged".to_string());
         return;
     }
     let content = note.buffer.as_text().to_string();
-    let if_match = note.content_hash.clone();
+    let if_match = if force {
+        None
+    } else {
+        Some(note.content_hash.clone())
+    };
     let client = daemon_client(&state.daemon_url);
     match client
         .vault()
@@ -200,7 +215,7 @@ pub(crate) async fn save_active_note(state: &mut TuiState) {
                 session_id: Some(state.session_id.clone()),
                 auto_workshop_tags: None,
             },
-            Some(&if_match),
+            if_match.as_deref(),
         )
         .await
     {
@@ -208,15 +223,79 @@ pub(crate) async fn save_active_note(state: &mut TuiState) {
             if let Some(note) = state.note_buffers.get_mut(&path) {
                 note.content_hash = resp.note.content_hash;
                 note.dirty = false;
-                note.status = "saved".to_string();
+                note.conflict = false;
+                note.status = if force {
+                    "overwrote (kept mine)".to_string()
+                } else {
+                    "saved".to_string()
+                };
             }
-            super::push_obs(state, format!("✓ saved {path}"));
+            super::push_obs(
+                state,
+                if force {
+                    format!("✓ overwrote {path} (kept mine)")
+                } else {
+                    format!("✓ saved {path}")
+                },
+            );
         }
         Err(err) => {
+            let conflict = is_vault_conflict_error(&err.to_string());
             if let Some(note) = state.note_buffers.get_mut(&path) {
-                note.status = format!("save failed: {err}");
+                note.conflict = conflict;
+                note.status = if conflict {
+                    "conflict — Ctrl+R reload · Ctrl+Y keep mine".to_string()
+                } else {
+                    format!("save failed: {err}")
+                };
             }
-            super::push_obs(state, format!("⚠ vault save failed: {err}"));
+            if conflict {
+                super::push_obs(
+                    state,
+                    format!(
+                        "⚠ vault conflict on {path} (If-Match / content_hash). Ctrl+R reload · Ctrl+Y keep mine"
+                    ),
+                );
+            } else {
+                super::push_obs(state, format!("⚠ vault save failed: {err}"));
+            }
+        }
+    }
+}
+
+pub(crate) async fn save_active_note(state: &mut TuiState) {
+    put_active_note(state, false).await;
+}
+
+pub(crate) async fn overwrite_active_note(state: &mut TuiState) {
+    put_active_note(state, true).await;
+}
+
+pub(crate) async fn reload_active_note(state: &mut TuiState) {
+    let Some(path) = state
+        .workspace
+        .active_tab()
+        .and_then(|t| t.notes_path().map(str::to_string))
+    else {
+        super::push_obs(state, "⚠ no note tab focused".to_string());
+        return;
+    };
+    let client = daemon_client(&state.daemon_url);
+    match client.vault().get_note(&path).await {
+        Ok(resp) => {
+            if let Some(note) = state.note_buffers.get_mut(&path) {
+                note.buffer = TextBuffer::from_text(resp.content);
+                note.content_hash = resp.note.content_hash;
+                note.dirty = false;
+                note.conflict = false;
+                note.status = "reloaded".to_string();
+                note.preferred_col = None;
+                note.scroll = 0;
+            }
+            super::push_obs(state, format!("✓ reloaded {path} from vault"));
+        }
+        Err(err) => {
+            super::push_obs(state, format!("⚠ vault reload failed: {err}"));
         }
     }
 }
@@ -325,6 +404,15 @@ pub(crate) async fn handle_notes_key(
         ask_about_active_note(state).await;
         return EventOutcome::Continue;
     }
+    if key.code == KeyCode::Char('r') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        reload_active_note(state).await;
+        return EventOutcome::Continue;
+    }
+    if key.code == KeyCode::Char('y') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        // Keep mine — force save without If-Match (Home conflict bar parity).
+        overwrite_active_note(state).await;
+        return EventOutcome::Continue;
+    }
     if key.code == KeyCode::Esc {
         state.mode = UiMode::Chat;
         return EventOutcome::Continue;
@@ -338,16 +426,19 @@ pub(crate) async fn handle_notes_key(
         KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
             note.buffer.insert_char(c);
             note.dirty = true;
+            note.conflict = false;
             note.preferred_col = None;
         }
         KeyCode::Enter => {
             note.buffer.insert_newline();
             note.dirty = true;
+            note.conflict = false;
             note.preferred_col = None;
         }
         KeyCode::Backspace => {
             note.buffer.backspace();
             note.dirty = true;
+            note.conflict = false;
             note.preferred_col = None;
         }
         KeyCode::Left => {

@@ -34,7 +34,7 @@ const CATEGORY_ORDER: [PaletteCategory; 5] = [
     PaletteCategory::SafetyKeys,
 ];
 
-const PALETTE_ACTIONS: [PaletteAction; 24] = [
+const PALETTE_ACTIONS: [PaletteAction; 25] = [
     PaletteAction {
         category: PaletteCategory::QuickActions,
         title: "Start New Chat",
@@ -70,6 +70,15 @@ const PALETTE_ACTIONS: [PaletteAction; 24] = [
         risk: ActionRisk::Safe,
         key_hint: "Ctrl+; w",
         aliases: &["connection", "workshop", "daemon", "connect"],
+    },
+    PaletteAction {
+        category: PaletteCategory::QuickActions,
+        title: "Seal Code Lease",
+        subtitle: "Seal the focused Forge code lease and open Review",
+        command: "/seal",
+        risk: ActionRisk::Caution,
+        key_hint: "Ctrl+E",
+        aliases: &["seal", "complete lease", "evidence"],
     },
     PaletteAction {
         category: PaletteCategory::QuickActions,
@@ -916,6 +925,7 @@ fn command_effect(command: &str) -> &'static str {
         "/notes" => "Opens the vault notes picker (Library-lite).",
         "/terminal" => "Opens a workshop shell session pane (or attaches by id).",
         "/connection" => "Opens the Connection picker to switch workshop daemon URL.",
+        "/seal" => "Seals the focused Forge code lease and opens Review.",
         "/history" => "Opens session history for quick switching.",
         "/name" => "Shows or sets a global display name for the current session.",
         "/name " => "Sets the global display name (stored in Surreal on daemon runtime).",

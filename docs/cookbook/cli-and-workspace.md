@@ -101,6 +101,14 @@ The picker lists **Local**, workshops from Home’s `{dataDir}/workshops.json` (
 
 Chat turns live on the **daemon** (`/v1/sessions/{id}/history`). Point TUI and Home at the **same workshop URL** and use the **same `session_id`** (`--session` / focused chat tab / Home’s last session) — there is no fork. Pane layouts stay shell-local (TUI JSON vs Home localStorage).
 
+### Forge seal + note conflicts
+
+| Action | Keys |
+|--------|------|
+| Seal code lease → Review | `Ctrl+E` / `/seal` (saves dirty buffer first) |
+| Review dispositions | `a` approve · `f` finish · `u` restore |
+| Note save conflict | `Ctrl+R` reload from vault · `Ctrl+Y` keep mine (omit If-Match) |
+
 ---
 
 ## Skill learning tools (worker lane)

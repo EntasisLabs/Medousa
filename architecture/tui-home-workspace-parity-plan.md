@@ -171,7 +171,8 @@ ask-about-note hands context to a chat pane.
 - notes tab kind + markdown buffer with dirty/`If-Match` save (`Ctrl+S`)
 - `/notes <path>`, `/notes new <path.md>`
 - `Ctrl+A` ask-about-note → new chat tab with note snippet prefilled
-- Follow-ups: backlinks panel, conflict UI polish, tree sidebar
+- Follow-ups: backlinks panel, tree sidebar
+- Follow-up landed: If-Match conflict UI (`Ctrl+R` reload · `Ctrl+Y` keep mine)
 
 ### Phase 3 — Code + Review ✅ (v1)
 
@@ -194,7 +195,8 @@ path works without opening Home.
 - `Ctrl+; f` / `/code` Forge picker → code desk (tree + buffer, lease-fenced save)
 - `Ctrl+; r` / `/review` → stacked file diffs, `a` approve / `f` finish / `u` restore
 - `Ctrl+R` from code → review; `c` from review → code
-- Follow-ups: seal from TUI, syntax highlight, conflict DiffStack polish
+- Follow-ups: syntax highlight, conflict DiffStack polish
+- Follow-up landed: seal from TUI (`Ctrl+E` / `/seal` → lease complete → Review)
 
 ### Phase 4 — Terminal panes ✅ (v1)
 
@@ -212,7 +214,8 @@ the same session ids the TUI attached.
 - `terminal_runtime.rs` — create/list/attach WS, stdin/resize, restore on restart
 - `Ctrl+; t` new · `Ctrl+; T` / `/terminal list` picker · `/terminal [id]`
 - split while Terminal-focused creates a new shell session pane
-- Follow-ups: richer SGR/colors, scrollback pager, lease-staged command log
+- Follow-ups: scrollback pager, lease-staged command log
+- Follow-up landed: 16-color SGR (+ bold/reverse) aligned with Home xterm theme
 
 ### Phase 5 — Workshop connection polish ✅ (v1)
 

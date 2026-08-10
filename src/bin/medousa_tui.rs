@@ -401,6 +401,8 @@ struct NoteBuffer {
     buffer: TextBuffer,
     content_hash: String,
     dirty: bool,
+    /// True when last save hit an If-Match / content_hash conflict (412).
+    conflict: bool,
     status: String,
     scroll: u16,
     preferred_col: Option<usize>,

@@ -10,6 +10,9 @@ pub struct Cell {
     pub ch: char,
     pub bold: bool,
     pub reverse: bool,
+    /// Indexed color 0–15 (ANSI / bright), or None for default.
+    pub fg: Option<u8>,
+    pub bg: Option<u8>,
 }
 
 impl Default for Cell {
@@ -18,6 +21,8 @@ impl Default for Cell {
             ch: ' ',
             bold: false,
             reverse: false,
+            fg: None,
+            bg: None,
         }
     }
 }
@@ -31,6 +36,8 @@ pub struct VtGrid {
     cursor_row: usize,
     bold: bool,
     reverse: bool,
+    fg: Option<u8>,
+    bg: Option<u8>,
     scroll_top: usize,
     scroll_bottom: usize,
 }
@@ -47,6 +54,8 @@ impl VtGrid {
             cursor_row: 0,
             bold: false,
             reverse: false,
+            fg: None,
+            bg: None,
             scroll_top: 0,
             scroll_bottom: rows.saturating_sub(1),
         }
@@ -120,6 +129,8 @@ impl VtGrid {
             ch,
             bold: self.bold,
             reverse: self.reverse,
+            fg: self.fg,
+            bg: self.bg,
         };
         self.set_cell(col, row, cell);
         self.cursor_col += 1;
@@ -311,17 +322,27 @@ impl VtGrid {
                 0 => {
                     self.bold = false;
                     self.reverse = false;
+                    self.fg = None;
+                    self.bg = None;
                 }
                 1 => self.bold = true,
                 7 => self.reverse = true,
                 22 => self.bold = false,
                 27 => self.reverse = false,
+                30..=37 => self.fg = Some((code - 30) as u8),
+                39 => self.fg = None,
+                40..=47 => self.bg = Some((code - 40) as u8),
+                49 => self.bg = None,
+                90..=97 => self.fg = Some((code - 90 + 8) as u8),
+                100..=107 => self.bg = Some((code - 100 + 8) as u8),
                 _ => {}
             }
         }
         if !saw_any {
             self.bold = false;
             self.reverse = false;
+            self.fg = None;
+            self.bg = None;
         }
     }
 
@@ -456,6 +477,18 @@ mod tests {
         assert!(!grid.cell_at(1, 0).bold);
         assert_eq!(grid.cell_at(0, 0).ch, 'X');
         assert_eq!(grid.cell_at(1, 0).ch, 'Y');
+    }
+
+    #[test]
+    fn sgr_indexed_colors() {
+        let mut grid = VtGrid::new(8, 2);
+        feed(&mut grid, b"\x1b[31;42mA\x1b[91mB\x1b[0mC");
+        assert_eq!(grid.cell_at(0, 0).fg, Some(1));
+        assert_eq!(grid.cell_at(0, 0).bg, Some(2));
+        assert_eq!(grid.cell_at(1, 0).fg, Some(9));
+        assert_eq!(grid.cell_at(1, 0).bg, Some(2));
+        assert_eq!(grid.cell_at(2, 0).fg, None);
+        assert_eq!(grid.cell_at(2, 0).bg, None);
     }
 
     #[test]
