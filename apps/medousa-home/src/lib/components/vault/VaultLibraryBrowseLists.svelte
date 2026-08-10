@@ -10,7 +10,7 @@
   import VaultKindBadge from "./VaultKindBadge.svelte";
 
   interface Props {
-    onSelect: (path: string) => void;
+    onSelect: (path: string, event?: MouseEvent) => void;
   }
 
   let { onSelect }: Props = $props();
@@ -71,13 +71,14 @@
             {#each vault.notesForTag(row.tag) as note (note.path)}
               <button
                 type="button"
-                class="vault-tree-row vault-tree-row--note flex w-full items-center gap-1.5 rounded-container-token px-2 py-1 text-left text-sm outline-none hover:bg-surface-700/80 focus-visible:ring-1 focus-visible:ring-primary-400/50 {note.path ===
-                vault.selectedPath
+                class="vault-tree-row vault-tree-row--note flex w-full items-center gap-1.5 rounded-container-token px-2 py-1 text-left text-sm outline-none hover:bg-surface-700/80 focus-visible:ring-1 focus-visible:ring-primary-400/50 {vault.isRailPathSelected(
+                  note.path,
+                )
                   ? 'bg-primary-500/15 text-content-link'
                   : 'text-content-secondary'}"
                 style="padding-left: 1.75rem"
                 title={note.path}
-                onclick={() => onSelect(note.path)}
+                onclick={(event) => onSelect(note.path, event)}
                 oncontextmenu={(event) =>
                   handleVaultNoteContextMenuEvent(note.path, event)}
               >
@@ -98,12 +99,13 @@
       {#each recentNotes as note (note.path)}
         <button
           type="button"
-          class="vault-tree-row vault-tree-row--note flex w-full items-center gap-1.5 rounded-container-token px-2 py-1 text-left text-sm outline-none hover:bg-surface-700/80 focus-visible:ring-1 focus-visible:ring-primary-400/50 {note.path ===
-          vault.selectedPath
+          class="vault-tree-row vault-tree-row--note flex w-full items-center gap-1.5 rounded-container-token px-2 py-1 text-left text-sm outline-none hover:bg-surface-700/80 focus-visible:ring-1 focus-visible:ring-primary-400/50 {vault.isRailPathSelected(
+            note.path,
+          )
             ? 'bg-primary-500/15 text-content-link'
             : 'text-content-secondary'}"
           title={note.path}
-          onclick={() => onSelect(note.path)}
+          onclick={(event) => onSelect(note.path, event)}
           oncontextmenu={(event) => handleVaultNoteContextMenuEvent(note.path, event)}
         >
           <span class="min-w-0 flex-1 truncate">{noteLabel(note)}</span>
@@ -140,13 +142,14 @@
             {#each group.notes as note (note.path)}
               <button
                 type="button"
-                class="vault-tree-row vault-tree-row--note flex w-full items-center gap-1.5 rounded-container-token px-2 py-1 text-left text-sm outline-none hover:bg-surface-700/80 focus-visible:ring-1 focus-visible:ring-primary-400/50 {note.path ===
-                vault.selectedPath
+                class="vault-tree-row vault-tree-row--note flex w-full items-center gap-1.5 rounded-container-token px-2 py-1 text-left text-sm outline-none hover:bg-surface-700/80 focus-visible:ring-1 focus-visible:ring-primary-400/50 {vault.isRailPathSelected(
+                  note.path,
+                )
                   ? 'bg-primary-500/15 text-content-link'
                   : 'text-content-secondary'}"
                 style="padding-left: 1.75rem"
                 title={note.path}
-                onclick={() => onSelect(note.path)}
+                onclick={(event) => onSelect(note.path, event)}
                 oncontextmenu={(event) =>
                   handleVaultNoteContextMenuEvent(note.path, event)}
               >

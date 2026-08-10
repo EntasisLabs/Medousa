@@ -1,5 +1,5 @@
 import type { Extension } from "@codemirror/state";
-import { LanguageSupport } from "@codemirror/language";
+import { LanguageSupport, StreamLanguage } from "@codemirror/language";
 import { markdown } from "@codemirror/lang-markdown";
 import { javascript } from "@codemirror/lang-javascript";
 import { json } from "@codemirror/lang-json";
@@ -9,12 +9,23 @@ import { xml } from "@codemirror/lang-xml";
 import { python } from "@codemirror/lang-python";
 import { rust } from "@codemirror/lang-rust";
 import { yaml } from "@codemirror/lang-yaml";
+import { go } from "@codemirror/lang-go";
+import { cpp } from "@codemirror/lang-cpp";
+import { java } from "@codemirror/lang-java";
+import { php } from "@codemirror/lang-php";
+import { svelte } from "codemirror-lang-svelte";
+import {
+  csharp as csharpMode,
+  kotlin as kotlinMode,
+} from "@codemirror/legacy-modes/mode/clike";
+import { ruby as rubyMode } from "@codemirror/legacy-modes/mode/ruby";
+import { lua as luaMode } from "@codemirror/legacy-modes/mode/lua";
+import { swift as swiftMode } from "@codemirror/legacy-modes/mode/swift";
 import {
   graphemeEditorTheme,
   graphemeLanguageSupport,
 } from "$lib/grapheme/graphemeEditorTheme";
 import { graphemeHostCompletions } from "$lib/grapheme/graphemeHostCompletions";
-import { medousaSyntaxHighlighting } from "$lib/syntax/codemirrorSyntaxTheme";
 import { vaultMarkdownSyntax } from "$lib/utils/vaultCodeMirror";
 import { shellLanguage } from "$lib/code/shellLanguage";
 
@@ -27,8 +38,11 @@ export type CodeEditorLanguageId =
   | "shell"
   | "python"
   | "typescript"
+  | "tsx"
   | "rust"
   | "javascript"
+  | "jsx"
+  | "svelte"
   | "json"
   | "html"
   | "css"
@@ -61,6 +75,13 @@ export interface CodeEditorLanguageDefinition {
   /** File suffix hint for snippet tabs (no vault/git wiring). */
   fileExtension?: string;
   aliases?: string[];
+  /**
+   * Language id sent to the workshop coding engine / LSP.
+   * Defaults to `id` when omitted.
+   */
+  lspLanguageId?: string;
+  /** Optional package id that Repair installs for this language (HCP-3B). */
+  packageId?: string;
 }
 
 const FULL: CodeEditorLanguageCapabilities = {
@@ -88,9 +109,13 @@ const HIGHLIGHT_LSP: CodeEditorLanguageCapabilities = {
   addToFlow: false,
 };
 
-const shellLanguageSupport = new LanguageSupport(shellLanguage, [
-  medousaSyntaxHighlighting,
-]);
+const shellLanguageSupport = new LanguageSupport(shellLanguage);
+
+const csharpLanguageSupport = new LanguageSupport(StreamLanguage.define(csharpMode));
+const kotlinLanguageSupport = new LanguageSupport(StreamLanguage.define(kotlinMode));
+const rubyLanguageSupport = new LanguageSupport(StreamLanguage.define(rubyMode));
+const luaLanguageSupport = new LanguageSupport(StreamLanguage.define(luaMode));
+const swiftLanguageSupport = new LanguageSupport(StreamLanguage.define(swiftMode));
 
 const markdownLanguageSupport = markdown({
   codeLanguages: [],
@@ -138,6 +163,7 @@ export const CODE_EDITOR_LANGUAGES: Record<
     capabilities: HIGHLIGHT_LSP,
     fileExtension: "py",
     aliases: ["py"],
+    packageId: "langservers",
   },
   typescript: {
     id: "typescript",
@@ -145,7 +171,18 @@ export const CODE_EDITOR_LANGUAGES: Record<
     tier: "highlight",
     capabilities: HIGHLIGHT_LSP,
     fileExtension: "ts",
-    aliases: ["ts", "tsx"],
+    aliases: ["ts"],
+    packageId: "langservers",
+  },
+  tsx: {
+    id: "tsx",
+    label: "TSX",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
+    fileExtension: "tsx",
+    aliases: ["tsx"],
+    lspLanguageId: "typescript",
+    packageId: "langservers",
   },
   rust: {
     id: "rust",
@@ -161,7 +198,27 @@ export const CODE_EDITOR_LANGUAGES: Record<
     tier: "highlight",
     capabilities: HIGHLIGHT_LSP,
     fileExtension: "js",
-    aliases: ["js", "jsx", "mjs"],
+    aliases: ["js", "mjs"],
+    packageId: "langservers",
+  },
+  jsx: {
+    id: "jsx",
+    label: "JSX",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
+    fileExtension: "jsx",
+    aliases: ["jsx"],
+    lspLanguageId: "javascript",
+    packageId: "langservers",
+  },
+  svelte: {
+    id: "svelte",
+    label: "Svelte",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
+    fileExtension: "svelte",
+    aliases: ["svelte"],
+    packageId: "langservers",
   },
   go: {
     id: "go",
@@ -301,6 +358,14 @@ export function getCodeEditorLanguage(
   return CODE_EDITOR_LANGUAGES[resolved];
 }
 
+/** Language id used for workshop LSP sessions and didOpen payloads. */
+export function codeEditorLspLanguageId(
+  id: CodeEditorLanguageId | string | null | undefined,
+): string {
+  const def = getCodeEditorLanguage(id);
+  return def.lspLanguageId ?? def.id;
+}
+
 export function languageSupportsLsp(
   id: CodeEditorLanguageId | string | null | undefined,
 ): boolean {
@@ -319,7 +384,15 @@ export function languageSupportsRun(
   return getCodeEditorLanguage(id).capabilities.run;
 }
 
-/** CodeMirror extensions for a language tier (never attaches fake LSP). */
+/** Optional package Repair should install for this editor language. */
+export function languageRepairPackageId(
+  id: CodeEditorLanguageId | string | null | undefined,
+): string | null {
+  return getCodeEditorLanguage(id).packageId ?? null;
+}
+
+/** CodeMirror extensions for a language tier (never attaches fake LSP).
+ * Syntax colors are owned by CodeMirrorHost’s syntax theme compartment. */
 export function buildCodeEditorLanguageExtensions(
   id: CodeEditorLanguageId | string | null | undefined,
 ): Extension[] {
@@ -336,30 +409,54 @@ export function buildCodeEditorLanguageExtensions(
     case "shell":
       return [graphemeEditorTheme, shellLanguageSupport];
     case "javascript":
-      return [graphemeEditorTheme, javascript(), medousaSyntaxHighlighting];
+      return [graphemeEditorTheme, javascript()];
+    case "jsx":
+      return [graphemeEditorTheme, javascript({ jsx: true })];
     case "typescript":
+      return [graphemeEditorTheme, javascript({ typescript: true })];
+    case "tsx":
       return [
         graphemeEditorTheme,
-        javascript({ typescript: true }),
-        medousaSyntaxHighlighting,
+        javascript({ typescript: true, jsx: true }),
       ];
+    case "svelte":
+      return [graphemeEditorTheme, svelte()];
     case "python":
-      return [graphemeEditorTheme, python(), medousaSyntaxHighlighting];
+      return [graphemeEditorTheme, python()];
     case "rust":
-      return [graphemeEditorTheme, rust(), medousaSyntaxHighlighting];
+      return [graphemeEditorTheme, rust()];
+    case "go":
+      return [graphemeEditorTheme, go()];
+    case "c":
+    case "cpp":
+      return [graphemeEditorTheme, cpp()];
+    case "java":
+      return [graphemeEditorTheme, java()];
+    case "php":
+      return [graphemeEditorTheme, php()];
+    case "csharp":
+      return [graphemeEditorTheme, csharpLanguageSupport];
+    case "kotlin":
+      return [graphemeEditorTheme, kotlinLanguageSupport];
+    case "ruby":
+      return [graphemeEditorTheme, rubyLanguageSupport];
+    case "lua":
+      return [graphemeEditorTheme, luaLanguageSupport];
+    case "swift":
+      return [graphemeEditorTheme, swiftLanguageSupport];
     case "yaml":
-      return [graphemeEditorTheme, yaml(), medousaSyntaxHighlighting];
+      return [graphemeEditorTheme, yaml()];
     case "json":
-      return [graphemeEditorTheme, json(), medousaSyntaxHighlighting];
+      return [graphemeEditorTheme, json()];
     case "html":
-      return [graphemeEditorTheme, html(), medousaSyntaxHighlighting];
+      return [graphemeEditorTheme, html()];
     case "css":
-      return [graphemeEditorTheme, css(), medousaSyntaxHighlighting];
+      return [graphemeEditorTheme, css()];
     case "xml":
-      return [graphemeEditorTheme, xml(), medousaSyntaxHighlighting];
+      return [graphemeEditorTheme, xml()];
     case "plaintext":
-      return [graphemeEditorTheme, medousaSyntaxHighlighting];
+      return [graphemeEditorTheme];
     default:
-      return [graphemeEditorTheme, medousaSyntaxHighlighting];
+      return [graphemeEditorTheme];
   }
 }

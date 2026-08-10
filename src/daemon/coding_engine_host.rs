@@ -122,6 +122,46 @@ fn forge_worktree_roots() -> Vec<PathBuf> {
     vec![forge_root]
 }
 
+/// Resolve the worktree Home and coding tools should use for a work id.
+///
+/// Must match forge projections (`workspace_environment`), not the durable
+/// staging `item.environment` alone — after an isolated attempt the client
+/// document URIs live under the attempt worktree, which is a sibling of staging.
+fn worktree_for_work(
+    forge: &medousa_forge::forge::Forge,
+    work_id: &str,
+) -> Option<PathBuf> {
+    let id = medousa_forge::model::WorkId::from(work_id.trim().to_owned());
+    forge
+        .load(&id)
+        .ok()
+        .and_then(|item| item.workspace_environment().map(|env| env.worktree.clone()))
+}
+
+/// Resolve one exact attempt when an execution boundary supplies it. Falling
+/// back to the undertaking projection is retained for Home and older clients,
+/// but Coder tools must address their leased attempt so concurrent siblings do
+/// not silently query a different worktree.
+fn worktree_for_request(
+    forge: &medousa_forge::forge::Forge,
+    work_id: &str,
+    attempt_id: Option<&str>,
+) -> Option<PathBuf> {
+    let Some(attempt_id) = attempt_id
+        .map(str::trim)
+        .filter(|attempt_id| !attempt_id.is_empty())
+    else {
+        return worktree_for_work(forge, work_id);
+    };
+    let id = medousa_forge::model::WorkId::from(work_id.trim().to_owned());
+    let attempt_id = medousa_forge::model::AttemptId::from(attempt_id.to_owned());
+    forge.load(&id).ok().and_then(|item| {
+        item.attempt(&attempt_id)?;
+        item.environment_for_attempt(&attempt_id)
+            .map(|environment| environment.worktree.clone())
+    })
+}
+
 #[derive(Debug, Deserialize)]
 struct EngineHealth {
     name: String,
@@ -292,6 +332,9 @@ pub fn coding_engine_router(state: AppState) -> Router {
         .route("/v1/code/workspace-symbols", get(code_workspace_symbols))
         .route("/v1/code/capabilities", get(code_capabilities))
         .route("/v1/code/conventions", get(code_conventions))
+        .route("/v1/code/language-root", get(code_language_root))
+        .route("/v1/code/language-sessions", get(code_language_sessions))
+        .route("/v1/code/language-matrix", get(code_language_matrix))
         .route("/v1/code/request", post(code_request))
         .with_state(state)
 }
@@ -307,6 +350,8 @@ pub struct CodeLspQuery {
     pub language: String,
     #[serde(default)]
     pub work_id: Option<String>,
+    #[serde(default)]
+    pub document_uri: Option<String>,
 }
 
 fn default_language() -> String {
@@ -323,8 +368,10 @@ pub async fn code_lsp_ws(
     if !info.available {
         return (axum::http::StatusCode::SERVICE_UNAVAILABLE, info.message).into_response();
     }
-    ws.on_upgrade(move |socket| proxy_lsp_socket(socket, state, q.language, q.work_id))
-        .into_response()
+    ws.on_upgrade(move |socket| {
+        proxy_lsp_socket(socket, state, q.language, q.work_id, q.document_uri)
+    })
+    .into_response()
 }
 
 async fn proxy_lsp_socket(
@@ -332,6 +379,7 @@ async fn proxy_lsp_socket(
     state: AppState,
     language: String,
     work_id: Option<String>,
+    document_uri: Option<String>,
 ) {
     let host = state.coding_engine.clone().unwrap_or_default();
     let info = ensure_coding_engine(&host).await;
@@ -339,14 +387,9 @@ async fn proxy_lsp_socket(
         tracing::warn!(message = %info.message, "coding engine unavailable for LSP proxy");
         return;
     }
-    let workspace_root = work_id.as_deref().and_then(|raw| {
-        let id = medousa_forge::model::WorkId::from(raw.trim().to_owned());
-        state
-            .forge
-            .load(&id)
-            .ok()
-            .and_then(|item| item.environment.map(|env| env.worktree))
-    });
+    let workspace_root = work_id
+        .as_deref()
+        .and_then(|raw| worktree_for_work(state.forge.as_ref(), raw));
     if work_id.is_some() && workspace_root.is_none() {
         tracing::warn!(
             work_id,
@@ -354,32 +397,12 @@ async fn proxy_lsp_socket(
         );
         return;
     }
-    let root_query = workspace_root
-        .as_ref()
-        .map(|root| {
-            format!(
-                "&workspace_root={}",
-                urlencoding::encode(&root.to_string_lossy())
-            )
-        })
-        .unwrap_or_default();
-    let upstream = format!(
-        "{}/v1/lsp?language={}{}",
-        info.lsp_url.trim_end_matches('/'),
-        urlencoding::encode(&language),
-        root_query,
+    let upstream = lsp_upstream_url(
+        &info.lsp_url,
+        &language,
+        workspace_root.as_deref(),
+        document_uri.as_deref(),
     );
-    // lsp_url is already ws://host/v1/lsp — avoid double path
-    let upstream = if info.lsp_url.contains("/v1/lsp") {
-        format!(
-            "{}?language={}{}",
-            info.lsp_url,
-            urlencoding::encode(&language),
-            root_query,
-        )
-    } else {
-        upstream
-    };
 
     let Ok((upstream_ws, _)) = connect_async(&upstream).await else {
         tracing::warn!(%upstream, "failed to connect to medousa-code LSP");
@@ -421,6 +444,29 @@ async fn proxy_lsp_socket(
         }
     }
     client_to_up.abort();
+}
+
+fn lsp_upstream_url(
+    lsp_url: &str,
+    language: &str,
+    workspace_root: Option<&Path>,
+    document_uri: Option<&str>,
+) -> String {
+    let base = if lsp_url.contains("/v1/lsp") {
+        lsp_url.trim_end_matches('/').to_string()
+    } else {
+        format!("{}/v1/lsp", lsp_url.trim_end_matches('/'))
+    };
+    let mut query = format!("language={}", urlencoding::encode(language));
+    if let Some(root) = workspace_root {
+        query.push_str("&workspace_root=");
+        query.push_str(&urlencoding::encode(&root.to_string_lossy()));
+    }
+    if let Some(uri) = document_uri.filter(|uri| !uri.trim().is_empty()) {
+        query.push_str("&document_uri=");
+        query.push_str(&urlencoding::encode(uri));
+    }
+    format!("{base}?{query}")
 }
 
 pub async fn code_hover(
@@ -479,6 +525,27 @@ pub async fn code_conventions(
     proxy_agent_get(&state, "/v1/code/conventions", &q).await
 }
 
+pub async fn code_language_root(
+    State(state): State<AppState>,
+    Query(q): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    proxy_agent_get(&state, "/v1/code/language-root", &q).await
+}
+
+pub async fn code_language_sessions(
+    State(state): State<AppState>,
+    Query(q): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    proxy_agent_get(&state, "/v1/code/language-sessions", &q).await
+}
+
+pub async fn code_language_matrix(
+    State(state): State<AppState>,
+    Query(q): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    proxy_agent_get(&state, "/v1/code/language-matrix", &q).await
+}
+
 pub async fn code_request(
     State(state): State<AppState>,
     Json(body): Json<serde_json::Value>,
@@ -497,18 +564,33 @@ async fn proxy_agent_get(
         return Err((axum::http::StatusCode::SERVICE_UNAVAILABLE, info.message));
     }
     let mut forwarded = q.clone();
+    // Workshop paths are daemon authority, never caller authority.
+    forwarded.remove("workspace_root");
+    let attempt_id = forwarded.remove("attempt_id");
+    if attempt_id.as_deref().is_some_and(|value| value.trim().is_empty()) {
+        return Err((
+            axum::http::StatusCode::BAD_REQUEST,
+            "attempt_id must be non-empty".to_string(),
+        ));
+    }
     if let Some(work_id) = forwarded.remove("work_id") {
-        let id = medousa_forge::model::WorkId::from(work_id.trim().to_owned());
-        let root = state
-            .forge
-            .load(&id)
-            .ok()
-            .and_then(|item| item.environment.map(|env| env.worktree))
+        if work_id.trim().is_empty() {
+            return Err((
+                axum::http::StatusCode::BAD_REQUEST,
+                "work_id must be non-empty".to_string(),
+            ));
+        }
+        let root = worktree_for_request(state.forge.as_ref(), &work_id, attempt_id.as_deref())
             .ok_or((
                 axum::http::StatusCode::CONFLICT,
-                "unknown or unprepared undertaking".to_string(),
+                "unknown undertaking, attempt, or governed worktree".to_string(),
             ))?;
         forwarded.insert("workspace_root".into(), root.to_string_lossy().into_owned());
+    } else if attempt_id.is_some() {
+        return Err((
+            axum::http::StatusCode::BAD_REQUEST,
+            "attempt_id requires work_id".to_string(),
+        ));
     }
     let mut url = reqwest::Url::parse(&format!("{}{path}", info.url))
         .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
@@ -550,27 +632,49 @@ async fn proxy_agent_post(
     if !info.available {
         return Err((axum::http::StatusCode::SERVICE_UNAVAILABLE, info.message));
     }
-    if let Some(work_id) = body
+    let (work_id, attempt_id) = body
         .as_object_mut()
-        .and_then(|object| object.remove("work_id"))
-        .and_then(|value| value.as_str().map(str::to_owned))
-    {
-        let id = medousa_forge::model::WorkId::from(work_id.trim().to_owned());
-        let root = state
-            .forge
-            .load(&id)
-            .ok()
-            .and_then(|item| item.environment.map(|env| env.worktree))
-            .ok_or((
-                axum::http::StatusCode::CONFLICT,
-                "unknown or unprepared undertaking".to_string(),
-            ))?;
+        .map(|object| {
+            object.remove("workspace_root");
+            (object.remove("work_id"), object.remove("attempt_id"))
+        })
+        .unwrap_or_default();
+    let work_id = match work_id {
+        Some(serde_json::Value::String(value)) if !value.trim().is_empty() => Some(value),
+        Some(_) => {
+            return Err((
+                axum::http::StatusCode::BAD_REQUEST,
+                "work_id must be a non-empty string".to_string(),
+            ));
+        }
+        None => None,
+    };
+    let attempt_id = match attempt_id {
+        Some(serde_json::Value::String(value)) if !value.trim().is_empty() => Some(value),
+        Some(_) => {
+            return Err((
+                axum::http::StatusCode::BAD_REQUEST,
+                "attempt_id must be a non-empty string".to_string(),
+            ));
+        }
+        None => None,
+    };
+    if let Some(work_id) = work_id {
+        let root = worktree_for_request(state.forge.as_ref(), &work_id, attempt_id.as_deref()).ok_or((
+            axum::http::StatusCode::CONFLICT,
+            "unknown undertaking, attempt, or governed worktree".to_string(),
+        ))?;
         if let Some(object) = body.as_object_mut() {
             object.insert(
                 "workspace_root".into(),
                 serde_json::Value::String(root.to_string_lossy().into_owned()),
             );
         }
+    } else if attempt_id.is_some() {
+        return Err((
+            axum::http::StatusCode::BAD_REQUEST,
+            "attempt_id requires work_id".to_string(),
+        ));
     }
     let client = reqwest::Client::new();
     let resp = client
@@ -628,8 +732,14 @@ pub fn workspace_is_under(root: &Path, candidate: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::proxy_upstream_status;
+    use super::{lsp_upstream_url, proxy_upstream_status, worktree_for_request};
     use axum::http::StatusCode;
+    use medousa_forge::forge::Forge;
+    use medousa_forge::git::{CheckpointAuthor, GitEngine};
+    use medousa_forge::model::{AttemptId, ExecutorDescriptor};
+    use serde_json::Value;
+    use std::path::Path;
+    use tempfile::TempDir;
 
     #[test]
     fn coding_engine_client_errors_preserve_their_status() {
@@ -648,6 +758,105 @@ mod tests {
         assert_eq!(
             proxy_upstream_status(StatusCode::INTERNAL_SERVER_ERROR),
             StatusCode::BAD_GATEWAY
+        );
+    }
+
+    #[test]
+    fn lsp_proxy_forwards_the_document_and_daemon_owned_root() {
+        let upstream = lsp_upstream_url(
+            "ws://127.0.0.1:7861/v1/lsp",
+            "typescript",
+            Some(Path::new("/work trees/project")),
+            Some("file:///work%20trees/project/packages/app/src/main.ts"),
+        );
+        let parsed = reqwest::Url::parse(&upstream).unwrap();
+        let query = parsed
+            .query_pairs()
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(parsed.path(), "/v1/lsp");
+        assert_eq!(query.get("language").unwrap(), "typescript");
+        assert_eq!(query.get("workspace_root").unwrap(), "/work trees/project");
+        assert_eq!(
+            query.get("document_uri").unwrap(),
+            "file:///work%20trees/project/packages/app/src/main.ts"
+        );
+    }
+
+    #[test]
+    fn coding_engine_attempt_resolution_never_falls_back_to_a_sibling() {
+        let repo = TempDir::new().expect("repo");
+        let forge_root = TempDir::new().expect("forge root");
+        let git = GitEngine::detect().expect("git");
+        assert!(
+            std::process::Command::new("git")
+                .args(["init", "-b", "main", "--template="])
+                .current_dir(repo.path())
+                .status()
+                .expect("git init")
+                .success()
+        );
+        std::fs::write(repo.path().join("seed.txt"), "seed\n").expect("seed");
+        assert!(
+            std::process::Command::new("git")
+                .args(["add", "-A"])
+                .current_dir(repo.path())
+                .status()
+                .expect("git add")
+                .success()
+        );
+        git.commit_checkpoint(repo.path(), "initial", &CheckpointAuthor::default())
+            .expect("initial commit");
+        let forge = Forge::open(forge_root.path()).expect("forge");
+        let item = forge
+            .register(
+                "Exact coding worktree",
+                "Keep language actions attempt-scoped",
+                repo.path(),
+                "main",
+                "user-1",
+                &Forge::system_actor(),
+            )
+            .expect("register");
+        forge
+            .provision(&item.id, &Forge::system_actor())
+            .expect("provision");
+        let executor = || ExecutorDescriptor {
+            kind: "test-coder".into(),
+            detail: Value::Null,
+        };
+        let (item, first) = forge
+            .begin_isolated_attempt(&item.id, executor(), None, &Forge::system_actor())
+            .expect("first attempt");
+        let (item, second) = forge
+            .begin_isolated_attempt(&item.id, executor(), None, &Forge::system_actor())
+            .expect("second attempt");
+        let first_root = worktree_for_request(
+            &forge,
+            item.id.as_str(),
+            Some(first.attempt_id.as_str()),
+        )
+        .expect("first root");
+        let second_root = worktree_for_request(
+            &forge,
+            item.id.as_str(),
+            Some(second.attempt_id.as_str()),
+        )
+        .expect("second root");
+        assert_ne!(first_root, second_root);
+        assert_eq!(
+            first_root,
+            item.environment_for_attempt(&first.attempt_id)
+                .expect("first environment")
+                .worktree
+        );
+        assert!(
+            worktree_for_request(
+                &forge,
+                item.id.as_str(),
+                Some(AttemptId::from("missing".to_string()).as_str()),
+            )
+            .is_none(),
+            "an unknown attempt must not fall back to staging or a sibling"
         );
     }
 }

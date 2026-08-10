@@ -315,7 +315,13 @@ async fn main() -> Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await.with_context(|| {
         format!("failed to bind medousa daemon on {addr} — another daemon may already be running")
     })?;
-    tracing::info!(%addr, "acquired bind address, initializing runtime");
+    let bound_addr = listener
+        .local_addr()
+        .context("failed to read medousa daemon listener address")?;
+    tracing::info!(requested = %addr, bound = %bound_addr, "acquired bind address, initializing runtime");
+    // In-process tool proxies dial the API over loopback; point them at the
+    // port we actually bound rather than the compiled-in default.
+    medousa::daemon_self_url::init_daemon_self_base_url(bound_addr);
 
     let webhook_client = heartbeat_notify
         .webhook_url
@@ -486,6 +492,7 @@ async fn main() -> Result<()> {
             }
         },
     };
+    medousa::daemon::forge_watch::spawn_forge_worktree_watcher(state.forge_events.clone());
 
     medousa::turn_worker_notify::register_ingest_channel_delivery_bridge(
         medousa::turn_worker_notify::IngestChannelDeliveryBridge::new(

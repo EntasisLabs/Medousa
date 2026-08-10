@@ -79,34 +79,8 @@
   }
 </script>
 
-<aside class="lme-files-explorer flex h-full min-h-0 w-full flex-col" aria-label="Local Files">
-  <div class="min-h-0 flex-1 overflow-hidden">
-    {#if searching}
-      <div class="flex h-full min-h-0 flex-col overflow-y-auto px-1.5 py-1">
-        {#if externalHits.length === 0}
-          <p class="px-2 py-4 text-sm text-content-quiet">No files match.</p>
-        {:else}
-          <ul class="space-y-0.5">
-            {#each externalHits as entry (entry.path)}
-              <li>
-                <ExternalFileRow
-                  {entry}
-                  selected={externalDesk.selectedExternalPath === entry.path}
-                  showLink={canLinkFiles}
-                  onOpen={handleOpen}
-                  onLink={handleLink}
-                />
-              </li>
-            {/each}
-          </ul>
-        {/if}
-      </div>
-    {:else}
-      <ExternalFilesBrowser onOpenFile={handleOpen} />
-    {/if}
-  </div>
-
-  <footer
+<aside class="lme-files-explorer flex h-full min-h-0 w-full flex-col" aria-label="Files">
+  <header
     class="lme-side-rail-dock lme-files-dock"
     use:portLmeDock
   >
@@ -134,13 +108,17 @@
         </button>
       </div>
     {:else}
-      <div class="lme-dock-leading-ghost min-w-0 flex-1">
-        {#if !coLocated}
-          <span class="workshop-faint truncate text-[11px]" title={vaultPinFolderRemoteHint()}>
-            Local only
-          </span>
-        {/if}
-      </div>
+      <!-- Push action cluster to the right: New · Refresh · Search -->
+      <div class="lme-dock-leading-ghost min-w-0 flex-1" aria-hidden="true"></div>
+
+      {#if !coLocated}
+        <span
+          class="workshop-faint mr-0.5 max-w-[4.5rem] shrink-0 truncate text-[10px]"
+          title={vaultPinFolderRemoteHint()}
+        >
+          Local only
+        </span>
+      {/if}
 
       {#if coLocated}
         <button
@@ -150,7 +128,7 @@
           title="Add folder"
           onclick={() => void externalDesk.pinFolder()}
         >
-          <FolderPlus size={15} strokeWidth={1.75} />
+          <FolderPlus size={16} strokeWidth={1.75} />
         </button>
       {/if}
 
@@ -183,5 +161,31 @@
         <Search size={15} strokeWidth={1.75} />
       </button>
     {/if}
-  </footer>
+  </header>
+  <div class="min-h-0 flex-1 overflow-hidden">
+    {#if searching}
+      <div class="flex h-full min-h-0 flex-col overflow-y-auto px-1.5 py-1">
+        {#if externalHits.length === 0}
+          <p class="px-2 py-4 text-sm text-content-quiet">No files match.</p>
+        {:else}
+          <ul class="space-y-0.5">
+            {#each externalHits as entry (entry.path)}
+              <li>
+                <ExternalFileRow
+                  {entry}
+                  selected={externalDesk.selectedExternalPath === entry.path}
+                  showLink={canLinkFiles}
+                  onOpen={handleOpen}
+                  onLink={handleLink}
+                />
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </div>
+    {:else}
+      <ExternalFilesBrowser onOpenFile={handleOpen} />
+    {/if}
+  </div>
+
 </aside>

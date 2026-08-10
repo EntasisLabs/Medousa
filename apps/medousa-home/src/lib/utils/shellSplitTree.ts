@@ -153,24 +153,113 @@ export function leafOrder(node: SplitNode): string[] {
   return collectGroupIds(node);
 }
 
+type LayoutRect = { x: number; y: number; w: number; h: number };
+
+/** Unit-square geometry for each leaf from the binary split tree. */
+export function leafRects(
+  root: SplitNode,
+  bounds: LayoutRect = { x: 0, y: 0, w: 1, h: 1 },
+): Map<string, LayoutRect> {
+  const out = new Map<string, LayoutRect>();
+  function walk(node: SplitNode, rect: LayoutRect) {
+    if (node.type === "group") {
+      out.set(node.id, rect);
+      return;
+    }
+    const ratio = clampRatio(node.ratio);
+    if (node.direction === "column") {
+      const aw = rect.w * ratio;
+      walk(node.a, { x: rect.x, y: rect.y, w: aw, h: rect.h });
+      walk(node.b, { x: rect.x + aw, y: rect.y, w: rect.w - aw, h: rect.h });
+      return;
+    }
+    const ah = rect.h * ratio;
+    walk(node.a, { x: rect.x, y: rect.y, w: rect.w, h: ah });
+    walk(node.b, { x: rect.x, y: rect.y + ah, w: rect.w, h: rect.h - ah });
+  }
+  walk(root, bounds);
+  return out;
+}
+
+function overlap1d(a0: number, a1: number, b0: number, b1: number): number {
+  return Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
+}
+
+/**
+ * Focus neighbor by rendered geometry (unit-square layout), not flat leaf index.
+ * Prefers sash-adjacent leaves with edge overlap, then nearest center in-axis.
+ */
 export function neighborInDirection(
   root: SplitNode,
   groupId: string,
   dir: FocusDir,
 ): string | null {
-  const order = leafOrder(root);
-  const idx = order.indexOf(groupId);
-  if (idx < 0) return null;
+  const rects = leafRects(root);
+  const current = rects.get(groupId);
+  if (!current) return null;
 
-  // Approximate geometry from tree: column → horizontal, row → vertical.
-  if (dir === "left" || dir === "right") {
-    const step = dir === "left" ? -1 : 1;
-    const next = idx + step;
-    return order[next] ?? null;
+  const cx = current.x + current.w / 2;
+  const cy = current.y + current.h / 2;
+  const eps = 1e-6;
+
+  type Candidate = { id: string; overlap: number; gap: number; cross: number };
+  const candidates: Candidate[] = [];
+
+  for (const [id, rect] of rects) {
+    if (id === groupId) continue;
+    const rx = rect.x + rect.w / 2;
+    const ry = rect.y + rect.h / 2;
+
+    if (dir === "left") {
+      if (rx >= cx - eps) continue;
+      const gap = current.x - (rect.x + rect.w);
+      if (gap < -eps) continue;
+      candidates.push({
+        id,
+        overlap: overlap1d(current.y, current.y + current.h, rect.y, rect.y + rect.h),
+        gap: Math.max(0, gap),
+        cross: Math.abs(cy - ry),
+      });
+    } else if (dir === "right") {
+      if (rx <= cx + eps) continue;
+      const gap = rect.x - (current.x + current.w);
+      if (gap < -eps) continue;
+      candidates.push({
+        id,
+        overlap: overlap1d(current.y, current.y + current.h, rect.y, rect.y + rect.h),
+        gap: Math.max(0, gap),
+        cross: Math.abs(cy - ry),
+      });
+    } else if (dir === "up") {
+      if (ry >= cy - eps) continue;
+      const gap = current.y - (rect.y + rect.h);
+      if (gap < -eps) continue;
+      candidates.push({
+        id,
+        overlap: overlap1d(current.x, current.x + current.w, rect.x, rect.x + rect.w),
+        gap: Math.max(0, gap),
+        cross: Math.abs(cx - rx),
+      });
+    } else {
+      if (ry <= cy + eps) continue;
+      const gap = rect.y - (current.y + current.h);
+      if (gap < -eps) continue;
+      candidates.push({
+        id,
+        overlap: overlap1d(current.x, current.x + current.w, rect.x, rect.x + rect.w),
+        gap: Math.max(0, gap),
+        cross: Math.abs(cx - rx),
+      });
+    }
   }
-  const step = dir === "up" ? -1 : 1;
-  const next = idx + step;
-  return order[next] ?? null;
+
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => {
+    if (a.gap !== b.gap) return a.gap - b.gap;
+    if (b.overlap !== a.overlap) return b.overlap - a.overlap;
+    return a.cross - b.cross;
+  });
+  return candidates[0]?.id ?? null;
 }
 
 export function migrateV1ToSplitRoot(groupId: string): SplitNode {

@@ -5,7 +5,6 @@
   import { contextShell } from "$lib/stores/contextShell.svelte";
   import { contextThreads } from "$lib/stores/contextThreads.svelte";
   import type { LocusNodeDetailResponse, LocusNodeSummary } from "$lib/types/locus";
-  import type { VaultNote } from "$lib/types/vault";
   import {
     applySimulationPositions,
     buildContextMapGraph,
@@ -13,11 +12,12 @@
     type ContextMapDensity,
     type ContextMapNode,
   } from "$lib/utils/contextMap";
+  import type { MapVaultNote } from "$lib/utils/contextMapNotes";
   import { createContextMapSimulation } from "$lib/utils/contextMapPhysics";
 
   interface Props {
     nodes: LocusNodeSummary[];
-    vaultNotes?: VaultNote[];
+    vaultNotes?: MapVaultNote[];
     sessionLabels: Record<string, string>;
     search: string;
     loading: boolean;

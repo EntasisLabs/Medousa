@@ -5,6 +5,7 @@ import {
   type ForgeSourceFile,
 } from "$lib/forge";
 import { resolveCodeEditorLanguage } from "$lib/code/codeEditorLanguageRegistry";
+import { codeWorkbenchState } from "$lib/code/codeWorkbenchState.svelte";
 
 export type CodeDocumentTab = ForgeSourceFile & {
   tabId: string;
@@ -17,7 +18,11 @@ export type CodeDocumentTab = ForgeSourceFile & {
   line: number | null;
 };
 
-export type CodeLocation = { path: string; line: number | null };
+export type CodeLocation = {
+  path: string;
+  line: number | null;
+  groupId?: string | null;
+};
 
 function tabId(workId: string, path: string): string {
   return `source:${encodeURIComponent(workId)}:${encodeURIComponent(path)}`;
@@ -38,8 +43,6 @@ class CodeWorkspaceStore {
   leaseByWorkId = $state<
     Record<string, { lease_id: string; generation: number } | null>
   >({});
-  navigationByWorkId = $state<Record<string, CodeLocation[]>>({});
-  navigationIndexByWorkId = $state<Record<string, number>>({});
   recentTabIdsByWorkId = $state<Record<string, string[]>>({});
   /** Most-recently-closed tabs per work item (path + line) for reopen. */
   closedByWorkId = $state<Record<string, CodeLocation[]>>({});
@@ -50,6 +53,23 @@ class CodeWorkspaceStore {
   private opening = new Map<string, Promise<CodeDocumentTab | null>>();
   private persistTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private workspaceEpoch = 0;
+
+  /** Compatibility view of Code history entries (group-aware). */
+  get navigationByWorkId(): Record<string, CodeLocation[]> {
+    const out: Record<string, CodeLocation[]> = {};
+    const workIds = new Set([
+      ...this.tabs.map((tab) => tab.work_id),
+      ...Object.keys(this.activeByWorkId),
+    ]);
+    for (const workId of workIds) {
+      out[workId] = codeWorkbenchState.entriesFor(workId).map((entry) => ({
+        path: entry.path,
+        line: entry.line,
+        groupId: entry.groupId,
+      }));
+    }
+    return out;
+  }
 
   resetForWorkshopSwitch() {
     this.workspaceEpoch += 1;
@@ -62,8 +82,7 @@ class CodeWorkspaceStore {
     this.activeByWorkId = {};
     this.workspaceErrorByWorkId = {};
     this.leaseByWorkId = {};
-    this.navigationByWorkId = {};
-    this.navigationIndexByWorkId = {};
+    codeWorkbenchState.reset();
     this.recentTabIdsByWorkId = {};
     this.closedByWorkId = {};
     this.tabOrderByWorkId = {};
@@ -128,6 +147,7 @@ class CodeWorkspaceStore {
 
 
   isDirty(tab: CodeDocumentTab): boolean {
+    if (tab.preview) return false;
     return tab.draft !== tab.content;
   }
 
@@ -249,34 +269,45 @@ class CodeWorkspaceStore {
     return ordered;
   }
 
-  private recordNavigation(workId: string, path: string, line: number | null) {
-    const history = this.navigationByWorkId[workId] ?? [];
-    const index = this.navigationIndexByWorkId[workId] ?? history.length - 1;
-    const current = history[index];
-    const next = { path, line: line && line > 0 ? Math.floor(line) : null };
-    if (current?.path === next.path && current.line === next.line) return;
-    const entries = [...history.slice(0, index + 1), next].slice(-100);
-    this.navigationByWorkId = { ...this.navigationByWorkId, [workId]: entries };
-    this.navigationIndexByWorkId = {
-      ...this.navigationIndexByWorkId,
-      [workId]: entries.length - 1,
-    };
+  private recordNavigation(
+    workId: string,
+    path: string,
+    line: number | null,
+    groupId: string | null = null,
+  ) {
+    codeWorkbenchState.record(workId, path, line, groupId);
+  }
+
+  recordNavigationLocation(
+    workId: string,
+    path: string,
+    line: number | null,
+    groupId: string | null = null,
+  ) {
+    if (!workId || !path) return;
+    this.recordNavigation(workId, path, line, groupId);
   }
 
   canNavigate(workId: string, direction: -1 | 1): boolean {
-    const entries = this.navigationByWorkId[workId] ?? [];
-    const index = this.navigationIndexByWorkId[workId] ?? entries.length - 1;
-    return direction < 0 ? index > 0 : index >= 0 && index < entries.length - 1;
+    return codeWorkbenchState.canNavigate(workId, direction);
   }
 
+  /**
+   * Step Back/Forward. Returns the opened tab plus the history entry so the
+   * editor can focus the remembered shell group.
+   */
   async navigate(workId: string, direction: -1 | 1) {
-    if (!this.canNavigate(workId, direction)) return null;
-    const entries = this.navigationByWorkId[workId] ?? [];
-    const current = this.navigationIndexByWorkId[workId] ?? entries.length - 1;
-    const index = current + direction;
-    const location = entries[index];
-    this.navigationIndexByWorkId = { ...this.navigationIndexByWorkId, [workId]: index };
-    return this.open(workId, location.path, location.line, { recordNavigation: false });
+    const previousIndex = codeWorkbenchState.indexFor(workId);
+    const location = codeWorkbenchState.step(workId, direction);
+    if (!location) return null;
+    const opened = await this.open(workId, location.path, location.line, {
+      recordNavigation: false,
+    });
+    if (!opened) {
+      codeWorkbenchState.restoreIndex(workId, previousIndex);
+      return null;
+    }
+    return { tab: opened, entry: location };
   }
 
 
@@ -479,6 +510,9 @@ class CodeWorkspaceStore {
         [workId]: active.tabId,
       };
     }
+    if (state.layout) {
+      codeWorkbenchState.applyLayout(workId, state.layout);
+    }
   }
 
   private schedulePersist(workId: string, delay = 700) {
@@ -493,12 +527,18 @@ class CodeWorkspaceStore {
     );
   }
 
+  /** Persist Code buffers and contextual layout for this undertaking. */
+  scheduleLayoutPersist(workId: string) {
+    this.schedulePersist(workId, 400);
+  }
+
   async persist(workId: string) {
     if (!this.hydrated.has(workId)) return;
     const tabs = this.tabsFor(workId).filter((tab) => !tab.loading && tab.digest);
     const dirty = tabs.some((tab) => this.isDirty(tab));
     const lease = this.leaseByWorkId[workId] ?? null;
     if (dirty && !lease) return;
+    const layout = codeWorkbenchState.layoutFor(workId);
     try {
       await saveCodeWorkspaceState(
         workId,
@@ -511,6 +551,13 @@ class CodeWorkspaceStore {
           })),
           active_path: this.activeFor(workId)?.path ?? null,
           secondary_path: null,
+          layout: {
+            context_panel: layout.context_panel,
+            terminal: layout.terminal,
+            tests: layout.tests,
+            search: layout.search,
+            changes: layout.changes,
+          },
         },
         lease,
       );

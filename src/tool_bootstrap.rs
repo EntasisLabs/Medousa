@@ -284,19 +284,6 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                 summary: "Home environment — surfaces, chrome, persistent components, context pointers",
                 tools: ENVIRONMENT_DOMAIN_TOOLS,
             },
-            ToolDomainCatalogEntry {
-                domain: "presentation",
-                summary: "Liquid chat embeds (markdown) first; ui_build for streaming scenes; legacy ui_scene + HTML artifacts",
-                tools: &[
-                    "cognition_ui_build",
-                    "cognition_ui_scene",
-                    "cognition_ui_present",
-                    "cognition_artifact_list",
-                    "cognition_artifact_read",
-                    "cognition_artifact_grep",
-                    "cognition_artifact_write",
-                ],
-            },
         ]
     })
     .as_slice()
@@ -442,73 +429,6 @@ pub const BOUND_WORKSHOP_AUTO_UNLOCK_DOMAINS: &[&str] = &[
     "calendar",
     "memory",
 ];
-
-pub fn tool_one_liner(name: &str) -> &'static str {
-    match name {
-        COGNITION_TOOLS_DISCOVER => "Unlock a tool domain for this session (memory, catalog, runtime, …)",
-        "cognition_capability_search" => "Search capability catalog by keyword",
-        "cognition_capability_resolve" => "Resolve capability id to bindings",
-        "cognition_tool_history_summary" => "Summarize recent turn tool slices",
-        "cognition_tool_history_detail" => "Full tool receipt for slice_id=turn:N",
-        "cognition_spawn_turn_worker" => "Delegate execution to workshop lane",
-        "cognition_memory_context" => "Load Locus AVEC + session memory context",
-        "cognition_memory_store" => "Store episodic STTP node in Locus memory",
-        "cognition_identity_recall" => "Look up preferences, people, and identity facts",
-        "cognition_identity_remember" => "Remember durable personal facts in identity memory",
-        "cognition_vault_search" => "Search vault notes",
-        "cognition_vault_grep" => "Grep inside a vault note by line",
-        "cognition_vault_tags" => "List semantic tags across vault notes (shared with Locus)",
-        "cognition_calendar_list" => "List personal calendar events in a time range",
-        "cognition_calendar_create" => "Create a calendar event in vault .ics",
-        "cognition_calendar_update" => "Update a calendar event by uid",
-        "cognition_calendar_delete" => "Delete a calendar event by uid",
-        "cognition_calendar_import" => "Import VEVENTs from raw ICS text",
-        "cognition_calendar_export" => "Export the vault calendar as ICS",
-        "cognition_web_search" => "Search the public web (provider fallback from config)",
-        "cognition_browser_fetch" => "Fetch a URL via Agent Browser and return markdown excerpt",
-        "cognition_browser_snapshot" => "Snapshot a URL via Agent Browser for synthesis",
-        "cognition_browser_act" => "Click/type/scroll on the shared Web tab (agent control required)",
-        "cognition_turn_begin_work" => "Signal heavy/long-running tool work starting (workers, big crawls)",
-        "cognition_turn_update_user" => "Short status to the principal mid-turn (retries, course-corrections) — call with your next tool",
-        "cognition_turn_checkpoint" => "Mid-task update; hand turn to principal",
-        "cognition_turn_finish" => "Commit principal-ready answer (required after tool work)",
-        "cognition_ui_build" => "Streaming interactive Liquid scenes (begin → set_prose/add_section/add_card/add_actions → done) when markdown embeds aren't enough; prefer over cognition_ui_scene",
-        "cognition_ui_scene" => "Legacy freeform scene ops (plan_layout/fill_slot) — prefer markdown embeds or cognition_ui_build for chat",
-        "cognition_ui_present" => "Publish a new HTML artifact in chat (inline, panel, or fullscreen)",
-        "cognition_artifact_list" => "List HTML presentation artifacts in this session",
-        "cognition_artifact_read" => "Read HTML artifact source (line range or budget)",
-        "cognition_artifact_grep" => "Grep inside an HTML artifact by line",
-        "cognition_artifact_write" => "Revise or create an HTML artifact revision",
-        "cognition_artifact_delete" => "Delete an HTML presentation artifact revision chain",
-        "cognition_vault_delete" => "Soft-delete a vault note (moves to .trash)",
-        "cognition_vault_move" => "Move or rename a vault note path",
-        "cognition_environment_wiki" => "Canvas SDK STTP nodes — schemas, merge_spec, recipes; call before guessing propose JSON",
-        "cognition_environment_get" => "Read environment spec — custom surfaces + components; start canvas work here",
-        "cognition_environment_propose" => "Validate environment spec patch (errors[] on failure)",
-        "cognition_environment_apply" => "Apply approved environment spec changes",
-        "cognition_environment_activate_preset" => "Switch active layout preset (nav + chrome)",
-        "cognition_component_list" => "List persisted canvas components",
-        "cognition_component_create" => "Add presentation/chrome_action on a custom surface (camelCase surfaceId)",
-        "cognition_component_update" => "Patch a canvas component",
-        "cognition_component_delete" => "Remove a canvas component",
-        "cognition_context_follow_pointer" => "Resolve a pointer id to a focused context slice",
-        "cognition_context_list_pointers" => "List ranked context pointers (bootstrap usually sufficient)",
-        "cognition_intent_resolve" => "Resolve intent to capability + suggested feeds and component template",
-        "cognition_feed_subscribe" => "Bind feed ids on a custom-surface component",
-        "cognition_feed_publish" => "Publish a bounded feed event to subscribed components",
-        "cognition_layout_get" => "Read stack layout tree for a custom surface main body",
-        "cognition_layout_apply" => "Apply vstack/hstack/grid layout to custom surface main body",
-        "cognition_layout_reset" => "Clear layoutRoot to implicit vertical stack",
-        "cognition_environment_patch" => "Incremental environment ops — new custom surfaces go live; preset rewrites propose",
-        "cognition_custom_view_doctor" => "Diagnose custom surfaces — nav, feeds, recurring bindings, mismatches",
-        "cognition_custom_view_compose" => "One-shot custom view + HTML + feeds + layout + recurring poll",
-        "cognition_turn_worker_status" => "Pending worker status",
-        "cognition_capability_invoke" => "One-shot capability execution",
-        "cognition_grapheme_script_load" => "Load saved Grapheme script body",
-        "cognition_grapheme_template_run" => "Run preset Grapheme template",
-        _ => "Session-unlocked tool — see cognition_tools_discover catalog",
-    }
-}
 
 pub fn domain_catalog(lane: ToolSurfaceLane) -> &'static [ToolDomainCatalogEntry] {
     match lane {
@@ -728,6 +648,7 @@ pub fn effective_tool_names(
 }
 
 pub fn build_tool_hints_block(
+    catalog: &crate::typed_tools::ToolCatalog,
     session_id: &str,
     prompt: &str,
     turns: &[ConversationTurn],
@@ -748,7 +669,10 @@ pub fn build_tool_hints_block(
     ];
 
     for tool in HOST_BOOTSTRAP_TOOLS {
-        lines.push(format!("- {tool}: {}", tool_one_liner(tool)));
+        lines.push(format!(
+            "- {tool}: {}",
+            catalog.presentation_summary_for_wire(tool)
+        ));
     }
 
     let ranked = rank_hint_domains(prompt, turns);
@@ -1055,7 +979,13 @@ mod tests {
 
     #[test]
     fn tool_hints_block_mentions_discover() {
-        let block = build_tool_hints_block("sess-hints", "calibrate memory posture", &[], 600);
+        let block = build_tool_hints_block(
+            &crate::typed_tools::ToolCatalog::default(),
+            "sess-hints",
+            "calibrate memory posture",
+            &[],
+            600,
+        );
         assert!(block.contains("[MEDOUSA_TOOL_HINTS]"));
         assert!(block.contains("cognition_tools_discover"));
         assert!(block.contains("memory"));

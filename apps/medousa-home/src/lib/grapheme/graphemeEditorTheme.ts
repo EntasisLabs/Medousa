@@ -1,10 +1,6 @@
 import { LanguageSupport } from "@codemirror/language";
 import { EditorView } from "@codemirror/view";
 import { graphemeLanguage } from "$lib/grapheme/graphemeLanguage";
-import {
-  medousaSyntaxHighlightStyle,
-  medousaSyntaxHighlighting,
-} from "$lib/syntax/codemirrorSyntaxTheme";
 
 const tooltipShell = {
   border: "1px solid rgb(var(--color-surface-600) / 0.4)",
@@ -14,11 +10,13 @@ const tooltipShell = {
   boxShadow: "0 12px 28px rgb(0 0 0 / 0.38), 0 0 0 1px rgb(0 0 0 / 0.14)",
 } as const;
 
+/**
+ * Non-token chrome for Grapheme/code editors (tooltips, completions).
+ * Canvas / token colors come from the independent syntax theme pack.
+ */
 export const graphemeEditorTheme = EditorView.theme(
   {
     "&": {
-      color: "rgb(var(--syn-fg))",
-      backgroundColor: "rgb(var(--color-surface-950))",
       height: "100%",
     },
     ".cm-content": {
@@ -26,30 +24,10 @@ export const graphemeEditorTheme = EditorView.theme(
         'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
       fontSize: "13px",
       lineHeight: "1.45",
-      caretColor: "rgb(var(--color-primary-300))",
       padding: "8px 0",
-    },
-    ".cm-gutters": {
-      backgroundColor: "rgb(var(--color-surface-950))",
-      color: "rgb(var(--color-surface-500))",
-      borderRight: "1px solid rgb(var(--color-surface-600) / 0.4)",
-      minWidth: "2.75rem",
     },
     ".cm-gutterElement": {
       padding: "0 0.5rem 0 0.65rem",
-    },
-    ".cm-activeLineGutter": {
-      backgroundColor: "rgb(var(--color-surface-900))",
-      color: "rgb(var(--color-surface-300))",
-    },
-    ".cm-activeLine": {
-      backgroundColor: "rgb(var(--color-surface-900) / 0.45)",
-    },
-    ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
-      backgroundColor: "rgb(var(--color-primary-500) / 0.22) !important",
-    },
-    ".cm-cursor, .cm-dropCursor": {
-      borderLeftColor: "rgb(var(--color-primary-300))",
     },
     ".cm-scroller": {
       overflow: "auto",
@@ -209,12 +187,7 @@ export const graphemeEditorTheme = EditorView.theme(
       color: "rgb(var(--color-surface-500))",
     },
   },
-  { dark: true },
 );
 
-export const graphemeHighlightStyle = medousaSyntaxHighlightStyle;
-export const graphemeSyntax = medousaSyntaxHighlighting;
-
-export const graphemeLanguageSupport = new LanguageSupport(graphemeLanguage, [
-  graphemeSyntax,
-]);
+/** Language support only — syntax colors come from the host theme compartment. */
+export const graphemeLanguageSupport = new LanguageSupport(graphemeLanguage);

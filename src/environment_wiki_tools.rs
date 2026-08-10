@@ -3,12 +3,16 @@
 //! Spatio-Temporal Transfer Protocol compresses policy into cognitive latent space —
 //! same representation family as `DEFAULT_SYSTEM_PROMPT`, not markdown tables.
 
-use async_trait::async_trait;
-use serde_json::{Value, json};
-use stasis::application::orchestration::tool_registry::StasisTool;
+use schemars::JsonSchema;
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Value;
 use stasis::prelude::Result as StasisResult;
 
+use crate::typed_tools::{ToolId, medousa_tool};
+
 pub const COGNITION_ENVIRONMENT_WIKI: &str = "cognition_environment_wiki";
+
+const COGNITION_ENVIRONMENT_WIKI_ID: ToolId = ToolId::new(COGNITION_ENVIRONMENT_WIKI);
 
 const STTP_ORIGIN: &str = "medousa-environment-wiki";
 const STTP_PARENT: &str = "medousa-system-prompt";
@@ -428,7 +432,12 @@ const TOPICS: &[WikiTopic] = &[
     },
     adhd_guide_example(.96): "{ surface_id:adhd-guide, layout_root:{ type:hstack, spacing:md, distribution:fill_equally, children:[{type:component,id:adhd-guide-tetris,flex:1},{type:component,id:adhd-guide-original,flex:1}] } }",
     anti_patterns(.98): "Do not encode mosaic layout inside HTML artifact when multiple presentation components should move independently — use layout_apply instead; respect user slot zones in layoutRoot"#,
-        related: &["component_schema", "surface_schema", "layout_zones", "tool_map"],
+        related: &[
+            "component_schema",
+            "surface_schema",
+            "layout_zones",
+            "tool_map",
+        ],
         call_next: &["cognition_layout_get", "cognition_layout_apply"],
     },
     WikiTopic {
@@ -497,7 +506,10 @@ const TOPICS: &[WikiTopic] = &[
         step_5(.96): "Turn ends — ticks keep UI live via component_patch SSE"
     }"#,
         related: &["tool_map", "example_trip_poll", "component_schema"],
-        call_next: &["cognition_feed_subscribe", "cognition_runtime_recurring_register"],
+        call_next: &[
+            "cognition_feed_subscribe",
+            "cognition_runtime_recurring_register",
+        ],
     },
     WikiTopic {
         id: "example_trip_poll",
@@ -517,7 +529,10 @@ const TOPICS: &[WikiTopic] = &[
     },
     payload_fields(.98): "phase tick_succeeded|tick_failed, checkedAt, statusCode, excerpt, recurringId, jobId"#,
         related: &["feed_client", "component_schema"],
-        call_next: &["cognition_feed_subscribe", "cognition_runtime_recurring_register"],
+        call_next: &[
+            "cognition_feed_subscribe",
+            "cognition_runtime_recurring_register",
+        ],
     },
     WikiTopic {
         id: "custom_view_compose",
@@ -534,8 +549,16 @@ const TOPICS: &[WikiTopic] = &[
         gated(.98): "rewrite_active_preset_surfaces or preset_rewrite in compose input"
     },
     response(.98): "live, nav_visible, feeds_subscribed, feeds_bound_recurring, next_run_at_utc, embedded doctor summary"#,
-        related: &["custom_view_doctor", "feed_client", "example_trip_poll", "tool_map"],
-        call_next: &["cognition_custom_view_compose", "cognition_custom_view_doctor"],
+        related: &[
+            "custom_view_doctor",
+            "feed_client",
+            "example_trip_poll",
+            "tool_map",
+        ],
+        call_next: &[
+            "cognition_custom_view_compose",
+            "cognition_custom_view_doctor",
+        ],
     },
     WikiTopic {
         id: "custom_view_doctor",
@@ -555,8 +578,17 @@ const TOPICS: &[WikiTopic] = &[
     },
     fix_hints(.96): "issues[].fix_hint + suggested_actions[] — patch via cognition_artifact_write, re-run doctor",
     http(.96): "GET /v1/environment/status?include_runtime=true mirrors lightweight runtime for Settings Canvas"#,
-        related: &["custom_view_compose", "feed_client", "artifact_runtime", "tool_map"],
-        call_next: &["cognition_custom_view_doctor", "cognition_environment_patch", "cognition_artifact_write"],
+        related: &[
+            "custom_view_compose",
+            "feed_client",
+            "artifact_runtime",
+            "tool_map",
+        ],
+        call_next: &[
+            "cognition_custom_view_doctor",
+            "cognition_environment_patch",
+            "cognition_artifact_write",
+        ],
     },
     WikiTopic {
         id: "artifact_runtime",
@@ -591,7 +623,12 @@ const TOPICS: &[WikiTopic] = &[
     anti_patterns(.98): "return MedousaStore.get(key) without await; sync store.get wrapper; loadThoughts() without async",
     probe(.96): "Doctor probe=true → SSE runtime_probe → iframe self-test → POST .../runtime/probe/{id}/result",
     agent_codes(.97): "STATIC_LOCALSTORAGE, STATIC_STORE_SYNC_USAGE, STORE_WRONG_TYPE, RUNTIME_LOG, PROBE_STORE_NOT_READY"#,
-        related: &["custom_view_doctor", "feed_client", "component_schema", "environment_theme"],
+        related: &[
+            "custom_view_doctor",
+            "feed_client",
+            "component_schema",
+            "environment_theme",
+        ],
         call_next: &["cognition_custom_view_doctor", "cognition_artifact_write"],
     },
     WikiTopic {
@@ -652,9 +689,7 @@ const TOPICS: &[WikiTopic] = &[
 ];
 
 fn normalize_topic(raw: &str) -> String {
-    raw.trim()
-        .to_ascii_lowercase()
-        .replace(['_', ' '], "-")
+    raw.trim().to_ascii_lowercase().replace(['_', ' '], "-")
 }
 
 fn resolve_topic(requested: Option<&str>) -> Option<&'static WikiTopic> {
@@ -707,101 +742,155 @@ fn topic_sttp_node(topic: &'static WikiTopic) -> String {
     wrap_sttp_node(&trigger, topic.summary, topic.policy)
 }
 
-fn topic_to_json(topic: &'static WikiTopic) -> Value {
+#[derive(Debug, Serialize, JsonSchema)]
+struct WikiTopicSummary {
+    id: String,
+    summary: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+enum EnvironmentWikiOutput {
+    Topic {
+        ok: bool,
+        format: String,
+        topic: String,
+        title: String,
+        summary: String,
+        sttp_node: String,
+        content: String,
+        related_topics: Vec<String>,
+        suggested_next_tools: Vec<String>,
+        all_topics: Vec<WikiTopicSummary>,
+    },
+    Error {
+        ok: bool,
+        format: String,
+        error: String,
+        hint: String,
+        all_topics: Vec<String>,
+    },
+}
+
+fn topic_to_output(topic: &'static WikiTopic) -> EnvironmentWikiOutput {
     let sttp_node = topic_sttp_node(topic);
-    json!({
-        "ok": true,
-        "format": "sttp",
-        "topic": topic.id,
-        "title": topic.title,
-        "summary": topic.summary,
-        "sttp_node": sttp_node,
-        "content": sttp_node,
-        "related_topics": topic.related,
-        "suggested_next_tools": topic.call_next,
-        "all_topics": TOPICS.iter().skip(1).map(|t| json!({
-            "id": t.id,
-            "summary": t.summary,
-        })).collect::<Vec<_>>(),
-    })
+    EnvironmentWikiOutput::Topic {
+        ok: true,
+        format: "sttp".to_string(),
+        topic: topic.id.to_string(),
+        title: topic.title.to_string(),
+        summary: topic.summary.to_string(),
+        content: sttp_node.clone(),
+        sttp_node,
+        related_topics: topic
+            .related
+            .iter()
+            .map(|value| (*value).to_string())
+            .collect(),
+        suggested_next_tools: topic
+            .call_next
+            .iter()
+            .map(|value| (*value).to_string())
+            .collect(),
+        all_topics: TOPICS
+            .iter()
+            .skip(1)
+            .map(|topic| WikiTopicSummary {
+                id: topic.id.to_string(),
+                summary: topic.summary.to_string(),
+            })
+            .collect(),
+    }
 }
 
 struct CognitionEnvironmentWikiTool;
 
-#[async_trait]
-impl StasisTool for CognitionEnvironmentWikiTool {
-    fn name(&self) -> &'static str {
-        COGNITION_ENVIRONMENT_WIKI
-    }
+#[derive(Debug)]
+struct WikiTopicQuery(String);
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Environment/canvas SDK as STTP temporal nodes — schemas, merge rules, propose/apply, ui_present, ui_scene. \
-             Returns response_format=sttp (same family as system prompt). \
-             Call topic=recipe or merge_spec BEFORE hand-building environment spec JSON. \
-             Topics: scene_vs_html, mental_model, recipe, merge_spec, surface_schema, component_schema, propose_apply, ui_present, ui_scene, presets, layout_schema, layout_zones, media_embed, feed_client, example_trip_poll, common_errors, example_writing_studio, tool_map.",
-        )
-    }
+fn deserialize_optional_wiki_topic<'de, D>(
+    deserializer: D,
+) -> Result<Option<WikiTopicQuery>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    Ok(value
+        .as_str()
+        .map(|value| WikiTopicQuery(value.to_string())))
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "topic": {
-                    "type": "string",
-                    "description": "STTP wiki topic id. Omit for index node.",
-                    "enum": [
-                        "index",
-                        "scene_vs_html",
-                        "mental_model",
-                        "recipe",
-                        "merge_spec",
-                        "surface_schema",
-                        "component_schema",
-                        "propose_apply",
-                        "ui_present",
-                        "ui_scene",
-                        "presets",
-                        "layout_schema",
-                        "layout_zones",
-                        "media_embed",
-                        "feed_client",
-                        "example_trip_poll",
-                        "common_errors",
-                        "example_writing_studio",
-                        "tool_map"
-                    ]
-                }
-            }
-        }))
-    }
+#[derive(Debug, JsonSchema)]
+#[allow(dead_code)]
+#[schemars(rename_all = "snake_case")]
+enum WikiTopicSchema {
+    Index,
+    SceneVsHtml,
+    MentalModel,
+    Recipe,
+    MergeSpec,
+    SurfaceSchema,
+    ComponentSchema,
+    ProposeApply,
+    UiPresent,
+    UiScene,
+    Presets,
+    LayoutSchema,
+    LayoutZones,
+    MediaEmbed,
+    FeedClient,
+    ExampleTripPoll,
+    CommonErrors,
+    ExampleWritingStudio,
+    ToolMap,
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let requested = input.get("topic").and_then(Value::as_str);
+#[derive(Debug, Deserialize, JsonSchema)]
+struct EnvironmentWikiInput {
+    /// STTP wiki topic id. Omit for index node.
+    #[serde(default, deserialize_with = "deserialize_optional_wiki_topic")]
+    #[schemars(with = "WikiTopicSchema", skip_serializing_if = "Option::is_none")]
+    topic: Option<WikiTopicQuery>,
+}
+
+#[medousa_tool(id = COGNITION_ENVIRONMENT_WIKI_ID)]
+impl CognitionEnvironmentWikiTool {
+    /// Environment/canvas SDK as STTP temporal nodes — schemas, merge rules, propose/apply, ui_present, ui_scene. Returns response_format=sttp (same family as system prompt). Call topic=recipe or merge_spec BEFORE hand-building environment spec JSON. Topics: scene_vs_html, mental_model, recipe, merge_spec, surface_schema, component_schema, propose_apply, ui_present, ui_scene, presets, layout_schema, layout_zones, media_embed, feed_client, example_trip_poll, common_errors, example_writing_studio, tool_map.
+    async fn invoke_typed(
+        &self,
+        input: EnvironmentWikiInput,
+    ) -> stasis::prelude::Result<EnvironmentWikiOutput> {
+        let requested = input.topic.as_ref().map(|topic| topic.0.as_str());
         if let Some(topic) = resolve_topic(requested) {
-            return Ok(topic_to_json(topic));
+            return Ok(topic_to_output(topic));
         }
         let key = requested.unwrap_or("(empty)");
-        Ok(json!({
-            "ok": false,
-            "format": "sttp",
-            "error": format!("unknown topic '{key}'"),
-            "hint": "Omit topic for index STTP node, or use a topic id from all_topics",
-            "all_topics": TOPICS.iter().skip(1).map(|t| t.id).collect::<Vec<_>>(),
-        }))
+        Ok(EnvironmentWikiOutput::Error {
+            ok: false,
+            format: "sttp".to_string(),
+            error: format!("unknown topic '{key}'"),
+            hint: "Omit topic for index STTP node, or use a topic id from all_topics".to_string(),
+            all_topics: TOPICS
+                .iter()
+                .skip(1)
+                .map(|topic| topic.id.to_string())
+                .collect(),
+        })
     }
 }
 
 pub fn register_environment_wiki_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
 ) -> StasisResult<()> {
-    registry.register_tool(CognitionEnvironmentWikiTool)?;
+    registry.register_typed_tool(CognitionEnvironmentWikiTool)?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+    use stasis::application::orchestration::tool_registry::StasisTool;
 
     #[test]
     fn wiki_index_is_sttp() {

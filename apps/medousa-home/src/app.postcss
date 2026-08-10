@@ -22,9 +22,21 @@
   html {
     --mobile-keyboard-inset: 0px;
     --mobile-bottom-chrome-height: 5.5rem;
+    /* Lucide stroke weight — slightly heavier than the old 1.5–1.75 chrome default. */
+    --icon-stroke: 2.15;
     /* Legacy font multipliers stay at 1; real UI zoom is Tauri webview setZoom
        (see contentZoom.ts). Never put CSS zoom on individual scroll hosts. */
     --content-zoom: 1;
+    /* Chrome typography scale — dense UI chrome (toolbars, status, menus).
+       Floor is 11px; pairs with Tailwind `text-chrome-*` utilities. */
+    --chrome-xs: 11px;
+    --chrome-sm: 12px;
+    --chrome-md: 13px;
+  }
+
+  /* App-wide Lucide weight. Overrides per-icon stroke-width attrs (charts stay untouched). */
+  svg.lucide {
+    stroke-width: var(--icon-stroke);
   }
 
   /* iOS WKWebView auto-zooms focused inputs below 16px — enforce minimum app-wide. */
@@ -70,8 +82,7 @@
 
 @layer components {
   .workshop-list-row-active {
-    background-color: rgb(var(--color-primary-500) / 0.1);
-    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-500) / 0.25);
+    background-color: rgb(var(--color-primary-500) / 0.14);
   }
 
   .context-layer-toggle {
@@ -1646,9 +1657,9 @@
     @apply bg-transparent text-surface-100;
   }
 
-  /* Side-rail dock footers (h-8 matches workshop status bar height). */
+  /* Side-rail action rows (h-8 matches workshop status bar height). */
   .lme-side-rail-dock {
-    @apply relative flex h-8 shrink-0 items-center gap-0.5 overflow-visible border-t border-surface-500/25 px-1;
+    @apply relative flex h-8 shrink-0 items-center gap-0.5 overflow-visible border-b border-surface-500/25 px-2;
   }
 
   /* Keep secondary chrome in a single row (avoids stacked buttons overflowing the bar). */
@@ -1844,7 +1855,7 @@
   }
 
   .lme-dock-search-expand {
-    @apply relative flex min-w-0 items-center;
+    @apply relative flex min-w-0 items-center gap-1.5 pl-0.5;
     animation: lme-dock-search-in 160ms ease-out;
   }
 
@@ -3372,15 +3383,49 @@
   }
 
   .session-sidebar-list {
-    @apply flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-2;
+    @apply flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 pb-2 pt-1.5;
+    /* Keep gutter reserved so revealing the thumb never shoves titles. */
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+
+  .session-sidebar-list:hover,
+  .session-sidebar-list:focus-within,
+  .session-sidebar-list:active {
+    scrollbar-color: rgb(var(--color-surface-500) / 0.32) transparent;
+  }
+
+  .session-sidebar-list::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .session-sidebar-list::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .session-sidebar-list::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: transparent;
+  }
+
+  .session-sidebar-list:hover::-webkit-scrollbar-thumb,
+  .session-sidebar-list:focus-within::-webkit-scrollbar-thumb,
+  .session-sidebar-list:active::-webkit-scrollbar-thumb {
+    background: rgb(var(--color-surface-500) / 0.32);
+  }
+
+  .session-sidebar-list:hover::-webkit-scrollbar-thumb:hover,
+  .session-sidebar-list:focus-within::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--color-surface-400) / 0.45);
   }
 
   .session-sidebar-section-title {
-    @apply px-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-content-quiet;
+    @apply px-2.5 pb-1.5 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-content-quiet;
   }
 
   .session-sidebar-section-list {
-    @apply space-y-0.5;
+    @apply space-y-1;
   }
 
   .session-sidebar-empty {
@@ -3388,51 +3433,74 @@
   }
 
   .session-row {
-    @apply flex items-stretch rounded-md transition;
+    @apply relative flex items-stretch rounded-md transition hover:bg-surface-800/70;
   }
 
-  .session-row:hover,
   .session-row:focus-within {
-    @apply bg-surface-700/50;
-  }
-
-  .session-row-active {
-    @apply bg-surface-700/70;
-  }
-
-  .session-row-active:hover,
-  .session-row-active:focus-within {
-    @apply bg-surface-700/80;
+    @apply bg-surface-800/70;
   }
 
   .session-row-main {
-    @apply min-w-0 flex-1 px-2.5 py-1.5 text-left;
+    @apply flex min-w-0 flex-1 items-center gap-1.5 px-2.5 py-2 text-left;
   }
 
   .session-row-title {
-    @apply text-[13px] font-medium text-surface-100;
+    @apply block min-w-0 truncate text-[13px] font-medium leading-snug text-surface-100;
   }
 
-  .session-row-when {
-    @apply text-[10px] tabular-nums text-content-quiet;
+  .session-row-shared-mark {
+    @apply mr-1 inline-block rounded border border-surface-500/45 px-1.5 py-px align-baseline text-[10px] font-semibold uppercase tracking-wide text-content-tertiary;
   }
 
   .session-row-meta {
-    @apply mt-0.5 text-[10px] text-content-quiet;
+    @apply inline-flex shrink-0 items-center justify-end gap-2 self-center px-2 text-[10px] leading-none text-content-quiet transition-opacity duration-150;
   }
 
+  .session-row-when {
+    @apply tabular-nums text-content-quiet;
+  }
+
+  .session-row-turns {
+    @apply inline-flex items-center gap-0.5 text-content-quiet;
+  }
+
+  /*
+   * Actions sit out of flow so idle rows reclaim that width for the title.
+   * On hover/focus they fade in over the meta (same trailing corner).
+   * Scrim uses surface-800 to match rail hover / selected overlays.
+   */
   .session-row-actions {
-    @apply flex shrink-0 items-center gap-0 opacity-0 transition-opacity;
+    @apply absolute inset-y-0 right-0 z-[1] flex items-center gap-0 pr-1 pl-4 opacity-0 pointer-events-none transition-opacity duration-150;
+    background: linear-gradient(
+      to right,
+      transparent,
+      rgb(var(--color-surface-800) / 0.92) 0.85rem,
+      rgb(var(--color-surface-800) / 0.98) 100%
+    );
   }
 
   .session-row:hover .session-row-actions,
-  .session-row:focus-within .session-row-actions,
+  .session-row:focus-within .session-row-actions {
+    @apply pointer-events-auto opacity-100;
+  }
+
+  .session-row:hover .session-row-meta,
+  .session-row:focus-within .session-row-meta {
+    @apply opacity-0;
+  }
+
+  .session-row--touch .session-row-meta {
+    @apply hidden;
+  }
+
   .session-row--touch .session-row-actions {
-    @apply opacity-100;
+    @apply pointer-events-auto relative inset-auto opacity-100;
+    background: transparent;
+    padding-left: 0;
   }
 
   .session-row-action {
-    @apply inline-flex h-7 w-7 items-center justify-center rounded-md text-content-quiet transition hover:bg-surface-800 hover:text-surface-200;
+    @apply inline-flex h-7 w-7 items-center justify-center rounded-md text-content-quiet transition hover:bg-surface-800/70 hover:text-surface-100;
   }
 
   .session-row-action--danger:hover {
@@ -3440,11 +3508,11 @@
   }
 
   .session-row-action--pinned {
-    @apply text-amber-400;
+    @apply text-content-warning;
   }
 
   .session-row-action--pinned:hover {
-    @apply text-amber-300;
+    @apply text-content-warning;
   }
 
   /* Side drawers (sessions, identity) */

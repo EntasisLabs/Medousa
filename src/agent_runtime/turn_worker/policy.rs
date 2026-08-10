@@ -54,10 +54,13 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
     push(
         &mut names,
         &[
+            "cognition_tools_discover",
             "cognition_turn_prepare_final",
             "cognition.turn.prepare_final",
             "cognition_turn_checkpoint",
             "cognition.turn.checkpoint",
+            "cognition_turn_update_user",
+            "cognition.turn.update_user",
             "cognition_turn_finish",
             "cognition.turn.finish",
             "cognition_turn_request_more_rounds",
@@ -227,10 +230,13 @@ pub fn host_bus_tool_names() -> HashSet<String> {
     push(
         &mut names,
         &[
+            "cognition_tools_discover",
             "cognition_turn_begin_work",
             "cognition.turn.begin_work",
             "cognition_turn_checkpoint",
             "cognition.turn.checkpoint",
+            "cognition_turn_update_user",
+            "cognition.turn.update_user",
             "cognition_turn_finish",
             "cognition.turn.finish",
             "cognition_turn_request_more_rounds",
@@ -454,7 +460,9 @@ mod tests {
         assert!(!names.contains("cognition_mcp_invoke"));
         assert!(!names.contains("cognition_turn_prepare_final"));
         assert!(names.contains("cognition_turn_begin_work"));
+        assert!(names.contains("cognition_turn_update_user"));
         assert!(names.contains("cognition_turn_finish"));
+        assert!(names.contains("cognition_tools_discover"));
         assert!(names.contains("cognition_web_search"));
         assert!(names.contains("cognition_browser_fetch"));
         assert!(!names.contains("cognition_environment_get"));
@@ -466,5 +474,7 @@ mod tests {
         let names = allowed_tool_names_for_intent(TurnWorkerIntent::General);
         assert!(names.contains("cognition_environment_get"));
         assert!(names.contains("cognition_component_create"));
+        assert!(names.contains("cognition_turn_update_user"));
+        assert!(names.contains("cognition_tools_discover"));
     }
 }

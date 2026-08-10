@@ -91,6 +91,15 @@ vi.mock("$lib/stores/layout.svelte", () => ({
   layout: layoutState,
 }));
 
+vi.mock("$lib/stores/codeWorkspace.svelte", () => ({
+  codeWorkspace: {
+    resetForWorkshopSwitch: vi.fn(),
+    tabsFor: vi.fn(() => []),
+    hydrate: vi.fn(async () => {}),
+    open: vi.fn(async () => null),
+  },
+}));
+
 describe("shellTabs store", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -188,7 +197,7 @@ describe("shellTabs store", () => {
     expect(shellTabs.groups).toHaveLength(2);
   });
 
-  it("splits by moving the active tab into the new pane", async () => {
+  it("splits by retaining the active tab in both panes", async () => {
     const { shellTabs } = await import("./shellTabs.svelte");
     lmeState.tabs = [
       { tabId: "lme-1", kind: "note", path: "notes/split.md", title: "Split note" },
@@ -200,12 +209,34 @@ describe("shellTabs store", () => {
     expect(shellTabs.splitActive("right")).toBe(true);
     expect(shellTabs.paneCount).toBe(2);
     expect(shellTabs.activeGroupId).not.toBe(fromGroupId);
-    expect(shellTabs.activeTab?.id).toBe(shellId);
-    expect(shellTabs.tabs.filter((tab) => tab.kind === "lme")).toHaveLength(1);
+    expect(shellTabs.tabs.filter((tab) => tab.kind === "lme")).toHaveLength(2);
+    const from = shellTabs.groups.find((group) => group.id === fromGroupId);
+    const to = shellTabs.groups.find((group) => group.id === shellTabs.activeGroupId);
+    expect(from?.tabIds).toContain(shellId);
+    expect(to?.tabIds.some((id) => id !== shellId)).toBe(true);
+    expect(
+      shellTabs.tabs.filter(
+        (tab) => tab.kind === "lme" && tab.lmeTabId === "lme-1",
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("can move the active tab into a new split as a separate command", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    lmeState.tabs = [
+      { tabId: "lme-2", kind: "note", path: "notes/move.md", title: "Move note" },
+    ];
+    lmeState.activeTabId = "lme-2";
+    const shellId = shellTabs.openLme("lme-2", { activate: true, title: "Move note" });
+    expect(shellId).toBeTruthy();
+    const fromGroupId = shellTabs.activeGroupId;
+    expect(shellTabs.moveActiveToNewSplit("right")).toBe(true);
+    expect(shellTabs.paneCount).toBe(2);
     const from = shellTabs.groups.find((group) => group.id === fromGroupId);
     const to = shellTabs.groups.find((group) => group.id === shellTabs.activeGroupId);
     expect(from?.tabIds).not.toContain(shellId);
     expect(to?.tabIds).toContain(shellId);
+    expect(shellTabs.tabs.filter((tab) => tab.kind === "lme")).toHaveLength(1);
   });
 
   it("splits a host pane with a dragged tab on an edge", async () => {
@@ -253,19 +284,24 @@ describe("shellTabs store", () => {
     const moveId = shellTabs.openChat("session-b", { activate: true });
     expect(stayId).toBeTruthy();
     expect(moveId).toBeTruthy();
-    // splitActive moves the focused tab into the new pane
+    // splitActive retains the focused tab; moveId stays in the source pane and
+    // a second shell tab for the same session is cloned into the new pane.
     expect(shellTabs.splitActive("right")).toBe(true);
     const rightGroup = shellTabs.activeGroupId;
     expect(shellTabs.paneCount).toBe(2);
-    expect(shellTabs.activeTab?.id).toBe(moveId);
+    const rightTabId = shellTabs.groups.find((group) => group.id === rightGroup)
+      ?.activeTabId;
+    expect(rightTabId).toBeTruthy();
+    expect(rightTabId).not.toBe(moveId);
 
     const otherId = shellTabs.createDesktop("Park", { activate: false });
     expect(shellTabs.movePaneToDesktop(rightGroup, otherId)).toBe(true);
     expect(shellTabs.paneCount).toBe(1);
-    expect(shellTabs.tabs.some((tab) => tab.id === moveId)).toBe(false);
+    expect(shellTabs.tabs.some((tab) => tab.id === rightTabId)).toBe(false);
     expect(shellTabs.tabs.some((tab) => tab.id === stayId)).toBe(true);
+    expect(shellTabs.tabs.some((tab) => tab.id === moveId)).toBe(true);
     const park = shellTabs.desktops.find((desktop) => desktop.id === otherId);
-    expect(park?.layout.tabs.some((tab) => tab.id === moveId)).toBe(true);
+    expect(park?.layout.tabs.some((tab) => tab.id === rightTabId)).toBe(true);
   });
 
   it("collects search hits across desktops and reveals them", async () => {
@@ -297,11 +333,22 @@ describe("shellTabs store", () => {
     expect(tabId).toBeTruthy();
     expect(shellTabs.splitActive("right")).toBe(true);
     expect(shellTabs.paneCount).toBe(2);
-    expect(shellTabs.activeTab?.id).toBe(tabId);
+    expect(
+      shellTabs.tabs.filter(
+        (tab) => tab.kind === "chat" && tab.sessionId === "session-a",
+      ),
+    ).toHaveLength(2);
+    const cloneId = shellTabs.activeTab?.id;
+    expect(cloneId).toBeTruthy();
+    expect(cloneId).not.toBe(tabId);
     expect(shellTabs.closeActiveGroup()).toBe(true);
     expect(shellTabs.paneCount).toBe(1);
-    expect(shellTabs.tabs.some((tab) => tab.id === tabId)).toBe(true);
-    expect(shellTabs.activeTab?.id).toBe(tabId);
+    // Merge keeps both the original and retained clone in the surviving pane.
+    expect(
+      shellTabs.tabs.filter(
+        (tab) => tab.kind === "chat" && tab.sessionId === "session-a",
+      ),
+    ).toHaveLength(2);
     expect(shellTabs.closeActiveGroup()).toBe(false);
   });
 
@@ -322,6 +369,7 @@ describe("shellTabs store", () => {
 
   it("persists and restores split layout across bootstrap", async () => {
     const { shellTabs } = await import("./shellTabs.svelte");
+    shellTabs.bootstrap();
     shellTabs.openChat("session-a", { activate: true });
     expect(shellTabs.splitActive("right")).toBe(true);
     const branchId =
@@ -357,6 +405,7 @@ describe("shellTabs store", () => {
 
   it("keeps the restored chat tab authoritative over a stale session key", async () => {
     const { shellTabs } = await import("./shellTabs.svelte");
+    shellTabs.bootstrap();
     shellTabs.openChat("session-a", { activate: true });
 
     vi.resetModules();
@@ -396,6 +445,7 @@ describe("shellTabs store", () => {
 
   it("restores shell and code workspace descriptors from one snapshot", async () => {
     const { shellTabs } = await import("./shellTabs.svelte");
+    shellTabs.bootstrap();
     const lmeTab = {
       tabId: "code-file:work-a:src%2Flib.rs",
       kind: "code",
@@ -410,6 +460,7 @@ describe("shellTabs store", () => {
       title: lmeTab.title,
     });
     expect(shellId).toBeTruthy();
+    expect(localStorage.getItem("medousa-home-workspace-session-v4:personal")).toBeTruthy();
 
     vi.resetModules();
     lmeState.tabs = [];
@@ -425,6 +476,59 @@ describe("shellTabs store", () => {
       title: "lib.rs",
     });
     expect(lmeState.activateTab).toHaveBeenCalledWith(lmeTab.tabId);
+  });
+
+  it("does not wipe a saved session when LME sync runs before bootstrap", async () => {
+    const lmeTab = {
+      tabId: "code-file:work-a:src%2Flib.rs",
+      kind: "code",
+      workId: "work-a",
+      title: "lib.rs",
+      resource: { kind: "file", path: "src/lib.rs", line: 1 },
+    };
+    localStorage.setItem(
+      "medousa-home-workspace-session-v4:personal",
+      JSON.stringify({
+        version: 4,
+        savedAt: Date.now(),
+        activeDesktopId: "desk-1",
+        desktops: [{
+          id: "desk-1",
+          name: "Main",
+          layout: {
+            tabs: [{
+              id: "shell-code",
+              kind: "lme",
+              lmeTabId: lmeTab.tabId,
+              title: "lib.rs",
+            }],
+            groups: [{ id: "main", tabIds: ["shell-code"], activeTabId: "shell-code" }],
+            splitRoot: { type: "group", id: "main" },
+            activeGroupId: "main",
+            zoomedGroupId: null,
+          },
+        }],
+        lme: { tabs: [lmeTab], activeTabId: lmeTab.tabId },
+      }),
+    );
+
+    const { shellTabs } = await import("./shellTabs.svelte");
+    // Simulate ShellTabHost effects firing before onMount bootstrap.
+    lmeState.tabs = [];
+    lmeState.activeTabId = null;
+    shellTabs.syncFromLmeWorkspace();
+    shellTabs.syncTitlesFromStores();
+
+    const raw = localStorage.getItem("medousa-home-workspace-session-v4:personal");
+    expect(raw).toBeTruthy();
+    expect(JSON.parse(raw!).lme.tabs).toEqual([lmeTab]);
+
+    shellTabs.bootstrap();
+    expect(lmeState.tabs).toEqual([lmeTab]);
+    expect(shellTabs.activeTab).toMatchObject({
+      kind: "lme",
+      lmeTabId: lmeTab.tabId,
+    });
   });
 
   it("migrates v2 layout into a Main desktop", async () => {
@@ -555,6 +659,7 @@ describe("shellTabs store", () => {
 
   it("does not reassign desktops on routine persist (avoids effect storms)", async () => {
     const { shellTabs } = await import("./shellTabs.svelte");
+    shellTabs.bootstrap();
     shellTabs.openChat("session-a", { activate: true });
     const before = shellTabs.desktops;
     shellTabs.syncTitlesFromStores();
@@ -568,7 +673,7 @@ describe("shellTabs store", () => {
     const { shellTabs } = await import("./shellTabs.svelte");
     shellTabs.openChat("session-a", { activate: true });
     shellTabs.splitActive("right");
-    // Split moves session-a into the new pane; open distinct chat in the empty pane.
+    // Split retains session-a in both panes; open a distinct chat in the other pane.
     const otherGroup = shellTabs.groups.find((g) => g.id !== shellTabs.activeGroupId);
     expect(otherGroup).toBeTruthy();
     if (otherGroup) {
@@ -587,6 +692,54 @@ describe("shellTabs store", () => {
     shellTabs.close(tabId!);
     expect(shellTabs.tabs).toHaveLength(0);
     expect(shellTabs.activeTab).toBeNull();
+  });
+
+  it("enterLmeFamily does not seed empty Workspace or Code surface tabs", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    shellTabs.bootstrap();
+    shellTabs.openChat("session-a", { activate: true });
+
+    expect(shellTabs.enterLmeFamily("library")).toBeNull();
+    expect(shellTabs.enterLmeFamily("code")).toBeNull();
+    expect(shellTabs.tabs.some((tab) => tab.kind === "surface")).toBe(false);
+    expect(shellTabs.activeTab).toMatchObject({ kind: "chat", sessionId: "session-a" });
+    expect(layoutState.focusDesktopSurface).toHaveBeenCalledWith("library");
+    expect(layoutState.focusDesktopSurface).toHaveBeenCalledWith("code");
+  });
+
+  it("enterLmeFamily reactivates an open document in that family", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    shellTabs.bootstrap();
+    const note = {
+      tabId: "note-a",
+      kind: "note",
+      path: "notes/a.md",
+      title: "Alpha",
+    };
+    lmeState.tabs = [note];
+    lmeState.activeTabId = note.tabId;
+    shellTabs.openLme(note.tabId, { activate: true, title: note.title });
+    shellTabs.openChat("session-a", { activate: true });
+
+    const restored = shellTabs.enterLmeFamily("library");
+    expect(restored).toBeTruthy();
+    expect(shellTabs.activeTab).toMatchObject({
+      kind: "lme",
+      lmeTabId: note.tabId,
+    });
+    expect(shellTabs.tabs.some((tab) =>
+      tab.kind === "surface" && (tab.surfaceId === "library" || tab.surfaceId === "code")
+    )).toBe(false);
+  });
+
+  it("openDestination for notes/code uses enterLmeFamily", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    shellTabs.bootstrap();
+    shellTabs.openChat("session-a", { activate: true });
+    shellTabs.openDestination("notes");
+    shellTabs.openDestination("code");
+    expect(shellTabs.tabs.some((tab) => tab.kind === "surface")).toBe(false);
+    expect(shellTabs.activeTab).toMatchObject({ kind: "chat" });
   });
 
   it("opens multiple distinct chat tabs in the same group", async () => {

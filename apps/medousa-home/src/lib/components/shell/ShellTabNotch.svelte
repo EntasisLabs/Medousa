@@ -14,6 +14,7 @@
     popBrowserPopoverOverlay,
     pushBrowserPopoverOverlay,
   } from "$lib/utils/browserPopoverOverlay";
+  import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
   import { ChevronDown, Columns2, Rows2, Search, SquareX } from "@lucide/svelte";
   import { tick } from "svelte";
 
@@ -270,11 +271,11 @@
   </div>
 
   <div class="shell-tab-notch-trailing shrink-0">
-    {#if mode === "panes"}
+    <div class="shell-tab-notch-pane-actions">
       <button
         type="button"
         class="shell-tab-notch-expand"
-        title="Split right"
+        title={titleWithShortcut("Split right", "split-right")}
         aria-label="Split pane right"
         disabled={!canSplit}
         onclick={() => shellTabs.splitActive("right")}
@@ -284,7 +285,7 @@
       <button
         type="button"
         class="shell-tab-notch-expand"
-        title="Split down"
+        title={titleWithShortcut("Split down", "split-down")}
         aria-label="Split pane down"
         disabled={!canSplit}
         onclick={() => shellTabs.splitActive("down")}
@@ -294,17 +295,15 @@
       <button
         type="button"
         class="shell-tab-notch-expand"
-        title="Close pane · merge tabs"
+        title={titleWithShortcut("Close pane · merge tabs", "close-pane")}
         aria-label="Close pane and merge tabs"
         disabled={!canMergePane}
         onclick={() => shellTabs.closeActiveGroup()}
       >
         <SquareX size={13} strokeWidth={1.85} />
       </button>
-      <span class="shell-tab-notch-rule" aria-hidden="true"></span>
-    {:else if mode === "closed"}
-      <span class="shell-tab-notch-rule" aria-hidden="true"></span>
-    {/if}
+    </div>
+    <span class="shell-tab-notch-rule" aria-hidden="true"></span>
     <button
       type="button"
       class="shell-tab-notch-expand"
@@ -362,10 +361,12 @@
 <style>
   .shell-tab-notch {
     display: flex;
+    box-sizing: border-box;
     width: min(38rem, 52vw);
     max-width: 100%;
+    min-width: 0;
     height: 32px;
-    flex: 0 1 auto;
+    flex: 0 0 auto;
     align-items: center;
     gap: 0.45rem;
     border: 1px solid rgb(var(--color-surface-500) / 0.16);
@@ -538,6 +539,13 @@
     align-items: center;
     gap: 0.15rem;
     padding-right: 0.05rem;
+  }
+
+  .shell-tab-notch-pane-actions {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.15rem;
   }
 
   .shell-tab-notch-rule {

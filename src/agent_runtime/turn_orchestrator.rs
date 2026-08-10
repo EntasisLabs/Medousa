@@ -42,7 +42,7 @@ use super::turn_budget::{
     try_consume_continuation_budget, try_consume_prompt_only_budget, try_consume_retry_budget,
     try_consume_tool_loop_budget, turn_budget_for_lane,
 };
-use super::turn_completion::ToolLoopCompletionGate;
+use super::turn_completion::ToolLoopCompletionGateConfig;
 use super::turn_context::TurnScratchpad;
 use super::turn_context::scratch_seed_for_tool_loop;
 use super::turn_ledger::append_tool_loop_policy;
@@ -58,6 +58,49 @@ use super::turn_worker::{
 };
 use crate::turn_continuation::StoredDeliveryTarget;
 use crate::turn_slice::session_scratch_seed_from_history;
+
+/// Serializes streamed model deltas ahead of terminal delivery.
+///
+/// Model pipelines enqueue deltas through an unbounded sender. The consumer must
+/// be drained before publishing a terminal event; otherwise the terminal commit
+/// can overtake a queued delta and the client can append stale prose afterward.
+struct TurnStreamBridge {
+    sender: Option<tokio::sync::mpsc::UnboundedSender<StreamDelta>>,
+    pump: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl TurnStreamBridge {
+    fn new(sink: SharedAgentStreamSink, turn_id: u64) -> Self {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<StreamDelta>();
+        let pump = tokio::spawn(async move {
+            while let Some(delta) = receiver.recv().await {
+                match delta {
+                    StreamDelta::Content(delta) => sink.content_chunk(turn_id, delta).await,
+                    StreamDelta::Reasoning(delta) | StreamDelta::ThoughtSignature(delta) => {
+                        sink.reasoning_chunk(turn_id, delta).await
+                    }
+                }
+            }
+        });
+        Self {
+            sender: Some(sender),
+            pump: Some(pump),
+        }
+    }
+
+    fn sender(&self) -> &tokio::sync::mpsc::UnboundedSender<StreamDelta> {
+        self.sender
+            .as_ref()
+            .expect("stream bridge sender requested after drain")
+    }
+
+    async fn drain(&mut self) {
+        self.sender.take();
+        if let Some(pump) = self.pump.take() {
+            let _ = pump.await;
+        }
+    }
+}
 
 pub const MAX_PRIOR_TOTAL_CHARS: usize = 24_000;
 pub const MAX_SINGLE_PRIOR_MESSAGE_CHARS: usize = 4_000;
@@ -292,6 +335,9 @@ pub struct LocalTurnExecutionParams {
     pub evidence_undertaking_id: Option<String>,
     pub compact_evidence_receipt_sink:
         Option<Arc<dyn super::coder_evidence::CompactEvidenceReceiptSink>>,
+    pub active_turn_checkpoint_sink:
+        Option<Arc<dyn super::coder_turn_checkpoint::ActiveTurnCheckpointSink>>,
+    pub active_turn_resume: Option<super::coder_turn_checkpoint::ActiveTurnResumeState>,
 }
 
 pub struct AssembleLocalTurnParams<'a> {
@@ -308,6 +354,7 @@ pub struct AssembleLocalTurnParams<'a> {
     pub final_route: Option<&'a StageRoute>,
     pub response_depth_mode: &'a str,
     pub reasoning_effort: &'a str,
+    pub max_tool_rounds_override: Option<usize>,
     pub turn_id: u64,
     pub scheduled_tool_allowlist: Option<std::collections::HashSet<String>>,
     pub media_refs: Vec<crate::daemon_api::MediaRef>,
@@ -318,6 +365,9 @@ pub struct AssembleLocalTurnParams<'a> {
     pub evidence_undertaking_id: Option<String>,
     pub compact_evidence_receipt_sink:
         Option<Arc<dyn super::coder_evidence::CompactEvidenceReceiptSink>>,
+    pub active_turn_checkpoint_sink:
+        Option<Arc<dyn super::coder_turn_checkpoint::ActiveTurnCheckpointSink>>,
+    pub active_turn_resume: Option<super::coder_turn_checkpoint::ActiveTurnResumeState>,
 }
 
 pub struct AssembledLocalTurn {
@@ -330,7 +380,11 @@ pub struct AssembledLocalTurn {
 pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLocalTurn {
     let configured_tool_call_mode =
         turn_services::parse_tool_call_mode(&params.settings.tool_call_mode);
-    let turn_loop_settings = TurnLoopSettings::from_runtime_settings(params.settings);
+    let mut turn_loop_settings = TurnLoopSettings::from_runtime_settings(params.settings);
+    if params.prepared.agent_mode.id == crate::daemon_api::AgentModeId::Coder {
+        turn_loop_settings.configured_max_tool_rounds =
+            super::turn_loop_settings::coder_max_tool_rounds(params.max_tool_rounds_override);
+    }
     let activation = turn_services::decide_turn_activation(
         params.prompt,
         configured_tool_call_mode,
@@ -364,7 +418,7 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
     if params.prepared.agent_mode.id == crate::daemon_api::AgentModeId::Coder {
         activation.turn_class = "coder_foreground";
         activation.enforce_no_tools = false;
-        activation.max_tool_rounds = activation.max_tool_rounds.max(12);
+        activation.max_tool_rounds = turn_loop_settings.configured_max_tool_rounds;
         activation.reason = "coder_mode_requires_tool_capable_foreground_loop";
     }
 
@@ -383,6 +437,7 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
     .max(hot_window_turns);
 
     let prior_build = turn_services::build_prior_messages(
+        params.tui_rt.tool_catalog.as_ref(),
         params.session_id,
         params.conversation,
         params.prompt,
@@ -501,6 +556,8 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
             round_context_provider: params.round_context_provider.clone(),
             evidence_undertaking_id: params.evidence_undertaking_id.clone(),
             compact_evidence_receipt_sink: params.compact_evidence_receipt_sink.clone(),
+            active_turn_checkpoint_sink: params.active_turn_checkpoint_sink.clone(),
+            active_turn_resume: params.active_turn_resume.clone(),
         },
         pipeline_selection,
         activation: activation.clone(),
@@ -655,6 +712,11 @@ async fn deliver_turn_failure(
 
 pub fn retryable_runtime_reason(err_text: &str) -> Option<&'static str> {
     let text = err_text.to_ascii_lowercase();
+    if text.contains(super::coder_turn_checkpoint::TOOL_ROUND_BUDGET_EXHAUSTED_REASON)
+        || text.contains("tool loop exceeded max rounds")
+    {
+        return None;
+    }
     if text.contains("timeout") || text.contains("timed out") {
         return Some("timeout");
     }
@@ -670,6 +732,29 @@ pub fn retryable_runtime_reason(err_text: &str) -> Option<&'static str> {
         return Some("transient_runtime");
     }
     None
+}
+
+fn legacy_retryable_runtime_reason(err_text: &str, is_coder_turn: bool) -> Option<&'static str> {
+    if is_coder_turn {
+        None
+    } else {
+        retryable_runtime_reason(err_text)
+    }
+}
+
+fn mark_active_turn_checkpoint(
+    checkpoint: Option<&Arc<dyn super::coder_turn_checkpoint::ActiveTurnCheckpointSink>>,
+    status: super::coder_turn_checkpoint::ActiveTurnCheckpointStatus,
+    boundary: super::coder_turn_checkpoint::SafeCheckpointBoundary,
+    reason: &str,
+    orchestration: &TurnOrchestrationState,
+) {
+    let Some(checkpoint) = checkpoint else {
+        return;
+    };
+    if let Err(err) = checkpoint.mark_status(status, boundary, Some(reason), Some(orchestration)) {
+        tracing::warn!(error = %err, ?status, ?boundary, "failed to update Coder checkpoint status");
+    }
 }
 
 pub async fn emit_tool_payload_events(
@@ -762,7 +847,21 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         round_context_provider,
         evidence_undertaking_id,
         compact_evidence_receipt_sink,
+        active_turn_checkpoint_sink,
+        active_turn_resume,
     } = params;
+
+    let is_coder_turn = agent_mode.id == crate::daemon_api::AgentModeId::Coder;
+    let mut pending_active_turn_resume = active_turn_resume;
+    let has_active_turn_resume = pending_active_turn_resume.is_some();
+    let restores_interrupted_budget = pending_active_turn_resume
+        .as_ref()
+        .is_some_and(|resume| resume.restore_turn_budget);
+    let resume_has_consumed_tool_loop = pending_active_turn_resume
+        .as_ref()
+        .filter(|resume| resume.restore_turn_budget)
+        .and_then(|resume| resume.counters.orchestration.as_ref())
+        .is_some_and(|state| state.tool_loop_calls > 0);
 
     let capability_required =
         if inference_profile_kind == crate::inference_profiles::InferenceProfileKind::Vision {
@@ -779,6 +878,17 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         turn_loop_settings.operator_summary()
     ))
     .await;
+    if restores_interrupted_budget && let Some(resume) = pending_active_turn_resume.as_ref() {
+        sink.notice(format!(
+            "◈ coder_exact_resume source_turn={} rounds={}/{} tool_batches={} retries={}",
+            resume.source_daemon_turn_id,
+            resume.counters.model_rounds_executed,
+            resume.counters.max_tool_rounds,
+            resume.counters.tool_batches_completed,
+            resume.counters.retry_count,
+        ))
+        .await;
+    }
 
     let host_profile = resolve_host_turn_profile(
         &original_prompt,
@@ -797,6 +907,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
     } else {
         host_profile.host_bus_active
     };
+    let completion_profile = agent_mode.completion_profile;
     let suggested_intent = host_profile
         .route
         .suggested_worker_intent()
@@ -871,12 +982,21 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
     };
 
     let turn_budget = turn_budget_for_lane(EngineExecutionLane::Interactive);
-    let mut orchestration_state = TurnOrchestrationState {
-        final_mode: "unknown".to_string(),
-        ..TurnOrchestrationState::default()
-    };
+    let mut orchestration_state = pending_active_turn_resume
+        .as_ref()
+        .filter(|resume| resume.restore_turn_budget)
+        .and_then(|resume| resume.counters.orchestration.clone())
+        .unwrap_or_default();
+    if orchestration_state.final_mode.trim().is_empty() {
+        orchestration_state.final_mode = "unknown".to_string();
+    }
 
-    if should_invoke_intent_classifier(&activation) {
+    if has_active_turn_resume {
+        // A durable Coder boundary must pass through the checkpoint-aware loop
+        // so it can either continue or become terminal. A fresh classifier
+        // decision must not divert restored state into the prompt-only lane.
+        activation.enforce_no_tools = false;
+    } else if should_invoke_intent_classifier(&activation) {
         if try_consume_classifier_budget(&sink, &mut orchestration_state, &turn_budget).await {
             let classification = classify_turn_intent_with_model(
                 &no_tools_pipeline,
@@ -919,18 +1039,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         }
     }
 
-    let (chunk_tx, mut chunk_rx) = tokio::sync::mpsc::unbounded_channel::<StreamDelta>();
-    let chunk_sink = sink.clone();
-    tokio::spawn(async move {
-        while let Some(delta) = chunk_rx.recv().await {
-            match delta {
-                StreamDelta::Content(delta) => chunk_sink.content_chunk(turn_id, delta).await,
-                StreamDelta::Reasoning(delta) | StreamDelta::ThoughtSignature(delta) => {
-                    chunk_sink.reasoning_chunk(turn_id, delta).await
-                }
-            }
-        }
-    });
+    let mut stream_bridge = TurnStreamBridge::new(sink.clone(), turn_id);
 
     sink.tool_invoked("llm.chat".to_string(), prompt_preview)
         .await;
@@ -949,12 +1058,21 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
 
         if !try_consume_prompt_only_budget(&sink, &mut orchestration_state, &turn_budget).await {
             orchestration_state.final_mode = "prompt_only_budget_denied".to_string();
+            mark_active_turn_checkpoint(
+                active_turn_checkpoint_sink.as_ref(),
+                super::coder_turn_checkpoint::ActiveTurnCheckpointStatus::BudgetExhausted,
+                super::coder_turn_checkpoint::SafeCheckpointBoundary::BudgetExhausted,
+                "turn budget exhausted before prompt-only execution",
+                &orchestration_state,
+            );
+            stream_bridge.drain().await;
             sink.agent_error(
                 turn_id,
                 "turn budget exhausted before prompt-only execution".to_string(),
             )
             .await;
             emit_orchestration_summary(&sink, &orchestration_state).await;
+            worker_scheduler.clear_bus_session().await;
             return;
         }
         orchestration_state.final_mode = "prompt_only".to_string();
@@ -962,14 +1080,15 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         sink.notice("◈ fallback_mode=prompt_only retry_count=0 retry_reason=none".to_string())
             .await;
 
-        match no_tools_pipeline
+        let prompt_only_result = no_tools_pipeline
             .complete_chat_stream(
                 ChatRequest::new(messages),
                 prompt_ctx.clone(),
-                Some(&chunk_tx),
+                Some(stream_bridge.sender()),
             )
-            .await
-        {
+            .await;
+        stream_bridge.drain().await;
+        match prompt_only_result {
             Ok(completion) => {
                 let final_text = completion
                     .response
@@ -980,6 +1099,13 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                         "I do not have enough information to answer confidently without tools for this turn."
                             .to_string()
                     });
+                mark_active_turn_checkpoint(
+                    active_turn_checkpoint_sink.as_ref(),
+                    super::coder_turn_checkpoint::ActiveTurnCheckpointStatus::Completed,
+                    super::coder_turn_checkpoint::SafeCheckpointBoundary::Terminal,
+                    "prompt_only",
+                    &orchestration_state,
+                );
                 super::turn_delivery::deliver_agent_turn_outcome(
                     &sink,
                     turn_id,
@@ -993,10 +1119,18 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 emit_orchestration_summary(&sink, &orchestration_state).await;
             }
             Err(err) => {
+                mark_active_turn_checkpoint(
+                    active_turn_checkpoint_sink.as_ref(),
+                    super::coder_turn_checkpoint::ActiveTurnCheckpointStatus::RecoverableFailure,
+                    super::coder_turn_checkpoint::SafeCheckpointBoundary::RecoverableFailure,
+                    &err.to_string(),
+                    &orchestration_state,
+                );
                 sink.agent_error(turn_id, err.to_string()).await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
             }
         }
+        worker_scheduler.clear_bus_session().await;
         return;
     }
 
@@ -1014,14 +1148,28 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         tool_input: Value::Null,
         tool_call_mode: activation.tool_call_mode,
     };
-    if !try_consume_tool_loop_budget(&sink, &mut orchestration_state, &turn_budget).await {
+    if !resume_has_consumed_tool_loop
+        && !try_consume_tool_loop_budget(&sink, &mut orchestration_state, &turn_budget).await
+    {
         orchestration_state.final_mode = "tool_loop_budget_denied".to_string();
+        if let Some(checkpoint) = active_turn_checkpoint_sink.as_ref()
+            && let Err(err) = checkpoint.mark_status(
+                super::coder_turn_checkpoint::ActiveTurnCheckpointStatus::BudgetExhausted,
+                super::coder_turn_checkpoint::SafeCheckpointBoundary::BudgetExhausted,
+                Some("turn budget exhausted before tool-loop execution"),
+                Some(&orchestration_state),
+            )
+        {
+            tracing::warn!(error = %err, "failed to checkpoint denied Coder turn budget");
+        }
+        stream_bridge.drain().await;
         sink.agent_error(
             turn_id,
             "turn budget exhausted before tool-loop execution".to_string(),
         )
         .await;
         emit_orchestration_summary(&sink, &orchestration_state).await;
+        worker_scheduler.clear_bus_session().await;
         return;
     }
     orchestration_state.final_mode = "tool_loop".to_string();
@@ -1042,8 +1190,47 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         .as_ref()
         .and_then(|scope| scope.delivery_target.as_ref())
         .map(StoredDeliveryTarget::from);
+    let hard_tool_round_ceiling =
+        (agent_mode.id == crate::daemon_api::AgentModeId::Coder).then(|| {
+            pending_active_turn_resume
+                .as_ref()
+                .filter(|resume| resume.restore_turn_budget)
+                .map(|resume| resume.counters.max_tool_rounds)
+                .filter(|rounds| *rounds > 0)
+                .unwrap_or(turn_loop_settings.configured_max_tool_rounds)
+                .min(super::turn_loop_settings::DEFAULT_CODER_MAX_TOOL_ROUNDS)
+        });
+    let completion_gate_config = ToolLoopCompletionGateConfig {
+        stream_turn_id: turn_id,
+        session_id: ledger_session_id.clone(),
+        sink: Some(sink.clone()),
+        max_text_only_stuck_continues: turn_loop_settings.max_text_only_stuck_continues,
+        host_handoff_slot: Some(host_handoff_slot.clone()),
+        parent_turn_correlation_id: parent_turn_correlation_id.clone(),
+        handoff_parent_user_prompt: Some(original_prompt.clone()),
+        handoff_vibe_signature: Some(handoff_vibe_signature.clone()),
+        handoff_model_avec: Some(handoff_model_avec),
+        handoff_continuity_bundle: handoff_continuity_bundle.clone(),
+        skip_avec_ritual_check: false,
+        channel: origin_channel.clone(),
+        delivery_target: origin_delivery_target.clone(),
+        hard_tool_round_ceiling,
+        require_operator_budget_gate: require_operator_budget_gate(),
+        completion_profile,
+        cancel_poll_work_id: None,
+        steer_poll_work_id: None,
+        round_context_provider: round_context_provider.clone(),
+        evidence_undertaking_id: evidence_undertaking_id.clone(),
+        compact_evidence_receipt_sink: compact_evidence_receipt_sink.clone(),
+    };
     let mut last_tool_scratch: Option<TurnScratchpad> = None;
-    let loop_max_rounds = activation.max_tool_rounds.max(1);
+    let loop_max_rounds = pending_active_turn_resume
+        .as_ref()
+        .filter(|resume| resume.restore_turn_budget)
+        .map(|resume| resume.counters.max_tool_rounds)
+        .filter(|rounds| *rounds > 0)
+        .unwrap_or(activation.max_tool_rounds)
+        .max(1);
     let inference_targets = crate::inference_router::profile_targets(inference_profile_kind);
     let inference_target_total = inference_targets.len().max(1);
     let mut first_attempt: Option<
@@ -1074,6 +1261,11 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         }
 
         crate::workshop_env::apply_provider_llm_env(&target.provider);
+        if let Some(checkpoint) = active_turn_checkpoint_sink.as_ref()
+            && let Err(err) = checkpoint.set_model_route(&target.provider, &target.model)
+        {
+            tracing::warn!(error = %err, "failed to update Coder checkpoint model route");
+        }
         sink.notice(crate::inference_router::telemetry_line(
             inference_profile_kind,
             attempt_index,
@@ -1102,43 +1294,22 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         loop {
             let initial_worker_scratch =
                 scratch_seed_for_tool_loop(&session_scratch_seed, last_tool_scratch.as_ref());
-            let mut completion_gate = ToolLoopCompletionGate {
-                stream_turn_id: turn_id,
-                session_id: ledger_session_id.clone(),
-                sink: Some(sink.clone()),
-                orchestration: Some(&mut orchestration_state),
-                budget: Some(&turn_budget),
-                max_tool_rounds: loop_max_rounds,
-                max_text_only_stuck_continues: turn_loop_settings.max_text_only_stuck_continues,
-                scratch_out: Some(&mut last_tool_scratch),
-                host_handoff_slot: Some(host_handoff_slot.clone()),
-                parent_turn_correlation_id: parent_turn_correlation_id.clone(),
-                initial_worker_scratch: Some(initial_worker_scratch),
-                handoff_parent_user_prompt: Some(original_prompt.clone()),
-                handoff_vibe_signature: Some(handoff_vibe_signature.clone()),
-                handoff_model_avec: Some(handoff_model_avec),
-                handoff_continuity_bundle: handoff_continuity_bundle.clone(),
-                skip_avec_ritual_check: false,
-                channel: origin_channel.clone(),
-                delivery_target: origin_delivery_target.clone(),
-                tool_round_budget_ceiling: host_tool_round_budget_ceiling(
-                    &turn_loop_settings,
-                    loop_max_rounds,
-                ),
-                require_operator_budget_gate: require_operator_budget_gate(),
-                host_scheduler_lane: true,
-                cancel_poll_work_id: None,
-                steer_poll_work_id: None,
-                round_context_provider: round_context_provider.clone(),
-                evidence_undertaking_id: evidence_undertaking_id.clone(),
-                compact_evidence_receipt_sink: compact_evidence_receipt_sink.clone(),
-            };
+            let mut completion_gate = completion_gate_config.bind(
+                &mut orchestration_state,
+                &turn_budget,
+                &mut last_tool_scratch,
+                loop_max_rounds,
+                host_tool_round_budget_ceiling(&turn_loop_settings, loop_max_rounds),
+                initial_worker_scratch,
+                active_turn_checkpoint_sink.clone(),
+                pending_active_turn_resume.take(),
+            );
 
             match attempt_pipeline
                 .execute_with_stream_prior_messages_max_rounds(
                     request.clone(),
                     prior_messages.clone(),
-                    Some(&chunk_tx),
+                    Some(stream_bridge.sender()),
                     loop_max_rounds,
                     Some(&mut completion_gate),
                     Some(current_turn_user_message.clone()),
@@ -1152,6 +1323,25 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 Err(err) => {
                     let failure = crate::turn_failure::TurnFailure::from_debug(&err.to_string());
                     inference_last_err = failure.debug_message.clone();
+                    // Without a safe-boundary checkpoint, a fresh Coder retry
+                    // could replay a tool effect whose result never reached the
+                    // provider transcript. Stop and recover from Forge/activity
+                    // evidence on the next turn instead.
+                    if is_coder_turn && active_turn_checkpoint_sink.is_none() {
+                        first_attempt = Some(Err(err));
+                        break 'inference_targets;
+                    }
+                    if let Some(checkpoint) = active_turn_checkpoint_sink.as_ref() {
+                        match checkpoint.latest_safe_resume() {
+                            Ok(resume) => pending_active_turn_resume = resume,
+                            Err(recovery_err) => {
+                                first_attempt = Some(Err(
+                                    stasis::domain::errors::StasisError::PortFailure(recovery_err),
+                                ));
+                                break 'inference_targets;
+                            }
+                        }
+                    }
                     if crate::inference_router::should_retry_same_target(failure.category)
                         && same_target_retries < 1
                     {
@@ -1198,10 +1388,12 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                         &combined_invocations,
                     )
                     .map(|(id, _)| id);
+                stream_bridge.drain().await;
                 stage_scratch_for_persist(&sink, &last_tool_scratch).await;
                 sink.agent_worker_ack(turn_id, final_text, tool_names, work_id)
                     .await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
+                worker_scheduler.clear_bus_session().await;
                 return;
             }
             if response.termination_reason == "workshop_entered" {
@@ -1210,14 +1402,17 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     &combined_invocations,
                 )
                 .map(|(id, _)| id);
+                stream_bridge.drain().await;
                 stage_scratch_for_persist(&sink, &last_tool_scratch).await;
                 sink.agent_workshop_ack(turn_id, final_text, tool_names, work_id)
                     .await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
+                worker_scheduler.clear_bus_session().await;
                 return;
             }
             if response.termination_reason == "cognition_turn_checkpoint" {
                 let tool_names = collect_tool_names(&combined_invocations);
+                stream_bridge.drain().await;
                 sink.tool_invoked(
                     "llm.chat".to_string(),
                     format!(
@@ -1232,9 +1427,14 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 )
                 .await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
+                worker_scheduler.clear_bus_session().await;
                 return;
             }
-            if should_run_continuation(&combined_invocations)
+            let tool_budget_exhausted = response.termination_reason
+                == super::coder_turn_checkpoint::TOOL_ROUND_BUDGET_EXHAUSTED_REASON;
+            if !is_coder_turn
+                && !tool_budget_exhausted
+                && should_run_continuation(&combined_invocations)
                 && !crate::channel_delivery::is_principal_interactive_channel(
                     origin_channel
                         .as_deref()
@@ -1292,43 +1492,24 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                             &session_scratch_seed,
                             last_tool_scratch.as_ref(),
                         );
-                        let mut continuation_gate = ToolLoopCompletionGate {
-                            stream_turn_id: turn_id,
-                            session_id: ledger_session_id.clone(),
-                            sink: Some(sink.clone()),
-                            orchestration: Some(&mut orchestration_state),
-                            budget: Some(&turn_budget),
-                            max_tool_rounds: continuation_max_rounds,
-                            max_text_only_stuck_continues: turn_loop_settings
-                                .max_text_only_stuck_continues,
-                            scratch_out: Some(&mut last_tool_scratch),
-                            host_handoff_slot: Some(host_handoff_slot.clone()),
-                            parent_turn_correlation_id: parent_turn_correlation_id.clone(),
-                            initial_worker_scratch: Some(initial_worker_scratch),
-                            handoff_parent_user_prompt: Some(original_prompt.clone()),
-                            handoff_vibe_signature: Some(handoff_vibe_signature.clone()),
-                            handoff_model_avec: Some(handoff_model_avec),
-                            handoff_continuity_bundle: handoff_continuity_bundle.clone(),
-                            skip_avec_ritual_check: false,
-                            channel: origin_channel.clone(),
-                            delivery_target: origin_delivery_target.clone(),
-                            tool_round_budget_ceiling: host_tool_round_budget_ceiling(
+                        let mut continuation_gate = completion_gate_config.bind(
+                            &mut orchestration_state,
+                            &turn_budget,
+                            &mut last_tool_scratch,
+                            continuation_max_rounds,
+                            host_tool_round_budget_ceiling(
                                 &turn_loop_settings,
                                 continuation_max_rounds,
                             ),
-                            require_operator_budget_gate: require_operator_budget_gate(),
-                            host_scheduler_lane: true,
-                            cancel_poll_work_id: None,
-                            steer_poll_work_id: None,
-                            round_context_provider: round_context_provider.clone(),
-                            evidence_undertaking_id: evidence_undertaking_id.clone(),
-                            compact_evidence_receipt_sink: compact_evidence_receipt_sink.clone(),
-                        };
+                            initial_worker_scratch,
+                            None,
+                            None,
+                        );
                         pipeline
                             .execute_with_stream_prior_messages_max_rounds(
                                 continuation_request,
                                 continuation_prior_messages,
-                                Some(&chunk_tx),
+                                Some(stream_bridge.sender()),
                                 continuation_max_rounds,
                                 Some(&mut continuation_gate),
                                 None,
@@ -1363,6 +1544,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 profile,
             );
             let tool_names = collect_tool_names(&combined_invocations);
+            stream_bridge.drain().await;
             sink.tool_invoked(
                 "llm.chat".to_string(),
                 format!("done  {} token(s)", final_text.split_whitespace().count()),
@@ -1383,7 +1565,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         }
         Some(Err(err)) => {
             let err_text = err.to_string();
-            if let Some(reason) = retryable_runtime_reason(&err_text) {
+            if let Some(reason) = legacy_retryable_runtime_reason(&err_text, is_coder_turn) {
                 // Retry uses the same tool-round budget as the primary loop unless the
                 // operator explicitly set a lower retry_runtime_max_rounds cap.
                 let retry_rounds = activation
@@ -1405,9 +1587,18 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     {
                         orchestration_state.final_mode =
                             "tool_loop_retry_budget_denied".to_string();
+                        mark_active_turn_checkpoint(
+                            active_turn_checkpoint_sink.as_ref(),
+                            super::coder_turn_checkpoint::ActiveTurnCheckpointStatus::BudgetExhausted,
+                            super::coder_turn_checkpoint::SafeCheckpointBoundary::BudgetExhausted,
+                            "turn budget exhausted before runtime retry",
+                            &orchestration_state,
+                        );
+                        stream_bridge.drain().await;
                         sink.agent_error(turn_id, "turn budget exhausted before retry".to_string())
                             .await;
                         emit_orchestration_summary(&sink, &orchestration_state).await;
+                        worker_scheduler.clear_bus_session().await;
                         return;
                     }
                     orchestration_state.final_mode = "tool_loop_retry".to_string();
@@ -1417,43 +1608,21 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                             &session_scratch_seed,
                             last_tool_scratch.as_ref(),
                         );
-                        let mut retry_gate = ToolLoopCompletionGate {
-                            stream_turn_id: turn_id,
-                            session_id: ledger_session_id.clone(),
-                            sink: Some(sink.clone()),
-                            orchestration: Some(&mut orchestration_state),
-                            budget: Some(&turn_budget),
-                            max_tool_rounds: retry_rounds,
-                            max_text_only_stuck_continues: turn_loop_settings
-                                .max_text_only_stuck_continues,
-                            scratch_out: Some(&mut last_tool_scratch),
-                            host_handoff_slot: Some(host_handoff_slot.clone()),
-                            parent_turn_correlation_id: parent_turn_correlation_id.clone(),
-                            initial_worker_scratch: Some(initial_worker_scratch),
-                            handoff_parent_user_prompt: Some(original_prompt.clone()),
-                            handoff_vibe_signature: Some(handoff_vibe_signature.clone()),
-                            handoff_model_avec: Some(handoff_model_avec),
-                            handoff_continuity_bundle: handoff_continuity_bundle.clone(),
-                            skip_avec_ritual_check: false,
-                            channel: origin_channel.clone(),
-                            delivery_target: origin_delivery_target.clone(),
-                            tool_round_budget_ceiling: host_tool_round_budget_ceiling(
-                                &turn_loop_settings,
-                                retry_rounds,
-                            ),
-                            require_operator_budget_gate: require_operator_budget_gate(),
-                            host_scheduler_lane: true,
-                            cancel_poll_work_id: None,
-                            steer_poll_work_id: None,
-                            round_context_provider: round_context_provider.clone(),
-                            evidence_undertaking_id: evidence_undertaking_id.clone(),
-                            compact_evidence_receipt_sink: compact_evidence_receipt_sink.clone(),
-                        };
+                        let mut retry_gate = completion_gate_config.bind(
+                            &mut orchestration_state,
+                            &turn_budget,
+                            &mut last_tool_scratch,
+                            retry_rounds,
+                            host_tool_round_budget_ceiling(&turn_loop_settings, retry_rounds),
+                            initial_worker_scratch,
+                            None,
+                            None,
+                        );
                         pipeline
                             .execute_with_stream_prior_messages_max_rounds(
                                 request.clone(),
                                 prior_messages.clone(),
-                                Some(&chunk_tx),
+                                Some(stream_bridge.sender()),
                                 retry_rounds,
                                 Some(&mut retry_gate),
                                 None,
@@ -1464,6 +1633,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     match retry_result {
                         Ok(response) => {
                             let tool_names = collect_tool_names(&response.tool_invocations);
+                            stream_bridge.drain().await;
                             stage_scratch_for_persist(&sink, &last_tool_scratch).await;
                             super::turn_delivery::deliver_agent_turn_outcome(
                                 &sink,
@@ -1477,6 +1647,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                             .await;
                             orchestration_state.final_mode = "tool_loop_retry_success".to_string();
                             emit_orchestration_summary(&sink, &orchestration_state).await;
+                            worker_scheduler.clear_bus_session().await;
                             return;
                         }
                         Err(retry_err) => {
@@ -1485,6 +1656,14 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     }
                 }
                 orchestration_state.final_mode = "tool_loop_retry_exhausted".to_string();
+                mark_active_turn_checkpoint(
+                    active_turn_checkpoint_sink.as_ref(),
+                    super::coder_turn_checkpoint::ActiveTurnCheckpointStatus::RecoverableFailure,
+                    super::coder_turn_checkpoint::SafeCheckpointBoundary::RecoverableFailure,
+                    &format!("{reason} (retry exhausted: {last_err})"),
+                    &orchestration_state,
+                );
+                stream_bridge.drain().await;
                 deliver_turn_failure(
                     &sink,
                     turn_id,
@@ -1497,6 +1676,14 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 sink.notice("◈ retry_policy retry_count=0 retry_reason=not_runtime".to_string())
                     .await;
                 orchestration_state.final_mode = "tool_loop_error_non_retryable".to_string();
+                mark_active_turn_checkpoint(
+                    active_turn_checkpoint_sink.as_ref(),
+                    super::coder_turn_checkpoint::ActiveTurnCheckpointStatus::RecoverableFailure,
+                    super::coder_turn_checkpoint::SafeCheckpointBoundary::RecoverableFailure,
+                    &err_text,
+                    &orchestration_state,
+                );
+                stream_bridge.drain().await;
                 deliver_turn_failure(&sink, turn_id, &err_text, &mut orchestration_state).await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
             }
@@ -1508,10 +1695,122 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             } else {
                 inference_last_err.clone()
             };
+            mark_active_turn_checkpoint(
+                active_turn_checkpoint_sink.as_ref(),
+                super::coder_turn_checkpoint::ActiveTurnCheckpointStatus::RecoverableFailure,
+                super::coder_turn_checkpoint::SafeCheckpointBoundary::RecoverableFailure,
+                &err_text,
+                &orchestration_state,
+            );
+            stream_bridge.drain().await;
             deliver_turn_failure(&sink, turn_id, &err_text, &mut orchestration_state).await;
             emit_orchestration_summary(&sink, &orchestration_state).await;
         }
     }
 
+    stream_bridge.drain().await;
     worker_scheduler.clear_bus_session().await;
+}
+
+#[cfg(test)]
+mod stream_bridge_tests {
+    use std::sync::{Arc, Mutex};
+
+    use async_trait::async_trait;
+    use medousa_engine::receipt::ArtifactReceiptMeta;
+
+    use super::*;
+    use crate::agent_runtime::stream_sink::AgentStreamSink;
+
+    #[derive(Default)]
+    struct OrderedSink {
+        events: Mutex<Vec<String>>,
+    }
+
+    impl OrderedSink {
+        fn push(&self, event: String) {
+            self.events.lock().expect("events lock").push(event);
+        }
+    }
+
+    #[async_trait]
+    impl AgentStreamSink for OrderedSink {
+        async fn content_chunk(&self, _turn_id: u64, delta: String) {
+            tokio::task::yield_now().await;
+            self.push(delta);
+        }
+
+        async fn reasoning_chunk(&self, _turn_id: u64, _delta: String) {}
+
+        async fn agent_response(&self, _turn_id: u64, text: String, _tool_names: Vec<String>) {
+            self.push(text);
+        }
+
+        async fn agent_error(&self, _turn_id: u64, _message: String) {}
+
+        async fn notice(&self, _message: String) {}
+
+        async fn tool_invoked(&self, _tool_name: String, _input_summary: String) {}
+
+        async fn tool_payload(
+            &self,
+            _tool_name: String,
+            _tool_input: Value,
+            _tool_output: Value,
+            _input_receipt: Option<ArtifactReceiptMeta>,
+            _output_receipt: Option<ArtifactReceiptMeta>,
+        ) {
+        }
+    }
+
+    #[tokio::test]
+    async fn drain_orders_all_streamed_deltas_before_terminal_delivery() {
+        let concrete = Arc::new(OrderedSink::default());
+        let sink: SharedAgentStreamSink = concrete.clone();
+        let mut bridge = TurnStreamBridge::new(sink, 7);
+
+        bridge
+            .sender()
+            .send(StreamDelta::Content("first".to_string()))
+            .expect("first delta");
+        bridge
+            .sender()
+            .send(StreamDelta::Content("second".to_string()))
+            .expect("second delta");
+        bridge.drain().await;
+        concrete
+            .agent_response(7, "terminal".to_string(), Vec::new())
+            .await;
+
+        assert_eq!(
+            *concrete.events.lock().expect("events lock"),
+            vec!["first", "second", "terminal"]
+        );
+    }
+
+    #[test]
+    fn typed_tool_budget_exhaustion_is_never_a_runtime_retry() {
+        assert_eq!(
+            retryable_runtime_reason(
+                super::super::coder_turn_checkpoint::TOOL_ROUND_BUDGET_EXHAUSTED_REASON,
+            ),
+            None
+        );
+        assert_eq!(
+            retryable_runtime_reason("tool loop exceeded max rounds (30) without final response"),
+            None
+        );
+        assert_eq!(
+            retryable_runtime_reason("transport temporarily unavailable"),
+            Some("transient_runtime")
+        );
+        assert_eq!(
+            legacy_retryable_runtime_reason("transport temporarily unavailable", true),
+            None
+        );
+        assert_eq!(
+            legacy_retryable_runtime_reason("transport temporarily unavailable", false),
+            Some("transient_runtime")
+        );
+    }
 }

@@ -2,20 +2,23 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use chrono::Utc;
 use medousa_types::environment::{
     ComponentDef, ComponentType, EnvironmentPendingProposal, EnvironmentSpec, SurfaceDef,
     SurfaceKind, SurfaceLayout, UiPresentation, activate_layout_preset,
 };
 use medousa_types::environment_validate::validate_environment_spec;
+use schemars::JsonSchema;
+use schemars::schema::{InstanceType, Schema, SchemaObject};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Value, json};
-use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::prelude::{Result as StasisResult, StasisError};
 use tokio::sync::RwLock;
 
 use crate::environment_store::{environment_hub, resolve_profile_id};
+use crate::semantic_values::TrimmedText;
 use crate::turn_continuation::TurnContinuationScope;
+use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_ENVIRONMENT_GET: &str = "cognition_environment_get";
 pub const COGNITION_ENVIRONMENT_APPLY: &str = "cognition_environment_apply";
@@ -27,8 +30,18 @@ pub const COGNITION_COMPONENT_CREATE: &str = "cognition_component_create";
 pub const COGNITION_COMPONENT_UPDATE: &str = "cognition_component_update";
 pub const COGNITION_COMPONENT_DELETE: &str = "cognition_component_delete";
 
-const ENVIRONMENT_SPEC_PATCH_HINT: &str =
-    "Patch surfaces/components on the full spec. Custom surfaces must be listed in the active layout preset surfaces array. Components render only on kind=custom surfaces.";
+const COGNITION_ENVIRONMENT_GET_ID: ToolId = ToolId::new(COGNITION_ENVIRONMENT_GET);
+const COGNITION_ENVIRONMENT_APPLY_ID: ToolId = ToolId::new(COGNITION_ENVIRONMENT_APPLY);
+const COGNITION_ENVIRONMENT_ACTIVATE_PRESET_ID: ToolId =
+    ToolId::new(COGNITION_ENVIRONMENT_ACTIVATE_PRESET);
+const COGNITION_ENVIRONMENT_PROPOSE_ID: ToolId = ToolId::new(COGNITION_ENVIRONMENT_PROPOSE);
+const COGNITION_COMPONENT_LIST_ID: ToolId = ToolId::new(COGNITION_COMPONENT_LIST);
+const COGNITION_COMPONENT_GET_ID: ToolId = ToolId::new(COGNITION_COMPONENT_GET);
+const COGNITION_COMPONENT_CREATE_ID: ToolId = ToolId::new(COGNITION_COMPONENT_CREATE);
+const COGNITION_COMPONENT_UPDATE_ID: ToolId = ToolId::new(COGNITION_COMPONENT_UPDATE);
+const COGNITION_COMPONENT_DELETE_ID: ToolId = ToolId::new(COGNITION_COMPONENT_DELETE);
+
+const ENVIRONMENT_SPEC_PATCH_HINT: &str = "Patch surfaces/components on the full spec. Custom surfaces must be listed in the active layout preset surfaces array. Components render only on kind=custom surfaces.";
 
 fn component_def_schema() -> Value {
     json!({
@@ -74,93 +87,134 @@ fn component_def_schema() -> Value {
 }
 
 pub fn register_environment_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 ) -> StasisResult<()> {
     crate::environment_wiki_tools::register_environment_wiki_tools(registry)?;
-    registry.register_tool(CognitionEnvironmentGetTool)?;
-    registry.register_tool(CognitionEnvironmentProposeTool)?;
-    registry.register_tool(CognitionEnvironmentApplyTool)?;
-    registry.register_tool(CognitionEnvironmentActivatePresetTool)?;
-    registry.register_tool(CognitionComponentListTool)?;
-    registry.register_tool(CognitionComponentGetTool)?;
-    registry.register_tool(CognitionComponentCreateTool::new(turn_scope.clone()))?;
-    registry.register_tool(CognitionComponentUpdateTool::new(turn_scope.clone()))?;
-    registry.register_tool(CognitionComponentDeleteTool)?;
+    registry.register_typed_tool(CognitionEnvironmentGetTool)?;
+    registry.register_typed_tool(CognitionEnvironmentProposeTool)?;
+    registry.register_typed_tool(CognitionEnvironmentApplyTool)?;
+    registry.register_typed_tool(CognitionEnvironmentActivatePresetTool)?;
+    registry.register_typed_tool(CognitionComponentListTool)?;
+    registry.register_typed_tool(CognitionComponentGetTool)?;
+    registry.register_typed_tool(CognitionComponentCreateTool::new(turn_scope.clone()))?;
+    registry.register_typed_tool(CognitionComponentUpdateTool::new(turn_scope.clone()))?;
+    registry.register_typed_tool(CognitionComponentDeleteTool)?;
     Ok(())
 }
 
 struct CognitionEnvironmentGetTool;
 
-#[async_trait]
-impl StasisTool for CognitionEnvironmentGetTool {
-    fn name(&self) -> &'static str {
-        COGNITION_ENVIRONMENT_GET
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+struct EnvironmentProfileInput {
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    profile_id: CompatOption<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("Read the persisted environment spec and component canvas for the active profile.")
-    }
+#[derive(Debug)]
+struct EnvironmentProfileCommand {
+    profile_id: Option<TrimmedText>,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "profile_id": { "type": "string" }
-            }
-        }))
-    }
+impl TryFrom<EnvironmentProfileInput> for EnvironmentProfileCommand {
+    type Error = StasisError;
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let profile_id = profile_from_input(&input);
+    fn try_from(input: EnvironmentProfileInput) -> Result<Self, Self::Error> {
+        Ok(Self {
+            profile_id: input
+                .profile_id
+                .into_option()
+                .and_then(|value| TrimmedText::new(value).ok()),
+        })
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct EnvironmentGetOutput {
+    ok: bool,
+    revision: u64,
+    #[schemars(with = "serde_json::Value")]
+    spec: EnvironmentSpec,
+}
+
+#[medousa_tool(id = COGNITION_ENVIRONMENT_GET_ID)]
+impl CognitionEnvironmentGetTool {
+    /// Read the persisted environment spec and component canvas for the active profile.
+    async fn invoke_typed(
+        &self,
+        input: EnvironmentProfileInput,
+    ) -> stasis::prelude::Result<EnvironmentGetOutput> {
+        let command = EnvironmentProfileCommand::try_from(input)?;
+        let profile_id = profile_from_typed(command.profile_id.as_ref().map(TrimmedText::as_str));
         let record = environment_hub()
             .get(&profile_id)
             .await
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
-        Ok(json!({
-            "ok": true,
-            "revision": record.revision,
-            "spec": record.spec,
-        }))
+        Ok(EnvironmentGetOutput {
+            ok: true,
+            revision: record.revision,
+            spec: record.spec,
+        })
     }
 }
 
 struct CognitionEnvironmentProposeTool;
 
-#[async_trait]
-impl StasisTool for CognitionEnvironmentProposeTool {
-    fn name(&self) -> &'static str {
-        COGNITION_ENVIRONMENT_PROPOSE
+#[derive(Debug, Deserialize)]
+#[serde(transparent)]
+struct ProposedEnvironmentSpecInput(EnvironmentSpec);
+
+impl JsonSchema for ProposedEnvironmentSpecInput {
+    fn schema_name() -> String {
+        "ProposedEnvironmentSpecInput".to_string()
     }
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Validate a proposed environment spec before applying. Returns errors[] on failure. \
-             Add custom surfaces to spec.surfaces AND include their ids in the active preset surfaces list.",
-        )
+    fn is_referenceable() -> bool {
+        false
     }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
+    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> Schema {
+        serde_json::from_value(json!({
             "type": "object",
-            "required": ["spec"],
+            "description": ENVIRONMENT_SPEC_PATCH_HINT,
             "properties": {
-                "spec": {
-                    "type": "object",
-                    "description": ENVIRONMENT_SPEC_PATCH_HINT,
-                    "properties": {
-                        "surfaces": { "type": "array", "items": { "type": "object" } },
-                        "components": { "type": "array", "items": component_def_schema() },
-                        "layoutPresets": { "type": "array" },
-                        "activePresetId": { "type": "string" }
-                    }
-                }
+                "surfaces": { "type": "array", "items": { "type": "object" } },
+                "components": { "type": "array", "items": component_def_schema() },
+                "layoutPresets": { "type": "array" },
+                "activePresetId": { "type": "string" }
             }
         }))
+        .expect("valid proposed environment compatibility schema")
     }
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let spec: EnvironmentSpec = parse_spec_input(&input)?;
+#[derive(Debug, Deserialize, JsonSchema)]
+struct EnvironmentProposeInput {
+    spec: ProposedEnvironmentSpecInput,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct EnvironmentProposeOutput {
+    ok: bool,
+    errors: Vec<String>,
+    diff_summary: String,
+    #[schemars(with = "serde_json::Value")]
+    proposed_spec: EnvironmentSpec,
+    pending_operator_approval: bool,
+}
+
+#[medousa_tool(id = COGNITION_ENVIRONMENT_PROPOSE_ID)]
+impl CognitionEnvironmentProposeTool {
+    /// Validate a proposed environment spec before applying. Returns errors[] on failure. Add custom surfaces to spec.surfaces AND include their ids in the active preset surfaces list.
+    async fn invoke_typed(
+        &self,
+        input: EnvironmentProposeInput,
+    ) -> stasis::prelude::Result<EnvironmentProposeOutput> {
+        let spec = input.spec.0;
         let profile_id = resolve_profile_id(Some(spec.profile_id.as_str()));
         let errors = validate_environment_spec(&spec);
         let diff_summary = format!(
@@ -181,46 +235,71 @@ impl StasisTool for CognitionEnvironmentProposeTool {
                 },
             )
             .await;
-        Ok(json!({
-            "ok": errors.is_empty(),
-            "errors": errors,
-            "diff_summary": diff_summary,
-            "proposed_spec": spec,
-            "pending_operator_approval": true,
-        }))
+        Ok(EnvironmentProposeOutput {
+            ok: errors.is_empty(),
+            errors,
+            diff_summary,
+            proposed_spec: spec,
+            pending_operator_approval: true,
+        })
     }
 }
 
 struct CognitionEnvironmentApplyTool;
 
-#[async_trait]
-impl StasisTool for CognitionEnvironmentApplyTool {
-    fn name(&self) -> &'static str {
-        COGNITION_ENVIRONMENT_APPLY
+#[derive(Debug, Deserialize)]
+#[serde(transparent)]
+struct ApprovedEnvironmentSpecInput(EnvironmentSpec);
+
+impl JsonSchema for ApprovedEnvironmentSpecInput {
+    fn schema_name() -> String {
+        "ApprovedEnvironmentSpecInput".to_string()
     }
 
-    fn description(&self) -> Option<&'static str> {
-        Some("Apply an approved environment spec to the daemon store. Surfaces, components, and chrome sync to Home.")
+    fn is_referenceable() -> bool {
+        false
     }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
+    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> Schema {
+        serde_json::from_value(json!({
             "type": "object",
-            "required": ["spec"],
-            "properties": {
-                "spec": {
-                    "type": "object",
-                    "description": ENVIRONMENT_SPEC_PATCH_HINT
-                }
-            }
+            "description": ENVIRONMENT_SPEC_PATCH_HINT
         }))
+        .expect("valid approved environment compatibility schema")
     }
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let spec: EnvironmentSpec = parse_spec_input(&input)?;
+#[derive(Debug, Deserialize, JsonSchema)]
+struct EnvironmentApplyInput {
+    spec: ApprovedEnvironmentSpecInput,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+enum EnvironmentApplyOutput {
+    Success {
+        ok: bool,
+        revision: u64,
+        #[schemars(with = "serde_json::Value")]
+        spec: Box<EnvironmentSpec>,
+    },
+    Failure {
+        ok: bool,
+        errors: Vec<String>,
+    },
+}
+
+#[medousa_tool(id = COGNITION_ENVIRONMENT_APPLY_ID)]
+impl CognitionEnvironmentApplyTool {
+    /// Apply an approved environment spec to the daemon store. Surfaces, components, and chrome sync to Home.
+    async fn invoke_typed(
+        &self,
+        input: EnvironmentApplyInput,
+    ) -> stasis::prelude::Result<EnvironmentApplyOutput> {
+        let spec = input.spec.0;
         let errors = validate_environment_spec(&spec);
         if !errors.is_empty() {
-            return Ok(json!({ "ok": false, "errors": errors }));
+            return Ok(EnvironmentApplyOutput::Failure { ok: false, errors });
         }
         let record = environment_hub()
             .put(spec, "agent")
@@ -229,126 +308,162 @@ impl StasisTool for CognitionEnvironmentApplyTool {
         environment_hub()
             .clear_pending(&record.spec.profile_id)
             .await;
-        Ok(json!({
-            "ok": true,
-            "revision": record.revision,
-            "spec": record.spec,
-        }))
+        Ok(EnvironmentApplyOutput::Success {
+            ok: true,
+            revision: record.revision,
+            spec: Box::new(record.spec),
+        })
     }
 }
 
 struct CognitionEnvironmentActivatePresetTool;
 
-#[async_trait]
-impl StasisTool for CognitionEnvironmentActivatePresetTool {
-    fn name(&self) -> &'static str {
-        COGNITION_ENVIRONMENT_ACTIVATE_PRESET
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+struct EnvironmentActivatePresetInput {
+    /// Layout preset id from environment_get layoutPresets
+    preset_id: String,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    profile_id: CompatOption<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Switch the active layout preset (morning vs focus vs custom). Updates nav surfaces and shell chrome from the preset.",
-        )
-    }
+#[derive(Debug)]
+struct EnvironmentActivatePresetCommand {
+    preset_id: TrimmedText,
+    profile_id: Option<TrimmedText>,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["preset_id"],
-            "properties": {
-                "preset_id": { "type": "string", "description": "Layout preset id from environment_get layoutPresets" },
-                "profile_id": { "type": "string" }
-            }
-        }))
-    }
+impl TryFrom<EnvironmentActivatePresetInput> for EnvironmentActivatePresetCommand {
+    type Error = StasisError;
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let profile_id = profile_from_input(&input);
-        let preset_id = input
-            .get("preset_id")
-            .and_then(Value::as_str)
-            .ok_or_else(|| StasisError::PortFailure("preset_id required".to_string()))?;
+    fn try_from(input: EnvironmentActivatePresetInput) -> Result<Self, Self::Error> {
+        let preset_id = TrimmedText::new(input.preset_id)
+            .map_err(|_| StasisError::PortFailure("preset_id is required".to_string()))?;
+        Ok(Self {
+            preset_id,
+            profile_id: input
+                .profile_id
+                .into_option()
+                .and_then(|value| TrimmedText::new(value).ok()),
+        })
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct EnvironmentActivatePresetOutput {
+    ok: bool,
+    revision: u64,
+    active_preset_id: Option<String>,
+}
+
+#[medousa_tool(id = COGNITION_ENVIRONMENT_ACTIVATE_PRESET_ID)]
+impl CognitionEnvironmentActivatePresetTool {
+    /// Switch the active layout preset (morning vs focus vs custom). Updates nav surfaces and shell chrome from the preset.
+    async fn invoke_typed(
+        &self,
+        input: EnvironmentActivatePresetInput,
+    ) -> stasis::prelude::Result<EnvironmentActivatePresetOutput> {
+        let command = EnvironmentActivatePresetCommand::try_from(input)?;
+        let profile_id = profile_from_typed(command.profile_id.as_ref().map(TrimmedText::as_str));
+        let preset_id = command.preset_id.into_string();
         let mut record = environment_hub()
             .get(&profile_id)
             .await
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
-        activate_layout_preset(&mut record.spec, preset_id)
-            .map_err(StasisError::PortFailure)?;
+        activate_layout_preset(&mut record.spec, &preset_id).map_err(StasisError::PortFailure)?;
         let updated = environment_hub()
             .put(record.spec, "agent")
             .await
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
-        Ok(json!({
-            "ok": true,
-            "revision": updated.revision,
-            "active_preset_id": updated.spec.active_preset_id,
-        }))
+        Ok(EnvironmentActivatePresetOutput {
+            ok: true,
+            revision: updated.revision,
+            active_preset_id: updated.spec.active_preset_id,
+        })
     }
 }
 
 struct CognitionComponentListTool;
 
-#[async_trait]
-impl StasisTool for CognitionComponentListTool {
-    fn name(&self) -> &'static str {
-        COGNITION_COMPONENT_LIST
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+struct ComponentListOutput {
+    ok: bool,
+    components: Vec<ComponentDef>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("List all persisted components on the environment canvas.")
-    }
-
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "profile_id": { "type": "string" }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let profile_id = profile_from_input(&input);
+#[medousa_tool(id = COGNITION_COMPONENT_LIST_ID)]
+impl CognitionComponentListTool {
+    /// List all persisted components on the environment canvas.
+    async fn invoke_typed(
+        &self,
+        input: EnvironmentProfileInput,
+    ) -> stasis::prelude::Result<ComponentListOutput> {
+        let command = EnvironmentProfileCommand::try_from(input)?;
+        let profile_id = profile_from_typed(command.profile_id.as_ref().map(TrimmedText::as_str));
         let record = environment_hub()
             .get(&profile_id)
             .await
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
-        Ok(json!({
-            "ok": true,
-            "components": record.spec.components,
-        }))
+        Ok(ComponentListOutput {
+            ok: true,
+            components: record.spec.components,
+        })
     }
 }
 
 struct CognitionComponentGetTool;
 
-#[async_trait]
-impl StasisTool for CognitionComponentGetTool {
-    fn name(&self) -> &'static str {
-        COGNITION_COMPONENT_GET
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ComponentIdInput {
+    component_id: String,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    profile_id: CompatOption<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("Read one component by id from the canvas.")
-    }
+#[derive(Debug)]
+struct ComponentIdCommand {
+    component_id: TrimmedText,
+    profile_id: Option<TrimmedText>,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["component_id"],
-            "properties": {
-                "component_id": { "type": "string" },
-                "profile_id": { "type": "string" }
-            }
-        }))
-    }
+impl TryFrom<ComponentIdInput> for ComponentIdCommand {
+    type Error = StasisError;
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let profile_id = profile_from_input(&input);
-        let component_id = input
-            .get("component_id")
-            .and_then(Value::as_str)
-            .ok_or_else(|| StasisError::PortFailure("component_id required".to_string()))?;
+    fn try_from(input: ComponentIdInput) -> Result<Self, Self::Error> {
+        Ok(Self {
+            component_id: TrimmedText::new(input.component_id)
+                .map_err(|_| StasisError::PortFailure("component_id required".to_string()))?,
+            profile_id: input
+                .profile_id
+                .into_option()
+                .and_then(|value| TrimmedText::new(value).ok()),
+        })
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct ComponentGetOutput {
+    ok: bool,
+    component: ComponentDef,
+}
+
+#[medousa_tool(id = COGNITION_COMPONENT_GET_ID)]
+impl CognitionComponentGetTool {
+    /// Read one component by id from the canvas.
+    async fn invoke_typed(
+        &self,
+        input: ComponentIdInput,
+    ) -> stasis::prelude::Result<ComponentGetOutput> {
+        let command = ComponentIdCommand::try_from(input)?;
+        let profile_id = profile_from_typed(command.profile_id.as_ref().map(TrimmedText::as_str));
+        let component_id = command.component_id.into_string();
         let record = environment_hub()
             .get(&profile_id)
             .await
@@ -357,10 +472,15 @@ impl StasisTool for CognitionComponentGetTool {
             .spec
             .components
             .iter()
-            .find(|c| c.id == component_id)
+            .find(|component| component.id == component_id.as_str())
             .cloned()
-            .ok_or_else(|| StasisError::PortFailure(format!("component not found: {component_id}")))?;
-        Ok(json!({ "ok": true, "component": component }))
+            .ok_or_else(|| {
+                StasisError::PortFailure(format!("component not found: {component_id}"))
+            })?;
+        Ok(ComponentGetOutput {
+            ok: true,
+            component,
+        })
     }
 }
 
@@ -374,58 +494,165 @@ impl CognitionComponentCreateTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionComponentCreateTool {
-    fn name(&self) -> &'static str {
-        COGNITION_COMPONENT_CREATE
+#[derive(Debug, Default)]
+enum CompatibleComponentInput {
+    #[default]
+    Missing,
+    Parsed(ComponentDef),
+    Invalid(String),
+}
+
+impl CompatibleComponentInput {
+    fn into_result(self) -> Result<ComponentDef, String> {
+        match self {
+            Self::Missing => Err("component required".to_string()),
+            Self::Parsed(component) => Ok(component),
+            Self::Invalid(error) => Err(error),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for CompatibleComponentInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        Ok(match serde_json::from_value(value) {
+            Ok(component) => Self::Parsed(component),
+            Err(error) => Self::Invalid(format!("invalid component: {error}")),
+        })
+    }
+}
+
+impl JsonSchema for CompatibleComponentInput {
+    fn schema_name() -> String {
+        "CompatibleComponentInput".to_string()
     }
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Add a presentation or chrome_action component to a custom surface slot. \
-             Use camelCase fields (surfaceId, type). Verify with cognition_component_list.",
-        )
+    fn is_referenceable() -> bool {
+        false
     }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["component"],
-            "properties": {
-                "component": component_def_schema(),
-                "profile_id": { "type": "string" }
-            }
-        }))
+    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> Schema {
+        serde_json::from_value(component_def_schema())
+            .expect("valid component compatibility schema")
     }
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let profile_id = profile_from_input(&input);
-        let component = match parse_component_input(&input) {
-            Ok(component) => component,
-            Err(err) => {
-                return Ok(json!({ "ok": false, "errors": [err] }));
+#[derive(Debug, JsonSchema)]
+struct ComponentCreateInput {
+    #[schemars(required)]
+    component: CompatibleComponentInput,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    profile_id: CompatOption<String>,
+}
+
+impl<'de> Deserialize<'de> for ComponentCreateInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(default)]
+            component: CompatibleComponentInput,
+            #[serde(default)]
+            profile_id: CompatOption<String>,
+        }
+
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            component: input.component,
+            profile_id: input.profile_id,
+        })
+    }
+}
+
+#[derive(Debug)]
+struct ComponentCreateCommand {
+    component: ComponentDef,
+    profile_id: Option<TrimmedText>,
+}
+
+impl TryFrom<ComponentCreateInput> for ComponentCreateCommand {
+    type Error = String;
+
+    fn try_from(input: ComponentCreateInput) -> Result<Self, Self::Error> {
+        Ok(Self {
+            component: input.component.into_result()?,
+            profile_id: input
+                .profile_id
+                .into_option()
+                .and_then(|value| TrimmedText::new(value).ok()),
+        })
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+enum ComponentCreateOutput {
+    Success {
+        ok: bool,
+        revision: u64,
+        component: Option<Box<ComponentDef>>,
+        live: bool,
+        nav_visible: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        hint: Option<String>,
+    },
+    Failure {
+        ok: bool,
+        errors: Vec<String>,
+    },
+}
+
+#[medousa_tool(id = COGNITION_COMPONENT_CREATE_ID)]
+impl CognitionComponentCreateTool {
+    /// Add a presentation or chrome_action component to a custom surface slot. Use camelCase fields (surfaceId, type). Verify with cognition_component_list.
+    async fn invoke_typed(
+        &self,
+        input: ComponentCreateInput,
+    ) -> stasis::prelude::Result<ComponentCreateOutput> {
+        let command = match ComponentCreateCommand::try_from(input) {
+            Ok(command) => command,
+            Err(error) => {
+                return Ok(ComponentCreateOutput::Failure {
+                    ok: false,
+                    errors: vec![error],
+                });
             }
         };
+        let profile_id = profile_from_typed(command.profile_id.as_ref().map(TrimmedText::as_str));
+        let component = command.component;
         let session_id = tool_session_id(&self.turn_scope).await;
-        if let Some(err) = validate_presentation_component_artifact(session_id.as_deref(), &component)
+        if let Some(err) =
+            validate_presentation_component_artifact(session_id.as_deref(), &component)
         {
-            return Ok(json!({ "ok": false, "errors": [err] }));
+            return Ok(ComponentCreateOutput::Failure {
+                ok: false,
+                errors: vec![err],
+            });
         }
         let mut record = environment_hub()
             .get(&profile_id)
             .await
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
         if record.spec.components.iter().any(|c| c.id == component.id) {
-            return Ok(json!({
-                "ok": false,
-                "errors": [format!("component already exists: {}", component.id)]
-            }));
+            return Ok(ComponentCreateOutput::Failure {
+                ok: false,
+                errors: vec![format!("component already exists: {}", component.id)],
+            });
         }
         record.spec.components.push(component.clone());
         let errors = validate_environment_spec(&record.spec);
         if !errors.is_empty() {
             record.spec.components.pop();
-            return Ok(json!({ "ok": false, "errors": errors }));
+            return Ok(ComponentCreateOutput::Failure { ok: false, errors });
         }
         let updated = environment_hub()
             .put(record.spec, "agent")
@@ -434,31 +661,18 @@ impl StasisTool for CognitionComponentCreateTool {
         if let Some(session_id) = session_id.as_deref() {
             register_presentation_aliases(session_id, &component);
         }
-        let nav_visible =
-            surface_nav_visible_for_spec(&updated.spec, &component.surface_id);
-        let mut response = json!({
-            "ok": true,
-            "revision": updated.revision,
-            "component": updated.spec.components.last(),
-            "live": true,
-            "nav_visible": nav_visible,
-        });
-        if let (Some(obj), Some(extra)) = (
-            response.as_object_mut(),
-            crate::custom_view_status::nav_visibility_fields(
-                &updated.spec,
+        let nav_visible = surface_nav_visible_for_spec(&updated.spec, &component.surface_id);
+        Ok(ComponentCreateOutput::Success {
+            ok: true,
+            revision: updated.revision,
+            component: updated.spec.components.last().cloned().map(Box::new),
+            live: true,
+            nav_visible,
+            hint: crate::custom_view_status::nav_visibility_hint(
                 &component.surface_id,
                 nav_visible,
-            )
-            .as_object(),
-        ) {
-            for (key, value) in extra {
-                if key != "live" && key != "nav_visible" {
-                    obj.insert(key.clone(), value.clone());
-                }
-            }
-        }
-        Ok(response)
+            ),
+        })
     }
 }
 
@@ -472,49 +686,214 @@ impl CognitionComponentUpdateTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionComponentUpdateTool {
-    fn name(&self) -> &'static str {
-        COGNITION_COMPONENT_UPDATE
+#[derive(Debug, Default)]
+enum CompatibleComponentConfig {
+    #[default]
+    Missing,
+    Value(Value),
+}
+
+impl JsonSchema for CompatibleComponentConfig {
+    fn schema_name() -> String {
+        "CompatibleComponentConfig".to_string()
     }
 
-    fn description(&self) -> Option<&'static str> {
-        Some("Patch an existing canvas component by id.")
+    fn is_referenceable() -> bool {
+        false
     }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["component_id"],
-            "properties": {
-                "component_id": { "type": "string" },
-                "patch": {
-                    "type": "object",
-                    "description": "Partial update — label, surfaceId|surface_id, slot, config, presentation",
-                    "properties": {
-                        "label": { "type": "string" },
-                        "surfaceId": { "type": "string" },
-                        "surface_id": { "type": "string" },
-                        "slot": { "type": "string" },
-                        "config": { "type": "object" },
-                        "presentation": {
-                            "type": "string",
-                            "enum": ["inline", "panel", "fullscreen"]
-                        }
-                    }
-                },
-                "profile_id": { "type": "string" }
-            }
-        }))
+    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> Schema {
+        Schema::Object(SchemaObject {
+            instance_type: Some(InstanceType::Object.into()),
+            ..SchemaObject::default()
+        })
+    }
+}
+
+#[derive(Debug, Default)]
+struct ComponentPatchInput {
+    label: Option<String>,
+    surface_id: Option<String>,
+    slot: Option<String>,
+    config: CompatibleComponentConfig,
+    presentation: Option<UiPresentation>,
+}
+
+impl<'de> Deserialize<'de> for ComponentPatchInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        let config = value
+            .get("config")
+            .cloned()
+            .map(CompatibleComponentConfig::Value)
+            .unwrap_or_default();
+        Ok(Self {
+            label: value
+                .get("label")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            surface_id: value
+                .get("surfaceId")
+                .or_else(|| value.get("surface_id"))
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            slot: value
+                .get("slot")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            config,
+            presentation: value
+                .get("presentation")
+                .and_then(Value::as_str)
+                .map(|presentation| match presentation {
+                    "panel" => UiPresentation::Panel,
+                    "fullscreen" => UiPresentation::Fullscreen,
+                    _ => UiPresentation::Inline,
+                }),
+        })
+    }
+}
+
+#[allow(dead_code)]
+#[derive(JsonSchema)]
+struct ComponentPatchSchema {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        rename = "surfaceId",
+        with = "String",
+        skip_serializing_if = "Option::is_none"
+    )]
+    surface_id_camel: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    surface_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    slot: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        with = "CompatibleComponentConfig",
+        skip_serializing_if = "Option::is_none"
+    )]
+    config: Option<CompatibleComponentConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "UiPresentation", skip_serializing_if = "Option::is_none")]
+    presentation: Option<UiPresentation>,
+}
+
+impl JsonSchema for ComponentPatchInput {
+    fn schema_name() -> String {
+        "ComponentPatchInput".to_string()
     }
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let profile_id = profile_from_input(&input);
-        let component_id = input
-            .get("component_id")
-            .and_then(Value::as_str)
-            .ok_or_else(|| StasisError::PortFailure("component_id required".to_string()))?;
-        let patch = input.get("patch").cloned().unwrap_or(json!({}));
+    fn is_referenceable() -> bool {
+        false
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> Schema {
+        ComponentPatchSchema::json_schema(generator)
+    }
+}
+
+#[derive(Debug, JsonSchema)]
+struct ComponentUpdateInput {
+    #[schemars(required, with = "String")]
+    component_id: CompatOption<String>,
+    /// Partial update — label, surfaceId|surface_id, slot, config, presentation
+    #[serde(default)]
+    #[schemars(with = "ComponentPatchInput", skip_serializing_if = "Option::is_none")]
+    patch: Option<ComponentPatchInput>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    profile_id: CompatOption<String>,
+}
+
+impl<'de> Deserialize<'de> for ComponentUpdateInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(default)]
+            component_id: CompatOption<String>,
+            #[serde(default)]
+            patch: Option<ComponentPatchInput>,
+            #[serde(default)]
+            profile_id: CompatOption<String>,
+        }
+
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            component_id: input.component_id,
+            patch: input.patch,
+            profile_id: input.profile_id,
+        })
+    }
+}
+
+#[derive(Debug)]
+struct ComponentUpdateCommand {
+    component_id: TrimmedText,
+    patch: ComponentPatchInput,
+    profile_id: Option<TrimmedText>,
+}
+
+impl TryFrom<ComponentUpdateInput> for ComponentUpdateCommand {
+    type Error = StasisError;
+
+    fn try_from(input: ComponentUpdateInput) -> Result<Self, Self::Error> {
+        Ok(Self {
+            component_id: input
+                .component_id
+                .into_option()
+                .ok_or_else(|| StasisError::PortFailure("component_id required".to_string()))
+                .and_then(|value| {
+                    TrimmedText::new(value)
+                        .map_err(|_| StasisError::PortFailure("component_id required".to_string()))
+                })?,
+            patch: input.patch.unwrap_or_default(),
+            profile_id: input
+                .profile_id
+                .into_option()
+                .and_then(|value| TrimmedText::new(value).ok()),
+        })
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+enum ComponentUpdateOutput {
+    Success {
+        ok: bool,
+        revision: u64,
+        component: ComponentDef,
+    },
+    Failure {
+        ok: bool,
+        errors: Vec<String>,
+    },
+}
+
+#[medousa_tool(id = COGNITION_COMPONENT_UPDATE_ID)]
+impl CognitionComponentUpdateTool {
+    /// Patch an existing canvas component by id.
+    async fn invoke_typed(
+        &self,
+        input: ComponentUpdateInput,
+    ) -> stasis::prelude::Result<ComponentUpdateOutput> {
+        let command = ComponentUpdateCommand::try_from(input)?;
+        let profile_id = profile_from_typed(command.profile_id.as_ref().map(TrimmedText::as_str));
+        let component_id = command.component_id.into_string();
         let mut record = environment_hub()
             .get(&profile_id)
             .await
@@ -523,28 +902,31 @@ impl StasisTool for CognitionComponentUpdateTool {
             .spec
             .components
             .iter()
-            .position(|c| c.id == component_id)
+            .position(|c| c.id == component_id.as_str())
         else {
-            return Ok(json!({
-                "ok": false,
-                "errors": [format!("component not found: {component_id}")]
-            }));
+            return Ok(ComponentUpdateOutput::Failure {
+                ok: false,
+                errors: vec![format!("component not found: {component_id}")],
+            });
         };
         let previous = record.spec.components[index].clone();
         let mut existing = previous.clone();
-        apply_component_patch(&mut existing, &patch);
+        apply_component_patch(&mut existing, command.patch);
         existing.updated_at = Some(Utc::now());
         let session_id = tool_session_id(&self.turn_scope).await;
         if let Some(err) =
             validate_presentation_component_artifact(session_id.as_deref(), &existing)
         {
-            return Ok(json!({ "ok": false, "errors": [err] }));
+            return Ok(ComponentUpdateOutput::Failure {
+                ok: false,
+                errors: vec![err],
+            });
         }
         record.spec.components[index] = existing.clone();
         let errors = validate_environment_spec(&record.spec);
         if !errors.is_empty() {
             record.spec.components[index] = previous;
-            return Ok(json!({ "ok": false, "errors": errors }));
+            return Ok(ComponentUpdateOutput::Failure { ok: false, errors });
         }
         let updated = environment_hub()
             .put(record.spec, "agent")
@@ -553,43 +935,32 @@ impl StasisTool for CognitionComponentUpdateTool {
         if let Some(session_id) = session_id.as_deref() {
             register_presentation_aliases(session_id, &existing);
         }
-        Ok(json!({
-            "ok": true,
-            "revision": updated.revision,
-            "component": existing,
-        }))
+        Ok(ComponentUpdateOutput::Success {
+            ok: true,
+            revision: updated.revision,
+            component: existing,
+        })
     }
 }
 
 struct CognitionComponentDeleteTool;
 
-#[async_trait]
-impl StasisTool for CognitionComponentDeleteTool {
-    fn name(&self) -> &'static str {
-        COGNITION_COMPONENT_DELETE
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+struct ComponentDeleteOutput {
+    ok: bool,
+    revision: u64,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("Remove a component from the canvas.")
-    }
-
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["component_id"],
-            "properties": {
-                "component_id": { "type": "string" },
-                "profile_id": { "type": "string" }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let profile_id = profile_from_input(&input);
-        let component_id = input
-            .get("component_id")
-            .and_then(Value::as_str)
-            .ok_or_else(|| StasisError::PortFailure("component_id required".to_string()))?;
+#[medousa_tool(id = COGNITION_COMPONENT_DELETE_ID)]
+impl CognitionComponentDeleteTool {
+    /// Remove a component from the canvas.
+    async fn invoke_typed(
+        &self,
+        input: ComponentIdInput,
+    ) -> stasis::prelude::Result<ComponentDeleteOutput> {
+        let command = ComponentIdCommand::try_from(input)?;
+        let profile_id = profile_from_typed(command.profile_id.as_ref().map(TrimmedText::as_str));
+        let component_id = command.component_id.into_string();
         let mut record = environment_hub()
             .get(&profile_id)
             .await
@@ -598,7 +969,7 @@ impl StasisTool for CognitionComponentDeleteTool {
         record
             .spec
             .components
-            .retain(|c| c.id != component_id);
+            .retain(|component| component.id != component_id.as_str());
         if record.spec.components.len() == before {
             return Err(StasisError::PortFailure(format!(
                 "component not found: {component_id}"
@@ -608,24 +979,15 @@ impl StasisTool for CognitionComponentDeleteTool {
             .put(record.spec, "agent")
             .await
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
-        Ok(json!({ "ok": true, "revision": updated.revision }))
+        Ok(ComponentDeleteOutput {
+            ok: true,
+            revision: updated.revision,
+        })
     }
 }
 
-fn profile_from_input(input: &Value) -> String {
-    resolve_profile_id(
-        input
-            .get("profile_id")
-            .and_then(Value::as_str),
-    )
-}
-
-fn parse_component_input(input: &Value) -> Result<ComponentDef, String> {
-    let value = input
-        .get("component")
-        .cloned()
-        .ok_or_else(|| "component required".to_string())?;
-    serde_json::from_value(value).map_err(|err| format!("invalid component: {err}"))
+fn profile_from_typed(profile_id: Option<&str>) -> String {
+    resolve_profile_id(profile_id)
 }
 
 async fn tool_session_id(
@@ -699,37 +1061,21 @@ fn register_presentation_aliases(session_id: &str, component: &ComponentDef) {
     }
 }
 
-fn parse_spec_input(input: &Value) -> StasisResult<EnvironmentSpec> {
-    let value = input
-        .get("spec")
-        .cloned()
-        .ok_or_else(|| StasisError::PortFailure("spec required".to_string()))?;
-    serde_json::from_value(value).map_err(|err| StasisError::PortFailure(err.to_string()))
-}
-
-fn apply_component_patch(component: &mut ComponentDef, patch: &Value) {
-    if let Some(label) = patch.get("label").and_then(Value::as_str) {
-        component.label = Some(label.to_string());
+fn apply_component_patch(component: &mut ComponentDef, patch: ComponentPatchInput) {
+    if let Some(label) = patch.label {
+        component.label = Some(label);
     }
-    if let Some(surface_id) = patch
-        .get("surfaceId")
-        .or_else(|| patch.get("surface_id"))
-        .and_then(Value::as_str)
-    {
-        component.surface_id = surface_id.to_string();
+    if let Some(surface_id) = patch.surface_id {
+        component.surface_id = surface_id;
     }
-    if let Some(slot) = patch.get("slot").and_then(Value::as_str) {
-        component.slot = slot.to_string();
+    if let Some(slot) = patch.slot {
+        component.slot = slot;
     }
-    if let Some(config) = patch.get("config") {
-        component.config = config.clone();
+    if let CompatibleComponentConfig::Value(config) = patch.config {
+        component.config = config;
     }
-    if let Some(presentation) = patch.get("presentation").and_then(Value::as_str) {
-        component.presentation = match presentation {
-            "panel" => Some(UiPresentation::Panel),
-            "fullscreen" => Some(UiPresentation::Fullscreen),
-            _ => Some(UiPresentation::Inline),
-        };
+    if let Some(presentation) = patch.presentation {
+        component.presentation = Some(presentation);
     }
 }
 
@@ -839,6 +1185,44 @@ mod demo_tests {
     }
 
     #[test]
+    fn component_create_input_preserves_legacy_error_receipts() {
+        let missing: ComponentCreateInput =
+            serde_json::from_value(json!({})).expect("missing component stays handler-visible");
+        assert_eq!(
+            missing.component.into_result().unwrap_err(),
+            "component required"
+        );
+
+        let invalid: ComponentCreateInput = serde_json::from_value(json!({ "component": null }))
+            .expect("invalid component stays handler-visible");
+        assert!(
+            invalid
+                .component
+                .into_result()
+                .unwrap_err()
+                .starts_with("invalid component:")
+        );
+    }
+
+    #[test]
+    fn component_patch_preserves_alias_precedence_and_opaque_config() {
+        let patch: ComponentPatchInput = serde_json::from_value(json!({
+            "surfaceId": 42,
+            "surface_id": "ignored-fallback",
+            "config": null,
+            "presentation": "future-value"
+        }))
+        .expect("legacy-compatible patch");
+
+        assert_eq!(patch.surface_id, None);
+        assert!(matches!(
+            patch.config,
+            CompatibleComponentConfig::Value(Value::Null)
+        ));
+        assert_eq!(patch.presentation, Some(UiPresentation::Inline));
+    }
+
+    #[test]
     fn scene_component_bypasses_artifact_check_and_validates_on_custom_surface() {
         let scene = json!({ "ops": [{ "op": "plan_layout" }] });
         let component = make_scene_component("trip-scene", "japan-trip", scene, "Itinerary");
@@ -852,5 +1236,105 @@ mod demo_tests {
         scene_component.surface_id = "writing-studio".to_string();
         spec.components.push(scene_component);
         assert!(is_valid_environment_spec(&spec));
+    }
+
+    #[test]
+    fn environment_commands_normalize_ids_and_keep_component_config_opaque() {
+        let profile = EnvironmentProfileCommand::try_from(EnvironmentProfileInput {
+            profile_id: Some(" profile-a ".to_string()).into(),
+        })
+        .expect("profile command");
+        assert_eq!(
+            profile.profile_id.as_ref().map(TrimmedText::as_str),
+            Some("profile-a")
+        );
+
+        let component = ComponentDef {
+            id: "component-a".to_string(),
+            component_type: ComponentType::Presentation,
+            surface_id: "surface-a".to_string(),
+            slot: "main".to_string(),
+            label: Some("Chart".to_string()),
+            config: json!({"artifactId": "art:chart", "future": {"keep": true}}),
+            presentation: Some(UiPresentation::Inline),
+            feeds: vec![],
+            updated_at: None,
+        };
+        let create = ComponentCreateCommand::try_from(ComponentCreateInput {
+            component: CompatibleComponentInput::Parsed(component.clone()),
+            profile_id: Some(" profile-a ".to_string()).into(),
+        })
+        .expect("create command");
+        assert_eq!(create.component.id, "component-a");
+        assert_eq!(create.component.config["future"]["keep"], Value::Bool(true));
+
+        let update = ComponentUpdateCommand::try_from(ComponentUpdateInput {
+            component_id: Some(" component-a ".to_string()).into(),
+            patch: None,
+            profile_id: None.into(),
+        })
+        .expect("update command");
+        assert_eq!(update.component_id.as_str(), "component-a");
+        assert!(matches!(
+            update.patch.config,
+            CompatibleComponentConfig::Missing
+        ));
+    }
+
+    #[test]
+    fn component_commands_reject_blank_identifiers() {
+        let error = ComponentIdCommand::try_from(ComponentIdInput {
+            component_id: " \n\t".to_string(),
+            profile_id: None.into(),
+        })
+        .expect_err("blank component id should fail");
+        assert!(error.to_string().contains("component_id required"));
+
+        let error = EnvironmentActivatePresetCommand::try_from(EnvironmentActivatePresetInput {
+            preset_id: " \n\t".to_string(),
+            profile_id: None.into(),
+        })
+        .expect_err("blank preset id should fail");
+        assert!(error.to_string().contains("preset_id is required"));
+    }
+
+    #[test]
+    fn environment_wire_optionals_remain_lenient_for_legacy_values() {
+        let profile: EnvironmentProfileInput =
+            serde_json::from_value(json!({ "profile_id": 42 })).expect("profile input");
+        assert!(profile.profile_id.into_option().is_none());
+
+        let activate: EnvironmentActivatePresetInput = serde_json::from_value(json!({
+            "preset_id": "focus",
+            "profile_id": false,
+        }))
+        .expect("activate input");
+        assert!(activate.profile_id.into_option().is_none());
+
+        let component: ComponentIdInput = serde_json::from_value(json!({
+            "component_id": "component-a",
+            "profile_id": [],
+        }))
+        .expect("component id input");
+        assert!(component.profile_id.into_option().is_none());
+
+        let create: ComponentCreateInput =
+            serde_json::from_value(json!({ "profile_id": 9 })).expect("create input");
+        assert!(create.profile_id.into_option().is_none());
+        assert_eq!(
+            create
+                .component
+                .into_result()
+                .expect_err("missing component"),
+            "component required"
+        );
+
+        let update: ComponentUpdateInput = serde_json::from_value(json!({
+            "component_id": true,
+            "profile_id": {"legacy": true},
+        }))
+        .expect("update input");
+        assert!(update.component_id.into_option().is_none());
+        assert!(update.profile_id.into_option().is_none());
     }
 }

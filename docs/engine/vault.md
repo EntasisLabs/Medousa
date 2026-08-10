@@ -12,13 +12,15 @@ The vault is Medousa's markdown note store with wikilinks, backlinks, tags, and 
 |--------|------|---------|
 | GET/POST | `/v1/vault/roots` | List / register roots |
 | PUT | `/v1/vault/active` | Set active root for writes |
-| GET/POST | `/v1/vault/notes` | List / create |
-| GET/PUT/DELETE | `/v1/vault/notes/{*note_path}` | CRUD single note |
+| GET/POST | `/v1/vault/notes` | List (`VaultNoteSummary[]`) / create |
+| GET/PUT/DELETE | `/v1/vault/notes/{*note_path}` | CRUD single note (`VaultNote` + body) |
 | GET | `/v1/vault/tags` | Tag index |
 | GET | `/v1/vault/search` | Search (`q` query param) |
 | GET | `/v1/vault/backlinks` | Backlinks for path |
 
 Optimistic concurrency: `If-Match` on note PUT (hash of last known content).
+
+`GET /v1/vault/notes` returns light `VaultNoteSummary` rows (path, title, mtime, kind, tags) from the write-time index with cheap mtime-incremental refresh — not a full body re-parse on every list. Full `VaultNote` (wikilinks, backlinks, hashes) remains on get-one / write responses.
 
 Multi-workshop / data dir: [upgrade-and-data-dir runbook](../runbooks/upgrade-and-data-dir.md), ADR-003.
 
@@ -49,7 +51,7 @@ Bootstrap domain **documents** groups vault + artifact edit tools — see [agent
 
 ## App integration
 
-- Desktop Library: vault tree + files + **Presentations** tab (`ArtifactLibraryPanel`)
-- Mobile: Notes / Presentations tabs in `MobileLibraryPanel`
+- Desktop: Notes / Files / Artifacts rail doors (`ArtifactLibraryPanel` for artifacts)
+- Mobile: Notes / Artifacts tabs in `MobileLibraryPanel`
 
 Cookbook: [vault-and-library.md](../cookbook/vault-and-library.md)

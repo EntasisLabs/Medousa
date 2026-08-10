@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use once_cell::sync::Lazy;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -51,7 +52,7 @@ impl CoderAgentIdentity {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CoderActivityKind {
     AgentJoined,
@@ -1013,8 +1014,20 @@ fn effect_summary(output: &Value) -> String {
             .join("\n");
         truncate(&tail, 240)
     });
+    let stable_object_id = output
+        .pointer("/change_set/id")
+        .or_else(|| output.pointer("/action/id"))
+        .or_else(|| output.pointer("/selection/id"))
+        .or_else(|| output.get("workflow"));
+    let stable_object_kind = output
+        .pointer("/change_set/kind")
+        .or_else(|| output.pointer("/action/kind"))
+        .or_else(|| output.pointer("/selection/kind"))
+        .or_else(|| output.get("query"));
     let summary = json!({
         "ok": output.get("ok"),
+        "stable_object_id": stable_object_id,
+        "stable_object_kind": stable_object_kind,
         "path": output.get("path"),
         "digest": output.get("digest"),
         "session_id": output.get("session_id"),
@@ -1063,6 +1076,21 @@ mod tests {
             "inspect callers before rename"
         );
         assert!(validate_intent(&"x".repeat(MAX_INTENT_CHARS + 1)).is_err());
+    }
+
+    #[test]
+    fn effect_summary_retains_stable_semantic_object_without_source_payload() {
+        let summary = effect_summary(&json!({
+            "ok": true,
+            "change_set": {
+                "id": "changeset:sha256:abc",
+                "kind": "symbol_rename",
+                "files": [{ "path": "src/lib.rs", "after": "private source" }]
+            }
+        }));
+        assert!(summary.contains("changeset:sha256:abc"));
+        assert!(summary.contains("symbol_rename"));
+        assert!(!summary.contains("private source"));
     }
 
     #[test]

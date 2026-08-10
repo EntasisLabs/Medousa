@@ -56,7 +56,7 @@ Env vars: [configuration-reference.md](../configuration-reference.md)
 
 At viewport ≤768px: **Pulse**, **Work**, **Chat**, **You**.
 
-Library → **Notes** | **Presentations**. Presentations open artifacts fullscreen with safe-area chrome.
+Library → **Notes** | **Artifacts**. Artifacts open fullscreen with safe-area chrome.
 
 App integrator doc: [medousa-home.md](../apps/medousa-home.md)
 

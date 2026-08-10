@@ -42,4 +42,17 @@ describe("Forge presentation language", () => {
       "older than Medousa",
     );
   });
+
+  it("explains missing indexed snapshots as a code map that is not ready", () => {
+    expect(
+      humanizeForgeMessage(
+        "workshop returned HTTP 404 Not Found: work work-18c6f16a996b12f8988cb3bd84be88f8 has no ready indexed snapshot yet",
+      ),
+    ).toBe("The code map isn’t ready yet. Rebuild it, or wait for indexing to finish.");
+    expect(
+      humanizeForgeMessage(
+        "HTTP 404 Not Found for /v1/world/works/work-abc/code_avec",
+      ),
+    ).toContain("code map isn’t ready");
+  });
 });

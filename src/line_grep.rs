@@ -1,8 +1,9 @@
 //! Line-oriented literal grep shared by vault and artifact edit tools.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub struct LineGrepMatch {
     pub line: usize,
     pub text: String,
@@ -12,7 +13,7 @@ pub struct LineGrepMatch {
     pub context_after: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub struct LineGrepResult {
     pub pattern: String,
     pub total_lines: usize,
@@ -20,7 +21,7 @@ pub struct LineGrepResult {
     pub matches: Vec<LineGrepMatch>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub struct LineExcerpt {
     pub content: String,
     pub truncated: bool,

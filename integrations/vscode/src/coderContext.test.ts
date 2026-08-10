@@ -30,7 +30,7 @@ describe("VS Code Coder context", () => {
         human_phase: "work",
         environment: {
           worktree: "/forge/work-1",
-          branch: "medousa/attempt/work-1/1",
+          branch: "worktree/demo-a1",
           baseline_oid: "abc",
           generation: 1,
         },

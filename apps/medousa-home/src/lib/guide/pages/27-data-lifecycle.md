@@ -31,8 +31,8 @@ Exact paths depend on your operating system — trust the paths the app lists.
 |---------|--------|
 | Hide finished Work cards | Preferences → Work cards |
 | Wipe old Work archives | Preferences → Work cards |
-| Presentation cleanup | Medousa Agent → Presentations |
-| Deleted notes | Library → Trash → Restore |
+| Artifact cleanup | Medousa Agent → Artifacts |
+| Deleted notes | Notes → Trash → Restore |
 | Note history | Versions (if turned on) |
 
 ## Moving or reinstalling

@@ -84,7 +84,7 @@ pub struct InteractiveTurnStreamSink {
     delivery: Option<InteractiveTurnDeliveryContext>,
     session_hooks: InteractiveTurnSessionHooks,
     parts: std::sync::Mutex<TurnPartsAccumulator>,
-    /// Principal-facing answer text delivered via content_delta (Phase 7A canonical body).
+    /// Current presentation draft assembled from content deltas.
     streamed_markdown: std::sync::Mutex<String>,
     pending_slice_scratch: std::sync::Mutex<Option<TurnScratchpad>>,
 }
@@ -152,14 +152,12 @@ impl InteractiveTurnStreamSink {
         self.spawn_persist_turn(projected);
     }
 
-    /// Prefer streamed tokens for persist + terminal commit when the client already saw them.
-    fn canonical_terminal_body(&self, fallback: &str) -> (String, bool) {
-        let streamed = self.streamed_markdown();
-        if streamed.trim().is_empty() {
-            (fallback.to_string(), false)
-        } else {
-            (streamed, true)
-        }
+    /// Terminal model/control output is the durable source of truth.
+    ///
+    /// Stream deltas are presentation-only and travel through an asynchronous bridge;
+    /// using their arrival state here can persist a stale preamble or a partial final.
+    fn canonical_terminal_body(terminal_text: &str) -> String {
+        terminal_text.to_string()
     }
 
     async fn turn_cancelled(&self) -> bool {
@@ -347,7 +345,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             return;
         }
 
-        let (body, _stream_authoritative) = self.canonical_terminal_body(&text);
+        let body = Self::canonical_terminal_body(&text);
 
         let assistant_turn = self
             .parts
@@ -365,11 +363,8 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                 )
             });
 
-        // Always carry the canonical body in the terminal commit. The client prefers
-        // its streamed content when present (resolveTurnContent) and only falls back to
-        // final_text when the local bubble is empty — e.g. after a scratch_reset cleared
-        // the draft — so a turn that finished mid-reloop self-heals instead of going blank
-        // until the user navigates away and back.
+        // Always carry the authoritative body in the terminal commit. The client
+        // replaces any partial streamed draft with this value.
         let final_event = interactive_turn_runtime::final_stream_event_with_tools(
             &self.turn_id,
             &body,
@@ -391,7 +386,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             return;
         }
 
-        let (body, stream_authoritative) = self.canonical_terminal_body(&text);
+        let body = Self::canonical_terminal_body(&text);
 
         let assistant_turn = self
             .parts
@@ -415,19 +410,11 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                 )
             });
 
-        let checkpoint_event = if stream_authoritative {
-            interactive_turn_runtime::turn_checkpoint_stream_event(
-                &self.turn_id,
-                "",
-                tool_names.clone(),
-            )
-        } else {
-            interactive_turn_runtime::turn_checkpoint_stream_event(
-                &self.turn_id,
-                &body,
-                tool_names.clone(),
-            )
-        };
+        let checkpoint_event = interactive_turn_runtime::turn_checkpoint_stream_event(
+            &self.turn_id,
+            &body,
+            tool_names.clone(),
+        );
         let event = super::turn_event::TurnEvent::checkpoint_from_turn(&assistant_turn);
         self.publish_tracked_with_journal(checkpoint_event, Some(event.clone()))
             .await;
@@ -444,7 +431,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             return;
         }
 
-        let (body, stream_authoritative) = self.canonical_terminal_body(&text);
+        let body = Self::canonical_terminal_body(&text);
 
         let assistant_turn = self
             .parts
@@ -468,19 +455,11 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                 )
             });
 
-        let needs_input_event = if stream_authoritative {
-            interactive_turn_runtime::needs_input_stream_event_with_tools(
-                &self.turn_id,
-                "",
-                tool_names.clone(),
-            )
-        } else {
-            interactive_turn_runtime::needs_input_stream_event_with_tools(
-                &self.turn_id,
-                &body,
-                tool_names.clone(),
-            )
-        };
+        let needs_input_event = interactive_turn_runtime::needs_input_stream_event_with_tools(
+            &self.turn_id,
+            &body,
+            tool_names.clone(),
+        );
         let event = super::turn_event::TurnEvent::needs_input_from_turn(&assistant_turn);
         self.publish_tracked_with_journal(needs_input_event, Some(event.clone()))
             .await;
@@ -666,6 +645,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         tool_run_id: String,
         tool_name: String,
         input_summary: String,
+        input_params: Vec<medousa_types::daemon_api::ToolInputParam>,
         tool_round: usize,
     ) {
         if self.emit_cancelled_if_needed().await {
@@ -679,6 +659,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             &tool_run_id,
             &tool_name,
             &input_summary,
+            input_params,
             tool_round,
         ))
         .await;
@@ -825,6 +806,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             &tool_name,
             &status,
             &input_summary,
+            super::tool_stream::preview_tool_input(&tool_input),
             output_summary.as_deref(),
             tool_round,
             artifact_refs,
@@ -1045,8 +1027,15 @@ async fn run_agent_turn_inner(
         resolved_code_context.work_id = binding.work_id;
     }
     let forge = project_state.as_ref().map(|state| state.forge.clone());
-    let (coder_authority, coder_registry, mode_context_appendix, tool_registry_override) =
-        if agent_mode.id == crate::daemon_api::AgentModeId::Coder {
+    let checkpoint_store = super::coder_turn_checkpoint::coder_turn_checkpoint_store();
+    let (
+        coder_authority,
+        coder_registry,
+        coder_entry,
+        coder_resume_checkpoint,
+        mode_context_appendix,
+        tool_registry_override,
+    ) = if agent_mode.id == crate::daemon_api::AgentModeId::Coder {
             let Some(forge) = forge else {
                 sink.agent_error(
                     1,
@@ -1079,7 +1068,7 @@ async fn run_agent_turn_inner(
                 let registry_override: Arc<
                     dyn stasis::application::orchestration::tool_registry::ToolRegistry,
                 > = registry;
-                (None, None, None, Some(registry_override))
+                (None, None, None, None, None, Some(registry_override))
             } else {
                 agent_mode.coder_phase = Some(super::modes::CoderRuntimePhase::Work);
                 let work_id = medousa_forge::model::WorkId::from(
@@ -1098,12 +1087,89 @@ async fn run_agent_turn_inner(
                         "contract_revision": agent_mode.contract_revision,
                     }),
                 };
-                let (item, lease) = match forge.begin_isolated_attempt(
-                    &work_id,
-                    executor,
-                    Some(std::process::id()),
-                    &medousa_forge::forge::Forge::system_actor(),
-                ) {
+                let mut recovery_plan =
+                    match super::coder_turn_checkpoint::plan_coder_recovery(
+                        &checkpoint_store,
+                        &forge,
+                        &super::coder_activity::coder_activity_store(),
+                        &session_id,
+                        &work_id,
+                    ) {
+                        Ok(plan) => plan,
+                        Err(err) => {
+                            sink.notice(format!(
+                                "⚠ Coder recovery index unavailable; starting from Forge state: {err}"
+                            ))
+                            .await;
+                            super::coder_turn_checkpoint::CoderRecoveryPlan::Fresh
+                        }
+                    };
+                if let Some(checkpoint) = recovery_plan.exact_checkpoint()
+                    && (checkpoint.agent_mode != "coder"
+                        || checkpoint.contract_revision != agent_mode.contract_revision)
+                {
+                    recovery_plan = super::coder_turn_checkpoint::CoderRecoveryPlan::Semantic {
+                        checkpoint: checkpoint.clone(),
+                        reason: "Coder mode contract changed since the checkpoint".into(),
+                    };
+                }
+                let source_attempt = recovery_plan.exact_checkpoint().map(|checkpoint| {
+                    medousa_forge::model::AttemptId::from(checkpoint.forge.attempt_id.clone())
+                });
+                let can_rebind_source = source_attempt.as_ref().is_some_and(|source| {
+                    forge.load(&work_id).is_ok_and(|item| {
+                        !item.has_active_attempts()
+                            && item
+                                .attempt(source)
+                                .and_then(|attempt| attempt.environment.as_ref())
+                                .is_some()
+                    })
+                });
+                if source_attempt.is_some()
+                    && !can_rebind_source
+                    && let Some(checkpoint) = recovery_plan.exact_checkpoint().cloned()
+                {
+                    recovery_plan = super::coder_turn_checkpoint::CoderRecoveryPlan::Semantic {
+                        checkpoint,
+                        reason: "exact Forge environment can no longer be rebound".into(),
+                    };
+                }
+                let begin_result = if can_rebind_source {
+                    match forge.begin_isolated_attempt_from(
+                        &work_id,
+                        source_attempt.as_ref().expect("checked source attempt"),
+                        executor.clone(),
+                        Some(std::process::id()),
+                        &medousa_forge::forge::Forge::system_actor(),
+                    ) {
+                        Ok(value) => Ok(value),
+                        Err(rebind_err) => {
+                            if let Some(checkpoint) = recovery_plan.exact_checkpoint().cloned() {
+                                recovery_plan =
+                                    super::coder_turn_checkpoint::CoderRecoveryPlan::Semantic {
+                                        checkpoint,
+                                        reason: format!(
+                                            "exact Forge environment rebind failed: {rebind_err}"
+                                        ),
+                                    };
+                            }
+                            forge.begin_isolated_attempt(
+                                &work_id,
+                                executor,
+                                Some(std::process::id()),
+                                &medousa_forge::forge::Forge::system_actor(),
+                            )
+                        }
+                    }
+                } else {
+                    forge.begin_isolated_attempt(
+                        &work_id,
+                        executor,
+                        Some(std::process::id()),
+                        &medousa_forge::forge::Forge::system_actor(),
+                    )
+                };
+                let (item, lease) = match begin_result {
                     Ok(value) => value,
                     Err(err) => {
                         sink.agent_error(1, format!("cannot acquire Coder authority: {err}"))
@@ -1111,6 +1177,7 @@ async fn run_agent_turn_inner(
                         return;
                     }
                 };
+                let recovery_note = recovery_plan.prompt_note();
                 let entry = match super::coder_mode::compile_coder_entry_for_attempt(
                     &forge,
                     &resolved_code_context,
@@ -1160,13 +1227,25 @@ async fn run_agent_turn_inner(
                         return;
                     }
                 };
-                let registry = Arc::new(super::coder_tools::CoderBoundToolRegistry::new(
+                let registry = Arc::new(super::coder_tools::CoderBoundToolRegistry::new_with_catalog(
                     agent_rt.tool_registry.clone(),
+                    agent_rt.tool_catalog.clone(),
                     &authority,
                     entry.clone(),
                     item.policy,
                 ));
-                let shared_space_appendix = match registry.initial_prompt_appendix() {
+                if let Some(checkpoint) = recovery_plan.exact_checkpoint()
+                    && let Err(err) = registry.restore_checkpoint_surface(
+                        &checkpoint.visible_tools,
+                        checkpoint.locus_cursor.as_deref(),
+                    )
+                {
+                    sink.notice(format!(
+                        "⚠ exact Coder tool-surface restore degraded: {err}"
+                    ))
+                    .await;
+                }
+                let shared_space_appendix = match registry.initial_prompt_appendix().await {
                     Ok(appendix) => appendix,
                     Err(err) => {
                         sink.agent_error(1, err.to_string()).await;
@@ -1176,19 +1255,38 @@ async fn run_agent_turn_inner(
                 let registry_override: Arc<
                     dyn stasis::application::orchestration::tool_registry::ToolRegistry,
                 > = registry.clone();
+                let resume_checkpoint = recovery_plan.exact_checkpoint().cloned();
+                if let super::coder_turn_checkpoint::CoderRecoveryPlan::Semantic {
+                    checkpoint,
+                    reason,
+                } = &recovery_plan
+                    && let Err(err) = checkpoint_store.mark_superseded(checkpoint, reason)
+                {
+                    tracing::warn!(error = %err, "failed to supersede unsafe Coder checkpoint");
+                }
+                if let Some(note) = recovery_note.as_ref() {
+                    sink.notice(note.lines().take(5).collect::<Vec<_>>().join(" "))
+                        .await;
+                }
+                let recovery_appendix = recovery_note
+                    .map(|note| format!("\n\n{note}"))
+                    .unwrap_or_default();
                 (
                     Some(authority),
                     Some(registry),
+                    Some(entry.clone()),
+                    resume_checkpoint,
                     Some(format!(
-                        "{}\n\n{}",
+                        "{}\n\n{}{}",
                         entry.prompt_appendix(),
-                        shared_space_appendix
+                        shared_space_appendix,
+                        recovery_appendix,
                     )),
                     Some(registry_override),
                 )
             }
         } else {
-            (None, None, None, None)
+            (None, None, None, None, None, None)
         };
     sink.notice(format!(
         "◈ agent_mode id={} source={:?} contract={} lane={:?}",
@@ -1271,6 +1369,59 @@ async fn run_agent_turn_inner(
     let stage_routing = stage_routing_for_interactive_turn(&request);
     let final_route = stage_routing.get("final_response").cloned();
     let verifier_route = stage_routing.get("verifier").cloned();
+
+    let active_turn_resume =
+        super::coder_turn_checkpoint::CoderTurnCheckpointController::initial_resume_state(
+            coder_resume_checkpoint.clone(),
+        );
+    let active_turn_checkpoint_sink: Option<
+        Arc<dyn super::coder_turn_checkpoint::ActiveTurnCheckpointSink>,
+    > = if let (Some(authority), Some(registry), Some(entry), Some(forge)) = (
+        coder_authority.as_ref(),
+        coder_registry.as_ref(),
+        coder_entry.as_ref(),
+        project_state.as_ref().map(|state| state.forge.clone()),
+    ) {
+        let (checkpoint_provider, checkpoint_model) = final_route
+            .as_ref()
+            .map(|route| (route.provider.clone(), route.model.clone()))
+            .unwrap_or_else(|| (vision_target.provider.clone(), vision_target.model.clone()));
+        match super::coder_turn_checkpoint::CoderTurnCheckpointController::new(
+            super::coder_turn_checkpoint::CoderTurnCheckpointControllerParams {
+                store: checkpoint_store.clone(),
+                session_id: session_id.clone(),
+                daemon_turn_id: turn_id.to_string(),
+                agent_mode: agent_mode.id.as_str().to_string(),
+                contract_revision: agent_mode.contract_revision.to_string(),
+                provider: checkpoint_provider,
+                model: checkpoint_model,
+                authoritative_prompt: effective_prompt.clone(),
+                forge,
+                lease: authority.lease().clone(),
+                entry: entry.clone(),
+                registry: registry.clone(),
+                resume_from: coder_resume_checkpoint.clone(),
+            },
+        ) {
+            Ok(controller) => Some(controller),
+            Err(err) => {
+                if let Some(source) = coder_resume_checkpoint.as_ref()
+                    && let Err(mark_err) = checkpoint_store
+                        .mark_superseded(source, "new fenced checkpoint could not be established")
+                {
+                    tracing::warn!(error = %mark_err, "failed to retire unrecoverable Coder checkpoint");
+                }
+                sink.notice(format!(
+                    "⚠ exact Coder checkpointing unavailable for this turn: {err}"
+                ))
+                .await;
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let active_turn_resume = active_turn_checkpoint_sink.as_ref().and(active_turn_resume);
 
     if let Some(route) = final_route.as_ref() {
         sink.notice(format!(
@@ -1429,6 +1580,7 @@ async fn run_agent_turn_inner(
         final_route: final_route.as_ref(),
         response_depth_mode: &request.response_depth_mode,
         reasoning_effort: &request.reasoning_effort,
+        max_tool_rounds_override: request.max_tool_rounds,
         turn_id: 1,
         scheduled_tool_allowlist,
         media_refs: request.media_refs.clone(),
@@ -1448,6 +1600,8 @@ async fn run_agent_turn_inner(
         compact_evidence_receipt_sink: coder_registry
             .clone()
             .map(|registry| registry as Arc<dyn super::coder_evidence::CompactEvidenceReceiptSink>),
+        active_turn_checkpoint_sink,
+        active_turn_resume,
     });
 
     if let Some(route_notice) = assembled.pipeline_selection.route_dispatch_notice {
@@ -1539,6 +1693,7 @@ async fn run_agent_turn_inner(
 
     turn_orchestrator::execute_local_turn(sink, assembled.execution).await;
     if let Some(registry) = coder_registry {
+        let _ = registry.flush_memory_queue().await;
         registry.interrupt_shell_sessions().await;
     }
     drop(coder_authority);
@@ -1638,10 +1793,17 @@ impl AgentStreamSink for TurnOutcomeTrackingSink {
         tool_run_id: String,
         tool_name: String,
         input_summary: String,
+        input_params: Vec<medousa_types::daemon_api::ToolInputParam>,
         tool_round: usize,
     ) {
         self.inner
-            .tool_run_started(tool_run_id, tool_name, input_summary, tool_round)
+            .tool_run_started(
+                tool_run_id,
+                tool_name,
+                input_summary,
+                input_params,
+                tool_round,
+            )
             .await;
     }
 

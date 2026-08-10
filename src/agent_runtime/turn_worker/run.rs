@@ -3,7 +3,9 @@
 use std::sync::Arc;
 
 use chrono::Utc;
-use serde_json::{Value, json};
+use schemars::JsonSchema;
+use serde::Serialize;
+use serde_json::Value;
 use stasis::application::orchestration::prompt_pipeline::PromptExecutionContext;
 use stasis::application::orchestration::tool_loop_pipeline::ToolLoopExecutionRequest;
 use tokio::sync::RwLock;
@@ -30,7 +32,7 @@ use stasis::application::orchestration::prompt_pipeline::{
     PromptExecutionPipeline, PromptExecutionRequest,
 };
 use stasis::application::orchestration::tool_registry::ToolRegistry;
-use stasis::ports::outbound::ai_chat_client::AiChatClient;
+use stasis::ports::outbound::ai_chat_client::{AiChatClient, StreamDelta};
 
 use stasis::prelude::RuntimeComposition;
 
@@ -158,6 +160,44 @@ pub struct TurnWorkerScheduler {
     bus_session: RwLock<Option<ActiveWorkerBusSession>>,
 }
 
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct SpawnTurnWorkerOutput {
+    pub ok: bool,
+    pub worker_spawned: bool,
+    pub work_id: String,
+    pub stasis_job_id: String,
+    pub intent: String,
+    pub manuscript_id: Option<String>,
+    pub stage_role: Option<String>,
+    pub status: String,
+    pub user_ack: String,
+    pub handoff_summary: String,
+    pub scratch_digest: String,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum EnterBoundWorkshopOutput {
+    Failure {
+        ok: bool,
+        workshop_entered: bool,
+        error: String,
+    },
+    Entered {
+        ok: bool,
+        workshop_entered: bool,
+        work_id: String,
+        stasis_job_id: String,
+        intent: String,
+        status: String,
+        user_ack: String,
+        message: String,
+        handoff_summary: String,
+        scratch_digest: String,
+    },
+}
+
 impl TurnWorkerScheduler {
     pub fn new(store: Arc<TurnWorkerStore>) -> Self {
         Self {
@@ -208,7 +248,7 @@ impl TurnWorkerScheduler {
         manuscript: Option<crate::identity_manuscript::ManuscriptContext>,
         stage_role: Option<&str>,
         model_hint: Option<&str>,
-    ) -> stasis::prelude::Result<Value> {
+    ) -> stasis::prelude::Result<SpawnTurnWorkerOutput> {
         let bus = self.bus_session.read().await.clone().ok_or_else(|| {
             stasis::domain::errors::StasisError::PortFailure(
                 "cognition_spawn_turn_worker: no active host turn session".to_string(),
@@ -351,6 +391,11 @@ impl TurnWorkerScheduler {
             supports_ui_artifacts: bus.supports_ui_artifacts,
             supports_liquid_markdown: bus.supports_liquid_markdown,
             supports_browser_host: bus.supports_browser_host,
+            live_tool_activity: Vec::new(),
+            live_thinking: String::new(),
+            live_output: String::new(),
+            thinking_started_at: None,
+            thinking_finished_at: None,
             created_at: now,
             updated_at: now,
         };
@@ -411,20 +456,20 @@ impl TurnWorkerScheduler {
         )
         .await?;
 
-        Ok(json!({
-            "ok": true,
-            "worker_spawned": true,
-            "work_id": work_id,
-            "stasis_job_id": work_id,
-            "intent": intent.as_str(),
-            "manuscript_id": manuscript_id,
-            "stage_role": record_stage_role_for_response(resolved_stage_role.as_deref()),
-            "status": "pending",
-            "user_ack": user_ack,
-            "handoff_summary": handoff_summary,
-            "scratch_digest": scratch_digest,
-            "message": "Worker enqueued on durable bus; host turn may end with user_ack.",
-        }))
+        Ok(SpawnTurnWorkerOutput {
+            ok: true,
+            worker_spawned: true,
+            work_id: work_id.clone(),
+            stasis_job_id: work_id,
+            intent: intent.as_str().to_string(),
+            manuscript_id,
+            stage_role: record_stage_role_for_response(resolved_stage_role.as_deref()),
+            status: "pending".to_string(),
+            user_ack: user_ack.to_string(),
+            handoff_summary,
+            scratch_digest,
+            message: "Worker enqueued on durable bus; host turn may end with user_ack.".to_string(),
+        })
     }
 
     pub async fn enter_bound_workshop(
@@ -432,7 +477,7 @@ impl TurnWorkerScheduler {
         message: &str,
         goal: &str,
         intent: TurnWorkerIntent,
-    ) -> stasis::prelude::Result<Value> {
+    ) -> stasis::prelude::Result<EnterBoundWorkshopOutput> {
         let bus = self.bus_session.read().await.clone().ok_or_else(|| {
             stasis::domain::errors::StasisError::PortFailure(
                 "cognition_turn_begin_work: no active host turn session".to_string(),
@@ -440,11 +485,13 @@ impl TurnWorkerScheduler {
         })?;
 
         if self.store.active_bound_workshop(&bus.session_id).is_some() {
-            return Ok(json!({
-                "ok": false,
-                "workshop_entered": false,
-                "error": "A bound workshop is already active for this session; steer or cancel it first.",
-            }));
+            return Ok(EnterBoundWorkshopOutput::Failure {
+                ok: false,
+                workshop_entered: false,
+                error:
+                    "A bound workshop is already active for this session; steer or cancel it first."
+                        .to_string(),
+            });
         }
 
         let _runtime_ctx = self.runtime_ctx.read().await.clone().ok_or_else(|| {
@@ -456,20 +503,20 @@ impl TurnWorkerScheduler {
 
         let task = goal.trim();
         if task.is_empty() {
-            return Ok(json!({
-                "ok": false,
-                "workshop_entered": false,
-                "error": "goal is required and must be non-empty",
-            }));
+            return Ok(EnterBoundWorkshopOutput::Failure {
+                ok: false,
+                workshop_entered: false,
+                error: "goal is required and must be non-empty".to_string(),
+            });
         }
 
         let user_ack = message.trim();
         if user_ack.is_empty() {
-            return Ok(json!({
-                "ok": false,
-                "workshop_entered": false,
-                "error": "message is required and must be non-empty",
-            }));
+            return Ok(EnterBoundWorkshopOutput::Failure {
+                ok: false,
+                workshop_entered: false,
+                error: "message is required and must be non-empty".to_string(),
+            });
         }
 
         let parent_turn_correlation_id = bus.parent_turn_correlation_id.clone();
@@ -552,6 +599,11 @@ impl TurnWorkerScheduler {
             supports_ui_artifacts: true,
             supports_liquid_markdown: bus.supports_liquid_markdown,
             supports_browser_host: bus.supports_browser_host,
+            live_tool_activity: Vec::new(),
+            live_thinking: String::new(),
+            live_output: String::new(),
+            thinking_started_at: None,
+            thinking_finished_at: None,
             created_at: now,
             updated_at: now,
         };
@@ -598,18 +650,18 @@ impl TurnWorkerScheduler {
         )
         .await?;
 
-        Ok(json!({
-            "ok": true,
-            "workshop_entered": true,
-            "work_id": work_id,
-            "stasis_job_id": work_id,
-            "intent": intent.as_str(),
-            "status": "pending",
-            "user_ack": user_ack,
-            "message": user_ack,
-            "handoff_summary": handoff_summary,
-            "scratch_digest": scratch_digest,
-        }))
+        Ok(EnterBoundWorkshopOutput::Entered {
+            ok: true,
+            workshop_entered: true,
+            work_id: work_id.clone(),
+            stasis_job_id: work_id,
+            intent: intent.as_str().to_string(),
+            status: "pending".to_string(),
+            user_ack: user_ack.to_string(),
+            message: user_ack.to_string(),
+            handoff_summary,
+            scratch_digest,
+        })
     }
 }
 
@@ -815,13 +867,17 @@ pub async fn run_worker_turn(
             .map(|target| target.channel.clone()),
         delivery_target: record.delivery_target.clone(),
         tool_round_budget_ceiling: worker_max_rounds,
+        hard_tool_round_ceiling: None,
         require_operator_budget_gate: false,
-        host_scheduler_lane: false,
+        completion_profile:
+            crate::agent_runtime::turn_completion_fsm::TurnCompletionProfile::WorkerSynthesis,
         cancel_poll_work_id: Some(work_id.clone()),
         steer_poll_work_id: is_bound_workshop.then_some(work_id.clone()),
         round_context_provider: None,
         evidence_undertaking_id: None,
         compact_evidence_receipt_sink: None,
+        active_turn_checkpoint_sink: None,
+        active_turn_resume: None,
     };
 
     if store.is_work_cancelled(&work_id) {
@@ -837,16 +893,34 @@ pub async fn run_worker_turn(
         return;
     }
 
+    // Stream worker tokens into the sink so Home can show live reasoning and
+    // draft output. The sink batches these before touching the store.
+    let (chunk_tx, mut chunk_rx) = tokio::sync::mpsc::unbounded_channel::<StreamDelta>();
+    let chunk_sink = sink.clone();
+    let chunk_pump = tokio::spawn(async move {
+        while let Some(delta) = chunk_rx.recv().await {
+            match delta {
+                StreamDelta::Content(delta) => chunk_sink.content_chunk(0, delta).await,
+                StreamDelta::Reasoning(delta) | StreamDelta::ThoughtSignature(delta) => {
+                    chunk_sink.reasoning_chunk(0, delta).await
+                }
+            }
+        }
+    });
+
     let result = worker_pipeline
         .execute_with_stream_prior_messages_max_rounds(
             request,
             Vec::new(),
-            None,
+            Some(&chunk_tx),
             worker_max_rounds,
             Some(&mut completion_gate),
             None,
         )
         .await;
+
+    drop(chunk_tx);
+    let _ = chunk_pump.await;
 
     match result {
         Ok(response) => {
@@ -997,6 +1071,18 @@ async fn run_worker_failure_notify(
         vec!["turn_worker.failure".to_string()],
     )
     .await;
+
+    crate::feed_adapters::publish_workshop_finish_activity(
+        &record,
+        "failed",
+        Some(
+            &record
+                .error
+                .clone()
+                .unwrap_or_else(|| "worker failed".to_string()),
+        ),
+    )
+    .await;
 }
 
 async fn run_synthesis_turn(
@@ -1018,7 +1104,6 @@ async fn run_synthesis_turn(
         deliver_synthesis_response(&record, &sink, synthesis_turn_id, text).await;
         return;
     }
-
     let parent_prompt = record
         .parent_user_prompt
         .clone()
@@ -1125,6 +1210,8 @@ async fn deliver_synthesis_response(
         worker.synthesis_delivered = true;
         worker.result_text = Some(text.clone());
     });
+    // Work-scoped finish on the workspace feed bus (independent of parent SSE).
+    crate::feed_adapters::publish_workshop_finish_activity(record, "synthesis", Some(&text)).await;
     if record.disposition == TurnWorkDisposition::Bound {
         crate::feed_adapters::publish_workshop_synthesis(record, &text).await;
         crate::feed_adapters::publish_workshop_terminal(record, "done", Some(&text)).await;
@@ -1256,6 +1343,11 @@ mod tests {
             supports_ui_artifacts: false,
             supports_liquid_markdown: false,
             supports_browser_host: false,
+            live_tool_activity: Vec::new(),
+            live_thinking: String::new(),
+            live_output: String::new(),
+            thinking_started_at: None,
+            thinking_finished_at: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -1282,6 +1374,19 @@ mod tests {
         assert!(!worker_synthesis_pass_through(&sample_record(
             None,
             Some("done")
+        )));
+    }
+
+    /// Workers only pass through on an explicit cognition_turn_finish;
+    /// partial or fused results still go through host synthesis.
+    #[test]
+    fn worker_requires_finish_for_pass_through() {
+        let mut record = sample_record(Some("max_rounds_fuse"), Some("partial"));
+        record.disposition = TurnWorkDisposition::Bound;
+        assert!(!worker_synthesis_pass_through(&record));
+        assert!(worker_synthesis_pass_through(&sample_record(
+            Some("cognition_turn_finish"),
+            Some("Here is the report.")
         )));
     }
 }

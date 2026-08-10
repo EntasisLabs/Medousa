@@ -7,12 +7,6 @@
   import { portLmeDock } from "$lib/utils/lmeDockHost";
   import { ensureRailPopoverOpen } from "$lib/utils/railPopoverChrome";
 
-  interface Props {
-    onOpenChat: () => void;
-  }
-
-  let { onOpenChat }: Props = $props();
-
   let searchExpanded = $state(false);
   let searchInputEl = $state<HTMLInputElement | null>(null);
 
@@ -50,32 +44,12 @@
   }
 </script>
 
-<aside class="lme-decks-explorer flex h-full min-h-0 w-full flex-col" aria-label="Presentations">
+<aside class="lme-decks-explorer flex h-full min-h-0 w-full flex-col" aria-label="Artifacts">
   {#if artifacts.error}
     <p class="shrink-0 px-3 py-2 text-sm text-content-error">{artifacts.error}</p>
   {/if}
 
-  <div class="min-h-0 flex-1 overflow-hidden">
-    {#if artifacts.loading && artifacts.artifacts.length === 0}
-      <p class="workshop-muted px-3 py-2 text-sm">Loading…</p>
-    {:else}
-      <ArtifactLibraryList
-        artifacts={artifacts.filteredArtifacts}
-        selectedArtifactId={artifacts.selectedArtifactId}
-        sessionTitle={(sessionId) => artifacts.sessionTitle(sessionId)}
-        onSelect={(artifactId) => {
-          const entry = artifacts.artifacts.find((row) => row.artifact_id === artifactId);
-          lmeWorkspace.openDeck(artifactId, entry?.label);
-        }}
-        onOpenChat={(artifact) => {
-          void artifact;
-          onOpenChat();
-        }}
-      />
-    {/if}
-  </div>
-
-  <footer class="lme-side-rail-dock" use:portLmeDock>
+  <header class="lme-side-rail-dock" use:portLmeDock>
     {#if searchExpanded}
       <div class="lme-dock-search-expand flex min-w-0 flex-1 items-center gap-1">
         <Search size={14} strokeWidth={1.75} class="shrink-0 text-content-quiet" aria-hidden="true" />
@@ -83,7 +57,7 @@
           bind:this={searchInputEl}
           class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-content-quiet focus:outline-none focus:ring-0"
           type="search"
-          placeholder="Search presentations…"
+          placeholder="Search artifacts…"
           value={query}
           oninput={(event) => artifacts.setSearchQuery(event.currentTarget.value)}
           onkeydown={handleSearchKeydown}
@@ -99,11 +73,14 @@
         </button>
       </div>
     {:else}
+      <!-- Push action cluster to the right (matches Automations). -->
+      <div class="lme-dock-leading-ghost min-w-0 flex-1" aria-hidden="true"></div>
+
       <div class="lme-dock-chrome-secondary shrink-0">
         <button
           type="button"
           class="vault-dock-icon-btn"
-          aria-label="Refresh presentations"
+          aria-label="Refresh artifacts"
           title="Refresh"
           disabled={refreshing}
           onclick={() => void artifacts.refresh()}
@@ -115,12 +92,27 @@
       <button
         type="button"
         class="vault-dock-icon-btn"
-        aria-label="Search presentations"
+        aria-label="Search artifacts"
         title="Search"
         onclick={() => void openSearch()}
       >
         <Search size={15} strokeWidth={1.75} />
       </button>
     {/if}
-  </footer>
+  </header>
+  <div class="min-h-0 flex-1 overflow-hidden">
+    {#if artifacts.loading && artifacts.artifacts.length === 0}
+      <p class="workshop-muted px-3 py-2 text-sm">Loading…</p>
+    {:else}
+      <ArtifactLibraryList
+        artifacts={artifacts.filteredArtifacts}
+        selectedArtifactId={artifacts.selectedArtifactId}
+        onSelect={(artifactId) => {
+          const entry = artifacts.artifacts.find((row) => row.artifact_id === artifactId);
+          lmeWorkspace.openDeck(artifactId, entry?.label);
+        }}
+      />
+    {/if}
+  </div>
+
 </aside>

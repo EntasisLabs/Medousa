@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { Pencil, Star, Trash2 } from "@lucide/svelte";
+  import { MessagesSquare, Pencil, Star, Trash2 } from "@lucide/svelte";
+  import SessionChannelMarks from "$lib/components/chat/SessionChannelMarks.svelte";
   import type { SessionSummary } from "$lib/types/session";
   import { formatSessionLabel, formatSessionWhen } from "$lib/utils/formatSession";
 
@@ -27,31 +28,43 @@
   }: Props = $props();
 
   const when = $derived(formatSessionWhen(session.last_timestamp));
+  const hasMeta = $derived(Boolean(when) || session.turns > 0);
 </script>
 
 <div
-  class="session-row group/session {selected ? 'session-row-active' : ''} {alwaysShowActions
+  class="session-row group/session {selected ? 'workshop-list-row-active' : ''} {alwaysShowActions
     ? 'session-row--touch'
     : ''}"
 >
   <button type="button" class="session-row-main" onclick={onSelect}>
-    <div class="flex min-w-0 items-baseline justify-between gap-2">
-      <span class="session-row-title truncate">
-        {#if session.catalog === "shared"}
-          <span class="session-row-shared-mark" title="Shared room">Room</span>
-        {/if}
-        {formatSessionLabel(session)}
-      </span>
+    <SessionChannelMarks
+      originSurface={session.origin_surface}
+      hasCodeWork={session.has_code_work}
+    />
+    <span class="session-row-title truncate">
+      {#if session.catalog === "shared"}
+        <span class="session-row-shared-mark" title="Shared room">Room</span>
+      {/if}
+      {formatSessionLabel(session)}
+    </span>
+  </button>
+
+  {#if hasMeta}
+    <div class="session-row-meta">
       {#if when}
-        <span class="session-row-when shrink-0">{when}</span>
+        <span class="session-row-when">{when}</span>
+      {/if}
+      {#if session.turns > 0}
+        <span
+          class="session-row-turns"
+          title="{session.turns} turn{session.turns === 1 ? '' : 's'}"
+        >
+          <MessagesSquare size={10} strokeWidth={2} aria-hidden="true" />
+          <span class="tabular-nums">{session.turns}</span>
+        </span>
       {/if}
     </div>
-    {#if session.turns > 0}
-      <p class="session-row-meta truncate">
-        {session.turns} turn{session.turns === 1 ? "" : "s"}
-      </p>
-    {/if}
-  </button>
+  {/if}
 
   <div class="session-row-actions">
     <button
@@ -87,19 +100,3 @@
     </button>
   </div>
 </div>
-
-<style>
-  .session-row-shared-mark {
-    display: inline-block;
-    margin-right: 0.35rem;
-    padding: 0.05rem 0.35rem;
-    border-radius: 0.25rem;
-    border: 1px solid color-mix(in oklab, var(--color-surface-400, #94a3b8) 45%, transparent);
-    font-size: 0.65rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    color: var(--color-surface-300, #cbd5e1);
-    vertical-align: 0.05em;
-  }
-</style>

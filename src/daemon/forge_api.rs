@@ -8,9 +8,9 @@ use std::path::{Component, Path as FsPath, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, LazyLock, Mutex};
 
-use axum::extract::{Path, Query, State};
+use axum::extract::{DefaultBodyLimit, Path, Query, State};
 use axum::http::StatusCode;
-use axum::routing::{get, post, put};
+use axum::routing::{get, patch, post, put};
 use axum::{Json, Router};
 use medousa_forge::adapter::{ScriptAdapter, export_bundle};
 use medousa_forge::error::ForgeError;
@@ -18,8 +18,8 @@ use medousa_forge::forge::{Forge, SealOptions};
 use medousa_forge::git::{CheckpointAuthor, GitEngine};
 use medousa_forge::model::{
     ActorKind, ActorRef, CompactEvidenceReceipt, EvidenceId, ExecutionLease, ExecutorDescriptor,
-    GitOid, IntegrationStrategy, LeaseId, RecoveryDisposition, ReviewDecision, ReviewDecisionId,
-    WorkId, WorkItem, WorkPolicy, WorkState, WorkTarget,
+    GitOid, IntegrationStrategy, LeaseId, RecoveryDisposition, ReviewCommentId, ReviewDecision,
+    ReviewDecisionId, WorkId, WorkItem, WorkPolicy, WorkState, WorkTarget,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -29,15 +29,49 @@ use crate::daemon_api::{
 };
 
 use crate::daemon::forge_projections::{
-    ItemProjection, ReviewProjection, build_review_for_attempt, evidence_dir, project_item,
-    project_items, read_lines_page,
+    ItemProjection, ReviewCommentProjection, ReviewProjection, build_review_for_attempt,
+    evidence_dir, project_item, project_items, read_lines_page,
 };
+use crate::daemon::forge_events::ForgeProjectEventKind;
 use crate::daemon::state::AppState;
+use crate::semantic_values::TrimmedText;
 
 fn publish_item(state: &AppState, item: &WorkItem, kind: &str) {
     state
         .forge_events
         .publish(item.id.as_str(), &item.state.to_string(), kind);
+}
+
+fn remember_worktree(state: &AppState, item: &WorkItem, worktree: &FsPath) {
+    state
+        .forge_events
+        .remember_worktree(item.id.as_str(), worktree.to_path_buf());
+}
+
+fn publish_project_change(
+    state: &AppState,
+    item: &WorkItem,
+    kind: ForgeProjectEventKind,
+    path: Option<String>,
+    old_path: Option<String>,
+    digest: Option<String>,
+) {
+    let event_kind = match kind {
+        ForgeProjectEventKind::Created => "source_created",
+        ForgeProjectEventKind::Changed => "source_saved",
+        ForgeProjectEventKind::Renamed => "source_renamed",
+        ForgeProjectEventKind::Deleted => "source_deleted",
+        ForgeProjectEventKind::GitStatus => "git_status",
+        ForgeProjectEventKind::Snapshot => "project_snapshot",
+    };
+    publish_item(state, item, event_kind);
+    state.forge_events.publish_project(
+        item.id.as_str(),
+        kind,
+        path,
+        old_path,
+        digest,
+    );
 }
 
 fn ok_item(state: &AppState, item: WorkItem, kind: &str) -> Json<ItemProjection> {
@@ -73,16 +107,86 @@ pub fn forge_router(state: AppState) -> Router {
                 .delete(delete_source),
         )
         .route("/v1/forge/items/{work_id}/tree", get(source_tree))
+        .route("/v1/forge/items/{work_id}/changes", get(get_changes))
+        .route(
+            "/v1/forge/items/{work_id}/changes/file",
+            get(get_changes_file).post(restore_changes_file),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/changes/fetch",
+            post(changes_fetch),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/changes/pull",
+            post(changes_pull),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/changes/push",
+            post(changes_push),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/changes/sync",
+            post(changes_sync),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/changes/checkpoint",
+            post(changes_checkpoint),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/changes/history",
+            get(changes_history),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/changes/blame",
+            get(changes_blame),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/changes/conflict",
+            post(resolve_changes_conflict),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/changes/file/hunk",
+            post(revert_changes_hunk),
+        )
         .route(
             "/v1/forge/items/{work_id}/source/batch",
             put(save_source_batch),
         )
+        .route(
+            "/v1/forge/items/{work_id}/source/workspace-edit",
+            put(apply_source_workspace_edit)
+                .layer(DefaultBodyLimit::max(MAX_SOURCE_WORKSPACE_EDIT_BODY_BYTES)),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/project-events",
+            get(forge_project_event_stream),
+        )
         .route("/v1/forge/items/{work_id}/search", get(search_source))
+        .route(
+            "/v1/forge/items/{work_id}/search/replace",
+            post(replace_source),
+        )
         .route(
             "/v1/forge/items/{work_id}/workspace-state",
             get(read_workspace_state).put(save_workspace_state),
         )
         .route("/v1/forge/items/{work_id}/review", get(get_review))
+        .route(
+            "/v1/forge/items/{work_id}/review/comments",
+            get(list_review_comments).post(add_review_comment),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/review/comments/{comment_id}",
+            patch(patch_review_comment).delete(delete_review_comment),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/review/request-changes",
+            post(request_review_changes),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/review/continue-editing",
+            post(continue_editing),
+        )
         .route(
             "/v1/forge/items/{work_id}/review/file",
             get(get_review_file).post(restore_review_file),
@@ -99,6 +203,14 @@ pub fn forge_router(state: AppState) -> Router {
         .route(
             "/v1/forge/items/{work_id}/task-runs/{run_id}",
             get(get_project_task_run).delete(cancel_project_task_run),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/task-runs/{run_id}/events",
+            get(project_task_run_events),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/task-runs/{run_id}/preview",
+            post(create_task_run_preview),
         )
         .route("/v1/forge/items/{work_id}/tests", get(list_project_tests))
         .route("/v1/forge/items/{work_id}/provision", post(provision_item))
@@ -230,6 +342,8 @@ fn request_error(status: StatusCode, message: impl Into<String>) -> ApiError {
 }
 
 const MAX_SOURCE_BYTES: usize = 2 * 1024 * 1024;
+const MAX_BINARY_PREVIEW_BYTES: usize = 4 * 1024;
+const BINARY_SCAN_BYTES: usize = 8 * 1024;
 
 fn source_digest(bytes: &[u8]) -> String {
     format!("sha256:{:x}", Sha256::digest(bytes))
@@ -316,8 +430,17 @@ fn resolve_new_source_path(root: &FsPath, raw: &str) -> ApiResult<(PathBuf, Stri
             format!("governed workspace is unavailable: {err}"),
         )
     })?;
-    let parent = relative.parent().unwrap_or_else(|| FsPath::new(""));
-    let parent = std::fs::canonicalize(root.join(parent)).map_err(|err| {
+    let parent_rel = relative.parent().unwrap_or_else(|| FsPath::new(""));
+    let parent_joined = root.join(parent_rel);
+    if !parent_joined.as_os_str().is_empty() && !parent_joined.exists() {
+        std::fs::create_dir_all(&parent_joined).map_err(|err| {
+            request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not create source parent directory: {err}"),
+            )
+        })?;
+    }
+    let parent = std::fs::canonicalize(&parent_joined).map_err(|err| {
         request_error(
             StatusCode::NOT_FOUND,
             format!("source parent directory not found: {err}"),
@@ -337,6 +460,59 @@ fn resolve_new_source_path(root: &FsPath, raw: &str) -> ApiResult<(PathBuf, Stri
         return Err(request_error(
             StatusCode::CONFLICT,
             "a source file already exists at that path",
+        ));
+    }
+    Ok((candidate, clean))
+}
+
+/// Resolve a new directory path inside the worktree (creates nothing yet).
+fn resolve_new_directory_path(root: &FsPath, raw: &str) -> ApiResult<(PathBuf, String)> {
+    let trimmed = raw.trim().trim_end_matches('/');
+    let (relative, clean) = normalize_source_relative(trimmed)?;
+    let root = std::fs::canonicalize(root).map_err(|err| {
+        request_error(
+            StatusCode::CONFLICT,
+            format!("governed workspace is unavailable: {err}"),
+        )
+    })?;
+    let candidate = root.join(&relative);
+    if candidate.exists() {
+        return Err(request_error(
+            StatusCode::CONFLICT,
+            "a path already exists at that location",
+        ));
+    }
+    if let Some(parent) = relative.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+        let parent_joined = root.join(parent);
+        if !parent_joined.exists() {
+            std::fs::create_dir_all(&parent_joined).map_err(|err| {
+                request_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("could not create parent directory: {err}"),
+                )
+            })?;
+        }
+        let parent = std::fs::canonicalize(&parent_joined).map_err(|err| {
+            request_error(
+                StatusCode::NOT_FOUND,
+                format!("parent directory not found: {err}"),
+            )
+        })?;
+        if !parent.starts_with(&root) {
+            return Err(request_error(
+                StatusCode::BAD_REQUEST,
+                "directory path must stay inside the governed workspace",
+            ));
+        }
+    }
+    if !candidate.starts_with(&root)
+        && candidate
+            .parent()
+            .is_none_or(|parent| !parent.starts_with(&root))
+    {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "directory path must stay inside the governed workspace",
         ));
     }
     Ok((candidate, clean))
@@ -1091,43 +1267,67 @@ pub(crate) fn start_code_project_for_session(
         .map_err(|(_, Json(error))| error.error)
 }
 
+#[derive(Debug)]
+struct StartCodeProjectCommand {
+    session_id: TrimmedText,
+    title: TrimmedText,
+    brief: TrimmedText,
+    source: CodeProjectSource,
+    repo_path: Option<TrimmedText>,
+    base_ref: TrimmedText,
+}
+
+impl StartCodeProjectCommand {
+    fn new(session_id: &str, input: StartSessionCodeProjectRequest) -> Result<Self, String> {
+        let StartSessionCodeProjectRequest {
+            title,
+            brief,
+            source,
+            repo_path,
+            base_ref,
+        } = input;
+        let (session_id, title, brief) = match (
+            TrimmedText::new(session_id.to_string()),
+            TrimmedText::new(title),
+            TrimmedText::new(brief),
+        ) {
+            (Ok(session_id), Ok(title), Ok(brief)) => (session_id, title, brief),
+            _ => return Err("session_id, title, and brief are required".to_string()),
+        };
+        let repo_path = repo_path.and_then(|value| TrimmedText::new(value).ok());
+        if source == CodeProjectSource::Repository && repo_path.is_none() {
+            return Err("repo_path is required for an existing repository".to_string());
+        }
+        let base_ref = base_ref
+            .and_then(|value| TrimmedText::new(value).ok())
+            .unwrap_or_else(|| TrimmedText::new("main").expect("literal is nonblank"));
+        Ok(Self {
+            session_id,
+            title,
+            brief,
+            source,
+            repo_path,
+            base_ref,
+        })
+    }
+}
+
 fn start_code_project_for_session_inner(
     state: &AppState,
     session_id: &str,
     body: StartSessionCodeProjectRequest,
 ) -> ApiResult<SessionCodeProjectResponse> {
-    let session_id = session_id.trim();
-    let title = body.title.trim();
-    let brief = body.brief.trim();
-    if session_id.is_empty() || title.is_empty() || brief.is_empty() {
-        return Err(request_error(
-            StatusCode::BAD_REQUEST,
-            "session_id, title, and brief are required",
-        ));
-    }
-
-    let base_ref = body
-        .base_ref
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("main")
-        .to_string();
-    let (repo_path, created_repository) = match body.source {
+    let command = StartCodeProjectCommand::new(session_id, body)
+        .map_err(|error| request_error(StatusCode::BAD_REQUEST, error))?;
+    let session_id = command.session_id.as_str();
+    let title = command.title.as_str();
+    let brief = command.brief.as_str();
+    let base_ref = command.base_ref.as_str().to_string();
+    let (repo_path, created_repository) = match command.source {
         CodeProjectSource::Blank => (create_blank_repository(title, &base_ref)?, true),
         CodeProjectSource::Repository => {
-            let path = body
-                .repo_path
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .ok_or_else(|| {
-                    request_error(
-                        StatusCode::BAD_REQUEST,
-                        "repo_path is required for an existing repository",
-                    )
-                })?;
-            (PathBuf::from(path), false)
+            let path = command.repo_path.as_ref().expect("validated repository path");
+            (PathBuf::from(path.as_str()), false)
         }
     };
 
@@ -1280,25 +1480,7 @@ fn initialize_blank_repository(
 }
 
 fn project_slug(title: &str) -> String {
-    let mut slug = String::new();
-    let mut separator = false;
-    for character in title.chars().flat_map(char::to_lowercase) {
-        if character.is_ascii_alphanumeric() {
-            slug.push(character);
-            separator = false;
-        } else if !slug.is_empty() && !separator {
-            slug.push('-');
-            separator = true;
-        }
-    }
-    while slug.ends_with('-') {
-        slug.pop();
-    }
-    if slug.is_empty() {
-        "new-project".to_string()
-    } else {
-        slug.chars().take(64).collect()
-    }
+    medousa_forge::slug::project_slug(title)
 }
 
 async fn list_items(State(state): State<AppState>) -> ApiResult<Json<Vec<ItemProjection>>> {
@@ -1327,6 +1509,15 @@ struct SourceResponse {
     content: String,
     digest: String,
     byte_size: usize,
+    /// `utf-8`, `utf-8-lossy`, or `binary`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    encoding: Option<String>,
+    /// True when `content` is a bounded preview rather than the full editable body.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    preview: bool,
+    /// True when a text preview was truncated to the editor byte limit.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    truncated: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1353,10 +1544,42 @@ struct SaveSourceBatchFile {
 }
 
 #[derive(Debug, Deserialize)]
+struct SourceWorkspaceEditRequest {
+    preconditions: Vec<SourceWorkspacePrecondition>,
+    operations: Vec<SourceWorkspaceOperation>,
+    lease_id: String,
+    generation: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum SourceWorkspacePrecondition {
+    Existing {
+        path: String,
+        expected_digest: String,
+    },
+    Missing {
+        path: String,
+    },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum SourceWorkspaceOperation {
+    Write { path: String, content: String },
+    Create { path: String, content: String },
+    Rename { path: String, destination: String },
+    Delete { path: String },
+}
+
+#[derive(Debug, Deserialize)]
 struct CreateSourceRequest {
     path: String,
     #[serde(default)]
     content: String,
+    /// `file` (default) or `directory`.
+    #[serde(default)]
+    kind: Option<String>,
     lease_id: String,
     generation: u64,
 }
@@ -1403,6 +1626,29 @@ struct SourceTreeResponse {
 #[derive(Debug, Deserialize)]
 struct SourceSearchQuery {
     query: String,
+    /// `literal` (default) or `regex`.
+    #[serde(default)]
+    mode: Option<String>,
+    #[serde(default)]
+    case_sensitive: Option<String>,
+    #[serde(default)]
+    whole_word: Option<String>,
+    /// Comma-separated include globs (git pathspecs).
+    #[serde(default)]
+    include: Option<String>,
+    /// Comma-separated exclude globs.
+    #[serde(default)]
+    exclude: Option<String>,
+    #[serde(default)]
+    include_ignored: Option<String>,
+    /// `all` (default) or `changed`.
+    #[serde(default)]
+    scope: Option<String>,
+    #[serde(default)]
+    limit: Option<u32>,
+    /// Opaque skip cursor from a prior `next_cursor`.
+    #[serde(default)]
+    cursor: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1417,6 +1663,491 @@ struct SourceSearchResponse {
     work_id: String,
     hits: Vec<SourceSearchHit>,
     truncated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_cursor: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SourceReplaceRequest {
+    query: String,
+    replacement: String,
+    #[serde(default)]
+    mode: Option<String>,
+    #[serde(default)]
+    case_sensitive: Option<bool>,
+    #[serde(default)]
+    whole_word: Option<bool>,
+    #[serde(default)]
+    include: Option<String>,
+    #[serde(default)]
+    exclude: Option<String>,
+    #[serde(default)]
+    include_ignored: Option<bool>,
+    #[serde(default)]
+    scope: Option<String>,
+    /// Cap on files included in the plan (default 50, max 100).
+    #[serde(default)]
+    limit: Option<u32>,
+    /// When true (default), return a preview plan without writing.
+    #[serde(default)]
+    dry_run: Option<bool>,
+    /// Optional subset of paths from a prior preview to apply or re-preview.
+    #[serde(default)]
+    paths: Option<Vec<String>>,
+    #[serde(default)]
+    preconditions: Option<Vec<SourceReplacePrecondition>>,
+    #[serde(default)]
+    lease_id: Option<String>,
+    #[serde(default)]
+    generation: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct SourceReplacePrecondition {
+    path: String,
+    expected_digest: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SourceReplaceFile {
+    path: String,
+    expected_digest: String,
+    match_count: u32,
+    before: String,
+    after: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SourceReplaceResponse {
+    work_id: String,
+    files: Vec<SourceReplaceFile>,
+    truncated: bool,
+    applied: bool,
+}
+
+const MAX_REPLACE_FILES: usize = 100;
+const DEFAULT_REPLACE_FILES: usize = 50;
+
+#[derive(Debug, Clone)]
+struct SourceSearchOptions {
+    needle: String,
+    regex: bool,
+    case_sensitive: bool,
+    whole_word: bool,
+    include: Vec<String>,
+    exclude: Vec<String>,
+    include_ignored: bool,
+    changed_only: bool,
+    limit: usize,
+    skip: usize,
+}
+
+fn parse_query_bool(value: Option<&str>, default: bool) -> bool {
+    match value.map(str::trim).filter(|v| !v.is_empty()) {
+        None => default,
+        Some("1" | "true" | "yes" | "on") => true,
+        Some("0" | "false" | "no" | "off") => false,
+        Some(_) => default,
+    }
+}
+
+fn parse_csv_globs(value: Option<&str>) -> Vec<String> {
+    value
+        .unwrap_or("")
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(|part| part.replace('\\', "/"))
+        .collect()
+}
+
+fn source_search_options_from_query(query: &SourceSearchQuery) -> ApiResult<SourceSearchOptions> {
+    let needle = query.query.trim().to_owned();
+    if needle.len() < 2 || needle.len() > 200 {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "repository search must be between 2 and 200 characters",
+        ));
+    }
+    let mode = query
+        .mode
+        .as_deref()
+        .unwrap_or("literal")
+        .trim()
+        .to_ascii_lowercase();
+    let regex = match mode.as_str() {
+        "literal" | "" => false,
+        "regex" => true,
+        _ => {
+            return Err(request_error(
+                StatusCode::BAD_REQUEST,
+                "mode must be literal or regex",
+            ))
+        }
+    };
+    let scope = query
+        .scope
+        .as_deref()
+        .unwrap_or("all")
+        .trim()
+        .to_ascii_lowercase();
+    let changed_only = match scope.as_str() {
+        "all" | "" => false,
+        "changed" => true,
+        _ => {
+            return Err(request_error(
+                StatusCode::BAD_REQUEST,
+                "scope must be all or changed",
+            ))
+        }
+    };
+    let limit = query.limit.unwrap_or(100).clamp(1, 500) as usize;
+    let skip = query
+        .cursor
+        .as_deref()
+        .unwrap_or("0")
+        .trim()
+        .parse::<usize>()
+        .unwrap_or(0);
+    Ok(SourceSearchOptions {
+        needle,
+        regex,
+        case_sensitive: parse_query_bool(query.case_sensitive.as_deref(), true),
+        whole_word: parse_query_bool(query.whole_word.as_deref(), false),
+        include: parse_csv_globs(query.include.as_deref()),
+        exclude: parse_csv_globs(query.exclude.as_deref()),
+        include_ignored: parse_query_bool(query.include_ignored.as_deref(), false),
+        changed_only,
+        limit,
+        skip,
+    })
+}
+
+fn changed_repository_paths(root: &FsPath) -> ApiResult<Vec<String>> {
+    let output = background_command("git")
+        .args(["status", "--porcelain", "-z", "--untracked-files=all"])
+        .current_dir(root)
+        .output()
+        .map_err(|err| {
+            request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not list changed files: {err}"),
+            )
+        })?;
+    if !output.status.success() {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+        ));
+    }
+    let mut paths = Vec::new();
+    for entry in output.stdout.split(|&b| b == 0).filter(|chunk| !chunk.is_empty()) {
+        if entry.len() < 3 {
+            continue;
+        }
+        // XY<space>path — rename lines are "R  old\0new\0"; porcelain -z uses
+        // "R  old\0new" with the next null-separated chunk as the new path.
+        let text = String::from_utf8_lossy(entry);
+        if text.len() < 3 {
+            continue;
+        }
+        let path = text[3..].replace('\\', "/");
+        if !path.is_empty() {
+            paths.push(path);
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    Ok(paths)
+}
+
+fn run_repository_search(
+    root: &FsPath,
+    options: &SourceSearchOptions,
+) -> ApiResult<(Vec<SourceSearchHit>, bool, Option<String>)> {
+    use std::io::BufRead;
+    use std::process::Stdio;
+
+    let mut args = vec!["grep".to_owned(), "-n".into(), "-I".into()];
+    if options.regex {
+        args.push("-E".into());
+    } else {
+        args.push("-F".into());
+    }
+    if !options.case_sensitive {
+        args.push("-i".into());
+    }
+    if options.whole_word {
+        args.push("-w".into());
+    }
+    if !options.include_ignored {
+        args.push("--exclude-standard".into());
+    }
+    args.push("--untracked".into());
+    args.push("--".into());
+    args.push(options.needle.clone());
+
+    let mut pathspecs: Vec<String> = Vec::new();
+    if options.changed_only {
+        let changed = changed_repository_paths(root)?;
+        if changed.is_empty() {
+            return Ok((Vec::new(), false, None));
+        }
+        pathspecs.extend(changed);
+    }
+    pathspecs.extend(options.include.iter().cloned());
+    for exclude in &options.exclude {
+        pathspecs.push(format!(":(exclude){exclude}"));
+    }
+    args.extend(pathspecs);
+
+    let mut child = background_command("git")
+        .args(&args)
+        .current_dir(root)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|err| {
+            request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not search repository: {err}"),
+            )
+        })?;
+    let stdout = child.stdout.take().ok_or_else(|| {
+        request_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "repository search had no output",
+        )
+    })?;
+    let mut hits = Vec::new();
+    let mut seen = 0usize;
+    let mut truncated = false;
+    let page_end = options.skip.saturating_add(options.limit);
+    for line in std::io::BufReader::new(stdout)
+        .lines()
+        .map_while(Result::ok)
+    {
+        let mut parts = line.splitn(3, ':');
+        let Some(path) = parts.next() else { continue };
+        let Some(line_no) = parts.next().and_then(|value| value.parse::<u32>().ok()) else {
+            continue;
+        };
+        let preview = parts.next().unwrap_or_default().trim().to_owned();
+        if seen < options.skip {
+            seen += 1;
+            continue;
+        }
+        if hits.len() >= options.limit {
+            truncated = true;
+            break;
+        }
+        hits.push(SourceSearchHit {
+            path: path.replace('\\', "/"),
+            line: line_no,
+            preview,
+        });
+        seen += 1;
+    }
+    if truncated {
+        let _ = child.kill();
+    }
+    let _ = child.wait();
+    let next_cursor = if truncated {
+        Some(page_end.to_string())
+    } else {
+        None
+    };
+    Ok((hits, truncated, next_cursor))
+}
+
+fn bool_opt(value: Option<bool>, default: bool) -> bool {
+    value.unwrap_or(default)
+}
+
+fn source_search_options_from_replace(
+    body: &SourceReplaceRequest,
+) -> ApiResult<SourceSearchOptions> {
+    let query = SourceSearchQuery {
+        query: body.query.clone(),
+        mode: body.mode.clone(),
+        case_sensitive: body.case_sensitive.map(|v| v.to_string()),
+        whole_word: body.whole_word.map(|v| v.to_string()),
+        include: body.include.clone(),
+        exclude: body.exclude.clone(),
+        include_ignored: body.include_ignored.map(|v| v.to_string()),
+        scope: body.scope.clone(),
+        // Collect a wide hit page so we can discover unique paths.
+        limit: Some(500),
+        cursor: None,
+    };
+    let mut options = source_search_options_from_query(&query)?;
+    options.case_sensitive = bool_opt(body.case_sensitive, true);
+    options.whole_word = bool_opt(body.whole_word, false);
+    options.include_ignored = bool_opt(body.include_ignored, false);
+    Ok(options)
+}
+
+fn build_replace_regex(options: &SourceSearchOptions) -> ApiResult<regex::Regex> {
+    let escaped = if options.regex {
+        options.needle.clone()
+    } else {
+        regex::escape(&options.needle)
+    };
+    let pattern = if options.whole_word {
+        format!(r"(?m)\b(?:{escaped})\b")
+    } else {
+        escaped
+    };
+    regex::RegexBuilder::new(&pattern)
+        .case_insensitive(!options.case_sensitive)
+        .dot_matches_new_line(false)
+        .build()
+        .map_err(|err| {
+            request_error(
+                StatusCode::BAD_REQUEST,
+                format!("invalid search pattern: {err}"),
+            )
+        })
+}
+
+fn apply_content_replace(
+    content: &str,
+    options: &SourceSearchOptions,
+    replacement: &str,
+) -> ApiResult<(String, u32)> {
+    let re = build_replace_regex(options)?;
+    let mut count = 0u32;
+    let after = re
+        .replace_all(content, |_: &regex::Captures| {
+            count = count.saturating_add(1);
+            replacement
+        })
+        .into_owned();
+    Ok((after, count))
+}
+
+fn run_repository_replace_plan(
+    root: &FsPath,
+    options: &SourceSearchOptions,
+    replacement: &str,
+    file_limit: usize,
+    path_filter: Option<&[String]>,
+) -> ApiResult<(Vec<SourceReplaceFile>, bool)> {
+    let search_opts = SourceSearchOptions {
+        limit: 500,
+        skip: 0,
+        ..options.clone()
+    };
+    let (hits, search_truncated, _) = run_repository_search(root, &search_opts)?;
+    let mut paths = Vec::new();
+    for hit in &hits {
+        if paths.iter().any(|path| path == &hit.path) {
+            continue;
+        }
+        if let Some(filter) = path_filter
+            && !filter.iter().any(|path| path == &hit.path)
+        {
+            continue;
+        }
+        paths.push(hit.path.clone());
+    }
+    paths.sort();
+    let mut files = Vec::new();
+    let mut truncated = search_truncated || paths.len() > file_limit;
+    for path in paths.into_iter().take(file_limit) {
+        let (resolved, clean) = resolve_source_path(root, &path)?;
+        let bytes = std::fs::read(&resolved).map_err(|err| {
+            request_error(
+                StatusCode::NOT_FOUND,
+                format!("could not read {clean}: {err}"),
+            )
+        })?;
+        if bytes.len() > MAX_SOURCE_BYTES {
+            truncated = true;
+            continue;
+        }
+        let before = String::from_utf8(bytes).map_err(|_| {
+            request_error(
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                format!("{clean} is not UTF-8 text and cannot be replaced"),
+            )
+        })?;
+        let digest = source_digest(before.as_bytes());
+        let (after, match_count) = apply_content_replace(&before, options, replacement)?;
+        if match_count == 0 || after == before {
+            continue;
+        }
+        files.push(SourceReplaceFile {
+            path: clean,
+            expected_digest: digest,
+            match_count,
+            before,
+            after,
+        });
+    }
+    Ok((files, truncated))
+}
+
+fn apply_repository_replace_plan(
+    root: &FsPath,
+    files: &[SourceReplaceFile],
+    preconditions: &[SourceReplacePrecondition],
+) -> ApiResult<()> {
+    if files.is_empty() {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "no replace edits to apply",
+        ));
+    }
+    let mut expected = std::collections::HashMap::new();
+    for precondition in preconditions {
+        expected.insert(
+            precondition.path.replace('\\', "/"),
+            precondition.expected_digest.clone(),
+        );
+    }
+    let mut snapshots = Vec::new();
+    for file in files {
+        let Some(want) = expected.get(&file.path) else {
+            return Err(request_error(
+                StatusCode::BAD_REQUEST,
+                format!("replace is missing a digest precondition for {}", file.path),
+            ));
+        };
+        if want != &file.expected_digest {
+            return Err(request_error(
+                StatusCode::CONFLICT,
+                format!("{} changed since the replace preview was built", file.path),
+            ));
+        }
+        let (resolved, _) = resolve_source_path(root, &file.path)?;
+        let current = std::fs::read(&resolved).map_err(|err| {
+            request_error(
+                StatusCode::NOT_FOUND,
+                format!("could not read {}: {err}", file.path),
+            )
+        })?;
+        if source_digest(&current) != file.expected_digest {
+            return Err(request_error(
+                StatusCode::CONFLICT,
+                format!("{} changed since the replace preview was built", file.path),
+            ));
+        }
+        snapshots.push((resolved, current));
+    }
+    for (index, file) in files.iter().enumerate() {
+        let path = &snapshots[index].0;
+        if let Err(err) = std::fs::write(path, file.after.as_bytes()) {
+            for (prior, bytes) in snapshots.iter().take(index) {
+                let _ = std::fs::write(prior, bytes);
+            }
+            return Err(request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not apply replace to {}: {err}", file.path),
+            ));
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1430,6 +2161,20 @@ struct CodeWorkspaceTabState {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct CodeWorkspaceLayout {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    context_panel: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    terminal: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    tests: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    search: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    changes: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct CodeWorkspaceState {
     #[serde(default)]
     tabs: Vec<CodeWorkspaceTabState>,
@@ -1437,6 +2182,9 @@ struct CodeWorkspaceState {
     active_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     secondary_path: Option<String>,
+    /// Contextual Code regions (Problems / Terminal / Tests). Additive.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    layout: Option<CodeWorkspaceLayout>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     updated_at: Option<String>,
 }
@@ -1539,34 +2287,118 @@ fn repository_statuses(root: &FsPath) -> std::collections::HashMap<String, Strin
         .collect()
 }
 
+fn looks_like_binary(bytes: &[u8]) -> bool {
+    let sample = &bytes[..bytes.len().min(BINARY_SCAN_BYTES)];
+    if sample.contains(&0) {
+        return true;
+    }
+    if std::str::from_utf8(sample).is_ok() {
+        return false;
+    }
+    let non_text = sample
+        .iter()
+        .filter(|byte| {
+            let value = **byte;
+            !(value == b'\n'
+                || value == b'\r'
+                || value == b'\t'
+                || (0x20..0x7f).contains(&value)
+                || value >= 0x80)
+        })
+        .count();
+    non_text * 10 > sample.len()
+}
+
+fn format_binary_preview(bytes: &[u8], byte_size: usize, digest: &str) -> String {
+    let sample = &bytes[..bytes.len().min(MAX_BINARY_PREVIEW_BYTES)];
+    let mut out = format!(
+        "Binary file · {byte_size} bytes · {digest}\nPreview (first {} bytes):\n",
+        sample.len()
+    );
+    for (row, chunk) in sample.chunks(16).enumerate() {
+        let offset = row * 16;
+        let hex = chunk
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let ascii = chunk
+            .iter()
+            .map(|byte| {
+                if (0x20..0x7f).contains(byte) {
+                    *byte as char
+                } else {
+                    '.'
+                }
+            })
+            .collect::<String>();
+        out.push_str(&format!("{offset:08x}  {hex:<47}  |{ascii}|\n"));
+    }
+    out
+}
+
 fn read_source_response(work_id: &WorkId, root: &FsPath, raw: &str) -> ApiResult<SourceResponse> {
+    use std::io::Read;
+
     let (path, relative) = resolve_source_path(root, raw)?;
-    let bytes = std::fs::read(&path).map_err(|err| {
+    let mut file = std::fs::File::open(&path).map_err(|err| {
         request_error(
             StatusCode::NOT_FOUND,
             format!("could not read source file: {err}"),
         )
     })?;
-    if bytes.len() > MAX_SOURCE_BYTES {
-        return Err(request_error(
-            StatusCode::PAYLOAD_TOO_LARGE,
-            format!("source file exceeds the {MAX_SOURCE_BYTES} byte editor limit"),
-        ));
+    let mut hasher = Sha256::new();
+    let mut prefix = Vec::new();
+    let mut buffer = [0u8; 64 * 1024];
+    let mut byte_size = 0usize;
+    loop {
+        let read = file.read(&mut buffer).map_err(|err| {
+            request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not read source file: {err}"),
+            )
+        })?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+        if prefix.len() < MAX_SOURCE_BYTES {
+            let take = (MAX_SOURCE_BYTES - prefix.len()).min(read);
+            prefix.extend_from_slice(&buffer[..take]);
+        }
+        byte_size = byte_size.saturating_add(read);
     }
-    let digest = source_digest(&bytes);
-    let byte_size = bytes.len();
-    let content = String::from_utf8(bytes).map_err(|_| {
-        request_error(
-            StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            "binary files cannot be opened in the source editor",
-        )
-    })?;
+    let digest = format!("sha256:{:x}", hasher.finalize());
+    if looks_like_binary(&prefix) {
+        return Ok(SourceResponse {
+            work_id: work_id.as_str().to_owned(),
+            path: relative,
+            content: format_binary_preview(&prefix, byte_size, &digest),
+            digest,
+            byte_size,
+            encoding: Some("binary".into()),
+            preview: true,
+            truncated: byte_size > MAX_BINARY_PREVIEW_BYTES,
+        });
+    }
+    let truncated = byte_size > prefix.len();
+    let (content, encoding, lossy) = match String::from_utf8(prefix) {
+        Ok(text) => (text, "utf-8", false),
+        Err(err) => (
+            String::from_utf8_lossy(&err.into_bytes()).into_owned(),
+            "utf-8-lossy",
+            true,
+        ),
+    };
     Ok(SourceResponse {
         work_id: work_id.as_str().to_owned(),
         path: relative,
         content,
         digest,
         byte_size,
+        encoding: Some(encoding.into()),
+        preview: truncated || lossy,
+        truncated,
     })
 }
 
@@ -1613,7 +2445,14 @@ async fn create_source(
     Json(body): Json<CreateSourceRequest>,
 ) -> ApiResult<Json<SourceResponse>> {
     let id = parse_work_id(&work_id)?;
-    if body.content.len() > MAX_SOURCE_BYTES {
+    let kind = body
+        .kind
+        .as_deref()
+        .unwrap_or("file")
+        .trim()
+        .to_ascii_lowercase();
+    let is_directory = matches!(kind.as_str(), "directory" | "dir" | "folder");
+    if !is_directory && body.content.len() > MAX_SOURCE_BYTES {
         return Err(request_error(
             StatusCode::PAYLOAD_TOO_LARGE,
             format!("source file exceeds the {MAX_SOURCE_BYTES} byte editor limit"),
@@ -1623,6 +2462,41 @@ async fn create_source(
     let environment = item
         .environment_for_attempt(&lease.attempt_id)
         .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
+    if is_directory {
+        let (path, clean) = resolve_new_directory_path(&environment.worktree, &body.path)?;
+        std::fs::create_dir_all(&path).map_err(|err| {
+            request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not create directory: {err}"),
+            )
+        })?;
+        // Seed an ignored placeholder so the folder appears in the file tree
+        // and remains durable under git until real files are added.
+        let keep = path.join(".gitkeep");
+        if !keep.exists() {
+            std::fs::write(&keep, b"").map_err(|err| {
+                request_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("could not initialize directory: {err}"),
+                )
+            })?;
+        }
+        let keep_path = format!("{clean}/.gitkeep");
+        publish_project_change(
+            &state,
+            &item,
+            ForgeProjectEventKind::Created,
+            Some(keep_path.clone()),
+            None,
+            Some(source_digest(b"")),
+        );
+        remember_worktree(&state, &item, &environment.worktree);
+        return Ok(Json(read_source_response(
+            &id,
+            &environment.worktree,
+            &keep_path,
+        )?));
+    }
     let (path, _) = resolve_new_source_path(&environment.worktree, &body.path)?;
     use std::io::Write;
     let mut file = std::fs::OpenOptions::new()
@@ -1643,7 +2517,15 @@ async fn create_source(
             format!("could not initialize source file: {err}"),
         ));
     }
-    publish_item(&state, &item, "source_created");
+    publish_project_change(
+        &state,
+        &item,
+        ForgeProjectEventKind::Created,
+        Some(body.path.clone()),
+        None,
+        Some(source_digest(body.content.as_bytes())),
+    );
+    remember_worktree(&state, &item, &environment.worktree);
     Ok(Json(read_source_response(
         &id,
         &environment.worktree,
@@ -1680,17 +2562,8 @@ async fn search_source(
     Path(work_id): Path<String>,
     Query(query): Query<SourceSearchQuery>,
 ) -> ApiResult<Json<SourceSearchResponse>> {
-    use std::io::BufRead;
-    use std::process::Stdio;
-
     let id = parse_work_id(&work_id)?;
-    let needle = query.query.trim();
-    if needle.len() < 2 || needle.len() > 200 {
-        return Err(request_error(
-            StatusCode::BAD_REQUEST,
-            "repository search must be between 2 and 200 characters",
-        ));
-    }
+    let options = source_search_options_from_query(&query)?;
     let item = forge(&state).load(&id).map_err(map_err)?;
     let environment = item.workspace_environment().cloned().ok_or_else(|| {
         request_error(
@@ -1698,54 +2571,166 @@ async fn search_source(
             "prepare the governed workspace before searching source files",
         )
     })?;
-    let mut child = background_command("git")
-        .args(["grep", "-n", "-I", "-F", "--", needle])
-        .current_dir(&environment.worktree)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|err| {
-            request_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("could not search repository: {err}"),
-            )
-        })?;
-    let stdout = child.stdout.take().ok_or_else(|| {
+    let root = std::fs::canonicalize(&environment.worktree).map_err(|err| {
         request_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "repository search had no output",
+            StatusCode::CONFLICT,
+            format!("governed workspace is unavailable: {err}"),
         )
     })?;
-    let mut hits = Vec::new();
-    let mut truncated = false;
-    for line in std::io::BufReader::new(stdout)
-        .lines()
-        .map_while(Result::ok)
-    {
-        if hits.len() >= 500 {
-            truncated = true;
-            break;
-        }
-        let mut parts = line.splitn(3, ':');
-        let Some(path) = parts.next() else { continue };
-        let Some(line) = parts.next().and_then(|value| value.parse::<u32>().ok()) else {
-            continue;
-        };
-        let preview = parts.next().unwrap_or_default().trim().to_owned();
-        hits.push(SourceSearchHit {
-            path: path.replace('\\', "/"),
-            line,
-            preview,
-        });
-    }
-    if truncated {
-        let _ = child.kill();
-    }
-    let _ = child.wait();
+    let (hits, truncated, next_cursor) =
+        tokio::task::spawn_blocking(move || run_repository_search(&root, &options))
+            .await
+            .map_err(|err| {
+                request_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("repository search worker failed: {err}"),
+                )
+            })??;
     Ok(Json(SourceSearchResponse {
         work_id: id.as_str().to_owned(),
         hits,
         truncated,
+        next_cursor,
+    }))
+}
+
+async fn replace_source(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<SourceReplaceRequest>,
+) -> ApiResult<Json<SourceReplaceResponse>> {
+    let id = parse_work_id(&work_id)?;
+    if body.replacement.len() > 8_000 {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "replacement text must be at most 8000 characters",
+        ));
+    }
+    let options = source_search_options_from_replace(&body)?;
+    let dry_run = body.dry_run.unwrap_or(true);
+    let file_limit = body
+        .limit
+        .unwrap_or(DEFAULT_REPLACE_FILES as u32)
+        .clamp(1, MAX_REPLACE_FILES as u32) as usize;
+    let path_filter = body.paths.as_ref().map(|paths| {
+        paths
+            .iter()
+            .map(|path| path.replace('\\', "/"))
+            .filter(|path| !path.is_empty())
+            .collect::<Vec<_>>()
+    });
+
+    if dry_run {
+        let item = forge(&state).load(&id).map_err(map_err)?;
+        let environment = item.workspace_environment().cloned().ok_or_else(|| {
+            request_error(
+                StatusCode::CONFLICT,
+                "prepare the governed workspace before replacing source files",
+            )
+        })?;
+        let root = std::fs::canonicalize(&environment.worktree).map_err(|err| {
+            request_error(
+                StatusCode::CONFLICT,
+                format!("governed workspace is unavailable: {err}"),
+            )
+        })?;
+        let replacement = body.replacement.clone();
+        let filter = path_filter.clone();
+        let (files, truncated) = tokio::task::spawn_blocking(move || {
+            run_repository_replace_plan(
+                &root,
+                &options,
+                &replacement,
+                file_limit,
+                filter.as_deref(),
+            )
+        })
+        .await
+        .map_err(|err| {
+            request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("repository replace worker failed: {err}"),
+            )
+        })??;
+        return Ok(Json(SourceReplaceResponse {
+            work_id: id.as_str().to_owned(),
+            files,
+            truncated,
+            applied: false,
+        }));
+    }
+
+    let lease_id = body.lease_id.as_deref().unwrap_or("").trim();
+    let generation = body.generation.ok_or_else(|| {
+        request_error(
+            StatusCode::BAD_REQUEST,
+            "generation is required when applying a replace",
+        )
+    })?;
+    if lease_id.is_empty() {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "lease_id is required when applying a replace",
+        ));
+    }
+    let preconditions = body.preconditions.clone().unwrap_or_default();
+    if preconditions.is_empty() {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "preconditions are required when applying a replace",
+        ));
+    }
+    let (item, lease) = require_work_lease(&state, &id, lease_id, generation)?;
+    let environment = item
+        .environment_for_attempt(&lease.attempt_id)
+        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?
+        .clone();
+    let root = std::fs::canonicalize(&environment.worktree).map_err(|err| {
+        request_error(
+            StatusCode::CONFLICT,
+            format!("governed workspace is unavailable: {err}"),
+        )
+    })?;
+    let replacement = body.replacement.clone();
+    let filter = path_filter.clone();
+    let (files, truncated) = tokio::task::spawn_blocking({
+        let root = root.clone();
+        let options = options.clone();
+        move || {
+            run_repository_replace_plan(
+                &root,
+                &options,
+                &replacement,
+                file_limit,
+                filter.as_deref(),
+            )
+        }
+    })
+    .await
+    .map_err(|err| {
+        request_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("repository replace worker failed: {err}"),
+        )
+    })??;
+    apply_repository_replace_plan(&root, &files, &preconditions)?;
+    for file in &files {
+        publish_project_change(
+            &state,
+            &item,
+            ForgeProjectEventKind::Changed,
+            Some(file.path.clone()),
+            None,
+            Some(source_digest(file.after.as_bytes())),
+        );
+    }
+    remember_worktree(&state, &item, &environment.worktree);
+    publish_item(&state, &item, "source_replace_applied");
+    Ok(Json(SourceReplaceResponse {
+        work_id: id.as_str().to_owned(),
+        files,
+        truncated,
+        applied: true,
     }))
 }
 
@@ -1856,6 +2841,14 @@ async fn save_workspace_state(
         let (_, clean) = resolve_source_path(&environment.worktree, secondary_path)?;
         *secondary_path = clean;
     }
+    if let Some(layout) = body.state.layout.as_mut() {
+        if let Some(panel) = layout.context_panel.as_deref() {
+            match panel {
+                "problems" | "outline" | "references" | "language" => {}
+                _ => layout.context_panel = None,
+            }
+        }
+    }
     let open_paths = body
         .state
         .tabs
@@ -1937,7 +2930,15 @@ async fn save_source(
             format!("could not save source file: {err}"),
         )
     })?;
-    publish_item(&state, &item, "source_saved");
+    publish_project_change(
+        &state,
+        &item,
+        ForgeProjectEventKind::Changed,
+        Some(body.path.clone()),
+        None,
+        Some(source_digest(body.content.as_bytes())),
+    );
+    remember_worktree(&state, &item, &environment.worktree);
     Ok(Json(read_source_response(
         &id,
         &environment.worktree,
@@ -2006,10 +3007,315 @@ async fn save_source_batch(
         }
     }
     publish_item(&state, &item, "source_batch_saved");
+    remember_worktree(&state, &item, &environment.worktree);
+    for (_, relative, _, content) in &prepared {
+        state.forge_events.publish_project(
+            item.id.as_str(),
+            ForgeProjectEventKind::Changed,
+            Some(relative.clone()),
+            None,
+            Some(source_digest(content)),
+        );
+    }
     let responses = prepared
         .iter()
         .map(|(_, relative, _, _)| read_source_response(&id, &environment.worktree, relative))
         .collect::<Result<Vec<_>, _>>()?;
+    Ok(Json(responses))
+}
+
+const MAX_SOURCE_WORKSPACE_EDIT_OPERATIONS: usize = 512;
+const MAX_SOURCE_WORKSPACE_EDIT_BYTES: usize = 8 * 1024 * 1024;
+// JSON escaping can expand valid source text well beyond its decoded size.
+const MAX_SOURCE_WORKSPACE_EDIT_BODY_BYTES: usize = 64 * 1024 * 1024;
+
+#[derive(Debug)]
+struct SourceWorkspaceSnapshot {
+    path: PathBuf,
+    original: Option<Vec<u8>>,
+}
+
+#[derive(Debug)]
+enum PreparedSourceWorkspaceOperation {
+    Write { path: String, content: Vec<u8> },
+    Create { path: String, content: Vec<u8> },
+    Rename { path: String, destination: String },
+    Delete { path: String },
+}
+
+#[derive(Debug)]
+struct PreparedSourceWorkspaceEdit {
+    snapshots: std::collections::BTreeMap<String, SourceWorkspaceSnapshot>,
+    operations: Vec<PreparedSourceWorkspaceOperation>,
+    final_paths: std::collections::BTreeSet<String>,
+}
+
+fn prepare_source_workspace_edit(
+    root: &FsPath,
+    body: &SourceWorkspaceEditRequest,
+) -> ApiResult<PreparedSourceWorkspaceEdit> {
+    if body.operations.is_empty() {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "no workspace edit operations supplied",
+        ));
+    }
+    if body.operations.len() > MAX_SOURCE_WORKSPACE_EDIT_OPERATIONS
+        || body.preconditions.len() > MAX_SOURCE_WORKSPACE_EDIT_OPERATIONS * 2
+    {
+        return Err(request_error(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "workspace edit contains too many operations",
+        ));
+    }
+
+    let mut snapshots = std::collections::BTreeMap::new();
+    let mut absolute_paths = std::collections::HashSet::new();
+    let mut snapshot_bytes = 0usize;
+    for precondition in &body.preconditions {
+        let (path, clean, original) = match precondition {
+            SourceWorkspacePrecondition::Existing {
+                path,
+                expected_digest,
+            } => {
+                let (resolved, clean) = resolve_source_path(root, path)?;
+                let original = std::fs::read(&resolved).map_err(|err| {
+                    request_error(
+                        StatusCode::NOT_FOUND,
+                        format!("could not read {clean}: {err}"),
+                    )
+                })?;
+                if original.len() > MAX_SOURCE_BYTES {
+                    return Err(request_error(
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        format!("{clean} exceeds the source editor limit"),
+                    ));
+                }
+                snapshot_bytes = snapshot_bytes.saturating_add(original.len());
+                if snapshot_bytes > MAX_SOURCE_WORKSPACE_EDIT_BYTES {
+                    return Err(request_error(
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        "workspace edit snapshots exceed the combined source editor limit",
+                    ));
+                }
+                if source_digest(&original) != *expected_digest {
+                    return Err(request_error(
+                        StatusCode::CONFLICT,
+                        format!("{clean} changed; review the refactor again before applying"),
+                    ));
+                }
+                (resolved, clean, Some(original))
+            }
+            SourceWorkspacePrecondition::Missing { path } => {
+                let (resolved, clean) = resolve_new_source_path(root, path)?;
+                (resolved, clean, None)
+            }
+        };
+        if snapshots.contains_key(&clean) || !absolute_paths.insert(path.clone()) {
+            return Err(request_error(
+                StatusCode::BAD_REQUEST,
+                "duplicate workspace edit precondition",
+            ));
+        }
+        snapshots.insert(clean, SourceWorkspaceSnapshot { path, original });
+    }
+
+    let mut virtual_exists = snapshots
+        .iter()
+        .map(|(path, snapshot)| (path.clone(), snapshot.original.is_some()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut prepared = Vec::with_capacity(body.operations.len());
+    let mut touched = std::collections::BTreeSet::new();
+    let mut content_bytes = 0usize;
+    let normalize_known = |raw: &str| -> ApiResult<String> {
+        let (_, clean) = normalize_source_relative(raw)?;
+        if !snapshots.contains_key(&clean) {
+            return Err(request_error(
+                StatusCode::BAD_REQUEST,
+                format!("workspace edit is missing a precondition for {clean}"),
+            ));
+        }
+        Ok(clean)
+    };
+    let require_state =
+        |states: &std::collections::BTreeMap<String, bool>, path: &str, exists: bool| {
+            if states.get(path).copied() == Some(exists) {
+                Ok(())
+            } else {
+                Err(request_error(
+                    StatusCode::CONFLICT,
+                    format!(
+                        "workspace edit expected {path} to {}",
+                        if exists { "exist" } else { "be absent" }
+                    ),
+                ))
+            }
+        };
+
+    for operation in &body.operations {
+        match operation {
+            SourceWorkspaceOperation::Write { path, content } => {
+                let path = normalize_known(path)?;
+                require_state(&virtual_exists, &path, true)?;
+                if content.len() > MAX_SOURCE_BYTES {
+                    return Err(request_error(
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        format!("{path} exceeds the source editor limit"),
+                    ));
+                }
+                content_bytes = content_bytes.saturating_add(content.len());
+                touched.insert(path.clone());
+                prepared.push(PreparedSourceWorkspaceOperation::Write {
+                    path,
+                    content: content.as_bytes().to_vec(),
+                });
+            }
+            SourceWorkspaceOperation::Create { path, content } => {
+                let path = normalize_known(path)?;
+                require_state(&virtual_exists, &path, false)?;
+                if content.len() > MAX_SOURCE_BYTES {
+                    return Err(request_error(
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        format!("{path} exceeds the source editor limit"),
+                    ));
+                }
+                content_bytes = content_bytes.saturating_add(content.len());
+                virtual_exists.insert(path.clone(), true);
+                touched.insert(path.clone());
+                prepared.push(PreparedSourceWorkspaceOperation::Create {
+                    path,
+                    content: content.as_bytes().to_vec(),
+                });
+            }
+            SourceWorkspaceOperation::Rename { path, destination } => {
+                let path = normalize_known(path)?;
+                let destination = normalize_known(destination)?;
+                require_state(&virtual_exists, &path, true)?;
+                require_state(&virtual_exists, &destination, false)?;
+                virtual_exists.insert(path.clone(), false);
+                virtual_exists.insert(destination.clone(), true);
+                touched.insert(path.clone());
+                touched.insert(destination.clone());
+                prepared.push(PreparedSourceWorkspaceOperation::Rename { path, destination });
+            }
+            SourceWorkspaceOperation::Delete { path } => {
+                let path = normalize_known(path)?;
+                require_state(&virtual_exists, &path, true)?;
+                virtual_exists.insert(path.clone(), false);
+                touched.insert(path.clone());
+                prepared.push(PreparedSourceWorkspaceOperation::Delete { path });
+            }
+        }
+    }
+    if content_bytes > MAX_SOURCE_WORKSPACE_EDIT_BYTES {
+        return Err(request_error(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "workspace edit content exceeds the combined source editor limit",
+        ));
+    }
+    if snapshots.keys().any(|path| !touched.contains(path)) {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "workspace edit contains an unused precondition",
+        ));
+    }
+    let final_paths = virtual_exists
+        .into_iter()
+        .filter_map(|(path, exists)| (exists && touched.contains(&path)).then_some(path))
+        .collect();
+    Ok(PreparedSourceWorkspaceEdit {
+        snapshots,
+        operations: prepared,
+        final_paths,
+    })
+}
+
+fn rollback_source_workspace_edit(
+    snapshots: &std::collections::BTreeMap<String, SourceWorkspaceSnapshot>,
+) {
+    for snapshot in snapshots.values() {
+        if snapshot.path.is_file() {
+            let _ = std::fs::remove_file(&snapshot.path);
+        }
+    }
+    for snapshot in snapshots.values() {
+        if let Some(original) = snapshot.original.as_ref() {
+            let _ = crate::session::atomic_write(&snapshot.path, original);
+        }
+    }
+}
+
+fn execute_source_workspace_edit(
+    work_id: &WorkId,
+    root: &FsPath,
+    body: &SourceWorkspaceEditRequest,
+) -> ApiResult<Vec<SourceResponse>> {
+    let prepared = prepare_source_workspace_edit(root, body)?;
+    for operation in &prepared.operations {
+        let result = match operation {
+            PreparedSourceWorkspaceOperation::Write { path, content } => {
+                crate::session::atomic_write(&prepared.snapshots[path].path, content)
+            }
+            PreparedSourceWorkspaceOperation::Create { path, content } => {
+                use std::io::Write;
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&prepared.snapshots[path].path)
+                    .and_then(|mut file| file.write_all(content))
+            }
+            PreparedSourceWorkspaceOperation::Rename { path, destination } => std::fs::rename(
+                &prepared.snapshots[path].path,
+                &prepared.snapshots[destination].path,
+            ),
+            PreparedSourceWorkspaceOperation::Delete { path } => {
+                std::fs::remove_file(&prepared.snapshots[path].path)
+            }
+        };
+        if let Err(err) = result {
+            rollback_source_workspace_edit(&prepared.snapshots);
+            return Err(request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not apply workspace edit: {err}"),
+            ));
+        }
+    }
+
+    let mut responses = Vec::with_capacity(prepared.final_paths.len());
+    for path in &prepared.final_paths {
+        match read_source_response(work_id, root, path) {
+            Ok(response) => responses.push(response),
+            Err(err) => {
+                rollback_source_workspace_edit(&prepared.snapshots);
+                return Err(err);
+            }
+        }
+    }
+    Ok(responses)
+}
+
+async fn apply_source_workspace_edit(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<SourceWorkspaceEditRequest>,
+) -> ApiResult<Json<Vec<SourceResponse>>> {
+    let id = parse_work_id(&work_id)?;
+    let (item, lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+    let environment = item
+        .environment_for_attempt(&lease.attempt_id)
+        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
+    let responses = execute_source_workspace_edit(&id, &environment.worktree, &body)?;
+    publish_item(&state, &item, "source_workspace_edit_applied");
+    remember_worktree(&state, &item, &environment.worktree);
+    for response in &responses {
+        state.forge_events.publish_project(
+            item.id.as_str(),
+            ForgeProjectEventKind::Changed,
+            Some(response.path.clone()),
+            None,
+            Some(response.digest.clone()),
+        );
+    }
     Ok(Json(responses))
 }
 
@@ -2043,12 +3349,17 @@ async fn rename_source(
             format!("could not rename source file: {err}"),
         )
     })?;
-    publish_item(&state, &item, "source_renamed");
-    Ok(Json(read_source_response(
-        &id,
-        &environment.worktree,
-        &body.destination,
-    )?))
+    let response = read_source_response(&id, &environment.worktree, &body.destination)?;
+    publish_project_change(
+        &state,
+        &item,
+        ForgeProjectEventKind::Renamed,
+        Some(body.destination.clone()),
+        Some(body.path.clone()),
+        Some(response.digest.clone()),
+    );
+    remember_worktree(&state, &item, &environment.worktree);
+    Ok(Json(response))
 }
 
 async fn delete_source(
@@ -2080,11 +3391,1182 @@ async fn delete_source(
             format!("could not delete source file: {err}"),
         )
     })?;
-    publish_item(&state, &item, "source_deleted");
+    publish_project_change(
+        &state,
+        &item,
+        ForgeProjectEventKind::Deleted,
+        Some(relative.clone()),
+        None,
+        None,
+    );
+    remember_worktree(&state, &item, &environment.worktree);
     Ok(Json(DeleteSourceResponse {
         work_id: id.as_str().to_owned(),
         path: relative,
         deleted: true,
+    }))
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ForgeChangesFile {
+    path: String,
+    status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    old_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ForgeChangesResponse {
+    work_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    branch: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    detached: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    base_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    baseline_oid: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    upstream: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ahead: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    behind: Option<u64>,
+    conflict: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    dirty: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    merge_in_progress: bool,
+    files: Vec<ForgeChangesFile>,
+}
+
+fn porcelain_change_status(entry: &medousa_forge::git::PorcelainEntry) -> Option<&'static str> {
+    use medousa_forge::git::PorcelainKind;
+    match entry.kind {
+        PorcelainKind::Ignored => None,
+        PorcelainKind::Untracked => Some("untracked"),
+        PorcelainKind::Unmerged => Some("unmerged"),
+        PorcelainKind::RenameOrCopy => {
+            if entry.xy.as_deref().unwrap_or_default().starts_with('C') {
+                Some("copied")
+            } else {
+                Some("renamed")
+            }
+        }
+        PorcelainKind::Ordinary => {
+            let xy = entry.xy.as_deref().unwrap_or_default();
+            if xy.contains('A') {
+                Some("added")
+            } else if xy.contains('D') {
+                Some("deleted")
+            } else if xy.contains('T') {
+                Some("type_changed")
+            } else {
+                Some("modified")
+            }
+        }
+    }
+}
+
+fn build_changes_response(state: &AppState, work_id: &WorkId) -> ApiResult<ForgeChangesResponse> {
+    let forge = forge(state);
+    let item = forge.load(work_id).map_err(map_err)?;
+    let environment = item.workspace_environment().cloned().ok_or_else(|| {
+        request_error(
+            StatusCode::CONFLICT,
+            "prepare the governed workspace before reading changes",
+        )
+    })?;
+    let (tracking, entries) = forge
+        .git()
+        .status_porcelain_with_branch(&environment.worktree)
+        .map_err(map_err)?;
+    let mut files = Vec::new();
+    let mut conflict = false;
+    for entry in entries {
+        let Some(status) = porcelain_change_status(&entry) else {
+            continue;
+        };
+        let path = medousa_forge::policy::normalize_git_path(&entry.path);
+        if medousa_forge::policy::is_git_internal(&path) {
+            continue;
+        }
+        if status == "unmerged" {
+            conflict = true;
+        }
+        files.push(ForgeChangesFile {
+            path,
+            status: status.to_owned(),
+            old_path: entry.orig_path.map(|p| medousa_forge::policy::normalize_git_path(&p)),
+        });
+    }
+    files.sort_unstable_by(|left, right| left.path.cmp(&right.path));
+    let WorkTarget::Git(target) = &item.target;
+    Ok(ForgeChangesResponse {
+        work_id: work_id.as_str().to_owned(),
+        branch: tracking.head.or_else(|| Some(environment.branch.clone())),
+        detached: tracking.detached,
+        base_ref: Some(target.base_ref.clone()),
+        baseline_oid: Some(environment.baseline_oid.as_str().to_owned()),
+        upstream: tracking.upstream,
+        ahead: tracking.ahead,
+        behind: tracking.behind,
+        conflict,
+        dirty: !files.is_empty() || conflict,
+        merge_in_progress: forge.git().merge_in_progress(&environment.worktree),
+        files,
+    })
+}
+
+async fn get_changes(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+) -> ApiResult<Json<ForgeChangesResponse>> {
+    let id = parse_work_id(&work_id)?;
+    Ok(Json(build_changes_response(&state, &id)?))
+}
+
+#[derive(Debug, Deserialize)]
+struct ChangesFileQuery {
+    path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ChangesFileDiff {
+    work_id: String,
+    path: String,
+    status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    old_path: Option<String>,
+    baseline_oid: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    working_digest: Option<String>,
+    binary: bool,
+    conflict: bool,
+    baseline: ReviewFileVersion,
+    working: ReviewFileVersion,
+    hunks: Vec<ReviewDiffHunk>,
+    truncated: bool,
+}
+
+fn changes_file_diff(state: &AppState, id: &WorkId, raw_path: &str) -> ApiResult<ChangesFileDiff> {
+    const MAX_CHANGES_FILE_BYTES: usize = 1024 * 1024;
+    let (_, path) = normalize_source_relative(raw_path)?;
+    let forge = forge(state);
+    let item = forge.load(id).map_err(map_err)?;
+    let environment = item.workspace_environment().cloned().ok_or_else(|| {
+        request_error(
+            StatusCode::CONFLICT,
+            "prepare the governed workspace before reading changes",
+        )
+    })?;
+    let baseline_oid = environment.baseline_oid.clone();
+    let entries = forge
+        .git()
+        .status_porcelain(&environment.worktree)
+        .map_err(map_err)?;
+    let entry = entries.iter().find(|entry| {
+        medousa_forge::policy::normalize_git_path(&entry.path) == path
+            || entry
+                .orig_path
+                .as_ref()
+                .map(|old| medousa_forge::policy::normalize_git_path(old) == path)
+                .unwrap_or(false)
+    });
+    let status = entry
+        .and_then(porcelain_change_status)
+        .unwrap_or("modified")
+        .to_owned();
+    let old_path = entry.and_then(|e| {
+        e.orig_path
+            .as_ref()
+            .map(|p| medousa_forge::policy::normalize_git_path(p))
+    });
+    let conflict = matches!(status.as_str(), "unmerged");
+    let baseline_path = old_path.as_deref().unwrap_or(path.as_str());
+    let baseline_bytes = forge
+        .git()
+        .show_bytes(&environment.worktree, &baseline_oid, baseline_path)
+        .ok();
+    let work_abs = environment.worktree.join(&path);
+    let working_bytes = if work_abs.is_file() {
+        std::fs::read(&work_abs).ok()
+    } else {
+        None
+    };
+    let binary = baseline_bytes
+        .as_ref()
+        .is_some_and(|bytes| looks_like_binary(bytes))
+        || working_bytes
+            .as_ref()
+            .is_some_and(|bytes| looks_like_binary(bytes));
+    let truncated = baseline_bytes
+        .as_ref()
+        .is_some_and(|bytes| bytes.len() > MAX_CHANGES_FILE_BYTES)
+        || working_bytes
+            .as_ref()
+            .is_some_and(|bytes| bytes.len() > MAX_CHANGES_FILE_BYTES);
+    let version = |bytes: &Option<Vec<u8>>| ReviewFileVersion {
+        exists: bytes.is_some(),
+        binary,
+        byte_size: bytes.as_ref().map(|value| value.len() as u64).unwrap_or(0),
+        digest: bytes.as_ref().map(|value| source_digest(value)),
+        content: if binary || truncated {
+            None
+        } else {
+            bytes
+                .as_ref()
+                .and_then(|value| String::from_utf8(value.clone()).ok())
+        },
+    };
+    let patch = if binary {
+        Vec::new()
+    } else if status == "untracked" || (baseline_bytes.is_none() && working_bytes.is_some()) {
+        forge
+            .git()
+            .diff_untracked_path(&environment.worktree, &path)
+            .unwrap_or_default()
+    } else {
+        forge
+            .git()
+            .diff_path_worktree(&environment.worktree, &baseline_oid, &path)
+            .map_err(map_err)?
+    };
+    let hunks = parse_review_hunks(&String::from_utf8_lossy(&patch));
+    Ok(ChangesFileDiff {
+        work_id: id.as_str().to_owned(),
+        path,
+        status,
+        old_path,
+        baseline_oid: baseline_oid.as_str().to_owned(),
+        working_digest: working_bytes.as_ref().map(|value| source_digest(value)),
+        binary,
+        conflict,
+        baseline: version(&baseline_bytes),
+        working: version(&working_bytes),
+        hunks,
+        truncated,
+    })
+}
+
+async fn get_changes_file(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Query(query): Query<ChangesFileQuery>,
+) -> ApiResult<Json<ChangesFileDiff>> {
+    let id = parse_work_id(&work_id)?;
+    Ok(Json(changes_file_diff(&state, &id, &query.path)?))
+}
+
+#[derive(Debug, Deserialize)]
+struct RestoreChangesFileRequest {
+    path: String,
+    expected_working_digest: Option<String>,
+    lease_id: String,
+    generation: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct RestoreChangesFileResponse {
+    work_id: String,
+    path: String,
+    action: String,
+    digest: Option<String>,
+}
+
+async fn restore_changes_file(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<RestoreChangesFileRequest>,
+) -> ApiResult<Json<RestoreChangesFileResponse>> {
+    let id = parse_work_id(&work_id)?;
+    let comparison = changes_file_diff(&state, &id, &body.path)?;
+    if comparison.binary && comparison.baseline.exists {
+        return Err(request_error(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "binary recovery is preserved in Git but cannot yet be restored from Home",
+        ));
+    }
+    let expected = body
+        .expected_working_digest
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let current = comparison.working_digest.as_deref();
+    match (expected, current) {
+        (Some(want), Some(have)) if want != have => {
+            return Err(request_error(
+                StatusCode::CONFLICT,
+                "the working copy changed; refresh Changes before restoring",
+            ));
+        }
+        (Some(_), None) => {
+            return Err(request_error(
+                StatusCode::CONFLICT,
+                "the working copy changed; refresh Changes before restoring",
+            ));
+        }
+        (None, Some(_)) if comparison.working.exists => {
+            return Err(request_error(
+                StatusCode::CONFLICT,
+                "expected_working_digest is required to restore this file",
+            ));
+        }
+        _ => {}
+    }
+    let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+    let environment = item.workspace_environment().cloned().ok_or_else(|| {
+        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+    })?;
+    let restore_path = comparison
+        .old_path
+        .as_deref()
+        .unwrap_or(&comparison.path)
+        .to_owned();
+    if comparison.path != restore_path {
+        let (renamed, _) = resolve_source_path(&environment.worktree, &comparison.path)?;
+        if renamed.is_file() {
+            std::fs::remove_file(&renamed).map_err(|err| {
+                request_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("could not restore file: {err}"),
+                )
+            })?;
+        }
+    }
+    let (action, digest) = if comparison.baseline.exists {
+        let content = comparison.baseline.content.clone().ok_or_else(|| {
+            request_error(
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "baseline text is unavailable for restore",
+            )
+        })?;
+        let candidate = environment.worktree.join(&restore_path);
+        let (destination, relative) = if candidate.is_file() {
+            resolve_source_path(&environment.worktree, &restore_path)?
+        } else {
+            resolve_new_source_path(&environment.worktree, &restore_path)?
+        };
+        if let Some(parent) = destination.parent() {
+            std::fs::create_dir_all(parent).map_err(|err| {
+                request_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("could not restore file: {err}"),
+                )
+            })?;
+        }
+        std::fs::write(&destination, content.as_bytes()).map_err(|err| {
+            request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not restore file: {err}"),
+            )
+        })?;
+        let digest = source_digest(content.as_bytes());
+        if comparison.conflict || comparison.status == "unmerged" {
+            let _ = forge(&state).git().add_path(&environment.worktree, &restore_path);
+        }
+        publish_project_change(
+            &state,
+            &item,
+            ForgeProjectEventKind::Changed,
+            Some(relative.clone()),
+            None,
+            Some(digest.clone()),
+        );
+        ("restored".into(), Some(digest))
+    } else {
+        let (target, relative) = resolve_source_path(&environment.worktree, &comparison.path)?;
+        if target.is_file() {
+            std::fs::remove_file(&target).map_err(|err| {
+                request_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("could not restore file: {err}"),
+                )
+            })?;
+        }
+        if comparison.conflict || comparison.status == "unmerged" {
+            let _ = forge(&state)
+                .git()
+                .add_path(&environment.worktree, &comparison.path);
+        }
+        publish_project_change(
+            &state,
+            &item,
+            ForgeProjectEventKind::Deleted,
+            Some(relative.clone()),
+            None,
+            None,
+        );
+        ("deleted".into(), None)
+    };
+    remember_worktree(&state, &item, &environment.worktree);
+    Ok(Json(RestoreChangesFileResponse {
+        work_id: id.as_str().to_owned(),
+        path: restore_path,
+        action,
+        digest,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+struct ChangesLeaseRequest {
+    lease_id: String,
+    generation: u64,
+    #[serde(default)]
+    remote: Option<String>,
+    #[serde(default)]
+    ack_risks: bool,
+    #[serde(default)]
+    author_name: Option<String>,
+    #[serde(default)]
+    author_email: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ChangesSyncResult {
+    work_id: String,
+    fetched: bool,
+    pulled: bool,
+    pushed: bool,
+    message: String,
+    changes: ForgeChangesResponse,
+}
+
+fn changes_sync_preflight(
+    forge: &Forge,
+    environment: &medousa_forge::model::GovernedEnv,
+) -> ApiResult<()> {
+    if forge.git().merge_in_progress(&environment.worktree) {
+        return Err(request_error(
+            StatusCode::CONFLICT,
+            "finish or abort the in-progress merge/rebase before syncing",
+        ));
+    }
+    let snapshot = forge
+        .git()
+        .status_porcelain(&environment.worktree)
+        .map_err(map_err)?;
+    if snapshot
+        .iter()
+        .any(|entry| entry.kind == medousa_forge::git::PorcelainKind::Unmerged)
+    {
+        return Err(request_error(
+            StatusCode::CONFLICT,
+            "resolve merge conflicts before pull/push/sync",
+        ));
+    }
+    Ok(())
+}
+
+fn has_tracked_worktree_edits(
+    forge: &Forge,
+    environment: &medousa_forge::model::GovernedEnv,
+) -> ApiResult<bool> {
+    use medousa_forge::git::PorcelainKind;
+    let snapshot = forge
+        .git()
+        .status_porcelain(&environment.worktree)
+        .map_err(map_err)?;
+    Ok(snapshot.iter().any(|entry| {
+        matches!(
+            entry.kind,
+            PorcelainKind::Ordinary | PorcelainKind::RenameOrCopy | PorcelainKind::Unmerged
+        )
+    }))
+}
+
+async fn changes_fetch(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<ChangesLeaseRequest>,
+) -> ApiResult<Json<ChangesSyncResult>> {
+    let id = parse_work_id(&work_id)?;
+    let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+    let environment = item.workspace_environment().cloned().ok_or_else(|| {
+        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+    })?;
+    let remote = body.remote.as_deref().unwrap_or("origin");
+    let message = forge(&state)
+        .git()
+        .fetch(&environment.worktree, remote)
+        .map_err(map_err)?;
+    remember_worktree(&state, &item, &environment.worktree);
+    publish_project_change(
+        &state,
+        &item,
+        ForgeProjectEventKind::GitStatus,
+        None,
+        None,
+        None,
+    );
+    Ok(Json(ChangesSyncResult {
+        work_id: id.as_str().to_owned(),
+        fetched: true,
+        pulled: false,
+        pushed: false,
+        message: if message.trim().is_empty() {
+            "Fetched".into()
+        } else {
+            message.trim().to_owned()
+        },
+        changes: build_changes_response(&state, &id)?,
+    }))
+}
+
+async fn changes_pull(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<ChangesLeaseRequest>,
+) -> ApiResult<Json<ChangesSyncResult>> {
+    let id = parse_work_id(&work_id)?;
+    let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+    let environment = item.workspace_environment().cloned().ok_or_else(|| {
+        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+    })?;
+    changes_sync_preflight(forge(&state).as_ref(), &environment)?;
+    if has_tracked_worktree_edits(forge(&state).as_ref(), &environment)? {
+        return Err(request_error(
+            StatusCode::CONFLICT,
+            "commit or restore local changes before a fast-forward pull",
+        ));
+    }
+    let remote = body.remote.as_deref().unwrap_or("origin");
+    let message = forge(&state)
+        .git()
+        .pull_ff_only(&environment.worktree, remote)
+        .map_err(|err| {
+            request_error(
+                StatusCode::CONFLICT,
+                format!("fast-forward pull refused: {err}"),
+            )
+        })?;
+    remember_worktree(&state, &item, &environment.worktree);
+    publish_project_change(
+        &state,
+        &item,
+        ForgeProjectEventKind::GitStatus,
+        None,
+        None,
+        None,
+    );
+    Ok(Json(ChangesSyncResult {
+        work_id: id.as_str().to_owned(),
+        fetched: false,
+        pulled: true,
+        pushed: false,
+        message: if message.trim().is_empty() {
+            "Pulled (fast-forward)".into()
+        } else {
+            message.trim().to_owned()
+        },
+        changes: build_changes_response(&state, &id)?,
+    }))
+}
+
+async fn changes_push(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<ChangesLeaseRequest>,
+) -> ApiResult<Json<ChangesSyncResult>> {
+    let id = parse_work_id(&work_id)?;
+    let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+    let environment = item.workspace_environment().cloned().ok_or_else(|| {
+        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+    })?;
+    changes_sync_preflight(forge(&state).as_ref(), &environment)?;
+    let WorkTarget::Git(target) = &item.target;
+    if environment.branch == target.base_ref {
+        return Err(request_error(
+            StatusCode::CONFLICT,
+            "refusing to push the protected base branch from Changes",
+        ));
+    }
+    let remote = body.remote.as_deref().unwrap_or("origin");
+    let message = forge(&state)
+        .git()
+        .push_branch(&environment.worktree, remote, &environment.branch)
+        .map_err(|err| {
+            request_error(StatusCode::CONFLICT, format!("push refused: {err}"))
+        })?;
+    remember_worktree(&state, &item, &environment.worktree);
+    publish_project_change(
+        &state,
+        &item,
+        ForgeProjectEventKind::GitStatus,
+        None,
+        None,
+        None,
+    );
+    Ok(Json(ChangesSyncResult {
+        work_id: id.as_str().to_owned(),
+        fetched: false,
+        pulled: false,
+        pushed: true,
+        message: if message.trim().is_empty() {
+            format!("Pushed {}", environment.branch)
+        } else {
+            message.trim().to_owned()
+        },
+        changes: build_changes_response(&state, &id)?,
+    }))
+}
+
+async fn changes_sync(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<ChangesLeaseRequest>,
+) -> ApiResult<Json<ChangesSyncResult>> {
+    let id = parse_work_id(&work_id)?;
+    let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+    let environment = item.workspace_environment().cloned().ok_or_else(|| {
+        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+    })?;
+    changes_sync_preflight(forge(&state).as_ref(), &environment)?;
+    let remote = body.remote.as_deref().unwrap_or("origin");
+    let mut messages = Vec::new();
+    let mut pulled = false;
+    let mut pushed = false;
+    let fetch_msg = forge(&state)
+        .git()
+        .fetch(&environment.worktree, remote)
+        .map_err(|err| {
+            request_error(
+                StatusCode::CONFLICT,
+                format!("sync fetch failed: {err}"),
+            )
+        })?;
+    let fetched = true;
+    if !fetch_msg.trim().is_empty() {
+        messages.push(fetch_msg.trim().to_owned());
+    } else {
+        messages.push("Fetched".into());
+    }
+    let after_fetch = build_changes_response(&state, &id)?;
+    if after_fetch.behind.unwrap_or(0) > 0 {
+        if has_tracked_worktree_edits(forge(&state).as_ref(), &environment)? {
+            return Err(request_error(
+                StatusCode::CONFLICT,
+                "remote is ahead; restore or seal local changes before sync pull",
+            ));
+        }
+        let msg = forge(&state)
+            .git()
+            .pull_ff_only(&environment.worktree, remote)
+            .map_err(|err| {
+                request_error(
+                    StatusCode::CONFLICT,
+                    format!("sync pull refused: {err}"),
+                )
+            })?;
+        pulled = true;
+        messages.push(if msg.trim().is_empty() {
+            "Pulled (fast-forward)".into()
+        } else {
+            msg.trim().to_owned()
+        });
+    }
+    let after_pull = build_changes_response(&state, &id)?;
+    if after_pull.ahead.unwrap_or(0) > 0 {
+        let WorkTarget::Git(target) = &item.target;
+        if environment.branch == target.base_ref {
+            return Err(request_error(
+                StatusCode::CONFLICT,
+                "refusing to push the protected base branch from Changes",
+            ));
+        }
+        let msg = forge(&state)
+            .git()
+            .push_branch(&environment.worktree, remote, &environment.branch)
+            .map_err(|err| {
+                request_error(StatusCode::CONFLICT, format!("sync push refused: {err}"))
+            })?;
+        pushed = true;
+        messages.push(if msg.trim().is_empty() {
+            format!("Pushed {}", environment.branch)
+        } else {
+            msg.trim().to_owned()
+        });
+    }
+    remember_worktree(&state, &item, &environment.worktree);
+    publish_project_change(
+        &state,
+        &item,
+        ForgeProjectEventKind::GitStatus,
+        None,
+        None,
+        None,
+    );
+    Ok(Json(ChangesSyncResult {
+        work_id: id.as_str().to_owned(),
+        fetched,
+        pulled,
+        pushed,
+        message: messages.join(" · "),
+        changes: build_changes_response(&state, &id)?,
+    }))
+}
+
+async fn changes_checkpoint(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<ChangesLeaseRequest>,
+) -> ApiResult<Json<ItemProjection>> {
+    let id = parse_work_id(&work_id)?;
+    let (_item, lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+    let author = match (body.author_name, body.author_email) {
+        (Some(name), Some(email)) => Some(CheckpointAuthor { name, email }),
+        _ => None,
+    };
+    let options = SealOptions {
+        ack_risks: body.ack_risks,
+        author,
+    };
+    let actor = actor_from_state(&state);
+    let item = forge(&state)
+        .complete_attempt(&lease, &options, &actor)
+        .map_err(map_err)?;
+    if let Some(env) = item.environment_for_attempt(&lease.attempt_id) {
+        let sealed_oid = forge(&state)
+            .git()
+            .head_oid(&env.worktree)
+            .ok()
+            .map(|oid| oid.as_str().to_owned())
+            .unwrap_or_else(|| env.baseline_oid.as_str().to_owned());
+        crate::daemon::detamu_host::spawn_index_forge_item(
+            state.detamu.clone(),
+            item.id.as_str().to_owned(),
+            env.worktree.clone(),
+            sealed_oid,
+            crate::daemon::detamu_host::BindingKind::Sealed,
+        );
+    }
+    Ok(ok_item(&state, item, "sealed"))
+}
+
+#[derive(Debug, Deserialize)]
+struct ChangesHistoryQuery {
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Serialize)]
+struct ChangesHistoryEntry {
+    oid: String,
+    author_name: String,
+    author_email: String,
+    authored_at: i64,
+    subject: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ChangesHistoryResponse {
+    work_id: String,
+    commits: Vec<ChangesHistoryEntry>,
+}
+
+async fn changes_history(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Query(query): Query<ChangesHistoryQuery>,
+) -> ApiResult<Json<ChangesHistoryResponse>> {
+    let id = parse_work_id(&work_id)?;
+    let item = forge(&state).load(&id).map_err(map_err)?;
+    let environment = item.workspace_environment().cloned().ok_or_else(|| {
+        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+    })?;
+    let limit = query.limit.unwrap_or(50).clamp(1, 200);
+    let range = format!("{}..HEAD", environment.baseline_oid.as_str());
+    let commits = forge(&state)
+        .git()
+        .log_commits(&environment.worktree, &range, limit)
+        .or_else(|_| {
+            forge(&state)
+                .git()
+                .log_commits(&environment.worktree, "HEAD", limit)
+        })
+        .map_err(map_err)?
+        .into_iter()
+        .map(|commit| ChangesHistoryEntry {
+            oid: commit.oid.as_str().to_owned(),
+            author_name: commit.author_name,
+            author_email: commit.author_email,
+            authored_at: commit.authored_at,
+            subject: commit.subject,
+        })
+        .collect();
+    Ok(Json(ChangesHistoryResponse {
+        work_id: id.as_str().to_owned(),
+        commits,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+struct ChangesBlameQuery {
+    path: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ChangesBlameHunk {
+    oid: String,
+    author_name: String,
+    author_email: String,
+    authored_at: i64,
+    summary: String,
+    start_line: u32,
+    line_count: u32,
+}
+
+#[derive(Debug, Serialize)]
+struct ChangesBlameResponse {
+    work_id: String,
+    path: String,
+    hunks: Vec<ChangesBlameHunk>,
+}
+
+async fn changes_blame(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Query(query): Query<ChangesBlameQuery>,
+) -> ApiResult<Json<ChangesBlameResponse>> {
+    let id = parse_work_id(&work_id)?;
+    let (_, path) = normalize_source_relative(&query.path)?;
+    let item = forge(&state).load(&id).map_err(map_err)?;
+    let environment = item.workspace_environment().cloned().ok_or_else(|| {
+        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+    })?;
+    let hunks = forge(&state)
+        .git()
+        .blame(&environment.worktree, &path)
+        .map_err(map_err)?
+        .into_iter()
+        .map(|hunk| ChangesBlameHunk {
+            oid: hunk.oid.as_str().to_owned(),
+            author_name: hunk.author_name,
+            author_email: hunk.author_email,
+            authored_at: hunk.authored_at,
+            summary: hunk.summary,
+            start_line: hunk.start_line,
+            line_count: hunk.line_count,
+        })
+        .collect();
+    Ok(Json(ChangesBlameResponse {
+        work_id: id.as_str().to_owned(),
+        path,
+        hunks,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+struct ResolveChangesConflictRequest {
+    path: String,
+    /// `ours`, `theirs`, or `baseline`.
+    resolution: String,
+    #[serde(default)]
+    expected_working_digest: Option<String>,
+    lease_id: String,
+    generation: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct ResolveChangesConflictResponse {
+    work_id: String,
+    path: String,
+    action: String,
+    changes: ForgeChangesResponse,
+}
+
+async fn resolve_changes_conflict(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<ResolveChangesConflictRequest>,
+) -> ApiResult<Json<ResolveChangesConflictResponse>> {
+    let id = parse_work_id(&work_id)?;
+    let (_, path) = normalize_source_relative(&body.path)?;
+    let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+    let environment = item.workspace_environment().cloned().ok_or_else(|| {
+        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+    })?;
+    let comparison = changes_file_diff(&state, &id, &path)?;
+    if !comparison.conflict && comparison.status != "unmerged" {
+        return Err(request_error(
+            StatusCode::CONFLICT,
+            "file is not in an unmerged conflict state",
+        ));
+    }
+    if let Some(expected) = body
+        .expected_working_digest
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        match comparison.working_digest.as_deref() {
+            Some(have) if have != expected => {
+                return Err(request_error(
+                    StatusCode::CONFLICT,
+                    "the working copy changed; refresh Changes before resolving",
+                ));
+            }
+            None => {
+                return Err(request_error(
+                    StatusCode::CONFLICT,
+                    "the working copy changed; refresh Changes before resolving",
+                ));
+            }
+            _ => {}
+        }
+    }
+    let resolution = body.resolution.trim().to_ascii_lowercase();
+    let action = match resolution.as_str() {
+        "ours" | "theirs" => {
+            forge(&state)
+                .git()
+                .checkout_conflict_side(&environment.worktree, &path, &resolution)
+                .map_err(map_err)?;
+            forge(&state)
+                .git()
+                .add_path(&environment.worktree, &path)
+                .map_err(map_err)?;
+            format!("resolved_{resolution}")
+        }
+        "baseline" => {
+            if comparison.binary {
+                return Err(request_error(
+                    StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                    "binary conflict baseline restore is not available from Home",
+                ));
+            }
+            let content = comparison.baseline.content.clone().ok_or_else(|| {
+                request_error(
+                    StatusCode::CONFLICT,
+                    "baseline text is unavailable for this conflict",
+                )
+            })?;
+            let candidate = environment.worktree.join(&path);
+            let (destination, _) = if candidate.is_file() {
+                resolve_source_path(&environment.worktree, &path)?
+            } else {
+                resolve_new_source_path(&environment.worktree, &path)?
+            };
+            if let Some(parent) = destination.parent() {
+                std::fs::create_dir_all(parent).map_err(|err| {
+                    request_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("could not resolve conflict: {err}"),
+                    )
+                })?;
+            }
+            std::fs::write(&destination, content.as_bytes()).map_err(|err| {
+                request_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("could not resolve conflict: {err}"),
+                )
+            })?;
+            forge(&state)
+                .git()
+                .add_path(&environment.worktree, &path)
+                .map_err(map_err)?;
+            "resolved_baseline".into()
+        }
+        _ => {
+            return Err(request_error(
+                StatusCode::BAD_REQUEST,
+                "resolution must be ours, theirs, or baseline",
+            ));
+        }
+    };
+    let digest = std::fs::read(environment.worktree.join(&path))
+        .ok()
+        .map(|bytes| source_digest(&bytes));
+    publish_project_change(
+        &state,
+        &item,
+        ForgeProjectEventKind::Changed,
+        Some(path.clone()),
+        None,
+        digest,
+    );
+    remember_worktree(&state, &item, &environment.worktree);
+    Ok(Json(ResolveChangesConflictResponse {
+        work_id: id.as_str().to_owned(),
+        path,
+        action,
+        changes: build_changes_response(&state, &id)?,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+struct RevertChangesHunkRequest {
+    path: String,
+    /// 0-based hunk index from `GET …/changes/file`.
+    hunk_index: usize,
+    expected_working_digest: String,
+    lease_id: String,
+    generation: u64,
+}
+
+fn apply_hunks_except(
+    baseline: &str,
+    hunks: &[ReviewDiffHunk],
+    skip: usize,
+) -> ApiResult<String> {
+    let mut lines: Vec<String> = if baseline.is_empty() {
+        Vec::new()
+    } else {
+        let mut out: Vec<String> = baseline.split('\n').map(str::to_string).collect();
+        if baseline.ends_with('\n') {
+            out.pop();
+        }
+        out
+    };
+    // Apply remaining hunks from bottom to top so earlier offsets stay valid.
+    let mut ordered: Vec<(usize, &ReviewDiffHunk)> = hunks
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| *index != skip)
+        .collect();
+    ordered.sort_by(|a, b| b.1.old_start.cmp(&a.1.old_start));
+    for (_, hunk) in ordered {
+        let start = hunk.old_start.saturating_sub(1);
+        if start > lines.len() {
+            return Err(request_error(
+                StatusCode::CONFLICT,
+                "hunk no longer applies cleanly; refresh the diff",
+            ));
+        }
+        let mut replacement: Vec<String> = Vec::new();
+        let mut consumed = 0usize;
+        for line in &hunk.lines {
+            match line.kind.as_str() {
+                "context" => {
+                    replacement.push(line.content.clone());
+                    consumed += 1;
+                }
+                "deletion" => {
+                    consumed += 1;
+                }
+                "addition" => {
+                    replacement.push(line.content.clone());
+                }
+                _ => {}
+            }
+        }
+        let end = (start + consumed).min(lines.len());
+        lines.splice(start..end, replacement);
+    }
+    let mut out = lines.join("\n");
+    if baseline.ends_with('\n') && !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    } else if baseline.ends_with('\n') && out.is_empty() {
+        // empty file with trailing newline convention — leave empty
+    }
+    Ok(out)
+}
+
+async fn revert_changes_hunk(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<RevertChangesHunkRequest>,
+) -> ApiResult<Json<RestoreChangesFileResponse>> {
+    let id = parse_work_id(&work_id)?;
+    let comparison = changes_file_diff(&state, &id, &body.path)?;
+    if comparison.binary {
+        return Err(request_error(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "hunk revert is only available for text files",
+        ));
+    }
+    if comparison.hunks.is_empty() {
+        return Err(request_error(
+            StatusCode::CONFLICT,
+            "no hunks to revert",
+        ));
+    }
+    if body.hunk_index >= comparison.hunks.len() {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "hunk_index is out of range",
+        ));
+    }
+    let expected = body.expected_working_digest.trim();
+    match comparison.working_digest.as_deref() {
+        Some(have) if have == expected => {}
+        _ => {
+            return Err(request_error(
+                StatusCode::CONFLICT,
+                "the working copy changed; refresh Changes before reverting",
+            ));
+        }
+    }
+    let baseline = comparison.baseline.content.clone().unwrap_or_default();
+    let next = apply_hunks_except(&baseline, &comparison.hunks, body.hunk_index)?;
+    let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+    let environment = item.workspace_environment().cloned().ok_or_else(|| {
+        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+    })?;
+    let candidate = environment.worktree.join(&comparison.path);
+    let (destination, relative) = if candidate.is_file() || comparison.working.exists {
+        if candidate.is_file() {
+            resolve_source_path(&environment.worktree, &comparison.path)?
+        } else {
+            resolve_new_source_path(&environment.worktree, &comparison.path)?
+        }
+    } else {
+        resolve_new_source_path(&environment.worktree, &comparison.path)?
+    };
+    if next.is_empty() && !comparison.baseline.exists {
+        if destination.is_file() {
+            std::fs::remove_file(&destination).map_err(|err| {
+                request_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("could not revert hunk: {err}"),
+                )
+            })?;
+        }
+        publish_project_change(
+            &state,
+            &item,
+            ForgeProjectEventKind::Deleted,
+            Some(relative.clone()),
+            None,
+            None,
+        );
+        remember_worktree(&state, &item, &environment.worktree);
+        return Ok(Json(RestoreChangesFileResponse {
+            work_id: id.as_str().to_owned(),
+            path: relative,
+            action: "hunk_reverted_deleted".into(),
+            digest: None,
+        }));
+    }
+    if let Some(parent) = destination.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| {
+            request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not revert hunk: {err}"),
+            )
+        })?;
+    }
+    std::fs::write(&destination, next.as_bytes()).map_err(|err| {
+        request_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("could not revert hunk: {err}"),
+        )
+    })?;
+    let digest = source_digest(next.as_bytes());
+    publish_project_change(
+        &state,
+        &item,
+        ForgeProjectEventKind::Changed,
+        Some(relative.clone()),
+        None,
+        Some(digest.clone()),
+    );
+    remember_worktree(&state, &item, &environment.worktree);
+    Ok(Json(RestoreChangesFileResponse {
+        work_id: id.as_str().to_owned(),
+        path: relative,
+        action: "hunk_reverted".into(),
+        digest: Some(digest),
     }))
 }
 
@@ -2116,6 +4598,241 @@ async fn get_review(
         review.world = Some(host.binding_status_json(item.id.as_str()).await);
     }
     Ok(Json(review))
+}
+
+#[derive(Debug, Deserialize)]
+struct AddReviewCommentRequest {
+    evidence_id: String,
+    #[serde(default)]
+    attempt_id: Option<String>,
+    path: String,
+    #[serde(default = "default_comment_side")]
+    side: String,
+    start_line: u32,
+    #[serde(default)]
+    end_line: Option<u32>,
+    #[serde(default)]
+    anchor_text: Option<String>,
+    body: String,
+    #[serde(default)]
+    parent_id: Option<String>,
+}
+
+fn default_comment_side() -> String {
+    "new".into()
+}
+
+#[derive(Debug, Deserialize)]
+struct PatchReviewCommentRequest {
+    #[serde(default)]
+    resolve: Option<bool>,
+    #[serde(default)]
+    body: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RequestReviewChangesRequest {
+    evidence_id: String,
+    evidence_digest: String,
+    #[serde(default)]
+    summary: Option<String>,
+    #[serde(default)]
+    comment_ids: Option<Vec<String>>,
+}
+
+async fn list_review_comments(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Query(query): Query<ReviewSelectionQuery>,
+) -> ApiResult<Json<Vec<ReviewCommentProjection>>> {
+    let id = parse_work_id(&work_id)?;
+    let item = forge(&state).load(&id).map_err(map_err)?;
+    let attempt_id = query
+        .attempt_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| medousa_forge::model::AttemptId::from(value.to_string()));
+    let review = build_review_for_attempt(forge(&state).as_ref(), &item, attempt_id.as_ref());
+    Ok(Json(review.comments))
+}
+
+async fn add_review_comment(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<AddReviewCommentRequest>,
+) -> ApiResult<Json<ItemProjection>> {
+    let id = parse_work_id(&work_id)?;
+    let actor = actor_from_state(&state);
+    let evidence_id = EvidenceId::from(body.evidence_id);
+    let attempt_id = body
+        .attempt_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| medousa_forge::model::AttemptId::from(value.to_string()));
+    let parent_id = body
+        .parent_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| ReviewCommentId::from(value.to_string()));
+    let end_line = body.end_line.unwrap_or(body.start_line);
+    let item = forge(&state)
+        .add_review_comment(
+            &id,
+            evidence_id,
+            attempt_id,
+            body.path,
+            body.side,
+            body.start_line,
+            end_line,
+            body.anchor_text,
+            body.body,
+            parent_id,
+            &actor,
+        )
+        .map_err(map_err)?;
+    Ok(ok_item(&state, item, "review_comment_added"))
+}
+
+async fn patch_review_comment(
+    State(state): State<AppState>,
+    Path((work_id, comment_id)): Path<(String, String)>,
+    Json(body): Json<PatchReviewCommentRequest>,
+) -> ApiResult<Json<ItemProjection>> {
+    let id = parse_work_id(&work_id)?;
+    let actor = actor_from_state(&state);
+    let comment_id = ReviewCommentId::from(comment_id);
+    if body.resolve.is_none() && body.body.is_none() {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "patch requires resolve and/or body",
+        ));
+    }
+    if body.resolve == Some(false) {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "unresolving comments is not supported",
+        ));
+    }
+    let forge = forge(&state);
+    let mut item = forge.load(&id).map_err(map_err)?;
+    if let Some(text) = body.body {
+        item = forge
+            .update_review_comment_body(&id, &comment_id, text, &actor)
+            .map_err(map_err)?;
+    }
+    if body.resolve == Some(true) {
+        item = forge
+            .resolve_review_comment(&id, &comment_id, &actor)
+            .map_err(map_err)?;
+    }
+    Ok(ok_item(&state, item, "review_comment_updated"))
+}
+
+async fn delete_review_comment(
+    State(state): State<AppState>,
+    Path((work_id, comment_id)): Path<(String, String)>,
+) -> ApiResult<Json<ItemProjection>> {
+    let id = parse_work_id(&work_id)?;
+    let actor = actor_from_state(&state);
+    let comment_id = ReviewCommentId::from(comment_id);
+    let item = forge(&state)
+        .delete_review_comment(&id, &comment_id, &actor)
+        .map_err(map_err)?;
+    Ok(ok_item(&state, item, "review_comment_deleted"))
+}
+
+async fn request_review_changes(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<RequestReviewChangesRequest>,
+) -> ApiResult<Json<ItemProjection>> {
+    let id = parse_work_id(&work_id)?;
+    let actor = actor_from_state(&state);
+    let evidence_id = EvidenceId::from(body.evidence_id);
+    let evidence_digest = medousa_forge::model::Digest::from_hex(body.evidence_digest);
+    let comment_ids = body.comment_ids.map(|ids| {
+        ids.into_iter()
+            .map(ReviewCommentId::from)
+            .collect::<Vec<_>>()
+    });
+    let item = forge(&state)
+        .request_changes(
+            &id,
+            evidence_id,
+            evidence_digest,
+            body.summary,
+            comment_ids,
+            &actor,
+        )
+        .map_err(map_err)?;
+    Ok(ok_item(&state, item, "changes_requested"))
+}
+
+/// Reopen sealed review for human edits (no agent). Same custody path as
+/// restore-from-review, without mutating a specific file.
+async fn continue_editing(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+) -> ApiResult<Json<BeginAttemptResponse>> {
+    let id = parse_work_id(&work_id)?;
+    let actor = actor_from_state(&state);
+    let forge = forge(&state);
+    let item = forge.load(&id).map_err(map_err)?;
+    if item.state != WorkState::AwaitingReview {
+        return Err(request_error(
+            StatusCode::CONFLICT,
+            format!("Cannot continue editing in state {}", item.state),
+        ));
+    }
+    let source_attempt_id = item
+        .attempts
+        .iter()
+        .filter(|attempt| attempt.evidence_id.is_some())
+        .max_by_key(|attempt| attempt.seq)
+        .map(|attempt| attempt.id.clone())
+        .ok_or_else(|| {
+            request_error(
+                StatusCode::CONFLICT,
+                "No sealed evidence to continue editing from",
+            )
+        })?;
+    forge
+        .reopen_for_changes(&id, "Continue editing after review", &actor)
+        .map_err(map_err)?;
+    let (item, lease) = forge
+        .begin_isolated_attempt_from(
+            &id,
+            &source_attempt_id,
+            ExecutorDescriptor {
+                kind: "human".into(),
+                detail: serde_json::json!({"reason": "continue_editing"}),
+            },
+            None,
+            &actor,
+        )
+        .map_err(map_err)?;
+    let environment = item
+        .environment_for_attempt(&lease.attempt_id)
+        .ok_or_else(|| {
+            request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "isolated attempt has no governed environment",
+            )
+        })?;
+    let attempt_id = lease.attempt_id.as_str().to_owned();
+    let worktree = environment.worktree.display().to_string();
+    let branch = environment.branch.clone();
+    publish_item(&state, &item, "continue_editing");
+    Ok(Json(BeginAttemptResponse {
+        item: project_item(item),
+        lease,
+        attempt_id,
+        worktree,
+        branch,
+    }))
 }
 
 #[derive(Debug, Deserialize)]
@@ -2530,6 +5247,24 @@ struct ProjectTask {
     provider: String,
     #[serde(default)]
     long_running: bool,
+    /// Optional regex (unanchored) that marks a background task ready.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ready_pattern: Option<String>,
+    /// Optional VS Code-style problem matcher pattern for this task.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    problem_matcher: Option<ProjectProblemPattern>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ProjectProblemPattern {
+    regexp: String,
+    /// 1-based capture group indices (VS Code tasks.json convention).
+    file: u8,
+    line: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    column: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    message: Option<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2570,16 +5305,362 @@ struct ProjectTaskRun {
     state: String,
     task: ProjectTask,
     result: Option<ProjectTaskResult>,
+    /// Bounded live stdout retained while the run is active (and after for replay).
+    #[serde(default)]
+    stdout: String,
+    /// Bounded live stderr retained while the run is active (and after for replay).
+    #[serde(default)]
+    stderr: String,
+    #[serde(default)]
+    output_truncated: bool,
+    /// Next chunk sequence number for SSE `?since=` replay.
+    #[serde(default)]
+    next_seq: u64,
+    /// Incrementally matched problem locations (also on final result).
+    #[serde(default)]
+    locations: Vec<ProjectOutputLocation>,
+    /// Loopback URL detected when a long-running task became ready.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ready_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ProjectTaskOutputEvent {
+    seq: u64,
+    run_id: String,
+    kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stream: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    state: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    result: Option<ProjectTaskResult>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    locations: Option<Vec<ProjectOutputLocation>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ready_url: Option<String>,
+}
+
+const TASK_OUTPUT_CAP: usize = 256 * 1024;
+const TASK_CHUNK_REPLAY_CAP: usize = 400;
+const CONFIGURED_TASK_CAP: usize = 24;
+
+struct ProjectTaskRunStore {
+    run: ProjectTaskRun,
+    root: PathBuf,
+    ready_re: Option<regex::Regex>,
+    problem_re: Option<(regex::Regex, ProjectProblemPattern)>,
+    chunks: std::collections::VecDeque<ProjectTaskOutputEvent>,
+    tx: tokio::sync::broadcast::Sender<ProjectTaskOutputEvent>,
 }
 
 static PROJECT_TASK_RUNS: LazyLock<
-    tokio::sync::RwLock<std::collections::HashMap<String, ProjectTaskRun>>,
+    tokio::sync::RwLock<std::collections::HashMap<String, ProjectTaskRunStore>>,
 > = LazyLock::new(|| tokio::sync::RwLock::new(std::collections::HashMap::new()));
 static PROJECT_TASK_CHILDREN: LazyLock<
     tokio::sync::RwLock<
         std::collections::HashMap<String, Arc<tokio::sync::Mutex<tokio::process::Child>>>,
     >,
 > = LazyLock::new(|| tokio::sync::RwLock::new(std::collections::HashMap::new()));
+
+fn append_bounded_output(buf: &mut String, chunk: &str, truncated: &mut bool) {
+    if chunk.is_empty() {
+        return;
+    }
+    buf.push_str(chunk);
+    if buf.len() <= TASK_OUTPUT_CAP {
+        return;
+    }
+    *truncated = true;
+    let drain = buf.len() - TASK_OUTPUT_CAP;
+    let drain = buf
+        .char_indices()
+        .find(|(index, _)| *index >= drain)
+        .map(|(index, _)| index)
+        .unwrap_or(drain);
+    buf.drain(..drain);
+}
+
+fn task_run_is_terminal(run: &ProjectTaskRun) -> bool {
+    matches!(run.state.as_str(), "passed" | "failed")
+        || (run.state == "cancelled" && run.result.is_some())
+}
+
+fn task_output_event_is_terminal(event: &ProjectTaskOutputEvent) -> bool {
+    event.kind == "state" && event.result.is_some()
+}
+
+fn default_ready_pattern() -> &'static str {
+    r"(?i)(listening on|local:\s*https?://|ready in\b|compiled successfully|started server|webpack compiled|vite.+ready|nest application successfully started|serving on\b)"
+}
+
+fn compile_ready_pattern(task: &ProjectTask) -> Option<regex::Regex> {
+    if !task.long_running {
+        return None;
+    }
+    let pattern = task
+        .ready_pattern
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| default_ready_pattern());
+    regex::Regex::new(pattern).ok()
+}
+
+fn compile_problem_pattern(
+    task: &ProjectTask,
+) -> Option<(regex::Regex, ProjectProblemPattern)> {
+    let pattern = task.problem_matcher.as_ref()?;
+    let re = regex::Regex::new(&pattern.regexp).ok()?;
+    Some((re, pattern.clone()))
+}
+
+fn merge_task_locations(
+    into: &mut Vec<ProjectOutputLocation>,
+    incoming: impl IntoIterator<Item = ProjectOutputLocation>,
+) {
+    for location in incoming {
+        if into.iter().any(|existing| {
+            existing.path == location.path
+                && existing.line == location.line
+                && existing.column == location.column
+        }) {
+            continue;
+        }
+        into.push(location);
+        if into.len() >= 100 {
+            break;
+        }
+    }
+}
+
+fn parse_output_locations_with_matcher(
+    root: &FsPath,
+    output: &str,
+    matcher: Option<&(regex::Regex, ProjectProblemPattern)>,
+) -> Vec<ProjectOutputLocation> {
+    let Some((re, pattern)) = matcher else {
+        return parse_output_locations(root, output);
+    };
+    let mut locations = Vec::new();
+    for line_text in output.lines() {
+        let Some(captures) = re.captures(line_text) else {
+            continue;
+        };
+        let file_idx = usize::from(pattern.file);
+        let line_idx = usize::from(pattern.line);
+        let Some(raw) = captures.get(file_idx).map(|m| m.as_str()) else {
+            continue;
+        };
+        let line = captures
+            .get(line_idx)
+            .and_then(|m| m.as_str().parse().ok())
+            .unwrap_or(1);
+        let column = pattern
+            .column
+            .and_then(|idx| captures.get(usize::from(idx)))
+            .and_then(|m| m.as_str().parse().ok());
+        let message = pattern
+            .message
+            .and_then(|idx| captures.get(usize::from(idx)))
+            .map(|m| m.as_str().chars().take(300).collect())
+            .unwrap_or_else(|| line_text.trim().chars().take(300).collect());
+        let path = std::path::Path::new(raw.trim());
+        let relative = if path.is_absolute() {
+            path.strip_prefix(root).ok()
+        } else {
+            Some(path)
+        };
+        let Some(relative) = relative else {
+            continue;
+        };
+        if relative
+            .components()
+            .any(|part| matches!(part, std::path::Component::ParentDir))
+        {
+            continue;
+        }
+        locations.push(ProjectOutputLocation {
+            path: relative.to_string_lossy().replace('\\', "/"),
+            line,
+            column,
+            message,
+        });
+        if locations.len() >= 100 {
+            break;
+        }
+    }
+    locations
+}
+
+fn push_task_event(store: &mut ProjectTaskRunStore, event: ProjectTaskOutputEvent) {
+    store.chunks.push_back(event.clone());
+    while store.chunks.len() > TASK_CHUNK_REPLAY_CAP {
+        store.chunks.pop_front();
+    }
+    let _ = store.tx.send(event);
+}
+
+async fn publish_task_output(run_id: &str, stream: &str, text: &str) {
+    if text.is_empty() {
+        return;
+    }
+    let became_ready = {
+        let mut runs = PROJECT_TASK_RUNS.write().await;
+        let Some(store) = runs.get_mut(run_id) else {
+            return;
+        };
+        if stream == "stderr" {
+            append_bounded_output(&mut store.run.stderr, text, &mut store.run.output_truncated);
+        } else {
+            append_bounded_output(&mut store.run.stdout, text, &mut store.run.output_truncated);
+        }
+        let matched = parse_output_locations_with_matcher(
+            &store.root,
+            text,
+            store.problem_re.as_ref(),
+        );
+        let before = store.run.locations.len();
+        merge_task_locations(&mut store.run.locations, matched);
+        let new_locations = if store.run.locations.len() > before {
+            Some(store.run.locations[before..].to_vec())
+        } else {
+            None
+        };
+        let seq = store.run.next_seq;
+        store.run.next_seq = seq.saturating_add(1);
+        push_task_event(
+            store,
+            ProjectTaskOutputEvent {
+                seq,
+                run_id: run_id.to_owned(),
+                kind: "output".into(),
+                stream: Some(stream.into()),
+                text: Some(text.to_owned()),
+                state: None,
+                result: None,
+                locations: new_locations,
+                ready_url: None,
+            },
+        );
+        let waiting_for_ready = store.run.task.long_running
+            && matches!(store.run.state.as_str(), "running")
+            && store.ready_re.is_some();
+        let matched_ready = waiting_for_ready
+            && store
+                .ready_re
+                .as_ref()
+                .is_some_and(|re| re.is_match(text));
+        if matched_ready {
+            let haystack = format!("{}\n{}\n{}", store.run.stdout, store.run.stderr, text);
+            if let Some(url) = crate::daemon::forge_preview::extract_ready_url(&haystack) {
+                store.run.ready_url = Some(url);
+            } else if let Some(url) = crate::daemon::forge_preview::extract_ready_url(text) {
+                store.run.ready_url = Some(url);
+            }
+        }
+        matched_ready
+    };
+    if became_ready {
+        let (work_id, ready_url) = {
+            let runs = PROJECT_TASK_RUNS.read().await;
+            runs.get(run_id)
+                .map(|store| (store.run.work_id.clone(), store.run.ready_url.clone()))
+                .unwrap_or_default()
+        };
+        if let (true, Some(url)) = (!work_id.is_empty(), ready_url.as_ref()) {
+            let _ = crate::daemon::forge_preview::mint_preview_grant(&work_id, run_id, url).await;
+        }
+        publish_task_state(run_id, "ready", None).await;
+    }
+}
+
+async fn publish_task_state(
+    run_id: &str,
+    state: &str,
+    result: Option<ProjectTaskResult>,
+) {
+    let mut runs = PROJECT_TASK_RUNS.write().await;
+    let Some(store) = runs.get_mut(run_id) else {
+        return;
+    };
+    // Readiness must not clobber cancel/terminal states.
+    if state == "ready" && store.run.state != "running" {
+        return;
+    }
+    store.run.state = state.to_owned();
+    if let Some(result) = result.clone() {
+        if !result.stdout.is_empty() {
+            store.run.stdout = result.stdout.clone();
+        }
+        if !result.stderr.is_empty() {
+            store.run.stderr = result.stderr.clone();
+        }
+        store.run.output_truncated = store.run.output_truncated || result.truncated;
+        if !result.locations.is_empty() {
+            merge_task_locations(&mut store.run.locations, result.locations.clone());
+        }
+        store.run.result = Some(result);
+    }
+    let seq = store.run.next_seq;
+    store.run.next_seq = seq.saturating_add(1);
+    push_task_event(
+        store,
+        ProjectTaskOutputEvent {
+            seq,
+            run_id: run_id.to_owned(),
+            kind: "state".into(),
+            stream: None,
+            text: None,
+            state: Some(state.to_owned()),
+            result: store.run.result.clone(),
+            locations: if store.run.locations.is_empty() {
+                None
+            } else {
+                Some(store.run.locations.clone())
+            },
+            ready_url: store.run.ready_url.clone(),
+        },
+    );
+}
+
+async fn pump_task_stream(
+    run_id: String,
+    stream_name: &'static str,
+    mut reader: tokio::process::ChildStdout,
+) {
+    use tokio::io::AsyncReadExt;
+    let mut buf = [0u8; 4096];
+    loop {
+        match reader.read(&mut buf).await {
+            Ok(0) => break,
+            Ok(n) => {
+                let text = String::from_utf8_lossy(&buf[..n]).into_owned();
+                publish_task_output(&run_id, stream_name, &text).await;
+            }
+            Err(_) => break,
+        }
+    }
+}
+
+async fn pump_task_stderr(
+    run_id: String,
+    mut reader: tokio::process::ChildStderr,
+) {
+    use tokio::io::AsyncReadExt;
+    let mut buf = [0u8; 4096];
+    loop {
+        match reader.read(&mut buf).await {
+            Ok(0) => break,
+            Ok(n) => {
+                let text = String::from_utf8_lossy(&buf[..n]).into_owned();
+                publish_task_output(&run_id, "stderr", &text).await;
+            }
+            Err(_) => break,
+        }
+    }
+}
 
 #[derive(Debug, Deserialize)]
 struct RunProjectTaskRequest {
@@ -2629,6 +5710,8 @@ fn detected_project_tasks(root: &FsPath) -> Vec<ProjectTask> {
             argv: argv.iter().map(|part| (*part).to_string()).collect(),
             provider: argv.first().copied().unwrap_or("project").into(),
             long_running: kind == "run",
+            ready_pattern: None,
+            problem_matcher: None,
         });
     };
     if root.join("Cargo.toml").is_file() {
@@ -2704,6 +5787,267 @@ fn detected_project_tasks(root: &FsPath) -> Vec<ProjectTask> {
     tasks
 }
 
+fn strip_tasks_jsonc(raw: &str) -> String {
+    raw.lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn load_tasks_json_value(root: &FsPath) -> Option<serde_json::Value> {
+    let bytes = std::fs::read(root.join(".vscode").join("tasks.json")).ok()?;
+    if let Ok(value) = serde_json::from_slice(&bytes) {
+        return Some(value);
+    }
+    let text = String::from_utf8_lossy(&bytes);
+    serde_json::from_str(&strip_tasks_jsonc(&text)).ok()
+}
+
+fn sanitize_task_id_slug(label: &str) -> String {
+    let slug = label
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    let slug = slug.trim_matches('-').to_owned();
+    if slug.is_empty() {
+        "task".into()
+    } else {
+        slug.chars().take(48).collect()
+    }
+}
+
+fn npm_script_is_safe(script: &str) -> bool {
+    !script.is_empty()
+        && script.len() <= 64
+        && script
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | ':' | '.'))
+}
+
+fn infer_configured_task_kind(label: &str, script: Option<&str>, background: bool) -> &'static str {
+    if background {
+        return "run";
+    }
+    let hay = format!("{} {}", label, script.unwrap_or("")).to_ascii_lowercase();
+    if hay.contains("test") {
+        "test"
+    } else if hay.contains("build") || hay.contains("compile") {
+        "build"
+    } else {
+        "verify"
+    }
+}
+
+fn parse_problem_matcher_value(value: &serde_json::Value) -> Option<ProjectProblemPattern> {
+    let pattern = if value.is_object() && value.get("pattern").is_some() {
+        value.get("pattern")?
+    } else {
+        value
+    };
+    let regexp = pattern.get("regexp")?.as_str()?.to_owned();
+    if regexp.trim().is_empty() || regexp.len() > 512 {
+        return None;
+    }
+    let file = pattern.get("file")?.as_u64()? as u8;
+    let line = pattern.get("line")?.as_u64()? as u8;
+    if file == 0 || line == 0 {
+        return None;
+    }
+    Some(ProjectProblemPattern {
+        regexp,
+        file,
+        line,
+        column: pattern
+            .get("column")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u8)
+            .filter(|v| *v > 0),
+        message: pattern
+            .get("message")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u8)
+            .filter(|v| *v > 0),
+    })
+}
+
+fn first_problem_matcher(value: &serde_json::Value) -> Option<ProjectProblemPattern> {
+    match value {
+        serde_json::Value::Array(items) => items.iter().find_map(parse_problem_matcher_value),
+        other => parse_problem_matcher_value(other),
+    }
+}
+
+fn configured_task_ready_pattern(task: &serde_json::Value) -> Option<String> {
+    let matcher = task.get("problemMatcher")?;
+    let matchers = match matcher {
+        serde_json::Value::Array(items) => items.as_slice(),
+        other => std::slice::from_ref(other),
+    };
+    for entry in matchers {
+        if let Some(pattern) = entry
+            .get("background")
+            .and_then(|bg| bg.get("endsPattern"))
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty() && value.len() <= 512)
+        {
+            return Some(pattern.to_owned());
+        }
+        if let Some(pattern) = entry
+            .get("background")
+            .and_then(|bg| bg.get("beginsPattern"))
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty() && value.len() <= 512)
+        {
+            // Prefer endsPattern; beginsPattern alone is still a useful readiness hint.
+            return Some(pattern.to_owned());
+        }
+    }
+    None
+}
+
+fn configured_project_tasks(root: &FsPath) -> Vec<ProjectTask> {
+    let Some(document) = load_tasks_json_value(root) else {
+        return Vec::new();
+    };
+    let Some(items) = document.get("tasks").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    let mut tasks = Vec::new();
+    let mut used_ids = std::collections::HashSet::new();
+    for item in items.iter().take(CONFIGURED_TASK_CAP.saturating_mul(2)) {
+        if tasks.len() >= CONFIGURED_TASK_CAP {
+            break;
+        }
+        let label = item
+            .get("label")
+            .or_else(|| item.get("script"))
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("");
+        if label.is_empty() {
+            continue;
+        }
+        let task_type = item
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("shell")
+            .to_ascii_lowercase();
+        let background = item
+            .get("isBackground")
+            .or_else(|| item.get("is_background"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+            || item
+                .get("problemMatcher")
+                .map(|matcher| match matcher {
+                    serde_json::Value::Array(items) => items
+                        .iter()
+                        .any(|entry| entry.get("background").is_some()),
+                    other => other.get("background").is_some(),
+                })
+                .unwrap_or(false);
+        let (argv, script_name) = match task_type.as_str() {
+            "npm" => {
+                let script = item
+                    .get("script")
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .unwrap_or("");
+                if !npm_script_is_safe(script) {
+                    continue;
+                }
+                (
+                    vec!["npm".into(), "run".into(), script.to_owned()],
+                    Some(script.to_owned()),
+                )
+            }
+            "process" | "shell" => {
+                let Some(command) = item
+                    .get("command")
+                    .and_then(|v| {
+                        v.as_str().map(str::to_owned).or_else(|| {
+                            v.get("value")
+                                .and_then(|inner| inner.as_str())
+                                .map(str::to_owned)
+                        })
+                    })
+                    .map(|value| value.trim().to_owned())
+                    .filter(|value| !value.is_empty())
+                else {
+                    continue;
+                };
+                let args = item
+                    .get("args")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(str::to_owned))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                if args.is_empty() && command.contains(char::is_whitespace) && task_type == "shell"
+                {
+                    (vec!["sh".into(), "-c".into(), command], None)
+                } else {
+                    let mut argv = vec![command];
+                    argv.extend(args);
+                    (argv, None)
+                }
+            }
+            _ => continue,
+        };
+        if argv.is_empty() || argv.len() > 32 || argv.iter().any(|part| part.len() > 512) {
+            continue;
+        }
+        let mut id = format!("configured-{}", sanitize_task_id_slug(label));
+        let mut suffix = 2u32;
+        while !used_ids.insert(id.clone()) {
+            id = format!("configured-{}-{suffix}", sanitize_task_id_slug(label));
+            suffix = suffix.saturating_add(1);
+        }
+        let kind = infer_configured_task_kind(label, script_name.as_deref(), background);
+        tasks.push(ProjectTask {
+            id,
+            label: label.to_owned(),
+            kind: kind.into(),
+            argv,
+            provider: "vscode-tasks".into(),
+            long_running: background || kind == "run",
+            ready_pattern: configured_task_ready_pattern(item),
+            problem_matcher: item.get("problemMatcher").and_then(first_problem_matcher),
+        });
+    }
+    tasks
+}
+
+fn project_tasks(root: &FsPath) -> Vec<ProjectTask> {
+    let mut tasks = detected_project_tasks(root);
+    let mut seen_ids = tasks
+        .iter()
+        .map(|task| task.id.clone())
+        .collect::<std::collections::HashSet<_>>();
+    let seen_argv = tasks
+        .iter()
+        .map(|task| task.argv.clone())
+        .collect::<std::collections::HashSet<_>>();
+    for task in configured_project_tasks(root) {
+        if !seen_ids.insert(task.id.clone()) || seen_argv.contains(&task.argv) {
+            continue;
+        }
+        tasks.push(task);
+    }
+    tasks
+}
+
 fn parse_output_locations(root: &FsPath, output: &str) -> Vec<ProjectOutputLocation> {
     let mut locations = Vec::new();
     for line_text in output.lines() {
@@ -2775,7 +6119,7 @@ async fn list_project_tasks(
         })?
         .worktree
         .clone();
-    Ok(Json(detected_project_tasks(&root)))
+    Ok(Json(project_tasks(&root)))
 }
 
 fn discover_project_tests(root: &FsPath, tasks: &[ProjectTask]) -> Vec<ProjectTest> {
@@ -2854,11 +6198,27 @@ fn discover_project_tests(root: &FsPath, tasks: &[ProjectTask]) -> Vec<ProjectTe
 async fn list_project_tests(
     State(state): State<AppState>,
     Path(work_id): Path<String>,
+    Query(query): Query<ReviewSelectionQuery>,
 ) -> ApiResult<Json<Vec<ProjectTest>>> {
     let id = parse_work_id(&work_id)?;
     let item = forge(&state).load(&id).map_err(map_err)?;
-    let root = item
-        .workspace_environment()
+    let selected_attempt = query
+        .attempt_id
+        .as_deref()
+        .map(|attempt_id| medousa_forge::model::AttemptId::from(attempt_id.to_string()));
+    if selected_attempt
+        .as_ref()
+        .is_some_and(|attempt_id| item.attempt(attempt_id).is_none())
+    {
+        return Err(request_error(
+            StatusCode::NOT_FOUND,
+            "test-discovery attempt does not belong to this undertaking",
+        ));
+    }
+    let root = selected_attempt
+        .as_ref()
+        .and_then(|attempt_id| item.environment_for_attempt(attempt_id))
+        .or_else(|| item.workspace_environment())
         .ok_or_else(|| {
             request_error(
                 StatusCode::CONFLICT,
@@ -2867,7 +6227,7 @@ async fn list_project_tests(
         })?
         .worktree
         .clone();
-    let tasks = detected_project_tasks(&root);
+    let tasks = project_tasks(&root);
     Ok(Json(discover_project_tests(&root, &tasks)))
 }
 
@@ -2889,7 +6249,7 @@ async fn start_project_task_run(
         })?
         .worktree
         .clone();
-    let mut task = detected_project_tasks(&root)
+    let mut task = project_tasks(&root)
         .into_iter()
         .find(|task| task.id == task_id)
         .ok_or_else(|| {
@@ -2900,12 +6260,20 @@ async fn start_project_task_run(
         })?;
     target_project_test(&root, &mut task, body.test_id.as_deref())?;
     let run_id = format!("run-{}", uuid::Uuid::new_v4());
+    let ready_re = compile_ready_pattern(&task);
+    let problem_re = compile_problem_pattern(&task);
     let run = ProjectTaskRun {
         run_id: run_id.clone(),
         work_id: work_id.clone(),
         state: "running".into(),
         task: task.clone(),
         result: None,
+        stdout: String::new(),
+        stderr: String::new(),
+        output_truncated: false,
+        next_seq: 0,
+        locations: Vec::new(),
+        ready_url: None,
     };
     let mut child = background_tokio_command(&task.argv[0])
         .args(&task.argv[1..])
@@ -2920,28 +6288,26 @@ async fn start_project_task_run(
                 format!("Could not run {}: {err}", task.label),
             )
         })?;
-    PROJECT_TASK_RUNS
-        .write()
-        .await
-        .insert(run_id.clone(), run.clone());
-    let mut stdout_stream = child.stdout.take();
-    let mut stderr_stream = child.stderr.take();
-    let stdout_reader = tokio::spawn(async move {
-        use tokio::io::AsyncReadExt;
-        let mut bytes = Vec::new();
-        if let Some(ref mut stream) = stdout_stream {
-            let _ = stream.read_to_end(&mut bytes).await;
-        }
-        bytes
-    });
-    let stderr_reader = tokio::spawn(async move {
-        use tokio::io::AsyncReadExt;
-        let mut bytes = Vec::new();
-        if let Some(ref mut stream) = stderr_stream {
-            let _ = stream.read_to_end(&mut bytes).await;
-        }
-        bytes
-    });
+    let (tx, _) = tokio::sync::broadcast::channel(256);
+    PROJECT_TASK_RUNS.write().await.insert(
+        run_id.clone(),
+        ProjectTaskRunStore {
+            run: run.clone(),
+            root: root.clone(),
+            ready_re,
+            problem_re,
+            chunks: std::collections::VecDeque::new(),
+            tx,
+        },
+    );
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    if let Some(stdout) = stdout {
+        tokio::spawn(pump_task_stream(run_id.clone(), "stdout", stdout));
+    }
+    if let Some(stderr) = stderr {
+        tokio::spawn(pump_task_stderr(run_id.clone(), stderr));
+    }
     let child = Arc::new(tokio::sync::Mutex::new(child));
     PROJECT_TASK_CHILDREN
         .write()
@@ -2954,22 +6320,46 @@ async fn start_project_task_run(
         loop {
             let status = { child.lock().await.try_wait().ok().flatten() };
             if let Some(status) = status {
-                let stdout_bytes = stdout_reader.await.unwrap_or_default();
-                let stderr_bytes = stderr_reader.await.unwrap_or_default();
-                const CAP: usize = 64 * 1024;
-                let truncated = stdout_bytes.len() > CAP || stderr_bytes.len() > CAP;
-                let stdout = String::from_utf8_lossy(&stdout_bytes[..stdout_bytes.len().min(CAP)])
-                    .into_owned();
-                let stderr = String::from_utf8_lossy(&stderr_bytes[..stderr_bytes.len().min(CAP)])
-                    .into_owned();
-                let locations = parse_output_locations(&root, &format!("{stdout}\n{stderr}"));
+                // Give stream pumps a moment to flush final bytes.
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                let (stdout, stderr, output_truncated, prior_locations, problem_re) = {
+                    let runs = PROJECT_TASK_RUNS.read().await;
+                    runs.get(&run_id_for_task)
+                        .map(|store| {
+                            (
+                                store.run.stdout.clone(),
+                                store.run.stderr.clone(),
+                                store.run.output_truncated,
+                                store.run.locations.clone(),
+                                store.problem_re.clone(),
+                            )
+                        })
+                        .unwrap_or_else(|| {
+                            (
+                                String::new(),
+                                String::new(),
+                                false,
+                                Vec::new(),
+                                None,
+                            )
+                        })
+                };
+                let mut locations = prior_locations;
+                merge_task_locations(
+                    &mut locations,
+                    parse_output_locations_with_matcher(
+                        &root,
+                        &format!("{stdout}\n{stderr}"),
+                        problem_re.as_ref(),
+                    ),
+                );
                 let result = ProjectTaskResult {
                     task: task.clone(),
                     success: status.success(),
                     exit_code: status.code(),
                     stdout,
                     stderr,
-                    truncated,
+                    truncated: output_truncated,
                     duration_ms: started.elapsed().as_millis(),
                     locations,
                 };
@@ -2977,14 +6367,18 @@ async fn start_project_task_run(
                     .read()
                     .await
                     .get(&run_id_for_task)
-                    .is_some_and(|run| run.state == "cancelled");
+                    .is_some_and(|store| {
+                        matches!(store.run.state.as_str(), "cancelled")
+                    });
                 let _ = forge.append_command_log(&lease, &serde_json::json!({"kind":if cancelled {"project_task_cancelled"} else {"project_task"},"run_id":run_id_for_task,"task":result.task,"success":result.success,"exit_code":result.exit_code,"duration_ms":result.duration_ms,"stdout":result.stdout,"stderr":result.stderr,"truncated":result.truncated,"locations":result.locations}));
-                if let Some(stored) = PROJECT_TASK_RUNS.write().await.get_mut(&run_id_for_task) {
-                    if !cancelled {
-                        stored.state = if result.success { "passed" } else { "failed" }.into();
-                    }
-                    stored.result = Some(result);
-                }
+                let final_state = if cancelled {
+                    "cancelled"
+                } else if result.success {
+                    "passed"
+                } else {
+                    "failed"
+                };
+                publish_task_state(&run_id_for_task, final_state, Some(result)).await;
                 PROJECT_TASK_CHILDREN.write().await.remove(&run_id_for_task);
                 publish_item(&state_for_run, &item, "task_finished");
                 break;
@@ -3002,10 +6396,57 @@ async fn get_project_task_run(
         .read()
         .await
         .get(&run_id)
-        .cloned()
+        .map(|store| store.run.clone())
         .filter(|run| run.work_id == work_id)
         .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "Project run was not found"))?;
     Ok(Json(run))
+}
+
+#[derive(Debug, Serialize)]
+struct TaskRunPreviewResponse {
+    work_id: String,
+    run_id: String,
+    ready_url: String,
+    port: u16,
+    token: String,
+    preview_path: String,
+}
+
+async fn create_task_run_preview(
+    Path((work_id, run_id)): Path<(String, String)>,
+) -> ApiResult<Json<TaskRunPreviewResponse>> {
+    let run = PROJECT_TASK_RUNS
+        .read()
+        .await
+        .get(&run_id)
+        .map(|store| store.run.clone())
+        .filter(|run| run.work_id == work_id)
+        .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "Project run was not found"))?;
+    let ready_url = run.ready_url.clone().ok_or_else(|| {
+        request_error(
+            StatusCode::CONFLICT,
+            "This run is not ready for Browser preview yet",
+        )
+    })?;
+    let port = crate::daemon::forge_preview::port_from_ready_url(&ready_url).ok_or_else(|| {
+        request_error(StatusCode::CONFLICT, "Could not determine the preview port")
+    })?;
+    let token = match crate::daemon::forge_preview::preview_token_for_run(&work_id, &run_id).await {
+        Some(token) => token,
+        None => crate::daemon::forge_preview::mint_preview_grant(&work_id, &run_id, &ready_url)
+            .await
+            .ok_or_else(|| {
+                request_error(StatusCode::CONFLICT, "Could not mint a preview grant")
+            })?,
+    };
+    Ok(Json(TaskRunPreviewResponse {
+        work_id,
+        run_id,
+        ready_url,
+        port,
+        preview_path: crate::daemon::forge_preview::preview_path_for_token(&token),
+        token,
+    }))
 }
 
 async fn cancel_project_task_run(
@@ -3015,7 +6456,7 @@ async fn cancel_project_task_run(
         .read()
         .await
         .get(&run_id)
-        .is_none_or(|run| run.work_id != work_id)
+        .is_none_or(|store| store.run.work_id != work_id)
     {
         return Err(request_error(
             StatusCode::NOT_FOUND,
@@ -3034,13 +6475,105 @@ async fn cancel_project_task_run(
             format!("Could not stop project run: {err}"),
         )
     })?;
-    let mut runs = PROJECT_TASK_RUNS.write().await;
-    let run = runs
-        .get_mut(&run_id)
+    publish_task_state(&run_id, "cancelled", None).await;
+    let run = PROJECT_TASK_RUNS
+        .read()
+        .await
+        .get(&run_id)
+        .map(|store| store.run.clone())
         .filter(|run| run.work_id == work_id)
         .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "Project run was not found"))?;
-    run.state = "cancelled".into();
-    Ok(Json(run.clone()))
+    Ok(Json(run))
+}
+
+#[derive(Debug, Deserialize)]
+struct TaskRunEventsQuery {
+    #[serde(default)]
+    since: Option<u64>,
+}
+
+async fn project_task_run_events(
+    Path((work_id, run_id)): Path<(String, String)>,
+    Query(query): Query<TaskRunEventsQuery>,
+) -> ApiResult<
+    axum::response::Sse<
+        impl futures_util::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>
+            + Send,
+    >,
+> {
+    use axum::response::sse::{Event, KeepAlive, Sse};
+    use futures_util::stream::unfold;
+    use std::convert::Infallible;
+    use std::time::Duration;
+
+    let since = query.since.unwrap_or(0);
+    let (pending, rx, terminal) = {
+        let runs = PROJECT_TASK_RUNS.read().await;
+        let store = runs
+            .get(&run_id)
+            .filter(|store| store.run.work_id == work_id)
+            .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "Project run was not found"))?;
+        let pending = store
+            .chunks
+            .iter()
+            .filter(|event| event.seq >= since)
+            .cloned()
+            .collect::<std::collections::VecDeque<_>>();
+        // Cancel may flip state before the process exits and final result lands.
+        let terminal = task_run_is_terminal(&store.run);
+        (pending, store.tx.subscribe(), terminal)
+    };
+
+    struct StreamState {
+        pending: std::collections::VecDeque<ProjectTaskOutputEvent>,
+        rx: tokio::sync::broadcast::Receiver<ProjectTaskOutputEvent>,
+        last_seq: u64,
+        terminal: bool,
+    }
+
+    let initial = StreamState {
+        pending,
+        rx,
+        last_seq: since.saturating_sub(1),
+        terminal,
+    };
+
+    let stream = unfold(initial, |mut state| async move {
+        loop {
+            if let Some(event) = state.pending.pop_front() {
+                if event.seq <= state.last_seq {
+                    continue;
+                }
+                state.last_seq = event.seq;
+                let done = task_output_event_is_terminal(&event);
+                let data = serde_json::to_string(&event).unwrap_or_else(|_| "{}".into());
+                if done {
+                    state.terminal = true;
+                }
+                return Some((
+                    Ok::<_, Infallible>(Event::default().event("task").data(data)),
+                    state,
+                ));
+            }
+            if state.terminal {
+                return None;
+            }
+            match state.rx.recv().await {
+                Ok(event) => {
+                    if event.seq <= state.last_seq {
+                        continue;
+                    }
+                    state.pending.push_back(event);
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    state.terminal = true;
+                }
+            }
+        }
+    });
+
+    Ok(Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
 }
 
 async fn run_project_task(
@@ -3061,7 +6594,7 @@ async fn run_project_task(
         })?
         .worktree
         .clone();
-    let task = detected_project_tasks(&root)
+    let task = project_tasks(&root)
         .into_iter()
         .find(|task| task.id == task_id)
         .ok_or_else(|| {
@@ -4156,6 +7689,24 @@ async fn apply_decision(
     let item = forge(&state)
         .apply_decision(&id, &decision_id, &actor)
         .map_err(map_err)?;
+    let memory_lineage = crate::agent_runtime::coder_tools::finalize_coder_memory_lineage(
+        state.platform.agent().tool_registry.clone(),
+        forge(&state),
+        &item,
+        Some(&decision_id),
+    )
+    .await;
+    if memory_lineage
+        .get("ok")
+        .and_then(serde_json::Value::as_bool)
+        == Some(false)
+    {
+        tracing::warn!(
+            work_id = %item.id,
+            report = %memory_lineage,
+            "accepted Coder memory lineage finalized with deferred work"
+        );
+    }
     Ok(ok_item(&state, item, "applied"))
 }
 
@@ -4166,6 +7717,24 @@ async fn discard_item(
     let id = parse_work_id(&work_id)?;
     let actor = actor_from_state(&state);
     let item = forge(&state).discard(&id, &actor).map_err(map_err)?;
+    let memory_lineage = crate::agent_runtime::coder_tools::finalize_coder_memory_lineage(
+        state.platform.agent().tool_registry.clone(),
+        forge(&state),
+        &item,
+        None,
+    )
+    .await;
+    if memory_lineage
+        .get("ok")
+        .and_then(serde_json::Value::as_bool)
+        == Some(false)
+    {
+        tracing::warn!(
+            work_id = %item.id,
+            report = %memory_lineage,
+            "discarded Coder memory lineage finalized with deferred work"
+        );
+    }
     Ok(ok_item(&state, item, "discarded"))
 }
 
@@ -4418,9 +7987,409 @@ async fn forge_stream(
     Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
 }
 
+#[derive(Debug, Deserialize)]
+struct ProjectEventStreamQuery {
+    #[serde(default)]
+    since: Option<u64>,
+}
+
+async fn forge_project_event_stream(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Query(query): Query<ProjectEventStreamQuery>,
+) -> ApiResult<
+    axum::response::Sse<
+        impl futures_util::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>
+            + use<>,
+    >,
+> {
+    use axum::response::sse::{Event, KeepAlive, Sse};
+    use futures_util::stream::unfold;
+    use std::collections::VecDeque;
+    use std::convert::Infallible;
+    use std::time::Duration;
+
+    let id = parse_work_id(&work_id)?;
+    let item = forge(&state).load(&id).map_err(map_err)?;
+    if let Some(env) = item
+        .attempts
+        .last()
+        .and_then(|attempt| item.environment_for_attempt(&attempt.id))
+    {
+        remember_worktree(&state, &item, &env.worktree);
+    }
+
+    let since = query.since.unwrap_or(0);
+    // Subscribe before snapshot so live events cannot slip between the two.
+    let receiver = state.forge_events.subscribe_project();
+    let pending: VecDeque<_> = state
+        .forge_events
+        .snapshot_project_since(id.as_str(), since)
+        .into();
+    let work_id = id.as_str().to_owned();
+
+    struct StreamState {
+        work_id: String,
+        receiver: tokio::sync::broadcast::Receiver<crate::daemon::forge_events::ForgeProjectEvent>,
+        pending: VecDeque<crate::daemon::forge_events::ForgeProjectEvent>,
+        last_seq: u64,
+        bus: crate::daemon::forge_events::ForgeEventBus,
+    }
+
+    let initial = StreamState {
+        work_id: work_id.clone(),
+        receiver,
+        pending,
+        last_seq: since,
+        bus: state.forge_events.clone(),
+    };
+
+    let stream = unfold(initial, |mut state| async move {
+        loop {
+            if let Some(event) = state.pending.pop_front() {
+                if event.seq <= state.last_seq {
+                    continue;
+                }
+                state.last_seq = event.seq;
+                let data = serde_json::to_string(&event).unwrap_or_else(|_| "{}".into());
+                return Some((
+                    Ok::<_, Infallible>(Event::default().event("project").data(data)),
+                    state,
+                ));
+            }
+            match state.receiver.recv().await {
+                Ok(event) => {
+                    if event.work_id != state.work_id || event.seq <= state.last_seq {
+                        continue;
+                    }
+                    state.last_seq = event.seq;
+                    let data = serde_json::to_string(&event).unwrap_or_else(|_| "{}".into());
+                    return Some((
+                        Ok::<_, Infallible>(Event::default().event("project").data(data)),
+                        state,
+                    ));
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    state.pending.extend(
+                        state
+                            .bus
+                            .snapshot_project_since(&state.work_id, state.last_seq),
+                    );
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+            }
+        }
+    });
+
+    Ok(Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
+}
+
 #[cfg(test)]
 mod source_tests {
     use super::*;
+
+    #[test]
+    fn start_code_project_command_normalizes_request_fields() {
+        let command = StartCodeProjectCommand::new(
+            " session-a ",
+            StartSessionCodeProjectRequest {
+                title: " Project ".into(),
+                brief: " Brief ".into(),
+                source: CodeProjectSource::Repository,
+                repo_path: Some(" /workspace/project ".into()),
+                base_ref: Some("  ".into()),
+            },
+        )
+        .expect("valid project request");
+
+        assert_eq!(command.session_id.as_str(), "session-a");
+        assert_eq!(command.title.as_str(), "Project");
+        assert_eq!(command.brief.as_str(), "Brief");
+        assert_eq!(
+            command.repo_path.as_ref().unwrap().as_str(),
+            "/workspace/project"
+        );
+        assert_eq!(command.base_ref.as_str(), "main");
+    }
+
+    #[test]
+    fn start_code_project_command_rejects_missing_required_values() {
+        let missing_repo = StartCodeProjectCommand::new(
+            "session-a",
+            StartSessionCodeProjectRequest {
+                title: "Project".into(),
+                brief: "Brief".into(),
+                source: CodeProjectSource::Repository,
+                repo_path: Some(" \n\t".into()),
+                base_ref: None,
+            },
+        )
+        .expect_err("repository source requires a path");
+        assert_eq!(
+            missing_repo,
+            "repo_path is required for an existing repository"
+        );
+
+        let missing_title = StartCodeProjectCommand::new(
+            "session-a",
+            StartSessionCodeProjectRequest {
+                title: " \n\t".into(),
+                brief: "Brief".into(),
+                source: CodeProjectSource::Blank,
+                repo_path: None,
+                base_ref: None,
+            },
+        )
+        .expect_err("title is required");
+        assert_eq!(missing_title, "session_id, title, and brief are required");
+    }
+
+    #[test]
+    fn porcelain_change_status_maps_kinds() {
+        use medousa_forge::git::{PorcelainEntry, PorcelainKind};
+        assert_eq!(
+            porcelain_change_status(&PorcelainEntry {
+                path: "a.rs".into(),
+                kind: PorcelainKind::Unmerged,
+                orig_path: None,
+                xy: Some("UU".into()),
+            }),
+            Some("unmerged")
+        );
+        assert_eq!(
+            porcelain_change_status(&PorcelainEntry {
+                path: "b.rs".into(),
+                kind: PorcelainKind::Untracked,
+                orig_path: None,
+                xy: None,
+            }),
+            Some("untracked")
+        );
+        assert_eq!(
+            porcelain_change_status(&PorcelainEntry {
+                path: "c.rs".into(),
+                kind: PorcelainKind::Ordinary,
+                orig_path: None,
+                xy: Some(".M".into()),
+            }),
+            Some("modified")
+        );
+        assert_eq!(
+            porcelain_change_status(&PorcelainEntry {
+                path: "d.rs".into(),
+                kind: PorcelainKind::Ignored,
+                orig_path: None,
+                xy: None,
+            }),
+            None
+        );
+    }
+
+    #[test]
+    fn apply_hunks_except_skips_selected_hunk() {
+        let baseline = "a\nb\nc\n";
+        let hunks = vec![
+            ReviewDiffHunk {
+                old_start: 1,
+                old_count: 1,
+                new_start: 1,
+                new_count: 1,
+                lines: vec![
+                    ReviewDiffLine {
+                        kind: "deletion".into(),
+                        old_line: Some(1),
+                        new_line: None,
+                        content: "a".into(),
+                    },
+                    ReviewDiffLine {
+                        kind: "addition".into(),
+                        old_line: None,
+                        new_line: Some(1),
+                        content: "A".into(),
+                    },
+                ],
+            },
+            ReviewDiffHunk {
+                old_start: 3,
+                old_count: 1,
+                new_start: 3,
+                new_count: 1,
+                lines: vec![
+                    ReviewDiffLine {
+                        kind: "deletion".into(),
+                        old_line: Some(3),
+                        new_line: None,
+                        content: "c".into(),
+                    },
+                    ReviewDiffLine {
+                        kind: "addition".into(),
+                        old_line: None,
+                        new_line: Some(3),
+                        content: "C".into(),
+                    },
+                ],
+            },
+        ];
+        let with_both = apply_hunks_except(baseline, &hunks, usize::MAX).unwrap();
+        assert_eq!(with_both, "A\nb\nC\n");
+        let skip_first = apply_hunks_except(baseline, &hunks, 0).unwrap();
+        assert_eq!(skip_first, "a\nb\nC\n");
+    }
+
+    #[test]
+    fn task_output_is_bounded_and_marks_truncation() {
+        let mut buf = String::new();
+        let mut truncated = false;
+        append_bounded_output(&mut buf, &"a".repeat(TASK_OUTPUT_CAP), &mut truncated);
+        assert!(!truncated);
+        assert_eq!(buf.len(), TASK_OUTPUT_CAP);
+        append_bounded_output(&mut buf, "xyz", &mut truncated);
+        assert!(truncated);
+        assert_eq!(buf.len(), TASK_OUTPUT_CAP);
+        assert!(buf.ends_with("xyz"));
+    }
+
+    #[test]
+    fn task_run_terminal_requires_final_result_after_cancel() {
+        let task = ProjectTask {
+            id: "cargo-check".into(),
+            label: "Check".into(),
+            kind: "verify".into(),
+            argv: vec!["cargo".into(), "check".into()],
+            provider: "cargo".into(),
+            long_running: false,
+            ready_pattern: None,
+            problem_matcher: None,
+        };
+        let mut run = ProjectTaskRun {
+            run_id: "run-1".into(),
+            work_id: "work-1".into(),
+            state: "cancelled".into(),
+            task: task.clone(),
+            result: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            output_truncated: false,
+            next_seq: 1,
+            locations: Vec::new(),
+            ready_url: None,
+        };
+        assert!(!task_run_is_terminal(&run));
+        run.result = Some(ProjectTaskResult {
+            task,
+            success: false,
+            exit_code: Some(1),
+            stdout: String::new(),
+            stderr: String::new(),
+            truncated: false,
+            duration_ms: 10,
+            locations: Vec::new(),
+        });
+        assert!(task_run_is_terminal(&run));
+        assert!(task_output_event_is_terminal(&ProjectTaskOutputEvent {
+            seq: 2,
+            run_id: "run-1".into(),
+            kind: "state".into(),
+            stream: None,
+            text: None,
+            state: Some("cancelled".into()),
+            result: run.result.clone(),
+            locations: None,
+            ready_url: None,
+        }));
+        assert!(!task_output_event_is_terminal(&ProjectTaskOutputEvent {
+            seq: 1,
+            run_id: "run-1".into(),
+            kind: "state".into(),
+            stream: None,
+            text: None,
+            state: Some("cancelled".into()),
+            result: None,
+            locations: None,
+            ready_url: None,
+        }));
+    }
+
+    #[test]
+    fn configured_tasks_json_merges_safe_shell_and_npm_entries() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join(".vscode")).unwrap();
+        std::fs::write(
+            root.path().join(".vscode/tasks.json"),
+            r#"{
+              // project tasks
+              "version": "2.0.0",
+              "tasks": [
+                {
+                  "label": "Lint",
+                  "type": "npm",
+                  "script": "lint",
+                  "problemMatcher": {
+                    "pattern": {
+                      "regexp": "^(.*):(\\d+):(\\d+):\\s+(.*)$",
+                      "file": 1,
+                      "line": 2,
+                      "column": 3,
+                      "message": 4
+                    }
+                  }
+                },
+                {
+                  "label": "Dev server",
+                  "type": "shell",
+                  "command": "npm",
+                  "args": ["run", "dev"],
+                  "isBackground": true,
+                  "problemMatcher": {
+                    "background": { "endsPattern": "Local:" },
+                    "pattern": { "regexp": "^(.*):(\\d+):(\\d+):\\s+(.*)$", "file": 1, "line": 2, "column": 3, "message": 4 }
+                  }
+                },
+                { "label": "Danger", "type": "npm", "script": "rm -rf /" }
+              ]
+            }"#,
+        )
+        .unwrap();
+        let tasks = project_tasks(root.path());
+        let lint = tasks.iter().find(|task| task.id == "configured-lint").unwrap();
+        assert_eq!(lint.argv, vec!["npm", "run", "lint"]);
+        assert_eq!(lint.provider, "vscode-tasks");
+        assert!(lint.problem_matcher.is_some());
+        let dev = tasks
+            .iter()
+            .find(|task| task.id == "configured-dev-server")
+            .unwrap();
+        assert!(dev.long_running);
+        assert_eq!(dev.ready_pattern.as_deref(), Some("Local:"));
+        assert!(!tasks.iter().any(|task| task.label == "Danger"));
+    }
+
+    #[test]
+    fn readiness_and_matcher_patterns_parse_incremental_output() {
+        let root = PathBuf::from("/work/project");
+        let matcher = (
+            regex::Regex::new(r"^(.*):(\d+):(\d+):\s+(.*)$").unwrap(),
+            ProjectProblemPattern {
+                regexp: r"^(.*):(\d+):(\d+):\s+(.*)$".into(),
+                file: 1,
+                line: 2,
+                column: Some(3),
+                message: Some(4),
+            },
+        );
+        let locations = parse_output_locations_with_matcher(
+            &root,
+            "src/app.ts:10:2: Unexpected token",
+            Some(&matcher),
+        );
+        assert_eq!(locations[0].path, "src/app.ts");
+        assert_eq!(locations[0].line, 10);
+        assert_eq!(locations[0].column, Some(2));
+        assert_eq!(locations[0].message, "Unexpected token");
+        let ready = regex::Regex::new(default_ready_pattern()).unwrap();
+        assert!(ready.is_match("  ➜  Local:   http://localhost:5173/"));
+        assert!(!ready.is_match("compiling modules"));
+    }
 
     #[test]
     fn repository_readiness_errors_keep_domain_specific_statuses() {
@@ -4462,7 +8431,7 @@ mod source_tests {
     }
 
     #[test]
-    fn new_source_paths_require_a_safe_existing_parent() {
+    fn new_source_paths_create_missing_parents_safely() {
         let root = tempfile::tempdir().unwrap();
         std::fs::create_dir(root.path().join("src")).unwrap();
 
@@ -4475,10 +8444,295 @@ mod source_tests {
                 .join("new.rs")
         );
 
-        assert!(resolve_new_source_path(root.path(), "missing/new.rs").is_err());
+        let (nested, nested_relative) =
+            resolve_new_source_path(root.path(), "missing/new.rs").unwrap();
+        assert_eq!(nested_relative, "missing/new.rs");
+        assert!(nested
+            .parent()
+            .is_some_and(|parent| parent.ends_with("missing")));
         assert!(resolve_new_source_path(root.path(), ".git/hooks/new-hook").is_err());
         std::fs::write(root.path().join("src/existing.rs"), "fn existing() {}\n").unwrap();
         assert!(resolve_new_source_path(root.path(), "src/existing.rs").is_err());
+    }
+
+    #[test]
+    fn source_reads_preview_binary_and_large_text() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("ok.rs"), "fn ok() {}\n").unwrap();
+        let ok = read_source_response(&WorkId::from("work-1".to_string()), root.path(), "ok.rs")
+            .unwrap();
+        assert_eq!(ok.encoding.as_deref(), Some("utf-8"));
+        assert!(!ok.preview);
+        assert!(!ok.truncated);
+        assert!(ok.content.contains("fn ok"));
+
+        std::fs::write(root.path().join("blob.bin"), [0u8, 1, 2, 255, b'A']).unwrap();
+        let binary =
+            read_source_response(&WorkId::from("work-1".to_string()), root.path(), "blob.bin")
+                .unwrap();
+        assert_eq!(binary.encoding.as_deref(), Some("binary"));
+        assert!(binary.preview);
+        assert!(binary.content.contains("Binary file"));
+        assert!(binary.content.contains("00000000"));
+
+        let large = "x".repeat(MAX_SOURCE_BYTES + 64);
+        std::fs::write(root.path().join("huge.txt"), &large).unwrap();
+        let preview =
+            read_source_response(&WorkId::from("work-1".to_string()), root.path(), "huge.txt")
+                .unwrap();
+        assert!(preview.truncated);
+        assert!(preview.preview);
+        assert_eq!(preview.byte_size, large.len());
+        assert_eq!(preview.content.len(), MAX_SOURCE_BYTES);
+        assert_eq!(preview.encoding.as_deref(), Some("utf-8"));
+    }
+
+    #[test]
+    fn workspace_source_edits_apply_mixed_operations_atomically() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("modify.rs"), "old\n").unwrap();
+        std::fs::write(root.path().join("move.rs"), "moving\n").unwrap();
+        std::fs::write(root.path().join("delete.rs"), "gone\n").unwrap();
+        let request = SourceWorkspaceEditRequest {
+            preconditions: vec![
+                SourceWorkspacePrecondition::Existing {
+                    path: "modify.rs".into(),
+                    expected_digest: source_digest(b"old\n"),
+                },
+                SourceWorkspacePrecondition::Existing {
+                    path: "move.rs".into(),
+                    expected_digest: source_digest(b"moving\n"),
+                },
+                SourceWorkspacePrecondition::Existing {
+                    path: "delete.rs".into(),
+                    expected_digest: source_digest(b"gone\n"),
+                },
+                SourceWorkspacePrecondition::Missing {
+                    path: "created.rs".into(),
+                },
+                SourceWorkspacePrecondition::Missing {
+                    path: "moved.rs".into(),
+                },
+            ],
+            operations: vec![
+                SourceWorkspaceOperation::Write {
+                    path: "modify.rs".into(),
+                    content: "new\n".into(),
+                },
+                SourceWorkspaceOperation::Create {
+                    path: "created.rs".into(),
+                    content: "created\n".into(),
+                },
+                SourceWorkspaceOperation::Rename {
+                    path: "move.rs".into(),
+                    destination: "moved.rs".into(),
+                },
+                SourceWorkspaceOperation::Delete {
+                    path: "delete.rs".into(),
+                },
+            ],
+            lease_id: "lease-1".into(),
+            generation: 1,
+        };
+
+        let responses = execute_source_workspace_edit(
+            &WorkId::from("work-1".to_string()),
+            root.path(),
+            &request,
+        )
+        .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("modify.rs")).unwrap(),
+            "new\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("created.rs")).unwrap(),
+            "created\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("moved.rs")).unwrap(),
+            "moving\n"
+        );
+        assert!(!root.path().join("move.rs").exists());
+        assert!(!root.path().join("delete.rs").exists());
+        assert_eq!(
+            responses
+                .iter()
+                .map(|response| response.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["created.rs", "modify.rs", "moved.rs"]
+        );
+    }
+
+    #[test]
+    fn workspace_source_edits_support_create_edit_rename_order() {
+        let root = tempfile::tempdir().unwrap();
+        let request = SourceWorkspaceEditRequest {
+            preconditions: vec![
+                SourceWorkspacePrecondition::Missing {
+                    path: "temporary.ts".into(),
+                },
+                SourceWorkspacePrecondition::Missing {
+                    path: "final.ts".into(),
+                },
+            ],
+            operations: vec![
+                SourceWorkspaceOperation::Create {
+                    path: "temporary.ts".into(),
+                    content: String::new(),
+                },
+                SourceWorkspaceOperation::Write {
+                    path: "temporary.ts".into(),
+                    content: "export const ready = true;\n".into(),
+                },
+                SourceWorkspaceOperation::Rename {
+                    path: "temporary.ts".into(),
+                    destination: "final.ts".into(),
+                },
+            ],
+            lease_id: "lease-1".into(),
+            generation: 1,
+        };
+
+        execute_source_workspace_edit(&WorkId::from("work-1".to_string()), root.path(), &request)
+            .unwrap();
+
+        assert!(!root.path().join("temporary.ts").exists());
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("final.ts")).unwrap(),
+            "export const ready = true;\n"
+        );
+    }
+
+    #[test]
+    fn workspace_source_edit_validation_leaves_every_file_unchanged() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("keep.rs"), "original\n").unwrap();
+        let request = SourceWorkspaceEditRequest {
+            preconditions: vec![SourceWorkspacePrecondition::Existing {
+                path: "keep.rs".into(),
+                expected_digest: source_digest(b"original\n"),
+            }],
+            operations: vec![
+                SourceWorkspaceOperation::Write {
+                    path: "keep.rs".into(),
+                    content: "changed\n".into(),
+                },
+                SourceWorkspaceOperation::Delete {
+                    path: "keep.rs".into(),
+                },
+                SourceWorkspaceOperation::Delete {
+                    path: "keep.rs".into(),
+                },
+            ],
+            lease_id: "lease-1".into(),
+            generation: 1,
+        };
+
+        assert!(
+            execute_source_workspace_edit(
+                &WorkId::from("work-1".to_string()),
+                root.path(),
+                &request,
+            )
+            .is_err()
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("keep.rs")).unwrap(),
+            "original\n"
+        );
+    }
+
+    #[test]
+    fn workspace_source_edits_require_digest_or_absence_for_every_path() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("unfenced.rs"), "original\n").unwrap();
+        let request = SourceWorkspaceEditRequest {
+            preconditions: vec![],
+            operations: vec![SourceWorkspaceOperation::Write {
+                path: "unfenced.rs".into(),
+                content: "changed\n".into(),
+            }],
+            lease_id: "lease-1".into(),
+            generation: 1,
+        };
+
+        assert!(
+            execute_source_workspace_edit(
+                &WorkId::from("work-1".to_string()),
+                root.path(),
+                &request,
+            )
+            .is_err()
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("unfenced.rs")).unwrap(),
+            "original\n"
+        );
+    }
+
+    #[test]
+    fn workspace_source_edits_reject_stale_and_unused_preconditions() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("target.rs"), "current\n").unwrap();
+        std::fs::write(root.path().join("extra.rs"), "extra\n").unwrap();
+
+        let stale = SourceWorkspaceEditRequest {
+            preconditions: vec![SourceWorkspacePrecondition::Existing {
+                path: "target.rs".into(),
+                expected_digest: source_digest(b"stale\n"),
+            }],
+            operations: vec![SourceWorkspaceOperation::Write {
+                path: "target.rs".into(),
+                content: "changed\n".into(),
+            }],
+            lease_id: "lease-1".into(),
+            generation: 1,
+        };
+        assert!(
+            execute_source_workspace_edit(
+                &WorkId::from("work-1".to_string()),
+                root.path(),
+                &stale,
+            )
+            .is_err()
+        );
+
+        let unused = SourceWorkspaceEditRequest {
+            preconditions: vec![
+                SourceWorkspacePrecondition::Existing {
+                    path: "target.rs".into(),
+                    expected_digest: source_digest(b"current\n"),
+                },
+                SourceWorkspacePrecondition::Existing {
+                    path: "extra.rs".into(),
+                    expected_digest: source_digest(b"extra\n"),
+                },
+            ],
+            operations: vec![SourceWorkspaceOperation::Write {
+                path: "target.rs".into(),
+                content: "changed\n".into(),
+            }],
+            lease_id: "lease-1".into(),
+            generation: 1,
+        };
+        assert!(
+            execute_source_workspace_edit(
+                &WorkId::from("work-1".to_string()),
+                root.path(),
+                &unused,
+            )
+            .is_err()
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("target.rs")).unwrap(),
+            "current\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("extra.rs")).unwrap(),
+            "extra\n"
+        );
     }
 
     #[test]
@@ -4494,15 +8748,26 @@ mod source_tests {
         .unwrap();
         assert_eq!(legacy.active_path.as_deref(), Some("src/lib.rs"));
         assert!(legacy.secondary_path.is_none());
+        assert!(legacy.layout.is_none());
 
         let split = CodeWorkspaceState {
             tabs: legacy.tabs,
             active_path: legacy.active_path,
             secondary_path: Some("src/main.rs".into()),
+            layout: Some(CodeWorkspaceLayout {
+                context_panel: Some("problems".into()),
+                terminal: true,
+                tests: false,
+                search: false,
+                changes: false,
+            }),
             updated_at: None,
         };
         let encoded = serde_json::to_value(split).unwrap();
         assert_eq!(encoded["secondary_path"], "src/main.rs");
+        assert_eq!(encoded["layout"]["context_panel"], "problems");
+        assert_eq!(encoded["layout"]["terminal"], true);
+        assert!(encoded["layout"].get("tests").is_none());
     }
 
     #[test]
@@ -4541,6 +8806,149 @@ mod source_tests {
             Some("??"),
         );
         assert!(!tree.truncated);
+    }
+
+    #[test]
+    fn repository_search_finds_untracked_honors_ignore_and_paginates() {
+        let root = tempfile::tempdir().unwrap();
+        let git = |args: &[&str]| {
+            let status = std::process::Command::new("git")
+                .args(args)
+                .current_dir(root.path())
+                .status()
+                .unwrap();
+            assert!(status.success());
+        };
+        git(&["init", "-q"]);
+        std::fs::write(root.path().join("tracked.rs"), "fn alpha_hit() {}\n").unwrap();
+        std::fs::write(root.path().join("fresh.rs"), "fn alpha_hit() {}\n").unwrap();
+        std::fs::write(root.path().join(".gitignore"), "secret/\n").unwrap();
+        std::fs::create_dir(root.path().join("secret")).unwrap();
+        std::fs::write(root.path().join("secret/hidden.rs"), "fn alpha_hit() {}\n").unwrap();
+        git(&["add", "tracked.rs", ".gitignore"]);
+
+        let options = SourceSearchOptions {
+            needle: "alpha_hit".into(),
+            regex: false,
+            case_sensitive: true,
+            whole_word: false,
+            include: Vec::new(),
+            exclude: Vec::new(),
+            include_ignored: false,
+            changed_only: false,
+            limit: 1,
+            skip: 0,
+        };
+        let (page1, truncated, next) =
+            run_repository_search(root.path(), &options).unwrap();
+        assert_eq!(page1.len(), 1);
+        assert!(truncated);
+        assert_eq!(next.as_deref(), Some("1"));
+        let paths: Vec<_> = page1.iter().map(|hit| hit.path.as_str()).collect();
+        assert!(
+            paths.contains(&"tracked.rs") || paths.contains(&"fresh.rs"),
+            "{paths:?}"
+        );
+
+        let page2 = run_repository_search(
+            root.path(),
+            &SourceSearchOptions {
+                skip: 1,
+                limit: 10,
+                ..options.clone()
+            },
+        )
+        .unwrap();
+        assert!(!page2.0.is_empty());
+        let all_paths: Vec<_> = page1
+            .iter()
+            .chain(page2.0.iter())
+            .map(|hit| hit.path.as_str())
+            .collect();
+        assert!(all_paths.contains(&"tracked.rs"));
+        assert!(all_paths.contains(&"fresh.rs"));
+        assert!(!all_paths.contains(&"secret/hidden.rs"));
+
+        let regex_hits = run_repository_search(
+            root.path(),
+            &SourceSearchOptions {
+                needle: "alpha_h.t".into(),
+                regex: true,
+                limit: 50,
+                skip: 0,
+                ..options.clone()
+            },
+        )
+        .unwrap()
+        .0;
+        assert!(regex_hits.len() >= 2);
+
+        let include_hits = run_repository_search(
+            root.path(),
+            &SourceSearchOptions {
+                include: vec!["fresh.rs".into()],
+                limit: 50,
+                skip: 0,
+                ..options.clone()
+            },
+        )
+        .unwrap()
+        .0;
+        assert_eq!(include_hits.len(), 1);
+        assert_eq!(include_hits[0].path, "fresh.rs");
+    }
+
+    #[test]
+    fn repository_replace_plans_and_applies_with_digest_fencing() {
+        let root = tempfile::tempdir().unwrap();
+        let git = |args: &[&str]| {
+            let status = std::process::Command::new("git")
+                .args(args)
+                .current_dir(root.path())
+                .status()
+                .unwrap();
+            assert!(status.success());
+        };
+        git(&["init", "-q"]);
+        std::fs::write(root.path().join("a.rs"), "fn alpha_hit() {}\n").unwrap();
+        std::fs::write(root.path().join("b.rs"), "fn alpha_hit() {}\n").unwrap();
+        git(&["add", "a.rs", "b.rs"]);
+
+        let options = SourceSearchOptions {
+            needle: "alpha_hit".into(),
+            regex: false,
+            case_sensitive: true,
+            whole_word: false,
+            include: Vec::new(),
+            exclude: Vec::new(),
+            include_ignored: false,
+            changed_only: false,
+            limit: 500,
+            skip: 0,
+        };
+        let (plan, truncated) =
+            run_repository_replace_plan(root.path(), &options, "beta_hit", 50, None).unwrap();
+        assert!(!truncated);
+        assert_eq!(plan.len(), 2);
+        assert!(plan.iter().all(|file| file.match_count == 1));
+        assert!(plan.iter().all(|file| file.after.contains("beta_hit")));
+
+        let preconditions: Vec<_> = plan
+            .iter()
+            .map(|file| SourceReplacePrecondition {
+                path: file.path.clone(),
+                expected_digest: file.expected_digest.clone(),
+            })
+            .collect();
+        apply_repository_replace_plan(root.path(), &plan, &preconditions).unwrap();
+        assert!(
+            std::fs::read_to_string(root.path().join("a.rs"))
+                .unwrap()
+                .contains("beta_hit")
+        );
+
+        let stale = apply_repository_replace_plan(root.path(), &plan, &preconditions);
+        assert!(stale.is_err());
     }
 
     #[test]

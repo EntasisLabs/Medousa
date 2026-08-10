@@ -200,7 +200,7 @@
 
   const runtimeSummary = $derived.by(() => {
     const shell = agentToolsOn ? "Shell on" : "Shell off";
-    const rounds = workshopDefaults.draft.maxToolRounds ?? 10;
+    const rounds = workshopDefaults.draft.maxToolRounds ?? 30;
     const versions = workshopDefaults.draft.vaultGitEnabled ? "Versions on" : "Versions off";
     return `${activePosture.label} · ${activeSpecialists.label} · ${shell} · ${versions} · ${rounds} rounds`;
   });
@@ -474,8 +474,8 @@
 
         <label class="prefs-tile prefs-tile-metric">
           <span class="prefs-tile-copy">
-            <span class="prefs-tile-title">Tool rounds</span>
-            <span class="prefs-tile-meta">Chained calls per turn</span>
+            <span class="prefs-tile-title">General tool rounds</span>
+            <span class="prefs-tile-meta">Coder uses a separate 100-round ceiling</span>
           </span>
           <span class="prefs-metric">
             <input
@@ -484,10 +484,10 @@
               min="1"
               max="48"
               inputmode="numeric"
-              value={workshopDefaults.draft.maxToolRounds ?? 10}
+              value={workshopDefaults.draft.maxToolRounds ?? 30}
               readonly={readOnly}
               disabled={readOnly || workshopDefaults.saving}
-              aria-label="Tool rounds per turn"
+              aria-label="General tool rounds per turn"
               oninput={(event) => numField("maxToolRounds", event)}
             />
             <span class="prefs-metric-unit">rounds</span>

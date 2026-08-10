@@ -42,22 +42,44 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | GET, POST | `/v1/forge/repositories/provider` | Discover optional GitHub/GitLab CLI adapters or clone into a daemon-scoped workshop folder |
 | GET | `/v1/forge/items` | List items |
 | GET | `/v1/forge/items/{id}` | Load item |
-| GET | `/v1/forge/items/{id}/source?path=…` | Read bounded UTF-8 source from the governed worktree |
-| POST | `/v1/forge/items/{id}/source` | Lease-fenced source-file creation |
+| GET | `/v1/forge/items/{id}/source?path=…` | Read governed source; UTF-8 edits return full content, while binary/large/lossy files return a read-only preview with `encoding`/`preview`/`truncated` |
+| POST | `/v1/forge/items/{id}/source` | Lease-fenced source-file or directory creation (`kind=directory` seeds `.gitkeep`) |
 | PUT | `/v1/forge/items/{id}/source` | Lease-fenced source save with digest conflict detection |
+| PUT | `/v1/forge/items/{id}/source/batch` | Atomic digest-fenced writes to existing text files |
+| PUT | `/v1/forge/items/{id}/source/workspace-edit` | Atomic ordered text/create/rename/delete workspace edit with digest-or-absence preconditions |
 | PATCH | `/v1/forge/items/{id}/source` | Lease-fenced source rename with digest conflict detection |
 | DELETE | `/v1/forge/items/{id}/source` | Lease-fenced source deletion with digest conflict detection |
+| GET (SSE) | `/v1/forge/items/{id}/project-events?since=…` | Resumable path-aware source/Git project events for one work item |
+| GET (SSE) | `/v1/forge/stream` | Live undertaking list freshness (state/kind only; no path cursor) |
 | GET | `/v1/forge/items/{id}/tree` | List tracked and unignored repository files (bounded to 20,000) |
-| GET | `/v1/forge/items/{id}/search?query=…` | Fixed-string tracked-source search (bounded to 500 hits) |
-| GET, PUT | `/v1/forge/items/{id}/workspace-state` | Restore/preserve open files, editor groups, positions, and bounded dirty drafts |
-| GET | `/v1/forge/items/{id}/review` | Structured outcome, risk, verification, attribution, timeline, and changed-file summary |
+| GET | `/v1/forge/items/{id}/changes` | Working-copy Changes: branch, upstream ahead/behind, conflict flag, dirty/merge flags, and changed-file statuses |
+| GET, POST | `/v1/forge/items/{id}/changes/file` | Per-file working-copy vs baseline diff (`GET`) or lease-fenced restore to baseline (`POST`) |
+| POST | `/v1/forge/items/{id}/changes/file/hunk` | Lease-fenced revert of one diff hunk |
+| POST | `/v1/forge/items/{id}/changes/fetch` | Fetch remotes for the governed worktree |
+| POST | `/v1/forge/items/{id}/changes/pull` | Fast-forward-only pull |
+| POST | `/v1/forge/items/{id}/changes/push` | Non-force push of the Forge branch |
+| POST | `/v1/forge/items/{id}/changes/sync` | Fetch, then ff-only pull when behind, then push when ahead |
+| POST | `/v1/forge/items/{id}/changes/checkpoint` | Seal the active lease for Review (same as lease complete) |
+| GET | `/v1/forge/items/{id}/changes/history` | Commits since the project baseline |
+| GET | `/v1/forge/items/{id}/changes/blame` | Line blame for one path |
+| POST | `/v1/forge/items/{id}/changes/conflict` | Resolve unmerged path (`ours` / `theirs` / `baseline`) and clear conflict state |
+| GET | `/v1/forge/items/{id}/search?query=…` | Repository search (`literal`/`regex`, case/whole-word, include/exclude globs, `scope=all\|changed`, `limit`, `cursor` pagination; bounded to 500 hits; includes untracked, honors ignore by default) |
+| POST | `/v1/forge/items/{id}/search/replace` | Preview (`dry_run=true`) or apply digest-fenced repository replace; optional `paths` subset and `preconditions` |
+| GET, PUT | `/v1/forge/items/{id}/workspace-state` | Restore/preserve open files, cursor positions, bounded dirty drafts, and contextual Code layout (Problems/Terminal/Tests/Search/Changes) |
+| GET | `/v1/forge/items/{id}/review` | Structured outcome, risk, verification, attribution, timeline, comments, and changed-file summary |
 | GET | `/v1/forge/evidence/{evidence_id}/receipts` | Sealed compact Coder evidence provenance (never raw payloads) |
-| GET | `/v1/forge/items/{id}/tasks` | Manifest-derived checks, tests, builds, and run commands |
+| GET | `/v1/forge/items/{id}/tasks` | Manifest-derived checks plus safe `.vscode/tasks.json` entries |
 | POST | `/v1/forge/items/{id}/tasks/{task_id}/runs` | Start a named, cancellable project run |
-| GET/DELETE | `/v1/forge/items/{id}/task-runs/{run_id}` | Poll or cancel a project run |
-| GET | `/v1/forge/items/{id}/tests` | Discover addressable project tests |
+| GET/DELETE | `/v1/forge/items/{id}/task-runs/{run_id}` | Poll or cancel a project run (includes live bounded `stdout`/`stderr`, `locations`, readiness `state`) |
+| GET (SSE) | `/v1/forge/items/{id}/task-runs/{run_id}/events?since=…` | Stream task output chunks, incremental locations, readiness, and terminal state (`?since=` replay) |
+| POST | `/v1/forge/items/{id}/task-runs/{run_id}/preview` | Mint a tokenized private preview path for a ready run |
+| ANY | `/v1/forge/preview/{token}/…` | Reverse-proxy to workshop `127.0.0.1:{port}` (token-gated; no public app bind) |
+| GET | `/v1/forge/items/{id}/tests?attempt_id=…` | Discover addressable project tests, optionally pinned to one exact attempt |
 | GET | `/v1/forge/items/{id}/review/file?path=…` | Exact baseline-to-reviewed file comparison with structured hunks |
 | POST | `/v1/forge/items/{id}/review/file` | Reopen work and restore one text file to its baseline while retaining the reviewed checkpoint |
+| GET, POST | `/v1/forge/items/{id}/review/comments` | List or add line-anchored review comments bound to sealed evidence |
+| PATCH, DELETE | `/v1/forge/items/{id}/review/comments/{comment_id}` | Resolve/edit or delete a review comment |
+| POST | `/v1/forge/items/{id}/review/request-changes` | Record changes-requested feedback, reopen to Ready, and keep a revision brief for the next attempt |
 | GET | `/v1/forge/items/{id}/tasks` | Detect safe project commands from repository manifests |
 | POST | `/v1/forge/items/{id}/tasks/{task_id}/run` | Run a detected command and stage its result into active evidence |
 | POST | `/v1/forge/items/{id}/provision` | Create governed worktree env |
@@ -75,6 +97,61 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | POST | `/v1/forge/items/{id}/discard` | Discard env (worktree then branch) |
 | POST | `/v1/forge/items/{id}/run-script` | Reference script executor (`argv`) |
 | POST | `/v1/forge/items/{id}/export` | Portable bundle to `destination` |
+
+### Project event stream
+
+`GET /v1/forge/items/{id}/project-events?since=<seq>` is the authoritative
+cursor for Code buffer reconciliation. Each SSE `project` payload is a
+`ForgeProjectEvent` with monotonic `seq`, `work_id`, `kind`
+(`created` / `changed` / `renamed` / `deleted` / `git_status` / `snapshot`),
+optional `path` / `old_path` / `digest`, and `updated_at`.
+
+Reconnect with `?since=<last_seq>` to replay the bounded in-memory journal
+(`seq > since` for that work item), then tail live events. Lagged subscribers
+re-snapshot from the journal rather than inventing gaps. Events come from:
+
+- lease-fenced source create/save/batch/workspace-edit/rename/delete routes;
+- a debounced worktree filesystem watcher (ignores `.git/**`).
+
+Home's Code editor consumes this stream for all open buffers: clean tabs accept
+the project version, dirty tabs keep the draft and offer compare/rebase,
+renames/deletes recover tab identity, and the language client receives
+`workspace/didChangeWatchedFiles` (plus create/rename/delete file notifications).
+
+`GET /v1/forge/stream` remains the coarse undertaking list channel (work id,
+state, event kind). It does not carry paths or a replay cursor.
+
+### Project task-run output stream
+
+`GET /v1/forge/items/{id}/task-runs/{run_id}/events?since=<seq>` streams live
+stdout/stderr for a named project run. Each SSE `task` payload is a
+`ProjectTaskOutputEvent` with monotonic `seq`, `run_id`, `kind`
+(`output` / `state`), optional `stream`/`text` for chunks, optional incremental
+`locations`, and optional `state`/`result` when status changes.
+
+Long-running / background tasks may emit `state=ready` (no `result`) when
+output matches a built-in readiness pattern or a task's `ready_pattern` from
+`.vscode/tasks.json`. Cancel may emit an early `state=cancelled` without
+`result`; the stream stays open until the process exits and a terminal `state`
+event includes the final result.
+
+`GET …/tasks` merges manifest-detected commands with a thin
+`.vscode/tasks.json` import (`npm` / `shell` / `process`, optional inline
+problem-matcher `pattern`, background `endsPattern`). Full VS Code matcher
+catalogs, `dependsOn`, and presentation panels are not supported.
+
+`GET …/task-runs/{run_id}` also returns bounded live `stdout`/`stderr`,
+`output_truncated`, `locations`, `ready_url` (when a background task becomes
+ready), and `next_seq` while the process is still running (and after exit for
+replay). Output buffers cap at 256 KiB; chunk replay keeps the last ~400 events.
+
+When readiness fires, the daemon may extract a loopback URL (`localhost` /
+`127.0.0.1` / `0.0.0.0`) into `ready_url` and mint a short-lived preview token.
+`POST …/task-runs/{run_id}/preview` returns `{ preview_path, token, ready_url,
+port }`. Home opens co-located previews at `ready_url` directly; remote Homes
+open `{daemon}/v1/forge/preview/{token}/…`, which reverse-proxies to
+`127.0.0.1:{port}` on the workshop without binding the app publicly. WebSocket
+HMR through the proxy is best-effort; prefer Stop/restart for broken live reload.
 
 Forge records a canonical `active_attempts` set and resolves every lease
 mutation against its addressed attempt. The legacy singular `active_attempt`
@@ -97,6 +174,11 @@ fresh isolated worktree rather than reusing an active environment.
 `attempt_id`, `worktree`, and `branch` fields. Forge item projections expose the
 current lease-owned workspace through `environment`; the durable item still
 retains its original staging anchor internally.
+
+Forked attempt environments also expose an optional `derived_from` object with
+the source `branch`, source `generation`, and immutable `forked_at` timestamp.
+The field is absent for staging environments and snapshots created before
+lineage metadata was introduced.
 
 Sealing, interruption, and failure are peer-safe. Ending one attempt leaves the
 item `Executing` while any healthy lease remains. After the last active attempt
@@ -217,6 +299,15 @@ and evidence are not rewritten, so the newer reviewed version remains a Git
 recovery point until the user seals another revision. Binary baseline content
 remains recoverable in Git but is not written through the Home text API.
 
+Line-anchored review comments are append-only events on the work item
+(`ReviewCommentAdded` / `Resolved` / `Deleted`). Each comment binds to an
+`evidence_id`, path, side, and line range, with an `anchor_digest` of the
+quoted line content. `POST …/review/request-changes` records a
+`ChangesRequested` event (including a daemon-composed revision brief from
+unresolved comments), then reopens the item to Ready via the same recovery
+transition as restore — without requiring a per-file restore. The next agent
+attempt should be seeded with that revision brief on the same work item.
+
 ### Lease fencing
 
 `begin` returns `lease.lease_id` and `lease.generation`. Every lease mutation
@@ -224,9 +315,11 @@ must present the same `generation`. Stale adapters get `409`.
 
 Source saves are also lease-fenced. The body includes `path`, `content`,
 `lease_id`, `generation`, and `expected_digest`. `path` is repository-relative;
-absolute paths, traversal, symlink escapes, directories, binary content, and
-files over 2 MiB are rejected. `expected_digest` is the `sha256:…` value from
-the preceding GET. If the on-disk content no longer matches, PUT returns `409`
+absolute paths, traversal, symlink escapes, and directories are rejected. Text
+bodies over 2 MiB are rejected. GET opens binary or oversized files as a
+read-only preview (`encoding`, `preview`, `truncated`) rather than refusing the
+read. `expected_digest` is the `sha256:…` of the full on-disk bytes from the
+preceding GET. If the on-disk content no longer matches, PUT returns `409`
 instead of overwriting concurrent work.
 
 Create, rename, and delete use the same lease fence. Rename and delete also
@@ -234,11 +327,25 @@ require the digest last read by the client. New files use exclusive creation;
 existing files are never replaced. Repository metadata, missing/outside parent
 directories, and symlink escapes are rejected.
 
+Complete editor refactors use `PUT …/source/workspace-edit`. Its body contains
+`lease_id`, `generation`, an ordered `operations` array, and `preconditions` for
+every path named by an operation. An existing path precondition carries
+`expected_digest`; a missing path precondition records expected absence.
+Supported operation kinds are `write`, `create`, `rename`, and `delete`.
+Before touching disk, Forge validates all paths, preconditions, sizes, and the
+entire virtual existence sequence. It then applies at most 512 operations and
+8 MiB of combined text as one transaction. Any failure restores all original
+files, while a stale digest or unexpected path returns a conflict without
+changing the worktree.
+
 Code workspace state is stored under Forge's data root, outside the governed
 worktree. Clean tab/group state does not require a lease. Persisting a dirty
 draft requires the undertaking's live lease and is bounded to 2 MiB per draft,
 8 MiB total, and 32 tabs. Drafts retain their source digest so clients can
-surface recovery conflicts instead of silently applying stale text.
+surface recovery conflicts instead of silently applying stale text. The optional
+`layout` object restores contextual Code regions (`context_panel`, `terminal`,
+`tests`, `search`) independently of Home shell desktops; pane geometry and group
+tab strips remain shell-owned.
 
 ### Errors
 

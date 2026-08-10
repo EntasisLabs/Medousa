@@ -1,6 +1,12 @@
 /** Shared transitions into an undertaking's permanent workspace surfaces. */
 
-import { beginHumanAttempt, humanizeForgeMessage, type ItemProjection } from "$lib/forge";
+import {
+  canStartHumanEditing,
+  discardUndertaking,
+  startHumanEditingSession,
+  humanizeForgeMessage,
+  type ItemProjection,
+} from "$lib/forge";
 import { terminalCreate } from "$lib/terminal";
 import { undertakings } from "$lib/stores/undertakings.svelte";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
@@ -51,10 +57,13 @@ export function activeCodeContext(sessionId: string): CodeIntentContext | null {
   const detail = undertakings.detail?.id === active.workId ? undertakings.detail : null;
   const openFiles = codeWorkspace.tabsFor(active.workId).map((tab) => tab.path).slice(0, 12);
   const insights = codeInsightsByWorkId.get(active.workId);
+  const revisionBrief = undertakings.review?.work_id === active.workId
+    ? undertakings.review.revision_brief?.trim() || null
+    : null;
   return {
     work_id: active.workId,
     project_title: active.title,
-    outcome: detail?.brief ?? null,
+    outcome: revisionBrief || detail?.brief || null,
     active_path: active.selectedPath,
     cursor_line: active.selectedLine,
     selection_start_line: active.selectionStartLine,
@@ -77,18 +86,23 @@ export async function openTrackedTerminal(
     undertakings.active?.workId === item.id
       ? undertakings.active.boundTerminalSessionIds[0]
       : null;
+
+  const openShellTab = options?.activate !== false;
+
   if (existing) {
-    shellTabs.openTerminal(existing, {
-      activate: options?.activate !== false,
-      title: `Terminal · ${item.title}`,
-      workId: item.id,
-    });
+    if (openShellTab) {
+      shellTabs.openTerminal(existing, {
+        activate: true,
+        title: `Terminal · ${item.title}`,
+        workId: item.id,
+      });
+    }
     return existing;
   }
 
   let leaseId = undertakings.active?.leaseId ?? null;
-  if (item.allowed_actions.begin_attempt.allowed) {
-    const begun = await beginHumanAttempt(item.id);
+  if (canStartHumanEditing(item.allowed_actions)) {
+    const begun = await startHumanEditingSession(item.id, item.allowed_actions);
     leaseId = begun.lease.lease_id;
     undertakings.setActiveFromItem(begun.item, {
       leaseId,
@@ -102,11 +116,13 @@ export async function openTrackedTerminal(
   if (!sessionId) return null;
 
   undertakings.bindTerminal(sessionId);
-  shellTabs.openTerminal(sessionId, {
-    activate: options?.activate !== false,
-    title: `Terminal · ${item.title}`,
-    workId: item.id,
-  });
+  if (openShellTab) {
+    shellTabs.openTerminal(sessionId, {
+      activate: true,
+      title: `Terminal · ${item.title}`,
+      workId: item.id,
+    });
+  }
   return sessionId;
 }
 
@@ -163,11 +179,24 @@ export async function interruptTrackedAgent(item: ItemProjection): Promise<void>
   undertakings.setActiveFromItem(item, { executorKind: "human" });
 }
 
+/**
+ * Close an undertaking: cancel any bound agent, then discard (Forge releases
+ * executing leases before tearing down worktrees).
+ */
+export async function closeUndertaking(item: ItemProjection): Promise<void> {
+  try {
+    await interruptTrackedAgent(item);
+  } catch {
+    // Discard still releases forge leases; agent cancel is best-effort.
+  }
+  await discardUndertaking(item.id);
+}
+
 export async function reclaimTrackedHuman(item: ItemProjection): Promise<ItemProjection> {
   await interruptTrackedAgent(item);
   await undertakings.refreshDetail();
   const ready = undertakings.detail?.id === item.id ? undertakings.detail : item;
-  const begun = await beginHumanAttempt(ready.id);
+  const begun = await startHumanEditingSession(ready.id, ready.allowed_actions);
   undertakings.setActiveFromItem(begun.item, {
     leaseId: begun.lease.lease_id,
     leaseGeneration: begun.lease.generation,

@@ -190,7 +190,7 @@
     display: flex;
     width: 100%;
     flex-direction: column;
-    gap: 1px;
+    gap: 3px;
   }
 
   /* Soft mode break — talk vs do — no taxonomy label. */
@@ -472,8 +472,41 @@
   .workshop-icon-rail-expanded .workshop-rail-tree .workshop-rail-dest-btn {
     height: 1.75rem;
     gap: 0.45rem;
-    padding-inline: 0.3rem 0.45rem;
+    /* Extra left inset so glyphs sit off the highlight edge; pill position unchanged. */
+    padding-inline: 0.65rem 0.5rem;
     border-radius: 0.4rem;
+  }
+
+  .workshop-icon-rail-expanded
+    .workshop-rail-tree
+    .workshop-rail-dest-btn:hover:not(:disabled):not(.workshop-rail-btn-active-quiet),
+  .workshop-icon-rail-expanded
+    .workshop-rail-dock
+    .workshop-rail-dock-btn:hover:not(:disabled):not(.workshop-rail-btn-active-quiet) {
+    background-color: rgb(var(--theme-selection) / 0.1);
+    color: rgb(var(--theme-selection-text));
+  }
+
+  .workshop-icon-rail-expanded
+    .workshop-rail-tree
+    .workshop-rail-dest-btn:hover:not(.workshop-rail-btn-active-quiet)
+    .workshop-rail-btn-label,
+  .workshop-icon-rail-expanded
+    .workshop-rail-dock
+    .workshop-rail-dock-btn:hover:not(.workshop-rail-btn-active-quiet)
+    .workshop-rail-btn-label {
+    color: rgb(var(--color-surface-50));
+  }
+
+  .workshop-icon-rail-expanded
+    .workshop-rail-tree
+    .workshop-rail-dest-btn:hover:not(.workshop-rail-btn-active-quiet)
+    .workshop-rail-btn-icon,
+  .workshop-icon-rail-expanded
+    .workshop-rail-dock
+    .workshop-rail-dock-btn:hover:not(.workshop-rail-btn-active-quiet)
+    .workshop-rail-btn-icon {
+    color: rgb(var(--color-surface-100));
   }
 
   .workshop-rail-dest-twist,
@@ -543,13 +576,12 @@
   }
 
   .workshop-rail-btn-active-quiet {
-    background-color: rgb(var(--theme-selection) / 0.12);
+    background-color: rgb(var(--theme-selection) / 0.16);
     color: rgb(var(--theme-selection-text));
-    box-shadow: inset 0 0 0 1px rgb(var(--theme-selection) / 0.18);
   }
 
   .workshop-rail-btn-active-quiet:hover {
-    background-color: rgb(var(--theme-selection) / 0.18);
+    background-color: rgb(var(--theme-selection) / 0.2);
   }
 
   .workshop-rail-nest {
@@ -738,9 +770,6 @@
   .workshop-rail-btn-active {
     background-color: rgb(var(--theme-selection) / 0.24);
     color: rgb(var(--shell-icon-active));
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.1),
-      inset 0 -1px 0 rgb(0 0 0 / 0.18);
   }
 
   .workshop-rail-btn-active:hover {
@@ -749,10 +778,7 @@
   }
 
   .workshop-rail-btn-active:focus-visible {
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.1),
-      inset 0 -1px 0 rgb(0 0 0 / 0.18),
-      inset 0 0 0 1px rgb(var(--theme-focus) / 0.42);
+    box-shadow: inset 0 0 0 1px rgb(var(--theme-focus) / 0.42);
   }
 
   .workshop-rail-tier-divider {

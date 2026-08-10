@@ -6,9 +6,7 @@ use medousa_types::environment::{
 };
 use medousa_types::layout::resolve_layout_root;
 use serde_json::Value;
-use stasis::domain::runtime::recurring::RecurringDefinition;
 use stasis::prelude::RuntimeComposition;
-use stasis::ports::outbound::runtime::recurring_store::RecurringStore;
 
 use crate::component_runtime_diagnostics::{
     build_component_runtime_diagnostic, RuntimeDiagnosticOptions,
@@ -16,6 +14,7 @@ use crate::component_runtime_diagnostics::{
 use crate::environment_store::EnvironmentHub;
 use crate::feed_store::feed_store;
 use crate::recurring_feed::{self, feeds_binding_to_json, RecurringFeedBinding};
+use crate::runtime_composition_ext::RuntimeCompositionExt;
 
 pub fn surface_nav_visible(spec: &EnvironmentSpec, surface_id: &str) -> bool {
     active_preset_surface_ids(spec)
@@ -46,22 +45,13 @@ fn presentation_artifact_id(config: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-async fn list_recurring_definitions(
-    runtime: &RuntimeComposition,
-) -> stasis::prelude::Result<Vec<RecurringDefinition>> {
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt.recurring_store.list().await,
-        RuntimeComposition::Surreal(rt) => rt.recurring_store.list().await,
-    }
-}
-
 async fn collect_recurring_feed_bindings(
     runtime: Option<&RuntimeComposition>,
 ) -> Vec<(String, RecurringFeedBinding, Option<String>, Option<bool>)> {
     let Some(runtime) = runtime else {
         return Vec::new();
     };
-    let Ok(definitions) = list_recurring_definitions(runtime).await else {
+    let Ok(definitions) = runtime.list_recurring().await else {
         return Vec::new();
     };
     let mut rows = Vec::new();
@@ -315,20 +305,25 @@ pub fn nav_visibility_fields(
     surface_id: &str,
     nav_visible: bool,
 ) -> serde_json::Value {
-    if nav_visible {
-        serde_json::json!({
-            "live": true,
-            "nav_visible": true,
-        })
-    } else {
-        serde_json::json!({
-            "live": true,
-            "nav_visible": false,
-            "hint": format!(
-                "Surface '{surface_id}' is not in the active layout preset — call cognition_environment_patch with add_to_active_preset or cognition_custom_view_compose."
-            ),
-        })
+    let mut fields = serde_json::json!({
+        "live": true,
+        "nav_visible": nav_visible,
+    });
+    if let (Some(object), Some(hint)) = (
+        fields.as_object_mut(),
+        nav_visibility_hint(surface_id, nav_visible),
+    ) {
+        object.insert("hint".to_string(), serde_json::Value::String(hint));
     }
+    fields
+}
+
+pub fn nav_visibility_hint(surface_id: &str, nav_visible: bool) -> Option<String> {
+    (!nav_visible).then(|| {
+        format!(
+            "Surface '{surface_id}' is not in the active layout preset — call cognition_environment_patch with add_to_active_preset or cognition_custom_view_compose."
+        )
+    })
 }
 
 pub fn recurring_feed_binding_json(binding: &RecurringFeedBinding) -> Value {

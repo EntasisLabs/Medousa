@@ -15,9 +15,11 @@ describe("resolveSummonToolbarSurface", () => {
     expect(resolveSummonToolbarSurface("profiles", "notes")).toBe("profiles");
   });
 
-  it("maps library/workshop desktop to explorer family", () => {
-    expect(resolveSummonToolbarSurface("library", "notes")).toBe("library");
-    expect(resolveSummonToolbarSurface("library", "files")).toBe("library");
+  it("maps library/workshop desktop to Notes/Files/Artifacts or Automations doors", () => {
+    expect(resolveSummonToolbarSurface("library", "notes")).toBe("notes");
+    expect(resolveSummonToolbarSurface("library", "files")).toBe("files");
+    expect(resolveSummonToolbarSurface("library", "artifacts")).toBe("artifacts");
+    expect(resolveSummonToolbarSurface("notes", "notes")).toBe("notes");
     expect(resolveSummonToolbarSurface("library", "scripts")).toBe("automations");
     expect(resolveSummonToolbarSurface("library", "schedules")).toBe("automations");
     expect(resolveSummonToolbarSurface("workshop", "flows")).toBe("automations");
@@ -31,7 +33,10 @@ describe("resolveSummonToolbarSurface", () => {
       "automations",
     );
     expect(resolveSummonToolbarSurface("library", "scripts", "note")).toBe(
-      "library",
+      "notes",
+    );
+    expect(resolveSummonToolbarSurface("library", "notes", "deck")).toBe(
+      "artifacts",
     );
     expect(resolveSummonToolbarSurface("workshop", "notes", "flow")).toBe(
       "automations",

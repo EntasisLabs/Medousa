@@ -20,6 +20,10 @@ export interface SessionSummary {
   preview: string;
   /** Present as `"shared"` for multi-member rooms. */
   catalog?: string | null;
+  /** First sticky non-home host surface (`vscode` | `neovim` | `obsidian` | `browser`). */
+  origin_surface?: string | null;
+  /** Sticky once a Forge code binding was set. */
+  has_code_work?: boolean;
 }
 
 export interface SessionHistoryResponse {

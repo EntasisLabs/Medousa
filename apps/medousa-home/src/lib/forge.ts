@@ -2,6 +2,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { getDaemonUrl } from "$lib/daemon";
+import { streamPathWithSince } from "$lib/stream/reconnect";
 import { isTauri } from "$lib/window";
 
 export type ActionAffordance = {
@@ -14,6 +15,8 @@ export type AllowedActions = {
   start_agent: ActionAffordance;
   open_terminal: ActionAffordance;
   begin_attempt: ActionAffordance;
+  /** Present once the workshop advertises reopen-without-agent. */
+  continue_editing?: ActionAffordance;
   seal: ActionAffordance;
   review: ActionAffordance;
   apply: ActionAffordance;
@@ -31,6 +34,8 @@ export type ForgeWorkItem = {
   id: string;
   title: string;
   brief: string;
+  /** Human-readable worktree/branch identity derived from title. */
+  slug?: string;
   state: string;
   owner: string;
   created_at?: string;
@@ -62,8 +67,30 @@ export type ForgeWorkItem = {
   active_attempts?: string[];
   review_decisions?: Array<{ id: string; strategy: string }>;
   disposition?: string | null;
-  target?: { Git?: { repo_path: string; base_ref: string } };
+  /** Internally tagged: `{ kind: "git", repo_path, base_ref, base_oid }`. */
+  target?: GitWorkTarget | null;
 };
+
+export type GitWorkTarget = {
+  kind: "git";
+  repo_path: string;
+  base_ref: string;
+  base_oid?: string;
+};
+
+export function gitTargetRepoPath(
+  target: GitWorkTarget | null | undefined,
+): string | null {
+  const path = target?.kind === "git" ? target.repo_path?.trim() : "";
+  return path || null;
+}
+
+export function gitTargetBaseRef(
+  target: GitWorkTarget | null | undefined,
+): string | null {
+  const ref = target?.kind === "git" ? target.base_ref?.trim() : "";
+  return ref || null;
+}
 
 export type ItemProjection = ForgeWorkItem & {
   human_phase: HumanPhase | string;
@@ -102,6 +129,12 @@ export type ReviewProjection = {
     old_path?: string | null;
     is_binary: boolean;
     byte_size?: number | null;
+    lines_added?: number;
+    lines_removed?: number;
+    intents?: string[];
+    primary_intent?: string | null;
+    symbol_count?: number;
+    scopes?: ReviewSymbolScope[];
   }>;
   synthesis: {
     outcome: string;
@@ -117,6 +150,13 @@ export type ReviewProjection = {
       duration_ms?: number | null;
     } | null;
     unresolved_issues: string[];
+    issues?: Array<{
+      id: string;
+      message: string;
+      severity: "high" | "attention" | "info" | string;
+      blocks_approval: boolean;
+    }>;
+    blocks_approval?: boolean;
     recommended_next_action: string;
   };
   attribution: Array<{
@@ -127,6 +167,7 @@ export type ReviewProjection = {
     started_at: string;
     ended_at?: string | null;
     files: string[];
+    count?: number;
   }>;
   timeline: Array<{
     id: string;
@@ -139,15 +180,58 @@ export type ReviewProjection = {
   }>;
   truncated: boolean;
   base_advanced: boolean;
+  comments?: ReviewComment[];
+  unresolved_comment_count?: number;
+  revision_brief?: string | null;
+  changed_since_previous?: string[];
   policy?: PolicyReport | null;
   command_log_lines: number;
   patch_byte_size: number;
-  decision?: { id?: string; strategy?: string } | null;
+  decision?: {
+    id?: string;
+    strategy?: string;
+    rationale?: string | null;
+  } | null;
   disposition?: string | null;
   worktree?: string | null;
   active_lease_id?: string | null;
   active_lease_generation?: number | null;
   world?: WorldBindingStatus | null;
+};
+
+export type ReviewSymbolScope = {
+  id: string;
+  label: string;
+  kind: string;
+  line_start: number;
+  line_end: number;
+  entity_id?: string | null;
+  lines_added: number;
+  lines_removed: number;
+  intents?: string[];
+};
+
+export type ReviewFileChange = ReviewProjection["changed_files"][number];
+
+export type ReviewComment = {
+  id: string;
+  thread_id: string;
+  parent_id?: string | null;
+  evidence_id: string;
+  attempt_id: string;
+  path: string;
+  side: "new" | "old" | string;
+  start_line: number;
+  end_line: number;
+  anchor_digest: string;
+  anchor_text?: string | null;
+  body: string;
+  actor_kind: string;
+  actor_id: string;
+  created_at: string;
+  resolved_at?: string | null;
+  resolved_by_kind?: string | null;
+  resolved_by_id?: string | null;
 };
 
 export type ReviewFileDiff = {
@@ -288,7 +372,23 @@ export type ForgeSourceFile = {
   content: string;
   digest: string;
   byte_size: number;
+  /** `utf-8`, `utf-8-lossy`, or `binary` when the workshop reports it. */
+  encoding?: string | null;
+  /** True when content is a bounded preview (large/binary/lossy), not editable. */
+  preview?: boolean;
+  /** True when a text preview was truncated to the editor byte limit. */
+  truncated?: boolean;
 };
+
+export type ForgeSourceWorkspacePrecondition =
+  | { kind: "existing"; path: string; expected_digest: string }
+  | { kind: "missing"; path: string };
+
+export type ForgeSourceWorkspaceOperation =
+  | { kind: "write"; path: string; content: string }
+  | { kind: "create"; path: string; content: string }
+  | { kind: "rename"; path: string; destination: string }
+  | { kind: "delete"; path: string };
 
 export type ForgeSourceTree = {
   work_id: string;
@@ -302,6 +402,20 @@ export type ForgeSourceSearch = {
   work_id: string;
   hits: Array<{ path: string; line: number; preview: string }>;
   truncated: boolean;
+  next_cursor?: string | null;
+};
+
+export type ForgeSourceSearchOptions = {
+  query: string;
+  mode?: "literal" | "regex";
+  caseSensitive?: boolean;
+  wholeWord?: boolean;
+  include?: string;
+  exclude?: string;
+  includeIgnored?: boolean;
+  scope?: "all" | "changed";
+  limit?: number;
+  cursor?: string | null;
 };
 
 export type ForgeCodeWorkspaceState = {
@@ -313,6 +427,14 @@ export type ForgeCodeWorkspaceState = {
   }>;
   active_path?: string | null;
   secondary_path?: string | null;
+  /** Contextual Code regions (Problems/Terminal/Tests/Search/Changes); additive. */
+  layout?: {
+    context_panel?: "problems" | "outline" | "references" | "language" | null;
+    terminal?: boolean;
+    tests?: boolean;
+    search?: boolean;
+    changes?: boolean;
+  } | null;
   updated_at?: string | null;
 };
 
@@ -323,6 +445,37 @@ async function forgeUrl(path: string): Promise<string> {
 
 export async function forgeStreamUrl(): Promise<string> {
   return forgeUrl("/v1/forge/stream");
+}
+
+export type ForgeProjectEventKind =
+  | "created"
+  | "changed"
+  | "renamed"
+  | "deleted"
+  | "git_status"
+  | "snapshot";
+
+/** Path-aware project event from GET …/project-events (SSE `project`). */
+export type ForgeProjectEvent = {
+  seq: number;
+  work_id: string;
+  kind: ForgeProjectEventKind;
+  path?: string | null;
+  old_path?: string | null;
+  digest?: string | null;
+  updated_at: string;
+};
+
+/** Resumable source/Git event stream for one undertaking (`?since=` replay). */
+export async function forgeProjectEventsUrl(
+  workId: string,
+  since = 0,
+): Promise<string> {
+  const path = streamPathWithSince(
+    `/v1/forge/items/${encodeURIComponent(workId)}/project-events`,
+    since,
+  );
+  return forgeUrl(path);
 }
 
 async function forgeFetch<T>(
@@ -437,11 +590,84 @@ export async function getUndertakingSourceTree(
 
 export async function searchUndertakingSource(
   workId: string,
-  query: string,
+  queryOrOptions: string | ForgeSourceSearchOptions,
 ): Promise<ForgeSourceSearch> {
-  const params = new URLSearchParams({ query });
+  const options: ForgeSourceSearchOptions =
+    typeof queryOrOptions === "string"
+      ? { query: queryOrOptions }
+      : queryOrOptions;
+  const params = new URLSearchParams();
+  params.set("query", options.query);
+  if (options.mode) params.set("mode", options.mode);
+  if (options.caseSensitive != null) {
+    params.set("case_sensitive", String(options.caseSensitive));
+  }
+  if (options.wholeWord != null) {
+    params.set("whole_word", String(options.wholeWord));
+  }
+  if (options.include?.trim()) params.set("include", options.include.trim());
+  if (options.exclude?.trim()) params.set("exclude", options.exclude.trim());
+  if (options.includeIgnored != null) {
+    params.set("include_ignored", String(options.includeIgnored));
+  }
+  if (options.scope) params.set("scope", options.scope);
+  if (options.limit != null) params.set("limit", String(options.limit));
+  if (options.cursor) params.set("cursor", options.cursor);
   return forgeFetch(
     `/v1/forge/items/${encodeURIComponent(workId)}/search?${params}`,
+  );
+}
+
+export type ForgeSourceReplaceFile = {
+  path: string;
+  expected_digest: string;
+  match_count: number;
+  before: string;
+  after: string;
+};
+
+export type ForgeSourceReplacePlan = {
+  work_id: string;
+  files: ForgeSourceReplaceFile[];
+  truncated: boolean;
+  applied: boolean;
+};
+
+export type ForgeSourceReplaceOptions = ForgeSourceSearchOptions & {
+  replacement: string;
+  dryRun?: boolean;
+  paths?: string[];
+  preconditions?: Array<{ path: string; expected_digest: string }>;
+  lease_id?: string;
+  generation?: number;
+};
+
+export async function replaceUndertakingSource(
+  workId: string,
+  options: ForgeSourceReplaceOptions,
+): Promise<ForgeSourceReplacePlan> {
+  return forgeFetch(
+    `/v1/forge/items/${encodeURIComponent(workId)}/search/replace`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        query: options.query,
+        replacement: options.replacement,
+        mode: options.mode,
+        case_sensitive: options.caseSensitive,
+        whole_word: options.wholeWord,
+        include: options.include,
+        exclude: options.exclude,
+        include_ignored: options.includeIgnored,
+        scope: options.scope,
+        limit: options.limit,
+        dry_run: options.dryRun ?? true,
+        paths: options.paths,
+        preconditions: options.preconditions,
+        lease_id: options.lease_id,
+        generation: options.generation,
+      }),
+    },
   );
 }
 
@@ -504,11 +730,31 @@ export async function saveUndertakingSources(
   );
 }
 
+/** Apply one optimistic, all-or-nothing text and resource workspace edit. */
+export async function applyUndertakingSourceWorkspaceEdit(
+  workId: string,
+  input: {
+    preconditions: ForgeSourceWorkspacePrecondition[];
+    operations: ForgeSourceWorkspaceOperation[];
+    lease_id: string;
+    generation: number;
+  },
+): Promise<ForgeSourceFile[]> {
+  return forgeFetch(
+    `/v1/forge/items/${encodeURIComponent(workId)}/source/workspace-edit`,
+    {
+      method: "PUT",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
 export async function createUndertakingSource(
   workId: string,
   input: {
     path: string;
     content?: string;
+    kind?: "file" | "directory";
     lease_id: string;
     generation: number;
   },
@@ -626,6 +872,14 @@ export type ProjectTask = {
   argv: string[];
   provider: string;
   long_running?: boolean;
+  ready_pattern?: string | null;
+  problem_matcher?: {
+    regexp: string;
+    file: number;
+    line: number;
+    column?: number | null;
+    message?: number | null;
+  } | null;
 };
 
 export type ProjectTaskResult = {
@@ -639,12 +893,48 @@ export type ProjectTaskResult = {
   locations: Array<{ path: string; line: number; column?: number | null; message: string }>;
 };
 
+export type ProjectTaskLocation = {
+  path: string;
+  line: number;
+  column?: number | null;
+  message: string;
+};
+
 export type ProjectTaskRun = {
   run_id: string;
   work_id: string;
-  state: "running" | "passed" | "failed" | "cancelled" | string;
+  state: "running" | "ready" | "passed" | "failed" | "cancelled" | string;
   task: ProjectTask;
   result?: ProjectTaskResult | null;
+  /** Bounded live stdout (also retained after exit for replay). */
+  stdout?: string;
+  stderr?: string;
+  output_truncated?: boolean;
+  next_seq?: number;
+  locations?: ProjectTaskLocation[];
+  /** Loopback URL when a background task reports ready. */
+  ready_url?: string | null;
+};
+
+export type ProjectTaskOutputEvent = {
+  seq: number;
+  run_id: string;
+  kind: "output" | "state" | string;
+  stream?: string | null;
+  text?: string | null;
+  state?: string | null;
+  result?: ProjectTaskResult | null;
+  locations?: ProjectTaskLocation[] | null;
+  ready_url?: string | null;
+};
+
+export type ProjectTaskRunPreview = {
+  work_id: string;
+  run_id: string;
+  ready_url: string;
+  port: number;
+  token: string;
+  preview_path: string;
 };
 
 export type ProjectTest = {
@@ -653,6 +943,76 @@ export type ProjectTest = {
   path: string;
   line: number;
   task_id: string;
+};
+
+export type ForgeChangesFile = {
+  path: string;
+  status: string;
+  old_path?: string | null;
+};
+
+export type ForgeChanges = {
+  work_id: string;
+  branch?: string | null;
+  detached?: boolean;
+  base_ref?: string | null;
+  baseline_oid?: string | null;
+  upstream?: string | null;
+  ahead?: number | null;
+  behind?: number | null;
+  conflict: boolean;
+  dirty?: boolean;
+  merge_in_progress?: boolean;
+  files: ForgeChangesFile[];
+};
+
+export type ChangesFileDiff = {
+  work_id: string;
+  path: string;
+  status: string;
+  old_path?: string | null;
+  baseline_oid: string;
+  working_digest?: string | null;
+  binary: boolean;
+  conflict: boolean;
+  baseline: ReviewFileVersion;
+  working: ReviewFileVersion;
+  hunks: ReviewDiffHunk[];
+  truncated: boolean;
+};
+
+export type RestoreChangesFileResponse = {
+  work_id: string;
+  path: string;
+  action: string;
+  digest?: string | null;
+};
+
+export type ChangesSyncResult = {
+  work_id: string;
+  fetched: boolean;
+  pulled: boolean;
+  pushed: boolean;
+  message: string;
+  changes: ForgeChanges;
+};
+
+export type ChangesHistoryEntry = {
+  oid: string;
+  author_name: string;
+  author_email: string;
+  authored_at: number;
+  subject: string;
+};
+
+export type ChangesBlameHunk = {
+  oid: string;
+  author_name: string;
+  author_email: string;
+  authored_at: number;
+  summary: string;
+  start_line: number;
+  line_count: number;
 };
 
 export async function getProjectTasks(workId: string): Promise<ProjectTask[]> {
@@ -689,6 +1049,30 @@ export async function cancelProjectTaskRun(workId: string, runId: string): Promi
   return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/task-runs/${encodeURIComponent(runId)}`, {
     method: "DELETE",
   });
+}
+
+/** Mint or reuse a tokenized workshop preview path for a ready task run. */
+export async function createProjectTaskRunPreview(
+  workId: string,
+  runId: string,
+): Promise<ProjectTaskRunPreview> {
+  return forgeFetch(
+    `/v1/forge/items/${encodeURIComponent(workId)}/task-runs/${encodeURIComponent(runId)}/preview`,
+    { method: "POST" },
+  );
+}
+
+/** Resumable task-run output stream (`?since=` chunk replay). */
+export async function forgeTaskRunEventsUrl(
+  workId: string,
+  runId: string,
+  since = 0,
+): Promise<string> {
+  const path = streamPathWithSince(
+    `/v1/forge/items/${encodeURIComponent(workId)}/task-runs/${encodeURIComponent(runId)}/events`,
+    since,
+  );
+  return forgeUrl(path);
 }
 
 export async function getProjectTests(workId: string): Promise<ProjectTest[]> {
@@ -841,6 +1225,40 @@ export async function beginHumanAttempt(workId: string): Promise<BeginAttemptRes
   });
 }
 
+/** Reopen sealed review and begin a human attempt (no agent). */
+export async function continueEditing(workId: string): Promise<BeginAttemptResponse> {
+  return forgeFetch(
+    `/v1/forge/items/${encodeURIComponent(workId)}/review/continue-editing`,
+    { method: "POST", body: "{}" },
+  );
+}
+
+/** True when a human can start or resume editing without an agent. */
+export function canStartHumanEditing(actions: AllowedActions | null | undefined): boolean {
+  return Boolean(actions?.begin_attempt.allowed || actions?.continue_editing?.allowed);
+}
+
+/**
+ * Begin a human editing session: either a normal attempt (Ready) or continue
+ * editing after review (AwaitingReview → reopen + human lease).
+ */
+export async function startHumanEditingSession(
+  workId: string,
+  actions: AllowedActions,
+): Promise<BeginAttemptResponse> {
+  if (actions.begin_attempt.allowed) {
+    return beginHumanAttempt(workId);
+  }
+  if (actions.continue_editing?.allowed) {
+    return continueEditing(workId);
+  }
+  throw new Error(
+    actions.continue_editing?.reason
+      ?? actions.begin_attempt.reason
+      ?? "This project is not ready for file changes",
+  );
+}
+
 export async function prepareExecutorHandoff(input: {
   work_id: string;
   lease_id: string;
@@ -879,6 +1297,138 @@ export async function getReview(workId: string, attemptId?: string): Promise<Rev
   if (attemptId) query.set("attempt_id", attemptId);
   const suffix = query.size ? `?${query.toString()}` : "";
   return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/review${suffix}`);
+}
+
+export async function getForgeChanges(workId: string): Promise<ForgeChanges> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/changes`);
+}
+
+export async function getChangesFile(
+  workId: string,
+  path: string,
+): Promise<ChangesFileDiff> {
+  const query = new URLSearchParams({ path });
+  return forgeFetch(
+    `/v1/forge/items/${encodeURIComponent(workId)}/changes/file?${query.toString()}`,
+  );
+}
+
+export async function restoreChangesFile(
+  workId: string,
+  input: {
+    path: string;
+    expected_working_digest?: string | null;
+    lease_id: string;
+    generation: number;
+  },
+): Promise<RestoreChangesFileResponse> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/changes/file`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+async function changesLeaseAction(
+  workId: string,
+  action: "fetch" | "pull" | "push" | "sync" | "checkpoint",
+  lease: {
+    lease_id: string;
+    generation: number;
+    remote?: string;
+    ack_risks?: boolean;
+  },
+): Promise<ChangesSyncResult | ItemProjection> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/changes/${action}`, {
+    method: "POST",
+    body: JSON.stringify(lease),
+  });
+}
+
+export async function fetchChanges(
+  workId: string,
+  lease: { lease_id: string; generation: number; remote?: string },
+): Promise<ChangesSyncResult> {
+  return changesLeaseAction(workId, "fetch", lease) as Promise<ChangesSyncResult>;
+}
+
+export async function pullChanges(
+  workId: string,
+  lease: { lease_id: string; generation: number; remote?: string },
+): Promise<ChangesSyncResult> {
+  return changesLeaseAction(workId, "pull", lease) as Promise<ChangesSyncResult>;
+}
+
+export async function pushChanges(
+  workId: string,
+  lease: { lease_id: string; generation: number; remote?: string },
+): Promise<ChangesSyncResult> {
+  return changesLeaseAction(workId, "push", lease) as Promise<ChangesSyncResult>;
+}
+
+export async function syncChanges(
+  workId: string,
+  lease: { lease_id: string; generation: number; remote?: string },
+): Promise<ChangesSyncResult> {
+  return changesLeaseAction(workId, "sync", lease) as Promise<ChangesSyncResult>;
+}
+
+export async function checkpointChanges(
+  workId: string,
+  lease: { lease_id: string; generation: number; ack_risks?: boolean },
+): Promise<ItemProjection> {
+  return changesLeaseAction(workId, "checkpoint", lease) as Promise<ItemProjection>;
+}
+
+export async function getChangesHistory(
+  workId: string,
+  limit = 50,
+): Promise<{ work_id: string; commits: ChangesHistoryEntry[] }> {
+  const query = new URLSearchParams({ limit: String(limit) });
+  return forgeFetch(
+    `/v1/forge/items/${encodeURIComponent(workId)}/changes/history?${query.toString()}`,
+  );
+}
+
+export async function getChangesBlame(
+  workId: string,
+  path: string,
+): Promise<{ work_id: string; path: string; hunks: ChangesBlameHunk[] }> {
+  const query = new URLSearchParams({ path });
+  return forgeFetch(
+    `/v1/forge/items/${encodeURIComponent(workId)}/changes/blame?${query.toString()}`,
+  );
+}
+
+export async function resolveChangesConflict(
+  workId: string,
+  input: {
+    path: string;
+    resolution: "ours" | "theirs" | "baseline";
+    expected_working_digest?: string | null;
+    lease_id: string;
+    generation: number;
+  },
+): Promise<{ work_id: string; path: string; action: string; changes: ForgeChanges }> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/changes/conflict`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function revertChangesHunk(
+  workId: string,
+  input: {
+    path: string;
+    hunk_index: number;
+    expected_working_digest: string;
+    lease_id: string;
+    generation: number;
+  },
+): Promise<RestoreChangesFileResponse> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/changes/file/hunk`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export async function getReviewFile(
@@ -949,6 +1499,89 @@ export async function recordReviewIntent(
       strategy: intent.strategy ?? "preserve_branch",
       rationale: intent.rationale ?? null,
       acknowledged_violations: intent.acknowledged_violations ?? [],
+    }),
+  });
+}
+
+export async function listReviewComments(
+  workId: string,
+  attemptId?: string,
+): Promise<ReviewComment[]> {
+  const query = new URLSearchParams();
+  if (attemptId) query.set("attempt_id", attemptId);
+  const suffix = query.size ? `?${query.toString()}` : "";
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/review/comments${suffix}`);
+}
+
+export async function addReviewComment(
+  workId: string,
+  input: {
+    evidence_id: string;
+    attempt_id?: string;
+    path: string;
+    side?: "new" | "old" | string;
+    start_line: number;
+    end_line?: number;
+    anchor_text?: string | null;
+    body: string;
+    parent_id?: string | null;
+  },
+): Promise<ItemProjection> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/review/comments`, {
+    method: "POST",
+    body: JSON.stringify({
+      evidence_id: input.evidence_id,
+      attempt_id: input.attempt_id ?? null,
+      path: input.path,
+      side: input.side ?? "new",
+      start_line: input.start_line,
+      end_line: input.end_line ?? input.start_line,
+      anchor_text: input.anchor_text ?? null,
+      body: input.body,
+      parent_id: input.parent_id ?? null,
+    }),
+  });
+}
+
+export async function resolveReviewComment(
+  workId: string,
+  commentId: string,
+): Promise<ItemProjection> {
+  return forgeFetch(
+    `/v1/forge/items/${encodeURIComponent(workId)}/review/comments/${encodeURIComponent(commentId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ resolve: true }),
+    },
+  );
+}
+
+export async function deleteReviewComment(
+  workId: string,
+  commentId: string,
+): Promise<ItemProjection> {
+  return forgeFetch(
+    `/v1/forge/items/${encodeURIComponent(workId)}/review/comments/${encodeURIComponent(commentId)}`,
+    { method: "DELETE" },
+  );
+}
+
+export async function requestReviewChanges(
+  workId: string,
+  input: {
+    evidence_id: string;
+    evidence_digest: string;
+    summary?: string;
+    comment_ids?: string[];
+  },
+): Promise<ItemProjection> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/review/request-changes`, {
+    method: "POST",
+    body: JSON.stringify({
+      evidence_id: input.evidence_id,
+      evidence_digest: input.evidence_digest,
+      summary: input.summary ?? null,
+      comment_ids: input.comment_ids ?? null,
     }),
   });
 }
@@ -1102,6 +1735,13 @@ export function humanExecutorLabel(executor: string | null | undefined): string 
 /** Keep daemon diagnostics useful without making users learn Forge's machinery. */
 export function humanizeForgeMessage(message: string): string {
   const trimmed = message.trim();
+  if (
+    /no ready indexed snapshot/i.test(trimmed) ||
+    (/HTTP\s+404\b/i.test(trimmed) && /\/v1\/world\//i.test(trimmed)) ||
+    (/indexed snapshot/i.test(trimmed) && /not (ready|available|indexed)/i.test(trimmed))
+  ) {
+    return "The code map isn’t ready yet. Rebuild it, or wait for indexing to finish.";
+  }
   if (
     /^workshop returned HTTP 404(\s+Not Found)?:?\s*$/i.test(trimmed) ||
     /^workshop returned HTTP 405(\s+Method Not Allowed)?:?\s*$/i.test(trimmed) ||

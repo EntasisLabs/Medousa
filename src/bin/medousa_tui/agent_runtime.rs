@@ -142,6 +142,7 @@ impl AgentStreamSink for TuiStreamSink {
         tool_run_id: String,
         tool_name: String,
         input_summary: String,
+        _input_params: Vec<medousa_types::daemon_api::ToolInputParam>,
         tool_round: usize,
     ) {
         let _ = self
@@ -515,6 +516,7 @@ pub(crate) async fn start_prompt_run(
     )
     .max(hot_window_turns);
     let prior_build = build_prior_messages(
+        tui_rt.tool_catalog.as_ref(),
         &state.session_id,
         &state.conversation,
         &prompt,
@@ -681,6 +683,8 @@ pub(crate) async fn start_prompt_run(
                 round_context_provider: None,
                 evidence_undertaking_id: None,
                 compact_evidence_receipt_sink: None,
+                active_turn_checkpoint_sink: None,
+                active_turn_resume: None,
             },
         )
         .await;
@@ -710,12 +714,9 @@ async fn attempt_daemon_interactive_turn(
         stage_routing: state.stage_routing.clone(),
         surface: Some(medousa::TurnSurfaceContext::tui()),
         host_context: None,
-        max_tool_rounds: Some(medousa::tui::settings::parse_usize_with_bounds(
-            &state.settings.max_tool_rounds,
-            10,
-            medousa::agent_runtime::ROUND_LIMIT_MIN,
-            medousa::agent_runtime::ROUND_LIMIT_MAX,
-        )),
+        // The daemon reads the persisted General-mode setting. Leaving this
+        // unset also lets Coder select its independent 100-round default.
+        max_tool_rounds: None,
         retry_runtime_max_rounds: Some(medousa::tui::settings::parse_usize_with_bounds(
             &state.settings.retry_runtime_max_rounds,
             medousa::agent_runtime::turn_orchestrator::DEFAULT_RETRY_RUNTIME_MAX_ROUNDS,
@@ -1097,6 +1098,7 @@ async fn dispatch_daemon_stream_event(
 }
 
 fn build_prior_messages(
+    tool_catalog: &medousa::typed_tools::ToolCatalog,
     session_id: &str,
     turns: &[ConversationTurn],
     current_prompt: &str,
@@ -1105,6 +1107,7 @@ fn build_prior_messages(
     cold_window_turns: usize,
 ) -> turn_services::PriorMessageBuild {
     turn_services::build_prior_messages(
+        tool_catalog,
         session_id,
         turns,
         current_prompt,

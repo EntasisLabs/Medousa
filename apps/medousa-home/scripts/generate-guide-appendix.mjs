@@ -17,7 +17,7 @@ function readRel(rel) {
 
 function formatKeysMac(keys) {
   if (keys.startsWith("literal:")) return keys.slice("literal:".length);
-  if (keys.startsWith("prefix:")) return `⌘; then ${keys.slice("prefix:".length)}`;
+  if (keys.startsWith("prefix:")) return `⌘; + ${keys.slice("prefix:".length)}`;
   if (keys.startsWith("mod:")) {
     const chord = keys.slice("mod:".length);
     if (chord.includes(" / ")) {
@@ -33,7 +33,7 @@ function formatKeysMac(keys) {
 
 function formatKeysWin(keys) {
   if (keys.startsWith("literal:")) return keys.slice("literal:".length);
-  if (keys.startsWith("prefix:")) return `Ctrl+; then ${keys.slice("prefix:".length)}`;
+  if (keys.startsWith("prefix:")) return `Ctrl+; + ${keys.slice("prefix:".length)}`;
   if (keys.startsWith("mod:")) {
     const chord = keys.slice("mod:".length);
     if (chord.includes(" / ")) {
@@ -160,7 +160,7 @@ push("```callout");
 push("tone: note");
 push("title: Prefix chord");
 push(
-  "body: Pane bindings use a prefix — ⌘; on macOS, Ctrl+; elsewhere — then the key (for example ⌘; then % to split right). Spotlight always opens with ⌘K / Ctrl+K.",
+  "body: Pane bindings use a prefix — ⌘; on macOS, Ctrl+; elsewhere — then the key (for example ⌘; + % to split right). Spotlight always opens with ⌘K / Ctrl+K.",
 );
 push("```");
 push("");

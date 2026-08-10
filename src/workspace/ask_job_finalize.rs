@@ -166,13 +166,13 @@ pub fn default_journal_path_for_today() -> String {
 }
 
 fn heartbeat_delivery_target(channel: &str, channel_id: &str) -> ChannelDeliveryTarget {
-    ChannelDeliveryTarget {
-        channel: channel.to_string(),
-        user_id: "medousa:system:ask-complete".to_string(),
-        channel_id: channel_id.to_string(),
-        session_id: "medousa-ask-complete".to_string(),
-        stream_id: None,
-    }
+    ChannelDeliveryTarget::new(
+        channel,
+        "medousa:system:ask-complete",
+        channel_id,
+        "medousa-ask-complete",
+        None,
+    )
 }
 
 fn resolve_notify_target(channel: &str) -> Option<ChannelDeliveryTarget> {

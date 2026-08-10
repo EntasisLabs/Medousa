@@ -1,0 +1,5 @@
+error: `invoke_typed` must be async
+  --> tests/ui/fail_non_async.rs:11:5
+   |
+11 |     fn invoke_typed(&self, input: String) -> Result<String, ()> {
+   |     ^^

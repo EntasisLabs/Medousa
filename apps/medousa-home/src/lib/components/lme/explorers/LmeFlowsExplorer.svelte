@@ -97,6 +97,80 @@
     <p class="shrink-0 px-3 py-2 text-sm text-content-error">{flows.error}</p>
   {/if}
 
+  <header class="lme-side-rail-dock" use:portLmeDock>
+    <div class="lme-dock-leading-ghost min-w-0 flex-1">
+      {#if filterActive}
+        <span class="workshop-faint truncate text-[11px]">Filtered</span>
+      {/if}
+    </div>
+
+    <button
+      type="button"
+      class="vault-dock-icon-btn"
+      aria-label="New flow"
+      title="New"
+      onclick={startNew}
+    >
+      <Plus size={16} strokeWidth={1.75} />
+    </button>
+
+    <div class="lme-dock-chrome-secondary relative shrink-0">
+      <button
+        type="button"
+        class="vault-dock-icon-btn {filterActive ? 'vault-dock-icon-btn-active' : ''}"
+        aria-haspopup="menu"
+        aria-expanded={filterOpen}
+        aria-label="Filter flows"
+        title="Filter"
+        onclick={(event) => {
+          event.stopPropagation();
+          filterOpen = !filterOpen;
+        }}
+      >
+        <SlidersHorizontal size={15} strokeWidth={1.75} />
+      </button>
+      {#if filterOpen}
+        <div
+          class="vault-notes-filter-menu absolute top-full right-0 z-30 mt-1 w-[min(17.5rem,calc(100vw-2rem))] rounded-lg border border-surface-500/50 bg-surface-900 py-2 shadow-xl"
+          role="menu"
+          tabindex="-1"
+          onclick={(event) => event.stopPropagation()}
+          onkeydown={handleMenuKeydown}
+        >
+          <div class="px-2.5 pb-1">
+            <input
+              class="input w-full text-xs"
+              type="search"
+              placeholder="Search flows…"
+              bind:value={search}
+              onclick={(event) => event.stopPropagation()}
+            />
+          </div>
+          <div class="my-1 border-t border-surface-500/35"></div>
+          <button
+            type="button"
+            role="menuitem"
+            class="vault-menu-item text-content-tertiary"
+            onclick={() => void flows.refresh()}
+          >
+            Refresh
+          </button>
+          {#if filterActive}
+            <button
+              type="button"
+              role="menuitem"
+              class="vault-menu-item text-content-tertiary"
+              onclick={() => {
+                search = "";
+              }}
+            >
+              Clear
+            </button>
+          {/if}
+        </div>
+      {/if}
+    </div>
+  </header>
   <div class="min-h-0 flex-1 overflow-y-auto">
     {#if flows.loading && flows.workflows.length === 0}
       <p class="workshop-muted px-3 py-2 text-sm">Loading…</p>
@@ -178,78 +252,4 @@
     {/if}
   </div>
 
-  <footer class="lme-side-rail-dock" use:portLmeDock>
-    <div class="lme-dock-leading-ghost min-w-0 flex-1">
-      {#if filterActive}
-        <span class="workshop-faint truncate text-[11px]">Filtered</span>
-      {/if}
-    </div>
-
-    <button
-      type="button"
-      class="vault-dock-icon-btn"
-      aria-label="New flow"
-      title="New"
-      onclick={startNew}
-    >
-      <Plus size={16} strokeWidth={1.75} />
-    </button>
-
-    <div class="lme-dock-chrome-secondary relative shrink-0">
-      <button
-        type="button"
-        class="vault-dock-icon-btn {filterActive ? 'vault-dock-icon-btn-active' : ''}"
-        aria-haspopup="menu"
-        aria-expanded={filterOpen}
-        aria-label="Filter flows"
-        title="Filter"
-        onclick={(event) => {
-          event.stopPropagation();
-          filterOpen = !filterOpen;
-        }}
-      >
-        <SlidersHorizontal size={15} strokeWidth={1.75} />
-      </button>
-      {#if filterOpen}
-        <div
-          class="vault-notes-filter-menu absolute bottom-full right-0 z-30 mb-1 w-[min(17.5rem,calc(100vw-2rem))] rounded-lg border border-surface-500/50 bg-surface-900 py-2 shadow-xl"
-          role="menu"
-          tabindex="-1"
-          onclick={(event) => event.stopPropagation()}
-          onkeydown={handleMenuKeydown}
-        >
-          <div class="px-2.5 pb-1">
-            <input
-              class="input w-full text-xs"
-              type="search"
-              placeholder="Search flows…"
-              bind:value={search}
-              onclick={(event) => event.stopPropagation()}
-            />
-          </div>
-          <div class="my-1 border-t border-surface-500/35"></div>
-          <button
-            type="button"
-            role="menuitem"
-            class="vault-menu-item text-content-tertiary"
-            onclick={() => void flows.refresh()}
-          >
-            Refresh
-          </button>
-          {#if filterActive}
-            <button
-              type="button"
-              role="menuitem"
-              class="vault-menu-item text-content-tertiary"
-              onclick={() => {
-                search = "";
-              }}
-            >
-              Clear
-            </button>
-          {/if}
-        </div>
-      {/if}
-    </div>
-  </footer>
 </aside>

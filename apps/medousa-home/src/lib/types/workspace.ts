@@ -43,6 +43,8 @@ export interface WorkspaceStreamEvent {
   feed_event?: WorkspaceEvent;
   counts?: Record<string, number>;
   snapshot?: WorkspaceSnapshot;
+  /** Live subagent transcript slice, present on `card_upserted` for worker cards. */
+  worker_progress?: import("$lib/types/card").WorkerProgress;
 }
 
 export function columnLabel(column: string): string {

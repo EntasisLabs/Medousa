@@ -40,15 +40,17 @@ pub fn infer_tool_claims(
     let mode = tool_mode(tool_name, input);
 
     if let Some(path) = input.get("path").and_then(Value::as_str) {
-        let path = logical_path(path, worktree);
-        if !path.is_empty() {
-            claims.push(CoderClaimScope {
-                target: format!("file://{path}"),
+        add_file_claim(&mut claims, path, mode, worktree, "tool path");
+    }
+    if let Some(paths) = input.get("paths").and_then(Value::as_array) {
+        for path in paths.iter().filter_map(Value::as_str) {
+            add_file_claim(
+                &mut claims,
+                path,
                 mode,
-                hazardous: hazardous_path(&path),
-                reason: "tool path".into(),
-            });
-            add_path_resource_claims(&mut claims, &path, mode);
+                worktree,
+                "runtime-issued change-set path",
+            );
         }
     }
     if let Some(uri) = input.get("uri").and_then(Value::as_str) {
@@ -99,6 +101,7 @@ pub fn infer_tool_claims(
     }
     if tool_name.starts_with("cognition_engineering_")
         || tool_name == super::coder_tools::COGNITION_CODER_EVIDENCE_READ
+        || tool_name == super::coder_causal::COGNITION_CODER_CAUSAL_QUERY
     {
         claims.push(CoderClaimScope {
             target: format!("ledger://{}", lease.work_id),
@@ -114,6 +117,7 @@ pub fn infer_tool_claims(
 fn tool_mode(tool_name: &str, input: &Value) -> CoderClaimMode {
     if tool_name == crate::coding_tools::COGNITION_CODE_APPLY_PATCH
         || tool_name == crate::coding_tools::COGNITION_SHELL_SESSION_INTERRUPT
+        || tool_name == super::coder_semantic_actions::COGNITION_CODER_CHANGE_SET_APPLY
     {
         CoderClaimMode::Write
     } else if tool_name == crate::coding_tools::COGNITION_SHELL_SESSION_RUN
@@ -128,6 +132,26 @@ fn tool_mode(tool_name: &str, input: &Value) -> CoderClaimMode {
     } else {
         CoderClaimMode::Read
     }
+}
+
+fn add_file_claim(
+    claims: &mut Vec<CoderClaimScope>,
+    raw_path: &str,
+    mode: CoderClaimMode,
+    worktree: &Path,
+    reason: &str,
+) {
+    let path = logical_path(raw_path, worktree);
+    if path.is_empty() {
+        return;
+    }
+    claims.push(CoderClaimScope {
+        target: format!("file://{path}"),
+        mode,
+        hazardous: hazardous_path(&path),
+        reason: reason.into(),
+    });
+    add_path_resource_claims(claims, &path, mode);
 }
 
 fn add_path_resource_claims(claims: &mut Vec<CoderClaimScope>, path: &str, mode: CoderClaimMode) {
@@ -412,11 +436,15 @@ fn contains_any(value: &str, needles: &[&str]) -> bool {
 
 fn deduplicate_claims(claims: Vec<CoderClaimScope>) -> Vec<CoderClaimScope> {
     let mut seen = HashSet::new();
-    claims
+    let mut claims = claims
         .into_iter()
         .filter(|claim| seen.insert((claim.target.clone(), claim.mode)))
-        .take(16)
-        .collect()
+        .collect::<Vec<_>>();
+    // Hazard serialization must survive the bounded claim projection even for
+    // a large multi-file semantic change set.
+    claims.sort_by_key(|claim| std::cmp::Reverse(claim.hazardous));
+    claims.truncate(16);
+    claims
 }
 
 #[cfg(test)]
@@ -509,5 +537,23 @@ mod tests {
             worktree,
         );
         assert_eq!(claims[0].target, "file://src/lib.rs");
+    }
+
+    #[test]
+    fn semantic_change_sets_keep_hazardous_claims_when_many_files_change() {
+        let mut paths = (0..24)
+            .map(|index| format!("src/generated_{index}.rs"))
+            .collect::<Vec<_>>();
+        paths.push("Cargo.lock".into());
+        let claims = infer_tool_claims(
+            super::super::coder_semantic_actions::COGNITION_CODER_CHANGE_SET_APPLY,
+            &serde_json::json!({ "paths": paths }),
+            &lease(),
+            Path::new("/tmp/worktree"),
+        );
+        assert!(claims.iter().all(|claim| claim.mode == CoderClaimMode::Write));
+        assert!(claims.iter().any(|claim| {
+            claim.target == "resource://lockfile/cargo.lock" && claim.hazardous
+        }));
     }
 }

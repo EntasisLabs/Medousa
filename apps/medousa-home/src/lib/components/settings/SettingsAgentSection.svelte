@@ -756,7 +756,7 @@
 
   <details class="prefs-more" bind:open={presentationsOpen}>
     <summary class="prefs-more-summary">
-      <span>Presentations cleanup</span>
+      <span>Artifacts cleanup</span>
       <ChevronDown size={14} strokeWidth={2} class="prefs-more-chevron" aria-hidden="true" />
     </summary>
     <div class="prefs-more-body">

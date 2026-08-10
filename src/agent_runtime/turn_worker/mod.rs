@@ -25,16 +25,17 @@ pub use registry::{
     inject_worker_session_id,
 };
 pub use routing::{
-    HostBusEnvMode, HostTurnProfile, HostTurnRoute, apply_host_profile_to_activation,
-    classify_host_turn_route_heuristic, host_bus_env_mode, host_bus_force_enabled,
-    host_route_notice, resolve_host_turn_profile, HOST_BUS_MAX_TOOL_ROUNDS,
+    HOST_BUS_MAX_TOOL_ROUNDS, HostBusEnvMode, HostTurnProfile, HostTurnRoute,
+    apply_host_profile_to_activation, classify_host_turn_route_heuristic, host_bus_env_mode,
+    host_bus_force_enabled, host_route_notice, resolve_host_turn_profile,
 };
 pub use run::{
-    ActiveWorkerBusSession, TurnWorkerScheduler, WorkerRuntimeContext, host_bus_mode_enabled,
-    pipeline_for_turn_profile, resume_synthesis_if_needed, run_worker_turn,
-    system_prompt_for_host_bus,
+    ActiveWorkerBusSession, EnterBoundWorkshopOutput, SpawnTurnWorkerOutput, TurnWorkerScheduler,
+    WorkerRuntimeContext, host_bus_mode_enabled, pipeline_for_turn_profile,
+    resume_synthesis_if_needed, run_worker_turn, system_prompt_for_host_bus,
 };
 pub use status::{append_active_workers_hint, format_active_workers_block};
 pub use store::{
-    TurnWorkDisposition, TurnWorkRecord, TurnWorkStatus, TurnWorkerStore, turn_worker_store,
+    TurnWorkDisposition, TurnWorkRecord, TurnWorkStatus, TurnWorkerStore, WorkerToolActivity,
+    turn_worker_store,
 };

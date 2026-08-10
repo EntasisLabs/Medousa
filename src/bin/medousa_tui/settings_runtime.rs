@@ -54,7 +54,7 @@ pub(crate) async fn apply_settings(
         super::resolve_tool_call_mode_name(Some(state.settings_draft.tool_call_mode.trim()));
     let max_tool_rounds = super::parse_usize_with_bounds(
         &state.settings_draft.max_tool_rounds,
-        10,
+        medousa::agent_runtime::DEFAULT_GENERAL_MAX_TOOL_ROUNDS,
         medousa::agent_runtime::ROUND_LIMIT_MIN,
         medousa::agent_runtime::ROUND_LIMIT_MAX,
     );

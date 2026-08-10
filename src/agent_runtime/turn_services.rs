@@ -148,6 +148,7 @@ pub fn parse_tool_call_mode(value: &str) -> ToolCallMode {
 }
 
 pub fn build_prior_messages(
+    tool_catalog: &crate::typed_tools::ToolCatalog,
     session_id: &str,
     turns: &[ConversationTurn],
     current_prompt: &str,
@@ -297,8 +298,13 @@ pub fn build_prior_messages(
         .hot_window_char_budget
         .min(DEFAULT_TOOL_HINTS_BLOCK_CHARS)
         .min(limits.max_prior_total_chars.saturating_sub(total_chars));
-    let tool_hints_block =
-        build_tool_hints_block(session_id, current_prompt, turns, hints_budget);
+    let tool_hints_block = build_tool_hints_block(
+        tool_catalog,
+        session_id,
+        current_prompt,
+        turns,
+        hints_budget,
+    );
     let tool_hints_chars = tool_hints_block.chars().count();
     if !tool_hints_block.trim().is_empty() {
         total_chars = total_chars.saturating_add(tool_hints_chars);
@@ -690,6 +696,7 @@ mod tests {
         }
 
         let built = build_prior_messages(
+            &crate::typed_tools::ToolCatalog::default(),
             "test-session",
             &turns,
             "new prompt",
@@ -728,7 +735,16 @@ mod tests {
         },
         ];
 
-        let built = build_prior_messages("test-session", &turns, "new prompt", false, 8, 24, sample_limits());
+        let built = build_prior_messages(
+            &crate::typed_tools::ToolCatalog::default(),
+            "test-session",
+            &turns,
+            "new prompt",
+            false,
+            8,
+            24,
+            sample_limits(),
+        );
         let has_assistant = built
             .messages
             .iter()
@@ -830,7 +846,16 @@ mod tests {
         },
         ];
 
-        let built = build_prior_messages("test-session", &turns, "spin them up", false, 8, 24, sample_limits());
+        let built = build_prior_messages(
+            &crate::typed_tools::ToolCatalog::default(),
+            "test-session",
+            &turns,
+            "spin them up",
+            false,
+            8,
+            24,
+            sample_limits(),
+        );
         assert!(built.tool_slices_chars > TOOL_SLICES_PREFIX.len());
         assert!(built.total_chars > built.tool_slices_chars);
     }

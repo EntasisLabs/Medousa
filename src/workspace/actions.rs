@@ -5,14 +5,14 @@ use std::sync::Arc;
 use chrono::Utc;
 use stasis::application::runtime::runtime_factory::RuntimeComposition;
 use stasis::sdk::runtime_sdk::RuntimeSdk;
-use stasis::domain::runtime::job::{Job, JobState};
-use stasis::ports::outbound::runtime::job_store::JobStore;
+use stasis::domain::runtime::job::JobState;
 
 use crate::agent_runtime::turn_worker::{TurnWorkStatus, turn_worker_store};
 use crate::daemon_api::{
     ReplayAndResumeResponse, WorkCardDetail, WorkCardKind, WorkspaceCardActionResponse,
 };
 use crate::turn_continuation;
+use crate::runtime_composition_ext::RuntimeCompositionExt;
 use crate::workspace::ask_job_store::ask_job_store;
 use crate::workspace::event::event_for_vault_link;
 use crate::workspace::service::WorkspaceService;
@@ -148,7 +148,7 @@ fn cancel_turn_worker(work_id: &str) -> Result<(bool, String, Option<String>), C
 }
 
 async fn cancel_runtime_job(runtime: &RuntimeComposition, job_id: &str) -> bool {
-    let Some(mut job) = get_job(runtime, job_id).await.ok().flatten() else {
+    let Some(mut job) = runtime.get_job(job_id).await.ok().flatten() else {
         return false;
     };
 
@@ -159,7 +159,7 @@ async fn cancel_runtime_job(runtime: &RuntimeComposition, job_id: &str) -> bool 
 
     job.state = JobState::Canceled;
     job.finished_at = Some(Utc::now());
-    save_job(runtime, job).await.is_ok()
+    runtime.save_job(job).await.is_ok()
 }
 
 pub async fn archive_card(
@@ -360,25 +360,9 @@ async fn resolve_card_detail(
         .ok_or(CardActionError::NotFound)
 }
 
-async fn get_job(
-    runtime: &RuntimeComposition,
-    job_id: &str,
-) -> Result<Option<Job>, stasis::domain::errors::StasisError> {
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt.job_store.get(job_id).await,
-        RuntimeComposition::Surreal(rt) => rt.job_store.get(job_id).await,
-    }
-}
-
-async fn save_job(runtime: &RuntimeComposition, job: Job) -> Result<(), stasis::domain::errors::StasisError> {
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt.job_store.save(job).await,
-        RuntimeComposition::Surreal(rt) => rt.job_store.save(job).await,
-    }
-}
-
 async fn job_succeeded(runtime: &RuntimeComposition, job_id: &str) -> bool {
-    get_job(runtime, job_id)
+    runtime
+        .get_job(job_id)
         .await
         .ok()
         .flatten()
@@ -433,6 +417,11 @@ mod tests {
             supports_ui_artifacts: false,
             supports_liquid_markdown: false,
             supports_browser_host: false,
+            live_tool_activity: Vec::new(),
+            live_thinking: String::new(),
+            live_output: String::new(),
+            thinking_started_at: None,
+            thinking_finished_at: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -446,18 +435,20 @@ mod tests {
 
     #[test]
     fn link_vault_persists_association() {
-        let note_path = format!("journal/link-test-{}.md", uuid::Uuid::new_v4().simple());
-        let request = crate::daemon_api::VaultWriteRequest {
-            path: Some(note_path.clone()),
-            content: "# Link test\n".to_string(),
-            ..Default::default()
-        };
-        crate::vault::VaultService::write_note(Some(&note_path), &request, None).expect("seed");
+        crate::vault::service::with_temp_vault(|| {
+            let note_path = format!("journal/link-test-{}.md", uuid::Uuid::new_v4().simple());
+            let request = crate::daemon_api::VaultWriteRequest {
+                path: Some(note_path.clone()),
+                content: "# Link test\n".to_string(),
+                ..Default::default()
+            };
+            crate::vault::VaultService::write_note(Some(&note_path), &request, None).expect("seed");
 
-        let card_id = format!("card-link-{}", uuid::Uuid::new_v4().simple());
-        let response = link_vault_card(&card_id, &note_path).expect("link");
-        assert!(response.ok);
-        let assoc = workspace_store().associations(&card_id);
-        assert_eq!(assoc.vault_paths, vec![note_path]);
+            let card_id = format!("card-link-{}", uuid::Uuid::new_v4().simple());
+            let response = link_vault_card(&card_id, &note_path).expect("link");
+            assert!(response.ok);
+            let assoc = workspace_store().associations(&card_id);
+            assert_eq!(assoc.vault_paths, vec![note_path]);
+        });
     }
 }

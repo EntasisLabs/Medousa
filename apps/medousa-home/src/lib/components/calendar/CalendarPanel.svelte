@@ -845,7 +845,7 @@
 
   .calendar-cell-num-today {
     background: rgb(var(--color-primary-500));
-    color: rgb(var(--color-surface-50));
+    color: rgb(var(--on-primary));
     font-weight: 650;
   }
 

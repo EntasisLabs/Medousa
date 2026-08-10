@@ -25,11 +25,14 @@ const MAX_REPO_INSTRUCTIONS_CHARS: usize = 12_000;
 /// enrich the prompt, but can never select the working directory or branch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoderEntryContext {
+    pub repo_id: String,
     pub work_id: String,
     pub title: String,
     pub brief: String,
     pub worktree: PathBuf,
     pub branch: String,
+    pub environment_generation: u32,
+    pub memory_parent: Option<CoderMemoryParentContext>,
     pub baseline_oid: String,
     pub head_oid: String,
     pub changed_paths: Vec<String>,
@@ -38,6 +41,15 @@ pub struct CoderEntryContext {
     pub project_markers: Vec<String>,
     pub repository_instructions: Vec<RepositoryInstruction>,
     pub editor: CoderEditorContext,
+}
+
+/// Forge-authored lineage needed to read a bounded parent-memory snapshot.
+/// The runtime derives the parent Locus session; the model never receives it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoderMemoryParentContext {
+    pub branch: String,
+    pub environment_generation: u32,
+    pub inherited_before_utc: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -169,13 +181,52 @@ fn compile_coder_entry_inner(
         .take(MAX_CHANGED_PATHS)
         .collect();
     let editor = compile_editor_context(advisory);
+    let memory_parent = environment
+        .derived_from
+        .as_ref()
+        .map(|source| CoderMemoryParentContext {
+            branch: source.branch.clone(),
+            environment_generation: source.generation,
+            inherited_before_utc: source
+                .forked_at
+                .to_rfc3339_opts(SecondsFormat::Millis, true),
+        })
+        .or_else(|| {
+            // Snapshots written before Forge persisted explicit lineage can
+            // only have been cloned from the undertaking staging environment.
+            let staging = item.environment.as_ref()?;
+            if staging.branch == environment.branch && staging.generation == environment.generation
+            {
+                return None;
+            }
+            let created_at = item
+                .attempts
+                .iter()
+                .filter(|attempt| {
+                    attempt.environment.as_ref().is_some_and(|candidate| {
+                        candidate.branch == environment.branch
+                            && candidate.generation == environment.generation
+                    })
+                })
+                .map(|attempt| attempt.started_at)
+                .min()
+                .unwrap_or(item.created_at);
+            Some(CoderMemoryParentContext {
+                branch: staging.branch.clone(),
+                environment_generation: staging.generation,
+                inherited_before_utc: created_at.to_rfc3339_opts(SecondsFormat::Millis, true),
+            })
+        });
 
     Ok(CoderEntryContext {
+        repo_id: environment.repo.repo_id.to_string(),
         work_id: item.id.to_string(),
         title: truncate(&item.title, MAX_FIELD_CHARS),
         brief: truncate(&item.brief, MAX_FIELD_CHARS),
         worktree: worktree.clone(),
         branch,
+        environment_generation: environment.generation,
+        memory_parent,
         baseline_oid: environment.baseline_oid.to_string(),
         head_oid: head_oid.to_string(),
         changed_paths,
@@ -206,9 +257,16 @@ impl CoderEntryContext {
             })
             .collect();
         let forge_state = json!({
+            "repo_id": self.repo_id,
             "work_id": self.work_id,
             "worktree": self.worktree.display().to_string(),
             "branch": self.branch,
+            "environment_generation": self.environment_generation,
+            "memory_lineage": self.memory_parent.as_ref().map(|parent| json!({
+                "derived_from_branch": parent.branch,
+                "derived_from_generation": parent.environment_generation,
+                "inherited_before_utc": parent.inherited_before_utc,
+            })),
             "baseline_oid": self.baseline_oid,
             "head_oid": self.head_oid,
             "title": self.title,
@@ -482,7 +540,7 @@ mod tests {
 
         assert_eq!(entry.work_id, work_id);
         assert_eq!(entry.title, "Repair demo");
-        assert!(entry.branch.starts_with("medousa/work/"));
+        assert!(entry.branch.starts_with("worktree/"));
         assert_eq!(entry.project_markers, vec!["Cargo.toml"]);
         assert_eq!(entry.repository_instructions[0].path, "AGENTS.md");
         assert_eq!(entry.editor.active_path.as_deref(), Some("src/lib.rs"));
@@ -533,6 +591,9 @@ mod tests {
             std::fs::canonicalize(&private.worktree).expect("canonical private worktree")
         );
         assert_eq!(entry.branch, private.branch);
+        let memory_parent = entry.memory_parent.as_ref().expect("memory parent");
+        assert_eq!(memory_parent.branch, staging.branch);
+        assert_eq!(memory_parent.environment_generation, staging.generation);
         assert_ne!(
             entry.worktree,
             std::fs::canonicalize(&staging.worktree).expect("canonical staging worktree")

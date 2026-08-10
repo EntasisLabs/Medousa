@@ -2,29 +2,35 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use medousa_types::environment::POINTER_KIND_SESSION;
-use serde_json::{Value, json};
-use stasis::application::orchestration::tool_registry::StasisTool;
+use medousa_types::environment::ContextPointerDigest;
+use schemars::JsonSchema;
+use serde::{Deserialize, Deserializer, Serialize};
 use stasis::prelude::{Result as StasisResult, StasisError};
 use tokio::sync::RwLock;
 
 use crate::context_pointer_index::resolve_pointer_slice;
 use crate::environment_store::{environment_hub, resolve_profile_id};
+use crate::semantic_values::TrimmedText;
 use crate::session::load_history;
 use crate::turn_continuation::TurnContinuationScope;
+use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_CONTEXT_FOLLOW_POINTER: &str = "cognition_context_follow_pointer";
 pub const COGNITION_CONTEXT_LIST_POINTERS: &str = "cognition_context_list_pointers";
+const COGNITION_CONTEXT_FOLLOW_POINTER_ID: ToolId =
+    ToolId::new(COGNITION_CONTEXT_FOLLOW_POINTER);
+const COGNITION_CONTEXT_LIST_POINTERS_ID: ToolId =
+    ToolId::new(COGNITION_CONTEXT_LIST_POINTERS);
 
 pub fn register_context_pointer_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 ) -> StasisResult<()> {
-    registry.register_tool(CognitionContextFollowPointerTool {
+    registry.register_typed_tool(CognitionContextFollowPointerTool {
         turn_scope: turn_scope.clone(),
     })?;
-    registry.register_tool(CognitionContextListPointersTool { turn_scope })?;
+    registry.register_typed_tool(CognitionContextListPointersTool { turn_scope })?;
     Ok(())
 }
 
@@ -32,39 +38,103 @@ struct CognitionContextFollowPointerTool {
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 }
 
-#[async_trait]
-impl StasisTool for CognitionContextFollowPointerTool {
-    fn name(&self) -> &'static str {
-        COGNITION_CONTEXT_FOLLOW_POINTER
+fn default_pointer_scope() -> String {
+    "last_5_turns".to_string()
+}
+
+#[derive(Debug, JsonSchema)]
+struct ContextFollowPointerInput {
+    #[schemars(required, with = "String")]
+    pointer_id: CompatOption<String>,
+    #[serde(default = "default_pointer_scope")]
+    scope: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PointerScope(usize);
+
+impl PointerScope {
+    fn parse(value: String) -> Self {
+        let normalized = value.trim().to_ascii_lowercase();
+        let turns = normalized
+            .strip_prefix("last_")
+            .and_then(|value| value.strip_suffix("_turns"))
+            .and_then(|value| value.parse::<usize>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(5);
+        Self(turns)
     }
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Pull a focused slice of a context pointer into working memory. \
-             Use pointer ids from [MEDOUSA_POINTERS] at turn start. scope examples: last_5_turns.",
-        )
+    fn as_string(self) -> String {
+        format!("last_{}_turns", self.0)
     }
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["pointer_id"],
-            "properties": {
-                "pointer_id": { "type": "string" },
-                "scope": { "type": "string", "default": "last_5_turns" }
-            }
-        }))
-    }
+#[derive(Debug)]
+struct ContextFollowPointerCommand {
+    pointer_id: TrimmedText,
+    scope: PointerScope,
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+impl TryFrom<ContextFollowPointerInput> for ContextFollowPointerCommand {
+    type Error = StasisError;
+
+    fn try_from(input: ContextFollowPointerInput) -> Result<Self, Self::Error> {
         let pointer_id = input
-            .get("pointer_id")
-            .and_then(Value::as_str)
+            .pointer_id
+            .into_option()
             .ok_or_else(|| StasisError::PortFailure("pointer_id required".to_string()))?;
-        let scope = input
-            .get("scope")
-            .and_then(Value::as_str)
-            .unwrap_or("last_5_turns");
+        Ok(Self {
+            pointer_id: TrimmedText::new(pointer_id)
+                .map_err(|_| StasisError::PortFailure("pointer_id required".to_string()))?,
+            scope: PointerScope::parse(input.scope),
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for ContextFollowPointerInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(default)]
+            pointer_id: CompatOption<String>,
+            #[serde(default)]
+            scope: CompatOption<String>,
+        }
+
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            pointer_id: input.pointer_id,
+            scope: input
+                .scope
+                .into_option()
+                .unwrap_or_else(default_pointer_scope),
+        })
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct ContextFollowPointerOutput {
+    ok: bool,
+    pointer_id: String,
+    kind: String,
+    content: String,
+    truncated: bool,
+}
+
+#[medousa_tool(id = COGNITION_CONTEXT_FOLLOW_POINTER_ID)]
+impl CognitionContextFollowPointerTool {
+    /// Pull a focused slice of a context pointer into working memory. Use pointer ids from [MEDOUSA_POINTERS] at turn start. scope examples: last_5_turns.
+    async fn invoke_typed(
+        &self,
+        input: ContextFollowPointerInput,
+    ) -> stasis::prelude::Result<ContextFollowPointerOutput> {
+        let command = ContextFollowPointerCommand::try_from(input)?;
+        let pointer_id = command.pointer_id.into_string();
+        let scope = command.scope.as_string();
 
         let active_session =
             crate::runtime_session::require_active_chat_session_id_async(
@@ -88,27 +158,27 @@ impl StasisTool for CognitionContextFollowPointerTool {
         let pointer = digest
             .pointers
             .iter()
-            .find(|p| p.id == pointer_id)
+            .find(|p| p.id == pointer_id.as_str())
             .cloned()
             .ok_or_else(|| {
                 StasisError::PortFailure(format!("pointer not found in digest: {pointer_id}"))
             })?;
 
         let history = if pointer.kind == POINTER_KIND_SESSION {
-            Some(load_history(pointer_id))
+            Some(load_history(&pointer_id))
         } else {
             None
         };
         let (content, truncated) =
-            resolve_pointer_slice(&pointer, scope, history.as_deref());
+            resolve_pointer_slice(&pointer, &scope, history.as_deref());
 
-        Ok(json!({
-            "ok": true,
-            "pointer_id": pointer_id,
-            "kind": pointer.kind,
-            "content": content,
-            "truncated": truncated,
-        }))
+        Ok(ContextFollowPointerOutput {
+            ok: true,
+            pointer_id,
+            kind: pointer.kind,
+            content,
+            truncated,
+        })
     }
 }
 
@@ -116,22 +186,24 @@ struct CognitionContextListPointersTool {
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 }
 
-#[async_trait]
-impl StasisTool for CognitionContextListPointersTool {
-    fn name(&self) -> &'static str {
-        COGNITION_CONTEXT_LIST_POINTERS
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ContextListPointersInput {}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("List ranked context pointers for the active session (same as turn bootstrap digest).")
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+struct ContextListPointersOutput {
+    ok: bool,
+    #[schemars(with = "serde_json::Value")]
+    digest: ContextPointerDigest,
+    block: String,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({ "type": "object", "properties": {} }))
-    }
-
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let _ = input;
+#[medousa_tool(id = COGNITION_CONTEXT_LIST_POINTERS_ID)]
+impl CognitionContextListPointersTool {
+    /// List ranked context pointers for the active session (same as turn bootstrap digest).
+    async fn invoke_typed(
+        &self,
+        _input: ContextListPointersInput,
+    ) -> stasis::prelude::Result<ContextListPointersOutput> {
         let active_session =
             crate::runtime_session::require_active_chat_session_id_async(
                 &self.turn_scope,
@@ -150,10 +222,62 @@ impl StasisTool for CognitionContextListPointersTool {
             env.as_ref(),
             &crate::context_pointer_index::collect_work_card_hints(&active_session),
         );
-        Ok(json!({
-            "ok": true,
-            "digest": digest,
-            "block": crate::context_pointer_index::format_pointer_digest_block(&digest),
+        let block = crate::context_pointer_index::format_pointer_digest_block(&digest);
+        Ok(ContextListPointersOutput {
+            ok: true,
+            digest,
+            block,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pointer_command_normalizes_id_and_scope() {
+        let command = ContextFollowPointerCommand::try_from(ContextFollowPointerInput {
+            pointer_id: Some(" session-a ".to_string()).into(),
+            scope: " LAST_3_TURNS ".to_string(),
+        })
+        .expect("pointer command");
+        assert_eq!(command.pointer_id.as_str(), "session-a");
+        assert_eq!(command.scope.as_string(), "last_3_turns");
+
+        let fallback = PointerScope::parse("unsupported".to_string());
+        assert_eq!(fallback.as_string(), "last_5_turns");
+    }
+
+    #[test]
+    fn pointer_command_rejects_blank_pointer_id() {
+        let error = ContextFollowPointerCommand::try_from(ContextFollowPointerInput {
+            pointer_id: Some(" \n\t".to_string()).into(),
+            scope: default_pointer_scope(),
+        })
+        .expect_err("blank pointer id should fail");
+        assert!(error.to_string().contains("pointer_id required"));
+    }
+
+    #[test]
+    fn pointer_wire_optionals_remain_lenient_for_legacy_values() {
+        let missing: ContextFollowPointerInput = serde_json::from_value(serde_json::json!({
+            "pointer_id": 42,
+            "scope": false,
         }))
+        .expect("pointer input");
+        assert!(missing.pointer_id.into_option().is_none());
+        assert_eq!(missing.scope, "last_5_turns");
+
+        let explicit: ContextFollowPointerInput = serde_json::from_value(serde_json::json!({
+            "pointer_id": "session-a",
+            "scope": "last_3_turns",
+        }))
+        .expect("explicit pointer input");
+        assert_eq!(
+            explicit.pointer_id.into_option().as_deref(),
+            Some("session-a")
+        );
+        assert_eq!(explicit.scope, "last_3_turns");
     }
 }

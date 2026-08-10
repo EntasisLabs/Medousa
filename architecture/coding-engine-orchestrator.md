@@ -20,8 +20,20 @@ On spawn, the daemon passes:
 - `--workspace` = Grapheme scripts library root
 - `--allow-root` for each Forge worktree under `{dataDir}/forge/worktrees/…`
 
-Undertaking-bound editing shares the same Orchestrator session pool keyed by
-`(workspace_root, language)`.
+Undertaking-bound agent operations use an Orchestrator session pool keyed by
+`(governed_project_root, resolved_language_root, language)`. Transparent Home
+editor channels use the same bounded root resolution; Home pools those channels
+by the returned language-root URI so files in one nested package reuse a server.
+
+Each editor and agent session also has a bounded lifecycle record. The
+orchestrator captures process stderr, LSP log/show-message notifications,
+work-done progress, resolved roots, and terminal state. Home receives live
+progress on the editor channel and can inspect recent workshop-side records via
+the daemon without gaining direct process or filesystem authority. Editor
+`initialize` is rewritten to advertise configuration, workspace folders, and
+work-done progress; common server-to-client requests for those capabilities
+plus dynamic registration are answered at this boundary because the CodeMirror
+client does not implement them.
 
 ## Detamu bridge (M5 hooks)
 
@@ -42,7 +54,7 @@ bare `avec`.
 | Package id | Binaries |
 |------------|----------|
 | `coding-engine` | `medousa-code` → `{dataDir}/bin` |
-| `langservers` | `pyright-langserver`, `typescript-language-server` |
+| `langservers` | `pyright-langserver`, `typescript-language-server`, `svelteserver` |
 
 Install from Settings → Packages. Orchestrator resolves stdio servers from
 `{dataDir}/bin` first, then `PATH`.

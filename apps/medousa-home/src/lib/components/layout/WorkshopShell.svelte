@@ -110,7 +110,8 @@
       shellTabs.openSurface("map", { activate: true });
       return;
     }
-    // Automations + Capabilities fold into the LME workspace (library surface).
+    // Automations + Capabilities fold into the LME workspace — rail only, no
+    // empty Workspace/Code surface tabs.
     if (surface === "automations") {
       const mode = lmeWorkspace.explorerMode;
       if (
@@ -122,17 +123,32 @@
       ) {
         lmeWorkspace.setExplorerMode("scripts");
       }
-      shellTabs.openSurface("library", { activate: true });
+      shellTabs.enterLmeFamily("library");
       return;
     }
     if (surface === "workshop") {
       lmeWorkspace.setExplorerMode("agents");
-      shellTabs.openSurface("library", { activate: true });
+      shellTabs.enterLmeFamily("library");
+      return;
+    }
+    if (surface === "notes") {
+      lmeWorkspace.setExplorerMode("notes");
+      shellTabs.enterLmeFamily("library");
+      return;
+    }
+    if (surface === "files") {
+      lmeWorkspace.setExplorerMode("files");
+      shellTabs.enterLmeFamily("library");
+      return;
+    }
+    if (surface === "artifacts") {
+      lmeWorkspace.setExplorerMode("artifacts");
+      shellTabs.enterLmeFamily("library");
       return;
     }
     if (surface === "code") {
       lmeWorkspace.setExplorerMode("code");
-      shellTabs.openSurface("code", { activate: true });
+      shellTabs.enterLmeFamily("code");
       return;
     }
     if (surface === "chat") {

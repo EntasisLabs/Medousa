@@ -4,10 +4,11 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use chrono::Utc;
+use schemars::JsonSchema;
+use schemars::schema::{InstanceType, Schema, SchemaObject};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::application::runtime::runtime_factory::RuntimeComposition;
 use stasis::prelude::StasisError;
 use tokio::sync::{RwLock, mpsc};
@@ -20,32 +21,63 @@ use crate::events::TuiEvent;
 use crate::mcp_gateway_api::{McpInvokeRequest, McpTurnContext, McpTurnLane};
 use crate::mcp_gateway_client::McpGatewayClient;
 use crate::mcp_turn_token::mint_mcp_turn_token;
+use crate::semantic_values::{RequiredContent, TrimmedText};
 use crate::tools::{run_grapheme_via_runtime, validate_grapheme_source_for_schedule};
 use crate::turn_continuation::{
     ContinuationAwaitMode, TurnContinuationScope, continuation_tool_metadata,
 };
+use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
 use crate::workflow::{
-    MedousaWorkflowPayload, WorkflowEnqueueContinuation, WorkflowRecord, WorkflowRegistry,
-    WorkflowStatus, WorkflowStepSpec, enqueue_workflow_job, new_workflow_id,
-    workflow_job_type_for_strategy, WORKFLOW_SEQUENTIAL_JOB_TYPE,
+    MedousaWorkflowPayload, WORKFLOW_SEQUENTIAL_JOB_TYPE, WorkflowEnqueueContinuation,
+    WorkflowRecord, WorkflowRegistry, WorkflowStatus, WorkflowStepSpec, enqueue_workflow_job,
+    new_workflow_id, workflow_job_type_for_strategy,
 };
+
+const COGNITION_CAPABILITY_INVOKE_ID: ToolId = ToolId::new("cognition_capability_invoke");
+const COGNITION_MCP_PROMOTE_TO_JOB_ID: ToolId = ToolId::new("cognition_mcp_promote_to_job");
+const COGNITION_GRAPHEME_TEMPLATE_RUN_ID: ToolId = ToolId::new("cognition_grapheme_template_run");
+const COGNITION_WEB_SEARCH_ID: ToolId = ToolId::new("cognition_web_search");
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(transparent)]
+pub struct BridgeObject(Value);
+
+impl JsonSchema for BridgeObject {
+    fn schema_name() -> String {
+        "BridgeObject".to_string()
+    }
+
+    fn is_referenceable() -> bool {
+        false
+    }
+
+    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> Schema {
+        Schema::Object(SchemaObject {
+            instance_type: Some(InstanceType::Object.into()),
+            ..SchemaObject::default()
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct CapabilityBindingRef {
+    source: String,
+    reference: String,
+}
 
 fn escape_grapheme_literal(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-fn binding_ref_json(binding: &CapabilityBinding) -> Value {
-    json!({
-        "source": binding.source.as_str(),
-        "reference": binding.reference
-    })
+fn binding_ref(binding: &CapabilityBinding) -> CapabilityBindingRef {
+    CapabilityBindingRef {
+        source: binding.source.as_str().to_string(),
+        reference: binding.reference.clone(),
+    }
 }
 
-fn fallback_bindings_json(bindings: &[CapabilityBinding]) -> Vec<Value> {
-    bindings
-        .iter()
-        .map(binding_ref_json)
-        .collect::<Vec<_>>()
+fn fallback_bindings(bindings: &[CapabilityBinding]) -> Vec<CapabilityBindingRef> {
+    bindings.iter().map(binding_ref).collect()
 }
 
 fn effect_class_for_capability(capability_id: &str) -> &'static str {
@@ -88,11 +120,70 @@ fn resolve_capability_from_input(
     })
 }
 
-fn parse_preferred_source(value: Option<&str>) -> Option<CapabilitySource> {
-    match value?.trim().to_ascii_lowercase().as_str() {
-        "grapheme" => Some(CapabilitySource::Grapheme),
-        "mcp" => Some(CapabilitySource::Mcp),
-        _ => None,
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CapabilitySourceInput {
+    Grapheme,
+    Mcp,
+}
+
+impl CapabilitySourceInput {
+    fn runtime(self) -> CapabilitySource {
+        match self {
+            Self::Grapheme => CapabilitySource::Grapheme,
+            Self::Mcp => CapabilitySource::Mcp,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CapabilityBindingRequest {
+    source: CapabilitySource,
+    reference: TrimmedText,
+}
+
+impl CapabilityBindingRequest {
+    fn new(
+        source: CapabilitySource,
+        reference: impl Into<String>,
+    ) -> stasis::prelude::Result<Self> {
+        let reference = TrimmedText::new(reference).map_err(|_| {
+            StasisError::PortFailure(
+                "cognition_capability_invoke: binding.reference is required".to_string(),
+            )
+        })?;
+        Ok(Self { source, reference })
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct CapabilityBindingInput {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        with = "CapabilitySourceInput",
+        skip_serializing_if = "Option::is_none"
+    )]
+    source: Option<CapabilitySourceInput>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    reference: Option<String>,
+}
+
+impl TryFrom<CapabilityBindingInput> for CapabilityBindingRequest {
+    type Error = stasis::prelude::StasisError;
+
+    fn try_from(input: CapabilityBindingInput) -> Result<Self, Self::Error> {
+        let source = input.source.ok_or_else(|| {
+            StasisError::PortFailure(
+                "cognition_capability_invoke: binding.source is required".to_string(),
+            )
+        })?;
+        let reference = input.reference.ok_or_else(|| {
+            StasisError::PortFailure(
+                "cognition_capability_invoke: binding.reference is required".to_string(),
+            )
+        })?;
+        Self::new(source.runtime(), reference)
     }
 }
 
@@ -119,41 +210,13 @@ fn ordered_available_bindings(
 
 fn select_binding_for_invoke(
     response: &CapabilityResolveResponse,
-    input: &Value,
+    preferred_source: Option<CapabilitySource>,
+    explicit: Option<&CapabilityBindingRequest>,
 ) -> stasis::prelude::Result<(CapabilityBinding, Vec<CapabilityBinding>)> {
-    let preferred_source = parse_preferred_source(
-        input
-            .get("preferred_source")
-            .and_then(|value| value.as_str()),
-    );
-
-    if let Some(explicit) = input.get("binding") {
-        let source = explicit
-            .get("source")
-            .and_then(|value| value.as_str())
-            .ok_or_else(|| {
-                StasisError::PortFailure(
-                    "cognition_capability_invoke: binding.source is required".to_string(),
-                )
-            })?;
-        let reference = explicit
-            .get("reference")
-            .and_then(|value| value.as_str())
-            .ok_or_else(|| {
-                StasisError::PortFailure(
-                    "cognition_capability_invoke: binding.reference is required".to_string(),
-                )
-            })?;
-
-        let parsed_source = match source.trim().to_ascii_lowercase().as_str() {
-            "grapheme" => CapabilitySource::Grapheme,
-            "mcp" => CapabilitySource::Mcp,
-            other => {
-                return Err(StasisError::PortFailure(format!(
-                    "cognition_capability_invoke: unsupported binding.source '{other}'"
-                )));
-            }
-        };
+    if let Some(explicit) = explicit {
+        let parsed_source = explicit.source;
+        let reference = explicit.reference.as_str();
+        let source = explicit.source.as_str();
 
         let mut available = ordered_available_bindings(response, preferred_source);
         let Some(primary) = available
@@ -166,7 +229,9 @@ fn select_binding_for_invoke(
                 response.capability
             )));
         };
-        available.retain(|binding| binding.reference != primary.reference || binding.source != primary.source);
+        available.retain(|binding| {
+            binding.reference != primary.reference || binding.source != primary.source
+        });
         return Ok((primary, available));
     }
 
@@ -196,7 +261,12 @@ pub fn grapheme_source_for_binding(
     tool_input: &Value,
 ) -> stasis::prelude::Result<String> {
     if let Some(source) = tool_input.get("source").and_then(|value| value.as_str()) {
-        return Ok(source.to_string());
+        let source = RequiredContent::new(source.to_string()).map_err(|_| {
+            StasisError::PortFailure(
+                "cognition_capability_invoke: input.source must be non-empty".to_string(),
+            )
+        })?;
+        return Ok(source.into_string());
     }
 
     let query = tool_input
@@ -211,13 +281,11 @@ pub fn grapheme_source_for_binding(
     let escaped = escape_grapheme_literal(query);
 
     let source = match binding.reference.as_str() {
-        "web.providers" => {
-            r#"import core from "grapheme/core"
+        "web.providers" => r#"import core from "grapheme/core"
 query CapabilityInvoke {
   web.providers() { count providers { id } }
 }"#
-            .to_string()
-        }
+        .to_string(),
         "web.capabilities" => {
             let provider = tool_input
                 .get("provider")
@@ -234,13 +302,11 @@ query CapabilityInvoke {{
 }}"#
                     )
                 }
-                None => {
-                    r#"import core from "grapheme/core"
+                None => r#"import core from "grapheme/core"
 query CapabilityInvoke {
   web.capabilities() { available_providers provider }
 }"#
-                    .to_string()
-                }
+                .to_string(),
             }
         }
         "web.duckduckgo" | "web.google" | "web.xaviv" => grapheme_source_for_web_provider_search(
@@ -317,12 +383,16 @@ query CapabilityInvoke {{
 pub fn render_grapheme_template(template: &str, params: &Value) -> stasis::prelude::Result<String> {
     match template.trim().to_ascii_lowercase().as_str() {
         "research_report" => {
-            let topic = params.get("topic").or_else(|| params.get("query")).and_then(|v| v.as_str()).ok_or_else(|| {
-                StasisError::PortFailure(
-                    "cognition_grapheme_template_run: research_report requires topic or query"
-                        .to_string(),
-                )
-            })?;
+            let topic = params
+                .get("topic")
+                .or_else(|| params.get("query"))
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| {
+                    StasisError::PortFailure(
+                        "cognition_grapheme_template_run: research_report requires topic or query"
+                            .to_string(),
+                    )
+                })?;
             Ok(format!(
                 r#"import core from "grapheme/core"
 query ResearchReport {{
@@ -450,7 +520,10 @@ async fn invoke_grapheme_binding(
 
 fn invoke_succeeded(binding: &CapabilityBinding, result: &Value) -> bool {
     match binding.source {
-        CapabilitySource::Mcp => result.get("ok").and_then(|value| value.as_bool()).unwrap_or(false),
+        CapabilitySource::Mcp => result
+            .get("ok")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false),
         CapabilitySource::Grapheme => result
             .get("succeeded")
             .and_then(|value| value.as_bool())
@@ -459,7 +532,11 @@ fn invoke_succeeded(binding: &CapabilityBinding, result: &Value) -> bool {
     }
 }
 
-fn effect_class_from_result(binding: &CapabilityBinding, result: &Value, capability_id: &str) -> String {
+fn effect_class_from_result(
+    binding: &CapabilityBinding,
+    result: &Value,
+    capability_id: &str,
+) -> String {
     if binding.source == CapabilitySource::Mcp {
         result
             .get("effect_class")
@@ -502,80 +579,162 @@ impl CognitionCapabilityInvokeTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionCapabilityInvokeTool {
-    fn name(&self) -> &'static str {
-        "cognition_capability_invoke"
-    }
+fn default_bridge_fallbacks() -> bool {
+    true
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Resolve a capability intent and execute the best available binding in one call. \
-             Returns a policy receipt with binding_used, decision, result, and fallback_available.",
-        )
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CapabilityInvokeInput {
+    /// Capability id, e.g. document_search
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    capability: Option<String>,
+    /// Fuzzy resolve when capability id is unknown
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    query: Option<String>,
+    /// Arguments forwarded to MCP or used to build Grapheme source
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "BridgeObject", skip_serializing_if = "Option::is_none")]
+    input: Option<BridgeObject>,
+    /// Optional explicit Grapheme source override
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        with = "CapabilityBindingInput",
+        skip_serializing_if = "Option::is_none"
+    )]
+    binding: Option<CapabilityBindingInput>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        with = "CapabilitySourceInput",
+        skip_serializing_if = "Option::is_none"
+    )]
+    preferred_source: Option<CapabilitySourceInput>,
+    #[serde(default = "default_bridge_fallbacks")]
+    #[schemars(default = "default_bridge_fallbacks")]
+    try_fallbacks: bool,
+    #[serde(flatten)]
+    #[schemars(skip)]
+    extra: serde_json::Map<String, Value>,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "capability": { "type": "string", "description": "Capability id, e.g. document_search" },
-                "query": { "type": "string", "description": "Fuzzy resolve when capability id is unknown" },
-                "input": { "type": "object", "description": "Arguments forwarded to MCP or used to build Grapheme source" },
-                "source": { "type": "string", "description": "Optional explicit Grapheme source override" },
-                "binding": {
-                    "type": "object",
-                    "properties": {
-                        "source": { "type": "string", "enum": ["grapheme", "mcp"] },
-                        "reference": { "type": "string" }
-                    }
-                },
-                "preferred_source": { "type": "string", "enum": ["grapheme", "mcp"] },
-                "try_fallbacks": { "type": "boolean", "default": true }
-            }
-        }))
+impl CapabilityInvokeInput {
+    fn tool_input(&self) -> Value {
+        if let Some(input) = self.input.as_ref() {
+            return input.0.clone();
+        }
+        let mut input = self.extra.clone();
+        if let Some(value) = self.capability.as_ref() {
+            input.insert("capability".to_string(), Value::String(value.clone()));
+        }
+        if let Some(value) = self.query.as_ref() {
+            input.insert("query".to_string(), Value::String(value.clone()));
+        }
+        if let Some(value) = self.source.as_ref() {
+            input.insert("source".to_string(), Value::String(value.clone()));
+        }
+        input.insert("try_fallbacks".to_string(), Value::Bool(self.try_fallbacks));
+        Value::Object(input)
     }
+}
 
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let capability_id = input
-            .get("capability")
-            .and_then(|value| value.as_str())
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
+#[derive(Debug)]
+struct CapabilityInvokeCommand {
+    capability: Option<TrimmedText>,
+    query: Option<TrimmedText>,
+    tool_input: Value,
+    binding: Option<CapabilityBindingRequest>,
+    preferred_source: Option<CapabilitySource>,
+    try_fallbacks: bool,
+}
+
+impl TryFrom<CapabilityInvokeInput> for CapabilityInvokeCommand {
+    type Error = stasis::prelude::StasisError;
+
+    fn try_from(input: CapabilityInvokeInput) -> Result<Self, Self::Error> {
+        let tool_input = input.tool_input();
+        let capability = input
+            .capability
+            .as_deref()
+            .and_then(|value| TrimmedText::new(value).ok());
         let query = input
-            .get("query")
-            .and_then(|value| value.as_str())
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
+            .query
+            .as_deref()
+            .and_then(|value| TrimmedText::new(value).ok());
+        let binding = input.binding.map(TryInto::try_into).transpose()?;
+        let preferred_source = input.preferred_source.map(CapabilitySourceInput::runtime);
 
-        let summary = capability_id
-            .unwrap_or(query.unwrap_or("capability"))
-            .to_string();
+        Ok(Self {
+            capability,
+            query,
+            tool_input,
+            binding,
+            preferred_source,
+            try_fallbacks: input.try_fallbacks,
+        })
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum CapabilityInvokeResult {
+    External(ExternalJson),
+    FailedResult {
+        binding: CapabilityBindingRef,
+        result: ExternalJson,
+    },
+    FailedError {
+        binding: CapabilityBindingRef,
+        error: String,
+    },
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct CapabilityInvokeOutput {
+    capability: String,
+    binding_used: CapabilityBindingRef,
+    decision: String,
+    lane: String,
+    effect_class: String,
+    result: Option<CapabilityInvokeResult>,
+    fallback_available: Vec<CapabilityBindingRef>,
+}
+
+#[medousa_tool(id = COGNITION_CAPABILITY_INVOKE_ID)]
+impl CognitionCapabilityInvokeTool {
+    /// Resolve a capability intent and execute the best available binding in one call. Returns a policy receipt with binding_used, decision, result, and fallback_available.
+    async fn invoke_typed(
+        &self,
+        input: CapabilityInvokeInput,
+    ) -> stasis::prelude::Result<CapabilityInvokeOutput> {
+        let command = CapabilityInvokeCommand::try_from(input)?;
+        let capability_id = command.capability.as_ref().map(TrimmedText::as_str);
+        let query = command.query.as_ref().map(TrimmedText::as_str);
+
+        let summary = capability_id.or(query).unwrap_or("capability").to_string();
         let _ = self
             .event_tx
             .send(TuiEvent::ToolInvoked {
-                tool_name: self.name().to_string(),
+                tool_name: COGNITION_CAPABILITY_INVOKE_ID.as_str().to_string(),
                 input_summary: summary,
             })
             .await;
 
         let registry = self.capability_registry.read().await;
         let resolved = resolve_capability_from_input(&registry, capability_id, query)?;
-        let try_fallbacks = input
-            .get("try_fallbacks")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(true);
 
-        let (primary, mut fallbacks) = select_binding_for_invoke(&resolved, &input)?;
+        let (primary, mut fallbacks) = select_binding_for_invoke(
+            &resolved,
+            command.preferred_source,
+            command.binding.as_ref(),
+        )?;
         let mut candidates = vec![primary];
-        if try_fallbacks {
+        if command.try_fallbacks {
             candidates.append(&mut fallbacks);
         }
-
-        let tool_input = input
-            .get("input")
-            .cloned()
-            .unwrap_or_else(|| input.clone());
 
         let session_id = crate::runtime_session::resolve_active_chat_session_id_async(
             &self.turn_scope,
@@ -583,7 +742,7 @@ impl StasisTool for CognitionCapabilityInvokeTool {
         )
         .await;
 
-        let mut last_error = None;
+        let mut last_error: Option<CapabilityInvokeResult> = None;
         for (index, binding) in candidates.iter().enumerate() {
             let result = match binding.source {
                 CapabilitySource::Mcp => {
@@ -591,52 +750,60 @@ impl StasisTool for CognitionCapabilityInvokeTool {
                         &self.gateway_client,
                         &session_id,
                         binding,
-                        &tool_input,
+                        &command.tool_input,
                     )
                     .await
                 }
                 CapabilitySource::Grapheme => {
-                    invoke_grapheme_binding(&self.runtime, binding, &tool_input).await
+                    invoke_grapheme_binding(&self.runtime, binding, &command.tool_input).await
                 }
             };
 
             match result {
                 Ok(result) if invoke_succeeded(binding, &result) => {
-                    let remaining = candidates.iter().skip(index + 1).cloned().collect::<Vec<_>>();
-                    return Ok(json!({
-                        "capability": resolved.capability,
-                        "binding_used": binding_ref_json(binding),
-                        "decision": "allow",
-                        "lane": "interactive",
-                        "effect_class": effect_class_from_result(binding, &result, &resolved.capability),
-                        "result": result,
-                        "fallback_available": fallback_bindings_json(&remaining)
-                    }));
+                    let remaining = candidates
+                        .iter()
+                        .skip(index + 1)
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    return Ok(CapabilityInvokeOutput {
+                        capability: resolved.capability.clone(),
+                        binding_used: binding_ref(binding),
+                        decision: "allow".to_string(),
+                        lane: "interactive".to_string(),
+                        effect_class: effect_class_from_result(
+                            binding,
+                            &result,
+                            &resolved.capability,
+                        ),
+                        result: Some(CapabilityInvokeResult::External(ExternalJson::new(result))),
+                        fallback_available: fallback_bindings(&remaining),
+                    });
                 }
                 Ok(result) => {
-                    last_error = Some(json!({
-                        "binding": binding_ref_json(binding),
-                        "result": result
-                    }));
+                    last_error = Some(CapabilityInvokeResult::FailedResult {
+                        binding: binding_ref(binding),
+                        result: ExternalJson::new(result),
+                    });
                 }
                 Err(error) => {
-                    last_error = Some(json!({
-                        "binding": binding_ref_json(binding),
-                        "error": error.to_string()
-                    }));
+                    last_error = Some(CapabilityInvokeResult::FailedError {
+                        binding: binding_ref(binding),
+                        error: error.to_string(),
+                    });
                 }
             }
         }
 
-        Ok(json!({
-            "capability": resolved.capability,
-            "binding_used": binding_ref_json(&candidates[0]),
-            "decision": "deny",
-            "lane": "interactive",
-            "effect_class": effect_class_for_capability(&resolved.capability),
-            "result": last_error,
-            "fallback_available": fallback_bindings_json(&candidates[1..])
-        }))
+        Ok(CapabilityInvokeOutput {
+            capability: resolved.capability.clone(),
+            binding_used: binding_ref(&candidates[0]),
+            decision: "deny".to_string(),
+            lane: "interactive".to_string(),
+            effect_class: effect_class_for_capability(&resolved.capability).to_string(),
+            result: last_error,
+            fallback_available: fallback_bindings(&candidates[1..]),
+        })
     }
 }
 
@@ -665,86 +832,137 @@ impl CognitionMcpPromoteToJobTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionMcpPromoteToJobTool {
-    fn name(&self) -> &'static str {
-        "cognition_mcp_promote_to_job"
-    }
+fn default_bridge_queue() -> String {
+    "default".to_string()
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Promote a successful MCP invoke into a durable sequential workflow job with one MCP step.",
-        )
-    }
+fn default_mcp_step_id() -> String {
+    "mcp_step".to_string()
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "server_id": { "type": "string" },
-                "tool_name": { "type": "string" },
-                "input": { "type": "object" },
-                "note": { "type": "string" },
-                "queue": { "type": "string", "default": "default" },
-                "step_id": { "type": "string", "default": "mcp_step" }
-            },
-            "required": ["server_id", "tool_name"]
-        }))
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct McpPromoteToJobInput {
+    #[schemars(required, with = "String")]
+    server_id: Option<String>,
+    #[schemars(required, with = "String")]
+    tool_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "BridgeObject", skip_serializing_if = "Option::is_none")]
+    input: Option<BridgeObject>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
+    #[serde(default = "default_bridge_queue")]
+    #[schemars(default = "default_bridge_queue")]
+    queue: String,
+    #[serde(default = "default_mcp_step_id")]
+    #[schemars(default = "default_mcp_step_id")]
+    step_id: String,
+}
 
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let server_id = input.get("server_id").and_then(|v| v.as_str()).ok_or_else(|| {
-            StasisError::PortFailure(
-                "cognition_mcp_promote_to_job: server_id is required".to_string(),
-            )
-        })?;
-        let tool_name = input.get("tool_name").and_then(|v| v.as_str()).ok_or_else(|| {
-            StasisError::PortFailure(
-                "cognition_mcp_promote_to_job: tool_name is required".to_string(),
-            )
-        })?;
-        let args = input
-            .get("input")
-            .cloned()
-            .unwrap_or_else(|| json!({}));
-        let note = input
-            .get("note")
-            .and_then(|v| v.as_str())
-            .map(str::to_string);
-        let queue = input
-            .get("queue")
-            .and_then(|v| v.as_str())
-            .unwrap_or("default");
-        let step_id = input
-            .get("step_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("mcp_step");
+#[derive(Debug)]
+struct McpPromoteToJobCommand {
+    server_id: TrimmedText,
+    tool_name: TrimmedText,
+    input: Value,
+    note: Option<String>,
+    queue: TrimmedText,
+    step_id: TrimmedText,
+}
+
+impl TryFrom<McpPromoteToJobInput> for McpPromoteToJobCommand {
+    type Error = stasis::prelude::StasisError;
+
+    fn try_from(input: McpPromoteToJobInput) -> Result<Self, Self::Error> {
+        let server_id = required_mcp_identifier(input.server_id, "server_id")?;
+        let tool_name = required_mcp_identifier(input.tool_name, "tool_name")?;
+        let queue = required_mcp_identifier(Some(input.queue), "queue")?;
+        let step_id = required_mcp_identifier(Some(input.step_id), "step_id")?;
+
+        Ok(Self {
+            server_id,
+            tool_name,
+            input: input
+                .input
+                .map(|input| input.0)
+                .unwrap_or_else(|| json!({})),
+            note: input.note,
+            queue,
+            step_id,
+        })
+    }
+}
+
+fn required_mcp_identifier(
+    value: Option<String>,
+    field: &str,
+) -> stasis::prelude::Result<TrimmedText> {
+    let value = value.ok_or_else(|| {
+        StasisError::PortFailure(format!("cognition_mcp_promote_to_job: {field} is required"))
+    })?;
+    TrimmedText::new(value).map_err(|_| {
+        StasisError::PortFailure(format!("cognition_mcp_promote_to_job: {field} is required"))
+    })
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct McpPromoteToJobOutput {
+    workflow_id: String,
+    job_id: String,
+    root_job_id: String,
+    job_type: String,
+    status: String,
+    lane: String,
+    note: Option<String>,
+    continuation: Option<ExternalJson>,
+}
+
+#[medousa_tool(id = COGNITION_MCP_PROMOTE_TO_JOB_ID)]
+impl CognitionMcpPromoteToJobTool {
+    /// Promote a successful MCP invoke into a durable sequential workflow job with one MCP step.
+    async fn invoke_typed(
+        &self,
+        input: McpPromoteToJobInput,
+    ) -> stasis::prelude::Result<McpPromoteToJobOutput> {
+        let command = McpPromoteToJobCommand::try_from(input)?;
 
         let workflow_id = new_workflow_id();
         let payload = MedousaWorkflowPayload {
             workflow_id: workflow_id.clone(),
-            name: Some(format!("mcp:{server_id}.{tool_name}")),
+            name: Some(format!(
+                "mcp:{}.{}",
+                command.server_id.as_str(),
+                command.tool_name.as_str()
+            )),
             strategy: "sequential".to_string(),
             mode: "default".to_string(),
             on_failure: "stop".to_string(),
-            note: note.clone(),
+            note: command.note.clone(),
             lane: "interactive".to_string(),
             steps: vec![WorkflowStepSpec::Mcp {
-                id: step_id.to_string(),
-                server_id: server_id.to_string(),
-                tool_name: tool_name.to_string(),
-                args,
+                id: command.step_id.as_str().to_string(),
+                server_id: command.server_id.as_str().to_string(),
+                tool_name: command.tool_name.as_str().to_string(),
+                args: command.input,
                 effect_class: None,
             }],
         };
 
         let scope = self.turn_scope.read().await.clone();
-        let continuation = scope.as_ref().map(|turn_scope| WorkflowEnqueueContinuation {
-            turn_scope,
-            tool_name: self.name(),
-            await_mode: ContinuationAwaitMode::Async,
-        });
-        let job_id = enqueue_workflow_job(self.runtime.as_ref(), &payload, queue, continuation).await?;
+        let continuation = scope
+            .as_ref()
+            .map(|turn_scope| WorkflowEnqueueContinuation {
+                turn_scope,
+                tool_name: COGNITION_MCP_PROMOTE_TO_JOB_ID.as_str(),
+                await_mode: ContinuationAwaitMode::Async,
+            });
+        let job_id = enqueue_workflow_job(
+            self.runtime.as_ref(),
+            &payload,
+            command.queue.as_str(),
+            continuation,
+        )
+        .await?;
         let job_type = workflow_job_type_for_strategy(&payload.strategy)
             .unwrap_or(WORKFLOW_SEQUENTIAL_JOB_TYPE);
 
@@ -766,27 +984,32 @@ impl StasisTool for CognitionMcpPromoteToJobTool {
         let _ = self
             .event_tx
             .send(TuiEvent::ToolInvoked {
-                tool_name: self.name().to_string(),
-                input_summary: format!("{server_id}.{tool_name}"),
+                tool_name: COGNITION_MCP_PROMOTE_TO_JOB_ID.as_str().to_string(),
+                input_summary: format!(
+                    "{}.{}",
+                    command.server_id.as_str(),
+                    command.tool_name.as_str()
+                ),
             })
             .await;
 
-        Ok(json!({
-            "workflow_id": workflow_id,
-            "job_id": job_id.clone(),
-            "root_job_id": job_id,
-            "job_type": job_type,
-            "status": "enqueued",
-            "lane": "interactive",
-            "note": note,
-            "continuation": scope.as_ref().map(|turn_scope| {
-                continuation_tool_metadata(
-                    turn_scope,
-                    &job_id,
-                    ContinuationAwaitMode::Async,
-                )
-            }),
-        }))
+        let continuation = scope.as_ref().map(|turn_scope| {
+            ExternalJson::new(continuation_tool_metadata(
+                turn_scope,
+                &job_id,
+                ContinuationAwaitMode::Async,
+            ))
+        });
+        Ok(McpPromoteToJobOutput {
+            workflow_id,
+            job_id: job_id.clone(),
+            root_job_id: job_id,
+            job_type: job_type.to_string(),
+            status: "enqueued".to_string(),
+            lane: "interactive".to_string(),
+            note: command.note,
+            continuation,
+        })
     }
 }
 
@@ -803,60 +1026,97 @@ impl CognitionGraphemeTemplateRunTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionGraphemeTemplateRunTool {
-    fn name(&self) -> &'static str {
-        "cognition_grapheme_template_run"
-    }
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum GraphemeTemplateInput {
+    ResearchReport,
+    HttpPoll,
+    CsvDigest,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Run a preset Grapheme workflow template. \
-             Supported templates: research_report, http_poll, csv_digest.",
-        )
+impl GraphemeTemplateInput {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::ResearchReport => "research_report",
+            Self::HttpPoll => "http_poll",
+            Self::CsvDigest => "csv_digest",
+        }
     }
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "template": {
-                    "type": "string",
-                    "enum": ["research_report", "http_poll", "csv_digest"]
-                },
-                "params": { "type": "object", "description": "Template parameters (topic/query, url, etc.)" }
-            },
-            "required": ["template", "params"]
-        }))
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GraphemeTemplateRunInput {
+    #[schemars(required, with = "GraphemeTemplateInput")]
+    template: Option<GraphemeTemplateInput>,
+    /// Template parameters (topic/query, url, etc.)
+    #[schemars(required, with = "BridgeObject")]
+    params: Option<BridgeObject>,
+}
 
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let template = input.get("template").and_then(|v| v.as_str()).ok_or_else(|| {
+#[derive(Debug)]
+struct GraphemeTemplateRunCommand {
+    template: GraphemeTemplateInput,
+    params: Value,
+}
+
+impl TryFrom<GraphemeTemplateRunInput> for GraphemeTemplateRunCommand {
+    type Error = stasis::prelude::StasisError;
+
+    fn try_from(input: GraphemeTemplateRunInput) -> Result<Self, Self::Error> {
+        let template = input.template.ok_or_else(|| {
             StasisError::PortFailure(
                 "cognition_grapheme_template_run: template is required".to_string(),
             )
         })?;
-        let params = input.get("params").cloned().unwrap_or_else(|| json!({}));
+        let params = input
+            .params
+            .map(|params| params.0)
+            .unwrap_or_else(|| json!({}));
+        Ok(Self { template, params })
+    }
+}
 
-        let source = render_grapheme_template(template, &params)?;
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum GraphemeTemplateRunOutput {
+    Rejected {
+        template: String,
+        status: String,
+        reason: String,
+        validation: ExternalJson,
+    },
+    Result(ExternalJson),
+}
+
+#[medousa_tool(id = COGNITION_GRAPHEME_TEMPLATE_RUN_ID)]
+impl CognitionGraphemeTemplateRunTool {
+    /// Run a preset Grapheme workflow template. Supported templates: research_report, http_poll, csv_digest.
+    async fn invoke_typed(
+        &self,
+        input: GraphemeTemplateRunInput,
+    ) -> stasis::prelude::Result<GraphemeTemplateRunOutput> {
+        let command = GraphemeTemplateRunCommand::try_from(input)?;
+        let template = command.template.as_str();
+
+        let source = render_grapheme_template(template, &command.params)?;
         let validation = validate_grapheme_source_for_schedule(&self.runtime, &source).await?;
         if !validation
             .get("validated")
             .and_then(|value| value.as_bool())
             .unwrap_or(false)
         {
-            return Ok(json!({
-                "template": template,
-                "status": "rejected",
-                "reason": "invalid_grapheme_source",
-                "validation": validation
-            }));
+            return Ok(GraphemeTemplateRunOutput::Rejected {
+                template: template.to_string(),
+                status: "rejected".to_string(),
+                reason: "invalid_grapheme_source".to_string(),
+                validation: ExternalJson::new(validation),
+            });
         }
 
         let _ = self
             .event_tx
             .send(TuiEvent::ToolInvoked {
-                tool_name: self.name().to_string(),
+                tool_name: COGNITION_GRAPHEME_TEMPLATE_RUN_ID.as_str().to_string(),
                 input_summary: template.to_string(),
             })
             .await;
@@ -865,20 +1125,29 @@ impl StasisTool for CognitionGraphemeTemplateRunTool {
             run_grapheme_via_runtime(&self.runtime, &source, "cognition_grapheme_template_run")
                 .await?;
         result["template"] = json!(template);
-        result["params"] = params;
-        Ok(result)
+        result["params"] = command.params;
+        Ok(GraphemeTemplateRunOutput::Result(ExternalJson::new(result)))
     }
 }
 
 // ── cognition_web_search ──────────────────────────────────────────────────────
 
-fn web_search_binding_reference(mode: &str, provider: Option<&str>) -> Option<(CapabilitySource, String)> {
+fn web_search_binding_reference(
+    mode: &str,
+    provider: Option<&str>,
+) -> Option<(CapabilitySource, String)> {
     let mode = mode.trim().to_ascii_lowercase();
     if mode == "research_materials" {
-        return Some((CapabilitySource::Grapheme, "websearch.research_materials".to_string()));
+        return Some((
+            CapabilitySource::Grapheme,
+            "websearch.research_materials".to_string(),
+        ));
     }
     if mode == "research_report" {
-        return Some((CapabilitySource::Grapheme, "websearch.research_report".to_string()));
+        return Some((
+            CapabilitySource::Grapheme,
+            "websearch.research_report".to_string(),
+        ));
     }
     if mode == "facade" || mode == "websearch" {
         return Some((CapabilitySource::Grapheme, "websearch.search".to_string()));
@@ -922,81 +1191,130 @@ impl CognitionWebSearchTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionWebSearchTool {
-    fn name(&self) -> &'static str {
-        "cognition_web_search"
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum WebSearchModeInput {
+    #[default]
+    Search,
+    Facade,
+    ResearchMaterials,
+    ResearchReport,
+}
+
+impl WebSearchModeInput {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Search => "search",
+            Self::Facade => "facade",
+            Self::ResearchMaterials => "research_materials",
+            Self::ResearchReport => "research_report",
+        }
     }
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Search the public web with one call. Uses configured provider preference and binding \
-             fallbacks (web.<provider>, then websearch.search). For deep reports use mode=research_report.",
-        )
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct WebSearchInput {
+    /// Search query or research topic
+    #[schemars(required, with = "String")]
+    query: Option<String>,
+    /// search = provider-native web lookup; research_* = websearch facade pipelines
+    #[serde(default)]
+    #[schemars(default)]
+    mode: WebSearchModeInput,
+    /// Optional web provider id (duckduckgo, google, tavily, …). Defaults to capabilities.toml [web_search].preferred_provider or MEDOUSA_WEB_SEARCH_PROVIDER
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    provider: Option<String>,
+    /// Try lower-priority bindings when the preferred provider fails
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
+    try_fallbacks: Option<bool>,
+    #[serde(default)]
+    #[schemars(skip)]
+    max_results: Option<u64>,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["query"],
-            "properties": {
-                "query": { "type": "string", "description": "Search query or research topic" },
-                "mode": {
-                    "type": "string",
-                    "enum": ["search", "facade", "research_materials", "research_report"],
-                    "default": "search",
-                    "description": "search = provider-native web lookup; research_* = websearch facade pipelines"
-                },
-                "provider": {
-                    "type": "string",
-                    "description": "Optional web provider id (duckduckgo, google, tavily, …). Defaults to capabilities.toml [web_search].preferred_provider or MEDOUSA_WEB_SEARCH_PROVIDER"
-                },
-                "try_fallbacks": {
-                    "type": "boolean",
-                    "description": "Try lower-priority bindings when the preferred provider fails"
-                }
-            }
-        }))
-    }
+#[derive(Debug)]
+struct WebSearchCommand {
+    query: TrimmedText,
+    mode: WebSearchModeInput,
+    provider: Option<TrimmedText>,
+    try_fallbacks: Option<bool>,
+    max_results: Option<u64>,
+}
 
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let query = input
-            .get("query")
-            .and_then(|value| value.as_str())
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| {
-                StasisError::PortFailure("cognition_web_search: query is required".to_string())
-            })?;
+impl TryFrom<WebSearchInput> for WebSearchCommand {
+    type Error = stasis::prelude::StasisError;
 
-        let mode = input
-            .get("mode")
-            .and_then(|value| value.as_str())
-            .unwrap_or("search");
-        let settings = crate::capability_catalog::web_search_settings();
+    fn try_from(input: WebSearchInput) -> Result<Self, Self::Error> {
+        let query = input.query.ok_or_else(|| {
+            StasisError::PortFailure("cognition_web_search: query is required".to_string())
+        })?;
+        let query = TrimmedText::new(query).map_err(|_| {
+            StasisError::PortFailure("cognition_web_search: query is required".to_string())
+        })?;
         let provider = input
-            .get("provider")
-            .and_then(|value| value.as_str())
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
+            .provider
+            .as_deref()
+            .and_then(|value| TrimmedText::new(value).ok());
+
+        Ok(Self {
+            query,
+            mode: input.mode,
+            provider,
+            try_fallbacks: input.try_fallbacks,
+            max_results: input.max_results,
+        })
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct WebSearchCapabilityOutput {
+    query: String,
+    mode: String,
+    provider_requested: Option<String>,
+    binding_used: CapabilityBindingRef,
+    decision: String,
+    effect_class: String,
+    result: Option<CapabilityInvokeResult>,
+    fallback_available: Vec<CapabilityBindingRef>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum WebSearchOutput {
+    Browser(ExternalJson),
+    Capability(Box<WebSearchCapabilityOutput>),
+}
+
+#[medousa_tool(id = COGNITION_WEB_SEARCH_ID)]
+impl CognitionWebSearchTool {
+    /// Search the public web with one call. Uses configured provider preference and binding fallbacks (web.<provider>, then websearch.search). For deep reports use mode=research_report.
+    async fn invoke_typed(
+        &self,
+        input: WebSearchInput,
+    ) -> stasis::prelude::Result<WebSearchOutput> {
+        let command = WebSearchCommand::try_from(input)?;
+        let query = command.query.as_str();
+
+        let mode = command.mode.as_str();
+        let settings = crate::capability_catalog::web_search_settings();
+        let provider = command
+            .provider
+            .as_ref()
+            .map(TrimmedText::as_str)
             .or(settings.preferred_provider.as_deref());
-        let try_fallbacks = input
-            .get("try_fallbacks")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(settings.try_fallbacks);
+        let try_fallbacks = command.try_fallbacks.unwrap_or(settings.try_fallbacks);
 
         let _ = self
             .event_tx
             .send(TuiEvent::ToolInvoked {
-                tool_name: self.name().to_string(),
+                tool_name: COGNITION_WEB_SEARCH_ID.as_str().to_string(),
                 input_summary: query.to_string(),
             })
             .await;
 
-        let max_results = input
-            .get("max_results")
-            .and_then(|value| value.as_u64())
-            .unwrap_or(8) as usize;
+        let max_results = command.max_results.unwrap_or(8) as usize;
         let chat_session_id = crate::runtime_session::resolve_active_chat_session_id_async(
             &self.turn_scope,
             &self.session_id,
@@ -1027,47 +1345,41 @@ impl StasisTool for CognitionWebSearchTool {
                     } else {
                         "browser_host"
                     };
-                    return Ok(crate::browser_search::search_response_to_tool_json(
-                        query,
-                        mode,
-                        provider,
-                        &response,
-                        binding,
-                    ));
+                    return Ok(WebSearchOutput::Browser(ExternalJson::new(
+                        crate::browser_search::search_response_to_tool_json(
+                            query, mode, provider, &response, binding,
+                        ),
+                    )));
                 }
                 Ok(response) if response.challenge.is_some() => {
-                    return Ok(crate::browser_search::search_response_to_tool_json(
-                        query,
-                        mode,
-                        provider,
-                        &response,
-                        "browser_host_lite",
-                    ));
+                    return Ok(WebSearchOutput::Browser(ExternalJson::new(
+                        crate::browser_search::search_response_to_tool_json(
+                            query,
+                            mode,
+                            provider,
+                            &response,
+                            "browser_host_lite",
+                        ),
+                    )));
                 }
                 Ok(_) | Err(_) => {}
             }
         }
 
-        let mut invoke_input = json!({
-            "capability": "web_research",
-            "input": { "query": query },
-            "try_fallbacks": try_fallbacks
-        });
-        if let Some((source, reference)) = web_search_binding_reference(mode, provider) {
-            invoke_input["binding"] = json!({
-                "source": source.as_str(),
-                "reference": reference
-            });
-        }
+        let explicit_binding = web_search_binding_reference(mode, provider)
+            .map(|(source, reference)| CapabilityBindingRequest::new(source, reference))
+            .transpose()?;
 
         let registry = self.capability_registry.read().await;
         let resolved = resolve_capability_from_input(&registry, Some("web_research"), None)?;
-        let (primary, mut fallbacks) = select_binding_for_invoke(&resolved, &invoke_input)?;
+        let (primary, mut fallbacks) =
+            select_binding_for_invoke(&resolved, None, explicit_binding.as_ref())?;
         let mut candidates = vec![primary];
         if try_fallbacks {
             candidates.append(&mut fallbacks);
         }
-        candidates.retain(|binding| !crate::browser_search::is_discovery_binding(&binding.reference));
+        candidates
+            .retain(|binding| !crate::browser_search::is_discovery_binding(&binding.reference));
         if candidates.is_empty() {
             return Err(StasisError::PortFailure(
                 "cognition_web_search: no search bindings available after filtering discovery ops"
@@ -1079,19 +1391,14 @@ impl StasisTool for CognitionWebSearchTool {
 
         let tool_input = json!({ "query": query });
         let session_id = chat_session_id;
-        let mut last_error = None;
+        let mut last_error: Option<CapabilityInvokeResult> = None;
         let mut candidate_list = vec![primary];
         candidate_list.append(&mut fallbacks);
         for (index, binding) in candidate_list.iter().enumerate() {
             let result = match binding.source {
                 CapabilitySource::Mcp => {
-                    invoke_mcp_binding(
-                        &self.gateway_client,
-                        &session_id,
-                        binding,
-                        &tool_input,
-                    )
-                    .await
+                    invoke_mcp_binding(&self.gateway_client, &session_id, binding, &tool_input)
+                        .await
                 }
                 CapabilitySource::Grapheme => {
                     invoke_grapheme_binding(&self.runtime, binding, &tool_input).await
@@ -1100,43 +1407,57 @@ impl StasisTool for CognitionWebSearchTool {
 
             match result {
                 Ok(result) if invoke_succeeded(binding, &result) => {
-                    let remaining = candidate_list.iter().skip(index + 1).cloned().collect::<Vec<_>>();
-                    return Ok(json!({
-                        "query": query,
-                        "mode": mode,
-                        "provider_requested": provider,
-                        "binding_used": binding_ref_json(binding),
-                        "decision": "allow",
-                        "effect_class": effect_class_from_result(binding, &result, "web_research"),
-                        "result": result,
-                        "fallback_available": fallback_bindings_json(&remaining)
-                    }));
+                    let remaining = candidate_list
+                        .iter()
+                        .skip(index + 1)
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    return Ok(WebSearchOutput::Capability(Box::new(
+                        WebSearchCapabilityOutput {
+                            query: query.to_string(),
+                            mode: mode.to_string(),
+                            provider_requested: provider.map(str::to_string),
+                            binding_used: binding_ref(binding),
+                            decision: "allow".to_string(),
+                            effect_class: effect_class_from_result(
+                                binding,
+                                &result,
+                                "web_research",
+                            ),
+                            result: Some(CapabilityInvokeResult::External(ExternalJson::new(
+                                result,
+                            ))),
+                            fallback_available: fallback_bindings(&remaining),
+                        },
+                    )));
                 }
                 Ok(result) => {
-                    last_error = Some(json!({
-                        "binding": binding_ref_json(binding),
-                        "result": result
-                    }));
+                    last_error = Some(CapabilityInvokeResult::FailedResult {
+                        binding: binding_ref(binding),
+                        result: ExternalJson::new(result),
+                    });
                 }
                 Err(error) => {
-                    last_error = Some(json!({
-                        "binding": binding_ref_json(binding),
-                        "error": error.to_string()
-                    }));
+                    last_error = Some(CapabilityInvokeResult::FailedError {
+                        binding: binding_ref(binding),
+                        error: error.to_string(),
+                    });
                 }
             }
         }
 
-        Ok(json!({
-            "query": query,
-            "mode": mode,
-            "provider_requested": provider,
-            "binding_used": binding_ref_json(&candidate_list[0]),
-            "decision": "deny",
-            "effect_class": effect_class_for_capability("web_research"),
-            "result": last_error,
-            "fallback_available": fallback_bindings_json(&candidate_list[1..])
-        }))
+        Ok(WebSearchOutput::Capability(Box::new(
+            WebSearchCapabilityOutput {
+                query: query.to_string(),
+                mode: mode.to_string(),
+                provider_requested: provider.map(str::to_string),
+                binding_used: binding_ref(&candidate_list[0]),
+                decision: "deny".to_string(),
+                effect_class: effect_class_for_capability("web_research").to_string(),
+                result: last_error,
+                fallback_available: fallback_bindings(&candidate_list[1..]),
+            },
+        )))
     }
 }
 
@@ -1152,9 +1473,8 @@ mod tests {
 
     #[test]
     fn research_report_template_renders_source() {
-        let source =
-            render_grapheme_template("research_report", &json!({ "topic": "rust async" }))
-                .expect("template");
+        let source = render_grapheme_template("research_report", &json!({ "topic": "rust async" }))
+            .expect("template");
         assert!(source.contains("websearch.research_report"));
         assert!(source.contains("rust async"));
     }
@@ -1162,8 +1482,8 @@ mod tests {
     #[test]
     fn grapheme_source_for_websearch_binding() {
         let binding = CapabilityBinding::grapheme("websearch.search", 10, true);
-        let source = grapheme_source_for_binding(&binding, &json!({ "query": "medousa" }))
-            .expect("source");
+        let source =
+            grapheme_source_for_binding(&binding, &json!({ "query": "medousa" })).expect("source");
         assert!(source.contains("websearch.search"));
         assert!(source.contains("medousa"));
     }
@@ -1175,6 +1495,25 @@ mod tests {
             .expect("source");
         assert!(source.contains("web.duckduckgo"));
         assert!(source.contains("phoenix events"));
+    }
+
+    #[test]
+    fn explicit_grapheme_source_preserves_content_bytes() {
+        let binding = CapabilityBinding::grapheme("custom.operation", 10, true);
+        let source = grapheme_source_for_binding(
+            &binding,
+            &json!({ "source": "  query Custom { value }  \n" }),
+        )
+        .expect("source");
+        assert_eq!(source, "  query Custom { value }  \n");
+    }
+
+    #[test]
+    fn explicit_grapheme_source_rejects_blank_content() {
+        let binding = CapabilityBinding::grapheme("custom.operation", 10, true);
+        let error = grapheme_source_for_binding(&binding, &json!({ "source": " \n\t" }))
+            .expect_err("blank source should fail");
+        assert!(error.to_string().contains("input.source must be non-empty"));
     }
 
     #[test]
@@ -1196,5 +1535,146 @@ mod tests {
 
         let ordered = ordered_available_bindings(&response, None);
         assert_eq!(ordered[0].reference, "websearch.search");
+    }
+
+    #[test]
+    fn capability_command_normalizes_selection_without_rewriting_forwarded_input() {
+        let command = CapabilityInvokeCommand::try_from(CapabilityInvokeInput {
+            capability: Some("  document_search  ".to_string()),
+            query: Some("  docs  ".to_string()),
+            input: None,
+            source: None,
+            binding: Some(CapabilityBindingInput {
+                source: Some(CapabilitySourceInput::Mcp),
+                reference: Some("  docs.search  ".to_string()),
+            }),
+            preferred_source: Some(CapabilitySourceInput::Mcp),
+            try_fallbacks: true,
+            extra: serde_json::Map::new(),
+        })
+        .expect("command");
+
+        assert_eq!(
+            command.capability.as_ref().map(TrimmedText::as_str),
+            Some("document_search")
+        );
+        assert_eq!(
+            command.query.as_ref().map(TrimmedText::as_str),
+            Some("docs")
+        );
+        assert_eq!(command.preferred_source, Some(CapabilitySource::Mcp));
+        assert_eq!(
+            command
+                .binding
+                .as_ref()
+                .map(|binding| binding.reference.as_str()),
+            Some("docs.search")
+        );
+        assert_eq!(
+            command.tool_input["capability"],
+            json!("  document_search  ")
+        );
+        assert_eq!(command.tool_input["query"], json!("  docs  "));
+    }
+
+    #[test]
+    fn capability_binding_command_rejects_blank_reference() {
+        let error = CapabilityBindingRequest::try_from(CapabilityBindingInput {
+            source: Some(CapabilitySourceInput::Grapheme),
+            reference: Some(" \n\t".to_string()),
+        })
+        .expect_err("blank binding reference should fail");
+
+        assert!(error.to_string().contains("binding.reference is required"));
+    }
+
+    #[test]
+    fn mcp_promotion_command_normalizes_identifiers_and_preserves_arguments() {
+        let command = McpPromoteToJobCommand::try_from(McpPromoteToJobInput {
+            server_id: Some("  docs  ".to_string()),
+            tool_name: Some("  search  ".to_string()),
+            input: Some(BridgeObject(json!({
+                "query": "  keep payload bytes  "
+            }))),
+            note: Some("  operator note  ".to_string()),
+            queue: "  bridge  ".to_string(),
+            step_id: "  search_step  ".to_string(),
+        })
+        .expect("command");
+
+        assert_eq!(command.server_id.as_str(), "docs");
+        assert_eq!(command.tool_name.as_str(), "search");
+        assert_eq!(command.queue.as_str(), "bridge");
+        assert_eq!(command.step_id.as_str(), "search_step");
+        assert_eq!(command.note.as_deref(), Some("  operator note  "));
+        assert_eq!(command.input["query"], json!("  keep payload bytes  "));
+    }
+
+    #[test]
+    fn mcp_promotion_command_rejects_blank_required_identifiers() {
+        let error = McpPromoteToJobCommand::try_from(McpPromoteToJobInput {
+            server_id: Some(" \n".to_string()),
+            tool_name: Some("search".to_string()),
+            input: None,
+            note: None,
+            queue: "default".to_string(),
+            step_id: "mcp_step".to_string(),
+        })
+        .expect_err("blank server id should fail");
+
+        assert!(error.to_string().contains("server_id is required"));
+    }
+
+    #[test]
+    fn grapheme_template_command_requires_template_and_preserves_params() {
+        let command = GraphemeTemplateRunCommand::try_from(GraphemeTemplateRunInput {
+            template: Some(GraphemeTemplateInput::HttpPoll),
+            params: Some(BridgeObject(json!({ "url": "  https://example.test  " }))),
+        })
+        .expect("command");
+
+        assert_eq!(command.template.as_str(), "http_poll");
+        assert_eq!(command.params["url"], json!("  https://example.test  "));
+
+        let error = GraphemeTemplateRunCommand::try_from(GraphemeTemplateRunInput {
+            template: None,
+            params: None,
+        })
+        .expect_err("missing template should fail");
+        assert!(error.to_string().contains("template is required"));
+    }
+
+    #[test]
+    fn web_search_command_normalizes_query_and_provider() {
+        let command = WebSearchCommand::try_from(WebSearchInput {
+            query: Some("  rust async  ".to_string()),
+            mode: WebSearchModeInput::Search,
+            provider: Some("  duckduckgo  ".to_string()),
+            try_fallbacks: Some(true),
+            max_results: Some(12),
+        })
+        .expect("command");
+
+        assert_eq!(command.query.as_str(), "rust async");
+        assert_eq!(
+            command.provider.as_ref().map(TrimmedText::as_str),
+            Some("duckduckgo")
+        );
+        assert_eq!(command.mode.as_str(), "search");
+        assert_eq!(command.try_fallbacks, Some(true));
+        assert_eq!(command.max_results, Some(12));
+    }
+
+    #[test]
+    fn web_search_command_rejects_blank_query() {
+        let error = WebSearchCommand::try_from(WebSearchInput {
+            query: Some(" \n\t".to_string()),
+            mode: WebSearchModeInput::default(),
+            provider: None,
+            try_fallbacks: None,
+            max_results: None,
+        })
+        .expect_err("blank query should fail");
+        assert!(error.to_string().contains("query is required"));
     }
 }

@@ -266,6 +266,7 @@ impl Forge {
                     branch,
                     baseline_oid,
                     generation,
+                    derived_from: None,
                 };
                 item.environment = Some(env.clone());
                 self.store.append(
@@ -810,7 +811,7 @@ mod tests {
         // (and the worktree exists), but no EnvironmentProvisioned / commit.
         let worktree = fx.forge_root.join("worktrees/r1/w1");
         fx.git
-            .worktree_add(&fx.repo, &worktree, "medousa/work/w1", &fx.baseline)
+            .worktree_add(&fx.repo, &worktree, "worktree/w1", &fx.baseline)
             .unwrap();
         let op = OperationId::new();
         let store = forge.store();
@@ -844,7 +845,7 @@ mod tests {
                     operation_id: op.clone(),
                     effect: SideEffect::WorktreeAdded {
                         path: worktree.clone(),
-                        branch: "medousa/work/w1".into(),
+                        branch: "worktree/w1".into(),
                         baseline_oid: fx.baseline.clone(),
                     },
                 },

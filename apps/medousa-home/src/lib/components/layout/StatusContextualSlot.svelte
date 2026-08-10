@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { CircleAlert, CircleCheck } from "@lucide/svelte";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
@@ -10,6 +11,13 @@
   import { workshop } from "$lib/stores/workshop.svelte";
   import { formatVaultNoteStats, vaultNoteStats } from "$lib/utils/vaultNoteStats";
   import { dispatchScriptWorkbenchOpenConsole } from "$lib/utils/scriptWorkbenchChromeEvents";
+
+  function reviewStatusLabel(issue: string): string {
+    if (/no project check|project checks haven'?t run/i.test(issue)) {
+      return "Project checks haven't run";
+    }
+    return issue;
+  }
 
   const activeLme = $derived(lmeWorkspace.activeTab);
   const onLibrary = $derived(layout.desktopSurface === "library");
@@ -114,28 +122,31 @@
 
 {#if codeReview}
   <div class="status-contextual status-contextual--code" aria-label="Code review status">
-    <span class="status-contextual-item">
-      {codeReview.changed_files.length}
-      {codeReview.changed_files.length === 1 ? "changed file" : "changed files"}
-    </span>
-    <span class="status-contextual-sep" aria-hidden="true">·</span>
-    <span
-      class="status-contextual-item"
-      class:text-content-warning={codeReview.synthesis.risk !== "low"}
-    >
-      {codeReview.synthesis.risk === "low"
-        ? "Low risk"
-        : codeReview.synthesis.risk_summary}
-    </span>
     {#if codeReview.synthesis.verification}
-      <span class="status-contextual-sep" aria-hidden="true">·</span>
       <span
-        class="status-contextual-item"
+        class="status-contextual-item status-contextual-item--icon"
         class:text-content-success={codeReview.synthesis.verification.success}
         class:text-content-error={!codeReview.synthesis.verification.success}
       >
-        {codeReview.synthesis.verification.success ? "Checks passed" : "Checks failed"}
+        {#if codeReview.synthesis.verification.success}
+          <CircleCheck size={11} strokeWidth={2} aria-hidden="true" />
+        {:else}
+          <CircleAlert size={11} strokeWidth={2} aria-hidden="true" />
+        {/if}
+        <span class="truncate">
+          {codeReview.synthesis.verification.success ? "Checks passed" : "Checks failed"}
+        </span>
       </span>
+    {:else if codeReview.synthesis.unresolved_issues.length > 0}
+      <span
+        class="status-contextual-item status-contextual-item--icon text-content-warning"
+        title={codeReview.synthesis.unresolved_issues.join(" · ")}
+      >
+        <CircleAlert size={11} strokeWidth={2} aria-hidden="true" />
+        <span class="truncate">{reviewStatusLabel(codeReview.synthesis.unresolved_issues[0]!)}</span>
+      </span>
+    {:else}
+      <span class="status-contextual-whisper">Review open</span>
     {/if}
   </div>
 {:else if showCode && codeStatus}
@@ -167,15 +178,33 @@
           : codeStatus.saveWhisper || "Unsaved"}
       </span>
     {/if}
-    {#if codeStatus.languageState !== "ready"}
+    {#if codeStatus.languageDetail || codeStatus.languageState !== "ready"}
       <span class="status-contextual-sep" aria-hidden="true">·</span>
       <span
-        class="status-contextual-item"
-        class:text-content-warning={codeStatus.languageState === "editing-only"}
+        class="status-contextual-item status-contextual-item--detail"
+        class:text-content-warning={codeStatus.languageState === "editing-only" ||
+          codeStatus.languageState === "reconnecting"}
+        class:text-content-error={codeStatus.languageState === "failed"}
+        title={codeStatus.languageDetail ??
+          (codeStatus.languageState === "connecting"
+            ? "Language starting…"
+            : codeStatus.languageState === "reconnecting"
+              ? "Language reconnecting…"
+              : codeStatus.languageState === "failed"
+                ? "Language failed"
+                : "Editing only")}
       >
-        {codeStatus.languageState === "connecting"
-          ? "Language starting…"
-          : "Editing only"}
+        {#if codeStatus.languageDetail}
+          {codeStatus.languageDetail}
+        {:else if codeStatus.languageState === "connecting"}
+          Language starting…
+        {:else if codeStatus.languageState === "reconnecting"}
+          Language reconnecting…
+        {:else if codeStatus.languageState === "failed"}
+          Language failed
+        {:else}
+          Editing only
+        {/if}
       </span>
     {/if}
   </div>
@@ -229,22 +258,55 @@
   .status-contextual {
     display: inline-flex;
     min-width: 0;
-    max-width: 18rem;
+    max-width: 100%;
     flex: 0 1 auto;
+    flex-wrap: nowrap;
     align-items: center;
     justify-content: flex-end;
     gap: 0.35rem;
     color: rgb(var(--theme-text-quiet));
     overflow: hidden;
     text-align: right;
+    white-space: nowrap;
   }
 
   .status-contextual--code {
-    max-width: min(38rem, 55vw);
+    /* Prefer yielding to trailing chrome over wrapping into the fixed-height bar. */
+    max-width: min(38rem, 100%);
   }
 
   .status-contextual-item {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  /* Long LSP / language notices absorb squeeze; full text stays on title. */
+  .status-contextual-item--detail {
     min-width: 0;
+    flex: 1 1 auto;
+    max-width: 16rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .status-contextual-item--icon {
+    display: inline-flex;
+    min-width: 0;
+    max-width: 100%;
+    flex-shrink: 1;
+    align-items: center;
+    gap: 0.3rem;
+    overflow: hidden;
+  }
+
+  :global(html.dark) .status-contextual-item.text-content-warning,
+  :global(html.dark) .status-contextual-item--icon.text-content-warning {
+    color: color-mix(
+      in srgb,
+      rgb(var(--theme-warning)) 72%,
+      rgb(var(--theme-text-secondary))
+    );
   }
 
   .status-contextual-sep {
@@ -253,13 +315,14 @@
   }
 
   .status-contextual-action {
-    min-width: 0;
+    flex-shrink: 0;
     border: 0;
     background: transparent;
     padding: 0;
     color: inherit;
     font: inherit;
     text-align: right;
+    white-space: nowrap;
     transition: color 140ms ease;
   }
 
@@ -270,5 +333,6 @@
   .status-contextual-whisper {
     flex-shrink: 0;
     color: rgb(var(--theme-text-tertiary));
+    white-space: nowrap;
   }
 </style>

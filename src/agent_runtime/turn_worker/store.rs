@@ -50,6 +50,31 @@ pub struct WorkshopSteerMessage {
     pub speaker_profile_id: Option<String>,
 }
 
+/// One live tool run for the worker transcript, correlated start-to-finish by
+/// `run_id` so the UI can render a single `tool(params) → result` row.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkerToolActivity {
+    #[serde(default)]
+    pub run_id: String,
+    pub name: String,
+    #[serde(default)]
+    pub round: usize,
+    /// running | succeeded | failed
+    #[serde(default)]
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub input_params: Vec<medousa_types::daemon_api::ToolInputParam>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_summary: Option<String>,
+    /// `alias` keeps pre-correlation `turn_workers.json` files loadable.
+    #[serde(default = "Utc::now", alias = "at")]
+    pub started_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finished_at: Option<DateTime<Utc>>,
+}
+
 fn default_worker_max_tool_rounds() -> usize {
     10
 }
@@ -113,6 +138,20 @@ pub struct TurnWorkRecord {
     pub supports_liquid_markdown: bool,
     #[serde(default)]
     pub supports_browser_host: bool,
+    /// Live tool/assistant activity for chat-adjacent transcript (rolling, capped).
+    #[serde(default)]
+    pub live_tool_activity: Vec<crate::agent_runtime::turn_worker::WorkerToolActivity>,
+    /// Live reasoning transcript — joined chunks, capped tail. Prose, not deltas.
+    #[serde(default)]
+    pub live_thinking: String,
+    /// Live assistant output preview — joined chunks, capped tail.
+    #[serde(default)]
+    pub live_output: String,
+    /// First/last reasoning chunk, so chat can render "Thought for Ns".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking_started_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking_finished_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

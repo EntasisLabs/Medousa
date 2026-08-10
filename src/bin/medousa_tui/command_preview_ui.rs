@@ -460,7 +460,7 @@ fn record_palette_usage(state: &mut TuiState, command: &str) {
     defaults.tool_call_mode = Some(state.settings.tool_call_mode.clone());
     defaults.max_tool_rounds = Some(parse_usize_with_bounds(
         &state.settings.max_tool_rounds,
-        10,
+        medousa::agent_runtime::DEFAULT_GENERAL_MAX_TOOL_ROUNDS,
         medousa::agent_runtime::ROUND_LIMIT_MIN,
         medousa::agent_runtime::ROUND_LIMIT_MAX,
     ));

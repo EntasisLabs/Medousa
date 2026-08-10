@@ -509,6 +509,7 @@ export class ShellTabsStore {
 
   /** Persist v3 without mutating reactive `desktops` (active layout is live state). */
   private persist() {
+    if (!this.bootstrapped) return;
     if (typeof localStorage === "undefined") return;
     try {
       this.ensureDesktopCatalog();
@@ -704,12 +705,7 @@ export class ShellTabsStore {
       }
     }
     if (surface === "library" || surface === "automations" || surface === "code") {
-      const lme = lmeWorkspace.activeTab;
-      if (lme && (surface !== "code" || lme.kind === "code")) {
-        this.openLme(lme.tabId, { activate: true });
-        return;
-      }
-      this.openSurface(surface === "automations" ? "library" : surface, { activate: true });
+      this.enterLmeFamily(surface === "code" ? "code" : "library");
       return;
     }
     if (surface === "chat") {
@@ -731,7 +727,7 @@ export class ShellTabsStore {
       this.openChat(sessionId, { activate: true });
       return;
     }
-    this.openSurface("library", { activate: true });
+    this.enterLmeFamily("library");
   }
 
   /**
@@ -782,7 +778,7 @@ export class ShellTabsStore {
     if (active) {
       await this.activate(active.id, { rehydrate: true });
     } else {
-      this.openSurface("library", { activate: true });
+      this.enterLmeFamily("library");
     }
     await this.resyncLiveStreams(previousChatIds);
     this.persist();
@@ -987,7 +983,15 @@ export class ShellTabsStore {
   ): string | null {
     let next = surfaceId === "home" ? "chat" : surfaceId;
     if (next === "context") next = "map";
-    if (next === "automations" || next === "workshop") next = "library";
+    if (
+      next === "automations" ||
+      next === "workshop" ||
+      next === "notes" ||
+      next === "files" ||
+      next === "artifacts"
+    ) {
+      next = "library";
+    }
     const groupId = options?.groupId ?? this.activeGroupId;
     if (next === "chat") {
       const focusedSessionChat = this.tabs.find(
@@ -1057,7 +1061,67 @@ export class ShellTabsStore {
   }
 
   openDestination(surfaceId: string) {
+    let next = surfaceId === "home" ? "chat" : surfaceId;
+    if (next === "context") next = "map";
+    if (
+      next === "automations" ||
+      next === "workshop" ||
+      next === "notes" ||
+      next === "files" ||
+      next === "artifacts" ||
+      next === "library"
+    ) {
+      this.enterLmeFamily("library");
+      return;
+    }
+    if (next === "code") {
+      this.enterLmeFamily("code");
+      return;
+    }
     this.openSurface(surfaceId, { activate: true });
+  }
+
+  /**
+   * Enter Notes/Code/Automations without seeding empty Workspace/Code surface
+   * tabs. Prefer an open document in that family; otherwise only update the
+   * rail hint and leave the center pane alone.
+   */
+  enterLmeFamily(family: "library" | "code"): string | null {
+    layout.focusDesktopSurface(family);
+
+    const matchesFamily = (lmeTabId: string) => {
+      const lme = lmeWorkspace.tabs.find((tab) => tab.tabId === lmeTabId);
+      if (!lme) return false;
+      return family === "code" ? lme.kind === "code" : lme.kind !== "code";
+    };
+
+    const activateShellForLme = (lmeTabId: string, title?: string) => {
+      const existing = this.tabs.find(
+        (tab) => tab.kind === "lme" && tab.lmeTabId === lmeTabId,
+      );
+      if (existing) {
+        if (title) this.patchTitle(existing.id, title);
+        void this.activate(existing.id);
+        return existing.id;
+      }
+      return this.openLme(lmeTabId, { activate: true, title });
+    };
+
+    const activeLme = lmeWorkspace.activeTab;
+    if (activeLme && matchesFamily(activeLme.tabId)) {
+      return activateShellForLme(activeLme.tabId, activeLme.title);
+    }
+
+    const shellMatch = [...this.tabs]
+      .reverse()
+      .find((tab) => tab.kind === "lme" && matchesFamily(tab.lmeTabId));
+    if (shellMatch && shellMatch.kind === "lme") {
+      void this.activate(shellMatch.id);
+      return shellMatch.id;
+    }
+
+    // No document in this family — keep whatever is focused (chat, etc.).
+    return null;
   }
 
   private recordNavVisit(nextTabId: string) {
@@ -1170,11 +1234,15 @@ export class ShellTabsStore {
     }
   }
 
-  mirrorLmeTab(lmeTabId: string, options?: { activate?: boolean; title?: string }) {
+  mirrorLmeTab(
+    lmeTabId: string,
+    options?: { activate?: boolean; title?: string; groupId?: string },
+  ) {
     if (this.suppressMirror) return;
     this.openLme(lmeTabId, {
       activate: options?.activate !== false,
       title: options?.title,
+      groupId: options?.groupId,
     });
   }
 
@@ -1323,16 +1391,79 @@ export class ShellTabsStore {
     this.groups = [...this.groups, { id: newGroupId, tabIds: [], activeTabId: null }];
 
     if (seed) {
-      // Move the focused tab into the new pane — do not clone. Shared LME/web
-      // identities meant closing one shell tab tore down both views.
-      this.moveTab(seed.id, newGroupId);
-      void this.activate(seed.id);
+      // Retain the current editor in both groups (VS Code Split Editor).
+      // Moving a tab into a new pane remains moveTab / splitGroupWithTab.
+      const retained = this.retainTabInGroup(seed, newGroupId);
+      this.activeGroupId = newGroupId;
+      if (retained) {
+        this.patchGroup(newGroupId, { activeTabId: retained });
+        void this.activate(retained);
+      }
     } else {
       this.activeGroupId = newGroupId;
-      this.openSurface("library", { activate: true, groupId: newGroupId });
+      // Empty pane stays empty — ShellPane shows “Open something from the rail.”
+      // Do not seed Workspace/Code placeholders.
     }
     this.persist();
     return true;
+  }
+
+  /**
+   * Split and move the active tab into the new pane (drag-to-split semantics).
+   * Prefer `splitActive` when the editor should stay visible in both groups.
+   */
+  moveActiveToNewSplit(direction: SplitDirection): boolean {
+    if (countLeaves(this.splitRoot) >= MAX_SHELL_PANES) {
+      return false;
+    }
+    const fromGroupId = this.activeGroupId;
+    const seed = this.activeTab;
+    if (!seed) return this.splitActive(direction);
+    const newGroupId = newSplitId("group");
+    const result = splitLeaf(this.splitRoot, fromGroupId, direction, newGroupId);
+    if (!result) return false;
+
+    this.splitRoot = result.root;
+    this.groups = [...this.groups, { id: newGroupId, tabIds: [], activeTabId: null }];
+    this.moveTab(seed.id, newGroupId);
+    void this.activate(seed.id);
+    this.persist();
+    return true;
+  }
+
+  /** Clone `seed` into `groupId` while leaving the original tab where it is. */
+  private retainTabInGroup(seed: ShellTab, groupId: string): string | null {
+    switch (seed.kind) {
+      case "lme":
+        return this.openLme(seed.lmeTabId, {
+          activate: false,
+          title: seed.title,
+          groupId,
+        });
+      case "chat":
+        return this.openChat(seed.sessionId, {
+          activate: false,
+          title: seed.title,
+          groupId,
+        });
+      case "web":
+        return this.openWeb(seed.browserTabId, {
+          activate: false,
+          title: seed.title,
+          groupId,
+        });
+      case "surface":
+        return this.openSurface(seed.surfaceId, { activate: false, groupId });
+      case "terminal":
+        return this.openTerminal(seed.sessionId, {
+          activate: false,
+          title: seed.title,
+          groupId,
+          workId: seed.workId,
+        });
+      default:
+        return null;
+    }
   }
 
   /** Split `hostGroupId` toward `edge` and move `tabId` into the new pane. */
@@ -1489,6 +1620,7 @@ export class ShellTabsStore {
   }
 
   syncTitlesFromStores() {
+    if (!this.bootstrapped) return;
     let changed = false;
     const next = this.tabs.map((tab) => {
       if (tab.kind === "chat") {
@@ -1540,6 +1672,7 @@ export class ShellTabsStore {
   }
 
   syncFromLmeWorkspace() {
+    if (!this.bootstrapped) return;
     const lmeIds = new Set(lmeWorkspace.tabs.map((tab) => tab.tabId));
     // LME's document catalog is global, but shell presentations belong to a
     // desktop. Do not mirror a document into the active desktop merely because
@@ -1576,6 +1709,7 @@ export class ShellTabsStore {
   }
 
   syncFromHumanBrowser() {
+    if (!this.bootstrapped) return;
     const browserIds = new Set(humanBrowser.tabs.map((tab) => tab.id));
     const hasWebShell = this.tabs.some((tab) => tab.kind === "web");
     const webEngaged =

@@ -7,8 +7,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::model::{
-    AcceptedDisposition, ActorRef, Attempt, AttemptId, AttemptState, EvidenceId, GitOid, LeaseId,
-    OperationId, RecoveryDisposition, ReviewDecision, ReviewDecisionId, WorkId, WorkState,
+    AcceptedDisposition, ActorRef, Attempt, AttemptId, AttemptState, ChangesRequested, EvidenceId,
+    GitOid, LeaseId, OperationId, RecoveryDisposition, ReviewComment, ReviewCommentId,
+    ReviewDecision, ReviewDecisionId, WorkId, WorkState,
 };
 
 pub const EVENT_SCHEMA_VERSION: u32 = 1;
@@ -101,6 +102,20 @@ pub enum EventPayload {
     ReviewDecided {
         decision: Box<ReviewDecision>,
     },
+    ReviewCommentAdded {
+        comment: Box<ReviewComment>,
+    },
+    ReviewCommentResolved {
+        comment_id: ReviewCommentId,
+        resolved_by: ActorRef,
+        resolved_at: DateTime<Utc>,
+    },
+    ReviewCommentDeleted {
+        comment_id: ReviewCommentId,
+    },
+    ChangesRequested {
+        request: Box<ChangesRequested>,
+    },
     DecisionInvalidated {
         decision_id: ReviewDecisionId,
         reason: String,
@@ -188,7 +203,7 @@ mod tests {
             EventPayload::OperationSideEffect {
                 operation_id: OperationId::new(),
                 effect: SideEffect::CheckpointCommitCreated {
-                    branch: "medousa/work/x".into(),
+                    branch: "worktree/x".into(),
                     oid: GitOid::new("d".repeat(40)),
                 },
             },
@@ -215,6 +230,47 @@ mod tests {
                 attempt_id: AttemptId::new(),
                 evidence_id: EvidenceId::new(),
                 evidence_digest: Digest::sha256_hex(b"bundle"),
+            },
+            EventPayload::ReviewCommentAdded {
+                comment: Box::new(crate::model::ReviewComment {
+                    id: ReviewCommentId::new(),
+                    thread_id: ReviewCommentId::new(),
+                    parent_id: None,
+                    evidence_id: EvidenceId::new(),
+                    attempt_id: AttemptId::new(),
+                    path: "src/main.rs".into(),
+                    side: "new".into(),
+                    start_line: 10,
+                    end_line: 12,
+                    anchor_digest: crate::model::anchor_digest_for("let x = 1;"),
+                    anchor_text: Some("let x = 1;".into()),
+                    body: "Please rename".into(),
+                    actor: actor(),
+                    created_at: Utc::now(),
+                    resolved_at: None,
+                    resolved_by: None,
+                }),
+            },
+            EventPayload::ReviewCommentResolved {
+                comment_id: ReviewCommentId::new(),
+                resolved_by: actor(),
+                resolved_at: Utc::now(),
+            },
+            EventPayload::ReviewCommentDeleted {
+                comment_id: ReviewCommentId::new(),
+            },
+            EventPayload::ChangesRequested {
+                request: Box::new(crate::model::ChangesRequested {
+                    id: crate::model::ChangesRequestedId::new(),
+                    actor: actor(),
+                    attempt_id: AttemptId::new(),
+                    evidence_id: EvidenceId::new(),
+                    evidence_digest: Digest::sha256_hex(b"bundle"),
+                    comment_ids: vec![ReviewCommentId::new()],
+                    summary: Some("needs polish".into()),
+                    revision_brief: "src/main.rs:10\nPlease rename".into(),
+                    decided_at: Utc::now(),
+                }),
             },
             EventPayload::DecisionInvalidated {
                 decision_id: ReviewDecisionId::new(),

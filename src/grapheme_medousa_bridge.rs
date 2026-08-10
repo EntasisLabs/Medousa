@@ -567,13 +567,13 @@ fn deliver_to_channel(args: &Value, session_id: &str, body: &str) -> Result<Valu
         HostCallError::Fatal("medousa.deliver channel destination requires channel_id".to_string())
     })?;
     let user_id = arg_string(args, &["user_id"]).unwrap_or_else(|| session_id.to_string());
-    let target = ChannelDeliveryTarget {
-        channel: normalize_channel_surface(&channel),
+    let target = ChannelDeliveryTarget::new(
+        normalize_channel_surface(&channel),
         user_id,
         channel_id,
-        session_id: session_id.to_string(),
-        stream_id: None,
-    };
+        session_id,
+        None,
+    );
     let client = reqwest::Client::new();
     block_on(channel_delivery::dispatch_channel_message(&client, &target, body)).map_err(|err| {
         HostCallError::Fatal(format!("medousa.deliver channel dispatch failed: {err}"))

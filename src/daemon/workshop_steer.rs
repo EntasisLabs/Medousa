@@ -24,12 +24,13 @@ pub async fn steer_bound_workshop_handler(
     let speaker = resolve_steer_speaker(addr.ip(), &headers);
     match steer_bound_workshop_for_session(session_id.trim(), body.message.trim(), speaker) {
         Ok(value) => {
-            let ok = value.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
-            let status = if ok {
+            let status = if value.is_ok() {
                 StatusCode::OK
             } else {
                 StatusCode::CONFLICT
             };
+            let value = serde_json::to_value(value)
+                .unwrap_or_else(|error| json!({ "ok": false, "error": error.to_string() }));
             (status, Json(value))
         }
         Err(err) => (

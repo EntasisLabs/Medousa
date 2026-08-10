@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { CaseSensitive, ChevronDown, ChevronUp, Replace, X } from "@lucide/svelte";
+  import { titleWithKeys } from "$lib/utils/keyboardShortcutsCatalog";
   import { vaultFind } from "$lib/stores/vaultFind.svelte";
   import { VAULT_FIND_INPUT_ID } from "$lib/utils/vaultFindInNote";
-  import { formatShortcut } from "$lib/platform";
 
   let inputEl = $state<HTMLInputElement | null>(null);
   let replaceInputEl = $state<HTMLInputElement | null>(null);
@@ -126,7 +126,7 @@
       class:vault-find-btn--active={vaultFind.replaceMode}
       aria-label="Toggle replace"
       aria-pressed={vaultFind.replaceMode}
-      title={`Replace (${formatShortcut("⌥F")})`}
+      title={titleWithKeys("Replace", "mod:⌥F")}
       onmousedown={keepFocus}
       onclick={() => {
         vaultFind.replaceMode = !vaultFind.replaceMode;

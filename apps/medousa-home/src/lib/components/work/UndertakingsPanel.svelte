@@ -8,13 +8,12 @@
     GitPullRequestArrow,
     History,
     Link2,
-    MessageSquarePlus,
+    MessageSquareWarning,
     MoreHorizontal,
+    Pencil,
     Play,
     Save,
-    ShieldCheck,
     Square,
-    UserRound,
   } from "@lucide/svelte";
   import { undertakings } from "$lib/stores/undertakings.svelte";
   import {
@@ -26,10 +25,16 @@
     prepareExecutorHandoff,
     recordReviewIntent,
     applyDecision,
-    discardUndertaking,
     getEvidencePatch,
     getEvidenceCommands,
     restoreReviewFile,
+    addReviewComment,
+    resolveReviewComment,
+    deleteReviewComment,
+    requestReviewChanges,
+    continueEditing,
+    canStartHumanEditing,
+    startHumanEditingSession,
     getWorldCodeAvec,
     getWorldFiles,
     getWorldFind,
@@ -41,6 +46,7 @@
     humanPhaseGuidance,
     humanPhaseLabel,
     humanizeForgeMessage,
+    gitTargetBaseRef,
     getProviderHandoff,
     shareProviderHandoff,
     saveProviderContext,
@@ -58,6 +64,7 @@
     type ProviderComment,
   } from "$lib/forge";
   import {
+    closeUndertaking,
     interruptTrackedAgent,
     landCodeWorkingSet,
     openTrackedTerminal,
@@ -71,6 +78,10 @@
   import { shareText } from "$lib/share";
   import CodeSourceEditor from "$lib/components/work/CodeSourceEditor.svelte";
   import ForgeReviewSurface from "$lib/components/work/ForgeReviewSurface.svelte";
+  import ReviewCommentRail from "$lib/components/work/ReviewCommentRail.svelte";
+  import ReviewProvenanceStrip from "$lib/components/work/ReviewProvenanceStrip.svelte";
+  import EmptyState from "$lib/components/ui/EmptyState.svelte";
+  import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
   import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
   import { isTauri } from "$lib/window";
   import { toast } from "$lib/stores/toast.svelte";
@@ -114,6 +125,15 @@
   let reviewRationale = $state("");
   let reviewNoteOpen = $state(false);
   let acknowledgePolicy = $state(false);
+  let acknowledgeBlocking = $state(false);
+  let commentDraft = $state("");
+  let commentCompose = $state<{
+    path: string;
+    side: "new" | "old" | string;
+    line: number;
+    content: string;
+  } | null>(null);
+  let requestChangesPreviewOpen = $state(false);
   let exportOpen = $state(false);
   let exportDestination = $state("");
   let exportedDestination = $state<string | null>(null);
@@ -126,9 +146,11 @@
   let reviewDetailsFor = $state<string | null>(null);
   let reviewDetailsLoading = $state(false);
   let reviewDetailsOpen = $state(false);
-  let reviewTimelineOpen = $state(false);
-  let reviewAuditOpen = $state(false);
+  let reviewHistoryExpanded = $state(false);
+  let reviewAuditOpen = $state(true);
   let providerLinkOpen = $state(false);
+  /** When threads exist, `c` can dismiss the rail without losing comments. */
+  let commentRailDismissed = $state(false);
 
   const detail = $derived(
     !boundWorkId || undertakings.detail?.id === boundWorkId
@@ -158,6 +180,16 @@
   function selectedWorldSnapshot(): WorldSnapshotRef | null {
     return worldBinding?.[worldSnapshot] ?? null;
   }
+
+  const worldSlot = $derived(worldBinding?.[worldSnapshot] ?? null);
+  const worldSlotState = $derived((worldSlot?.state ?? "").toLowerCase());
+  const worldMapIndexing = $derived(
+    worldSlotState === "queued" || worldSlotState === "indexing",
+  );
+  const worldMapFailed = $derived(worldSlotState === "failed");
+  const worldMapReady = $derived(
+    worldSlotState === "ready" && worldInsight != null && !worldError,
+  );
 
   onMount(() => {
     // Default repo path only when Home shares the workshop disk.
@@ -317,21 +349,41 @@
     Boolean(
       undertakings.active?.workId === detail?.id &&
         undertakings.active?.executorKind &&
-        undertakings.active.executorKind !== "human",
+        undertakings.active.executorKind !== "human" &&
+        undertakings.active.leaseId &&
+        undertakings.active.leaseGeneration != null,
     ),
   );
   const agentLabel = $derived(
     undertakings.active?.executorKind === "cursor" ? "Cursor" : "Codex",
   );
   async function doSeal() {
-    const leaseId = undertakings.active?.leaseId;
-    const generation = undertakings.active?.leaseGeneration;
+    let leaseId = undertakings.active?.leaseId ?? null;
+    let generation = undertakings.active?.leaseGeneration ?? null;
+    if ((!leaseId || generation == null) && detail && canStartHumanEditing(detail.allowed_actions)) {
+      try {
+        const begun = await startHumanEditingSession(detail.id, detail.allowed_actions);
+        leaseId = begun.lease.lease_id;
+        generation = begun.lease.generation;
+        undertakings.setActiveFromItem(begun.item, {
+          leaseId,
+          leaseGeneration: generation,
+          executorKind: "human",
+        });
+        await undertakings.refreshDetail();
+      } catch (err) {
+        actionError = humanizeForgeMessage(
+          err instanceof Error ? err.message : String(err),
+        );
+        return;
+      }
+    }
     if (!leaseId || generation == null) {
-      actionError = "Editing is not active yet. Open a file or ask an agent to begin.";
+      actionError = "Nothing to seal yet — make a change first, then seal for review.";
       return;
     }
     await run(async () => {
-      await sealLease(leaseId, generation);
+      await sealLease(leaseId!, generation!);
       await undertakings.refreshDetail();
       if (undertakings.review?.evidence_id) {
         patch = await getEvidencePatch(undertakings.review.evidence_id, {
@@ -354,18 +406,15 @@
     const evidenceId = current.evidence_id;
     reviewDetailsFor = evidenceId;
     reviewDetailsLoading = true;
-    patch = null;
     commands = null;
     worldInsight = null;
     providerHandoff = null;
-    const [patchResult, commandsResult, worldResult, providerResult] = await Promise.allSettled([
-      getEvidencePatch(evidenceId, { work_id: current.work_id, limit: 400 }),
+    const [commandsResult, worldResult, providerResult] = await Promise.allSettled([
       getEvidenceCommands(evidenceId, { work_id: current.work_id, limit: 100 }),
       getWorldCodeAvec(current.work_id),
       getProviderHandoff(current.work_id),
     ]);
     if (review?.evidence_id !== evidenceId) return;
-    patch = patchResult.status === "fulfilled" ? patchResult.value : null;
     commands = commandsResult.status === "fulfilled" ? commandsResult.value : null;
     if (worldResult.status === "fulfilled") {
       worldInsight = worldResult.value;
@@ -380,17 +429,18 @@
     reviewDetailsLoading = false;
   }
 
-  async function loadMorePatch() {
-    if (!patch?.truncated || !review?.evidence_id) return;
-    await run(async () => {
-      const next = await getEvidencePatch(review!.evidence_id!, {
-        work_id: review!.work_id,
-        offset: patch!.offset + patch!.lines.length,
-        limit: 400,
-      });
-      patch = { ...next, offset: patch!.offset, lines: [...patch!.lines, ...next.lines] };
-    });
-  }
+  $effect(() => {
+    if (review?.evidence_id) {
+      void loadReviewDetails();
+    }
+  });
+
+  $effect(() => {
+    // Fresh evidence → show comments again if any exist.
+    void review?.evidence_id;
+    commentRailDismissed = false;
+    reviewHistoryExpanded = false;
+  });
 
   async function loadMoreCommands() {
     if (!commands?.truncated || !review?.evidence_id) return;
@@ -410,13 +460,48 @@
 
   async function loadWorldOverview() {
     if (!detail) return;
-    await run(async () => {
-      worldBinding = await getWorldBinding(detail!.id);
+    busy = true;
+    worldError = null;
+    try {
+      worldBinding = await getWorldBinding(detail.id);
+      const slot = worldBinding?.[worldSnapshot];
+      const state = (slot?.state ?? "").toLowerCase();
+      if (state && state !== "ready") {
+        worldFiles = null;
+        worldInsight = null;
+        worldFind = null;
+        worldImpact = null;
+        if (state === "failed") {
+          worldError = slot?.error?.trim() || "Code map indexing failed.";
+        }
+        return;
+      }
       const snapshot = selectedWorldSnapshot();
-      worldFiles = await getWorldFiles(detail!.id, undefined, snapshot);
-      worldInsight = await getWorldCodeAvec(detail!.id, snapshot);
-      worldError = null;
+      try {
+        worldFiles = await getWorldFiles(detail.id, undefined, snapshot);
+        worldInsight = await getWorldCodeAvec(detail.id, snapshot);
+        worldError = null;
+      } catch (err) {
+        worldFiles = null;
+        worldInsight = null;
+        worldError = err instanceof Error ? err.message : String(err);
+      }
+    } catch (err) {
+      worldFiles = null;
+      worldInsight = null;
+      worldError = err instanceof Error ? err.message : String(err);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function rebuildWorldMap() {
+    if (!detail) return;
+    await run(async () => {
+      await queueWorldIndex(detail!.id, worldSnapshot);
+      worldBinding = await getWorldBinding(detail!.id);
     });
+    await loadWorldOverview();
   }
 
   async function revealLocation(input: {
@@ -474,9 +559,71 @@
 
   function reviewIssueLabel(issue: string): string {
     if (issue.toLowerCase().includes("no project check")) {
-      return "Verification is missing";
+      return "Project checks haven't run";
+    }
+    if (issue.toLowerCase().includes("no file changes")) {
+      return "Nothing to approve";
     }
     return humanizeForgeMessage(issue);
+  }
+
+  const reviewBlockingMessages = $derived(
+    (review?.synthesis.issues ?? [])
+      .filter((issue) => issue.blocks_approval)
+      .map((issue) => issue.message)
+      .concat(
+        !(review?.synthesis.issues?.length)
+          ? (review?.synthesis.unresolved_issues ?? []).filter((message) =>
+              /did not pass|policy or content|starting branch|no file changes/i.test(message),
+            )
+          : [],
+      ),
+  );
+
+  const reviewHardBlockingMessages = $derived(
+    reviewBlockingMessages.filter(
+      (message) => !/no project check|project checks haven'?t run/i.test(message),
+    ),
+  );
+
+  /** Soft check nudges live in the status bar — keep the review footer for real issues / notes. */
+  const reviewFooterIssues = $derived(
+    (review?.synthesis.unresolved_issues ?? []).filter(
+      (message) => !/no project check|project checks haven'?t run/i.test(message),
+    ),
+  );
+
+  const canApproveReview = $derived(
+    Boolean(
+      review
+        && actions?.review.allowed
+        && review.changed_files.length > 0
+        && !busy
+        && !(review.policy?.violations.length && !acknowledgePolicy)
+        && !(reviewHardBlockingMessages.length && !acknowledgeBlocking && !acknowledgePolicy),
+    ),
+  );
+
+  const reviewPrLinkCount = $derived.by(() => {
+    if (!providerHandoff) return 0;
+    let count = providerHandoff.links.length;
+    if (providerHandoff.review_url) count += 1;
+    return count;
+  });
+
+  const reviewTimelineNewestFirst = $derived(
+    review ? [...review.timeline].reverse() : [],
+  );
+
+  const reviewTimelineVisible = $derived(
+    reviewHistoryExpanded
+      ? reviewTimelineNewestFirst
+      : reviewTimelineNewestFirst.slice(0, 6),
+  );
+
+  function scrollToReviewFile(path: string) {
+    const el = document.getElementById(`diff-file-${encodeURIComponent(path)}`);
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   async function beginExport() {
@@ -519,6 +666,121 @@
           ? (review.policy?.violations.map((violation) => violation.id) ?? [])
           : [],
       });
+      await undertakings.refreshDetail();
+    });
+  }
+
+  async function beginContinueEditing() {
+    if (!detail?.allowed_actions.continue_editing?.allowed) return;
+    await run(async () => {
+      const begun = await continueEditing(detail!.id);
+      undertakings.setActiveFromItem(begun.item, {
+        leaseId: begun.lease.lease_id,
+        leaseGeneration: begun.lease.generation,
+        executorKind: "human",
+      });
+      await undertakings.refreshDetail();
+      await lmeWorkspace.openCodeWorkspace(detail!.id, detail!.title);
+    });
+  }
+
+  async function beginRequestChanges() {
+    if (!review?.evidence_id || !review.evidence_digest || !detail) return;
+    const summary = reviewRationale.trim() || undefined;
+    const unresolvedIds = (review.comments ?? [])
+      .filter((comment) => !comment.resolved_at)
+      .map((comment) => comment.id);
+    await run(async () => {
+      const item = await requestReviewChanges(detail!.id, {
+        evidence_id: review.evidence_id!,
+        evidence_digest: review.evidence_digest!,
+        summary,
+        comment_ids: unresolvedIds.length ? unresolvedIds : undefined,
+      });
+      undertakings.setActiveFromItem(item);
+      const brief =
+        review.revision_brief?.trim()
+        || summary
+        || unresolvedIds.map((id) => {
+            const comment = review.comments?.find((entry) => entry.id === id);
+            return comment ? `${comment.path}:${comment.start_line}\n${comment.body}` : "";
+          }).filter(Boolean).join("\n\n");
+      await startTrackedAgent(item, preferredCodeAgent, {
+        draft: brief || undefined,
+      });
+      await undertakings.refreshDetail();
+      toast.show("Changes requested — a new attempt is starting with your feedback.");
+    });
+  }
+
+  function openCommentCompose(input: {
+    path: string;
+    side: "new" | "old" | string;
+    line: number;
+    content: string;
+  }) {
+    commentCompose = input;
+    commentDraft = "";
+    commentRailDismissed = false;
+  }
+
+  function toggleCommentRail() {
+    const hasThreads = (review?.comments?.length ?? 0) > 0;
+    if (!hasThreads && !commentCompose) {
+      // Summon compose affordance hint by pinning an empty rail briefly is avoided —
+      // `.` / hover already start compose. Toggle only when threads earn the rail.
+      return;
+    }
+    commentRailDismissed = !commentRailDismissed;
+  }
+
+  function openAboutReview() {
+    reviewDetailsOpen = true;
+    void loadReviewDetails();
+    queueMicrotask(() => {
+      document.getElementById("review-about")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  const showCommentRail = $derived(
+    Boolean(commentCompose)
+      || (((review?.comments?.length ?? 0) > 0) && !commentRailDismissed),
+  );
+
+  async function submitComment() {
+    if (!detail || !review?.evidence_id || !commentCompose || !commentDraft.trim()) return;
+    const compose = commentCompose;
+    const body = commentDraft.trim();
+    await run(async () => {
+      await addReviewComment(detail!.id, {
+        evidence_id: review.evidence_id!,
+        attempt_id: review.attempt_id ?? undefined,
+        path: compose.path,
+        side: compose.side,
+        start_line: compose.line,
+        end_line: compose.line,
+        anchor_text: compose.content || null,
+        body,
+      });
+      commentCompose = null;
+      commentDraft = "";
+      commentRailDismissed = false;
+      await undertakings.refreshDetail();
+    });
+  }
+
+  async function resolveComment(commentId: string) {
+    if (!detail) return;
+    await run(async () => {
+      await resolveReviewComment(detail!.id, commentId);
+      await undertakings.refreshDetail();
+    });
+  }
+
+  async function removeComment(commentId: string) {
+    if (!detail) return;
+    await run(async () => {
+      await deleteReviewComment(detail!.id, commentId);
       await undertakings.refreshDetail();
     });
   }
@@ -594,11 +856,15 @@
 
   async function discardWithConfirmation() {
     if (!detail) return;
-    if (!window.confirm(`Discard “${detail.title}”? Its working copy will be removed.`)) {
+    if (
+      !window.confirm(
+        `Close “${detail.title}”? Its working copy will be removed.`,
+      )
+    ) {
       return;
     }
     await run(async () => {
-      await discardUndertaking(detail!.id);
+      await closeUndertaking(detail!);
       undertakings.clearActive();
       await undertakings.refreshList();
       await undertakings.select("");
@@ -756,10 +1022,46 @@
           </div>
         </div>
       {:else}
+        {#if reviewCanvas || !detail.environment}
         <div class="flex shrink-0 flex-wrap items-center justify-between gap-2 {showBrowser ? 'px-0' : 'border-b border-surface-500/25 px-2 py-1'}">
           <div class="min-w-0 flex-1">
             <h3 class="truncate text-sm font-semibold text-surface-50" title={detail.brief || detail.title}>{detail.title}</h3>
-            {#if detail.environment}
+            {#if reviewCanvas && review}
+              <p class="review-chrome-meta" aria-label="Review summary">
+                <span class="review-meta-item review-meta-item--files">
+                  <span class="review-meta-value tabular-nums">{review.changed_files.length}</span>
+                  {review.changed_files.length === 1 ? "file" : "files"}
+                </span>
+                <span class="review-meta-dot" aria-hidden="true">·</span>
+                <span
+                  class="review-meta-item review-meta-item--risk review-meta-item--risk-{review.synthesis.risk}"
+                  title={review.synthesis.risk_summary}
+                >{review.synthesis.risk} risk</span>
+                {#if review.attempt_seq != null}
+                  <span class="review-meta-dot" aria-hidden="true">·</span>
+                  <span class="review-meta-item review-meta-item--attempt">
+                    attempt
+                    <span class="review-meta-value tabular-nums">{review.attempt_seq}</span>{#if review.candidates.length > 1}<span class="review-meta-quiet tabular-nums">/{review.candidates.length}</span>{/if}
+                  </span>
+                {/if}
+                {#if review.timeline.length > 0}
+                  <span class="review-meta-dot" aria-hidden="true">·</span>
+                  <span class="review-meta-item review-meta-item--events">
+                    <span class="review-meta-value tabular-nums">{review.timeline.length}</span>
+                    {review.timeline.length === 1 ? "event" : "events"}
+                  </span>
+                {/if}
+                {#if reviewPrLinkCount > 0}
+                  <span class="review-meta-dot" aria-hidden="true">·</span>
+                  <span class="review-meta-item review-meta-item--pr">
+                    PR <span class="review-meta-value tabular-nums">({reviewPrLinkCount})</span>
+                  </span>
+                {:else if (review.changed_since_previous?.length ?? 0) > 0}
+                  <span class="review-meta-dot" aria-hidden="true">·</span>
+                  <span class="review-meta-item review-meta-item--follow">follow-up</span>
+                {/if}
+              </p>
+            {:else if detail.environment}
               <p class="mt-0.5 text-[10px] text-content-quiet">
                 {humanPhaseLabel(detail.human_phase)}
               </p>
@@ -774,7 +1076,43 @@
             {/if}
           </div>
           <div class="flex shrink-0 items-center gap-1.5">
-            {#if !detail.environment && actions?.provision.allowed}
+            {#if reviewCanvas && review && actions?.review.allowed}
+              {#if actions.continue_editing?.allowed}
+                <button
+                  type="button"
+                  class="scripts-workbench-toolbar-btn"
+                  disabled={busy}
+                  title="Continue editing"
+                  aria-label="Continue editing"
+                  onclick={() => void beginContinueEditing()}
+                ><Pencil size={14} strokeWidth={1.75} /></button>
+              {/if}
+              <button
+                type="button"
+                class="scripts-workbench-toolbar-btn"
+                disabled={busy}
+                title="Request changes"
+                aria-label="Request changes"
+                onclick={() => void beginRequestChanges()}
+              ><MessageSquareWarning size={14} strokeWidth={1.75} /></button>
+              <button
+                type="button"
+                class="scripts-workbench-toolbar-btn scripts-workbench-toolbar-btn-primary"
+                disabled={!canApproveReview}
+                title="Approve changes"
+                aria-label="Approve changes"
+                onclick={() => void recordApproval()}
+              ><Check size={14} strokeWidth={1.75} /></button>
+            {:else if reviewCanvas && review && actions?.apply.allowed}
+              <button
+                type="button"
+                class="scripts-workbench-toolbar-btn scripts-workbench-toolbar-btn-primary"
+                disabled={busy}
+                title="Finish project"
+                aria-label="Finish project"
+                onclick={() => void applyApproval()}
+              ><Check size={14} strokeWidth={1.75} /></button>
+            {:else if !detail.environment && actions?.provision.allowed}
               <button
                 type="button"
                 class="rounded-md bg-primary-500/80 px-3 py-1.5 text-xs font-medium text-surface-50 disabled:opacity-40"
@@ -815,74 +1153,263 @@
               ><Play size={14} /><span class="hidden sm:inline">Resume</span></button>
             {/if}
 
-            <details class="relative">
-              <summary
-                class="scripts-workbench-toolbar-btn cursor-pointer list-none [&::-webkit-details-marker]:hidden"
-                title="Project actions"
-                aria-label="Project actions"
+            {#if reviewCanvas && review}
+              <OverflowMenu
+                label="Review history"
+                title="History"
+                panelClass="w-[min(22rem,calc(100vw-2rem))] rounded-lg border border-surface-500/40 bg-surface-900 p-2 shadow-xl"
               >
-                <MoreHorizontal size={15} strokeWidth={1.75} />
-              </summary>
-              <div
-                class="absolute right-0 top-full z-30 mt-1 w-52 rounded-lg border border-surface-500/40 bg-surface-900 p-1.5 shadow-xl"
-              >
-                {#if actions?.start_agent.allowed}
+                {#snippet trigger({ open, toggle })}
                   <button
                     type="button"
-                    class="secondary-action"
-                    disabled={busy}
-                    title={actions?.start_agent.reason ?? ""}
-                    onclick={() => void startAgent("codex")}
-                  >Ask Codex to continue</button>
+                    class="scripts-workbench-toolbar-btn {open ? 'scripts-workbench-toolbar-btn-active' : ''}"
+                    title="History"
+                    aria-label="History · {review.timeline.length} events"
+                    aria-expanded={open}
+                    aria-haspopup="menu"
+                    onclick={toggle}
+                  ><History size={14} strokeWidth={1.75} /></button>
+                {/snippet}
+                <div class="review-chrome-popover" role="presentation">
+                  <p class="review-chrome-popover-title">
+                    History
+                    <span class="tabular-nums">{review.timeline.length}</span>
+                  </p>
+                  {#if reviewTimelineNewestFirst.length === 0}
+                    <p class="review-chrome-popover-empty">No events yet.</p>
+                  {:else}
+                    <ol class="review-chrome-timeline">
+                      {#each reviewTimelineVisible as event (event.id)}
+                        <li>
+                          <div>
+                            <p>{event.label}</p>
+                            <span>{event.actor_label}{event.detail ? ` · ${event.detail}` : ""}</span>
+                          </div>
+                          <time>{new Date(event.at).toLocaleString()}</time>
+                        </li>
+                      {/each}
+                    </ol>
+                    {#if reviewTimelineNewestFirst.length > 6}
+                      <button
+                        type="button"
+                        class="review-chrome-popover-more"
+                        onclick={() => (reviewHistoryExpanded = !reviewHistoryExpanded)}
+                      >
+                        {reviewHistoryExpanded
+                          ? "Show less"
+                          : `Show earlier · ${reviewTimelineNewestFirst.length - 6} more`}
+                      </button>
+                    {/if}
+                  {/if}
+                </div>
+              </OverflowMenu>
+
+              <OverflowMenu
+                label="Pull request"
+                title="Pull request"
+                panelClass="w-[min(20rem,calc(100vw-2rem))] rounded-lg border border-surface-500/40 bg-surface-900 p-2 shadow-xl"
+              >
+                {#snippet trigger({ open, toggle })}
                   <button
                     type="button"
-                    class="secondary-action"
-                    disabled={busy}
-                    onclick={() => void startAgent("cursor")}
-                  >Ask Cursor to continue</button>
-                {/if}
+                    class="scripts-workbench-toolbar-btn {open ? 'scripts-workbench-toolbar-btn-active' : ''}"
+                    title={reviewPrLinkCount > 0 ? `Pull request · ${reviewPrLinkCount} links` : "Pull request"}
+                    aria-label={reviewPrLinkCount > 0 ? `Pull request · ${reviewPrLinkCount} links` : "Pull request"}
+                    aria-expanded={open}
+                    aria-haspopup="menu"
+                    onclick={toggle}
+                  >
+                    <GitPullRequestArrow size={14} strokeWidth={1.75} />
+                    {#if reviewPrLinkCount > 0}
+                      <span class="review-toolbar-badge tabular-nums">{reviewPrLinkCount}</span>
+                    {/if}
+                  </button>
+                {/snippet}
+                <div class="review-chrome-popover" role="presentation">
+                  <p class="review-chrome-popover-title">Pull request</p>
+                  {#if !providerHandoff || (!providerHandoff.available && !providerHandoff.review_url && providerHandoff.links.length === 0)}
+                    <p class="review-chrome-popover-empty">Not linked</p>
+                  {:else}
+                    {#if providerHandoff.repository || providerHandoff.review_url}
+                      <p class="review-chrome-popover-line">
+                        {providerHandoff.repository || "Ready to share"}
+                      </p>
+                    {/if}
+                    {#if providerHandoff.review_url}
+                      <button
+                        type="button"
+                        role="menuitem"
+                        class="secondary-action"
+                        onclick={() => window.open(providerHandoff?.review_url ?? "", "_blank", "noopener,noreferrer")}
+                      >Open review</button>
+                    {:else if providerHandoff.available}
+                      <button
+                        type="button"
+                        role="menuitem"
+                        class="secondary-action"
+                        disabled={busy}
+                        onclick={() => void shareProject()}
+                      >Share branch…</button>
+                    {/if}
+                    {#each providerHandoff.links as link (link)}
+                      <button
+                        type="button"
+                        role="menuitem"
+                        class="secondary-action review-chrome-link"
+                        onclick={() => window.open(link, "_blank", "noopener,noreferrer")}
+                      >{link}</button>
+                    {/each}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="secondary-action"
+                      onclick={() => {
+                        reviewDetailsOpen = true;
+                        providerLinkOpen = true;
+                        void loadReviewDetails();
+                      }}
+                    >Add related link…</button>
+                  {/if}
+                </div>
+              </OverflowMenu>
+            {/if}
+
+            <OverflowMenu
+              label="Project actions"
+              title="Project actions"
+              panelClass="w-52 rounded-lg border border-surface-500/40 bg-surface-900 p-1.5 shadow-xl"
+            >
+              {#snippet trigger({ open, toggle })}
                 <button
                   type="button"
+                  class="scripts-workbench-toolbar-btn {open ? 'scripts-workbench-toolbar-btn-active' : ''}"
+                  title="Project actions"
+                  aria-label="Project actions"
+                  aria-expanded={open}
+                  aria-haspopup="menu"
+                  onclick={toggle}
+                >
+                  <MoreHorizontal size={15} strokeWidth={1.75} />
+                </button>
+              {/snippet}
+              {#if reviewCanvas && review && actions?.review.allowed}
+                <button
+                  type="button"
+                  role="menuitem"
                   class="secondary-action"
-                  disabled={busy || !actions?.open_terminal.allowed}
-                  onclick={() => void openTerminalTracked()}
-                >Terminal in working copy</button>
-                {#if detail.environment?.worktree}
+                  onclick={() => (reviewNoteOpen = !reviewNoteOpen)}
+                >{reviewRationale.trim() ? "Edit note" : "Add note"}</button>
+                {#if actions.continue_editing?.allowed}
                   <button
                     type="button"
+                    role="menuitem"
                     class="secondary-action"
                     disabled={busy}
-                    onclick={() => void revealWorktree()}
-                  >Reveal working copy</button>
+                    onclick={() => void beginContinueEditing()}
+                  >Continue editing</button>
                 {/if}
-                {#if undertakings.active?.workId === detail.id && undertakings.active.selectedPath}
-                  <button
-                    type="button"
-                    class="secondary-action"
-                    disabled={busy}
-                    onclick={() => void copyLocationLink()}
-                  >Copy location link</button>
+                {#if review.candidates.length > 1}
+                  <div class="px-2 py-1.5 text-[10px] text-content-quiet">
+                    <label class="flex flex-col gap-1">
+                      <span>Compare sealed attempt</span>
+                      <select
+                        class="rounded border border-surface-500/35 bg-surface-900 px-1.5 py-1 text-[11px] text-content-secondary"
+                        value={review.attempt_id ?? ""}
+                        disabled={busy}
+                        onchange={(event) => undertakings.selectReviewAttempt(event.currentTarget.value)}
+                      >
+                        {#each review.candidates as candidate (candidate.attempt_id)}
+                          <option value={candidate.attempt_id}>
+                            Attempt {candidate.attempt_seq} · {candidate.executor}
+                          </option>
+                        {/each}
+                      </select>
+                    </label>
+                  </div>
                 {/if}
-                <div class="my-1 border-t border-surface-500/25"></div>
-                {#if detail.environment}
-                  <details class="px-2 py-1 text-[9px] text-content-quiet">
-                    <summary class="cursor-pointer select-none hover:text-content-secondary">Technical details</summary>
-                    <p class="mt-1 break-all font-mono leading-relaxed">
-                      Working copy: {detail.environment.worktree}<br />Starting revision:
-                      {detail.environment.baseline_oid.slice(0, 12)} · internal state: {detail.state}
-                    </p>
-                  </details>
-                {/if}
+                <div class="my-1 border-t border-surface-500/25" role="separator"></div>
+              {/if}
+              {#if actions?.start_agent.allowed}
                 <button
                   type="button"
-                  class="secondary-action text-rose-200"
-                  disabled={busy || !actions?.discard.allowed}
-                  onclick={() => void discardWithConfirmation()}
-                >Discard project…</button>
-              </div>
-            </details>
+                  role="menuitem"
+                  class="secondary-action"
+                  disabled={busy}
+                  title={actions?.start_agent.reason ?? ""}
+                  onclick={() => void startAgent("codex")}
+                >Ask Codex to continue</button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="secondary-action"
+                  disabled={busy}
+                  onclick={() => void startAgent("cursor")}
+                >Ask Cursor to continue</button>
+              {/if}
+              <button
+                type="button"
+                role="menuitem"
+                class="secondary-action"
+                disabled={busy || !actions?.open_terminal.allowed}
+                onclick={() => void openTerminalTracked()}
+              >Terminal in working copy</button>
+              {#if detail.environment?.worktree}
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="secondary-action"
+                  disabled={busy}
+                  onclick={() => void revealWorktree()}
+                >Reveal working copy</button>
+              {/if}
+              {#if undertakings.active?.workId === detail.id && undertakings.active.selectedPath}
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="secondary-action"
+                  disabled={busy}
+                  onclick={() => void copyLocationLink()}
+                >Copy location link</button>
+              {/if}
+              {#if reviewCanvas && review}
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="secondary-action"
+                  onclick={() => openAboutReview()}
+                >Review details</button>
+                {#if (review.comments?.length ?? 0) > 0}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    class="secondary-action"
+                    onclick={() => {
+                      commentRailDismissed = !commentRailDismissed;
+                    }}
+                  >{showCommentRail ? "Hide comments" : "Show comments"}</button>
+                {/if}
+              {/if}
+              <div class="my-1 border-t border-surface-500/25" role="separator"></div>
+              {#if detail.environment}
+                <details class="px-2 py-1 text-chrome-xs text-content-quiet">
+                  <summary class="cursor-pointer select-none hover:text-content-secondary">Technical details</summary>
+                  <p class="mt-1 break-all font-mono leading-relaxed">
+                    Working copy: {detail.environment.worktree}<br />Starting revision:
+                    {detail.environment.baseline_oid.slice(0, 12)} · internal state: {detail.state}
+                  </p>
+                </details>
+              {/if}
+              <button
+                type="button"
+                role="menuitem"
+                class="secondary-action text-rose-200"
+                disabled={busy || !actions?.discard.allowed}
+                onclick={() => void discardWithConfirmation()}
+              >Close project…</button>
+            </OverflowMenu>
           </div>
         </div>
+        {/if}
 
         {#if detail.environment && !reviewCanvas}
           <CodeSourceEditor
@@ -891,12 +1418,18 @@
             {resourcePath}
             {interactive}
             worldOpen={worldMode}
-            reviewAvailable={Boolean(review && (detail.human_phase === "review" || review.evidence_id))}
+            projectTitle={detail.title}
+            phaseLabel={humanPhaseLabel(detail.human_phase)}
+            reviewAvailable={Boolean(actions?.seal.allowed) || Boolean(review && (detail.human_phase === "review" || review.evidence_id))}
             terminalAvailable={Boolean(actions?.open_terminal.allowed)}
+            agentRunning={agentRunning}
+            agentLabel={agentLabel}
             preferredAgent={preferredCodeAgent}
             onToggleWorld={() => void toggleWorldFromEditor()}
-            onOpenReview={() => void openReviewFromEditor()}
+            onOpenReview={() => void (actions?.seal.allowed ? doSeal() : openReviewFromEditor())}
             onOpenTerminal={() => void openTerminalTracked()}
+            onStopAgent={() => void interruptAgent()}
+            onResumeEditing={() => void reclaimHuman()}
             onProvision={async () => {
               await run(async () => {
                 await provisionAndOpenProject(detail.id);
@@ -904,7 +1437,69 @@
             }}
             onHandoffToAgent={handoffToAgent}
             onReclaimHuman={reclaimHuman}
-          />
+          >
+            {#snippet projectMenu()}
+              {#if actions?.start_agent.allowed}
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="code-chrome-menu-item"
+                  disabled={busy}
+                  title={actions?.start_agent.reason ?? ""}
+                  onclick={() => void startAgent("codex")}
+                >Ask Codex to continue</button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="code-chrome-menu-item"
+                  disabled={busy}
+                  onclick={() => void startAgent("cursor")}
+                >Ask Cursor to continue</button>
+              {/if}
+              <button
+                type="button"
+                role="menuitem"
+                class="code-chrome-menu-item"
+                disabled={busy || !actions?.open_terminal.allowed}
+                onclick={() => void openTerminalTracked()}
+              >Terminal in working copy</button>
+              {#if detail.environment?.worktree}
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="code-chrome-menu-item"
+                  disabled={busy}
+                  onclick={() => void revealWorktree()}
+                >Reveal working copy</button>
+              {/if}
+              {#if undertakings.active?.workId === detail.id && undertakings.active.selectedPath}
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="code-chrome-menu-item"
+                  disabled={busy}
+                  onclick={() => void copyLocationLink()}
+                >Copy location link</button>
+              {/if}
+              {#if detail.environment}
+                <details class="px-2 py-1 text-[11px] text-content-quiet">
+                  <summary class="cursor-pointer select-none hover:text-content-secondary">Technical details</summary>
+                  <p class="mt-1 break-all font-mono leading-relaxed text-[10px]">
+                    Working copy: {detail.environment.worktree}<br />Starting revision:
+                    {detail.environment.baseline_oid.slice(0, 12)} · internal state: {detail.state}
+                  </p>
+                </details>
+              {/if}
+              <div class="code-chrome-menu-sep" role="separator"></div>
+              <button
+                type="button"
+                role="menuitem"
+                class="code-chrome-menu-item code-chrome-menu-item--warn"
+                disabled={busy || !actions?.discard.allowed}
+                onclick={() => void discardWithConfirmation()}
+              >Close project…</button>
+            {/snippet}
+          </CodeSourceEditor>
         {:else if !reviewCanvas && actions?.provision.allowed}
           <div class="flex min-h-48 flex-1 items-center justify-center p-6 text-center">
             <div class="max-w-sm">
@@ -933,15 +1528,11 @@
         {#if reviewCanvas && review && (detail.human_phase === "review" || review.evidence_id)}
           <div class="flex min-h-0 flex-1 flex-col bg-surface-950/20">
             <div class="min-h-0 flex-1 overflow-auto px-4 py-3">
-              <div class="review-canvas">
-                <ForgeReviewSurface
-                  {review}
-                  {busy}
-                  onOpenFile={(path, line) => revealLocation({ path, line })}
-                  onRestore={restoreReviewedFile}
-                  onSelectCandidate={(attemptId) => undertakings.selectReviewAttempt(attemptId)}
-                />
-
+              <div
+                class="review-canvas"
+                class:review-canvas--with-rail={showCommentRail}
+              >
+                <div class="review-canvas-main">
                 {#if review.policy && (review.policy.violations.length || review.policy.capture_risks.length)}
                   <section class="review-policy" aria-label="Policy exceptions">
                     <CircleAlert size={15} strokeWidth={1.7} aria-hidden="true" />
@@ -949,14 +1540,31 @@
                       <p>Review exceptions</p>
                       <ul>
                         {#each review.policy.violations as violation (violation.id)}
-                          <li><span>{violation.path}</span> — {violation.detail}</li>
+                          <li>
+                            <button
+                              type="button"
+                              class="review-policy-path"
+                              onclick={() => scrollToReviewFile(violation.path)}
+                            >{violation.path}</button>
+                            — {violation.detail}
+                          </li>
                         {/each}
-                        {#each review.policy.capture_risks as risk}
+                        {#each review.policy.capture_risks as risk, riskIndex (`${risk.kind}:${"path" in risk ? risk.path : ""}:${riskIndex}`)}
                           <li>
                             {#if risk.kind === "secret_pattern"}
-                              Possible secret in <span>{risk.path}</span>
+                              Possible secret in
+                              <button
+                                type="button"
+                                class="review-policy-path"
+                                onclick={() => scrollToReviewFile(risk.path)}
+                              >{risk.path}</button>
                             {:else if risk.kind === "oversize_file"}
-                              Large file <span>{risk.path}</span>
+                              Large file
+                              <button
+                                type="button"
+                                class="review-policy-path"
+                                onclick={() => scrollToReviewFile(risk.path)}
+                              >{risk.path}</button>
                             {:else}
                               These changes exceed the configured size limit
                             {/if}
@@ -973,14 +1581,79 @@
                   </section>
                 {/if}
 
-                <section class="review-context">
+                {#if reviewHardBlockingMessages.length > 0 && !(review.policy?.violations.length)}
+                  <section class="review-policy" aria-label="Blocking review issues">
+                    <CircleAlert size={15} strokeWidth={1.7} aria-hidden="true" />
+                    <div class="min-w-0 flex-1">
+                      <p>Needs acknowledgment before approval</p>
+                      <ul>
+                        {#each reviewHardBlockingMessages as message (message)}
+                          <li>{reviewIssueLabel(message)}</li>
+                        {/each}
+                      </ul>
+                      <label>
+                        <input type="checkbox" bind:checked={acknowledgeBlocking} />
+                        <span>I reviewed these conditions and want to approve anyway.</span>
+                      </label>
+                    </div>
+                  </section>
+                {/if}
+
+                <ForgeReviewSurface
+                  {review}
+                  projectTitle={detail.title}
+                  {busy}
+                  onOpenFile={(path, line) => revealLocation({ path, line })}
+                  onRestore={restoreReviewedFile}
+                  onSelectCandidate={(attemptId) => undertakings.selectReviewAttempt(attemptId)}
+                  onComment={openCommentCompose}
+                  onToggleCommentRail={toggleCommentRail}
+                />
+
+                {#if review.decision?.rationale}
+                  <p class="review-prior-note">
+                    Prior decision note: <span>{review.decision.rationale}</span>
+                  </p>
+                {/if}
+
+                {#if review.revision_brief || (review.unresolved_comment_count ?? 0) > 0 || (review.comments?.length ?? 0) > 0}
+                  <section class="review-revision-brief" aria-label="Revision brief preview">
+                    <button
+                      type="button"
+                      class="review-context-disclosure"
+                      aria-expanded={requestChangesPreviewOpen}
+                      onclick={() => (requestChangesPreviewOpen = !requestChangesPreviewOpen)}
+                    >
+                      <ChevronRight
+                        size={13}
+                        strokeWidth={2}
+                        class="review-context-chevron {requestChangesPreviewOpen ? 'review-context-chevron--open' : ''}"
+                      />
+                      <span>Feedback for the next attempt</span>
+                      <small>
+                        {(review.unresolved_comment_count ?? 0) === 1
+                          ? "1 open comment"
+                          : `${review.unresolved_comment_count ?? 0} open comments`}
+                      </small>
+                    </button>
+                    {#if requestChangesPreviewOpen}
+                      <pre class="review-revision-brief-body">{review.revision_brief
+                        || (review.comments ?? [])
+                            .filter((comment) => !comment.resolved_at)
+                            .map((comment) => `${comment.path}:${comment.start_line}\n${comment.body}`)
+                            .join("\n\n")
+                        || "No open comments yet."}</pre>
+                    {/if}
+                  </section>
+                {/if}
+
+                <section class="review-context" id="review-about">
                   <button
                     type="button"
                     class="review-context-disclosure"
                     aria-expanded={reviewDetailsOpen}
                     onclick={() => {
                       reviewDetailsOpen = !reviewDetailsOpen;
-                      if (reviewDetailsOpen) void loadReviewDetails();
                     }}
                   >
                     <ChevronRight
@@ -988,8 +1661,8 @@
                       strokeWidth={2}
                       class="review-context-chevron {reviewDetailsOpen ? 'review-context-chevron--open' : ''}"
                     />
-                    <span>About this review</span>
-                    <small>People, history, sharing, and recovery</small>
+                    <span>About</span>
+                    <small>Base, digest, and command log</small>
                   </button>
 
                   {#if reviewDetailsOpen}
@@ -1001,155 +1674,31 @@
                         </div>
                       {/if}
 
-                      <div class="review-context-row">
-                        <span class="review-context-icon"><UserRound size={14} strokeWidth={1.7} /></span>
-                        <div class="review-context-copy">
-                          <p>Contributors</p>
-                          <span>
-                            {#if review.attribution.length}
-                              {review.attribution.map((source) => source.label).join(", ")}
-                            {:else}
-                              No contributor record
-                            {/if}
-                          </span>
-                        </div>
-                      </div>
+                      <ReviewProvenanceStrip
+                        {review}
+                        baseRef={baseRef || gitTargetBaseRef(detail?.target) || null}
+                        onExport={() => void beginExport()}
+                      />
 
-                      <div class="review-context-row">
-                        <span class="review-context-icon"><GitCommitHorizontal size={14} strokeWidth={1.7} /></span>
-                        <div class="review-context-copy">
-                          <p>Recovery point</p>
-                          <span>
-                            The reviewed state is saved and can be revisited later.
-                            {#if review.base_advanced} The starting branch moved while this work was open.{/if}
-                          </span>
-                        </div>
-                        <button type="button" class="review-context-action" onclick={() => void beginExport()}>
-                          <Save size={12} />Save a copy…
-                        </button>
-                      </div>
-
-                      <div class="review-context-row review-context-row--stack">
-                        <button
-                          type="button"
-                          class="review-context-row-button"
-                          aria-expanded={reviewTimelineOpen}
-                          onclick={() => (reviewTimelineOpen = !reviewTimelineOpen)}
-                        >
-                          <span class="review-context-icon"><History size={14} strokeWidth={1.7} /></span>
-                          <span class="review-context-copy">
-                            <span class="review-context-copy-title">Project history</span>
-                            <span>{review.timeline.length} recorded {review.timeline.length === 1 ? "event" : "events"}</span>
-                          </span>
-                          <ChevronRight
-                            size={13}
-                            class="review-context-row-chevron {reviewTimelineOpen ? 'review-context-row-chevron--open' : ''}"
+                      {#if providerLinkOpen && providerHandoff?.available}
+                        <div class="review-link-compose">
+                          <Link2 size={13} />
+                          <input
+                            type="url"
+                            placeholder="Paste an issue, PR, or ticket URL"
+                            bind:value={providerLink}
+                            onkeydown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                void addProviderLink();
+                              }
+                            }}
                           />
-                        </button>
-                        {#if reviewTimelineOpen}
-                          <ol class="review-timeline">
-                            {#each review.timeline as event (event.id)}
-                              <li>
-                                <span class="review-timeline-dot"></span>
-                                <div>
-                                  <p>{event.label}</p>
-                                  <span>{event.actor_label}{event.detail ? ` · ${event.detail}` : ""}</span>
-                                </div>
-                                <time>{new Date(event.at).toLocaleString()}</time>
-                              </li>
-                            {/each}
-                          </ol>
-                        {/if}
-                      </div>
-
-                      {#if providerHandoff}
-                        <div class="review-context-row review-context-row--stack">
-                          <div class="review-context-row-main">
-                            <span class="review-context-icon"><Link2 size={14} strokeWidth={1.7} /></span>
-                            <div class="review-context-copy">
-                              <p>Repository review</p>
-                              <span>
-                                {#if providerHandoff.available}
-                                  {#if providerHandoff.repository}{providerHandoff.repository}{:else}Ready to share{/if}
-                                {:else}
-                                  Sharing is not configured on this workshop.
-                                {/if}
-                              </span>
-                            </div>
-                            {#if providerHandoff.review_url}
-                              <button type="button" class="review-context-action" onclick={() => window.open(providerHandoff?.review_url ?? "", "_blank", "noopener,noreferrer")}>Open review</button>
-                            {:else if providerHandoff.available && (detail.state === "awaiting_review" || detail.state === "accepted")}
-                              <button type="button" class="review-context-action" disabled={busy} onclick={() => void shareProject()}>Share branch…</button>
-                            {/if}
-                          </div>
-
-                          {#if providerHandoff.available}
-                            {#if providerHandoff.links.length}
-                              <div class="review-linked-items">
-                                {#each providerHandoff.links as link (link)}
-                                  <button type="button" onclick={() => window.open(link, "_blank", "noopener,noreferrer")}>{link}</button>
-                                {/each}
-                              </div>
-                            {/if}
-                            <div class="review-context-subactions">
-                              <button type="button" onclick={() => (providerLinkOpen = !providerLinkOpen)}>
-                                {providerLinkOpen ? "Cancel" : "Add related link"}
-                              </button>
-                              {#if providerHandoff.review_url && providerHandoff.provider === "github"}
-                                <button type="button" onclick={() => void loadProviderComments()}>
-                                  {providerOpen ? "Hide feedback" : "Load feedback"}
-                                </button>
-                              {/if}
-                            </div>
-                            {#if providerLinkOpen}
-                              <div class="review-link-compose">
-                                <Link2 size={13} />
-                                <input
-                                  type="url"
-                                  placeholder="Paste an issue, PR, or ticket URL"
-                                  bind:value={providerLink}
-                                  onkeydown={(event) => {
-                                    if (event.key === "Enter") {
-                                      event.preventDefault();
-                                      void addProviderLink();
-                                    }
-                                  }}
-                                />
-                                <button type="button" disabled={!providerLink.trim() || busy} onclick={() => void addProviderLink()}>Add</button>
-                              </div>
-                            {/if}
-                            {#if providerOpen}
-                              <div class="review-feedback">
-                                {#if providerComments.length === 0}
-                                  <p>No review feedback yet.</p>
-                                {/if}
-                                {#each providerComments as comment (comment.id)}
-                                  <article>
-                                    <span>{comment.author}</span>
-                                    <p>{comment.body}</p>
-                                    <button type="button" disabled={busy} onclick={() => void createFollowUp(comment)}>Create follow-up</button>
-                                  </article>
-                                {/each}
-                              </div>
-                            {/if}
-                          {/if}
+                          <button type="button" disabled={!providerLink.trim() || busy} onclick={() => void addProviderLink()}>Add</button>
                         </div>
                       {/if}
 
-                      {#if worldInsight?.code_avec}
-                        <div class="review-context-row">
-                          <span class="review-context-icon"><ShieldCheck size={14} strokeWidth={1.7} /></span>
-                          <div class="review-context-copy">
-                            <p>Code understanding</p>
-                            <span>
-                              {worldInsight.code_avec.fully_scored_entities} of
-                              {worldInsight.code_avec.scoreable_entities} known elements fully understood
-                            </span>
-                          </div>
-                        </div>
-                      {/if}
-
-                      {#if patch || (commands && commands.lines.length)}
+                      {#if commands && commands.lines.length}
                         <div class="review-context-row review-context-row--stack">
                           <button
                             type="button"
@@ -1157,10 +1706,10 @@
                             aria-expanded={reviewAuditOpen}
                             onclick={() => (reviewAuditOpen = !reviewAuditOpen)}
                           >
-                            <span class="review-context-icon"><ShieldCheck size={14} strokeWidth={1.7} /></span>
+                            <span class="review-context-icon"><GitCommitHorizontal size={14} strokeWidth={1.7} /></span>
                             <span class="review-context-copy">
-                              <span class="review-context-copy-title">Audit trail</span>
-                              <span>Exact patch and command record</span>
+                              <span class="review-context-copy-title">Command log</span>
+                              <span>{commands.lines.length} recorded {commands.lines.length === 1 ? "command" : "commands"}</span>
                             </span>
                             <ChevronRight
                               size={13}
@@ -1173,18 +1722,9 @@
                                 {review.baseline_oid?.slice(0, 10)}… → {review.sealed_head_oid?.slice(0, 10)}…
                                 {#if review.evidence_digest} · record {review.evidence_digest.slice(0, 16)}…{/if}
                               </p>
-                              {#if patch}
-                                <pre>{patch.lines.join("\n")}</pre>
-                                {#if patch.truncated}
-                                  <button type="button" disabled={busy} onclick={() => void loadMorePatch()}>Show more changes · {patch.lines.length} of {patch.total_lines} lines</button>
-                                {/if}
-                              {/if}
-                              {#if commands && commands.lines.length}
-                                <p class="review-audit-label">Commands</p>
-                                <pre>{commands.lines.join("\n")}</pre>
-                                {#if commands.truncated}
-                                  <button type="button" disabled={busy} onclick={() => void loadMoreCommands()}>Show more commands · {commands.lines.length} of {commands.total_lines}</button>
-                                {/if}
+                              <pre>{commands.lines.join("\n")}</pre>
+                              {#if commands.truncated}
+                                <button type="button" disabled={busy} onclick={() => void loadMoreCommands()}>Show more commands · {commands.lines.length} of {commands.total_lines}</button>
                               {/if}
                             </div>
                           {/if}
@@ -1199,12 +1739,37 @@
                     Project record saved at <span>{exportedDestination}</span>
                   </p>
                 {/if}
+                </div>
+
+                {#if showCommentRail}
+                  <ReviewCommentRail
+                    comments={review.comments ?? []}
+                    compose={commentCompose}
+                    draft={commentDraft}
+                    {busy}
+                    onDraftChange={(value) => (commentDraft = value)}
+                    onSubmit={submitComment}
+                    onCancelCompose={() => {
+                      commentCompose = null;
+                      commentDraft = "";
+                    }}
+                    onResolve={resolveComment}
+                    onDelete={removeComment}
+                    onJump={(comment) => {
+                      scrollToReviewFile(comment.path);
+                      const el = document.querySelector(
+                        `[data-diff-line="${comment.start_line}"]`,
+                      ) as HTMLElement | null;
+                      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+                    }}
+                  />
+                {/if}
               </div>
             </div>
 
-            {#if actions?.review.allowed || actions?.apply.allowed}
+            {#if reviewCanvas && review && actions?.review.allowed && (reviewNoteOpen || reviewFooterIssues.length > 0)}
               <footer class="review-decision">
-                {#if reviewNoteOpen && actions?.review.allowed}
+                {#if reviewNoteOpen}
                   <label class="sr-only" for="review-rationale">Review note</label>
                   <textarea
                     id="review-rationale"
@@ -1214,44 +1779,16 @@
                     bind:value={reviewRationale}
                   ></textarea>
                 {/if}
-                <div class="review-decision-row">
-                  <div class="review-decision-guidance">
-                    {#if review.synthesis.unresolved_issues.length}
+                {#if reviewFooterIssues.length}
+                  <div class="review-decision-row">
+                    <div class="review-decision-guidance">
                       <CircleAlert size={13} strokeWidth={1.7} />
-                      <p title={review.synthesis.unresolved_issues.join(" · ")}>
-                        {reviewIssueLabel(review.synthesis.unresolved_issues[0])}{review.synthesis.unresolved_issues.length > 1 ? ` · ${review.synthesis.unresolved_issues.length - 1} more` : ""}
+                      <p title={reviewFooterIssues.join(" · ")}>
+                        {reviewIssueLabel(reviewFooterIssues[0]!)}{reviewFooterIssues.length > 1 ? ` · ${reviewFooterIssues.length - 1} more` : ""}
                       </p>
-                    {:else if actions?.apply.allowed}
-                      <Check size={13} strokeWidth={1.8} />
-                      <p>Approved and ready to finish</p>
-                    {:else}
-                      <p>Review the changes, then record your decision.</p>
-                    {/if}
+                    </div>
                   </div>
-                  <div class="review-decision-actions">
-                    {#if actions?.review.allowed}
-                      <button
-                        type="button"
-                        class="review-decision-btn"
-                        aria-pressed={reviewNoteOpen}
-                        onclick={() => (reviewNoteOpen = !reviewNoteOpen)}
-                      ><MessageSquarePlus size={13} /><span>{reviewRationale.trim() ? "Edit note" : "Add note"}</span></button>
-                      <button
-                        type="button"
-                        class="review-decision-btn review-decision-btn--primary"
-                        disabled={busy || (!!review.policy?.violations.length && !acknowledgePolicy)}
-                        onclick={() => void recordApproval()}
-                      ><Check size={14} /><span>Approve changes</span></button>
-                    {:else if actions?.apply.allowed}
-                      <button
-                        type="button"
-                        class="review-decision-btn review-decision-btn--primary"
-                        disabled={busy}
-                        onclick={() => void applyApproval()}
-                      ><Check size={14} /><span>Finish project…</span></button>
-                    {/if}
-                  </div>
-                </div>
+                {/if}
               </footer>
             {/if}
           </div>
@@ -1315,12 +1852,14 @@
         {#if worldMode}
           <div
             bind:this={worldEl}
-            class="absolute inset-y-0 right-0 z-30 w-[min(32rem,100%)] overflow-auto border-l border-surface-500/40 bg-surface-950/98 p-3 shadow-2xl"
+            class="absolute inset-y-0 right-0 z-30 flex w-[min(32rem,100%)] flex-col overflow-auto border-l border-surface-500/40 bg-surface-950/98 p-3 shadow-2xl"
           >
             <div class="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h4 class="text-sm font-semibold">Understand this code</h4>
-                <p class="text-[10px] text-content-quiet">See relationships and possible impact without leaving your work</p>
+                <p class="workshop-faint mt-0.5 text-[10px]">
+                  See relationships and possible impact without leaving your work
+                </p>
               </div>
               <div class="flex items-center gap-1 text-[10px]">
                 <button
@@ -1356,184 +1895,222 @@
                 >×</button>
               </div>
             </div>
-            <p class="mt-1 text-[10px] text-content-quiet">This view only explains the code; it never changes files.</p>
-            <div class="mt-2 flex flex-wrap gap-1">
-              <button
-                type="button"
-                class="rounded border border-surface-500/50 px-2 py-1 text-xs"
-                onclick={() => void loadWorldOverview()}
-              >
-                Refresh understanding
-              </button>
-              <button
-                type="button"
-                class="rounded border border-surface-500/50 px-2 py-1 text-xs"
-                onclick={() =>
-                  void run(async () => {
-                    await queueWorldIndex(detail.id, worldSnapshot);
-                    worldBinding = await getWorldBinding(detail.id);
-                  })}
-              >
-                Rebuild code map
-              </button>
-            </div>
-            {#if worldBinding}
-              <details class="mt-2 text-[10px] text-content-quiet">
-                <summary class="w-fit cursor-pointer hover:text-content-secondary">Technical details</summary>
-                <p class="mt-1">
-                  Before: {worldBinding.baseline?.state ?? "not indexed"} · current:
-                  {worldBinding.sealed?.state ?? "not indexed"}
-                </p>
-                {#if worldBinding.capabilities}
-                  <div class="mt-1 flex flex-wrap gap-1">
-                  {#each Object.entries(worldBinding.capabilities).filter(([key]) => key !== "note") as [capability, enabled]}
-                    <span
-                      class="rounded-full border border-surface-500/30 px-1.5 py-0.5 text-[9px] {enabled
-                        ? 'text-content-secondary'
-                        : 'text-content-faint'}"
-                    >{capability.replaceAll("_", " ")}{enabled ? "" : " · unavailable"}</span>
-                  {/each}
-                  </div>
-                {/if}
-                {#if worldBinding.diagnostics?.length}
-                  <ul class="mt-1 text-[10px] text-amber-200/90">
-                  {#each worldBinding.diagnostics as d}
-                    <li>{d}</li>
-                  {/each}
-                  </ul>
-                {/if}
-              </details>
-            {/if}
-            <div class="mt-2 flex flex-wrap items-center gap-1">
-              <input
-                class="min-w-[120px] flex-1 rounded border border-surface-500/40 bg-surface-900 px-2 py-1 text-xs"
-                placeholder="Find a class, function, or name…"
-                bind:value={findQuery}
-              />
-              <button
-                type="button"
-                class="rounded border border-surface-500/50 px-2 py-1 text-xs"
-                onclick={() =>
-                  void run(async () => {
-                    worldFind = await getWorldFind(detail.id, {
-                      name_contains: findQuery.trim() || undefined,
-                      snapshot: selectedWorldSnapshot(),
-                    });
-                  })}
-              >
-                Find
-              </button>
-            </div>
-            <div class="mt-1 flex flex-wrap items-center gap-1">
-              <input
-                class="min-w-[120px] flex-1 rounded border border-surface-500/40 bg-surface-900 px-2 py-1 text-xs"
-                placeholder="Class or function to check"
-                bind:value={impactEntity}
-              />
-              <button
-                type="button"
-                class="rounded border border-surface-500/50 px-2 py-1 text-xs"
-                disabled={!impactEntity.trim()}
-                onclick={() =>
-                  void run(async () => {
-                    worldImpact = await getWorldImpact(
-                      detail.id,
-                      impactEntity.trim(),
-                      selectedWorldSnapshot(),
-                    );
-                  })}
-              >
-                See impact
-              </button>
-            </div>
-            {#if worldFind}
-              <div class="mt-2 max-h-44 overflow-auto rounded-md border border-surface-500/25">
-                {#if worldFind.entities.length === 0}
-                  <p class="p-2 text-[10px] text-content-quiet">Nothing matched that name.</p>
-                {:else}
-                  {#each worldFind.entities as entity (entity.id)}
-                    <button
-                      type="button"
-                      class="flex w-full items-center justify-between gap-2 border-b border-surface-500/20 px-2 py-1.5 text-left last:border-0 hover:bg-surface-800/60"
-                      onclick={() => {
-                        void revealLocation({
-                          path: entity.path,
-                          line: entity.line_start,
-                          entityId: entity.id,
-                        });
-                      }}
-                    >
-                      <span class="min-w-0">
-                        <span class="block truncate text-[11px] text-surface-200">{entity.label}</span>
-                        <span class="block truncate font-mono text-[9px] text-content-quiet">{entity.path}</span>
-                      </span>
-                      <span class="shrink-0 text-[9px] text-content-quiet">{entity.kind}</span>
-                    </button>
-                  {/each}
-                {/if}
+            <p class="mt-1 text-[10px] text-content-quiet">
+              This view only explains the code; it never changes files.
+            </p>
+
+            {#if worldMapReady}
+              <div class="mt-2 flex flex-wrap gap-1">
+                <button
+                  type="button"
+                  class="rounded border border-surface-500/50 px-2 py-1 text-xs"
+                  onclick={() => void loadWorldOverview()}
+                >
+                  Refresh understanding
+                </button>
+                <button
+                  type="button"
+                  class="rounded border border-surface-500/50 px-2 py-1 text-xs"
+                  onclick={() => void rebuildWorldMap()}
+                >
+                  Rebuild code map
+                </button>
               </div>
-            {/if}
-            {#if worldImpact}
-              <div class="mt-2 rounded-md border border-surface-500/25 p-2">
-                <p class="text-[11px] font-medium text-surface-200">
-                  What depends on this · {worldImpact.direct_dependents ?? 0} directly,
-                  {worldImpact.transitive_dependents ?? 0} through other code
-                </p>
-                {#if worldImpact.message}
-                  <p class="mt-1 text-[10px] text-content-quiet">{worldImpact.message}</p>
-                {/if}
-                <ul class="mt-1 max-h-32 overflow-auto text-[10px] text-content-tertiary">
-                  {#each worldImpact.nodes as node (node.id)}
-                    <li class="truncate py-0.5">{node.label} <span class="text-content-faint">· {node.path}</span></li>
-                  {/each}
-                </ul>
+              {#if worldBinding}
+                <details class="mt-2 text-[10px] text-content-quiet">
+                  <summary class="w-fit cursor-pointer hover:text-content-secondary">Technical details</summary>
+                  <p class="mt-1">
+                    Before: {worldBinding.baseline?.state ?? "not indexed"} · current:
+                    {worldBinding.sealed?.state ?? "not indexed"}
+                  </p>
+                  {#if worldBinding.capabilities}
+                    <div class="mt-1 flex flex-wrap gap-1">
+                    {#each Object.entries(worldBinding.capabilities).filter(([key]) => key !== "note") as [capability, enabled]}
+                      <span
+                        class="rounded-full border border-surface-500/30 px-1.5 py-0.5 text-[9px] {enabled
+                          ? 'text-content-secondary'
+                          : 'text-content-faint'}"
+                      >{capability.replaceAll("_", " ")}{enabled ? "" : " · unavailable"}</span>
+                    {/each}
+                    </div>
+                  {/if}
+                  {#if worldBinding.diagnostics?.length}
+                    <ul class="mt-1 text-[10px] text-amber-200/90">
+                    {#each worldBinding.diagnostics as d}
+                      <li>{d}</li>
+                    {/each}
+                    </ul>
+                  {/if}
+                </details>
+              {/if}
+              <div class="mt-2 flex flex-wrap items-center gap-1">
+                <input
+                  class="min-w-[120px] flex-1 rounded border border-surface-500/40 bg-surface-900 px-2 py-1 text-xs"
+                  placeholder="Find a class, function, or name…"
+                  bind:value={findQuery}
+                />
+                <button
+                  type="button"
+                  class="rounded border border-surface-500/50 px-2 py-1 text-xs"
+                  onclick={() =>
+                    void run(async () => {
+                      worldFind = await getWorldFind(detail.id, {
+                        name_contains: findQuery.trim() || undefined,
+                        snapshot: selectedWorldSnapshot(),
+                      });
+                    })}
+                >
+                  Find
+                </button>
               </div>
-            {/if}
-            {#if worldInsight}
-              <div class="mt-2 grid gap-2 sm:grid-cols-3">
-                <div class="rounded-md bg-surface-900/60 p-2">
-                  <p class="text-lg font-semibold text-surface-100">
-                    {worldInsight.code_avec?.fully_scored_entities ?? 0}
-                  </p>
-                  <p class="text-[9px] text-content-quiet">fully understood</p>
-                </div>
-                <div class="rounded-md bg-surface-900/60 p-2">
-                  <p class="text-lg font-semibold text-surface-100">
-                    {worldInsight.code_avec?.scoreable_entities ?? 0}
-                  </p>
-                  <p class="text-[9px] text-content-quiet">code elements found</p>
-                </div>
-                <div class="rounded-md bg-surface-900/60 p-2">
-                  <p class="text-lg font-semibold text-surface-100">
-                    {worldInsight.code_avec?.gaps.length ?? 0}
-                  </p>
-                  <p class="text-[9px] text-content-quiet">still unclear</p>
-                </div>
+              <div class="mt-1 flex flex-wrap items-center gap-1">
+                <input
+                  class="min-w-[120px] flex-1 rounded border border-surface-500/40 bg-surface-900 px-2 py-1 text-xs"
+                  placeholder="Class or function to check"
+                  bind:value={impactEntity}
+                />
+                <button
+                  type="button"
+                  class="rounded border border-surface-500/50 px-2 py-1 text-xs"
+                  disabled={!impactEntity.trim()}
+                  onclick={() =>
+                    void run(async () => {
+                      worldImpact = await getWorldImpact(
+                        detail.id,
+                        impactEntity.trim(),
+                        selectedWorldSnapshot(),
+                      );
+                    })}
+                >
+                  See impact
+                </button>
               </div>
-            {/if}
-            {#if worldFiles}
-              <details class="mt-2">
-                <summary class="cursor-pointer text-[10px] text-content-tertiary">
-                  Files in this view · {worldFiles.files.length}
-                </summary>
-                <ul class="mt-1 max-h-48 overflow-auto rounded-md border border-surface-500/25">
-                  {#each worldFiles.files as file (file.id)}
-                    <li class="border-b border-surface-500/15 px-2 py-1 last:border-0">
+              {#if worldFind}
+                <div class="mt-2 max-h-44 overflow-auto rounded-md border border-surface-500/25">
+                  {#if worldFind.entities.length === 0}
+                    <p class="p-2 text-[10px] text-content-quiet">Nothing matched that name.</p>
+                  {:else}
+                    {#each worldFind.entities as entity (entity.id)}
                       <button
                         type="button"
-                        class="w-full truncate text-left font-mono text-[10px] text-content-tertiary hover:text-surface-100"
-                        onclick={() =>
-                          void revealLocation({ path: file.path, line: 1, entityId: file.id })}
-                      >{file.path}</button>
-                    </li>
-                  {/each}
-                </ul>
-              </details>
-            {/if}
-            {#if worldError}
-              <p class="mt-2 rounded-md bg-amber-950/30 p-2 text-[10px] text-amber-100">
-                Code understanding is not ready yet. {humanizeForgeMessage(worldError)}
-              </p>
+                        class="flex w-full items-center justify-between gap-2 border-b border-surface-500/20 px-2 py-1.5 text-left last:border-0 hover:bg-surface-800/60"
+                        onclick={() => {
+                          void revealLocation({
+                            path: entity.path,
+                            line: entity.line_start,
+                            entityId: entity.id,
+                          });
+                        }}
+                      >
+                        <span class="min-w-0">
+                          <span class="block truncate text-[11px] text-surface-200">{entity.label}</span>
+                          <span class="block truncate font-mono text-[9px] text-content-quiet">{entity.path}</span>
+                        </span>
+                        <span class="shrink-0 text-[9px] text-content-quiet">{entity.kind}</span>
+                      </button>
+                    {/each}
+                  {/if}
+                </div>
+              {/if}
+              {#if worldImpact}
+                <div class="mt-2 rounded-md border border-surface-500/25 p-2">
+                  <p class="text-[11px] font-medium text-surface-200">
+                    What depends on this · {worldImpact.direct_dependents ?? 0} directly,
+                    {worldImpact.transitive_dependents ?? 0} through other code
+                  </p>
+                  {#if worldImpact.message}
+                    <p class="mt-1 text-[10px] text-content-quiet">{worldImpact.message}</p>
+                  {/if}
+                  <ul class="mt-1 max-h-32 overflow-auto text-[10px] text-content-tertiary">
+                    {#each worldImpact.nodes as node (node.id)}
+                      <li class="truncate py-0.5">{node.label} <span class="text-content-faint">· {node.path}</span></li>
+                    {/each}
+                  </ul>
+                </div>
+              {/if}
+              {#if worldInsight}
+                <div class="mt-2 grid gap-2 sm:grid-cols-3">
+                  <div class="rounded-md bg-surface-900/60 p-2">
+                    <p class="text-lg font-semibold text-surface-100">
+                      {worldInsight.code_avec?.fully_scored_entities ?? 0}
+                    </p>
+                    <p class="text-[9px] text-content-quiet">fully understood</p>
+                  </div>
+                  <div class="rounded-md bg-surface-900/60 p-2">
+                    <p class="text-lg font-semibold text-surface-100">
+                      {worldInsight.code_avec?.scoreable_entities ?? 0}
+                    </p>
+                    <p class="text-[9px] text-content-quiet">code elements found</p>
+                  </div>
+                  <div class="rounded-md bg-surface-900/60 p-2">
+                    <p class="text-lg font-semibold text-surface-100">
+                      {worldInsight.code_avec?.gaps.length ?? 0}
+                    </p>
+                    <p class="text-[9px] text-content-quiet">still unclear</p>
+                  </div>
+                </div>
+              {/if}
+              {#if worldFiles}
+                <details class="mt-2">
+                  <summary class="cursor-pointer text-[10px] text-content-tertiary">
+                    Files in this view · {worldFiles.files.length}
+                  </summary>
+                  <ul class="mt-1 max-h-48 overflow-auto rounded-md border border-surface-500/25">
+                    {#each worldFiles.files as file (file.id)}
+                      <li class="border-b border-surface-500/15 px-2 py-1 last:border-0">
+                        <button
+                          type="button"
+                          class="w-full truncate text-left font-mono text-[10px] text-content-tertiary hover:text-surface-100"
+                          onclick={() =>
+                            void revealLocation({ path: file.path, line: 1, entityId: file.id })}
+                        >{file.path}</button>
+                      </li>
+                    {/each}
+                  </ul>
+                </details>
+              {/if}
+            {:else}
+              <div class="mt-6 flex flex-1 flex-col items-center justify-center px-2">
+                {#if busy || worldMapIndexing}
+                  <p class="workshop-faint text-sm">Building the code map…</p>
+                  <p class="mt-1 max-w-xs text-center text-[10px] leading-relaxed text-content-quiet">
+                    Relationships and impact stay hidden until indexing finishes.
+                  </p>
+                {:else}
+                  <EmptyState
+                    title={worldMapFailed ? "Code map failed" : "Code map isn’t ready"}
+                    description={worldError
+                      ? humanizeForgeMessage(worldError)
+                      : worldMapFailed
+                        ? "Indexing didn’t finish. Rebuild the code map and try again."
+                        : "Build a map of this project to find symbols and see what depends on them."}
+                  >
+                    <div class="flex flex-wrap items-center justify-center gap-2">
+                      <button
+                        type="button"
+                        class="rounded bg-primary-500/80 px-3 py-1.5 text-[11px] font-medium text-surface-50"
+                        disabled={busy}
+                        onclick={() => void rebuildWorldMap()}
+                      >Rebuild code map</button>
+                      <button
+                        type="button"
+                        class="rounded border border-surface-500/40 px-3 py-1.5 text-[11px] text-surface-200 hover:bg-surface-800"
+                        disabled={busy}
+                        onclick={() => void loadWorldOverview()}
+                      >Refresh</button>
+                    </div>
+                  </EmptyState>
+                {/if}
+              </div>
+              {#if worldBinding}
+                <details class="mt-auto pt-4 text-[10px] text-content-quiet">
+                  <summary class="w-fit cursor-pointer hover:text-content-secondary">Technical details</summary>
+                  <p class="mt-1">
+                    Before: {worldBinding.baseline?.state ?? "not indexed"} · current:
+                    {worldBinding.sealed?.state ?? "not indexed"}
+                  </p>
+                </details>
+              {/if}
             {/if}
           </div>
         {/if}
@@ -1543,29 +2120,197 @@
 </div>
 
 <style>
+  .review-chrome-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.2rem 0.4rem;
+    margin-top: 0.15rem;
+    min-width: 0;
+    font-size: 0.7rem;
+    line-height: 1.35;
+    letter-spacing: 0.005em;
+    color: rgb(var(--theme-text-secondary));
+  }
+
+  .review-meta-item {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.22rem;
+    white-space: nowrap;
+  }
+
+  .review-meta-value {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: rgb(var(--theme-text));
+  }
+
+  .review-meta-quiet {
+    font-weight: 500;
+    color: rgb(var(--theme-text-quiet));
+  }
+
+  .review-meta-dot {
+    color: rgb(var(--theme-text-quiet));
+    opacity: 0.7;
+  }
+
+  .review-meta-item--risk {
+    font-weight: 550;
+  }
+
+  /* Mix status into readable text — tint, not neon. */
+  .review-meta-item--risk-low {
+    color: color-mix(
+      in srgb,
+      rgb(var(--theme-success)) 40%,
+      rgb(var(--theme-text-secondary))
+    );
+  }
+
+  .review-meta-item--risk-attention {
+    color: color-mix(
+      in srgb,
+      rgb(var(--theme-warning)) 48%,
+      rgb(var(--theme-text-secondary))
+    );
+  }
+
+  .review-meta-item--risk-high {
+    color: color-mix(
+      in srgb,
+      rgb(var(--theme-error)) 52%,
+      rgb(var(--theme-text-secondary))
+    );
+  }
+
+  .review-meta-item--attempt {
+    color: rgb(var(--theme-text-secondary));
+  }
+
+  .review-meta-item--attempt .review-meta-value {
+    color: color-mix(
+      in srgb,
+      rgb(var(--color-primary-400)) 45%,
+      rgb(var(--theme-text))
+    );
+  }
+
+  .review-meta-item--events {
+    color: rgb(var(--theme-text-secondary));
+  }
+
+  .review-meta-item--pr,
+  .review-meta-item--follow {
+    font-weight: 550;
+    color: color-mix(
+      in srgb,
+      rgb(var(--theme-link)) 42%,
+      rgb(var(--theme-text-secondary))
+    );
+  }
+
+  .review-meta-item--pr .review-meta-value {
+    color: inherit;
+    font-weight: 600;
+  }
+
+  :global(html.dark) .review-meta-item--risk-low {
+    color: color-mix(
+      in srgb,
+      rgb(var(--theme-success)) 32%,
+      rgb(var(--theme-text-secondary))
+    );
+  }
+
+  :global(html.dark) .review-meta-item--attempt .review-meta-value {
+    color: color-mix(
+      in srgb,
+      rgb(var(--color-primary-300)) 38%,
+      rgb(var(--theme-text))
+    );
+  }
+
+  :global(html.dark) .review-meta-item--pr,
+  :global(html.dark) .review-meta-item--follow {
+    color: color-mix(
+      in srgb,
+      rgb(var(--theme-link)) 34%,
+      rgb(var(--theme-text-secondary))
+    );
+  }
+
   .secondary-action {
     display: block;
     width: 100%;
-    border-radius: 0.4rem;
+    border: 0;
+    border-radius: 0.35rem;
+    background: transparent;
     padding: 0.4rem 0.5rem;
     text-align: left;
-    font-size: 0.75rem;
-    color: rgb(var(--color-surface-200));
+    font-family:
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      system-ui,
+      sans-serif;
+    font-size: 13px;
+    font-weight: 400;
+    color: rgb(var(--theme-text));
+    cursor: pointer;
   }
 
   .secondary-action:hover:not(:disabled) {
-    background: rgb(var(--color-surface-700) / 0.65);
-    color: rgb(var(--color-surface-50));
+    background: rgb(var(--color-surface-800) / 0.7);
+    color: rgb(var(--theme-text));
   }
 
   .secondary-action:disabled {
     opacity: 0.35;
+    cursor: default;
   }
 
   .review-canvas {
     width: 100%;
     max-width: 88rem;
     margin: 0 auto;
+  }
+
+  .review-canvas--with-rail {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(14rem, 17rem);
+    gap: 0.85rem;
+    align-items: start;
+  }
+
+  .review-canvas-main {
+    min-width: 0;
+  }
+
+  .review-revision-brief {
+    margin-top: 0.85rem;
+  }
+
+  .review-revision-brief-body {
+    margin-top: 0.45rem;
+    max-height: 12rem;
+    overflow: auto;
+    border: 1px solid rgb(var(--color-surface-500) / 0.22);
+    border-radius: 0.5rem;
+    background: rgb(var(--color-surface-950) / 0.35);
+    padding: 0.65rem 0.75rem;
+    color: rgb(var(--theme-text-secondary));
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+  }
+
+  @media (max-width: 960px) {
+    .review-canvas--with-rail {
+      grid-template-columns: 1fr;
+    }
   }
 
   .review-policy {
@@ -1576,7 +2321,7 @@
     border: 1px solid rgb(var(--color-warning-500) / 0.26);
     border-radius: 0.6rem;
     padding: 0.75rem;
-    background: rgb(var(--color-warning-950) / 0.12);
+    background: rgb(var(--color-warning-500) / 0.1);
     color: rgb(var(--theme-warning));
   }
 
@@ -1592,8 +2337,22 @@
     color: rgb(var(--theme-warning) / 0.72);
   }
 
-  .review-policy li span {
+  .review-policy-path {
     font-family: var(--font-mono);
+  }
+
+  .review-policy-path {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 0.12em;
+    cursor: pointer;
+  }
+
+  .review-policy-path:hover {
+    color: rgb(var(--color-surface-100));
   }
 
   .review-policy label {
@@ -1603,6 +2362,16 @@
     margin-top: 0.55rem;
     font-size: 0.625rem;
     color: rgb(var(--theme-warning));
+  }
+
+  .review-prior-note {
+    margin-top: 0.75rem;
+    font-size: 0.6875rem;
+    color: rgb(var(--theme-text-quiet));
+  }
+
+  .review-prior-note span {
+    color: rgb(var(--color-surface-200));
   }
 
   .review-context {
@@ -1618,14 +2387,14 @@
     border-radius: 0.35rem;
     background: transparent;
     padding: 0.3rem 0.4rem 0.3rem 0.1rem;
-    color: rgb(var(--theme-text-quiet));
+    color: rgb(var(--theme-text-secondary));
     text-align: left;
     transition: color 140ms ease, background-color 140ms ease;
   }
 
   .review-context-disclosure:hover {
     background: rgb(var(--color-surface-800) / 0.3);
-    color: rgb(var(--color-surface-200));
+    color: rgb(var(--theme-text));
   }
 
   .review-context-disclosure > span {
@@ -1638,7 +2407,7 @@
     margin-left: 0.25rem;
     font-size: 0.625rem;
     font-weight: 400;
-    color: rgb(var(--theme-text-faint));
+    color: rgb(var(--theme-text-quiet));
   }
 
   :global(.review-context-chevron),
@@ -1693,7 +2462,6 @@
   }
 
   .review-context-row,
-  .review-context-row-main,
   .review-context-row-button {
     display: grid;
     grid-template-columns: 1.75rem minmax(0, 1fr) auto;
@@ -1742,7 +2510,6 @@
     flex-direction: column;
   }
 
-  .review-context-copy p,
   .review-context-copy-title {
     overflow: hidden;
     font-size: 0.6875rem;
@@ -1755,80 +2522,11 @@
   .review-context-copy > span:not(.review-context-copy-title) {
     overflow: hidden;
     margin-top: 0.1rem;
-    font-size: 0.625rem;
+    font-size: 0.6875rem;
     line-height: 1.4;
     color: rgb(var(--theme-text-quiet));
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
-  .review-context-action {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    border: 0;
-    border-radius: 0.35rem;
-    background: transparent;
-    padding: 0.35rem 0.5rem;
-    font-size: 0.625rem;
-    color: rgb(var(--theme-text-quiet));
-  }
-
-  .review-context-action:hover:not(:disabled) {
-    background: rgb(var(--color-surface-700) / 0.35);
-    color: rgb(var(--color-surface-100));
-  }
-
-  .review-context-action:disabled {
-    opacity: 0.35;
-  }
-
-  .review-timeline {
-    margin: 0.5rem 0 0.25rem 2.65rem;
-    padding-left: 0.75rem;
-    border-left: 1px solid rgb(var(--color-surface-500) / 0.2);
-  }
-
-  .review-timeline li {
-    position: relative;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 1rem;
-    padding: 0.35rem 0;
-  }
-
-  .review-timeline-dot {
-    position: absolute;
-    top: 0.68rem;
-    left: -0.95rem;
-    width: 0.35rem;
-    height: 0.35rem;
-    border: 1px solid rgb(var(--color-surface-500) / 0.45);
-    border-radius: 50%;
-    background: rgb(var(--color-surface-900));
-  }
-
-  .review-timeline p {
-    font-size: 0.625rem;
-    color: rgb(var(--theme-text-secondary));
-  }
-
-  .review-timeline span,
-  .review-timeline time {
-    font-size: 0.5625rem;
-    color: rgb(var(--theme-text-faint));
-  }
-
-  .review-context-subactions,
-  .review-linked-items {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.45rem;
-    margin: 0.35rem 0 0 2.3rem;
-  }
-
-  .review-context-subactions button,
-  .review-linked-items button,
   .review-audit button {
     border: 0;
     background: transparent;
@@ -1837,19 +2535,8 @@
     color: rgb(var(--theme-text-quiet));
   }
 
-  .review-context-subactions button:hover,
-  .review-linked-items button:hover,
   .review-audit button:hover {
     color: rgb(var(--theme-link));
-  }
-
-  .review-linked-items button {
-    max-width: 24rem;
-    overflow: hidden;
-    border-radius: 0.3rem;
-    background: rgb(var(--color-surface-800) / 0.35);
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .review-link-compose {
@@ -1857,7 +2544,7 @@
     max-width: 34rem;
     align-items: center;
     gap: 0.4rem;
-    margin: 0.45rem 0 0 2.3rem;
+    margin: 0.45rem 0 0;
     border-radius: 0.45rem;
     padding: 0.3rem 0.4rem;
     background: rgb(var(--color-surface-800) / 0.28);
@@ -1894,62 +2581,105 @@
     color: rgb(var(--theme-text-faint));
   }
 
-  .review-feedback {
-    margin: 0.55rem 0 0 2.3rem;
-    overflow: hidden;
-    border: 1px solid rgb(var(--color-surface-500) / 0.18);
-    border-radius: 0.45rem;
+  .review-toolbar-badge {
+    margin-left: 0.1rem;
+    min-width: 0.9rem;
+    font-size: 0.625rem;
+    font-weight: 600;
+    color: rgb(var(--theme-text-secondary));
   }
 
-  .review-feedback > p,
-  .review-feedback article {
-    padding: 0.6rem;
+  .review-chrome-popover {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    max-height: min(22rem, 60vh);
+    overflow: auto;
+  }
+
+  .review-chrome-popover-title {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0.15rem 0.35rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: rgb(var(--theme-text));
+  }
+
+  .review-chrome-popover-title span {
+    color: rgb(var(--theme-text-quiet));
+    font-weight: 500;
+  }
+
+  .review-chrome-popover-empty,
+  .review-chrome-popover-line {
+    margin: 0;
+    padding: 0.25rem 0.35rem;
+    font-size: 0.75rem;
+    color: rgb(var(--theme-text-quiet));
+  }
+
+  .review-chrome-timeline {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+
+  .review-chrome-timeline li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.65rem;
+    padding: 0.2rem 0.35rem;
+  }
+
+  .review-chrome-timeline p {
+    margin: 0;
+    font-size: 0.75rem;
+    font-weight: 550;
+    color: rgb(var(--theme-text));
+  }
+
+  .review-chrome-timeline span,
+  .review-chrome-timeline time {
     font-size: 0.625rem;
     color: rgb(var(--theme-text-quiet));
   }
 
-  .review-feedback article + article {
-    border-top: 1px solid rgb(var(--color-surface-500) / 0.15);
+  .review-chrome-timeline time {
+    white-space: nowrap;
   }
 
-  .review-feedback article span {
-    font-size: 0.5625rem;
-    color: rgb(var(--theme-text-faint));
-  }
-
-  .review-feedback article p {
-    margin-top: 0.2rem;
-    white-space: pre-wrap;
-    color: rgb(var(--theme-text-secondary));
-  }
-
-  .review-feedback article button {
-    margin-top: 0.35rem;
+  .review-chrome-popover-more {
     border: 0;
     background: transparent;
-    padding: 0;
-    font-size: 0.5625rem;
+    padding: 0.35rem;
     color: rgb(var(--theme-link));
+    font-size: 0.6875rem;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .review-chrome-link {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .review-audit {
     margin: 0.55rem 0 0 2.3rem;
   }
 
-  .review-audit-revision,
-  .review-audit-label {
+  .review-audit-revision {
     margin-bottom: 0.35rem;
     font-family: var(--font-mono);
     font-size: 0.5625rem;
     color: rgb(var(--theme-text-faint));
-  }
-
-  .review-audit-label {
-    margin-top: 0.65rem;
-    font-family: inherit;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
   }
 
   .review-audit pre {
@@ -2019,48 +2749,9 @@
 
   .review-decision-guidance p {
     overflow: hidden;
-    font-size: 0.625rem;
+    font-size: 0.8125rem;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .review-decision-actions {
-    display: flex;
-    flex-shrink: 0;
-    align-items: center;
-    gap: 0.35rem;
-  }
-
-  .review-decision-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    border: 1px solid transparent;
-    border-radius: 0.45rem;
-    background: transparent;
-    padding: 0.4rem 0.6rem;
-    font-size: 0.6875rem;
-    color: rgb(var(--theme-text-tertiary));
-  }
-
-  .review-decision-btn:hover:not(:disabled) {
-    background: rgb(var(--color-surface-700) / 0.35);
-    color: rgb(var(--color-surface-100));
-  }
-
-  .review-decision-btn--primary {
-    border-color: rgb(var(--color-primary-500) / 0.28);
-    background: rgb(var(--color-primary-500) / 0.1);
-    color: rgb(var(--color-primary-200));
-  }
-
-  .review-decision-btn--primary:hover:not(:disabled) {
-    background: rgb(var(--color-primary-500) / 0.18);
-    color: rgb(var(--color-primary-100));
-  }
-
-  .review-decision-btn:disabled {
-    opacity: 0.35;
   }
 
   .review-export-overlay {
@@ -2205,12 +2896,10 @@
     }
 
     .review-context-row,
-    .review-context-row-main,
     .review-context-row-button {
       grid-template-columns: 1.75rem minmax(0, 1fr);
     }
 
-    .review-context-action,
     :global(.review-context-row-chevron) {
       grid-column: 2;
       justify-self: flex-start;
@@ -2219,11 +2908,6 @@
     .review-decision-row {
       align-items: flex-start;
       flex-direction: column;
-    }
-
-    .review-decision-actions {
-      align-self: stretch;
-      justify-content: flex-end;
     }
   }
 

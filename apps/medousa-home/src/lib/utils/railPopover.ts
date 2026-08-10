@@ -292,8 +292,8 @@ export function placeToolbarPopover(
     /** Dock triggers usually prefer above; titlebars prefer below. */
     prefer?: "below" | "above";
     maxHeightRatio?: number;
-    /** End-align (default) or center under the trigger. */
-    align?: "end" | "center";
+    /** End-align (default), start-align, or center under the trigger. */
+    align?: "end" | "start" | "center";
   },
 ): void {
   const gap = options?.gap ?? 6;
@@ -320,7 +320,11 @@ export function placeToolbarPopover(
   const minLeft = view.left + pad;
   const maxLeft = view.left + view.width - pad - menuW;
   let left =
-    align === "center" ? tr.left + tr.width / 2 - menuW / 2 : tr.right - menuW;
+    align === "center"
+      ? tr.left + tr.width / 2 - menuW / 2
+      : align === "start"
+        ? tr.left
+        : tr.right - menuW;
   left = clamp(left, minLeft, maxLeft);
 
   const spaceBelow = view.top + view.height - pad - (tr.bottom + gap);
@@ -335,7 +339,8 @@ export function placeToolbarPopover(
   }
 
   const avail = Math.max(0, openAbove ? spaceAbove : spaceBelow);
-  const cappedH = Math.max(120, Math.min(viewMaxH, avail || viewMaxH));
+  // Cap to the open side so menus scroll instead of spilling off-screen.
+  const cappedH = Math.min(viewMaxH, avail > 0 ? avail : viewMaxH);
   menu.style.maxHeight = `${Math.round(cappedH)}px`;
 
   // Prefer natural content height (scrollHeight) so growth re-anchors above docks.

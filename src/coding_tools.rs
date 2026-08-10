@@ -9,11 +9,13 @@
 use std::io::{BufRead, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-use async_trait::async_trait;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
-use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::prelude::{Result as StasisResult, StasisError};
+
+use crate::typed_tools::{CompatOption, ExternalJson, ToolId, medousa_tool};
 
 pub const COGNITION_CODE_READ: &str = "cognition_code_read";
 pub const COGNITION_CODE_SEARCH: &str = "cognition_code_search";
@@ -24,6 +26,15 @@ pub const COGNITION_SHELL_SESSION_INTERRUPT: &str = "cognition_shell_session_int
 /// One-shot shell for Coder — Forge-bound PTY facade (not OS `cognition_shell_run`).
 pub const COGNITION_CODER_SHELL_RUN: &str = "cognition_coder_shell_run";
 pub const COGNITION_CODER_SHELL_STATUS: &str = "cognition_coder_shell_status";
+
+const COGNITION_CODE_READ_ID: ToolId = ToolId::new(COGNITION_CODE_READ);
+const COGNITION_CODE_SEARCH_ID: ToolId = ToolId::new(COGNITION_CODE_SEARCH);
+const COGNITION_CODE_APPLY_PATCH_ID: ToolId = ToolId::new(COGNITION_CODE_APPLY_PATCH);
+const COGNITION_SHELL_SESSION_STATUS_ID: ToolId = ToolId::new(COGNITION_SHELL_SESSION_STATUS);
+const COGNITION_SHELL_SESSION_RUN_ID: ToolId = ToolId::new(COGNITION_SHELL_SESSION_RUN);
+const COGNITION_SHELL_SESSION_INTERRUPT_ID: ToolId = ToolId::new(COGNITION_SHELL_SESSION_INTERRUPT);
+const COGNITION_CODER_SHELL_RUN_ID: ToolId = ToolId::new(COGNITION_CODER_SHELL_RUN);
+const COGNITION_CODER_SHELL_STATUS_ID: ToolId = ToolId::new(COGNITION_CODER_SHELL_STATUS);
 
 pub const CODING_COGNITION_TOOLS: &[&str] = &[
     COGNITION_CODE_READ,
@@ -49,7 +60,10 @@ pub fn is_coding_cognition_tool(name: &str) -> bool {
 }
 
 pub fn is_coder_shell_tool(name: &str) -> bool {
-    matches!(name, COGNITION_CODER_SHELL_RUN | COGNITION_CODER_SHELL_STATUS)
+    matches!(
+        name,
+        COGNITION_CODER_SHELL_RUN | COGNITION_CODER_SHELL_STATUS
+    )
 }
 
 pub fn is_shell_session_tool(name: &str) -> bool {
@@ -64,7 +78,7 @@ pub fn is_shell_session_tool(name: &str) -> bool {
 }
 
 fn daemon_base() -> String {
-    std::env::var("MEDOUSA_DAEMON_URL").unwrap_or_else(|_| "http://127.0.0.1:8741".into())
+    crate::daemon_self_url::daemon_self_base_url()
 }
 
 fn allowed_roots() -> Vec<PathBuf> {
@@ -222,12 +236,35 @@ async fn daemon_get(path: &str) -> StasisResult<Value> {
     Ok(value)
 }
 
-fn root_and_path(input: &Value) -> StasisResult<(PathBuf, PathBuf)> {
-    let root = resolve_root(input.get("root").and_then(|v| v.as_str()))?;
-    let path = input
-        .get("path")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| StasisError::PortFailure("path is required".into()))?;
+async fn create_bound_shell_session(
+    work_id: Option<&str>,
+    lease_id: Option<&str>,
+    lease_generation: Option<u64>,
+    attempt_id: Option<&str>,
+) -> StasisResult<Value> {
+    daemon_post(
+        "/v1/sessions/shell",
+        json!({
+            "work_id": work_id.filter(|value| !value.trim().is_empty()),
+            "lease_id": lease_id.filter(|value| !value.trim().is_empty()),
+            "lease_generation": lease_generation,
+            "attempt_id": attempt_id,
+            "cwd": Value::Null,
+        }),
+    )
+    .await
+}
+
+fn daemon_session_id(response: &Value) -> StasisResult<String> {
+    response
+        .get("session_id")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .ok_or_else(|| StasisError::PortFailure("daemon did not return session_id".into()))
+}
+
+fn root_and_path(path: &str, requested_root: Option<&str>) -> StasisResult<(PathBuf, PathBuf)> {
+    let root = resolve_root(requested_root)?;
     let resolved = resolve_path(&root, path)?;
     Ok((root, resolved))
 }
@@ -236,52 +273,316 @@ fn root_and_path(input: &Value) -> StasisResult<(PathBuf, PathBuf)> {
 // Tools
 // ---------------------------------------------------------------------------
 
-pub struct CognitionCodeReadTool;
-pub struct CognitionCodeSearchTool;
-pub struct CognitionCodeApplyPatchTool;
-pub struct CognitionShellSessionStatusTool;
-pub struct CognitionShellSessionRunTool;
-pub struct CognitionShellSessionInterruptTool;
-pub struct CognitionCoderShellRunTool;
-pub struct CognitionCoderShellStatusTool;
+struct CognitionCodeReadTool;
+struct CognitionCodeSearchTool;
+struct CognitionCodeApplyPatchTool;
+struct CognitionShellSessionStatusTool;
+struct CognitionShellSessionRunTool;
+struct CognitionShellSessionInterruptTool;
+struct CognitionCoderShellRunTool;
+struct CognitionCoderShellStatusTool;
 
-#[async_trait]
-impl StasisTool for CognitionCodeReadTool {
-    fn name(&self) -> &'static str {
-        COGNITION_CODE_READ
+#[derive(Debug, Deserialize, JsonSchema)]
+struct CodeReadInput {
+    /// Absolute or root-relative file path
+    path: String,
+    /// Optional explicit root (default: scripts library)
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    root: CompatOption<String>,
+    /// Optional 1-based inclusive line start
+    #[serde(default)]
+    #[schemars(
+        with = "u64",
+        range(min = 1),
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    line_start: CompatOption<u64>,
+    /// Optional 1-based inclusive line end
+    #[serde(default)]
+    #[schemars(
+        with = "u64",
+        range(min = 1),
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    line_end: CompatOption<u64>,
+    /// Optional 0-based byte start; cannot be combined with line ranges
+    #[serde(default)]
+    #[schemars(
+        with = "u64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    byte_start: CompatOption<u64>,
+    /// Optional exclusive byte end; cannot be combined with line ranges
+    #[serde(default)]
+    #[schemars(
+        with = "u64",
+        range(min = 1),
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    byte_end: CompatOption<u64>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum CodeReadStatus {
+    Complete,
+    OrientationRequired,
+    Range,
+    Partial,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum CodeReadEncoding {
+    Utf8,
+    Utf8Lossy,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct CodeReadSuggestion {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    purpose: Option<String>,
+    path: String,
+    root: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    line: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    line_start: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    line_end: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    byte_start: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    byte_end: Option<u64>,
+}
+
+impl CodeReadSuggestion {
+    fn byte(path: &Path, root: &Path, byte_start: u64, byte_end: u64) -> Self {
+        Self {
+            purpose: None,
+            path: path.display().to_string(),
+            root: root.display().to_string(),
+            line: None,
+            line_start: None,
+            line_end: None,
+            byte_start: Some(byte_start),
+            byte_end: Some(byte_end),
+        }
     }
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Read a whole text file when it fits, or a bounded line/byte range. Oversized whole-file requests return actionable range orientation instead of an opaque failure. Coding domain only.",
-        )
+
+    fn line(
+        purpose: &'static str,
+        path: &Path,
+        root: &Path,
+        line_start: usize,
+        line_end: usize,
+    ) -> Self {
+        Self {
+            purpose: Some(purpose.to_string()),
+            path: path.display().to_string(),
+            root: root.display().to_string(),
+            line: None,
+            line_start: Some(line_start),
+            line_end: Some(line_end),
+            byte_start: None,
+            byte_end: None,
+        }
     }
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "path": { "type": "string", "description": "Absolute or root-relative file path" },
-                "root": { "type": "string", "description": "Optional explicit root (default: scripts library)" },
-                "line_start": { "type": "integer", "minimum": 1, "description": "Optional 1-based inclusive line start" },
-                "line_end": { "type": "integer", "minimum": 1, "description": "Optional 1-based inclusive line end" },
-                "byte_start": { "type": "integer", "minimum": 0, "description": "Optional 0-based byte start; cannot be combined with line ranges" },
-                "byte_end": { "type": "integer", "minimum": 1, "description": "Optional exclusive byte end; cannot be combined with line ranges" }
-            },
-            "required": ["path"]
-        }))
-    }
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let (root, path) = root_and_path(&input)?;
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct CodeReadObservedCoverage {
+    complete: bool,
+    observed_bytes: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    file_bytes: Option<u64>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct CodeReadCompleteCoverage {
+    complete: bool,
+    byte_start: usize,
+    byte_end: usize,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct CodeReadLineRequest {
+    line_start: usize,
+    line_end: usize,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct CodeReadByteRequest {
+    byte_start: u64,
+    byte_end: u64,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct CodeReadLineCoverage {
+    complete: bool,
+    line_start: Option<usize>,
+    line_end: Option<usize>,
+    byte_start: Option<u64>,
+    byte_end: Option<u64>,
+    returned_bytes: usize,
+    metadata_complete: bool,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct CodeReadByteCoverage {
+    complete: bool,
+    byte_start: u64,
+    byte_end: u64,
+    returned_bytes: usize,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct CodeReadNonUtf8Orientation {
+    reason: String,
+    message: String,
+    suggested_reads: Vec<CodeReadSuggestion>,
+    invalid_utf8_at: usize,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct CodeReadOversizedOrientation {
+    reason: String,
+    message: String,
+    whole_read_limit_bytes: u64,
+    range_read_limit_bytes: usize,
+    max_range_lines: usize,
+    metadata_complete: bool,
+    suggested_reads: Vec<CodeReadSuggestion>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct CodeReadLineScanOrientation {
+    reason: String,
+    message: String,
+    suggested_reads: Vec<CodeReadSuggestion>,
+    metadata_scan_limit_bytes: u64,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct CodeReadLineOrientation {
+    reason: String,
+    next_read: Option<CodeReadSuggestion>,
+    max_range_bytes: usize,
+    max_range_lines: usize,
+    file_ended_with_newline: Option<bool>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct CodeReadByteOrientation {
+    reason: String,
+    next_read: Option<CodeReadSuggestion>,
+    max_range_bytes: usize,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+enum CodeReadOutput {
+    NonUtf8 {
+        ok: bool,
+        read_status: CodeReadStatus,
+        path: String,
+        root: String,
+        bytes: u64,
+        digest: String,
+        content: Option<String>,
+        coverage: CodeReadObservedCoverage,
+        orientation: CodeReadNonUtf8Orientation,
+    },
+    Complete {
+        ok: bool,
+        read_status: CodeReadStatus,
+        path: String,
+        root: String,
+        bytes: usize,
+        total_lines: usize,
+        digest: String,
+        coverage: CodeReadCompleteCoverage,
+        content: String,
+    },
+    Oversized {
+        ok: bool,
+        read_status: CodeReadStatus,
+        path: String,
+        root: String,
+        bytes: u64,
+        total_lines: Option<usize>,
+        digest: Option<String>,
+        content: Option<String>,
+        coverage: CodeReadObservedCoverage,
+        orientation: CodeReadOversizedOrientation,
+    },
+    LineScanBudget {
+        ok: bool,
+        read_status: CodeReadStatus,
+        path: String,
+        root: String,
+        bytes: u64,
+        total_lines: Option<usize>,
+        digest: Option<String>,
+        content: Option<String>,
+        coverage: CodeReadObservedCoverage,
+        orientation: CodeReadLineScanOrientation,
+    },
+    LineRange {
+        ok: bool,
+        read_status: CodeReadStatus,
+        path: String,
+        root: String,
+        bytes: u64,
+        total_lines: Option<usize>,
+        digest: Option<String>,
+        requested: CodeReadLineRequest,
+        coverage: CodeReadLineCoverage,
+        encoding: CodeReadEncoding,
+        content: String,
+        orientation: CodeReadLineOrientation,
+    },
+    ByteRange {
+        ok: bool,
+        read_status: CodeReadStatus,
+        path: String,
+        root: String,
+        bytes: u64,
+        total_lines: Option<usize>,
+        digest: Option<String>,
+        requested: CodeReadByteRequest,
+        coverage: CodeReadByteCoverage,
+        encoding: CodeReadEncoding,
+        content: String,
+        orientation: CodeReadByteOrientation,
+    },
+}
+
+#[medousa_tool(id = COGNITION_CODE_READ_ID)]
+impl CognitionCodeReadTool {
+    /// Read a whole text file when it fits, or a bounded line/byte range. Oversized whole-file requests return actionable range orientation instead of an opaque failure. Coding domain only.
+    async fn invoke_typed(&self, input: CodeReadInput) -> stasis::prelude::Result<CodeReadOutput> {
+        let requested_root = input.root.as_ref().cloned();
+        let (root, path) = root_and_path(&input.path, requested_root.as_deref())?;
         tokio::task::spawn_blocking(move || code_read_observation(&root, &path, &input))
             .await
             .map_err(|err| StasisError::PortFailure(format!("code_read task failed: {err}")))?
     }
 }
 
-fn code_read_observation(root: &Path, path: &Path, input: &Value) -> StasisResult<Value> {
-    let line_start = input.get("line_start").and_then(Value::as_u64);
-    let line_end = input.get("line_end").and_then(Value::as_u64);
-    let byte_start = input.get("byte_start").and_then(Value::as_u64);
-    let byte_end = input.get("byte_end").and_then(Value::as_u64);
+fn code_read_observation(
+    root: &Path,
+    path: &Path,
+    input: &CodeReadInput,
+) -> StasisResult<CodeReadOutput> {
+    let line_start = input.line_start.as_ref().copied();
+    let line_end = input.line_end.as_ref().copied();
+    let byte_start = input.byte_start.as_ref().copied();
+    let byte_end = input.byte_end.as_ref().copied();
     let has_line_range = line_start.is_some() || line_end.is_some();
     let has_byte_range = byte_start.is_some() || byte_end.is_some();
     if has_line_range && has_byte_range {
@@ -306,44 +607,48 @@ fn code_read_observation(root: &Path, path: &Path, input: &Value) -> StasisResul
         let content = match String::from_utf8(bytes) {
             Ok(content) => content,
             Err(error) => {
-                return Ok(json!({
-                    "ok": true,
-                    "read_status": "orientation_required",
-                    "path": path.display().to_string(),
-                    "root": root.display().to_string(),
-                    "bytes": file_bytes,
-                    "digest": digest,
-                    "content": Value::Null,
-                    "coverage": { "complete": false, "observed_bytes": 0 },
-                    "orientation": {
-                        "reason": "file_is_not_utf8_text",
-                        "message": "Whole-file text decoding is unavailable. Use a bounded byte range for lossy orientation or a binary-aware domain tool.",
-                        "suggested_reads": [{
-                            "path": path.display().to_string(),
-                            "root": root.display().to_string(),
-                            "byte_start": 0,
-                            "byte_end": (MAX_CODE_RANGE_BYTES as u64).min(file_bytes),
-                        }],
-                        "invalid_utf8_at": error.utf8_error().valid_up_to(),
-                    }
-                }));
+                return Ok(CodeReadOutput::NonUtf8 {
+                    ok: true,
+                    read_status: CodeReadStatus::OrientationRequired,
+                    path: path.display().to_string(),
+                    root: root.display().to_string(),
+                    bytes: file_bytes,
+                    digest,
+                    content: None,
+                    coverage: CodeReadObservedCoverage {
+                        complete: false,
+                        observed_bytes: 0,
+                        file_bytes: None,
+                    },
+                    orientation: CodeReadNonUtf8Orientation {
+                        reason: "file_is_not_utf8_text".to_string(),
+                        message: "Whole-file text decoding is unavailable. Use a bounded byte range for lossy orientation or a binary-aware domain tool.".to_string(),
+                        suggested_reads: vec![CodeReadSuggestion::byte(
+                            path,
+                            root,
+                            0,
+                            (MAX_CODE_RANGE_BYTES as u64).min(file_bytes),
+                        )],
+                        invalid_utf8_at: error.utf8_error().valid_up_to(),
+                    },
+                });
             }
         };
-        return Ok(json!({
-            "ok": true,
-            "read_status": "complete",
-            "path": path.display().to_string(),
-            "root": root.display().to_string(),
-            "bytes": content.len(),
-            "total_lines": text_line_count(&content),
-            "digest": digest,
-            "coverage": {
-                "complete": true,
-                "byte_start": 0,
-                "byte_end": content.len(),
+        return Ok(CodeReadOutput::Complete {
+            ok: true,
+            read_status: CodeReadStatus::Complete,
+            path: path.display().to_string(),
+            root: root.display().to_string(),
+            bytes: content.len(),
+            total_lines: text_line_count(&content),
+            digest,
+            coverage: CodeReadCompleteCoverage {
+                complete: true,
+                byte_start: 0,
+                byte_end: content.len(),
             },
-            "content": content,
-        }));
+            content,
+        });
     }
 
     if has_line_range {
@@ -356,7 +661,11 @@ fn code_read_observation(root: &Path, path: &Path, input: &Value) -> StasisResul
     oversized_file_orientation(root, path, file_bytes)
 }
 
-fn oversized_file_orientation(root: &Path, path: &Path, file_bytes: u64) -> StasisResult<Value> {
+fn oversized_file_orientation(
+    root: &Path,
+    path: &Path,
+    file_bytes: u64,
+) -> StasisResult<CodeReadOutput> {
     let metadata = scan_text_metadata(path, file_bytes <= MAX_CODE_ORIENTATION_SCAN_BYTES)?;
     let suggested_reads = if let Some(total_lines) = metadata.total_lines {
         let tail_start = total_lines
@@ -366,72 +675,58 @@ fn oversized_file_orientation(root: &Path, path: &Path, file_bytes: u64) -> Stas
         let middle_start = (total_lines / 2)
             .saturating_sub(DEFAULT_CODE_RANGE_LINES / 2)
             .max(1);
-        json!([
-            {
-                "purpose": "orient_from_file_start",
-                "path": path.display().to_string(),
-                "root": root.display().to_string(),
-                "line_start": 1,
-                "line_end": DEFAULT_CODE_RANGE_LINES.min(total_lines),
-            },
-            {
-                "purpose": "inspect_file_middle",
-                "path": path.display().to_string(),
-                "root": root.display().to_string(),
-                "line_start": middle_start,
-                "line_end": middle_start.saturating_add(DEFAULT_CODE_RANGE_LINES - 1).min(total_lines),
-            },
-            {
-                "purpose": "orient_from_file_end",
-                "path": path.display().to_string(),
-                "root": root.display().to_string(),
-                "line_start": tail_start,
-                "line_end": total_lines,
-            }
-        ])
+        vec![
+            CodeReadSuggestion::line(
+                "orient_from_file_start",
+                path,
+                root,
+                1,
+                DEFAULT_CODE_RANGE_LINES.min(total_lines),
+            ),
+            CodeReadSuggestion::line(
+                "inspect_file_middle",
+                path,
+                root,
+                middle_start,
+                middle_start
+                    .saturating_add(DEFAULT_CODE_RANGE_LINES - 1)
+                    .min(total_lines),
+            ),
+            CodeReadSuggestion::line("orient_from_file_end", path, root, tail_start, total_lines),
+        ]
     } else {
         let tail_start = file_bytes.saturating_sub(MAX_CODE_RANGE_BYTES as u64);
-        json!([
-            {
-                "purpose": "inspect_file_start",
-                "path": path.display().to_string(),
-                "root": root.display().to_string(),
-                "byte_start": 0,
-                "byte_end": (MAX_CODE_RANGE_BYTES as u64).min(file_bytes),
-            },
-            {
-                "purpose": "inspect_file_end",
-                "path": path.display().to_string(),
-                "root": root.display().to_string(),
-                "byte_start": tail_start,
-                "byte_end": file_bytes,
-            }
-        ])
+        let mut start =
+            CodeReadSuggestion::byte(path, root, 0, (MAX_CODE_RANGE_BYTES as u64).min(file_bytes));
+        start.purpose = Some("inspect_file_start".to_string());
+        let mut end = CodeReadSuggestion::byte(path, root, tail_start, file_bytes);
+        end.purpose = Some("inspect_file_end".to_string());
+        vec![start, end]
     };
-    Ok(json!({
-        "ok": true,
-        "read_status": "orientation_required",
-        "path": path.display().to_string(),
-        "root": root.display().to_string(),
-        "bytes": file_bytes,
-        "total_lines": metadata.total_lines,
-        "digest": metadata.digest,
-        "content": Value::Null,
-        "coverage": {
-            "complete": false,
-            "observed_bytes": 0,
-            "file_bytes": file_bytes,
+    Ok(CodeReadOutput::Oversized {
+        ok: true,
+        read_status: CodeReadStatus::OrientationRequired,
+        path: path.display().to_string(),
+        root: root.display().to_string(),
+        bytes: file_bytes,
+        total_lines: metadata.total_lines,
+        digest: metadata.digest,
+        content: None,
+        coverage: CodeReadObservedCoverage {
+            complete: false,
+            observed_bytes: 0,
+            file_bytes: Some(file_bytes),
         },
-        "orientation": {
-            "reason": "file_exceeds_whole_read_budget",
-            "message": "The file is available, but a whole-file response would exceed the model-safe read budget. Continue with one of the suggested line or byte ranges.",
-            "whole_read_limit_bytes": MAX_CODE_READ_BYTES,
-            "range_read_limit_bytes": MAX_CODE_RANGE_BYTES,
-            "max_range_lines": MAX_CODE_RANGE_LINES,
-            "metadata_complete": metadata.complete,
-            "suggested_reads": suggested_reads,
-        }
-    }))
+        orientation: CodeReadOversizedOrientation {
+            reason: "file_exceeds_whole_read_budget".to_string(),
+            message: "The file is available, but a whole-file response would exceed the model-safe read budget. Continue with one of the suggested line or byte ranges.".to_string(),
+            whole_read_limit_bytes: MAX_CODE_READ_BYTES,
+            range_read_limit_bytes: MAX_CODE_RANGE_BYTES,
+            max_range_lines: MAX_CODE_RANGE_LINES,
+            metadata_complete: metadata.complete,
+            suggested_reads,
+        },
+    })
 }
 
 fn read_line_range(
@@ -440,34 +735,38 @@ fn read_line_range(
     file_bytes: u64,
     requested_start: Option<u64>,
     requested_end: Option<u64>,
-) -> StasisResult<Value> {
+) -> StasisResult<CodeReadOutput> {
     let start = requested_start.unwrap_or(1).max(1) as usize;
     let requested_end = requested_end
         .map(|value| value.max(start as u64) as usize)
         .unwrap_or_else(|| start.saturating_add(DEFAULT_CODE_RANGE_LINES - 1));
     if file_bytes > MAX_CODE_ORIENTATION_SCAN_BYTES {
-        return Ok(json!({
-            "ok": true,
-            "read_status": "orientation_required",
-            "path": path.display().to_string(),
-            "root": root.display().to_string(),
-            "bytes": file_bytes,
-            "total_lines": Value::Null,
-            "digest": Value::Null,
-            "content": Value::Null,
-            "coverage": { "complete": false, "observed_bytes": 0 },
-            "orientation": {
-                "reason": "line_index_scan_budget_exceeded",
-                "message": "This file is too large for a bounded line-index scan. Continue with byte ranges or search for a narrower anchor.",
-                "suggested_reads": [{
-                    "path": path.display().to_string(),
-                    "root": root.display().to_string(),
-                    "byte_start": 0,
-                    "byte_end": (MAX_CODE_RANGE_BYTES as u64).min(file_bytes),
-                }],
-                "metadata_scan_limit_bytes": MAX_CODE_ORIENTATION_SCAN_BYTES,
-            }
-        }));
+        return Ok(CodeReadOutput::LineScanBudget {
+            ok: true,
+            read_status: CodeReadStatus::OrientationRequired,
+            path: path.display().to_string(),
+            root: root.display().to_string(),
+            bytes: file_bytes,
+            total_lines: None,
+            digest: None,
+            content: None,
+            coverage: CodeReadObservedCoverage {
+                complete: false,
+                observed_bytes: 0,
+                file_bytes: None,
+            },
+            orientation: CodeReadLineScanOrientation {
+                reason: "line_index_scan_budget_exceeded".to_string(),
+                message: "This file is too large for a bounded line-index scan. Continue with byte ranges or search for a narrower anchor.".to_string(),
+                suggested_reads: vec![CodeReadSuggestion::byte(
+                    path,
+                    root,
+                    0,
+                    (MAX_CODE_RANGE_BYTES as u64).min(file_bytes),
+                )],
+                metadata_scan_limit_bytes: MAX_CODE_ORIENTATION_SCAN_BYTES,
+            },
+        });
     }
     let effective_end = requested_end.min(start.saturating_add(MAX_CODE_RANGE_LINES - 1));
     let file = std::fs::File::open(path)
@@ -518,9 +817,9 @@ fn read_line_range(
     };
 
     let encoding = if std::str::from_utf8(&content).is_ok() {
-        "utf8"
+        CodeReadEncoding::Utf8
     } else {
-        "utf8_lossy"
+        CodeReadEncoding::Utf8Lossy
     };
     let returned_bytes = content.len();
     let content = String::from_utf8_lossy(&content).into_owned();
@@ -539,54 +838,69 @@ fn read_line_range(
         returned_start == Some(1) && total_lines.is_some_and(|total| returned_end == Some(total));
     let continuation = oversized_line
         .map(|(line, byte_start, byte_end)| {
-            json!({
-                "purpose": "continue_within_oversized_line",
-                "path": path.display().to_string(),
-                "root": root.display().to_string(),
-                "line": line,
-                "byte_start": byte_start,
-                "byte_end": byte_start.saturating_add(MAX_CODE_RANGE_BYTES as u64).min(byte_end),
-            })
+            let mut suggestion = CodeReadSuggestion::byte(
+                path,
+                root,
+                byte_start,
+                byte_start
+                    .saturating_add(MAX_CODE_RANGE_BYTES as u64)
+                    .min(byte_end),
+            );
+            suggestion.purpose = Some("continue_within_oversized_line".to_string());
+            suggestion.line = Some(line);
+            suggestion
         })
         .or_else(|| {
             next_line.map(|line_start| {
-                json!({
-                    "purpose": "continue_by_line",
-                    "path": path.display().to_string(),
-                    "root": root.display().to_string(),
-                    "line_start": line_start,
-                    "line_end": line_start.saturating_add(DEFAULT_CODE_RANGE_LINES - 1),
-                })
+                CodeReadSuggestion::line(
+                    "continue_by_line",
+                    path,
+                    root,
+                    line_start,
+                    line_start.saturating_add(DEFAULT_CODE_RANGE_LINES - 1),
+                )
             })
         });
-    Ok(json!({
-        "ok": true,
-        "read_status": if request_clamped || output_limited { "partial" } else { "range" },
-        "path": path.display().to_string(),
-        "root": root.display().to_string(),
-        "bytes": file_bytes,
-        "total_lines": total_lines,
-        "digest": digest,
-        "requested": { "line_start": start, "line_end": requested_end },
-        "coverage": {
-            "complete": file_complete,
-            "line_start": returned_start,
-            "line_end": returned_end,
-            "byte_start": returned_byte_start,
-            "byte_end": returned_byte_end,
-            "returned_bytes": returned_bytes,
-            "metadata_complete": scan_complete,
+    Ok(CodeReadOutput::LineRange {
+        ok: true,
+        read_status: if request_clamped || output_limited {
+            CodeReadStatus::Partial
+        } else {
+            CodeReadStatus::Range
         },
-        "encoding": encoding,
-        "content": content,
-        "orientation": {
-            "reason": if request_clamped || output_limited { "range_bounded_by_response_budget" } else { "requested_range_returned" },
-            "next_read": continuation,
-            "max_range_bytes": MAX_CODE_RANGE_BYTES,
-            "max_range_lines": MAX_CODE_RANGE_LINES,
-            "file_ended_with_newline": scan_complete.then_some(last_byte == Some(b'\n')),
-        }
-    }))
+        path: path.display().to_string(),
+        root: root.display().to_string(),
+        bytes: file_bytes,
+        total_lines,
+        digest,
+        requested: CodeReadLineRequest {
+            line_start: start,
+            line_end: requested_end,
+        },
+        coverage: CodeReadLineCoverage {
+            complete: file_complete,
+            line_start: returned_start,
+            line_end: returned_end,
+            byte_start: returned_byte_start,
+            byte_end: returned_byte_end,
+            returned_bytes,
+            metadata_complete: scan_complete,
+        },
+        encoding,
+        content,
+        orientation: CodeReadLineOrientation {
+            reason: if request_clamped || output_limited {
+                "range_bounded_by_response_budget"
+            } else {
+                "requested_range_returned"
+            }
+            .to_string(),
+            next_read: continuation,
+            max_range_bytes: MAX_CODE_RANGE_BYTES,
+            max_range_lines: MAX_CODE_RANGE_LINES,
+            file_ended_with_newline: scan_complete.then_some(last_byte == Some(b'\n')),
+        },
+    })
 }
 
 fn read_byte_range(
@@ -595,7 +909,7 @@ fn read_byte_range(
     file_bytes: u64,
     requested_start: Option<u64>,
     requested_end: Option<u64>,
-) -> StasisResult<Value> {
+) -> StasisResult<CodeReadOutput> {
     let start = requested_start.unwrap_or(0).min(file_bytes);
     let requested_end = requested_end
         .unwrap_or_else(|| start.saturating_add(MAX_CODE_RANGE_BYTES as u64))
@@ -610,42 +924,56 @@ fn read_byte_range(
     file.read_exact(&mut bytes)
         .map_err(|err| StasisError::PortFailure(format!("read {}: {err}", path.display())))?;
     let encoding = if std::str::from_utf8(&bytes).is_ok() {
-        "utf8"
+        CodeReadEncoding::Utf8
     } else {
-        "utf8_lossy"
+        CodeReadEncoding::Utf8Lossy
     };
     let content = String::from_utf8_lossy(&bytes).into_owned();
     let next_read = (effective_end < file_bytes).then(|| {
-        json!({
-            "path": path.display().to_string(),
-            "root": root.display().to_string(),
-            "byte_start": effective_end,
-            "byte_end": effective_end.saturating_add(MAX_CODE_RANGE_BYTES as u64).min(file_bytes),
-        })
+        CodeReadSuggestion::byte(
+            path,
+            root,
+            effective_end,
+            effective_end
+                .saturating_add(MAX_CODE_RANGE_BYTES as u64)
+                .min(file_bytes),
+        )
     });
-    Ok(json!({
-        "ok": true,
-        "read_status": if effective_end < requested_end { "partial" } else { "range" },
-        "path": path.display().to_string(),
-        "root": root.display().to_string(),
-        "bytes": file_bytes,
-        "total_lines": Value::Null,
-        "digest": Value::Null,
-        "requested": { "byte_start": start, "byte_end": requested_end },
-        "coverage": {
-            "complete": start == 0 && effective_end == file_bytes,
-            "byte_start": start,
-            "byte_end": effective_end,
-            "returned_bytes": bytes.len(),
+    Ok(CodeReadOutput::ByteRange {
+        ok: true,
+        read_status: if effective_end < requested_end {
+            CodeReadStatus::Partial
+        } else {
+            CodeReadStatus::Range
         },
-        "encoding": encoding,
-        "content": content,
-        "orientation": {
-            "reason": if effective_end < requested_end { "range_bounded_by_response_budget" } else { "requested_range_returned" },
-            "next_read": next_read,
-            "max_range_bytes": MAX_CODE_RANGE_BYTES,
-        }
-    }))
+        path: path.display().to_string(),
+        root: root.display().to_string(),
+        bytes: file_bytes,
+        total_lines: None,
+        digest: None,
+        requested: CodeReadByteRequest {
+            byte_start: start,
+            byte_end: requested_end,
+        },
+        coverage: CodeReadByteCoverage {
+            complete: start == 0 && effective_end == file_bytes,
+            byte_start: start,
+            byte_end: effective_end,
+            returned_bytes: bytes.len(),
+        },
+        encoding,
+        content,
+        orientation: CodeReadByteOrientation {
+            reason: if effective_end < requested_end {
+                "range_bounded_by_response_budget"
+            } else {
+                "requested_range_returned"
+            }
+            .to_string(),
+            next_read,
+            max_range_bytes: MAX_CODE_RANGE_BYTES,
+        },
+    })
 }
 
 struct CodeFileMetadata {
@@ -708,51 +1036,63 @@ fn text_line_count(content: &str) -> usize {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionCodeSearchTool {
-    fn name(&self) -> &'static str {
-        COGNITION_CODE_SEARCH
-    }
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Search for a substring under the scripts root or a Forge worktree. Coding domain only.",
-        )
-    }
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "query": { "type": "string" },
-                "root": { "type": "string" },
-                "max_results": { "type": "integer" }
-            },
-            "required": ["query"]
-        }))
-    }
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let query = input
-            .get("query")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| StasisError::PortFailure("query is required".into()))?;
-        if query.chars().count() > 512 {
+#[derive(Debug, Deserialize, JsonSchema)]
+struct CodeSearchInput {
+    query: String,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    root: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    max_results: CompatOption<u64>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct CodeSearchMatch {
+    path: String,
+    lines: Vec<usize>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct CodeSearchOutput {
+    ok: bool,
+    root: String,
+    query: String,
+    results: Vec<CodeSearchMatch>,
+}
+
+#[medousa_tool(id = COGNITION_CODE_SEARCH_ID)]
+impl CognitionCodeSearchTool {
+    /// Search for a substring under the scripts root or a Forge worktree. Coding domain only.
+    async fn invoke_typed(
+        &self,
+        input: CodeSearchInput,
+    ) -> stasis::prelude::Result<CodeSearchOutput> {
+        if input.query.chars().count() > 512 {
             return Err(StasisError::PortFailure(
                 "query exceeds 512 characters".into(),
             ));
         }
-        let root = resolve_root(input.get("root").and_then(|v| v.as_str()))?;
-        let max = input
-            .get("max_results")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(50)
-            .clamp(1, 500) as usize;
+        let requested_root = input.root.into_option();
+        let root = resolve_root(requested_root.as_deref())?;
+        let max = input.max_results.into_option().unwrap_or(50).clamp(1, 500) as usize;
 
         let mut results = Vec::new();
         let mut scanned = 0usize;
-        search_dir(&root, &root, query, max, &mut scanned, &mut results)
+        search_dir(&root, &root, &input.query, max, &mut scanned, &mut results)
             .map_err(|e| StasisError::PortFailure(e.to_string()))?;
-        Ok(
-            json!({ "ok": true, "root": root.display().to_string(), "query": query, "results": results }),
-        )
+        Ok(CodeSearchOutput {
+            ok: true,
+            root: root.display().to_string(),
+            query: input.query,
+            results,
+        })
     }
 }
 
@@ -762,7 +1102,7 @@ fn search_dir(
     query: &str,
     max: usize,
     scanned: &mut usize,
-    out: &mut Vec<Value>,
+    out: &mut Vec<CodeSearchMatch>,
 ) -> std::io::Result<()> {
     const MAX_SCANNED_FILES: usize = 20_000;
     const MAX_SEARCH_FILE_BYTES: u64 = 2 * 1024 * 1024;
@@ -799,10 +1139,10 @@ fn search_dir(
                     .map(|(i, _)| i + 1)
                     .take(5)
                     .collect();
-                out.push(json!({
-                    "path": rel.display().to_string(),
-                    "lines": lines,
-                }));
+                out.push(CodeSearchMatch {
+                    path: rel.display().to_string(),
+                    lines,
+                });
                 if out.len() >= max || *scanned >= MAX_SCANNED_FILES {
                     return Ok(());
                 }
@@ -812,39 +1152,77 @@ fn search_dir(
     Ok(())
 }
 
-#[async_trait]
-impl StasisTool for CognitionCodeApplyPatchTool {
-    fn name(&self) -> &'static str {
-        COGNITION_CODE_APPLY_PATCH
-    }
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Write full content or replace an exact snippet in a file under the session root / Forge worktree. Coding domain only.",
-        )
-    }
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "path": { "type": "string" },
-                "root": { "type": "string" },
-                "content": { "type": "string", "description": "Full file content (write)" },
-                "find": { "type": "string", "description": "Exact snippet to replace" },
-                "replace": { "type": "string", "description": "Replacement for `find`" }
-                ,"expected_sha256": { "type": "string", "description": "Required current digest from code_read, or `missing` for a new file" }
-            },
-            "required": ["path", "expected_sha256"]
-        }))
-    }
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let (root, path) = root_and_path(&input)?;
-        let expected_digest = input
-            .get("expected_sha256")
-            .and_then(Value::as_str)
-            .filter(|value| !value.trim().is_empty())
-            .ok_or_else(|| StasisError::PortFailure("expected_sha256 is required".into()))?;
+#[derive(Debug, Deserialize, JsonSchema)]
+struct CodeApplyPatchInput {
+    path: String,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    root: CompatOption<String>,
+    /// Full file content (write)
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    content: CompatOption<String>,
+    /// Exact snippet to replace
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    find: CompatOption<String>,
+    /// Replacement for `find`
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    replace: CompatOption<String>,
+    /// Required current digest from code_read, or `missing` for a new file
+    expected_sha256: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum CodeApplyMode {
+    Write,
+    Patch,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct CodeApplyPatchOutput {
+    ok: bool,
+    mode: CodeApplyMode,
+    path: String,
+    root: String,
+    bytes: usize,
+    digest: String,
+}
+
+#[medousa_tool(id = COGNITION_CODE_APPLY_PATCH_ID)]
+impl CognitionCodeApplyPatchTool {
+    /// Write full content or replace an exact snippet in a file under the session root / Forge worktree. Coding domain only.
+    async fn invoke_typed(
+        &self,
+        input: CodeApplyPatchInput,
+    ) -> stasis::prelude::Result<CodeApplyPatchOutput> {
+        let requested_root = input.root.into_option();
+        let content = input.content.into_option();
+        let find = input.find.into_option();
+        let replace = input.replace.into_option();
+        let (root, path) = root_and_path(&input.path, requested_root.as_deref())?;
+        let expected_digest = input.expected_sha256.trim();
+        if expected_digest.is_empty() {
+            return Err(StasisError::PortFailure(
+                "expected_sha256 is required".into(),
+            ));
+        }
         let existing = verify_expected_digest(&path, expected_digest)?;
-        if let Some(content) = input.get("content").and_then(|v| v.as_str()) {
+        if let Some(content) = content {
             if content.len() > MAX_CODE_WRITE_BYTES {
                 return Err(StasisError::PortFailure(format!(
                     "content exceeds code_apply_patch limit of {MAX_CODE_WRITE_BYTES} bytes"
@@ -855,22 +1233,20 @@ impl StasisTool for CognitionCodeApplyPatchTool {
                     .await
                     .map_err(|e| StasisError::PortFailure(e.to_string()))?;
             }
-            tokio::fs::write(&path, content)
+            tokio::fs::write(&path, &content)
                 .await
                 .map_err(|e| StasisError::PortFailure(format!("write {}: {e}", path.display())))?;
-            return Ok(json!({
-                "ok": true,
-                "mode": "write",
-                "path": path.display().to_string(),
-                "root": root.display().to_string(),
-                "bytes": content.len(),
-                "digest": content_digest(content.as_bytes()),
-            }));
+            return Ok(CodeApplyPatchOutput {
+                ok: true,
+                mode: CodeApplyMode::Write,
+                path: path.display().to_string(),
+                root: root.display().to_string(),
+                bytes: content.len(),
+                digest: content_digest(content.as_bytes()),
+            });
         }
-        let find = input.get("find").and_then(|v| v.as_str());
-        let replace = input.get("replace").and_then(|v| v.as_str());
         let (find, replace) = match (find, replace) {
-            (Some(f), Some(r)) => (f, r),
+            (Some(find), Some(replace)) => (find, replace),
             _ => {
                 return Err(StasisError::PortFailure(
                     "provide `content` (write) or `find` + `replace` (patch)".into(),
@@ -882,12 +1258,12 @@ impl StasisTool for CognitionCodeApplyPatchTool {
         })?;
         let existing = String::from_utf8(existing)
             .map_err(|_| StasisError::PortFailure("patch target is not UTF-8 text".into()))?;
-        if !existing.contains(find) {
+        if !existing.contains(&find) {
             return Err(StasisError::PortFailure(
                 "find snippet not present in file".into(),
             ));
         }
-        let next = existing.replacen(find, replace, 1);
+        let next = existing.replacen(&find, &replace, 1);
         if next.len() > MAX_CODE_WRITE_BYTES {
             return Err(StasisError::PortFailure(format!(
                 "patched content exceeds code_apply_patch limit of {MAX_CODE_WRITE_BYTES} bytes"
@@ -896,144 +1272,200 @@ impl StasisTool for CognitionCodeApplyPatchTool {
         tokio::fs::write(&path, &next)
             .await
             .map_err(|e| StasisError::PortFailure(format!("write {}: {e}", path.display())))?;
-        Ok(json!({
-            "ok": true,
-            "mode": "patch",
-            "path": path.display().to_string(),
-            "root": root.display().to_string(),
-            "bytes": next.len(),
-            "digest": content_digest(next.as_bytes()),
-        }))
+        Ok(CodeApplyPatchOutput {
+            ok: true,
+            mode: CodeApplyMode::Patch,
+            path: path.display().to_string(),
+            root: root.display().to_string(),
+            bytes: next.len(),
+            digest: content_digest(next.as_bytes()),
+        })
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionShellSessionStatusTool {
-    fn name(&self) -> &'static str {
-        COGNITION_SHELL_SESSION_STATUS
-    }
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "List or create a workshop shell session (PTY). Coding domain only — sessions are shared by Home Terminal tabs and agents.",
-        )
-    }
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "work_id": { "type": "string", "description": "Optional Forge work id — session cwd binds to the worktree" },
-                "lease_id": { "type": "string", "description": "Forge lease fencing token supplied by the runtime" },
-                "lease_generation": { "type": "integer", "description": "Forge lease generation supplied by the runtime" },
-                "attempt_id": { "type": "string", "description": "Forge attempt id supplied by the runtime" },
-                "create": { "type": "boolean", "description": "Create a session (default: list only)" }
-            }
-        }))
-    }
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let create = input
-            .get("create")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let work_id = input
-            .get("work_id")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.trim().is_empty());
-        let lease_id = input
-            .get("lease_id")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.trim().is_empty());
-        let lease_generation = input.get("lease_generation").and_then(Value::as_u64);
-        let attempt_id = input.get("attempt_id").and_then(Value::as_str);
-        if create {
-            daemon_post(
-                "/v1/sessions/shell",
-                json!({ "work_id": work_id, "lease_id": lease_id, "lease_generation": lease_generation, "attempt_id": attempt_id, "cwd": Value::Null }),
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ShellSessionStatusInput {
+    /// Optional Forge work id — session cwd binds to the worktree
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    work_id: CompatOption<String>,
+    /// Forge lease fencing token supplied by the runtime
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    lease_id: CompatOption<String>,
+    /// Forge lease generation supplied by the runtime
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    lease_generation: CompatOption<u64>,
+    /// Forge attempt id supplied by the runtime
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    attempt_id: CompatOption<String>,
+    /// Create a session (default: list only)
+    #[serde(default)]
+    #[schemars(
+        with = "bool",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    create: CompatOption<bool>,
+}
+
+#[medousa_tool(id = COGNITION_SHELL_SESSION_STATUS_ID)]
+impl CognitionShellSessionStatusTool {
+    /// List or create a workshop shell session (PTY). Coding domain only — sessions are shared by Home Terminal tabs and agents.
+    async fn invoke_typed(
+        &self,
+        input: ShellSessionStatusInput,
+    ) -> stasis::prelude::Result<ExternalJson> {
+        let create = input.create.into_option().unwrap_or(false);
+        let work_id = input.work_id.into_option();
+        let lease_id = input.lease_id.into_option();
+        let lease_generation = input.lease_generation.into_option();
+        let attempt_id = input.attempt_id.into_option();
+        let output = if create {
+            create_bound_shell_session(
+                work_id.as_deref(),
+                lease_id.as_deref(),
+                lease_generation,
+                attempt_id.as_deref(),
             )
-            .await
+            .await?
         } else {
-            daemon_get("/v1/sessions/shell").await
-        }
+            daemon_get("/v1/sessions/shell").await?
+        };
+        Ok(ExternalJson::new(output))
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionShellSessionRunTool {
-    fn name(&self) -> &'static str {
-        COGNITION_SHELL_SESSION_RUN
-    }
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Write a command (or raw input) into a workshop shell session. Streams output for `wait_ms`. Coding domain only.",
-        )
-    }
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "session_id": { "type": "string", "description": "Existing session id" },
-                "work_id": { "type": "string", "description": "Create/bind a session for this Forge work id" },
-                "lease_id": { "type": "string", "description": "Forge lease fencing token supplied by the runtime" },
-                "lease_generation": { "type": "integer", "description": "Forge lease generation supplied by the runtime" },
-                "attempt_id": { "type": "string", "description": "Forge attempt id supplied by the runtime" },
-                "command": { "type": "string", "description": "Command line to run (newline appended)" },
-                "input": { "type": "string", "description": "Raw bytes to write (base64 not required)" },
-                "wait_ms": { "type": "integer", "description": "How long to stream output (default 1500, max 15000)" }
-            }
-        }))
-    }
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let session_id = match input
-            .get("session_id")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.trim().is_empty())
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ShellSessionRunInput {
+    /// Existing session id
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    session_id: CompatOption<String>,
+    /// Create/bind a session for this Forge work id
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    work_id: CompatOption<String>,
+    /// Forge lease fencing token supplied by the runtime
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    lease_id: CompatOption<String>,
+    /// Forge lease generation supplied by the runtime
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    lease_generation: CompatOption<u64>,
+    /// Forge attempt id supplied by the runtime
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    attempt_id: CompatOption<String>,
+    /// Command line to run (newline appended)
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    command: CompatOption<String>,
+    /// Raw bytes to write (base64 not required)
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    input: CompatOption<String>,
+    /// How long to stream output (default 1500, max 15000)
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    wait_ms: CompatOption<u64>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct ShellSessionRunOutput {
+    ok: bool,
+    session_id: String,
+    output: String,
+}
+
+#[medousa_tool(id = COGNITION_SHELL_SESSION_RUN_ID)]
+impl CognitionShellSessionRunTool {
+    /// Write a command (or raw input) into a workshop shell session. Streams output for `wait_ms`. Coding domain only.
+    async fn invoke_typed(
+        &self,
+        input: ShellSessionRunInput,
+    ) -> stasis::prelude::Result<ShellSessionRunOutput> {
+        let session_id_input = input.session_id.into_option();
+        let work_id = input.work_id.into_option();
+        let lease_id = input.lease_id.into_option();
+        let lease_generation = input.lease_generation.into_option();
+        let attempt_id = input.attempt_id.into_option();
+        let command = input.command.into_option();
+        let raw_input = input.input.into_option();
+        let wait_ms = input
+            .wait_ms
+            .into_option()
+            .unwrap_or(1500)
+            .clamp(100, 15_000);
+        let session_id = match session_id_input
+            .as_deref()
+            .filter(|session_id| !session_id.trim().is_empty())
         {
-            Some(id) => id.to_string(),
+            Some(session_id) => session_id.to_string(),
             None => {
-                let work_id = input
-                    .get("work_id")
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.trim().is_empty());
-                let lease_id = input
-                    .get("lease_id")
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.trim().is_empty());
-                let lease_generation = input.get("lease_generation").and_then(Value::as_u64);
-                let attempt_id = input.get("attempt_id").and_then(Value::as_str);
-                let created = daemon_post(
-                    "/v1/sessions/shell",
-                    json!({ "work_id": work_id, "lease_id": lease_id, "lease_generation": lease_generation, "attempt_id": attempt_id, "cwd": Value::Null }),
+                let created = create_bound_shell_session(
+                    work_id.as_deref(),
+                    lease_id.as_deref(),
+                    lease_generation,
+                    attempt_id.as_deref(),
                 )
                 .await?;
-                created
-                    .get("session_id")
-                    .and_then(|v| v.as_str())
-                    .map(str::to_string)
-                    .ok_or_else(|| {
-                        StasisError::PortFailure("daemon did not return session_id".into())
-                    })?
+                daemon_session_id(&created)?
             }
         };
-        let payload = if let Some(cmd) = input.get("command").and_then(|v| v.as_str()) {
-            format!("{cmd}\n")
-        } else if let Some(raw) = input.get("input").and_then(|v| v.as_str()) {
-            raw.to_string()
+        let payload = if let Some(command) = command {
+            format!("{command}\n")
+        } else if let Some(raw_input) = raw_input {
+            raw_input
         } else {
             return Err(StasisError::PortFailure(
                 "provide `command` or `input`".into(),
             ));
         };
-        let wait_ms = input
-            .get("wait_ms")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(1500)
-            .clamp(100, 15_000);
-
         let output = stream_session_input(&session_id, payload.as_bytes(), wait_ms).await?;
-        Ok(json!({
-            "ok": true,
-            "session_id": session_id,
-            "output": output,
-        }))
+        Ok(ShellSessionRunOutput {
+            ok: true,
+            session_id,
+            output,
+        })
     }
 }
 
@@ -1104,205 +1536,235 @@ async fn stream_session_input(
     Ok(output)
 }
 
-#[async_trait]
-impl StasisTool for CognitionShellSessionInterruptTool {
-    fn name(&self) -> &'static str {
-        COGNITION_SHELL_SESSION_INTERRUPT
-    }
-    fn description(&self) -> Option<&'static str> {
-        Some("Send SIGINT to a workshop shell session. Coding domain only.")
-    }
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "session_id": { "type": "string" }
-            },
-            "required": ["session_id"]
-        }))
-    }
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let session_id = input
-            .get("session_id")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.trim().is_empty())
-            .ok_or_else(|| StasisError::PortFailure("session_id is required".into()))?;
-        daemon_post(
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ShellSessionInterruptInput {
+    session_id: String,
+}
+
+#[medousa_tool(id = COGNITION_SHELL_SESSION_INTERRUPT_ID)]
+impl CognitionShellSessionInterruptTool {
+    /// Send SIGINT to a workshop shell session. Coding domain only.
+    async fn invoke_typed(
+        &self,
+        input: ShellSessionInterruptInput,
+    ) -> stasis::prelude::Result<ExternalJson> {
+        let session_id = input.session_id.trim();
+        if session_id.is_empty() {
+            return Err(StasisError::PortFailure("session_id is required".into()));
+        }
+        let response = daemon_post(
             &format!("/v1/sessions/shell/{session_id}/signal"),
             json!({ "signal": "interrupt" }),
         )
-        .await
+        .await?;
+        Ok(ExternalJson::new(response))
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionCoderShellStatusTool {
-    fn name(&self) -> &'static str {
-        COGNITION_CODER_SHELL_STATUS
-    }
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Coder-only: report Forge-bound Terminal shell readiness for this undertaking. \
-             Prefer cognition_coder_shell_run for one-shot commands.",
-        )
-    }
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "work_id": { "type": "string" },
-                "lease_id": { "type": "string" },
-                "lease_generation": { "type": "integer" },
-                "attempt_id": { "type": "string" }
-            }
-        }))
-    }
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+#[derive(Debug, Deserialize, JsonSchema)]
+struct CoderShellStatusInput {
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    work_id: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    lease_id: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    lease_generation: CompatOption<u64>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    attempt_id: CompatOption<String>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct CoderShellStatusOutput {
+    ok: bool,
+    surface: String,
+    session_id: Option<String>,
+    session: ExternalJson,
+}
+
+#[medousa_tool(id = COGNITION_CODER_SHELL_STATUS_ID)]
+impl CognitionCoderShellStatusTool {
+    /// Coder-only: report Forge-bound Terminal shell readiness for this undertaking. Prefer cognition_coder_shell_run for one-shot commands.
+    async fn invoke_typed(
+        &self,
+        input: CoderShellStatusInput,
+    ) -> stasis::prelude::Result<CoderShellStatusOutput> {
         // Ensure a bound session exists so status reflects the undertaking Terminal.
-        let work_id = input
-            .get("work_id")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.trim().is_empty());
-        let lease_id = input
-            .get("lease_id")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.trim().is_empty());
-        let lease_generation = input.get("lease_generation").and_then(Value::as_u64);
-        let attempt_id = input.get("attempt_id").and_then(Value::as_str);
-        let created = daemon_post(
-            "/v1/sessions/shell",
-            json!({
-                "work_id": work_id,
-                "lease_id": lease_id,
-                "lease_generation": lease_generation,
-                "attempt_id": attempt_id,
-                "cwd": Value::Null
-            }),
+        let work_id = input.work_id.into_option();
+        let lease_id = input.lease_id.into_option();
+        let lease_generation = input.lease_generation.into_option();
+        let attempt_id = input.attempt_id.into_option();
+        let created = create_bound_shell_session(
+            work_id.as_deref(),
+            lease_id.as_deref(),
+            lease_generation,
+            attempt_id.as_deref(),
         )
         .await?;
-        Ok(json!({
-            "ok": true,
-            "surface": "coder_pty",
-            "session_id": created.get("session_id"),
-            "session": created,
-        }))
+        let session_id = created
+            .get("session_id")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        Ok(CoderShellStatusOutput {
+            ok: true,
+            surface: "coder_pty".to_string(),
+            session_id,
+            session: ExternalJson::new(created),
+        })
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionCoderShellRunTool {
-    fn name(&self) -> &'static str {
-        COGNITION_CODER_SHELL_RUN
-    }
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Coder one-shot shell: run a command in the Forge-bound undertaking Terminal (PTY). \
-             Same ergonomics as a simple shell_run, but cwd/authority follow the active lease worktree. \
-             Do not use cognition_shell_run in Coder. For multi-step interactive Terminal work use cognition_shell_session_*.",
-        )
-    }
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["command"],
-            "properties": {
-                "command": {
-                    "type": "string",
-                    "description": "Shell command line (newline appended)"
-                },
-                "session_id": {
-                    "type": "string",
-                    "description": "Reuse a turn-owned session when provided by the runtime"
-                },
-                "work_id": { "type": "string" },
-                "lease_id": { "type": "string" },
-                "lease_generation": { "type": "integer" },
-                "attempt_id": { "type": "string" },
-                "wait_ms": {
-                    "type": "integer",
-                    "description": "How long to stream output (default 3000, max 15000)"
-                }
-            }
-        }))
-    }
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let command = input
-            .get("command")
-            .and_then(|v| v.as_str())
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| StasisError::PortFailure("command is required".into()))?;
-        let session_id = match input
-            .get("session_id")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.trim().is_empty())
-        {
-            Some(id) => id.to_string(),
-            None => {
-                let work_id = input
-                    .get("work_id")
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.trim().is_empty());
-                let lease_id = input
-                    .get("lease_id")
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.trim().is_empty());
-                let lease_generation = input.get("lease_generation").and_then(Value::as_u64);
-                let attempt_id = input.get("attempt_id").and_then(Value::as_str);
-                let created = daemon_post(
-                    "/v1/sessions/shell",
-                    json!({
-                        "work_id": work_id,
-                        "lease_id": lease_id,
-                        "lease_generation": lease_generation,
-                        "attempt_id": attempt_id,
-                        "cwd": Value::Null
-                    }),
-                )
-                .await?;
-                created
-                    .get("session_id")
-                    .and_then(|v| v.as_str())
-                    .map(str::to_string)
-                    .ok_or_else(|| {
-                        StasisError::PortFailure("daemon did not return session_id".into())
-                    })?
-            }
-        };
+#[derive(Debug, Deserialize, JsonSchema)]
+struct CoderShellRunInput {
+    /// Shell command line (newline appended)
+    command: String,
+    /// Reuse a turn-owned session when provided by the runtime
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    session_id: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    work_id: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    lease_id: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    lease_generation: CompatOption<u64>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    attempt_id: CompatOption<String>,
+    /// How long to stream output (default 3000, max 15000)
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    wait_ms: CompatOption<u64>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct CoderShellRunOutput {
+    ok: bool,
+    surface: String,
+    session_id: String,
+    command: String,
+    output: String,
+}
+
+#[medousa_tool(id = COGNITION_CODER_SHELL_RUN_ID)]
+impl CognitionCoderShellRunTool {
+    /// Coder one-shot shell: run a command in the Forge-bound undertaking Terminal (PTY). Same ergonomics as a simple shell_run, but cwd/authority follow the active lease worktree. Do not use cognition_shell_run in Coder. For multi-step interactive Terminal work use cognition_shell_session_*.
+    async fn invoke_typed(
+        &self,
+        input: CoderShellRunInput,
+    ) -> stasis::prelude::Result<CoderShellRunOutput> {
+        let command = input.command.trim().to_string();
+        if command.is_empty() {
+            return Err(StasisError::PortFailure("command is required".into()));
+        }
+        let session_id_input = input.session_id.into_option();
+        let work_id = input.work_id.into_option();
+        let lease_id = input.lease_id.into_option();
+        let lease_generation = input.lease_generation.into_option();
+        let attempt_id = input.attempt_id.into_option();
         let wait_ms = input
-            .get("wait_ms")
-            .and_then(|v| v.as_u64())
+            .wait_ms
+            .into_option()
             .unwrap_or(3000)
             .clamp(100, 15_000);
+        let session_id = match session_id_input
+            .as_deref()
+            .filter(|session_id| !session_id.trim().is_empty())
+        {
+            Some(session_id) => session_id.to_string(),
+            None => {
+                let created = create_bound_shell_session(
+                    work_id.as_deref(),
+                    lease_id.as_deref(),
+                    lease_generation,
+                    attempt_id.as_deref(),
+                )
+                .await?;
+                daemon_session_id(&created)?
+            }
+        };
         let output =
             stream_session_input(&session_id, format!("{command}\n").as_bytes(), wait_ms).await?;
-        Ok(json!({
-            "ok": true,
-            "surface": "coder_pty",
-            "session_id": session_id,
-            "command": command,
-            "output": output,
-        }))
+        Ok(CoderShellRunOutput {
+            ok: true,
+            surface: "coder_pty".to_string(),
+            session_id,
+            command,
+            output,
+        })
     }
 }
 
 pub fn register_coding_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
 ) -> stasis::prelude::Result<()> {
-    registry.register_tool(CognitionCodeReadTool)?;
-    registry.register_tool(CognitionCodeSearchTool)?;
-    registry.register_tool(CognitionCodeApplyPatchTool)?;
-    registry.register_tool(CognitionShellSessionStatusTool)?;
-    registry.register_tool(CognitionShellSessionRunTool)?;
-    registry.register_tool(CognitionShellSessionInterruptTool)?;
-    registry.register_tool(CognitionCoderShellRunTool)?;
-    registry.register_tool(CognitionCoderShellStatusTool)?;
+    registry.register_typed_tool(CognitionCodeReadTool)?;
+    registry.register_typed_tool(CognitionCodeSearchTool)?;
+    registry.register_typed_tool(CognitionCodeApplyPatchTool)?;
+    registry.register_typed_tool(CognitionShellSessionStatusTool)?;
+    registry.register_typed_tool(CognitionShellSessionRunTool)?;
+    registry.register_typed_tool(CognitionShellSessionInterruptTool)?;
+    registry.register_typed_tool(CognitionCoderShellRunTool)?;
+    registry.register_typed_tool(CognitionCoderShellStatusTool)?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn code_read_observation(root: &Path, path: &Path, input: &Value) -> StasisResult<Value> {
+        let mut wire_input = input.clone();
+        wire_input
+            .as_object_mut()
+            .expect("code read test input object")
+            .insert(
+                "path".to_string(),
+                Value::String(path.display().to_string()),
+            );
+        let input = serde_json::from_value::<CodeReadInput>(wire_input)
+            .expect("valid typed code read input");
+        super::code_read_observation(root, path, &input).and_then(|output| {
+            serde_json::to_value(output)
+                .map_err(|error| StasisError::PortFailure(error.to_string()))
+        })
+    }
 
     #[test]
     fn digest_fence_rejects_stale_content_and_allows_missing_sentinel() {
@@ -1320,6 +1782,25 @@ mod tests {
                 .expect("missing sentinel"),
             None
         );
+    }
+
+    #[test]
+    fn code_read_optional_controls_absorb_wrong_wire_types() {
+        let input: CodeReadInput = serde_json::from_value(json!({
+            "path": "src/lib.rs",
+            "root": 7,
+            "line_start": "first",
+            "line_end": null,
+            "byte_start": false,
+            "byte_end": -1
+        }))
+        .expect("compatible code read input");
+
+        assert!(input.root.is_none());
+        assert!(input.line_start.is_none());
+        assert!(input.line_end.is_none());
+        assert!(input.byte_start.is_none());
+        assert!(input.byte_end.is_none());
     }
 
     #[test]

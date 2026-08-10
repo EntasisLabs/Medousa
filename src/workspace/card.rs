@@ -4,7 +4,6 @@ use chrono::{DateTime, Duration, Utc};
 use serde_json::Value;
 use stasis::application::runtime::runtime_factory::RuntimeComposition;
 use stasis::domain::runtime::job::{Job, JobState};
-use stasis::ports::outbound::runtime::job_store::JobStore;
 
 use crate::agent_runtime::turn_worker::{TurnWorkRecord, TurnWorkStatus, turn_worker_store};
 use crate::daemon_api::{
@@ -15,6 +14,7 @@ use crate::workspace::retention::{self, WorkspaceRetentionConfig};
 use crate::turn_budget_request::{turn_budget_request_store, TurnBudgetRequest, TurnBudgetRequestStatus};
 use crate::openshell_sandbox_run::OPENSHELL_SANDBOX_RUN_JOB_TYPE;
 use crate::workspace::store::workspace_store;
+use crate::runtime_composition_ext::RuntimeCompositionExt;
 
 const WRAPPING_UP_STALE: Duration = Duration::hours(2);
 
@@ -30,10 +30,7 @@ pub async fn list_jobs_by_states(
 ) -> anyhow::Result<Vec<Job>> {
     let mut jobs = Vec::new();
     for state in states {
-        let mut batch = match runtime {
-            RuntimeComposition::InMemory(rt) => rt.job_store.list_by_state(state.clone()).await?,
-            RuntimeComposition::Surreal(rt) => rt.job_store.list_by_state(state.clone()).await?,
-        };
+        let mut batch = runtime.list_jobs_by_state(state.clone()).await?;
         jobs.append(&mut batch);
     }
     Ok(jobs)
@@ -156,6 +153,13 @@ pub fn project_ask_job(
         task_line: Some(truncate_line(&record.prompt, 500)),
         tool_names: None,
         associations: workspace_store().associations(&record.job_id),
+        live_tool_activity: Vec::new(),
+        live_thinking: String::new(),
+        live_output: String::new(),
+        thinking_started_at: None,
+        thinking_finished_at: None,
+        live_status_line: None,
+        model: None,
     };
 
     Some(ProjectedWorkItem { card, detail })
@@ -224,6 +228,13 @@ pub fn project_turn_budget_request(
         task_line,
         tool_names: None,
         associations: workspace_store().associations(&record.request_id),
+        live_tool_activity: Vec::new(),
+        live_thinking: String::new(),
+        live_output: String::new(),
+        thinking_started_at: None,
+        thinking_finished_at: None,
+        live_status_line: None,
+        model: None,
     };
 
     Some(ProjectedWorkItem { card, detail })
@@ -316,6 +327,31 @@ pub fn project_turn_worker(
             Some(record.tool_names.clone())
         },
         associations: workspace_store().associations(&record.work_id),
+        live_tool_activity: record
+            .live_tool_activity
+            .iter()
+            .map(|activity| medousa_types::daemon_api::WorkerToolActivityDto {
+                run_id: activity.run_id.clone(),
+                name: activity.name.clone(),
+                round: activity.round,
+                status: activity.status.clone(),
+                input_summary: activity.input_summary.clone(),
+                input_params: activity.input_params.clone(),
+                output_summary: activity.output_summary.clone(),
+                started_at: activity.started_at,
+                finished_at: activity.finished_at,
+            })
+            .collect(),
+        live_thinking: record.live_thinking.clone(),
+        live_output: record.live_output.clone(),
+        thinking_started_at: record.thinking_started_at,
+        thinking_finished_at: record.thinking_finished_at,
+        live_status_line: live_status_line_for_worker(record),
+        model: if record.model.trim().is_empty() {
+            None
+        } else {
+            Some(record.model.clone())
+        },
     };
 
     Some(ProjectedWorkItem { card, detail })
@@ -381,6 +417,13 @@ pub fn project_job(job: &Job, include_terminal: bool, hide_ttl: Duration) -> Opt
         task_line,
         tool_names: None,
         associations: workspace_store().associations(&job.id),
+        live_tool_activity: Vec::new(),
+        live_thinking: String::new(),
+        live_output: String::new(),
+        thinking_started_at: None,
+        thinking_finished_at: None,
+        live_status_line: None,
+        model: None,
     };
 
     Some(ProjectedWorkItem { card, detail })
@@ -625,6 +668,45 @@ fn truncate_line(text: &str, max: usize) -> String {
     }
 }
 
+/// Live one-line status for a turn worker card (Cursor-style "Running tool X…").
+fn live_status_line_for_worker(record: &TurnWorkRecord) -> Option<String> {
+    if matches!(
+        record.status,
+        TurnWorkStatus::Completed | TurnWorkStatus::Failed | TurnWorkStatus::Cancelled
+    ) {
+        return None;
+    }
+    // A tool in flight is the most specific thing we can say, so it wins over
+    // the last completed one.
+    if let Some(running) = record
+        .live_tool_activity
+        .iter()
+        .rev()
+        .find(|activity| activity.finished_at.is_none())
+    {
+        return Some(format!("Running {}…", running.name));
+    }
+    if let Some(last) = record
+        .live_tool_activity
+        .iter()
+        .rev()
+        .find(|activity| activity.finished_at.is_some())
+    {
+        return Some(format!("Last tool: {}", last.name));
+    }
+    if !record.live_output.is_empty() {
+        return Some("Drafting reply…".to_string());
+    }
+    if !record.live_thinking.is_empty() {
+        return Some("Thinking…".to_string());
+    }
+    match record.status {
+        TurnWorkStatus::Pending => Some("Queued…".to_string()),
+        TurnWorkStatus::Running => Some("Working…".to_string()),
+        _ => None,
+    }
+}
+
 pub fn counts_by_column(cards: &[WorkCard]) -> std::collections::HashMap<String, u32> {
     let mut counts = std::collections::HashMap::new();
     for card in cards {
@@ -658,6 +740,7 @@ pub fn parse_column_filter(value: &str) -> Option<WorkBoardColumn> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent_runtime::turn_worker::WorkerToolActivity;
     use chrono::TimeZone;
 
     fn sample_job(state: JobState, job_type: &str, payload: &str) -> Job {
@@ -737,6 +820,11 @@ mod tests {
             supports_ui_artifacts: false,
             supports_liquid_markdown: false,
             supports_browser_host: false,
+            live_tool_activity: Vec::new(),
+            live_thinking: String::new(),
+            live_output: String::new(),
+            thinking_started_at: None,
+            thinking_finished_at: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -785,6 +873,11 @@ mod tests {
             supports_ui_artifacts: false,
             supports_liquid_markdown: false,
             supports_browser_host: false,
+            live_tool_activity: Vec::new(),
+            live_thinking: String::new(),
+            live_output: String::new(),
+            thinking_started_at: None,
+            thinking_finished_at: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -802,5 +895,122 @@ mod tests {
         let hide_ttl = Duration::hours(24);
         let (column, _, _, _) = column_for_job(&job, true, hide_ttl).expect("column");
         assert_eq!(column, WorkBoardColumn::Backlog);
+    }
+
+    fn live_record(status: TurnWorkStatus) -> TurnWorkRecord {
+        TurnWorkRecord {
+            work_id: "work-live".to_string(),
+            session_id: "sess".to_string(),
+            parent_turn_correlation_id: None,
+            parent_stream_turn_id: 0,
+            intent: "research".to_string(),
+            task_prompt: "look it up".to_string(),
+            status,
+            result_text: None,
+            tool_names: vec![],
+            termination_reason: None,
+            error: None,
+            user_ack: "Looking it up".to_string(),
+            provider: "openai".to_string(),
+            model: "gpt".to_string(),
+            response_depth_mode: "normal".to_string(),
+            max_tool_rounds: 10,
+            delivery_target: None,
+            parent_user_prompt: None,
+            handoff_capsule: None,
+            worker_scratch: None,
+            synthesis_delivered: false,
+            stasis_job_id: None,
+            thread_id: None,
+            stage_role: None,
+            model_hint: None,
+            manuscript_id: None,
+            branch_group_id: None,
+            archived: false,
+            disposition: crate::agent_runtime::turn_worker::TurnWorkDisposition::Parallel,
+            steer_messages: Vec::new(),
+            supports_ui_artifacts: false,
+            supports_liquid_markdown: false,
+            supports_browser_host: false,
+            live_tool_activity: Vec::new(),
+            live_thinking: String::new(),
+            live_output: String::new(),
+            thinking_started_at: None,
+            thinking_finished_at: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn tool_activity(name: &str, finished: bool) -> WorkerToolActivity {
+        WorkerToolActivity {
+            run_id: format!("run-{name}"),
+            name: name.to_string(),
+            round: 1,
+            status: if finished { "succeeded" } else { "running" }.to_string(),
+            input_summary: None,
+            input_params: Vec::new(),
+            output_summary: None,
+            started_at: Utc::now(),
+            finished_at: finished.then(Utc::now),
+        }
+    }
+
+    /// An in-flight tool is the most specific thing we can say, so it outranks
+    /// a more recently *finished* one.
+    #[test]
+    fn live_status_prefers_running_tool_over_finished() {
+        let mut record = live_record(TurnWorkStatus::Running);
+        record.live_tool_activity = vec![
+            tool_activity("web_search", false),
+            tool_activity("read_file", true),
+        ];
+        assert_eq!(
+            live_status_line_for_worker(&record).as_deref(),
+            Some("Running web_search…")
+        );
+    }
+
+    #[test]
+    fn live_status_falls_back_through_finished_tool_output_then_thinking() {
+        let mut record = live_record(TurnWorkStatus::Running);
+        record.live_tool_activity = vec![tool_activity("read_file", true)];
+        assert_eq!(
+            live_status_line_for_worker(&record).as_deref(),
+            Some("Last tool: read_file")
+        );
+
+        let mut drafting = live_record(TurnWorkStatus::Running);
+        drafting.live_output = "Here is what I found".to_string();
+        assert_eq!(
+            live_status_line_for_worker(&drafting).as_deref(),
+            Some("Drafting reply…")
+        );
+
+        let mut thinking = live_record(TurnWorkStatus::Running);
+        thinking.live_thinking = "Considering…".to_string();
+        assert_eq!(
+            live_status_line_for_worker(&thinking).as_deref(),
+            Some("Thinking…")
+        );
+
+        assert_eq!(
+            live_status_line_for_worker(&live_record(TurnWorkStatus::Pending)).as_deref(),
+            Some("Queued…")
+        );
+    }
+
+    /// Settled workers own a real status label; a live line would fight it.
+    #[test]
+    fn live_status_is_silent_once_terminal() {
+        for status in [
+            TurnWorkStatus::Completed,
+            TurnWorkStatus::Failed,
+            TurnWorkStatus::Cancelled,
+        ] {
+            let mut record = live_record(status);
+            record.live_tool_activity = vec![tool_activity("web_search", false)];
+            assert!(live_status_line_for_worker(&record).is_none());
+        }
     }
 }

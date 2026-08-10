@@ -1,13 +1,13 @@
 //! FeedSink router — recurring job terminal events → feed_bus publish.
 
 use stasis::domain::runtime::job::JobState;
-use stasis::ports::outbound::runtime::job_store::JobStore;
 use stasis::prelude::RuntimeComposition;
 
 use crate::channel_delivery;
 use crate::daemon::ingest::get_job_attempts_graceful;
 use crate::feed_adapters::{self, JobTerminalPhase, RecurringTickContext};
 use crate::recurring_feed;
+use crate::runtime_composition_ext::RuntimeCompositionExt;
 
 pub async fn maybe_publish_recurring_job_feed(runtime: &RuntimeComposition, job_id: &str) {
     let Some(job) = load_job(runtime, job_id).await else {
@@ -52,10 +52,7 @@ async fn load_job(
     runtime: &RuntimeComposition,
     job_id: &str,
 ) -> Option<stasis::domain::runtime::job::Job> {
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt.job_store.get(job_id).await.ok().flatten(),
-        RuntimeComposition::Surreal(rt) => rt.job_store.get(job_id).await.ok().flatten(),
-    }
+    runtime.get_job(job_id).await.ok().flatten()
 }
 
 fn is_terminal(state: &JobState) -> bool {

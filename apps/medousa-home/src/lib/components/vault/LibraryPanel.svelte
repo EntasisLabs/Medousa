@@ -39,7 +39,8 @@
     lmeHosted = false,
   }: Props = $props();
 
-  async function openNote(path: string) {
+  async function openNote(path: string, event?: MouseEvent) {
+    if (!vault.applyRailSelection(path, event)) return;
     if (lmeHosted) {
       await lmeWorkspace.openNote(path);
       return;
@@ -50,7 +51,7 @@
   const externalHits = $derived(externalDesk.searchHitsList);
   const showVaultChrome = $derived(externalDesk.sidebarMode === "vault");
   const showYourFiles = $derived(externalDesk.sidebarMode === "files");
-  const showPresentations = $derived(externalDesk.sidebarMode === "presentations");
+  const showPresentations = $derived(externalDesk.sidebarMode === "artifacts");
   const showFilesSearch = $derived(
     showYourFiles && vault.searchQuery.trim().length > 0,
   );

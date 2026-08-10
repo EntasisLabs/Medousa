@@ -42,18 +42,17 @@
       <div class="border-b border-surface-500/45 px-3 py-2">
         <input
           class="w-full rounded-lg border border-surface-500/45 bg-surface-900/70 px-2.5 py-1.5 text-sm text-surface-100 outline-none ring-primary-500/30 focus:ring-2"
-          placeholder="Filter presentations…"
+          placeholder="Filter artifacts…"
           value={artifacts.searchQuery}
           oninput={(event) => artifacts.setSearchQuery(event.currentTarget.value)}
         />
       </div>
       {#if artifacts.loading}
-        <p class="px-3 py-4 text-sm text-content-quiet">Loading presentations…</p>
+        <p class="px-3 py-4 text-sm text-content-quiet">Loading artifacts…</p>
       {:else}
         <ArtifactLibraryList
           artifacts={artifacts.filteredArtifacts}
           selectedArtifactId={artifacts.selectedArtifactId}
-          sessionTitle={(sessionId) => artifacts.sessionTitle(sessionId)}
           onSelect={(artifactId) => {
             artifacts.selectArtifact(artifactId);
             panelOpen = true;

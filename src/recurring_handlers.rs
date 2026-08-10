@@ -6,11 +6,8 @@ use std::sync::{LazyLock, RwLock};
 use chrono::Utc;
 use stasis::application::runtime::runtime_factory::RuntimeComposition;
 use stasis::domain::errors::StasisError;
-use stasis::domain::runtime::job::{Job, JobState};
+use stasis::domain::runtime::job::JobState;
 use stasis::domain::runtime::recurring::RecurringDefinition;
-use stasis::ports::outbound::runtime::job_attempt_store::JobAttemptStore;
-use stasis::ports::outbound::runtime::job_store::JobStore;
-use stasis::ports::outbound::runtime::recurring_store::RecurringStore;
 
 use crate::channel_delivery;
 use crate::daemon_api::{
@@ -21,49 +18,11 @@ use crate::daemon_api::{
 use crate::recurring_agent_turn;
 use crate::recurring_delivery;
 use crate::recurring_feed;
+use crate::runtime_composition_ext::RuntimeCompositionExt;
 use crate::turn_continuation::StoredDeliveryTarget;
 
 static IN_MEMORY_DELETED_RECURRING: LazyLock<RwLock<HashSet<String>>> =
     LazyLock::new(|| RwLock::new(HashSet::new()));
-
-async fn list_recurring_definitions(
-    runtime: &RuntimeComposition,
-) -> stasis::prelude::Result<Vec<RecurringDefinition>> {
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt.recurring_store.list().await,
-        RuntimeComposition::Surreal(rt) => rt.recurring_store.list().await,
-    }
-}
-
-async fn save_recurring_definition(
-    runtime: &RuntimeComposition,
-    definition: RecurringDefinition,
-) -> stasis::prelude::Result<()> {
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt.recurring_store.save(definition).await,
-        RuntimeComposition::Surreal(rt) => rt.recurring_store.save(definition).await,
-    }
-}
-
-async fn list_jobs_by_state(
-    runtime: &RuntimeComposition,
-    state: JobState,
-) -> stasis::prelude::Result<Vec<Job>> {
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt.job_store.list_by_state(state).await,
-        RuntimeComposition::Surreal(rt) => rt.job_store.list_by_state(state).await,
-    }
-}
-
-async fn list_job_attempts(
-    runtime: &RuntimeComposition,
-    job_id: &str,
-) -> stasis::prelude::Result<Vec<stasis::domain::runtime::job_attempt::JobAttempt>> {
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt.job_attempt_store.list_by_job_id(job_id).await,
-        RuntimeComposition::Surreal(rt) => rt.job_attempt_store.list_by_job_id(job_id).await,
-    }
-}
 
 fn tombstoned_recurring_ids() -> HashSet<String> {
     IN_MEMORY_DELETED_RECURRING
@@ -211,7 +170,7 @@ pub async fn list_recurring(
 ) -> stasis::prelude::Result<RecurringListResponse> {
     let enabled_only = query.enabled_only.unwrap_or(false);
     let tombstones = tombstoned_recurring_ids();
-    let mut definitions = list_recurring_definitions(runtime).await?;
+    let mut definitions = runtime.list_recurring().await?;
     definitions.retain(|definition| !tombstones.contains(&definition.id));
     if enabled_only {
         definitions.retain(|definition| definition.enabled);
@@ -240,7 +199,7 @@ pub async fn get_recurring_definition(
     if tombstoned_recurring_ids().contains(recurring_id) {
         return Ok(None);
     }
-    let definitions = list_recurring_definitions(runtime).await?;
+    let definitions = runtime.list_recurring().await?;
     Ok(definitions
         .into_iter()
         .find(|definition| definition.id == recurring_id))
@@ -269,7 +228,7 @@ pub async fn list_recurring_runs(
     ];
     let mut jobs = Vec::new();
     for state in states {
-        let mut batch = list_jobs_by_state(runtime, state).await?;
+        let mut batch = runtime.list_jobs_by_state(state).await?;
         batch.retain(|job| job.correlation_id == recurring_id);
         jobs.append(&mut batch);
     }
@@ -289,7 +248,7 @@ pub async fn list_recurring_runs(
 
     let mut runs = Vec::with_capacity(jobs.len());
     for job in jobs {
-        let attempts = list_job_attempts(runtime, &job.id).await.unwrap_or_default();
+        let attempts = runtime.list_job_attempts(&job.id).await.unwrap_or_default();
         let latest = attempts.last();
         let latest_outcome = latest.map(|attempt| format!("{:?}", attempt.outcome));
         let output_text = latest.and_then(|attempt| {
@@ -377,7 +336,7 @@ pub async fn update_recurring(
         definition.next_run_at = definition.compute_next_run_at(now)?;
     }
 
-    save_recurring_definition(runtime, definition.clone()).await?;
+    runtime.save_recurring(definition.clone()).await?;
 
     if let Some(delivery) = request.delivery {
         if delivery.is_null() {

@@ -83,22 +83,49 @@ Code resources); pane splits and tab cycling belong to the Workshop shell, not
 a private Code IDE chrome.
 
 - File paths are always relative to the project’s safe working copy.
-- Files open read-only until **Edit** starts an editing session (or the first
-  keystroke begins one when the project is ready).
+- Files stay editable when the project can start (or continue) a human editing
+  session — the first keystroke or save begins one. While a revision is sealed
+  for review, Code shows that edits start a new attempt; sealed evidence stays
+  available as a recovery point.
 - Medousa keeps that editing session available while the file surface is open.
 - Saves present the lease fence and the digest from the opened file. A stale
   lease or an externally changed file returns `409`; Medousa never silently
   overwrites it.
-- Absolute paths, parent traversal, symlink escapes, binary files, and text
-  files over 2 MiB are rejected by the workshop daemon.
+- Absolute paths, parent traversal, and symlink escapes are rejected by the
+  workshop daemon. Binary files and text over 2 MiB open as a read-only preview
+  (hex dump or truncated text) with encoding metadata instead of a hard refusal.
 - `Cmd/Ctrl+S` saves the focused editor; `Cmd/Ctrl+Shift+S` saves all modified
   open files for the project. `Cmd/Ctrl+Shift+T` reopens the last closed file.
   Close and cycle tabs with Workshop shell controls (`Ctrl+;` then `n` / `p`,
-  or close from the tab strip). Split panes with Workshop (`Ctrl+;` then `%` /
-  `"`) to put Chat, a file, and Review side by side.
+  or close from the tab strip). Split Editor (`Ctrl+;` then `%` / `"`) keeps the
+  current file visible in both panes; drag a tab to a pane edge to move it.
+  Directional pane focus (`Ctrl+;` then hjkl) follows on-screen geometry.
+  Code Back/Forward restores the remembered pane when that group still exists.
+  Problems, Structure, Search, Changes, Tests, and the Terminal dock restore with the project
+  (`workspace-state` layout); they are not permanent chrome across Chat or Notes.
+  `Cmd/Ctrl+Shift+P` opens Spotlight in command mode (`>`). Code actions also
+  appear under familiar VS Code names (Quick Open, Search, Changes, Problems, Output, Terminal, Tests).
+  A small allowlist of chords can be overridden in storage; a Settings keybinding
+  editor is not shipped yet.
 - The Code explorer lists tracked and unignored repository files. `Cmd/Ctrl+P`
-  opens Quick Open: type a file name, `@` plus a name for project symbols, or
-  `:` plus a number to jump to a line.
+  opens Quick Open with fuzzy path matching: type a file name, `@` plus a name
+  for project symbols, or `:` plus a number to jump to a line. `Cmd/Ctrl+Shift+F`
+  opens Search across
+  tracked and untracked source (regex, case, whole word, include/exclude globs,
+  changed-files scope, and load-more pagination). **Replace…** previews
+  digest-fenced edits; uncheck files to skip them, then Apply writes the rest
+  atomically. **Changes** shows the governed working copy’s branch, upstream
+  ahead/behind when known, conflict state, and changed-file list. Select a file
+  for a baseline comparison with real context expansion, **Revert hunk**, and
+  **Restore baseline**. Conflicted paths offer Keep ours / Take theirs / Use
+  baseline (clears unmerged state). **Fetch / Pull / Push / Sync** are
+  lease-guarded (fast-forward pull only; Forge branch push; never force).
+  **Seal for Review** checkpoints into Review; Share still happens from Review
+  after finish. History and Blame are available on the Changes panel.
+  Review remains the finish/decision surface.
+- New file and New folder are available in the repository explorer. Nested
+  parents are created as needed. Rename and delete work on the selected file or
+  folder (folder ops apply one guarded multi-file transaction).
 - Open files become project-scoped shell tabs with independent unsaved drafts.
   Cursor targets and protected draft recovery survive view changes and app
   restarts. If the file changed outside Medousa, the recovered draft remains
@@ -110,29 +137,57 @@ a private Code IDE chrome.
   status bar shows find/save/open hints, `Ln`/`Col`, indentation, language id,
   and session ownership. **View** toggles word wrap and line numbers. Saves
   whisper `Saving…` / timed `Saved`.
-- New file, rename, and delete are available in the repository explorer. All
-  three begin or reuse the editing session and remain inside the working copy;
-  rename/delete refuse unsaved open drafts and use change-conflict protection.
-- Repository status and open files reconcile while Code is visible. Clean files
-  changed by an agent or Terminal refresh in place; a dirty human draft is
-  preserved and receives an explicit external-change warning.
+- File and folder create/rename/delete begin or reuse the editing session and
+  remain inside the working copy; rename/delete refuse unsaved open drafts and
+  use change-conflict protection.
+- Repository status refreshes with the tree. When Home regains focus, the
+  active clean file refreshes if an agent or Terminal changed it; a dirty human
+  draft is preserved and receives an explicit external-change warning. Live
+  reconciliation for every open file is still in progress.
 - When an installed language server is available, Code attaches it to the
-  project repository root. Diagnostics, completion, hover, and navigation
-  come from the real server; unavailable servers degrade honestly to basic
-  editing. `Cmd/Ctrl+Shift+O` opens **Structure**. Right-click in the editor
-  for Go to Definition, Find Uses, Rename, Format, Organize Imports, copy
-  path, and Reveal in Explorer. `F2` opens inline rename. Issues places the
-  current file before other project diagnostics. `Cmd/Ctrl+F` opens find with
-  the shared editor chrome.
+  closest language root inside the governed working copy. In a monorepo, the
+  nearest `package.json`, `Cargo.toml`, `go.mod`, or other registered marker
+  scopes that file without letting discovery escape the project. Diagnostics,
+  completion, hover, and navigation come from the real server; unavailable
+  servers degrade honestly to basic editing. `F12` goes to a definition and
+  `Ctrl/Cmd+F12` goes to an implementation, opening an unopened project file as
+  a shell tab when needed.
+  Right-click also offers declaration and type-definition navigation when the
+  server advertises them. Use `Alt+Left` / `Alt+Right` or the editor arrows to
+  move through precise code locations. `Cmd/Ctrl+Shift+O` opens **Structure**.
+  The editor menu also includes Find Uses, Rename, Format, Organize Imports,
+  copy path, and Reveal in Explorer. `F2` opens inline rename. **Problems**
+  collects diagnostics from every active project-language session, groups them
+  by file, filters by severity or text, and opens the exact location even when
+  the file is not already open. `Cmd/Ctrl+F` opens find with the shared editor
+  chrome.
+- If a language server stops, Code keeps the file editable, shows the degraded
+  state, and makes three short reconnect attempts. Use **Restart language
+  server** to retry immediately or **Show language server logs** to inspect the
+  resolved package root, recent progress, LSP messages, and captured workshop
+  process output. **Repair language support** remains the package path after
+  bounded recovery is exhausted; remote repair still belongs to the connected
+  workshop.
 - Find uses, rename, formatting, and import organization appear only when the
-  active language server supports them. Multi-file renames are digest-checked
-  and applied as one governed edit; a conflict leaves every file unchanged.
+  active language server supports them. Multi-file rename opens **Review
+  refactor** first, including text changes and any proposed create, rename, or
+  delete operations. Apply verifies the previewed digest or absence of every
+  path and commits the ordered edit as one governed transaction; a conflict or
+  write failure leaves every file unchanged. An older connected daemon can
+  still apply text-only refactors, while resource operations explain that the
+  workshop must be updated instead of partially applying the rename.
 - Repository `.editorconfig` rules feed indentation before Medousa falls back
   to the file’s existing style and language defaults. An explicit user
   preference still wins.
 - A co-located Medousa app can repair missing coding packages from the editor.
-  A remote client links to Packages instead, because installation belongs on
-  the connected workshop machine.
+  Repair consults the workshop language matrix and installs `coding-engine`
+  plus that language's exact package id when one exists (Svelte / TypeScript /
+  JavaScript / Python use `langservers`). Languages without a package id explain
+  which workshop binary is missing instead of installing an unrelated pack. A
+  remote client links to Packages, because installation belongs on the connected
+  workshop machine. Opening `*.svelte` uses Svelte syntax highlighting and the
+  Svelte language server; JSX/TSX files use JSX-aware grammars while still
+  talking to the TypeScript language server.
 
 Terminal and Understand remain contextual tools around the editor. **Review**
 opens as its own project tab — the same canvas for human, agent, and Terminal
@@ -147,6 +202,15 @@ development processes at the same time, including in mixed repositories.
 
 - Run, Test, and Build start named project runs. A running command becomes a
   **Stop** action and can be cancelled without closing the project or Terminal.
+- **Output** is the named task channel (`Task: …`). It streams stdout/stderr while
+  a check runs, shows **ready** for background/dev servers, lists clickable
+  problem locations, and offers **Open in Browser** for detected loopback URLs
+  (direct on a co-located workshop; tokenized private proxy when remote).
+  Spotlight **Output** toggles the panel; runs open it automatically.
+- Safe entries from `.vscode/tasks.json` (`npm` / `shell` / `process`) merge into
+  the project command list with optional problem-matcher patterns and background
+  readiness. Dependency graphs and the full VS Code matcher catalog are not
+  imported.
 - **Tests** progressively lists individual Rust, Python, JavaScript/TypeScript,
   and Go tests. Open one at its definition or run only that test.
 - The latest result stays beside Code with a one-click rerun. Compiler, test,
@@ -154,8 +218,9 @@ development processes at the same time, including in mixed repositories.
 - Completed checks are written into Forge command evidence. Review uses the
   latest completed result to say whether verification passed; cancelled runs
   are preserved as activity but do not pretend the revision failed.
-- Long-running development commands are project runs, while Terminal remains
-  the interactive escape hatch and keeps its own named, stoppable sessions.
+- Attachment of task runs to interactive PTY Terminal sessions and full OSC shell
+  integration remain later work. Terminal stays the interactive escape hatch with
+  find, path links, session switching, and run-selection.
 
 ## What each surface does
 
@@ -176,36 +241,53 @@ impact.”
   `work_id` + `lease_id` so commands can enter sealed evidence.
 - Tracked Terminal tabs retain their undertaking when restored and keep their
   active lease fresh while open.
-- Choose **Diagnostic** in the Terminal header to open a separate untracked
-  shell. Its commands are not part of sealed evidence.
+- The Code terminal dock supports **Find** (Mod+F while focused / Spotlight),
+  clickable `path:line` links into Code, session switching, and **Run Selected
+  Text in Terminal** from the editor. The default workshop shell profile uses
+  `$SHELL` (login for bash/zsh); custom shell profiles and OSC shell
+  integration arrive later.
+- Choose **Diagnostic** / **New shell** in the Terminal header to open a separate
+  untracked shell. Its commands are not part of sealed evidence.
 
 ## Review and Understand
 
-Review starts by answering four questions: whether the intended outcome was
-reached, what risk deserves attention, what verification ran, and what should
-happen next. It opens as a **separate Workshop tab** for the project. Human
-edits, coding-agent attempts, and Terminal work all land on that same Review —
-there is no separate “user commit” center. Provenance labels who contributed;
-the surface does not change.
+Review starts by answering what this seal did and why each file changed, then
+lets you dig into symbols and diffs only when something smells wrong. It opens
+as a **separate Workshop tab** for the project. Human edits, coding-agent
+attempts, and Terminal work all land on that same Review — there is no separate
+“user commit” center.
 
-Changed files stack in one scroll by default (with jump links for large sets),
-with unmodified spans collapsed until expanded. Inline comparison is the
-default; side-by-side remains available. Binary changes show honest file
-metadata instead of an unreadable patch. Raw patch and command records remain
-available under supporting detail.
+The first viewport shows an **outcome** line, quiet status chips (who wrote it,
+checks, follow-up to your comments), and a **file skim**: path, symbol count
+when known, `+/-` lines, and the coder’s sealed intents (hover or click the
+intents control — that does **not** open the diff). Expand a file to see changed
+symbols when World has indexed them, or the whole-file diff. Expand a symbol for
+that scope’s hunks only. Large pure deletions start collapsed. Custody details
+(base, digest, history, index coverage, PR) live under **About**.
 
-Code marks lines changed by the reviewed revision with quiet gutter indicators.
-**Who contributed** distinguishes human, coding-agent, Terminal, and verification
-work; **Project timeline** shows the durable Forge milestones and recovery
-points without exposing lease machinery.
+Binary changes show honest file metadata instead of an unreadable patch. Policy
+exceptions and risky content (secrets, oversize) are called out above the file
+list and must be acknowledged before approval; softer warnings such as “checks
+haven’t run” do not block Approve. Applying an approved revision has its own
+confirmation boundary.
 
-Choose **Restore starting version…** when one file should go back for another
-pass. Medousa reopens the project for editing and keeps the reviewed revision
-saved as a recovery point, so restoring never destroys the newer work before
-you decide. Binary versions remain safe in Git but must currently be restored
-outside the Home text editor. Policy exceptions and risky content are called
-out before approval; an exception must be explicitly acknowledged. Applying
-an approved revision has its own confirmation boundary.
+When several sealed attempts exist, pick another from a quiet overflow under the
+outcome — not as the hero of the page.
+
+Choose **Restore before this change…** from a file’s overflow when one path
+should go back for another pass. Medousa reopens the project for editing and
+keeps the reviewed revision saved as a recovery point, so restoring never
+destroys the newer work before you decide. Binary versions remain safe in Git
+but must currently be restored outside the Home text editor.
+
+Line comments live on the reviewed revision. Hover a changed line and add a
+comment, or press `.` while Review is focused. The comments rail appears when
+you are composing or when threads exist (`c` toggles it). Open comments compile
+into a **revision brief**. Choose **Continue editing** to reopen the project
+yourself without starting an agent, or **Request changes** to hand the brief to
+Codex/Cursor for another attempt. Typing in Code while sealed does the same
+human reopen. After a follow-up seal, Review notes that this is a follow-up to
+your last review when files differ from the attempt that received your feedback.
 
 Understand can compare **Before** and **Current**. Search for a class, function,
 or other name, then inspect its possible impact or open its file and line in
@@ -266,15 +348,24 @@ See `apps/medousa-home/src/lib/forge.ts` and daemon routes:
   and `POST /v1/forge/items/start` for inferred project setup
 - `GET|POST|PUT|PATCH|DELETE /v1/forge/items/{id}/source` for bounded,
   governed source editing
+- `PUT /v1/forge/items/{id}/source/workspace-edit` for previewed, atomic
+  multi-file text and resource refactors
 - `GET|PUT /v1/forge/items/{id}/workspace-state` for durable editor recovery
 - `GET /v1/forge/items/{id}/review[/file]` for synthesis and exact per-file
   comparisons; `POST …/review/file` for checkpoint-preserving restoration
 - `GET|POST /v1/forge/items/{id}/tasks[/…/run]` for detected checks, tests, and
   builds whose results become review evidence
+- `POST …/tasks/{task_id}/runs` plus `GET|DELETE …/task-runs/{run_id}` and
+  `GET …/task-runs/{run_id}/events?since=…` for cancellable runs with live
+  bounded output streaming
+- `POST …/task-runs/{run_id}/preview` and `ANY /v1/forge/preview/{token}/…` for
+  private Browser handoff to workshop loopback services
 - `GET|POST /v1/forge/items/{id}/provider`, plus `…/context` and `…/comments`,
   for optional external review handoff and follow-up intent
 - `POST …/decisions` with **review intent** (server builds the decision)
-- `GET /v1/forge/stream` for freshness
+- `GET /v1/forge/stream` for undertaking-list freshness
+- `GET /v1/forge/items/{id}/project-events?since=…` for resumable path-aware
+  source/Git events (Code reconciles every open buffer from this stream)
 - `GET /v1/world/bindings/{work_id}` for World status
 
 Repository inspection distinguishes a branch name from a usable commit. Empty

@@ -1,6 +1,6 @@
 # Coder cognitive runtime
 
-> Status: Approved direction; slices 1–6 complete
+> Status: Implemented; slices 1–8 complete
 > Parent: [Agent runtime modes](agent-runtime-modes-plan.md)
 
 ## Product decision
@@ -447,12 +447,37 @@ Implemented:
   seconds, expire after two minutes without renewal, disappear when the agent
   leaves, and are bounded to prevent unbounded activity-index growth.
 
-### Slice 7 — engineering notebook and experiments
+### Slice 7 — engineering notebook and experiments (complete)
+
+The approved durability, worktree-scoped Locus/STTP memory, exact recovery, and
+dynamic model-visible tool-surface contract now lives in
+[Coder durability, worktree memory, and dynamic tools](coder-durability-memory-and-tool-surface.md).
 
 - Persist objectives, hypotheses, evidence, unresolved questions, experiments,
-  acceptance criteria, and next actions by undertaking.
+  acceptance criteria, and next actions by governed environment lineage.
 - Support branchable speculative states and comparison between change sets.
-- Checkpoint cognitive state independently from conversation length.
+- Checkpoint semantic cognition independently from conversation length while
+  preserving exact turn protocol state in a separate active-turn checkpoint.
+
+Implemented:
+
+- The worktree-scoped STTP vocabulary now includes explicit `experiment`,
+  `acceptance_criterion`, and `next_action` nodes without adding any required
+  model-authored structure beyond `kind` and `summary`.
+- Forge attempt environments provide branchable speculative states. Their
+  explicit notebook nodes inherit only across the recorded fork cutoff;
+  unverified sibling conclusions are never ambiently merged.
+- The discoverable `experiments` pack exposes a runtime-owned sealed-candidate
+  comparison. It accepts two to four exact attempts (or selects the latest
+  sealed candidates), reads immutable evidence manifests, and computes
+  pairwise tree deltas between exact sealed Git heads.
+- Candidate notebook projections use daemon-derived Locus scopes and the
+  evidence seal timestamp as a closed temporal boundary. A Locus outage
+  degrades notebook context per candidate without losing the Forge/Git
+  comparison.
+- Comparison output is bounded to evidence metadata, path/status summaries,
+  semantic notebook nodes, and exact-OID deltas. It never reads live sibling
+  worktrees or returns raw patches, source bodies, or sibling paths.
 
 ### Slice 8 — semantic actions and causal runtime
 
@@ -461,6 +486,37 @@ Implemented:
 - Model traces and state transitions as stable objects.
 - Support causal `why`, replay, counterfactual experiment, and regression
   comparison workflows.
+
+Implemented:
+
+- Coder language-intelligence and semantic-action requests now carry the exact
+  leased attempt id as well as the undertaking id. The daemon rejects an
+  unknown or mismatched attempt instead of resolving through the latest sibling
+  worktree.
+- The discoverable `semantic_actions` pack exposes symbol references, rename
+  preview, structured change-set application, and affected-test selection.
+  Models provide a repository-relative symbol location and simple intent; the
+  runtime derives file URIs, worktree authority, lease identity, path claims,
+  and transaction preconditions.
+- Rename remains proposal-first. The runtime normalizes the complete LSP
+  `WorkspaceEdit`, including ordered text/create/rename/delete operations and
+  UTF-16 positions, validates Forge path policy, and returns a bounded stable
+  change-set object without source bodies. Only a runtime-issued change-set id
+  can reach Forge's lease- and digest-fenced workspace transaction.
+- Change sets have an explicit `previewed → applying → applied|uncertain`
+  lifecycle. An applied, in-flight, or uncertain object cannot be replayed;
+  recovery must reconcile current repository state and request a fresh preview.
+- Affected-test selection reads the exact attempt's daemon-discovered test
+  catalog, ranks bounded candidates against dirty or supplied paths and an
+  optional symbol, and returns stable verification targets without running
+  them.
+- The discoverable `causal` pack projects activity calls as stable traces and
+  events as stable state transitions. `why` is grounded only in declared
+  intent and ledger evidence; replay is observation-only and always requires a
+  fresh explicit action; regression compares two trace outcomes; and
+  counterfactual delegates to immutable sealed-candidate evidence.
+- Activity and command-log summaries retain the stable semantic object id while
+  continuing to exclude raw source and full tool payloads.
 
 ## Success measures
 

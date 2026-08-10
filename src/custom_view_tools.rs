@@ -2,43 +2,52 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use chrono::Utc;
 use medousa_types::environment::{
-    EnvironmentPatchOp, SurfaceKind, SurfaceLayout,
+    EnvironmentPatchOp, EnvironmentStatusResponse, SurfaceKind, SurfaceLayout,
 };
 use medousa_types::environment_validate::validate_environment_spec;
 use medousa_types::feed::is_valid_feed_id;
 use medousa_types::layout::LayoutNode;
-use serde_json::{json, Value};
-use stasis::application::orchestration::tool_registry::StasisTool;
+use schemars::JsonSchema;
+use schemars::schema::{InstanceType, Schema, SchemaObject};
+use serde::{Deserialize, Serialize};
 use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 
-use crate::custom_view_status::{build_environment_status, surface_nav_visible, DoctorDiagnosticOptions};
+use crate::custom_view_status::{
+    DoctorDiagnosticOptions, build_environment_status, surface_nav_visible,
+};
 use crate::environment_patch::execute_environment_patch;
 use crate::environment_store::{environment_hub, resolve_profile_id};
 use crate::environment_tools::make_presentation_component;
 use crate::events::TuiEvent;
-use crate::runtime_tools::CognitionRuntimeRecurringRegisterTool;
+use crate::recurring_delivery::RecurringDeliverySpec;
+use crate::recurring_feed::RecurringFeedSpec;
+use crate::runtime_tools::{
+    CognitionRuntimeRecurringRegisterTool, RuntimeRecurringRegisterInput,
+    RuntimeRecurringRegisterOutput,
+};
+use crate::semantic_values::{RequiredContent, TrimmedText};
 use crate::turn_continuation::TurnContinuationScope;
-use crate::ui_present_tools::CognitionUiPresentTool;
+use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
+use crate::ui_present_tools::{CognitionUiPresentTool, UiPresentInput, UiPresentOutput};
 
 pub const COGNITION_CUSTOM_VIEW_DOCTOR: &str = "cognition_custom_view_doctor";
 pub const COGNITION_CUSTOM_VIEW_COMPOSE: &str = "cognition_custom_view_compose";
+const COGNITION_CUSTOM_VIEW_DOCTOR_ID: ToolId = ToolId::new(COGNITION_CUSTOM_VIEW_DOCTOR);
+const COGNITION_CUSTOM_VIEW_COMPOSE_ID: ToolId = ToolId::new(COGNITION_CUSTOM_VIEW_COMPOSE);
 
 pub fn register_custom_view_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
     runtime: Arc<RuntimeComposition>,
     event_tx: mpsc::Sender<TuiEvent>,
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 ) -> StasisResult<()> {
     crate::environment_patch::register_environment_patch_tool(registry)?;
-    registry.register_tool(CognitionCustomViewDoctorTool::new(runtime.clone()))?;
-    registry.register_tool(CognitionCustomViewComposeTool::new(
-        runtime,
-        event_tx,
-        turn_scope,
+    registry.register_typed_tool(CognitionCustomViewDoctorTool::new(runtime.clone()))?;
+    registry.register_typed_tool(CognitionCustomViewComposeTool::new(
+        runtime, event_tx, turn_scope,
     ))?;
     Ok(())
 }
@@ -53,89 +62,121 @@ impl CognitionCustomViewDoctorTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionCustomViewDoctorTool {
-    fn name(&self) -> &'static str {
-        COGNITION_CUSTOM_VIEW_DOCTOR
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CustomViewDoctorInput {
+    /// Optional single custom surface id; omit to inspect all
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    surface_id: CompatOption<String>,
+    /// Optional presentation component id to narrow runtime diagnostics
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    component_id: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    profile_id: CompatOption<String>,
+    /// Optional chat session for artifact HTML resolution
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    session_id: CompatOption<String>,
+    /// Include MedousaStore lint and runtime log tail (default true)
+    #[serde(default)]
+    #[schemars(
+        with = "bool",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    include_runtime: CompatOption<bool>,
+    /// Lint artifact HTML for sandbox anti-patterns (default true)
+    #[serde(default)]
+    #[schemars(
+        with = "bool",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    include_static_lint: CompatOption<bool>,
+    /// Run active store self-test when Home client is open (default false)
+    #[serde(default)]
+    #[schemars(
+        with = "bool",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    probe: CompatOption<bool>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Diagnose custom environment surfaces: nav, feeds, recurring bindings, widget runtime logs, store lint, and static HTML checks.",
-        )
-    }
+#[derive(Debug)]
+struct CustomViewDoctorCommand {
+    surface_id: Option<TrimmedText>,
+    component_id: Option<TrimmedText>,
+    profile_id: Option<TrimmedText>,
+    session_id: Option<TrimmedText>,
+    include_runtime: bool,
+    include_static_lint: bool,
+    probe: bool,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "surface_id": {
-                    "type": "string",
-                    "description": "Optional single custom surface id; omit to inspect all"
-                },
-                "component_id": {
-                    "type": "string",
-                    "description": "Optional presentation component id to narrow runtime diagnostics"
-                },
-                "profile_id": { "type": "string" },
-                "session_id": {
-                    "type": "string",
-                    "description": "Optional chat session for artifact HTML resolution"
-                },
-                "include_runtime": {
-                    "type": "boolean",
-                    "description": "Include MedousaStore lint and runtime log tail (default true)"
-                },
-                "include_static_lint": {
-                    "type": "boolean",
-                    "description": "Lint artifact HTML for sandbox anti-patterns (default true)"
-                },
-                "probe": {
-                    "type": "boolean",
-                    "description": "Run active store self-test when Home client is open (default false)"
-                }
-            }
-        }))
+impl From<CustomViewDoctorInput> for CustomViewDoctorCommand {
+    fn from(input: CustomViewDoctorInput) -> Self {
+        let normalize = |value: CompatOption<String>| {
+            value
+                .into_option()
+                .and_then(|value| TrimmedText::new(value).ok())
+        };
+        Self {
+            surface_id: normalize(input.surface_id),
+            component_id: normalize(input.component_id),
+            profile_id: normalize(input.profile_id),
+            session_id: normalize(input.session_id),
+            include_runtime: input.include_runtime.into_option().unwrap_or(true),
+            include_static_lint: input.include_static_lint.into_option().unwrap_or(true),
+            probe: input.probe.into_option().unwrap_or(false),
+        }
     }
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let profile_id = resolve_profile_id(
-            input
-                .get("profile_id")
-                .and_then(Value::as_str),
-        );
-        let surface_filter = input
-            .get("surface_id")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
-        let component_id = input
-            .get("component_id")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(transparent)]
+pub struct CustomViewDoctorOutput {
+    #[schemars(with = "serde_json::Value")]
+    status: EnvironmentStatusResponse,
+}
+
+#[medousa_tool(id = COGNITION_CUSTOM_VIEW_DOCTOR_ID)]
+impl CognitionCustomViewDoctorTool {
+    /// Diagnose custom environment surfaces: nav, feeds, recurring bindings, widget runtime logs, store lint, and static HTML checks.
+    async fn invoke_typed(
+        &self,
+        input: CustomViewDoctorInput,
+    ) -> stasis::prelude::Result<CustomViewDoctorOutput> {
+        let command = CustomViewDoctorCommand::from(input);
+        let profile_id = resolve_profile_id(command.profile_id.as_ref().map(TrimmedText::as_str));
+        let surface_filter = command.surface_id.as_ref().map(TrimmedText::as_str);
+        let component_id = command
+            .component_id
+            .as_ref()
+            .map(TrimmedText::as_str)
             .map(str::to_string);
-        let include_runtime = input
-            .get("include_runtime")
-            .and_then(Value::as_bool)
-            .unwrap_or(true);
-        let include_static_lint = input
-            .get("include_static_lint")
-            .and_then(Value::as_bool)
-            .unwrap_or(true);
-        let probe = input.get("probe").and_then(Value::as_bool).unwrap_or(false);
-        let session_id = input
-            .get("session_id")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
+        let session_id = command
+            .session_id
+            .as_ref()
+            .map(TrimmedText::as_str)
             .map(str::to_string);
 
         let diagnostics = DoctorDiagnosticOptions {
             component_id_filter: component_id,
-            include_runtime,
-            include_static_lint,
-            probe,
+            include_runtime: command.include_runtime,
+            include_static_lint: command.include_static_lint,
+            probe: command.probe,
             session_id,
         };
 
@@ -149,9 +190,7 @@ impl StasisTool for CognitionCustomViewDoctorTool {
         .await
         .map_err(|err| StasisError::PortFailure(err.to_string()))?;
 
-        serde_json::to_value(status).map_err(|err| {
-            StasisError::PortFailure(format!("cognition_custom_view_doctor: encode error: {err}"))
-        })
+        Ok(CustomViewDoctorOutput { status })
     }
 }
 
@@ -175,79 +214,174 @@ impl CognitionCustomViewComposeTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionCustomViewComposeTool {
-    fn name(&self) -> &'static str {
-        COGNITION_CUSTOM_VIEW_COMPOSE
+#[derive(Debug, Deserialize)]
+#[serde(transparent)]
+pub struct CustomViewLayoutRoot(LayoutNode);
+
+impl JsonSchema for CustomViewLayoutRoot {
+    fn schema_name() -> String {
+        "CustomViewLayoutRoot".to_string()
     }
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Orchestrate a custom view: surface + HTML component + feed subscribe + layout + recurring poll in one call.",
-        )
+    fn is_referenceable() -> bool {
+        false
     }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["surface_id", "component_id"],
-            "properties": {
-                "surface_id": { "type": "string" },
-                "label": { "type": "string" },
-                "icon": { "type": "string" },
-                "component_id": { "type": "string" },
-                "html": { "type": "string" },
-                "artifact_id": { "type": "string", "description": "Revise-only path when html omitted" },
-                "title": { "type": "string" },
-                "feed_ids": { "type": "array", "items": { "type": "string" } },
-                "layout_root": { "type": "object" },
-                "recurring": {
-                    "type": "object",
-                    "properties": {
-                        "cron_expr": { "type": "string" },
-                        "timezone": { "type": "string" },
-                        "source": { "type": "string" },
-                        "poll_url": { "type": "string" },
-                        "job_type": { "type": "string" }
-                    }
-                },
-                "nav": {
-                    "type": "object",
-                    "properties": {
-                        "add_to_active_preset": { "type": "boolean", "default": true }
-                    }
-                },
-                "preset_rewrite": {
-                    "type": "object",
-                    "properties": {
-                        "surfaces": { "type": "array", "items": { "type": "string" } }
-                    }
-                },
-                "profile_id": { "type": "string" }
-            }
-        }))
+    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> Schema {
+        Schema::Object(SchemaObject {
+            instance_type: Some(InstanceType::Object.into()),
+            ..SchemaObject::default()
+        })
     }
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let profile_id = resolve_profile_id(
-            input
-                .get("profile_id")
-                .and_then(Value::as_str),
-        );
-        let surface_id = required_str(&input, "surface_id")?;
-        let component_id = required_str(&input, "component_id")?;
+fn default_compose_nav_enabled() -> bool {
+    true
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CustomViewNavInput {
+    #[serde(default = "default_compose_nav_enabled")]
+    #[schemars(default = "default_compose_nav_enabled")]
+    add_to_active_preset: bool,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CustomViewPresetRewriteInput {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
+    surfaces: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CustomViewRecurringInput {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    cron_expr: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    timezone: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    poll_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    job_type: Option<String>,
+    #[serde(default)]
+    #[schemars(skip)]
+    payload_template_ref: Option<String>,
+    #[serde(default)]
+    #[schemars(skip)]
+    queue: Option<String>,
+    #[serde(default, alias = "id")]
+    #[schemars(skip)]
+    recurring_id: Option<String>,
+    #[serde(default)]
+    #[schemars(skip)]
+    jitter_seconds: Option<i64>,
+    #[serde(default)]
+    #[schemars(skip)]
+    max_attempts: Option<u64>,
+    #[serde(default)]
+    #[schemars(skip)]
+    enabled: Option<bool>,
+    #[serde(default)]
+    #[schemars(skip)]
+    start_immediately: Option<bool>,
+    #[serde(default)]
+    #[schemars(skip)]
+    delivery: Option<RecurringDeliverySpec>,
+    #[serde(default)]
+    #[schemars(skip)]
+    feeds: Option<RecurringFeedSpec>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CustomViewComposeInput {
+    #[schemars(required, with = "String")]
+    surface_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    icon: Option<String>,
+    #[schemars(required, with = "String")]
+    component_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    html: Option<String>,
+    /// Revise-only path when html omitted
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    artifact_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
+    feed_ids: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "CustomViewLayoutRoot", skip_serializing_if = "Option::is_none")]
+    layout_root: Option<CustomViewLayoutRoot>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        with = "CustomViewRecurringInput",
+        skip_serializing_if = "Option::is_none"
+    )]
+    recurring: Option<CustomViewRecurringInput>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "CustomViewNavInput", skip_serializing_if = "Option::is_none")]
+    nav: Option<CustomViewNavInput>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        with = "CustomViewPresetRewriteInput",
+        skip_serializing_if = "Option::is_none"
+    )]
+    preset_rewrite: Option<CustomViewPresetRewriteInput>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    profile_id: Option<String>,
+    #[serde(default)]
+    #[schemars(skip)]
+    presentation: Option<String>,
+}
+
+#[derive(Debug)]
+struct CustomViewComposeCommand {
+    surface_id: String,
+    label: Option<String>,
+    icon: Option<String>,
+    component_id: String,
+    html: Option<String>,
+    artifact_id: Option<String>,
+    title: Option<String>,
+    feed_ids: Vec<String>,
+    layout_root: Option<LayoutNode>,
+    recurring: Option<CustomViewRecurringInput>,
+    nav: Option<CustomViewNavInput>,
+    preset_rewrite: Option<CustomViewPresetRewriteInput>,
+    profile_id: Option<String>,
+    presentation: Option<String>,
+}
+
+impl TryFrom<CustomViewComposeInput> for CustomViewComposeCommand {
+    type Error = StasisError;
+
+    fn try_from(input: CustomViewComposeInput) -> Result<Self, Self::Error> {
+        let surface_id = required_compose_string(input.surface_id, "surface_id")?;
+        let component_id = required_compose_string(input.component_id, "component_id")?;
         let html = input
-            .get("html")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
-        let artifact_id = input
-            .get("artifact_id")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
+            .html
+            .filter(|value| !value.trim().is_empty())
+            .map(RequiredContent::new)
+            .transpose()
+            .map_err(|_| StasisError::PortFailure("html is required".to_string()))?
+            .map(RequiredContent::into_string);
+        let artifact_id = optional_trimmed(input.artifact_id);
 
         if html.is_none() && artifact_id.is_none() {
             return Err(StasisError::PortFailure(
@@ -255,7 +389,12 @@ impl StasisTool for CognitionCustomViewComposeTool {
             ));
         }
 
-        let feed_ids = parse_feed_ids(&input);
+        let feed_ids = input
+            .feed_ids
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|value| TrimmedText::new(value).ok().map(TrimmedText::into_string))
+            .collect::<Vec<_>>();
         for feed_id in &feed_ids {
             if !is_valid_feed_id(feed_id) {
                 return Err(StasisError::PortFailure(format!(
@@ -264,10 +403,145 @@ impl StasisTool for CognitionCustomViewComposeTool {
             }
         }
 
-        let add_to_preset = input
-            .get("nav")
-            .and_then(|nav| nav.get("add_to_active_preset"))
-            .and_then(Value::as_bool)
+        Ok(Self {
+            surface_id,
+            label: optional_trimmed(input.label),
+            icon: optional_trimmed(input.icon),
+            component_id,
+            html,
+            artifact_id,
+            title: optional_trimmed(input.title),
+            feed_ids,
+            layout_root: input.layout_root.map(|root| root.0),
+            recurring: input.recurring,
+            nav: input.nav,
+            preset_rewrite: input.preset_rewrite,
+            profile_id: optional_trimmed(input.profile_id),
+            presentation: optional_trimmed(input.presentation),
+        })
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct CustomViewComposeFailure {
+    ok: bool,
+    live: bool,
+    pending_operator_approval: bool,
+    errors: Vec<String>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct CustomViewComposeUnsupported {
+    ok: bool,
+    unsupported_surface: bool,
+    error: String,
+    pending_operator_approval: bool,
+    live: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nav_visible: Option<bool>,
+    feeds_subscribed: Vec<String>,
+    feeds_bound_recurring: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_run_at_utc: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "serde_json::Value")]
+    doctor: Option<EnvironmentStatusResponse>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct CustomViewComposeUiFailure {
+    ok: bool,
+    artifact_id: String,
+    label: Option<String>,
+    mime: String,
+    presentation: Option<String>,
+    height_px: Option<u32>,
+    byte_size: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    persisted: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    errors: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    persisted_component_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    environment_revision: Option<u64>,
+    pending_operator_approval: bool,
+    live: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nav_visible: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hint: Option<String>,
+    feeds_subscribed: Vec<String>,
+    feeds_bound_recurring: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_run_at_utc: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "serde_json::Value")]
+    doctor: Option<EnvironmentStatusResponse>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct CustomViewComposeSuccess {
+    ok: bool,
+    live: bool,
+    nav_visible: bool,
+    pending_operator_approval: bool,
+    feeds_subscribed: Vec<String>,
+    feeds_bound_recurring: Vec<String>,
+    next_run_at_utc: Option<String>,
+    surface_id: String,
+    component_id: String,
+    #[schemars(with = "serde_json::Value")]
+    doctor: EnvironmentStatusResponse,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum CustomViewComposeOutput {
+    Failure(CustomViewComposeFailure),
+    Unsupported(CustomViewComposeUnsupported),
+    UiFailure(CustomViewComposeUiFailure),
+    Success(CustomViewComposeSuccess),
+}
+
+struct ComposeStatusAugment {
+    pending_operator_approval: bool,
+    live: bool,
+    nav_visible: Option<bool>,
+    feeds_subscribed: Vec<String>,
+    feeds_bound_recurring: Vec<String>,
+    next_run_at_utc: Option<String>,
+    doctor: Option<EnvironmentStatusResponse>,
+}
+
+struct ComposeStatusContext<'a> {
+    pending_operator_approval: bool,
+    surface_id: &'a str,
+    profile_id: &'a str,
+    feeds_subscribed: &'a [String],
+    feeds_bound_recurring: &'a [String],
+    next_run_at_utc: Option<&'a str>,
+    runtime: &'a RuntimeComposition,
+}
+
+#[medousa_tool(id = COGNITION_CUSTOM_VIEW_COMPOSE_ID)]
+impl CognitionCustomViewComposeTool {
+    /// Orchestrate a custom view: surface + HTML component + feed subscribe + layout + recurring poll in one call.
+    async fn invoke_typed(
+        &self,
+        input: CustomViewComposeInput,
+    ) -> stasis::prelude::Result<CustomViewComposeOutput> {
+        let command = CustomViewComposeCommand::try_from(input)?;
+        let profile_id = resolve_profile_id(command.profile_id.as_deref());
+        let surface_id = command.surface_id;
+        let component_id = command.component_id;
+        let html = command.html;
+        let artifact_id = command.artifact_id;
+        let feed_ids = command.feed_ids;
+        let add_to_preset = command
+            .nav
+            .as_ref()
+            .map(|nav| nav.add_to_active_preset)
             .unwrap_or(true);
 
         let mut pending_operator_approval = false;
@@ -284,16 +558,8 @@ impl StasisTool for CognitionCustomViewComposeTool {
             .any(|surface| surface.id == surface_id);
 
         if !surface_exists {
-            let label = input
-                .get("label")
-                .and_then(Value::as_str)
-                .unwrap_or(&surface_id)
-                .to_string();
-            let icon = input
-                .get("icon")
-                .and_then(Value::as_str)
-                .unwrap_or("layout-grid")
-                .to_string();
+            let label = command.label.as_deref().unwrap_or(&surface_id).to_string();
+            let icon = command.icon.as_deref().unwrap_or("layout-grid").to_string();
             patch_ops.push(EnvironmentPatchOp::AddCustomSurface {
                 id: surface_id.clone(),
                 label,
@@ -307,33 +573,26 @@ impl StasisTool for CognitionCustomViewComposeTool {
             });
         }
 
-        if let Some(rewrite) = input.get("preset_rewrite")
-            && let Some(surfaces) = rewrite.get("surfaces").and_then(Value::as_array) {
-                let surfaces: Vec<String> = surfaces
-                    .iter()
-                    .filter_map(|value| value.as_str().map(str::to_string))
-                    .collect();
-                patch_ops.push(EnvironmentPatchOp::RewriteActivePresetSurfaces { surfaces });
-            }
+        if let Some(rewrite) = command.preset_rewrite.as_ref() {
+            patch_ops.push(EnvironmentPatchOp::RewriteActivePresetSurfaces {
+                surfaces: rewrite.surfaces.clone().unwrap_or_default(),
+            });
+        }
 
         if !patch_ops.is_empty() {
-            let patch_result = execute_environment_patch(
-                environment_hub(),
-                &profile_id,
-                &patch_ops,
-                "agent",
-            )
-            .await
-            .map_err(|err| StasisError::PortFailure(err.to_string()))?;
+            let patch_result =
+                execute_environment_patch(environment_hub(), &profile_id, &patch_ops, "agent")
+                    .await
+                    .map_err(|err| StasisError::PortFailure(err.to_string()))?;
             if patch_result.pending_operator_approval {
                 pending_operator_approval = true;
             }
             if !patch_result.ok {
-                return Ok(json!({
-                    "ok": false,
-                    "live": false,
-                    "pending_operator_approval": pending_operator_approval,
-                    "errors": patch_result.errors,
+                return Ok(CustomViewComposeOutput::Failure(CustomViewComposeFailure {
+                    ok: false,
+                    live: false,
+                    pending_operator_approval,
+                    errors: patch_result.errors,
                 }));
             }
         }
@@ -343,49 +602,44 @@ impl StasisTool for CognitionCustomViewComposeTool {
         let mut next_run_at_utc: Option<String> = None;
 
         if let Some(html) = html {
-            let mut ui_input = json!({
-                "title": input.get("title").and_then(Value::as_str).unwrap_or(&surface_id),
-                "html": html,
-                "persist": true,
-                "component_id": component_id,
-                "surface_id": surface_id,
-                "slot": "main",
-            });
-            if let Some(presentation) = input.get("presentation") {
-                ui_input["presentation"] = presentation.clone();
-            }
+            let ui_input = UiPresentInput::persistent_component(
+                command.title.clone().unwrap_or_else(|| surface_id.clone()),
+                html,
+                command.presentation.clone(),
+                component_id.clone(),
+                surface_id.clone(),
+                "main",
+            )?;
             let ui_tool = CognitionUiPresentTool::new(self.turn_scope.clone());
-            let ui_result = ui_tool.invoke(ui_input).await?;
-            if ui_result
-                .get("ok")
-                .and_then(Value::as_bool)
-                .is_some_and(|ok| !ok)
-            {
+            let ui_result = ui_tool.invoke_typed(ui_input).await?;
+            let ui_failed = match &ui_result {
+                UiPresentOutput::Unsupported { .. } => true,
+                UiPresentOutput::Presented { ok, .. } => !ok,
+            };
+            if ui_failed {
                 return merge_compose_status(
                     ui_result,
-                    pending_operator_approval,
-                    &surface_id,
-                    &profile_id,
-                    &feeds_subscribed,
-                    &feeds_bound_recurring,
-                    next_run_at_utc.as_deref(),
-                    self.runtime.as_ref(),
+                    ComposeStatusContext {
+                        pending_operator_approval,
+                        surface_id: &surface_id,
+                        profile_id: &profile_id,
+                        feeds_subscribed: &feeds_subscribed,
+                        feeds_bound_recurring: &feeds_bound_recurring,
+                        next_run_at_utc: next_run_at_utc.as_deref(),
+                        runtime: self.runtime.as_ref(),
+                    },
                 )
                 .await;
             }
         } else if let Some(artifact_id) = artifact_id {
-            let label = input
-                .get("title")
-                .or_else(|| input.get("label"))
-                .and_then(Value::as_str)
+            let label = command
+                .title
+                .as_deref()
+                .or(command.label.as_deref())
                 .unwrap_or(&component_id)
                 .to_string();
-            let component = make_presentation_component(
-                &component_id,
-                &surface_id,
-                &artifact_id,
-                &label,
-            );
+            let component =
+                make_presentation_component(&component_id, &surface_id, &artifact_id, &label);
             let mut env_record = environment_hub()
                 .get(&profile_id)
                 .await
@@ -402,11 +656,11 @@ impl StasisTool for CognitionCustomViewComposeTool {
             }
             let errors = validate_environment_spec(&env_record.spec);
             if !errors.is_empty() {
-                return Ok(json!({
-                    "ok": false,
-                    "live": false,
-                    "pending_operator_approval": pending_operator_approval,
-                    "errors": errors,
+                return Ok(CustomViewComposeOutput::Failure(CustomViewComposeFailure {
+                    ok: false,
+                    live: false,
+                    pending_operator_approval,
+                    errors,
                 }));
             }
             environment_hub()
@@ -416,63 +670,86 @@ impl StasisTool for CognitionCustomViewComposeTool {
         }
 
         if !feed_ids.is_empty() {
-            feeds_subscribed = subscribe_component_feeds(&profile_id, &component_id, &feed_ids)
-                .await?;
+            feeds_subscribed =
+                subscribe_component_feeds(&profile_id, &component_id, &feed_ids).await?;
         }
 
-        if let Some(layout_root_value) = input.get("layout_root") {
-            let layout_root: LayoutNode = serde_json::from_value(layout_root_value.clone())
-                .map_err(|err| {
-                    StasisError::PortFailure(format!(
-                        "cognition_custom_view_compose: invalid layout_root: {err}"
-                    ))
-                })?;
+        if let Some(layout_root) = command.layout_root {
             apply_layout_root(&profile_id, &surface_id, layout_root).await?;
         }
 
-        if let Some(recurring) = input.get("recurring")
-            && !feed_ids.is_empty() {
-                let mut recurring_input = recurring.clone();
-                if recurring_input.get("source").is_none()
-                    && let Some(poll_url) = recurring.get("poll_url").and_then(Value::as_str) {
-                        recurring_input["source"] = json!(format!(
-                            "http_poll url=\"{}\"",
-                            poll_url.replace('"', "\\\"")
-                        ));
-                    }
-                if recurring_input.get("feeds").is_none() {
-                    recurring_input["feeds"] = json!({ "feed_ids": feed_ids });
-                }
-                if recurring_input.get("recurring_id").is_none() {
-                    recurring_input["recurring_id"] =
-                        json!(format!("{surface_id}-{}", component_id));
-                }
-                let register_tool = CognitionRuntimeRecurringRegisterTool::new(
-                    self.runtime.clone(),
-                    self.event_tx.clone(),
-                    self.turn_scope.clone(),
-                );
-                let register_result = register_tool.invoke(recurring_input).await?;
-                if let Some(ids) = register_result
-                    .get("feeds_bound")
-                    .and_then(Value::as_array)
-                {
-                    feeds_bound_recurring = ids
-                        .iter()
-                        .filter_map(|value| value.as_str().map(str::to_string))
-                        .collect();
-                } else if register_result
-                    .get("feeds_bound")
-                    .and_then(Value::as_bool)
-                    .is_some_and(|bound| bound)
-                {
-                    feeds_bound_recurring = feed_ids.clone();
-                }
-                next_run_at_utc = register_result
-                    .get("next_run_at_utc")
-                    .and_then(Value::as_str)
-                    .map(str::to_string);
+        if let Some(recurring) = command.recurring
+            && !feed_ids.is_empty()
+        {
+            let CustomViewRecurringInput {
+                cron_expr,
+                timezone,
+                source,
+                poll_url,
+                job_type,
+                payload_template_ref,
+                queue,
+                recurring_id,
+                jitter_seconds,
+                max_attempts,
+                enabled,
+                start_immediately,
+                delivery,
+                feeds,
+            } = recurring;
+            let source = source.or_else(|| {
+                poll_url
+                    .map(|poll_url| format!("http_poll url=\"{}\"", poll_url.replace('"', "\\\"")))
+            });
+            let mut recurring_input = if job_type
+                .as_deref()
+                .is_some_and(|value| value != "workflow.grapheme.run")
+            {
+                RuntimeRecurringRegisterInput::job(
+                    job_type.clone().unwrap_or_default(),
+                    payload_template_ref.clone().unwrap_or_default(),
+                    cron_expr.clone().unwrap_or_default(),
+                )
+            } else {
+                RuntimeRecurringRegisterInput::grapheme(
+                    source.clone().unwrap_or_default(),
+                    cron_expr.clone().unwrap_or_default(),
+                )
+            };
+            recurring_input.source = source;
+            recurring_input.job_type = job_type;
+            recurring_input.payload_template_ref = payload_template_ref;
+            recurring_input.cron_expr = cron_expr;
+            recurring_input.timezone = timezone;
+            recurring_input.queue = queue;
+            recurring_input.recurring_id =
+                recurring_id.or_else(|| Some(format!("{surface_id}-{component_id}")));
+            recurring_input.jitter_seconds = jitter_seconds;
+            recurring_input.max_attempts = max_attempts;
+            recurring_input.enabled = enabled;
+            recurring_input.start_immediately = start_immediately;
+            recurring_input.delivery = delivery;
+            recurring_input.feeds = Some(feeds.unwrap_or(RecurringFeedSpec {
+                feed_ids: feed_ids.clone(),
+                payload_mode: Default::default(),
+            }));
+            let register_tool = CognitionRuntimeRecurringRegisterTool::new(
+                self.runtime.clone(),
+                self.event_tx.clone(),
+                self.turn_scope.clone(),
+            );
+            let register_result = register_tool.invoke_typed(recurring_input).await?;
+            if let RuntimeRecurringRegisterOutput::Registered {
+                feeds_bound,
+                feeds_bound_recurring: bound_ids,
+                next_run_at_utc: next,
+                ..
+            } = register_result
+            {
+                feeds_bound_recurring = if feeds_bound { bound_ids } else { Vec::new() };
+                next_run_at_utc = Some(next);
             }
+        }
 
         let nav_visible = environment_hub()
             .get(&profile_id)
@@ -490,93 +767,113 @@ impl StasisTool for CognitionCustomViewComposeTool {
         .await
         .map_err(|err| StasisError::PortFailure(err.to_string()))?;
 
-        Ok(json!({
-            "ok": true,
-            "live": !pending_operator_approval,
-            "nav_visible": nav_visible,
-            "pending_operator_approval": pending_operator_approval,
-            "feeds_subscribed": feeds_subscribed,
-            "feeds_bound_recurring": feeds_bound_recurring,
-            "next_run_at_utc": next_run_at_utc,
-            "surface_id": surface_id,
-            "component_id": component_id,
-            "doctor": doctor,
+        Ok(CustomViewComposeOutput::Success(CustomViewComposeSuccess {
+            ok: true,
+            live: !pending_operator_approval,
+            nav_visible,
+            pending_operator_approval,
+            feeds_subscribed,
+            feeds_bound_recurring,
+            next_run_at_utc,
+            surface_id,
+            component_id,
+            doctor,
         }))
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn merge_compose_status(
-    mut base: Value,
-    pending_operator_approval: bool,
-    surface_id: &str,
-    profile_id: &str,
-    feeds_subscribed: &[String],
-    feeds_bound_recurring: &[String],
-    next_run_at_utc: Option<&str>,
-    runtime: &RuntimeComposition,
-) -> StasisResult<Value> {
-    if let Some(obj) = base.as_object_mut() {
-        obj.insert("pending_operator_approval".to_string(), json!(pending_operator_approval));
-        obj.insert("live".to_string(), json!(!pending_operator_approval));
-        if let Ok(record) = environment_hub().get(profile_id).await {
-            obj.insert(
-                "nav_visible".to_string(),
-                json!(surface_nav_visible(&record.spec, surface_id)),
-            );
-        }
-        obj.insert("feeds_subscribed".to_string(), json!(feeds_subscribed));
-        obj.insert(
-            "feeds_bound_recurring".to_string(),
-            json!(feeds_bound_recurring),
-        );
-        if let Some(next) = next_run_at_utc {
-            obj.insert("next_run_at_utc".to_string(), json!(next));
-        }
-        if let Ok(doctor) = build_environment_status(
+    base: UiPresentOutput,
+    context: ComposeStatusContext<'_>,
+) -> StasisResult<CustomViewComposeOutput> {
+    let augment = ComposeStatusAugment {
+        pending_operator_approval: context.pending_operator_approval,
+        live: !context.pending_operator_approval,
+        nav_visible: environment_hub()
+            .get(context.profile_id)
+            .await
+            .ok()
+            .map(|record| surface_nav_visible(&record.spec, context.surface_id)),
+        feeds_subscribed: context.feeds_subscribed.to_vec(),
+        feeds_bound_recurring: context.feeds_bound_recurring.to_vec(),
+        next_run_at_utc: context.next_run_at_utc.map(str::to_string),
+        doctor: build_environment_status(
             environment_hub(),
-            profile_id,
-            Some(surface_id),
-            Some(runtime),
+            context.profile_id,
+            Some(context.surface_id),
+            Some(context.runtime),
             None,
         )
         .await
-        {
-            obj.insert(
-                "doctor".to_string(),
-                serde_json::to_value(doctor).unwrap_or(Value::Null),
-            );
-        }
-    }
-    Ok(base)
+        .ok(),
+    };
+
+    Ok(match base {
+        UiPresentOutput::Unsupported {
+            ok,
+            unsupported_surface,
+            error,
+        } => CustomViewComposeOutput::Unsupported(CustomViewComposeUnsupported {
+            ok,
+            unsupported_surface,
+            error,
+            pending_operator_approval: augment.pending_operator_approval,
+            live: augment.live,
+            nav_visible: augment.nav_visible,
+            feeds_subscribed: augment.feeds_subscribed,
+            feeds_bound_recurring: augment.feeds_bound_recurring,
+            next_run_at_utc: augment.next_run_at_utc,
+            doctor: augment.doctor,
+        }),
+        UiPresentOutput::Presented {
+            ok,
+            artifact_id,
+            label,
+            mime,
+            presentation,
+            height_px,
+            byte_size,
+            persisted,
+            errors,
+            persisted_component_id,
+            environment_revision,
+            live: _,
+            nav_visible,
+            hint,
+        } => CustomViewComposeOutput::UiFailure(CustomViewComposeUiFailure {
+            ok,
+            artifact_id,
+            label,
+            mime,
+            presentation,
+            height_px,
+            byte_size,
+            persisted,
+            errors,
+            persisted_component_id,
+            environment_revision,
+            pending_operator_approval: augment.pending_operator_approval,
+            live: augment.live,
+            nav_visible: augment.nav_visible.or(nav_visible),
+            hint,
+            feeds_subscribed: augment.feeds_subscribed,
+            feeds_bound_recurring: augment.feeds_bound_recurring,
+            next_run_at_utc: augment.next_run_at_utc,
+            doctor: augment.doctor,
+        }),
+    })
 }
 
-fn required_str(input: &Value, key: &str) -> StasisResult<String> {
-    input
-        .get(key)
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-        .ok_or_else(|| {
-            StasisError::PortFailure(format!(
-                "cognition_custom_view_compose: {key} is required"
-            ))
+fn required_compose_string(input: Option<String>, key: &str) -> StasisResult<String> {
+    TrimmedText::new(input.unwrap_or_default())
+        .map(TrimmedText::into_string)
+        .map_err(|_| {
+            StasisError::PortFailure(format!("cognition_custom_view_compose: {key} is required"))
         })
 }
 
-fn parse_feed_ids(input: &Value) -> Vec<String> {
-    input
-        .get("feed_ids")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|value| value.as_str().map(str::trim).filter(|id| !id.is_empty()))
-                .map(str::to_string)
-                .collect()
-        })
-        .unwrap_or_default()
+fn optional_trimmed(input: Option<String>) -> Option<String> {
+    input.and_then(|value| TrimmedText::new(value).ok().map(TrimmedText::into_string))
 }
 
 async fn subscribe_component_feeds(
@@ -685,5 +982,57 @@ mod tests {
         }];
         crate::environment_patch::apply_patch_ops(&mut spec, &ops).expect("patch");
         assert!(surface_nav_visible(&spec, "trip-london"));
+    }
+
+    #[test]
+    fn compose_command_normalizes_ids_and_preserves_html() {
+        let command = CustomViewComposeCommand::try_from(CustomViewComposeInput {
+            surface_id: Some("  trip-london  ".to_string()),
+            label: Some("  Trip  ".to_string()),
+            icon: None,
+            component_id: Some("  departures  ".to_string()),
+            html: Some("  <main>Departures</main>\n".to_string()),
+            artifact_id: None,
+            title: None,
+            feed_ids: Some(vec!["  trip.london.trains  ".to_string()]),
+            layout_root: None,
+            recurring: None,
+            nav: None,
+            preset_rewrite: None,
+            profile_id: None,
+            presentation: None,
+        })
+        .expect("compose command");
+
+        assert_eq!(command.surface_id, "trip-london");
+        assert_eq!(command.component_id, "departures");
+        assert_eq!(command.html.as_deref(), Some("  <main>Departures</main>\n"));
+        assert_eq!(command.feed_ids, vec!["trip.london.trains"]);
+    }
+
+    #[test]
+    fn doctor_command_normalizes_filters_and_preserves_wire_lenience() {
+        let input: CustomViewDoctorInput = serde_json::from_value(serde_json::json!({
+            "surface_id": " trip-london ",
+            "component_id": 42,
+            "profile_id": " profile-a ",
+            "include_runtime": "yes",
+            "include_static_lint": false,
+            "probe": true,
+        }))
+        .expect("doctor input");
+        let command = CustomViewDoctorCommand::from(input);
+        assert_eq!(
+            command.surface_id.as_ref().map(TrimmedText::as_str),
+            Some("trip-london")
+        );
+        assert!(command.component_id.is_none());
+        assert_eq!(
+            command.profile_id.as_ref().map(TrimmedText::as_str),
+            Some("profile-a")
+        );
+        assert!(command.include_runtime);
+        assert!(!command.include_static_lint);
+        assert!(command.probe);
     }
 }

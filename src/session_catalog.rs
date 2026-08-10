@@ -42,6 +42,8 @@ const SCHEMA_STATEMENTS: &[&str] = &[
     "DEFINE FIELD last_verification_coverage ON TABLE session_catalog TYPE option<float>",
     "DEFINE FIELD last_verification_verified ON TABLE session_catalog TYPE option<bool>",
     "DEFINE FIELD profile_id ON TABLE session_catalog TYPE option<string>",
+    "DEFINE FIELD origin_surface ON TABLE session_catalog TYPE option<string>",
+    "DEFINE FIELD has_code_work ON TABLE session_catalog TYPE bool",
     "DEFINE INDEX idx_session_catalog_session_id ON TABLE session_catalog COLUMNS session_id UNIQUE",
 ];
 
@@ -73,6 +75,12 @@ pub struct SessionCatalogRow {
     /// Active profile when the session was created or last written (`user:work`, …).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile_id: Option<String>,
+    /// First sticky non-home host surface for rail channel marks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_surface: Option<String>,
+    /// Sticky once a Forge code binding was set.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub has_code_work: bool,
 }
 
 impl SessionCatalogRow {
@@ -89,6 +97,8 @@ impl SessionCatalogRow {
             last_verification_coverage: None,
             last_verification_verified: None,
             profile_id: None,
+            origin_surface: None,
+            has_code_work: false,
         }
     }
 
@@ -105,6 +115,8 @@ impl SessionCatalogRow {
             last_verification_coverage: None,
             last_verification_verified: None,
             profile_id: None,
+            origin_surface: None,
+            has_code_work: false,
         }
     }
 }
@@ -140,6 +152,8 @@ impl From<SessionCatalogRow> for SessionHistorySummary {
             last_verification_verified: row.last_verification_verified,
             preview: row.preview,
             catalog: None,
+            origin_surface: row.origin_surface,
+            has_code_work: row.has_code_work,
         }
     }
 }
@@ -205,6 +219,47 @@ fn truncate_chars(value: &str, max_chars: usize) -> String {
     }
     let truncated: String = value.chars().take(max_chars.saturating_sub(1)).collect();
     format!("{truncated}…")
+}
+
+/// Supported rail channel surfaces (matches Home `hostContextLabel` keys).
+pub fn sticky_origin_surface(source: &str) -> Option<String> {
+    match source.trim().to_ascii_lowercase().as_str() {
+        "vscode" | "neovim" | "obsidian" | "browser" => {
+            Some(source.trim().to_ascii_lowercase())
+        }
+        _ => None,
+    }
+}
+
+fn origin_surface_from_turn(turn: &ConversationTurn) -> Option<String> {
+    crate::agent_runtime::host_context::host_context_from_turn(turn)
+        .and_then(|context| sticky_origin_surface(&context.source))
+}
+
+fn apply_origin_from_turn(row: &mut SessionCatalogRow, turn: &ConversationTurn) {
+    if row.origin_surface.is_some() {
+        return;
+    }
+    if let Some(surface) = origin_surface_from_turn(turn) {
+        row.origin_surface = Some(surface);
+    }
+}
+
+/// Sticky mark once a Forge code binding is set (does not clear when unbound).
+pub fn mark_has_code_work(session_id: &str) {
+    let session_id = session_id.trim();
+    if session_id.is_empty() {
+        return;
+    }
+    let mut row = catalog_store()
+        .get_row(session_id)
+        .unwrap_or_else(|| SessionCatalogRow::empty_session(session_id));
+    if row.has_code_work {
+        return;
+    }
+    row.has_code_work = true;
+    stamp_profile_id(&mut row);
+    catalog_store().upsert_row(&row);
 }
 
 trait SessionCatalogStore: Send + Sync {
@@ -842,6 +897,8 @@ pub fn record_turn_appended(session_id: &str, turn: &ConversationTurn) {
             let _ = crate::session_meta_store::set_session_display_name(session_id, &title);
         }
 
+    apply_origin_from_turn(&mut row, turn);
+
     stamp_profile_id(&mut row);
     catalog_store().upsert_row(&row);
 }
@@ -886,6 +943,8 @@ pub fn ensure_named_session(session_id: &str, display_name: Option<String>) {
         last_verification_coverage: None,
         last_verification_verified: None,
         profile_id: Some(active_workshop_profile_id()),
+        origin_surface: None,
+        has_code_work: false,
     });
 }
 
@@ -929,6 +988,7 @@ pub fn delete_catalog_row(session_id: &str) {
 }
 
 static CATALOG_SYNC_ATTEMPTED: AtomicBool = AtomicBool::new(false);
+static RAIL_META_REPAIR_ATTEMPTED: AtomicBool = AtomicBool::new(false);
 
 pub fn list_sessions(limit: usize) -> Vec<SessionHistorySummary> {
     list_sessions_page(limit, None, None, None).sessions
@@ -979,6 +1039,56 @@ pub fn list_sessions_page(
             .collect(),
         next_cursor,
     }
+}
+
+/// One-shot repair of rail metadata (origin + code marks) without scanning on every list.
+pub fn ensure_rail_metadata_repaired() {
+    if RAIL_META_REPAIR_ATTEMPTED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let code_marks = repair_has_code_work_from_bindings();
+    let origins = repair_origin_surfaces_from_history(500);
+    if code_marks > 0 || origins > 0 {
+        eprintln!(
+            "session catalog rail metadata repair: {code_marks} code marks, {origins} origins"
+        );
+    }
+}
+
+fn repair_has_code_work_from_bindings() -> usize {
+    let mut count = 0usize;
+    for session_id in crate::agent_mode_state::session_ids_with_code_binding() {
+        let Some(mut row) = catalog_store().get_row(&session_id) else {
+            continue;
+        };
+        if row.has_code_work {
+            continue;
+        }
+        row.has_code_work = true;
+        catalog_store().upsert_row(&row);
+        count += 1;
+    }
+    count
+}
+
+/// Scan transcripts once for sessions missing `origin_surface` (capped).
+fn repair_origin_surfaces_from_history(limit: usize) -> usize {
+    let mut count = 0usize;
+    let rows = catalog_store().list_rows_page(limit.max(1), None, None);
+    for row in rows {
+        if row.origin_surface.is_some() {
+            continue;
+        }
+        let turns = crate::session_store::get_session_store().load_history(&row.session_id);
+        let Some(surface) = turns.iter().find_map(origin_surface_from_turn) else {
+            continue;
+        };
+        let mut updated = row;
+        updated.origin_surface = Some(surface);
+        catalog_store().upsert_row(&updated);
+        count += 1;
+    }
+    count
 }
 
 /// One-shot repair when the catalog is empty but legacy session data exists.
@@ -1076,6 +1186,8 @@ fn backfill_from_legacy_stores(limit: usize) -> Result<usize, String> {
             last_verification_coverage: summary.last_verification_coverage,
             last_verification_verified: summary.last_verification_verified,
             profile_id: None,
+            origin_surface: summary.origin_surface,
+            has_code_work: summary.has_code_work,
         };
 
         if let Some((record, coverage)) = verification_by_session.get(&summary.session_id) {
@@ -1228,6 +1340,137 @@ mod tests {
         };
         assert!(row_matches_profile(&work, "user:work"));
         assert!(!row_matches_profile(&work, DEFAULT_USER_ID));
+    }
+
+    #[test]
+    fn record_turn_appended_sticky_origin_surface() {
+        use crate::turn_parts::TurnPart;
+        use medousa_types::HostTurnContext;
+
+        let suffix = uuid::Uuid::new_v4().simple().to_string();
+        let tmp = std::env::temp_dir().join(format!("medousa-catalog-origin-{suffix}"));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).expect("tempdir");
+        unsafe { std::env::set_var("XDG_DATA_HOME", &tmp) };
+        set_catalog_store(Arc::new(FileSessionCatalogStore));
+
+        let at = Utc.with_ymd_and_hms(2026, 6, 8, 12, 0, 0).unwrap();
+        let session_id = format!("sess-origin-{suffix}");
+        let home_turn = ConversationTurn {
+            role: "user".into(),
+            content: "from home".into(),
+            timestamp: at,
+            tool_names: vec![],
+            answer_state: None,
+            parts: Some(vec![TurnPart::HostContext {
+                context: HostTurnContext {
+                    source: "home".into(),
+                    workspace: None,
+                    resource_kind: None,
+                    resource_path: None,
+                    resource_title: None,
+                    resource_url: None,
+                    language: None,
+                    cursor: None,
+                    selection: None,
+                    document_excerpt: None,
+                    diagnostics: vec![],
+                    related_resources: vec![],
+                },
+            }]),
+            slice_summary: None,
+            speaker_profile_id: None,
+        };
+        record_turn_appended(&session_id, &home_turn);
+        assert!(get_summary(&session_id).unwrap().origin_surface.is_none());
+
+        let vscode_turn = ConversationTurn {
+            role: "user".into(),
+            content: "from vscode".into(),
+            timestamp: at,
+            tool_names: vec![],
+            answer_state: None,
+            parts: Some(vec![TurnPart::HostContext {
+                context: HostTurnContext {
+                    source: "vscode".into(),
+                    workspace: None,
+                    resource_kind: Some("file".into()),
+                    resource_path: Some("main.rs".into()),
+                    resource_title: None,
+                    resource_url: None,
+                    language: None,
+                    cursor: None,
+                    selection: None,
+                    document_excerpt: None,
+                    diagnostics: vec![],
+                    related_resources: vec![],
+                },
+            }]),
+            slice_summary: None,
+            speaker_profile_id: None,
+        };
+        record_turn_appended(&session_id, &vscode_turn);
+        assert_eq!(
+            get_summary(&session_id).unwrap().origin_surface.as_deref(),
+            Some("vscode")
+        );
+
+        let browser_turn = ConversationTurn {
+            role: "user".into(),
+            content: "from browser".into(),
+            timestamp: at,
+            tool_names: vec![],
+            answer_state: None,
+            parts: Some(vec![TurnPart::HostContext {
+                context: HostTurnContext {
+                    source: "browser".into(),
+                    workspace: None,
+                    resource_kind: None,
+                    resource_path: None,
+                    resource_title: None,
+                    resource_url: None,
+                    language: None,
+                    cursor: None,
+                    selection: None,
+                    document_excerpt: None,
+                    diagnostics: vec![],
+                    related_resources: vec![],
+                },
+            }]),
+            slice_summary: None,
+            speaker_profile_id: None,
+        };
+        record_turn_appended(&session_id, &browser_turn);
+        assert_eq!(
+            get_summary(&session_id).unwrap().origin_surface.as_deref(),
+            Some("vscode"),
+            "origin stays sticky"
+        );
+    }
+
+    #[test]
+    fn mark_has_code_work_is_sticky() {
+        let suffix = uuid::Uuid::new_v4().simple().to_string();
+        let tmp = std::env::temp_dir().join(format!("medousa-catalog-code-{suffix}"));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).expect("tempdir");
+        unsafe { std::env::set_var("XDG_DATA_HOME", &tmp) };
+        set_catalog_store(Arc::new(FileSessionCatalogStore));
+
+        let session_id = format!("sess-code-{suffix}");
+        ensure_named_session(&session_id, Some("Code".into()));
+        assert!(!get_summary(&session_id).unwrap().has_code_work);
+        mark_has_code_work(&session_id);
+        assert!(get_summary(&session_id).unwrap().has_code_work);
+        mark_has_code_work(&session_id);
+        assert!(get_summary(&session_id).unwrap().has_code_work);
+    }
+
+    #[test]
+    fn sticky_origin_surface_filters_home() {
+        assert_eq!(sticky_origin_surface("vscode").as_deref(), Some("vscode"));
+        assert_eq!(sticky_origin_surface("HOME"), None);
+        assert_eq!(sticky_origin_surface("notion"), None);
     }
 
     #[test]

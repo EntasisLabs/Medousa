@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-  import { Terminal as XTerm, type IDisposable } from "@xterm/xterm";
+  import { Terminal as XTerm, type IDisposable, type ILink, type ILinkProvider } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
+  import { SearchAddon } from "@xterm/addon-search";
   import { WebLinksAddon } from "@xterm/addon-web-links";
   import "@xterm/xterm/css/xterm.css";
   import {
@@ -21,12 +22,25 @@
     type TerminalSessionSummary,
     type TerminalStatus,
   } from "$lib/terminal";
+  import { parseTerminalFileLinks } from "$lib/terminal/terminalFileLinks";
+  import { registerTerminalInputHandler } from "$lib/terminal/terminalInputBridge";
   import { undertakings } from "$lib/stores/undertakings.svelte";
-  import UndertakingContextChip from "$lib/components/work/UndertakingContextChip.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { layout } from "$lib/stores/layout.svelte";
+  import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { getUndertaking, heartbeatLease } from "$lib/forge";
+  import {
+    ChevronDown,
+    Layers,
+    PanelTop,
+    Plus,
+    Search,
+    Square,
+    SquareTerminal,
+    X,
+  } from "@lucide/svelte";
+  import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
 
   interface Props {
     /** Workshop shell session id. Empty string = create a fresh session on mount. */
@@ -35,9 +49,23 @@
     title?: string;
     /** Hide project chip / sessions chrome when docked under Code. */
     compact?: boolean;
+    /** Forge worktree root for resolving absolute paths in output. */
+    worktreeRoot?: string | null;
+    /** Dock: open as a full shell tab. */
+    onPopOut?: () => void;
+    /** Dock: collapse the terminal panel. */
+    onCollapse?: () => void;
   }
 
-  let { sessionId, workId = null, title = "Terminal", compact = false }: Props = $props();
+  let {
+    sessionId,
+    workId = null,
+    title = "Terminal",
+    compact = false,
+    worktreeRoot = null,
+    onPopOut,
+    onCollapse,
+  }: Props = $props();
 
   let attachId = $state<number | null>(null);
   let boundSessionId = $state("");
@@ -52,9 +80,14 @@
   let terminalRows = $state(0);
   let ptyCols = $state(0);
   let ptyRows = $state(0);
+  let findOpen = $state(false);
+  let findQuery = $state("");
+  let findInput = $state<HTMLInputElement | null>(null);
+  let sessionCwd = $state("");
 
   let terminal: XTerm | null = null;
   let fitAddon: FitAddon | null = null;
+  let searchAddon: SearchAddon | null = null;
   let outputUnlisten: UnlistenFn | null = null;
   let statusUnlisten: UnlistenFn | null = null;
   let resizeUnlisten: UnlistenFn | null = null;
@@ -68,6 +101,7 @@
   let requestedRows = 0;
   let inputQueue = Promise.resolve();
   const terminalDisposables: IDisposable[] = [];
+  let unregisterInput: (() => void) | null = null;
 
   function bytesToBase64(bytes: Uint8Array): string {
     let binary = "";
@@ -116,6 +150,59 @@
     terminal?.focus();
   }
 
+  function toggleFind(forceOpen?: boolean) {
+    findOpen =
+      forceOpen === true ? true : forceOpen === false ? false : !findOpen;
+    if (findOpen) {
+      queueMicrotask(() => findInput?.focus());
+    } else {
+      searchAddon?.clearDecorations();
+      findQuery = "";
+      terminal?.focus();
+    }
+  }
+
+  function sessionLabel(session: TerminalSessionSummary): string {
+    if (session.work_id && workId && session.work_id === workId) {
+      return title.trim() || "Shell";
+    }
+    if (session.work_id) {
+      const match = undertakings.items.find((item) => item.id === session.work_id);
+      if (match?.title?.trim()) return match.title.trim();
+      return "Another project";
+    }
+    return "Shell";
+  }
+
+  const connectionTitle = $derived(
+    [
+      connected ? "Connected" : connecting ? "Connecting" : "Disconnected",
+      sessionCwd || null,
+      connected
+        ? `view ${terminalCols}×${terminalRows} · PTY ${ptyCols || "—"}×${ptyRows || "—"} · ${boundSessionId.slice(0, 8)}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+  );
+
+  function runFind(direction: "next" | "previous") {
+    const term = findQuery.trim();
+    if (!term || !searchAddon) return;
+    const options = {
+      caseSensitive: false,
+      incremental: true,
+      decorations: {
+        matchBackground: "#6d28d955",
+        activeMatchBackground: "#a78bfa99",
+        matchOverviewRuler: "#a78bfa",
+        activeMatchColorOverviewRuler: "#c4b5fd",
+      },
+    };
+    if (direction === "next") searchAddon.findNext(term, options);
+    else searchAddon.findPrevious(term, options);
+  }
+
   async function openExternalLink(uri: string) {
     try {
       const { openUrl } = await import("@tauri-apps/plugin-opener");
@@ -123,6 +210,59 @@
     } catch {
       // Link activation should never make the terminal itself unusable.
     }
+  }
+
+  async function openTerminalPath(path: string, line: number | null) {
+    const id = workId?.trim();
+    if (!id) return;
+    try {
+      await lmeWorkspace.openCodeFile(id, path, {
+        line: line && line > 0 ? line : 1,
+        groupId: shellTabs.activeGroupId,
+      });
+      undertakings.setSelection({
+        path,
+        line: line && line > 0 ? line : 1,
+        entityId: null,
+      });
+    } catch {
+      // Opening a stale path from scrollback should not break the PTY.
+    }
+  }
+
+  function createFileLinkProvider(): ILinkProvider {
+    return {
+      provideLinks(bufferLineNumber, callback) {
+        const active = terminal?.buffer.active;
+        const line = active?.getLine(bufferLineNumber - 1);
+        if (!line || !terminal) {
+          callback(undefined);
+          return;
+        }
+        let text = "";
+        for (let col = 0; col < line.length; col += 1) {
+          text += line.getCell(col)?.getChars() || "";
+        }
+        const root =
+          worktreeRoot ||
+          sessions.find((session) => session.session_id === boundSessionId)?.cwd ||
+          null;
+        const hits = parseTerminalFileLinks(text, root);
+        if (hits.length === 0) {
+          callback(undefined);
+          return;
+        }
+        const links: ILink[] = hits.map((hit) => ({
+          range: {
+            start: { x: hit.startIndex + 1, y: bufferLineNumber },
+            end: { x: hit.startIndex + hit.length, y: bufferLineNumber },
+          },
+          text: text.slice(hit.startIndex, hit.startIndex + hit.length),
+          activate: () => void openTerminalPath(hit.path, hit.line),
+        }));
+        callback(links);
+      },
+    };
   }
 
   function initializeTerminal() {
@@ -166,8 +306,11 @@
       },
     });
     fitAddon = new FitAddon();
+    searchAddon = new SearchAddon();
     terminal.loadAddon(fitAddon);
+    terminal.loadAddon(searchAddon);
     terminal.loadAddon(new WebLinksAddon((_event, uri) => void openExternalLink(uri)));
+    terminalDisposables.push(terminal.registerLinkProvider(createFileLinkProvider()));
     terminal.open(terminalHost);
 
     terminalDisposables.push(
@@ -180,6 +323,15 @@
       }),
     );
     terminal.attachCustomKeyEventHandler((event) => {
+      if (
+        event.type === "keydown" &&
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === "f"
+      ) {
+        event.preventDefault();
+        toggleFind(true);
+        return false;
+      }
       const copy =
         event.type === "keydown" &&
         (event.metaKey || event.ctrlKey) &&
@@ -339,6 +491,9 @@
       await terminalReady(attach.attach_id);
       scheduleFit();
       await refreshSessionList();
+      sessionCwd =
+        sessions.find((session) => session.session_id === boundSessionId)?.cwd ??
+        "";
       focusTerminal();
     } catch (reason) {
       error = reason instanceof Error ? reason.message : String(reason);
@@ -368,6 +523,15 @@
     } catch (reason) {
       error = reason instanceof Error ? reason.message : String(reason);
     }
+  }
+
+  function closeShellTab() {
+    const sid = (boundSessionId || sessionId).trim();
+    if (!sid) return;
+    const tab = shellTabs.tabs.find(
+      (entry) => entry.kind === "terminal" && entry.sessionId === sid,
+    );
+    if (tab) shellTabs.close(tab.id);
   }
 
   async function restoreUndertakingContext() {
@@ -412,6 +576,12 @@
   onMount(() => {
     let disposed = false;
     initializeTerminal();
+    unregisterInput = registerTerminalInputHandler({
+      workId: workId ?? null,
+      write: (text) => queueInput(text),
+    });
+    const onFind = () => toggleFind(true);
+    window.addEventListener("medousa-terminal-find", onFind);
     void (async () => {
       outputUnlisten = await listen<TerminalOutput>("terminal-output", (event) => {
         if (event.payload.attach_id !== attachId) return;
@@ -466,11 +636,14 @@
 
     return () => {
       disposed = true;
+      window.removeEventListener("medousa-terminal-find", onFind);
     };
   });
 
   onDestroy(() => {
     connectGeneration += 1;
+    unregisterInput?.();
+    unregisterInput = null;
     outputUnlisten?.();
     statusUnlisten?.();
     resizeUnlisten?.();
@@ -481,6 +654,8 @@
     if (resizeFrame != null) cancelAnimationFrame(resizeFrame);
     for (const disposable of terminalDisposables) disposable.dispose();
     terminalDisposables.length = 0;
+    searchAddon?.dispose();
+    searchAddon = null;
     terminal?.dispose();
     terminal = null;
     fitAddon = null;
@@ -494,56 +669,143 @@
   aria-label={title}
 >
   <div
-    class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-white/10 px-3 py-1.5"
+    class="terminal-chrome flex shrink-0 items-center justify-between gap-2 border-b border-white/10 px-2 py-0.5"
   >
-    <div class="min-w-0 flex flex-wrap items-center gap-2 text-xs text-white">
-      {#if !compact}
-        <span class="truncate">{title}</span>
-        <UndertakingContextChip />
-      {:else}
-        <span class="truncate text-[10px] text-white">Shared with agents in this project</span>
-      {/if}
+    <div class="min-w-0 flex items-center gap-1.5">
+      <SquareTerminal size={11} class="shrink-0 text-white/70" strokeWidth={1.75} />
+      <span class="truncate text-chrome-sm font-medium text-white" title={sessionCwd || undefined}>
+        {title}
+      </span>
+      <span
+        class="terminal-status-dot shrink-0"
+        class:terminal-status-dot--ok={connected}
+        class:terminal-status-dot--pending={connecting && !connected}
+        title={connectionTitle}
+        aria-label={connectionTitle}
+        role="status"
+      ></span>
     </div>
-    <div class="flex items-center gap-1">
+    <div class="flex shrink-0 items-center gap-0.5">
+      <button
+        type="button"
+        class="scripts-workbench-toolbar-btn {findOpen ? 'scripts-workbench-toolbar-btn-active' : ''}"
+        aria-label="Find in terminal"
+        title="Find in terminal"
+        aria-pressed={findOpen}
+        onclick={() => toggleFind()}
+      ><Search size={13} strokeWidth={1.75} /></button>
+      <OverflowMenu
+        label="Shell sessions"
+        title="Shell sessions"
+        panelClass="w-64 rounded-lg border border-white/15 bg-[#171312] p-1.5 shadow-xl"
+      >
+        {#snippet trigger({ open, toggle })}
+          <button
+            type="button"
+            class="scripts-workbench-toolbar-btn {open ? 'scripts-workbench-toolbar-btn-active' : ''}"
+            aria-label="Shell sessions"
+            title="Shell sessions"
+            aria-expanded={open}
+            aria-haspopup="menu"
+            onclick={toggle}
+          ><Layers size={13} strokeWidth={1.75} /></button>
+        {/snippet}
+        {#each sessions as session (session.session_id)}
+          <button
+            type="button"
+            role="menuitem"
+            class="block w-full truncate rounded px-2 py-1 text-left text-chrome-sm text-white hover:bg-white/10 hover:text-white"
+            title={session.cwd || undefined}
+            onclick={() => void switchSession(session.session_id)}
+          >
+            {sessionLabel(session)}
+          </button>
+        {/each}
+        {#if sessions.length === 0}
+          <p class="px-2 py-1 text-chrome-sm text-white/60">No other sessions</p>
+        {/if}
+        <div class="mt-1 border-t border-white/10 px-2 pt-1.5 text-chrome-xs text-white/55" role="note">
+          <p class="truncate" title={sessionCwd || undefined}>
+            {sessionCwd || "Shared with agents in this project"}
+          </p>
+          <p class="mt-0.5 font-mono">
+            {connected ? "Connected" : connecting ? "Connecting" : "Disconnected"}
+            · view {terminalCols}×{terminalRows}
+            · PTY {ptyCols || "—"}×{ptyRows || "—"}
+            · {boundSessionId.slice(0, 8)}
+          </p>
+        </div>
+      </OverflowMenu>
       {#if !compact}
-        <details class="relative">
-          <summary class="cursor-pointer list-none rounded px-2 py-0.5 text-[10px] text-white hover:bg-white/10 hover:text-white [&::-webkit-details-marker]:hidden">Sessions</summary>
-          <div class="absolute right-0 top-full z-30 mt-1 w-56 rounded border border-white/15 bg-[#171312] p-1 shadow-xl">
-            {#each sessions as session (session.session_id)}
-              <button
-                type="button"
-                class="block w-full truncate rounded px-2 py-1 text-left text-[10px] text-white hover:bg-white/10 hover:text-white"
-                title={session.cwd}
-                onclick={() => void switchSession(session.session_id)}
-              >
-                {session.work_id === workId ? "Project shell" : session.work_id ? "Another project" : "Shell"} · {session.cwd.split(/[\\/]/).filter(Boolean).pop() ?? session.cwd}
-              </button>
-            {/each}
-            {#if sessions.length === 0}
-              <p class="px-2 py-1 text-[10px] text-white">No other sessions</p>
-            {/if}
-            <p class="mt-1 border-t border-white/10 px-2 pt-1 font-mono text-[8px] text-white">Current {boundSessionId.slice(0, 8)}</p>
-          </div>
-        </details>
         <button
           type="button"
-          class="rounded px-2 py-0.5 text-[11px] text-white hover:bg-white/10 hover:text-white"
+          class="scripts-workbench-toolbar-btn"
           onclick={() => void openDiagnosticSession()}
           title="Open a shell outside the current project"
-        >
-          New shell
-        </button>
+          aria-label="New shell"
+        ><Plus size={13} strokeWidth={1.75} /></button>
       {/if}
       <button
         type="button"
-        class="rounded px-2 py-0.5 text-[11px] text-white hover:bg-white/10 hover:text-white"
+        class="scripts-workbench-toolbar-btn"
         onclick={interrupt}
         title="Stop the running command"
-      >
-        Stop
-      </button>
+        aria-label="Stop the running command"
+      ><Square size={12} strokeWidth={1.75} /></button>
+      {#if onPopOut}
+        <button
+          type="button"
+          class="scripts-workbench-toolbar-btn"
+          onclick={onPopOut}
+          title="Open as a full Terminal tab"
+          aria-label="Open as a full Terminal tab"
+        ><PanelTop size={13} strokeWidth={1.75} /></button>
+      {/if}
+      {#if onCollapse}
+        <button
+          type="button"
+          class="scripts-workbench-toolbar-btn"
+          onclick={onCollapse}
+          title="Collapse terminal"
+          aria-label="Collapse terminal"
+        ><ChevronDown size={13} strokeWidth={1.75} /></button>
+      {:else if !compact}
+        <button
+          type="button"
+          class="scripts-workbench-toolbar-btn"
+          onclick={closeShellTab}
+          title="Close terminal"
+          aria-label="Close terminal"
+        ><X size={13} strokeWidth={1.75} /></button>
+      {/if}
     </div>
   </div>
+
+  {#if findOpen}
+    <div class="flex shrink-0 items-center gap-1 border-b border-white/10 px-2 py-1">
+      <Search size={11} class="shrink-0 text-white/50" />
+      <input
+        bind:this={findInput}
+        class="min-w-0 flex-1 rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-white outline-none placeholder:text-white/40"
+        placeholder="Find in terminal"
+        bind:value={findQuery}
+        oninput={() => runFind("next")}
+        onkeydown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            runFind(event.shiftKey ? "previous" : "next");
+          }
+          if (event.key === "Escape") {
+            event.preventDefault();
+            toggleFind(false);
+          }
+        }}
+      />
+      <button type="button" class="rounded px-1.5 py-0.5 text-[9px] text-white hover:bg-white/10" onclick={() => runFind("previous")}>Prev</button>
+      <button type="button" class="rounded px-1.5 py-0.5 text-[9px] text-white hover:bg-white/10" onclick={() => runFind("next")}>Next</button>
+      <button type="button" class="rounded p-1 text-white hover:bg-white/10" aria-label="Close find" onclick={() => toggleFind(false)}><X size={11} /></button>
+    </div>
+  {/if}
 
   <div class="relative min-h-0 flex-1 overflow-hidden">
     <div
@@ -580,24 +842,6 @@
       </button>
     {/if}
   </div>
-
-  <div
-    class="flex shrink-0 items-center gap-2 border-t border-white/10 px-3 py-1 text-[10px] text-white"
-  >
-    <span class={connected ? "text-emerald-300/60" : "text-white"}>
-      {connected ? "Connected" : connecting ? "Connecting" : "Disconnected"}
-    </span>
-    <span class="text-white">Shared with agents working in this project</span>
-    <details class="ml-auto">
-      <summary class="cursor-pointer">Technical details</summary>
-      <span
-        class="ml-2 font-mono"
-        class:text-amber-300={connected && (ptyCols !== terminalCols || ptyRows !== terminalRows)}
-      >
-        view {terminalCols}×{terminalRows} · PTY {ptyCols || "—"}×{ptyRows || "—"} · {boundSessionId.slice(0, 8)}
-      </span>
-    </details>
-  </div>
 </div>
 
 <style>
@@ -611,5 +855,20 @@
 
   .terminal-host :global(.xterm-viewport) {
     overscroll-behavior: contain;
+  }
+
+  .terminal-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: color-mix(in srgb, #a8a29e 55%, transparent);
+  }
+
+  .terminal-status-dot--ok {
+    background: color-mix(in srgb, #6ee7b7 80%, transparent);
+  }
+
+  .terminal-status-dot--pending {
+    background: color-mix(in srgb, #fbbf24 75%, transparent);
   }
 </style>

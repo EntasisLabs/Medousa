@@ -107,6 +107,8 @@ impl SharedSessionCatalogRow {
             last_verification_verified: None,
             preview: self.preview.clone(),
             catalog: Some("shared".to_string()),
+            origin_surface: None,
+            has_code_work: false,
         }
     }
 }
@@ -289,6 +291,8 @@ pub fn list_merged_sessions_for_profile(
                 last_verification_coverage: None,
                 last_verification_verified: None,
                 profile_id: None,
+                origin_surface: session.origin_surface.clone(),
+                has_code_work: session.has_code_work,
             };
             encode_list_cursor(&adapter)
         })

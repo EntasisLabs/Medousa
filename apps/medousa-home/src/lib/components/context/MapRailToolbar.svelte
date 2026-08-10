@@ -76,7 +76,7 @@
   function placeMoments() {
     if (!momentsBtnEl) return;
     momentsPlacement = placeDockPopover(momentsBtnEl, {
-      preferUp: true,
+      preferUp: false,
       width: 300,
       maxHeight: 380,
     });
@@ -85,7 +85,7 @@
   function placeFilter() {
     if (!filterBtnEl) return;
     filterPlacement = placeDockPopover(filterBtnEl, {
-      preferUp: true,
+      preferUp: false,
       width: 240,
       maxHeight: 320,
     });

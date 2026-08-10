@@ -12,7 +12,6 @@
   import { layout } from "$lib/stores/layout.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { artifacts } from "$lib/stores/artifacts.svelte";
-  import { chat } from "$lib/stores/chat.svelte";
   import {
     bindVaultLongPress,
     handleVaultNoteContextMenuEvent,
@@ -23,30 +22,29 @@
   import type { ArtifactSummary } from "$lib/types/artifact";
   import type { UiArtifact } from "$lib/types/chat";
 
-  type LibraryTab = "notes" | "presentations";
+  type LibraryTab = "notes" | "artifacts";
 
   interface Props {
     visible: boolean;
-    onOpenChat?: () => void | Promise<void>;
   }
 
-  let { visible, onOpenChat }: Props = $props();
+  let { visible }: Props = $props();
 
   let listScrollEl = $state<HTMLDivElement | null>(null);
   let notesSearchEl = $state<HTMLInputElement | null>(null);
-  let presentationsSearchEl = $state<HTMLInputElement | null>(null);
+  let artifactsSearchEl = $state<HTMLInputElement | null>(null);
   let libraryTab = $state<LibraryTab>("notes");
   let searchOpen = $state(false);
   let filterSheetOpen = $state(false);
-  let presentationArtifact = $state<ArtifactSummary | null>(null);
-  let presentationFullscreenOpen = $state(false);
+  let selectedArtifact = $state<ArtifactSummary | null>(null);
+  let artifactFullscreenOpen = $state(false);
 
   const view = $derived(layout.libraryView);
-  const presentationUiArtifact = $derived.by((): UiArtifact | null =>
-    presentationArtifact ? artifactSummaryToUi(presentationArtifact) : null,
+  const selectedUiArtifact = $derived.by((): UiArtifact | null =>
+    selectedArtifact ? artifactSummaryToUi(selectedArtifact) : null,
   );
 
-  const listTitle = $derived(libraryTab === "presentations" ? "Presentations" : "Notes");
+  const listTitle = $derived(libraryTab === "artifacts" ? "Artifacts" : "Notes");
 
   const browseModeLabel = $derived.by(() => {
     switch (vault.libraryBrowseMode) {
@@ -67,7 +65,7 @@
   });
 
   const filterChipLabel = $derived.by(() => {
-    if (libraryTab === "presentations") return "Presentations";
+    if (libraryTab === "artifacts") return "Artifacts";
     const parts: string[] = [];
     if (spaceFilterLabel) parts.push(spaceFilterLabel);
     if (vault.libraryBrowseMode !== "folders") parts.push(browseModeLabel);
@@ -77,14 +75,14 @@
   const showSearchField = $derived(
     searchOpen ||
       (libraryTab === "notes" && Boolean(vault.searchQuery.trim())) ||
-      (libraryTab === "presentations" && Boolean(artifacts.searchQuery.trim())),
+      (libraryTab === "artifacts" && Boolean(artifacts.searchQuery.trim())),
   );
 
   onMount(() => {
     const onSearchFocus = () => {
       searchOpen = true;
       void tick().then(() => {
-        const el = libraryTab === "presentations" ? presentationsSearchEl : notesSearchEl;
+        const el = libraryTab === "artifacts" ? artifactsSearchEl : notesSearchEl;
         el?.focus();
         el?.select();
       });
@@ -112,7 +110,7 @@
   });
 
   $effect(() => {
-    if (libraryTab === "presentations") {
+    if (libraryTab === "artifacts") {
       void artifacts.refresh();
     }
   });
@@ -136,7 +134,7 @@
     searchOpen = false;
   }
 
-  function clearPresentationsSearch() {
+  function clearArtifactsSearch() {
     artifacts.setSearchQuery("");
     searchOpen = false;
   }
@@ -145,8 +143,9 @@
     layout.setLibraryListScrollTop((event.currentTarget as HTMLDivElement).scrollTop);
   }
 
-  async function openNote(path: string) {
+  async function openNote(path: string, event?: MouseEvent) {
     if (shouldSuppressVaultContextMenuClick()) return;
+    if (!vault.applyRailSelection(path, event)) return;
     await vault.openNote(path);
     vault.enterPreviewMode();
     layout.setLibraryView("reader");
@@ -165,14 +164,14 @@
       }
       if (searchOpen || vault.searchQuery.trim() || artifacts.searchQuery.trim()) {
         clearNotesSearch();
-        clearPresentationsSearch();
+        clearArtifactsSearch();
         return true;
       }
-      if (libraryTab === "presentations" && presentationFullscreenOpen) {
-        presentationFullscreenOpen = false;
+      if (libraryTab === "artifacts" && artifactFullscreenOpen) {
+        artifactFullscreenOpen = false;
         return true;
       }
-      if (libraryTab === "presentations") {
+      if (libraryTab === "artifacts") {
         libraryTab = "notes";
         return true;
       }
@@ -188,13 +187,8 @@
   const saveWhisper = $derived(vault.saveWhisper());
 
   function openPresentation(artifact: ArtifactSummary) {
-    presentationArtifact = artifact;
-    presentationFullscreenOpen = true;
-  }
-
-  async function openPresentationChat(artifact: ArtifactSummary) {
-    chat.sessionId = artifact.session_id;
-    await onOpenChat?.();
+    selectedArtifact = artifact;
+    artifactFullscreenOpen = true;
   }
 </script>
 
@@ -244,20 +238,20 @@
         {:else}
           <div class="flex items-center gap-2">
             <input
-              bind:this={presentationsSearchEl}
+              bind:this={artifactsSearchEl}
               class="input min-w-0 flex-1 text-sm"
               type="search"
-              placeholder="Filter presentations…"
+              placeholder="Filter artifacts…"
               value={artifacts.searchQuery}
               oninput={(event) => artifacts.setSearchQuery(event.currentTarget.value)}
               onkeydown={(event) => {
-                if (event.key === "Escape") clearPresentationsSearch();
+                if (event.key === "Escape") clearArtifactsSearch();
               }}
             />
             <button
               type="button"
               class="btn btn-sm variant-ghost-surface shrink-0"
-              onclick={clearPresentationsSearch}
+              onclick={clearArtifactsSearch}
             >
               Cancel
             </button>
@@ -318,19 +312,17 @@
           </p>
         {/if}
         {#if artifacts.loading}
-          <p class="px-3 py-4 text-sm text-content-quiet">Loading presentations…</p>
+          <p class="px-3 py-4 text-sm text-content-quiet">Loading artifacts…</p>
         {:else}
           <ArtifactLibraryList
             artifacts={artifacts.filteredArtifacts}
-            selectedArtifactId={presentationArtifact?.artifact_id ?? null}
-            sessionTitle={(sessionId) => artifacts.sessionTitle(sessionId)}
+            selectedArtifactId={selectedArtifact?.artifact_id ?? null}
             onSelect={(artifactId) => {
               const match = artifacts.filteredArtifacts.find(
                 (artifact) => artifact.artifact_id === artifactId,
               );
               if (match) openPresentation(match);
             }}
-            onOpenChat={onOpenChat ? openPresentationChat : undefined}
           />
         {/if}
       </div>
@@ -338,13 +330,13 @@
   {/if}
 </section>
 
-{#if presentationUiArtifact && presentationArtifact}
+{#if selectedUiArtifact && selectedArtifact}
   <ArtifactFullscreen
-    open={presentationFullscreenOpen}
-    sessionId={presentationArtifact.session_id}
-    artifact={presentationUiArtifact}
+    open={artifactFullscreenOpen}
+    sessionId={selectedArtifact.session_id}
+    artifact={selectedUiArtifact}
     onClose={() => {
-      presentationFullscreenOpen = false;
+      artifactFullscreenOpen = false;
     }}
   />
 {/if}

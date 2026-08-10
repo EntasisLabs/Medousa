@@ -31,7 +31,10 @@ function defaultSurfaces() {
     { id: "peers", label: "Peers", icon: "users", builtinId: "peers" },
     { id: "work", label: "Work", icon: "layout-grid", builtinId: "work" },
     { id: "code", label: "Code", icon: "code-2", builtinId: "code" },
-    { id: "library", label: "Workspace", icon: "notebook-text", builtinId: "library", mobileTab: "notes" },
+    { id: "library", label: "Workspace", icon: "notebook-text", builtinId: "library" },
+    { id: "notes", label: "Notes", icon: "notebook-text", builtinId: "notes", mobileTab: "notes" },
+    { id: "files", label: "Files", icon: "folder", builtinId: "files" },
+    { id: "artifacts", label: "Artifacts", icon: "sparkles", builtinId: "artifacts" },
     { id: "calendar", label: "Calendar", icon: "calendar-days", builtinId: "calendar" },
     { id: "web", label: "Web", icon: "globe", builtinId: "web", mobileTab: "web" },
     { id: "map", label: "Map", icon: "compass", builtinId: "map" },
@@ -116,6 +119,99 @@ export function ensureCodeSurfaceInSpec(spec: EnvironmentSpec): EnvironmentSpec 
     const next = layoutPresets[index];
     return !next || preset.surfaces.join("\0") !== next.surfaces.join("\0");
   });
+  if (!surfacesChanged && !presetsChanged) return spec;
+  return {
+    ...spec,
+    surfaces,
+    layoutPresets: layoutPresets.length > 0 ? layoutPresets : spec.layoutPresets,
+  };
+}
+
+const LIBRARY_SPLIT_IDS = ["notes", "files", "artifacts"] as const;
+
+function librarySplitSurfaceDef(id: (typeof LIBRARY_SPLIT_IDS)[number]): SurfaceDef {
+  const found = defaultSurfaces().find((surface) => surface.id === id);
+  if (found) return found;
+  const fallback: Record<(typeof LIBRARY_SPLIT_IDS)[number], SurfaceDef> = {
+    notes: {
+      id: "notes",
+      label: "Notes",
+      icon: "notebook-text",
+      kind: "builtin",
+      builtinId: "notes",
+      layout: "single",
+      slots: [],
+      mobileTab: "notes",
+    },
+    files: {
+      id: "files",
+      label: "Files",
+      icon: "folder",
+      kind: "builtin",
+      builtinId: "files",
+      layout: "single",
+      slots: [],
+      mobileTab: null,
+    },
+    artifacts: {
+      id: "artifacts",
+      label: "Artifacts",
+      icon: "sparkles",
+      kind: "builtin",
+      builtinId: "artifacts",
+      layout: "single",
+      slots: [],
+      mobileTab: null,
+    },
+  };
+  return fallback[id];
+}
+
+/** Replace a single `library` slot with notes/files/artifacts, preserving order. */
+function replaceLibraryWithSplit(surfaceIds: string[]): string[] {
+  if (!surfaceIds.includes("library")) return surfaceIds;
+  const next: string[] = [];
+  for (const id of surfaceIds) {
+    if (id === "library") {
+      for (const splitId of LIBRARY_SPLIT_IDS) {
+        if (!next.includes(splitId)) next.push(splitId);
+      }
+      continue;
+    }
+    next.push(id);
+  }
+  return next;
+}
+
+/**
+ * Promote Library's three explorer modes to first-class destinations on older
+ * saved layouts. Keeps `library` as the internal LME tab host.
+ */
+export function ensureLibrarySplitInSpec(spec: EnvironmentSpec): EnvironmentSpec {
+  let surfaces = [...spec.surfaces];
+  for (const id of LIBRARY_SPLIT_IDS) {
+    if (!surfaces.some((surface) => surface.id === id)) {
+      const libraryAt = surfaces.findIndex((surface) => surface.id === "library");
+      const insertAt = libraryAt >= 0 ? libraryAt + 1 : surfaces.length;
+      surfaces.splice(insertAt, 0, librarySplitSurfaceDef(id));
+    }
+  }
+
+  const layoutPresets = (spec.layoutPresets ?? []).map((preset) => ({
+    ...preset,
+    surfaces: replaceLibraryWithSplit(preset.surfaces),
+  }));
+
+  const surfacesChanged =
+    surfaces.length !== spec.surfaces.length ||
+    surfaces.some((surface, index) => surface.id !== spec.surfaces[index]?.id);
+  const presetsChanged = (spec.layoutPresets ?? []).some((preset, index) => {
+    const next = layoutPresets[index];
+    if (!next) return true;
+    if (preset.surfaces.length !== next.surfaces.length) return true;
+    return preset.surfaces.some((id, i) => id !== next.surfaces[i]);
+  });
+
   if (!surfacesChanged && !presetsChanged) return spec;
   return {
     ...spec,
@@ -349,7 +445,10 @@ export function defaultEnvironmentSpec(
         id: DEFAULT_PRESET_ID,
         label: "Default",
         active: true,
-        surfaces: surfaces.map((surface) => surface.id),
+        // `library` stays defined as the LME host but is not a rail door.
+        surfaces: surfaces
+          .map((surface) => surface.id)
+          .filter((id) => id !== "library"),
         shellChrome: defaultShellChrome(),
       },
       {
@@ -361,7 +460,9 @@ export function defaultEnvironmentSpec(
           "peers",
           "work",
           "code",
-          "library",
+          "notes",
+          "files",
+          "artifacts",
           "map",
           SAFETY_SURFACE_SETTINGS,
           SAFETY_SURFACE_RUNTIME,

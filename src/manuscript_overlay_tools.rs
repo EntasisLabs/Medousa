@@ -3,35 +3,39 @@
 use std::fs;
 use std::path::PathBuf;
 
-use async_trait::async_trait;
 use chrono::Utc;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
-use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 
 use crate::session;
+use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_MANUSCRIPT_OVERLAY_PROPOSE: &str = "cognition_manuscript_overlay_propose";
 pub const COGNITION_MANUSCRIPT_OVERLAY_LIST: &str = "cognition_manuscript_overlay_list";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+const COGNITION_MANUSCRIPT_OVERLAY_PROPOSE_ID: ToolId =
+    ToolId::new(COGNITION_MANUSCRIPT_OVERLAY_PROPOSE);
+const COGNITION_MANUSCRIPT_OVERLAY_LIST_ID: ToolId = ToolId::new(COGNITION_MANUSCRIPT_OVERLAY_LIST);
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ManuscriptOverlayProposal {
     pub proposal_id: String,
     pub manuscript_id: String,
     pub appendix: String,
     pub reason: String,
     pub status: String,
+    #[schemars(with = "String")]
     pub proposed_at_utc: chrono::DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
 }
 
 pub fn register_manuscript_overlay_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
 ) -> StasisResult<()> {
-    registry.register_tool(CognitionManuscriptOverlayProposeTool)?;
-    registry.register_tool(CognitionManuscriptOverlayListTool)?;
+    registry.register_typed_tool(CognitionManuscriptOverlayProposeTool)?;
+    registry.register_typed_tool(CognitionManuscriptOverlayListTool)?;
     Ok(())
 }
 
@@ -50,13 +54,7 @@ fn proposal_path(proposal_id: &str) -> PathBuf {
 fn slug_token(raw: &str) -> String {
     raw.to_ascii_lowercase()
         .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() {
-                c
-            } else {
-                '-'
-            }
-        })
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect::<String>()
         .split('-')
         .filter(|segment| !segment.is_empty())
@@ -103,7 +101,12 @@ pub fn propose_overlay(
 
     fs::create_dir_all(pending_dir()).map_err(|err| err.to_string())?;
     let stamp = Utc::now().format("%Y%m%d%H%M%S");
-    let proposal_id = format!("{}-{}-{}", slug_token(manuscript_id), stamp, &uuid::Uuid::new_v4().simple().to_string()[..8]);
+    let proposal_id = format!(
+        "{}-{}-{}",
+        slug_token(manuscript_id),
+        stamp,
+        &uuid::Uuid::new_v4().simple().to_string()[..8]
+    );
     let proposal = ManuscriptOverlayProposal {
         proposal_id: proposal_id.clone(),
         manuscript_id: manuscript_id.to_string(),
@@ -120,99 +123,99 @@ pub fn propose_overlay(
 
 pub struct CognitionManuscriptOverlayProposeTool;
 
-#[async_trait]
-impl StasisTool for CognitionManuscriptOverlayProposeTool {
-    fn name(&self) -> &'static str {
-        COGNITION_MANUSCRIPT_OVERLAY_PROPOSE
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ManuscriptOverlayProposeInput {
+    /// Target manuscript id e.g. base-researcher
+    pub manuscript_id: String,
+    /// Markdown/YAML appendix to merge at spawn when approved
+    pub appendix: String,
+    /// Why this overlay helps future turns
+    pub reason: String,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    pub session_id: CompatOption<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Propose a session-scoped manuscript overlay appendix for operator approval — never mutates kernel STTP. \
-             Writes a pending YAML under the Medousa data dir at manuscript-overlays/pending/. \
-             Operator approves by promoting the file to user manuscripts (manual for now).",
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ManuscriptOverlayProposeOutput {
+    pub ok: bool,
+    pub proposal_id: String,
+    pub manuscript_id: String,
+    pub status: String,
+    pub path: String,
+    pub message: String,
+}
+
+#[medousa_tool(id = COGNITION_MANUSCRIPT_OVERLAY_PROPOSE_ID)]
+impl CognitionManuscriptOverlayProposeTool {
+    /// Propose a session-scoped manuscript overlay appendix for operator approval — never mutates kernel STTP. Writes a pending YAML under the Medousa data dir at manuscript-overlays/pending/. Operator approves by promoting the file to user manuscripts (manual for now).
+    async fn invoke_typed(
+        &self,
+        input: ManuscriptOverlayProposeInput,
+    ) -> stasis::prelude::Result<ManuscriptOverlayProposeOutput> {
+        let manuscript_id = input.manuscript_id.as_str();
+        let appendix = input.appendix.as_str();
+        let reason = input.reason.as_str();
+
+        let proposal = propose_overlay(
+            manuscript_id,
+            appendix,
+            reason,
+            input.session_id.into_option(),
         )
-    }
+        .map_err(StasisError::PortFailure)?;
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["manuscript_id", "appendix", "reason"],
-            "properties": {
-                "manuscript_id": { "type": "string", "description": "Target manuscript id e.g. base-researcher" },
-                "appendix": { "type": "string", "description": "Markdown/YAML appendix to merge at spawn when approved" },
-                "reason": { "type": "string", "description": "Why this overlay helps future turns" },
-                "session_id": { "type": "string" }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let manuscript_id = input
-            .get("manuscript_id")
-            .and_then(Value::as_str)
-            .ok_or_else(|| StasisError::PortFailure("manuscript_id is required".to_string()))?;
-        let appendix = input
-            .get("appendix")
-            .and_then(Value::as_str)
-            .ok_or_else(|| StasisError::PortFailure("appendix is required".to_string()))?;
-        let reason = input
-            .get("reason")
-            .and_then(Value::as_str)
-            .ok_or_else(|| StasisError::PortFailure("reason is required".to_string()))?;
-        let session_id = input
-            .get("session_id")
-            .and_then(Value::as_str)
-            .map(str::to_string);
-
-        let proposal = propose_overlay(manuscript_id, appendix, reason, session_id)
-            .map_err(StasisError::PortFailure)?;
-
-        Ok(json!({
-            "ok": true,
-            "proposal_id": proposal.proposal_id,
-            "manuscript_id": proposal.manuscript_id,
-            "status": proposal.status,
-            "path": proposal_path(&proposal.proposal_id).display().to_string(),
-            "message": "Overlay proposal queued for operator approval — does not affect live turns until promoted.",
-        }))
+        Ok(ManuscriptOverlayProposeOutput {
+            ok: true,
+            path: proposal_path(&proposal.proposal_id).display().to_string(),
+            proposal_id: proposal.proposal_id,
+            manuscript_id: proposal.manuscript_id,
+            status: proposal.status,
+            message: "Overlay proposal queued for operator approval — does not affect live turns until promoted."
+                .to_string(),
+        })
     }
 }
 
 pub struct CognitionManuscriptOverlayListTool;
 
-#[async_trait]
-impl StasisTool for CognitionManuscriptOverlayListTool {
-    fn name(&self) -> &'static str {
-        COGNITION_MANUSCRIPT_OVERLAY_LIST
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ManuscriptOverlayListInput {
+    #[serde(default)]
+    #[schemars(
+        with = "usize",
+        range(min = 1, max = 100),
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    pub limit: CompatOption<usize>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("List pending manuscript overlay proposals awaiting operator approval.")
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ManuscriptOverlayListOutput {
+    pub ok: bool,
+    pub count: usize,
+    pub pending_dir: String,
+    pub proposals: Vec<ManuscriptOverlayProposal>,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "limit": { "type": "integer", "minimum": 1, "maximum": 100 }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let limit = input
-            .get("limit")
-            .and_then(Value::as_u64)
-            .map(|value| value as usize)
-            .unwrap_or(20);
+#[medousa_tool(id = COGNITION_MANUSCRIPT_OVERLAY_LIST_ID)]
+impl CognitionManuscriptOverlayListTool {
+    /// List pending manuscript overlay proposals awaiting operator approval.
+    async fn invoke_typed(
+        &self,
+        input: ManuscriptOverlayListInput,
+    ) -> stasis::prelude::Result<ManuscriptOverlayListOutput> {
+        let limit = input.limit.into_option().unwrap_or(20);
         let proposals = list_pending_proposals(limit).map_err(StasisError::PortFailure)?;
-        Ok(json!({
-            "ok": true,
-            "count": proposals.len(),
-            "pending_dir": pending_dir().display().to_string(),
-            "proposals": proposals,
-        }))
+        Ok(ManuscriptOverlayListOutput {
+            ok: true,
+            count: proposals.len(),
+            pending_dir: pending_dir().display().to_string(),
+            proposals,
+        })
     }
 }
 
@@ -240,6 +243,24 @@ mod tests {
         );
 
         let _ = fs::remove_file(proposal_path(&proposal.proposal_id));
+    }
+
+    #[test]
+    fn overlay_wire_optionals_remain_lenient_for_legacy_values() {
+        let proposal: ManuscriptOverlayProposeInput = serde_json::from_value(serde_json::json!({
+            "manuscript_id": "base-researcher",
+            "appendix": "notes",
+            "reason": "useful",
+            "session_id": 42,
+        }))
+        .expect("proposal input");
+        assert!(proposal.session_id.into_option().is_none());
+
+        let list: ManuscriptOverlayListInput = serde_json::from_value(serde_json::json!({
+            "limit": "20",
+        }))
+        .expect("list input");
+        assert!(list.limit.into_option().is_none());
     }
 
     fn overlay_test_lock() -> std::sync::MutexGuard<'static, ()> {

@@ -1,0 +1,5 @@
+error: `invoke_typed` does not support generics
+  --> tests/ui/fail_generic_handler.rs:11:26
+   |
+11 |     async fn invoke_typed<T>(&self, input: T) -> Result<T, ()> {
+   |                          ^^^

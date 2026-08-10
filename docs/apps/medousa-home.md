@@ -8,10 +8,10 @@ Native desktop and mobile shell (Tauri v2 + SvelteKit). Product README: [../../R
 
 | Viewport | Shell | Primary surfaces |
 |----------|-------|------------------|
-| Desktop (>768px) | WorkshopShell | Chat, Work, Library, Workshop, Settings |
+| Desktop (>768px) | WorkshopShell | Chat, Work, Notes, Files, Artifacts, Workshop, Settings |
 | Mobile (≤768px) | MobileShell | Pulse, Work, Chat, You (Library, Skills, Settings, …) |
 
-Library on mobile includes **Notes** and **Presentations** tabs; presentations open fullscreen artifacts with safe-area chrome.
+Library on mobile includes **Notes** and **Artifacts** tabs; artifacts open fullscreen with safe-area chrome.
 
 Active roadmap: [architecture/ROADMAP.md](../../architecture/ROADMAP.md).
 

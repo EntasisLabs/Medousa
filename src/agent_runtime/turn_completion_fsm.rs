@@ -1,16 +1,15 @@
 //! Explicit turn completion FSM — text-only model rounds.
 //!
-//! **Workshop/worker:** heuristic interim continues + `prose_requires_finish` after tools.
-//!
-//! **Host scheduler (`host_scheduler_lane`):** ambiguous prose enters **content pack hold**
-//! (one resolution round, merge or tools). Substantive answers commit immediately.
-//! Execution work uses `cognition_turn_begin_work`; workshop uses `cognition_turn_finish`.
+//! Completion is independent of the execution lane:
+//! - host scheduling uses a one-round content-pack hold for ambiguous prose;
+//! - principal-facing foreground work commits two consecutive prose rounds as one answer;
+//! - synthesis-bound workers require an explicit finish after tools.
 
 use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
 
 use crate::turn_text_heuristics::{
-    is_extended_prose, looks_like_clarifying_question, looks_like_interim_status,
-    looks_like_planning_prose, looks_like_substantive_final_answer, EXTENDED_PROSE_CHAR_THRESHOLD,
+    EXTENDED_PROSE_CHAR_THRESHOLD, is_extended_prose, looks_like_clarifying_question,
+    looks_like_interim_status, looks_like_planning_prose, looks_like_substantive_final_answer,
 };
 
 /// A non-tool draft at or below this many characters is treated as a brief
@@ -28,6 +27,30 @@ pub fn resolve_interim_continue_cap(max_tool_rounds: usize) -> usize {
 
 /// Host scheduler: empty model round after tools may continue at most once.
 pub const HOST_EMPTY_AFTER_TOOLS_CONTINUE_CAP: usize = 1;
+
+/// Principal-delivery contract for text-only model rounds.
+///
+/// This must not be inferred from where execution happens: Coder executes in the
+/// foreground but still owns a principal-facing reply, while workshop workers
+/// produce synthesis-bound results.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnCompletionProfile {
+    HostScheduler,
+    ForegroundPrincipal,
+    WorkerSynthesis,
+}
+
+impl TurnCompletionProfile {
+    pub fn uses_host_scheduler_rules(self) -> bool {
+        matches!(self, Self::HostScheduler)
+    }
+
+    /// This profile can hold one prose round so a second consecutive text-only
+    /// round commits the combined response. Any intervening tool call resets it.
+    pub fn holds_first_prose(self) -> bool {
+        matches!(self, Self::HostScheduler | Self::ForegroundPrincipal)
+    }
+}
 
 /// What the tool loop should do after a text-only model response.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,7 +74,7 @@ pub enum ContinueReason {
     InterimProse,
     /// Long planning/status prose — reloop with full text kept in transcript.
     ExtendedProse,
-    /// Host scheduler only: ambiguous prose held for one resolution round (content pack).
+    /// Principal-facing content held for one bounded resolution round.
     PackHold,
 }
 
@@ -60,9 +83,10 @@ pub fn continue_control_message(reason: ContinueReason, _missing_tools: &[String
     match reason {
         ContinueReason::EmptyAfterTools => {
             "Turn continues: last model round had no tool calls and no assistant text. \
-             Call the tools you still need in this round, then cognition_turn_finish with the \
-             complete answer, or cognition_turn_checkpoint for a mid-task handoff. \
-             After tools have run, only cognition_turn_finish commits the principal-facing answer."
+             Call the tools you still need in this round, then deliver the complete answer; \
+             cognition_turn_finish is the explicit hard stop and cognition_turn_checkpoint \
+             is for a mid-task handoff. Synthesis-bound workers must use cognition_turn_finish \
+             for direct pass-through."
                 .to_string()
         }
         ContinueReason::InterimProse => {
@@ -98,15 +122,33 @@ fn is_short_interim_prose(draft: &str) -> bool {
     looks_like_interim_status(draft) || trimmed.chars().count() <= INTERIM_MAX_CHARS
 }
 
-fn continue_loop(
-    reason: ContinueReason,
-    missing_tools: Vec<String>,
-) -> TurnRoundAction {
+fn continue_loop(reason: ContinueReason, missing_tools: Vec<String>) -> TurnRoundAction {
     TurnRoundAction::ContinueLoop {
         reason,
         control_message: continue_control_message(reason, &missing_tools),
         missing_tools,
     }
+}
+
+fn common_terminal_guard(
+    draft: &str,
+    pending_final_answer: bool,
+    rounds_executed: usize,
+    max_tool_rounds: usize,
+) -> Option<TurnRoundAction> {
+    if pending_final_answer && !draft.is_empty() {
+        return Some(TurnRoundAction::EndTurn {
+            termination_reason: "prepare_final_then_text",
+        });
+    }
+
+    if rounds_executed >= max_tool_rounds.max(1) {
+        return Some(TurnRoundAction::EndTurn {
+            termination_reason: "max_rounds_fuse",
+        });
+    }
+
+    None
 }
 
 fn maybe_continue_prose(
@@ -143,8 +185,7 @@ pub struct NoToolDebtRoundContext {
     pub interim_continues_used: usize,
     /// Per-turn budget for interim auto-continues (bounded so the loop can't spin).
     pub interim_continue_cap: usize,
-    /// Host scheduler: prose-terminates after tools; bounded pre-tool continues.
-    pub host_scheduler_lane: bool,
+    pub completion_profile: TurnCompletionProfile,
 }
 
 #[derive(Debug, Clone)]
@@ -159,8 +200,7 @@ pub struct AfterToolsRoundContext<'a> {
     pub interim_continues_used: usize,
     /// Per-turn budget for interim auto-continues (bounded so the loop can't spin).
     pub interim_continue_cap: usize,
-    /// Host scheduler: prose-terminates after tools; bounded pre-tool continues.
-    pub host_scheduler_lane: bool,
+    pub completion_profile: TurnCompletionProfile,
     /// Host scheduler: empty-after-tools continues already spent this turn.
     pub empty_after_tools_continues_used: usize,
 }
@@ -168,16 +208,13 @@ pub struct AfterToolsRoundContext<'a> {
 fn decide_host_no_tool_debt_text_round(ctx: &NoToolDebtRoundContext) -> TurnRoundAction {
     let draft = ctx.draft_text.trim();
 
-    if ctx.pending_final_answer && !draft.is_empty() {
-        return TurnRoundAction::EndTurn {
-            termination_reason: "prepare_final_then_text",
-        };
-    }
-
-    if ctx.rounds_executed >= ctx.max_tool_rounds.max(1) {
-        return TurnRoundAction::EndTurn {
-            termination_reason: "max_rounds_fuse",
-        };
+    if let Some(action) = common_terminal_guard(
+        draft,
+        ctx.pending_final_answer,
+        ctx.rounds_executed,
+        ctx.max_tool_rounds,
+    ) {
+        return action;
     }
 
     if looks_like_substantive_final_answer(&ctx.draft_text) {
@@ -198,16 +235,13 @@ fn decide_host_no_tool_debt_text_round(ctx: &NoToolDebtRoundContext) -> TurnRoun
 fn decide_host_after_tools_text_round(ctx: &AfterToolsRoundContext<'_>) -> TurnRoundAction {
     let draft = ctx.draft_text.trim();
 
-    if ctx.pending_final_answer && !draft.is_empty() {
-        return TurnRoundAction::EndTurn {
-            termination_reason: "prepare_final_then_text",
-        };
-    }
-
-    if ctx.rounds_executed >= ctx.max_tool_rounds.max(1) {
-        return TurnRoundAction::EndTurn {
-            termination_reason: "max_rounds_fuse",
-        };
+    if let Some(action) = common_terminal_guard(
+        draft,
+        ctx.pending_final_answer,
+        ctx.rounds_executed,
+        ctx.max_tool_rounds,
+    ) {
+        return action;
     }
 
     if draft.is_empty() {
@@ -232,24 +266,27 @@ fn decide_host_after_tools_text_round(ctx: &AfterToolsRoundContext<'_>) -> TurnR
     continue_loop(ContinueReason::PackHold, vec![])
 }
 
-/// Zero tool invocations this turn — any non-empty prose ends the turn.
+/// Decide a text-only round before any tools have run.
 pub fn decide_no_tool_debt_text_round(ctx: &NoToolDebtRoundContext) -> TurnRoundAction {
-    if ctx.host_scheduler_lane {
-        return decide_host_no_tool_debt_text_round(ctx);
+    match ctx.completion_profile {
+        TurnCompletionProfile::HostScheduler => {
+            return decide_host_no_tool_debt_text_round(ctx);
+        }
+        TurnCompletionProfile::ForegroundPrincipal => {
+            return decide_foreground_no_tool_debt_text_round(ctx);
+        }
+        TurnCompletionProfile::WorkerSynthesis => {}
     }
 
     let draft = ctx.draft_text.trim();
 
-    if ctx.pending_final_answer && !draft.is_empty() {
-        return TurnRoundAction::EndTurn {
-            termination_reason: "prepare_final_then_text",
-        };
-    }
-
-    if ctx.rounds_executed >= ctx.max_tool_rounds.max(1) {
-        return TurnRoundAction::EndTurn {
-            termination_reason: "max_rounds_fuse",
-        };
+    if let Some(action) = common_terminal_guard(
+        draft,
+        ctx.pending_final_answer,
+        ctx.rounds_executed,
+        ctx.max_tool_rounds,
+    ) {
+        return action;
     }
 
     if looks_like_clarifying_question(&ctx.draft_text) {
@@ -272,11 +309,43 @@ pub fn decide_no_tool_debt_text_round(ctx: &NoToolDebtRoundContext) -> TurnRound
     }
 }
 
-/// Tools already ran — workshop prose without `cognition_turn_finish` ends with a stub body;
-/// host scheduler prose commits directly.
+fn decide_foreground_no_tool_debt_text_round(ctx: &NoToolDebtRoundContext) -> TurnRoundAction {
+    let draft = ctx.draft_text.trim();
+
+    if let Some(action) = common_terminal_guard(
+        draft,
+        ctx.pending_final_answer,
+        ctx.rounds_executed,
+        ctx.max_tool_rounds,
+    ) {
+        return action;
+    }
+
+    if looks_like_clarifying_question(&ctx.draft_text) {
+        return TurnRoundAction::EndTurn {
+            termination_reason: "clarifying_question",
+        };
+    }
+
+    if draft.is_empty() {
+        return TurnRoundAction::EndTurn {
+            termination_reason: "no_tools_prose",
+        };
+    }
+
+    continue_loop(ContinueReason::PackHold, vec![])
+}
+
+/// Decide a text-only round after tools have run.
 pub fn decide_after_tools_text_round(ctx: &AfterToolsRoundContext<'_>) -> TurnRoundAction {
-    if ctx.host_scheduler_lane {
-        return decide_host_after_tools_text_round(ctx);
+    match ctx.completion_profile {
+        TurnCompletionProfile::HostScheduler => {
+            return decide_host_after_tools_text_round(ctx);
+        }
+        TurnCompletionProfile::ForegroundPrincipal => {
+            return decide_foreground_after_tools_text_round(ctx);
+        }
+        TurnCompletionProfile::WorkerSynthesis => {}
     }
 
     let draft = ctx.draft_text.trim();
@@ -287,16 +356,13 @@ pub fn decide_after_tools_text_round(ctx: &AfterToolsRoundContext<'_>) -> TurnRo
         };
     }
 
-    if ctx.rounds_executed >= ctx.max_tool_rounds.max(1) {
-        return TurnRoundAction::EndTurn {
-            termination_reason: "max_rounds_fuse",
-        };
-    }
-
-    if ctx.pending_final_answer && !draft.is_empty() {
-        return TurnRoundAction::EndTurn {
-            termination_reason: "prepare_final_then_text",
-        };
+    if let Some(action) = common_terminal_guard(
+        draft,
+        ctx.pending_final_answer,
+        ctx.rounds_executed,
+        ctx.max_tool_rounds,
+    ) {
+        return action;
     }
 
     if draft.is_empty() {
@@ -323,6 +389,31 @@ pub fn decide_after_tools_text_round(ctx: &AfterToolsRoundContext<'_>) -> TurnRo
     }
 }
 
+fn decide_foreground_after_tools_text_round(ctx: &AfterToolsRoundContext<'_>) -> TurnRoundAction {
+    let draft = ctx.draft_text.trim();
+
+    if let Some(action) = common_terminal_guard(
+        draft,
+        ctx.pending_final_answer,
+        ctx.rounds_executed,
+        ctx.max_tool_rounds,
+    ) {
+        return action;
+    }
+
+    if draft.is_empty() {
+        return continue_loop(ContinueReason::EmptyAfterTools, vec![]);
+    }
+
+    if looks_like_clarifying_question(&ctx.draft_text) {
+        return TurnRoundAction::EndTurn {
+            termination_reason: "clarifying_question",
+        };
+    }
+
+    continue_loop(ContinueReason::PackHold, vec![])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -336,11 +427,20 @@ mod tests {
             max_tool_rounds: 10,
             interim_continues_used: 0,
             interim_continue_cap: 2,
-            host_scheduler_lane: false,
+            completion_profile: TurnCompletionProfile::WorkerSynthesis,
         }
     }
 
-    fn after_tools<'a>(draft: &str, invocations: &'a [ToolInvocation]) -> AfterToolsRoundContext<'a> {
+    fn foreground_ctx(draft: &str) -> NoToolDebtRoundContext {
+        let mut round = ctx(draft);
+        round.completion_profile = TurnCompletionProfile::ForegroundPrincipal;
+        round
+    }
+
+    fn after_tools<'a>(
+        draft: &str,
+        invocations: &'a [ToolInvocation],
+    ) -> AfterToolsRoundContext<'a> {
         AfterToolsRoundContext {
             draft_text: draft.to_string(),
             pending_final_answer: false,
@@ -350,9 +450,18 @@ mod tests {
             workshop_lane: false,
             interim_continues_used: 0,
             interim_continue_cap: 2,
-            host_scheduler_lane: false,
+            completion_profile: TurnCompletionProfile::WorkerSynthesis,
             empty_after_tools_continues_used: 0,
         }
+    }
+
+    fn foreground_after_tools<'a>(
+        draft: &str,
+        invocations: &'a [ToolInvocation],
+    ) -> AfterToolsRoundContext<'a> {
+        let mut round = after_tools(draft, invocations);
+        round.completion_profile = TurnCompletionProfile::ForegroundPrincipal;
+        round
     }
 
     fn host_ctx(draft: &str) -> NoToolDebtRoundContext {
@@ -363,11 +472,14 @@ mod tests {
             max_tool_rounds: 10,
             interim_continues_used: 0,
             interim_continue_cap: 1,
-            host_scheduler_lane: true,
+            completion_profile: TurnCompletionProfile::HostScheduler,
         }
     }
 
-    fn host_after_tools<'a>(draft: &str, invocations: &'a [ToolInvocation]) -> AfterToolsRoundContext<'a> {
+    fn host_after_tools<'a>(
+        draft: &str,
+        invocations: &'a [ToolInvocation],
+    ) -> AfterToolsRoundContext<'a> {
         AfterToolsRoundContext {
             draft_text: draft.to_string(),
             pending_final_answer: false,
@@ -377,7 +489,7 @@ mod tests {
             workshop_lane: false,
             interim_continues_used: 0,
             interim_continue_cap: 1,
-            host_scheduler_lane: true,
+            completion_profile: TurnCompletionProfile::HostScheduler,
             empty_after_tools_continues_used: 0,
         }
     }
@@ -440,12 +552,38 @@ mod tests {
         let invocations = vec![tool("cognition_environment_get")];
         let draft = "Now I see what went wrong before — I was targeting home (builtin), which \
                      silently rejects components. Let me grab the schemas.";
-        assert!(crate::turn_text_heuristics::looks_like_interim_status(draft));
+        assert!(crate::turn_text_heuristics::looks_like_interim_status(
+            draft
+        ));
         let action = decide_after_tools_text_round(&after_tools(draft, &invocations));
         assert!(matches!(
             action,
             TurnRoundAction::ContinueLoop {
                 reason: ContinueReason::InterimProse,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn foreground_announcement_stays_a_preamble() {
+        // Both principal-facing profiles keep the announcement in a content pack;
+        // a following tool call resets it instead of ending the turn.
+        let announce = "I'll correct the hardcoded port in the three tool modules, then rerun the shell \
+             smoke test to confirm the session proxy answers.";
+        let mut foreground = foreground_ctx(announce);
+        foreground.interim_continue_cap = resolve_interim_continue_cap(12);
+        assert!(matches!(
+            decide_no_tool_debt_text_round(&foreground),
+            TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::PackHold,
+                ..
+            }
+        ));
+        assert!(matches!(
+            decide_no_tool_debt_text_round(&host_ctx(announce)),
+            TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::PackHold,
                 ..
             }
         ));
@@ -487,10 +625,8 @@ mod tests {
     #[test]
     fn interim_prose_after_tools_continues_bounded() {
         let invocations = vec![tool("cognition_memory_context")];
-        let action = decide_after_tools_text_round(&after_tools(
-            "I'll spin up workers next.",
-            &invocations,
-        ));
+        let action =
+            decide_after_tools_text_round(&after_tools("I'll spin up workers next.", &invocations));
         assert!(matches!(
             action,
             TurnRoundAction::ContinueLoop {
@@ -522,7 +658,7 @@ mod tests {
     }
 
     #[test]
-    fn interim_prose_after_tools_ends_when_cap_exhausted() {
+    fn worker_interim_prose_after_tools_requires_finish_when_cap_exhausted() {
         let invocations = vec![tool("cognition_memory_context")];
         let cap = resolve_interim_continue_cap(10);
         let mut round = after_tools("I'll spin up workers next.", &invocations);
@@ -538,7 +674,44 @@ mod tests {
     }
 
     #[test]
-    fn substantive_prose_after_tools_requires_finish() {
+    fn foreground_substantive_prose_after_tools_enters_one_round_hold() {
+        let invocations = vec![tool("cognition_memory_moods")];
+        let action = decide_after_tools_text_round(&foreground_after_tools(
+            "Focused preset pulled and applied: stability is now 0.95, friction dropped to 0.12, \
+             and autonomy holds at 0.80. I stored the calibration summary in Locus for this session.",
+            &invocations,
+        ));
+        assert!(matches!(
+            action,
+            TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::PackHold,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn long_foreground_final_is_not_mistaken_for_planning() {
+        let invocations = vec![tool("cognition_coder_shell_run")];
+        let answer = "The runtime now keeps announcements alive until work begins, while the final \
+                      response remains principal-facing after tool execution. I verified the focused \
+                      completion tests and the streamed terminal body is committed from the model \
+                      response rather than whichever chunks happened to arrive first. No additional \
+                      repository changes are pending, and the implementation preserves the worker \
+                      synthesis boundary for delegated tasks.";
+        assert!(is_extended_prose(answer));
+        assert!(looks_like_substantive_final_answer(answer));
+        assert!(matches!(
+            decide_after_tools_text_round(&foreground_after_tools(answer, &invocations)),
+            TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::PackHold,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn synthesis_worker_substantive_prose_after_tools_requires_finish() {
         let invocations = vec![tool("cognition_memory_moods")];
         let action = decide_after_tools_text_round(&after_tools(
             "Focused preset pulled and applied: stability is now 0.95, friction dropped to 0.12, \
@@ -556,7 +729,7 @@ mod tests {
     #[test]
     fn clarifying_question_after_tools_commits_prose() {
         let invocations = vec![tool("cognition_memory_context")];
-        let action = decide_after_tools_text_round(&after_tools(
+        let action = decide_after_tools_text_round(&foreground_after_tools(
             "Which repository should I search — medousa or stasis?",
             &invocations,
         ));
@@ -571,7 +744,7 @@ mod tests {
     #[test]
     fn empty_after_tools_continues_without_draft() {
         let invocations = vec![tool("cognition_tool_history_summary")];
-        let action = decide_after_tools_text_round(&after_tools("", &invocations));
+        let action = decide_after_tools_text_round(&foreground_after_tools("", &invocations));
         assert!(matches!(
             action,
             TurnRoundAction::ContinueLoop {
@@ -590,6 +763,7 @@ mod tests {
         );
         round.pending_final_answer = true;
         round.workshop_lane = true;
+        round.completion_profile = TurnCompletionProfile::WorkerSynthesis;
         let action = decide_after_tools_text_round(&round);
         assert!(matches!(
             action,

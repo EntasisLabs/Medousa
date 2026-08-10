@@ -5,27 +5,26 @@ use std::sync::{Arc, OnceLock};
 use async_trait::async_trait;
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Utc};
 use locus_core_rs::NodeStore;
+use schemars::JsonSchema;
+use schemars::schema::{InstanceType, Schema, SchemaObject};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::sync::{RwLock, mpsc};
 use uuid::Uuid;
 
 use crate::medousa_tool_loop::MedousaToolLoopPipeline;
-use stasis::application::orchestration::tool_registry::{
-    StasisTool, ToolRegistry,
-};
+use stasis::application::orchestration::tool_registry::{StasisTool, ToolRegistry};
 use stasis::domain::runtime::job_attempt::JobAttemptOutcome;
 use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
-use stasis::ports::outbound::runtime::job_attempt_store::JobAttemptStore;
-use stasis::prelude::{
-    BackoffPolicy, NewJob, RecurringDefinition,
-    RuntimeBackend, RuntimeComposition, StasisError,
-};
+use stasis::prelude::{RuntimeBackend, RuntimeComposition, StasisError};
 use stasis::prelude_ext::{MemoryContextReader, MemoryContextWriter};
 
-use crate::capability_catalog::CapabilityRegistry;
+use crate::capability_catalog::{
+    CapabilityListResponse, CapabilityRegistry, CapabilityResolveResponse, CapabilitySearchMatch,
+    CapabilitySearchResponse,
+};
 use crate::engine_context::{
-    EngineExecutionLane, LaneSafetyActionClass, validate_lane_action,
-    validate_lane_policy_profile,
+    EngineExecutionLane, LaneSafetyActionClass, validate_lane_action, validate_lane_policy_profile,
 };
 use crate::events::TuiEvent;
 use crate::grapheme_sttp_compaction::{
@@ -35,17 +34,37 @@ use crate::mcp_gateway_api::{McpDiscoverRequest, McpInvokeRequest, McpTurnContex
 use crate::mcp_gateway_client::McpGatewayClient;
 use crate::mcp_turn_token::mint_mcp_turn_token;
 use crate::process_once;
+use crate::recurring_delivery::{
+    DeliveryResolveContext, RecurringDeliverySpec, ambient_from_turn_scope,
+    bind_recurring_delivery_spec_for_registration,
+};
+use crate::recurring_feed::{RecurringFeedSpec, bind_recurring_feed_spec_for_registration};
+use crate::recurring_schedule::RecurringScheduleSpec;
+use crate::runtime_composition_ext::RuntimeCompositionExt;
+use crate::runtime_job_spec::ToolJobSpec;
 use crate::tui::runtime_services::{
     build_tool_loop_pipeline_for_target, build_tui_runtime_services,
 };
-use crate::recurring_delivery::{
-    DeliveryResolveContext, ambient_from_turn_scope, bind_recurring_delivery_for_registration,
-};
-use crate::recurring_feed::bind_recurring_feed_for_registration;
 use crate::turn_continuation::{
     self, ContinuationAwaitMode, TurnContinuationScope, continuation_tool_metadata,
     wire_turn_child_job,
 };
+use crate::typed_tools::{CompatOption, ExternalJson, ToolId, medousa_tool};
+
+const COGNITION_JOB_ENQUEUE_ID: ToolId = ToolId::new("cognition_job_enqueue");
+const COGNITION_GRAPHEME_RUN_ID: ToolId = ToolId::new("cognition_grapheme_run");
+const COGNITION_GRAPHEME_MODULES_ID: ToolId = ToolId::new("cognition_grapheme_modules");
+const COGNITION_GRAPHEME_MODULES_INFO_ID: ToolId = ToolId::new("cognition_grapheme_modules_info");
+const COGNITION_GRAPHEME_MODULES_OPS_ID: ToolId = ToolId::new("cognition_grapheme_modules_ops");
+const COGNITION_GRAPHEME_EXAMPLES_ID: ToolId = ToolId::new("cognition_grapheme_examples");
+const COGNITION_GRAPHEME_CLI_RUN_ID: ToolId = ToolId::new("cognition_grapheme_cli_run");
+const COGNITION_GRAPHEME_PROMOTE_TO_JOB_ID: ToolId =
+    ToolId::new("cognition_grapheme_promote_to_job");
+const COGNITION_GRAPHEME_PROMOTE_TO_RECURRING_ID: ToolId =
+    ToolId::new("cognition_grapheme_promote_to_recurring");
+const COGNITION_GRAPHEME_PROMOTE_LAST_RUN_TO_RECURRING_ID: ToolId =
+    ToolId::new("cognition_grapheme_promote_last_run_to_recurring");
+const COGNITION_MCP_INVOKE_ID: ToolId = ToolId::new("cognition_mcp_invoke");
 
 async fn run_grapheme_cli(args: Vec<String>) -> stasis::prelude::Result<Value> {
     let cmdline = format!("grapheme {}", args.join(" "));
@@ -92,35 +111,24 @@ pub(crate) async fn run_grapheme_via_runtime(
     let job_id = format!("cognition-gph-runtime-{}", Uuid::new_v4().simple());
     let now = Utc::now();
 
-    let job = NewJob {
-        id: job_id.clone(),
-        queue: "default".to_string(),
-        job_type: "workflow.grapheme.run".to_string(),
-        payload_ref: format!("grapheme:inline:{source}"),
-        priority: 100,
-        max_attempts: 1,
-        idempotency_key: format!("idem-{job_id}"),
-        correlation_id: job_id.clone(),
-        causation_id: causation.to_string(),
-        trace_id: job_id.clone(),
-        sttp_input_node_id: "sttp:in:cognition:grapheme:runtime".to_string(),
-        scheduled_at: now,
-        backoff_policy: BackoffPolicy::default(),
-    };
+    let job = ToolJobSpec::new(
+        job_id.clone(),
+        "default",
+        "workflow.grapheme.run",
+        format!("grapheme:inline:{source}"),
+        causation,
+        "sttp:in:cognition:grapheme:runtime",
+        now,
+    )
+    .build();
 
-    match &**runtime {
-        RuntimeComposition::InMemory(rt) => rt.enqueue(job).await?,
-        RuntimeComposition::Surreal(rt) => rt.enqueue(job).await?,
-    }
+    runtime.enqueue_job(job).await?;
 
     let _ = process_once(runtime, causation)
         .await
         .map_err(|e| StasisError::PortFailure(format!("runtime process_once failed: {e}")))?;
 
-    let attempts = match &**runtime {
-        RuntimeComposition::InMemory(rt) => rt.job_attempt_store.list_by_job_id(&job_id).await?,
-        RuntimeComposition::Surreal(rt) => rt.job_attempt_store.list_by_job_id(&job_id).await?,
-    };
+    let attempts = runtime.as_ref().list_job_attempts(&job_id).await?;
 
     let last = attempts.last().ok_or_else(|| {
         StasisError::PortFailure(
@@ -218,15 +226,14 @@ async fn emit_compaction_observability(
         .unwrap_or_default()
         != "sttp_compaction"
     {
-        if inline_notice_enabled
-            && let Some(size) = raw_output_bytes {
-                let _ = event_tx
-                    .send(TuiEvent::UiNotice(format!(
-                        "◈ sttp_compaction tool={} status=inline bytes={} trigger_bytes={}",
-                        tool_name, size, trigger_bytes
-                    )))
-                    .await;
-            }
+        if inline_notice_enabled && let Some(size) = raw_output_bytes {
+            let _ = event_tx
+                .send(TuiEvent::UiNotice(format!(
+                    "◈ sttp_compaction tool={} status=inline bytes={} trigger_bytes={}",
+                    tool_name, size, trigger_bytes
+                )))
+                .await;
+        }
         return;
     }
 
@@ -290,60 +297,76 @@ impl CognitionJobEnqueueTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionJobEnqueueTool {
-    fn name(&self) -> &'static str {
-        "cognition_job_enqueue"
-    }
+#[derive(Debug, JsonSchema)]
+pub struct JobEnqueueInput {
+    /// The job handler identifier, e.g. 'workflow.grapheme.run'
+    #[schemars(required, with = "String")]
+    job_type: Option<String>,
+    /// Serialized job payload. For grapheme: 'grapheme:inline:<source>'. For JSON payloads: serialized JSON string.
+    #[schemars(required, with = "String")]
+    payload_ref: Option<String>,
+    /// Optional human-readable note about the intent of this job
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Persist a job into the Stasis runtime for durable background execution. \
-             Use this to schedule work: grapheme scripts, orchestration patterns, \
-             memory operations, or any registered workflow handler. \
-             Valid job_type values: workflow.grapheme.run, workflow.grapheme.echo, \
-             workflow.stasis.orchestration.sequential, workflow.stasis.orchestration.concurrent, \
-             workflow.stasis.orchestration.handoff, workflow.stasis.agent_session, \
-             workflow.stasis.prompt, openshell.sandbox.run.",
-        )
+impl<'de> Deserialize<'de> for JobEnqueueInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(default)]
+            job_type: CompatOption<String>,
+            #[serde(default)]
+            payload_ref: CompatOption<String>,
+            #[serde(default)]
+            note: CompatOption<String>,
+        }
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            job_type: input.job_type.into_option(),
+            payload_ref: input.payload_ref.into_option(),
+            note: input.note.into_option(),
+        })
     }
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "job_type": {
-                    "type": "string",
-                    "description": "The job handler identifier, e.g. 'workflow.grapheme.run'"
-                },
-                "payload_ref": {
-                    "type": "string",
-                    "description": "Serialized job payload. For grapheme: 'grapheme:inline:<source>'. For JSON payloads: serialized JSON string."
-                },
-                "note": {
-                    "type": "string",
-                    "description": "Optional human-readable note about the intent of this job"
-                }
-            },
-            "required": ["job_type", "payload_ref"]
-        }))
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum JobEnqueueOutput {
+    Rejected {
+        status: String,
+        reason: String,
+        job_type: String,
+        policy_message: String,
+        validation: ExternalJson,
+        note: String,
+    },
+    Enqueued {
+        job_id: String,
+        status: String,
+        note: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        continuation: Option<ExternalJson>,
+    },
+}
 
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let job_type = input
-            .get("job_type")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                StasisError::PortFailure("cognition_job_enqueue: job_type is required".to_string())
-            })?;
-        let payload_ref = input
-            .get("payload_ref")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                StasisError::PortFailure(
-                    "cognition_job_enqueue: payload_ref is required".to_string(),
-                )
-            })?;
+#[medousa_tool(id = COGNITION_JOB_ENQUEUE_ID)]
+impl CognitionJobEnqueueTool {
+    /// Persist a job into the Stasis runtime for durable background execution. Use this to schedule work: grapheme scripts, orchestration patterns, memory operations, or any registered workflow handler. Valid job_type values: workflow.grapheme.run, workflow.grapheme.echo, workflow.stasis.orchestration.sequential, workflow.stasis.orchestration.concurrent, workflow.stasis.orchestration.handoff, workflow.stasis.agent_session, workflow.stasis.prompt, openshell.sandbox.run.
+    async fn invoke_typed(
+        &self,
+        input: JobEnqueueInput,
+    ) -> stasis::prelude::Result<JobEnqueueOutput> {
+        let job_type = input.job_type.as_deref().ok_or_else(|| {
+            StasisError::PortFailure("cognition_job_enqueue: job_type is required".to_string())
+        })?;
+        let payload_ref = input.payload_ref.as_deref().ok_or_else(|| {
+            StasisError::PortFailure("cognition_job_enqueue: payload_ref is required".to_string())
+        })?;
 
         if job_type == "workflow.grapheme.run" {
             let source = grapheme_inline_payload_source(payload_ref).ok_or_else(|| {
@@ -358,51 +381,44 @@ impl StasisTool for CognitionJobEnqueueTool {
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false)
             {
-                return Ok(json!({
-                    "status": "rejected",
-                    "reason": "invalid_grapheme_source",
-                    "job_type": "workflow.grapheme.run",
-                    "policy_message": "Refused scheduling: Grapheme source failed runtime preflight.",
-                    "validation": validation,
-                    "note": input.get("note").and_then(|v| v.as_str()).unwrap_or("")
-                }));
+                return Ok(JobEnqueueOutput::Rejected {
+                    status: "rejected".to_string(),
+                    reason: "invalid_grapheme_source".to_string(),
+                    job_type: "workflow.grapheme.run".to_string(),
+                    policy_message: "Refused scheduling: Grapheme source failed runtime preflight."
+                        .to_string(),
+                    validation: ExternalJson::new(validation),
+                    note: input.note.clone().unwrap_or_default(),
+                });
             }
         }
 
         let job_id = format!("cognition-{}", Uuid::new_v4().simple());
         let now = Utc::now();
 
-        let mut job = NewJob {
-            id: job_id.clone(),
-            queue: "default".to_string(),
-            job_type: job_type.to_string(),
-            payload_ref: payload_ref.to_string(),
-            priority: 100,
-            max_attempts: 1,
-            idempotency_key: format!("idem-{job_id}"),
-            correlation_id: job_id.clone(),
-            causation_id: "cognition_tui".to_string(),
-            trace_id: job_id.clone(),
-            sttp_input_node_id: "sttp:in:cognition:enqueue".to_string(),
-            scheduled_at: now,
-            backoff_policy: BackoffPolicy::default(),
-        };
+        let mut job = ToolJobSpec::new(
+            job_id.clone(),
+            "default",
+            job_type,
+            payload_ref,
+            "cognition_tui",
+            "sttp:in:cognition:enqueue",
+            now,
+        )
+        .build();
 
         if let Some(scope) = self.turn_scope.read().await.clone() {
             wire_turn_child_job(
                 &mut job,
                 &scope,
-                self.name(),
+                COGNITION_JOB_ENQUEUE_ID.as_str(),
                 job_type,
                 ContinuationAwaitMode::Async,
             )
             .await;
         }
 
-        match &*self.runtime {
-            RuntimeComposition::InMemory(rt) => rt.enqueue(job).await?,
-            RuntimeComposition::Surreal(rt) => rt.enqueue(job).await?,
-        }
+        self.runtime.enqueue_job(job).await?;
 
         let _ = self
             .event_tx
@@ -412,24 +428,20 @@ impl StasisTool for CognitionJobEnqueueTool {
             })
             .await;
 
-        let mut response = json!({
-            "job_id": job_id,
-            "status": "enqueued",
-            "note": input.get("note").and_then(|v| v.as_str()).unwrap_or("")
+        let continuation = self.turn_scope.read().await.clone().map(|scope| {
+            ExternalJson::new(continuation_tool_metadata(
+                &scope,
+                &job_id,
+                ContinuationAwaitMode::Async,
+            ))
         });
-        if let Some(scope) = self.turn_scope.read().await.clone()
-            && let Some(obj) = response.as_object_mut() {
-                obj.insert(
-                    "continuation".to_string(),
-                    continuation_tool_metadata(
-                        &scope,
-                        &job_id,
-                        ContinuationAwaitMode::Async,
-                    ),
-                );
-            }
 
-        Ok(response)
+        Ok(JobEnqueueOutput::Enqueued {
+            job_id,
+            status: "enqueued".to_string(),
+            note: input.note.unwrap_or_default(),
+            continuation,
+        })
     }
 }
 
@@ -461,84 +473,72 @@ impl CognitionGraphemeRunTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionGraphemeRunTool {
-    fn name(&self) -> &'static str {
-        "cognition_grapheme_run"
-    }
+#[derive(Debug, JsonSchema)]
+pub struct GraphemeRunInput {
+    /// Complete Grapheme source code. Imports under 'grapheme/*' are allowed by default.
+    #[schemars(required, with = "String")]
+    source: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Execute a Grapheme script synchronously and return the result. \
-             Grapheme is a typed workflow scripting language. Built-in modules in the \
-             'grapheme/*' namespace are allowed by default (for example core, web). \
-             Scripts run sandboxed with guardrails enforced. \
-             Example source: import core from \"grapheme/core\"\nquery Run { \
-             core.echo(message: \"hello\") { state { current } } }",
-        )
+impl<'de> Deserialize<'de> for GraphemeRunInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(default)]
+            source: CompatOption<String>,
+        }
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            source: input.source.into_option(),
+        })
     }
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "source": {
-                    "type": "string",
-                    "description": "Complete Grapheme source code. Imports under 'grapheme/*' are allowed by default."
-                }
-            },
-            "required": ["source"]
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let source = input
-            .get("source")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                StasisError::PortFailure("cognition_grapheme_run: source is required".to_string())
-            })?;
+#[medousa_tool(id = COGNITION_GRAPHEME_RUN_ID)]
+impl CognitionGraphemeRunTool {
+    /// Execute a Grapheme script synchronously and return the result. Grapheme is a typed workflow scripting language. Built-in modules in the 'grapheme/*' namespace are allowed by default (for example core, web). Scripts run sandboxed with guardrails enforced. Example source: import core from "grapheme/core"
+    /// query Run { core.echo(message: "hello") { state { current } } }
+    async fn invoke_typed(&self, input: GraphemeRunInput) -> stasis::prelude::Result<ExternalJson> {
+        let source = input.source.as_deref().ok_or_else(|| {
+            StasisError::PortFailure("cognition_grapheme_run: source is required".to_string())
+        })?;
 
         remember_last_grapheme_source(source).await;
 
         let job_id = format!("cognition-gph-{}", Uuid::new_v4().simple());
         let now = Utc::now();
 
-        let mut job = NewJob {
-            id: job_id.clone(),
-            queue: "default".to_string(),
-            job_type: "workflow.grapheme.run".to_string(),
-            payload_ref: format!("grapheme:inline:{source}"),
-            priority: 100,
-            max_attempts: 1,
-            idempotency_key: format!("idem-{job_id}"),
-            correlation_id: job_id.clone(),
-            causation_id: "cognition_tui".to_string(),
-            trace_id: job_id.clone(),
-            sttp_input_node_id: "sttp:in:cognition:grapheme".to_string(),
-            scheduled_at: now,
-            backoff_policy: BackoffPolicy::default(),
-        };
+        let mut job = ToolJobSpec::new(
+            job_id.clone(),
+            "default",
+            "workflow.grapheme.run",
+            format!("grapheme:inline:{source}"),
+            "cognition_tui",
+            "sttp:in:cognition:grapheme",
+            now,
+        )
+        .build();
 
         if let Some(scope) = self.turn_scope.read().await.clone() {
             wire_turn_child_job(
                 &mut job,
                 &scope,
-                self.name(),
+                COGNITION_GRAPHEME_RUN_ID.as_str(),
                 "workflow.grapheme.run",
                 ContinuationAwaitMode::Sync,
             )
             .await;
         }
 
-        let continuation_meta = self.turn_scope.read().await.clone().map(|scope| {
-            continuation_tool_metadata(&scope, &job_id, ContinuationAwaitMode::Sync)
-        });
+        let continuation_meta =
+            self.turn_scope.read().await.clone().map(|scope| {
+                continuation_tool_metadata(&scope, &job_id, ContinuationAwaitMode::Sync)
+            });
 
-        match &*self.runtime {
-            RuntimeComposition::InMemory(rt) => rt.enqueue(job).await?,
-            RuntimeComposition::Surreal(rt) => rt.enqueue(job).await?,
-        }
+        self.runtime.enqueue_job(job).await?;
 
         let _ = self
             .event_tx
@@ -551,14 +551,7 @@ impl StasisTool for CognitionGraphemeRunTool {
         let runtime_ref = Arc::clone(&self.runtime);
         let mut raw_output = match process_once(&runtime_ref, "cognition_tui").await {
             Ok(_) => {
-                let attempts = match &*runtime_ref {
-                    RuntimeComposition::InMemory(rt) => {
-                        rt.job_attempt_store.list_by_job_id(&job_id).await
-                    }
-                    RuntimeComposition::Surreal(rt) => {
-                        rt.job_attempt_store.list_by_job_id(&job_id).await
-                    }
-                };
+                let attempts = runtime_ref.list_job_attempts(&job_id).await;
 
                 match attempts {
                     Ok(list) => {
@@ -657,9 +650,10 @@ impl StasisTool for CognitionGraphemeRunTool {
             }
         };
         if let Some(meta) = continuation_meta
-            && let Some(obj) = raw_output.as_object_mut() {
-                obj.insert("continuation".to_string(), meta);
-            }
+            && let Some(obj) = raw_output.as_object_mut()
+        {
+            obj.insert("continuation".to_string(), meta);
+        }
         let session_id = crate::runtime_session::resolve_active_chat_session_id_async(
             &self.turn_scope,
             &self.session_id,
@@ -669,7 +663,7 @@ impl StasisTool for CognitionGraphemeRunTool {
             serde_json::to_string(&raw_output).unwrap_or_else(|_| raw_output.to_string());
 
         let output = maybe_compact_output_to_sttp(
-            self.name(),
+            COGNITION_GRAPHEME_RUN_ID.as_str(),
             &session_id,
             raw_output,
             &self.model_target,
@@ -677,12 +671,12 @@ impl StasisTool for CognitionGraphemeRunTool {
         .await?;
         emit_compaction_observability(
             &self.event_tx,
-            self.name(),
+            COGNITION_GRAPHEME_RUN_ID.as_str(),
             &output,
             Some(serialized_raw_output.len()),
         )
         .await;
-        Ok(output)
+        Ok(ExternalJson::new(output))
     }
 }
 
@@ -704,46 +698,57 @@ impl CognitionGraphemeModulesSearchTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionGraphemeModulesSearchTool {
-    fn name(&self) -> &'static str {
-        "cognition_grapheme_modules"
-    }
+#[derive(Debug, JsonSchema)]
+pub struct GraphemeModulesSearchInput {
+    /// Search query, e.g. web
+    #[schemars(required, with = "String")]
+    query: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("Search Grapheme modules by query. Mirrors: grapheme modules search <query> --yaml")
+impl<'de> Deserialize<'de> for GraphemeModulesSearchInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(default)]
+            query: CompatOption<String>,
+        }
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            query: input.query.into_option(),
+        })
     }
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "query": { "type": "string", "description": "Search query, e.g. web" }
-            },
-            "required": ["query"]
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let query = input.get("query").and_then(|v| v.as_str()).ok_or_else(|| {
+#[medousa_tool(id = COGNITION_GRAPHEME_MODULES_ID)]
+impl CognitionGraphemeModulesSearchTool {
+    /// Search Grapheme modules by query. Mirrors: grapheme modules search <query> --yaml
+    async fn invoke_typed(
+        &self,
+        input: GraphemeModulesSearchInput,
+    ) -> stasis::prelude::Result<ExternalJson> {
+        let query = input.query.as_deref().ok_or_else(|| {
             StasisError::PortFailure("cognition_grapheme_modules: query is required".to_string())
         })?;
 
         let _ = self
             .event_tx
             .send(TuiEvent::ToolInvoked {
-                tool_name: self.name().to_string(),
+                tool_name: COGNITION_GRAPHEME_MODULES_ID.as_str().to_string(),
                 input_summary: query.to_string(),
             })
             .await;
 
-        run_grapheme_cli(vec![
+        let result = run_grapheme_cli(vec![
             "modules".to_string(),
             "search".to_string(),
             query.to_string(),
             "--yaml".to_string(),
         ])
-        .await
+        .await?;
+        Ok(ExternalJson::new(result))
     }
 }
 
@@ -757,51 +762,59 @@ impl CognitionGraphemeModulesInfoTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionGraphemeModulesInfoTool {
-    fn name(&self) -> &'static str {
-        "cognition_grapheme_modules_info"
-    }
+#[derive(Debug, JsonSchema)]
+pub struct GraphemeModulesInfoInput {
+    /// Module id, e.g. web
+    #[schemars(required, with = "String")]
+    module: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("Inspect Grapheme module metadata. Mirrors: grapheme modules info <module> --yaml")
+impl<'de> Deserialize<'de> for GraphemeModulesInfoInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(default)]
+            module: CompatOption<String>,
+        }
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            module: input.module.into_option(),
+        })
     }
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "module": { "type": "string", "description": "Module id, e.g. web" }
-            },
-            "required": ["module"]
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let module = input
-            .get("module")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                StasisError::PortFailure(
-                    "cognition_grapheme_modules_info: module is required".to_string(),
-                )
-            })?;
+#[medousa_tool(id = COGNITION_GRAPHEME_MODULES_INFO_ID)]
+impl CognitionGraphemeModulesInfoTool {
+    /// Inspect Grapheme module metadata. Mirrors: grapheme modules info <module> --yaml
+    async fn invoke_typed(
+        &self,
+        input: GraphemeModulesInfoInput,
+    ) -> stasis::prelude::Result<ExternalJson> {
+        let module = input.module.as_deref().ok_or_else(|| {
+            StasisError::PortFailure(
+                "cognition_grapheme_modules_info: module is required".to_string(),
+            )
+        })?;
 
         let _ = self
             .event_tx
             .send(TuiEvent::ToolInvoked {
-                tool_name: self.name().to_string(),
+                tool_name: COGNITION_GRAPHEME_MODULES_INFO_ID.as_str().to_string(),
                 input_summary: module.to_string(),
             })
             .await;
 
-        run_grapheme_cli(vec![
+        let result = run_grapheme_cli(vec![
             "modules".to_string(),
             "info".to_string(),
             module.to_string(),
             "--yaml".to_string(),
         ])
-        .await
+        .await?;
+        Ok(ExternalJson::new(result))
     }
 }
 
@@ -815,28 +828,38 @@ impl CognitionGraphemeModulesOpsTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionGraphemeModulesOpsTool {
-    fn name(&self) -> &'static str {
-        "cognition_grapheme_modules_ops"
-    }
+#[derive(Debug, JsonSchema)]
+pub struct GraphemeModulesOpsInput {
+    /// Module or op query, e.g. web
+    #[schemars(required, with = "String")]
+    query: Option<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("Inspect Grapheme module operations. Mirrors: grapheme modules ops <query> --yaml")
+impl<'de> Deserialize<'de> for GraphemeModulesOpsInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(default)]
+            query: CompatOption<String>,
+        }
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            query: input.query.into_option(),
+        })
     }
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "query": { "type": "string", "description": "Module or op query, e.g. web" }
-            },
-            "required": ["query"]
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let query = input.get("query").and_then(|v| v.as_str()).ok_or_else(|| {
+#[medousa_tool(id = COGNITION_GRAPHEME_MODULES_OPS_ID)]
+impl CognitionGraphemeModulesOpsTool {
+    /// Inspect Grapheme module operations. Mirrors: grapheme modules ops <query> --yaml
+    async fn invoke_typed(
+        &self,
+        input: GraphemeModulesOpsInput,
+    ) -> stasis::prelude::Result<ExternalJson> {
+        let query = input.query.as_deref().ok_or_else(|| {
             StasisError::PortFailure(
                 "cognition_grapheme_modules_ops: query is required".to_string(),
             )
@@ -845,18 +868,19 @@ impl StasisTool for CognitionGraphemeModulesOpsTool {
         let _ = self
             .event_tx
             .send(TuiEvent::ToolInvoked {
-                tool_name: self.name().to_string(),
+                tool_name: COGNITION_GRAPHEME_MODULES_OPS_ID.as_str().to_string(),
                 input_summary: query.to_string(),
             })
             .await;
 
-        run_grapheme_cli(vec![
+        let result = run_grapheme_cli(vec![
             "modules".to_string(),
             "ops".to_string(),
             query.to_string(),
             "--yaml".to_string(),
         ])
-        .await
+        .await?;
+        Ok(ExternalJson::new(result))
     }
 }
 
@@ -870,42 +894,43 @@ impl CognitionGraphemeExamplesTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionGraphemeExamplesTool {
-    fn name(&self) -> &'static str {
-        "cognition_grapheme_examples"
-    }
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum GraphemeExamplesActionInput {
+    List,
+    Show,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("List or show Grapheme examples. action=list|show")
+impl GraphemeExamplesActionInput {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::List => "list",
+            Self::Show => "show",
+        }
     }
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "description": "list or show",
-                    "enum": ["list", "show"]
-                },
-                "name": {
-                    "type": "string",
-                    "description": "Example name for action=show"
-                }
-            },
-            "required": ["action"]
-        }))
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GraphemeExamplesInput {
+    /// list or show
+    action: GraphemeExamplesActionInput,
+    /// Example name for action=show
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+}
 
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let action = input
-            .get("action")
-            .and_then(|v| v.as_str())
-            .unwrap_or("list");
+#[medousa_tool(id = COGNITION_GRAPHEME_EXAMPLES_ID)]
+impl CognitionGraphemeExamplesTool {
+    /// List or show Grapheme examples. action=list|show
+    async fn invoke_typed(
+        &self,
+        input: GraphemeExamplesInput,
+    ) -> stasis::prelude::Result<ExternalJson> {
+        let action = input.action.as_str();
         let args = match action {
             "show" => {
-                let name = input.get("name").and_then(|v| v.as_str()).ok_or_else(|| {
+                let name = input.name.as_deref().ok_or_else(|| {
                     StasisError::PortFailure(
                         "cognition_grapheme_examples: name is required for action=show".to_string(),
                     )
@@ -918,12 +943,12 @@ impl StasisTool for CognitionGraphemeExamplesTool {
         let _ = self
             .event_tx
             .send(TuiEvent::ToolInvoked {
-                tool_name: self.name().to_string(),
+                tool_name: COGNITION_GRAPHEME_EXAMPLES_ID.as_str().to_string(),
                 input_summary: action.to_string(),
             })
             .await;
 
-        run_grapheme_cli(args).await
+        Ok(ExternalJson::new(run_grapheme_cli(args).await?))
     }
 }
 
@@ -953,56 +978,49 @@ impl CognitionGraphemeCliRunTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionGraphemeCliRunTool {
-    fn name(&self) -> &'static str {
-        "cognition_grapheme_cli_run"
-    }
+fn default_tools_true() -> bool {
+    true
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Run grapheme code through Stasis runtime workflow execution (workflow.grapheme.run) using the same path as scheduled jobs.",
-        )
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GraphemeCliRunInput {
+    /// Complete Grapheme script source
+    #[schemars(required, with = "String")]
+    source: Option<String>,
+    /// Deprecated compatibility flag; runtime mode always returns JSON
+    #[serde(default = "default_tools_true")]
+    #[schemars(default = "default_tools_true")]
+    json: bool,
+    /// Deprecated compatibility flag; ignored in runtime mode
+    #[serde(default = "default_tools_true")]
+    #[schemars(default = "default_tools_true")]
+    stream_steps: bool,
+    /// Deprecated compatibility flag; ignored in runtime mode
+    #[serde(default)]
+    #[schemars(default)]
+    native_modules: bool,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "source": { "type": "string", "description": "Complete Grapheme script source" },
-                "json": { "type": "boolean", "description": "Deprecated compatibility flag; runtime mode always returns JSON", "default": true },
-                "stream_steps": { "type": "boolean", "description": "Deprecated compatibility flag; ignored in runtime mode", "default": true },
-                "native_modules": { "type": "boolean", "description": "Deprecated compatibility flag; ignored in runtime mode", "default": false }
-            },
-            "required": ["source"]
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let source = input
-            .get("source")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                StasisError::PortFailure(
-                    "cognition_grapheme_cli_run: source is required".to_string(),
-                )
-            })?;
+#[medousa_tool(id = COGNITION_GRAPHEME_CLI_RUN_ID)]
+impl CognitionGraphemeCliRunTool {
+    /// Run grapheme code through Stasis runtime workflow execution (workflow.grapheme.run) using the same path as scheduled jobs.
+    async fn invoke_typed(
+        &self,
+        input: GraphemeCliRunInput,
+    ) -> stasis::prelude::Result<ExternalJson> {
+        let source = input.source.as_deref().ok_or_else(|| {
+            StasisError::PortFailure("cognition_grapheme_cli_run: source is required".to_string())
+        })?;
 
         remember_last_grapheme_source(source).await;
-        let use_json = input.get("json").and_then(|v| v.as_bool()).unwrap_or(true);
-        let stream_steps = input
-            .get("stream_steps")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-        let native_modules = input
-            .get("native_modules")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let use_json = input.json;
+        let stream_steps = input.stream_steps;
+        let native_modules = input.native_modules;
 
         let _ = self
             .event_tx
             .send(TuiEvent::ToolInvoked {
-                tool_name: self.name().to_string(),
+                tool_name: COGNITION_GRAPHEME_CLI_RUN_ID.as_str().to_string(),
                 input_summary: source.chars().take(60).collect(),
             })
             .await;
@@ -1027,17 +1045,21 @@ impl StasisTool for CognitionGraphemeCliRunTool {
         )
         .await;
 
-        let output =
-            maybe_compact_output_to_sttp(self.name(), &session_id, result, &self.model_target)
-                .await?;
+        let output = maybe_compact_output_to_sttp(
+            COGNITION_GRAPHEME_CLI_RUN_ID.as_str(),
+            &session_id,
+            result,
+            &self.model_target,
+        )
+        .await?;
         emit_compaction_observability(
             &self.event_tx,
-            self.name(),
+            COGNITION_GRAPHEME_CLI_RUN_ID.as_str(),
             &output,
             Some(serialized_raw_output.len()),
         )
         .await;
-        Ok(output)
+        Ok(ExternalJson::new(output))
     }
 }
 
@@ -1061,38 +1083,97 @@ impl CognitionGraphemePromoteToJobTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionGraphemePromoteToJobTool {
-    fn name(&self) -> &'static str {
-        "cognition_grapheme_promote_to_job"
-    }
+fn default_tools_queue() -> String {
+    "default".to_string()
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("Promote Grapheme source to a durable one-off runtime job (workflow.grapheme.run).")
-    }
+fn default_tools_priority() -> i64 {
+    100
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "source": { "type": "string", "description": "Complete Grapheme source" },
-                "queue": { "type": "string", "description": "Runtime queue", "default": "default" },
-                "priority": { "type": "integer", "description": "Job priority", "default": 100 },
-                "max_attempts": { "type": "integer", "description": "Max job attempts", "default": 1 }
-            },
-            "required": ["source"]
-        }))
-    }
+fn default_tools_one_u64() -> u64 {
+    1
+}
 
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let source = input
-            .get("source")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                StasisError::PortFailure(
-                    "cognition_grapheme_promote_to_job: source is required".to_string(),
-                )
-            })?;
+fn default_tools_one_i64() -> i64 {
+    1
+}
+
+#[derive(Debug, JsonSchema)]
+pub struct GraphemePromoteToJobInput {
+    /// Complete Grapheme source
+    #[schemars(required, with = "String")]
+    source: Option<String>,
+    /// Runtime queue
+    #[schemars(default = "default_tools_queue")]
+    queue: String,
+    /// Job priority
+    #[schemars(default = "default_tools_priority")]
+    priority: i64,
+    /// Max job attempts
+    #[schemars(with = "i64", default = "default_tools_one_i64")]
+    max_attempts: u64,
+}
+
+impl<'de> Deserialize<'de> for GraphemePromoteToJobInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(default)]
+            source: CompatOption<String>,
+            #[serde(default = "default_tools_queue")]
+            queue: String,
+            #[serde(default = "default_tools_priority")]
+            priority: i64,
+            #[serde(default = "default_tools_one_u64")]
+            max_attempts: u64,
+        }
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            source: input.source.into_option(),
+            queue: input.queue,
+            priority: input.priority,
+            max_attempts: input.max_attempts,
+        })
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum GraphemePromoteToJobOutput {
+    Rejected {
+        status: String,
+        reason: String,
+        job_type: String,
+        policy_message: String,
+        validation: ExternalJson,
+    },
+    Enqueued {
+        job_id: String,
+        job_type: String,
+        queue: String,
+        status: String,
+        validation: ExternalJson,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        continuation: Option<ExternalJson>,
+    },
+}
+
+#[medousa_tool(id = COGNITION_GRAPHEME_PROMOTE_TO_JOB_ID)]
+impl CognitionGraphemePromoteToJobTool {
+    /// Promote Grapheme source to a durable one-off runtime job (workflow.grapheme.run).
+    async fn invoke_typed(
+        &self,
+        input: GraphemePromoteToJobInput,
+    ) -> stasis::prelude::Result<GraphemePromoteToJobOutput> {
+        let source = input.source.as_deref().ok_or_else(|| {
+            StasisError::PortFailure(
+                "cognition_grapheme_promote_to_job: source is required".to_string(),
+            )
+        })?;
 
         remember_last_grapheme_source(source).await;
         let validation = validate_grapheme_source_for_schedule(&self.runtime, source).await?;
@@ -1101,62 +1182,44 @@ impl StasisTool for CognitionGraphemePromoteToJobTool {
             .and_then(|v| v.as_bool())
             .unwrap_or(false)
         {
-            return Ok(json!({
-                "status": "rejected",
-                "reason": "invalid_grapheme_source",
-                "job_type": "workflow.grapheme.run",
-                "policy_message": "Refused promotion: Grapheme source failed runtime preflight.",
-                "validation": validation
-            }));
+            return Ok(GraphemePromoteToJobOutput::Rejected {
+                status: "rejected".to_string(),
+                reason: "invalid_grapheme_source".to_string(),
+                job_type: "workflow.grapheme.run".to_string(),
+                policy_message: "Refused promotion: Grapheme source failed runtime preflight."
+                    .to_string(),
+                validation: ExternalJson::new(validation),
+            });
         }
-
-        let queue = input
-            .get("queue")
-            .and_then(|v| v.as_str())
-            .unwrap_or("default");
-        let priority = input
-            .get("priority")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(100) as i32;
-        let max_attempts = input
-            .get("max_attempts")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(1) as u32;
 
         let job_id = format!("cognition-promote-job-{}", Uuid::new_v4().simple());
         let now = Utc::now();
 
-        let mut job = NewJob {
-            id: job_id.clone(),
-            queue: queue.to_string(),
-            job_type: "workflow.grapheme.run".to_string(),
-            payload_ref: format!("grapheme:inline:{source}"),
-            priority,
-            max_attempts,
-            idempotency_key: format!("idem-{job_id}"),
-            correlation_id: job_id.clone(),
-            causation_id: "cognition_tui.promote".to_string(),
-            trace_id: job_id.clone(),
-            sttp_input_node_id: "sttp:in:cognition:grapheme:promote".to_string(),
-            scheduled_at: now,
-            backoff_policy: BackoffPolicy::default(),
-        };
+        let mut job = ToolJobSpec::new(
+            job_id.clone(),
+            input.queue.clone(),
+            "workflow.grapheme.run",
+            format!("grapheme:inline:{source}"),
+            "cognition_tui.promote",
+            "sttp:in:cognition:grapheme:promote",
+            now,
+        )
+        .priority(input.priority as i32)
+        .max_attempts(input.max_attempts as u32)
+        .build();
 
         if let Some(scope) = self.turn_scope.read().await.clone() {
             wire_turn_child_job(
                 &mut job,
                 &scope,
-                self.name(),
+                COGNITION_GRAPHEME_PROMOTE_TO_JOB_ID.as_str(),
                 "workflow.grapheme.run",
                 ContinuationAwaitMode::Async,
             )
             .await;
         }
 
-        match &*self.runtime {
-            RuntimeComposition::InMemory(rt) => rt.enqueue(job).await?,
-            RuntimeComposition::Surreal(rt) => rt.enqueue(job).await?,
-        }
+        self.runtime.enqueue_job(job).await?;
 
         let _ = self
             .event_tx
@@ -1166,26 +1229,21 @@ impl StasisTool for CognitionGraphemePromoteToJobTool {
             })
             .await;
 
-        let mut response = json!({
-            "job_id": job_id,
-            "job_type": "workflow.grapheme.run",
-            "queue": queue,
-            "status": "enqueued",
-            "validation": validation
+        let continuation = self.turn_scope.read().await.clone().map(|scope| {
+            ExternalJson::new(continuation_tool_metadata(
+                &scope,
+                &job_id,
+                ContinuationAwaitMode::Async,
+            ))
         });
-        if let Some(scope) = self.turn_scope.read().await.clone()
-            && let Some(obj) = response.as_object_mut() {
-                obj.insert(
-                    "continuation".to_string(),
-                    continuation_tool_metadata(
-                        &scope,
-                        &job_id,
-                        ContinuationAwaitMode::Async,
-                    ),
-                );
-            }
-
-        Ok(response)
+        Ok(GraphemePromoteToJobOutput::Enqueued {
+            job_id,
+            job_type: "workflow.grapheme.run".to_string(),
+            queue: input.queue,
+            status: "enqueued".to_string(),
+            validation: ExternalJson::new(validation),
+            continuation,
+        })
     }
 }
 
@@ -1209,53 +1267,101 @@ impl CognitionGraphemePromoteToRecurringTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionGraphemePromoteToRecurringTool {
-    fn name(&self) -> &'static str {
-        "cognition_grapheme_promote_to_recurring"
-    }
+fn default_tools_timezone() -> String {
+    "UTC".to_string()
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("Promote Grapheme source to a durable recurring schedule (register_recurring).")
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GraphemePromoteToRecurringInput {
+    /// Complete Grapheme source
+    #[schemars(required, with = "String")]
+    source: Option<String>,
+    /// 7-field cron: sec min hour day-of-month month day-of-week year (e.g. 0 0 */4 * * * *)
+    #[schemars(required, with = "String")]
+    cron_expr: Option<String>,
+    /// IANA timezone
+    #[serde(default = "default_tools_timezone")]
+    #[schemars(default = "default_tools_timezone")]
+    timezone: String,
+    /// Runtime queue
+    #[serde(default = "default_tools_queue")]
+    #[schemars(default = "default_tools_queue")]
+    queue: String,
+    /// Optional recurring id
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    id: Option<String>,
+    /// Jitter seconds
+    #[serde(default)]
+    #[schemars(default)]
+    jitter_seconds: i64,
+    /// Max attempts per materialized job
+    #[serde(default = "default_tools_one_u64")]
+    #[schemars(with = "i64", default = "default_tools_one_i64")]
+    max_attempts: u64,
+    /// Enabled schedule
+    #[serde(default = "default_tools_true")]
+    #[schemars(default = "default_tools_true")]
+    enabled: bool,
+    /// Set next_run_at=now
+    #[serde(default)]
+    #[schemars(default)]
+    start_immediately: bool,
+    /// Where to push each successful run (independent of current UI channel). 7-field cron required separately.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        with = "RecurringDeliverySpec",
+        skip_serializing_if = "Option::is_none"
+    )]
+    delivery: Option<RecurringDeliverySpec>,
+    /// Environment feed ids to publish each materialized run terminal event.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "RecurringFeedSpec", skip_serializing_if = "Option::is_none")]
+    feeds: Option<RecurringFeedSpec>,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "source": { "type": "string", "description": "Complete Grapheme source" },
-                "cron_expr": { "type": "string", "description": "7-field cron: sec min hour day-of-month month day-of-week year (e.g. 0 0 */4 * * * *)" },
-                "timezone": { "type": "string", "description": "IANA timezone", "default": "UTC" },
-                "queue": { "type": "string", "description": "Runtime queue", "default": "default" },
-                "id": { "type": "string", "description": "Optional recurring id" },
-                "jitter_seconds": { "type": "integer", "description": "Jitter seconds", "default": 0 },
-                "max_attempts": { "type": "integer", "description": "Max attempts per materialized job", "default": 1 },
-                "enabled": { "type": "boolean", "description": "Enabled schedule", "default": true },
-                "start_immediately": { "type": "boolean", "description": "Set next_run_at=now", "default": false },
-                "delivery": crate::recurring_delivery::delivery_spec_schema_fragment()["delivery"].clone(),
-                "feeds": crate::recurring_feed::feeds_spec_schema_fragment()["feeds"].clone()
-            },
-            "required": ["source", "cron_expr"]
-        }))
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum GraphemePromoteToRecurringOutput {
+    Rejected {
+        status: String,
+        reason: String,
+        job_type: String,
+        policy_message: String,
+        validation: ExternalJson,
+    },
+    Registered {
+        recurring_id: String,
+        job_type: String,
+        queue: String,
+        cron_expr: String,
+        timezone: String,
+        enabled: bool,
+        start_immediately: bool,
+        status: String,
+        delivery_bound: bool,
+        feeds_bound: bool,
+        validation: ExternalJson,
+    },
+}
 
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let source = input
-            .get("source")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                StasisError::PortFailure(
-                    "cognition_grapheme_promote_to_recurring: source is required".to_string(),
-                )
-            })?;
-        let cron_expr = input
-            .get("cron_expr")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                StasisError::PortFailure(
-                    "cognition_grapheme_promote_to_recurring: cron_expr is required".to_string(),
-                )
-            })?;
+#[medousa_tool(id = COGNITION_GRAPHEME_PROMOTE_TO_RECURRING_ID)]
+impl CognitionGraphemePromoteToRecurringTool {
+    /// Promote Grapheme source to a durable recurring schedule (register_recurring).
+    async fn invoke_typed(
+        &self,
+        input: GraphemePromoteToRecurringInput,
+    ) -> stasis::prelude::Result<GraphemePromoteToRecurringOutput> {
+        let source = input.source.as_deref().ok_or_else(|| {
+            StasisError::PortFailure(
+                "cognition_grapheme_promote_to_recurring: source is required".to_string(),
+            )
+        })?;
+        let cron_expr = input.cron_expr.as_deref().ok_or_else(|| {
+            StasisError::PortFailure(
+                "cognition_grapheme_promote_to_recurring: cron_expr is required".to_string(),
+            )
+        })?;
 
         remember_last_grapheme_source(source).await;
         let validation = validate_grapheme_source_for_schedule(&self.runtime, source).await?;
@@ -1264,67 +1370,38 @@ impl StasisTool for CognitionGraphemePromoteToRecurringTool {
             .and_then(|v| v.as_bool())
             .unwrap_or(false)
         {
-            return Ok(json!({
-                "status": "rejected",
-                "reason": "invalid_grapheme_source",
-                "job_type": "workflow.grapheme.run",
-                "policy_message": "Refused recurring registration: Grapheme source failed runtime preflight.",
-                "validation": validation
-            }));
+            return Ok(GraphemePromoteToRecurringOutput::Rejected {
+                status: "rejected".to_string(),
+                reason: "invalid_grapheme_source".to_string(),
+                job_type: "workflow.grapheme.run".to_string(),
+                policy_message:
+                    "Refused recurring registration: Grapheme source failed runtime preflight."
+                        .to_string(),
+                validation: ExternalJson::new(validation),
+            });
         }
 
         let recurring_id = input
-            .get("id")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
+            .id
+            .clone()
             .unwrap_or_else(|| format!("recur-gph-{}", Uuid::new_v4().simple()));
-        let queue = input
-            .get("queue")
-            .and_then(|v| v.as_str())
-            .unwrap_or("default");
-        let timezone = input
-            .get("timezone")
-            .and_then(|v| v.as_str())
-            .unwrap_or("UTC");
-        let jitter_seconds = input
-            .get("jitter_seconds")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let max_attempts = input
-            .get("max_attempts")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(1) as u32;
-        let enabled = input
-            .get("enabled")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-        let start_immediately = input
-            .get("start_immediately")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
 
         let now = Utc::now();
         let payload_template_ref = format!("grapheme:inline:{source}");
 
-        let mut definition = RecurringDefinition {
-            id: recurring_id.clone(),
-            queue: queue.to_string(),
-            job_type: "workflow.grapheme.run".to_string(),
+        let definition = RecurringScheduleSpec::new(
+            recurring_id.clone(),
+            input.queue.clone(),
+            "workflow.grapheme.run",
             payload_template_ref,
-            cron_expr: cron_expr.to_string(),
-            timezone: timezone.to_string(),
-            jitter_seconds,
-            enabled,
-            max_attempts,
-            next_run_at: now,
-            last_run_at: None,
-            lease_owner: None,
-            lease_expires_at: None,
-        };
-
-        if !start_immediately {
-            definition.next_run_at = definition.compute_next_run_at(now)?;
-        }
+            cron_expr.to_string(),
+            input.timezone.clone(),
+        )
+        .jitter_seconds(input.jitter_seconds)
+        .enabled(input.enabled)
+        .max_attempts(input.max_attempts as u32)
+        .start_immediately(input.start_immediately)
+        .build(now)?;
 
         let scope = self.turn_scope.read().await.clone();
         let ambient = ambient_from_turn_scope(scope.as_ref());
@@ -1332,45 +1409,45 @@ impl StasisTool for CognitionGraphemePromoteToRecurringTool {
             .as_ref()
             .map(|turn| turn.session_id.clone())
             .unwrap_or_else(|| format!("recurring-{recurring_id}"));
-        let (delivery_bound, _) = bind_recurring_delivery_for_registration(
+        let (delivery_bound, _) = bind_recurring_delivery_spec_for_registration(
             &recurring_id,
             cron_expr,
-            timezone,
-            &input,
+            &input.timezone,
+            input.delivery.as_ref(),
             DeliveryResolveContext {
                 ambient: ambient.as_ref(),
                 fallback_session_id: fallback_session_id.clone(),
             },
         )
         .await?;
-        let (feeds_bound, _) = bind_recurring_feed_for_registration(&recurring_id, &input).await?;
+        let (feeds_bound, _) =
+            bind_recurring_feed_spec_for_registration(&recurring_id, input.feeds.as_ref()).await?;
 
-        match &*self.runtime {
-            RuntimeComposition::InMemory(rt) => rt.register_recurring(definition).await?,
-            RuntimeComposition::Surreal(rt) => rt.register_recurring(definition).await?,
-        }
+        self.runtime.register_recurring(definition).await?;
 
         let _ = self
             .event_tx
             .send(TuiEvent::ToolInvoked {
-                tool_name: self.name().to_string(),
+                tool_name: COGNITION_GRAPHEME_PROMOTE_TO_RECURRING_ID
+                    .as_str()
+                    .to_string(),
                 input_summary: format!("{} @ {}", recurring_id, cron_expr),
             })
             .await;
 
-        Ok(json!({
-            "recurring_id": recurring_id,
-            "job_type": "workflow.grapheme.run",
-            "queue": queue,
-            "cron_expr": cron_expr,
-            "timezone": timezone,
-            "enabled": enabled,
-            "start_immediately": start_immediately,
-            "status": "registered",
-            "delivery_bound": delivery_bound,
-            "feeds_bound": feeds_bound,
-            "validation": validation
-        }))
+        Ok(GraphemePromoteToRecurringOutput::Registered {
+            recurring_id,
+            job_type: "workflow.grapheme.run".to_string(),
+            queue: input.queue,
+            cron_expr: cron_expr.to_string(),
+            timezone: input.timezone,
+            enabled: input.enabled,
+            start_immediately: input.start_immediately,
+            status: "registered".to_string(),
+            delivery_bound,
+            feeds_bound,
+            validation: ExternalJson::new(validation),
+        })
     }
 }
 
@@ -1394,50 +1471,99 @@ impl CognitionGraphemePromoteLastRunToRecurringTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionGraphemePromoteLastRunToRecurringTool {
-    fn name(&self) -> &'static str {
-        "cognition_grapheme_promote_last_run_to_recurring"
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GraphemePromoteLastRunInput {
+    /// 7-field cron: sec min hour day-of-month month day-of-week year (e.g. 0 0 */4 * * * *)
+    #[schemars(required, with = "String")]
+    cron_expr: Option<String>,
+    /// IANA timezone
+    #[serde(default = "default_tools_timezone")]
+    #[schemars(default = "default_tools_timezone")]
+    timezone: String,
+    /// Runtime queue
+    #[serde(default = "default_tools_queue")]
+    #[schemars(default = "default_tools_queue")]
+    queue: String,
+    /// Optional recurring id
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    id: Option<String>,
+    /// Jitter seconds
+    #[serde(default)]
+    #[schemars(default)]
+    jitter_seconds: i64,
+    /// Max attempts per materialized job
+    #[serde(default = "default_tools_one_u64")]
+    #[schemars(with = "i64", default = "default_tools_one_i64")]
+    max_attempts: u64,
+    /// Enabled schedule
+    #[serde(default = "default_tools_true")]
+    #[schemars(default = "default_tools_true")]
+    enabled: bool,
+    /// Set next_run_at=now
+    #[serde(default)]
+    #[schemars(default)]
+    start_immediately: bool,
+    /// Optional source override; if omitted, uses last remembered source
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    source: Option<String>,
+    /// Where to push each successful run (independent of current UI channel). 7-field cron required separately.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        with = "RecurringDeliverySpec",
+        skip_serializing_if = "Option::is_none"
+    )]
+    delivery: Option<RecurringDeliverySpec>,
+    /// Environment feed ids to publish each materialized run terminal event.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "RecurringFeedSpec", skip_serializing_if = "Option::is_none")]
+    feeds: Option<RecurringFeedSpec>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Promote the last executed Grapheme source to recurring schedule. You can also provide source explicitly.",
-        )
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum GraphemePromoteLastRunOutput {
+    Rejected {
+        status: String,
+        reason: String,
+        job_type: String,
+        policy_message: String,
+        used_remembered_source: bool,
+        validation: ExternalJson,
+    },
+    Registered {
+        recurring_id: String,
+        job_type: String,
+        queue: String,
+        cron_expr: String,
+        timezone: String,
+        enabled: bool,
+        start_immediately: bool,
+        used_remembered_source: bool,
+        status: String,
+        delivery_bound: bool,
+        feeds_bound: bool,
+        validation: ExternalJson,
+    },
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "cron_expr": { "type": "string", "description": "7-field cron: sec min hour day-of-month month day-of-week year (e.g. 0 0 */4 * * * *)" },
-                "timezone": { "type": "string", "description": "IANA timezone", "default": "UTC" },
-                "queue": { "type": "string", "description": "Runtime queue", "default": "default" },
-                "id": { "type": "string", "description": "Optional recurring id" },
-                "jitter_seconds": { "type": "integer", "description": "Jitter seconds", "default": 0 },
-                "max_attempts": { "type": "integer", "description": "Max attempts per materialized job", "default": 1 },
-                "enabled": { "type": "boolean", "description": "Enabled schedule", "default": true },
-                "start_immediately": { "type": "boolean", "description": "Set next_run_at=now", "default": false },
-                "source": { "type": "string", "description": "Optional source override; if omitted, uses last remembered source" },
-                "delivery": crate::recurring_delivery::delivery_spec_schema_fragment()["delivery"].clone(),
-                "feeds": crate::recurring_feed::feeds_spec_schema_fragment()["feeds"].clone()
-            },
-            "required": ["cron_expr"]
-        }))
-    }
+#[medousa_tool(id = COGNITION_GRAPHEME_PROMOTE_LAST_RUN_TO_RECURRING_ID)]
+impl CognitionGraphemePromoteLastRunToRecurringTool {
+    /// Promote the last executed Grapheme source to recurring schedule. You can also provide source explicitly.
+    async fn invoke_typed(
+        &self,
+        input: GraphemePromoteLastRunInput,
+    ) -> stasis::prelude::Result<GraphemePromoteLastRunOutput> {
+        let cron_expr = input.cron_expr.as_deref().ok_or_else(|| {
+            StasisError::PortFailure(
+                "cognition_grapheme_promote_last_run_to_recurring: cron_expr is required"
+                    .to_string(),
+            )
+        })?;
 
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let cron_expr = input
-            .get("cron_expr")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                StasisError::PortFailure(
-                    "cognition_grapheme_promote_last_run_to_recurring: cron_expr is required"
-                        .to_string(),
-                )
-            })?;
-
-        let source = if let Some(src) = input.get("source").and_then(|v| v.as_str()) {
+        let used_remembered_source = input.source.is_none();
+        let source = if let Some(src) = input.source.as_deref() {
             src.to_string()
         } else {
             read_last_grapheme_source().await.ok_or_else(|| {
@@ -1452,68 +1578,38 @@ impl StasisTool for CognitionGraphemePromoteLastRunToRecurringTool {
             .and_then(|v| v.as_bool())
             .unwrap_or(false)
         {
-            return Ok(json!({
-                "status": "rejected",
-                "reason": "invalid_grapheme_source",
-                "job_type": "workflow.grapheme.run",
-                "policy_message": "Refused recurring registration from last run: Grapheme source failed runtime preflight.",
-                "used_remembered_source": input.get("source").is_none(),
-                "validation": validation
-            }));
+            return Ok(GraphemePromoteLastRunOutput::Rejected {
+                status: "rejected".to_string(),
+                reason: "invalid_grapheme_source".to_string(),
+                job_type: "workflow.grapheme.run".to_string(),
+                policy_message: "Refused recurring registration from last run: Grapheme source failed runtime preflight."
+                    .to_string(),
+                used_remembered_source,
+                validation: ExternalJson::new(validation),
+            });
         }
 
         let recurring_id = input
-            .get("id")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
+            .id
+            .clone()
             .unwrap_or_else(|| format!("recur-gph-{}", Uuid::new_v4().simple()));
-        let queue = input
-            .get("queue")
-            .and_then(|v| v.as_str())
-            .unwrap_or("default");
-        let timezone = input
-            .get("timezone")
-            .and_then(|v| v.as_str())
-            .unwrap_or("UTC");
-        let jitter_seconds = input
-            .get("jitter_seconds")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let max_attempts = input
-            .get("max_attempts")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(1) as u32;
-        let enabled = input
-            .get("enabled")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-        let start_immediately = input
-            .get("start_immediately")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
 
         let now = Utc::now();
         let payload_template_ref = format!("grapheme:inline:{source}");
 
-        let mut definition = RecurringDefinition {
-            id: recurring_id.clone(),
-            queue: queue.to_string(),
-            job_type: "workflow.grapheme.run".to_string(),
+        let definition = RecurringScheduleSpec::new(
+            recurring_id.clone(),
+            input.queue.clone(),
+            "workflow.grapheme.run",
             payload_template_ref,
-            cron_expr: cron_expr.to_string(),
-            timezone: timezone.to_string(),
-            jitter_seconds,
-            enabled,
-            max_attempts,
-            next_run_at: now,
-            last_run_at: None,
-            lease_owner: None,
-            lease_expires_at: None,
-        };
-
-        if !start_immediately {
-            definition.next_run_at = definition.compute_next_run_at(now)?;
-        }
+            cron_expr.to_string(),
+            input.timezone.clone(),
+        )
+        .jitter_seconds(input.jitter_seconds)
+        .enabled(input.enabled)
+        .max_attempts(input.max_attempts as u32)
+        .start_immediately(input.start_immediately)
+        .build(now)?;
 
         let scope = self.turn_scope.read().await.clone();
         let ambient = ambient_from_turn_scope(scope.as_ref());
@@ -1521,112 +1617,122 @@ impl StasisTool for CognitionGraphemePromoteLastRunToRecurringTool {
             .as_ref()
             .map(|turn| turn.session_id.clone())
             .unwrap_or_else(|| format!("recurring-{recurring_id}"));
-        let (delivery_bound, _) = bind_recurring_delivery_for_registration(
+        let (delivery_bound, _) = bind_recurring_delivery_spec_for_registration(
             &recurring_id,
             cron_expr,
-            timezone,
-            &input,
+            &input.timezone,
+            input.delivery.as_ref(),
             DeliveryResolveContext {
                 ambient: ambient.as_ref(),
                 fallback_session_id: fallback_session_id.clone(),
             },
         )
         .await?;
-        let (feeds_bound, _) = bind_recurring_feed_for_registration(&recurring_id, &input).await?;
+        let (feeds_bound, _) =
+            bind_recurring_feed_spec_for_registration(&recurring_id, input.feeds.as_ref()).await?;
 
-        match &*self.runtime {
-            RuntimeComposition::InMemory(rt) => rt.register_recurring(definition).await?,
-            RuntimeComposition::Surreal(rt) => rt.register_recurring(definition).await?,
-        }
+        self.runtime.register_recurring(definition).await?;
 
         let _ = self
             .event_tx
             .send(TuiEvent::ToolInvoked {
-                tool_name: self.name().to_string(),
+                tool_name: COGNITION_GRAPHEME_PROMOTE_LAST_RUN_TO_RECURRING_ID
+                    .as_str()
+                    .to_string(),
                 input_summary: format!("{} @ {}", recurring_id, cron_expr),
             })
             .await;
 
-        Ok(json!({
-            "recurring_id": recurring_id,
-            "job_type": "workflow.grapheme.run",
-            "queue": queue,
-            "cron_expr": cron_expr,
-            "timezone": timezone,
-            "enabled": enabled,
-            "start_immediately": start_immediately,
-            "used_remembered_source": input.get("source").is_none(),
-            "status": "registered",
-            "delivery_bound": delivery_bound,
-            "feeds_bound": feeds_bound,
-            "validation": validation
-        }))
+        Ok(GraphemePromoteLastRunOutput::Registered {
+            recurring_id,
+            job_type: "workflow.grapheme.run".to_string(),
+            queue: input.queue,
+            cron_expr: cron_expr.to_string(),
+            timezone: input.timezone,
+            enabled: input.enabled,
+            start_immediately: input.start_immediately,
+            used_remembered_source,
+            status: "registered".to_string(),
+            delivery_bound,
+            feeds_bound,
+            validation: ExternalJson::new(validation),
+        })
     }
+}
+
+const COGNITION_UTILITY_TIME_NOW_ID: ToolId = ToolId::new("cognition_utility_time_now");
+const COGNITION_UTILITY_DAY_OF_WEEK_ID: ToolId = ToolId::new("cognition_utility_day_of_week");
+const COGNITION_UTILITY_UUID_ID: ToolId = ToolId::new("cognition_utility_uuid");
+const COGNITION_RUNTIME_RECURRING_PREVIEW_ID: ToolId =
+    ToolId::new("cognition_runtime_recurring_preview");
+const COGNITION_RUNTIME_JOBS_STATUS_ID: ToolId = ToolId::new("cognition_runtime_jobs_status");
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UtilityTimeNowInput {}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct UtilityTimeNowOutput {
+    pub utc_rfc3339: String,
+    pub local_rfc3339: String,
+    pub weekday: String,
+    pub unix_seconds: i64,
+    pub unix_millis: i64,
+    pub local_offset_seconds: i32,
 }
 
 pub struct CognitionUtilityTimeNowTool;
 
-#[async_trait]
-impl StasisTool for CognitionUtilityTimeNowTool {
-    fn name(&self) -> &'static str {
-        "cognition_utility_time_now"
-    }
-
-    fn description(&self) -> Option<&'static str> {
-        Some("Return current time in UTC and local timezone, including weekday and unix timestamp.")
-    }
-
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {}
-        }))
-    }
-
-    async fn invoke(&self, _input: Value) -> stasis::prelude::Result<Value> {
+#[medousa_tool(id = COGNITION_UTILITY_TIME_NOW_ID)]
+impl CognitionUtilityTimeNowTool {
+    /// Return current time in UTC and local timezone, including weekday and unix timestamp.
+    async fn invoke_typed(
+        &self,
+        _input: UtilityTimeNowInput,
+    ) -> stasis::prelude::Result<UtilityTimeNowOutput> {
         let now_utc = Utc::now();
         let now_local = Local::now();
 
-        Ok(json!({
-            "utc_rfc3339": now_utc.to_rfc3339(),
-            "local_rfc3339": now_local.to_rfc3339(),
-            "weekday": now_local.weekday().to_string(),
-            "unix_seconds": now_utc.timestamp(),
-            "unix_millis": now_utc.timestamp_millis(),
-            "local_offset_seconds": now_local.offset().local_minus_utc()
-        }))
+        Ok(UtilityTimeNowOutput {
+            utc_rfc3339: now_utc.to_rfc3339(),
+            local_rfc3339: now_local.to_rfc3339(),
+            weekday: now_local.weekday().to_string(),
+            unix_seconds: now_utc.timestamp(),
+            unix_millis: now_utc.timestamp_millis(),
+            local_offset_seconds: now_local.offset().local_minus_utc(),
+        })
     }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UtilityDayOfWeekInput {
+    /// Optional date in YYYY-MM-DD
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    pub date: CompatOption<String>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct UtilityDayOfWeekOutput {
+    pub date: String,
+    pub weekday: String,
+    pub weekday_number_from_monday: u32,
+    pub weekday_number_from_sunday: u32,
 }
 
 pub struct CognitionUtilityDayOfWeekTool;
 
-#[async_trait]
-impl StasisTool for CognitionUtilityDayOfWeekTool {
-    fn name(&self) -> &'static str {
-        "cognition_utility_day_of_week"
-    }
-
-    fn description(&self) -> Option<&'static str> {
-        Some("Return weekday for a YYYY-MM-DD date, or for today when date is omitted.")
-    }
-
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "date": {
-                    "type": "string",
-                    "description": "Optional date in YYYY-MM-DD"
-                }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let date_opt = input.get("date").and_then(|v| v.as_str());
-
-        let date = if let Some(date_str) = date_opt {
-            NaiveDate::parse_from_str(date_str, "%Y-%m-%d").map_err(|e| {
+#[medousa_tool(id = COGNITION_UTILITY_DAY_OF_WEEK_ID)]
+impl CognitionUtilityDayOfWeekTool {
+    /// Return weekday for a YYYY-MM-DD date, or for today when date is omitted.
+    async fn invoke_typed(
+        &self,
+        input: UtilityDayOfWeekInput,
+    ) -> stasis::prelude::Result<UtilityDayOfWeekOutput> {
+        let date = if let Some(date_str) = input.date.into_option() {
+            NaiveDate::parse_from_str(&date_str, "%Y-%m-%d").map_err(|e| {
                 StasisError::PortFailure(format!(
                     "cognition_utility_day_of_week: invalid date '{}': {}",
                     date_str, e
@@ -1636,53 +1742,57 @@ impl StasisTool for CognitionUtilityDayOfWeekTool {
             Local::now().date_naive()
         };
 
-        Ok(json!({
-            "date": date.format("%Y-%m-%d").to_string(),
-            "weekday": date.weekday().to_string(),
-            "weekday_number_from_monday": date.weekday().number_from_monday(),
-            "weekday_number_from_sunday": date.weekday().number_from_sunday()
-        }))
+        Ok(UtilityDayOfWeekOutput {
+            date: date.format("%Y-%m-%d").to_string(),
+            weekday: date.weekday().to_string(),
+            weekday_number_from_monday: date.weekday().number_from_monday(),
+            weekday_number_from_sunday: date.weekday().number_from_sunday(),
+        })
     }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UtilityUuidInput {
+    /// Optional prefix for derived keys
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    pub prefix: CompatOption<String>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct UtilityUuidOutput {
+    pub uuid: String,
+    pub uuid_simple: String,
+    pub correlation_id: String,
+    pub trace_id: String,
+    pub idempotency_key: String,
 }
 
 pub struct CognitionUtilityUuidTool;
 
-#[async_trait]
-impl StasisTool for CognitionUtilityUuidTool {
-    fn name(&self) -> &'static str {
-        "cognition_utility_uuid"
-    }
-
-    fn description(&self) -> Option<&'static str> {
-        Some("Generate UUID helper values for correlation, trace, and idempotency keys.")
-    }
-
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "prefix": {
-                    "type": "string",
-                    "description": "Optional prefix for derived keys"
-                }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
+#[medousa_tool(id = COGNITION_UTILITY_UUID_ID)]
+impl CognitionUtilityUuidTool {
+    /// Generate UUID helper values for correlation, trace, and idempotency keys.
+    async fn invoke_typed(
+        &self,
+        input: UtilityUuidInput,
+    ) -> stasis::prelude::Result<UtilityUuidOutput> {
         let id = Uuid::new_v4();
         let prefix = input
-            .get("prefix")
-            .and_then(|v| v.as_str())
-            .unwrap_or("cognition");
+            .prefix
+            .into_option()
+            .unwrap_or_else(|| "cognition".to_string());
 
-        Ok(json!({
-            "uuid": id.to_string(),
-            "uuid_simple": id.simple().to_string(),
-            "correlation_id": format!("{}-{}", prefix, id.simple()),
-            "trace_id": format!("{}-trace-{}", prefix, id.simple()),
-            "idempotency_key": format!("idem-{}-{}", prefix, id.simple())
-        }))
+        Ok(UtilityUuidOutput {
+            uuid: id.to_string(),
+            uuid_simple: id.simple().to_string(),
+            correlation_id: format!("{}-{}", prefix, id.simple()),
+            trace_id: format!("{}-trace-{}", prefix, id.simple()),
+            idempotency_key: format!("idem-{}-{}", prefix, id.simple()),
+        })
     }
 }
 
@@ -1700,64 +1810,94 @@ impl CognitionRuntimeRecurringPreviewTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionRuntimeRecurringPreviewTool {
-    fn name(&self) -> &'static str {
-        "cognition_runtime_recurring_preview"
+fn default_runtime_timezone() -> String {
+    "UTC".to_string()
+}
+
+#[derive(Debug, JsonSchema)]
+pub struct RuntimeRecurringPreviewInput {
+    /// Cron expression to validate
+    #[schemars(required, with = "String")]
+    cron_expr: Option<String>,
+    /// IANA timezone
+    #[schemars(default = "default_runtime_timezone")]
+    timezone: String,
+    /// How many future runs to preview (1-20, default 5)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        with = "usize",
+        range(min = 1, max = 20),
+        skip_serializing_if = "Option::is_none"
+    )]
+    count: Option<usize>,
+    /// Optional RFC3339 UTC start timestamp
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    start_at: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for RuntimeRecurringPreviewInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(default)]
+            cron_expr: CompatOption<String>,
+            #[serde(default)]
+            timezone: CompatOption<String>,
+            #[serde(default)]
+            count: CompatOption<usize>,
+            #[serde(default)]
+            start_at: CompatOption<String>,
+        }
+
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            cron_expr: input.cron_expr.into_option(),
+            timezone: input
+                .timezone
+                .into_option()
+                .unwrap_or_else(default_runtime_timezone),
+            count: input.count.into_option(),
+            start_at: input.start_at.into_option(),
+        })
     }
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("Validate cron/timezone configuration and preview upcoming recurring run times.")
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct RuntimeRecurringPreviewEntry {
+    run_at_utc: String,
+    unix_seconds: i64,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "cron_expr": {
-                    "type": "string",
-                    "description": "Cron expression to validate"
-                },
-                "timezone": {
-                    "type": "string",
-                    "description": "IANA timezone",
-                    "default": "UTC"
-                },
-                "count": {
-                    "type": "integer",
-                    "description": "How many future runs to preview (1-20, default 5)",
-                    "minimum": 1,
-                    "maximum": 20
-                },
-                "start_at": {
-                    "type": "string",
-                    "description": "Optional RFC3339 UTC start timestamp"
-                }
-            },
-            "required": ["cron_expr"]
-        }))
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct RuntimeRecurringPreviewOutput {
+    valid: bool,
+    cron_expr: String,
+    timezone: String,
+    start_at_utc: String,
+    count: usize,
+    preview: Vec<RuntimeRecurringPreviewEntry>,
+}
 
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let cron_expr = input
-            .get("cron_expr")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                StasisError::PortFailure(
-                    "cognition_runtime_recurring_preview: cron_expr is required".to_string(),
-                )
-            })?;
-        let timezone = input
-            .get("timezone")
-            .and_then(|v| v.as_str())
-            .unwrap_or("UTC");
-        let count = input
-            .get("count")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(5)
-            .clamp(1, 20) as usize;
+#[medousa_tool(id = COGNITION_RUNTIME_RECURRING_PREVIEW_ID)]
+impl CognitionRuntimeRecurringPreviewTool {
+    /// Validate cron/timezone configuration and preview upcoming recurring run times.
+    async fn invoke_typed(
+        &self,
+        input: RuntimeRecurringPreviewInput,
+    ) -> stasis::prelude::Result<RuntimeRecurringPreviewOutput> {
+        let cron_expr = input.cron_expr.ok_or_else(|| {
+            StasisError::PortFailure(
+                "cognition_runtime_recurring_preview: cron_expr is required".to_string(),
+            )
+        })?;
+        let timezone = input.timezone;
+        let count = input.count.unwrap_or(5).clamp(1, 20);
 
-        let base_time = if let Some(start_at) = input.get("start_at").and_then(|v| v.as_str()) {
+        let base_time = if let Some(start_at) = input.start_at.as_deref() {
             DateTime::parse_from_rfc3339(start_at)
                 .map_err(|e| {
                     StasisError::PortFailure(format!(
@@ -1770,31 +1910,25 @@ impl StasisTool for CognitionRuntimeRecurringPreviewTool {
             Utc::now()
         };
 
-        let definition = RecurringDefinition {
-            id: "preview-only".to_string(),
-            queue: "default".to_string(),
-            job_type: "workflow.grapheme.run".to_string(),
-            payload_template_ref: "grapheme:inline:preview".to_string(),
-            cron_expr: cron_expr.to_string(),
-            timezone: timezone.to_string(),
-            jitter_seconds: 0,
-            enabled: true,
-            max_attempts: 1,
-            next_run_at: base_time,
-            last_run_at: None,
-            lease_owner: None,
-            lease_expires_at: None,
-        };
+        let definition = RecurringScheduleSpec::new(
+            "preview-only",
+            "default",
+            "workflow.grapheme.run",
+            "grapheme:inline:preview",
+            cron_expr.clone(),
+            timezone.clone(),
+        )
+        .build(base_time)?;
 
         let mut cursor = base_time;
-        let mut preview: Vec<Value> = Vec::with_capacity(count);
+        let mut preview = Vec::with_capacity(count);
 
         for _ in 0..count {
             let next_run = definition.compute_next_run_at(cursor)?;
-            preview.push(json!({
-                "run_at_utc": next_run.to_rfc3339(),
-                "unix_seconds": next_run.timestamp()
-            }));
+            preview.push(RuntimeRecurringPreviewEntry {
+                run_at_utc: next_run.to_rfc3339(),
+                unix_seconds: next_run.timestamp(),
+            });
             cursor = next_run + Duration::seconds(1);
         }
 
@@ -1802,18 +1936,18 @@ impl StasisTool for CognitionRuntimeRecurringPreviewTool {
             .event_tx
             .send(TuiEvent::ToolInvoked {
                 tool_name: self.name().to_string(),
-                input_summary: format!("{} @ {}", cron_expr, timezone),
+                input_summary: format!("{cron_expr} @ {timezone}"),
             })
             .await;
 
-        Ok(json!({
-            "valid": true,
-            "cron_expr": cron_expr,
-            "timezone": timezone,
-            "start_at_utc": base_time.to_rfc3339(),
-            "count": count,
-            "preview": preview
-        }))
+        Ok(RuntimeRecurringPreviewOutput {
+            valid: true,
+            cron_expr,
+            timezone,
+            start_at_utc: base_time.to_rfc3339(),
+            count,
+            preview,
+        })
     }
 }
 
@@ -1823,43 +1957,67 @@ impl CognitionRuntimeJobStatusTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionRuntimeJobStatusTool {
-    fn name(&self) -> &'static str {
-        "cognition_runtime_jobs_status"
+#[derive(Debug, JsonSchema)]
+pub struct RuntimeJobStatusInput {
+    /// Runtime job identifier
+    #[schemars(required, with = "String")]
+    job_id: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for RuntimeJobStatusInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(default)]
+            job_id: CompatOption<String>,
+        }
+
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            job_id: input.job_id.into_option(),
+        })
     }
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("Inspect job attempts and latest execution status for a given job_id.")
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct RuntimeJobAttemptSummary {
+    attempt: u32,
+    outcome: String,
+    execution_id: Option<String>,
+    #[schemars(with = "String")]
+    started_at: DateTime<Utc>,
+    #[schemars(with = "String")]
+    finished_at: DateTime<Utc>,
+    diagnostics: Option<String>,
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "job_id": {
-                    "type": "string",
-                    "description": "Runtime job identifier"
-                }
-            },
-            "required": ["job_id"]
-        }))
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct RuntimeJobStatusOutput {
+    job_id: String,
+    attempt_count: usize,
+    latest_outcome: String,
+    latest_execution_id: Option<String>,
+    latest_diagnostics: Option<String>,
+    attempts: Vec<RuntimeJobAttemptSummary>,
+}
 
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let job_id = input
-            .get("job_id")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                StasisError::PortFailure(
-                    "cognition_runtime_jobs_status: job_id is required".to_string(),
-                )
-            })?;
+#[medousa_tool(id = COGNITION_RUNTIME_JOBS_STATUS_ID)]
+impl CognitionRuntimeJobStatusTool {
+    /// Inspect job attempts and latest execution status for a given job_id.
+    async fn invoke_typed(
+        &self,
+        input: RuntimeJobStatusInput,
+    ) -> stasis::prelude::Result<RuntimeJobStatusOutput> {
+        let job_id = input.job_id.ok_or_else(|| {
+            StasisError::PortFailure(
+                "cognition_runtime_jobs_status: job_id is required".to_string(),
+            )
+        })?;
 
-        let attempts = match &*self.runtime {
-            RuntimeComposition::InMemory(rt) => rt.job_attempt_store.list_by_job_id(job_id).await?,
-            RuntimeComposition::Surreal(rt) => rt.job_attempt_store.list_by_job_id(job_id).await?,
-        };
+        let attempts = self.runtime.list_job_attempts(&job_id).await?;
 
         let last = attempts.last();
         let latest_outcome = last
@@ -1868,32 +2026,36 @@ impl StasisTool for CognitionRuntimeJobStatusTool {
         let execution_id = last.and_then(|a| a.execution_id.clone());
         let diagnostics = last.and_then(|a| a.diagnostics.clone());
 
-        let attempts_summary: Vec<Value> = attempts
+        let attempts_summary = attempts
             .iter()
-            .map(|a| {
-                json!({
-                    "attempt": a.attempt_number,
-                    "outcome": format!("{:?}", a.outcome),
-                    "execution_id": a.execution_id,
-                    "started_at": a.started_at,
-                    "finished_at": a.finished_at,
-                    "diagnostics": a.diagnostics,
-                })
+            .map(|attempt| RuntimeJobAttemptSummary {
+                attempt: attempt.attempt_number,
+                outcome: format!("{:?}", attempt.outcome),
+                execution_id: attempt.execution_id.clone(),
+                started_at: attempt.started_at,
+                finished_at: attempt.finished_at,
+                diagnostics: attempt.diagnostics.clone(),
             })
             .collect();
 
-        Ok(json!({
-            "job_id": job_id,
-            "attempt_count": attempts.len(),
-            "latest_outcome": latest_outcome,
-            "latest_execution_id": execution_id,
-            "latest_diagnostics": diagnostics,
-            "attempts": attempts_summary
-        }))
+        Ok(RuntimeJobStatusOutput {
+            job_id,
+            attempt_count: attempts.len(),
+            latest_outcome,
+            latest_execution_id: execution_id,
+            latest_diagnostics: diagnostics,
+            attempts: attempts_summary,
+        })
     }
 }
 
 // ── Capability catalog tools (Phase A) ───────────────────────────────────────
+
+const COGNITION_CAPABILITY_RESOLVE_ID: ToolId = ToolId::new("cognition_capability_resolve");
+const COGNITION_CAPABILITY_LIST_ID: ToolId = ToolId::new("cognition_capability_list");
+const COGNITION_CAPABILITY_SEARCH_ID: ToolId = ToolId::new("cognition_capability_search");
+const COGNITION_MCP_DISCOVER_ID: ToolId = ToolId::new("cognition_mcp_discover");
+const COGNITION_MCP_SERVERS_ID: ToolId = ToolId::new("cognition_mcp_servers");
 
 pub struct CognitionCapabilityResolveTool {
     capability_registry: Arc<RwLock<CapabilityRegistry>>,
@@ -1912,37 +2074,52 @@ impl CognitionCapabilityResolveTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionCapabilityResolveTool {
-    fn name(&self) -> &'static str {
-        "cognition_capability_resolve"
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CapabilityResolveInput {
+    /// Capability id, e.g. document_search
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    capability: CompatOption<String>,
+    /// Optional fuzzy query when capability id is unknown
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    query: CompatOption<String>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("Resolve a capability intent to Grapheme and MCP implementations.")
-    }
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum CapabilityResolveOutput {
+    Resolved(CapabilityResolveResponse),
+    NoMatch {
+        capability: Option<String>,
+        matches: Vec<CapabilitySearchMatch>,
+        message: String,
+    },
+}
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "capability": { "type": "string", "description": "Capability id, e.g. document_search" },
-                "query": { "type": "string", "description": "Optional fuzzy query when capability id is unknown" }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let capability_id = input
-            .get("capability")
-            .and_then(|value| value.as_str())
+#[medousa_tool(id = COGNITION_CAPABILITY_RESOLVE_ID)]
+impl CognitionCapabilityResolveTool {
+    /// Resolve a capability intent to Grapheme and MCP implementations.
+    async fn invoke_typed(
+        &self,
+        input: CapabilityResolveInput,
+    ) -> stasis::prelude::Result<CapabilityResolveOutput> {
+        let capability_value = input.capability.into_option();
+        let query_value = input.query.into_option();
+        let capability_id = capability_value
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string);
 
-        let query = input
-            .get("query")
-            .and_then(|value| value.as_str())
+        let query = query_value
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string);
@@ -1953,41 +2130,32 @@ impl StasisTool for CognitionCapabilityResolveTool {
             ));
         }
 
-        let summary = capability_id
-            .clone()
-            .or(query.clone())
-            .unwrap_or_default();
+        let summary = capability_id.clone().or(query.clone()).unwrap_or_default();
         let _ = self
             .event_tx
             .send(TuiEvent::ToolInvoked {
-                tool_name: self.name().to_string(),
+                tool_name: COGNITION_CAPABILITY_RESOLVE_ID.as_str().to_string(),
                 input_summary: summary,
             })
             .await;
 
         let registry = self.capability_registry.read().await;
         if let Some(capability_id) = capability_id {
-            let response = registry
-                .resolve(&capability_id)
-                .ok_or_else(|| {
-                    StasisError::PortFailure(format!(
-                        "cognition.capability.resolve: unknown capability '{capability_id}'"
-                    ))
-                })?;
-            return serde_json::to_value(response).map_err(|error| {
+            let response = registry.resolve(&capability_id).ok_or_else(|| {
                 StasisError::PortFailure(format!(
-                    "cognition.capability.resolve: failed to encode response: {error}"
+                    "cognition.capability.resolve: unknown capability '{capability_id}'"
                 ))
-            });
+            })?;
+            return Ok(CapabilityResolveOutput::Resolved(response));
         }
 
         let search = registry.search(query.as_deref().unwrap_or_default(), 1);
         let Some(first) = search.matches.first() else {
-            return Ok(json!({
-                "capability": null,
-                "matches": search.matches,
-                "message": "no capabilities matched query"
-            }));
+            return Ok(CapabilityResolveOutput::NoMatch {
+                capability: None,
+                matches: search.matches,
+                message: "no capabilities matched query".to_string(),
+            });
         };
 
         let response = registry.resolve(&first.capability).ok_or_else(|| {
@@ -1996,11 +2164,7 @@ impl StasisTool for CognitionCapabilityResolveTool {
                 first.capability
             ))
         })?;
-        Ok(serde_json::to_value(response).map_err(|error| {
-            StasisError::PortFailure(format!(
-                "cognition.capability.resolve: failed to encode response: {error}"
-            ))
-        })?)
+        Ok(CapabilityResolveOutput::Resolved(response))
     }
 }
 
@@ -2016,49 +2180,47 @@ impl CognitionCapabilityListTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionCapabilityListTool {
-    fn name(&self) -> &'static str {
-        "cognition_capability_list"
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CapabilityListInput {
+    /// Optional capability id prefix filter
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    prefix: CompatOption<String>,
+    /// Max entries (default 50)
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    limit: CompatOption<usize>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("List registered capability intents in the Medousa capability catalog.")
-    }
-
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "prefix": { "type": "string", "description": "Optional capability id prefix filter" },
-                "limit": { "type": "integer", "description": "Max entries (default 50)" }
-            }
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let prefix = input
-            .get("prefix")
-            .and_then(|value| value.as_str())
+#[medousa_tool(id = COGNITION_CAPABILITY_LIST_ID)]
+impl CognitionCapabilityListTool {
+    /// List registered capability intents in the Medousa capability catalog.
+    async fn invoke_typed(
+        &self,
+        input: CapabilityListInput,
+    ) -> stasis::prelude::Result<CapabilityListResponse> {
+        let prefix_value = input.prefix.into_option();
+        let prefix = prefix_value
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty());
-        let limit = input
-            .get("limit")
-            .and_then(|value| value.as_u64())
-            .unwrap_or(50)
-            .clamp(1, 200) as usize;
+        let limit = input.limit.into_option().unwrap_or(50).clamp(1, 200);
 
         let registry = self.capability_registry.read().await;
         let mut response = registry.list();
         if let Some(prefix) = prefix {
-            response.capabilities.retain(|entry| entry.id.starts_with(prefix));
+            response
+                .capabilities
+                .retain(|entry| entry.id.starts_with(prefix));
         }
         response.capabilities.truncate(limit);
-        Ok(serde_json::to_value(response).map_err(|error| {
-            StasisError::PortFailure(format!(
-                "cognition.capability.list: failed to encode response: {error}"
-            ))
-        })?)
+        Ok(response)
     }
 }
 
@@ -2079,52 +2241,61 @@ impl CognitionCapabilitySearchTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionCapabilitySearchTool {
-    fn name(&self) -> &'static str {
-        "cognition_capability_search"
-    }
+#[derive(Debug, JsonSchema)]
+pub struct CapabilitySearchInput {
+    /// Search query
+    #[schemars(required, with = "String")]
+    query: Option<String>,
+    /// Max matches (default 10)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
+    limit: Option<usize>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("Keyword search capability intents by query, alias, or keywords.")
-    }
+impl<'de> Deserialize<'de> for CapabilitySearchInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(default)]
+            query: CompatOption<String>,
+            #[serde(default)]
+            limit: CompatOption<usize>,
+        }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "query": { "type": "string", "description": "Search query" },
-                "limit": { "type": "integer", "description": "Max matches (default 10)" }
-            },
-            "required": ["query"]
-        }))
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            query: input.query.into_option(),
+            limit: input.limit.into_option(),
+        })
     }
+}
 
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let query = input.get("query").and_then(|value| value.as_str()).ok_or_else(|| {
+#[medousa_tool(id = COGNITION_CAPABILITY_SEARCH_ID)]
+impl CognitionCapabilitySearchTool {
+    /// Keyword search capability intents by query, alias, or keywords.
+    async fn invoke_typed(
+        &self,
+        input: CapabilitySearchInput,
+    ) -> stasis::prelude::Result<CapabilitySearchResponse> {
+        let query = input.query.as_deref().ok_or_else(|| {
             StasisError::PortFailure("cognition.capability.search: query is required".to_string())
         })?;
-        let limit = input
-            .get("limit")
-            .and_then(|value| value.as_u64())
-            .unwrap_or(10)
-            .clamp(1, 50) as usize;
+        let limit = input.limit.unwrap_or(10).clamp(1, 50);
 
         let _ = self
             .event_tx
             .send(TuiEvent::ToolInvoked {
-                tool_name: self.name().to_string(),
+                tool_name: COGNITION_CAPABILITY_SEARCH_ID.as_str().to_string(),
                 input_summary: query.to_string(),
             })
             .await;
 
         let registry = self.capability_registry.read().await;
         let response = registry.search(query, limit);
-        Ok(serde_json::to_value(response).map_err(|error| {
-            StasisError::PortFailure(format!(
-                "cognition.capability.search: failed to encode response: {error}"
-            ))
-        })?)
+        Ok(response)
     }
 }
 
@@ -2151,48 +2322,64 @@ impl CognitionMcpDiscoverTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionMcpDiscoverTool {
-    fn name(&self) -> &'static str {
-        "cognition_mcp_discover"
-    }
+#[derive(Debug, JsonSchema)]
+pub struct McpDiscoverInput {
+    /// Search query
+    #[schemars(required, with = "String")]
+    query: Option<String>,
+    /// Optional MCP server id filter
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    server_id: Option<String>,
+    /// Max matches (default 20)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
+    limit: Option<usize>,
+}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("Search external MCP tools via the MCP Client gateway.")
-    }
+impl<'de> Deserialize<'de> for McpDiscoverInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(default)]
+            query: CompatOption<String>,
+            #[serde(default)]
+            server_id: CompatOption<String>,
+            #[serde(default)]
+            limit: CompatOption<usize>,
+        }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "query": { "type": "string", "description": "Search query" },
-                "server_id": { "type": "string", "description": "Optional MCP server id filter" },
-                "limit": { "type": "integer", "description": "Max matches (default 20)" }
-            },
-            "required": ["query"]
-        }))
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            query: input.query.into_option(),
+            server_id: input.server_id.into_option(),
+            limit: input.limit.into_option(),
+        })
     }
+}
 
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let query = input.get("query").and_then(|value| value.as_str()).ok_or_else(|| {
+#[medousa_tool(id = COGNITION_MCP_DISCOVER_ID)]
+impl CognitionMcpDiscoverTool {
+    /// Search external MCP tools via the MCP Client gateway.
+    async fn invoke_typed(&self, input: McpDiscoverInput) -> stasis::prelude::Result<ExternalJson> {
+        let query = input.query.as_deref().ok_or_else(|| {
             StasisError::PortFailure("cognition.mcp.discover: query is required".to_string())
         })?;
         let server_id = input
-            .get("server_id")
-            .and_then(|value| value.as_str())
+            .server_id
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string);
-        let limit = input
-            .get("limit")
-            .and_then(|value| value.as_u64())
-            .unwrap_or(20)
-            .clamp(1, 100) as usize;
+        let limit = input.limit.unwrap_or(20).clamp(1, 100);
 
         let _ = self
             .event_tx
             .send(TuiEvent::ToolInvoked {
-                tool_name: self.name().to_string(),
+                tool_name: COGNITION_MCP_DISCOVER_ID.as_str().to_string(),
                 input_summary: query.to_string(),
             })
             .await;
@@ -2218,11 +2405,13 @@ impl StasisTool for CognitionMcpDiscoverTool {
                 StasisError::PortFailure(format!("cognition.mcp.discover: {error}"))
             })?;
 
-        Ok(serde_json::to_value(response).map_err(|error| {
-            StasisError::PortFailure(format!(
-                "cognition.mcp.discover: failed to encode response: {error}"
-            ))
-        })?)
+        serde_json::to_value(response)
+            .map(ExternalJson::new)
+            .map_err(|error| {
+                StasisError::PortFailure(format!(
+                    "cognition.mcp.discover: failed to encode response: {error}"
+                ))
+            })
     }
 }
 
@@ -2249,49 +2438,65 @@ impl CognitionMcpInvokeTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionMcpInvokeTool {
-    fn name(&self) -> &'static str {
-        "cognition_mcp_invoke"
+#[derive(Debug, Deserialize)]
+#[serde(transparent)]
+pub struct McpInvokeObject(Value);
+
+impl JsonSchema for McpInvokeObject {
+    fn schema_name() -> String {
+        "McpInvokeObject".to_string()
     }
 
-    fn description(&self) -> Option<&'static str> {
-        Some("Invoke an external MCP tool via the MCP Client gateway.")
+    fn is_referenceable() -> bool {
+        false
     }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "server_id": { "type": "string" },
-                "tool_name": { "type": "string" },
-                "input": { "type": "object" },
-                "turn_token": { "type": "string", "description": "Optional pre-minted turn token" },
-                "approval_granted": {
-                    "type": "boolean",
-                    "description": "Set true after the operator approves a prior approval_required response"
-                }
-            },
-            "required": ["server_id", "tool_name"]
-        }))
+    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> Schema {
+        Schema::Object(SchemaObject {
+            instance_type: Some(InstanceType::Object.into()),
+            ..SchemaObject::default()
+        })
     }
+}
 
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let server_id = input.get("server_id").and_then(|value| value.as_str()).ok_or_else(|| {
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct McpInvokeInput {
+    #[schemars(required, with = "String")]
+    server_id: Option<String>,
+    #[schemars(required, with = "String")]
+    tool_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "McpInvokeObject", skip_serializing_if = "Option::is_none")]
+    input: Option<McpInvokeObject>,
+    /// Optional pre-minted turn token
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    turn_token: Option<String>,
+    /// Set true after the operator approves a prior approval_required response
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
+    approval_granted: Option<bool>,
+}
+
+#[medousa_tool(id = COGNITION_MCP_INVOKE_ID)]
+impl CognitionMcpInvokeTool {
+    /// Invoke an external MCP tool via the MCP Client gateway.
+    async fn invoke_typed(&self, input: McpInvokeInput) -> stasis::prelude::Result<ExternalJson> {
+        let server_id = input.server_id.as_deref().ok_or_else(|| {
             StasisError::PortFailure("cognition.mcp.invoke: server_id is required".to_string())
         })?;
-        let tool_name = input.get("tool_name").and_then(|value| value.as_str()).ok_or_else(|| {
+        let tool_name = input.tool_name.as_deref().ok_or_else(|| {
             StasisError::PortFailure("cognition.mcp.invoke: tool_name is required".to_string())
         })?;
         let tool_input = input
-            .get("input")
-            .cloned()
+            .input
+            .map(|input| input.0)
             .unwrap_or_else(|| json!({}));
 
         let _ = self
             .event_tx
             .send(TuiEvent::ToolInvoked {
-                tool_name: self.name().to_string(),
+                tool_name: COGNITION_MCP_INVOKE_ID.as_str().to_string(),
                 input_summary: format!("{server_id}.{tool_name}"),
             })
             .await;
@@ -2302,16 +2507,14 @@ impl StasisTool for CognitionMcpInvokeTool {
         )
         .await;
         let turn_context = build_agent_mcp_turn_context(&session_id);
-        let turn_token = if let Some(token) = input.get("turn_token").and_then(|value| value.as_str()) {
-            Some(token.to_string())
+        let turn_token = if let Some(token) = input.turn_token {
+            Some(token)
         } else {
             mint_mcp_turn_token(&turn_context).map_err(|error| {
                 StasisError::PortFailure(format!("cognition.mcp.invoke: {error}"))
             })?
         };
-        let operator_approval_granted = input
-            .get("approval_granted")
-            .and_then(|value| value.as_bool());
+        let operator_approval_granted = input.approval_granted;
 
         let request = McpInvokeRequest {
             server_id: server_id.to_string(),
@@ -2330,22 +2533,25 @@ impl StasisTool for CognitionMcpInvokeTool {
 
         if !response.ok
             && let Some(error) = response.error.as_ref()
-                && error.code == "approval_required" {
-                    let _ = self
-                        .event_tx
-                        .send(TuiEvent::ApprovalRequired {
-                            server_id: server_id.to_string(),
-                            tool_name: tool_name.to_string(),
-                            reason: error.message.clone(),
-                        })
-                        .await;
-                }
+            && error.code == "approval_required"
+        {
+            let _ = self
+                .event_tx
+                .send(TuiEvent::ApprovalRequired {
+                    server_id: server_id.to_string(),
+                    tool_name: tool_name.to_string(),
+                    reason: error.message.clone(),
+                })
+                .await;
+        }
 
-        Ok(serde_json::to_value(response).map_err(|error| {
-            StasisError::PortFailure(format!(
-                "cognition.mcp.invoke: failed to encode response: {error}"
-            ))
-        })?)
+        serde_json::to_value(response)
+            .map(ExternalJson::new)
+            .map_err(|error| {
+                StasisError::PortFailure(format!(
+                    "cognition.mcp.invoke: failed to encode response: {error}"
+                ))
+            })
     }
 }
 
@@ -2359,31 +2565,24 @@ impl CognitionMcpServersTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionMcpServersTool {
-    fn name(&self) -> &'static str {
-        "cognition_mcp_servers"
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct McpServersInput {}
 
-    fn description(&self) -> Option<&'static str> {
-        Some("List MCP servers known to the MCP Client gateway.")
-    }
-
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({ "type": "object", "properties": {} }))
-    }
-
-    async fn invoke(&self, _input: Value) -> stasis::prelude::Result<Value> {
-        let response = self
-            .gateway_client
-            .list_servers()
-            .await
-            .map_err(|error| StasisError::PortFailure(format!("cognition.mcp.servers: {error}")))?;
-        Ok(serde_json::to_value(response).map_err(|error| {
-            StasisError::PortFailure(format!(
-                "cognition.mcp.servers: failed to encode response: {error}"
-            ))
-        })?)
+#[medousa_tool(id = COGNITION_MCP_SERVERS_ID)]
+impl CognitionMcpServersTool {
+    /// List MCP servers known to the MCP Client gateway.
+    async fn invoke_typed(&self, _input: McpServersInput) -> stasis::prelude::Result<ExternalJson> {
+        let response =
+            self.gateway_client.list_servers().await.map_err(|error| {
+                StasisError::PortFailure(format!("cognition.mcp.servers: {error}"))
+            })?;
+        serde_json::to_value(response)
+            .map(ExternalJson::new)
+            .map_err(|error| {
+                StasisError::PortFailure(format!(
+                    "cognition.mcp.servers: failed to encode response: {error}"
+                ))
+            })
     }
 }
 
@@ -2424,17 +2623,14 @@ impl PolicyAwareToolRegistry {
         }
     }
 
-    fn enforce_lane_safety(
-        &self,
-        tool_name: &str,
-        input: &Value,
-    ) -> stasis::prelude::Result<()> {
+    fn enforce_lane_safety(&self, tool_name: &str, input: &Value) -> stasis::prelude::Result<()> {
         if let Some(action) = lane_safety_action_for_tool_call(tool_name, input)
-            && let Err(reason) = validate_lane_action(self.lane, action) {
-                return Err(StasisError::PortFailure(format!(
-                    "lane safety violation: {reason}"
-                )));
-            }
+            && let Err(reason) = validate_lane_action(self.lane, action)
+        {
+            return Err(StasisError::PortFailure(format!(
+                "lane safety violation: {reason}"
+            )));
+        }
 
         let policy_profile = tool_policy_profile_for_tool_call(input);
         if let Err(reason) = validate_lane_policy_profile(self.lane, policy_profile) {
@@ -2503,9 +2699,10 @@ fn lane_safety_action_for_tool_call(
     _input: &Value,
 ) -> Option<LaneSafetyActionClass> {
     match tool_name {
-        "cognition_job_enqueue" | "cognition_grapheme_promote_to_job" | "cognition_runtime_workflow_run" | "cognition_mcp_promote_to_job" => {
-            Some(LaneSafetyActionClass::InteractiveIngress)
-        }
+        "cognition_job_enqueue"
+        | "cognition_grapheme_promote_to_job"
+        | "cognition_runtime_workflow_run"
+        | "cognition_mcp_promote_to_job" => Some(LaneSafetyActionClass::InteractiveIngress),
         "cognition_grapheme_promote_to_recurring"
         | "cognition_grapheme_promote_last_run_to_recurring"
         | "cognition_runtime_recurring_register"
@@ -2654,6 +2851,7 @@ pub struct TuiRuntime {
     pub runtime: Arc<RuntimeComposition>,
     pub tool_loop_pipeline: MedousaToolLoopPipeline,
     pub tool_registry: Arc<dyn ToolRegistry>,
+    pub tool_catalog: Arc<crate::typed_tools::ToolCatalog>,
     pub capability_registry: Arc<RwLock<CapabilityRegistry>>,
     pub mcp_gateway_client: Arc<McpGatewayClient>,
     pub workflow_registry: Arc<crate::workflow::WorkflowRegistry>,
@@ -2663,7 +2861,8 @@ pub struct TuiRuntime {
     pub identity_memory_store: Arc<dyn IdentityMemoryStore>,
     pub memory_reader: Arc<dyn MemoryContextReader>,
     pub memory_writer: Arc<dyn MemoryContextWriter>,
-    pub memory_operations: Arc<dyn stasis::ports::outbound::memory::memory_operations::MemoryOperations>,
+    pub memory_operations:
+        Arc<dyn stasis::ports::outbound::memory::memory_operations::MemoryOperations>,
     pub client_registry: crate::client_tools::ClientRegistry,
     pub turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
     pub worker_scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
@@ -2711,11 +2910,12 @@ mod tests {
     use async_trait::async_trait;
     use genai::chat::Tool;
     use serde_json::json;
-    use stasis::application::orchestration::tool_registry::ToolRegistry;
+    use stasis::application::orchestration::tool_registry::{StasisTool, ToolRegistry};
 
     use super::{
-        EngineExecutionLane, PolicyAwareToolRegistry, extract_module_ops_from_source,
-        referenced_module_ops_for_tool_call,
+        CognitionUtilityDayOfWeekTool, CognitionUtilityTimeNowTool, CognitionUtilityUuidTool,
+        EngineExecutionLane, PolicyAwareToolRegistry, UtilityDayOfWeekInput, UtilityTimeNowInput,
+        UtilityUuidInput, extract_module_ops_from_source, referenced_module_ops_for_tool_call,
     };
 
     #[derive(Default)]
@@ -2779,7 +2979,8 @@ mod tests {
     #[tokio::test]
     async fn interactive_registry_allows_recurring_registration_tools() {
         let inner: Arc<dyn ToolRegistry> = Arc::new(PassthroughToolRegistry);
-        let registry = PolicyAwareToolRegistry::new(inner, Vec::new(), EngineExecutionLane::Interactive);
+        let registry =
+            PolicyAwareToolRegistry::new(inner, Vec::new(), EngineExecutionLane::Interactive);
 
         let result = registry
             .invoke_tool(
@@ -2798,7 +2999,8 @@ mod tests {
     #[tokio::test]
     async fn scheduled_registry_allows_recurring_registration_tools() {
         let inner: Arc<dyn ToolRegistry> = Arc::new(PassthroughToolRegistry);
-        let registry = PolicyAwareToolRegistry::new(inner, Vec::new(), EngineExecutionLane::Scheduled);
+        let registry =
+            PolicyAwareToolRegistry::new(inner, Vec::new(), EngineExecutionLane::Scheduled);
 
         let result = registry
             .invoke_tool(
@@ -2812,5 +3014,65 @@ mod tests {
             .expect("scheduled lane should allow recurring registration action");
 
         assert_eq!(result["status"], "ok");
+    }
+
+    #[tokio::test]
+    async fn typed_utility_handlers_preserve_outputs_and_legacy_optional_inputs() {
+        let weekday = CognitionUtilityDayOfWeekTool
+            .invoke_typed(UtilityDayOfWeekInput {
+                date: Some("2026-08-09".to_string()).into(),
+            })
+            .await
+            .expect("known weekday");
+        assert_eq!(weekday.date, "2026-08-09");
+        assert_eq!(weekday.weekday, "Sun");
+        assert_eq!(weekday.weekday_number_from_monday, 7);
+        assert_eq!(weekday.weekday_number_from_sunday, 1);
+
+        let error = CognitionUtilityDayOfWeekTool
+            .invoke_typed(UtilityDayOfWeekInput {
+                date: Some("not-a-date".to_string()).into(),
+            })
+            .await
+            .expect_err("invalid date");
+        assert!(
+            error
+                .to_string()
+                .contains("cognition_utility_day_of_week: invalid date 'not-a-date'")
+        );
+
+        let legacy_weekday =
+            StasisTool::invoke(&CognitionUtilityDayOfWeekTool, json!({ "date": 20260809 }))
+                .await
+                .expect("legacy non-string date remains equivalent to omission");
+        assert!(legacy_weekday["weekday"].is_string());
+
+        let uuid = CognitionUtilityUuidTool
+            .invoke_typed(UtilityUuidInput {
+                prefix: Some("phase-two".to_string()).into(),
+            })
+            .await
+            .expect("typed UUID");
+        assert!(uuid.correlation_id.starts_with("phase-two-"));
+        assert!(uuid.trace_id.starts_with("phase-two-trace-"));
+        assert!(uuid.idempotency_key.starts_with("idem-phase-two-"));
+        assert_eq!(uuid.uuid_simple.len(), 32);
+
+        let legacy_uuid = StasisTool::invoke(&CognitionUtilityUuidTool, json!({ "prefix": false }))
+            .await
+            .expect("legacy non-string prefix remains equivalent to omission");
+        assert!(
+            legacy_uuid["correlation_id"]
+                .as_str()
+                .is_some_and(|value| value.starts_with("cognition-"))
+        );
+
+        let time = CognitionUtilityTimeNowTool
+            .invoke_typed(UtilityTimeNowInput {})
+            .await
+            .expect("typed current time");
+        assert!(!time.utc_rfc3339.is_empty());
+        assert!(!time.local_rfc3339.is_empty());
+        assert!(time.unix_millis / 1_000 >= time.unix_seconds - 1);
     }
 }

@@ -1,0 +1,5 @@
+error: `medousa_tool` impl contains more than one `invoke_typed` method
+  --> tests/ui/fail_multiple_handlers.rs:16:14
+   |
+16 |     async fn invoke_typed(&self, input: String) -> Result<String, ()> {
+   |              ^^^^^^^^^^^^

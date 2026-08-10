@@ -2,6 +2,8 @@
 
 use medousa_types::daemon_api::TurnSurfaceContext;
 
+use crate::semantic_values::TrimmedText;
+
 pub const COGNITION_BROWSER_FETCH: &str = "cognition_browser_fetch";
 pub const COGNITION_BROWSER_SNAPSHOT: &str = "cognition_browser_snapshot";
 pub const COGNITION_BROWSER_ACT: &str = "cognition_browser_act";
@@ -11,6 +13,28 @@ pub const BROWSER_COGNITION_TOOLS: &[&str] = &[
     COGNITION_BROWSER_SNAPSHOT,
     COGNITION_BROWSER_ACT,
 ];
+
+#[derive(Debug)]
+pub(crate) struct BrowserUrlCommand {
+    pub(crate) url: TrimmedText,
+    pub(crate) max_chars: usize,
+}
+
+impl BrowserUrlCommand {
+    pub(crate) fn new(
+        url: Option<String>,
+        max_chars: usize,
+        tool_id: &str,
+    ) -> stasis::prelude::Result<Self> {
+        let url = url.ok_or_else(|| {
+            stasis::domain::errors::StasisError::PortFailure(format!("{tool_id}: url is required"))
+        })?;
+        let url = TrimmedText::new(url).map_err(|_| {
+            stasis::domain::errors::StasisError::PortFailure(format!("{tool_id}: url is required"))
+        })?;
+        Ok(Self { url, max_chars })
+    }
+}
 
 pub fn surface_supports_browser_host(surface: Option<&TurnSurfaceContext>) -> bool {
     surface.is_some_and(|ctx| ctx.supports_browser_host)
@@ -39,5 +63,28 @@ mod tests {
         assert!(surface_supports_browser_host(Some(
             &TurnSurfaceContext::default().with_browser_host(true)
         )));
+    }
+
+    #[test]
+    fn browser_url_command_normalizes_required_url() {
+        let command = BrowserUrlCommand::new(
+            Some("  https://example.test  ".to_string()),
+            4000,
+            "cognition_browser_fetch",
+        )
+        .expect("url");
+        assert_eq!(command.url.as_str(), "https://example.test");
+        assert_eq!(command.max_chars, 4000);
+    }
+
+    #[test]
+    fn browser_url_command_rejects_blank_url() {
+        let error = BrowserUrlCommand::new(
+            Some(" \n\t".to_string()),
+            4000,
+            "cognition_browser_snapshot",
+        )
+        .expect_err("blank url should fail");
+        assert!(error.to_string().contains("url is required"));
     }
 }

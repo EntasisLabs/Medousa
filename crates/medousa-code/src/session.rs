@@ -1,23 +1,29 @@
-//! Session pool: one language-server backend per (workspace_root, language).
+//! Session pool: one language-server backend per governed project, resolved
+//! language root, and language.
 //!
-//! Multi-client: Home + agents share one backend; outbound broadcast fans
-//! notifications (diagnostics, etc.) to every subscribed WebSocket client.
+//! HTTP agent callers share a backend; outbound broadcast fans notifications
+//! (diagnostics, etc.) to every subscribed internal request listener.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 use tokio::sync::{Mutex, RwLock, broadcast};
+use url::Url;
 
 use crate::backend::{LanguageServerBackend, spawn_backend};
+use crate::language_session::{
+    LanguageSessionHandle, LanguageSessionIdentity, LanguageSessionKind, LanguageSessionStore,
+};
 use crate::registry::{LanguageId, ServerRegistry};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SessionKey {
-    pub workspace_root: PathBuf,
+    pub project_root: PathBuf,
+    pub language_root: PathBuf,
     pub language: LanguageId,
 }
 
@@ -30,6 +36,7 @@ pub struct LiveSession {
     pub diagnostics: RwLock<HashMap<String, Value>>,
     /// Capabilities advertised by the active language server.
     pub capabilities: RwLock<Value>,
+    lifecycle: LanguageSessionHandle,
     initialized: AtomicBool,
     closed: AtomicBool,
     last_used_millis: AtomicU64,
@@ -48,6 +55,12 @@ fn now_millis() -> u64 {
         .unwrap_or(u64::MAX)
 }
 
+fn path_to_file_uri(path: &Path) -> String {
+    Url::from_file_path(path)
+        .map(|url| url.to_string())
+        .unwrap_or_else(|_| format!("file:///{}", path.to_string_lossy().replace('\\', "/")))
+}
+
 pub(crate) fn initialization_options(language: &LanguageId) -> Value {
     if language.as_str() != "rust" {
         return Value::Null;
@@ -64,6 +77,47 @@ pub(crate) fn initialization_options(language: &LanguageId) -> Value {
         "numThreads": 2,
         "procMacro": { "enable": false }
     })
+}
+
+pub(crate) fn workspace_settings(language: &LanguageId) -> Value {
+    match language.as_str() {
+        "rust" => json!({ "rust-analyzer": initialization_options(language) }),
+        "svelte" => json!({
+            "svelte": {
+                "plugin": {
+                    "typescript": { "enable": true },
+                    "css": { "enable": true },
+                    "html": { "enable": true }
+                }
+            }
+        }),
+        _ => json!({}),
+    }
+}
+
+pub(crate) fn workspace_configuration_response(language: &LanguageId, params: &Value) -> Value {
+    let settings = workspace_settings(language);
+    let Some(items) = params.get("items").and_then(Value::as_array) else {
+        return json!([]);
+    };
+    Value::Array(
+        items
+            .iter()
+            .map(|item| {
+                let Some(section) = item.get("section").and_then(Value::as_str) else {
+                    return settings.clone();
+                };
+                if section.is_empty() {
+                    return settings.clone();
+                }
+                section
+                    .split('.')
+                    .try_fold(&settings, |value, part| value.get(part))
+                    .cloned()
+                    .unwrap_or_else(|| json!({}))
+            })
+            .collect(),
+    )
 }
 
 struct ActiveRequest<'a>(&'a LiveSession);
@@ -102,20 +156,37 @@ impl LiveSession {
                     Ok(msg) => msg,
                     Err(err) => {
                         tracing::warn!(error = %err, "language server reader stopped");
+                        session
+                            .lifecycle
+                            .failed(format!("Language server stopped: {err}"))
+                            .await;
                         break;
                     }
                 };
-                if let Ok(value) = serde_json::from_str::<Value>(&msg)
-                    && value.get("method").and_then(|m| m.as_str())
+                session.lifecycle.record_lsp_message(&msg).await;
+                if let Ok(value) = serde_json::from_str::<Value>(&msg) {
+                    match session.answer_server_request(&value).await {
+                        Ok(true) => continue,
+                        Ok(false) => {}
+                        Err(err) => {
+                            session
+                                .lifecycle
+                                .failed(format!("Could not answer language server: {err}"))
+                                .await;
+                            break;
+                        }
+                    }
+                    if value.get("method").and_then(|m| m.as_str())
                         == Some("textDocument/publishDiagnostics")
-                    && let Some(uri) = value.pointer("/params/uri").and_then(|v| v.as_str())
-                {
-                    let params = value.get("params").cloned().unwrap_or(Value::Null);
-                    session
-                        .diagnostics
-                        .write()
-                        .await
-                        .insert(uri.to_string(), params);
+                        && let Some(uri) = value.pointer("/params/uri").and_then(|v| v.as_str())
+                    {
+                        let params = value.get("params").cloned().unwrap_or(Value::Null);
+                        session
+                            .diagnostics
+                            .write()
+                            .await
+                            .insert(uri.to_string(), params);
+                    }
                 }
                 let _ = session.outbound.send(msg);
             }
@@ -125,6 +196,48 @@ impl LiveSession {
 
     pub fn is_closed(&self) -> bool {
         self.closed.load(Ordering::SeqCst)
+    }
+
+    async fn answer_server_request(&self, value: &Value) -> anyhow::Result<bool> {
+        let Some(method) = value.get("method").and_then(Value::as_str) else {
+            return Ok(false);
+        };
+        let Some(id) = value.get("id").cloned() else {
+            return Ok(false);
+        };
+        let result = match method {
+            "workspace/configuration" => workspace_configuration_response(
+                &self.key.language,
+                value.get("params").unwrap_or(&Value::Null),
+            ),
+            "workspace/workspaceFolders" => json!([{
+                "uri": path_to_file_uri(&self.key.language_root),
+                "name": self
+                    .key
+                    .language_root
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("workspace"),
+            }]),
+            "window/workDoneProgress/create" => {
+                if let Some(token) = value.pointer("/params/token") {
+                    self.lifecycle.create_progress(token).await;
+                }
+                Value::Null
+            }
+            "client/registerCapability" | "client/unregisterCapability" => Value::Null,
+            _ => return Ok(false),
+        };
+        self.write_message(
+            &json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": result,
+            })
+            .to_string(),
+        )
+        .await?;
+        Ok(true)
     }
 
     fn ensure_open(&self) -> anyhow::Result<()> {
@@ -154,6 +267,9 @@ impl LiveSession {
             return Ok(());
         }
         let id = self.next_id.fetch_add(1, Ordering::SeqCst) + 1;
+        self.lifecycle
+            .initializing(format!("Initializing {}", self.key.language))
+            .await;
         let init = json!({
             "jsonrpc": "2.0",
             "id": id,
@@ -182,8 +298,11 @@ impl LiveSession {
                     },
                     "workspace": {
                         "symbol": {},
-                        "diagnostics": {}
-                    }
+                        "diagnostics": {},
+                        "configuration": true,
+                        "workspaceFolders": true
+                    },
+                    "window": { "workDoneProgress": true }
                 },
                 "clientInfo": { "name": "medousa-code", "version": env!("CARGO_PKG_VERSION") }
             }
@@ -224,7 +343,16 @@ impl LiveSession {
             "params": {}
         });
         self.write_message(&initialized.to_string()).await?;
+        let configuration = json!({
+            "jsonrpc": "2.0",
+            "method": "workspace/didChangeConfiguration",
+            "params": { "settings": workspace_settings(&self.key.language) }
+        });
+        self.write_message(&configuration.to_string()).await?;
         self.initialized.store(true, Ordering::SeqCst);
+        self.lifecycle
+            .ready(format!("{} language server ready", self.key.language))
+            .await;
         Ok(())
     }
 
@@ -290,18 +418,21 @@ impl LiveSession {
         if let Some(reader) = self.reader_task.lock().await.take() {
             reader.abort();
         }
+        self.lifecycle.stopped("Language session stopped").await;
     }
 }
 
 pub struct SessionPool {
     registry: ServerRegistry,
+    lifecycle: Arc<LanguageSessionStore>,
     sessions: RwLock<HashMap<SessionKey, Arc<LiveSession>>>,
 }
 
 impl SessionPool {
-    pub fn new(registry: ServerRegistry) -> Arc<Self> {
+    pub fn new(registry: ServerRegistry, lifecycle: Arc<LanguageSessionStore>) -> Arc<Self> {
         Arc::new(Self {
             registry,
+            lifecycle,
             sessions: RwLock::new(HashMap::new()),
         })
     }
@@ -312,11 +443,13 @@ impl SessionPool {
 
     pub async fn get_or_spawn(
         &self,
-        workspace_root: PathBuf,
+        project_root: PathBuf,
+        language_root: PathBuf,
         language: LanguageId,
     ) -> anyhow::Result<Arc<LiveSession>> {
         let key = SessionKey {
-            workspace_root: workspace_root.clone(),
+            project_root,
+            language_root: language_root.clone(),
             language: language.clone(),
         };
         {
@@ -337,7 +470,24 @@ impl SessionPool {
             .get(&language)
             .ok_or_else(|| anyhow::anyhow!("no language server registered for {language}"))?
             .clone();
-        let backend = spawn_backend(&spec, &workspace_root).await?;
+        let lifecycle = self
+            .lifecycle
+            .begin(LanguageSessionIdentity {
+                kind: LanguageSessionKind::Agent,
+                project_root: key.project_root.clone(),
+                language_root: key.language_root.clone(),
+                language: language.to_string(),
+            })
+            .await;
+        let backend = match spawn_backend(&spec, &language_root, lifecycle.logs()).await {
+            Ok(backend) => backend,
+            Err(err) => {
+                lifecycle
+                    .failed(format!("Failed to start language server: {err}"))
+                    .await;
+                return Err(err.into());
+            }
+        };
         let (outbound, _) = broadcast::channel(256);
         let session = Arc::new(LiveSession {
             key: key.clone(),
@@ -345,6 +495,7 @@ impl SessionPool {
             outbound,
             diagnostics: RwLock::new(HashMap::new()),
             capabilities: RwLock::new(Value::Null),
+            lifecycle,
             initialized: AtomicBool::new(false),
             closed: AtomicBool::new(false),
             last_used_millis: AtomicU64::new(now_millis()),
@@ -366,7 +517,7 @@ impl SessionPool {
             existing
         };
         if let Some(existing) = existing {
-            session.backend.shutdown().await;
+            session.shutdown().await;
             return Ok(existing);
         }
         Ok(session)
@@ -374,11 +525,13 @@ impl SessionPool {
 
     pub async fn get_existing(
         &self,
-        workspace_root: PathBuf,
+        project_root: PathBuf,
+        language_root: PathBuf,
         language: LanguageId,
     ) -> Option<Arc<LiveSession>> {
         let key = SessionKey {
-            workspace_root,
+            project_root,
+            language_root,
             language,
         };
         self.sessions
@@ -390,6 +543,40 @@ impl SessionPool {
                 session.touch();
                 Arc::clone(session)
             })
+    }
+
+    pub async fn existing_for_workspace(&self, project_root: &Path) -> Vec<Arc<LiveSession>> {
+        self.sessions
+            .read()
+            .await
+            .values()
+            .filter(|session| !session.is_closed() && session.key.project_root == project_root)
+            .map(|session| {
+                session.touch();
+                Arc::clone(session)
+            })
+            .collect()
+    }
+
+    pub async fn existing_for_workspace_language(
+        &self,
+        project_root: &Path,
+        language: &LanguageId,
+    ) -> Vec<Arc<LiveSession>> {
+        self.sessions
+            .read()
+            .await
+            .values()
+            .filter(|session| {
+                !session.is_closed()
+                    && session.key.project_root == project_root
+                    && &session.key.language == language
+            })
+            .map(|session| {
+                session.touch();
+                Arc::clone(session)
+            })
+            .collect()
     }
 
     pub async fn shutdown_idle(&self, max_idle: Duration) -> usize {
@@ -461,5 +648,22 @@ mod tests {
             initialization_options(&LanguageId::new("typescript")),
             Value::Null
         );
+    }
+
+    #[test]
+    fn workspace_configuration_resolves_requested_sections_in_order() {
+        let response = workspace_configuration_response(
+            &LanguageId::new("rust"),
+            &json!({
+                "items": [
+                    { "section": "rust-analyzer.cargo" },
+                    { "section": "rust-analyzer.checkOnSave" },
+                    { "section": "unknown" }
+                ]
+            }),
+        );
+        assert_eq!(response[0]["allTargets"], false);
+        assert_eq!(response[1], false);
+        assert_eq!(response[2], json!({}));
     }
 }

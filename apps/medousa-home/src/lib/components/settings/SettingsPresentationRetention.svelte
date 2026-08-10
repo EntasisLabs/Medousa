@@ -79,7 +79,7 @@
 </script>
 
 <section class="settings-subsection mt-8">
-  <h3 class="settings-subsection-heading">Presentations</h3>
+  <h3 class="settings-subsection-heading">Artifacts</h3>
   <p class="settings-subsection-lead">
     Old HTML decks and revisions clear on a weekly schedule.
   </p>
@@ -94,7 +94,7 @@
         <span class="min-w-0 flex-1">
           <span class="block text-sm font-medium text-surface-100">Automatic cleanup</span>
           <span class="workshop-faint mt-0.5 block text-xs">
-            Weekly background pass for stale presentations
+            Weekly background pass for stale artifacts
           </span>
         </span>
         <input
@@ -109,7 +109,7 @@
         <span class="min-w-0 flex-1">
           <span class="block text-sm font-medium text-surface-100">Keep for</span>
           <span class="workshop-faint mt-0.5 block text-xs">
-            Drop presentations older than this
+            Drop artifacts older than this
           </span>
         </span>
         <span class="settings-metric-value">
@@ -121,7 +121,7 @@
             inputmode="numeric"
             bind:value={maxAgeDays}
             disabled={saving || !enabled}
-            aria-label="Keep presentations for days"
+            aria-label="Keep artifacts for days"
           />
           <span class="settings-metric-unit" aria-hidden="true">days</span>
         </span>
@@ -143,7 +143,7 @@
             inputmode="numeric"
             bind:value={maxPerSession}
             disabled={saving || !enabled}
-            aria-label="Max presentations per chat session"
+            aria-label="Max artifacts per chat session"
           />
           <span class="settings-metric-unit" aria-hidden="true">max</span>
         </span>

@@ -119,7 +119,7 @@ export function defaultWorkshopDefaults(): Required<
     model: "qwen2.5:7b",
     toolCallMode: "auto",
     hostTurnBusMode: "auto",
-    maxToolRounds: 10,
+    maxToolRounds: 30,
     hostBusMaxToolRounds: 8,
     activationToolIntentMaxRounds: 4,
     activationShortTurnMaxToolRounds: 6,

@@ -14,6 +14,8 @@ use crate::daemon_api::{
     UpdateArtifactRetentionRequest, UpdateArtifactRetentionResponse,
 };
 use crate::recurring_handlers;
+use crate::recurring_schedule::RecurringScheduleSpec;
+use crate::runtime_composition_ext::RuntimeCompositionExt;
 
 pub const ARTIFACT_MAINTENANCE_RECURRING_ID: &str = "system-artifact-maintenance";
 /// Weekly Sunday 03:00 UTC — sec min hour dom month dow year
@@ -72,16 +74,6 @@ pub fn save_settings(settings: &ArtifactRetentionSettings) -> Result<(), String>
     std::fs::write(path, raw).map_err(|err| err.to_string())
 }
 
-async fn register_recurring_definition(
-    runtime: &RuntimeComposition,
-    definition: RecurringDefinition,
-) -> StasisResult<()> {
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt.register_recurring(definition).await,
-        RuntimeComposition::Surreal(rt) => rt.register_recurring(definition).await,
-    }
-}
-
 pub async fn sync_recurring_schedule(
     runtime: &RuntimeComposition,
     settings: &ArtifactRetentionSettings,
@@ -95,21 +87,21 @@ pub async fn sync_recurring_schedule(
         recurring_handlers::get_recurring_definition(runtime, ARTIFACT_MAINTENANCE_RECURRING_ID)
             .await?;
 
-    let mut definition = existing.unwrap_or_else(|| RecurringDefinition {
-        id: ARTIFACT_MAINTENANCE_RECURRING_ID.to_string(),
-        queue: crate::daemon::worker_host::MAINTENANCE_QUEUE.to_string(),
-        job_type: ARTIFACT_MAINTENANCE_JOB_TYPE.to_string(),
-        payload_template_ref: payload_template_ref.clone(),
-        cron_expr: DEFAULT_MAINTENANCE_CRON.to_string(),
-        timezone: "UTC".to_string(),
-        jitter_seconds: 0,
-        enabled: settings.enabled,
-        max_attempts: 1,
-        next_run_at: now,
-        last_run_at: None,
-        lease_owner: None,
-        lease_expires_at: None,
-    });
+    let mut definition = if let Some(existing) = existing {
+        existing
+    } else {
+        RecurringScheduleSpec::new(
+            ARTIFACT_MAINTENANCE_RECURRING_ID,
+            crate::daemon::worker_host::MAINTENANCE_QUEUE,
+            ARTIFACT_MAINTENANCE_JOB_TYPE,
+            payload_template_ref.clone(),
+            DEFAULT_MAINTENANCE_CRON,
+            "UTC",
+        )
+        .enabled(settings.enabled)
+        .max_attempts(1)
+        .build(now)?
+    };
 
     definition.job_type = ARTIFACT_MAINTENANCE_JOB_TYPE.to_string();
     definition.queue = crate::daemon::worker_host::MAINTENANCE_QUEUE.to_string();
@@ -120,7 +112,7 @@ pub async fn sync_recurring_schedule(
     }
     definition.next_run_at = definition.compute_next_run_at(now)?;
 
-    register_recurring_definition(runtime, definition.clone()).await?;
+    runtime.register_recurring(definition.clone()).await?;
     Ok(definition)
 }
 

@@ -117,6 +117,12 @@ pub struct SessionHistorySummary {
     /// `shared` when indexed in the multi-member catalog; omitted for single-seat chats.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub catalog: Option<String>,
+    /// First sticky non-home host surface (`vscode` | `neovim` | `obsidian` | `browser`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_surface: Option<String>,
+    /// Sticky once a Forge code binding was set on the session.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub has_code_work: bool,
 }
 
 impl SessionHistorySummary {

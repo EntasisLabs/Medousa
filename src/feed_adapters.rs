@@ -13,6 +13,81 @@ pub const SUMMER_AI_DIGEST_FEED_ID: &str = "summer-ai-digest";
 
 pub const WORKSHOP_PULSE: &str = WORKSHOP_PULSE_FEED_ID;
 
+/// Live mid-flight worker activity — durable/work-scoped, not tied to parent SSE.
+/// Consumed by the workspace `feed_appended` stream (kind `work_progress`).
+pub async fn publish_workshop_progress_activity(
+    record: &TurnWorkRecord,
+    tool_name: &str,
+    status: &str,
+    output_summary: Option<&str>,
+) {
+    let summary = match status {
+        "started" => format!("Tool started: {tool_name}"),
+        "finished" => format!("Tool finished: {tool_name}"),
+        _ => format!("Tool {status}: {tool_name}"),
+    };
+    let mut payload = json!({
+        "phase": "working",
+        "kind": "tool_activity",
+        "tool": tool_name,
+        "status": status,
+        "workId": record.work_id,
+        "sessionId": record.session_id,
+    });
+    if let Some(out) = output_summary
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        payload["output"] = Value::String(truncate(out, 240));
+    }
+    let _ = publish(FeedPublishRequest {
+        profile_id: None,
+        feed_id: WORKSHOP_PULSE.to_string(),
+        source: medousa_types::feed::FeedSource::BoundWorkshop,
+        summary,
+        refs: workshop_refs(record),
+        payload_slice: Some(payload),
+        payload_max_bytes: None,
+    })
+    .await;
+}
+
+/// Terminal/finish worker activity (synthesis ready, done, failed) for the same bus.
+pub async fn publish_workshop_finish_activity(
+    record: &TurnWorkRecord,
+    phase: &str,
+    excerpt: Option<&str>,
+) {
+    let summary = match phase {
+        "synthesis" => "Synthesis ready".to_string(),
+        "done" => "Worker done".to_string(),
+        "failed" => "Worker failed".to_string(),
+        _ => format!("Worker {phase}"),
+    };
+    let mut payload = json!({
+        "phase": phase,
+        "kind": "finish",
+        "workId": record.work_id,
+        "sessionId": record.session_id,
+    });
+    if let Some(excerpt) = excerpt
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        payload["excerpt"] = Value::String(truncate(excerpt, 400));
+    }
+    let _ = publish(FeedPublishRequest {
+        profile_id: None,
+        feed_id: WORKSHOP_PULSE.to_string(),
+        source: medousa_types::feed::FeedSource::BoundWorkshop,
+        summary,
+        refs: workshop_refs(record),
+        payload_slice: Some(payload),
+        payload_max_bytes: None,
+    })
+    .await;
+}
+
 pub async fn publish_workshop_started(record: &TurnWorkRecord) {
     let _ = publish(FeedPublishRequest {
         profile_id: None,

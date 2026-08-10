@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 
 use chrono::{DateTime, Utc};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -12,7 +13,7 @@ use super::coder_activity::{CoderActivityEvent, CoderActivityKind};
 pub const MAX_AMBIENT_POINTERS: usize = 6;
 pub const MAX_HISTORY_EVENTS: usize = 50;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CoderPointerKind {
     Activity,
@@ -38,7 +39,7 @@ impl CoderPointerKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct CoderEngineeringPointer {
     pub pointer_id: String,
     pub kind: CoderPointerKind,
@@ -301,12 +302,13 @@ fn pointer_kind(event: &CoderActivityEvent) -> CoderPointerKind {
         .to_ascii_lowercase();
     if tool.contains("diagnostic") {
         CoderPointerKind::DiagnosticSet
-    } else if tool.contains("apply_patch") {
+    } else if tool.contains("apply_patch") || tool.contains("change_set_apply") {
         CoderPointerKind::ChangeSet
-    } else if tool.contains("shell")
-        && ["test", "build", "check", "verify", "lint", "compile"]
-            .iter()
-            .any(|needle| intent.contains(needle))
+    } else if tool.contains("affected_tests")
+        || (tool.contains("shell")
+            && ["test", "build", "check", "verify", "lint", "compile"]
+                .iter()
+                .any(|needle| intent.contains(needle)))
     {
         CoderPointerKind::Verification
     } else if tool.contains("shell") {

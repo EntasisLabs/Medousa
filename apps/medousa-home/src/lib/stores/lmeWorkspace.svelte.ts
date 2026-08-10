@@ -16,7 +16,7 @@ export type LmeExplorerMode =
   | "notes"
   | "files"
   | "code"
-  | "presentations"
+  | "artifacts"
   | "scripts"
   | "agents"
   | "flows"
@@ -128,11 +128,13 @@ function isRestorableTab(value: unknown): value is LmeTab {
 function loadExplorerMode(): LmeExplorerMode {
   if (typeof localStorage === "undefined") return "notes";
   const raw = localStorage.getItem(EXPLORER_MODE_KEY);
+  // Legacy Library tab id — Presentations was renamed to Artifacts.
+  if (raw === "presentations") return "artifacts";
   if (
     raw === "notes" ||
     raw === "files" ||
     raw === "code" ||
-    raw === "presentations" ||
+    raw === "artifacts" ||
     raw === "scripts" ||
     raw === "agents" ||
     raw === "flows" ||
@@ -163,10 +165,18 @@ function codeResourceKey(workId: string, resource: CodeWorkspaceResource): strin
   return `code-${resource.kind}:${encodeURIComponent(workId)}`;
 }
 
-function mirrorActiveTabToShell(tabId: string | null, title?: string) {
+function mirrorActiveTabToShell(
+  tabId: string | null,
+  title?: string,
+  groupId?: string,
+) {
   if (!tabId) return;
   void import("$lib/stores/shellTabs.svelte").then(({ shellTabs }) => {
-    shellTabs.mirrorLmeTab(tabId, { activate: true, title });
+    shellTabs.mirrorLmeTab(tabId, {
+      activate: true,
+      title,
+      groupId,
+    });
   });
 }
 
@@ -246,8 +256,8 @@ export class LmeWorkspaceStore {
       externalDesk.setSidebarMode("vault");
     } else if (mode === "files") {
       externalDesk.setSidebarMode("files");
-    } else if (mode === "presentations") {
-      externalDesk.setSidebarMode("presentations");
+    } else if (mode === "artifacts") {
+      externalDesk.setSidebarMode("artifacts");
     }
   }
 
@@ -392,7 +402,9 @@ export class LmeWorkspaceStore {
     this.setExplorerMode("code");
     const result = await openCodeWorkspaceSession(id);
     if (result.ok) {
-      return this.openCodeFile(id, result.path, { projectTitle: title });
+      const opened = await this.openCodeFile(id, result.path, { projectTitle: title });
+      await this.ensureCodeFilePresentations(id);
+      return opened;
     }
 
     // A project without a working copy still needs a real room so setup and
@@ -429,6 +441,9 @@ export class LmeWorkspaceStore {
       line?: number | null;
       projectTitle?: string;
       activate?: boolean;
+      recordNavigation?: boolean;
+      /** Target shell editor group; defaults to the focused group. */
+      groupId?: string;
     },
   ) {
     const id = workId.trim();
@@ -438,7 +453,9 @@ export class LmeWorkspaceStore {
     const line =
       options?.line && options.line > 0 ? Math.floor(options.line) : null;
     const { codeWorkspace } = await import("$lib/stores/codeWorkspace.svelte");
-    const source = await codeWorkspace.open(id, normalizedPath, line);
+    const source = await codeWorkspace.open(id, normalizedPath, line, {
+      recordNavigation: options?.recordNavigation,
+    });
     if (!source) return null;
 
     const resource: CodeWorkspaceResource = {
@@ -466,7 +483,7 @@ export class LmeWorkspaceStore {
       }
       if (options?.activate !== false) {
         this.activeTabId = existing.tabId;
-        mirrorActiveTabToShell(existing.tabId, existing.title);
+        mirrorActiveTabToShell(existing.tabId, existing.title, options?.groupId);
       }
       return source;
     }
@@ -481,9 +498,46 @@ export class LmeWorkspaceStore {
     this.tabs = [...this.tabs, tab].slice(-MAX_TABS);
     if (options?.activate !== false) {
       this.activeTabId = tab.tabId;
-      mirrorActiveTabToShell(tab.tabId, tab.title);
+      mirrorActiveTabToShell(tab.tabId, tab.title, options?.groupId);
     }
     return source;
+  }
+
+  /**
+   * Ensure every hydrated Code buffer has an LME presentation so multi-file
+   * workspaces survive shell/LME session restore (daemon state alone is not enough).
+   */
+  async ensureCodeFilePresentations(workId: string) {
+    const id = workId.trim();
+    if (!id) return;
+    const { codeWorkspace } = await import("$lib/stores/codeWorkspace.svelte");
+    const buffers = codeWorkspace.tabsFor(id).filter((tab) => tab.path && !tab.loading);
+    if (buffers.length === 0) return;
+    const existing = new Set(
+      this.tabs
+        .filter((tab) => tab.kind === "code" && tab.workId === id)
+        .map((tab) => tab.tabId),
+    );
+    const additions: LmeTab[] = [];
+    for (const buffer of buffers) {
+      const resource: CodeWorkspaceResource = {
+        kind: "file",
+        path: buffer.path,
+        line: buffer.line,
+      };
+      const tabId = codeResourceKey(id, resource);
+      if (existing.has(tabId)) continue;
+      existing.add(tabId);
+      additions.push({
+        tabId,
+        kind: "code",
+        workId: id,
+        title: buffer.title || fileTitle(buffer.path),
+        resource,
+      });
+    }
+    if (additions.length === 0) return;
+    this.tabs = [...this.tabs, ...additions].slice(-MAX_TABS);
   }
 
   /** Review is a canvas, not a panel stacked beneath the editor. */
@@ -538,13 +592,17 @@ export class LmeWorkspaceStore {
     oldPath: string,
     newPath: string,
     line = 1,
+    options?: { activate?: boolean },
   ) {
-    await this.openCodeFile(workId, newPath, { line });
+    await this.openCodeFile(workId, newPath, {
+      line,
+      activate: options?.activate,
+    });
     await this.closeCodeFile(workId, oldPath);
   }
 
   openDeck(artifactId: string, title?: string) {
-    this.setExplorerMode("presentations");
+    this.setExplorerMode("artifacts");
     const existing = this.tabs.find(
       (tab) => tab.kind === "deck" && tab.artifactId === artifactId,
     );
@@ -796,9 +854,10 @@ export class LmeWorkspaceStore {
       if (undertakings.detail?.id !== tab.workId) {
         await undertakings.select(tab.workId);
       }
+      const { codeWorkspace } = await import("$lib/stores/codeWorkspace.svelte");
+      await codeWorkspace.hydrate(tab.workId);
+      await this.ensureCodeFilePresentations(tab.workId);
       if (tab.resource.kind === "file") {
-        const { codeWorkspace } = await import("$lib/stores/codeWorkspace.svelte");
-        await codeWorkspace.hydrate(tab.workId);
         await codeWorkspace.open(
           tab.workId,
           tab.resource.path,

@@ -12,6 +12,7 @@ members = [
     ".",
     "crates/medousa-types",
     "crates/medousa-types-schema",
+    "crates/medousa-tool-macros",
     "crates/medousa-engine",
     "crates/medousa-sdk",
     "crates/medousa-sdk-iroh",
@@ -52,7 +53,8 @@ name = "medousa_tui"
 path = "src/bin/medousa_tui.rs"
 
 [dependencies]
-medousa-types = { path = "crates/medousa-types" }
+medousa-types = { path = "crates/medousa-types", features = ["json-schema"] }
+medousa-tool-macros = { path = "crates/medousa-tool-macros" }
 medousa-adapter-common = { path = "crates/medousa-adapter-common" }
 medousa-mcp-gateway = { path = "adapters/medousa-mcp-gateway" }
 medousa-install-support = { path = "crates/medousa-install-support" }
@@ -90,7 +92,6 @@ grapheme-sdk = "0.6.1"
 grapheme-compiler = "0.6.1"
 grapheme-runtime = "0.6.1"
 grapheme-lsp = "0.6.1"
-stasis-rs-macros = { version = "0.1.0"}
 schemars = "0.8"
 genai = "0.6.5"
 keyring = "2.3"
@@ -106,6 +107,7 @@ serde_yaml = "0.9"
 libc = "0.2"
 hmac = "0.12"
 sha2 = "0.10"
+regex = "1"
 base64 = "0.22"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand = "0.8"
@@ -134,6 +136,7 @@ tracing-opentelemetry = { version = "0.28", optional = true }
 opentelemetry = { version = "0.27", optional = true }
 opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"], optional = true }
 opentelemetry-otlp = { version = "0.27", features = ["grpc-tonic"], optional = true }
+notify = "6"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = [
@@ -155,6 +158,7 @@ otel-export = [
 iroh-transport = ["dep:iroh", "dep:iroh-tickets", "dep:httparse", "dep:medousa-iroh-http"]
 
 [dev-dependencies]
+medousa-mcp-server = { path = "crates/medousa-mcp-server" }
 surrealdb-types = { version = "3.1.5" }
 surrealdb = { version = "3.1.5", default-features = false, features = ["kv-mem"] }
 tempfile = "3"

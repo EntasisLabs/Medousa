@@ -14,8 +14,6 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use chrono::{DateTime, Utc};
 use futures_util::stream::{self, Stream};
 use serde_json::Value;
-use stasis::ports::outbound::runtime::job_attempt_store::JobAttemptStore;
-use stasis::ports::outbound::runtime::job_store::JobStore;
 use stasis::prelude::{JobState, RuntimeComposition};
 use tokio::sync::{RwLock, broadcast};
 use uuid::Uuid;
@@ -25,6 +23,7 @@ use crate::channel_delivery;
 use crate::daemon::bounded_set::BoundedDedupSet;
 use crate::daemon::heartbeat::is_missing_runtime_table_error;
 use crate::daemon::state::{AgentTurnJobRecord, AppState};
+use crate::runtime_composition_ext::RuntimeCompositionExt;
 use medousa_engine::TurnStreamRegistryPort;
 
 use crate::daemon::turn_event_channel::TurnEventChannel;
@@ -915,22 +914,12 @@ async fn resolve_job_title_for_vault_footer(
 }
 
 pub async fn job_succeeded(runtime: &RuntimeComposition, job_id: &str) -> bool {
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt
-            .job_store
-            .get(job_id)
-            .await
-            .ok()
-            .flatten()
-            .is_some_and(|job| job.state == JobState::Succeeded),
-        RuntimeComposition::Surreal(rt) => rt
-            .job_store
-            .get(job_id)
-            .await
-            .ok()
-            .flatten()
-            .is_some_and(|job| job.state == JobState::Succeeded),
-    }
+    runtime
+        .get_job(job_id)
+        .await
+        .ok()
+        .flatten()
+        .is_some_and(|job| job.state == JobState::Succeeded)
 }
 
 pub async fn maybe_resume_agent_turn_from_child_job(state: &AppState, child_job_id: &str) -> bool {
@@ -1703,6 +1692,7 @@ impl AgentStreamSink for IngestAgentStreamSink {
         tool_run_id: String,
         tool_name: String,
         input_summary: String,
+        input_params: Vec<medousa_types::daemon_api::ToolInputParam>,
         tool_round: usize,
     ) {
         if let Ok(mut parts) = self.parts.lock() {
@@ -1715,6 +1705,7 @@ impl AgentStreamSink for IngestAgentStreamSink {
                 &tool_run_id,
                 &tool_name,
                 &input_summary,
+                input_params,
                 tool_round,
             ),
         );
@@ -1767,6 +1758,7 @@ impl AgentStreamSink for IngestAgentStreamSink {
                 &tool_name,
                 &status,
                 &input_summary,
+                crate::agent_runtime::tool_stream::preview_tool_input(&tool_input),
                 output_summary.as_deref(),
                 tool_round,
                 artifact_refs,
@@ -1853,13 +1845,13 @@ async fn start_ingest_ask_stream(
     );
     state.channel_deliveries.write().await.insert(
         job_id_str.clone(),
-        channel_delivery::ChannelDeliveryTarget {
-            channel: request.channel.clone(),
-            user_id: request.user_id.clone(),
-            channel_id: request.channel_id.clone(),
-            session_id: session_id.to_string(),
-            stream_id: Some(stream_id.clone()),
-        },
+        channel_delivery::ChannelDeliveryTarget::new(
+            request.channel.clone(),
+            request.user_id.clone(),
+            request.channel_id.clone(),
+            session_id.to_string(),
+            Some(stream_id.clone()),
+        ),
     );
     record_job_delivery_pending(state, &job_id_str).await;
 
@@ -1878,26 +1870,26 @@ async fn start_ingest_ask_stream(
     let stream_id_for_task = stream_id.clone();
     let stream_id_for_cleanup = stream_id.clone();
     let session_id_owned = session_id.to_string();
-    let delivery_target = channel_delivery::ChannelDeliveryTarget {
-        channel: request.channel.clone(),
-        user_id: request.user_id.clone(),
-        channel_id: request.channel_id.clone(),
-        session_id: session_id_owned.clone(),
-        stream_id: Some(stream_id.clone()),
-    };
+    let delivery_target = channel_delivery::ChannelDeliveryTarget::new(
+        request.channel.clone(),
+        request.user_id.clone(),
+        request.channel_id.clone(),
+        session_id_owned.clone(),
+        Some(stream_id.clone()),
+    );
 
     let job_id_for_sink = job_id_str.clone();
     let continuation_scope = crate::turn_continuation::TurnContinuationScope {
         turn_correlation_id: job_id_str.clone(),
         session_id: session_id_owned.clone(),
         original_prompt: interactive_request.prompt.clone(),
-        delivery_target: Some(channel_delivery::ChannelDeliveryTarget {
-            channel: request.channel.clone(),
-            user_id: request.user_id.clone(),
-            channel_id: request.channel_id.clone(),
-            session_id: session_id_owned.clone(),
-            stream_id: Some(stream_id.clone()),
-        }),
+        delivery_target: Some(channel_delivery::ChannelDeliveryTarget::new(
+            request.channel.clone(),
+            request.user_id.clone(),
+            request.channel_id.clone(),
+            session_id_owned.clone(),
+            Some(stream_id.clone()),
+        )),
         provider: interactive_request.provider.clone(),
         model: interactive_request.model.clone(),
         response_depth_mode: interactive_request.response_depth_mode.clone(),
@@ -1988,23 +1980,9 @@ pub async fn get_job_attempts_graceful(
     job_id: &str,
 ) -> std::result::Result<Vec<stasis::domain::runtime::job_attempt::JobAttempt>, (StatusCode, String)>
 {
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt
-            .job_attempt_store
-            .list_by_job_id(job_id)
-            .await
-            .map_err(internal_error),
-        RuntimeComposition::Surreal(rt) => {
-            match rt.job_attempt_store.list_by_job_id(job_id).await {
-                Ok(attempts) => Ok(attempts),
-                Err(err) => {
-                    if is_missing_runtime_table_error(&err.to_string()) {
-                        Ok(Vec::new())
-                    } else {
-                        Err(internal_error(err))
-                    }
-                }
-            }
-        }
+    match runtime.list_job_attempts(job_id).await {
+        Ok(attempts) => Ok(attempts),
+        Err(err) if is_missing_runtime_table_error(&err.to_string()) => Ok(Vec::new()),
+        Err(err) => Err(internal_error(err)),
     }
 }

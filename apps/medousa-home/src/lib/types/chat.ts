@@ -26,6 +26,8 @@ export interface ToolRunState {
   status: "running" | "succeeded" | "failed";
   round: number;
   inputSummary?: string | null;
+  /** Redacted arguments, so evidence reads `query: "…"` and not just the tool name. */
+  inputParams?: import("$lib/types/card").ToolInputParam[];
   outputSummary?: string | null;
   artifactRefs?: ToolArtifactRef[];
 }
@@ -142,6 +144,8 @@ export interface InteractiveTurnStreamEvent {
   tool_name?: string | null;
   tool_status?: string | null;
   tool_input_summary?: string | null;
+  /** Redacted tool arguments; truncated at the emit site. */
+  tool_input_params?: import("$lib/types/card").ToolInputParam[] | null;
   tool_output_summary?: string | null;
   tool_round?: number | null;
   tool_artifact_refs?: ToolArtifactRef[] | null;

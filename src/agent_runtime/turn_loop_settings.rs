@@ -10,6 +10,8 @@ pub use crate::tui::settings::{
 };
 
 pub const DEFAULT_HOST_BUS_MAX_TOOL_ROUNDS: usize = 8;
+pub const DEFAULT_GENERAL_MAX_TOOL_ROUNDS: usize = 30;
+pub const DEFAULT_CODER_MAX_TOOL_ROUNDS: usize = 100;
 pub const DEFAULT_ACTIVATION_TOOL_INTENT_MAX_ROUNDS: usize = 12;
 pub const DEFAULT_ACTIVATION_SHORT_TURN_MAX_TOOL_ROUNDS: usize = 1;
 pub const DEFAULT_CONTINUATION_MAX_TOOL_ROUNDS: usize = 4;
@@ -35,7 +37,7 @@ impl TurnLoopSettings {
         apply_turn_loop_field_defaults(&mut settings);
         let configured_max_tool_rounds = parse_usize_with_bounds(
             &settings.max_tool_rounds,
-            10,
+            DEFAULT_GENERAL_MAX_TOOL_ROUNDS,
             ROUND_LIMIT_MIN,
             ROUND_LIMIT_MAX,
         );
@@ -121,6 +123,12 @@ impl TurnLoopSettings {
     }
 }
 
+pub fn coder_max_tool_rounds(requested_override: Option<usize>) -> usize {
+    requested_override
+        .unwrap_or(DEFAULT_CODER_MAX_TOOL_ROUNDS)
+        .clamp(ROUND_LIMIT_MIN, DEFAULT_CODER_MAX_TOOL_ROUNDS)
+}
+
 pub fn parse_host_turn_bus_mode(raw: &str) -> HostBusEnvMode {
     match raw.trim().to_ascii_lowercase().as_str() {
         "off" | "0" | "false" | "no" => HostBusEnvMode::Off,
@@ -135,6 +143,9 @@ pub fn default_host_turn_bus_mode_label() -> &'static str {
 
 /// Fill turn-loop limit fields on [`RuntimeSettings`] when missing (daemon/TUI defaults).
 pub fn apply_turn_loop_field_defaults(settings: &mut RuntimeSettings) {
+    if settings.max_tool_rounds.trim().is_empty() {
+        settings.max_tool_rounds = DEFAULT_GENERAL_MAX_TOOL_ROUNDS.to_string();
+    }
     if settings.host_bus_max_tool_rounds.trim().is_empty() {
         settings.host_bus_max_tool_rounds = DEFAULT_HOST_BUS_MAX_TOOL_ROUNDS.to_string();
     }
@@ -145,7 +156,11 @@ pub fn apply_turn_loop_field_defaults(settings: &mut RuntimeSettings) {
         settings.activation_tool_intent_max_rounds =
             DEFAULT_ACTIVATION_TOOL_INTENT_MAX_ROUNDS.to_string();
     }
-    if settings.activation_short_turn_max_tool_rounds.trim().is_empty() {
+    if settings
+        .activation_short_turn_max_tool_rounds
+        .trim()
+        .is_empty()
+    {
         settings.activation_short_turn_max_tool_rounds =
             DEFAULT_ACTIVATION_SHORT_TURN_MAX_TOOL_ROUNDS.to_string();
     }
@@ -155,8 +170,24 @@ pub fn apply_turn_loop_field_defaults(settings: &mut RuntimeSettings) {
     if settings.max_text_only_stuck_continues.trim().is_empty() {
         settings.max_text_only_stuck_continues = DEFAULT_MAX_TEXT_ONLY_STUCK_CONTINUES.to_string();
     }
-    if settings.classifier_restricted_max_tool_rounds.trim().is_empty() {
+    if settings
+        .classifier_restricted_max_tool_rounds
+        .trim()
+        .is_empty()
+    {
         settings.classifier_restricted_max_tool_rounds =
             DEFAULT_CLASSIFIER_RESTRICTED_MAX_TOOL_ROUNDS.to_string();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn coder_uses_100_by_default_and_honors_only_a_lower_override() {
+        assert_eq!(coder_max_tool_rounds(None), 100);
+        assert_eq!(coder_max_tool_rounds(Some(42)), 42);
+        assert_eq!(coder_max_tool_rounds(Some(500)), 100);
     }
 }

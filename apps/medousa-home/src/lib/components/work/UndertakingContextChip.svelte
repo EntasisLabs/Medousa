@@ -32,12 +32,14 @@
     startTrackedAgent,
   } from "$lib/utils/undertakingWorkspace";
   import DiffSummaryCard from "$lib/components/diff/DiffSummaryCard.svelte";
+  import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
 
   interface Props {
     chatOnly?: boolean;
   }
 
   let { chatOnly = false }: Props = $props();
+  let chipMenuOpen = $state(false);
   const active = $derived(
     chatOnly && !undertakings.active?.boundChatSessionIds.includes(chat.sessionId)
       ? null
@@ -205,98 +207,108 @@
 
 {#if active}
   <div class="flex max-w-full flex-col gap-1.5">
-  <details class="group relative max-w-full">
-    <summary
-      class="flex max-w-full cursor-pointer list-none items-center gap-1.5 rounded-full border border-surface-500/35 bg-surface-900/75 px-2.5 py-1 text-[11px] text-surface-200 transition hover:border-surface-400/60 hover:bg-surface-800/90 [&::-webkit-details-marker]:hidden"
-      aria-label={`Current project: ${active.title}`}
-    >
-      <CircleDot
-        size={12}
-        class={active.humanPhase === "review" ? "text-amber-300" : "text-primary-400"}
-        aria-hidden="true"
-      />
-      <span class="truncate font-medium text-surface-100">{active.title}</span>
-      <span class="shrink-0 text-content-quiet">·</span>
-      <span class="shrink-0 text-content-tertiary">{humanPhaseLabel(active.humanPhase)}</span>
-      {#if review && review.candidates.length > 1}
-        <span class="hidden shrink-0 text-amber-300/90 sm:inline"
-          >{review.candidates.length} candidates</span
-        >
-      {/if}
-      {#if active.executorKind}
-        <span class="hidden shrink-0 text-content-quiet sm:inline">{humanExecutorLabel(active.executorKind)}</span>
-      {/if}
-      <ChevronDown
-        size={12}
-        class="shrink-0 text-content-quiet transition group-open:rotate-180"
-        aria-hidden="true"
-      />
-    </summary>
-
-    <div
-      class="absolute left-0 top-full z-50 mt-1.5 w-64 rounded-xl border border-surface-500/40 bg-surface-900/95 p-1.5 text-xs shadow-2xl backdrop-blur"
-    >
-      <div class="px-2 py-1.5">
-        <p class="truncate font-medium text-surface-100">{active.title}</p>
-        <p class="mt-0.5 text-[10px] text-content-quiet">
-          {humanPhaseGuidance(active.humanPhase)}
-        </p>
-      </div>
-
-      <button type="button" class="context-action" onclick={goDetail}>
-        {#if active.humanPhase === "review"}
-          <GitPullRequestArrow size={14} />
-          Review changes
-        {:else}
-          <ExternalLink size={14} />
-          Open project
+  <OverflowMenu
+    bind:open={chipMenuOpen}
+    align="left"
+    class="max-w-full"
+    panelClass="w-64 rounded-xl border border-surface-500/40 bg-surface-900/95 p-1.5 text-xs shadow-2xl backdrop-blur"
+  >
+    {#snippet trigger({ open, toggle })}
+      <button
+        type="button"
+        class="flex max-w-full cursor-pointer items-center gap-1.5 rounded-full border border-surface-500/35 bg-surface-900/75 px-2.5 py-1 text-chrome-md text-surface-200 transition hover:border-surface-400/60 hover:bg-surface-800/90"
+        aria-label={`Current project: ${active.title}`}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        onclick={toggle}
+      >
+        <CircleDot
+          size={12}
+          class={active.humanPhase === "review" ? "text-amber-300" : "text-primary-400"}
+          aria-hidden="true"
+        />
+        <span class="truncate font-medium text-surface-100">{active.title}</span>
+        <span class="shrink-0 text-content-quiet">·</span>
+        <span class="shrink-0 text-content-tertiary">{humanPhaseLabel(active.humanPhase)}</span>
+        {#if review && review.candidates.length > 1}
+          <span class="hidden shrink-0 text-amber-300/90 sm:inline"
+            >{review.candidates.length} candidates</span
+          >
         {/if}
+        {#if active.executorKind}
+          <span class="hidden shrink-0 text-content-quiet sm:inline">{humanExecutorLabel(active.executorKind)}</span>
+        {/if}
+        <ChevronDown
+          size={12}
+          class="shrink-0 text-content-quiet transition {open ? 'rotate-180' : ''}"
+          aria-hidden="true"
+        />
+      </button>
+    {/snippet}
+
+    <div class="px-2 py-1.5">
+      <p class="truncate font-medium text-surface-100">{active.title}</p>
+      <p class="mt-0.5 text-chrome-sm text-content-quiet">
+        {humanPhaseGuidance(active.humanPhase)}
+      </p>
+    </div>
+
+    <button type="button" role="menuitem" class="context-action" onclick={() => { chipMenuOpen = false; goDetail(); }}>
+      {#if active.humanPhase === "review"}
+        <GitPullRequestArrow size={14} />
+        Review changes
+      {:else}
+        <ExternalLink size={14} />
+        Open project
+      {/if}
+    </button>
+    <button
+      type="button"
+      role="menuitem"
+      class="context-action"
+      disabled={busy}
+      onclick={() => { chipMenuOpen = false; void withItem("terminal"); }}
+    >
+      <SquareTerminal size={14} />
+      Open Terminal here
+    </button>
+
+    {#if active.humanPhase === "work" || active.humanPhase === "prepare"}
+      <div class="my-1 border-t border-surface-500/25" role="separator"></div>
+      <button
+        type="button"
+        role="menuitem"
+        class="context-action"
+        disabled={busy}
+        onclick={() => { chipMenuOpen = false; void withItem("codex"); }}
+      >
+        <Bot size={14} />
+        Ask Codex to continue
       </button>
       <button
         type="button"
+        role="menuitem"
         class="context-action"
         disabled={busy}
-        onclick={() => void withItem("terminal")}
+        onclick={() => { chipMenuOpen = false; void withItem("cursor"); }}
       >
-        <SquareTerminal size={14} />
-        Open Terminal here
+        <Bot size={14} />
+        Ask Cursor to continue
       </button>
+    {/if}
 
-      {#if active.humanPhase === "work" || active.humanPhase === "prepare"}
-        <div class="my-1 border-t border-surface-500/25"></div>
-        <button
-          type="button"
-          class="context-action"
-          disabled={busy}
-          onclick={() => void withItem("codex")}
-        >
-          <Bot size={14} />
-          Ask Codex to continue
-        </button>
-        <button
-          type="button"
-          class="context-action"
-          disabled={busy}
-          onclick={() => void withItem("cursor")}
-        >
-          <Bot size={14} />
-          Ask Cursor to continue
-        </button>
-      {/if}
+    <div class="my-1 border-t border-surface-500/25" role="separator"></div>
+    <button type="button" role="menuitem" class="context-action text-content-tertiary" onclick={() => { chipMenuOpen = false; void detach(); }}>
+      <Link2Off size={14} />
+      Stop following this project
+    </button>
 
-      <div class="my-1 border-t border-surface-500/25"></div>
-      <button type="button" class="context-action text-content-tertiary" onclick={() => void detach()}>
-        <Link2Off size={14} />
-        Stop following this project
-      </button>
-
-      {#if error}
-        <p class="m-1.5 rounded-md bg-amber-950/60 px-2 py-1.5 text-[10px] text-amber-100">
-          {humanizeForgeMessage(error)}
-        </p>
-      {/if}
-    </div>
-  </details>
+    {#if error}
+      <p class="m-1.5 rounded-md bg-amber-950/60 px-2 py-1.5 text-chrome-sm text-amber-100">
+        {humanizeForgeMessage(error)}
+      </p>
+    {/if}
+  </OverflowMenu>
   {#if review && review.changed_files.length > 0}
     <DiffSummaryCard
       fileCount={review.changed_files.length}

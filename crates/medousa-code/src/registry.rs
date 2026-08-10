@@ -41,6 +41,12 @@ pub struct ServerLaunchSpec {
     /// Extra argv after the command.
     #[serde(default)]
     pub args: Vec<String>,
+    /// File extensions associated with this language (no leading dot).
+    #[serde(default)]
+    pub extensions: Vec<String>,
+    /// Optional Settings → Packages id that Repair should install.
+    #[serde(default)]
+    pub package_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,9 +58,38 @@ pub enum ServerKind {
     Stdio { command: String },
 }
 
+impl ServerKind {
+    pub fn command_name(&self) -> Option<&str> {
+        match self {
+            ServerKind::Grapheme => None,
+            ServerKind::Stdio { command } => Some(command.as_str()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ServerRegistry {
     specs: Vec<ServerLaunchSpec>,
+}
+
+fn stdio_spec(
+    language: &str,
+    command: &str,
+    root_markers: &[&str],
+    args: &[&str],
+    extensions: &[&str],
+    package_id: Option<&str>,
+) -> ServerLaunchSpec {
+    ServerLaunchSpec {
+        language: LanguageId::new(language),
+        kind: ServerKind::Stdio {
+            command: command.into(),
+        },
+        root_markers: root_markers.iter().map(|marker| (*marker).into()).collect(),
+        args: args.iter().map(|arg| (*arg).into()).collect(),
+        extensions: extensions.iter().map(|ext| (*ext).into()).collect(),
+        package_id: package_id.map(str::to_string),
+    }
 }
 
 impl ServerRegistry {
@@ -65,121 +100,133 @@ impl ServerRegistry {
             kind: ServerKind::Grapheme,
             root_markers: vec![],
             args: vec![],
+            extensions: vec!["grapheme".into(), "gr".into()],
+            package_id: None,
         });
-        reg.register(ServerLaunchSpec {
-            language: LanguageId::new("python"),
-            kind: ServerKind::Stdio {
-                command: "pyright-langserver".into(),
-            },
-            root_markers: vec![
-                "pyproject.toml".into(),
-                "setup.py".into(),
-                "requirements.txt".into(),
+        reg.register(stdio_spec(
+            "python",
+            "pyright-langserver",
+            &["pyproject.toml", "setup.py", "requirements.txt"],
+            &["--stdio"],
+            &["py"],
+            Some("langservers"),
+        ));
+        reg.register(stdio_spec(
+            "typescript",
+            "typescript-language-server",
+            &["package.json", "tsconfig.json"],
+            &["--stdio"],
+            &["ts", "tsx"],
+            Some("langservers"),
+        ));
+        reg.register(stdio_spec(
+            "javascript",
+            "typescript-language-server",
+            &["package.json", "jsconfig.json"],
+            &["--stdio"],
+            &["js", "jsx", "mjs"],
+            Some("langservers"),
+        ));
+        reg.register(stdio_spec(
+            "svelte",
+            "svelteserver",
+            &[
+                "svelte.config.js",
+                "svelte.config.ts",
+                "svelte.config.mjs",
+                "package.json",
             ],
-            args: vec!["--stdio".into()],
-        });
-        reg.register(ServerLaunchSpec {
-            language: LanguageId::new("typescript"),
-            kind: ServerKind::Stdio {
-                command: "typescript-language-server".into(),
-            },
-            root_markers: vec!["package.json".into(), "tsconfig.json".into()],
-            args: vec!["--stdio".into()],
-        });
-        reg.register(ServerLaunchSpec {
-            language: LanguageId::new("javascript"),
-            kind: ServerKind::Stdio {
-                command: "typescript-language-server".into(),
-            },
-            root_markers: vec!["package.json".into(), "jsconfig.json".into()],
-            args: vec!["--stdio".into()],
-        });
-        reg.register(ServerLaunchSpec {
-            language: LanguageId::new("rust"),
-            kind: ServerKind::Stdio {
-                command: "rust-analyzer".into(),
-            },
-            root_markers: vec!["Cargo.toml".into()],
-            args: vec![],
-        });
-        reg.register(ServerLaunchSpec {
-            language: LanguageId::new("go"),
-            kind: ServerKind::Stdio {
-                command: "gopls".into(),
-            },
-            root_markers: vec!["go.work".into(), "go.mod".into()],
-            args: vec![],
-        });
+            &["--stdio"],
+            &["svelte"],
+            Some("langservers"),
+        ));
+        reg.register(stdio_spec(
+            "rust",
+            "rust-analyzer",
+            &["Cargo.toml"],
+            &[],
+            &["rs"],
+            None,
+        ));
+        reg.register(stdio_spec(
+            "go",
+            "gopls",
+            &["go.work", "go.mod"],
+            &[],
+            &["go"],
+            None,
+        ));
         for language in ["c", "cpp"] {
-            reg.register(ServerLaunchSpec {
-                language: LanguageId::new(language),
-                kind: ServerKind::Stdio {
-                    command: "clangd".into(),
-                },
-                root_markers: vec![
-                    "compile_commands.json".into(),
-                    "compile_flags.txt".into(),
-                    ".clangd".into(),
-                ],
-                args: vec![],
-            });
+            let extensions: &[&str] = if language == "c" {
+                &["c", "h"]
+            } else {
+                &["cc", "cpp", "cxx", "hh", "hpp", "hxx"]
+            };
+            reg.register(stdio_spec(
+                language,
+                "clangd",
+                &["compile_commands.json", "compile_flags.txt", ".clangd"],
+                &[],
+                extensions,
+                None,
+            ));
         }
-        reg.register(ServerLaunchSpec {
-            language: LanguageId::new("csharp"),
-            kind: ServerKind::Stdio {
-                command: "omnisharp".into(),
-            },
-            root_markers: vec![".sln".into(), ".csproj".into()],
-            args: vec!["-lsp".into()],
-        });
-        reg.register(ServerLaunchSpec {
-            language: LanguageId::new("java"),
-            kind: ServerKind::Stdio {
-                command: "jdtls".into(),
-            },
-            root_markers: vec!["pom.xml".into(), "build.gradle".into(), "build.gradle.kts".into()],
-            args: vec![],
-        });
-        reg.register(ServerLaunchSpec {
-            language: LanguageId::new("kotlin"),
-            kind: ServerKind::Stdio {
-                command: "kotlin-language-server".into(),
-            },
-            root_markers: vec!["settings.gradle".into(), "settings.gradle.kts".into()],
-            args: vec![],
-        });
-        reg.register(ServerLaunchSpec {
-            language: LanguageId::new("ruby"),
-            kind: ServerKind::Stdio {
-                command: "solargraph".into(),
-            },
-            root_markers: vec!["Gemfile".into(), ".ruby-version".into()],
-            args: vec!["stdio".into()],
-        });
-        reg.register(ServerLaunchSpec {
-            language: LanguageId::new("php"),
-            kind: ServerKind::Stdio {
-                command: "intelephense".into(),
-            },
-            root_markers: vec!["composer.json".into()],
-            args: vec!["--stdio".into()],
-        });
-        reg.register(ServerLaunchSpec {
-            language: LanguageId::new("swift"),
-            kind: ServerKind::Stdio {
-                command: "sourcekit-lsp".into(),
-            },
-            root_markers: vec!["Package.swift".into()],
-            args: vec![],
-        });
-        reg.register(ServerLaunchSpec {
-            language: LanguageId::new("lua"),
-            kind: ServerKind::Stdio {
-                command: "lua-language-server".into(),
-            },
-            root_markers: vec![".luarc.json".into(), ".luarc.jsonc".into()],
-            args: vec![],
-        });
+        reg.register(stdio_spec(
+            "csharp",
+            "omnisharp",
+            &["*.sln", "*.csproj"],
+            &["-lsp"],
+            &["cs"],
+            None,
+        ));
+        reg.register(stdio_spec(
+            "java",
+            "jdtls",
+            &["pom.xml", "build.gradle", "build.gradle.kts"],
+            &[],
+            &["java"],
+            None,
+        ));
+        reg.register(stdio_spec(
+            "kotlin",
+            "kotlin-language-server",
+            &["settings.gradle", "settings.gradle.kts"],
+            &[],
+            &["kt", "kts"],
+            None,
+        ));
+        reg.register(stdio_spec(
+            "ruby",
+            "solargraph",
+            &["Gemfile", ".ruby-version"],
+            &["stdio"],
+            &["rb"],
+            None,
+        ));
+        reg.register(stdio_spec(
+            "php",
+            "intelephense",
+            &["composer.json"],
+            &["--stdio"],
+            &["php"],
+            None,
+        ));
+        reg.register(stdio_spec(
+            "swift",
+            "sourcekit-lsp",
+            &["Package.swift"],
+            &[],
+            &["swift"],
+            None,
+        ));
+        reg.register(stdio_spec(
+            "lua",
+            "lua-language-server",
+            &[".luarc.json", ".luarc.jsonc"],
+            &[],
+            &["lua"],
+            None,
+        ));
         reg
     }
 
@@ -196,33 +243,59 @@ impl ServerRegistry {
         self.specs.iter().map(|s| &s.language)
     }
 
-    /// Walk parents from `path` looking for a root marker; fall back to `fallback`.
+    pub fn specs(&self) -> &[ServerLaunchSpec] {
+        &self.specs
+    }
+
+    /// Walk parents from `path` looking for the closest root marker without
+    /// ever escaping the canonical governed project root in `fallback`.
     pub fn resolve_root(&self, language: &LanguageId, path: &Path, fallback: &Path) -> PathBuf {
+        let fallback = fallback
+            .canonicalize()
+            .unwrap_or_else(|_| fallback.to_path_buf());
         let Some(spec) = self.get(language) else {
-            return fallback.to_path_buf();
+            return fallback;
         };
         if spec.root_markers.is_empty() {
-            return fallback.to_path_buf();
+            return fallback;
         }
-        let mut cur = path.to_path_buf();
+        let path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        if !path.starts_with(&fallback) {
+            return fallback;
+        }
+        let mut cur = path;
         if cur.is_file() {
             cur = cur
                 .parent()
                 .map(Path::to_path_buf)
-                .unwrap_or_else(|| fallback.to_path_buf());
+                .unwrap_or_else(|| fallback.clone());
         }
-        loop {
+        while cur.starts_with(&fallback) {
             for marker in &spec.root_markers {
-                if cur.join(marker).exists() {
+                if directory_has_marker(&cur, marker) {
                     return cur;
                 }
             }
-            if !cur.pop() {
+            if cur == fallback || !cur.pop() {
                 break;
             }
         }
-        fallback.to_path_buf()
+        fallback
     }
+}
+
+fn directory_has_marker(directory: &Path, marker: &str) -> bool {
+    let Some(suffix) = marker.strip_prefix('*') else {
+        return directory.join(marker).exists();
+    };
+    std::fs::read_dir(directory).is_ok_and(|entries| {
+        entries.flatten().any(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .is_some_and(|name| name.ends_with(suffix))
+        })
+    })
 }
 
 #[cfg(test)]
@@ -234,7 +307,37 @@ mod tests {
         let reg = ServerRegistry::with_defaults();
         assert!(reg.get(&LanguageId::new("grapheme")).is_some());
         assert!(reg.get(&LanguageId::new("python")).is_some());
+        assert!(reg.get(&LanguageId::new("svelte")).is_some());
         assert!(reg.get(&LanguageId::new("rust")).is_some());
+        assert_eq!(
+            reg.get(&LanguageId::new("svelte"))
+                .and_then(|spec| spec.package_id.as_deref()),
+            Some("langservers")
+        );
+    }
+
+    #[test]
+    fn resolve_root_prefers_svelte_config_over_outer_package() {
+        let dir = tempfile::tempdir().unwrap();
+        let package = dir.path().join("apps/medousa-home");
+        let source = package.join("src");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(dir.path().join("package.json"), "{}").unwrap();
+        std::fs::write(package.join("package.json"), "{}").unwrap();
+        std::fs::write(package.join("svelte.config.js"), "export default {};").unwrap();
+        let file = source.join("App.svelte");
+        std::fs::write(
+            &file,
+            "<script lang=\"ts\">export let name = \"Medousa\";</script>",
+        )
+        .unwrap();
+
+        let root = ServerRegistry::with_defaults().resolve_root(
+            &LanguageId::new("svelte"),
+            &file,
+            dir.path(),
+        );
+        assert_eq!(root, package.canonicalize().unwrap());
     }
 
     #[test]
@@ -246,7 +349,58 @@ mod tests {
         let file = nested.join("main.rs");
         std::fs::write(&file, "fn main() {}").unwrap();
         let reg = ServerRegistry::with_defaults();
-        let root = reg.resolve_root(&LanguageId::new("rust"), &file, Path::new("/tmp"));
-        assert_eq!(root, dir.path());
+        let root = reg.resolve_root(&LanguageId::new("rust"), &file, dir.path());
+        assert_eq!(root, dir.path().canonicalize().unwrap());
+    }
+
+    #[test]
+    fn resolve_root_prefers_the_closest_nested_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let package = dir.path().join("packages/app");
+        let source = package.join("src");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(dir.path().join("package.json"), "{}").unwrap();
+        std::fs::write(package.join("package.json"), "{}").unwrap();
+        let file = source.join("main.ts");
+        std::fs::write(&file, "export {};").unwrap();
+
+        let root = ServerRegistry::with_defaults().resolve_root(
+            &LanguageId::new("typescript"),
+            &file,
+            dir.path(),
+        );
+        assert_eq!(root, package.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn resolve_root_never_uses_a_marker_above_the_governed_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let outer = dir.path().join("outer");
+        let project = outer.join("project");
+        let nested = project.join("src");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(outer.join("Cargo.toml"), "[package]\n").unwrap();
+        let file = nested.join("main.rs");
+        std::fs::write(&file, "fn main() {}").unwrap();
+        let project = project.canonicalize().unwrap();
+        let root =
+            ServerRegistry::with_defaults().resolve_root(&LanguageId::new("rust"), &file, &project);
+        assert_eq!(root, project);
+    }
+
+    #[test]
+    fn resolve_root_supports_extension_markers() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(project.join("App.csproj"), "<Project></Project>").unwrap();
+        let file = project.join("Program.cs");
+        std::fs::write(&file, "class Program {}").unwrap();
+        let root = ServerRegistry::with_defaults().resolve_root(
+            &LanguageId::new("csharp"),
+            &file,
+            &project,
+        );
+        assert_eq!(root, project.canonicalize().unwrap());
     }
 }

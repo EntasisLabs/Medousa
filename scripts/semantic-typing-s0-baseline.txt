@@ -1,0 +1,10 @@
+# Semantic typing audit snapshot
+# Captured at f8005883, the parent of the first semantic-typing commit.
+trim_calls=1423
+lenient_compatibility_helpers=375
+direct_port_failure_string_mappings=155
+runtime_composition_backend_mentions=160
+new_job_literals=11
+recurring_definition_literals=9
+channel_delivery_target_literals=19
+too_many_arguments_allowances=34

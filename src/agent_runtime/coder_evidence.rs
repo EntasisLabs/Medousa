@@ -691,7 +691,7 @@ fn redact_evidence_value(value: &Value) -> Value {
     }
 }
 
-fn redact_evidence_text(value: &str) -> String {
+pub(super) fn redact_evidence_text(value: &str) -> String {
     const TOKEN_MARKERS: &[&str] = &[
         "bearer ",
         "api_key=",

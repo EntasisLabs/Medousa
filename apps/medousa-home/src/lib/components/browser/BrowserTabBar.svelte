@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Plus, X } from "@lucide/svelte";
   import { browser } from "$lib/stores/browser.svelte";
+  import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
 
   function handleNewTab() {
     void browser.openTab("about:blank", "user");
@@ -50,7 +51,7 @@
     type="button"
     class="mb-1 rounded-md p-1.5 text-content-tertiary hover:bg-surface-800 hover:text-surface-100"
     aria-label="New tab"
-    title="New tab"
+    title={titleWithShortcut("New tab", "browser-new-tab")}
     onclick={handleNewTab}
   >
     <Plus size={14} />

@@ -62,7 +62,18 @@
 
 {#snippet segmentDetail(run: ToolRunState)}
   <div class="space-y-1 text-[11px] leading-relaxed text-content-tertiary">
-    {#if run.inputSummary?.trim()}
+    {#if run.inputParams && run.inputParams.length > 0}
+      <dl class="m-0 space-y-0.5">
+        {#each run.inputParams as param (param.key)}
+          <div class="flex gap-1.5">
+            <dt class="shrink-0 font-mono text-[10px] text-primary-400/60">{param.key}</dt>
+            <dd class="m-0 min-w-0 flex-1 break-words text-content-secondary">
+              {param.value}{#if param.truncated}<span class="text-content-faint">…</span>{/if}
+            </dd>
+          </div>
+        {/each}
+      </dl>
+    {:else if run.inputSummary?.trim()}
       <p class="break-words">
         <span class="text-primary-400/50">in</span>
         {run.inputSummary}

@@ -1,10 +1,10 @@
 <script lang="ts">
   import { Plus, X } from "@lucide/svelte";
   import { humanBrowserForWindow } from "$lib/stores/humanBrowserSurface";
+  import { faviconUrlForSite, tabDisplayLabel } from "$lib/utils/browserFavicon";
+  import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
 
   const humanBrowser = $derived(humanBrowserForWindow());
-  import { faviconUrlForSite, tabDisplayLabel } from "$lib/utils/browserFavicon";
-  import { formatShortcut } from "$lib/platform";
 
   interface Props {
     variant?: "bar" | "sheet";
@@ -58,6 +58,7 @@
             type="button"
             class="browser-tab-close {tab.active ? 'browser-tab-close--visible' : ''}"
             aria-label="Close tab"
+            title={titleWithShortcut("Close tab", "browser-close-tab")}
             onclick={(event) => handleClose(tab.id, event)}
           >
             <X size={12} strokeWidth={2} />
@@ -69,7 +70,7 @@
       type="button"
       class="browser-tab-new"
       aria-label="New tab"
-      title="New tab ({formatShortcut('T')})"
+      title={titleWithShortcut("New tab", "browser-new-tab")}
       onclick={handleNewTab}
     >
       <Plus size={14} strokeWidth={2} />
@@ -100,6 +101,7 @@
             type="button"
             class="btn btn-icon btn-sm shrink-0 text-content-tertiary"
             aria-label="Close tab"
+            title={titleWithShortcut("Close tab", "browser-close-tab")}
             onclick={(event) => handleClose(tab.id, event)}
           >
             <X size={14} />

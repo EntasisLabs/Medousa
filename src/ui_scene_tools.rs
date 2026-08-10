@@ -10,15 +10,22 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use serde_json::{Value, json};
+use schemars::JsonSchema;
+use schemars::schema::{InstanceType, Schema, SchemaObject};
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Value;
+#[cfg(test)]
+use serde_json::json;
+#[cfg(test)]
 use stasis::application::orchestration::tool_registry::StasisTool;
-use stasis::prelude::{Result as StasisResult, StasisError};
+use stasis::prelude::StasisError;
 use tokio::sync::RwLock;
 
 use crate::turn_continuation::TurnContinuationScope;
+use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_UI_SCENE: &str = "cognition_ui_scene";
+const COGNITION_UI_SCENE_ID: ToolId = ToolId::new(COGNITION_UI_SCENE);
 
 pub const UI_SCENE_COGNITION_TOOLS: &[&str] = &[COGNITION_UI_SCENE];
 
@@ -27,10 +34,10 @@ pub fn is_ui_scene_cognition_tool(name: &str) -> bool {
 }
 
 pub fn register_ui_scene_tools(
-    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 ) -> stasis::prelude::Result<()> {
-    registry.register_tool(CognitionUiSceneTool::new(turn_scope))?;
+    registry.register_typed_tool(CognitionUiSceneTool::new(turn_scope))?;
     Ok(())
 }
 
@@ -52,63 +59,123 @@ impl CognitionUiSceneTool {
     }
 }
 
-#[async_trait]
-impl StasisTool for CognitionUiSceneTool {
-    fn name(&self) -> &'static str {
-        COGNITION_UI_SCENE
+#[derive(Debug, Serialize)]
+#[serde(transparent)]
+pub struct SceneOperation(Value);
+
+impl JsonSchema for SceneOperation {
+    fn schema_name() -> String {
+        "SceneOperation".to_string()
     }
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Author a native, streamable scene (structure-then-fill) when the client advertises supports_ui_artifacts. \
-             Preferred over cognition_ui_present for interactive UI — the model composes typed nodes, not HTML. \
-             Emit ops in the scene-op JSON shape; go bones-first: send a plan_layout with skeleton slots, then follow up \
-             with fill_slot batches (call again in the same turn) so structure paints before content streams in. \
-             Keep each call small (plan_layout first, then 1–3 fill_slot ops per follow-up) — ops must be valid JSON. \
-             Ops: plan_layout, fill_slot, patch_props, set_binding, set_fill_state, precompute, remove. \
-             Each op is an object with a string op field; nodes carry id (stable reconciliation key), type (archetype), and props.",
-        )
+    fn is_referenceable() -> bool {
+        false
     }
 
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["ops"],
-            "properties": {
-                "ops": {
-                    "type": "array",
-                    "description": "Ordered scene operations. Each item is an object with a string op field (plan_layout, fill_slot, patch_props, set_binding, set_fill_state, precompute, remove). Keep batches small — plan_layout first, then fill_slot in follow-up calls.",
-                    "minItems": 1,
-                    "maxItems": 12,
-                    "items": { "type": "object" }
-                },
-                "surface_id": {
-                    "type": "string",
-                    "description": "Optional scene surface id. Defaults to the chat turn surface."
-                },
-                "rev": {
-                    "type": "integer",
-                    "description": "Owning plan_layout revision for ordering (optional)."
-                }
-            }
-        }))
+    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> Schema {
+        Schema::Object(SchemaObject {
+            instance_type: Some(InstanceType::Object.into()),
+            ..SchemaObject::default()
+        })
     }
+}
 
-    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+fn deserialize_optional_scene_ops<'de, D>(
+    deserializer: D,
+) -> Result<Option<Vec<SceneOperation>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    Ok(value
+        .as_array()
+        .map(|items| items.iter().cloned().map(SceneOperation).collect()))
+}
+
+#[derive(Debug, JsonSchema)]
+pub struct UiSceneInput {
+    /// Ordered scene operations. Each item is an object with a string op field (plan_layout, fill_slot, patch_props, set_binding, set_fill_state, precompute, remove). Keep batches small — plan_layout first, then fill_slot in follow-up calls.
+    #[schemars(required, with = "Vec<SceneOperation>", length(min = 1, max = 12))]
+    ops: Option<Vec<SceneOperation>>,
+    /// Optional scene surface id. Defaults to the chat turn surface.
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    surface_id: CompatOption<String>,
+    /// Owning plan_layout revision for ordering (optional).
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    rev: CompatOption<i64>,
+}
+
+impl<'de> Deserialize<'de> for UiSceneInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(default, deserialize_with = "deserialize_optional_scene_ops")]
+            ops: Option<Vec<SceneOperation>>,
+            #[serde(default)]
+            surface_id: CompatOption<String>,
+            #[serde(default)]
+            rev: CompatOption<i64>,
+        }
+
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            ops: input.ops,
+            surface_id: input.surface_id,
+            rev: input.rev,
+        })
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum UiSceneOutput {
+    Success {
+        ok: bool,
+        ops: Vec<SceneOperation>,
+        op_count: usize,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        surface_id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        rev: Option<i64>,
+    },
+    Unsupported {
+        ok: bool,
+        unsupported_surface: bool,
+        error: String,
+    },
+}
+
+#[medousa_tool(id = COGNITION_UI_SCENE_ID)]
+impl CognitionUiSceneTool {
+    /// Author a native, streamable scene (structure-then-fill) when the client advertises supports_ui_artifacts. Preferred over cognition_ui_present for interactive UI — the model composes typed nodes, not HTML. Emit ops in the scene-op JSON shape; go bones-first: send a plan_layout with skeleton slots, then follow up with fill_slot batches (call again in the same turn) so structure paints before content streams in. Keep each call small (plan_layout first, then 1–3 fill_slot ops per follow-up) — ops must be valid JSON. Ops: plan_layout, fill_slot, patch_props, set_binding, set_fill_state, precompute, remove. Each op is an object with a string op field; nodes carry id (stable reconciliation key), type (archetype), and props.
+    async fn invoke_typed(&self, input: UiSceneInput) -> stasis::prelude::Result<UiSceneOutput> {
         if !self.active_surface_supports_ui_artifacts().await {
-            return Ok(json!({
-                "ok": false,
-                "unsupported_surface": true,
-                "error": "This channel does not support UI scenes (supports_ui_artifacts=false). Answer in markdown instead.",
-            }));
+            return Ok(UiSceneOutput::Unsupported {
+                ok: false,
+                unsupported_surface: true,
+                error: "This channel does not support UI scenes (supports_ui_artifacts=false). Answer in markdown instead."
+                    .to_string(),
+            });
         }
 
         let ops = input
-            .get("ops")
-            .and_then(Value::as_array)
+            .ops
             .ok_or_else(|| StasisError::PortFailure("ops must be an array".to_string()))?;
         if ops.is_empty() {
-            return Err(StasisError::PortFailure("ops must not be empty".to_string()));
+            return Err(StasisError::PortFailure(
+                "ops must not be empty".to_string(),
+            ));
         }
         if ops.len() > 12 {
             return Err(StasisError::PortFailure(
@@ -117,10 +184,10 @@ impl StasisTool for CognitionUiSceneTool {
             ));
         }
         for (index, op) in ops.iter().enumerate() {
-            let has_op = op
-                .get("op")
-                .and_then(Value::as_str)
-                .is_some_and(|value| !value.trim().is_empty());
+            let has_op =
+                op.0.get("op")
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| !value.trim().is_empty());
             if !has_op {
                 return Err(StasisError::PortFailure(format!(
                     "ops[{index}] must be an object with a string `op` field"
@@ -128,23 +195,21 @@ impl StasisTool for CognitionUiSceneTool {
             }
         }
 
-        let mut response = json!({
-            "ok": true,
-            "ops": ops.clone(),
-            "op_count": ops.len(),
-        });
-        if let Some(surface_id) = input
-            .get("surface_id")
-            .and_then(Value::as_str)
+        let surface_id = input
+            .surface_id
+            .into_option()
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
-        {
-            response["surface_id"] = json!(surface_id);
-        }
-        if let Some(rev) = input.get("rev").and_then(Value::as_i64) {
-            response["rev"] = json!(rev);
-        }
-        Ok(response)
+            .map(str::to_string);
+        let op_count = ops.len();
+        Ok(UiSceneOutput::Success {
+            ok: true,
+            ops,
+            op_count,
+            surface_id,
+            rev: input.rev.into_option(),
+        })
     }
 }
 
@@ -182,7 +247,10 @@ mod tests {
             .await
             .expect("invoke");
         assert_eq!(out.get("ok").and_then(Value::as_bool), Some(false));
-        assert_eq!(out.get("unsupported_surface").and_then(Value::as_bool), Some(true));
+        assert_eq!(
+            out.get("unsupported_surface").and_then(Value::as_bool),
+            Some(true)
+        );
     }
 
     #[tokio::test]
@@ -198,7 +266,10 @@ mod tests {
             .expect("invoke");
         assert_eq!(out.get("ok").and_then(Value::as_bool), Some(true));
         assert_eq!(out.get("op_count").and_then(Value::as_u64), Some(1));
-        assert_eq!(out.get("surface_id").and_then(Value::as_str), Some("chat:turn-1"));
+        assert_eq!(
+            out.get("surface_id").and_then(Value::as_str),
+            Some("chat:turn-1")
+        );
     }
 
     #[tokio::test]
@@ -222,5 +293,17 @@ mod tests {
             .await
             .expect_err("should reject");
         assert!(err.to_string().contains("max 12"));
+    }
+
+    #[test]
+    fn scene_wire_optionals_remain_lenient_for_legacy_values() {
+        let input: UiSceneInput = serde_json::from_value(json!({
+            "ops": [{"op": "plan_layout"}],
+            "surface_id": 42,
+            "rev": "1",
+        }))
+        .expect("scene input");
+        assert!(input.surface_id.into_option().is_none());
+        assert!(input.rev.into_option().is_none());
     }
 }

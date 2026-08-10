@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import type { VaultTreeNode } from "$lib/types/vault";
   import { vault } from "$lib/stores/vault.svelte";
   import { recentPathsForSpace } from "$lib/utils/vaultRecent";
@@ -12,7 +13,7 @@
     activeSpaceFilter?: string | null;
     /** Expand ancestors when selection changes. Off on mobile list so nothing stays forced open. */
     revealSelected?: boolean;
-    onSelect: (path: string) => void;
+    onSelect: (path: string, event?: MouseEvent) => void;
     onMoveNote?: (sourcePath: string, targetFolderPrefix: string) => void | Promise<void>;
   }
 
@@ -47,6 +48,17 @@
         )
       : [],
   );
+
+  onMount(() => {
+    function onKeydown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      if (vault.selectedPaths.size === 0) return;
+      event.preventDefault();
+      vault.clearRailSelection();
+    }
+    window.addEventListener("keydown", onKeydown);
+    return () => window.removeEventListener("keydown", onKeydown);
+  });
 </script>
 
 <nav class="flex-1 overflow-y-auto px-1.5 py-1" aria-label="Vault tree">

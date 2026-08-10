@@ -602,13 +602,23 @@
     min-width: 0;
   }
 
-  /* Notes breadcrumb: readable text, no junk icons. */
+  /* Notes/Code breadcrumb: match workbench tree type. */
   .nav-rail-view-popover-dock-slot :global(.vault-dock-branch) {
-    max-width: 5.75rem;
-    color: rgb(var(--color-surface-100));
-    font-size: 0.72rem;
+    max-width: 8.75rem;
+    color: color-mix(
+      in srgb,
+      rgb(var(--theme-text)) 92%,
+      rgb(var(--theme-text-secondary))
+    );
+    font-family:
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      system-ui,
+      sans-serif;
+    font-size: 13px;
     font-weight: 500;
-    letter-spacing: -0.01em;
+    letter-spacing: 0;
   }
 
   .nav-rail-view-popover-dock-slot :global(.vault-dock-branch__icon) {
@@ -620,7 +630,13 @@
   }
 
   .nav-rail-view-popover-dock-slot :global(.nav-rail-dock-crumb-sep) {
-    color: rgb(var(--theme-text-quiet));
+    color: color-mix(in srgb, rgb(var(--theme-text)) 40%, transparent);
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .nav-rail-view-popover-dock-slot :global(.lme-code-dock .vault-dock-branch) {
+    max-width: 10rem;
   }
 
   .nav-rail-view-popover-actions :global(.vault-dock-icon-btn),

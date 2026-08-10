@@ -5,7 +5,7 @@
   import { contextThreads } from "$lib/stores/contextThreads.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
-  import type { VaultNote } from "$lib/types/vault";
+  import type { VaultNoteSummary } from "$lib/types/vault";
   import { hasKnownChatSession } from "$lib/utils/contextCrossLinks";
   import {
     buildContextMapGraph,
@@ -39,7 +39,7 @@
   const search = $derived(contextShell.search);
   const selectedMapNodeId = $derived(contextShell.selectedMapNodeId);
 
-  let vaultNotes = $state<VaultNote[]>([]);
+  let vaultNotes = $state<VaultNoteSummary[]>([]);
 
   const sessionLabels = $derived(
     Object.fromEntries(
@@ -69,7 +69,7 @@
   );
   const noteLinkedSessionId = $derived(
     selectedNote
-      ? sessionIdForNoteChatTag(selectedNote.tags, chatSessionIds)
+      ? sessionIdForNoteChatTag(selectedNote.tags ?? [], chatSessionIds)
       : null,
   );
 
@@ -217,7 +217,6 @@
 
   async function openSelectedNote() {
     if (!selectedNotePath) return;
-    shellTabs.openSurface("library", { activate: true });
     await lmeWorkspace.openNote(selectedNotePath);
   }
 
@@ -349,20 +348,7 @@
           </div>
         {/if}
 
-        {#if selectedNote.wikilinks_out.length > 0 || selectedNote.backlinks.length > 0}
-          <p class="workshop-faint text-[11px] leading-relaxed">
-            {#if selectedNote.wikilinks_out.length > 0}
-              {selectedNote.wikilinks_out.length} outgoing link{selectedNote.wikilinks_out
-                .length === 1
-                ? ""
-                : "s"}{/if}{#if selectedNote.wikilinks_out.length > 0 && selectedNote.backlinks.length > 0}
-              ·
-            {/if}{#if selectedNote.backlinks.length > 0}
-              {selectedNote.backlinks.length} backlink{selectedNote.backlinks.length === 1
-                ? ""
-                : "s"}{/if}
-          </p>
-        {:else if selectionSummary}
+        {#if selectionSummary}
           <p class="workshop-faint text-[11px] leading-relaxed">{selectionSummary}</p>
         {/if}
 

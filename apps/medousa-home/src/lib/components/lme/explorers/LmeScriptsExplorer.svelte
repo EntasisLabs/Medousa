@@ -18,6 +18,7 @@
   import { renameScriptById } from "$lib/grapheme/scriptWorkbenchActions";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
+  import { scriptLibrarySelection } from "$lib/stores/scriptLibrarySelection.svelte";
   import { scriptRenameUi } from "$lib/stores/scriptRenameUi.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
   import { portLmeDock } from "$lib/utils/lmeDockHost";
@@ -154,6 +155,7 @@
       );
     }),
   );
+  const filteredScriptIds = $derived(filteredScripts.map((entry) => entry.id));
 
   const filteredRecipes = $derived(
     GRAPHEME_STARTER_RECIPES.filter((recipe) => {
@@ -175,8 +177,11 @@
       : workshop.lifecycleEvents,
   );
 
-  async function openScript(entry: GraphemeScriptEntry) {
+  async function openScript(entry: GraphemeScriptEntry, event?: MouseEvent) {
     if (shouldSuppressScriptContextMenuClick()) return;
+    if (!scriptLibrarySelection.applySelection(entry.id, event, filteredScriptIds)) {
+      return;
+    }
     await lmeWorkspace.openScriptById(entry.id);
   }
 
@@ -238,83 +243,7 @@
 <svelte:window onclick={closeMenus} />
 
 <aside class="lme-scripts-explorer flex h-full min-h-0 w-full flex-col" aria-label="Scripts">
-  <div class="min-h-0 flex-1 overflow-y-auto">
-    {#if workshop.loading && workshop.scripts.length === 0}
-      <p class="workshop-muted px-3 py-2 text-sm">Loading…</p>
-    {:else if workshop.error}
-      <p class="px-3 py-2 text-sm text-content-error">{workshop.error}</p>
-    {:else if filteredScripts.length === 0}
-      <p class="workshop-muted px-3 py-4 text-xs">
-        {searching ? "No scripts match." : "No saved scripts yet."}
-      </p>
-    {:else}
-      <ul class="divide-y divide-surface-500/35 border-y border-surface-500/35">
-        {#each filteredScripts as entry (entry.id)}
-          <li>
-            {#if scriptRenameUi.libraryScriptId === entry.id}
-              <div class="flex flex-col gap-0.5 px-3 py-2">
-                <input
-                  bind:this={libraryRenameInput}
-                  class="script-library-rename"
-                  type="text"
-                  aria-label="Rename script"
-                  spellcheck="false"
-                  bind:value={libraryRenameDraft}
-                  onblur={() => void commitLibraryRename(entry.id)}
-                  onkeydown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      void commitLibraryRename(entry.id);
-                    }
-                    if (event.key === "Escape") {
-                      event.preventDefault();
-                      cancelLibraryRename();
-                    }
-                  }}
-                />
-                <span class="workshop-faint truncate font-mono text-[10px]">{entry.id}</span>
-              </div>
-            {:else}
-              <div
-                class="lme-script-row group flex w-full items-stretch transition hover:bg-surface-800/70 {graphemeScriptEditor.activeTab?.scriptId ===
-                entry.id
-                  ? 'workshop-list-row-active'
-                  : ''}"
-              >
-                <button
-                  type="button"
-                  class="flex min-w-0 flex-1 flex-col px-3 py-2 text-left"
-                  onclick={() => void openScript(entry)}
-                  oncontextmenu={(event) =>
-                    handleScriptContextMenuEvent(entry.id, entry.name, event)}
-                  use:bindScriptLongPress={() => ({ scriptId: entry.id, name: entry.name })}
-                >
-                  <span class="truncate text-sm font-medium text-surface-100">{entry.name}</span>
-                  <span class="workshop-faint mt-0.5 truncate font-mono text-[10px]">
-                    {entry.id}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  class="lme-script-rename-btn mr-1.5 self-center"
-                  title="Rename script"
-                  aria-label="Rename {entry.name}"
-                  onclick={(event) => {
-                    event.stopPropagation();
-                    scriptRenameUi.startLibraryRename(entry.id);
-                  }}
-                >
-                  <Pencil size={13} strokeWidth={1.75} />
-                </button>
-              </div>
-            {/if}
-          </li>
-        {/each}
-      </ul>
-    {/if}
-  </div>
-
-  <footer class="lme-side-rail-dock" use:portLmeDock>
+  <header class="lme-side-rail-dock" use:portLmeDock>
     {#if searchExpanded}
       <div class="lme-dock-search-expand flex min-w-0 flex-1 items-center gap-1">
         <Search size={14} strokeWidth={1.75} class="shrink-0 text-content-quiet" aria-hidden="true" />
@@ -378,7 +307,7 @@
           </button>
           {#if dockMenu === "templates"}
             <div
-              class="lme-scripts-popover absolute bottom-full right-0 z-30 mb-1.5 w-[min(19rem,calc(100vw-2rem))]"
+              class="lme-scripts-popover absolute top-full right-0 z-30 mt-1.5 w-[min(19rem,calc(100vw-2rem))]"
               role="dialog"
               aria-label="Templates"
               tabindex="-1"
@@ -436,7 +365,7 @@
           </button>
           {#if dockMenu === "wasm"}
             <div
-              class="lme-scripts-popover lme-scripts-popover-wasm absolute bottom-full right-0 z-30 mb-1.5 w-[min(19rem,calc(100vw-2rem))]"
+              class="lme-scripts-popover lme-scripts-popover-wasm absolute top-full right-0 z-30 mt-1.5 w-[min(19rem,calc(100vw-2rem))]"
               role="dialog"
               aria-label="Load WASM"
               tabindex="-1"
@@ -600,7 +529,84 @@
         <Search size={15} strokeWidth={1.75} />
       </button>
     {/if}
-  </footer>
+  </header>
+  <div class="min-h-0 flex-1 overflow-y-auto">
+    {#if workshop.loading && workshop.scripts.length === 0}
+      <p class="workshop-muted px-3 py-2 text-sm">Loading…</p>
+    {:else if workshop.error}
+      <p class="px-3 py-2 text-sm text-content-error">{workshop.error}</p>
+    {:else if filteredScripts.length === 0}
+      <p class="workshop-muted px-3 py-4 text-xs">
+        {searching ? "No scripts match." : "No saved scripts yet."}
+      </p>
+    {:else}
+      <ul class="divide-y divide-surface-500/35 border-y border-surface-500/35">
+        {#each filteredScripts as entry (entry.id)}
+          <li>
+            {#if scriptRenameUi.libraryScriptId === entry.id}
+              <div class="flex flex-col gap-0.5 px-3 py-2">
+                <input
+                  bind:this={libraryRenameInput}
+                  class="script-library-rename"
+                  type="text"
+                  aria-label="Rename script"
+                  spellcheck="false"
+                  bind:value={libraryRenameDraft}
+                  onblur={() => void commitLibraryRename(entry.id)}
+                  onkeydown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void commitLibraryRename(entry.id);
+                    }
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      cancelLibraryRename();
+                    }
+                  }}
+                />
+                <span class="workshop-faint truncate font-mono text-[10px]">{entry.id}</span>
+              </div>
+            {:else}
+              <div
+                class="lme-script-row group flex w-full items-stretch transition hover:bg-surface-800/70 {scriptLibrarySelection.isSelected(
+                  entry.id,
+                ) || graphemeScriptEditor.activeTab?.scriptId === entry.id
+                  ? 'workshop-list-row-active'
+                  : ''}"
+              >
+                <button
+                  type="button"
+                  class="flex min-w-0 flex-1 flex-col px-3 py-2 text-left"
+                  onclick={(event) => void openScript(entry, event)}
+                  oncontextmenu={(event) =>
+                    handleScriptContextMenuEvent(entry.id, entry.name, event)}
+                  use:bindScriptLongPress={() => ({ scriptId: entry.id, name: entry.name })}
+                >
+                  <span class="truncate text-sm font-medium text-surface-100">{entry.name}</span>
+                  <span class="workshop-faint mt-0.5 truncate font-mono text-[10px]">
+                    {entry.id}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  class="lme-script-rename-btn mr-1.5 self-center"
+                  title="Rename script"
+                  aria-label="Rename {entry.name}"
+                  onclick={(event) => {
+                    event.stopPropagation();
+                    scriptRenameUi.startLibraryRename(entry.id);
+                  }}
+                >
+                  <Pencil size={13} strokeWidth={1.75} />
+                </button>
+              </div>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </div>
+
 </aside>
 
 <style>

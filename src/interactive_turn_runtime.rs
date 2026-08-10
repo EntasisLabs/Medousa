@@ -421,6 +421,7 @@ pub fn tool_started_stream_event(
     tool_run_id: &str,
     tool_name: &str,
     input_summary: &str,
+    input_params: Vec<crate::daemon_api::ToolInputParam>,
     tool_round: usize,
 ) -> Result<InteractiveTurnStreamEvent> {
     let mut event = build_event_messages(
@@ -436,6 +437,9 @@ pub fn tool_started_stream_event(
     event.tool_name = Some(tool_name.to_string());
     event.tool_status = Some("running".to_string());
     event.tool_input_summary = Some(input_summary.to_string());
+    if !input_params.is_empty() {
+        event.tool_input_params = Some(input_params);
+    }
     event.tool_round = Some(tool_round.max(1));
     Ok(event)
 }
@@ -447,6 +451,7 @@ pub fn tool_finished_stream_event(
     tool_name: &str,
     status: &str,
     input_summary: &str,
+    input_params: Vec<crate::daemon_api::ToolInputParam>,
     output_summary: Option<&str>,
     tool_round: usize,
     artifact_refs: Vec<crate::daemon_api::StreamToolArtifactRef>,
@@ -468,6 +473,9 @@ pub fn tool_finished_stream_event(
     event.tool_name = Some(tool_name.to_string());
     event.tool_status = Some(status.to_string());
     event.tool_input_summary = Some(input_summary.to_string());
+    if !input_params.is_empty() {
+        event.tool_input_params = Some(input_params);
+    }
     event.tool_output_summary = output_summary.map(str::to_string);
     event.tool_round = Some(tool_round.max(1));
     if !artifact_refs.is_empty() {
@@ -647,6 +655,7 @@ fn build_event_messages(
         tool_name: None,
         tool_status: None,
         tool_input_summary: None,
+        tool_input_params: None,
         tool_output_summary: None,
         tool_round: None,
         tool_artifact_refs: None,

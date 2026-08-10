@@ -1693,6 +1693,9 @@ pub struct InteractiveTurnStreamEvent {
     pub tool_status: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_input_summary: Option<String>,
+    /// Redacted key/value arguments so chat can show `query: "…"`, not just the tool name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_input_params: Option<Vec<ToolInputParam>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_output_summary: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1763,6 +1766,17 @@ pub struct ContextUsageReport {
     pub tool_count: u32,
     /// `chars / 4` — documented estimator; not tokenizer-exact.
     pub estimator: String,
+}
+
+/// One redacted key/value from a tool's arguments, for chat-adjacent tool evidence.
+/// Values are truncated at the emit site; `truncated` tells the UI to say so.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ToolInputParam {
+    pub key: String,
+    pub value: String,
+    #[serde(default)]
+    pub truncated: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2284,6 +2298,50 @@ pub struct WorkCardDetail {
     pub tool_names: Option<Vec<String>>,
     #[serde(default)]
     pub associations: WorkCardAssociations,
+    /// Live worker tool runs, correlated start-to-finish by `run_id`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub live_tool_activity: Vec<WorkerToolActivityDto>,
+    /// Rolling worker reasoning transcript (joined chunks, capped tail).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub live_thinking: String,
+    /// Rolling worker assistant output preview (joined chunks, capped tail).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub live_output: String,
+    /// First/last reasoning chunk, so chat can render "Thought for Ns".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking_started_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking_finished_at: Option<DateTime<Utc>>,
+    /// Live status line (e.g. "Running tool X", "Thinking…", "Synthesizing…").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub live_status_line: Option<String>,
+    /// Worker model/provider whisper.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+}
+
+/// One worker tool run, shaped to match the host's `ToolRun` turn part so both
+/// render through the same chat evidence component.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct WorkerToolActivityDto {
+    #[serde(default)]
+    pub run_id: String,
+    pub name: String,
+    #[serde(default)]
+    pub round: usize,
+    /// running | succeeded | failed
+    #[serde(default)]
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub input_params: Vec<ToolInputParam>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_summary: Option<String>,
+    pub started_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finished_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -2420,6 +2478,38 @@ pub struct WorkspaceStreamEvent {
     pub counts: Option<std::collections::HashMap<String, u32>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snapshot: Option<WorkspaceSnapshot>,
+    /// Live subagent progress rides along with `card_upserted` for turn-worker
+    /// cards so chat can tick without a detail round trip.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker_progress: Option<WorkerProgressDto>,
+}
+
+/// Streaming slice of a worker's live transcript — the `live_*` fields of
+/// `WorkCardDetail`, pushed instead of polled.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct WorkerProgressDto {
+    pub work_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub live_tool_activity: Vec<WorkerToolActivityDto>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub live_thinking: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub live_output: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking_started_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking_finished_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub live_status_line: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_excerpt: Option<String>,
+    pub terminal: bool,
+    pub column: WorkBoardColumn,
 }
 
 /// Frozen workspace HTTP contract version (Phase W3 gate).
@@ -2460,12 +2550,14 @@ pub struct VaultNoteSummary {
     pub modified_at_utc: DateTime<Utc>,
     #[serde(default)]
     pub kind: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct VaultNotesListResponse {
-    pub notes: Vec<VaultNote>,
+    pub notes: Vec<VaultNoteSummary>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

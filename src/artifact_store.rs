@@ -829,16 +829,15 @@ fn inject_artifact_host_styles(html: &str) -> String {
 }
 
 fn wrap_html_document(html: &str) -> String {
-    let trimmed = html.trim();
-    if trimmed.is_empty() {
+    if html.trim().is_empty() {
         return String::new();
     }
-    let lower = trimmed.to_ascii_lowercase();
+    let lower = html.to_ascii_lowercase();
     if lower.contains("<html") || lower.contains("<!doctype") {
-        return inject_artifact_host_styles(trimmed);
+        return inject_artifact_host_styles(html);
     }
     format!(
-        "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'\">{ARTIFACT_HOST_STYLE}</head><body>{trimmed}</body></html>"
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'\">{ARTIFACT_HOST_STYLE}</head><body>{html}</body></html>"
     )
 }
 
@@ -1242,6 +1241,13 @@ mod tests {
         );
         assert!(full.contains("medousa-artifact-host"));
         assert!(full.contains("medousa-fill"));
+    }
+
+    #[test]
+    fn wrap_html_document_preserves_non_blank_content_boundaries() {
+        let html = "  <div>Chart</div>  \n";
+        let wrapped = wrap_html_document(html);
+        assert!(wrapped.contains(html));
     }
 
     #[test]

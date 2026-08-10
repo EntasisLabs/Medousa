@@ -64,7 +64,8 @@
   import { formatToolName, formatTurnPhase } from "$lib/utils/formatTurn";
   import { groupAskThreads, isChatLaneMessage } from "$lib/utils/askThreads";
   import { openWorkAsks } from "$lib/utils/workChromeEvents";
-  import { groupWorkerThreads } from "$lib/utils/workerThreads";
+  import WorkerTranscriptPanel from "$lib/components/chat/WorkerTranscriptPanel.svelte";
+  import { subagentRowMap, subagentRowsForSession } from "$lib/utils/subagentRows";
   import {
     saveChatTurnToVault,
     showChatTurnSaveFeedback,
@@ -133,6 +134,7 @@
   let chatScrollEndTimer: ReturnType<typeof setTimeout> | undefined;
   let cardDetailOpen = $state(false);
   let cardDetail = $state<CardDetailPayload | null>(null);
+  let workerTranscriptWorkId = $state<string | null>(null);
 
   function openCardDetail(detail: CardDetailPayload) {
     cardDetail = detail;
@@ -142,6 +144,24 @@
   function closeCardDetail() {
     cardDetailOpen = false;
     cardDetail = null;
+  }
+
+  function openWorkerTranscript(workId: string) {
+    const trimmed = workId.trim();
+    if (!trimmed) return;
+    workerTranscriptWorkId = trimmed;
+  }
+
+  function closeWorkerTranscript() {
+    workerTranscriptWorkId = null;
+  }
+
+  function stopWorker(workId: string) {
+    const trimmed = workId.trim();
+    if (!trimmed) return;
+    void import("$lib/daemon").then(({ cancelWorkspaceCard }) => {
+      void cancelWorkspaceCard(trimmed);
+    });
   }
 
   function prefillComposerFromChip(label: string) {
@@ -156,16 +176,26 @@
   /** Stable principal — ignores temporary session swaps during background SSE. */
   const panelSessionId = $derived(chat.focusedSessionId);
   const panelMessages = $derived(chat.messagesFor(panelSessionId));
-  const chatMessages = $derived(panelMessages.filter((message) => isChatLaneMessage(message)));
+  /**
+   * Worker-lane turns stay in the principal thread: they carry the sub-agent's
+   * synthesis prose, and their position is where the beat belongs chronologically.
+   */
+  const chatMessages = $derived(
+    panelMessages.filter(
+      (message) => isChatLaneMessage(message) || message.lane === "worker",
+    ),
+  );
+  const subagentRows = $derived(subagentRowsForSession(panelSessionId));
+  const subagentRowsByWorkId = $derived(subagentRowMap(panelSessionId));
+  const activeSubagentCount = $derived(subagentRows.filter((row) => row.streaming).length);
   const askThreads = $derived(groupAskThreads(panelMessages));
-  const workerThreads = $derived(groupWorkerThreads(panelMessages));
   const showInlineComposer = $derived(!mobile || (embedded && scriptWorkbench));
   const useMobileChatLayout = $derived(mobile);
   /** The centered new-chat state exists only after an explicit New action. */
   const showChatEmptyState = $derived(
     chat.sessionPristine &&
       chatMessages.length === 0 &&
-      workerThreads.length === 0,
+      subagentRows.length === 0,
   );
 
   /** Don't treat "history still loading" as empty Presence — that centers the dock on cold start. */
@@ -395,7 +425,7 @@
 
   const showScrollFab = $derived(
     !atBottom &&
-      (chatMessages.length > 0 || workerThreads.length > 0),
+      (chatMessages.length > 0 || subagentRows.length > 0),
   );
 
   const latestUserTurn = $derived.by(() => {
@@ -438,9 +468,7 @@
   $effect(() => {
     if (!scrollEl) return;
     void chatMessages.map((message) => message.content).join("\0");
-    void workerThreads
-      .flatMap((thread) => thread.messages.map((message) => message.content))
-      .join("\0");
+    void subagentRows.map((row) => row.statusLine).join("\0");
     void chat.hasTurnActivity;
     scrollToLatest(false);
     void tick().then(scheduleChatNavigationMeasure);
@@ -1310,65 +1338,6 @@
         </button>
       {/if}
 
-      {#if workerThreads.length > 0 && !embedded}
-        {#if mobile}
-          <button
-            type="button"
-            class="mobile-chat-rail-chip"
-            onclick={() => switchMobileTab("home")}
-          >
-            <span>
-              {workerThreads.length} worker{workerThreads.length === 1 ? "" : "s"} in Work
-            </span>
-            <span class="text-content-quiet">→</span>
-          </button>
-        {:else}
-        <section class="chat-ask-rail space-y-3">
-          <div class="chat-ask-rail-header">
-            <p class="text-content-quiet text-[11px] font-medium uppercase tracking-[0.12em]">
-              Workers
-            </p>
-            <p class="text-content-quiet mt-0.5 text-[11px]">
-              Workshop lane — progress stays off the main thread
-            </p>
-          </div>
-          {#each workerThreads as thread (thread.workId)}
-            <article class="chat-ask-thread">
-              <header class="chat-ask-thread-header">
-                <div class="min-w-0">
-                  <p class="truncate text-sm font-medium text-surface-100">
-                    {thread.workId}
-                  </p>
-                  <p class="text-content-quiet mt-0.5 text-[10px]">
-                    {#if thread.active}
-                      {visibleChatStatusLine(thread.statusLine, settings.showEngineDetailsInChat) ??
-                        "Working in background…"}
-                    {:else}
-                      Settled
-                    {/if}
-                  </p>
-                </div>
-              </header>
-              <div class="chat-ask-thread-body space-y-3">
-                <ChatMessageList
-                  messages={thread.messages}
-                  sessionId={panelSessionId}
-                  {mobile}
-                  compact={true}
-                  workerThread={true}
-                  scrollRoot={scrollEl}
-                  onPromoteToFlow={handlePromoteToFlow}
-                  onSubmitIntent={submitChatIntent}
-                  onSaveToVault={handleSaveToVault}
-                  onOpenCardDetail={openCardDetail}
-                />
-              </div>
-            </article>
-          {/each}
-        </section>
-        {/if}
-      {/if}
-
       {#if chatMessages.length > 0}
         <ChatMessageList
           messages={chatMessages}
@@ -1380,6 +1349,9 @@
           onSubmitIntent={submitChatIntent}
           onSaveToVault={handleSaveToVault}
           onOpenCardDetail={openCardDetail}
+          subagentRows={subagentRowsByWorkId}
+          onOpenSubagent={openWorkerTranscript}
+          onStopSubagent={stopWorker}
         />
       {:else if showChatEmptyState}
         {#if scriptWorkbench && chat.scriptWorkbenchContext}
@@ -1497,6 +1469,19 @@
       sessionId={panelSessionId}
     />
     <AgentPermissionBar />
+    {#if activeSubagentCount > 0}
+      <button
+        type="button"
+        class="chat-subagent-pill"
+        onclick={() => {
+          const running = subagentRows.find((row) => row.streaming);
+          if (running) openWorkerTranscript(running.workId);
+        }}
+      >
+        <span class="chat-subagent-pill-dot" aria-hidden="true"></span>
+        {activeSubagentCount} subagent{activeSubagentCount === 1 ? "" : "s"} working
+      </button>
+    {/if}
     <div class="mx-4 mb-1 flex flex-wrap gap-2">
       <UndertakingContextChip chatOnly />
     </div>
@@ -1584,6 +1569,11 @@
     detail={cardDetail}
     onClose={closeCardDetail}
     onChipSelect={prefillComposerFromChip}
+  />
+
+  <WorkerTranscriptPanel
+    workId={workerTranscriptWorkId}
+    onClose={closeWorkerTranscript}
   />
 
   {#if showScrollFab && visible}
@@ -1713,6 +1703,42 @@
 
   .chat-composer--presence-center {
     width: 100%;
+  }
+
+  /* Ambient count only — the beats in-thread carry the detail. */
+  .chat-subagent-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    align-self: flex-start;
+    margin: 0 1rem 0.375rem;
+    border-radius: 999px;
+    padding: 0.125rem 0.5rem;
+    font-size: 0.625rem;
+    color: rgb(var(--theme-text-tertiary));
+    transition: color 120ms ease;
+  }
+
+  .chat-subagent-pill:hover {
+    color: rgb(var(--theme-text-secondary));
+  }
+
+  .chat-subagent-pill-dot {
+    width: 0.25rem;
+    height: 0.25rem;
+    border-radius: 999px;
+    background: rgb(var(--color-primary-400));
+    animation: subagent-pulse 1.8s ease-in-out infinite;
+  }
+
+  @keyframes subagent-pulse {
+    0%,
+    100% {
+      opacity: 0.4;
+    }
+    50% {
+      opacity: 1;
+    }
   }
 
   .chat-presence-empty {

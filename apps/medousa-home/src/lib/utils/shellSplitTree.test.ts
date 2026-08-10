@@ -120,4 +120,33 @@ describe("shellSplitTree", () => {
     expect(neighborInDirection(root, "a", "right")).toBe("b");
     expect(neighborInDirection(root, "b", "left")).toBe("a");
   });
+
+  it("follows nested geometry instead of flat leaf order", () => {
+    // left | (top / bottom) — flat order is [left, top, bottom]
+    const root: SplitNode = {
+      type: "branch",
+      id: "outer",
+      direction: "column",
+      ratio: 0.5,
+      a: { type: "group", id: "left" },
+      b: {
+        type: "branch",
+        id: "inner",
+        direction: "row",
+        ratio: 0.5,
+        a: { type: "group", id: "top" },
+        b: { type: "group", id: "bottom" },
+      },
+    };
+    expect(leafOrder(root)).toEqual(["left", "top", "bottom"]);
+    // From left, up/down stay put (no vertical neighbor).
+    expect(neighborInDirection(root, "left", "up")).toBeNull();
+    expect(neighborInDirection(root, "left", "down")).toBeNull();
+    expect(neighborInDirection(root, "left", "right")).toBe("top");
+    // From top-right, left returns the left pane — not "previous flat leaf".
+    expect(neighborInDirection(root, "top", "left")).toBe("left");
+    expect(neighborInDirection(root, "bottom", "left")).toBe("left");
+    expect(neighborInDirection(root, "top", "down")).toBe("bottom");
+    expect(neighborInDirection(root, "bottom", "up")).toBe("top");
+  });
 });

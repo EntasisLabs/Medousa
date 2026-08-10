@@ -8,6 +8,9 @@ const LANDING_SURFACES: Surface[] = [
   "chat",
   "work",
   "library",
+  "notes",
+  "files",
+  "artifacts",
   "web",
   "workshop",
   "peers",
@@ -418,7 +421,15 @@ export class LayoutStore {
    */
   focusDesktopSurface(surface: string) {
     let next = surface === "home" ? "chat" : surface;
-    if (next === "automations" || next === "workshop") next = "library";
+    if (
+      next === "automations" ||
+      next === "workshop" ||
+      next === "notes" ||
+      next === "files" ||
+      next === "artifacts"
+    ) {
+      next = "library";
+    }
     if (this.desktopSurface === next) return;
     this.sidebarModeBySurface[this.desktopSurface] = this.shellSidebarMode;
     this.desktopSurface = next as Surface;
@@ -426,13 +437,26 @@ export class LayoutStore {
   }
 
   navigateDesktop(surface: string, options?: { bump?: boolean }) {
-    // Automations still hosts in the LME workspace (library tabs), but keeps its
-    // own explorer family. Callers that need a specific mode should set
+    // Automations and the Notes/Files/Artifacts doors host in the LME workspace
+    // (library tabs). Callers that need a specific mode should set
     // `lmeWorkspace` before navigating.
     let next = surface === "home" ? "chat" : surface;
-    if (next === "automations" || next === "library") {
+    if (
+      next === "automations" ||
+      next === "library" ||
+      next === "notes" ||
+      next === "files" ||
+      next === "artifacts"
+    ) {
       const requested = next;
-      if (next === "automations") next = "library";
+      if (
+        next === "automations" ||
+        next === "notes" ||
+        next === "files" ||
+        next === "artifacts"
+      ) {
+        next = "library";
+      }
       void import("$lib/stores/lmeWorkspace.svelte").then(({ lmeWorkspace }) => {
         void import("$lib/utils/lmeExplorerModes").then(
           ({
@@ -442,6 +466,12 @@ export class LayoutStore {
           }) => {
             if (requested === "automations" && !isLmeAutomationsMode(lmeWorkspace.explorerMode)) {
               lmeWorkspace.setExplorerMode(defaultModeForLmeFamily("automations"));
+            } else if (requested === "notes") {
+              lmeWorkspace.setExplorerMode("notes");
+            } else if (requested === "files") {
+              lmeWorkspace.setExplorerMode("files");
+            } else if (requested === "artifacts") {
+              lmeWorkspace.setExplorerMode("artifacts");
             } else if (requested === "library" && !isLmeLibraryMode(lmeWorkspace.explorerMode)) {
               lmeWorkspace.setExplorerMode(defaultModeForLmeFamily("library"));
             }

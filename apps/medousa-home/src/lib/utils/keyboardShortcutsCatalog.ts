@@ -1,6 +1,14 @@
 import { formatShortcut, modKeyLabel, usesMetaModKey } from "$lib/platform";
+import { effectiveChordFor } from "$lib/commands/commandBindings";
 
-export type ShortcutCatalogGroupId = "global" | "panes" | "code" | "vault" | "chat";
+export type ShortcutCatalogGroupId =
+  | "global"
+  | "panes"
+  | "code"
+  | "review"
+  | "vault"
+  | "browser"
+  | "chat";
 
 export type ShortcutCatalogEntry = {
   id: string;
@@ -17,7 +25,8 @@ export type ShortcutCatalogGroup = {
 
 /**
  * Single reference for binds that already exist in the app.
- * Drive cheat sheet / Spotlight labels from here — no remapping UI.
+ * Drive cheat sheet / Spotlight labels / button hover titles from here.
+ * A small allowlist can override chords via `commandBindings` (no Settings UI yet).
  */
 export const KEYBOARD_SHORTCUTS_CATALOG: ShortcutCatalogGroup[] = [
   {
@@ -25,6 +34,11 @@ export const KEYBOARD_SHORTCUTS_CATALOG: ShortcutCatalogGroup[] = [
     title: "Global",
     entries: [
       { id: "spotlight", keys: "mod:K", action: "Open Spotlight" },
+      {
+        id: "command-palette",
+        keys: "mod:Shift+P",
+        action: "Show All Commands (Spotlight >)",
+      },
       { id: "toggle-rail", keys: "mod:B", action: "Toggle left rail" },
       {
         id: "summon-toolbar",
@@ -70,6 +84,7 @@ export const KEYBOARD_SHORTCUTS_CATALOG: ShortcutCatalogGroup[] = [
     title: "Code",
     entries: [
       { id: "code-quick-open", keys: "mod:P", action: "Quick Open file / symbol / line" },
+      { id: "code-search", keys: "mod:Shift+F", action: "Search in files" },
       { id: "code-save", keys: "mod:S", action: "Save focused file" },
       { id: "code-save-all", keys: "mod:Shift+S", action: "Save all modified files" },
       { id: "code-find", keys: "mod:F", action: "Find in file" },
@@ -81,6 +96,21 @@ export const KEYBOARD_SHORTCUTS_CATALOG: ShortcutCatalogGroup[] = [
         id: "code-cycle-tabs",
         keys: "literal:Ctrl+Tab",
         action: "Cycle Code file tabs in focused pane",
+      },
+    ],
+  },
+  {
+    id: "review",
+    title: "Review",
+    entries: [
+      { id: "review-next-file", keys: "literal:n / j", action: "Next changed file" },
+      { id: "review-prev-file", keys: "literal:p / k", action: "Previous changed file" },
+      { id: "review-toggle-viewed", keys: "literal:v", action: "Toggle file viewed" },
+      { id: "review-comment", keys: "literal:.", action: "Add comment on focused file" },
+      {
+        id: "review-toggle-comments",
+        keys: "literal:c",
+        action: "Show or hide the comments rail when threads exist",
       },
     ],
   },
@@ -98,6 +128,21 @@ export const KEYBOARD_SHORTCUTS_CATALOG: ShortcutCatalogGroup[] = [
       },
       { id: "vault-pdf", keys: "mod:Shift+P", action: "Export PDF" },
       { id: "vault-board", keys: "mod:Shift+B", action: "Toggle board" },
+    ],
+  },
+  {
+    id: "browser",
+    title: "Browser",
+    entries: [
+      { id: "browser-focus-url", keys: "mod:L", action: "Focus URL bar" },
+      { id: "browser-find", keys: "mod:F", action: "Find in page" },
+      { id: "browser-bookmarks", keys: "mod:Shift+B", action: "Open bookmarks" },
+      { id: "browser-new-tab", keys: "mod:T", action: "New tab" },
+      { id: "browser-reopen-tab", keys: "mod:Shift+T", action: "Reopen closed tab" },
+      { id: "browser-close-tab", keys: "mod:W", action: "Close tab" },
+      { id: "browser-reload", keys: "mod:R", action: "Reload page" },
+      { id: "browser-back", keys: "mod:[", action: "Go back" },
+      { id: "browser-forward", keys: "mod:]", action: "Go forward" },
     ],
   },
   {
@@ -123,7 +168,7 @@ export function formatCatalogKeys(keys: string): string {
     // Two-step chord — spell out the sequence so it doesn't read as one press.
     const suffix = keys.slice("prefix:".length);
     const mod = modKeyLabel();
-    return usesMetaModKey() ? `${mod}; then ${suffix}` : `Ctrl+; then ${suffix}`;
+    return usesMetaModKey() ? `${mod}; + ${suffix}` : `Ctrl+; + ${suffix}`;
   }
   if (keys.startsWith("mod:")) {
     const chord = keys.slice("mod:".length);
@@ -149,11 +194,49 @@ export function catalogGroup(
   return KEYBOARD_SHORTCUTS_CATALOG.find((group) => group.id === id);
 }
 
+/** Flat lookup across all catalog groups. */
+export function shortcutEntryById(id: string): ShortcutCatalogEntry | undefined {
+  for (const group of KEYBOARD_SHORTCUTS_CATALOG) {
+    const entry = group.entries.find((e) => e.id === id);
+    if (entry) return entry;
+  }
+  return undefined;
+}
+
+/**
+ * Native `title` hint: `Label (⌘B)`. Falls back to bare label if the id is unknown.
+ * Remappable workbench chords prefer the effective binding from commandBindings.
+ */
+const CATALOG_COMMAND_IDS: Record<string, string> = {
+  "command-palette": "workbench.action.showCommands",
+  "code-quick-open": "workbench.action.quickOpen",
+  "code-search": "workbench.action.findInFiles",
+  "code-terminal": "workbench.action.terminal.toggleTerminal",
+};
+
+export function titleWithShortcut(label: string, catalogId: string): string {
+  const entry = shortcutEntryById(catalogId);
+  if (!entry) return label;
+  const commandId = CATALOG_COMMAND_IDS[catalogId];
+  const keys =
+    (commandId ? effectiveChordFor(commandId) : null) ?? entry.keys;
+  return `${label} (${formatCatalogKeys(keys)})`;
+}
+
+/**
+ * Native `title` hint from a raw keys token (for binds not in the cheat sheet).
+ * Tokens use the same grammar as catalog `keys` (`mod:…`, `prefix:…`, `literal:…`).
+ */
+export function titleWithKeys(label: string, keys: string): string {
+  return `${label} (${formatCatalogKeys(keys)})`;
+}
+
 /** Groups shown in the in-app shortcuts sheet. */
 export const CHEAT_SHEET_GROUP_IDS: ShortcutCatalogGroupId[] = [
   "global",
   "panes",
   "code",
   "vault",
+  "browser",
   "chat",
 ];

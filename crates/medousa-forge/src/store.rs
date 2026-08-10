@@ -513,7 +513,7 @@ mod tests {
                     operation_id: op.clone(),
                     effect: SideEffect::WorktreeAdded {
                         path: PathBuf::from("/tmp/forge/worktrees/r/w"),
-                        branch: "medousa/work/w".into(),
+                        branch: "worktree/w".into(),
                         baseline_oid: GitOid::new("b".repeat(40)),
                     },
                 },

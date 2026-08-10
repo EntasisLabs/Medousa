@@ -445,7 +445,9 @@ async fn main() -> Result<()> {
         resolve_tool_call_mode_name(tool_call_mode.or(defaults.tool_call_mode.as_deref()));
     let resolved_max_tool_rounds = resolve_usize_arg(
         max_tool_rounds,
-        defaults.max_tool_rounds.unwrap_or(10),
+        defaults.max_tool_rounds.unwrap_or(
+            medousa::agent_runtime::turn_loop_settings::DEFAULT_GENERAL_MAX_TOOL_ROUNDS,
+        ),
         medousa::agent_runtime::ROUND_LIMIT_MIN,
         medousa::agent_runtime::ROUND_LIMIT_MAX,
     );

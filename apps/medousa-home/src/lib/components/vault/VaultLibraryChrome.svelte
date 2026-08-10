@@ -15,6 +15,7 @@
   import { vault } from "$lib/stores/vault.svelte";
   import { externalDesk } from "$lib/stores/externalDesk.svelte";
   import { formatShortcut } from "$lib/platform";
+  import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
   import { canUseLocalVaultFilesystem } from "$lib/utils/vaultFilesystem";
   import VaultGroupPicker from "./VaultGroupPicker.svelte";
   import VaultRootPicker from "./VaultRootPicker.svelte";
@@ -111,13 +112,13 @@
         <button
           type="button"
           role="tab"
-          aria-selected={externalDesk.sidebarMode === "presentations"}
-          class="vault-sidebar-tab {externalDesk.sidebarMode === 'presentations'
+          aria-selected={externalDesk.sidebarMode === "artifacts"}
+          class="vault-sidebar-tab {externalDesk.sidebarMode === 'artifacts'
             ? 'vault-sidebar-tab-active'
             : ''}"
-          onclick={() => externalDesk.setSidebarMode("presentations")}
+          onclick={() => externalDesk.setSidebarMode("artifacts")}
         >
-          Presentations
+          Artifacts
         </button>
       </div>
       <button
@@ -170,6 +171,7 @@
             class="workshop-text-action px-1.5 text-xs"
             aria-haspopup="menu"
             aria-expanded={createOpen}
+            title={titleWithShortcut("New note", "vault-new")}
             onclick={(event) => {
               event.stopPropagation();
               createOpen = !createOpen;

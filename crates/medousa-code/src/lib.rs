@@ -6,7 +6,9 @@
 
 pub mod backend;
 pub mod detamu;
+pub mod diagnostics;
 pub mod document;
+pub mod language_session;
 pub mod registry;
 pub mod server;
 pub mod session;

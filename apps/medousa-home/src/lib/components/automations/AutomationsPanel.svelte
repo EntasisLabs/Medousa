@@ -413,6 +413,69 @@
     </header>
   {/if}
 
+  {#if embedded && !mobile && !mobileDetailOpen}
+    <header
+      class="lme-side-rail-dock"
+      use:portLmeDock
+    >
+      <div class="lme-dock-leading-ghost min-w-0 flex-1">
+        <span class="workshop-faint truncate text-[11px]">
+          {counts.enabled}/{counts.total} active
+        </span>
+      </div>
+      <ScheduleCreatePopover {mobile} {lmeHosted} trigger="dock" />
+      <div class="lme-dock-chrome-secondary relative shrink-0">
+        <button
+          type="button"
+          class="vault-dock-icon-btn {filterActive ? 'vault-dock-icon-btn-active' : ''}"
+          aria-haspopup="menu"
+          aria-expanded={filterOpen}
+          aria-label="Filter schedules"
+          title="Filter"
+          onclick={(event) => {
+            event.stopPropagation();
+            filterOpen = !filterOpen;
+          }}
+        >
+          <SlidersHorizontal size={15} strokeWidth={1.75} />
+        </button>
+        {#if filterOpen}
+          <div
+            class="vault-notes-filter-menu absolute top-full right-0 z-30 mt-1 w-[min(17.5rem,calc(100vw-2rem))] rounded-lg border border-surface-500/50 bg-surface-900 py-2 shadow-xl"
+            role="menu"
+            tabindex="-1"
+            onkeydown={(event) => event.stopPropagation()}
+            onclick={(event) => event.stopPropagation()}
+          >
+            <div class="px-2.5 pb-1">
+              <input
+                class="input w-full text-xs"
+                type="search"
+                placeholder="Search schedules…"
+                bind:value={search}
+                autocapitalize="off"
+                autocorrect="off"
+                spellcheck="false"
+                onclick={(event) => event.stopPropagation()}
+              />
+            </div>
+            {#if filterActive}
+              <button
+                type="button"
+                role="menuitem"
+                class="vault-menu-item text-content-tertiary"
+                onclick={() => {
+                  search = "";
+                }}
+              >
+                Clear
+              </button>
+            {/if}
+          </div>
+        {/if}
+      </div>
+    </header>
+  {/if}
   <div class="flex min-h-0 flex-1 overflow-hidden">
     <div
       class="workshop-list-pane min-w-0 flex-1 overflow-y-auto {calmMobile
@@ -501,68 +564,6 @@
     {/if}
   </div>
 
-  {#if embedded && !mobile && !mobileDetailOpen}
-    <footer
-      class="lme-side-rail-dock"
-      use:portLmeDock
-    >
-      <div class="lme-dock-leading-ghost min-w-0 flex-1">
-        <span class="workshop-faint truncate text-[11px]">
-          {counts.enabled}/{counts.total} active
-        </span>
-      </div>
-      <ScheduleCreatePopover {mobile} {lmeHosted} trigger="dock" />
-      <div class="lme-dock-chrome-secondary relative shrink-0">
-        <button
-          type="button"
-          class="vault-dock-icon-btn {filterActive ? 'vault-dock-icon-btn-active' : ''}"
-          aria-haspopup="menu"
-          aria-expanded={filterOpen}
-          aria-label="Filter schedules"
-          title="Filter"
-          onclick={(event) => {
-            event.stopPropagation();
-            filterOpen = !filterOpen;
-          }}
-        >
-          <SlidersHorizontal size={15} strokeWidth={1.75} />
-        </button>
-        {#if filterOpen}
-          <div
-            class="vault-notes-filter-menu absolute bottom-full right-0 z-30 mb-1 w-[min(17.5rem,calc(100vw-2rem))] rounded-lg border border-surface-500/50 bg-surface-900 py-2 shadow-xl"
-            role="menu"
-            tabindex="-1"
-            onkeydown={(event) => event.stopPropagation()}
-            onclick={(event) => event.stopPropagation()}
-          >
-            <div class="px-2.5 pb-1">
-              <input
-                class="input w-full text-xs"
-                type="search"
-                placeholder="Search schedules…"
-                bind:value={search}
-                autocapitalize="off"
-                autocorrect="off"
-                spellcheck="false"
-                onclick={(event) => event.stopPropagation()}
-              />
-            </div>
-            {#if filterActive}
-              <button
-                type="button"
-                role="menuitem"
-                class="vault-menu-item text-content-tertiary"
-                onclick={() => {
-                  search = "";
-                }}
-              >
-                Clear
-              </button>
-            {/if}
-          </div>
-        {/if}
-      </div>
-    </footer>
-  {/if}
+
   {/if}
 </section>

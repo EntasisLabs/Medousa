@@ -31,7 +31,7 @@
   data-debug-label="lme-side-panel"
   data-family={resolvedFamily}
 >
-  {#if resolvedFamily !== "code"}
+  {#if resolvedFamily === "automations"}
     <LmeExplorerModeBar family={resolvedFamily} />
   {/if}
   <div class="min-h-0 flex-1 overflow-hidden">
@@ -41,8 +41,8 @@
       <LmeNotesExplorer />
     {:else if mode === "files"}
       <LmeFilesExplorer />
-    {:else if mode === "presentations"}
-      <LmeDecksExplorer {onOpenChat} />
+    {:else if mode === "artifacts"}
+      <LmeDecksExplorer />
     {:else if mode === "scripts"}
       <LmeScriptsExplorer />
     {:else if mode === "agents"}

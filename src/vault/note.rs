@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::daemon_api::VaultNote;
+use crate::daemon_api::{VaultNote, VaultNoteSummary};
 use crate::vault::links::{merge_tags, parse_inline_tags, parse_raw_wikilinks, resolve_wikilink_target};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -47,6 +47,19 @@ impl VaultIndexEntry {
                 .clone()
                 .unwrap_or_else(|| resolve_kind_from_path(&self.path)),
             backlinks,
+        }
+    }
+
+    pub fn to_vault_note_summary(&self) -> VaultNoteSummary {
+        VaultNoteSummary {
+            path: self.path.clone(),
+            title: self.title.clone(),
+            modified_at_utc: self.modified_at_utc,
+            kind: self
+                .kind
+                .clone()
+                .unwrap_or_else(|| resolve_kind_from_path(&self.path)),
+            tags: self.tags.clone(),
         }
     }
 }

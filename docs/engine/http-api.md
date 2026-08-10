@@ -85,7 +85,7 @@ for the protocol and surface-scoping rules.
 
 | Method | Path | Types | SDK |
 |--------|------|-------|-----|
-| GET | `/v1/sessions` | `SessionHistoryListResponse` | `sessions().list` |
+| GET | `/v1/sessions` | `SessionHistoryListResponse` (`origin_surface`, `has_code_work` on each summary) | `sessions().list` |
 | GET | `/v1/sessions/{session_id}/history` | `SessionHistoryResponse` | `sessions().history` |
 | PUT | `/v1/sessions/{session_id}/name` | `SessionSetDisplayNameRequest` | `sessions().set_display_name` |
 | GET | `/v1/sessions/{session_id}/agent-mode` | Effective selection and source | `sessions().agent_mode` |
@@ -215,7 +215,7 @@ Patch ops (`remove_custom_surface`, `remove_component`, etc.) are **agent-tool o
 |--------|------|---------|
 | GET/POST | `/v1/vault/roots` | List / add vault roots |
 | PUT | `/v1/vault/active` | Set active root |
-| GET/POST | `/v1/vault/notes` | List / create notes |
+| GET/POST | `/v1/vault/notes` | List (`VaultNoteSummary[]`) / create notes |
 | GET/PUT/DELETE | `/v1/vault/notes/{*note_path}` | Read / write / delete note |
 | GET | `/v1/vault/tags` | List tags |
 | GET | `/v1/vault/search` | Full-text search |
@@ -322,19 +322,41 @@ Custody of intentional work episodes over a git target (vault or any repo). Dist
 | POST | `/v1/forge/items/{id}/run-script` | Script adapter |
 | POST | `/v1/forge/items/{id}/export` | Export bundle |
 | GET | `/v1/forge/items/{id}/tree` | Browse governed source tree |
-| GET | `/v1/forge/items/{id}/search` | Search governed source contents |
-| GET | `/v1/forge/items/{id}/source?path=…` | Read a governed source file |
-| POST | `/v1/forge/items/{id}/source` | Create a governed source file |
+| GET | `/v1/forge/items/{id}/changes` | Working-copy Changes (branch, upstream, conflict, file statuses) |
+| GET, POST | `/v1/forge/items/{id}/changes/file` | Per-file working-copy vs baseline diff, or lease-fenced restore to baseline |
+| POST | `/v1/forge/items/{id}/changes/file/hunk` | Lease-fenced single-hunk revert |
+| POST | `/v1/forge/items/{id}/changes/fetch` | Fetch remotes |
+| POST | `/v1/forge/items/{id}/changes/pull` | Fast-forward-only pull |
+| POST | `/v1/forge/items/{id}/changes/push` | Non-force push of the Forge branch |
+| POST | `/v1/forge/items/{id}/changes/sync` | Fetch → ff-only pull when behind → push when ahead |
+| POST | `/v1/forge/items/{id}/changes/checkpoint` | Seal active lease for Review |
+| GET | `/v1/forge/items/{id}/changes/history` | Commit history since baseline |
+| GET | `/v1/forge/items/{id}/changes/blame` | Blame hunks for a path |
+| POST | `/v1/forge/items/{id}/changes/conflict` | Resolve unmerged path (`ours`/`theirs`/`baseline`) |
+| GET | `/v1/forge/items/{id}/search` | Repository search (`query`, optional `mode`, `case_sensitive`, `whole_word`, `include`, `exclude`, `include_ignored`, `scope`, `limit`, `cursor`; response may include `next_cursor`) |
+| POST | `/v1/forge/items/{id}/search/replace` | Preview or apply digest-fenced repository replace (`dry_run`, `replacement`, search options, optional `paths`/`preconditions`/`lease_id`/`generation`) |
+| GET | `/v1/forge/items/{id}/source?path=…` | Read governed source (full UTF-8, or read-only preview for binary/large/lossy with `encoding`/`preview`/`truncated`) |
+| POST | `/v1/forge/items/{id}/source` | Create a governed source file or directory (`kind=directory` seeds `.gitkeep`) |
 | PUT | `/v1/forge/items/{id}/source` | Save with digest conflict fencing |
 | PATCH | `/v1/forge/items/{id}/source` | Rename with digest conflict fencing |
 | DELETE | `/v1/forge/items/{id}/source` | Delete with digest conflict fencing |
+| GET (SSE) | `/v1/forge/items/{id}/project-events?since=…` | Resumable path-aware source/Git events (`seq` cursor) |
+| GET (SSE) | `/v1/forge/stream` | Undertaking list freshness |
 | GET | `/v1/forge/items/{id}/workspace-state` | Restore editor tabs, drafts, and groups |
 | PUT | `/v1/forge/items/{id}/workspace-state` | Persist lease-bound editor recovery state |
-| GET | `/v1/forge/items/{id}/review` | Structured review synthesis, attribution, and timeline |
+| GET | `/v1/forge/items/{id}/review` | Structured review synthesis, attribution, timeline, and comments |
 | GET | `/v1/forge/items/{id}/review/file?path=…` | Compare one file between exact baseline and reviewed revisions |
 | POST | `/v1/forge/items/{id}/review/file` | Reopen and restore one baseline text file while preserving reviewed evidence |
-| GET | `/v1/forge/items/{id}/tasks` | Detect project commands |
+| GET, POST | `/v1/forge/items/{id}/review/comments` | List or add line-anchored review comments |
+| PATCH, DELETE | `/v1/forge/items/{id}/review/comments/{comment_id}` | Resolve/edit or delete a review comment |
+| POST | `/v1/forge/items/{id}/review/request-changes` | Request changes, reopen for another attempt, retain revision brief |
+| GET | `/v1/forge/items/{id}/tasks` | Detect project commands (manifest + thin tasks.json) |
 | POST | `/v1/forge/items/{id}/tasks/{task_id}/run` | Run a detected command and record its result |
+| POST | `/v1/forge/items/{id}/tasks/{task_id}/runs` | Start a named, cancellable project run |
+| GET/DELETE | `/v1/forge/items/{id}/task-runs/{run_id}` | Poll or cancel a project run (live bounded output + locations) |
+| GET (SSE) | `/v1/forge/items/{id}/task-runs/{run_id}/events?since=…` | Stream task output, locations, readiness, and terminal state |
+| POST | `/v1/forge/items/{id}/task-runs/{run_id}/preview` | Mint tokenized private preview path |
+| ANY | `/v1/forge/preview/{token}/…` | Proxy to workshop loopback port |
 | GET | `/v1/forge/evidence/{evidence_id}/patch` | Read a bounded page of the sealed patch |
 | GET | `/v1/forge/evidence/{evidence_id}/commands` | Read a bounded page of the sealed command log |
 | GET | `/v1/forge/evidence/{evidence_id}/receipts` | Read typed compact evidence provenance; raw payloads are excluded |

@@ -5,10 +5,13 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use medousa::{TuiRuntime, events::TuiEvent, process_once};
+use medousa::{
+    TuiRuntime, events::TuiEvent, process_once,
+    runtime_composition_ext::RuntimeCompositionExt, runtime_job_spec::ToolJobSpec,
+};
 use stasis::domain::runtime::job_attempt::JobAttemptOutcome;
 use stasis::ports::outbound::runtime::job_attempt_store::JobAttemptStore;
-use stasis::prelude::{BackoffPolicy, NewJob, RuntimeComposition};
+use stasis::prelude::RuntimeComposition;
 
 use super::TuiState;
 
@@ -176,26 +179,18 @@ async fn execute_editor_run_task(
 
     let job_id = format!("editor-gr-run-{}", Uuid::new_v4().simple());
     let now = Utc::now();
-    let job = NewJob {
-        id: job_id.clone(),
-        queue: "default".to_string(),
-        job_type: "workflow.grapheme.run".to_string(),
-        payload_ref: format!("grapheme:inline:{source}"),
-        priority: 100,
-        max_attempts: 1,
-        idempotency_key: format!("idem-{job_id}"),
-        correlation_id: job_id.clone(),
-        causation_id: "medousa_tui.editor_run".to_string(),
-        trace_id: job_id.clone(),
-        sttp_input_node_id: "sttp:in:cognition:grapheme:editor-run".to_string(),
-        scheduled_at: now,
-        backoff_policy: BackoffPolicy::default(),
-    };
+    let job = ToolJobSpec::new(
+        job_id.clone(),
+        "default",
+        "workflow.grapheme.run",
+        format!("grapheme:inline:{source}"),
+        "medousa_tui.editor_run",
+        "sttp:in:cognition:grapheme:editor-run",
+        now,
+    )
+    .build();
 
-    let enqueue_result = match &*runtime {
-        RuntimeComposition::InMemory(rt) => rt.enqueue(job).await,
-        RuntimeComposition::Surreal(rt) => rt.enqueue(job).await,
-    };
+    let enqueue_result = runtime.enqueue_job(job).await;
 
     if let Err(err) = enqueue_result {
         return Err(format!("run enqueue failed: {err}"));

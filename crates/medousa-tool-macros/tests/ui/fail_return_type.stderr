@@ -1,0 +1,5 @@
+error: `invoke_typed` must return `Result<Output>`
+  --> tests/ui/fail_return_type.rs:11:52
+   |
+11 |     async fn invoke_typed(&self, input: String) -> String {
+   |                                                    ^^^^^^

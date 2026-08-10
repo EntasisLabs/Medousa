@@ -40,10 +40,11 @@ use crate::verifier::{VerificationPolicy, verify_context_pack};
 use stasis::application::orchestration::runtime_job_payloads::PromptJobPayload;
 use stasis::application::orchestration::runtime_workflow_job_builder::RuntimeWorkflowJobBuilder;
 use stasis::application::runtime::identity_context_compiler::prepend_identity_snapshot;
-use stasis::prelude::{RecurringDefinition, RuntimeComposition, RuntimeSdk};
+use stasis::prelude::{RuntimeComposition, RuntimeSdk};
 
 use crate::daemon::http::internal_error;
 use crate::daemon::state::{AgentTurnJobRecord, AppState};
+use crate::recurring_schedule::RecurringScheduleSpec;
 
 const DAEMON_REPORT_SESSION_ID: &str = "medousa-daemon-reports";
 const MAX_REPORT_CITATIONS: usize = 24;
@@ -752,25 +753,19 @@ pub async fn register_recurring_prompt(
         request.display_name.as_deref(),
     );
 
-    let mut definition = RecurringDefinition {
-        id: recurring_id.clone(),
-        queue: queue.clone(),
+    let definition = RecurringScheduleSpec::new(
+        recurring_id.clone(),
+        queue.clone(),
         job_type,
         payload_template_ref,
-        cron_expr: cron_expr.clone(),
-        timezone: timezone.clone(),
-        jitter_seconds: request.jitter_seconds.unwrap_or(0),
-        enabled: request.enabled.unwrap_or(true),
-        max_attempts: request.max_attempts.unwrap_or(1),
-        next_run_at: now,
-        last_run_at: None,
-        lease_owner: None,
-        lease_expires_at: None,
-    };
-
-    definition.next_run_at = definition
-        .compute_next_run_at(now)
-        .map_err(internal_error)?;
+        cron_expr.clone(),
+        timezone.clone(),
+    )
+    .jitter_seconds(request.jitter_seconds.unwrap_or(0))
+    .enabled(request.enabled.unwrap_or(true))
+    .max_attempts(request.max_attempts.unwrap_or(1))
+    .build(now)
+    .map_err(internal_error)?;
 
     let delivery_input = serde_json::json!({ "delivery": request.delivery });
     crate::recurring_delivery::persist_recurring_delivery_binding(

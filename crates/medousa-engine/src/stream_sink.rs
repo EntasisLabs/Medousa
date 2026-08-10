@@ -5,6 +5,8 @@ use serde_json::Value;
 
 use crate::receipt::ArtifactReceiptMeta;
 
+pub use medousa_types::daemon_api::ToolInputParam;
+
 #[allow(clippy::too_many_arguments)]
 #[async_trait]
 pub trait AgentStreamSink: Send + Sync {
@@ -67,9 +69,10 @@ pub trait AgentStreamSink: Send + Sync {
         tool_run_id: String,
         tool_name: String,
         input_summary: String,
+        input_params: Vec<ToolInputParam>,
         tool_round: usize,
     ) {
-        let _ = (tool_run_id, tool_round);
+        let _ = (tool_run_id, input_params, tool_round);
         self.tool_invoked(tool_name, input_summary).await;
     }
     async fn tool_run_finished(

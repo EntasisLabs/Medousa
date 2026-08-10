@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use chrono::Utc;
+use schemars::JsonSchema;
 use serde::Serialize;
 
 use super::entry::GraphemeScriptEntry;
@@ -13,7 +14,7 @@ const TAG_WEIGHT: f32 = 0.15;
 const BODY_WEIGHT: f32 = 0.15;
 const RECENCY_WEIGHT: f32 = 0.10;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct GraphemeScriptHit {
     pub id: String,
     pub name: String,
@@ -198,50 +199,43 @@ fn tokenize(query: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Mutex, OnceLock};
-
     use super::*;
     use crate::grapheme_script::entry::slugify_script_id;
-
-    fn script_test_lock() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-            .lock()
-            .expect("grapheme script test lock")
-    }
+    use crate::grapheme_script::store::with_temp_grapheme_scripts;
 
     #[test]
     fn save_list_load_search_round_trip() {
-        let _guard = script_test_lock();
-        let token = uuid::Uuid::new_v4().simple().to_string();
-        let name = format!("Probe {token}");
-        let id = slugify_script_id(&name);
-        let body = format!(
-            "import core from \"grapheme/core\"\nquery Probe {{\n  set {{ message: \"{token}\" }}\n  |> core.echo(message: $current.message)\n}}"
-        );
+        with_temp_grapheme_scripts(|| {
+            let token = uuid::Uuid::new_v4().simple().to_string();
+            let name = format!("Probe {token}");
+            let id = slugify_script_id(&name);
+            let body = format!(
+                "import core from \"grapheme/core\"\nquery Probe {{\n  set {{ message: \"{token}\" }}\n  |> core.echo(message: $current.message)\n}}"
+            );
 
-        let saved = GraphemeScriptService::save(
-            Some(&id),
-            &name,
-            &body,
-            vec!["core".to_string(), "web".to_string()],
-            vec!["research".to_string()],
-            Some("web lookup".to_string()),
-            None,
-        )
-        .expect("save");
+            let saved = GraphemeScriptService::save(
+                Some(&id),
+                &name,
+                &body,
+                vec!["core".to_string(), "web".to_string()],
+                vec!["research".to_string()],
+                Some("web lookup".to_string()),
+                None,
+            )
+            .expect("save");
 
-        assert_eq!(saved.id, id);
-        assert!(saved.version >= 1);
+            assert_eq!(saved.id, id);
+            assert!(saved.version >= 1);
 
-        let listed = GraphemeScriptService::list(Some("web"), None, 20);
-        assert!(listed.iter().any(|entry| entry.id == id));
+            let listed = GraphemeScriptService::list(Some("web"), None, 20);
+            assert!(listed.iter().any(|entry| entry.id == id));
 
-        let (loaded, loaded_body) = GraphemeScriptService::load(&id).expect("load");
-        assert_eq!(loaded.id, id);
-        assert_eq!(loaded_body, body);
+            let (loaded, loaded_body) = GraphemeScriptService::load(&id).expect("load");
+            assert_eq!(loaded.id, id);
+            assert_eq!(loaded_body, body);
 
-        let hits = GraphemeScriptService::search_ranked(&token, None, None, 5);
-        assert!(hits.iter().any(|hit| hit.id == id));
+            let hits = GraphemeScriptService::search_ranked(&token, None, None, 5);
+            assert!(hits.iter().any(|hit| hit.id == id));
+        });
     }
 }

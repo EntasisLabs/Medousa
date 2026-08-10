@@ -55,6 +55,10 @@ import type {
 import { buildVaultLabelMap } from "$lib/utils/formatVault";
 import { buildVaultTree } from "$lib/utils/vaultTree";
 import {
+  flattenTreeNotePaths,
+  rangePathsBetween,
+} from "$lib/utils/vaultRailSelection";
+import {
   contentForTemplate,
   dailyNotePath,
   dailyNoteTemplate,
@@ -206,6 +210,10 @@ export class VaultStore {
   notes = $state<VaultNote[]>([]);
   tree = $state<VaultTreeNode[]>([]);
   selectedPath = $state<string | null>(loadLastNote());
+  /** Multi-select in the vault rail (tree / browse lists). */
+  selectedPaths = $state<Set<string>>(new Set());
+  /** Anchor for shift-click range selection. */
+  selectionAnchorPath = $state<string | null>(null);
   /** Absolute path when editing a single .md outside any vault root. */
   looseFilePath = $state<string | null>(null);
   content = $state("");
@@ -1456,6 +1464,7 @@ export class VaultStore {
     this.clearProposal();
     this.clearLooseFile();
     this.selectedPath = null;
+    this.clearRailSelection();
     this.content = "";
     this.baselineContent = "";
     this.contentHash = null;
@@ -1515,7 +1524,18 @@ export class VaultStore {
     this.error = null;
     try {
       const response = await listVaultNotes({ limit: 500 });
-      this.notes = response.notes;
+      this.notes = response.notes.map((note) => ({
+        path: note.path,
+        title: note.title,
+        byte_size: 0,
+        content_hash: "",
+        modified_at_utc: note.modified_at_utc,
+        created_at_utc: note.modified_at_utc,
+        tags: note.tags ?? [],
+        wikilinks_out: [],
+        backlinks: [],
+        kind: note.kind,
+      }));
       this.rebuildTree();
       if (this.libraryBrowseMode === "tags") {
         void this.refreshVaultTags();
@@ -2375,10 +2395,18 @@ export class VaultStore {
   }
 
   async archiveNote(path: string) {
+    await this.archiveNotes([path]);
+  }
+
+  async archiveNotes(paths: string[]) {
+    const unique = [...new Set(paths.map((path) => path.trim()).filter(Boolean))];
+    if (unique.length === 0) return;
     this.error = null;
     try {
-      await deleteVaultNote(path);
-      if (this.selectedPath === path) {
+      for (const path of unique) {
+        await deleteVaultNote(path);
+      }
+      if (this.selectedPath && unique.includes(this.selectedPath)) {
         this.selectedPath = null;
         this.content = "";
         this.baselineContent = "";
@@ -2389,10 +2417,76 @@ export class VaultStore {
         this.resetSaveState();
         this.bumpContentSync();
       }
+      this.clearRailSelection();
       await this.refreshNotes();
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
     }
+  }
+
+  isRailPathSelected(path: string): boolean {
+    if (this.selectedPaths.size > 0) return this.selectedPaths.has(path);
+    return this.selectedPath === path;
+  }
+
+  clearRailSelection() {
+    this.selectedPaths = new Set();
+    this.selectionAnchorPath = null;
+  }
+
+  /** Visible note order for the current rail browse mode (shift-range). */
+  railNoteOrder(): string[] {
+    switch (this.libraryBrowseMode) {
+      case "recent":
+        return this.recentNotesList(200).map((note) => note.path);
+      case "kind":
+        return this.notesByKind().flatMap((group) => group.notes.map((note) => note.path));
+      case "tags":
+        return this.scopedLibraryNotes().map((note) => note.path);
+      case "folders":
+      default:
+        return flattenTreeNotePaths(this.tree);
+    }
+  }
+
+  /**
+   * Apply click modifiers for rail multi-select.
+   * Returns true when the note should open in the editor.
+   */
+  applyRailSelection(path: string, event?: MouseEvent | null): boolean {
+    const ordered = this.railNoteOrder();
+    if (event?.shiftKey && this.selectionAnchorPath) {
+      const range = rangePathsBetween(ordered, this.selectionAnchorPath, path);
+      this.selectedPaths = new Set(range);
+      return false;
+    }
+    if (event && (event.metaKey || event.ctrlKey)) {
+      const next = new Set(this.selectedPaths);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      if (next.size === 0 && this.selectedPath) {
+        next.add(this.selectedPath);
+      }
+      this.selectedPaths = next;
+      this.selectionAnchorPath = path;
+      return false;
+    }
+    this.selectedPaths = new Set([path]);
+    this.selectionAnchorPath = path;
+    return true;
+  }
+
+  /**
+   * Right-click / long-press: keep multi-selection if the target is already
+   * selected; otherwise collapse to the clicked note.
+   */
+  prepareRailContextMenu(path: string): string[] {
+    if (this.selectedPaths.has(path) && this.selectedPaths.size > 1) {
+      return [...this.selectedPaths];
+    }
+    this.selectedPaths = new Set([path]);
+    this.selectionAnchorPath = path;
+    return [path];
   }
 
   openNewGroupDialog() {
