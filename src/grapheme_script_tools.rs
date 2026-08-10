@@ -10,7 +10,7 @@ use crate::events::TuiEvent;
 use crate::grapheme_script::service::GraphemeScriptHit;
 use crate::grapheme_script::{GraphemeScriptEntry, GraphemeScriptService};
 use crate::semantic_values::{RequiredContent, TrimmedText};
-use crate::typed_tools::{ToolId, medousa_tool};
+use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_GRAPHEME_SCRIPT_SAVE: &str = "cognition_grapheme_script_save";
 pub const COGNITION_GRAPHEME_SCRIPT_LIST: &str = "cognition_grapheme_script_list";
@@ -45,7 +45,7 @@ fn emit_invoked(event_tx: &mpsc::Sender<TuiEvent>, tool_name: &str, summary: &st
     });
 }
 
-fn deserialize_lenient_string_list<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+fn deserialize_compat_string_list<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -104,46 +104,31 @@ impl<'de> Deserialize<'de> for GraphemeScriptSaveInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            id: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            name: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            body: Option<String>,
-            #[serde(default, deserialize_with = "deserialize_lenient_string_list")]
+            #[serde(default)]
+            id: CompatOption<String>,
+            #[serde(default)]
+            name: CompatOption<String>,
+            #[serde(default)]
+            body: CompatOption<String>,
+            #[serde(default, deserialize_with = "deserialize_compat_string_list")]
             modules: Option<Vec<String>>,
-            #[serde(default, deserialize_with = "deserialize_lenient_string_list")]
+            #[serde(default, deserialize_with = "deserialize_compat_string_list")]
             tags: Option<Vec<String>>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            intent: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            session_id: Option<String>,
+            #[serde(default)]
+            intent: CompatOption<String>,
+            #[serde(default)]
+            session_id: CompatOption<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            id: input.id,
-            name: input.name,
-            body: input.body,
+            id: input.id.into_option(),
+            name: input.name.into_option(),
+            body: input.body.into_option(),
             modules: input.modules,
             tags: input.tags,
-            intent: input.intent,
-            session_id: input.session_id,
+            intent: input.intent.into_option(),
+            session_id: input.session_id.into_option(),
         })
     }
 }
@@ -251,28 +236,25 @@ pub struct CognitionGraphemeScriptListTool {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GraphemeScriptListInput {
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    module: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    module: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    tag: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-    )]
+    tag: CompatOption<String>,
+    #[serde(default)]
     #[schemars(
         with = "usize",
         range(min = 1, max = 200),
-        skip_serializing_if = "Option::is_none"
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    limit: Option<usize>,
+    limit: CompatOption<usize>,
 }
 
 #[derive(Debug)]
@@ -286,10 +268,13 @@ impl TryFrom<GraphemeScriptListInput> for GraphemeScriptListCommand {
     type Error = StasisError;
 
     fn try_from(input: GraphemeScriptListInput) -> Result<Self, Self::Error> {
+        let module = input.module.into_option();
+        let tag = input.tag.into_option();
+        let limit = input.limit.into_option();
         Ok(Self {
-            module: input.module.and_then(|value| TrimmedText::new(value).ok()),
-            tag: input.tag.and_then(|value| TrimmedText::new(value).ok()),
-            limit: input.limit.unwrap_or(20).clamp(1, 200),
+            module: module.and_then(|value| TrimmedText::new(value).ok()),
+            tag: tag.and_then(|value| TrimmedText::new(value).ok()),
+            limit: limit.unwrap_or(20).clamp(1, 200),
         })
     }
 }
@@ -358,34 +343,22 @@ impl<'de> Deserialize<'de> for GraphemeScriptSearchInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            q: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            module: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            tag: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-            )]
-            limit: Option<usize>,
+            #[serde(default)]
+            q: CompatOption<String>,
+            #[serde(default)]
+            module: CompatOption<String>,
+            #[serde(default)]
+            tag: CompatOption<String>,
+            #[serde(default)]
+            limit: CompatOption<usize>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            q: input.q,
-            module: input.module,
-            tag: input.tag,
-            limit: input.limit,
+            q: input.q.into_option(),
+            module: input.module.into_option(),
+            tag: input.tag.into_option(),
+            limit: input.limit.into_option(),
         })
     }
 }
@@ -465,15 +438,14 @@ impl<'de> Deserialize<'de> for GraphemeScriptLoadInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            id: Option<String>,
+            #[serde(default)]
+            id: CompatOption<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
-        Ok(Self { id: input.id })
+        Ok(Self {
+            id: input.id.into_option(),
+        })
     }
 }
 
@@ -538,6 +510,7 @@ impl CognitionGraphemeScriptLoadTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn save_command_normalizes_metadata_and_preserves_script_bytes() {
@@ -565,9 +538,9 @@ mod tests {
     #[test]
     fn script_query_commands_normalize_filters_and_bounds() {
         let list = GraphemeScriptListCommand::try_from(GraphemeScriptListInput {
-            module: Some(" web ".into()),
-            tag: Some(" \n\t".into()),
-            limit: Some(999),
+            module: Some(" web ".into()).into(),
+            tag: Some(" \n\t".into()).into(),
+            limit: Some(999).into(),
         })
         .expect("list command");
         assert_eq!(list.module.as_ref().unwrap().as_str(), "web");
@@ -589,6 +562,55 @@ mod tests {
             id: Some(" \n\t".into()),
         })
         .expect_err("load id is required");
+        assert!(error.to_string().contains("id is required"));
+    }
+
+    #[test]
+    fn script_wire_optionals_absorb_wrong_legacy_types() {
+        let save: GraphemeScriptSaveInput = serde_json::from_value(json!({
+            "id": 7,
+            "name": "script",
+            "body": "body",
+            "modules": ["web", 9],
+            "tags": "legacy",
+            "intent": false,
+            "session_id": []
+        }))
+        .expect("save input should deserialize");
+        assert_eq!(save.id, None);
+        assert_eq!(save.name, Some("script".to_string()));
+        assert_eq!(save.body, Some("body".to_string()));
+        assert_eq!(save.modules, Some(vec!["web".to_string()]));
+        assert_eq!(save.tags, Some(Vec::new()));
+        assert_eq!(save.intent, None);
+        assert_eq!(save.session_id, None);
+
+        let list: GraphemeScriptListInput = serde_json::from_value(json!({
+            "module": 9,
+            "tag": true,
+            "limit": "many"
+        }))
+        .expect("list input should deserialize");
+        let list = GraphemeScriptListCommand::try_from(list).expect("list command");
+        assert!(list.module.is_none());
+        assert!(list.tag.is_none());
+        assert_eq!(list.limit, 20);
+
+        let search: GraphemeScriptSearchInput = serde_json::from_value(json!({
+            "q": false,
+            "module": [],
+            "tag": {},
+            "limit": []
+        }))
+        .expect("search input should deserialize");
+        let error = GraphemeScriptSearchCommand::try_from(search)
+            .expect_err("wrong query type should become the required-field error");
+        assert!(error.to_string().contains("q is required"));
+
+        let load: GraphemeScriptLoadInput = serde_json::from_value(json!({"id": ["script"]}))
+            .expect("load input should deserialize");
+        let error = GraphemeScriptLoadCommand::try_from(load)
+            .expect_err("wrong load id type should become the required-field error");
         assert!(error.to_string().contains("id is required"));
     }
 }
