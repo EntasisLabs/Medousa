@@ -672,46 +672,28 @@ impl<'de> Deserialize<'de> for MemoryCalibrateInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            session_id: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
-            )]
-            stability: Option<f64>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
-            )]
-            friction: Option<f64>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
-            )]
-            logic: Option<f64>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
-            )]
-            autonomy: Option<f64>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            trigger: Option<String>,
+            #[serde(default)]
+            session_id: CompatOption<String>,
+            #[serde(default)]
+            stability: CompatOption<f64>,
+            #[serde(default)]
+            friction: CompatOption<f64>,
+            #[serde(default)]
+            logic: CompatOption<f64>,
+            #[serde(default)]
+            autonomy: CompatOption<f64>,
+            #[serde(default)]
+            trigger: CompatOption<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            session_id: input.session_id,
-            stability: input.stability,
-            friction: input.friction,
-            logic: input.logic,
-            autonomy: input.autonomy,
-            trigger: input.trigger,
+            session_id: input.session_id.into_option(),
+            stability: input.stability.into_option(),
+            friction: input.friction.into_option(),
+            logic: input.logic.into_option(),
+            autonomy: input.autonomy.into_option(),
+            trigger: input.trigger.into_option(),
         })
     }
 }
