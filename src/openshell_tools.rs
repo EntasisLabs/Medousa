@@ -21,7 +21,7 @@ use crate::semantic_values::RequiredContent;
 use crate::turn_continuation::{
     ContinuationAwaitMode, TurnContinuationScope, continuation_tool_metadata, wire_turn_child_job,
 };
-use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
+use crate::typed_tools::{CompatOption, ExternalJson, ToolId, medousa_tool};
 
 pub const COGNITION_OPENSHELL_STATUS: &str = "cognition_openshell_status";
 pub const COGNITION_OPENSHELL_SANDBOX_RUN: &str = "cognition_openshell_sandbox_run";
@@ -199,57 +199,95 @@ pub struct OpenshellSandboxRunInput {
     )]
     command: Option<OpenshellCommandInput>,
     /// Optional manuscript for policy_template/sandbox_from defaults
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    manuscript_id: Option<String>,
+    manuscript_id: CompatOption<String>,
     /// OpenShell --from source (default base or manuscript spec)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    sandbox_from: Option<String>,
+    sandbox_from: CompatOption<String>,
     /// Policy template id under ~/.config/medousa/openshell-policies/
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    policy_template: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    policy_template: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    workdir: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_u64"
+    workdir: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
-    timeout_secs: Option<u64>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
-    )]
+    timeout_secs: CompatOption<u64>,
+    #[serde(default)]
     #[schemars(with = "bool", default = "default_destroy_on_complete")]
-    destroy_on_complete: Option<bool>,
+    destroy_on_complete: CompatOption<bool>,
     /// Relative script path in imported skill assets (e.g. scripts/run.sh). Requires manuscript_id.
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    skill_script: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    correlation_id: CompatOption<String>,
+}
+
+#[derive(Debug)]
+struct OpenshellSandboxRunCommand {
+    command: Option<OpenshellCommandInput>,
+    manuscript_id: Option<String>,
+    sandbox_from: Option<String>,
+    policy_template: Option<String>,
+    workdir: Option<String>,
+    timeout_secs: Option<u64>,
+    destroy_on_complete: bool,
     skill_script: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-    )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     correlation_id: Option<String>,
+}
+
+fn optional_openshell_text(value: CompatOption<String>) -> Option<String> {
+    value.into_option().and_then(|value| {
+        let value = value.trim();
+        (!value.is_empty()).then(|| value.to_string())
+    })
+}
+
+impl TryFrom<OpenshellSandboxRunInput> for OpenshellSandboxRunCommand {
+    type Error = StasisError;
+
+    fn try_from(input: OpenshellSandboxRunInput) -> Result<Self, Self::Error> {
+        Ok(Self {
+            command: input.command,
+            manuscript_id: optional_openshell_text(input.manuscript_id),
+            sandbox_from: optional_openshell_text(input.sandbox_from),
+            policy_template: optional_openshell_text(input.policy_template),
+            workdir: optional_openshell_text(input.workdir),
+            timeout_secs: input.timeout_secs.into_option(),
+            destroy_on_complete: input
+                .destroy_on_complete
+                .into_option()
+                .unwrap_or_else(default_destroy_on_complete),
+            skill_script: optional_openshell_text(input.skill_script),
+            correlation_id: optional_openshell_text(input.correlation_id),
+        })
+    }
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -281,12 +319,8 @@ impl CognitionOpenshellSandboxRunTool {
         &self,
         input: OpenshellSandboxRunInput,
     ) -> stasis::prelude::Result<OpenshellSandboxRunOutput> {
-        let manuscript_id = input
-            .manuscript_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
+        let command = OpenshellSandboxRunCommand::try_from(input)?;
+        let manuscript_id = command.manuscript_id.clone();
 
         let (sandbox_from, policy_template) = if let Some(id) = manuscript_id.as_deref() {
             let manuscript = build_manuscript_context(id)
@@ -309,20 +343,8 @@ impl CognitionOpenshellSandboxRunTool {
             (None, None)
         };
 
-        let sandbox_from = input
-            .sandbox_from
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-            .or(sandbox_from);
-        let policy_template = input
-            .policy_template
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-            .or(policy_template);
+        let sandbox_from = command.sandbox_from.clone().or(sandbox_from);
+        let policy_template = command.policy_template.clone().or(policy_template);
 
         if policy_template.is_none() {
             return Ok(OpenshellSandboxRunOutput::Rejected {
@@ -362,27 +384,11 @@ impl CognitionOpenshellSandboxRunTool {
             });
         }
 
-        let destroy_on_complete = input.destroy_on_complete.unwrap_or(true);
-        let workdir = input
-            .workdir
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
-        let timeout_secs = input.timeout_secs;
-        let correlation_id = input
-            .correlation_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
-
-        let skill_script = input
-            .skill_script
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
+        let destroy_on_complete = command.destroy_on_complete;
+        let workdir = command.workdir.clone();
+        let timeout_secs = command.timeout_secs;
+        let correlation_id = command.correlation_id.clone();
+        let skill_script = command.skill_script.clone();
 
         let payload = if let (Some(manuscript_id), Some(script)) =
             (manuscript_id.as_deref(), skill_script.as_deref())
@@ -402,9 +408,9 @@ impl CognitionOpenshellSandboxRunTool {
             }
             skill_payload
         } else {
-            let command = parse_command_argv(input.command.as_ref())?;
+            let input_command = parse_command_argv(command.command.as_ref())?;
             OpenshellSandboxRunPayload {
-                command,
+                command: input_command,
                 sandbox_from,
                 policy_template,
                 destroy_on_complete,
@@ -554,5 +560,31 @@ mod tests {
         ]);
         let argv = parse_command_argv(Some(&command)).expect("parse");
         assert_eq!(argv, vec![" echo ", "hi"]);
+    }
+
+    #[test]
+    fn sandbox_run_command_normalizes_optional_inputs_once() {
+        let input: OpenshellSandboxRunInput = serde_json::from_value(serde_json::json!({
+            "command": "echo hi",
+            "manuscript_id": " specialist ",
+            "sandbox_from": 42,
+            "policy_template": " policy-a ",
+            "workdir": " /workspace ",
+            "timeout_secs": "120",
+            "destroy_on_complete": "true",
+            "skill_script": " scripts/run.sh ",
+            "correlation_id": " correlation-1 ",
+        }))
+        .expect("sandbox input");
+        let command = OpenshellSandboxRunCommand::try_from(input).expect("sandbox command");
+
+        assert_eq!(command.manuscript_id.as_deref(), Some("specialist"));
+        assert_eq!(command.sandbox_from, None);
+        assert_eq!(command.policy_template.as_deref(), Some("policy-a"));
+        assert_eq!(command.workdir.as_deref(), Some("/workspace"));
+        assert_eq!(command.timeout_secs, None);
+        assert!(command.destroy_on_complete);
+        assert_eq!(command.skill_script.as_deref(), Some("scripts/run.sh"));
+        assert_eq!(command.correlation_id.as_deref(), Some("correlation-1"));
     }
 }
