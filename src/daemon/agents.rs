@@ -33,6 +33,7 @@ use crate::daemon::ingest::{publish_interactive_turn_event, stream_events_from_r
 use crate::daemon::state::AppState;
 use crate::daemon::turn_stream_registry::{TurnStreamEntry, TurnStreamRegistryPortAdapter};
 use crate::runtime::agent_platform::{AcpTerminalKind, publish_acp_terminal};
+use crate::semantic_values::{RequiredContent, TrimmedText};
 use medousa_engine::TurnStreamRegistryPort;
 use serde_json::json;
 
@@ -63,6 +64,64 @@ static AGENT_SESSIONS: once_cell::sync::Lazy<RwLock<AgentSessionRegistry>> =
 
 static ACP_CLIENT: once_cell::sync::Lazy<ExternalAcpClient> =
     once_cell::sync::Lazy::new(ExternalAcpClient::new);
+
+#[derive(Debug)]
+struct CreateAgentSessionCommand {
+    session_id: TrimmedText,
+    runtime: AgentRuntimeKind,
+    prompt: Option<RequiredContent>,
+    cwd: Option<TrimmedText>,
+    command: Option<TrimmedText>,
+    args: Option<Vec<String>>,
+    work_id: Option<TrimmedText>,
+    resume_provider_token: Option<TrimmedText>,
+    code_context: Option<CodeIntentContext>,
+}
+
+impl TryFrom<CreateAgentSessionRequest> for CreateAgentSessionCommand {
+    type Error = String;
+
+    fn try_from(input: CreateAgentSessionRequest) -> Result<Self, Self::Error> {
+        let session_id =
+            TrimmedText::new(input.session_id).map_err(|_| "session_id is required".to_string())?;
+        let runtime = AgentRuntimeKind::parse(input.runtime.trim())
+            .ok_or_else(|| format!("unknown runtime '{}'", input.runtime.trim()))?;
+        let prompt = input
+            .prompt
+            .and_then(|value| RequiredContent::new(value).ok());
+        Ok(Self {
+            session_id,
+            runtime,
+            prompt,
+            cwd: input.cwd.and_then(|value| TrimmedText::new(value).ok()),
+            command: input.command.and_then(|value| TrimmedText::new(value).ok()),
+            args: input.args,
+            work_id: input.work_id.and_then(|value| TrimmedText::new(value).ok()),
+            resume_provider_token: input
+                .resume_provider_token
+                .and_then(|value| TrimmedText::new(value).ok()),
+            code_context: input.code_context,
+        })
+    }
+}
+
+#[derive(Debug)]
+struct AgentSessionPromptCommand {
+    prompt: RequiredContent,
+    code_context: Option<CodeIntentContext>,
+}
+
+impl TryFrom<AgentSessionPromptRequest> for AgentSessionPromptCommand {
+    type Error = String;
+
+    fn try_from(input: AgentSessionPromptRequest) -> Result<Self, Self::Error> {
+        Ok(Self {
+            prompt: RequiredContent::new(input.prompt)
+                .map_err(|_| "prompt is required".to_string())?,
+            code_context: input.code_context,
+        })
+    }
+}
 
 pub async fn list_agent_runtimes() -> Json<AgentRuntimeListResponse> {
     let kinds = [
@@ -99,16 +158,10 @@ pub async fn create_agent_session(
     State(state): State<AppState>,
     Json(body): Json<CreateAgentSessionRequest>,
 ) -> Result<Json<CreateAgentSessionResponse>, (StatusCode, String)> {
-    let session_id = body.session_id.trim().to_string();
-    if session_id.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "session_id is required".into()));
-    }
-    let kind = AgentRuntimeKind::parse(&body.runtime).ok_or_else(|| {
-        (
-            StatusCode::BAD_REQUEST,
-            format!("unknown runtime '{}'", body.runtime),
-        )
-    })?;
+    let command = CreateAgentSessionCommand::try_from(body)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error))?;
+    let session_id = command.session_id.into_string();
+    let kind = command.runtime;
     if matches!(kind, AgentRuntimeKind::Medousa) {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -128,13 +181,13 @@ pub async fn create_agent_session(
 
     let mut config =
         external_runtime_config(kind).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-    if let Some(cwd) = body.cwd.clone().filter(|s| !s.trim().is_empty()) {
-        config.cwd = Some(cwd);
+    if let Some(cwd) = command.cwd.as_ref().map(TrimmedText::as_str) {
+        config.cwd = Some(cwd.to_string());
     }
-    if let Some(command) = body.command.clone().filter(|s| !s.trim().is_empty()) {
-        config.command = command;
+    if let Some(command) = command.command.as_ref().map(TrimmedText::as_str) {
+        config.command = command.to_string();
     }
-    if let Some(args) = body.args.clone() {
+    if let Some(args) = command.args.clone() {
         config.args = args;
     }
 
@@ -155,11 +208,8 @@ pub async fn create_agent_session(
 
     // Forge undertaking binding: acquire the isolated lease before provider
     // creation so the provider process starts in the lease-owned worktree.
-    let forge_work_id = if let Some(work_id_raw) = body.work_id.clone() {
-        let work_id = WorkId::from(work_id_raw.trim().to_string());
-        if work_id.as_str().is_empty() {
-            return Err((StatusCode::BAD_REQUEST, "work_id must not be empty".into()));
-        }
+    let forge_work_id = if let Some(work_id_raw) = command.work_id.as_ref() {
+        let work_id = WorkId::from(work_id_raw.as_str().to_string());
         let item = state.forge.load(&work_id).map_err(|e| {
             (
                 StatusCode::NOT_FOUND,
@@ -234,11 +284,10 @@ pub async fn create_agent_session(
     // Resume token: explicit request wins; otherwise look up the latest
     // ResumeSupported token on the bound work item.
     let resume_token = {
-        let explicit = body
+        let explicit = command
             .resume_provider_token
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
+            .as_ref()
+            .map(TrimmedText::as_str)
             .map(str::to_string);
         if explicit.is_some() {
             explicit
@@ -341,11 +390,11 @@ pub async fn create_agent_session(
         );
     }
 
-    if let Some(prompt) = body.prompt.filter(|p| !p.trim().is_empty()) {
+    if let Some(prompt) = command.prompt.map(RequiredContent::into_string) {
         spawn_prompt_pump(
             state.clone(),
             live.clone(),
-            prompt_with_code_context(prompt, body.code_context.as_ref()),
+            prompt_with_code_context(prompt, command.code_context.as_ref()),
         );
     }
 
@@ -367,10 +416,9 @@ pub async fn prompt_agent_session(
     AxumPath(agent_session_id): AxumPath<String>,
     Json(body): Json<AgentSessionPromptRequest>,
 ) -> Result<Json<AgentSessionPromptResponse>, (StatusCode, String)> {
-    let prompt = body.prompt.trim().to_string();
-    if prompt.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "prompt is required".into()));
-    }
+    let command = AgentSessionPromptCommand::try_from(body)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error))?;
+    let prompt = command.prompt.into_string();
     let live = {
         let guard = AGENT_SESSIONS.read().await;
         guard
@@ -390,7 +438,7 @@ pub async fn prompt_agent_session(
     spawn_prompt_pump(
         state,
         live.clone(),
-        prompt_with_code_context(prompt, body.code_context.as_ref()),
+        prompt_with_code_context(prompt, command.code_context.as_ref()),
     );
     Ok(Json(AgentSessionPromptResponse {
         accepted: true,
@@ -1186,5 +1234,69 @@ mod tests {
             prompt_with_code_context("Keep going".into(), Some(&CodeIntentContext::default())),
             "Keep going"
         );
+    }
+
+    #[test]
+    fn agent_commands_normalize_session_and_runtime_identifiers() {
+        let raw_prompt = "  Fix the provider handoff.  \n";
+        let command = CreateAgentSessionCommand::try_from(CreateAgentSessionRequest {
+            session_id: " chat-1 ".to_string(),
+            runtime: " codex ".to_string(),
+            prompt: Some(raw_prompt.to_string()),
+            cwd: Some(" /worktree ".to_string()),
+            command: Some(" codex-cli ".to_string()),
+            args: Some(vec!["--resume".to_string()]),
+            surface: None,
+            work_id: Some(" work-1 ".to_string()),
+            resume_provider_token: Some(" token-1 ".to_string()),
+            code_context: Some(CodeIntentContext::default()),
+        })
+        .expect("agent session command");
+        assert_eq!(command.session_id.as_str(), "chat-1");
+        assert_eq!(command.runtime.as_str(), "codex");
+        assert_eq!(
+            command.prompt.as_ref().map(RequiredContent::as_str),
+            Some(raw_prompt)
+        );
+        assert_eq!(
+            command.cwd.as_ref().map(TrimmedText::as_str),
+            Some("/worktree")
+        );
+        assert_eq!(
+            command.work_id.as_ref().map(TrimmedText::as_str),
+            Some("work-1")
+        );
+
+        let prompt = AgentSessionPromptCommand::try_from(AgentSessionPromptRequest {
+            prompt: raw_prompt.to_string(),
+            code_context: None,
+        })
+        .expect("prompt command");
+        assert_eq!(prompt.prompt.as_str(), raw_prompt);
+    }
+
+    #[test]
+    fn agent_commands_reject_blank_required_values() {
+        let runtime_error = CreateAgentSessionCommand::try_from(CreateAgentSessionRequest {
+            session_id: "chat-1".to_string(),
+            runtime: "unknown".to_string(),
+            prompt: None,
+            cwd: None,
+            command: None,
+            args: None,
+            surface: None,
+            work_id: None,
+            resume_provider_token: None,
+            code_context: None,
+        })
+        .expect_err("unknown runtime should fail");
+        assert!(runtime_error.contains("unknown runtime"));
+
+        let prompt_error = AgentSessionPromptCommand::try_from(AgentSessionPromptRequest {
+            prompt: " \n\t".to_string(),
+            code_context: None,
+        })
+        .expect_err("blank prompt should fail");
+        assert_eq!(prompt_error, "prompt is required");
     }
 }
