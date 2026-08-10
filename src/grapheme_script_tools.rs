@@ -9,6 +9,7 @@ use tokio::sync::mpsc;
 use crate::events::TuiEvent;
 use crate::grapheme_script::service::GraphemeScriptHit;
 use crate::grapheme_script::{GraphemeScriptEntry, GraphemeScriptService};
+use crate::semantic_values::{RequiredContent, TrimmedText};
 use crate::typed_tools::{ToolId, medousa_tool};
 
 pub const COGNITION_GRAPHEME_SCRIPT_SAVE: &str = "cognition_grapheme_script_save";
@@ -147,6 +148,43 @@ impl<'de> Deserialize<'de> for GraphemeScriptSaveInput {
     }
 }
 
+#[derive(Debug)]
+struct GraphemeScriptSaveCommand {
+    id: Option<TrimmedText>,
+    name: TrimmedText,
+    body: RequiredContent,
+    modules: Vec<String>,
+    tags: Vec<String>,
+    intent: Option<TrimmedText>,
+    session_id: Option<TrimmedText>,
+}
+
+impl TryFrom<GraphemeScriptSaveInput> for GraphemeScriptSaveCommand {
+    type Error = StasisError;
+
+    fn try_from(input: GraphemeScriptSaveInput) -> Result<Self, Self::Error> {
+        let id = input.id.and_then(|value| TrimmedText::new(value).ok());
+        let name = TrimmedText::new(input.name.unwrap_or_default())
+            .map_err(|_| StasisError::PortFailure("name is required".to_string()))?;
+        let body = RequiredContent::new(input.body.unwrap_or_default())
+            .map_err(|_| StasisError::PortFailure("body is required".to_string()))?;
+        let intent = input.intent.and_then(|value| TrimmedText::new(value).ok());
+        let session_id = input
+            .session_id
+            .and_then(|value| TrimmedText::new(value).ok());
+
+        Ok(Self {
+            id,
+            name,
+            body,
+            modules: input.modules.unwrap_or_default(),
+            tags: input.tags.unwrap_or_default(),
+            intent,
+            session_id,
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct GraphemeScriptSaveOutput {
     ok: bool,
@@ -166,26 +204,30 @@ impl CognitionGraphemeScriptSaveTool {
         &self,
         input: GraphemeScriptSaveInput,
     ) -> stasis::prelude::Result<GraphemeScriptSaveOutput> {
-        let name = input
-            .name
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| StasisError::PortFailure("name is required".to_string()))?;
-        let body = input
-            .body
-            .as_deref()
-            .ok_or_else(|| StasisError::PortFailure("body is required".to_string()))?;
-
-        emit_invoked(&self.event_tx, COGNITION_GRAPHEME_SCRIPT_SAVE, name);
-        let entry = GraphemeScriptService::save(
-            input.id.as_deref(),
+        let command = GraphemeScriptSaveCommand::try_from(input)?;
+        let GraphemeScriptSaveCommand {
+            id,
             name,
             body,
-            input.modules.unwrap_or_default(),
-            input.tags.unwrap_or_default(),
-            input.intent,
-            input.session_id,
+            modules,
+            tags,
+            intent,
+            session_id,
+        } = command;
+
+        emit_invoked(
+            &self.event_tx,
+            COGNITION_GRAPHEME_SCRIPT_SAVE,
+            name.as_str(),
+        );
+        let entry = GraphemeScriptService::save(
+            id.as_ref().map(TrimmedText::as_str),
+            name.as_str(),
+            body.as_str(),
+            modules,
+            tags,
+            intent.map(TrimmedText::into_string),
+            session_id.map(TrimmedText::into_string),
         )
         .map_err(|err| StasisError::PortFailure(err.to_string()))?;
         let line = entry.summary_line();
@@ -233,6 +275,25 @@ pub struct GraphemeScriptListInput {
     limit: Option<usize>,
 }
 
+#[derive(Debug)]
+struct GraphemeScriptListCommand {
+    module: Option<TrimmedText>,
+    tag: Option<TrimmedText>,
+    limit: usize,
+}
+
+impl TryFrom<GraphemeScriptListInput> for GraphemeScriptListCommand {
+    type Error = StasisError;
+
+    fn try_from(input: GraphemeScriptListInput) -> Result<Self, Self::Error> {
+        Ok(Self {
+            module: input.module.and_then(|value| TrimmedText::new(value).ok()),
+            tag: input.tag.and_then(|value| TrimmedText::new(value).ok()),
+            limit: input.limit.unwrap_or(20).clamp(1, 200),
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct GraphemeScriptListOutput {
     ok: bool,
@@ -248,15 +309,15 @@ impl CognitionGraphemeScriptListTool {
         &self,
         input: GraphemeScriptListInput,
     ) -> stasis::prelude::Result<GraphemeScriptListOutput> {
-        let module = input.module.as_deref();
-        let tag = input.tag.as_deref();
-        let limit = input.limit.unwrap_or(20);
+        let command = GraphemeScriptListCommand::try_from(input)?;
+        let module = command.module.as_ref().map(TrimmedText::as_str);
+        let tag = command.tag.as_ref().map(TrimmedText::as_str);
         emit_invoked(
             &self.event_tx,
             COGNITION_GRAPHEME_SCRIPT_LIST_ID.as_str(),
-            module.unwrap_or(tag.unwrap_or("*")),
+            module.or(tag).unwrap_or("*"),
         );
-        let entries = GraphemeScriptService::list(module, tag, limit);
+        let entries = GraphemeScriptService::list(module, tag, command.limit);
         let lines: Vec<String> = entries.iter().map(|entry| entry.summary_line()).collect();
         Ok(GraphemeScriptListOutput {
             ok: true,
@@ -329,6 +390,29 @@ impl<'de> Deserialize<'de> for GraphemeScriptSearchInput {
     }
 }
 
+#[derive(Debug)]
+struct GraphemeScriptSearchCommand {
+    query: TrimmedText,
+    module: Option<TrimmedText>,
+    tag: Option<TrimmedText>,
+    limit: usize,
+}
+
+impl TryFrom<GraphemeScriptSearchInput> for GraphemeScriptSearchCommand {
+    type Error = StasisError;
+
+    fn try_from(input: GraphemeScriptSearchInput) -> Result<Self, Self::Error> {
+        let query = TrimmedText::new(input.q.unwrap_or_default())
+            .map_err(|_| StasisError::PortFailure("q is required".to_string()))?;
+        Ok(Self {
+            query,
+            module: input.module.and_then(|value| TrimmedText::new(value).ok()),
+            tag: input.tag.and_then(|value| TrimmedText::new(value).ok()),
+            limit: input.limit.unwrap_or(10).clamp(1, 50),
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct GraphemeScriptSearchOutput {
     ok: bool,
@@ -344,21 +428,16 @@ impl CognitionGraphemeScriptSearchTool {
         &self,
         input: GraphemeScriptSearchInput,
     ) -> stasis::prelude::Result<GraphemeScriptSearchOutput> {
-        let query = input
-            .q
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| StasisError::PortFailure("q is required".to_string()))?;
-        let module = input.module.as_deref();
-        let tag = input.tag.as_deref();
-        let limit = input.limit.unwrap_or(10);
+        let command = GraphemeScriptSearchCommand::try_from(input)?;
+        let query = command.query.as_str();
+        let module = command.module.as_ref().map(TrimmedText::as_str);
+        let tag = command.tag.as_ref().map(TrimmedText::as_str);
         emit_invoked(
             &self.event_tx,
             COGNITION_GRAPHEME_SCRIPT_SEARCH_ID.as_str(),
             query,
         );
-        let hits = GraphemeScriptService::search_ranked(query, module, tag, limit);
+        let hits = GraphemeScriptService::search_ranked(query, module, tag, command.limit);
         let lines: Vec<String> = hits.iter().map(|hit| hit.line.clone()).collect();
         Ok(GraphemeScriptSearchOutput {
             ok: true,
@@ -398,6 +477,21 @@ impl<'de> Deserialize<'de> for GraphemeScriptLoadInput {
     }
 }
 
+#[derive(Debug)]
+struct GraphemeScriptLoadCommand {
+    id: TrimmedText,
+}
+
+impl TryFrom<GraphemeScriptLoadInput> for GraphemeScriptLoadCommand {
+    type Error = StasisError;
+
+    fn try_from(input: GraphemeScriptLoadInput) -> Result<Self, Self::Error> {
+        let id = TrimmedText::new(input.id.unwrap_or_default())
+            .map_err(|_| StasisError::PortFailure("id is required".to_string()))?;
+        Ok(Self { id })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct GraphemeScriptLoadOutput {
     ok: bool,
@@ -418,12 +512,8 @@ impl CognitionGraphemeScriptLoadTool {
         &self,
         input: GraphemeScriptLoadInput,
     ) -> stasis::prelude::Result<GraphemeScriptLoadOutput> {
-        let id = input
-            .id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| StasisError::PortFailure("id is required".to_string()))?;
+        let command = GraphemeScriptLoadCommand::try_from(input)?;
+        let id = command.id.as_str();
         emit_invoked(
             &self.event_tx,
             COGNITION_GRAPHEME_SCRIPT_LOAD_ID.as_str(),
@@ -442,5 +532,63 @@ impl CognitionGraphemeScriptLoadTool {
             body,
             body_hash: entry.body_hash,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn save_command_normalizes_metadata_and_preserves_script_bytes() {
+        let command = GraphemeScriptSaveCommand::try_from(GraphemeScriptSaveInput {
+            id: Some(" script-a ".into()),
+            name: Some(" Script A ".into()),
+            body: Some("  query Core.echo(message: \"hi\")  \n".into()),
+            modules: Some(vec!["core".into()]),
+            tags: Some(vec!["demo".into()]),
+            intent: Some(" example ".into()),
+            session_id: Some(" session-a ".into()),
+        })
+        .expect("save command");
+
+        assert_eq!(command.id.as_ref().unwrap().as_str(), "script-a");
+        assert_eq!(command.name.as_str(), "Script A");
+        assert_eq!(
+            command.body.as_str(),
+            "  query Core.echo(message: \"hi\")  \n"
+        );
+        assert_eq!(command.intent.as_ref().unwrap().as_str(), "example");
+        assert_eq!(command.session_id.as_ref().unwrap().as_str(), "session-a");
+    }
+
+    #[test]
+    fn script_query_commands_normalize_filters_and_bounds() {
+        let list = GraphemeScriptListCommand::try_from(GraphemeScriptListInput {
+            module: Some(" web ".into()),
+            tag: Some(" \n\t".into()),
+            limit: Some(999),
+        })
+        .expect("list command");
+        assert_eq!(list.module.as_ref().unwrap().as_str(), "web");
+        assert!(list.tag.is_none());
+        assert_eq!(list.limit, 200);
+
+        let search = GraphemeScriptSearchCommand::try_from(GraphemeScriptSearchInput {
+            q: Some("  hello  ".into()),
+            module: Some(" core ".into()),
+            tag: None,
+            limit: Some(999),
+        })
+        .expect("search command");
+        assert_eq!(search.query.as_str(), "hello");
+        assert_eq!(search.module.as_ref().unwrap().as_str(), "core");
+        assert_eq!(search.limit, 50);
+
+        let error = GraphemeScriptLoadCommand::try_from(GraphemeScriptLoadInput {
+            id: Some(" \n\t".into()),
+        })
+        .expect_err("load id is required");
+        assert!(error.to_string().contains("id is required"));
     }
 }
