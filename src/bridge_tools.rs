@@ -1048,6 +1048,29 @@ pub struct GraphemeTemplateRunInput {
     params: Option<BridgeObject>,
 }
 
+#[derive(Debug)]
+struct GraphemeTemplateRunCommand {
+    template: GraphemeTemplateInput,
+    params: Value,
+}
+
+impl TryFrom<GraphemeTemplateRunInput> for GraphemeTemplateRunCommand {
+    type Error = stasis::prelude::StasisError;
+
+    fn try_from(input: GraphemeTemplateRunInput) -> Result<Self, Self::Error> {
+        let template = input.template.ok_or_else(|| {
+            StasisError::PortFailure(
+                "cognition_grapheme_template_run: template is required".to_string(),
+            )
+        })?;
+        let params = input
+            .params
+            .map(|params| params.0)
+            .unwrap_or_else(|| json!({}));
+        Ok(Self { template, params })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(untagged)]
 pub enum GraphemeTemplateRunOutput {
@@ -1067,20 +1090,10 @@ impl CognitionGraphemeTemplateRunTool {
         &self,
         input: GraphemeTemplateRunInput,
     ) -> stasis::prelude::Result<GraphemeTemplateRunOutput> {
-        let template = input
-            .template
-            .map(GraphemeTemplateInput::as_str)
-            .ok_or_else(|| {
-                StasisError::PortFailure(
-                    "cognition_grapheme_template_run: template is required".to_string(),
-                )
-            })?;
-        let params = input
-            .params
-            .map(|params| params.0)
-            .unwrap_or_else(|| json!({}));
+        let command = GraphemeTemplateRunCommand::try_from(input)?;
+        let template = command.template.as_str();
 
-        let source = render_grapheme_template(template, &params)?;
+        let source = render_grapheme_template(template, &command.params)?;
         let validation = validate_grapheme_source_for_schedule(&self.runtime, &source).await?;
         if !validation
             .get("validated")
@@ -1107,7 +1120,7 @@ impl CognitionGraphemeTemplateRunTool {
             run_grapheme_via_runtime(&self.runtime, &source, "cognition_grapheme_template_run")
                 .await?;
         result["template"] = json!(template);
-        result["params"] = params;
+        result["params"] = command.params;
         Ok(GraphemeTemplateRunOutput::Result(ExternalJson::new(result)))
     }
 }
@@ -1559,5 +1572,24 @@ mod tests {
         .expect_err("blank server id should fail");
 
         assert!(error.to_string().contains("server_id is required"));
+    }
+
+    #[test]
+    fn grapheme_template_command_requires_template_and_preserves_params() {
+        let command = GraphemeTemplateRunCommand::try_from(GraphemeTemplateRunInput {
+            template: Some(GraphemeTemplateInput::HttpPoll),
+            params: Some(BridgeObject(json!({ "url": "  https://example.test  " }))),
+        })
+        .expect("command");
+
+        assert_eq!(command.template.as_str(), "http_poll");
+        assert_eq!(command.params["url"], json!("  https://example.test  "));
+
+        let error = GraphemeTemplateRunCommand::try_from(GraphemeTemplateRunInput {
+            template: None,
+            params: None,
+        })
+        .expect_err("missing template should fail");
+        assert!(error.to_string().contains("template is required"));
     }
 }
