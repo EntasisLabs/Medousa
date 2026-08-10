@@ -28,7 +28,7 @@ use crate::locus_memory::{
 };
 use crate::semantic_values::{RequiredContent, TrimmedText};
 use crate::turn_continuation::TurnContinuationScope;
-use crate::typed_tools::{ToolId, medousa_tool};
+use crate::typed_tools::{CompatList, CompatOption, ToolId, medousa_tool};
 
 const COGNITION_MEMORY_SCHEMA_ID: ToolId = ToolId::new("cognition_memory_schema");
 const COGNITION_MEMORY_STORE_ID: ToolId = ToolId::new("cognition_memory_store");
@@ -433,40 +433,25 @@ impl<'de> Deserialize<'de> for MemoryStoreInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            node: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            session_id: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string_list"
-            )]
-            semantic_tags: Option<Vec<String>>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            content: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            vibe_signature: Option<String>,
+            #[serde(default)]
+            node: CompatOption<String>,
+            #[serde(default)]
+            session_id: CompatOption<String>,
+            #[serde(default)]
+            semantic_tags: CompatList<String>,
+            #[serde(default)]
+            content: CompatOption<String>,
+            #[serde(default)]
+            vibe_signature: CompatOption<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            node: input.node,
-            session_id: input.session_id,
-            semantic_tags: input.semantic_tags,
-            content: input.content,
-            vibe_signature: input.vibe_signature,
+            node: input.node.into_option(),
+            session_id: input.session_id.into_option(),
+            semantic_tags: input.semantic_tags.into_option(),
+            content: input.content.into_option(),
+            vibe_signature: input.vibe_signature.into_option(),
         })
     }
 }
