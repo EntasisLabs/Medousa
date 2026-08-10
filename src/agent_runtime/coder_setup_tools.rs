@@ -21,7 +21,7 @@ use crate::daemon_api::{
 use crate::semantic_values::{RequiredContent, TrimmedText};
 #[cfg(test)]
 use crate::typed_tools::TypedTool;
-use crate::typed_tools::{ToolId, ToolRegistration, medousa_tool};
+use crate::typed_tools::{CompatOption, ToolId, ToolRegistration, medousa_tool};
 
 const PROJECT_LIST: &str = "cognition_project_list";
 const PROJECT_BIND: &str = "cognition_project_bind";
@@ -160,7 +160,7 @@ struct CognitionProjectBindTool {
 struct ProjectBindInput {
     /// Ready project id returned by cognition_project_list
     #[schemars(required, with = "String")]
-    work_id: Option<String>,
+    work_id: CompatOption<String>,
 }
 
 #[derive(Debug)]
@@ -174,6 +174,7 @@ impl TryFrom<ProjectBindInput> for ProjectBindCommand {
     fn try_from(input: ProjectBindInput) -> Result<Self> {
         let work_id = input
             .work_id
+            .into_option()
             .ok_or_else(|| StasisError::PortFailure("work_id is required".to_string()))?;
         Ok(Self {
             work_id: TrimmedText::new(work_id)
@@ -189,11 +190,8 @@ impl<'de> Deserialize<'de> for ProjectBindInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            work_id: Option<String>,
+            #[serde(default)]
+            work_id: CompatOption<String>,
         }
 
         Ok(Self {
@@ -386,7 +384,7 @@ mod command_tests {
     #[test]
     fn project_commands_normalize_ids_and_preserve_brief_content() {
         let bind = ProjectBindCommand::try_from(ProjectBindInput {
-            work_id: Some(" work-123 ".to_string()),
+            work_id: Some(" work-123 ".to_string()).into(),
         })
         .expect("bind command");
         assert_eq!(bind.work_id.as_str(), "work-123");
@@ -424,6 +422,15 @@ mod command_tests {
                 .to_string()
                 .contains("repo_path is required for an existing repository")
         );
+    }
+
+    #[test]
+    fn project_bind_wire_id_remains_lenient_for_legacy_values() {
+        let input: ProjectBindInput = serde_json::from_value(serde_json::json!({
+            "work_id": 42,
+        }))
+        .expect("project bind input");
+        assert!(input.work_id.into_option().is_none());
     }
 }
 

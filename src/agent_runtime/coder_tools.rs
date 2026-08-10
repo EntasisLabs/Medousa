@@ -28,8 +28,8 @@ use super::coder_activity::{CoderActivityStore, CoderAgentIdentity, CoderToolAct
 use super::coder_claims::CoderClaimScope;
 use super::coder_mode::CoderEntryContext;
 use crate::typed_tools::{
-    ModeToolAdapter, ToolCatalog, ToolDomainId, ToolExposureRef, ToolId, ToolPlacementIndex,
-    ToolRegistrar,
+    CompatOption, ModeToolAdapter, ToolCatalog, ToolDomainId, ToolExposureRef, ToolId,
+    ToolPlacementIndex, ToolRegistrar,
 };
 
 const TURN_CONTROL_TOOLS: &[&str] = &[
@@ -87,16 +87,13 @@ static CODER_MODE_ADAPTER: Lazy<ModeToolAdapter<CoderCallMetadata>> = Lazy::new(
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct EngineeringPointersInput {
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-    )]
+    #[serde(default)]
     #[schemars(
         with = "usize",
         range(min = 1, max = 24),
-        skip_serializing_if = "Option::is_none"
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    limit: Option<usize>,
+    limit: CompatOption<usize>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -1206,7 +1203,7 @@ impl CoderBoundToolRegistry {
         &self,
         input: EngineeringPointersInput,
     ) -> Result<EngineeringPointersOutput> {
-        let limit = input.limit.unwrap_or(12).clamp(1, 24);
+        let limit = input.limit.into_option().unwrap_or(12).clamp(1, 24);
         let pointers = self.ranked_pointers(limit)?;
         self.refresh_visible_from_pointers(&pointers)?;
         Ok(EngineeringPointersOutput {
@@ -4287,6 +4284,15 @@ mod tests {
                 .iter()
                 .all(|event| event.intent.as_deref() == Some(intent))
         );
+    }
+
+    #[test]
+    fn engineering_pointer_wire_optionals_remain_lenient_for_legacy_values() {
+        let input: EngineeringPointersInput = serde_json::from_value(json!({
+            "limit": "24",
+        }))
+        .expect("engineering pointer input");
+        assert!(input.limit.into_option().is_none());
     }
 
     #[tokio::test]
