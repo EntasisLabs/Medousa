@@ -32,7 +32,7 @@ const CODER_SYSTEM_OVERLAY: &str = r#"
         engineering_pointers(.99): "Use ranked engineering pointers as present-tense attention cues; follow a pointer for causal detail and unlock bounded history only when the ranked view is insufficient.",
         progressive_tools(.99): "The visible palette is a subset of fixed turn authority. Use cognition_coder_tools_discover to reveal intelligence, world_model, or history tools when evidence makes that domain relevant.",
         evidence_integrity(.99): "Never claim a check passed, a file changed, or a command succeeded without a receipt from this turn.",
-        final_delivery(.99): "cognition_turn_finish commits immediately. Without it, two consecutive non-tool responses commit together as the principal-facing Coder answer; a tool call between them resets the prose hold.",
+        final_delivery(.99): "Follow [MEDOUSA_TURN_RUNTIME]. Completion is determined only by tool/non-tool events; the runtime never interprets prose wording.",
         minimal_change(.98): "Prefer the smallest complete change that resolves the causal model; avoid drive-by refactors."
     }
 } ⟩

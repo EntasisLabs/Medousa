@@ -193,6 +193,12 @@ pub async fn spawn_turn_ticket(
     let continuation_scope = crate::turn_continuation::TurnContinuationScope {
         turn_correlation_id: turn_id.clone(),
         session_id: interactive_request.session_id.clone(),
+        identity_user_id: Some(
+            interactive_request
+                .identity_user_id
+                .clone()
+                .unwrap_or_else(|| state.workshop_identity_user_id()),
+        ),
         original_prompt: interactive_request.prompt.clone(),
         delivery_target: Some(delivery_target),
         provider: interactive_request.provider.clone(),

@@ -279,6 +279,8 @@ pub fn host_bus_tool_names() -> HashSet<String> {
             "cognition_calendar_export",
             "cognition_tool_history_summary",
             "cognition_tool_history_detail",
+            "cognition_chat_history_search",
+            "cognition_chat_history_read",
         ],
     );
 

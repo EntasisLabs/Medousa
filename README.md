@@ -99,6 +99,8 @@ Run it headless. Call it from your stack. Integrate it into your existing contex
 
 Dual-licensed under **MIT OR Apache-2.0**. See [LICENSE](LICENSE), [LICENSE-MIT](LICENSE-MIT), and [LICENSE-APACHE](LICENSE-APACHE).
 
+Third-party libraries and redistributed assets are documented separately in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 Security reports: [SECURITY.md](SECURITY.md) · Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
@@ -118,5 +120,7 @@ Medousa and its stack stand on a few heavyweight open-source crates and apps:
 | **[genai](https://github.com/jeremychone/rust-genai)** | Multi-provider model client (cloud + local backends) |
 | **[SurrealDB](https://surrealdb.com)** | Embedded store for durable runtime state |
 | **[Axum](https://github.com/tokio-rs/axum)** + **[Tokio](https://tokio.rs)** | Local HTTP engine and async runtime |
+| **[Lucide](https://github.com/lucide-icons/lucide)** | UI icons in Home and Installer |
+| **[Material Icon Theme](https://github.com/material-extensions/vscode-material-icon-theme)** | File icons vendored for the Home code explorer |
 
 Grateful to the maintainers — Medousa wouldn’t ship without them.

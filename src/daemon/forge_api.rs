@@ -585,9 +585,18 @@ struct RepositoryInspection {
     dirty: bool,
     changed_files: usize,
     remotes: Vec<String>,
+    local_branches: Vec<String>,
+    remote_branches: Vec<RepositoryRemoteBranches>,
     existing_projects: Vec<ExistingRepositoryProject>,
     state_explanation: String,
     trust_explanation: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct RepositoryRemoteBranches {
+    name: String,
+    branches: Vec<String>,
+    default_branch: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -609,6 +618,8 @@ struct RepositoryCatalogRecord {
     path: PathBuf,
     #[serde(default)]
     pinned: bool,
+    #[serde(default)]
+    archived: bool,
     last_used_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -617,6 +628,7 @@ struct RepositoryCatalogEntry {
     #[serde(flatten)]
     repository: RepositoryInspection,
     pinned: bool,
+    archived: bool,
     last_used_at: chrono::DateTime<chrono::Utc>,
     available: bool,
 }
@@ -624,7 +636,10 @@ struct RepositoryCatalogEntry {
 #[derive(Debug, Deserialize)]
 struct UpdateRepositoryPinRequest {
     path: PathBuf,
-    pinned: bool,
+    #[serde(default)]
+    pinned: Option<bool>,
+    #[serde(default)]
+    archived: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -731,6 +746,7 @@ fn touch_repository(path: &FsPath, pinned: Option<bool>) -> ApiResult<()> {
         store.entries.push(RepositoryCatalogRecord {
             path: canonical,
             pinned: pinned.unwrap_or(false),
+            archived: false,
             last_used_at: chrono::Utc::now(),
         });
     }
@@ -741,6 +757,32 @@ fn touch_repository(path: &FsPath, pinned: Option<bool>) -> ApiResult<()> {
             .then_with(|| right.last_used_at.cmp(&left.last_used_at))
     });
     store.entries.truncate(50);
+    write_repository_catalog_unlocked(&store)
+}
+
+fn set_repository_archived(path: &FsPath, archived: bool) -> ApiResult<()> {
+    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    let _guard = REPOSITORY_CATALOG_LOCK.lock().map_err(|_| {
+        request_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "repository catalog lock failed",
+        )
+    })?;
+    let mut store = read_repository_catalog_unlocked();
+    if let Some(entry) = store
+        .entries
+        .iter_mut()
+        .find(|entry| entry.path == canonical)
+    {
+        entry.archived = archived;
+    } else {
+        store.entries.push(RepositoryCatalogRecord {
+            path: canonical,
+            pinned: false,
+            archived,
+            last_used_at: chrono::Utc::now(),
+        });
+    }
     write_repository_catalog_unlocked(&store)
 }
 
@@ -795,6 +837,17 @@ fn inspect_repository_path_from_items(
     };
     let changed_files = git.status_porcelain(&path).map_err(map_err)?.len();
     let identity = git.repo_identity(&path).map_err(map_err)?;
+    let local_branches = git.local_branches(&path).unwrap_or_default();
+    let remote_branches = git
+        .remote_names(&path)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|name| RepositoryRemoteBranches {
+            branches: git.remote_branches(&path, &name).unwrap_or_default(),
+            default_branch: git.remote_default_branch(&path, &name),
+            name,
+        })
+        .collect();
     let display_name = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -824,6 +877,8 @@ fn inspect_repository_path_from_items(
         dirty: changed_files > 0,
         changed_files,
         remotes: identity.remotes,
+        local_branches,
+        remote_branches,
         existing_projects,
         state_explanation,
         trust_explanation: "Medousa may read this repository and create an isolated working copy. Project commands run only when you explicitly choose a check or Terminal action.".into(),
@@ -897,6 +952,7 @@ async fn list_repositories(
             store.entries.push(RepositoryCatalogRecord {
                 path,
                 pinned: false,
+                archived: false,
                 last_used_at: item.updated_at,
             });
         }
@@ -928,6 +984,8 @@ async fn list_repositories(
                     dirty: false,
                     changed_files: 0,
                     remotes: Vec::new(),
+                    local_branches: Vec::new(),
+                    remote_branches: Vec::new(),
                     existing_projects: existing_projects_for_repository(&items, &record.path),
                     state_explanation: "This repository is not currently available on the connected workshop.".into(),
                     trust_explanation: "No files or commands can be accessed until this workshop repository is available again.".into(),
@@ -936,6 +994,7 @@ async fn list_repositories(
             RepositoryCatalogEntry {
                 repository,
                 pinned: record.pinned,
+                archived: record.archived,
                 last_used_at: record.last_used_at,
                 available,
             }
@@ -948,8 +1007,23 @@ async fn update_repository_pin(
     State(state): State<AppState>,
     Json(body): Json<UpdateRepositoryPinRequest>,
 ) -> ApiResult<Json<Vec<RepositoryCatalogEntry>>> {
-    let repository = inspect_repository_path(&state, &body.path)?;
-    touch_repository(&repository.path, Some(body.pinned))?;
+    if body.pinned.is_none() && body.archived.is_none() {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "pinned or archived is required",
+        ));
+    }
+    let canonical = body
+        .path
+        .canonicalize()
+        .unwrap_or_else(|_| body.path.clone());
+    if let Some(pinned) = body.pinned {
+        let repository = inspect_repository_path(&state, &canonical)?;
+        touch_repository(&repository.path, Some(pinned))?;
+    }
+    if let Some(archived) = body.archived {
+        set_repository_archived(&canonical, archived)?;
+    }
     list_repositories(State(state)).await
 }
 

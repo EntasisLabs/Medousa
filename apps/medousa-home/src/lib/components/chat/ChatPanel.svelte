@@ -1164,11 +1164,15 @@
         >
           <h1 class="truncate text-sm font-semibold text-surface-50">{sessionLabel}</h1>
         </button>
+        <UndertakingContextChip chatOnly header />
       {:else}
         <div class="min-w-0 py-1">
-          <h1 class="truncate text-sm font-semibold text-surface-50">
-            {mobileChatTitle}
-          </h1>
+          <div class="flex min-w-0 items-center gap-2">
+            <h1 class="truncate text-sm font-semibold text-surface-50">
+              {mobileChatTitle}
+            </h1>
+            <UndertakingContextChip chatOnly header />
+          </div>
           <p class="text-content-tertiary truncate text-[11px]">{mobileChatSubtitle}</p>
         </div>
         {#if chat.hasTurnActivity}
@@ -1457,35 +1461,36 @@
       presenceDockMode === "docking" ||
       presenceDockMode === "docked"}
   >
-    {#if !embedded && presenceDockMode === "docked"}
-    <BudgetApprovalBar
-      onOpenWork={() => {
-        workspace.workView = "hub";
-        const pending = chat.budgetAlert ?? chat.pendingBudgetApprovals[0];
-        if (pending) void workspace.selectCard(pending.workCardId);
-      }}
-    />
-    <ModeProposalBar
-      sessionId={panelSessionId}
-    />
-    <AgentPermissionBar />
-    {#if activeSubagentCount > 0}
-      <button
-        type="button"
-        class="chat-subagent-pill"
-        onclick={() => {
-          const running = subagentRows.find((row) => row.streaming);
-          if (running) openWorkerTranscript(running.workId);
-        }}
-      >
-        <span class="chat-subagent-pill-dot" aria-hidden="true"></span>
-        {activeSubagentCount} subagent{activeSubagentCount === 1 ? "" : "s"} working
-      </button>
-    {/if}
-    <div class="mx-4 mb-1 flex flex-wrap gap-2">
-      <UndertakingContextChip chatOnly />
-    </div>
-    <AgentBrowserPanel />
+    {#if !embedded}
+      {#if presenceDockMode === "docked"}
+        <BudgetApprovalBar
+          onOpenWork={() => {
+            workspace.workView = "hub";
+            const pending = chat.budgetAlert ?? chat.pendingBudgetApprovals[0];
+            if (pending) void workspace.selectCard(pending.workCardId);
+          }}
+        />
+        <ModeProposalBar
+          sessionId={panelSessionId}
+        />
+        <AgentPermissionBar />
+        {#if activeSubagentCount > 0}
+          <button
+            type="button"
+            class="chat-subagent-pill"
+            onclick={() => {
+              const running = subagentRows.find((row) => row.streaming);
+              if (running) openWorkerTranscript(running.workId);
+            }}
+          >
+            <span class="chat-subagent-pill-dot" aria-hidden="true"></span>
+            {activeSubagentCount} subagent{activeSubagentCount === 1 ? "" : "s"} working
+          </button>
+        {/if}
+      {/if}
+      {#if presenceDockMode === "docked"}
+        <AgentBrowserPanel />
+      {/if}
     {/if}
     <form
       bind:this={composerFormEl}

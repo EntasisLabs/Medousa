@@ -95,6 +95,8 @@ export function gitTargetBaseRef(
 export type ItemProjection = ForgeWorkItem & {
   human_phase: HumanPhase | string;
   allowed_actions: AllowedActions;
+  /** Missing on older daemons; environment presence is the compatibility fallback. */
+  workspace_present?: boolean;
 };
 
 export type ReviewProjection = {
@@ -823,6 +825,14 @@ export type RepositoryInspection = {
   dirty: boolean;
   changed_files: number;
   remotes: string[];
+  /** Missing on older workshop daemons. */
+  local_branches?: string[];
+  /** Missing on older workshop daemons. */
+  remote_branches?: Array<{
+    name: string;
+    branches: string[];
+    default_branch?: string | null;
+  }>;
   existing_projects: Array<{
     id: string;
     title: string;
@@ -835,6 +845,7 @@ export type RepositoryInspection = {
 
 export type RepositoryCatalogEntry = RepositoryInspection & {
   pinned: boolean;
+  archived: boolean;
   last_used_at: string;
   available: boolean;
 };
@@ -1162,6 +1173,16 @@ export async function setForgeRepositoryPinned(
   return forgeFetch("/v1/forge/repositories", {
     method: "PUT",
     body: JSON.stringify({ path, pinned }),
+  });
+}
+
+export async function setForgeRepositoryArchived(
+  path: string,
+  archived: boolean,
+): Promise<RepositoryCatalogEntry[]> {
+  return forgeFetch("/v1/forge/repositories", {
+    method: "PUT",
+    body: JSON.stringify({ path, archived }),
   });
 }
 

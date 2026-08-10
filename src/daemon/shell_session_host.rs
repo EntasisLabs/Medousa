@@ -10,7 +10,7 @@ use std::process::Stdio;
 use std::sync::Arc;
 
 use axum::extract::ws::{Message as AxumMessage, WebSocket, WebSocketUpgrade};
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Json, Router};
@@ -25,7 +25,7 @@ use crate::grapheme_script::store::GraphemeScriptStore;
 use crate::paths::medousa_data_dir;
 
 const DEFAULT_BIND: &str = "127.0.0.1:7862";
-const EXPECTED_API_REVISION: u32 = 2;
+const EXPECTED_API_REVISION: u32 = 3;
 
 #[derive(Debug, Default)]
 pub struct ShellSessionHost {
@@ -147,9 +147,11 @@ async fn probe_health(health_url: &str, required_roots: &[PathBuf]) -> HealthPro
         return HealthProbe::Incompatible(format!("unexpected service {}", health.name));
     }
     if health.api_revision != Some(EXPECTED_API_REVISION) {
+        let actual = health
+            .api_revision
+            .map_or_else(|| "missing".to_string(), |revision| revision.to_string());
         return HealthProbe::Incompatible(format!(
-            "API revision {:?}; expected {EXPECTED_API_REVISION}",
-            health.api_revision
+            "API revision {actual}; expected {EXPECTED_API_REVISION}"
         ));
     }
     if let Some(missing) = required_roots.iter().find(|required| {
@@ -190,7 +192,7 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
             return info(
                 false,
                 format!(
-                    "incompatible medousa-session is already listening on {bind}: {reason}; restart it with the current Medousa package"
+                    "incompatible medousa-session is already listening on {bind}: {reason}; update or rebuild the Shell session host in Settings → Packages, then restart the workshop"
                 ),
             );
         }
@@ -238,7 +240,9 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
             HealthProbe::Incompatible(reason) => {
                 return info(
                     false,
-                    format!("medousa-session started incompatibly: {reason}"),
+                    format!(
+                        "medousa-session started incompatibly: {reason}; update or rebuild the Shell session host in Settings → Packages, then restart the workshop"
+                    ),
                 );
             }
             HealthProbe::Unreachable => {}
@@ -349,14 +353,17 @@ async fn create_session(
             pid: None,
             process_start_marker: None,
         };
-        let staged = state.forge.append_command_log(
-            &lease,
-            &serde_json::json!({
-                "kind": "shell_session_open",
-                "session_id": session_id,
-                "cwd": cwd,
-            }),
-        ).is_ok();
+        let staged = state
+            .forge
+            .append_command_log(
+                &lease,
+                &serde_json::json!({
+                    "kind": "shell_session_open",
+                    "session_id": session_id,
+                    "cwd": cwd,
+                }),
+            )
+            .is_ok();
         if let Some(obj) = response.0.as_object_mut() {
             obj.insert("forge_log_staged".into(), serde_json::Value::Bool(staged));
         }
@@ -441,11 +448,30 @@ async fn session_ws(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
     Path(id): Path<String>,
+    Query(query): Query<SessionAttachQuery>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| proxy_ws(socket, state, id))
+    ws.on_upgrade(move |socket| proxy_ws(socket, state, id, query))
 }
 
-async fn proxy_ws(client: WebSocket, state: AppState, id: String) {
+#[derive(Debug, Default, Deserialize)]
+struct SessionAttachQuery {
+    #[serde(default)]
+    after_sequence: Option<u64>,
+    #[serde(default)]
+    replay: Option<String>,
+}
+
+fn session_attach_query_suffix(query: &SessionAttachQuery) -> String {
+    if let Some(sequence) = query.after_sequence {
+        return format!("?after_sequence={sequence}");
+    }
+    if query.replay.as_deref() == Some("tail") {
+        return "?replay=tail".to_string();
+    }
+    String::new()
+}
+
+async fn proxy_ws(client: WebSocket, state: AppState, id: String, query: SessionAttachQuery) {
     let host = state.shell_sessions.clone().unwrap_or_default();
     let info = ensure_shell_session_host(&host).await;
     if !info.available {
@@ -453,7 +479,11 @@ async fn proxy_ws(client: WebSocket, state: AppState, id: String) {
         return;
     }
     let ws_base = info.url.replacen("http", "ws", 1);
-    let upstream = format!("{ws_base}/v1/sessions/shell/{}", urlencoding::encode(&id));
+    let query = session_attach_query_suffix(&query);
+    let upstream = format!(
+        "{ws_base}/v1/sessions/shell/{}{query}",
+        urlencoding::encode(&id)
+    );
     let Ok((upstream_ws, _)) = connect_async(&upstream).await else {
         tracing::warn!(%upstream, "failed to connect to medousa-session");
         return;
@@ -502,7 +532,7 @@ pub fn parse_bind(bind: &str) -> Option<SocketAddr> {
 
 #[cfg(test)]
 mod tests {
-    use super::proxy_upstream_status;
+    use super::{SessionAttachQuery, proxy_upstream_status, session_attach_query_suffix};
     use axum::http::StatusCode;
 
     #[test]
@@ -518,6 +548,28 @@ mod tests {
         assert_eq!(
             proxy_upstream_status(StatusCode::INTERNAL_SERVER_ERROR),
             StatusCode::BAD_GATEWAY
+        );
+    }
+
+    #[test]
+    fn agent_attach_cursor_is_forwarded_to_the_session_host() {
+        assert_eq!(
+            session_attach_query_suffix(&SessionAttachQuery {
+                after_sequence: Some(42),
+                replay: Some("tail".into()),
+            }),
+            "?after_sequence=42"
+        );
+        assert_eq!(
+            session_attach_query_suffix(&SessionAttachQuery {
+                replay: Some("tail".into()),
+                ..Default::default()
+            }),
+            "?replay=tail"
+        );
+        assert_eq!(
+            session_attach_query_suffix(&SessionAttachQuery::default()),
+            ""
         );
     }
 }

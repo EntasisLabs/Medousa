@@ -1179,11 +1179,16 @@ pub struct ItemProjection {
     pub item: WorkItem,
     pub human_phase: String,
     pub allowed_actions: AllowedActions,
+    /// Whether the governed worktree currently exists on this workshop's disk.
+    pub workspace_present: bool,
 }
 
 pub fn project_item(mut item: WorkItem) -> ItemProjection {
     let human = human_phase(item.state).to_owned();
     let actions = allowed_actions(&item);
+    let workspace_present = item
+        .workspace_environment()
+        .is_some_and(|environment| environment.worktree.is_dir());
     // `environment` is the long-lived staging anchor in durable Forge state.
     // Existing clients already understand that field, so project the current
     // lease-owned workspace through it without mutating the stored item.
@@ -1194,6 +1199,7 @@ pub fn project_item(mut item: WorkItem) -> ItemProjection {
         item,
         human_phase: human,
         allowed_actions: actions,
+        workspace_present,
     }
 }
 

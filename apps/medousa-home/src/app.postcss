@@ -7756,6 +7756,15 @@
     transform: scale(0.92);
   }
 
+  .composer-bar-stop,
+  .composer-bar-stop:not(:disabled) {
+    background-color: rgb(var(--color-error-500) / 0.9);
+    color: rgb(var(--color-surface-50));
+    box-shadow:
+      0 1px 2px rgb(0 0 0 / 0.2),
+      0 0 12px rgb(var(--color-error-500) / 0.22);
+  }
+
   .composer-bar-mobile .composer-bar-send {
     @apply mb-0 h-11 w-11 text-sm;
     transition:

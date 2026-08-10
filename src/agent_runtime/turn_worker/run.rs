@@ -67,12 +67,16 @@ async fn establish_worker_canvas_turn_scope(
     record: &TurnWorkRecord,
 ) {
     let previous = turn_scope.read().await.clone();
+    let inherited_identity = previous
+        .as_ref()
+        .and_then(|scope| scope.identity_user_id.clone());
     let mut next = previous.unwrap_or_else(|| TurnContinuationScope {
         turn_correlation_id: record
             .parent_turn_correlation_id
             .clone()
             .unwrap_or_else(|| format!("work-{}", record.work_id)),
         session_id: record.session_id.clone(),
+        identity_user_id: inherited_identity,
         original_prompt: record.task_prompt.clone(),
         delivery_target: record
             .delivery_target

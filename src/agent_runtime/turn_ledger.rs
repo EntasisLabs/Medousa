@@ -22,79 +22,28 @@ pub const PACK_HOLD_PREFIX: &str = "[MEDOUSA_PACK_HOLD]";
 pub fn pack_hold_resolution_control_message() -> String {
     format!(
         "{PACK_HOLD_PREFIX}\n\
-         Your previous assistant message is still visible to the principal — do not repeat or rewrite it.\n\
-         Next step (pick one):\n\
-         - Call tools (or cognition_turn_begin_work) if work remains; a tool call resets this prose hold.\n\
-         - Call cognition_turn_finish with the final answer to commit immediately.\n\
-         - Send one additional non-tool response to commit both prose messages as the answer."
+         tools_used=true; consecutive_non_tool_responses=1.\n\
+         Next: a tool call continues work and resets the prose count; a non-tool response ends \
+         the turn and preserves both responses; cognition_turn_finish ends immediately and appends \
+         its message to the held response."
     )
 }
 
 /// Merge held assistant fragments with the resolution prose into one principal-facing body.
 ///
-/// Prefers the held text when the resolution is empty, a near-duplicate rewrite, or a short
-/// non-clarifying ack — so PackHold round-2 does not double the same answer.
+/// Every non-empty response is preserved in order. The runtime does not infer
+/// whether prose is a duplicate, acknowledgment, progress update, or final answer.
 pub fn merge_assistant_pack_fragments(fragments: &[String], resolution: &str) -> String {
-    let held_parts: Vec<String> = fragments
+    let mut parts: Vec<String> = fragments
         .iter()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .collect();
-    let held = if held_parts.is_empty() {
-        String::new()
-    } else if held_parts.len() == 1 {
-        held_parts[0].clone()
-    } else {
-        held_parts.join("\n\n")
-    };
-
     let trimmed_resolution = resolution.trim();
-    if trimmed_resolution.is_empty() {
-        return held;
+    if !trimmed_resolution.is_empty() {
+        parts.push(trimmed_resolution.to_string());
     }
-    if held.is_empty() {
-        return trimmed_resolution.to_string();
-    }
-
-    let held_norm = normalize_pack_text(&held);
-    let res_norm = normalize_pack_text(trimmed_resolution);
-    if pack_texts_near_duplicate(&held_norm, &res_norm) {
-        return held;
-    }
-
-    let res_words = trimmed_resolution.split_whitespace().count();
-    let held_words = held.split_whitespace().count();
-    // Short ack / status after a substantive held answer: keep held unless it's a new question.
-    if res_words <= 12 && held_words >= 12 {
-        if trimmed_resolution.contains('?') {
-            return format!("{held}\n\n{trimmed_resolution}");
-        }
-        return held;
-    }
-
-    if held_norm.eq_ignore_ascii_case(&res_norm) {
-        return held;
-    }
-    format!("{held}\n\n{trimmed_resolution}")
-}
-
-fn normalize_pack_text(text: &str) -> String {
-    text.split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_ascii_lowercase()
-}
-
-fn pack_texts_near_duplicate(a: &str, b: &str) -> bool {
-    if a.is_empty() || b.is_empty() {
-        return false;
-    }
-    if a == b {
-        return true;
-    }
-    let (shorter, longer) = if a.len() <= b.len() { (a, b) } else { (b, a) };
-    // Contained rewrite: shorter is most of the longer answer.
-    longer.contains(shorter) && shorter.len().saturating_mul(10) >= longer.len().saturating_mul(6)
+    parts.join("\n\n")
 }
 
 pub fn push_pack_hold_message(messages: &mut Vec<ChatMessage>) {
@@ -106,8 +55,7 @@ pub const TURN_RUNTIME_BOUNDARY_APPENDIX: &str = r#"[MEDOUSA_TURN_RUNTIME]
 Runtime boundary (enforced by the daemon):
 - Chat (host): memory, identity, runtime, vault read, quick cognition_web_search/cognition_browser_fetch, cognition_turn_begin_work(message, goal) for multi-tool execution, cognition_spawn_turn_worker for parallel research.
 - cognition_turn_begin_work enters the bound Workshop (one per session) — Chat ends with ack; synthesis delivers on the same thread.
-- Chat prose may continue briefly for scheduling; Studio/environment/canvas, Grapheme, and heavy web belong in the Workshop.
-- After tool work on a principal-facing turn: cognition_turn_finish commits immediately; otherwise two consecutive prose rounds commit one merged answer.
+- Completion is event-driven: before any tool call, a non-tool response ends the turn. After any tool call, tools continue/reset the prose count; two consecutive non-tool responses end the turn and both are preserved. cognition_turn_finish ends immediately and appends its message to one held response. Prose wording is never classified.
 - Mid-task handoff: cognition_turn_checkpoint. Parallel delegate: cognition_spawn_turn_worker in a tool round.
 - UI stream draft may reset between rounds; [MEDOUSA_SCRATCH] engine notes persist across rounds and client disconnect."#;
 
@@ -568,33 +516,32 @@ mod tests {
     }
 
     #[test]
-    fn merge_assistant_pack_dedupes_identical_resolution() {
+    fn merge_assistant_pack_preserves_identical_resolution() {
         let merged = merge_assistant_pack_fragments(&["Which repo?".to_string()], "Which repo?");
-        assert_eq!(merged, "Which repo?");
+        assert_eq!(merged, "Which repo?\n\nWhich repo?");
     }
 
     #[test]
-    fn merge_assistant_pack_drops_near_duplicate_rewrite() {
+    fn merge_assistant_pack_preserves_near_duplicate_rewrite() {
         let held = "I can help with that workshop setup when you are ready.";
         let rewrite = "i can help with that workshop setup when you are ready";
         let merged = merge_assistant_pack_fragments(&[held.to_string()], rewrite);
-        assert_eq!(merged, held);
+        assert_eq!(merged, format!("{held}\n\n{rewrite}"));
     }
 
     #[test]
-    fn merge_assistant_pack_drops_contained_rewrite() {
+    fn merge_assistant_pack_preserves_contained_rewrite() {
         let held = "Here is the full answer about the workshop setup for your team.";
         let rewrite = "Here is the full answer about the workshop setup for your team. Ready.";
         let merged = merge_assistant_pack_fragments(&[held.to_string()], rewrite);
-        // Contained held ≈ 90% of rewrite → prefer held (avoid padded restatement)
-        assert_eq!(merged, held);
+        assert_eq!(merged, format!("{held}\n\n{rewrite}"));
     }
 
     #[test]
-    fn merge_assistant_pack_keeps_held_for_short_ack() {
+    fn merge_assistant_pack_preserves_short_ack() {
         let held = "Here is the full answer with enough words to count as substantive body text.";
         let merged = merge_assistant_pack_fragments(&[held.to_string()], "Got it.");
-        assert_eq!(merged, held);
+        assert_eq!(merged, format!("{held}\n\nGot it."));
     }
 
     #[test]
@@ -605,13 +552,11 @@ mod tests {
     }
 
     #[test]
-    fn pack_hold_message_forbids_rewrite() {
+    fn pack_hold_message_describes_event_state_machine() {
         let msg = pack_hold_resolution_control_message();
-        assert!(msg.contains("still visible"));
-        assert!(msg.contains("do not repeat"));
+        assert!(msg.contains("consecutive_non_tool_responses=1"));
         assert!(msg.contains("cognition_turn_finish"));
-        assert!(msg.contains("additional non-tool response"));
-        assert!(msg.contains("tool call resets"));
-        assert!(!msg.contains("continuing that thought"));
+        assert!(msg.contains("preserves both responses"));
+        assert!(msg.contains("tool call continues work and resets"));
     }
 }

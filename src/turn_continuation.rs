@@ -129,6 +129,9 @@ impl From<&StoredDeliveryTarget> for ChannelDeliveryTarget {
 pub struct TurnContinuationScope {
     pub turn_correlation_id: String,
     pub session_id: String,
+    /// Principal/profile authorized for this turn. Cross-session read tools
+    /// must use this value rather than process-global active-profile state.
+    pub identity_user_id: Option<String>,
     pub original_prompt: String,
     pub delivery_target: Option<ChannelDeliveryTarget>,
     pub provider: String,

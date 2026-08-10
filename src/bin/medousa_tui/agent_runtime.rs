@@ -629,6 +629,7 @@ pub(crate) async fn start_prompt_run(
         *turn_scope.write().await = Some(TurnContinuationScope {
             turn_correlation_id: format!("tui-turn-{turn_id}"),
             session_id: session_id.clone(),
+            identity_user_id: Some(medousa::user_profiles::resolve_workshop_identity_user_id()),
             original_prompt: original_prompt_for_continuation.clone(),
             delivery_target: None,
             provider: provider.clone(),

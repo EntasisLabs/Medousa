@@ -1,5 +1,8 @@
 use anyhow::Result;
+use locus_core_rs::domain::contracts::{SemanticIndexStore, SemanticIndexStoreInitializer};
+use locus_core_rs::domain::models::SemanticTagNodeRef;
 use locus_core_rs::storage::surrealdb::client::{QueryParams, SurrealDbClient};
+use medousa::runtime::locus_semantic_index_store::MedousaSurrealSemanticIndexStore;
 use medousa::runtime::locus_surreal_client::StasisSurrealDbClient;
 use serde_json::json;
 use surrealdb::Surreal;
@@ -85,5 +88,107 @@ async fn raw_query_select_empty_returns_vec() -> Result<()> {
         .await?;
 
     assert!(rows.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn semantic_tag_queries_run_on_bundled_surrealql() -> Result<()> {
+    let db = mem_db().await;
+    let client = StasisSurrealDbClient::new(db.clone());
+    let index = MedousaSurrealSemanticIndexStore::new(client);
+    index.initialize_async().await?;
+
+    db
+        .query(
+            r#"
+            CREATE semantic_tag_index SET tenant_id = 'default', session_id = 'session-a',
+                node_id = 'node-both', sync_key = 'sync-both', tag = 'memory', updated_at = time::now();
+            CREATE semantic_tag_index SET tenant_id = 'default', session_id = 'session-a',
+                node_id = 'node-both', sync_key = 'sync-both', tag = 'runtime', updated_at = time::now();
+            CREATE semantic_tag_index SET tenant_id = 'default', session_id = 'session-a',
+                node_id = 'node-one', sync_key = 'sync-one', tag = 'memory', updated_at = time::now();
+            "#,
+        )
+        .await?
+        .check()?;
+
+    let sync_keys = index
+        .find_sync_keys_by_tags_async(
+            "default",
+            &["memory".into(), "runtime".into()],
+            true,
+            Some("session-a"),
+            10,
+        )
+        .await?;
+
+    assert_eq!(sync_keys, vec!["sync-both"]);
+
+    let mut sync_keys = index
+        .find_sync_keys_by_tags_async("default", &["memory".into()], false, Some("session-a"), 10)
+        .await?;
+    sync_keys.sort();
+
+    assert_eq!(sync_keys, vec!["sync-both", "sync-one"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn semantic_tag_sync_is_recallable_on_bundled_surrealql() -> Result<()> {
+    let db = mem_db().await;
+    let client = StasisSurrealDbClient::new(db);
+    let index = MedousaSurrealSemanticIndexStore::new(client);
+    index.initialize_async().await?;
+
+    let node_ref = SemanticTagNodeRef {
+        tenant_id: "default".into(),
+        session_id: "session-a".into(),
+        node_id: "node-written".into(),
+        sync_key: "sync-written".into(),
+    };
+    index
+        .sync_node_tags_async(
+            node_ref.clone(),
+            &["memory".into(), "runtime".into()],
+            None,
+        )
+        .await?;
+
+    let sync_keys = index
+        .find_sync_keys_by_tags_async(
+            "default",
+            &["memory".into(), "runtime".into()],
+            true,
+            Some("session-a"),
+            10,
+        )
+        .await?;
+
+    assert_eq!(sync_keys, vec!["sync-written"]);
+
+    index
+        .sync_node_tags_async(node_ref, &["memory".into(), "durable".into()], None)
+        .await?;
+    let old_keys = index
+        .find_sync_keys_by_tags_async(
+            "default",
+            &["memory".into(), "runtime".into()],
+            true,
+            Some("session-a"),
+            10,
+        )
+        .await?;
+    let new_keys = index
+        .find_sync_keys_by_tags_async(
+            "default",
+            &["memory".into(), "durable".into()],
+            true,
+            Some("session-a"),
+            10,
+        )
+        .await?;
+
+    assert!(old_keys.is_empty());
+    assert_eq!(new_keys, vec!["sync-written"]);
     Ok(())
 }

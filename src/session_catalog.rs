@@ -977,6 +977,23 @@ pub fn get_summary(session_id: &str) -> Option<SessionHistorySummary> {
         .map(SessionHistorySummary::from)
 }
 
+/// Whether `profile_id` may read this session through model-facing history tools.
+/// Single-user sessions follow their stamped profile (legacy unstamped rows belong
+/// to the default profile); shared rooms require explicit membership.
+pub fn session_visible_to_profile(session_id: &str, profile_id: &str) -> bool {
+    let session_id = session_id.trim();
+    let profile_id = profile_id.trim();
+    if session_id.is_empty() || profile_id.is_empty() {
+        return false;
+    }
+    if let Some(shared) = crate::shared_session_catalog::get_shared_row(session_id) {
+        return shared.includes_member(profile_id);
+    }
+    catalog_store()
+        .get_row(session_id)
+        .is_some_and(|row| row_matches_profile(&row, profile_id))
+}
+
 pub fn session_has_activity(session_id: &str) -> bool {
     catalog_store()
         .get_row(session_id.trim())

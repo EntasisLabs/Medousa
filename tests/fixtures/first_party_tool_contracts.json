@@ -420,6 +420,83 @@
     },
     {
       "registry": "coder_bound",
+      "name": "cognition_chat_history_read",
+      "description": "Read a bounded window from one prior Medousa chat. Returns user/assistant prose and compact tool names only; reasoning traces and raw tool receipts are never returned.",
+      "input_schema": {
+        "properties": {
+          "intent": {
+            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "maxLength": 320,
+            "type": "string"
+          },
+          "last_k": {
+            "description": "Number of most recent visible turns (default 12, maximum 40).",
+            "maximum": 40,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "max_chars": {
+            "description": "Total prose budget (default 12000, maximum 24000 characters).",
+            "maximum": 24000,
+            "minimum": 512,
+            "type": "integer"
+          },
+          "session_id": {
+            "description": "Session returned by cognition_chat_history_search.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "intent",
+          "session_id"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "coder:domain:history"
+      ]
+    },
+    {
+      "registry": "coder_bound",
+      "name": "cognition_chat_history_search",
+      "description": "Search prior Medousa chats visible to the active profile. Omit query to list recent chats. Searches only user/assistant prose; reasoning traces and raw tool receipts are excluded.",
+      "input_schema": {
+        "properties": {
+          "intent": {
+            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "maxLength": 320,
+            "type": "string"
+          },
+          "limit": {
+            "description": "Maximum results (default 8, maximum 20).",
+            "maximum": 20,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "query": {
+            "description": "Optional text to search across visible chat prose. Omit to list recent chats.",
+            "type": "string"
+          },
+          "session_scan_limit": {
+            "description": "Maximum recent sessions searched when query is present (default 80, maximum 200).",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "intent"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "coder:domain:history"
+      ]
+    },
+    {
+      "registry": "coder_bound",
       "name": "cognition_code_apply_patch",
       "description": "Write full content or replace an exact snippet in a file under the session root / Forge worktree. Coding domain only.",
       "input_schema": {
@@ -2149,7 +2226,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_shell_session_run",
-      "description": "Write a command (or raw input) into a workshop shell session. Streams output for `wait_ms`. Coding domain only.",
+      "description": "Write a command or raw input into a workshop shell session, or set `poll` to read pending output without typing into the PTY. Streams output for `wait_ms`. Coding domain only.",
       "input_schema": {
         "properties": {
           "attempt_id": {
@@ -2176,6 +2253,10 @@
           "lease_id": {
             "description": "Forge lease fencing token supplied by the runtime",
             "type": "string"
+          },
+          "poll": {
+            "description": "Read pending output without writing more input",
+            "type": "boolean"
           },
           "session_id": {
             "description": "Existing session id",
@@ -3588,6 +3669,71 @@
         "workshop:authorized:general",
         "workshop:authorized:research",
         "workshop:domain:discover"
+      ]
+    },
+    {
+      "registry": "general_runtime",
+      "name": "cognition_chat_history_read",
+      "description": "Read a bounded window from one prior Medousa chat. Returns user/assistant prose and compact tool names only; reasoning traces and raw tool receipts are never returned.",
+      "input_schema": {
+        "properties": {
+          "last_k": {
+            "description": "Number of most recent visible turns (default 12, maximum 40).",
+            "maximum": 40,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "max_chars": {
+            "description": "Total prose budget (default 12000, maximum 24000 characters).",
+            "maximum": 24000,
+            "minimum": 512,
+            "type": "integer"
+          },
+          "session_id": {
+            "description": "Session returned by cognition_chat_history_search.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "general:authorized",
+        "general:domain:history"
+      ]
+    },
+    {
+      "registry": "general_runtime",
+      "name": "cognition_chat_history_search",
+      "description": "Search prior Medousa chats visible to the active profile. Omit query to list recent chats. Searches only user/assistant prose; reasoning traces and raw tool receipts are excluded.",
+      "input_schema": {
+        "properties": {
+          "limit": {
+            "description": "Maximum results (default 8, maximum 20).",
+            "maximum": 20,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "query": {
+            "description": "Optional text to search across visible chat prose. Omit to list recent chats.",
+            "type": "string"
+          },
+          "session_scan_limit": {
+            "description": "Maximum recent sessions searched when query is present (default 80, maximum 200).",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "general:authorized",
+        "general:domain:history"
       ]
     },
     {
@@ -7232,7 +7378,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_shell_session_run",
-      "description": "Write a command (or raw input) into a workshop shell session. Streams output for `wait_ms`. Coding domain only.",
+      "description": "Write a command or raw input into a workshop shell session, or set `poll` to read pending output without typing into the PTY. Streams output for `wait_ms`. Coding domain only.",
       "input_schema": {
         "properties": {
           "attempt_id": {
@@ -7254,6 +7400,10 @@
           "lease_id": {
             "description": "Forge lease fencing token supplied by the runtime",
             "type": "string"
+          },
+          "poll": {
+            "description": "Read pending output without writing more input",
+            "type": "boolean"
           },
           "session_id": {
             "description": "Existing session id",

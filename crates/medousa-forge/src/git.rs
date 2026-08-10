@@ -199,6 +199,52 @@ impl GitEngine {
         Ok(Some(branch.trim().to_string()).filter(|value| !value.is_empty()))
     }
 
+    /// Local branch names, without the `refs/heads/` prefix.
+    pub fn local_branches(&self, path: &Path) -> Result<Vec<String>> {
+        let output = self.run(
+            path,
+            &["for-each-ref", "--format=%(refname:short)", "refs/heads/"],
+        )?;
+        Ok(sorted_nonempty_lines(&output))
+    }
+
+    /// Configured Git remote names.
+    pub fn remote_names(&self, path: &Path) -> Result<Vec<String>> {
+        let output = self.run(path, &["remote"])?;
+        Ok(sorted_nonempty_lines(&output))
+    }
+
+    /// Branch names for one remote, without the `<remote>/` prefix. The
+    /// synthetic remote HEAD alias is intentionally excluded.
+    pub fn remote_branches(&self, path: &Path, remote: &str) -> Result<Vec<String>> {
+        let prefix = format!("refs/remotes/{remote}/");
+        let output = self.run(
+            path,
+            &["for-each-ref", "--format=%(refname:short)", &prefix],
+        )?;
+        let short_prefix = format!("{remote}/");
+        let mut branches = output
+            .lines()
+            .map(str::trim)
+            .filter_map(|name| name.strip_prefix(&short_prefix))
+            .filter(|name| !name.is_empty() && *name != "HEAD")
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        branches.sort();
+        branches.dedup();
+        Ok(branches)
+    }
+
+    /// Default branch advertised by one remote, when its tracking HEAD exists.
+    pub fn remote_default_branch(&self, path: &Path, remote: &str) -> Option<String> {
+        let reference = format!("refs/remotes/{remote}/HEAD");
+        let prefix = format!("{remote}/");
+        self.run(path, &["symbolic-ref", "--quiet", "--short", &reference])
+            .ok()
+            .and_then(|value| value.trim().strip_prefix(&prefix).map(str::to_string))
+            .filter(|value| !value.is_empty())
+    }
+
     /// Best branch for new work: remote default, checked-out branch, then a
     /// conventional local default. This is advisory; callers still resolve it
     /// before creating a governed environment.
@@ -1253,6 +1299,18 @@ fn canonicalish(base: &Path, raw: &str) -> PathBuf {
     std::fs::canonicalize(&abs).unwrap_or(abs)
 }
 
+fn sorted_nonempty_lines(output: &str) -> Vec<String> {
+    let mut values = output
+        .lines()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    values.sort();
+    values.dedup();
+    values
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1275,6 +1333,7 @@ mod tests {
     #[test]
     fn repository_inspection_resolves_nested_root_and_branch() {
         let (tmp, git, _) = init_repo();
+        git.run(tmp.path(), &["branch", "feature/local"]).unwrap();
         let nested = tmp.path().join("src/nested");
         std::fs::create_dir_all(&nested).unwrap();
         assert_eq!(
@@ -1285,7 +1344,54 @@ mod tests {
             git.current_branch(&nested).unwrap().as_deref(),
             Some("main")
         );
-        assert_eq!(git.suggested_base_ref(&nested).unwrap().as_deref(), Some("main"));
+        assert_eq!(
+            git.suggested_base_ref(&nested).unwrap().as_deref(),
+            Some("main")
+        );
+        assert_eq!(
+            git.local_branches(&nested).unwrap(),
+            vec!["feature/local".to_string(), "main".to_string()]
+        );
+    }
+
+    #[test]
+    fn remote_branch_listing_separates_remote_and_hides_head_alias() {
+        let (tmp, git, head) = init_repo();
+        git.run(tmp.path(), &["remote", "add", "origin", "."])
+            .unwrap();
+        git.run(
+            tmp.path(),
+            &["update-ref", "refs/remotes/origin/main", head.as_str()],
+        )
+        .unwrap();
+        git.run(
+            tmp.path(),
+            &[
+                "update-ref",
+                "refs/remotes/origin/feature/remote",
+                head.as_str(),
+            ],
+        )
+        .unwrap();
+        git.run(
+            tmp.path(),
+            &[
+                "symbolic-ref",
+                "refs/remotes/origin/HEAD",
+                "refs/remotes/origin/main",
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(git.remote_names(tmp.path()).unwrap(), vec!["origin"]);
+        assert_eq!(
+            git.remote_branches(tmp.path(), "origin").unwrap(),
+            vec!["feature/remote".to_string(), "main".to_string()]
+        );
+        assert_eq!(
+            git.remote_default_branch(tmp.path(), "origin").as_deref(),
+            Some("main")
+        );
     }
 
     #[test]

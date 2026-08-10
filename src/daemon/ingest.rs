@@ -995,6 +995,7 @@ async fn spawn_continuation_agent_turn(
     let continuation_scope = crate::turn_continuation::TurnContinuationScope {
         turn_correlation_id: job_id.clone(),
         session_id: record.session_id.clone(),
+        identity_user_id: None,
         original_prompt: record.original_prompt.clone(),
         delivery_target: record
             .delivery_target
@@ -1107,6 +1108,7 @@ pub async fn spawn_daemon_api_agent_turn(
     let continuation_scope = crate::turn_continuation::TurnContinuationScope {
         turn_correlation_id: job_id.clone(),
         session_id: session_id.clone(),
+        identity_user_id: None,
         original_prompt: prompt.clone(),
         delivery_target: None,
         provider: provider.clone(),
@@ -1882,6 +1884,7 @@ async fn start_ingest_ask_stream(
     let continuation_scope = crate::turn_continuation::TurnContinuationScope {
         turn_correlation_id: job_id_str.clone(),
         session_id: session_id_owned.clone(),
+        identity_user_id: interactive_request.identity_user_id.clone(),
         original_prompt: interactive_request.prompt.clone(),
         delivery_target: Some(channel_delivery::ChannelDeliveryTarget::new(
             request.channel.clone(),

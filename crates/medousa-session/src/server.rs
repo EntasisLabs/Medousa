@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -213,17 +213,82 @@ enum ClientFrame {
     Resize { cols: u16, rows: u16 },
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct SessionAttachQuery {
+    /// Resume after a previously consumed output chunk.
+    #[serde(default)]
+    after_sequence: Option<u64>,
+    /// `tail` skips retained history and starts at the current output watermark.
+    #[serde(default)]
+    replay: Option<String>,
+}
+
+struct AttachReplay {
+    chunks: Vec<crate::session::OutputChunk>,
+    last_sequence: u64,
+    oldest_sequence: Option<u64>,
+    replay_truncated: bool,
+}
+
+fn attach_replay(
+    snapshot: Vec<crate::session::OutputChunk>,
+    query: &SessionAttachQuery,
+) -> AttachReplay {
+    let oldest_sequence = snapshot.first().map(|chunk| chunk.sequence);
+    let latest_sequence = snapshot.last().map_or(0, |chunk| chunk.sequence);
+
+    if let Some(requested) = query.after_sequence {
+        // A cursor from a replaced session host must not suppress all future output.
+        let cursor_reset = requested > latest_sequence;
+        let baseline = requested.min(latest_sequence);
+        let replay_truncated = cursor_reset
+            || oldest_sequence.is_some_and(|oldest| baseline.saturating_add(1) < oldest);
+        let chunks = snapshot
+            .into_iter()
+            .filter(|chunk| chunk.sequence > baseline)
+            .collect::<Vec<_>>();
+        let last_sequence = chunks.last().map_or(baseline, |chunk| chunk.sequence);
+        return AttachReplay {
+            chunks,
+            last_sequence,
+            oldest_sequence,
+            replay_truncated,
+        };
+    }
+
+    if query.replay.as_deref() == Some("tail") {
+        return AttachReplay {
+            chunks: Vec::new(),
+            last_sequence: latest_sequence,
+            oldest_sequence,
+            replay_truncated: false,
+        };
+    }
+
+    AttachReplay {
+        last_sequence: latest_sequence,
+        chunks: snapshot,
+        oldest_sequence,
+        replay_truncated: false,
+    }
+}
+
 async fn session_ws(
     ws: WebSocketUpgrade,
     State(state): State<Arc<SessionHostState>>,
     Path(id): Path<String>,
+    Query(query): Query<SessionAttachQuery>,
 ) -> impl IntoResponse {
     let session_id = SessionId(id);
     let session = state.manager.get(&session_id).await;
-    ws.on_upgrade(move |socket| handle_ws(socket, session))
+    ws.on_upgrade(move |socket| handle_ws(socket, session, query))
 }
 
-async fn handle_ws(socket: WebSocket, session: Option<Arc<crate::session::Session>>) {
+async fn handle_ws(
+    socket: WebSocket,
+    session: Option<Arc<crate::session::Session>>,
+    query: SessionAttachQuery,
+) {
     let Some(session) = session else {
         return;
     };
@@ -231,13 +296,23 @@ async fn handle_ws(socket: WebSocket, session: Option<Arc<crate::session::Sessio
     let mut output_rx = session.output.subscribe();
     let (mut ws_tx, mut ws_rx) = socket.split();
 
-    let replay = session.output_snapshot();
-    let mut last_sequence = 0;
-    for chunk in replay {
-        last_sequence = last_sequence.max(chunk.sequence);
+    let replay = attach_replay(session.output_snapshot(), &query);
+    let mut last_sequence = replay.last_sequence;
+    for chunk in replay.chunks {
         if send_output_chunk(&mut ws_tx, &chunk).await.is_err() {
             return;
         }
+    }
+    if send_attach_ready(
+        &mut ws_tx,
+        last_sequence,
+        replay.oldest_sequence,
+        replay.replay_truncated,
+    )
+    .await
+    .is_err()
+    {
+        return;
     }
 
     loop {
@@ -251,7 +326,15 @@ async fn handle_ws(socket: WebSocket, session: Option<Arc<crate::session::Sessio
                 }
                 Ok(_) => {}
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                    for chunk in session.output_snapshot() {
+                    let snapshot = session.output_snapshot();
+                    let oldest_sequence = snapshot.first().map(|chunk| chunk.sequence);
+                    if oldest_sequence
+                        .is_some_and(|oldest| last_sequence.saturating_add(1) < oldest)
+                        && send_output_gap(&mut ws_tx, last_sequence, oldest_sequence).await.is_err()
+                    {
+                        return;
+                    }
+                    for chunk in snapshot {
                         if chunk.sequence > last_sequence {
                             last_sequence = chunk.sequence;
                             if send_output_chunk(&mut ws_tx, &chunk).await.is_err() {
@@ -315,6 +398,36 @@ async fn send_output_chunk(
         "type": "stdout",
         "sequence": chunk.sequence,
         "data": base64::engine::general_purpose::STANDARD.encode(&chunk.bytes)
+    })
+    .to_string();
+    ws_tx.send(Message::Text(frame.into())).await
+}
+
+async fn send_attach_ready(
+    ws_tx: &mut futures_util::stream::SplitSink<WebSocket, Message>,
+    sequence: u64,
+    oldest_sequence: Option<u64>,
+    replay_truncated: bool,
+) -> Result<(), axum::Error> {
+    let frame = json!({
+        "type": "ready",
+        "sequence": sequence,
+        "oldest_sequence": oldest_sequence,
+        "replay_truncated": replay_truncated,
+    })
+    .to_string();
+    ws_tx.send(Message::Text(frame.into())).await
+}
+
+async fn send_output_gap(
+    ws_tx: &mut futures_util::stream::SplitSink<WebSocket, Message>,
+    after_sequence: u64,
+    oldest_sequence: Option<u64>,
+) -> Result<(), axum::Error> {
+    let frame = json!({
+        "type": "output_gap",
+        "after_sequence": after_sequence,
+        "oldest_sequence": oldest_sequence,
     })
     .to_string();
     ws_tx.send(Message::Text(frame.into())).await
@@ -387,7 +500,8 @@ async fn signal_session(
 
 #[cfg(test)]
 mod tests {
-    use super::{SessionHostConfig, SessionHostState};
+    use super::{SessionAttachQuery, SessionHostConfig, SessionHostState, attach_replay};
+    use crate::session::OutputChunk;
     use std::path::PathBuf;
 
     fn state() -> SessionHostState {
@@ -406,5 +520,99 @@ mod tests {
             "medousa/forge/worktrees/repo/work-new"
         )));
         assert!(!state.cwd_allowed(std::path::Path::new("other")));
+    }
+
+    fn chunks(sequences: impl IntoIterator<Item = u64>) -> Vec<OutputChunk> {
+        sequences
+            .into_iter()
+            .map(|sequence| OutputChunk {
+                sequence,
+                bytes: sequence.to_string().into_bytes(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn human_attach_replays_retained_history() {
+        let replay = attach_replay(chunks([3, 4, 5]), &SessionAttachQuery::default());
+        assert_eq!(
+            replay
+                .chunks
+                .iter()
+                .map(|chunk| chunk.sequence)
+                .collect::<Vec<_>>(),
+            vec![3, 4, 5]
+        );
+        assert_eq!(replay.last_sequence, 5);
+        assert!(!replay.replay_truncated);
+    }
+
+    #[test]
+    fn agent_tail_attach_skips_retained_history() {
+        let replay = attach_replay(
+            chunks([3, 4, 5]),
+            &SessionAttachQuery {
+                replay: Some("tail".into()),
+                ..Default::default()
+            },
+        );
+        assert!(replay.chunks.is_empty());
+        assert_eq!(replay.last_sequence, 5);
+        assert!(!replay.replay_truncated);
+    }
+
+    #[test]
+    fn agent_cursor_replays_only_unconsumed_chunks() {
+        let replay = attach_replay(
+            chunks([3, 4, 5]),
+            &SessionAttachQuery {
+                after_sequence: Some(3),
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            replay
+                .chunks
+                .iter()
+                .map(|chunk| chunk.sequence)
+                .collect::<Vec<_>>(),
+            vec![4, 5]
+        );
+        assert_eq!(replay.last_sequence, 5);
+        assert!(!replay.replay_truncated);
+    }
+
+    #[test]
+    fn stale_agent_cursor_reports_a_history_gap() {
+        let replay = attach_replay(
+            chunks([8, 9, 10]),
+            &SessionAttachQuery {
+                after_sequence: Some(3),
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            replay
+                .chunks
+                .iter()
+                .map(|chunk| chunk.sequence)
+                .collect::<Vec<_>>(),
+            vec![8, 9, 10]
+        );
+        assert!(replay.replay_truncated);
+    }
+
+    #[test]
+    fn cursor_from_a_replaced_host_resets_to_the_current_watermark() {
+        let replay = attach_replay(
+            chunks([8, 9, 10]),
+            &SessionAttachQuery {
+                after_sequence: Some(42),
+                ..Default::default()
+            },
+        );
+        assert!(replay.chunks.is_empty());
+        assert_eq!(replay.last_sequence, 10);
+        assert!(replay.replay_truncated);
     }
 }

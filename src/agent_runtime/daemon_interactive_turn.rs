@@ -932,6 +932,12 @@ pub async fn run_agent_turn(
     let mut effective_scope = continuation_scope.unwrap_or_else(|| TurnContinuationScope {
         turn_correlation_id: turn_id.to_string(),
         session_id: request.session_id.clone(),
+        identity_user_id: Some(
+            request
+                .identity_user_id
+                .clone()
+                .unwrap_or_else(crate::user_profiles::resolve_workshop_identity_user_id),
+        ),
         original_prompt: request.prompt.clone(),
         delivery_target: None,
         provider: request.provider.clone(),

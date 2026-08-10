@@ -54,10 +54,6 @@ const COGNITION_TURN_CHECKPOINT_ID: ToolId = ToolId::new(COGNITION_TURN_CHECKPOI
 const COGNITION_TURN_REQUEST_MORE_ROUNDS_ID: ToolId =
     ToolId::new(COGNITION_TURN_REQUEST_MORE_ROUNDS);
 
-/// Principal-facing body when the model ends with prose after tools without `cognition_turn_finish`.
-pub const PROSE_REQUIRES_FINISH_STUB: &str = "I finished the tool work but didn't commit a final answer. Reply to continue and I'll \
-     deliver the full summary with cognition_turn_finish.";
-
 pub struct RequestMoreRoundsPayload {
     pub requested_rounds: usize,
     pub reason: String,
@@ -216,25 +212,10 @@ pub fn finish_turn_from_invocations(invocations: &[ToolInvocation]) -> Option<St
     None
 }
 
-/// Map FSM termination to the principal-visible body (stub when finish was required but missing).
-pub fn terminal_text_for_fsm_end(termination_reason: &str, draft_text: String) -> String {
-    if termination_reason == "prose_requires_finish" {
-        let trimmed = draft_text.trim();
-        if trimmed.is_empty()
-            || crate::turn_text_heuristics::looks_like_substantive_final_answer(trimmed)
-        {
-            PROSE_REQUIRES_FINISH_STUB.to_string()
-        } else if crate::turn_text_heuristics::looks_like_interim_status(trimmed)
-            || trimmed.chars().count()
-                <= crate::agent_runtime::turn_completion_fsm::INTERIM_MAX_CHARS
-        {
-            draft_text
-        } else {
-            PROSE_REQUIRES_FINISH_STUB.to_string()
-        }
-    } else {
-        draft_text
-    }
+/// Preserve the model's terminal prose exactly. Completion policy is based on
+/// response/tool events, never a semantic classification of this text.
+pub fn terminal_text_for_fsm_end(_termination_reason: &str, draft_text: String) -> String {
+    draft_text
 }
 
 pub fn request_more_rounds_from_invocations(
@@ -1095,11 +1076,11 @@ mod tests {
     }
 
     #[test]
-    fn substantive_after_tools_uses_finish_stub() {
+    fn substantive_after_tools_is_preserved() {
         let draft = "Focused preset pulled and applied: stability is now 0.95, friction dropped \
                        to 0.12, and autonomy holds at 0.80. I stored the calibration summary.";
         let out = terminal_text_for_fsm_end("prose_requires_finish", draft.to_string());
-        assert_eq!(out, PROSE_REQUIRES_FINISH_STUB);
+        assert_eq!(out, draft);
     }
 
     #[test]

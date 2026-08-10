@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { Mic } from "@lucide/svelte";
+  import { Mic, Square } from "@lucide/svelte";
   import GrowingTextarea from "$lib/components/ui/GrowingTextarea.svelte";
   import ChatAttachmentChips from "$lib/components/chat/ChatAttachmentChips.svelte";
   import ChatModelPicker from "$lib/components/chat/ChatModelPicker.svelte";
@@ -91,6 +91,7 @@
   let profileOpen = $state(false);
   let agentOpen = $state(false);
   let workshopOpen = $state(false);
+  let stoppingTurn = $state(false);
 
   let voiceSession: ComposerAudioCaptureSession | null = null;
   let waveFrame = 0;
@@ -123,6 +124,17 @@
     const status = await composerSttStatus();
     sttAvailable = status.available;
     sttReason = status.reason;
+  }
+
+  async function stopActiveTurn() {
+    if (stoppingTurn) return;
+    stoppingTurn = true;
+    haptic("medium");
+    try {
+      await chat.cancelActiveTurn();
+    } finally {
+      stoppingTurn = false;
+    }
   }
 
   function tickWaveform() {
@@ -341,6 +353,20 @@
           <Mic size={16} strokeWidth={2} />
         </button>
 
+        {#if chat.liveStreamActive}
+          <button
+            type="button"
+            class="composer-bar-send composer-bar-stop"
+            disabled={stoppingTurn}
+            aria-label="Stop current turn"
+            title="Stop current turn"
+            onmousedown={(event) => event.preventDefault()}
+            onclick={() => void stopActiveTurn()}
+          >
+            <Square size={12} strokeWidth={2.4} fill="currentColor" />
+          </button>
+        {/if}
+
         <button
           type="submit"
           class="composer-bar-send"
@@ -432,6 +458,20 @@
       </button>
 
       <ContextUsageIndicator />
+
+      {#if chat.liveStreamActive}
+        <button
+          type="button"
+          class="composer-bar-send composer-bar-stop"
+          disabled={stoppingTurn}
+          aria-label="Stop current turn"
+          title="Stop current turn"
+          onmousedown={(event) => event.preventDefault()}
+          onclick={() => void stopActiveTurn()}
+        >
+          <Square size={10} strokeWidth={2.4} fill="currentColor" />
+        </button>
+      {/if}
 
       <button
         type="submit"

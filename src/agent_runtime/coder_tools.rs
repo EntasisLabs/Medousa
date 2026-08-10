@@ -976,7 +976,14 @@ pub struct CoderBoundToolRegistry {
     visible_tools: Arc<StdMutex<HashSet<ToolId>>>,
     memory_cursor: Arc<StdMutex<Option<String>>>,
     change_sets: Arc<StdMutex<super::coder_semantic_actions::CoderChangeSetStore>>,
-    shell_sessions: Arc<Mutex<HashSet<String>>>,
+    shell_state: Arc<Mutex<CoderShellState>>,
+}
+
+#[derive(Default)]
+struct CoderShellState {
+    owned_sessions: HashSet<String>,
+    preferred_session: Option<String>,
+    cursors: HashMap<String, u64>,
 }
 
 impl CoderBoundToolRegistry {
@@ -1030,7 +1037,7 @@ impl CoderBoundToolRegistry {
             visible_tools: Arc::new(StdMutex::new(visible_tools)),
             memory_cursor: Arc::new(StdMutex::new(None)),
             change_sets: Arc::new(StdMutex::new(Default::default())),
-            shell_sessions: Arc::new(Mutex::new(HashSet::new())),
+            shell_state: Arc::new(Mutex::new(CoderShellState::default())),
         }
     }
 
@@ -2082,7 +2089,12 @@ impl CoderBoundToolRegistry {
     }
 
     pub async fn interrupt_shell_sessions(&self) {
-        let session_ids: Vec<String> = self.shell_sessions.lock().await.drain().collect();
+        let session_ids = {
+            let mut state = self.shell_state.lock().await;
+            state.preferred_session = None;
+            state.cursors.clear();
+            state.owned_sessions.drain().collect::<Vec<_>>()
+        };
         for session_id in session_ids {
             let input = json!({ "session_id": session_id });
             let result = self
@@ -2164,7 +2176,13 @@ impl CoderBoundToolRegistry {
         let Some(session_id) = input.get("session_id").and_then(Value::as_str) else {
             return Ok(());
         };
-        if !self.shell_sessions.lock().await.contains(session_id) {
+        if !self
+            .shell_state
+            .lock()
+            .await
+            .owned_sessions
+            .contains(session_id)
+        {
             return Err(StasisError::PortFailure(
                 "shell session is not owned by this Coder turn".into(),
             ));
@@ -2181,29 +2199,45 @@ impl CoderBoundToolRegistry {
                 | crate::coding_tools::COGNITION_CODER_SHELL_STATUS
         ) && let Some(session_id) = output.get("session_id").and_then(Value::as_str)
         {
-            self.shell_sessions
-                .lock()
-                .await
-                .insert(session_id.to_string());
+            let mut state = self.shell_state.lock().await;
+            state.owned_sessions.insert(session_id.to_string());
+            state.preferred_session = Some(session_id.to_string());
+            if let Some(sequence) = output.get("next_sequence").and_then(Value::as_u64) {
+                state.cursors.insert(session_id.to_string(), sequence);
+            }
         }
     }
 
-    async fn prefer_turn_shell_session(&self, tool_name: &str, input: &mut Value) {
-        if tool_name != crate::coding_tools::COGNITION_CODER_SHELL_RUN {
+    async fn prepare_turn_shell_session(&self, tool_name: &str, input: &mut Value) {
+        if !matches!(
+            tool_name,
+            crate::coding_tools::COGNITION_SHELL_SESSION_RUN
+                | crate::coding_tools::COGNITION_CODER_SHELL_RUN
+        ) {
             return;
         }
-        if input
+        let mut session_id = input
             .get("session_id")
             .and_then(Value::as_str)
-            .is_some_and(|s| !s.trim().is_empty())
-        {
-            return;
+            .filter(|value| !value.trim().is_empty())
+            .map(str::to_string);
+        let state = self.shell_state.lock().await;
+        if session_id.is_none() && tool_name == crate::coding_tools::COGNITION_CODER_SHELL_RUN {
+            session_id.clone_from(&state.preferred_session);
         }
-        let Some(session_id) = self.shell_sessions.lock().await.iter().next().cloned() else {
-            return;
-        };
+        let cursor = session_id
+            .as_deref()
+            .and_then(|session_id| state.cursors.get(session_id).copied());
+        drop(state);
+
         if let Some(map) = input.as_object_mut() {
-            map.insert("session_id".into(), Value::String(session_id));
+            map.remove("after_sequence");
+            if let Some(session_id) = session_id {
+                map.insert("session_id".into(), Value::String(session_id));
+            }
+            if let Some(cursor) = cursor {
+                map.insert("after_sequence".into(), Value::from(cursor));
+            }
         }
     }
 }
@@ -2215,7 +2249,11 @@ fn coder_domain_tool_ids(domain: ToolDomainId) -> Option<Vec<ToolId>> {
         "causal" => &[super::coder_causal::COGNITION_CODER_CAUSAL_QUERY],
         "world_model" => crate::detamu_tools::DETAMU_COGNITION_TOOLS,
         "experiments" => &[super::coder_experiments::COGNITION_CODER_EXPERIMENT_COMPARE],
-        "history" => &[COGNITION_ENGINEERING_HISTORY],
+        "history" => &[
+            COGNITION_ENGINEERING_HISTORY,
+            crate::chat_history_tools::COGNITION_CHAT_HISTORY_SEARCH,
+            crate::chat_history_tools::COGNITION_CHAT_HISTORY_READ,
+        ],
         "memory" => CODER_ADVANCED_MEMORY_TOOLS,
         "research" => CODER_RESEARCH_TOOLS,
         "capabilities" => CODER_CAPABILITY_TOOLS,
@@ -2395,7 +2433,7 @@ impl ToolRegistry for CoderBoundToolRegistry {
             }
         };
         let mut input = input;
-        self.prefer_turn_shell_session(tool_name, &mut input).await;
+        self.prepare_turn_shell_session(tool_name, &mut input).await;
         if let Err(err) = self.validate_shell_session(tool_name, &input).await {
             authority.finish_tool_activity(
                 &call_id,
@@ -3187,7 +3225,12 @@ mod tests {
                 || tool_name == crate::coding_tools::COGNITION_CODER_SHELL_RUN
                 || tool_name == crate::coding_tools::COGNITION_CODER_SHELL_STATUS
             {
-                Ok(json!({ "ok": true, "session_id": "shell-1", "input": input }))
+                Ok(json!({
+                    "ok": true,
+                    "session_id": "shell-1",
+                    "next_sequence": 17,
+                    "input": input
+                }))
             } else if tool_name == "cognition_spawn_turn_worker" {
                 Ok(json!({
                     "ok": true,
@@ -4827,6 +4870,39 @@ mod tests {
             .expect("input");
         assert_eq!(input["session_id"], "shell-1");
         assert_eq!(input["command"], "echo two");
+        assert_eq!(input["after_sequence"], 17);
+    }
+
+    #[tokio::test]
+    async fn coder_shell_prefers_the_most_recently_used_owned_session() {
+        let fixture = fixture();
+        let authority = authority(&fixture);
+        let registry = CoderBoundToolRegistry::new(
+            Arc::new(RecordingRegistry::default()),
+            &authority,
+            fixture.entry.clone(),
+            fixture.policy.clone(),
+        );
+        registry
+            .record_shell_session(
+                crate::coding_tools::COGNITION_SHELL_SESSION_STATUS,
+                &json!({ "session_id": "shell-stuck", "next_sequence": 4 }),
+            )
+            .await;
+        registry
+            .record_shell_session(
+                crate::coding_tools::COGNITION_SHELL_SESSION_STATUS,
+                &json!({ "session_id": "shell-fresh", "next_sequence": 9 }),
+            )
+            .await;
+
+        let mut input = json!({ "command": "pwd" });
+        registry
+            .prepare_turn_shell_session(crate::coding_tools::COGNITION_CODER_SHELL_RUN, &mut input)
+            .await;
+
+        assert_eq!(input["session_id"], "shell-fresh");
+        assert_eq!(input["after_sequence"], 9);
     }
 
     #[tokio::test]
