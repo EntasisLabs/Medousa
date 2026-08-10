@@ -37,6 +37,7 @@ use crate::identity_write_policy::{
     evaluate_identity_commit, load_identity_product_config, parse_identity_entity_type,
     parse_update_source,
 };
+use crate::semantic_values::{RequiredContent, TrimmedText};
 use crate::typed_tools::{ToolId, medousa_tool};
 
 const COGNITION_IDENTITY_CONTEXT_ID: ToolId = ToolId::new("cognition_identity_context");
@@ -136,6 +137,11 @@ fn optional_str(value: Option<&str>) -> Option<String> {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(ToString::to_string)
+}
+
+fn required_identity_text(value: Option<String>, field: &str) -> StasisResult<TrimmedText> {
+    let value = value.ok_or_else(|| StasisError::PortFailure(format!("{field} is required")))?;
+    TrimmedText::new(value).map_err(|_| StasisError::PortFailure(format!("{field} is required")))
 }
 
 fn parse_identity_context_mode(raw: Option<&str>) -> StasisResult<IdentityContextMode> {
@@ -896,6 +902,29 @@ impl<'de> Deserialize<'de> for IdentityRecallInput {
     }
 }
 
+#[derive(Debug)]
+struct IdentityRecallCommand {
+    query: TrimmedText,
+    fact_kind: Option<TrimmedText>,
+    limit: usize,
+    user_id: Option<TrimmedText>,
+}
+
+impl TryFrom<IdentityRecallInput> for IdentityRecallCommand {
+    type Error = StasisError;
+
+    fn try_from(input: IdentityRecallInput) -> Result<Self, Self::Error> {
+        Ok(Self {
+            query: required_identity_text(input.query, "query")?,
+            fact_kind: input
+                .fact_kind
+                .and_then(|value| TrimmedText::new(value).ok()),
+            limit: input.limit.unwrap_or(8).clamp(1, 20),
+            user_id: input.user_id.and_then(|value| TrimmedText::new(value).ok()),
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(untagged)]
 pub enum IdentityRecallOutput {
@@ -923,14 +952,12 @@ impl CognitionIdentityRecallTool {
         &self,
         input: IdentityRecallInput,
     ) -> stasis::prelude::Result<IdentityRecallOutput> {
-        let query = input
-            .query
-            .as_deref()
-            .ok_or_else(|| StasisError::PortFailure("query is required".to_string()))?;
-        let fact_kind = input.fact_kind.as_deref();
-        let limit = input.limit.unwrap_or(8).clamp(1, 20);
+        let command = IdentityRecallCommand::try_from(input)?;
+        let query = command.query.as_str();
+        let fact_kind = command.fact_kind.as_ref().map(TrimmedText::as_str);
+        let limit = command.limit;
         let user_id = resolve_effective_identity_user_id(
-            input.user_id.as_deref(),
+            command.user_id.as_ref().map(TrimmedText::as_str),
             &self.default_user_id,
             self.workshop_dynamic,
         );
@@ -1147,6 +1174,65 @@ impl<'de> Deserialize<'de> for IdentityRememberInput {
     }
 }
 
+#[derive(Debug)]
+struct IdentityRememberCommand {
+    fact_kind: CognitiveFactKind,
+    fact_kind_label: TrimmedText,
+    subject: TrimmedText,
+    statement: RequiredContent,
+    attributes: Option<CompatibleObject>,
+    aliases: Vec<TrimmedText>,
+    source: Option<UpdateSource>,
+    confidence: Option<f32>,
+    reason: Option<RequiredContent>,
+    user_id: Option<TrimmedText>,
+}
+
+impl TryFrom<IdentityRememberInput> for IdentityRememberCommand {
+    type Error = StasisError;
+
+    fn try_from(input: IdentityRememberInput) -> Result<Self, Self::Error> {
+        let fact_kind_label = required_identity_text(input.fact_kind, "fact_kind")?;
+        let fact_kind =
+            parse_fact_kind(fact_kind_label.as_str()).map_err(StasisError::PortFailure)?;
+        let subject = required_identity_text(input.subject, "subject")?;
+        let statement = input
+            .statement
+            .ok_or_else(|| StasisError::PortFailure("statement is required".to_string()))
+            .and_then(|value| {
+                RequiredContent::new(value)
+                    .map_err(|_| StasisError::PortFailure("statement is required".to_string()))
+            })?;
+        let source = match input.source {
+            Some(value) => {
+                Some(parse_update_source(Some(value.as_str())).map_err(StasisError::PortFailure)?)
+            }
+            None => None,
+        };
+        let aliases = input
+            .aliases
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|value| TrimmedText::new(value).ok())
+            .collect();
+
+        Ok(Self {
+            fact_kind,
+            fact_kind_label,
+            subject,
+            statement,
+            attributes: input.attributes,
+            aliases,
+            source,
+            confidence: input.confidence.map(|value| value as f32),
+            reason: input
+                .reason
+                .and_then(|value| RequiredContent::new(value).ok()),
+            user_id: input.user_id.and_then(|value| TrimmedText::new(value).ok()),
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct IdentityRememberOutput {
     committed: bool,
@@ -1168,36 +1254,39 @@ impl CognitionIdentityRememberTool {
         &self,
         input: IdentityRememberInput,
     ) -> stasis::prelude::Result<IdentityRememberOutput> {
-        let fact_kind_raw = input
-            .fact_kind
-            .as_deref()
-            .ok_or_else(|| StasisError::PortFailure("fact_kind is required".to_string()))?;
-        let subject = input
-            .subject
-            .as_deref()
-            .ok_or_else(|| StasisError::PortFailure("subject is required".to_string()))?;
-        let statement = input
-            .statement
-            .as_deref()
-            .ok_or_else(|| StasisError::PortFailure("statement is required".to_string()))?;
-
-        let fact_kind = parse_fact_kind(fact_kind_raw).map_err(StasisError::PortFailure)?;
-        let source = match input.source.as_deref() {
-            None => UpdateSource::UserDirect,
-            Some(raw) => parse_update_source(Some(raw)).map_err(StasisError::PortFailure)?,
-        };
-        let confidence = input
-            .confidence
-            .map(|v| v as f32)
+        let command = IdentityRememberCommand::try_from(input)?;
+        let IdentityRememberCommand {
+            fact_kind,
+            fact_kind_label,
+            subject,
+            statement,
+            attributes,
+            aliases,
+            source,
+            confidence: requested_confidence,
+            reason: requested_reason,
+            user_id: requested_user_id,
+        } = command;
+        let source = source.unwrap_or(UpdateSource::UserDirect);
+        let confidence = requested_confidence
             .unwrap_or(if source == UpdateSource::UserDirect {
                 1.0
             } else {
                 0.85
             })
             .clamp(0.0, 1.0);
-        let reason = input.reason.as_deref().unwrap_or(statement).to_string();
+        let reason = requested_reason
+            .map(RequiredContent::into_string)
+            .unwrap_or_else(|| statement.as_str().to_string());
+        let fact_kind_raw = fact_kind_label.into_string();
+        let subject = subject.into_string();
+        let statement = statement.into_string();
+        let aliases = aliases
+            .into_iter()
+            .map(TrimmedText::into_string)
+            .collect::<Vec<_>>();
         let user_id = resolve_effective_identity_user_id(
-            input.user_id.as_deref(),
+            requested_user_id.as_ref().map(TrimmedText::as_str),
             &self.default_user_id,
             self.workshop_dynamic,
         );
@@ -1214,8 +1303,8 @@ impl CognitionIdentityRememberTool {
                 self.writer
                     .remember_preference(
                         &user_id,
-                        subject,
-                        Value::String(statement.to_string()),
+                        &subject,
+                        Value::String(statement.clone()),
                         source,
                         confidence,
                         &reason,
@@ -1223,15 +1312,13 @@ impl CognitionIdentityRememberTool {
                     .await?
             }
             CognitiveFactKind::Person => {
-                let attributes = parse_attributes_tags(
-                    input.attributes.as_ref().map(CompatibleObject::as_value),
-                );
-                let aliases = input.aliases.unwrap_or_default();
+                let attributes =
+                    parse_attributes_tags(attributes.as_ref().map(CompatibleObject::as_value));
                 self.writer
                     .remember_contact(
                         &user_id,
-                        subject,
-                        statement,
+                        &subject,
+                        &statement,
                         &attributes,
                         &aliases,
                         source,
@@ -1242,7 +1329,7 @@ impl CognitionIdentityRememberTool {
             }
             CognitiveFactKind::Note => {
                 self.writer
-                    .remember_note(&user_id, subject, statement, source, confidence, &reason)
+                    .remember_note(&user_id, &subject, &statement, source, confidence, &reason)
                     .await?
             }
         };
@@ -1256,8 +1343,8 @@ impl CognitionIdentityRememberTool {
             sttp_bridge_stored: result.sttp_bridge_stored,
             digest_preview: result.digest_preview,
             rationale: result.rationale,
-            fact_kind: fact_kind_raw.to_string(),
-            subject: subject.to_string(),
+            fact_kind: fact_kind_raw,
+            subject,
         })
     }
 }
@@ -1726,5 +1813,63 @@ mod remember_tests {
         let digest = compile_relational_memory_digest(&snapshot, 800);
         assert!(digest.contains("matcha"), "digest: {digest}");
         assert!(digest.contains("Mario"), "digest: {digest}");
+    }
+
+    #[test]
+    fn identity_commands_normalize_fact_inputs_and_preserve_statements() {
+        let recall = IdentityRecallCommand::try_from(IdentityRecallInput {
+            query: Some("  matcha  ".to_string()),
+            fact_kind: Some(" preference ".to_string()),
+            limit: Some(999),
+            user_id: Some(" user-a ".to_string()),
+        })
+        .expect("recall command");
+        assert_eq!(recall.query.as_str(), "matcha");
+        assert_eq!(recall.limit, 20);
+        assert_eq!(
+            recall.fact_kind.as_ref().map(TrimmedText::as_str),
+            Some("preference")
+        );
+
+        let raw_statement = "  User prefers matcha over coffee.  \n";
+        let remember = IdentityRememberCommand::try_from(IdentityRememberInput {
+            fact_kind: Some(" Preference ".to_string()),
+            subject: Some(" beverage ".to_string()),
+            statement: Some(raw_statement.to_string()),
+            attributes: Some(CompatibleObject(json!({"category": "drink"}))),
+            aliases: Some(vec!["  tea  ".to_string(), " \n".to_string()]),
+            source: Some(" user_direct ".to_string()),
+            confidence: Some(0.7),
+            reason: Some("  operator stated it  ".to_string()),
+            user_id: Some(" user-a ".to_string()),
+        })
+        .expect("remember command");
+        assert!(matches!(remember.fact_kind, CognitiveFactKind::Preference));
+        assert_eq!(remember.fact_kind_label.as_str(), "Preference");
+        assert_eq!(remember.subject.as_str(), "beverage");
+        assert_eq!(remember.statement.as_str(), raw_statement);
+        assert_eq!(remember.aliases.len(), 1);
+        assert_eq!(remember.aliases[0].as_str(), "tea");
+        assert_eq!(
+            remember.reason.as_ref().map(RequiredContent::as_str),
+            Some("  operator stated it  ")
+        );
+    }
+
+    #[test]
+    fn identity_remember_command_rejects_blank_statement() {
+        let error = IdentityRememberCommand::try_from(IdentityRememberInput {
+            fact_kind: Some("note".to_string()),
+            subject: Some("topic".to_string()),
+            statement: Some(" \n\t".to_string()),
+            attributes: None,
+            aliases: None,
+            source: None,
+            confidence: None,
+            reason: None,
+            user_id: None,
+        })
+        .expect_err("blank statement should fail");
+        assert!(error.to_string().contains("statement is required"));
     }
 }
