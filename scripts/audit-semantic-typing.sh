@@ -96,6 +96,25 @@ if ! rg -n --no-heading 'serde_json::from_value' "${recurring_paths[@]}"; then
 fi
 
 check_failed=0
+
+if rg -n --no-heading 'deserialize_lenient_' src \
+    --glob '*.rs' \
+    --glob '!src/typed_tools/compat.rs' \
+    --glob '!src/typed_tools/mod.rs'; then
+    printf '%s\n' "FAIL: lenient compatibility helpers must remain centralized under src/typed_tools" >&2
+    check_failed=1
+else
+    printf '%s\n' "PASS: no lenient compatibility call sites outside src/typed_tools"
+fi
+
+tool_sources=(src/*_tools.rs src/agent_runtime/*_tools.rs)
+if rg -n --no-heading 'RuntimeComposition::(InMemory|Surreal)' "${tool_sources[@]}"; then
+    printf '%s\n' "FAIL: tool handlers must use RuntimeCompositionExt for common backend operations" >&2
+    check_failed=1
+else
+    printf '%s\n' "PASS: no direct RuntimeComposition backend matches in tool handlers"
+fi
+
 if rg -n --no-heading 'serde_json::to_value' "${recurring_paths[@]}"; then
     printf '%s\n' "FAIL: typed recurring paths must not serialize values for internal reparsing" >&2
     check_failed=1
