@@ -30,7 +30,7 @@ use crate::runtime_tools::{
 };
 use crate::semantic_values::{RequiredContent, TrimmedText};
 use crate::turn_continuation::TurnContinuationScope;
-use crate::typed_tools::{ToolId, medousa_tool};
+use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 use crate::ui_present_tools::{CognitionUiPresentTool, UiPresentInput, UiPresentOutput};
 
 pub const COGNITION_CUSTOM_VIEW_DOCTOR: &str = "cognition_custom_view_doctor";
@@ -65,53 +65,83 @@ impl CognitionCustomViewDoctorTool {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CustomViewDoctorInput {
     /// Optional single custom surface id; omit to inspect all
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    surface_id: Option<String>,
+    surface_id: CompatOption<String>,
     /// Optional presentation component id to narrow runtime diagnostics
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    component_id: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    component_id: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    profile_id: Option<String>,
+    profile_id: CompatOption<String>,
     /// Optional chat session for artifact HTML resolution
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    session_id: Option<String>,
+    session_id: CompatOption<String>,
     /// Include MedousaStore lint and runtime log tail (default true)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
+    #[serde(default)]
+    #[schemars(
+        with = "bool",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
-    include_runtime: Option<bool>,
+    include_runtime: CompatOption<bool>,
     /// Lint artifact HTML for sandbox anti-patterns (default true)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
+    #[serde(default)]
+    #[schemars(
+        with = "bool",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
-    include_static_lint: Option<bool>,
+    include_static_lint: CompatOption<bool>,
     /// Run active store self-test when Home client is open (default false)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
+    #[serde(default)]
+    #[schemars(
+        with = "bool",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
-    probe: Option<bool>,
+    probe: CompatOption<bool>,
+}
+
+#[derive(Debug)]
+struct CustomViewDoctorCommand {
+    surface_id: Option<TrimmedText>,
+    component_id: Option<TrimmedText>,
+    profile_id: Option<TrimmedText>,
+    session_id: Option<TrimmedText>,
+    include_runtime: bool,
+    include_static_lint: bool,
+    probe: bool,
+}
+
+impl From<CustomViewDoctorInput> for CustomViewDoctorCommand {
+    fn from(input: CustomViewDoctorInput) -> Self {
+        let normalize = |value: CompatOption<String>| {
+            value
+                .into_option()
+                .and_then(|value| TrimmedText::new(value).ok())
+        };
+        Self {
+            surface_id: normalize(input.surface_id),
+            component_id: normalize(input.component_id),
+            profile_id: normalize(input.profile_id),
+            session_id: normalize(input.session_id),
+            include_runtime: input.include_runtime.into_option().unwrap_or(true),
+            include_static_lint: input.include_static_lint.into_option().unwrap_or(true),
+            probe: input.probe.into_option().unwrap_or(false),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -128,33 +158,25 @@ impl CognitionCustomViewDoctorTool {
         &self,
         input: CustomViewDoctorInput,
     ) -> stasis::prelude::Result<CustomViewDoctorOutput> {
-        let profile_id = resolve_profile_id(input.profile_id.as_deref());
-        let surface_filter = input
-            .surface_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
-        let component_id = input
+        let command = CustomViewDoctorCommand::from(input);
+        let profile_id = resolve_profile_id(command.profile_id.as_ref().map(TrimmedText::as_str));
+        let surface_filter = command.surface_id.as_ref().map(TrimmedText::as_str);
+        let component_id = command
             .component_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
+            .as_ref()
+            .map(TrimmedText::as_str)
             .map(str::to_string);
-        let include_runtime = input.include_runtime.unwrap_or(true);
-        let include_static_lint = input.include_static_lint.unwrap_or(true);
-        let probe = input.probe.unwrap_or(false);
-        let session_id = input
+        let session_id = command
             .session_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
+            .as_ref()
+            .map(TrimmedText::as_str)
             .map(str::to_string);
 
         let diagnostics = DoctorDiagnosticOptions {
             component_id_filter: component_id,
-            include_runtime,
-            include_static_lint,
-            probe,
+            include_runtime: command.include_runtime,
+            include_static_lint: command.include_static_lint,
+            probe: command.probe,
             session_id,
         };
 
@@ -986,5 +1008,31 @@ mod tests {
         assert_eq!(command.component_id, "departures");
         assert_eq!(command.html.as_deref(), Some("  <main>Departures</main>\n"));
         assert_eq!(command.feed_ids, vec!["trip.london.trains"]);
+    }
+
+    #[test]
+    fn doctor_command_normalizes_filters_and_preserves_wire_lenience() {
+        let input: CustomViewDoctorInput = serde_json::from_value(serde_json::json!({
+            "surface_id": " trip-london ",
+            "component_id": 42,
+            "profile_id": " profile-a ",
+            "include_runtime": "yes",
+            "include_static_lint": false,
+            "probe": true,
+        }))
+        .expect("doctor input");
+        let command = CustomViewDoctorCommand::from(input);
+        assert_eq!(
+            command.surface_id.as_ref().map(TrimmedText::as_str),
+            Some("trip-london")
+        );
+        assert!(command.component_id.is_none());
+        assert_eq!(
+            command.profile_id.as_ref().map(TrimmedText::as_str),
+            Some("profile-a")
+        );
+        assert!(command.include_runtime);
+        assert!(!command.include_static_lint);
+        assert!(command.probe);
     }
 }
