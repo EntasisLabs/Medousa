@@ -6,7 +6,7 @@ use stasis::prelude::StasisError;
 
 use crate::identity_manuscript::{ManuscriptScope, build_manuscript_context, list_manuscripts};
 use crate::semantic_values::TrimmedText;
-use crate::typed_tools::{ToolId, medousa_tool};
+use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 const COGNITION_MANUSCRIPT_LIST_ID: ToolId = ToolId::new("cognition_manuscript_list");
 const COGNITION_MANUSCRIPT_RESOLVE_ID: ToolId = ToolId::new("cognition_manuscript_resolve");
@@ -24,19 +24,19 @@ pub struct CognitionManuscriptListTool;
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ManuscriptListInput {
     /// Optional manuscript id prefix filter
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    pub prefix: Option<String>,
+    pub prefix: CompatOption<String>,
     /// Max entries (default 50)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
-    pub limit: Option<usize>,
+    pub limit: CompatOption<usize>,
 }
 
 #[derive(Debug)]
@@ -52,9 +52,10 @@ impl TryFrom<ManuscriptListInput> for ManuscriptListCommand {
         Ok(Self {
             prefix: input
                 .prefix
+                .into_option()
                 .as_deref()
                 .and_then(|value| TrimmedText::new(value).ok()),
-            limit: input.limit.unwrap_or(50).clamp(1, 200),
+            limit: input.limit.into_option().unwrap_or(50).clamp(1, 200),
         })
     }
 }
@@ -140,12 +141,12 @@ pub struct ManuscriptResolveInput {
     /// Manuscript id (e.g. morning-brief)
     pub id: String,
     /// Include truncated voice/system/task preview (default false)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
+    #[serde(default)]
+    #[schemars(
+        with = "bool",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
-    pub include_prompt_preview: Option<bool>,
+    pub include_prompt_preview: CompatOption<bool>,
 }
 
 #[derive(Debug)]
@@ -163,7 +164,7 @@ impl TryFrom<ManuscriptResolveInput> for ManuscriptResolveCommand {
         })?;
         Ok(Self {
             id,
-            include_prompt_preview: input.include_prompt_preview.unwrap_or(false),
+            include_prompt_preview: input.include_prompt_preview.into_option().unwrap_or(false),
         })
     }
 }
@@ -304,8 +305,8 @@ mod tests {
     #[test]
     fn manuscript_list_command_normalizes_prefix_and_clamps_limit() {
         let command = ManuscriptListCommand::try_from(ManuscriptListInput {
-            prefix: Some("  morning  ".to_string()),
-            limit: Some(999),
+            prefix: Some("  morning  ".to_string()).into(),
+            limit: Some(999).into(),
         })
         .expect("command");
         assert_eq!(
@@ -319,9 +320,27 @@ mod tests {
     fn manuscript_resolve_command_rejects_blank_id() {
         let error = ManuscriptResolveCommand::try_from(ManuscriptResolveInput {
             id: " \n\t".to_string(),
-            include_prompt_preview: None,
+            include_prompt_preview: None.into(),
         })
         .expect_err("blank manuscript id should fail");
         assert!(error.to_string().contains("id is required"));
+    }
+
+    #[test]
+    fn manuscript_wire_optionals_remain_lenient_for_legacy_values() {
+        let list: ManuscriptListInput = serde_json::from_value(serde_json::json!({
+            "prefix": 42,
+            "limit": "50",
+        }))
+        .expect("list input");
+        assert!(list.prefix.into_option().is_none());
+        assert!(list.limit.into_option().is_none());
+
+        let resolve: ManuscriptResolveInput = serde_json::from_value(serde_json::json!({
+            "id": "morning-brief",
+            "include_prompt_preview": [],
+        }))
+        .expect("resolve input");
+        assert!(resolve.include_prompt_preview.into_option().is_none());
     }
 }
