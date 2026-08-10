@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
  * Refresh vendored Material Icon Theme file glyphs + association JSON.
+ * Source and license details: ../../THIRD_PARTY_NOTICES.md
  * Run from apps/medousa-home after bumping `material-icon-theme`:
  *   node scripts/sync-file-icons.mjs
  */

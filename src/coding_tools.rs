@@ -205,17 +205,7 @@ async fn daemon_post(path: &str, body: Value) -> StasisResult<Value> {
         .send()
         .await
         .map_err(|e| StasisError::PortFailure(format!("daemon session proxy: {e}")))?;
-    let status = resp.status();
-    let value = resp
-        .json::<Value>()
-        .await
-        .map_err(|e| StasisError::PortFailure(e.to_string()))?;
-    if !status.is_success() {
-        return Err(StasisError::PortFailure(format!(
-            "daemon {status}: {value}"
-        )));
-    }
-    Ok(value)
+    decode_daemon_response(resp).await
 }
 
 async fn daemon_get(path: &str) -> StasisResult<Value> {
@@ -226,17 +216,35 @@ async fn daemon_get(path: &str) -> StasisResult<Value> {
         .send()
         .await
         .map_err(|e| StasisError::PortFailure(format!("daemon session proxy: {e}")))?;
-    let status = resp.status();
-    let value = resp
-        .json::<Value>()
-        .await
-        .map_err(|e| StasisError::PortFailure(e.to_string()))?;
-    if !status.is_success() {
-        return Err(StasisError::PortFailure(format!(
-            "daemon {status}: {value}"
-        )));
+    decode_daemon_response(resp).await
+}
+
+async fn decode_daemon_response(response: reqwest::Response) -> StasisResult<Value> {
+    let status = response.status();
+    let bytes = response.bytes().await.map_err(|error| {
+        StasisError::PortFailure(format!("daemon response read failed: {error}"))
+    })?;
+    decode_daemon_response_bytes(status, &bytes)
+}
+
+fn decode_daemon_response_bytes(status: reqwest::StatusCode, bytes: &[u8]) -> StasisResult<Value> {
+    if status.is_success() {
+        return serde_json::from_slice(bytes).map_err(|error| {
+            StasisError::PortFailure(format!("daemon {status} returned invalid JSON: {error}"))
+        });
     }
-    Ok(value)
+
+    let detail = serde_json::from_slice::<Value>(bytes)
+        .map(|value| value.to_string())
+        .unwrap_or_else(|_| String::from_utf8_lossy(bytes).trim().to_string());
+    let detail = if detail.is_empty() {
+        "empty response body".to_string()
+    } else {
+        detail
+    };
+    Err(StasisError::PortFailure(format!(
+        "daemon {status}: {detail}"
+    )))
 }
 
 async fn create_bound_shell_session(
@@ -1850,6 +1858,27 @@ pub fn register_coding_tools(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn daemon_response_preserves_plain_text_error_details() {
+        let error = decode_daemon_response_bytes(
+            reqwest::StatusCode::SERVICE_UNAVAILABLE,
+            b"incompatible medousa-session: API revision 2; expected 3",
+        )
+        .expect_err("503 should fail");
+        assert_eq!(
+            error.to_string(),
+            "port failure: daemon 503 Service Unavailable: incompatible medousa-session: API revision 2; expected 3"
+        );
+    }
+
+    #[test]
+    fn daemon_response_decodes_successful_json() {
+        let value =
+            decode_daemon_response_bytes(reqwest::StatusCode::OK, br#"{"ok":true,"sessions":[]}"#)
+                .expect("valid daemon JSON");
+        assert_eq!(value, json!({ "ok": true, "sessions": [] }));
+    }
 
     #[test]
     fn shell_output_limit_never_partially_consumes_a_sequence_chunk() {

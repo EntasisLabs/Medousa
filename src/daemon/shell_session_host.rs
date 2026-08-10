@@ -147,9 +147,11 @@ async fn probe_health(health_url: &str, required_roots: &[PathBuf]) -> HealthPro
         return HealthProbe::Incompatible(format!("unexpected service {}", health.name));
     }
     if health.api_revision != Some(EXPECTED_API_REVISION) {
+        let actual = health
+            .api_revision
+            .map_or_else(|| "missing".to_string(), |revision| revision.to_string());
         return HealthProbe::Incompatible(format!(
-            "API revision {:?}; expected {EXPECTED_API_REVISION}",
-            health.api_revision
+            "API revision {actual}; expected {EXPECTED_API_REVISION}"
         ));
     }
     if let Some(missing) = required_roots.iter().find(|required| {
@@ -190,7 +192,7 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
             return info(
                 false,
                 format!(
-                    "incompatible medousa-session is already listening on {bind}: {reason}; restart it with the current Medousa package"
+                    "incompatible medousa-session is already listening on {bind}: {reason}; update or rebuild the Shell session host in Settings → Packages, then restart the workshop"
                 ),
             );
         }
@@ -238,7 +240,9 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
             HealthProbe::Incompatible(reason) => {
                 return info(
                     false,
-                    format!("medousa-session started incompatibly: {reason}"),
+                    format!(
+                        "medousa-session started incompatibly: {reason}; update or rebuild the Shell session host in Settings → Packages, then restart the workshop"
+                    ),
                 );
             }
             HealthProbe::Unreachable => {}
