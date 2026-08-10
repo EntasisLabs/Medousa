@@ -89,7 +89,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, state: &mut TuiState) {
                 )
             } else {
                 format!(
-                    " Note edit  Ctrl+S save · Ctrl+A ask · Ctrl+; o library  panes:{pane_n} desk:{desk_idx}/{desk_n}{prefix_hint}  |  obs:{obs_count} "
+                    " Note  Tab tree/buffer/links · Enter open · Ctrl+S save · Ctrl+A ask  panes:{pane_n}{prefix_hint}  |  obs:{obs_count} "
                 )
             }
         }
@@ -100,7 +100,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, state: &mut TuiState) {
             " Review  [] files · a approve · f finish · u restore · c code  panes:{pane_n}{prefix_hint}  |  obs:{obs_count} "
         ),
         Some(ShellTabKind::Terminal) => format!(
-            " Terminal  keys→PTY · Ctrl+C interrupt · Ctrl+Q quit · Ctrl+; t new  panes:{pane_n}{prefix_hint}  |  obs:{obs_count} "
+            " Terminal  keys→PTY · PgUp/PgDn scrollback · Ctrl+C interrupt · Ctrl+Q quit  panes:{pane_n}{prefix_hint}  |  obs:{obs_count} "
         ),
         _ => format!(
             " {}  depth:{}  conn:{}  session:{session_short}  panes:{pane_n} desk:{desk_idx}/{desk_n}{}{}  |  obs:{obs_count} jobs:{jobs_count} drops:{drops}  [Ctrl+O] ",
@@ -386,57 +386,183 @@ fn render_notes_pane(
     group_id: &str,
     focused: bool,
 ) {
+    use super::NotesFocus;
     let path = state
         .workspace
         .group_active_tab(group_id)
         .and_then(|t| t.notes_path().map(str::to_string))
         .unwrap_or_default();
-    let (title, body, status, dirty, conflict, scroll) = state
-        .note_buffers
-        .get(&path)
-        .map(|n| {
-            (
-                n.title.clone(),
-                n.buffer.as_text().to_string(),
-                n.status.clone(),
-                n.dirty,
-                n.conflict,
-                n.scroll,
-            )
-        })
-        .unwrap_or_else(|| {
-            (
-                path.clone(),
-                String::from("(note not loaded)"),
-                String::new(),
-                false,
-                false,
-                0,
-            )
-        });
-    let dirty_mark = if dirty { "*" } else { "" };
-    let conflict_mark = if conflict { " ⚠" } else { "" };
-    let focus_mark = if focused { " ●" } else { "" };
-    let block_title = format!(" Note {title}{dirty_mark}{conflict_mark}{focus_mark}  {status} ");
-    let border = if conflict && focused {
-        Style::default().fg(ui_accent_warn())
-    } else if focused {
+    let Some(note) = state.note_buffers.get(&path) else {
+        let widget = Paragraph::new("(note not loaded — Ctrl+; o)")
+            .block(
+                Block::default()
+                    .title(" Note ")
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(ui_border()))
+                    .style(Style::default().bg(ui_panel_bg())),
+            );
+        frame.render_widget(widget, area);
+        return;
+    };
+
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(24),
+            Constraint::Percentage(52),
+            Constraint::Percentage(24),
+        ])
+        .split(area);
+
+    // Vault tree
+    let mut tree_lines: Vec<Line> = Vec::new();
+    for (idx, tree_path) in note.tree.iter().enumerate() {
+        let selected = idx == note.tree_selected;
+        let marker = if selected { ">" } else { " " };
+        let active = if tree_path == &path { " ●" } else { "" };
+        let style = if selected && note.focus == NotesFocus::Tree && focused {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else if tree_path == &path {
+            Style::default().fg(Color::Cyan)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        tree_lines.push(Line::from(Span::styled(
+            format!("{marker} {tree_path}{active}"),
+            style,
+        )));
+    }
+    if tree_lines.is_empty() {
+        tree_lines.push(Line::from(Span::styled(
+            "(empty vault)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+    let tree_border = if focused && note.focus == NotesFocus::Tree {
         Style::default().fg(ui_accent_primary())
     } else {
         Style::default().fg(ui_border())
     };
-    let widget = Paragraph::new(body)
+    let tree = Paragraph::new(Text::from(tree_lines))
         .block(
             Block::default()
-                .title(block_title)
+                .title(" Vault ")
                 .borders(Borders::ALL)
-                .border_style(border)
+                .border_style(tree_border)
                 .style(Style::default().bg(ui_panel_bg())),
         )
-        .style(Style::default().fg(Color::White).bg(ui_panel_bg()))
+        .scroll((note.tree_scroll, 0));
+    frame.render_widget(tree, chunks[0]);
+
+    // Buffer
+    let dirty_mark = if note.dirty { "*" } else { "" };
+    let conflict_mark = if note.conflict { " ⚠" } else { "" };
+    let focus_mark = if focused { " ●" } else { "" };
+    let buf_border = if note.conflict && focused && note.focus == NotesFocus::Buffer {
+        Style::default().fg(ui_accent_warn())
+    } else if focused && note.focus == NotesFocus::Buffer {
+        Style::default().fg(ui_accent_primary())
+    } else {
+        Style::default().fg(ui_border())
+    };
+    let body = medousa::tui::syntax_lite::highlight_source(&path, note.buffer.as_text());
+    let editor = Paragraph::new(Text::from(body))
+        .block(
+            Block::default()
+                .title(format!(
+                    " {}{dirty_mark}{conflict_mark}{focus_mark}  {} ",
+                    note.title, note.status
+                ))
+                .borders(Borders::ALL)
+                .border_style(buf_border)
+                .style(Style::default().bg(ui_panel_bg())),
+        )
         .wrap(Wrap { trim: false })
-        .scroll((scroll, 0));
-    frame.render_widget(widget, area);
+        .scroll((note.scroll, 0));
+    frame.render_widget(editor, chunks[1]);
+
+    // Backlinks / outbound wikilinks (selection index matches notes_runtime::link_targets)
+    let mut link_lines: Vec<Line> = Vec::new();
+    let mut flat_idx = 0usize;
+    if !note.backlinks.is_empty() {
+        link_lines.push(Line::from(Span::styled(
+            "backlinks",
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        )));
+        for bl in &note.backlinks {
+            let selected = flat_idx == note.links_selected;
+            let marker = if selected { ">" } else { " " };
+            let style = if selected && note.focus == NotesFocus::Backlinks && focused {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            link_lines.push(Line::from(Span::styled(
+                format!("{marker} {bl}"),
+                style,
+            )));
+            flat_idx += 1;
+        }
+    }
+    let outbound: Vec<&String> = note
+        .wikilinks_out
+        .iter()
+        .filter(|out| !note.backlinks.iter().any(|b| b == *out))
+        .collect();
+    if !outbound.is_empty() {
+        if !link_lines.is_empty() {
+            link_lines.push(Line::from(""));
+        }
+        link_lines.push(Line::from(Span::styled(
+            "wikilinks out",
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        )));
+        for out in outbound {
+            let selected = flat_idx == note.links_selected;
+            let marker = if selected { ">" } else { " " };
+            let style = if selected && note.focus == NotesFocus::Backlinks && focused {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            link_lines.push(Line::from(Span::styled(
+                format!("{marker} {out}"),
+                style,
+            )));
+            flat_idx += 1;
+        }
+    }
+    if flat_idx == 0 {
+        link_lines.push(Line::from(Span::styled(
+            "No links yet. Use [[note]]",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+    let links_border = if focused && note.focus == NotesFocus::Backlinks {
+        Style::default().fg(ui_accent_primary())
+    } else {
+        Style::default().fg(ui_border())
+    };
+    let links = Paragraph::new(Text::from(link_lines))
+        .block(
+            Block::default()
+                .title(" Links ")
+                .borders(Borders::ALL)
+                .border_style(links_border)
+                .style(Style::default().bg(ui_panel_bg())),
+        )
+        .scroll((note.links_scroll, 0));
+    frame.render_widget(links, chunks[2]);
 }
 
 fn render_code_pane(
@@ -511,17 +637,20 @@ fn render_code_pane(
     let dirty = if ws.dirty { "*" } else { "" };
     let focus_mark = if focused { " ●" } else { "" };
     let path = ws.open_path.as_deref().unwrap_or("(no file)");
-    let body = if ws.open_path.is_some() {
-        ws.buffer.as_text().to_string()
+    let body = if let Some(open_path) = ws.open_path.as_deref() {
+        medousa::tui::syntax_lite::highlight_source(open_path, ws.buffer.as_text())
     } else {
-        "Select a file and press Enter".to_string()
+        vec![Line::from(Span::styled(
+            "Select a file and press Enter",
+            Style::default().fg(Color::DarkGray),
+        ))]
     };
     let buf_border = if focused && ws.focus == CodeFocus::Buffer {
         Style::default().fg(ui_accent_primary())
     } else {
         Style::default().fg(ui_border())
     };
-    let editor = Paragraph::new(body)
+    let editor = Paragraph::new(Text::from(body))
         .block(
             Block::default()
                 .title(format!(" {path}{dirty}{focus_mark}  {} ", ws.status))
@@ -569,6 +698,18 @@ fn render_review_pane(
             .fg(Color::Cyan)
             .add_modifier(Modifier::BOLD),
     )));
+    if !review.attribution_line.is_empty() {
+        lines.push(Line::from(Span::styled(
+            format!("provenance: {}", review.attribution_line),
+            Style::default().fg(Color::Magenta),
+        )));
+    }
+    if let Some(disposition) = review.disposition.as_deref().filter(|d| !d.is_empty()) {
+        lines.push(Line::from(Span::styled(
+            format!("disposition: {disposition}"),
+            Style::default().fg(Color::Yellow),
+        )));
+    }
     if !review.synthesis_summary.is_empty() {
         lines.push(Line::from(Span::styled(
             review.synthesis_summary.clone(),
@@ -599,7 +740,17 @@ fn render_review_pane(
                 .add_modifier(Modifier::BOLD),
         )));
         for row in &file.lines {
-            let style = if row.starts_with('+') && !row.starts_with("──") {
+            let trimmed = row.trim_start_matches(['+', '-', ' ']);
+            let style = if trimmed.starts_with("<<<<<<<")
+                || trimmed.starts_with(">>>>>>>")
+                || trimmed.starts_with("=======")
+            {
+                Style::default()
+                    .fg(ui_accent_warn())
+                    .add_modifier(Modifier::BOLD)
+            } else if row.starts_with("@@ ") {
+                Style::default().fg(Color::Cyan)
+            } else if row.starts_with('+') && !row.starts_with("──") {
                 Style::default().fg(Color::Green)
             } else if row.starts_with('-') && !row.starts_with("──") {
                 Style::default().fg(Color::Red)
@@ -672,20 +823,25 @@ fn render_terminal_pane(
     } else {
         Style::default().fg(ui_border())
     };
-    let status = state
+    let (conn_mark, view_offset, scrolled) = state
         .terminal_panes
         .get(&session_id)
         .map(|p| {
-            if p.connected {
-                "●"
-            } else {
-                "○"
-            }
+            (
+                if p.connected { "●" } else { "○" },
+                p.view_offset,
+                p.view_offset > 0,
+            )
         })
-        .unwrap_or("?");
+        .unwrap_or(("?", 0, false));
+    let scroll_hint = if scrolled {
+        format!("  [scroll {view_offset} PgUp/PgDn Esc]")
+    } else {
+        String::new()
+    };
     let block = Block::default()
         .title(if focused {
-            format!(" {title}  {status} ")
+            format!(" {title}  {conn_mark}{scroll_hint} ")
         } else {
             format!(" {title} ")
         })
@@ -713,7 +869,7 @@ fn render_terminal_pane(
     for row in 0..rows {
         let mut spans: Vec<Span> = Vec::with_capacity(cols);
         for col in 0..cols {
-            let cell = grid.cell_at(col as u16, row as u16);
+            let cell = grid.cell_at_view(col as u16, row as u16, view_offset);
             let mut fg = cell
                 .fg
                 .map(ansi_indexed_color)
@@ -736,7 +892,11 @@ fn render_terminal_pane(
             if cell.bold {
                 style = style.add_modifier(Modifier::BOLD);
             }
-            if focused && col as u16 == cursor_col && row as u16 == cursor_row {
+            if focused
+                && view_offset == 0
+                && col as u16 == cursor_col
+                && row as u16 == cursor_row
+            {
                 style = style.bg(default_fg).fg(default_bg);
             }
             spans.push(Span::styled(cell.ch.to_string(), style));
@@ -792,7 +952,7 @@ fn render_connection_picker_overlay(frame: &mut ratatui::Frame, state: &TuiState
     } else {
         lines.push(Line::from(Span::styled(
             format!(
-                "Filter: /{}   Enter switch · u paste URL · Esc close · Ctrl+; w",
+                "Filter: /{}   Enter switch · l browse LAN · u paste URL · Esc",
                 state.connection_picker_query
             ),
             Style::default().fg(Color::DarkGray),

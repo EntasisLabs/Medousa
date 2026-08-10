@@ -171,8 +171,9 @@ ask-about-note hands context to a chat pane.
 - notes tab kind + markdown buffer with dirty/`If-Match` save (`Ctrl+S`)
 - `/notes <path>`, `/notes new <path.md>`
 - `Ctrl+A` ask-about-note → new chat tab with note snippet prefilled
-- Follow-ups: backlinks panel, tree sidebar
-- Follow-up landed: If-Match conflict UI (`Ctrl+R` reload · `Ctrl+Y` keep mine)
+- Follow-ups landed: vault tree sidebar + links panel (backlinks / wikilinks out);
+  If-Match conflict UI (`Ctrl+R` reload · `Ctrl+Y` keep mine); Tab cycles
+  tree / buffer / links
 
 ### Phase 3 — Code + Review ✅ (v1)
 
@@ -195,8 +196,9 @@ path works without opening Home.
 - `Ctrl+; f` / `/code` Forge picker → code desk (tree + buffer, lease-fenced save)
 - `Ctrl+; r` / `/review` → stacked file diffs, `a` approve / `f` finish / `u` restore
 - `Ctrl+R` from code → review; `c` from review → code
-- Follow-ups: syntax highlight, conflict DiffStack polish
-- Follow-up landed: seal from TUI (`Ctrl+E` / `/seal` → lease complete → Review)
+- Follow-ups landed: `syntax_lite` highlight in code buffer; DiffStack polish
+  (hunk headers, attribution, disposition, conflict-marker tint); seal from TUI
+  (`Ctrl+E` / `/seal` → lease complete → Review)
 
 ### Phase 4 — Terminal panes ✅ (v1)
 
@@ -214,8 +216,9 @@ the same session ids the TUI attached.
 - `terminal_runtime.rs` — create/list/attach WS, stdin/resize, restore on restart
 - `Ctrl+; t` new · `Ctrl+; T` / `/terminal list` picker · `/terminal [id]`
 - split while Terminal-focused creates a new shell session pane
-- Follow-ups: scrollback pager, lease-staged command log
-- Follow-up landed: 16-color SGR (+ bold/reverse) aligned with Home xterm theme
+- Follow-ups landed: scrollback pager (PgUp/PgDn/Esc, ~2000 lines); 16-color SGR
+  (+ bold/reverse) aligned with Home xterm theme
+- Still open: lease-staged command log
 
 ### Phase 5 — Workshop connection polish ✅ (v1)
 
@@ -230,7 +233,9 @@ the same session ids the TUI attached.
 - `Ctrl+; w` / `/connection` / palette **Connection** — local + Home registry + recent + paste URL
 - Remembers last Connection (`tui_active_connection_v1.json`) when `--daemon-url` unset
 - Handoff note in `docs/cookbook/cli-and-workspace.md`
-- Follow-ups: QR/Iroh join from TUI, LAN browse without an already-reachable daemon
+- Follow-up landed: LAN browse cold-start (`l` in Connection picker → in-process
+  mDNS `_medousa._tcp`, no daemon required)
+- Still open: QR/Iroh join from TUI
 
 ## What to lift from Home vs rewrite
 

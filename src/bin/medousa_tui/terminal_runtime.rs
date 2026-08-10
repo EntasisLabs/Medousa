@@ -58,6 +58,8 @@ pub(crate) struct TerminalPane {
     pub parser: Arc<Mutex<Parser>>,
     pub status: String,
     pub connected: bool,
+    /// Local pager offset into scrollback (0 = live). PageUp/PageDown.
+    pub view_offset: u16,
     pub stdin_tx: Option<mpsc::UnboundedSender<OutboundFrame>>,
     pub attach_task: Option<tokio::task::JoinHandle<()>>,
 }
@@ -74,6 +76,7 @@ impl TerminalPane {
             parser: Arc::new(Mutex::new(Parser::new())),
             status: "connecting…".to_string(),
             connected: false,
+            view_offset: 0,
             stdin_tx: None,
             attach_task: None,
         }
@@ -119,8 +122,10 @@ pub(crate) fn empty_terminal_panes() -> HashMap<String, TerminalPane> {
 pub(crate) fn handle_terminal_event(event: TerminalUiEvent, state: &mut TuiState) {
     match event {
         TerminalUiEvent::Dirty { session_id } => {
-            let _ = session_id;
-            // Grid already updated on the attach task; redraw is enough.
+            // Stick to the live bottom when new output arrives.
+            if let Some(pane) = state.terminal_panes.get_mut(&session_id) {
+                pane.view_offset = 0;
+            }
         }
         TerminalUiEvent::Status {
             session_id,
@@ -768,6 +773,42 @@ pub(crate) async fn handle_terminal_key(key: KeyEvent, state: &mut TuiState) -> 
         )
         .await;
         return EventOutcome::Continue;
+    }
+
+    // Local scrollback pager — do not forward PageUp/PageDown/Esc-while-scrolled to PTY.
+    if matches!(
+        key.code,
+        KeyCode::PageUp | KeyCode::PageDown | KeyCode::Esc
+    ) {
+        let Some(pane) = state.terminal_panes.get_mut(&session_id) else {
+            return EventOutcome::Continue;
+        };
+        let sb_len = pane
+            .grid
+            .lock()
+            .map(|g| g.scrollback_len())
+            .unwrap_or(0) as u16;
+        let page = pane.rows.max(1);
+        match key.code {
+            KeyCode::PageUp => {
+                pane.view_offset = pane.view_offset.saturating_add(page).min(sb_len);
+                return EventOutcome::Continue;
+            }
+            KeyCode::PageDown => {
+                pane.view_offset = pane.view_offset.saturating_sub(page);
+                return EventOutcome::Continue;
+            }
+            KeyCode::Esc if pane.view_offset > 0 => {
+                pane.view_offset = 0;
+                return EventOutcome::Continue;
+            }
+            _ => {}
+        }
+    }
+
+    // Typing while scrolled jumps back to live and forwards the key.
+    if let Some(pane) = state.terminal_panes.get_mut(&session_id) {
+        pane.view_offset = 0;
     }
 
     let Some(bytes) = encode_key(key) else {

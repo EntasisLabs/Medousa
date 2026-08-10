@@ -3,7 +3,12 @@
 //! Intentionally small (cursor, scroll, CSI CUP/ED/EL/SGR subset) so TUI terminal
 //! panes can attach to workshop shell sessions without Zig / libghostty.
 
+use std::collections::VecDeque;
+
 use vte::{Params, Parser, Perform};
+
+/// Soft cap on scrolled-off rows kept for the local pager.
+pub const SCROLLBACK_CAP: usize = 2_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Cell {
@@ -32,6 +37,8 @@ pub struct VtGrid {
     cols: usize,
     rows: usize,
     cells: Vec<Cell>,
+    /// Oldest → newest scrolled-off rows (each length == cols at push time).
+    scrollback: VecDeque<Vec<Cell>>,
     cursor_col: usize,
     cursor_row: usize,
     bold: bool,
@@ -50,6 +57,7 @@ impl VtGrid {
             cols,
             rows,
             cells: vec![Cell::default(); cols * rows],
+            scrollback: VecDeque::new(),
             cursor_col: 0,
             cursor_row: 0,
             bold: false,
@@ -73,6 +81,10 @@ impl VtGrid {
         (self.cursor_col as u16, self.cursor_row as u16)
     }
 
+    pub fn scrollback_len(&self) -> usize {
+        self.scrollback.len()
+    }
+
     pub fn cell_at(&self, col: u16, row: u16) -> Cell {
         let col = col as usize;
         let row = row as usize;
@@ -80,6 +92,43 @@ impl VtGrid {
             return Cell::default();
         }
         self.cells[row * self.cols + col]
+    }
+
+    /// Cell for a viewport row when the local pager is scrolled back by `view_offset`
+    /// lines (0 = live bottom). Rows above the live grid come from scrollback.
+    pub fn cell_at_view(&self, col: u16, row: u16, view_offset: u16) -> Cell {
+        let col = col as usize;
+        let row = row as usize;
+        let offset = view_offset as usize;
+        if col >= self.cols || row >= self.rows {
+            return Cell::default();
+        }
+        if offset == 0 {
+            return self.cells[row * self.cols + col];
+        }
+        let sb = self.scrollback.len();
+        let absolute = sb.saturating_sub(offset) + row;
+        if absolute < sb {
+            let line = &self.scrollback[absolute];
+            return line.get(col).copied().unwrap_or_default();
+        }
+        let live_row = absolute - sb;
+        if live_row >= self.rows {
+            return Cell::default();
+        }
+        self.cells[live_row * self.cols + col]
+    }
+
+    fn push_scrollback_row(&mut self, row: usize) {
+        let start = row * self.cols;
+        let end = start + self.cols;
+        if end > self.cells.len() {
+            return;
+        }
+        self.scrollback.push_back(self.cells[start..end].to_vec());
+        while self.scrollback.len() > SCROLLBACK_CAP {
+            self.scrollback.pop_front();
+        }
     }
 
     pub fn resize(&mut self, cols: u16, rows: u16) {
@@ -94,6 +143,14 @@ impl VtGrid {
         for row in 0..copy_rows {
             for col in 0..copy_cols {
                 next[row * cols + col] = self.cells[row * self.cols + col];
+            }
+        }
+        // Resize scrollback rows to the new width (pad/truncate).
+        for line in &mut self.scrollback {
+            if line.len() < cols {
+                line.resize(cols, Cell::default());
+            } else {
+                line.truncate(cols);
             }
         }
         self.cols = cols;
@@ -167,6 +224,11 @@ impl VtGrid {
             return;
         }
         let height = bottom - top + 1;
+        // Capture rows that will scroll off the top of the region.
+        let capture = lines.min(height);
+        for row in top..(top + capture) {
+            self.push_scrollback_row(row);
+        }
         if lines >= height {
             for row in top..=bottom {
                 for col in 0..self.cols {
@@ -501,5 +563,7 @@ mod tests {
         // scrolled: row0 should be previous row1 content + more
         assert_eq!(grid.rows(), 2);
         assert_eq!(grid.cell_at(0, 0).ch, '5');
+        assert!(grid.scrollback_len() >= 1);
+        assert_eq!(grid.cell_at_view(0, 0, 1).ch, '1');
     }
 }

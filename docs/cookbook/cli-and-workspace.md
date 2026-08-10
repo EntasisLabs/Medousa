@@ -93,21 +93,24 @@ Settings label in Home is **Connection**. In the TUI:
 |--------|-----|
 | Open picker | `Ctrl+; w` · `/connection` · command palette |
 | Switch URL | Enter on a row, or `/connection http://host:7419` |
+| Browse LAN | `l` in the picker (mDNS; works without a reachable daemon) |
 | Paste URL | `u` in the picker |
 
-The picker lists **Local**, workshops from Home’s `{dataDir}/workshops.json` (read-only), and recent daemons. Pane layout is scoped per workshop under `tui_workspaces/{scope}/` (same idea as Home’s `medousa-home-workspace-session-v4:{workshopId}`).
+The picker lists **Local**, workshops from Home’s `{dataDir}/workshops.json` (read-only), recent daemons, and LAN discoveries after browse. Pane layout is scoped per workshop under `tui_workspaces/{scope}/` (same idea as Home’s `medousa-home-workspace-session-v4:{workshopId}`).
 
 ### Chat handoff with Home
 
 Chat turns live on the **daemon** (`/v1/sessions/{id}/history`). Point TUI and Home at the **same workshop URL** and use the **same `session_id`** (`--session` / focused chat tab / Home’s last session) — there is no fork. Pane layouts stay shell-local (TUI JSON vs Home localStorage).
 
-### Forge seal + note conflicts
+### Forge, notes, terminal
 
 | Action | Keys |
 |--------|------|
 | Seal code lease → Review | `Ctrl+E` / `/seal` (saves dirty buffer first) |
 | Review dispositions | `a` approve · `f` finish · `u` restore |
+| Note tree / buffer / links | `Tab` cycle · Enter open from tree or links |
 | Note save conflict | `Ctrl+R` reload from vault · `Ctrl+Y` keep mine (omit If-Match) |
+| Terminal scrollback | `PgUp` / `PgDn` · `Esc` jump to live bottom |
 
 ---
 

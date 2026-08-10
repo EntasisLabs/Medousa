@@ -59,10 +59,12 @@ pub(crate) fn print_help() {
     println!("  Ctrl+; r     Open Forge review picker");
     println!("  Ctrl+; t     Open new workshop terminal pane");
     println!("  Ctrl+; T     Attach existing shell session");
-    println!("  Ctrl+; w     Connection picker (workshop / daemon)");
+    println!("  Ctrl+; w     Connection picker (workshop / daemon; l = browse LAN)");
     println!("  Ctrl+S       Save focused note/code file");
     println!("  Ctrl+E       Seal focused Forge code lease → review");
     println!("  Ctrl+A       Ask about focused note (new chat tab)");
+    println!("  Tab          Notes/Code: cycle tree · buffer · links");
+    println!("  PgUp/PgDn    Terminal: scrollback pager (Esc = live)");
     println!("  Ctrl+R       Reload note from vault (notes conflict)");
     println!("  Ctrl+Y       Keep mine / overwrite note (notes conflict)");
     println!("  Ctrl+C       Quit (in terminal pane: send to PTY; Ctrl+Q quits)");
