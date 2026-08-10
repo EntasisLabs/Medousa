@@ -855,6 +855,51 @@ pub struct McpPromoteToJobInput {
     step_id: String,
 }
 
+#[derive(Debug)]
+struct McpPromoteToJobCommand {
+    server_id: TrimmedText,
+    tool_name: TrimmedText,
+    input: Value,
+    note: Option<String>,
+    queue: TrimmedText,
+    step_id: TrimmedText,
+}
+
+impl TryFrom<McpPromoteToJobInput> for McpPromoteToJobCommand {
+    type Error = stasis::prelude::StasisError;
+
+    fn try_from(input: McpPromoteToJobInput) -> Result<Self, Self::Error> {
+        let server_id = required_mcp_identifier(input.server_id, "server_id")?;
+        let tool_name = required_mcp_identifier(input.tool_name, "tool_name")?;
+        let queue = required_mcp_identifier(Some(input.queue), "queue")?;
+        let step_id = required_mcp_identifier(Some(input.step_id), "step_id")?;
+
+        Ok(Self {
+            server_id,
+            tool_name,
+            input: input
+                .input
+                .map(|input| input.0)
+                .unwrap_or_else(|| json!({})),
+            note: input.note,
+            queue,
+            step_id,
+        })
+    }
+}
+
+fn required_mcp_identifier(
+    value: Option<String>,
+    field: &str,
+) -> stasis::prelude::Result<TrimmedText> {
+    let value = value.ok_or_else(|| {
+        StasisError::PortFailure(format!("cognition_mcp_promote_to_job: {field} is required"))
+    })?;
+    TrimmedText::new(value).map_err(|_| {
+        StasisError::PortFailure(format!("cognition_mcp_promote_to_job: {field} is required"))
+    })
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct McpPromoteToJobOutput {
     workflow_id: String,
@@ -874,36 +919,26 @@ impl CognitionMcpPromoteToJobTool {
         &self,
         input: McpPromoteToJobInput,
     ) -> stasis::prelude::Result<McpPromoteToJobOutput> {
-        let server_id = input.server_id.as_deref().ok_or_else(|| {
-            StasisError::PortFailure(
-                "cognition_mcp_promote_to_job: server_id is required".to_string(),
-            )
-        })?;
-        let tool_name = input.tool_name.as_deref().ok_or_else(|| {
-            StasisError::PortFailure(
-                "cognition_mcp_promote_to_job: tool_name is required".to_string(),
-            )
-        })?;
-        let args = input
-            .input
-            .map(|input| input.0)
-            .unwrap_or_else(|| json!({}));
-        let note = input.note;
+        let command = McpPromoteToJobCommand::try_from(input)?;
 
         let workflow_id = new_workflow_id();
         let payload = MedousaWorkflowPayload {
             workflow_id: workflow_id.clone(),
-            name: Some(format!("mcp:{server_id}.{tool_name}")),
+            name: Some(format!(
+                "mcp:{}.{}",
+                command.server_id.as_str(),
+                command.tool_name.as_str()
+            )),
             strategy: "sequential".to_string(),
             mode: "default".to_string(),
             on_failure: "stop".to_string(),
-            note: note.clone(),
+            note: command.note.clone(),
             lane: "interactive".to_string(),
             steps: vec![WorkflowStepSpec::Mcp {
-                id: input.step_id,
-                server_id: server_id.to_string(),
-                tool_name: tool_name.to_string(),
-                args,
+                id: command.step_id.as_str().to_string(),
+                server_id: command.server_id.as_str().to_string(),
+                tool_name: command.tool_name.as_str().to_string(),
+                args: command.input,
                 effect_class: None,
             }],
         };
@@ -916,9 +951,13 @@ impl CognitionMcpPromoteToJobTool {
                 tool_name: COGNITION_MCP_PROMOTE_TO_JOB_ID.as_str(),
                 await_mode: ContinuationAwaitMode::Async,
             });
-        let job_id =
-            enqueue_workflow_job(self.runtime.as_ref(), &payload, &input.queue, continuation)
-                .await?;
+        let job_id = enqueue_workflow_job(
+            self.runtime.as_ref(),
+            &payload,
+            command.queue.as_str(),
+            continuation,
+        )
+        .await?;
         let job_type = workflow_job_type_for_strategy(&payload.strategy)
             .unwrap_or(WORKFLOW_SEQUENTIAL_JOB_TYPE);
 
@@ -941,7 +980,11 @@ impl CognitionMcpPromoteToJobTool {
             .event_tx
             .send(TuiEvent::ToolInvoked {
                 tool_name: COGNITION_MCP_PROMOTE_TO_JOB_ID.as_str().to_string(),
-                input_summary: format!("{server_id}.{tool_name}"),
+                input_summary: format!(
+                    "{}.{}",
+                    command.server_id.as_str(),
+                    command.tool_name.as_str()
+                ),
             })
             .await;
 
@@ -959,7 +1002,7 @@ impl CognitionMcpPromoteToJobTool {
             job_type: job_type.to_string(),
             status: "enqueued".to_string(),
             lane: "interactive".to_string(),
-            note,
+            note: command.note,
             continuation,
         })
     }
@@ -1479,5 +1522,42 @@ mod tests {
         .expect_err("blank binding reference should fail");
 
         assert!(error.to_string().contains("binding.reference is required"));
+    }
+
+    #[test]
+    fn mcp_promotion_command_normalizes_identifiers_and_preserves_arguments() {
+        let command = McpPromoteToJobCommand::try_from(McpPromoteToJobInput {
+            server_id: Some("  docs  ".to_string()),
+            tool_name: Some("  search  ".to_string()),
+            input: Some(BridgeObject(json!({
+                "query": "  keep payload bytes  "
+            }))),
+            note: Some("  operator note  ".to_string()),
+            queue: "  bridge  ".to_string(),
+            step_id: "  search_step  ".to_string(),
+        })
+        .expect("command");
+
+        assert_eq!(command.server_id.as_str(), "docs");
+        assert_eq!(command.tool_name.as_str(), "search");
+        assert_eq!(command.queue.as_str(), "bridge");
+        assert_eq!(command.step_id.as_str(), "search_step");
+        assert_eq!(command.note.as_deref(), Some("  operator note  "));
+        assert_eq!(command.input["query"], json!("  keep payload bytes  "));
+    }
+
+    #[test]
+    fn mcp_promotion_command_rejects_blank_required_identifiers() {
+        let error = McpPromoteToJobCommand::try_from(McpPromoteToJobInput {
+            server_id: Some(" \n".to_string()),
+            tool_name: Some("search".to_string()),
+            input: None,
+            note: None,
+            queue: "default".to_string(),
+            step_id: "mcp_step".to_string(),
+        })
+        .expect_err("blank server id should fail");
+
+        assert!(error.to_string().contains("server_id is required"));
     }
 }
