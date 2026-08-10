@@ -63,8 +63,16 @@ impl ToolError {
         Self::new(ToolErrorKind::Dependency, message).for_tool(tool_id)
     }
 
+    pub fn conflict(tool_id: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new(ToolErrorKind::Conflict, message).for_tool(tool_id)
+    }
+
     pub fn external(tool_id: impl Into<String>, message: impl Into<String>) -> Self {
         Self::new(ToolErrorKind::External, message).for_tool(tool_id)
+    }
+
+    pub fn canceled(tool_id: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new(ToolErrorKind::Canceled, message).for_tool(tool_id)
     }
 
     pub fn kind(&self) -> ToolErrorKind {
@@ -183,5 +191,20 @@ mod tests {
             .unwrap_err();
         assert_eq!(error.kind(), ToolErrorKind::Dependency);
         assert!(error.to_string().contains("backend unavailable"));
+    }
+
+    #[test]
+    fn categories_keep_tool_context_at_the_stasis_boundary() {
+        let conflict = ToolError::conflict("tool.test", "already exists")
+            .with_operation("create")
+            .into_stasis();
+        assert!(
+            conflict
+                .to_string()
+                .contains("conflict tool=tool.test operation=create")
+        );
+
+        let canceled = ToolError::canceled("tool.test", "request stopped");
+        assert_eq!(canceled.kind(), ToolErrorKind::Canceled);
     }
 }

@@ -3,13 +3,14 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
-use stasis::domain::errors::{Result as StasisResult, StasisError};
+use stasis::domain::errors::Result as StasisResult;
 use tokio::sync::mpsc;
 
 use crate::events::TuiEvent;
 use crate::grapheme_script::service::GraphemeScriptHit;
 use crate::grapheme_script::{GraphemeScriptEntry, GraphemeScriptService};
 use crate::semantic_values::{RequiredContent, TrimmedText};
+use crate::tool_error::{DependencyResultExt, ToolError};
 use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_GRAPHEME_SCRIPT_SAVE: &str = "cognition_grapheme_script_save";
@@ -145,14 +146,18 @@ struct GraphemeScriptSaveCommand {
 }
 
 impl TryFrom<GraphemeScriptSaveInput> for GraphemeScriptSaveCommand {
-    type Error = StasisError;
+    type Error = ToolError;
 
     fn try_from(input: GraphemeScriptSaveInput) -> Result<Self, Self::Error> {
         let id = input.id.and_then(|value| TrimmedText::new(value).ok());
-        let name = TrimmedText::new(input.name.unwrap_or_default())
-            .map_err(|_| StasisError::PortFailure("name is required".to_string()))?;
-        let body = RequiredContent::new(input.body.unwrap_or_default())
-            .map_err(|_| StasisError::PortFailure("body is required".to_string()))?;
+        let name = TrimmedText::new(input.name.unwrap_or_default()).map_err(|_| {
+            ToolError::input(COGNITION_GRAPHEME_SCRIPT_SAVE, "name is required")
+                .with_operation("normalize save input")
+        })?;
+        let body = RequiredContent::new(input.body.unwrap_or_default()).map_err(|_| {
+            ToolError::input(COGNITION_GRAPHEME_SCRIPT_SAVE, "body is required")
+                .with_operation("normalize save input")
+        })?;
         let intent = input.intent.and_then(|value| TrimmedText::new(value).ok());
         let session_id = input
             .session_id
@@ -214,7 +219,7 @@ impl CognitionGraphemeScriptSaveTool {
             intent.map(TrimmedText::into_string),
             session_id.map(TrimmedText::into_string),
         )
-        .map_err(|err| StasisError::PortFailure(err.to_string()))?;
+        .dependency_context(COGNITION_GRAPHEME_SCRIPT_SAVE, "save script")?;
         let line = entry.summary_line();
 
         Ok(GraphemeScriptSaveOutput {
@@ -265,7 +270,7 @@ struct GraphemeScriptListCommand {
 }
 
 impl TryFrom<GraphemeScriptListInput> for GraphemeScriptListCommand {
-    type Error = StasisError;
+    type Error = ToolError;
 
     fn try_from(input: GraphemeScriptListInput) -> Result<Self, Self::Error> {
         let module = input.module.into_option();
@@ -372,11 +377,13 @@ struct GraphemeScriptSearchCommand {
 }
 
 impl TryFrom<GraphemeScriptSearchInput> for GraphemeScriptSearchCommand {
-    type Error = StasisError;
+    type Error = ToolError;
 
     fn try_from(input: GraphemeScriptSearchInput) -> Result<Self, Self::Error> {
-        let query = TrimmedText::new(input.q.unwrap_or_default())
-            .map_err(|_| StasisError::PortFailure("q is required".to_string()))?;
+        let query = TrimmedText::new(input.q.unwrap_or_default()).map_err(|_| {
+            ToolError::input(COGNITION_GRAPHEME_SCRIPT_SEARCH, "q is required")
+                .with_operation("normalize search input")
+        })?;
         Ok(Self {
             query,
             module: input.module.and_then(|value| TrimmedText::new(value).ok()),
@@ -455,11 +462,13 @@ struct GraphemeScriptLoadCommand {
 }
 
 impl TryFrom<GraphemeScriptLoadInput> for GraphemeScriptLoadCommand {
-    type Error = StasisError;
+    type Error = ToolError;
 
     fn try_from(input: GraphemeScriptLoadInput) -> Result<Self, Self::Error> {
-        let id = TrimmedText::new(input.id.unwrap_or_default())
-            .map_err(|_| StasisError::PortFailure("id is required".to_string()))?;
+        let id = TrimmedText::new(input.id.unwrap_or_default()).map_err(|_| {
+            ToolError::input(COGNITION_GRAPHEME_SCRIPT_LOAD, "id is required")
+                .with_operation("normalize load input")
+        })?;
         Ok(Self { id })
     }
 }
@@ -491,8 +500,15 @@ impl CognitionGraphemeScriptLoadTool {
             COGNITION_GRAPHEME_SCRIPT_LOAD_ID.as_str(),
             id,
         );
-        let (entry, body) = GraphemeScriptService::load(id)
-            .map_err(|err| StasisError::PortFailure(err.to_string()))?;
+        let (entry, body) = GraphemeScriptService::load(id).map_err(|err| {
+            let message = err.to_string();
+            if message.starts_with("grapheme script not found:") {
+                ToolError::not_found(COGNITION_GRAPHEME_SCRIPT_LOAD, message)
+            } else {
+                ToolError::dependency(COGNITION_GRAPHEME_SCRIPT_LOAD, message)
+            }
+            .with_operation("load script")
+        })?;
         Ok(GraphemeScriptLoadOutput {
             ok: true,
             id: entry.id,
