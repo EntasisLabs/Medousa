@@ -1164,11 +1164,15 @@
         >
           <h1 class="truncate text-sm font-semibold text-surface-50">{sessionLabel}</h1>
         </button>
+        <UndertakingContextChip chatOnly header />
       {:else}
         <div class="min-w-0 py-1">
-          <h1 class="truncate text-sm font-semibold text-surface-50">
-            {mobileChatTitle}
-          </h1>
+          <div class="flex min-w-0 items-center gap-2">
+            <h1 class="truncate text-sm font-semibold text-surface-50">
+              {mobileChatTitle}
+            </h1>
+            <UndertakingContextChip chatOnly header />
+          </div>
           <p class="text-content-tertiary truncate text-[11px]">{mobileChatSubtitle}</p>
         </div>
         {#if chat.hasTurnActivity}
@@ -1484,9 +1488,6 @@
           </button>
         {/if}
       {/if}
-      <div class="mx-4 mb-1 flex flex-wrap gap-2">
-        <UndertakingContextChip chatOnly />
-      </div>
       {#if presenceDockMode === "docked"}
         <AgentBrowserPanel />
       {/if}

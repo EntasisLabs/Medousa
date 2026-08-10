@@ -40,9 +40,10 @@
 
   interface Props {
     chatOnly?: boolean;
+    header?: boolean;
   }
 
-  let { chatOnly = false }: Props = $props();
+  let { chatOnly = false, header = false }: Props = $props();
   let chipMenuOpen = $state(false);
   const active = $derived(
     chatOnly && !undertakings.active?.boundChatSessionIds.includes(chat.sessionId)
@@ -108,7 +109,7 @@
     const placeOnce = () => {
       if (!chooserTriggerEl || !chooserPanelEl) return;
       placeToolbarPopover(chooserTriggerEl, chooserPanelEl, {
-        prefer: "above",
+        prefer: header ? "below" : "above",
         align: "start",
         width: 18 * 16,
         maxHeightRatio: 0.72,
@@ -249,7 +250,8 @@
 </script>
 
 {#if active}
-  <div class="flex max-w-full flex-col gap-1.5">
+  <div class={header ? "flex min-w-0 max-w-full items-center gap-2" : "flex max-w-full flex-col gap-1.5"}>
+  {#if header}<span class="shrink-0 text-content-faint" aria-hidden="true">/</span>{/if}
   <OverflowMenu
     bind:open={chipMenuOpen}
     align="left"
@@ -259,7 +261,9 @@
     {#snippet trigger({ open, toggle })}
       <button
         type="button"
-        class="flex max-w-full cursor-pointer items-center gap-1.5 rounded-full border border-surface-500/35 bg-surface-900/75 px-2.5 py-1 text-chrome-md text-surface-200 transition hover:border-surface-400/60 hover:bg-surface-800/90"
+        class={header
+          ? "flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-content-secondary transition hover:bg-surface-800/70 hover:text-surface-50"
+          : "flex max-w-full cursor-pointer items-center gap-1.5 rounded-full border border-surface-500/35 bg-surface-900/75 px-2.5 py-1 text-chrome-md text-surface-200 transition hover:border-surface-400/60 hover:bg-surface-800/90"}
         aria-label={`Current project: ${active.title}`}
         aria-expanded={open}
         aria-haspopup="menu"
@@ -352,7 +356,7 @@
       </p>
     {/if}
   </OverflowMenu>
-  {#if review && review.changed_files.length > 0}
+  {#if !header && review && review.changed_files.length > 0}
     <DiffSummaryCard
       fileCount={review.changed_files.length}
       additions={0}
@@ -363,11 +367,14 @@
   {/if}
   </div>
 {:else if activeMode === "coder"}
-  <div class="max-w-full">
+  <div class="flex min-w-0 max-w-full items-center gap-2">
+    {#if header}<span class="shrink-0 text-content-faint" aria-hidden="true">/</span>{/if}
     <button
       bind:this={chooserTriggerEl}
       type="button"
-      class="flex max-w-full items-center gap-1.5 rounded-full border border-primary-500/45 bg-primary-950/55 px-2.5 py-1 text-[11px] text-primary-100 transition hover:border-primary-400/70"
+      class={header
+        ? "flex min-w-0 max-w-full items-center gap-1.5 rounded-md bg-primary-950/45 px-1.5 py-1 text-xs text-primary-100 transition hover:bg-primary-900/45"
+        : "flex max-w-full items-center gap-1.5 rounded-full border border-primary-500/45 bg-primary-950/55 px-2.5 py-1 text-[11px] text-primary-100 transition hover:border-primary-400/70"}
       onclick={() => void openChooser()}
     >
       <FolderPlus size={12} aria-hidden="true" />

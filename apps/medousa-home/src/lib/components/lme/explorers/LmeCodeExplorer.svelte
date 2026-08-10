@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import {
+    ArrowUp,
     ChevronLeft,
+    CircleDot,
     Code2,
     Download,
     FilePlus2,
@@ -9,6 +11,7 @@
     FolderOpen,
     FolderPlus,
     GitPullRequestArrow,
+    GitBranch,
     Pin,
     Plus,
     RefreshCw,
@@ -261,9 +264,6 @@
   });
 
   const recentRepositories = $derived(repositoryCatalog.filter((entry) => entry.available));
-  const duplicateNeedsChoice = $derived(
-    Boolean(repository?.existing_projects.length && !duplicateAcknowledged),
-  );
   const repositoryReady = $derived(
     Boolean(repository && repository.has_commits !== false && baseRef.trim()),
   );
@@ -569,6 +569,12 @@
       busy = false;
     }
   }
+
+  function handleOutcomeKeydown(event: KeyboardEvent) {
+    if (event.key !== "Enter" || (!event.metaKey && !event.ctrlKey)) return;
+    event.preventDefault();
+    void create();
+  }
 </script>
 
 <aside class="flex h-full min-h-0 w-full flex-col" aria-label="Code">
@@ -749,65 +755,132 @@
 
   {#if creating}
     <form
-      class="flex shrink-0 flex-col gap-1.5 border-b border-surface-500/30 p-2"
+      class="code-create flex min-h-0 flex-1 flex-col"
       onsubmit={(event) => {
         event.preventDefault();
         void create();
       }}
     >
-      {#if repository}
-        <div class="rounded border border-surface-500/30 bg-surface-900/45 px-2 py-1.5">
-          <div class="flex items-start justify-between gap-2">
-            <div class="min-w-0">
-              <p class="truncate text-[11px] font-medium text-surface-200">{repository.display_name}</p>
-              <p class="truncate font-mono text-[9px] text-content-quiet">{repository.path}</p>
-            </div>
-            <button type="button" class="shrink-0 rounded px-1.5 py-0.5 text-[9px] text-content-tertiary hover:bg-surface-800" onclick={() => {
-              repository = null;
-              duplicateAcknowledged = false;
-            }}>Change</button>
-          </div>
-          <p class="mt-1 text-[9px] leading-relaxed {repository.dirty ? 'text-amber-200' : 'text-content-quiet'}">
-            {repository.state_explanation}
+      <div class="code-create-header flex items-center justify-between px-3 py-2.5">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-surface-100">New change</p>
+          <p class="truncate text-xs text-content-quiet">
+            {repository ? `In ${repository.display_name}` : "Choose a repository to begin"}
           </p>
-          <details class="mt-1 text-[9px] text-content-faint">
-            <summary class="cursor-pointer select-none hover:text-content-tertiary">What Medousa can do here</summary>
-            <p class="mt-1 leading-relaxed">{repository.trust_explanation}</p>
-          </details>
         </div>
-        {#if repository.existing_projects.length > 0 && !duplicateAcknowledged}
-          <div class="rounded border border-primary-500/30 bg-primary-950/15 p-2">
-            <p class="text-[10px] font-medium text-surface-200">You already have work here</p>
-            <p class="mt-0.5 text-[9px] leading-relaxed text-content-quiet">Continue it, or deliberately start a separate change.</p>
-            <div class="mt-1.5 flex flex-col gap-1">
-              {#each repository.existing_projects.slice(0, 3) as existing (existing.id)}
-                <button type="button" class="flex items-center justify-between gap-2 rounded px-2 py-1 text-left text-[10px] text-content-secondary hover:bg-surface-800" onclick={() => void openItem(existing.id, existing.title)}>
-                  <span class="min-w-0 flex-1 truncate">{existing.title}</span>
-                  <span class="shrink-0 text-[8px] text-content-quiet">{humanPhaseLabel(existing.human_phase)}</span>
-                </button>
-              {/each}
-              <button type="button" class="rounded px-2 py-1 text-left text-[9px] text-primary-200 hover:bg-primary-900/25" onclick={() => (duplicateAcknowledged = true)}>Start another change</button>
+        <button
+          type="button"
+          class="vault-dock-icon-btn"
+          aria-label="Cancel new change"
+          title="Cancel"
+          onclick={() => {
+            creating = false;
+            repository = null;
+            duplicateAcknowledged = false;
+          }}
+        ><X size={14} strokeWidth={1.75} /></button>
+      </div>
+
+      <div class="min-h-0 flex-1 overflow-y-auto p-2.5">
+        {#if repository}
+          <section class="code-create-repository">
+            <div class="flex min-w-0 items-start gap-2.5">
+              <span class="code-create-repository-icon"><Code2 size={15} strokeWidth={1.75} /></span>
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-sm font-medium text-surface-100">{repository.display_name}</p>
+                <p class="mt-0.5 truncate font-mono text-xs text-content-quiet">{repository.path}</p>
+                <p class="mt-1.5 text-xs leading-relaxed {repository.dirty ? 'text-amber-200' : 'text-content-tertiary'}">
+                  {repository.state_explanation}
+                </p>
+              </div>
+              <button type="button" class="code-create-text-action" onclick={() => {
+                repository = null;
+                duplicateAcknowledged = false;
+              }}>Change</button>
             </div>
-          </div>
-        {/if}
-      {:else}
-        <div class="grid gap-1">
+            <details class="mt-2 text-xs text-content-quiet">
+              <summary class="cursor-pointer select-none hover:text-content-secondary">Repository access</summary>
+              <p class="mt-1 leading-relaxed">{repository.trust_explanation}</p>
+            </details>
+          </section>
+
+          {#if repository.existing_projects.length > 0 && !duplicateAcknowledged}
+            <section class="mt-3">
+              <div class="px-1">
+                <p class="text-xs font-medium text-surface-200">Active changes</p>
+                <p class="mt-0.5 text-xs leading-relaxed text-content-quiet">Continue one, or create a separate working copy.</p>
+              </div>
+              <div class="code-create-list mt-1.5 overflow-hidden">
+                {#each repository.existing_projects.slice(0, 4) as existing (existing.id)}
+                  <button type="button" class="code-create-existing" onclick={() => void openItem(existing.id, existing.title)}>
+                    <CircleDot size={13} strokeWidth={1.75} class="shrink-0 text-primary-300" />
+                    <span class="min-w-0 flex-1 truncate text-xs font-medium text-surface-200">{existing.title}</span>
+                    <span class="shrink-0 text-xs text-content-quiet">{humanPhaseLabel(existing.human_phase)}</span>
+                  </button>
+                {/each}
+              </div>
+              <button type="button" class="code-create-new-separate" onclick={() => (duplicateAcknowledged = true)}>
+                <Plus size={13} strokeWidth={1.75} />
+                New change in a separate worktree
+              </button>
+            </section>
+          {:else}
+            <section class="mt-3">
+              <label for="code-change-outcome" class="px-1 text-xs font-medium text-surface-200">What do you want changed?</label>
+              <div class="code-create-prompt mt-1.5">
+                <textarea
+                  id="code-change-outcome"
+                  class="min-h-24 w-full resize-none border-0 bg-transparent text-sm text-surface-100 placeholder:text-content-quiet focus:outline-none focus:ring-0"
+                  placeholder="Make indexing cancellation-safe…"
+                  bind:value={outcome}
+                  onkeydown={handleOutcomeKeydown}
+                ></textarea>
+                <div class="code-create-prompt-toolbar mt-2 flex min-w-0 items-center gap-2 pt-2">
+                  <GitBranch size={13} strokeWidth={1.75} class="shrink-0 text-content-quiet" />
+                  <input
+                    class="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs text-content-tertiary focus:outline-none focus:ring-0"
+                    aria-label="Starting branch"
+                    title="Starting branch"
+                    bind:value={baseRef}
+                  />
+                  <button
+                    type="submit"
+                    class="code-create-submit"
+                    disabled={busy || inspecting || !outcome.trim() || !repositoryReady}
+                    aria-label={busy ? "Preparing change" : "Start change"}
+                    title="Start change (⌘Enter)"
+                  ><ArrowUp size={15} strokeWidth={2} /></button>
+                </div>
+              </div>
+            </section>
+          {/if}
+        {:else}
+          <div class="grid gap-1">
+            <p class="px-1 pb-1 text-xs font-medium text-content-tertiary">Open repository</p>
           {#if coLocated}
-            <button type="button" class="flex items-center gap-2 rounded border border-surface-500/30 px-2 py-2 text-left text-[10px] text-surface-200 hover:bg-surface-800" onclick={() => void pickRepository()}>
-              <FolderOpen size={13} class="text-content-link" />Choose a folder…
+            <button type="button" class="code-create-source" onclick={() => void pickRepository()}>
+              <FolderOpen size={15} class="text-content-link" />
+              <span class="min-w-0 flex-1 text-left">
+                <span class="block text-sm font-medium text-surface-100">Choose a folder…</span>
+                <span class="mt-0.5 block text-xs text-content-quiet">Open a repository on this computer</span>
+              </span>
             </button>
             {#if currentFolder}
-              <button type="button" class="flex min-w-0 items-center gap-2 rounded px-2 py-1 text-left text-[10px] text-content-tertiary hover:bg-surface-800 hover:text-surface-100" onclick={() => void chooseRepository(currentFolder.path)}>
-                <FolderOpen size={11} class="shrink-0" /><span class="min-w-0 flex-1 truncate">Current folder · {currentFolder.label}</span>
+              <button type="button" class="code-create-row" onclick={() => void chooseRepository(currentFolder.path)}>
+                <FolderOpen size={13} class="shrink-0" /><span class="min-w-0 flex-1 truncate">Current folder · {currentFolder.label}</span>
               </button>
             {/if}
           {:else}
-            <button type="button" class="flex items-center gap-2 rounded border border-surface-500/30 px-2 py-2 text-left text-[10px] text-surface-200 hover:bg-surface-800" onclick={() => void browseRepositoryFolder(null, "repository")}>
-              <FolderOpen size={13} class="text-content-link" />Browse connected computer…
+            <button type="button" class="code-create-source" onclick={() => void browseRepositoryFolder(null, "repository")}>
+              <FolderOpen size={15} class="text-content-link" />
+              <span class="min-w-0 flex-1 text-left">
+                <span class="block text-sm font-medium text-surface-100">Browse connected computer…</span>
+                <span class="mt-0.5 block text-xs text-content-quiet">Open a repository on the workshop</span>
+              </span>
             </button>
           {/if}
-          <button type="button" class="flex items-center gap-2 rounded px-2 py-1 text-left text-[10px] text-content-tertiary hover:bg-surface-800 hover:text-surface-100" onclick={() => void openHostedRepository()}>
-            <Download size={11} class="shrink-0" />
+          <button type="button" class="code-create-row" onclick={() => void openHostedRepository()}>
+            <Download size={13} class="shrink-0" />
             <span>{hostedOpen ? "Hide hosted repositories" : "Clone from GitHub or GitLab…"}</span>
           </button>
           {#if hostedOpen}
@@ -853,21 +926,28 @@
               >{hostedLoading ? "Cloning…" : "Clone repository"}</button>
             </div>
           {/if}
-          {#each recentRepositories.slice(0, 8) as recent (recent.path)}
-            <div class="group flex min-w-0 items-center rounded hover:bg-surface-800">
-              <button type="button" class="flex min-w-0 flex-1 items-center gap-2 px-2 py-1 text-left text-[10px] text-content-tertiary hover:text-surface-100" onclick={() => void chooseRepository(recent.path)}>
-                <Code2 size={11} class="shrink-0" />
-                <span class="min-w-0 flex-1 truncate">{recent.display_name}</span>
-                <span class="truncate text-[8px] text-content-faint">{recent.has_commits === false ? "No commits" : recent.current_branch ?? recent.suggested_base_ref ?? "Repository"}</span>
-              </button>
-              <button
-                type="button"
-                class="mr-1 shrink-0 rounded p-0.5 {recent.pinned ? 'text-content-link' : 'text-content-faint opacity-0 group-hover:opacity-100'}"
-                aria-label={recent.pinned ? `Unpin ${recent.display_name}` : `Pin ${recent.display_name}`}
-                onclick={(event) => void togglePinned(recent, event)}
-              ><Pin size={10} fill={recent.pinned ? "currentColor" : "none"} /></button>
+          {#if recentRepositories.length}
+            <p class="px-1 pb-1 pt-3 text-xs font-medium text-content-tertiary">Recent</p>
+            <div class="code-create-list overflow-hidden">
+              {#each recentRepositories.slice(0, 8) as recent (recent.path)}
+                <div class="code-create-recent group">
+                  <button type="button" class="flex min-w-0 flex-1 items-center gap-2.5 text-left" onclick={() => void chooseRepository(recent.path)}>
+                    <Code2 size={14} class="shrink-0 text-content-tertiary" />
+                    <span class="min-w-0 flex-1">
+                      <span class="block truncate text-xs font-medium text-surface-200">{recent.display_name}</span>
+                      <span class="mt-0.5 block truncate text-xs text-content-quiet">{recent.has_commits === false ? "No commits" : recent.current_branch ?? recent.suggested_base_ref ?? "Repository"}</span>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    class="shrink-0 rounded-md p-1 {recent.pinned ? 'text-content-link' : 'text-content-faint opacity-0 group-hover:opacity-100'}"
+                    aria-label={recent.pinned ? `Unpin ${recent.display_name}` : `Pin ${recent.display_name}`}
+                    onclick={(event) => void togglePinned(recent, event)}
+                  ><Pin size={12} fill={recent.pinned ? "currentColor" : "none"} /></button>
+                </div>
+              {/each}
             </div>
-          {/each}
+          {/if}
           {#if !coLocated}
             <details class="px-1 text-[9px] text-content-faint">
               <summary class="cursor-pointer select-none hover:text-content-tertiary">Enter a path instead</summary>
@@ -877,9 +957,9 @@
               </div>
             </details>
           {/if}
-        </div>
-      {/if}
-      {#if browserOpen && !repository}
+          </div>
+        {/if}
+        {#if browserOpen && !repository}
         <div class="overflow-hidden rounded border border-surface-500/35 bg-surface-950/80">
           <div class="flex items-center gap-1 border-b border-surface-500/25 px-1.5 py-1">
             <button type="button" class="rounded p-1 text-content-quiet hover:bg-surface-800 hover:text-surface-200 disabled:opacity-30" aria-label="Parent folder" disabled={!repositoryBrowser?.parent || browserLoading} onclick={() => void browseRepositoryFolder(repositoryBrowser?.parent)}><ChevronLeft size={12} /></button>
@@ -926,25 +1006,8 @@
             {/if}
           {/if}
         </div>
-      {/if}
-      <label class="code-field-label">
-        <span>What do you want to accomplish?</span>
-        <textarea class="code-field min-h-16 resize-none" placeholder="Make indexing cancellation-safe" bind:value={outcome}></textarea>
-      </label>
-      {#if repository}
-        <details class="text-[9px] text-content-quiet">
-          <summary class="cursor-pointer select-none hover:text-content-secondary">Starting point</summary>
-          <label class="mt-1 flex items-center gap-2">
-            <span class="shrink-0">Branch</span>
-            <input class="code-field min-w-0 flex-1" bind:value={baseRef} />
-          </label>
-        </details>
-      {/if}
-      <button
-        type="submit"
-        class="rounded bg-primary-500/80 px-2 py-1 text-xs font-medium text-surface-50 disabled:opacity-40"
-        disabled={busy || inspecting || !outcome.trim() || !repositoryReady || duplicateNeedsChoice}
-      >{busy ? "Preparing project…" : inspecting ? "Reading project…" : "Start"}</button>
+        {/if}
+      </div>
     </form>
   {/if}
 
@@ -954,7 +1017,7 @@
     </p>
   {/if}
 
-  <div class="flex min-h-0 flex-1 flex-col">
+  <div class="{creating ? 'hidden' : 'flex'} min-h-0 flex-1 flex-col">
     {#if undertakings.loading && undertakings.items.length === 0}
       <p class="px-3 py-3 text-xs text-content-quiet">Loading threads…</p>
     {:else if undertakings.items.length === 0}
@@ -1086,13 +1149,142 @@
     font-size: 0.7rem;
   }
 
-  .code-field-label {
+  .code-create {
+    background: rgb(var(--theme-pane) / 0.24);
+  }
+
+  .code-create-header {
+    border-bottom: 1px solid rgb(var(--theme-border) / 0.28);
+  }
+
+  .code-create-repository,
+  .code-create-prompt,
+  .code-create-source,
+  .code-create-list {
+    border: 1px solid rgb(var(--theme-border) / 0.34);
+    border-radius: var(--theme-container-radius);
+    background: rgb(var(--theme-card) / 0.52);
+  }
+
+  .code-create-repository {
+    padding: 0.75rem;
+  }
+
+  .code-create-repository-icon {
+    display: grid;
+    width: 1.75rem;
+    height: 1.75rem;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: var(--theme-control-radius);
+    background: rgb(var(--theme-pane-muted) / 0.78);
+    color: rgb(var(--theme-text-secondary));
+  }
+
+  .code-create-text-action {
+    flex: 0 0 auto;
+    border-radius: var(--theme-control-radius);
+    padding: 0.25rem 0.375rem;
+    color: rgb(var(--theme-text-secondary));
+    font-size: 0.75rem;
+  }
+
+  .code-create-text-action:hover,
+  .code-create-text-action:focus-visible {
+    background: rgb(var(--theme-card-hover) / 0.72);
+    color: rgb(var(--theme-text));
+  }
+
+  .code-create-existing,
+  .code-create-recent {
     display: flex;
-    flex-direction: column;
-    gap: 0.2rem;
-    color: rgb(var(--theme-text-quiet));
-    font-size: 0.58rem;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    width: 100%;
+    min-width: 0;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.625rem 0.75rem;
+    text-align: left;
+  }
+
+  .code-create-existing + .code-create-existing,
+  .code-create-recent + .code-create-recent {
+    border-top: 1px solid rgb(var(--theme-border) / 0.22);
+  }
+
+  .code-create-existing:hover,
+  .code-create-existing:focus-visible,
+  .code-create-recent:hover,
+  .code-create-recent:focus-within {
+    background: rgb(var(--theme-card-hover) / 0.62);
+  }
+
+  .code-create-new-separate,
+  .code-create-row {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: var(--theme-control-radius);
+    padding: 0.5rem 0.625rem;
+    color: rgb(var(--theme-text-secondary));
+    font-size: 0.75rem;
+    text-align: left;
+  }
+
+  .code-create-new-separate {
+    margin-top: 0.375rem;
+    color: rgb(var(--theme-link));
+  }
+
+  .code-create-new-separate:hover,
+  .code-create-new-separate:focus-visible,
+  .code-create-row:hover,
+  .code-create-row:focus-visible {
+    background: rgb(var(--theme-card-hover) / 0.62);
+    color: rgb(var(--theme-text));
+  }
+
+  .code-create-prompt {
+    padding: 0.75rem;
+  }
+
+  .code-create-prompt-toolbar {
+    border-top: 1px solid rgb(var(--theme-border) / 0.24);
+  }
+
+  .code-create-source {
+    display: flex;
+    width: 100%;
+    align-items: flex-start;
+    gap: 0.625rem;
+    padding: 0.75rem;
+  }
+
+  .code-create-source:hover,
+  .code-create-source:focus-visible,
+  .code-create-prompt:focus-within {
+    border-color: rgb(var(--theme-focus) / 0.58);
+    background: rgb(var(--theme-card-hover) / 0.58);
+  }
+
+  .code-create-submit {
+    display: grid;
+    width: 1.75rem;
+    height: 1.75rem;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: 9999px;
+    background: rgb(var(--theme-action));
+    color: rgb(var(--on-primary));
+    transition: opacity 120ms ease, background-color 120ms ease;
+  }
+
+  .code-create-submit:hover:not(:disabled),
+  .code-create-submit:focus-visible:not(:disabled) {
+    background: rgb(var(--theme-action-hover));
+  }
+
+  .code-create-submit:disabled {
+    opacity: 0.32;
   }
 </style>
