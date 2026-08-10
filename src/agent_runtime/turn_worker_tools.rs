@@ -8,7 +8,7 @@ use crate::agent_runtime::turn_worker::{
     SpawnTurnWorkerOutput, TurnWorkRecord, TurnWorkStatus, TurnWorkerIntent, turn_worker_store,
 };
 use crate::semantic_values::TrimmedText;
-use crate::typed_tools::{ToolId, medousa_tool};
+use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 use std::sync::Arc;
 
 pub const COGNITION_SPAWN_TURN_WORKER: &str = "cognition_spawn_turn_worker";
@@ -65,27 +65,39 @@ impl CognitionSpawnTurnWorkerTool {
 #[derive(Debug, JsonSchema)]
 pub struct SpawnTurnWorkerInput {
     /// Worker profile: memory.avec_calibrate | memory.context | research | general
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    intent: Option<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    intent: CompatOption<String>,
     /// Focused task for the worker: capability id, module.op, URLs, and constraints. Include what the host already resolved so the worker does not rediscover.
     #[schemars(required, with = "String")]
-    task: Option<String>,
+    task: CompatOption<String>,
     /// Short message for the user while the worker runs
     #[schemars(required, with = "String")]
-    user_ack: Option<String>,
+    user_ack: CompatOption<String>,
     /// Optional YAML specialty (voice, tools, worker intent, spec.worker.stage_role, spec.worker.model_hint).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    manuscript_id: Option<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    manuscript_id: CompatOption<String>,
     /// Optional StageRoutingMatrix role (extractor, verifier, chunker, …)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    stage_role: Option<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    stage_role: CompatOption<String>,
     /// Optional. Prefer omit or 'auto' to use user stage-routing / host prefs. Only set provider:model when explicitly requested (e.g. deepseek:deepseek-v4-flash).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    model_hint: Option<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    model_hint: CompatOption<String>,
 }
 
 impl<'de> Deserialize<'de> for SpawnTurnWorkerInput {
@@ -95,36 +107,18 @@ impl<'de> Deserialize<'de> for SpawnTurnWorkerInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            intent: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            task: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            user_ack: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            manuscript_id: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            stage_role: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            model_hint: Option<String>,
+            #[serde(default)]
+            intent: CompatOption<String>,
+            #[serde(default)]
+            task: CompatOption<String>,
+            #[serde(default)]
+            user_ack: CompatOption<String>,
+            #[serde(default)]
+            manuscript_id: CompatOption<String>,
+            #[serde(default)]
+            stage_role: CompatOption<String>,
+            #[serde(default)]
+            model_hint: CompatOption<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
@@ -155,6 +149,7 @@ impl TryFrom<SpawnTurnWorkerInput> for SpawnTurnWorkerCommand {
     fn try_from(input: SpawnTurnWorkerInput) -> Result<Self, Self::Error> {
         let explicit_intent = input
             .intent
+            .into_option()
             .and_then(|value| TrimmedText::new(value).ok().map(TrimmedText::into_string))
             .map(|raw| {
                 TurnWorkerIntent::parse(&raw).ok_or_else(|| {
@@ -164,16 +159,16 @@ impl TryFrom<SpawnTurnWorkerInput> for SpawnTurnWorkerCommand {
                 })
             })
             .transpose()?;
-        let task = required_worker_text(input.task, "task")?;
-        let user_ack = required_worker_text(input.user_ack, "user_ack")?;
+        let task = required_worker_text(input.task.into_option(), "task")?;
+        let user_ack = required_worker_text(input.user_ack.into_option(), "user_ack")?;
 
         Ok(Self {
             explicit_intent,
             task,
             user_ack,
-            manuscript_id: optional_worker_text(input.manuscript_id),
-            stage_role: optional_worker_text(input.stage_role),
-            model_hint: optional_worker_text(input.model_hint),
+            manuscript_id: optional_worker_text(input.manuscript_id.into_option()),
+            stage_role: optional_worker_text(input.stage_role.into_option()),
+            model_hint: optional_worker_text(input.model_hint.into_option()),
         })
     }
 }
@@ -252,18 +247,18 @@ impl CognitionTurnWorkerStatusTool {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct TurnWorkerStatusInput {
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    work_id: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    work_id: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    session_id: Option<String>,
+    session_id: CompatOption<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -291,7 +286,8 @@ impl CognitionTurnWorkerStatusTool {
         input: TurnWorkerStatusInput,
     ) -> stasis::prelude::Result<TurnWorkerStatusOutput> {
         let store = turn_worker_store();
-        if let Some(work_id) = input.work_id.as_deref() {
+        let work_id = input.work_id.into_option();
+        if let Some(work_id) = work_id.as_deref() {
             let record = store
                 .get(work_id)
                 .ok_or_else(|| StasisError::PortFailure(format!("work_id not found: {work_id}")))?;
@@ -302,6 +298,7 @@ impl CognitionTurnWorkerStatusTool {
         }
         let session_id = match input
             .session_id
+            .into_option()
             .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty())
@@ -503,12 +500,12 @@ mod tests {
     #[test]
     fn spawn_command_parses_intent_and_normalizes_identifiers() {
         let command = SpawnTurnWorkerCommand::try_from(SpawnTurnWorkerInput {
-            intent: Some("  research  ".to_string()),
-            task: Some("  inspect the feed  ".to_string()),
-            user_ack: Some("  I am on it  ".to_string()),
-            manuscript_id: Some("  research-specialist  ".to_string()),
-            stage_role: Some("  verifier  ".to_string()),
-            model_hint: Some("  auto  ".to_string()),
+            intent: Some("  research  ".to_string()).into(),
+            task: Some("  inspect the feed  ".to_string()).into(),
+            user_ack: Some("  I am on it  ".to_string()).into(),
+            manuscript_id: Some("  research-specialist  ".to_string()).into(),
+            stage_role: Some("  verifier  ".to_string()).into(),
+            model_hint: Some("  auto  ".to_string()).into(),
         })
         .expect("spawn command");
 
@@ -523,25 +520,52 @@ mod tests {
     #[test]
     fn spawn_command_rejects_blank_required_text_and_unknown_intent() {
         let blank = SpawnTurnWorkerCommand::try_from(SpawnTurnWorkerInput {
-            intent: Some("general".to_string()),
-            task: Some(" ".to_string()),
-            user_ack: Some("ack".to_string()),
-            manuscript_id: None,
-            stage_role: None,
-            model_hint: None,
+            intent: Some("general".to_string()).into(),
+            task: Some(" ".to_string()).into(),
+            user_ack: Some("ack".to_string()).into(),
+            manuscript_id: None.into(),
+            stage_role: None.into(),
+            model_hint: None.into(),
         })
         .unwrap_err();
         assert!(blank.to_string().contains("task is required"));
 
         let unknown = SpawnTurnWorkerCommand::try_from(SpawnTurnWorkerInput {
-            intent: Some("unknown".to_string()),
-            task: Some("task".to_string()),
-            user_ack: Some("ack".to_string()),
-            manuscript_id: None,
-            stage_role: None,
-            model_hint: None,
+            intent: Some("unknown".to_string()).into(),
+            task: Some("task".to_string()).into(),
+            user_ack: Some("ack".to_string()).into(),
+            manuscript_id: None.into(),
+            stage_role: None.into(),
+            model_hint: None.into(),
         })
         .unwrap_err();
         assert!(unknown.to_string().contains("unknown intent 'unknown'"));
+    }
+
+    #[test]
+    fn worker_wire_optionals_remain_lenient_for_legacy_values() {
+        let spawn: SpawnTurnWorkerInput = serde_json::from_value(serde_json::json!({
+            "intent": 42,
+            "task": false,
+            "user_ack": [],
+            "manuscript_id": 9,
+            "stage_role": {},
+            "model_hint": null,
+        }))
+        .expect("spawn input");
+        assert!(spawn.intent.into_option().is_none());
+        assert!(spawn.task.into_option().is_none());
+        assert!(spawn.user_ack.into_option().is_none());
+        assert!(spawn.manuscript_id.into_option().is_none());
+        assert!(spawn.stage_role.into_option().is_none());
+        assert!(spawn.model_hint.into_option().is_none());
+
+        let status: TurnWorkerStatusInput = serde_json::from_value(serde_json::json!({
+            "work_id": 42,
+            "session_id": false,
+        }))
+        .expect("status input");
+        assert!(status.work_id.into_option().is_none());
+        assert!(status.session_id.into_option().is_none());
     }
 }
