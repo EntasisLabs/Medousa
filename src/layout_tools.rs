@@ -10,6 +10,7 @@ use serde_json::Value;
 use stasis::prelude::{Result as StasisResult, StasisError};
 
 use crate::environment_store::{environment_hub, resolve_profile_id};
+use crate::semantic_values::TrimmedText;
 use crate::typed_tools::{ToolId, medousa_tool};
 
 pub const COGNITION_LAYOUT_GET: &str = "cognition_layout_get";
@@ -42,6 +43,25 @@ struct LayoutSurfaceInput {
     profile_id: Option<String>,
 }
 
+#[derive(Debug)]
+struct LayoutSurfaceCommand {
+    surface_id: TrimmedText,
+    profile_id: Option<TrimmedText>,
+}
+
+impl TryFrom<LayoutSurfaceInput> for LayoutSurfaceCommand {
+    type Error = StasisError;
+
+    fn try_from(input: LayoutSurfaceInput) -> Result<Self, Self::Error> {
+        Ok(Self {
+            surface_id: required_layout_identifier(input.surface_id, "surface_id")?,
+            profile_id: input
+                .profile_id
+                .and_then(|value| TrimmedText::new(value).ok()),
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(untagged)]
 enum LayoutGetOutput {
@@ -68,8 +88,9 @@ impl CognitionLayoutGetTool {
         &self,
         input: LayoutSurfaceInput,
     ) -> stasis::prelude::Result<LayoutGetOutput> {
-        let profile_id = profile_from_typed(input.profile_id.as_deref());
-        let surface_id = required_typed_string(input.surface_id, "surface_id")?;
+        let command = LayoutSurfaceCommand::try_from(input)?;
+        let profile_id = profile_from_typed(command.profile_id.as_ref().map(TrimmedText::as_str));
+        let surface_id = command.surface_id.into_string();
         let record = environment_hub()
             .get(&profile_id)
             .await
@@ -164,6 +185,27 @@ struct LayoutApplyInput {
     profile_id: Option<String>,
 }
 
+#[derive(Debug)]
+struct LayoutApplyCommand {
+    surface_id: TrimmedText,
+    layout_root: LayoutNode,
+    profile_id: Option<TrimmedText>,
+}
+
+impl TryFrom<LayoutApplyInput> for LayoutApplyCommand {
+    type Error = StasisError;
+
+    fn try_from(input: LayoutApplyInput) -> Result<Self, Self::Error> {
+        Ok(Self {
+            surface_id: required_layout_identifier(input.surface_id, "surface_id")?,
+            layout_root: input.layout_root.0,
+            profile_id: input
+                .profile_id
+                .and_then(|value| TrimmedText::new(value).ok()),
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(untagged)]
 enum LayoutApplyOutput {
@@ -187,9 +229,10 @@ impl CognitionLayoutApplyTool {
         &self,
         input: LayoutApplyInput,
     ) -> stasis::prelude::Result<LayoutApplyOutput> {
-        let profile_id = profile_from_typed(input.profile_id.as_deref());
-        let surface_id = required_typed_string(input.surface_id, "surface_id")?;
-        let layout_root = input.layout_root.0;
+        let command = LayoutApplyCommand::try_from(input)?;
+        let profile_id = profile_from_typed(command.profile_id.as_ref().map(TrimmedText::as_str));
+        let surface_id = command.surface_id.into_string();
+        let layout_root = command.layout_root;
         let mut record = environment_hub()
             .get(&profile_id)
             .await
@@ -260,8 +303,9 @@ impl CognitionLayoutResetTool {
         &self,
         input: LayoutSurfaceInput,
     ) -> stasis::prelude::Result<LayoutResetOutput> {
-        let profile_id = profile_from_typed(input.profile_id.as_deref());
-        let surface_id = required_typed_string(input.surface_id, "surface_id")?;
+        let command = LayoutSurfaceCommand::try_from(input)?;
+        let profile_id = profile_from_typed(command.profile_id.as_ref().map(TrimmedText::as_str));
+        let surface_id = command.surface_id.into_string();
         let mut record = environment_hub()
             .get(&profile_id)
             .await
@@ -295,11 +339,47 @@ fn profile_from_typed(profile_id: Option<&str>) -> String {
     resolve_profile_id(profile_id.map(str::trim).filter(|value| !value.is_empty()))
 }
 
-fn required_typed_string(value: String, key: &str) -> StasisResult<String> {
-    let value = value.trim();
-    if value.is_empty() {
-        Err(StasisError::PortFailure(format!("{key} is required")))
-    } else {
-        Ok(value.to_string())
+fn required_layout_identifier(value: String, key: &str) -> StasisResult<TrimmedText> {
+    TrimmedText::new(value).map_err(|_| StasisError::PortFailure(format!("{key} is required")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn layout_commands_normalize_surface_and_profile_identifiers() {
+        let surface = LayoutSurfaceCommand::try_from(LayoutSurfaceInput {
+            surface_id: " custom-surface ".to_string(),
+            profile_id: Some(" profile-a ".to_string()),
+        })
+        .expect("surface command");
+        assert_eq!(surface.surface_id.as_str(), "custom-surface");
+        assert_eq!(
+            surface.profile_id.as_ref().map(TrimmedText::as_str),
+            Some("profile-a")
+        );
+
+        let apply = LayoutApplyCommand::try_from(LayoutApplyInput {
+            surface_id: " custom-surface ".to_string(),
+            layout_root: LayoutRootInput(LayoutNode::Component {
+                id: "component-a".to_string(),
+                flex: Some(2),
+            }),
+            profile_id: None,
+        })
+        .expect("apply command");
+        assert_eq!(apply.surface_id.as_str(), "custom-surface");
+        assert!(matches!(apply.layout_root, LayoutNode::Component { .. }));
+    }
+
+    #[test]
+    fn layout_surface_command_rejects_blank_surface_id() {
+        let error = LayoutSurfaceCommand::try_from(LayoutSurfaceInput {
+            surface_id: " \n\t".to_string(),
+            profile_id: None,
+        })
+        .expect_err("blank surface id should fail");
+        assert!(error.to_string().contains("surface_id is required"));
     }
 }
