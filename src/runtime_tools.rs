@@ -32,7 +32,7 @@ use crate::turn_continuation::{
     find_active_job_by_correlation_id, materialize_recurring_now, patch_existing_job_correlation,
     register_turn_child_job,
 };
-use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
+use crate::typed_tools::{CompatOption, ExternalJson, ToolId, medousa_tool};
 use crate::workflow::{
     MedousaWorkflowPayload, WORKFLOW_SEQUENTIAL_JOB_TYPE, WorkflowEnqueueContinuation,
     WorkflowRecord, WorkflowRegistry, WorkflowRunRequest, WorkflowStatus, WorkflowStepResult,
@@ -266,30 +266,27 @@ impl CognitionRuntimeJobsListTool {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct RuntimeJobsListInput {
     /// Optional filter: enqueued, leased, running, succeeded, failed, dead_letter, canceled
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    state: Option<String>,
+    state: CompatOption<String>,
     /// Optional correlation_id filter (exact match)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    correlation_id: Option<String>,
+    correlation_id: CompatOption<String>,
     /// Max jobs to return (1-100, default 20)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-    )]
+    #[serde(default)]
     #[schemars(
         with = "usize",
         range(min = 1, max = 100),
-        skip_serializing_if = "Option::is_none"
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    limit: Option<usize>,
+    limit: CompatOption<usize>,
 }
 
 #[derive(Debug)]
@@ -303,8 +300,10 @@ impl TryFrom<RuntimeJobsListInput> for RuntimeJobsListCommand {
     type Error = StasisError;
 
     fn try_from(input: RuntimeJobsListInput) -> Result<Self, Self::Error> {
-        let state = input
-            .state
+        let state_value = input.state.into_option();
+        let correlation_id_value = input.correlation_id.into_option();
+        let limit = input.limit.into_option();
+        let state = state_value
             .as_deref()
             .map(|raw| {
                 parse_job_state_filter(raw).ok_or_else(|| {
@@ -314,14 +313,13 @@ impl TryFrom<RuntimeJobsListInput> for RuntimeJobsListCommand {
                 })
             })
             .transpose()?;
-        let correlation_id = input
-            .correlation_id
+        let correlation_id = correlation_id_value
             .and_then(|value| TrimmedText::new(value).ok().map(TrimmedText::into_string));
 
         Ok(Self {
             state,
             correlation_id,
-            limit: input.limit.unwrap_or(20).clamp(1, 100),
+            limit: limit.unwrap_or(20).clamp(1, 100),
         })
     }
 }
@@ -404,14 +402,11 @@ impl<'de> Deserialize<'de> for RuntimeJobsCancelInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            job_id: Option<String>,
+            #[serde(default)]
+            job_id: CompatOption<String>,
         }
         Ok(Self {
-            job_id: WireInput::deserialize(deserializer)?.job_id,
+            job_id: WireInput::deserialize(deserializer)?.job_id.into_option(),
         })
     }
 }
@@ -513,16 +508,13 @@ impl<'de> Deserialize<'de> for RuntimeRecurringListInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
-            )]
-            enabled_only: Option<bool>,
+            #[serde(default)]
+            enabled_only: CompatOption<bool>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            enabled_only: input.enabled_only.unwrap_or(false),
+            enabled_only: input.enabled_only.into_option().unwrap_or(false),
         })
     }
 }
@@ -574,12 +566,12 @@ impl CognitionRuntimeRecurringDoctorTool {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct RuntimeRecurringDoctorInput {
     /// Optional single recurring id; omit to inspect all
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    recurring_id: Option<String>,
+    recurring_id: CompatOption<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -635,8 +627,8 @@ impl CognitionRuntimeRecurringDoctorTool {
         &self,
         input: RuntimeRecurringDoctorInput,
     ) -> stasis::prelude::Result<RuntimeRecurringDoctorOutput> {
-        let filter_id = input
-            .recurring_id
+        let recurring_id = input.recurring_id.into_option();
+        let filter_id = recurring_id
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
@@ -816,66 +808,30 @@ impl<'de> Deserialize<'de> for RuntimeRecurringRegisterInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            source: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            job_type: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            payload_template_ref: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            cron_expr: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            timezone: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            queue: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            recurring_id: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            id: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_i64"
-            )]
-            jitter_seconds: Option<i64>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_u64"
-            )]
-            max_attempts: Option<u64>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
-            )]
-            enabled: Option<bool>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
-            )]
-            start_immediately: Option<bool>,
+            #[serde(default)]
+            source: CompatOption<String>,
+            #[serde(default)]
+            job_type: CompatOption<String>,
+            #[serde(default)]
+            payload_template_ref: CompatOption<String>,
+            #[serde(default)]
+            cron_expr: CompatOption<String>,
+            #[serde(default)]
+            timezone: CompatOption<String>,
+            #[serde(default)]
+            queue: CompatOption<String>,
+            #[serde(default)]
+            recurring_id: CompatOption<String>,
+            #[serde(default)]
+            id: CompatOption<String>,
+            #[serde(default)]
+            jitter_seconds: CompatOption<i64>,
+            #[serde(default)]
+            max_attempts: CompatOption<u64>,
+            #[serde(default)]
+            enabled: CompatOption<bool>,
+            #[serde(default)]
+            start_immediately: CompatOption<bool>,
             #[serde(default)]
             delivery: Option<RecurringDeliverySpec>,
             #[serde(default)]
@@ -884,17 +840,20 @@ impl<'de> Deserialize<'de> for RuntimeRecurringRegisterInput {
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            source: input.source,
-            job_type: input.job_type,
-            payload_template_ref: input.payload_template_ref,
-            cron_expr: input.cron_expr,
-            timezone: input.timezone,
-            queue: input.queue,
-            recurring_id: input.recurring_id.or(input.id),
-            jitter_seconds: input.jitter_seconds,
-            max_attempts: input.max_attempts,
-            enabled: input.enabled,
-            start_immediately: input.start_immediately,
+            source: input.source.into_option(),
+            job_type: input.job_type.into_option(),
+            payload_template_ref: input.payload_template_ref.into_option(),
+            cron_expr: input.cron_expr.into_option(),
+            timezone: input.timezone.into_option(),
+            queue: input.queue.into_option(),
+            recurring_id: input
+                .recurring_id
+                .into_option()
+                .or_else(|| input.id.into_option()),
+            jitter_seconds: input.jitter_seconds.into_option(),
+            max_attempts: input.max_attempts.into_option(),
+            enabled: input.enabled.into_option(),
+            start_immediately: input.start_immediately.into_option(),
             delivery: input.delivery,
             feeds: input.feeds,
         })
@@ -1341,16 +1300,13 @@ impl CognitionRuntimeDeliveryStatusTool {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct RuntimeDeliveryStatusInput {
     /// Max pending outbox rows to preview (1-50, default 10)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-    )]
+    #[serde(default)]
     #[schemars(
         with = "usize",
         range(min = 1, max = 50),
-        skip_serializing_if = "Option::is_none"
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    pending_limit: Option<usize>,
+    pending_limit: CompatOption<usize>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -1377,7 +1333,7 @@ impl CognitionRuntimeDeliveryStatusTool {
         &self,
         input: RuntimeDeliveryStatusInput,
     ) -> stasis::prelude::Result<RuntimeDeliveryStatusOutput> {
-        let pending_limit = input.pending_limit.unwrap_or(10).clamp(1, 50);
+        let pending_limit = input.pending_limit.into_option().unwrap_or(10).clamp(1, 50);
 
         let sdk = RuntimeSdk::new(self.runtime.as_ref().clone());
         let snapshot = sdk.stats_snapshot(pending_limit).await?;
@@ -2087,16 +2043,13 @@ impl<'de> Deserialize<'de> for RuntimeWorkflowStatusInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            workflow_id: Option<String>,
+            #[serde(default)]
+            workflow_id: CompatOption<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            workflow_id: input.workflow_id,
+            workflow_id: input.workflow_id.into_option(),
         })
     }
 }
@@ -2234,16 +2187,13 @@ impl<'de> Deserialize<'de> for RuntimeWorkflowCancelInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            workflow_id: Option<String>,
+            #[serde(default)]
+            workflow_id: CompatOption<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            workflow_id: input.workflow_id,
+            workflow_id: input.workflow_id.into_option(),
         })
     }
 }
@@ -2461,9 +2411,9 @@ mod tests {
     #[test]
     fn runtime_jobs_list_command_normalizes_filters_once() {
         let command = RuntimeJobsListCommand::try_from(RuntimeJobsListInput {
-            state: Some("  running  ".to_string()),
-            correlation_id: Some("  workflow-1  ".to_string()),
-            limit: Some(0),
+            state: Some("  running  ".to_string()).into(),
+            correlation_id: Some("  workflow-1  ".to_string()).into(),
+            limit: Some(0).into(),
         })
         .expect("job list command");
 
@@ -2480,9 +2430,11 @@ mod tests {
             "job_id",
         )
         .unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("cognition_runtime_jobs_cancel: job_id is required"));
+        assert!(
+            error
+                .to_string()
+                .contains("cognition_runtime_jobs_cancel: job_id is required")
+        );
     }
 
     #[test]
@@ -2673,9 +2625,9 @@ mod tests {
         let tool = CognitionRuntimeJobsListTool::new(Arc::new(runtime));
         let response = tool
             .invoke_typed(RuntimeJobsListInput {
-                state: None,
-                correlation_id: None,
-                limit: Some(10),
+                state: None::<String>.into(),
+                correlation_id: None::<String>.into(),
+                limit: Some(10).into(),
             })
             .await
             .expect("list jobs");
