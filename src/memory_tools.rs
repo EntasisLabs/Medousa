@@ -858,86 +858,50 @@ impl<'de> Deserialize<'de> for MemoryContextInput {
         struct WireInput {
             #[serde(default)]
             session_id: MemorySessionScopeInput,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
-            )]
-            stability: Option<f64>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
-            )]
-            friction: Option<f64>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
-            )]
-            logic: Option<f64>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
-            )]
-            autonomy: Option<f64>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string_list"
-            )]
-            context_keywords: Option<Vec<String>>,
+            #[serde(default)]
+            stability: CompatOption<f64>,
+            #[serde(default)]
+            friction: CompatOption<f64>,
+            #[serde(default)]
+            logic: CompatOption<f64>,
+            #[serde(default)]
+            autonomy: CompatOption<f64>,
+            #[serde(default)]
+            context_keywords: CompatList<String>,
             #[serde(default)]
             semantic_tags: Option<CompatibleSemanticTags>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            tag_prefix: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-            )]
-            limit: Option<usize>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
-            )]
-            alpha: Option<f64>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
-            )]
-            beta: Option<f64>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            from_utc: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            to_utc: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string_list"
-            )]
-            tiers: Option<Vec<String>>,
+            #[serde(default)]
+            tag_prefix: CompatOption<String>,
+            #[serde(default)]
+            limit: CompatOption<usize>,
+            #[serde(default)]
+            alpha: CompatOption<f64>,
+            #[serde(default)]
+            beta: CompatOption<f64>,
+            #[serde(default)]
+            from_utc: CompatOption<String>,
+            #[serde(default)]
+            to_utc: CompatOption<String>,
+            #[serde(default)]
+            tiers: CompatList<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
             session_id: input.session_id,
-            stability: input.stability,
-            friction: input.friction,
-            logic: input.logic,
-            autonomy: input.autonomy,
-            context_keywords: input.context_keywords,
+            stability: input.stability.into_option(),
+            friction: input.friction.into_option(),
+            logic: input.logic.into_option(),
+            autonomy: input.autonomy.into_option(),
+            context_keywords: input.context_keywords.into_option(),
             semantic_tags: input.semantic_tags,
-            tag_prefix: input.tag_prefix,
-            limit: input.limit,
-            alpha: input.alpha,
-            beta: input.beta,
-            from_utc: input.from_utc,
-            to_utc: input.to_utc,
-            tiers: input.tiers,
+            tag_prefix: input.tag_prefix.into_option(),
+            limit: input.limit.into_option(),
+            alpha: input.alpha.into_option(),
+            beta: input.beta.into_option(),
+            from_utc: input.from_utc.into_option(),
+            to_utc: input.to_utc.into_option(),
+            tiers: input.tiers.into_option(),
         })
     }
 }
