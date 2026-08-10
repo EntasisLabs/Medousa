@@ -14,7 +14,7 @@ use crate::tool_bootstrap::{
     domain_catalog, load_session_tool_surface,
 };
 use crate::turn_continuation::TurnContinuationScope;
-use crate::typed_tools::{ToolCatalogHandle, ToolId, medousa_tool};
+use crate::typed_tools::{CompatOption, ToolCatalogHandle, ToolId, medousa_tool};
 
 const COGNITION_TOOLS_DISCOVER_ID: ToolId = ToolId::new(COGNITION_TOOLS_DISCOVER);
 
@@ -72,40 +72,51 @@ impl<'de> Deserialize<'de> for ToolsDiscoverInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            domain: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            lane: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            session_id: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
-            )]
-            list_only: Option<bool>,
+            #[serde(default)]
+            domain: CompatOption<String>,
+            #[serde(default)]
+            lane: CompatOption<String>,
+            #[serde(default)]
+            session_id: CompatOption<String>,
+            #[serde(default)]
+            list_only: CompatOption<bool>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
-        let lane = input.lane.map(|lane| match lane.trim().to_ascii_lowercase().as_str() {
-            "worker" => DiscoverLaneInput::Worker,
-            "host" => DiscoverLaneInput::Host,
-            _ => DiscoverLaneInput::Auto,
-        });
+        let lane = input
+            .lane
+            .into_option()
+            .map(|lane| match lane.trim().to_ascii_lowercase().as_str() {
+                "worker" => DiscoverLaneInput::Worker,
+                "host" => DiscoverLaneInput::Host,
+                _ => DiscoverLaneInput::Auto,
+            });
         Ok(Self {
-            domain: input.domain,
+            domain: input.domain.into_option(),
             lane,
-            session_id: input.session_id,
-            list_only: input.list_only,
+            session_id: input.session_id.into_option(),
+            list_only: input.list_only.into_option(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn discover_wire_optionals_remain_lenient_for_legacy_values() {
+        let input: ToolsDiscoverInput = serde_json::from_value(serde_json::json!({
+            "domain": false,
+            "lane": 42,
+            "session_id": [],
+            "list_only": "true",
+        }))
+        .expect("discover input");
+        assert!(input.domain.is_none());
+        assert!(input.lane.is_none());
+        assert!(input.session_id.is_none());
+        assert!(input.list_only.is_none());
     }
 }
 
