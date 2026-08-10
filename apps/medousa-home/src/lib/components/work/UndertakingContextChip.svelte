@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import {
     Bot,
     ChevronDown,
@@ -32,7 +33,10 @@
     startTrackedAgent,
   } from "$lib/utils/undertakingWorkspace";
   import DiffSummaryCard from "$lib/components/diff/DiffSummaryCard.svelte";
+  import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
+  import { attachComposerMenuDismiss } from "$lib/utils/composerMenuDismiss";
+  import { placeToolbarPopover } from "$lib/utils/railPopover";
 
   interface Props {
     chatOnly?: boolean;
@@ -55,6 +59,8 @@
   let error = $state<string | null>(null);
   let activeMode = $state<"general" | "coder">("general");
   let chooserOpen = $state(false);
+  let chooserTriggerEl = $state<HTMLButtonElement | null>(null);
+  let chooserPanelEl = $state<HTMLDivElement | null>(null);
   let creating = $state(false);
   let newTitle = $state("");
   let newBrief = $state("");
@@ -94,6 +100,43 @@
     void hydrateSharedBinding(sessionId);
     const interval = window.setInterval(() => void hydrateSharedBinding(sessionId), 2_000);
     return () => window.clearInterval(interval);
+  });
+
+  $effect(() => {
+    if (!chooserOpen || !chooserTriggerEl || !chooserPanelEl) return;
+    let frame = 0;
+    const placeOnce = () => {
+      if (!chooserTriggerEl || !chooserPanelEl) return;
+      placeToolbarPopover(chooserTriggerEl, chooserPanelEl, {
+        prefer: "above",
+        align: "start",
+        width: 18 * 16,
+        maxHeightRatio: 0.72,
+        gap: 6,
+        pad: 8,
+      });
+      chooserPanelEl.style.overflowY = "auto";
+    };
+    const place = () => {
+      placeOnce();
+      frame = window.requestAnimationFrame(placeOnce);
+    };
+    void tick().then(place);
+    window.addEventListener("resize", place);
+    window.visualViewport?.addEventListener("resize", place);
+    window.visualViewport?.addEventListener("scroll", place);
+    const detachDismiss = attachComposerMenuDismiss({
+      isInside: (target) =>
+        Boolean(chooserPanelEl?.contains(target) || chooserTriggerEl?.contains(target)),
+      onDismiss: () => (chooserOpen = false),
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", place);
+      window.visualViewport?.removeEventListener("resize", place);
+      window.visualViewport?.removeEventListener("scroll", place);
+      detachDismiss();
+    };
   });
 
   $effect(() => {
@@ -320,8 +363,9 @@
   {/if}
   </div>
 {:else if activeMode === "coder"}
-  <div class="relative max-w-full">
+  <div class="max-w-full">
     <button
+      bind:this={chooserTriggerEl}
       type="button"
       class="flex max-w-full items-center gap-1.5 rounded-full border border-primary-500/45 bg-primary-950/55 px-2.5 py-1 text-[11px] text-primary-100 transition hover:border-primary-400/70"
       onclick={() => void openChooser()}
@@ -331,7 +375,13 @@
       <ChevronDown size={12} class={chooserOpen ? "rotate-180" : ""} aria-hidden="true" />
     </button>
     {#if chooserOpen}
-      <div class="absolute left-0 top-full z-50 mt-1.5 w-72 rounded-xl border border-surface-500/40 bg-surface-900/95 p-2 text-xs shadow-2xl backdrop-blur">
+      <BodyPortal>
+      <div
+        bind:this={chooserPanelEl}
+        class="z-50 w-72 rounded-xl border border-surface-500/40 bg-surface-900/95 p-2 text-xs shadow-2xl backdrop-blur"
+        role="dialog"
+        aria-label="Choose or create project"
+      >
         <p class="px-1.5 pb-1.5 text-[10px] font-medium uppercase tracking-wide text-content-quiet">Continue a project</p>
         {#each undertakings.items.filter((item) => ["ready", "executing"].includes(item.state) && item.environment?.worktree).slice(0, 6) as item (item.id)}
           <button type="button" class="context-action" disabled={busy} onclick={() => void bindProject(item)}>
@@ -372,6 +422,7 @@
           <p class="m-1.5 rounded-md bg-amber-950/60 px-2 py-1.5 text-[10px] text-amber-100">{humanizeForgeMessage(error)}</p>
         {/if}
       </div>
+      </BodyPortal>
     {/if}
   </div>
 {/if}

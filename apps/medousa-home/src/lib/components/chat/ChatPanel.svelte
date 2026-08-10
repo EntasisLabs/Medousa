@@ -1457,35 +1457,39 @@
       presenceDockMode === "docking" ||
       presenceDockMode === "docked"}
   >
-    {#if !embedded && presenceDockMode === "docked"}
-    <BudgetApprovalBar
-      onOpenWork={() => {
-        workspace.workView = "hub";
-        const pending = chat.budgetAlert ?? chat.pendingBudgetApprovals[0];
-        if (pending) void workspace.selectCard(pending.workCardId);
-      }}
-    />
-    <ModeProposalBar
-      sessionId={panelSessionId}
-    />
-    <AgentPermissionBar />
-    {#if activeSubagentCount > 0}
-      <button
-        type="button"
-        class="chat-subagent-pill"
-        onclick={() => {
-          const running = subagentRows.find((row) => row.streaming);
-          if (running) openWorkerTranscript(running.workId);
-        }}
-      >
-        <span class="chat-subagent-pill-dot" aria-hidden="true"></span>
-        {activeSubagentCount} subagent{activeSubagentCount === 1 ? "" : "s"} working
-      </button>
-    {/if}
-    <div class="mx-4 mb-1 flex flex-wrap gap-2">
-      <UndertakingContextChip chatOnly />
-    </div>
-    <AgentBrowserPanel />
+    {#if !embedded}
+      {#if presenceDockMode === "docked"}
+        <BudgetApprovalBar
+          onOpenWork={() => {
+            workspace.workView = "hub";
+            const pending = chat.budgetAlert ?? chat.pendingBudgetApprovals[0];
+            if (pending) void workspace.selectCard(pending.workCardId);
+          }}
+        />
+        <ModeProposalBar
+          sessionId={panelSessionId}
+        />
+        <AgentPermissionBar />
+        {#if activeSubagentCount > 0}
+          <button
+            type="button"
+            class="chat-subagent-pill"
+            onclick={() => {
+              const running = subagentRows.find((row) => row.streaming);
+              if (running) openWorkerTranscript(running.workId);
+            }}
+          >
+            <span class="chat-subagent-pill-dot" aria-hidden="true"></span>
+            {activeSubagentCount} subagent{activeSubagentCount === 1 ? "" : "s"} working
+          </button>
+        {/if}
+      {/if}
+      <div class="mx-4 mb-1 flex flex-wrap gap-2">
+        <UndertakingContextChip chatOnly />
+      </div>
+      {#if presenceDockMode === "docked"}
+        <AgentBrowserPanel />
+      {/if}
     {/if}
     <form
       bind:this={composerFormEl}

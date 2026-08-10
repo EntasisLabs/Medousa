@@ -27,7 +27,10 @@ Daemon-proxied to the session host (`medousa-session`, default
 - `GET /v1/sessions/shell` — list sessions
 - `POST /v1/sessions/shell` — create `{ work_id?, cwd? , lease_id? }`
 - `WS /v1/sessions/shell/{id}` — frames `{type: stdout|stdin|resize}`; payload
-  base64 in text frames, raw bytes in binary frames
+  base64 in text frames, raw bytes in binary frames. Human attaches default to
+  retained-history replay. Agent readers attach with `?replay=tail` initially
+  and `?after_sequence=N` thereafter; the host emits a `ready` watermark before
+  accepting new input and reports retained-history gaps explicitly.
 - `POST /v1/sessions/shell/{id}/signal` — `{signal: interrupt|kill}`
 
 ## Home = window manager (no tmux)

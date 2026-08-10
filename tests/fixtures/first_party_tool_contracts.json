@@ -2149,7 +2149,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_shell_session_run",
-      "description": "Write a command (or raw input) into a workshop shell session. Streams output for `wait_ms`. Coding domain only.",
+      "description": "Write a command or raw input into a workshop shell session, or set `poll` to read pending output without typing into the PTY. Streams output for `wait_ms`. Coding domain only.",
       "input_schema": {
         "properties": {
           "attempt_id": {
@@ -2176,6 +2176,10 @@
           "lease_id": {
             "description": "Forge lease fencing token supplied by the runtime",
             "type": "string"
+          },
+          "poll": {
+            "description": "Read pending output without writing more input",
+            "type": "boolean"
           },
           "session_id": {
             "description": "Existing session id",
@@ -7232,7 +7236,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_shell_session_run",
-      "description": "Write a command (or raw input) into a workshop shell session. Streams output for `wait_ms`. Coding domain only.",
+      "description": "Write a command or raw input into a workshop shell session, or set `poll` to read pending output without typing into the PTY. Streams output for `wait_ms`. Coding domain only.",
       "input_schema": {
         "properties": {
           "attempt_id": {
@@ -7254,6 +7258,10 @@
           "lease_id": {
             "description": "Forge lease fencing token supplied by the runtime",
             "type": "string"
+          },
+          "poll": {
+            "description": "Read pending output without writing more input",
+            "type": "boolean"
           },
           "session_id": {
             "description": "Existing session id",

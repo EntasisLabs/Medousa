@@ -156,15 +156,18 @@ fn content_digest(bytes: &[u8]) -> String {
     format!("sha256:{:x}", Sha256::digest(bytes))
 }
 
-fn truncate_utf8_bytes(value: &mut String, max_bytes: usize) {
-    if value.len() <= max_bytes {
-        return;
+fn append_shell_output(output: &mut String, bytes: &[u8]) -> bool {
+    let chunk = String::from_utf8_lossy(bytes);
+    if output.len().saturating_add(chunk.len()) > MAX_SHELL_OUTPUT_BYTES {
+        return false;
     }
-    let mut boundary = max_bytes;
-    while boundary > 0 && !value.is_char_boundary(boundary) {
-        boundary -= 1;
-    }
-    value.truncate(boundary);
+    output.push_str(&chunk);
+    true
+}
+
+fn accept_shell_ready_watermark(next_sequence: &mut u64, sequence: u64) {
+    // The host is authoritative here: a replacement may restart sequencing.
+    *next_sequence = sequence;
 }
 
 fn verify_expected_digest(path: &Path, expected: &str) -> StasisResult<Option<Vec<u8>>> {
@@ -1400,6 +1403,13 @@ struct ShellSessionRunInput {
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
     input: CompatOption<String>,
+    /// Read pending output without writing more input
+    #[serde(default)]
+    #[schemars(
+        with = "bool",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    poll: CompatOption<bool>,
     /// How long to stream output (default 1500, max 15000)
     #[serde(default)]
     #[schemars(
@@ -1407,6 +1417,10 @@ struct ShellSessionRunInput {
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
     wait_ms: CompatOption<u64>,
+    /// Runtime-managed output cursor; intentionally absent from the model schema
+    #[serde(default)]
+    #[schemars(skip)]
+    after_sequence: CompatOption<u64>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -1414,11 +1428,15 @@ struct ShellSessionRunOutput {
     ok: bool,
     session_id: String,
     output: String,
+    input_written: bool,
+    next_sequence: u64,
+    replay_truncated: bool,
+    output_truncated: bool,
 }
 
 #[medousa_tool(id = COGNITION_SHELL_SESSION_RUN_ID)]
 impl CognitionShellSessionRunTool {
-    /// Write a command (or raw input) into a workshop shell session. Streams output for `wait_ms`. Coding domain only.
+    /// Write a command or raw input into a workshop shell session, or set `poll` to read pending output without typing into the PTY. Streams output for `wait_ms`. Coding domain only.
     async fn invoke_typed(
         &self,
         input: ShellSessionRunInput,
@@ -1430,6 +1448,8 @@ impl CognitionShellSessionRunTool {
         let attempt_id = input.attempt_id.into_option();
         let command = input.command.into_option();
         let raw_input = input.input.into_option();
+        let poll = input.poll.into_option().unwrap_or(false);
+        let after_sequence = input.after_sequence.into_option();
         let wait_ms = input
             .wait_ms
             .into_option()
@@ -1452,77 +1472,134 @@ impl CognitionShellSessionRunTool {
             }
         };
         let payload = if let Some(command) = command {
-            format!("{command}\n")
+            Some(format!("{command}\n"))
         } else if let Some(raw_input) = raw_input {
-            raw_input
+            Some(raw_input)
+        } else if poll {
+            None
         } else {
             return Err(StasisError::PortFailure(
-                "provide `command` or `input`".into(),
+                "provide `command` or `input`, or set `poll` to true".into(),
             ));
         };
-        let output = stream_session_input(&session_id, payload.as_bytes(), wait_ms).await?;
+        let polling = payload.is_none();
+        let stream = stream_session_input(
+            &session_id,
+            payload.as_deref().map(str::as_bytes),
+            wait_ms,
+            after_sequence,
+        )
+        .await?;
         Ok(ShellSessionRunOutput {
-            ok: true,
+            ok: polling || stream.input_written,
             session_id,
-            output,
+            output: stream.output,
+            input_written: stream.input_written,
+            next_sequence: stream.next_sequence,
+            replay_truncated: stream.replay_truncated,
+            output_truncated: stream.output_truncated,
         })
     }
 }
 
+struct SessionStreamOutput {
+    output: String,
+    input_written: bool,
+    next_sequence: u64,
+    replay_truncated: bool,
+    output_truncated: bool,
+}
+
 async fn stream_session_input(
     session_id: &str,
-    input: &[u8],
+    input: Option<&[u8]>,
     wait_ms: u64,
-) -> StasisResult<String> {
+    after_sequence: Option<u64>,
+) -> StasisResult<SessionStreamOutput> {
     use futures_util::{SinkExt, StreamExt};
     use tokio_tungstenite::tungstenite::Message;
 
     let base = daemon_base().replacen("http", "ws", 1);
+    let attach_query = after_sequence.map_or_else(
+        || "?replay=tail".to_string(),
+        |sequence| format!("?after_sequence={sequence}"),
+    );
     let url = format!(
-        "{}/v1/sessions/shell/{}",
+        "{}/v1/sessions/shell/{}{attach_query}",
         base.trim_end_matches('/'),
         urlencoding::encode(session_id)
     );
     let (mut ws, _) = tokio_tungstenite::connect_async(&url)
         .await
         .map_err(|e| StasisError::PortFailure(format!("session ws connect: {e}")))?;
-    let frame = serde_json::json!({
-        "type": "stdin",
-        "data": base64::engine::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            input
-        )
-    })
-    .to_string();
-    ws.send(Message::Text(frame.into()))
-        .await
-        .map_err(|e| StasisError::PortFailure(format!("session ws send: {e}")))?;
+    let mut pending_input = input.map(|input| {
+        serde_json::json!({
+            "type": "stdin",
+            "data": base64::engine::Engine::encode(
+                &base64::engine::general_purpose::STANDARD,
+                input
+            )
+        })
+        .to_string()
+    });
 
     let mut output = String::new();
+    let mut input_written = false;
+    let mut next_sequence = after_sequence.unwrap_or(0);
+    let mut replay_truncated = false;
+    let mut output_truncated = false;
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(wait_ms);
     while std::time::Instant::now() < deadline {
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
         match tokio::time::timeout(remaining, ws.next()).await {
             Ok(Some(Ok(Message::Text(text)))) => {
-                if let Ok(v) = serde_json::from_str::<Value>(&text)
-                    && v.get("type").and_then(|t| t.as_str()) == Some("stdout")
-                    && let Some(data) = v.get("data").and_then(|d| d.as_str())
-                    && let Ok(bytes) = base64::engine::Engine::decode(
-                        &base64::engine::general_purpose::STANDARD,
-                        data,
-                    )
-                {
-                    output.push_str(&String::from_utf8_lossy(&bytes));
-                    if output.len() >= MAX_SHELL_OUTPUT_BYTES {
-                        truncate_utf8_bytes(&mut output, MAX_SHELL_OUTPUT_BYTES);
-                        break;
+                if let Ok(v) = serde_json::from_str::<Value>(&text) {
+                    match v.get("type").and_then(Value::as_str) {
+                        Some("stdout") => {
+                            if let Some(data) = v.get("data").and_then(Value::as_str)
+                                && let Ok(bytes) = base64::engine::Engine::decode(
+                                    &base64::engine::general_purpose::STANDARD,
+                                    data,
+                                )
+                            {
+                                if !append_shell_output(&mut output, &bytes) {
+                                    output_truncated = true;
+                                    break;
+                                }
+                                if let Some(sequence) = v.get("sequence").and_then(Value::as_u64) {
+                                    next_sequence = next_sequence.max(sequence);
+                                }
+                                if output.len() >= MAX_SHELL_OUTPUT_BYTES {
+                                    output_truncated = true;
+                                    break;
+                                }
+                            }
+                        }
+                        Some("ready") => {
+                            if let Some(sequence) = v.get("sequence").and_then(Value::as_u64) {
+                                accept_shell_ready_watermark(&mut next_sequence, sequence);
+                            }
+                            replay_truncated |= v
+                                .get("replay_truncated")
+                                .and_then(Value::as_bool)
+                                .unwrap_or(false);
+                            if let Some(frame) = pending_input.take() {
+                                ws.send(Message::Text(frame.into())).await.map_err(|e| {
+                                    StasisError::PortFailure(format!("session ws send: {e}"))
+                                })?;
+                                input_written = true;
+                            }
+                        }
+                        Some("output_gap") => replay_truncated = true,
+                        _ => {}
                     }
                 }
             }
             Ok(Some(Ok(Message::Binary(bytes)))) => {
-                output.push_str(&String::from_utf8_lossy(&bytes));
-                if output.len() >= MAX_SHELL_OUTPUT_BYTES {
-                    truncate_utf8_bytes(&mut output, MAX_SHELL_OUTPUT_BYTES);
+                if !append_shell_output(&mut output, &bytes)
+                    || output.len() >= MAX_SHELL_OUTPUT_BYTES
+                {
+                    output_truncated = true;
                     break;
                 }
             }
@@ -1533,7 +1610,13 @@ async fn stream_session_input(
         }
     }
     let _ = ws.close(None).await;
-    Ok(output)
+    Ok(SessionStreamOutput {
+        output,
+        input_written,
+        next_sequence,
+        replay_truncated,
+        output_truncated,
+    })
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1671,6 +1754,10 @@ struct CoderShellRunInput {
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
     wait_ms: CompatOption<u64>,
+    /// Runtime-managed output cursor; intentionally absent from the model schema
+    #[serde(default)]
+    #[schemars(skip)]
+    after_sequence: CompatOption<u64>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -1680,6 +1767,10 @@ struct CoderShellRunOutput {
     session_id: String,
     command: String,
     output: String,
+    input_written: bool,
+    next_sequence: u64,
+    replay_truncated: bool,
+    output_truncated: bool,
 }
 
 #[medousa_tool(id = COGNITION_CODER_SHELL_RUN_ID)]
@@ -1698,6 +1789,7 @@ impl CognitionCoderShellRunTool {
         let lease_id = input.lease_id.into_option();
         let lease_generation = input.lease_generation.into_option();
         let attempt_id = input.attempt_id.into_option();
+        let after_sequence = input.after_sequence.into_option();
         let wait_ms = input
             .wait_ms
             .into_option()
@@ -1719,14 +1811,24 @@ impl CognitionCoderShellRunTool {
                 daemon_session_id(&created)?
             }
         };
-        let output =
-            stream_session_input(&session_id, format!("{command}\n").as_bytes(), wait_ms).await?;
+        let payload = format!("{command}\n");
+        let stream = stream_session_input(
+            &session_id,
+            Some(payload.as_bytes()),
+            wait_ms,
+            after_sequence,
+        )
+        .await?;
         Ok(CoderShellRunOutput {
-            ok: true,
+            ok: stream.input_written,
             surface: "coder_pty".to_string(),
             session_id,
             command,
-            output,
+            output: stream.output,
+            input_written: stream.input_written,
+            next_sequence: stream.next_sequence,
+            replay_truncated: stream.replay_truncated,
+            output_truncated: stream.output_truncated,
         })
     }
 }
@@ -1748,6 +1850,29 @@ pub fn register_coding_tools(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shell_output_limit_never_partially_consumes_a_sequence_chunk() {
+        let mut output = "x".repeat(MAX_SHELL_OUTPUT_BYTES - 2);
+        let before = output.clone();
+        assert!(!append_shell_output(&mut output, b"tail"));
+        assert_eq!(output, before);
+    }
+
+    #[test]
+    fn shell_ready_watermark_can_reset_a_stale_cursor() {
+        let mut next_sequence = 42;
+        accept_shell_ready_watermark(&mut next_sequence, 10);
+        assert_eq!(next_sequence, 10);
+    }
+
+    #[test]
+    fn shell_run_schema_exposes_poll_but_hides_runtime_cursor() {
+        let schema = crate::typed_tools::normalize_input_schema::<ShellSessionRunInput>()
+            .expect("shell session run schema");
+        assert!(schema["properties"].get("poll").is_some());
+        assert!(schema["properties"].get("after_sequence").is_none());
+    }
 
     fn code_read_observation(root: &Path, path: &Path, input: &Value) -> StasisResult<Value> {
         let mut wire_input = input.clone();
