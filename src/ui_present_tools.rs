@@ -12,7 +12,7 @@ use crate::daemon_api::TurnSurfaceContext;
 use crate::runtime_session::{require_active_chat_session_id_async, runtime_bootstrap_session_id};
 use crate::semantic_values::{RequiredContent, TrimmedText};
 use crate::turn_continuation::TurnContinuationScope;
-use crate::typed_tools::{ToolId, medousa_tool};
+use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_UI_PRESENT: &str = "cognition_ui_present";
 const COGNITION_UI_PRESENT_ID: ToolId = ToolId::new(COGNITION_UI_PRESENT);
@@ -105,10 +105,7 @@ pub struct UiPresentInput {
 }
 
 impl UiPresentInput {
-    pub(crate) fn inline(
-        title: impl Into<String>,
-        html: impl Into<String>,
-    ) -> StasisResult<Self> {
+    pub(crate) fn inline(title: impl Into<String>, html: impl Into<String>) -> StasisResult<Self> {
         let title = TrimmedText::new(title)
             .map_err(|_| StasisError::PortFailure("title is required".to_string()))?;
         let html = RequiredContent::new(html)
@@ -135,16 +132,12 @@ impl UiPresentInput {
         slot: impl Into<String>,
     ) -> StasisResult<Self> {
         let mut input = Self::inline(title, html)?;
-        let component_id = TrimmedText::new(component_id)
-            .map_err(|_| {
-                StasisError::PortFailure(
-                    "component_id is required when persist=true".to_string(),
-                )
-            })?;
-        let surface_id = TrimmedText::new(surface_id)
-            .map_err(|_| {
-                StasisError::PortFailure("surface_id is required when persist=true".to_string())
-            })?;
+        let component_id = TrimmedText::new(component_id).map_err(|_| {
+            StasisError::PortFailure("component_id is required when persist=true".to_string())
+        })?;
+        let surface_id = TrimmedText::new(surface_id).map_err(|_| {
+            StasisError::PortFailure("surface_id is required when persist=true".to_string())
+        })?;
 
         input.presentation = presentation;
         input.persist = Some(true);
@@ -162,58 +155,34 @@ impl<'de> Deserialize<'de> for UiPresentInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            title: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            html: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            presentation: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_u64"
-            )]
-            height: Option<u64>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
-            )]
-            persist: Option<bool>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            component_id: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            surface_id: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            slot: Option<String>,
+            #[serde(default)]
+            title: CompatOption<String>,
+            #[serde(default)]
+            html: CompatOption<String>,
+            #[serde(default)]
+            presentation: CompatOption<String>,
+            #[serde(default)]
+            height: CompatOption<u64>,
+            #[serde(default)]
+            persist: CompatOption<bool>,
+            #[serde(default)]
+            component_id: CompatOption<String>,
+            #[serde(default)]
+            surface_id: CompatOption<String>,
+            #[serde(default)]
+            slot: CompatOption<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            title: input.title,
-            html: input.html,
-            presentation: input.presentation,
-            height: input.height,
-            persist: input.persist,
-            component_id: input.component_id,
-            surface_id: input.surface_id,
-            slot: input.slot,
+            title: input.title.into_option(),
+            html: input.html.into_option(),
+            presentation: input.presentation.into_option(),
+            height: input.height.into_option(),
+            persist: input.persist.into_option(),
+            component_id: input.component_id.into_option(),
+            surface_id: input.surface_id.into_option(),
+            slot: input.slot.into_option(),
         })
     }
 }
@@ -463,10 +432,27 @@ mod tests {
         assert_eq!(input.component_id.as_deref(), Some("component"));
         assert_eq!(input.surface_id.as_deref(), Some("surface"));
         assert_eq!(input.persist, Some(true));
-        assert!(UiPresentInput::persistent_component(
-            "title", "html", None, " ", "surface", "main"
-        )
-        .is_err());
+        assert!(
+            UiPresentInput::persistent_component("title", "html", None, " ", "surface", "main")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn wire_compatibility_absorbs_wrong_typed_optional_fields() {
+        let input: UiPresentInput = serde_json::from_value(serde_json::json!({
+            "title": 42,
+            "html": ["not html"],
+            "height": "360",
+            "persist": "yes",
+            "component_id": false,
+        }))
+        .expect("legacy optional fields remain lenient");
+        assert!(input.title.is_none());
+        assert!(input.html.is_none());
+        assert!(input.height.is_none());
+        assert!(input.persist.is_none());
+        assert!(input.component_id.is_none());
     }
 
     #[tokio::test]
