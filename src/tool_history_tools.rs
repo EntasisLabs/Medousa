@@ -8,6 +8,7 @@ use stasis::domain::errors::{Result as StasisResult, StasisError};
 use tokio::sync::RwLock;
 
 use crate::session::load_history;
+use crate::semantic_values::TrimmedText;
 use crate::turn_continuation::TurnContinuationScope;
 use crate::turn_slice::{
     DEFAULT_TOOL_HISTORY_DETAIL_CHARS, DEFAULT_TOOL_HISTORY_SUMMARY_TURNS, tool_history_detail_markdown,
@@ -19,6 +20,19 @@ pub const COGNITION_TOOL_HISTORY_SUMMARY: &str = "cognition_tool_history_summary
 pub const COGNITION_TOOL_HISTORY_DETAIL: &str = "cognition_tool_history_detail";
 const COGNITION_TOOL_HISTORY_SUMMARY_ID: ToolId = ToolId::new(COGNITION_TOOL_HISTORY_SUMMARY);
 const COGNITION_TOOL_HISTORY_DETAIL_ID: ToolId = ToolId::new(COGNITION_TOOL_HISTORY_DETAIL);
+
+fn optional_trimmed(value: Option<String>) -> Option<TrimmedText> {
+    value.and_then(|value| TrimmedText::new(value).ok())
+}
+
+fn required_slice_id(value: Option<String>) -> Result<TrimmedText, StasisError> {
+    let value = value.ok_or_else(|| {
+        StasisError::PortFailure("cognition_tool_history_detail: slice_id is required".to_string())
+    })?;
+    TrimmedText::new(value).map_err(|_| {
+        StasisError::PortFailure("cognition_tool_history_detail: slice_id is required".to_string())
+    })
+}
 
 pub fn register_tool_history_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
@@ -71,6 +85,30 @@ pub struct ToolHistorySummaryInput {
     keyword: Option<String>,
 }
 
+#[derive(Debug)]
+struct ToolHistorySummaryCommand {
+    session_id: Option<TrimmedText>,
+    last_k: usize,
+    tool_filter: Option<TrimmedText>,
+    keyword: Option<TrimmedText>,
+}
+
+impl TryFrom<ToolHistorySummaryInput> for ToolHistorySummaryCommand {
+    type Error = StasisError;
+
+    fn try_from(input: ToolHistorySummaryInput) -> Result<Self, Self::Error> {
+        Ok(Self {
+            session_id: optional_trimmed(input.session_id),
+            last_k: input
+                .last_k
+                .unwrap_or(DEFAULT_TOOL_HISTORY_SUMMARY_TURNS)
+                .clamp(1, 24),
+            tool_filter: optional_trimmed(input.tool_filter),
+            keyword: optional_trimmed(input.keyword),
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct ToolHistorySummaryOutput {
     ok: bool,
@@ -89,27 +127,16 @@ impl CognitionToolHistorySummaryTool {
         &self,
         input: ToolHistorySummaryInput,
     ) -> stasis::prelude::Result<ToolHistorySummaryOutput> {
-        let session_id =
-            crate::runtime_session::require_active_chat_session_id(
-                input.session_id.as_deref(),
-                &self.turn_scope,
-                COGNITION_TOOL_HISTORY_SUMMARY,
-            )
-            .await?;
-        let last_k = input
-            .last_k
-            .unwrap_or(DEFAULT_TOOL_HISTORY_SUMMARY_TURNS)
-            .clamp(1, 24);
-        let tool_filter = input
-            .tool_filter
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
-        let keyword = input
-            .keyword
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
+        let command = ToolHistorySummaryCommand::try_from(input)?;
+        let session_id = crate::runtime_session::require_active_chat_session_id(
+            command.session_id.as_ref().map(TrimmedText::as_str),
+            &self.turn_scope,
+            COGNITION_TOOL_HISTORY_SUMMARY,
+        )
+        .await?;
+        let last_k = command.last_k;
+        let tool_filter = command.tool_filter.as_ref().map(TrimmedText::as_str);
+        let keyword = command.keyword.as_ref().map(TrimmedText::as_str);
 
         let turns = load_history(&session_id);
         let rows = tool_history_summary_rows(&turns, last_k, tool_filter, keyword);
@@ -194,6 +221,30 @@ impl<'de> Deserialize<'de> for ToolHistoryDetailInput {
     }
 }
 
+#[derive(Debug)]
+struct ToolHistoryDetailCommand {
+    session_id: Option<TrimmedText>,
+    slice_id: TrimmedText,
+    tool_round: Option<usize>,
+    max_chars: usize,
+}
+
+impl TryFrom<ToolHistoryDetailInput> for ToolHistoryDetailCommand {
+    type Error = StasisError;
+
+    fn try_from(input: ToolHistoryDetailInput) -> Result<Self, Self::Error> {
+        Ok(Self {
+            session_id: optional_trimmed(input.session_id),
+            slice_id: required_slice_id(input.slice_id)?,
+            tool_round: input.tool_round,
+            max_chars: input
+                .max_chars
+                .unwrap_or(DEFAULT_TOOL_HISTORY_DETAIL_CHARS)
+                .clamp(256, 24_000),
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct ToolHistoryDetailOutput {
     ok: bool,
@@ -210,35 +261,25 @@ impl CognitionToolHistoryDetailTool {
         &self,
         input: ToolHistoryDetailInput,
     ) -> stasis::prelude::Result<ToolHistoryDetailOutput> {
-        let session_id =
-            crate::runtime_session::require_active_chat_session_id(
-                input.session_id.as_deref(),
-                &self.turn_scope,
-                COGNITION_TOOL_HISTORY_DETAIL,
-            )
-            .await?;
-        let slice_id = input
-            .slice_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| {
-                StasisError::PortFailure("cognition_tool_history_detail: slice_id is required".to_string())
-            })?;
-        let tool_round = input.tool_round;
-        let max_chars = input
-            .max_chars
-            .unwrap_or(DEFAULT_TOOL_HISTORY_DETAIL_CHARS)
-            .clamp(256, 24_000);
+        let command = ToolHistoryDetailCommand::try_from(input)?;
+        let session_id = crate::runtime_session::require_active_chat_session_id(
+            command.session_id.as_ref().map(TrimmedText::as_str),
+            &self.turn_scope,
+            COGNITION_TOOL_HISTORY_DETAIL,
+        )
+        .await?;
+        let slice_id = command.slice_id.into_string();
+        let tool_round = command.tool_round;
+        let max_chars = command.max_chars;
 
         let turns = load_history(&session_id);
-        let detail = tool_history_detail_markdown(&turns, slice_id, tool_round, max_chars)
+        let detail = tool_history_detail_markdown(&turns, &slice_id, tool_round, max_chars)
             .map_err(StasisError::PortFailure)?;
 
         Ok(ToolHistoryDetailOutput {
             ok: true,
             session_id,
-            slice_id: slice_id.to_string(),
+            slice_id,
             tool_round,
             detail,
         })
@@ -282,5 +323,47 @@ mod tests {
         let detail = tool_history_detail_markdown(&turns, "turn:1", Some(1), 4000).unwrap();
         assert!(detail.contains("cognition_manuscript_list"));
         assert!(detail.contains("base-researcher"));
+    }
+
+    #[test]
+    fn history_commands_normalize_filters_and_bound_detail_reads() {
+        let summary = ToolHistorySummaryCommand::try_from(ToolHistorySummaryInput {
+            session_id: Some(" session-a ".to_string()),
+            last_k: Some(999),
+            tool_filter: Some(" cognition_ ".to_string()),
+            keyword: Some(" outcome ".to_string()),
+        })
+        .expect("summary command");
+        assert_eq!(
+            summary.session_id.as_ref().map(TrimmedText::as_str),
+            Some("session-a")
+        );
+        assert_eq!(summary.last_k, 24);
+        assert_eq!(
+            summary.tool_filter.as_ref().map(TrimmedText::as_str),
+            Some("cognition_")
+        );
+
+        let detail = ToolHistoryDetailCommand::try_from(ToolHistoryDetailInput {
+            session_id: Some(" session-a ".to_string()),
+            slice_id: Some(" turn:4 ".to_string()),
+            tool_round: Some(2),
+            max_chars: Some(99_999),
+        })
+        .expect("detail command");
+        assert_eq!(detail.slice_id.as_str(), "turn:4");
+        assert_eq!(detail.max_chars, 24_000);
+    }
+
+    #[test]
+    fn history_detail_command_rejects_blank_slice_id() {
+        let error = ToolHistoryDetailCommand::try_from(ToolHistoryDetailInput {
+            session_id: None,
+            slice_id: Some(" \n\t".to_string()),
+            tool_round: None,
+            max_chars: None,
+        })
+        .expect_err("blank slice id should fail");
+        assert!(error.to_string().contains("slice_id is required"));
     }
 }
