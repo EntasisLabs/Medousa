@@ -1529,42 +1529,42 @@ impl CognitionMemoryMoodsTool {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct MemoryMoodsInput {
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    target_mood: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
+    target_mood: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "f64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "f64", skip_serializing_if = "Option::is_none")]
-    blend: Option<f64>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
+    blend: CompatOption<f64>,
+    #[serde(default)]
+    #[schemars(
+        with = "f64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "f64", skip_serializing_if = "Option::is_none")]
-    current_stability: Option<f64>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
+    current_stability: CompatOption<f64>,
+    #[serde(default)]
+    #[schemars(
+        with = "f64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "f64", skip_serializing_if = "Option::is_none")]
-    current_friction: Option<f64>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
+    current_friction: CompatOption<f64>,
+    #[serde(default)]
+    #[schemars(
+        with = "f64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "f64", skip_serializing_if = "Option::is_none")]
-    current_logic: Option<f64>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
+    current_logic: CompatOption<f64>,
+    #[serde(default)]
+    #[schemars(
+        with = "f64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "f64", skip_serializing_if = "Option::is_none")]
-    current_autonomy: Option<f64>,
+    current_autonomy: CompatOption<f64>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -1597,17 +1597,26 @@ impl CognitionMemoryMoodsTool {
         &self,
         input: MemoryMoodsInput,
     ) -> stasis::prelude::Result<MemoryMoodsOutput> {
-        let target_mood = input.target_mood.as_deref();
-        let blend = input.blend.unwrap_or(1.0) as f32;
-        let current_stability = input.current_stability.map(|value| value as f32);
-        let current_friction = input.current_friction.map(|value| value as f32);
-        let current_logic = input.current_logic.map(|value| value as f32);
-        let current_autonomy = input.current_autonomy.map(|value| value as f32);
+        let target_mood = input.target_mood.into_option();
+        let blend = input.blend.into_option().unwrap_or(1.0) as f32;
+        let current_stability = input
+            .current_stability
+            .into_option()
+            .map(|value| value as f32);
+        let current_friction = input
+            .current_friction
+            .into_option()
+            .map(|value| value as f32);
+        let current_logic = input.current_logic.into_option().map(|value| value as f32);
+        let current_autonomy = input
+            .current_autonomy
+            .into_option()
+            .map(|value| value as f32);
 
         emit_invoked(&self.event_tx, COGNITION_MEMORY_MOODS_ID.as_str(), "moods").await;
 
         let result = self.moods.get(
-            target_mood,
+            target_mood.as_deref(),
             blend,
             current_stability,
             current_friction,
