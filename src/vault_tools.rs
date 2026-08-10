@@ -14,6 +14,7 @@ use crate::daemon_api::{
 };
 use crate::events::TuiEvent;
 use crate::locus_semantic_tags::parse_semantic_tags_from_value;
+use crate::semantic_values::{RequiredContent, TrimmedText};
 use crate::turn_continuation::TurnContinuationScope;
 use crate::typed_tools::{ToolId, medousa_tool};
 use crate::vault::VaultService;
@@ -573,6 +574,50 @@ pub struct VaultWriteInput {
     if_match: Option<String>,
 }
 
+#[derive(Debug)]
+struct VaultWriteCommand {
+    path: TrimmedText,
+    content: RequiredContent,
+    session_id: Option<TrimmedText>,
+    session_id_provided: bool,
+    semantic_tags: Option<Vec<String>>,
+    auto_workshop_tags: bool,
+    if_match: Option<String>,
+}
+
+impl TryFrom<VaultWriteInput> for VaultWriteCommand {
+    type Error = stasis::prelude::StasisError;
+
+    fn try_from(input: VaultWriteInput) -> Result<Self, Self::Error> {
+        let path = TrimmedText::new(
+            input
+                .path
+                .ok_or_else(|| StasisError::PortFailure("path is required".to_string()))?,
+        )
+        .map_err(|_| StasisError::PortFailure("path is required".to_string()))?;
+        let content = RequiredContent::new(
+            input
+                .content
+                .ok_or_else(|| StasisError::PortFailure("content is required".to_string()))?,
+        )
+        .map_err(|_| StasisError::PortFailure("content is required".to_string()))?;
+        let session_id = input
+            .session_id
+            .as_deref()
+            .and_then(|value| TrimmedText::new(value).ok());
+
+        Ok(Self {
+            path,
+            content,
+            session_id,
+            session_id_provided: input.session_id_provided,
+            semantic_tags: input.semantic_tags,
+            auto_workshop_tags: input.auto_workshop_tags.unwrap_or(true),
+            if_match: input.if_match,
+        })
+    }
+}
+
 impl<'de> Deserialize<'de> for VaultWriteInput {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -626,23 +671,11 @@ impl CognitionVaultWriteTool {
         &self,
         input: VaultWriteInput,
     ) -> stasis::prelude::Result<VaultWriteResponse> {
-        let path = input
-            .path
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| StasisError::PortFailure("path is required".to_string()))?
-            .to_string();
-        let content = input
-            .content
-            .ok_or_else(|| StasisError::PortFailure("content is required".to_string()))?;
-        let session_id = if input.session_id_provided {
-            input
-                .session_id
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_string)
+        let command = VaultWriteCommand::try_from(input)?;
+        let path = command.path.into_string();
+        let content = command.content.into_string();
+        let session_id = if command.session_id_provided {
+            command.session_id.map(TrimmedText::into_string)
         } else {
             let chat_session_id = crate::runtime_session::resolve_active_chat_session_id_async(
                 &self.turn_scope,
@@ -658,13 +691,13 @@ impl CognitionVaultWriteTool {
             path: Some(path.clone()),
             content,
             session_id,
-            semantic_tags: input.semantic_tags,
-            auto_workshop_tags: input.auto_workshop_tags.unwrap_or(true),
+            semantic_tags: command.semantic_tags,
+            auto_workshop_tags: command.auto_workshop_tags,
         };
         VaultService::write_note_with_actor(
             Some(&path),
             &request,
-            input.if_match.as_deref(),
+            command.if_match.as_deref(),
             crate::daemon_api::WorkspaceEventActor::Agent,
             Some("cognition_vault_write"),
         )
@@ -825,6 +858,7 @@ mod tests {
 
     use super::{COGNITION_VAULT_LIST_ID, CognitionVaultListTool, VaultListInput, VaultWriteInput};
     use crate::events::TuiEvent;
+    use crate::semantic_values::TrimmedText;
 
     #[test]
     fn typed_vault_list_keeps_injected_events_and_lenient_wire_inputs() {
@@ -904,5 +938,43 @@ mod tests {
         .expect("explicit session input");
         assert!(explicit.session_id_provided);
         assert_eq!(explicit.session_id.as_deref(), Some("chat-1"));
+    }
+
+    #[test]
+    fn vault_write_command_preserves_content_and_normalizes_identifiers() {
+        let command = super::VaultWriteCommand::try_from(VaultWriteInput {
+            path: Some("  notes/typed.md  ".to_string()),
+            content: Some("  # Heading\n\nbody  \n".to_string()),
+            session_id: Some("  chat-1  ".to_string()),
+            session_id_provided: true,
+            semantic_tags: None,
+            auto_workshop_tags: None,
+            if_match: Some("  digest  ".to_string()),
+        })
+        .expect("command");
+
+        assert_eq!(command.path.as_str(), "notes/typed.md");
+        assert_eq!(command.content.as_str(), "  # Heading\n\nbody  \n");
+        assert_eq!(
+            command.session_id.as_ref().map(TrimmedText::as_str),
+            Some("chat-1")
+        );
+        assert!(command.auto_workshop_tags);
+        assert_eq!(command.if_match.as_deref(), Some("  digest  "));
+    }
+
+    #[test]
+    fn vault_write_command_rejects_blank_content() {
+        let error = super::VaultWriteCommand::try_from(VaultWriteInput {
+            path: Some("notes/blank.md".to_string()),
+            content: Some(" \n\t".to_string()),
+            session_id: None,
+            session_id_provided: false,
+            semantic_tags: None,
+            auto_workshop_tags: None,
+            if_match: None,
+        })
+        .expect_err("blank content should fail");
+        assert!(error.to_string().contains("content is required"));
     }
 }
