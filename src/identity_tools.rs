@@ -259,6 +259,33 @@ pub struct IdentityContextInput {
     mode: Option<String>,
 }
 
+#[derive(Debug)]
+struct IdentityContextCommand {
+    user_id: Option<TrimmedText>,
+    persona_id: Option<TrimmedText>,
+    channel_id: Option<TrimmedText>,
+    relationship_limit: usize,
+    mode: IdentityContextMode,
+}
+
+impl TryFrom<IdentityContextInput> for IdentityContextCommand {
+    type Error = StasisError;
+
+    fn try_from(input: IdentityContextInput) -> Result<Self, Self::Error> {
+        Ok(Self {
+            user_id: input.user_id.and_then(|value| TrimmedText::new(value).ok()),
+            persona_id: input
+                .persona_id
+                .and_then(|value| TrimmedText::new(value).ok()),
+            channel_id: input
+                .channel_id
+                .and_then(|value| TrimmedText::new(value).ok()),
+            relationship_limit: input.relationship_limit.unwrap_or(8).clamp(1, 64),
+            mode: parse_identity_context_mode(input.mode.as_deref())?,
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 struct IdentityPersonaOutput {
     persona_id: String,
@@ -567,6 +594,7 @@ impl CognitionIdentityContextTool {
         &self,
         input: IdentityContextInput,
     ) -> stasis::prelude::Result<IdentityContextOutput> {
+        let command = IdentityContextCommand::try_from(input)?;
         emit_invoked(
             &self.event_tx,
             COGNITION_IDENTITY_CONTEXT_ID.as_str(),
@@ -574,16 +602,20 @@ impl CognitionIdentityContextTool {
         )
         .await;
         let user_id = resolve_effective_identity_user_id(
-            input.user_id.as_deref(),
+            command.user_id.as_ref().map(TrimmedText::as_str),
             &self.default_user_id,
             self.workshop_dynamic,
         );
-        let persona_id = optional_str(input.persona_id.as_deref())
+        let persona_id = command
+            .persona_id
+            .map(TrimmedText::into_string)
             .unwrap_or_else(|| self.default_persona_id.clone());
-        let channel_id = optional_str(input.channel_id.as_deref())
+        let channel_id = command
+            .channel_id
+            .map(TrimmedText::into_string)
             .unwrap_or_else(|| self.default_channel_id.clone());
-        let relationship_limit = input.relationship_limit.unwrap_or(8).clamp(1, 64);
-        let mode = parse_identity_context_mode(input.mode.as_deref())?;
+        let relationship_limit = command.relationship_limit;
+        let mode = command.mode;
 
         let response = self
             .service
@@ -1871,5 +1903,44 @@ mod remember_tests {
         })
         .expect_err("blank statement should fail");
         assert!(error.to_string().contains("statement is required"));
+    }
+
+    #[test]
+    fn identity_context_command_normalizes_ids_and_mode_bounds() {
+        let command = IdentityContextCommand::try_from(IdentityContextInput {
+            user_id: Some(" user-a ".to_string()),
+            persona_id: Some(" persona-a ".to_string()),
+            channel_id: Some(" channel-a ".to_string()),
+            relationship_limit: Some(999),
+            mode: Some(" POLICY ".to_string()),
+        })
+        .expect("context command");
+        assert_eq!(
+            command.user_id.as_ref().map(TrimmedText::as_str),
+            Some("user-a")
+        );
+        assert_eq!(
+            command.persona_id.as_ref().map(TrimmedText::as_str),
+            Some("persona-a")
+        );
+        assert_eq!(command.relationship_limit, 64);
+        assert!(matches!(command.mode, IdentityContextMode::Policy));
+    }
+
+    #[test]
+    fn identity_context_command_rejects_unknown_mode() {
+        let error = IdentityContextCommand::try_from(IdentityContextInput {
+            user_id: None,
+            persona_id: None,
+            channel_id: None,
+            relationship_limit: None,
+            mode: Some("unknown".to_string()),
+        })
+        .expect_err("unknown identity context mode should fail");
+        assert!(
+            error
+                .to_string()
+                .contains("unsupported identity context mode")
+        );
     }
 }
