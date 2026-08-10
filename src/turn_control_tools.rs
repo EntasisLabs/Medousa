@@ -7,6 +7,7 @@ use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
 #[cfg(test)]
 use stasis::application::orchestration::tool_registry::StasisTool;
 
+use crate::semantic_values::TrimmedText;
 use crate::typed_tools::{ToolId, medousa_tool};
 
 /// Canonical registry name (snake_case).
@@ -292,10 +293,127 @@ fn message_from_turn_control_message_payload(payload: &Value) -> Option<String> 
         .map(str::to_string)
 }
 
-fn trimmed_nonempty(value: Option<String>) -> Option<String> {
-    value
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
+fn optional_trimmed(value: Option<String>) -> Option<TrimmedText> {
+    value.and_then(|value| TrimmedText::new(value).ok())
+}
+
+#[derive(Debug)]
+struct TurnBeginWorkCommand {
+    message: Option<TrimmedText>,
+    goal: Option<TrimmedText>,
+    intent: crate::agent_runtime::turn_worker::TurnWorkerIntent,
+}
+
+impl From<TurnBeginWorkInput> for TurnBeginWorkCommand {
+    fn from(input: TurnBeginWorkInput) -> Self {
+        let intent = input
+            .intent
+            .as_deref()
+            .and_then(crate::agent_runtime::turn_worker::TurnWorkerIntent::parse)
+            .unwrap_or(crate::agent_runtime::turn_worker::TurnWorkerIntent::General);
+        Self {
+            message: optional_trimmed(input.message),
+            goal: optional_trimmed(input.goal),
+            intent,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct TurnUpdateUserCommand {
+    message: Option<TrimmedText>,
+}
+
+impl From<TurnUpdateUserInput> for TurnUpdateUserCommand {
+    fn from(input: TurnUpdateUserInput) -> Self {
+        Self {
+            message: optional_trimmed(input.message),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct TurnProposeModeCommand {
+    mode: crate::daemon_api::AgentModeId,
+    scope: crate::daemon_api::AgentModeScope,
+    task_id: Option<TrimmedText>,
+    reason: Option<TrimmedText>,
+}
+
+impl From<TurnProposeModeInput> for TurnProposeModeCommand {
+    fn from(input: TurnProposeModeInput) -> Self {
+        Self {
+            mode: input.mode.into(),
+            scope: input.scope.into(),
+            task_id: optional_trimmed(input.task_id),
+            reason: TrimmedText::new(input.reason).ok(),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct TurnPrepareFinalCommand {
+    reason: Option<TrimmedText>,
+}
+
+impl From<TurnPrepareFinalInput> for TurnPrepareFinalCommand {
+    fn from(input: TurnPrepareFinalInput) -> Self {
+        Self {
+            reason: optional_trimmed(input.reason),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct TurnFinishCommand {
+    message: Option<TrimmedText>,
+    reason: Option<TrimmedText>,
+}
+
+impl From<TurnFinishInput> for TurnFinishCommand {
+    fn from(input: TurnFinishInput) -> Self {
+        Self {
+            message: optional_trimmed(input.message),
+            reason: optional_trimmed(input.reason),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct TurnCheckpointCommand {
+    message: Option<TrimmedText>,
+    awaiting: Option<TrimmedText>,
+    reason: Option<TrimmedText>,
+}
+
+impl From<TurnCheckpointInput> for TurnCheckpointCommand {
+    fn from(input: TurnCheckpointInput) -> Self {
+        Self {
+            message: optional_trimmed(input.message),
+            awaiting: optional_trimmed(input.awaiting),
+            reason: optional_trimmed(input.reason),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct TurnRequestMoreRoundsCommand {
+    requested_rounds: usize,
+    reason: Option<TrimmedText>,
+    progress_summary: Option<TrimmedText>,
+}
+
+impl From<TurnRequestMoreRoundsInput> for TurnRequestMoreRoundsCommand {
+    fn from(input: TurnRequestMoreRoundsInput) -> Self {
+        Self {
+            requested_rounds: input
+                .requested_rounds
+                .unwrap_or(0)
+                .clamp(1, crate::turn_budget_request::MAX_REQUESTED_ROUNDS_PER_ASK),
+            reason: optional_trimmed(input.reason),
+            progress_summary: optional_trimmed(input.progress_summary),
+        }
+    }
 }
 
 /// Extract the principal-facing checkpoint from a tool batch, if `cognition_turn_checkpoint` ran.
@@ -384,7 +502,8 @@ impl CognitionTurnBeginWorkTool {
         &self,
         input: TurnBeginWorkInput,
     ) -> stasis::prelude::Result<crate::agent_runtime::turn_worker::EnterBoundWorkshopOutput> {
-        let Some(message) = trimmed_nonempty(input.message) else {
+        let command = TurnBeginWorkCommand::from(input);
+        let Some(message) = command.message else {
             return Ok(
                 crate::agent_runtime::turn_worker::EnterBoundWorkshopOutput::Failure {
                     ok: false,
@@ -393,7 +512,7 @@ impl CognitionTurnBeginWorkTool {
                 },
             );
         };
-        let Some(goal) = trimmed_nonempty(input.goal) else {
+        let Some(goal) = command.goal else {
             return Ok(
                 crate::agent_runtime::turn_worker::EnterBoundWorkshopOutput::Failure {
                     ok: false,
@@ -402,14 +521,9 @@ impl CognitionTurnBeginWorkTool {
                 },
             );
         };
-        let intent_raw = input.intent.as_deref();
-        let intent = crate::agent_runtime::turn_worker::TurnWorkerIntent::parse(
-            intent_raw.unwrap_or("general"),
-        )
-        .unwrap_or(crate::agent_runtime::turn_worker::TurnWorkerIntent::General);
 
         self.scheduler
-            .enter_bound_workshop(&message, &goal, intent)
+            .enter_bound_workshop(message.as_str(), goal.as_str(), command.intent)
             .await
     }
 }
@@ -494,7 +608,8 @@ impl CognitionTurnUpdateUserTool {
         &self,
         input: TurnUpdateUserInput,
     ) -> stasis::prelude::Result<TurnUpdateUserOutput> {
-        let Some(message) = trimmed_nonempty(input.message) else {
+        let command = TurnUpdateUserCommand::from(input);
+        let Some(message) = command.message else {
             return Ok(TurnUpdateUserOutput::Failure {
                 ok: false,
                 update_user: false,
@@ -505,7 +620,7 @@ impl CognitionTurnUpdateUserTool {
         Ok(TurnUpdateUserOutput::Success {
             ok: true,
             update_user: true,
-            message,
+            message: message.into_string(),
         })
     }
 }
@@ -599,15 +714,13 @@ impl CognitionTurnProposeModeTool {
         &self,
         input: TurnProposeModeInput,
     ) -> stasis::prelude::Result<TurnProposeModeOutput> {
-        let mode = input.mode.into();
-        let scope = input.scope.into();
-        let reason = input.reason.trim();
-        if reason.is_empty() {
+        let command = TurnProposeModeCommand::from(input);
+        let Some(reason) = command.reason else {
             return Ok(TurnProposeModeOutput::Failure {
                 ok: false,
                 error: "reason is required".to_string(),
             });
-        }
+        };
         let session_id = crate::runtime_session::resolve_active_chat_session_id_async(
             &self.turn_scope,
             &self.bootstrap_session_id,
@@ -615,10 +728,10 @@ impl CognitionTurnProposeModeTool {
         .await;
         let proposal = crate::agent_mode_state::propose_mode_transition(
             &session_id,
-            mode,
-            scope,
-            input.task_id.as_deref(),
-            reason,
+            command.mode,
+            command.scope,
+            command.task_id.as_ref().map(TrimmedText::as_str),
+            reason.as_str(),
         )
         .map_err(stasis::domain::errors::StasisError::PortFailure)?;
         let message = if proposal.resolution
@@ -666,12 +779,13 @@ impl CognitionTurnPrepareFinalTool {
         &self,
         input: TurnPrepareFinalInput,
     ) -> stasis::prelude::Result<TurnPrepareFinalOutput> {
+        let command = TurnPrepareFinalCommand::from(input);
         Ok(TurnPrepareFinalOutput {
             ok: true,
             prepare_final: true,
             deprecated: true,
             message: "Deprecated — call cognition_turn_finish with the complete principal-facing reply. Workshop lane may still send one final prose round.".to_string(),
-            reason: trimmed_nonempty(input.reason),
+            reason: command.reason.map(TrimmedText::into_string),
         })
     }
 }
@@ -740,7 +854,8 @@ impl CognitionTurnFinishTool {
         &self,
         input: TurnFinishInput,
     ) -> stasis::prelude::Result<TurnFinishOutput> {
-        let Some(message) = trimmed_nonempty(input.message) else {
+        let command = TurnFinishCommand::from(input);
+        let Some(message) = command.message else {
             return Ok(TurnFinishOutput::Failure {
                 ok: false,
                 finish_turn: false,
@@ -751,8 +866,8 @@ impl CognitionTurnFinishTool {
         Ok(TurnFinishOutput::Success {
             ok: true,
             finish_turn: true,
-            message,
-            reason: trimmed_nonempty(input.reason),
+            message: message.into_string(),
+            reason: command.reason.map(TrimmedText::into_string),
         })
     }
 }
@@ -832,7 +947,8 @@ impl CognitionTurnCheckpointTool {
         &self,
         input: TurnCheckpointInput,
     ) -> stasis::prelude::Result<TurnCheckpointOutput> {
-        let Some(message) = trimmed_nonempty(input.message) else {
+        let command = TurnCheckpointCommand::from(input);
+        let Some(message) = command.message else {
             return Ok(TurnCheckpointOutput::Failure {
                 ok: false,
                 checkpoint_turn: false,
@@ -843,9 +959,9 @@ impl CognitionTurnCheckpointTool {
         Ok(TurnCheckpointOutput::Success {
             ok: true,
             checkpoint_turn: true,
-            message,
-            awaiting: trimmed_nonempty(input.awaiting),
-            reason: trimmed_nonempty(input.reason),
+            message: message.into_string(),
+            awaiting: command.awaiting.map(TrimmedText::into_string),
+            reason: command.reason.map(TrimmedText::into_string),
         })
     }
 }
@@ -932,11 +1048,8 @@ impl CognitionTurnRequestMoreRoundsTool {
         &self,
         input: TurnRequestMoreRoundsInput,
     ) -> stasis::prelude::Result<TurnRequestMoreRoundsOutput> {
-        let requested_rounds = input
-            .requested_rounds
-            .unwrap_or(0)
-            .clamp(1, crate::turn_budget_request::MAX_REQUESTED_ROUNDS_PER_ASK);
-        let Some(reason) = trimmed_nonempty(input.reason) else {
+        let command = TurnRequestMoreRoundsCommand::from(input);
+        let Some(reason) = command.reason else {
             return Ok(TurnRequestMoreRoundsOutput::Failure {
                 ok: false,
                 budget_request: false,
@@ -947,9 +1060,9 @@ impl CognitionTurnRequestMoreRoundsTool {
         Ok(TurnRequestMoreRoundsOutput::Success {
             ok: true,
             budget_request: true,
-            requested_rounds,
-            reason,
-            progress_summary: trimmed_nonempty(input.progress_summary),
+            requested_rounds: command.requested_rounds,
+            reason: reason.into_string(),
+            progress_summary: command.progress_summary.map(TrimmedText::into_string),
             message: "Turn paused — awaiting principal approval for additional tool rounds."
                 .to_string(),
         })
@@ -960,6 +1073,55 @@ impl CognitionTurnRequestMoreRoundsTool {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn turn_control_commands_normalize_text_and_defaults_once() {
+        let begin = TurnBeginWorkCommand::from(TurnBeginWorkInput {
+            message: Some("  Starting work.  ".into()),
+            goal: Some("  inspect the repository  ".into()),
+            intent: Some(" research ".into()),
+        });
+        assert_eq!(
+            begin.message.as_ref().map(TrimmedText::as_str),
+            Some("Starting work.")
+        );
+        assert_eq!(
+            begin.goal.as_ref().map(TrimmedText::as_str),
+            Some("inspect the repository")
+        );
+        assert_eq!(begin.intent.as_str(), "research");
+
+        let request = TurnRequestMoreRoundsCommand::from(TurnRequestMoreRoundsInput {
+            requested_rounds: Some(usize::MAX),
+            reason: Some("  need another pass  ".into()),
+            progress_summary: Some("  schemas are ready  ".into()),
+        });
+        assert_eq!(
+            request.requested_rounds,
+            crate::turn_budget_request::MAX_REQUESTED_ROUNDS_PER_ASK
+        );
+        assert_eq!(
+            request.reason.as_ref().map(TrimmedText::as_str),
+            Some("need another pass")
+        );
+        assert_eq!(
+            request.progress_summary.as_ref().map(TrimmedText::as_str),
+            Some("schemas are ready")
+        );
+
+        let finish = TurnFinishCommand::from(TurnFinishInput {
+            message: Some("  exact final text  ".into()),
+            reason: Some("  complete  ".into()),
+        });
+        assert_eq!(
+            finish.message.as_ref().map(TrimmedText::as_str),
+            Some("exact final text")
+        );
+        assert_eq!(
+            finish.reason.as_ref().map(TrimmedText::as_str),
+            Some("complete")
+        );
+    }
 
     #[test]
     fn preserves_interim_text_on_prose_requires_finish() {
