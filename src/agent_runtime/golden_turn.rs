@@ -11,7 +11,7 @@
 //! * plain reply (no tool calls) — terminates on prose,
 //! * tool round then `cognition_turn_finish` — terminal commit + tool slicing,
 //! * checkpoint / worker-ack handoff termination reasons,
-//! * interim-prose bounded auto-continue,
+//! * event-driven prose completion before and after tool use,
 //! * max-rounds fuse,
 //! * streamed content deltas reaching the sink.
 //!
@@ -581,24 +581,22 @@ async fn golden_model_visible_tools_refresh_after_a_tool_round() {
 }
 
 #[tokio::test]
-async fn golden_plain_reply_terminates_on_two_consecutive_prose_rounds() {
+async fn golden_plain_reply_terminates_on_first_non_tool_response() {
     let first = "Here is a complete explanation of how the ingester maps channel \
                  sessions to Medousa history without any further steps needed.";
-    let second = "The mapping preserves the active session identity and commits the combined response without duplication.";
-    let expected = format!("{first}\n\n{second}");
     let outcome = run_golden(
         "explain the ingester mapping",
-        vec![text_response(first), text_response(second)],
+        vec![text_response(first)],
         10,
         false,
     )
     .await;
 
-    assert_eq!(outcome.termination_reason, "content_pack_merged");
-    assert_eq!(outcome.text, expected);
-    assert_eq!(outcome.rounds_executed, 2);
+    assert_eq!(outcome.termination_reason, "no_tools_prose");
+    assert_eq!(outcome.text, first);
+    assert_eq!(outcome.rounds_executed, 1);
     assert!(outcome.tool_invocations.is_empty());
-    assert_eq!(outcome.event_kinds, vec!["pack_hold".to_string()]);
+    assert!(outcome.event_kinds.is_empty());
 }
 
 #[tokio::test]
@@ -644,6 +642,56 @@ async fn golden_tool_round_then_finish_commits_terminal_body() {
 }
 
 #[tokio::test]
+async fn golden_finish_appends_to_held_non_tool_response() {
+    let held = "The pager is only the visible symptom; the PTY command has no completion boundary.";
+    let finish =
+        "The fix is a scoped noninteractive environment plus an explicit completion sentinel.";
+    let outcome = run_golden(
+        "diagnose the pager problem",
+        vec![
+            tool_response(vec![tool_call("data_probe", json!({ "q": "pty" }))]),
+            text_response(held),
+            tool_response(vec![tool_call(
+                "cognition_turn_finish",
+                json!({ "message": finish }),
+            )]),
+        ],
+        10,
+        false,
+    )
+    .await;
+
+    assert_eq!(outcome.termination_reason, "cognition_turn_finish");
+    assert_eq!(outcome.text, format!("{held}\n\n{finish}"));
+    assert_eq!(outcome.rounds_executed, 3);
+}
+
+#[tokio::test]
+async fn golden_tool_call_resets_the_held_non_tool_response() {
+    let stale = "I found a possible cause and need one more probe.";
+    let held = "The second probe confirmed the missing PTY completion boundary.";
+    let final_text = "The pager environment and sentinel fix are ready to implement.";
+    let outcome = run_golden(
+        "keep diagnosing the pager problem",
+        vec![
+            tool_response(vec![tool_call("data_probe", json!({ "q": "first" }))]),
+            text_response(stale),
+            tool_response(vec![tool_call("data_probe", json!({ "q": "second" }))]),
+            text_response(held),
+            text_response(final_text),
+        ],
+        10,
+        false,
+    )
+    .await;
+
+    assert_eq!(outcome.termination_reason, "content_pack_merged");
+    assert_eq!(outcome.text, format!("{held}\n\n{final_text}"));
+    assert!(!outcome.text.contains(stale));
+    assert_eq!(outcome.rounds_executed, 5);
+}
+
+#[tokio::test]
 async fn golden_checkpoint_handoff_terminates_as_checkpoint() {
     let outcome = run_golden(
         "do partial work and hand back",
@@ -662,39 +710,18 @@ async fn golden_checkpoint_handoff_terminates_as_checkpoint() {
 }
 
 #[tokio::test]
-async fn golden_interim_prose_continues_then_finishes() {
+async fn golden_non_tool_announcement_before_tools_is_terminal() {
     let outcome = run_golden(
         "kick off some work",
-        vec![
-            // Round 1: a short interim acknowledgment with no tool call.
-            text_response("Let me check that for you."),
-            // Round 2: another explicit progress update must not count as a final answer.
-            text_response("I found the relevant path. I'll verify it before wrapping up."),
-            // Round 3: model commits the real answer via finish.
-            tool_response(vec![tool_call(
-                "cognition_turn_finish",
-                json!({ "message": "Done — here is the result." }),
-            )]),
-        ],
+        vec![text_response("Let me check that for you.")],
         10,
         false,
     )
     .await;
 
-    assert_eq!(outcome.termination_reason, "cognition_turn_finish");
-    assert_eq!(outcome.text, "Done — here is the result.");
-    assert_eq!(outcome.rounds_executed, 3);
-    let progress: Vec<&str> = outcome
-        .events
-        .iter()
-        .filter_map(|event| match event {
-            Ev::Progress(message) => Some(message.as_str()),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(progress.len(), 2, "events: {:?}", outcome.events);
-    assert!(progress[0].contains("Let me check that"));
-    assert!(progress[1].contains("I'll verify it"));
+    assert_eq!(outcome.termination_reason, "no_tools_prose");
+    assert_eq!(outcome.text, "Let me check that for you.");
+    assert_eq!(outcome.rounds_executed, 1);
 }
 
 #[tokio::test]
@@ -707,7 +734,6 @@ async fn golden_foreground_announcement_tools_and_two_prose_final() {
     let outcome = run_golden(
         "inspect the runtime and report back",
         vec![
-            text_response("I’ll inspect the runtime first, then report back with the result."),
             tool_response(vec![tool_call("data_probe", json!({ "q": "completion" }))]),
             text_response(first_final),
             text_response(second_final),
@@ -719,21 +745,8 @@ async fn golden_foreground_announcement_tools_and_two_prose_final() {
 
     assert_eq!(outcome.termination_reason, "content_pack_merged");
     assert_eq!(outcome.text, expected);
-    assert_eq!(outcome.rounds_executed, 4);
+    assert_eq!(outcome.rounds_executed, 3);
     assert_eq!(outcome.tool_invocations, vec!["data_probe".to_string()]);
-    assert!(
-        outcome
-            .events
-            .iter()
-            .any(|event| matches!(event, Ev::Progress(message) if message.contains("inspect the runtime"))),
-        "expected progress announcement, got: {:?}",
-        outcome.events
-    );
-    assert!(
-        !outcome.text.contains("inspect the runtime"),
-        "tool execution should reset the announcement hold: {}",
-        outcome.text
-    );
 }
 
 #[tokio::test]
@@ -755,28 +768,18 @@ async fn golden_max_rounds_fuse_terminates() {
 async fn golden_streamed_content_reaches_sink() {
     let first = "Here is a complete explanation of how the ingester maps channel \
                  sessions to Medousa history without any further steps needed.";
-    let second = "The streamed resolution confirms that the complete answer is ready for terminal delivery now.";
-    let outcome = run_golden(
-        "stream me an answer",
-        vec![text_response(first), text_response(second)],
-        10,
-        true,
-    )
-    .await;
+    let outcome = run_golden("stream me an answer", vec![text_response(first)], 10, true).await;
 
-    assert_eq!(outcome.termination_reason, "content_pack_merged");
-    assert_eq!(outcome.rounds_executed, 2);
-    assert_eq!(
-        outcome.streamed,
-        vec![first.to_string(), second.to_string()]
-    );
+    assert_eq!(outcome.termination_reason, "no_tools_prose");
+    assert_eq!(outcome.rounds_executed, 1);
+    assert_eq!(outcome.streamed, vec![first.to_string()]);
     assert_eq!(
         outcome
             .event_kinds
             .iter()
             .filter(|kind| kind.as_str() == "content")
             .count(),
-        2
+        1
     );
-    assert!(outcome.event_kinds.iter().any(|kind| kind == "pack_hold"));
+    assert!(!outcome.event_kinds.iter().any(|kind| kind == "pack_hold"));
 }

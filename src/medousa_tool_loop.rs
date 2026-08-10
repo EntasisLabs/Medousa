@@ -27,7 +27,6 @@ use crate::agent_runtime::turn_completion::{ToolLoopCompletionGate, collect_tool
 use crate::agent_runtime::turn_completion_fsm::{
     AfterToolsRoundContext, ContinueReason, NoToolDebtRoundContext, TurnCompletionProfile,
     TurnRoundAction, decide_after_tools_text_round, decide_no_tool_debt_text_round,
-    resolve_interim_continue_cap,
 };
 use crate::agent_runtime::turn_context::{
     HostTurnContext, TurnScratchpad, publish_host_handoff_snapshot,
@@ -301,16 +300,10 @@ impl MedousaToolLoopPipeline {
             .map(|gate| gate.completion_profile)
             .unwrap_or(TurnCompletionProfile::ForegroundPrincipal);
         let holds_first_prose = completion_profile.holds_first_prose();
-        // Coder progress rounds are distinct from its two-answer content hold.
-        // Host scheduling keeps its tighter prose behavior; all other profiles
-        // receive the bounded cap scaled to the operator's round budget.
-        let interim_continue_cap = match completion_profile {
-            TurnCompletionProfile::HostScheduler => 1,
-            TurnCompletionProfile::ForegroundPrincipal | TurnCompletionProfile::WorkerSynthesis => {
-                resolve_interim_continue_cap(effective_max_tool_rounds)
-            }
-        };
-        let mut interim_continues_used = resume_state
+        // Retained in checkpoints for wire compatibility; semantic prose
+        // auto-continues are no longer part of completion policy.
+        let interim_continue_cap = 0;
+        let interim_continues_used = resume_state
             .as_ref()
             .filter(|resume| resume.restore_turn_budget)
             .map(|resume| resume.counters.interim_continues_used)
@@ -655,12 +648,6 @@ impl MedousaToolLoopPipeline {
                                 control_message,
                                 missing_tools,
                             } => {
-                                if matches!(
-                                    reason,
-                                    ContinueReason::InterimProse | ContinueReason::ExtendedProse
-                                ) {
-                                    interim_continues_used += 1;
-                                }
                                 if completion_profile.uses_host_scheduler_rules()
                                     && reason == ContinueReason::EmptyAfterTools
                                     && !invocations.is_empty()
@@ -750,7 +737,10 @@ impl MedousaToolLoopPipeline {
                     }
                 }
 
-                if !tool_calls.is_empty() {
+                let finish_requested = tool_calls
+                    .iter()
+                    .any(|call| is_finish_turn_tool_name(&call.fn_name));
+                if !tool_calls.is_empty() && !finish_requested {
                     pack_hold = None;
                 }
 
@@ -1245,6 +1235,10 @@ impl MedousaToolLoopPipeline {
                 }
 
                 if let Some(message) = finish_turn_from_invocations(round_invocations) {
+                    let message = pack_hold
+                        .as_ref()
+                        .map(|pack| merge_assistant_pack_fragments(&pack.fragments, &message))
+                        .unwrap_or(message);
                     if let Some(gate) = completion_gate.as_ref() {
                         let tools = collect_tool_names(&invocations);
                         persist_ledger_record(
@@ -1655,26 +1649,6 @@ async fn apply_fsm_continue_loop(
     }
     if !text.trim().is_empty() {
         loop_awareness.record_user_response(text);
-    }
-    let preserve_prose_in_tool_lane = matches!(
-        continue_reason,
-        ContinueReason::InterimProse | ContinueReason::ExtendedProse
-    ) && !text.trim().is_empty();
-    if preserve_prose_in_tool_lane {
-        if let Some(gate) = completion_gate.as_ref()
-            && let Some(sink) = gate.sink.as_ref()
-        {
-            sink.agent_turn_progress(
-                gate.stream_turn_id,
-                text.trim().to_string(),
-                ledger_tool_names(invocations),
-            )
-            .await;
-        }
-        turn_ctx
-            .tool_lane
-            .messages
-            .push(ChatMessage::assistant(text.trim().to_string()));
     }
     push_turn_control_message(
         &mut turn_ctx.tool_lane.messages,
@@ -2095,17 +2069,15 @@ mod tests {
     }
 
     #[test]
-    fn foreground_progress_after_tools_remains_interim() {
+    fn foreground_prose_after_tools_enters_structural_hold() {
         use crate::agent_runtime::turn_completion_fsm::{
             AfterToolsRoundContext, ContinueReason, TurnRoundAction, decide_after_tools_text_round,
         };
-        use crate::turn_text_heuristics::is_extended_prose;
         use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
         let preamble = "Yesss! Let's do this — I'll pull up the current context, check what's \
                           resonating in memory, and calibrate to a focused AVEC posture. Boom — \
                           focused preset pulled. Let me lock it in and then call cognition_turn_finish \
                           once the full calibration summary is ready for you to read.";
-        assert!(is_extended_prose(preamble));
         let invocations = vec![
             ToolInvocation {
                 tool_name: "cognition_memory_moods".to_string(),
@@ -2133,15 +2105,15 @@ mod tests {
         assert!(matches!(
             action,
             TurnRoundAction::ContinueLoop {
-                reason: ContinueReason::ExtendedProse,
+                reason: ContinueReason::PackHold,
                 ..
             }
         ));
     }
 
     #[test]
-    fn prose_requires_finish_preserves_interim_terminal_body() {
-        use crate::turn_control_tools::{PROSE_REQUIRES_FINISH_STUB, terminal_text_for_fsm_end};
+    fn terminal_fsm_text_is_never_semantically_rewritten() {
+        use crate::turn_control_tools::terminal_text_for_fsm_end;
         let text = terminal_text_for_fsm_end(
             "prose_requires_finish",
             "I'll summarize everything next.".to_string(),
@@ -2152,7 +2124,7 @@ mod tests {
                 "prose_requires_finish",
                 "Here is the complete answer after tool work.".to_string(),
             ),
-            PROSE_REQUIRES_FINISH_STUB
+            "Here is the complete answer after tool work."
         );
         assert_eq!(
             terminal_text_for_fsm_end("clarifying_question", "Which repo?".to_string()),
