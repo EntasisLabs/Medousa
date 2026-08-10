@@ -16,9 +16,7 @@ use crate::medousa_tool_loop::MedousaToolLoopPipeline;
 use stasis::application::orchestration::tool_registry::{StasisTool, ToolRegistry};
 use stasis::domain::runtime::job_attempt::JobAttemptOutcome;
 use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
-use stasis::prelude::{
-    RuntimeBackend, RuntimeComposition, StasisError,
-};
+use stasis::prelude::{RuntimeBackend, RuntimeComposition, StasisError};
 use stasis::prelude_ext::{MemoryContextReader, MemoryContextWriter};
 
 use crate::capability_catalog::{
@@ -51,7 +49,7 @@ use crate::turn_continuation::{
     self, ContinuationAwaitMode, TurnContinuationScope, continuation_tool_metadata,
     wire_turn_child_job,
 };
-use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
+use crate::typed_tools::{CompatOption, ExternalJson, ToolId, medousa_tool};
 
 const COGNITION_JOB_ENQUEUE_ID: ToolId = ToolId::new("cognition_job_enqueue");
 const COGNITION_GRAPHEME_RUN_ID: ToolId = ToolId::new("cognition_grapheme_run");
@@ -320,27 +318,18 @@ impl<'de> Deserialize<'de> for JobEnqueueInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            job_type: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            payload_ref: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            note: Option<String>,
+            #[serde(default)]
+            job_type: CompatOption<String>,
+            #[serde(default)]
+            payload_ref: CompatOption<String>,
+            #[serde(default)]
+            note: CompatOption<String>,
         }
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            job_type: input.job_type,
-            payload_ref: input.payload_ref,
-            note: input.note,
+            job_type: input.job_type.into_option(),
+            payload_ref: input.payload_ref.into_option(),
+            note: input.note.into_option(),
         })
     }
 }
@@ -498,15 +487,12 @@ impl<'de> Deserialize<'de> for GraphemeRunInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            source: Option<String>,
+            #[serde(default)]
+            source: CompatOption<String>,
         }
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            source: input.source,
+            source: input.source.into_option(),
         })
     }
 }
@@ -726,14 +712,13 @@ impl<'de> Deserialize<'de> for GraphemeModulesSearchInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            query: Option<String>,
+            #[serde(default)]
+            query: CompatOption<String>,
         }
         let input = WireInput::deserialize(deserializer)?;
-        Ok(Self { query: input.query })
+        Ok(Self {
+            query: input.query.into_option(),
+        })
     }
 }
 
@@ -791,15 +776,12 @@ impl<'de> Deserialize<'de> for GraphemeModulesInfoInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            module: Option<String>,
+            #[serde(default)]
+            module: CompatOption<String>,
         }
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            module: input.module,
+            module: input.module.into_option(),
         })
     }
 }
@@ -860,14 +842,13 @@ impl<'de> Deserialize<'de> for GraphemeModulesOpsInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            query: Option<String>,
+            #[serde(default)]
+            query: CompatOption<String>,
         }
         let input = WireInput::deserialize(deserializer)?;
-        Ok(Self { query: input.query })
+        Ok(Self {
+            query: input.query.into_option(),
+        })
     }
 }
 
@@ -1141,11 +1122,8 @@ impl<'de> Deserialize<'de> for GraphemePromoteToJobInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            source: Option<String>,
+            #[serde(default)]
+            source: CompatOption<String>,
             #[serde(default = "default_tools_queue")]
             queue: String,
             #[serde(default = "default_tools_priority")]
@@ -1155,7 +1133,7 @@ impl<'de> Deserialize<'de> for GraphemePromoteToJobInput {
         }
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            source: input.source,
+            source: input.source.into_option(),
             queue: input.queue,
             priority: input.priority,
             max_attempts: input.max_attempts,
@@ -1728,12 +1706,12 @@ impl CognitionUtilityTimeNowTool {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct UtilityDayOfWeekInput {
     /// Optional date in YYYY-MM-DD
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    pub date: Option<String>,
+    pub date: CompatOption<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -1753,7 +1731,7 @@ impl CognitionUtilityDayOfWeekTool {
         &self,
         input: UtilityDayOfWeekInput,
     ) -> stasis::prelude::Result<UtilityDayOfWeekOutput> {
-        let date = if let Some(date_str) = input.date {
+        let date = if let Some(date_str) = input.date.into_option() {
             NaiveDate::parse_from_str(&date_str, "%Y-%m-%d").map_err(|e| {
                 StasisError::PortFailure(format!(
                     "cognition_utility_day_of_week: invalid date '{}': {}",
@@ -1776,12 +1754,12 @@ impl CognitionUtilityDayOfWeekTool {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct UtilityUuidInput {
     /// Optional prefix for derived keys
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    pub prefix: Option<String>,
+    pub prefix: CompatOption<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -1803,7 +1781,10 @@ impl CognitionUtilityUuidTool {
         input: UtilityUuidInput,
     ) -> stasis::prelude::Result<UtilityUuidOutput> {
         let id = Uuid::new_v4();
-        let prefix = input.prefix.as_deref().unwrap_or("cognition");
+        let prefix = input
+            .prefix
+            .into_option()
+            .unwrap_or_else(|| "cognition".to_string());
 
         Ok(UtilityUuidOutput {
             uuid: id.to_string(),
@@ -1862,34 +1843,25 @@ impl<'de> Deserialize<'de> for RuntimeRecurringPreviewInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            cron_expr: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            timezone: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-            )]
-            count: Option<usize>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            start_at: Option<String>,
+            #[serde(default)]
+            cron_expr: CompatOption<String>,
+            #[serde(default)]
+            timezone: CompatOption<String>,
+            #[serde(default)]
+            count: CompatOption<usize>,
+            #[serde(default)]
+            start_at: CompatOption<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            cron_expr: input.cron_expr,
-            timezone: input.timezone.unwrap_or_else(default_runtime_timezone),
-            count: input.count,
-            start_at: input.start_at,
+            cron_expr: input.cron_expr.into_option(),
+            timezone: input
+                .timezone
+                .into_option()
+                .unwrap_or_else(default_runtime_timezone),
+            count: input.count.into_option(),
+            start_at: input.start_at.into_option(),
         })
     }
 }
@@ -1999,16 +1971,13 @@ impl<'de> Deserialize<'de> for RuntimeJobStatusInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            job_id: Option<String>,
+            #[serde(default)]
+            job_id: CompatOption<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            job_id: input.job_id,
+            job_id: input.job_id.into_option(),
         })
     }
 }
@@ -2108,19 +2077,19 @@ impl CognitionCapabilityResolveTool {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CapabilityResolveInput {
     /// Capability id, e.g. document_search
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    capability: Option<String>,
+    capability: CompatOption<String>,
     /// Optional fuzzy query when capability id is unknown
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    query: Option<String>,
+    query: CompatOption<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -2141,15 +2110,15 @@ impl CognitionCapabilityResolveTool {
         &self,
         input: CapabilityResolveInput,
     ) -> stasis::prelude::Result<CapabilityResolveOutput> {
-        let capability_id = input
-            .capability
+        let capability_value = input.capability.into_option();
+        let query_value = input.query.into_option();
+        let capability_id = capability_value
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string);
 
-        let query = input
-            .query
+        let query = query_value
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
@@ -2214,19 +2183,19 @@ impl CognitionCapabilityListTool {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CapabilityListInput {
     /// Optional capability id prefix filter
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    prefix: Option<String>,
+    prefix: CompatOption<String>,
     /// Max entries (default 50)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
-    limit: Option<usize>,
+    limit: CompatOption<usize>,
 }
 
 #[medousa_tool(id = COGNITION_CAPABILITY_LIST_ID)]
@@ -2236,12 +2205,12 @@ impl CognitionCapabilityListTool {
         &self,
         input: CapabilityListInput,
     ) -> stasis::prelude::Result<CapabilityListResponse> {
-        let prefix = input
-            .prefix
+        let prefix_value = input.prefix.into_option();
+        let prefix = prefix_value
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty());
-        let limit = input.limit.unwrap_or(50).clamp(1, 200);
+        let limit = input.limit.into_option().unwrap_or(50).clamp(1, 200);
 
         let registry = self.capability_registry.read().await;
         let mut response = registry.list();
@@ -2290,22 +2259,16 @@ impl<'de> Deserialize<'de> for CapabilitySearchInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            query: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-            )]
-            limit: Option<usize>,
+            #[serde(default)]
+            query: CompatOption<String>,
+            #[serde(default)]
+            limit: CompatOption<usize>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            query: input.query,
-            limit: input.limit,
+            query: input.query.into_option(),
+            limit: input.limit.into_option(),
         })
     }
 }
@@ -2381,28 +2344,19 @@ impl<'de> Deserialize<'de> for McpDiscoverInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            query: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            server_id: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-            )]
-            limit: Option<usize>,
+            #[serde(default)]
+            query: CompatOption<String>,
+            #[serde(default)]
+            server_id: CompatOption<String>,
+            #[serde(default)]
+            limit: CompatOption<usize>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            query: input.query,
-            server_id: input.server_id,
-            limit: input.limit,
+            query: input.query.into_option(),
+            server_id: input.server_id.into_option(),
+            limit: input.limit.into_option(),
         })
     }
 }
@@ -3066,7 +3020,7 @@ mod tests {
     async fn typed_utility_handlers_preserve_outputs_and_legacy_optional_inputs() {
         let weekday = CognitionUtilityDayOfWeekTool
             .invoke_typed(UtilityDayOfWeekInput {
-                date: Some("2026-08-09".to_string()),
+                date: Some("2026-08-09".to_string()).into(),
             })
             .await
             .expect("known weekday");
@@ -3077,7 +3031,7 @@ mod tests {
 
         let error = CognitionUtilityDayOfWeekTool
             .invoke_typed(UtilityDayOfWeekInput {
-                date: Some("not-a-date".to_string()),
+                date: Some("not-a-date".to_string()).into(),
             })
             .await
             .expect_err("invalid date");
@@ -3095,7 +3049,7 @@ mod tests {
 
         let uuid = CognitionUtilityUuidTool
             .invoke_typed(UtilityUuidInput {
-                prefix: Some("phase-two".to_string()),
+                prefix: Some("phase-two".to_string()).into(),
             })
             .await
             .expect("typed UUID");
