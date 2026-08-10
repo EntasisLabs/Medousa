@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
 use stasis::prelude::{Result as StasisResult, StasisError};
 
-use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
+use crate::typed_tools::{CompatOption, ExternalJson, ToolId, medousa_tool};
 
 pub const COGNITION_CODE_READ: &str = "cognition_code_read";
 pub const COGNITION_CODE_SEARCH: &str = "cognition_code_search";
@@ -287,40 +287,43 @@ struct CodeReadInput {
     /// Absolute or root-relative file path
     path: String,
     /// Optional explicit root (default: scripts library)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    root: Option<String>,
+    root: CompatOption<String>,
     /// Optional 1-based inclusive line start
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_u64"
+    #[serde(default)]
+    #[schemars(
+        with = "u64",
+        range(min = 1),
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "u64", range(min = 1), skip_serializing_if = "Option::is_none")]
-    line_start: Option<u64>,
+    line_start: CompatOption<u64>,
     /// Optional 1-based inclusive line end
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_u64"
+    #[serde(default)]
+    #[schemars(
+        with = "u64",
+        range(min = 1),
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "u64", range(min = 1), skip_serializing_if = "Option::is_none")]
-    line_end: Option<u64>,
+    line_end: CompatOption<u64>,
     /// Optional 0-based byte start; cannot be combined with line ranges
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_u64"
+    #[serde(default)]
+    #[schemars(
+        with = "u64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "u64", skip_serializing_if = "Option::is_none")]
-    byte_start: Option<u64>,
+    byte_start: CompatOption<u64>,
     /// Optional exclusive byte end; cannot be combined with line ranges
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_u64"
+    #[serde(default)]
+    #[schemars(
+        with = "u64",
+        range(min = 1),
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "u64", range(min = 1), skip_serializing_if = "Option::is_none")]
-    byte_end: Option<u64>,
+    byte_end: CompatOption<u64>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, JsonSchema)]
@@ -563,7 +566,8 @@ enum CodeReadOutput {
 impl CognitionCodeReadTool {
     /// Read a whole text file when it fits, or a bounded line/byte range. Oversized whole-file requests return actionable range orientation instead of an opaque failure. Coding domain only.
     async fn invoke_typed(&self, input: CodeReadInput) -> stasis::prelude::Result<CodeReadOutput> {
-        let (root, path) = root_and_path(&input.path, input.root.as_deref())?;
+        let requested_root = input.root.as_ref().cloned();
+        let (root, path) = root_and_path(&input.path, requested_root.as_deref())?;
         tokio::task::spawn_blocking(move || code_read_observation(&root, &path, &input))
             .await
             .map_err(|err| StasisError::PortFailure(format!("code_read task failed: {err}")))?
@@ -575,10 +579,10 @@ fn code_read_observation(
     path: &Path,
     input: &CodeReadInput,
 ) -> StasisResult<CodeReadOutput> {
-    let line_start = input.line_start;
-    let line_end = input.line_end;
-    let byte_start = input.byte_start;
-    let byte_end = input.byte_end;
+    let line_start = input.line_start.as_ref().copied();
+    let line_end = input.line_end.as_ref().copied();
+    let byte_start = input.byte_start.as_ref().copied();
+    let byte_end = input.byte_end.as_ref().copied();
     let has_line_range = line_start.is_some() || line_end.is_some();
     let has_byte_range = byte_start.is_some() || byte_end.is_some();
     if has_line_range && has_byte_range {
@@ -1035,18 +1039,18 @@ fn text_line_count(content: &str) -> usize {
 #[derive(Debug, Deserialize, JsonSchema)]
 struct CodeSearchInput {
     query: String,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    root: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_u64"
+    root: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
-    max_results: Option<u64>,
+    max_results: CompatOption<u64>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -1075,8 +1079,9 @@ impl CognitionCodeSearchTool {
                 "query exceeds 512 characters".into(),
             ));
         }
-        let root = resolve_root(input.root.as_deref())?;
-        let max = input.max_results.unwrap_or(50).clamp(1, 500) as usize;
+        let requested_root = input.root.into_option();
+        let root = resolve_root(requested_root.as_deref())?;
+        let max = input.max_results.into_option().unwrap_or(50).clamp(1, 500) as usize;
 
         let mut results = Vec::new();
         let mut scanned = 0usize;
@@ -1150,33 +1155,33 @@ fn search_dir(
 #[derive(Debug, Deserialize, JsonSchema)]
 struct CodeApplyPatchInput {
     path: String,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    root: Option<String>,
+    root: CompatOption<String>,
     /// Full file content (write)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    content: Option<String>,
+    content: CompatOption<String>,
     /// Exact snippet to replace
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    find: Option<String>,
+    find: CompatOption<String>,
     /// Replacement for `find`
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    replace: Option<String>,
+    replace: CompatOption<String>,
     /// Required current digest from code_read, or `missing` for a new file
     expected_sha256: String,
 }
@@ -1205,7 +1210,11 @@ impl CognitionCodeApplyPatchTool {
         &self,
         input: CodeApplyPatchInput,
     ) -> stasis::prelude::Result<CodeApplyPatchOutput> {
-        let (root, path) = root_and_path(&input.path, input.root.as_deref())?;
+        let requested_root = input.root.into_option();
+        let content = input.content.into_option();
+        let find = input.find.into_option();
+        let replace = input.replace.into_option();
+        let (root, path) = root_and_path(&input.path, requested_root.as_deref())?;
         let expected_digest = input.expected_sha256.trim();
         if expected_digest.is_empty() {
             return Err(StasisError::PortFailure(
@@ -1213,7 +1222,7 @@ impl CognitionCodeApplyPatchTool {
             ));
         }
         let existing = verify_expected_digest(&path, expected_digest)?;
-        if let Some(content) = input.content {
+        if let Some(content) = content {
             if content.len() > MAX_CODE_WRITE_BYTES {
                 return Err(StasisError::PortFailure(format!(
                     "content exceeds code_apply_patch limit of {MAX_CODE_WRITE_BYTES} bytes"
@@ -1236,7 +1245,7 @@ impl CognitionCodeApplyPatchTool {
                 digest: content_digest(content.as_bytes()),
             });
         }
-        let (find, replace) = match (input.find, input.replace) {
+        let (find, replace) = match (find, replace) {
             (Some(find), Some(replace)) => (find, replace),
             _ => {
                 return Err(StasisError::PortFailure(
@@ -1277,40 +1286,40 @@ impl CognitionCodeApplyPatchTool {
 #[derive(Debug, Deserialize, JsonSchema)]
 struct ShellSessionStatusInput {
     /// Optional Forge work id — session cwd binds to the worktree
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    work_id: Option<String>,
+    work_id: CompatOption<String>,
     /// Forge lease fencing token supplied by the runtime
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    lease_id: Option<String>,
+    lease_id: CompatOption<String>,
     /// Forge lease generation supplied by the runtime
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_u64"
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
-    lease_generation: Option<u64>,
+    lease_generation: CompatOption<u64>,
     /// Forge attempt id supplied by the runtime
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    attempt_id: Option<String>,
+    attempt_id: CompatOption<String>,
     /// Create a session (default: list only)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
+    #[serde(default)]
+    #[schemars(
+        with = "bool",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
-    create: Option<bool>,
+    create: CompatOption<bool>,
 }
 
 #[medousa_tool(id = COGNITION_SHELL_SESSION_STATUS_ID)]
@@ -1320,12 +1329,17 @@ impl CognitionShellSessionStatusTool {
         &self,
         input: ShellSessionStatusInput,
     ) -> stasis::prelude::Result<ExternalJson> {
-        let output = if input.create.unwrap_or(false) {
+        let create = input.create.into_option().unwrap_or(false);
+        let work_id = input.work_id.into_option();
+        let lease_id = input.lease_id.into_option();
+        let lease_generation = input.lease_generation.into_option();
+        let attempt_id = input.attempt_id.into_option();
+        let output = if create {
             create_bound_shell_session(
-                input.work_id.as_deref(),
-                input.lease_id.as_deref(),
-                input.lease_generation,
-                input.attempt_id.as_deref(),
+                work_id.as_deref(),
+                lease_id.as_deref(),
+                lease_generation,
+                attempt_id.as_deref(),
             )
             .await?
         } else {
@@ -1338,61 +1352,61 @@ impl CognitionShellSessionStatusTool {
 #[derive(Debug, Deserialize, JsonSchema)]
 struct ShellSessionRunInput {
     /// Existing session id
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    session_id: Option<String>,
+    session_id: CompatOption<String>,
     /// Create/bind a session for this Forge work id
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    work_id: Option<String>,
+    work_id: CompatOption<String>,
     /// Forge lease fencing token supplied by the runtime
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    lease_id: Option<String>,
+    lease_id: CompatOption<String>,
     /// Forge lease generation supplied by the runtime
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_u64"
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
-    lease_generation: Option<u64>,
+    lease_generation: CompatOption<u64>,
     /// Forge attempt id supplied by the runtime
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    attempt_id: Option<String>,
+    attempt_id: CompatOption<String>,
     /// Command line to run (newline appended)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    command: Option<String>,
+    command: CompatOption<String>,
     /// Raw bytes to write (base64 not required)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    input: Option<String>,
+    input: CompatOption<String>,
     /// How long to stream output (default 1500, max 15000)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_u64"
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
-    wait_ms: Option<u64>,
+    wait_ms: CompatOption<u64>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -1409,34 +1423,43 @@ impl CognitionShellSessionRunTool {
         &self,
         input: ShellSessionRunInput,
     ) -> stasis::prelude::Result<ShellSessionRunOutput> {
-        let session_id = match input
-            .session_id
+        let session_id_input = input.session_id.into_option();
+        let work_id = input.work_id.into_option();
+        let lease_id = input.lease_id.into_option();
+        let lease_generation = input.lease_generation.into_option();
+        let attempt_id = input.attempt_id.into_option();
+        let command = input.command.into_option();
+        let raw_input = input.input.into_option();
+        let wait_ms = input
+            .wait_ms
+            .into_option()
+            .unwrap_or(1500)
+            .clamp(100, 15_000);
+        let session_id = match session_id_input
             .as_deref()
             .filter(|session_id| !session_id.trim().is_empty())
         {
             Some(session_id) => session_id.to_string(),
             None => {
                 let created = create_bound_shell_session(
-                    input.work_id.as_deref(),
-                    input.lease_id.as_deref(),
-                    input.lease_generation,
-                    input.attempt_id.as_deref(),
+                    work_id.as_deref(),
+                    lease_id.as_deref(),
+                    lease_generation,
+                    attempt_id.as_deref(),
                 )
                 .await?;
                 daemon_session_id(&created)?
             }
         };
-        let payload = if let Some(command) = input.command {
+        let payload = if let Some(command) = command {
             format!("{command}\n")
-        } else if let Some(raw_input) = input.input {
+        } else if let Some(raw_input) = raw_input {
             raw_input
         } else {
             return Err(StasisError::PortFailure(
                 "provide `command` or `input`".into(),
             ));
         };
-        let wait_ms = input.wait_ms.unwrap_or(1500).clamp(100, 15_000);
-
         let output = stream_session_input(&session_id, payload.as_bytes(), wait_ms).await?;
         Ok(ShellSessionRunOutput {
             ok: true,
@@ -1540,30 +1563,30 @@ impl CognitionShellSessionInterruptTool {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct CoderShellStatusInput {
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    work_id: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    work_id: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    lease_id: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_u64"
+    lease_id: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
-    lease_generation: Option<u64>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    lease_generation: CompatOption<u64>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    attempt_id: Option<String>,
+    attempt_id: CompatOption<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -1582,11 +1605,15 @@ impl CognitionCoderShellStatusTool {
         input: CoderShellStatusInput,
     ) -> stasis::prelude::Result<CoderShellStatusOutput> {
         // Ensure a bound session exists so status reflects the undertaking Terminal.
+        let work_id = input.work_id.into_option();
+        let lease_id = input.lease_id.into_option();
+        let lease_generation = input.lease_generation.into_option();
+        let attempt_id = input.attempt_id.into_option();
         let created = create_bound_shell_session(
-            input.work_id.as_deref(),
-            input.lease_id.as_deref(),
-            input.lease_generation,
-            input.attempt_id.as_deref(),
+            work_id.as_deref(),
+            lease_id.as_deref(),
+            lease_generation,
+            attempt_id.as_deref(),
         )
         .await?;
         let session_id = created
@@ -1607,43 +1634,43 @@ struct CoderShellRunInput {
     /// Shell command line (newline appended)
     command: String,
     /// Reuse a turn-owned session when provided by the runtime
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    session_id: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    session_id: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    work_id: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    work_id: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    lease_id: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_u64"
+    lease_id: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
-    lease_generation: Option<u64>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    lease_generation: CompatOption<u64>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    attempt_id: Option<String>,
+    attempt_id: CompatOption<String>,
     /// How long to stream output (default 3000, max 15000)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_u64"
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
-    wait_ms: Option<u64>,
+    wait_ms: CompatOption<u64>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -1666,24 +1693,32 @@ impl CognitionCoderShellRunTool {
         if command.is_empty() {
             return Err(StasisError::PortFailure("command is required".into()));
         }
-        let session_id = match input
-            .session_id
+        let session_id_input = input.session_id.into_option();
+        let work_id = input.work_id.into_option();
+        let lease_id = input.lease_id.into_option();
+        let lease_generation = input.lease_generation.into_option();
+        let attempt_id = input.attempt_id.into_option();
+        let wait_ms = input
+            .wait_ms
+            .into_option()
+            .unwrap_or(3000)
+            .clamp(100, 15_000);
+        let session_id = match session_id_input
             .as_deref()
             .filter(|session_id| !session_id.trim().is_empty())
         {
             Some(session_id) => session_id.to_string(),
             None => {
                 let created = create_bound_shell_session(
-                    input.work_id.as_deref(),
-                    input.lease_id.as_deref(),
-                    input.lease_generation,
-                    input.attempt_id.as_deref(),
+                    work_id.as_deref(),
+                    lease_id.as_deref(),
+                    lease_generation,
+                    attempt_id.as_deref(),
                 )
                 .await?;
                 daemon_session_id(&created)?
             }
         };
-        let wait_ms = input.wait_ms.unwrap_or(3000).clamp(100, 15_000);
         let output =
             stream_session_input(&session_id, format!("{command}\n").as_bytes(), wait_ms).await?;
         Ok(CoderShellRunOutput {
@@ -1747,6 +1782,25 @@ mod tests {
                 .expect("missing sentinel"),
             None
         );
+    }
+
+    #[test]
+    fn code_read_optional_controls_absorb_wrong_wire_types() {
+        let input: CodeReadInput = serde_json::from_value(json!({
+            "path": "src/lib.rs",
+            "root": 7,
+            "line_start": "first",
+            "line_end": null,
+            "byte_start": false,
+            "byte_end": -1
+        }))
+        .expect("compatible code read input");
+
+        assert!(input.root.is_none());
+        assert!(input.line_start.is_none());
+        assert!(input.line_end.is_none());
+        assert!(input.byte_start.is_none());
+        assert!(input.byte_end.is_none());
     }
 
     #[test]
