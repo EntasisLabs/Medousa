@@ -21,6 +21,7 @@ use crate::events::TuiEvent;
 use crate::mcp_gateway_api::{McpInvokeRequest, McpTurnContext, McpTurnLane};
 use crate::mcp_gateway_client::McpGatewayClient;
 use crate::mcp_turn_token::mint_mcp_turn_token;
+use crate::semantic_values::TrimmedText;
 use crate::tools::{run_grapheme_via_runtime, validate_grapheme_source_for_schedule};
 use crate::turn_continuation::{
     ContinuationAwaitMode, TurnContinuationScope, continuation_tool_metadata,
@@ -135,6 +136,26 @@ impl CapabilitySourceInput {
     }
 }
 
+#[derive(Debug, Clone)]
+struct CapabilityBindingRequest {
+    source: CapabilitySource,
+    reference: TrimmedText,
+}
+
+impl CapabilityBindingRequest {
+    fn new(
+        source: CapabilitySource,
+        reference: impl Into<String>,
+    ) -> stasis::prelude::Result<Self> {
+        let reference = TrimmedText::new(reference).map_err(|_| {
+            StasisError::PortFailure(
+                "cognition_capability_invoke: binding.reference is required".to_string(),
+            )
+        })?;
+        Ok(Self { source, reference })
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct CapabilityBindingInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -146,6 +167,24 @@ pub struct CapabilityBindingInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     reference: Option<String>,
+}
+
+impl TryFrom<CapabilityBindingInput> for CapabilityBindingRequest {
+    type Error = stasis::prelude::StasisError;
+
+    fn try_from(input: CapabilityBindingInput) -> Result<Self, Self::Error> {
+        let source = input.source.ok_or_else(|| {
+            StasisError::PortFailure(
+                "cognition_capability_invoke: binding.source is required".to_string(),
+            )
+        })?;
+        let reference = input.reference.ok_or_else(|| {
+            StasisError::PortFailure(
+                "cognition_capability_invoke: binding.reference is required".to_string(),
+            )
+        })?;
+        Self::new(source.runtime(), reference)
+    }
 }
 
 fn ordered_available_bindings(
@@ -171,24 +210,13 @@ fn ordered_available_bindings(
 
 fn select_binding_for_invoke(
     response: &CapabilityResolveResponse,
-    preferred_source: Option<CapabilitySourceInput>,
-    explicit: Option<&CapabilityBindingInput>,
+    preferred_source: Option<CapabilitySource>,
+    explicit: Option<&CapabilityBindingRequest>,
 ) -> stasis::prelude::Result<(CapabilityBinding, Vec<CapabilityBinding>)> {
-    let preferred_source = preferred_source.map(CapabilitySourceInput::runtime);
-
     if let Some(explicit) = explicit {
-        let source_input = explicit.source.ok_or_else(|| {
-            StasisError::PortFailure(
-                "cognition_capability_invoke: binding.source is required".to_string(),
-            )
-        })?;
-        let reference = explicit.reference.as_deref().ok_or_else(|| {
-            StasisError::PortFailure(
-                "cognition_capability_invoke: binding.reference is required".to_string(),
-            )
-        })?;
-        let parsed_source = source_input.runtime();
-        let source = source_input.runtime().as_str();
+        let parsed_source = explicit.source;
+        let reference = explicit.reference.as_str();
+        let source = explicit.source.as_str();
 
         let mut available = ordered_available_bindings(response, preferred_source);
         let Some(primary) = available
@@ -608,6 +636,43 @@ impl CapabilityInvokeInput {
     }
 }
 
+#[derive(Debug)]
+struct CapabilityInvokeCommand {
+    capability: Option<TrimmedText>,
+    query: Option<TrimmedText>,
+    tool_input: Value,
+    binding: Option<CapabilityBindingRequest>,
+    preferred_source: Option<CapabilitySource>,
+    try_fallbacks: bool,
+}
+
+impl TryFrom<CapabilityInvokeInput> for CapabilityInvokeCommand {
+    type Error = stasis::prelude::StasisError;
+
+    fn try_from(input: CapabilityInvokeInput) -> Result<Self, Self::Error> {
+        let tool_input = input.tool_input();
+        let capability = input
+            .capability
+            .as_deref()
+            .and_then(|value| TrimmedText::new(value).ok());
+        let query = input
+            .query
+            .as_deref()
+            .and_then(|value| TrimmedText::new(value).ok());
+        let binding = input.binding.map(TryInto::try_into).transpose()?;
+        let preferred_source = input.preferred_source.map(CapabilitySourceInput::runtime);
+
+        Ok(Self {
+            capability,
+            query,
+            tool_input,
+            binding,
+            preferred_source,
+            try_fallbacks: input.try_fallbacks,
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(untagged)]
 pub enum CapabilityInvokeResult {
@@ -640,20 +705,11 @@ impl CognitionCapabilityInvokeTool {
         &self,
         input: CapabilityInvokeInput,
     ) -> stasis::prelude::Result<CapabilityInvokeOutput> {
-        let capability_id = input
-            .capability
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
-        let query = input
-            .query
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
+        let command = CapabilityInvokeCommand::try_from(input)?;
+        let capability_id = command.capability.as_ref().map(TrimmedText::as_str);
+        let query = command.query.as_ref().map(TrimmedText::as_str);
 
-        let summary = capability_id
-            .unwrap_or(query.unwrap_or("capability"))
-            .to_string();
+        let summary = capability_id.or(query).unwrap_or("capability").to_string();
         let _ = self
             .event_tx
             .send(TuiEvent::ToolInvoked {
@@ -665,14 +721,15 @@ impl CognitionCapabilityInvokeTool {
         let registry = self.capability_registry.read().await;
         let resolved = resolve_capability_from_input(&registry, capability_id, query)?;
 
-        let (primary, mut fallbacks) =
-            select_binding_for_invoke(&resolved, input.preferred_source, input.binding.as_ref())?;
+        let (primary, mut fallbacks) = select_binding_for_invoke(
+            &resolved,
+            command.preferred_source,
+            command.binding.as_ref(),
+        )?;
         let mut candidates = vec![primary];
-        if input.try_fallbacks {
+        if command.try_fallbacks {
             candidates.append(&mut fallbacks);
         }
-
-        let tool_input = input.tool_input();
 
         let session_id = crate::runtime_session::resolve_active_chat_session_id_async(
             &self.turn_scope,
@@ -684,11 +741,16 @@ impl CognitionCapabilityInvokeTool {
         for (index, binding) in candidates.iter().enumerate() {
             let result = match binding.source {
                 CapabilitySource::Mcp => {
-                    invoke_mcp_binding(&self.gateway_client, &session_id, binding, &tool_input)
-                        .await
+                    invoke_mcp_binding(
+                        &self.gateway_client,
+                        &session_id,
+                        binding,
+                        &command.tool_input,
+                    )
+                    .await
                 }
                 CapabilitySource::Grapheme => {
-                    invoke_grapheme_binding(&self.runtime, binding, &tool_input).await
+                    invoke_grapheme_binding(&self.runtime, binding, &command.tool_input).await
                 }
             };
 
@@ -1216,16 +1278,9 @@ impl CognitionWebSearchTool {
             }
         }
 
-        let explicit_binding =
-            web_search_binding_reference(mode, provider).map(|(source, reference)| {
-                CapabilityBindingInput {
-                    source: Some(match source {
-                        CapabilitySource::Grapheme => CapabilitySourceInput::Grapheme,
-                        CapabilitySource::Mcp => CapabilitySourceInput::Mcp,
-                    }),
-                    reference: Some(reference),
-                }
-            });
+        let explicit_binding = web_search_binding_reference(mode, provider)
+            .map(|(source, reference)| CapabilityBindingRequest::new(source, reference))
+            .transpose()?;
 
         let registry = self.capability_registry.read().await;
         let resolved = resolve_capability_from_input(&registry, Some("web_research"), None)?;
@@ -1373,5 +1428,56 @@ mod tests {
 
         let ordered = ordered_available_bindings(&response, None);
         assert_eq!(ordered[0].reference, "websearch.search");
+    }
+
+    #[test]
+    fn capability_command_normalizes_selection_without_rewriting_forwarded_input() {
+        let command = CapabilityInvokeCommand::try_from(CapabilityInvokeInput {
+            capability: Some("  document_search  ".to_string()),
+            query: Some("  docs  ".to_string()),
+            input: None,
+            source: None,
+            binding: Some(CapabilityBindingInput {
+                source: Some(CapabilitySourceInput::Mcp),
+                reference: Some("  docs.search  ".to_string()),
+            }),
+            preferred_source: Some(CapabilitySourceInput::Mcp),
+            try_fallbacks: true,
+            extra: serde_json::Map::new(),
+        })
+        .expect("command");
+
+        assert_eq!(
+            command.capability.as_ref().map(TrimmedText::as_str),
+            Some("document_search")
+        );
+        assert_eq!(
+            command.query.as_ref().map(TrimmedText::as_str),
+            Some("docs")
+        );
+        assert_eq!(command.preferred_source, Some(CapabilitySource::Mcp));
+        assert_eq!(
+            command
+                .binding
+                .as_ref()
+                .map(|binding| binding.reference.as_str()),
+            Some("docs.search")
+        );
+        assert_eq!(
+            command.tool_input["capability"],
+            json!("  document_search  ")
+        );
+        assert_eq!(command.tool_input["query"], json!("  docs  "));
+    }
+
+    #[test]
+    fn capability_binding_command_rejects_blank_reference() {
+        let error = CapabilityBindingRequest::try_from(CapabilityBindingInput {
+            source: Some(CapabilitySourceInput::Grapheme),
+            reference: Some(" \n\t".to_string()),
+        })
+        .expect_err("blank binding reference should fail");
+
+        assert!(error.to_string().contains("binding.reference is required"));
     }
 }
