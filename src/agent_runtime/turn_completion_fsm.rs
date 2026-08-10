@@ -10,6 +10,7 @@ use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
 use crate::turn_text_heuristics::{
     EXTENDED_PROSE_CHAR_THRESHOLD, is_extended_prose, looks_like_clarifying_question,
     looks_like_interim_status, looks_like_planning_prose, looks_like_substantive_final_answer,
+    looks_like_work_in_progress,
 };
 
 /// A non-tool draft at or below this many characters is treated as a brief
@@ -63,6 +64,23 @@ pub enum TurnRoundAction {
         control_message: String,
         missing_tools: Vec<String>,
     },
+}
+
+impl TurnRoundAction {
+    /// Whether this round is eligible to resolve a previously held answer.
+    /// Progress and empty recovery rounds remain inside the loop; a second
+    /// terminal prose candidate (PackHold) or a terminal action resolves it.
+    pub fn resolves_existing_pack_hold(&self) -> bool {
+        !matches!(
+            self,
+            Self::ContinueLoop {
+                reason: ContinueReason::EmptyAfterTools
+                    | ContinueReason::InterimProse
+                    | ContinueReason::ExtendedProse,
+                ..
+            }
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -172,6 +190,32 @@ fn maybe_continue_prose(
     if !after_tools && looks_like_planning_prose(draft) {
         return Some(continue_loop(ContinueReason::ExtendedProse, vec![]));
     }
+    None
+}
+
+/// Foreground Coder keeps only explicit progress/planning prose inside the
+/// loop. Ambiguous short prose remains eligible for the two-answer completion
+/// contract instead of being reclassified as progress solely by its length.
+fn maybe_continue_foreground_progress(
+    draft: &str,
+    interim_continues_used: usize,
+    interim_continue_cap: usize,
+) -> Option<TurnRoundAction> {
+    if interim_continues_used >= interim_continue_cap
+        || looks_like_substantive_final_answer(draft)
+    {
+        return None;
+    }
+
+    if looks_like_work_in_progress(draft) || looks_like_planning_prose(draft) {
+        let reason = if is_extended_prose(draft) {
+            ContinueReason::ExtendedProse
+        } else {
+            ContinueReason::InterimProse
+        };
+        return Some(continue_loop(reason, vec![]));
+    }
+
     None
 }
 
@@ -333,6 +377,14 @@ fn decide_foreground_no_tool_debt_text_round(ctx: &NoToolDebtRoundContext) -> Tu
         };
     }
 
+    if let Some(action) = maybe_continue_foreground_progress(
+        &ctx.draft_text,
+        ctx.interim_continues_used,
+        ctx.interim_continue_cap,
+    ) {
+        return action;
+    }
+
     continue_loop(ContinueReason::PackHold, vec![])
 }
 
@@ -409,6 +461,14 @@ fn decide_foreground_after_tools_text_round(ctx: &AfterToolsRoundContext<'_>) ->
         return TurnRoundAction::EndTurn {
             termination_reason: "clarifying_question",
         };
+    }
+
+    if let Some(action) = maybe_continue_foreground_progress(
+        &ctx.draft_text,
+        ctx.interim_continues_used,
+        ctx.interim_continue_cap,
+    ) {
+        return action;
     }
 
     continue_loop(ContinueReason::PackHold, vec![])
@@ -567,8 +627,8 @@ mod tests {
 
     #[test]
     fn foreground_announcement_stays_a_preamble() {
-        // Both principal-facing profiles keep the announcement in a content pack;
-        // a following tool call resets it instead of ending the turn.
+        // Coder progress is an interim round, not the first half of a final answer.
+        // Host scheduling retains its bounded content-pack behavior.
         let announce = "I'll correct the hardcoded port in the three tool modules, then rerun the shell \
              smoke test to confirm the session proxy answers.";
         let mut foreground = foreground_ctx(announce);
@@ -576,12 +636,77 @@ mod tests {
         assert!(matches!(
             decide_no_tool_debt_text_round(&foreground),
             TurnRoundAction::ContinueLoop {
-                reason: ContinueReason::PackHold,
+                reason: ContinueReason::InterimProse,
                 ..
             }
         ));
         assert!(matches!(
             decide_no_tool_debt_text_round(&host_ctx(announce)),
+            TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::PackHold,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn foreground_progress_after_tools_does_not_enter_content_hold() {
+        let invocations = vec![tool("cognition_coder_shell_run")];
+        let progress = "I found the failing Locus query. I'm checking the bundled SurrealQL parser \
+                        now, then I'll patch the compatibility boundary.";
+        assert!(looks_like_interim_status(progress));
+
+        assert!(matches!(
+            decide_after_tools_text_round(&foreground_after_tools(progress, &invocations)),
+            TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::InterimProse,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn only_terminal_eligible_rounds_resolve_an_existing_content_hold() {
+        for reason in [
+            ContinueReason::EmptyAfterTools,
+            ContinueReason::InterimProse,
+            ContinueReason::ExtendedProse,
+        ] {
+            assert!(
+                !continue_loop(reason, vec![]).resolves_existing_pack_hold(),
+                "{reason:?} must not count as the second answer"
+            );
+        }
+
+        assert!(continue_loop(ContinueReason::PackHold, vec![]).resolves_existing_pack_hold());
+        assert!(
+            TurnRoundAction::EndTurn {
+                termination_reason: "max_rounds_fuse"
+            }
+            .resolves_existing_pack_hold()
+        );
+    }
+
+    #[test]
+    fn foreground_short_answer_is_not_progress_only_because_it_is_short() {
+        let invocations = vec![tool("cognition_coder_shell_run")];
+        let answer = "The focused regression passed, so these two prose responses now commit \
+                      together as one answer.";
+
+        assert!(matches!(
+            decide_after_tools_text_round(&foreground_after_tools(answer, &invocations)),
+            TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::PackHold,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn foreground_done_ack_is_a_terminal_prose_candidate() {
+        let invocations = vec![tool("cognition_coder_shell_run")];
+        assert!(matches!(
+            decide_after_tools_text_round(&foreground_after_tools("Done.", &invocations)),
             TurnRoundAction::ContinueLoop {
                 reason: ContinueReason::PackHold,
                 ..

@@ -26,7 +26,8 @@ pub fn pack_hold_resolution_control_message() -> String {
          Next step (pick one):\n\
          - Call tools (or cognition_turn_begin_work) if work remains; a tool call resets this prose hold.\n\
          - Call cognition_turn_finish with the final answer to commit immediately.\n\
-         - Send one additional non-tool response to commit both prose messages as the answer."
+         - Send one additional final-answer prose response to commit both answer fragments. \
+           Status or progress updates remain inside the loop and do not resolve this hold."
     )
 }
 
@@ -107,7 +108,7 @@ Runtime boundary (enforced by the daemon):
 - Chat (host): memory, identity, runtime, vault read, quick cognition_web_search/cognition_browser_fetch, cognition_turn_begin_work(message, goal) for multi-tool execution, cognition_spawn_turn_worker for parallel research.
 - cognition_turn_begin_work enters the bound Workshop (one per session) — Chat ends with ack; synthesis delivers on the same thread.
 - Chat prose may continue briefly for scheduling; Studio/environment/canvas, Grapheme, and heavy web belong in the Workshop.
-- After tool work on a principal-facing turn: cognition_turn_finish commits immediately; otherwise two consecutive prose rounds commit one merged answer.
+- After tool work on a principal-facing turn: cognition_turn_finish commits immediately; otherwise two consecutive final-answer prose rounds commit one merged answer. Status/progress prose does not count.
 - Mid-task handoff: cognition_turn_checkpoint. Parallel delegate: cognition_spawn_turn_worker in a tool round.
 - UI stream draft may reset between rounds; [MEDOUSA_SCRATCH] engine notes persist across rounds and client disconnect."#;
 
@@ -610,7 +611,8 @@ mod tests {
         assert!(msg.contains("still visible"));
         assert!(msg.contains("do not repeat"));
         assert!(msg.contains("cognition_turn_finish"));
-        assert!(msg.contains("additional non-tool response"));
+        assert!(msg.contains("additional final-answer prose response"));
+        assert!(msg.contains("progress updates"));
         assert!(msg.contains("tool call resets"));
         assert!(!msg.contains("continuing that thought"));
     }

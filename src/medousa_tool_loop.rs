@@ -301,12 +301,14 @@ impl MedousaToolLoopPipeline {
             .map(|gate| gate.completion_profile)
             .unwrap_or(TurnCompletionProfile::ForegroundPrincipal);
         let holds_first_prose = completion_profile.holds_first_prose();
-        // Principal-facing profiles use a one-round content hold; synthesis-bound
-        // workers retain the scaled interim-prose cap.
-        let interim_continue_cap = if holds_first_prose {
-            1
-        } else {
-            resolve_interim_continue_cap(effective_max_tool_rounds)
+        // Coder progress rounds are distinct from its two-answer content hold.
+        // Host scheduling keeps its tighter prose behavior; all other profiles
+        // receive the bounded cap scaled to the operator's round budget.
+        let interim_continue_cap = match completion_profile {
+            TurnCompletionProfile::HostScheduler => 1,
+            TurnCompletionProfile::ForegroundPrincipal | TurnCompletionProfile::WorkerSynthesis => {
+                resolve_interim_continue_cap(effective_max_tool_rounds)
+            }
         };
         let mut interim_continues_used = resume_state
             .as_ref()
@@ -536,7 +538,39 @@ impl MedousaToolLoopPipeline {
                     if !invocations.is_empty() || maybe_text.is_some() {
                         let text = maybe_text.unwrap_or_default();
 
-                        if holds_first_prose && let Some(pack) = pack_hold.as_ref() {
+                        let workshop_lane = completion_gate
+                            .as_ref()
+                            .map(|gate| gate.skip_avec_ritual_check)
+                            .unwrap_or(false);
+                        let action = if invocations.is_empty() {
+                            decide_no_tool_debt_text_round(&NoToolDebtRoundContext {
+                                draft_text: text.clone(),
+                                pending_final_answer,
+                                rounds_executed,
+                                max_tool_rounds: effective_max_tool_rounds,
+                                interim_continues_used,
+                                interim_continue_cap,
+                                completion_profile,
+                            })
+                        } else {
+                            decide_after_tools_text_round(&AfterToolsRoundContext {
+                                draft_text: text.clone(),
+                                pending_final_answer,
+                                rounds_executed,
+                                max_tool_rounds: effective_max_tool_rounds,
+                                invocations: &invocations,
+                                workshop_lane,
+                                interim_continues_used,
+                                interim_continue_cap,
+                                completion_profile,
+                                empty_after_tools_continues_used,
+                            })
+                        };
+
+                        if holds_first_prose
+                            && action.resolves_existing_pack_hold()
+                            && let Some(pack) = pack_hold.as_ref()
+                        {
                             let merged = merge_assistant_pack_fragments(&pack.fragments, &text);
                             let tools = collect_tool_names(&invocations);
                             if let Some(gate) = completion_gate.as_ref() {
@@ -573,35 +607,6 @@ impl MedousaToolLoopPipeline {
                                 termination_reason: "content_pack_merged".to_string(),
                             });
                         }
-
-                        let workshop_lane = completion_gate
-                            .as_ref()
-                            .map(|gate| gate.skip_avec_ritual_check)
-                            .unwrap_or(false);
-                        let action = if invocations.is_empty() {
-                            decide_no_tool_debt_text_round(&NoToolDebtRoundContext {
-                                draft_text: text.clone(),
-                                pending_final_answer,
-                                rounds_executed,
-                                max_tool_rounds: effective_max_tool_rounds,
-                                interim_continues_used,
-                                interim_continue_cap,
-                                completion_profile,
-                            })
-                        } else {
-                            decide_after_tools_text_round(&AfterToolsRoundContext {
-                                draft_text: text.clone(),
-                                pending_final_answer,
-                                rounds_executed,
-                                max_tool_rounds: effective_max_tool_rounds,
-                                invocations: &invocations,
-                                workshop_lane,
-                                interim_continues_used,
-                                interim_continue_cap,
-                                completion_profile,
-                                empty_after_tools_continues_used,
-                            })
-                        };
 
                         match action {
                             TurnRoundAction::EndTurn { termination_reason } => {
@@ -652,9 +657,7 @@ impl MedousaToolLoopPipeline {
                             } => {
                                 if matches!(
                                     reason,
-                                    ContinueReason::InterimProse
-                                        | ContinueReason::ExtendedProse
-                                        | ContinueReason::PackHold
+                                    ContinueReason::InterimProse | ContinueReason::ExtendedProse
                                 ) {
                                     interim_continues_used += 1;
                                 }
@@ -716,7 +719,6 @@ impl MedousaToolLoopPipeline {
                                     &shared_inputs,
                                     rounds_executed,
                                     effective_max_tool_rounds,
-                                    completion_profile,
                                 )
                                 .await?
                                 {
@@ -1625,7 +1627,6 @@ async fn apply_fsm_continue_loop(
     shared_inputs: &ToolLoopSharedInputs,
     rounds_executed: usize,
     max_tool_rounds: usize,
-    completion_profile: TurnCompletionProfile,
 ) -> Result<Option<ToolLoopExecutionResponse>> {
     if !missing_tools.is_empty() {
         turn_ctx.scratchpad.set_open_gaps(missing_tools);
@@ -1655,12 +1656,10 @@ async fn apply_fsm_continue_loop(
     if !text.trim().is_empty() {
         loop_awareness.record_user_response(text);
     }
-    let preserve_prose_in_tool_lane = !completion_profile.holds_first_prose()
-        && matches!(
-            continue_reason,
-            ContinueReason::InterimProse | ContinueReason::ExtendedProse
-        )
-        && !text.trim().is_empty();
+    let preserve_prose_in_tool_lane = matches!(
+        continue_reason,
+        ContinueReason::InterimProse | ContinueReason::ExtendedProse
+    ) && !text.trim().is_empty();
     if preserve_prose_in_tool_lane {
         if let Some(gate) = completion_gate.as_ref()
             && let Some(sink) = gate.sink.as_ref()
@@ -2096,7 +2095,7 @@ mod tests {
     }
 
     #[test]
-    fn foreground_prose_after_tools_enters_content_hold() {
+    fn foreground_progress_after_tools_remains_interim() {
         use crate::agent_runtime::turn_completion_fsm::{
             AfterToolsRoundContext, ContinueReason, TurnRoundAction, decide_after_tools_text_round,
         };
@@ -2134,7 +2133,7 @@ mod tests {
         assert!(matches!(
             action,
             TurnRoundAction::ContinueLoop {
-                reason: ContinueReason::PackHold,
+                reason: ContinueReason::ExtendedProse,
                 ..
             }
         ));

@@ -41,14 +41,11 @@ pub fn looks_like_interim_status(text: &str) -> bool {
         return true;
     }
 
-    let lower = normalized_lower(trimmed);
-
-    if WORK_IN_PROGRESS_ANYWHERE
-        .iter()
-        .any(|phrase| lower.contains(phrase))
-    {
+    if looks_like_work_in_progress(trimmed) {
         return true;
     }
+
+    let lower = normalized_lower(trimmed);
 
     const SHORT_ACKS: &[&str] = &[
         "stored.", "stored!", "done.", "done!", "ok.", "ok!", "okay.", "okay!", "got it.",
@@ -64,6 +61,20 @@ pub fn looks_like_interim_status(text: &str) -> bool {
     }
 
     false
+}
+
+/// True only when prose explicitly says more work is underway. Unlike the
+/// broader interim heuristic, this does not classify a message merely because
+/// it is short, so Coder can use short final answers in its two-prose exit.
+pub fn looks_like_work_in_progress(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let lower = normalized_lower(trimmed);
+    WORK_IN_PROGRESS_ANYWHERE
+        .iter()
+        .any(|phrase| lower.contains(phrase))
 }
 
 pub fn is_extended_prose(text: &str) -> bool {
@@ -305,6 +316,13 @@ mod tests {
         let announcement = "I’ll inspect the completion state first, then run the focused tests.";
         assert!(looks_like_interim_status(announcement));
         assert!(!looks_like_substantive_final_answer(announcement));
+    }
+
+    #[test]
+    fn short_completion_ack_is_not_work_in_progress() {
+        assert!(looks_like_interim_status("Done."));
+        assert!(!looks_like_work_in_progress("Done."));
+        assert!(looks_like_work_in_progress("I'll verify that now."));
     }
 
     #[test]

@@ -668,7 +668,9 @@ async fn golden_interim_prose_continues_then_finishes() {
         vec![
             // Round 1: a short interim acknowledgment with no tool call.
             text_response("Let me check that for you."),
-            // Round 2: model commits the real answer via finish.
+            // Round 2: another explicit progress update must not count as a final answer.
+            text_response("I found the relevant path. I'll verify it before wrapping up."),
+            // Round 3: model commits the real answer via finish.
             tool_response(vec![tool_call(
                 "cognition_turn_finish",
                 json!({ "message": "Done — here is the result." }),
@@ -681,16 +683,18 @@ async fn golden_interim_prose_continues_then_finishes() {
 
     assert_eq!(outcome.termination_reason, "cognition_turn_finish");
     assert_eq!(outcome.text, "Done — here is the result.");
-    assert_eq!(outcome.rounds_executed, 2);
-    // The first prose round is visible while the model gets one bounded exit round.
-    assert!(
-        outcome
-            .events
-            .iter()
-            .any(|ev| matches!(ev, Ev::PackHold(msg) if msg.contains("Let me check that"))),
-        "expected held prose, got: {:?}",
-        outcome.events
-    );
+    assert_eq!(outcome.rounds_executed, 3);
+    let progress: Vec<&str> = outcome
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            Ev::Progress(message) => Some(message.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(progress.len(), 2, "events: {:?}", outcome.events);
+    assert!(progress[0].contains("Let me check that"));
+    assert!(progress[1].contains("I'll verify it"));
 }
 
 #[tokio::test]
@@ -721,8 +725,8 @@ async fn golden_foreground_announcement_tools_and_two_prose_final() {
         outcome
             .events
             .iter()
-            .any(|event| matches!(event, Ev::PackHold(message) if message.contains("inspect the runtime"))),
-        "expected announcement hold, got: {:?}",
+            .any(|event| matches!(event, Ev::Progress(message) if message.contains("inspect the runtime"))),
+        "expected progress announcement, got: {:?}",
         outcome.events
     );
     assert!(
