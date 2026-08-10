@@ -10,6 +10,7 @@ use tokio::sync::{RwLock, mpsc};
 
 use crate::events::TuiEvent;
 use crate::runtime_session::{require_active_chat_session_id_async, runtime_bootstrap_session_id};
+use crate::semantic_values::{RequiredContent, TrimmedText};
 use crate::turn_continuation::TurnContinuationScope;
 use crate::typed_tools::{ToolId, medousa_tool};
 
@@ -33,6 +34,14 @@ pub const ARTIFACT_COGNITION_TOOLS: &[&str] = &[
 ];
 
 const READ_BUDGET_CHARS: usize = 12_000;
+
+fn required_artifact_identifier(
+    value: Option<String>,
+    field: &str,
+) -> stasis::prelude::Result<TrimmedText> {
+    let value = value.ok_or_else(|| StasisError::PortFailure(format!("{field} is required")))?;
+    TrimmedText::new(value).map_err(|_| StasisError::PortFailure(format!("{field} is required")))
+}
 
 pub fn is_artifact_cognition_tool(name: &str) -> bool {
     ARTIFACT_COGNITION_TOOLS.contains(&name)
@@ -144,6 +153,26 @@ pub struct ArtifactListInput {
     query: Option<String>,
 }
 
+#[derive(Debug)]
+struct ArtifactListCommand {
+    limit: usize,
+    query: Option<TrimmedText>,
+}
+
+impl TryFrom<ArtifactListInput> for ArtifactListCommand {
+    type Error = stasis::prelude::StasisError;
+
+    fn try_from(input: ArtifactListInput) -> Result<Self, Self::Error> {
+        Ok(Self {
+            limit: input.limit.unwrap_or(20).clamp(1, 100),
+            query: input
+                .query
+                .as_deref()
+                .and_then(|value| TrimmedText::new(value).ok()),
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 struct ArtifactListItem {
     artifact_id: String,
@@ -171,13 +200,9 @@ impl CognitionArtifactListTool {
     ) -> stasis::prelude::Result<ArtifactListOutput> {
         self.ctx.require_ui_artifacts().await?;
         let session_id = self.ctx.session_id(COGNITION_ARTIFACT_LIST).await?;
-        let limit = input.limit.unwrap_or(20).clamp(1, 100);
-        let query_owned = input
-            .query
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
+        let command = ArtifactListCommand::try_from(input)?;
+        let limit = command.limit;
+        let query_owned = command.query.map(TrimmedText::into_string);
         emit_invoked(
             &self.event_tx,
             COGNITION_ARTIFACT_LIST,
@@ -292,6 +317,30 @@ impl<'de> Deserialize<'de> for ArtifactReadInput {
     }
 }
 
+#[derive(Debug)]
+struct ArtifactReadCommand {
+    artifact_id: TrimmedText,
+    line_start: Option<usize>,
+    line_end: Option<usize>,
+    max_chars: usize,
+}
+
+impl TryFrom<ArtifactReadInput> for ArtifactReadCommand {
+    type Error = stasis::prelude::StasisError;
+
+    fn try_from(input: ArtifactReadInput) -> Result<Self, Self::Error> {
+        Ok(Self {
+            artifact_id: required_artifact_identifier(input.artifact_id, "artifact_id")?,
+            line_start: input.line_start,
+            line_end: input.line_end,
+            max_chars: input
+                .max_chars
+                .unwrap_or(READ_BUDGET_CHARS)
+                .clamp(256, 20_000),
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct ArtifactReadOutput {
     artifact_id: String,
@@ -312,19 +361,11 @@ impl CognitionArtifactReadTool {
     ) -> stasis::prelude::Result<ArtifactReadOutput> {
         self.ctx.require_ui_artifacts().await?;
         let session_id = self.ctx.session_id(COGNITION_ARTIFACT_READ).await?;
-        let artifact_id = input
-            .artifact_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| StasisError::PortFailure("artifact_id is required".to_string()))?
-            .to_string();
-        let line_start = input.line_start;
-        let line_end = input.line_end;
-        let max_chars = input
-            .max_chars
-            .unwrap_or(READ_BUDGET_CHARS)
-            .clamp(256, 20_000);
+        let command = ArtifactReadCommand::try_from(input)?;
+        let artifact_id = command.artifact_id.into_string();
+        let line_start = command.line_start;
+        let line_end = command.line_end;
+        let max_chars = command.max_chars;
         emit_invoked(&self.event_tx, COGNITION_ARTIFACT_READ, &artifact_id);
         let artifact_id_for_response = artifact_id.clone();
         let excerpt = tokio::task::spawn_blocking(move || {
@@ -429,6 +470,27 @@ impl<'de> Deserialize<'de> for ArtifactGrepInput {
     }
 }
 
+#[derive(Debug)]
+struct ArtifactGrepCommand {
+    artifact_id: TrimmedText,
+    pattern: TrimmedText,
+    context_lines: usize,
+    limit: usize,
+}
+
+impl TryFrom<ArtifactGrepInput> for ArtifactGrepCommand {
+    type Error = stasis::prelude::StasisError;
+
+    fn try_from(input: ArtifactGrepInput) -> Result<Self, Self::Error> {
+        Ok(Self {
+            artifact_id: required_artifact_identifier(input.artifact_id, "artifact_id")?,
+            pattern: required_artifact_identifier(input.pattern, "pattern")?,
+            context_lines: input.context_lines.unwrap_or(2).clamp(0, 10),
+            limit: input.limit.unwrap_or(20).clamp(1, 200),
+        })
+    }
+}
+
 #[medousa_tool(id = COGNITION_ARTIFACT_GREP_ID)]
 impl CognitionArtifactGrepTool {
     /// Search inside an HTML artifact source (literal case-insensitive match with line numbers). Use before cognition_artifact_write to locate CSS/HTML snippets.
@@ -438,22 +500,11 @@ impl CognitionArtifactGrepTool {
     ) -> stasis::prelude::Result<crate::line_grep::LineGrepResult> {
         self.ctx.require_ui_artifacts().await?;
         let session_id = self.ctx.session_id(COGNITION_ARTIFACT_GREP).await?;
-        let artifact_id = input
-            .artifact_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| StasisError::PortFailure("artifact_id is required".to_string()))?
-            .to_string();
-        let pattern = input
-            .pattern
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| StasisError::PortFailure("pattern is required".to_string()))?
-            .to_string();
-        let context_lines = input.context_lines.unwrap_or(2).clamp(0, 10);
-        let limit = input.limit.unwrap_or(20).clamp(1, 200);
+        let command = ArtifactGrepCommand::try_from(input)?;
+        let artifact_id = command.artifact_id.into_string();
+        let pattern = command.pattern.into_string();
+        let context_lines = command.context_lines;
+        let limit = command.limit;
         emit_invoked(&self.event_tx, COGNITION_ARTIFACT_GREP, &artifact_id);
         let result = tokio::task::spawn_blocking(move || {
             crate::artifact_store::grep_ui_artifact(
@@ -574,6 +625,74 @@ impl<'de> Deserialize<'de> for ArtifactWriteInput {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ArtifactPresentation {
+    Inline,
+    Panel,
+    Fullscreen,
+}
+
+impl ArtifactPresentation {
+    fn parse(value: Option<String>) -> stasis::prelude::Result<Self> {
+        let value = value.unwrap_or_else(|| "inline".to_string());
+        match value.trim().to_ascii_lowercase().as_str() {
+            "" | "inline" => Ok(Self::Inline),
+            "panel" => Ok(Self::Panel),
+            "fullscreen" => Ok(Self::Fullscreen),
+            other => Err(StasisError::PortFailure(format!(
+                "presentation must be inline, panel, or fullscreen (got {other})"
+            ))),
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Inline => "inline",
+            Self::Panel => "panel",
+            Self::Fullscreen => "fullscreen",
+        }
+    }
+}
+
+#[derive(Debug)]
+struct ArtifactWriteCommand {
+    title: TrimmedText,
+    html: RequiredContent,
+    presentation: ArtifactPresentation,
+    artifact_id: Option<TrimmedText>,
+    if_match_hash64: Option<TrimmedText>,
+    height_px: Option<u32>,
+}
+
+impl TryFrom<ArtifactWriteInput> for ArtifactWriteCommand {
+    type Error = stasis::prelude::StasisError;
+
+    fn try_from(input: ArtifactWriteInput) -> Result<Self, Self::Error> {
+        let title = required_artifact_identifier(input.title, "title")?;
+        let html = RequiredContent::new(
+            input
+                .html
+                .ok_or_else(|| StasisError::PortFailure("html is required".to_string()))?,
+        )
+        .map_err(|_| StasisError::PortFailure("html is required".to_string()))?;
+        let artifact_id = input
+            .artifact_id
+            .and_then(|value| TrimmedText::new(value).ok());
+        let if_match_hash64 = input
+            .if_match_hash64
+            .and_then(|value| TrimmedText::new(value).ok());
+
+        Ok(Self {
+            title,
+            html,
+            presentation: ArtifactPresentation::parse(input.presentation)?,
+            artifact_id,
+            if_match_hash64,
+            height_px: input.height.map(|value| value.clamp(120, 1200) as u32),
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct ArtifactWriteOutput {
     ok: bool,
@@ -597,34 +716,13 @@ impl CognitionArtifactWriteTool {
     ) -> stasis::prelude::Result<ArtifactWriteOutput> {
         self.ctx.require_ui_artifacts().await?;
         let session_id = self.ctx.session_id(COGNITION_ARTIFACT_WRITE).await?;
-        let title = input
-            .title
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| StasisError::PortFailure("title is required".to_string()))?
-            .to_string();
-        let html = input
-            .html
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| StasisError::PortFailure("html is required".to_string()))?
-            .to_string();
-        let presentation = input.presentation.unwrap_or_else(|| "inline".to_string());
-        let height_px = input.height.map(|value| value.clamp(120, 1200) as u32);
-        let artifact_id = input
-            .artifact_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
-        let if_match_hash64 = input
-            .if_match_hash64
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
+        let command = ArtifactWriteCommand::try_from(input)?;
+        let title = command.title.into_string();
+        let html = command.html.into_string();
+        let presentation = command.presentation.as_str().to_string();
+        let height_px = command.height_px;
+        let artifact_id = command.artifact_id.map(TrimmedText::into_string);
+        let if_match_hash64 = command.if_match_hash64.map(TrimmedText::into_string);
         emit_invoked(
             &self.event_tx,
             COGNITION_ARTIFACT_WRITE,
@@ -706,6 +804,68 @@ impl CognitionArtifactDeleteTool {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::semantic_values::TrimmedText;
+
+    #[test]
+    fn artifact_commands_normalize_identifiers_and_preserve_html() {
+        let write = ArtifactWriteCommand::try_from(ArtifactWriteInput {
+            title: Some("  Chart  ".to_string()),
+            html: Some("  <div>Chart</div>  \n".to_string()),
+            presentation: Some(" PANEL ".to_string()),
+            artifact_id: Some("  art:old  ".to_string()),
+            if_match_hash64: Some("  hash  ".to_string()),
+            height: Some(9999),
+        })
+        .expect("write command");
+        assert_eq!(write.title.as_str(), "Chart");
+        assert_eq!(write.html.as_str(), "  <div>Chart</div>  \n");
+        assert_eq!(write.presentation, ArtifactPresentation::Panel);
+        assert_eq!(
+            write.artifact_id.as_ref().map(TrimmedText::as_str),
+            Some("art:old")
+        );
+        assert_eq!(write.height_px, Some(1200));
+
+        let read = ArtifactReadCommand::try_from(ArtifactReadInput {
+            artifact_id: Some("  art:old  ".to_string()),
+            line_start: Some(2),
+            line_end: Some(4),
+            max_chars: Some(99_999),
+        })
+        .expect("read command");
+        assert_eq!(read.artifact_id.as_str(), "art:old");
+        assert_eq!(read.max_chars, 20_000);
+
+        let grep = ArtifactGrepCommand::try_from(ArtifactGrepInput {
+            artifact_id: Some("  art:old  ".to_string()),
+            pattern: Some("  Chart  ".to_string()),
+            context_lines: Some(99),
+            limit: Some(999),
+        })
+        .expect("grep command");
+        assert_eq!(grep.pattern.as_str(), "Chart");
+        assert_eq!(grep.context_lines, 10);
+        assert_eq!(grep.limit, 200);
+    }
+
+    #[test]
+    fn artifact_write_command_rejects_blank_html() {
+        let error = ArtifactWriteCommand::try_from(ArtifactWriteInput {
+            title: Some("Chart".to_string()),
+            html: Some(" \n\t".to_string()),
+            presentation: None,
+            artifact_id: None,
+            if_match_hash64: None,
+            height: None,
+        })
+        .expect_err("blank html should fail");
+        assert!(error.to_string().contains("html is required"));
+    }
+}
+
 #[derive(Debug, JsonSchema)]
 pub struct ArtifactDeleteInput {
     /// Presentation artifact id or alias to delete
@@ -733,6 +893,21 @@ impl<'de> Deserialize<'de> for ArtifactDeleteInput {
     }
 }
 
+#[derive(Debug)]
+struct ArtifactDeleteCommand {
+    artifact_id: TrimmedText,
+}
+
+impl TryFrom<ArtifactDeleteInput> for ArtifactDeleteCommand {
+    type Error = stasis::prelude::StasisError;
+
+    fn try_from(input: ArtifactDeleteInput) -> Result<Self, Self::Error> {
+        Ok(Self {
+            artifact_id: required_artifact_identifier(input.artifact_id, "artifact_id")?,
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct ArtifactDeleteOutput {
     ok: bool,
@@ -749,13 +924,8 @@ impl CognitionArtifactDeleteTool {
     ) -> stasis::prelude::Result<ArtifactDeleteOutput> {
         self.ctx.require_ui_artifacts().await?;
         let session_id = self.ctx.session_id(COGNITION_ARTIFACT_DELETE).await?;
-        let artifact_id = input
-            .artifact_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| StasisError::PortFailure("artifact_id is required".to_string()))?
-            .to_string();
+        let command = ArtifactDeleteCommand::try_from(input)?;
+        let artifact_id = command.artifact_id.into_string();
         emit_invoked(&self.event_tx, COGNITION_ARTIFACT_DELETE, &artifact_id);
 
         let deleted = tokio::task::spawn_blocking(move || {
