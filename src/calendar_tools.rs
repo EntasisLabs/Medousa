@@ -13,6 +13,7 @@ use crate::daemon_api::{
     CalendarImportResponse, CalendarListResponse, CalendarWriteRequest, CalendarWriteResponse,
 };
 use crate::events::TuiEvent;
+use crate::semantic_values::{RequiredContent, TrimmedText};
 use crate::typed_tools::{ToolId, medousa_tool};
 
 const COGNITION_CALENDAR_LIST_ID: ToolId = ToolId::new("cognition_calendar_list");
@@ -51,12 +52,13 @@ fn parse_rfc3339_str(raw: Option<&str>, field: &str) -> StasisResult<Option<Date
         .map_err(|err| StasisError::PortFailure(format!("invalid {field}: {err}")))
 }
 
-fn normalized_optional_string(value: Option<String>) -> Option<String> {
-    value
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
+fn optional_trimmed(value: Option<String>) -> Option<TrimmedText> {
+    value.and_then(|value| TrimmedText::new(value).ok())
+}
+
+fn required_trimmed(value: Option<String>, field: &str) -> StasisResult<TrimmedText> {
+    let value = value.ok_or_else(|| StasisError::PortFailure(format!("{field} is required")))?;
+    TrimmedText::new(value).map_err(|_| StasisError::PortFailure(format!("{field} is required")))
 }
 
 #[derive(Debug, JsonSchema)]
@@ -153,11 +155,31 @@ pub struct CalendarWriteFieldsInput {
 
 impl CalendarWriteFieldsInput {
     fn into_request(self, uid: Option<String>) -> StasisResult<CalendarWriteRequest> {
-        let summary = normalized_optional_string(self.summary)
-            .ok_or_else(|| StasisError::PortFailure("summary is required".to_string()))?;
-        let dtstart = parse_rfc3339_str(self.dtstart.as_deref(), "dtstart")?
+        Ok(CalendarWriteCommand::from_fields(self, uid)?.into_request())
+    }
+}
+
+#[derive(Debug)]
+struct CalendarWriteCommand {
+    uid: Option<TrimmedText>,
+    summary: TrimmedText,
+    description: Option<TrimmedText>,
+    location: Option<TrimmedText>,
+    dtstart: DateTime<Utc>,
+    dtend: Option<DateTime<Utc>>,
+    all_day: bool,
+    rrule: Option<TrimmedText>,
+    note_path: Option<TrimmedText>,
+    alarms: Vec<CalendarAlarm>,
+    calendar_path: Option<TrimmedText>,
+}
+
+impl CalendarWriteCommand {
+    fn from_fields(fields: CalendarWriteFieldsInput, uid: Option<String>) -> StasisResult<Self> {
+        let summary = required_trimmed(fields.summary, "summary")?;
+        let dtstart = parse_rfc3339_str(fields.dtstart.as_deref(), "dtstart")?
             .ok_or_else(|| StasisError::PortFailure("dtstart is required (RFC3339)".to_string()))?;
-        let alarms = self
+        let alarms = fields
             .alarms
             .unwrap_or_default()
             .into_iter()
@@ -167,20 +189,36 @@ impl CalendarWriteFieldsInput {
             })
             .collect();
 
-        Ok(CalendarWriteRequest {
-            uid: normalized_optional_string(uid),
+        Ok(Self {
+            uid: optional_trimmed(uid),
             summary,
-            description: normalized_optional_string(self.description),
-            location: normalized_optional_string(self.location),
+            description: optional_trimmed(fields.description),
+            location: optional_trimmed(fields.location),
             dtstart,
-            dtend: parse_rfc3339_str(self.dtend.as_deref(), "dtend")?,
-            all_day: self.all_day.unwrap_or(false),
-            rrule: normalized_optional_string(self.rrule),
-            calendar_path: normalized_optional_string(self.path)
-                .or_else(|| normalized_optional_string(self.calendar_path)),
-            note_path: normalized_optional_string(self.note_path),
+            dtend: parse_rfc3339_str(fields.dtend.as_deref(), "dtend")?,
+            all_day: fields.all_day.unwrap_or(false),
+            rrule: optional_trimmed(fields.rrule),
+            note_path: optional_trimmed(fields.note_path),
             alarms,
+            calendar_path: optional_trimmed(fields.path)
+                .or_else(|| optional_trimmed(fields.calendar_path)),
         })
+    }
+
+    fn into_request(self) -> CalendarWriteRequest {
+        CalendarWriteRequest {
+            uid: self.uid.map(TrimmedText::into_string),
+            summary: self.summary.into_string(),
+            description: self.description.map(TrimmedText::into_string),
+            location: self.location.map(TrimmedText::into_string),
+            dtstart: self.dtstart,
+            dtend: self.dtend,
+            all_day: self.all_day,
+            rrule: self.rrule.map(TrimmedText::into_string),
+            calendar_path: self.calendar_path.map(TrimmedText::into_string),
+            note_path: self.note_path.map(TrimmedText::into_string),
+            alarms: self.alarms,
+        }
     }
 }
 
@@ -301,6 +339,25 @@ pub struct CalendarListInput {
     path: Option<String>,
 }
 
+#[derive(Debug)]
+struct CalendarListCommand {
+    from: Option<DateTime<Utc>>,
+    to: Option<DateTime<Utc>>,
+    path: Option<TrimmedText>,
+}
+
+impl TryFrom<CalendarListInput> for CalendarListCommand {
+    type Error = StasisError;
+
+    fn try_from(input: CalendarListInput) -> Result<Self, Self::Error> {
+        Ok(Self {
+            from: parse_rfc3339_str(input.from.as_deref(), "from")?,
+            to: parse_rfc3339_str(input.to.as_deref(), "to")?,
+            path: optional_trimmed(input.path),
+        })
+    }
+}
+
 #[medousa_tool(id = COGNITION_CALENDAR_LIST_ID)]
 impl CognitionCalendarListTool {
     /// List personal calendar events in a time range (RRULE expanded). Default store: calendar/personal.ics.
@@ -308,12 +365,10 @@ impl CognitionCalendarListTool {
         &self,
         input: CalendarListInput,
     ) -> stasis::prelude::Result<CalendarListResponse> {
-        let from = parse_rfc3339_str(input.from.as_deref(), "from")?;
-        let to = parse_rfc3339_str(input.to.as_deref(), "to")?;
-        let path = input
-            .path
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty());
+        let command = CalendarListCommand::try_from(input)?;
+        let from = command.from;
+        let to = command.to;
+        let path = command.path.map(TrimmedText::into_string);
         emit_invoked(
             &self.event_tx,
             COGNITION_CALENDAR_LIST_ID.as_str(),
@@ -406,8 +461,7 @@ impl CognitionCalendarUpdateTool {
         &self,
         input: CalendarUpdateInput,
     ) -> stasis::prelude::Result<CalendarWriteResponse> {
-        let uid = normalized_optional_string(input.uid)
-            .ok_or_else(|| StasisError::PortFailure("uid is required".to_string()))?;
+        let uid = required_trimmed(input.uid, "uid")?.into_string();
         let request = input.fields.into_request(Some(uid.clone()))?;
         emit_invoked(&self.event_tx, COGNITION_CALENDAR_UPDATE_ID.as_str(), &uid);
         CalendarService::update_event(&uid, &request)
@@ -461,6 +515,23 @@ impl<'de> Deserialize<'de> for CalendarDeleteInput {
     }
 }
 
+#[derive(Debug)]
+struct CalendarDeleteCommand {
+    uid: TrimmedText,
+    path: Option<TrimmedText>,
+}
+
+impl TryFrom<CalendarDeleteInput> for CalendarDeleteCommand {
+    type Error = StasisError;
+
+    fn try_from(input: CalendarDeleteInput) -> Result<Self, Self::Error> {
+        Ok(Self {
+            uid: required_trimmed(input.uid, "uid")?,
+            path: optional_trimmed(input.path),
+        })
+    }
+}
+
 #[medousa_tool(id = COGNITION_CALENDAR_DELETE_ID)]
 impl CognitionCalendarDeleteTool {
     /// Delete a calendar event by uid from the vault .ics store.
@@ -468,9 +539,9 @@ impl CognitionCalendarDeleteTool {
         &self,
         input: CalendarDeleteInput,
     ) -> stasis::prelude::Result<CalendarDeleteResponse> {
-        let uid = normalized_optional_string(input.uid)
-            .ok_or_else(|| StasisError::PortFailure("uid is required".to_string()))?;
-        let path = normalized_optional_string(input.path);
+        let command = CalendarDeleteCommand::try_from(input)?;
+        let uid = command.uid.into_string();
+        let path = command.path.map(TrimmedText::into_string);
         emit_invoked(&self.event_tx, COGNITION_CALENDAR_DELETE_ID.as_str(), &uid);
         CalendarService::delete_event(&uid, path.as_deref())
             .map_err(|err| StasisError::PortFailure(err.to_string()))
@@ -534,6 +605,31 @@ impl<'de> Deserialize<'de> for CalendarImportInput {
     }
 }
 
+#[derive(Debug)]
+struct CalendarImportCommand {
+    ics: RequiredContent,
+    calendar_path: Option<TrimmedText>,
+}
+
+impl TryFrom<CalendarImportInput> for CalendarImportCommand {
+    type Error = StasisError;
+
+    fn try_from(input: CalendarImportInput) -> Result<Self, Self::Error> {
+        let ics = input
+            .ics
+            .ok_or_else(|| StasisError::PortFailure("ics is required".to_string()))
+            .and_then(|value| {
+                RequiredContent::new(value)
+                    .map_err(|_| StasisError::PortFailure("ics is required".to_string()))
+            })?;
+        Ok(Self {
+            ics,
+            calendar_path: optional_trimmed(input.path)
+                .or_else(|| optional_trimmed(input.calendar_path)),
+        })
+    }
+}
+
 #[medousa_tool(id = COGNITION_CALENDAR_IMPORT_ID)]
 impl CognitionCalendarImportTool {
     /// Merge VEVENT components from raw ICS text into the vault calendar (UID upsert).
@@ -541,10 +637,9 @@ impl CognitionCalendarImportTool {
         &self,
         input: CalendarImportInput,
     ) -> stasis::prelude::Result<CalendarImportResponse> {
-        let ics = normalized_optional_string(input.ics)
-            .ok_or_else(|| StasisError::PortFailure("ics is required".to_string()))?;
-        let path = normalized_optional_string(input.path)
-            .or_else(|| normalized_optional_string(input.calendar_path));
+        let command = CalendarImportCommand::try_from(input)?;
+        let ics = command.ics.into_string();
+        let path = command.calendar_path.map(TrimmedText::into_string);
         emit_invoked(
             &self.event_tx,
             COGNITION_CALENDAR_IMPORT_ID.as_str(),
@@ -579,6 +674,21 @@ pub struct CalendarExportInput {
     path: Option<String>,
 }
 
+#[derive(Debug)]
+struct CalendarExportCommand {
+    path: Option<TrimmedText>,
+}
+
+impl TryFrom<CalendarExportInput> for CalendarExportCommand {
+    type Error = StasisError;
+
+    fn try_from(input: CalendarExportInput) -> Result<Self, Self::Error> {
+        Ok(Self {
+            path: optional_trimmed(input.path),
+        })
+    }
+}
+
 #[medousa_tool(id = COGNITION_CALENDAR_EXPORT_ID)]
 impl CognitionCalendarExportTool {
     /// Export the vault calendar as raw ICS text.
@@ -586,10 +696,8 @@ impl CognitionCalendarExportTool {
         &self,
         input: CalendarExportInput,
     ) -> stasis::prelude::Result<CalendarExportResponse> {
-        let path = input
-            .path
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty());
+        let command = CalendarExportCommand::try_from(input)?;
+        let path = command.path.map(TrimmedText::into_string);
         emit_invoked(
             &self.event_tx,
             COGNITION_CALENDAR_EXPORT_ID.as_str(),
@@ -634,5 +742,50 @@ mod tests {
         assert_eq!(request.alarms.len(), 1);
         assert_eq!(request.alarms[0].trigger_minutes_before, 15);
         assert_eq!(request.alarms[0].action, "display");
+    }
+
+    #[test]
+    fn calendar_commands_normalize_identifiers_and_preserve_ics_content() {
+        let raw_ics = " \r\nBEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n ";
+        let import = CalendarImportCommand::try_from(CalendarImportInput {
+            ics: Some(raw_ics.to_string()),
+            path: Some(" calendar/team.ics ".to_string()),
+            calendar_path: Some("calendar/fallback.ics".to_string()),
+        })
+        .expect("import command");
+        assert_eq!(import.ics.as_str(), raw_ics);
+        assert_eq!(
+            import.calendar_path.as_ref().map(TrimmedText::as_str),
+            Some("calendar/team.ics")
+        );
+
+        let list = CalendarListCommand::try_from(CalendarListInput {
+            from: Some(" 2026-08-09T00:00:00Z ".to_string()),
+            to: Some("2026-08-10T00:00:00Z".to_string()),
+            path: Some(" calendar/team.ics ".to_string()),
+        })
+        .expect("list command");
+        assert_eq!(
+            list.path.as_ref().map(TrimmedText::as_str),
+            Some("calendar/team.ics")
+        );
+
+        let delete = CalendarDeleteCommand::try_from(CalendarDeleteInput {
+            uid: Some(" event-1 ".to_string()),
+            path: None,
+        })
+        .expect("delete command");
+        assert_eq!(delete.uid.as_str(), "event-1");
+    }
+
+    #[test]
+    fn calendar_import_command_rejects_blank_ics() {
+        let error = CalendarImportCommand::try_from(CalendarImportInput {
+            ics: Some(" \n\t".to_string()),
+            path: None,
+            calendar_path: None,
+        })
+        .expect_err("blank ics should fail");
+        assert!(error.to_string().contains("ics is required"));
     }
 }
