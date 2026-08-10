@@ -16,6 +16,7 @@ use stasis::prelude::{Result as StasisResult, StasisError};
 use tokio::sync::RwLock;
 
 use crate::environment_store::{environment_hub, resolve_profile_id};
+use crate::semantic_values::TrimmedText;
 use crate::turn_continuation::TurnContinuationScope;
 use crate::typed_tools::{ToolId, medousa_tool};
 
@@ -114,6 +115,23 @@ struct EnvironmentProfileInput {
     profile_id: Option<String>,
 }
 
+#[derive(Debug)]
+struct EnvironmentProfileCommand {
+    profile_id: Option<TrimmedText>,
+}
+
+impl TryFrom<EnvironmentProfileInput> for EnvironmentProfileCommand {
+    type Error = StasisError;
+
+    fn try_from(input: EnvironmentProfileInput) -> Result<Self, Self::Error> {
+        Ok(Self {
+            profile_id: input
+                .profile_id
+                .and_then(|value| TrimmedText::new(value).ok()),
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 struct EnvironmentGetOutput {
     ok: bool,
@@ -129,7 +147,8 @@ impl CognitionEnvironmentGetTool {
         &self,
         input: EnvironmentProfileInput,
     ) -> stasis::prelude::Result<EnvironmentGetOutput> {
-        let profile_id = profile_from_typed(input.profile_id.as_deref());
+        let command = EnvironmentProfileCommand::try_from(input)?;
+        let profile_id = profile_from_typed(command.profile_id.as_ref().map(TrimmedText::as_str));
         let record = environment_hub()
             .get(&profile_id)
             .await
@@ -310,6 +329,27 @@ struct EnvironmentActivatePresetInput {
     profile_id: Option<String>,
 }
 
+#[derive(Debug)]
+struct EnvironmentActivatePresetCommand {
+    preset_id: TrimmedText,
+    profile_id: Option<TrimmedText>,
+}
+
+impl TryFrom<EnvironmentActivatePresetInput> for EnvironmentActivatePresetCommand {
+    type Error = StasisError;
+
+    fn try_from(input: EnvironmentActivatePresetInput) -> Result<Self, Self::Error> {
+        let preset_id = TrimmedText::new(input.preset_id)
+            .map_err(|_| StasisError::PortFailure("preset_id is required".to_string()))?;
+        Ok(Self {
+            preset_id,
+            profile_id: input
+                .profile_id
+                .and_then(|value| TrimmedText::new(value).ok()),
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 struct EnvironmentActivatePresetOutput {
     ok: bool,
@@ -324,8 +364,9 @@ impl CognitionEnvironmentActivatePresetTool {
         &self,
         input: EnvironmentActivatePresetInput,
     ) -> stasis::prelude::Result<EnvironmentActivatePresetOutput> {
-        let profile_id = profile_from_typed(input.profile_id.as_deref());
-        let preset_id = input.preset_id;
+        let command = EnvironmentActivatePresetCommand::try_from(input)?;
+        let profile_id = profile_from_typed(command.profile_id.as_ref().map(TrimmedText::as_str));
+        let preset_id = command.preset_id.into_string();
         let mut record = environment_hub()
             .get(&profile_id)
             .await
@@ -358,7 +399,8 @@ impl CognitionComponentListTool {
         &self,
         input: EnvironmentProfileInput,
     ) -> stasis::prelude::Result<ComponentListOutput> {
-        let profile_id = profile_from_typed(input.profile_id.as_deref());
+        let command = EnvironmentProfileCommand::try_from(input)?;
+        let profile_id = profile_from_typed(command.profile_id.as_ref().map(TrimmedText::as_str));
         let record = environment_hub()
             .get(&profile_id)
             .await
@@ -383,6 +425,26 @@ struct ComponentIdInput {
     profile_id: Option<String>,
 }
 
+#[derive(Debug)]
+struct ComponentIdCommand {
+    component_id: TrimmedText,
+    profile_id: Option<TrimmedText>,
+}
+
+impl TryFrom<ComponentIdInput> for ComponentIdCommand {
+    type Error = StasisError;
+
+    fn try_from(input: ComponentIdInput) -> Result<Self, Self::Error> {
+        Ok(Self {
+            component_id: TrimmedText::new(input.component_id)
+                .map_err(|_| StasisError::PortFailure("component_id required".to_string()))?,
+            profile_id: input
+                .profile_id
+                .and_then(|value| TrimmedText::new(value).ok()),
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 struct ComponentGetOutput {
     ok: bool,
@@ -396,8 +458,9 @@ impl CognitionComponentGetTool {
         &self,
         input: ComponentIdInput,
     ) -> stasis::prelude::Result<ComponentGetOutput> {
-        let profile_id = profile_from_typed(input.profile_id.as_deref());
-        let component_id = input.component_id;
+        let command = ComponentIdCommand::try_from(input)?;
+        let profile_id = profile_from_typed(command.profile_id.as_ref().map(TrimmedText::as_str));
+        let component_id = command.component_id.into_string();
         let record = environment_hub()
             .get(&profile_id)
             .await
@@ -406,7 +469,7 @@ impl CognitionComponentGetTool {
             .spec
             .components
             .iter()
-            .find(|component| component.id == component_id)
+            .find(|component| component.id == component_id.as_str())
             .cloned()
             .ok_or_else(|| {
                 StasisError::PortFailure(format!("component not found: {component_id}"))
@@ -507,6 +570,25 @@ impl<'de> Deserialize<'de> for ComponentCreateInput {
     }
 }
 
+#[derive(Debug)]
+struct ComponentCreateCommand {
+    component: ComponentDef,
+    profile_id: Option<TrimmedText>,
+}
+
+impl TryFrom<ComponentCreateInput> for ComponentCreateCommand {
+    type Error = String;
+
+    fn try_from(input: ComponentCreateInput) -> Result<Self, Self::Error> {
+        Ok(Self {
+            component: input.component.into_result()?,
+            profile_id: input
+                .profile_id
+                .and_then(|value| TrimmedText::new(value).ok()),
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(untagged)]
 enum ComponentCreateOutput {
@@ -532,9 +614,8 @@ impl CognitionComponentCreateTool {
         &self,
         input: ComponentCreateInput,
     ) -> stasis::prelude::Result<ComponentCreateOutput> {
-        let profile_id = profile_from_typed(input.profile_id.as_deref());
-        let component = match input.component.into_result() {
-            Ok(component) => component,
+        let command = match ComponentCreateCommand::try_from(input) {
+            Ok(command) => command,
             Err(error) => {
                 return Ok(ComponentCreateOutput::Failure {
                     ok: false,
@@ -542,6 +623,8 @@ impl CognitionComponentCreateTool {
                 });
             }
         };
+        let profile_id = profile_from_typed(command.profile_id.as_ref().map(TrimmedText::as_str));
+        let component = command.component;
         let session_id = tool_session_id(&self.turn_scope).await;
         if let Some(err) =
             validate_presentation_component_artifact(session_id.as_deref(), &component)
@@ -757,6 +840,33 @@ impl<'de> Deserialize<'de> for ComponentUpdateInput {
     }
 }
 
+#[derive(Debug)]
+struct ComponentUpdateCommand {
+    component_id: TrimmedText,
+    patch: ComponentPatchInput,
+    profile_id: Option<TrimmedText>,
+}
+
+impl TryFrom<ComponentUpdateInput> for ComponentUpdateCommand {
+    type Error = StasisError;
+
+    fn try_from(input: ComponentUpdateInput) -> Result<Self, Self::Error> {
+        Ok(Self {
+            component_id: input
+                .component_id
+                .ok_or_else(|| StasisError::PortFailure("component_id required".to_string()))
+                .and_then(|value| {
+                    TrimmedText::new(value)
+                        .map_err(|_| StasisError::PortFailure("component_id required".to_string()))
+                })?,
+            patch: input.patch.unwrap_or_default(),
+            profile_id: input
+                .profile_id
+                .and_then(|value| TrimmedText::new(value).ok()),
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(untagged)]
 enum ComponentUpdateOutput {
@@ -778,11 +888,9 @@ impl CognitionComponentUpdateTool {
         &self,
         input: ComponentUpdateInput,
     ) -> stasis::prelude::Result<ComponentUpdateOutput> {
-        let profile_id = profile_from_typed(input.profile_id.as_deref());
-        let component_id = input
-            .component_id
-            .as_deref()
-            .ok_or_else(|| StasisError::PortFailure("component_id required".to_string()))?;
+        let command = ComponentUpdateCommand::try_from(input)?;
+        let profile_id = profile_from_typed(command.profile_id.as_ref().map(TrimmedText::as_str));
+        let component_id = command.component_id.into_string();
         let mut record = environment_hub()
             .get(&profile_id)
             .await
@@ -791,7 +899,7 @@ impl CognitionComponentUpdateTool {
             .spec
             .components
             .iter()
-            .position(|c| c.id == component_id)
+            .position(|c| c.id == component_id.as_str())
         else {
             return Ok(ComponentUpdateOutput::Failure {
                 ok: false,
@@ -800,7 +908,7 @@ impl CognitionComponentUpdateTool {
         };
         let previous = record.spec.components[index].clone();
         let mut existing = previous.clone();
-        apply_component_patch(&mut existing, input.patch.unwrap_or_default());
+        apply_component_patch(&mut existing, command.patch);
         existing.updated_at = Some(Utc::now());
         let session_id = tool_session_id(&self.turn_scope).await;
         if let Some(err) =
@@ -847,8 +955,9 @@ impl CognitionComponentDeleteTool {
         &self,
         input: ComponentIdInput,
     ) -> stasis::prelude::Result<ComponentDeleteOutput> {
-        let profile_id = profile_from_typed(input.profile_id.as_deref());
-        let component_id = input.component_id;
+        let command = ComponentIdCommand::try_from(input)?;
+        let profile_id = profile_from_typed(command.profile_id.as_ref().map(TrimmedText::as_str));
+        let component_id = command.component_id.into_string();
         let mut record = environment_hub()
             .get(&profile_id)
             .await
@@ -857,7 +966,7 @@ impl CognitionComponentDeleteTool {
         record
             .spec
             .components
-            .retain(|component| component.id != component_id);
+            .retain(|component| component.id != component_id.as_str());
         if record.spec.components.len() == before {
             return Err(StasisError::PortFailure(format!(
                 "component not found: {component_id}"
@@ -1124,5 +1233,65 @@ mod demo_tests {
         scene_component.surface_id = "writing-studio".to_string();
         spec.components.push(scene_component);
         assert!(is_valid_environment_spec(&spec));
+    }
+
+    #[test]
+    fn environment_commands_normalize_ids_and_keep_component_config_opaque() {
+        let profile = EnvironmentProfileCommand::try_from(EnvironmentProfileInput {
+            profile_id: Some(" profile-a ".to_string()),
+        })
+        .expect("profile command");
+        assert_eq!(
+            profile.profile_id.as_ref().map(TrimmedText::as_str),
+            Some("profile-a")
+        );
+
+        let component = ComponentDef {
+            id: "component-a".to_string(),
+            component_type: ComponentType::Presentation,
+            surface_id: "surface-a".to_string(),
+            slot: "main".to_string(),
+            label: Some("Chart".to_string()),
+            config: json!({"artifactId": "art:chart", "future": {"keep": true}}),
+            presentation: Some(UiPresentation::Inline),
+            feeds: vec![],
+            updated_at: None,
+        };
+        let create = ComponentCreateCommand::try_from(ComponentCreateInput {
+            component: CompatibleComponentInput::Parsed(component.clone()),
+            profile_id: Some(" profile-a ".to_string()),
+        })
+        .expect("create command");
+        assert_eq!(create.component.id, "component-a");
+        assert_eq!(create.component.config["future"]["keep"], Value::Bool(true));
+
+        let update = ComponentUpdateCommand::try_from(ComponentUpdateInput {
+            component_id: Some(" component-a ".to_string()),
+            patch: None,
+            profile_id: None,
+        })
+        .expect("update command");
+        assert_eq!(update.component_id.as_str(), "component-a");
+        assert!(matches!(
+            update.patch.config,
+            CompatibleComponentConfig::Missing
+        ));
+    }
+
+    #[test]
+    fn component_commands_reject_blank_identifiers() {
+        let error = ComponentIdCommand::try_from(ComponentIdInput {
+            component_id: " \n\t".to_string(),
+            profile_id: None,
+        })
+        .expect_err("blank component id should fail");
+        assert!(error.to_string().contains("component_id required"));
+
+        let error = EnvironmentActivatePresetCommand::try_from(EnvironmentActivatePresetInput {
+            preset_id: " \n\t".to_string(),
+            profile_id: None,
+        })
+        .expect_err("blank preset id should fail");
+        assert!(error.to_string().contains("preset_id is required"));
     }
 }
