@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 
 use crate::session;
-use crate::typed_tools::{ToolId, medousa_tool};
+use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_MANUSCRIPT_OVERLAY_PROPOSE: &str = "cognition_manuscript_overlay_propose";
 pub const COGNITION_MANUSCRIPT_OVERLAY_LIST: &str = "cognition_manuscript_overlay_list";
@@ -131,12 +131,12 @@ pub struct ManuscriptOverlayProposeInput {
     pub appendix: String,
     /// Why this overlay helps future turns
     pub reason: String,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    pub session_id: Option<String>,
+    pub session_id: CompatOption<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -160,8 +160,13 @@ impl CognitionManuscriptOverlayProposeTool {
         let appendix = input.appendix.as_str();
         let reason = input.reason.as_str();
 
-        let proposal = propose_overlay(manuscript_id, appendix, reason, input.session_id)
-            .map_err(StasisError::PortFailure)?;
+        let proposal = propose_overlay(
+            manuscript_id,
+            appendix,
+            reason,
+            input.session_id.into_option(),
+        )
+        .map_err(StasisError::PortFailure)?;
 
         Ok(ManuscriptOverlayProposeOutput {
             ok: true,
@@ -179,16 +184,13 @@ pub struct CognitionManuscriptOverlayListTool;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ManuscriptOverlayListInput {
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-    )]
+    #[serde(default)]
     #[schemars(
         with = "usize",
         range(min = 1, max = 100),
-        skip_serializing_if = "Option::is_none"
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    pub limit: Option<usize>,
+    pub limit: CompatOption<usize>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -206,7 +208,7 @@ impl CognitionManuscriptOverlayListTool {
         &self,
         input: ManuscriptOverlayListInput,
     ) -> stasis::prelude::Result<ManuscriptOverlayListOutput> {
-        let limit = input.limit.unwrap_or(20);
+        let limit = input.limit.into_option().unwrap_or(20);
         let proposals = list_pending_proposals(limit).map_err(StasisError::PortFailure)?;
         Ok(ManuscriptOverlayListOutput {
             ok: true,
@@ -241,6 +243,24 @@ mod tests {
         );
 
         let _ = fs::remove_file(proposal_path(&proposal.proposal_id));
+    }
+
+    #[test]
+    fn overlay_wire_optionals_remain_lenient_for_legacy_values() {
+        let proposal: ManuscriptOverlayProposeInput = serde_json::from_value(serde_json::json!({
+            "manuscript_id": "base-researcher",
+            "appendix": "notes",
+            "reason": "useful",
+            "session_id": 42,
+        }))
+        .expect("proposal input");
+        assert!(proposal.session_id.into_option().is_none());
+
+        let list: ManuscriptOverlayListInput = serde_json::from_value(serde_json::json!({
+            "limit": "20",
+        }))
+        .expect("list input");
+        assert!(list.limit.into_option().is_none());
     }
 
     fn overlay_test_lock() -> std::sync::MutexGuard<'static, ()> {
