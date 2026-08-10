@@ -1234,6 +1234,40 @@ pub struct WebSearchInput {
     max_results: Option<u64>,
 }
 
+#[derive(Debug)]
+struct WebSearchCommand {
+    query: TrimmedText,
+    mode: WebSearchModeInput,
+    provider: Option<TrimmedText>,
+    try_fallbacks: Option<bool>,
+    max_results: Option<u64>,
+}
+
+impl TryFrom<WebSearchInput> for WebSearchCommand {
+    type Error = stasis::prelude::StasisError;
+
+    fn try_from(input: WebSearchInput) -> Result<Self, Self::Error> {
+        let query = input.query.ok_or_else(|| {
+            StasisError::PortFailure("cognition_web_search: query is required".to_string())
+        })?;
+        let query = TrimmedText::new(query).map_err(|_| {
+            StasisError::PortFailure("cognition_web_search: query is required".to_string())
+        })?;
+        let provider = input
+            .provider
+            .as_deref()
+            .and_then(|value| TrimmedText::new(value).ok());
+
+        Ok(Self {
+            query,
+            mode: input.mode,
+            provider,
+            try_fallbacks: input.try_fallbacks,
+            max_results: input.max_results,
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct WebSearchCapabilityOutput {
     query: String,
@@ -1260,24 +1294,17 @@ impl CognitionWebSearchTool {
         &self,
         input: WebSearchInput,
     ) -> stasis::prelude::Result<WebSearchOutput> {
-        let query = input
-            .query
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| {
-                StasisError::PortFailure("cognition_web_search: query is required".to_string())
-            })?;
+        let command = WebSearchCommand::try_from(input)?;
+        let query = command.query.as_str();
 
-        let mode = input.mode.as_str();
+        let mode = command.mode.as_str();
         let settings = crate::capability_catalog::web_search_settings();
-        let provider = input
+        let provider = command
             .provider
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
+            .as_ref()
+            .map(TrimmedText::as_str)
             .or(settings.preferred_provider.as_deref());
-        let try_fallbacks = input.try_fallbacks.unwrap_or(settings.try_fallbacks);
+        let try_fallbacks = command.try_fallbacks.unwrap_or(settings.try_fallbacks);
 
         let _ = self
             .event_tx
@@ -1287,7 +1314,7 @@ impl CognitionWebSearchTool {
             })
             .await;
 
-        let max_results = input.max_results.unwrap_or(8) as usize;
+        let max_results = command.max_results.unwrap_or(8) as usize;
         let chat_session_id = crate::runtime_session::resolve_active_chat_session_id_async(
             &self.turn_scope,
             &self.session_id,
@@ -1615,5 +1642,39 @@ mod tests {
         })
         .expect_err("missing template should fail");
         assert!(error.to_string().contains("template is required"));
+    }
+
+    #[test]
+    fn web_search_command_normalizes_query_and_provider() {
+        let command = WebSearchCommand::try_from(WebSearchInput {
+            query: Some("  rust async  ".to_string()),
+            mode: WebSearchModeInput::Search,
+            provider: Some("  duckduckgo  ".to_string()),
+            try_fallbacks: Some(true),
+            max_results: Some(12),
+        })
+        .expect("command");
+
+        assert_eq!(command.query.as_str(), "rust async");
+        assert_eq!(
+            command.provider.as_ref().map(TrimmedText::as_str),
+            Some("duckduckgo")
+        );
+        assert_eq!(command.mode.as_str(), "search");
+        assert_eq!(command.try_fallbacks, Some(true));
+        assert_eq!(command.max_results, Some(12));
+    }
+
+    #[test]
+    fn web_search_command_rejects_blank_query() {
+        let error = WebSearchCommand::try_from(WebSearchInput {
+            query: Some(" \n\t".to_string()),
+            mode: WebSearchModeInput::default(),
+            provider: None,
+            try_fallbacks: None,
+            max_results: None,
+        })
+        .expect_err("blank query should fail");
+        assert!(error.to_string().contains("query is required"));
     }
 }
