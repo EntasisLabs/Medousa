@@ -89,8 +89,12 @@ pub(crate) fn render(frame: &mut ratatui::Frame, state: &mut TuiState) {
             " Terminal  keys→PTY · Ctrl+C interrupt · Ctrl+Q quit · Ctrl+; t new  panes:{pane_n}{prefix_hint}  |  obs:{obs_count} "
         ),
         _ => format!(
-            " {}  depth:{}  session:{session_short}  panes:{pane_n} desk:{desk_idx}/{desk_n}{}{}  |  obs:{obs_count} jobs:{jobs_count} drops:{drops}  [Ctrl+O] ",
-            state.provider_model, state.response_depth_mode, thinking_hint, prefix_hint
+            " {}  depth:{}  conn:{}  session:{session_short}  panes:{pane_n} desk:{desk_idx}/{desk_n}{}{}  |  obs:{obs_count} jobs:{jobs_count} drops:{drops}  [Ctrl+O] ",
+            state.provider_model,
+            state.response_depth_mode,
+            state.workshop_label,
+            thinking_hint,
+            prefix_hint
         ),
     };
     let input_display = match active_kind {
@@ -171,6 +175,8 @@ pub(crate) fn render(frame: &mut ratatui::Frame, state: &mut TuiState) {
         render_forge_picker_overlay(frame, state);
     } else if state.mode == UiMode::TerminalPicker {
         render_terminal_picker_overlay(frame, state);
+    } else if state.mode == UiMode::ConnectionPicker {
+        render_connection_picker_overlay(frame, state);
     } else if state.mode == UiMode::History {
         render_history_overlay(frame, state);
     } else if state.mode == UiMode::CommandPalette {
@@ -701,6 +707,80 @@ fn render_terminal_pane(
     drop(grid);
     let widget = Paragraph::new(Text::from(lines)).style(Style::default().bg(ui_panel_bg()));
     frame.render_widget(widget, inner);
+}
+
+fn render_connection_picker_overlay(frame: &mut ratatui::Frame, state: &TuiState) {
+    let area = frame.area();
+    let popup = centered_rect(area, 78, 72);
+    frame.render_widget(Clear, popup);
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from(Span::styled(
+        format!(
+            " Connection  current:{}  scope:{} ",
+            state.workshop_label, state.workshop_scope
+        ),
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )));
+    if state.connection_picker_editing_custom {
+        lines.push(Line::from(Span::styled(
+            format!(" Paste URL: {}_  Enter apply · Esc cancel", state.connection_picker_custom),
+            Style::default().fg(Color::Yellow),
+        )));
+    } else {
+        lines.push(Line::from(Span::styled(
+            format!(
+                "Filter: /{}   Enter switch · u paste URL · Esc close · Ctrl+; w",
+                state.connection_picker_query
+            ),
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+    lines.push(Line::from(""));
+    if state.connection_picker_hits.is_empty() && !state.connection_picker_editing_custom {
+        lines.push(Line::from(Span::styled(
+            "No workshops listed — press u to paste a daemon URL",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        for (idx, hit) in state.connection_picker_hits.iter().enumerate() {
+            let selected = idx == state.connection_picker_selected;
+            let marker = if selected { ">" } else { " " };
+            let style = if selected {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            let active = if medousa::tui::workshop_connection::normalize_daemon_url(&hit.url)
+                == medousa::tui::workshop_connection::normalize_daemon_url(&state.daemon_url)
+            {
+                " ●"
+            } else {
+                ""
+            };
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "{marker} {}{active}  [{}]",
+                    hit.label,
+                    super::connection_runtime::choice_subtitle(hit)
+                ),
+                style,
+            )));
+        }
+    }
+    let widget = Paragraph::new(Text::from(lines))
+        .block(
+            Block::default()
+                .title(" Connection ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(ui_accent_primary()))
+                .style(Style::default().bg(ui_modal_bg())),
+        )
+        .wrap(Wrap { trim: false });
+    frame.render_widget(widget, popup);
 }
 
 fn render_terminal_picker_overlay(frame: &mut ratatui::Frame, state: &TuiState) {

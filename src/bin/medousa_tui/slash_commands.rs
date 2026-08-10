@@ -37,6 +37,10 @@ pub(crate) async fn handle_slash_command(
                 state,
                 "  /terminal open workshop shell pane (Ctrl+; t / T)".to_string(),
             );
+            push_obs_alert(
+                state,
+                "  /connection switch workshop daemon (Ctrl+; w)".to_string(),
+            );
             push_obs_alert(state, "  /close    quit medousa_tui".to_string());
         }
         "/notes" | "/library" => {
@@ -90,6 +94,15 @@ pub(crate) async fn handle_slash_command(
                 terminal_runtime::open_terminal_picker(state).await;
             } else {
                 let _ = terminal_runtime::attach_or_create_terminal(state, Some(rest), None).await;
+            }
+        }
+        "/connection" | "/connect" | "/workshop" => {
+            let rest = parts.collect::<Vec<_>>().join(" ");
+            let rest = rest.trim();
+            if rest.is_empty() {
+                connection_runtime::open_connection_picker(state);
+            } else {
+                let _ = connection_runtime::apply_connection(state, rest, None, None).await;
             }
         }
         "/new" => {
@@ -396,7 +409,7 @@ pub(crate) async fn handle_slash_command(
             }
         }
         "/daemon" => {
-            return handle_daemon_command(&mut parts, state);
+            return handle_daemon_command(&mut parts, state).await;
         }
         "/budget" => {
             let sub = parts.next().unwrap_or("list");

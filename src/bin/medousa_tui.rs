@@ -106,6 +106,8 @@ mod notes_runtime;
 mod forge_runtime;
 #[path = "medousa_tui/terminal_runtime.rs"]
 mod terminal_runtime;
+#[path = "medousa_tui/connection_runtime.rs"]
+mod connection_runtime;
 
 use agent_runtime::{start_prompt_run, stop_active_generation};
 use editor_runtime::{load_editor_file, run_editor_source_via_runtime, save_editor_buffer};
@@ -274,6 +276,15 @@ struct TuiState {
     terminal_picker_hits: Vec<terminal_runtime::ShellSessionSummary>,
     terminal_picker_selected: usize,
     terminal_picker_query: String,
+    /// Workshop Connection scope (Home v4 analogue) for pane layout persist.
+    workshop_scope: String,
+    workshop_label: String,
+    /// Connection picker (Settings → Connection analogue).
+    connection_picker_hits: Vec<medousa::tui::workshop_connection::ConnectionChoice>,
+    connection_picker_selected: usize,
+    connection_picker_query: String,
+    connection_picker_custom: String,
+    connection_picker_editing_custom: bool,
 }
 
 pub(crate) fn build_tui_platform_config(state: &TuiState) -> TuiPlatformBuildConfig {
@@ -361,6 +372,7 @@ enum UiMode {
     ForgePicker,
     Terminal,
     TerminalPicker,
+    ConnectionPicker,
     History,
     CommandPalette,
     Settings,
@@ -604,7 +616,19 @@ async fn main() -> Result<()> {
             .as_deref()
             .unwrap_or(medousa::reasoning_effort::REASONING_EFFORT_DEFAULT),
     );
-    let resolved_daemon_url = resolve_daemon_url(daemon_url);
+    // Prefer explicit CLI; else env / last TUI Connection / default local.
+    let resolved_daemon_url = if daemon_url.map(str::trim).is_some_and(|u| !u.is_empty()) {
+        resolve_daemon_url(daemon_url)
+    } else {
+        medousa::tui::workshop_connection::resolve_tui_daemon_url(None)
+    };
+    let (workshop_scope, workshop_label) =
+        connection_runtime::resolve_scope_for_url(&resolved_daemon_url);
+    let _ = medousa::tui::workshop_connection::remember_daemon(
+        &resolved_daemon_url,
+        Some(&workshop_label),
+        Some(&workshop_scope),
+    );
     let tui_platform_config = TuiPlatformBuildConfig::from_names(
         &resolved_backend,
         Some(&resolved_provider),
@@ -808,7 +832,10 @@ async fn main() -> Result<()> {
         markdown_cache: RefCell::new(HashMap::new()),
         markdown_cache_order: RefCell::new(VecDeque::new()),
         perf_baseline: None,
-        workspace: workspace_runtime::bootstrap_workspace_from_disk(&session_id),
+        workspace: workspace_runtime::bootstrap_workspace_from_disk(
+            &session_id,
+            &workshop_scope,
+        ),
         chat_lanes: workspace_runtime::empty_chat_lanes(),
         prefix_active: false,
         turn_sessions: HashMap::new(),
@@ -829,6 +856,13 @@ async fn main() -> Result<()> {
         terminal_picker_hits: Vec::new(),
         terminal_picker_selected: 0,
         terminal_picker_query: String::new(),
+        workshop_scope,
+        workshop_label,
+        connection_picker_hits: Vec::new(),
+        connection_picker_selected: 0,
+        connection_picker_query: String::new(),
+        connection_picker_custom: String::new(),
+        connection_picker_editing_custom: false,
     };
 
     terminal_runtime::restore_terminal_tabs(&mut state).await;
@@ -1534,6 +1568,13 @@ mod tests {
             terminal_picker_hits: Vec::new(),
             terminal_picker_selected: 0,
             terminal_picker_query: String::new(),
+            workshop_scope: "personal".to_string(),
+            workshop_label: "Local".to_string(),
+            connection_picker_hits: Vec::new(),
+            connection_picker_selected: 0,
+            connection_picker_query: String::new(),
+            connection_picker_custom: String::new(),
+            connection_picker_editing_custom: false,
         }
     }
 

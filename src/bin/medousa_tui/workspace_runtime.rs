@@ -7,8 +7,8 @@ use uuid::Uuid;
 
 use medousa::session::ConversationTurn;
 use medousa::tui::workspace::{
-    FocusDir, SplitDirection, WorkspaceShell, load_workspace_session, save_workspace_session,
-    short_session_title,
+    FocusDir, SplitDirection, WorkspaceShell, load_workspace_session_for,
+    save_workspace_session_for, short_session_title,
 };
 
 use super::{EventOutcome, TuiState, UiMode};
@@ -36,8 +36,8 @@ pub(crate) struct ChatLane {
     pub received_native_reasoning: bool,
 }
 
-pub(crate) fn bootstrap_workspace_from_disk(session_id: &str) -> WorkspaceShell {
-    if let Some(mut shell) = load_workspace_session() {
+pub(crate) fn bootstrap_workspace_from_disk(session_id: &str, scope: &str) -> WorkspaceShell {
+    if let Some(mut shell) = load_workspace_session_for(scope) {
         shell.sanitize();
         let title = short_session_title(session_id);
         shell.rebind_focused_chat_session(session_id, &title);
@@ -48,7 +48,7 @@ pub(crate) fn bootstrap_workspace_from_disk(session_id: &str) -> WorkspaceShell 
 }
 
 pub(crate) fn persist_workspace(state: &TuiState) {
-    let _ = save_workspace_session(&state.workspace);
+    let _ = save_workspace_session_for(&state.workshop_scope, &state.workspace);
 }
 
 pub(crate) fn live_stream_count(state: &TuiState) -> usize {
@@ -406,6 +406,10 @@ pub(crate) async fn handle_prefix_key(key: KeyEvent, state: &mut TuiState) -> Ev
             super::terminal_runtime::open_terminal_picker(state).await;
             EventOutcome::Continue
         }
+        KeyCode::Char('w') => {
+            super::connection_runtime::open_connection_picker(state);
+            EventOutcome::Continue
+        }
         KeyCode::Char('n') => {
             if state.workspace.cycle_tab(true) {
                 if let Some(sid) = state
@@ -453,7 +457,7 @@ pub(crate) async fn handle_prefix_key(key: KeyEvent, state: &mut TuiState) -> Ev
         KeyCode::Char('?') => {
             super::push_obs(
                 state,
-                "panes: Ctrl+; then % \" h j k l z x c o f r t T n p 1-4".to_string(),
+                "panes: Ctrl+; then % \" h j k l z x c o f r t T w n p 1-4".to_string(),
             );
             EventOutcome::Continue
         }
@@ -461,7 +465,7 @@ pub(crate) async fn handle_prefix_key(key: KeyEvent, state: &mut TuiState) -> Ev
         _ => {
             super::push_obs(
                 state,
-                "prefix: % \" h/j/k/l z x c o f r t/T n/p 1-4 ?".to_string(),
+                "prefix: % \" h/j/k/l z x c o f r t/T w n/p 1-4 ?".to_string(),
             );
             EventOutcome::Continue
         }

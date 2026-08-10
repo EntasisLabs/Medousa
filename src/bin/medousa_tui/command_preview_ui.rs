@@ -34,7 +34,7 @@ const CATEGORY_ORDER: [PaletteCategory; 5] = [
     PaletteCategory::SafetyKeys,
 ];
 
-const PALETTE_ACTIONS: [PaletteAction; 23] = [
+const PALETTE_ACTIONS: [PaletteAction; 24] = [
     PaletteAction {
         category: PaletteCategory::QuickActions,
         title: "Start New Chat",
@@ -61,6 +61,15 @@ const PALETTE_ACTIONS: [PaletteAction; 23] = [
         risk: ActionRisk::Safe,
         key_hint: "Ctrl+; t",
         aliases: &["terminal", "shell", "term", "pty"],
+    },
+    PaletteAction {
+        category: PaletteCategory::QuickActions,
+        title: "Connection",
+        subtitle: "Switch workshop daemon (local / Home registry / URL)",
+        command: "/connection",
+        risk: ActionRisk::Safe,
+        key_hint: "Ctrl+; w",
+        aliases: &["connection", "workshop", "daemon", "connect"],
     },
     PaletteAction {
         category: PaletteCategory::QuickActions,
@@ -906,6 +915,7 @@ fn command_effect(command: &str) -> &'static str {
         "/new" => "Resets context to a fresh conversation.",
         "/notes" => "Opens the vault notes picker (Library-lite).",
         "/terminal" => "Opens a workshop shell session pane (or attaches by id).",
+        "/connection" => "Opens the Connection picker to switch workshop daemon URL.",
         "/history" => "Opens session history for quick switching.",
         "/name" => "Shows or sets a global display name for the current session.",
         "/name " => "Sets the global display name (stored in Surreal on daemon runtime).",

@@ -9,7 +9,9 @@ mod session;
 mod split_tree;
 
 pub use persist::{
-    clear_workspace_session, load_workspace_session, save_workspace_session, workspace_session_path,
+    clear_workspace_session, clear_workspace_session_for, legacy_workspace_session_path,
+    load_workspace_session, load_workspace_session_for, save_workspace_session,
+    save_workspace_session_for, workspace_session_path, workspace_session_path_for,
 };
 pub use session::{
     ChatTab, EditorGroup, FocusDir, MAX_SHELL_DESKTOPS, MAX_SHELL_PANES, MAX_TABS, ShellDesktop,

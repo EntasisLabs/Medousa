@@ -106,6 +106,9 @@ pub(crate) async fn handle_key_event(
     if state.mode == UiMode::TerminalPicker {
         return super::terminal_runtime::handle_terminal_picker_key(key, state).await;
     }
+    if state.mode == UiMode::ConnectionPicker {
+        return super::connection_runtime::handle_connection_picker_key(key, state).await;
+    }
     if state.mode == UiMode::Terminal {
         return super::terminal_runtime::handle_terminal_key(key, state).await;
     }

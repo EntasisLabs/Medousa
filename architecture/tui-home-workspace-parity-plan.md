@@ -1,6 +1,6 @@
 # TUI ↔ Home workspace parity
 
-> **Status:** Implementing (P0–P4 landed; P5 next)  
+> **Status:** Implementing (P0–P5 landed)  
 > **Date:** 2026-08-07  
 > **Related:** [component-tui.md](component-tui.md), [coding-session-terminal.md](coding-session-terminal.md),
 > [code-surface-bridge-plan.md](code-surface-bridge-plan.md), [medousa-anywhere-plan.md](medousa-anywhere-plan.md),
@@ -214,11 +214,20 @@ the same session ids the TUI attached.
 - split while Terminal-focused creates a new shell session pane
 - Follow-ups: richer SGR/colors, scrollback pager, lease-staged command log
 
-### Phase 5 — Workshop connection polish
+### Phase 5 — Workshop connection polish ✅ (v1)
 
 - TUI workshop picker aligned with Home Connection (local / portal / paired)
 - persist workspace session **scoped per workshop id** (Home v4 pattern)
 - document handoff: same session id opens in Home chat without fork
+
+**Landed (v1):**
+- Scoped layout: `{dataDir}/tui_workspaces/{scope}/tui_workspace_session_v1.json`
+  (`scope` = Home `workshops.json` id when URL matches, else `personal` / URL hash)
+- Legacy unscoped `tui_workspace_session_v1.json` migrates once into the active scope
+- `Ctrl+; w` / `/connection` / palette **Connection** — local + Home registry + recent + paste URL
+- Remembers last Connection (`tui_active_connection_v1.json`) when `--daemon-url` unset
+- Handoff note in `docs/cookbook/cli-and-workspace.md`
+- Follow-ups: QR/Iroh join from TUI, LAN browse without an already-reachable daemon
 
 ## What to lift from Home vs rewrite
 
