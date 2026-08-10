@@ -8,7 +8,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use stasis::prelude::{Result as StasisResult, StasisError};
 
-use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
+use crate::typed_tools::{CompatOption, ExternalJson, ToolId, medousa_tool};
 
 pub const COGNITION_DETAMU_STATUS: &str = "cognition_detamu_status";
 pub const COGNITION_DETAMU_FILES: &str = "cognition_detamu_files";
@@ -134,12 +134,12 @@ async fn daemon_get_query_pairs(path: &str, query: &[(String, String)]) -> Stasi
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DetamuStatusInput {
     /// Optional Forge work id — return Detamu snapshot binding
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    pub work_id: Option<String>,
+    pub work_id: CompatOption<String>,
 }
 
 #[medousa_tool(id = COGNITION_DETAMU_STATUS_ID)]
@@ -149,8 +149,9 @@ impl CognitionDetamuStatusTool {
         &self,
         input: DetamuStatusInput,
     ) -> stasis::prelude::Result<ExternalJson> {
+        let work_id = input.work_id.into_option();
         let mut status = daemon_get("/v1/world/status").await?;
-        if let Some(work_id) = input.work_id.as_deref().filter(|s| !s.trim().is_empty()) {
+        if let Some(work_id) = work_id.as_deref().filter(|s| !s.trim().is_empty()) {
             match daemon_get(&format!("/v1/world/bindings/{work_id}")).await {
                 Ok(binding) => {
                     if let Some(obj) = status.as_object_mut() {
@@ -170,58 +171,63 @@ impl CognitionDetamuStatusTool {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DetamuFilesInput {
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    pub work_id: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    pub work_id: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    pub world: Option<String>,
+    pub world: CompatOption<String>,
     /// Snapshot version (commit OID)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
+    pub version: CompatOption<String>,
     /// Optional path filter
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    pub path: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_u64"
+    pub path: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
-    pub limit: Option<u64>,
+    pub limit: CompatOption<u64>,
 }
 
 #[medousa_tool(id = COGNITION_DETAMU_FILES_ID)]
 impl CognitionDetamuFilesTool {
     /// List file entities from a Detamu snapshot (inventory). Prefer work_id when a Forge undertaking is bound. Detamu domain only — opt-in.
     async fn invoke_typed(&self, input: DetamuFilesInput) -> stasis::prelude::Result<ExternalJson> {
+        let work_id = input.work_id.into_option();
+        let world = input.world.into_option();
+        let version = input.version.into_option();
+        let path = input.path.into_option();
+        let limit = input.limit.into_option();
         let mut query = Vec::new();
-        if let Some(v) = input.work_id.as_deref() {
+        if let Some(v) = work_id.as_deref() {
             query.push(("work_id", v.to_owned()));
         }
-        if let Some(v) = input.world.as_deref() {
+        if let Some(v) = world.as_deref() {
             query.push(("world", v.to_owned()));
         }
-        if let Some(v) = input.version.as_deref() {
+        if let Some(v) = version.as_deref() {
             query.push(("version", v.to_owned()));
         }
-        if let Some(v) = input.path.as_deref() {
+        if let Some(v) = path.as_deref() {
             query.push(("path", v.to_owned()));
         }
-        if let Some(v) = input.limit {
+        if let Some(v) = limit {
             query.push(("limit", v.to_string()));
         }
         if query.iter().all(|(k, _)| *k != "work_id" && *k != "world") {
@@ -248,38 +254,38 @@ pub fn register_detamu_tools(
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DetamuImpactInput {
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    pub work_id: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    pub work_id: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    pub world: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    pub world: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
+    pub version: CompatOption<String>,
     /// Detamu entity id (e.g. code:symbol:...)
     pub entity_id: String,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_u64"
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
-    pub max_depth: Option<u64>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_u64"
+    pub max_depth: CompatOption<u64>,
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
-    pub max_nodes: Option<u64>,
+    pub max_nodes: CompatOption<u64>,
 }
 
 #[medousa_tool(id = COGNITION_DETAMU_IMPACT_ID)]
@@ -289,23 +295,24 @@ impl CognitionDetamuImpactTool {
         &self,
         input: DetamuImpactInput,
     ) -> stasis::prelude::Result<ExternalJson> {
-        require_snapshot_selector(
-            input.work_id.as_deref(),
-            input.world.as_deref(),
-            input.version.as_deref(),
-        )?;
+        let work_id = input.work_id.into_option();
+        let world = input.world.into_option();
+        let version = input.version.into_option();
+        let max_depth = input.max_depth.into_option();
+        let max_nodes = input.max_nodes.into_option();
+        require_snapshot_selector(work_id.as_deref(), world.as_deref(), version.as_deref())?;
         let mut query = Vec::new();
         push_snapshot_query(
-            input.work_id.as_deref(),
-            input.world.as_deref(),
-            input.version.as_deref(),
+            work_id.as_deref(),
+            world.as_deref(),
+            version.as_deref(),
             &mut query,
         );
         query.push(("entity_id".into(), input.entity_id));
-        if let Some(v) = input.max_depth {
+        if let Some(v) = max_depth {
             query.push(("max_depth".into(), v.to_string()));
         }
-        if let Some(v) = input.max_nodes {
+        if let Some(v) = max_nodes {
             query.push(("max_nodes".into(), v.to_string()));
         }
         daemon_get_query_pairs("/v1/world/impact", &query)
@@ -316,24 +323,24 @@ impl CognitionDetamuImpactTool {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DetamuCodeAvecInput {
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    pub work_id: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    pub work_id: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    pub world: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    pub world: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
+    pub version: CompatOption<String>,
 }
 
 #[medousa_tool(id = COGNITION_DETAMU_CODE_AVEC_ID)]
@@ -343,16 +350,15 @@ impl CognitionDetamuCodeAvecTool {
         &self,
         input: DetamuCodeAvecInput,
     ) -> stasis::prelude::Result<ExternalJson> {
-        require_snapshot_selector(
-            input.work_id.as_deref(),
-            input.world.as_deref(),
-            input.version.as_deref(),
-        )?;
+        let work_id = input.work_id.into_option();
+        let world = input.world.into_option();
+        let version = input.version.into_option();
+        require_snapshot_selector(work_id.as_deref(), world.as_deref(), version.as_deref())?;
         let mut query = Vec::new();
         push_snapshot_query(
-            input.work_id.as_deref(),
-            input.world.as_deref(),
-            input.version.as_deref(),
+            work_id.as_deref(),
+            world.as_deref(),
+            version.as_deref(),
             &mut query,
         );
         daemon_get_query_pairs("/v1/world/code_avec", &query)
@@ -363,77 +369,80 @@ impl CognitionDetamuCodeAvecTool {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DetamuFindInput {
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    pub work_id: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    pub work_id: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    pub world: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    pub world: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
+    pub version: CompatOption<String>,
     /// Entity kind (symbol, module, file, …)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    pub kind: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    pub kind: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    pub path: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    pub path: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    pub name_contains: Option<String>,
+    pub name_contains: CompatOption<String>,
     /// With path: resolve entity at line
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_u64"
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
-    pub line: Option<u64>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_u64"
+    pub line: CompatOption<u64>,
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
-    pub limit: Option<u64>,
+    pub limit: CompatOption<u64>,
 }
 
 #[medousa_tool(id = COGNITION_DETAMU_FIND_ID)]
 impl CognitionDetamuFindTool {
     /// Find Detamu code entities by kind/path/name (symbols, modules, files). Optional path+line resolves the narrowest entity at that location. Detamu domain only.
     async fn invoke_typed(&self, input: DetamuFindInput) -> stasis::prelude::Result<ExternalJson> {
-        require_snapshot_selector(
-            input.work_id.as_deref(),
-            input.world.as_deref(),
-            input.version.as_deref(),
-        )?;
+        let work_id = input.work_id.into_option();
+        let world = input.world.into_option();
+        let version = input.version.into_option();
+        let kind = input.kind.into_option();
+        let path = input.path.into_option();
+        let name_contains = input.name_contains.into_option();
+        let line = input.line.into_option();
+        let limit = input.limit.into_option();
+        require_snapshot_selector(work_id.as_deref(), world.as_deref(), version.as_deref())?;
         let mut query = Vec::new();
         push_snapshot_query(
-            input.work_id.as_deref(),
-            input.world.as_deref(),
-            input.version.as_deref(),
+            work_id.as_deref(),
+            world.as_deref(),
+            version.as_deref(),
             &mut query,
         );
-        if let Some(line) = input.line {
-            let path = input
-                .path
+        if let Some(line) = line {
+            let path = path
                 .as_deref()
                 .ok_or_else(|| StasisError::PortFailure("path required with line".into()))?;
             query.push(("path".into(), path.to_owned()));
@@ -442,20 +451,51 @@ impl CognitionDetamuFindTool {
                 .await
                 .map(ExternalJson::new);
         }
-        if let Some(v) = input.kind {
+        if let Some(v) = kind {
             query.push(("kind".into(), v));
         }
-        if let Some(v) = input.path {
+        if let Some(v) = path {
             query.push(("path".into(), v));
         }
-        if let Some(v) = input.name_contains {
+        if let Some(v) = name_contains {
             query.push(("name_contains".into(), v));
         }
-        if let Some(v) = input.limit {
+        if let Some(v) = limit {
             query.push(("limit".into(), v.to_string()));
         }
         daemon_get_query_pairs("/v1/world/find", &query)
             .await
             .map(ExternalJson::new)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn detamu_wire_optionals_absorb_wrong_legacy_types() {
+        let input: DetamuFindInput = serde_json::from_value(json!({
+            "work_id": 7,
+            "world": false,
+            "version": ["snapshot"],
+            "kind": 12,
+            "path": null,
+            "name_contains": {"value": "symbol"},
+            "line": "twenty",
+            "limit": -1,
+            "entity_id": "unused"
+        }))
+        .expect("compatible Detamu input");
+
+        assert!(input.work_id.is_none());
+        assert!(input.world.is_none());
+        assert!(input.version.is_none());
+        assert!(input.kind.is_none());
+        assert!(input.path.is_none());
+        assert!(input.name_contains.is_none());
+        assert!(input.line.is_none());
+        assert!(input.limit.is_none());
     }
 }
