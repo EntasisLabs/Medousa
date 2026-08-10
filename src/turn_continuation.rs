@@ -6,8 +6,6 @@ use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use stasis::domain::runtime::job::JobState;
-use stasis::ports::outbound::runtime::job_attempt_store::JobAttemptStore;
-use stasis::ports::outbound::runtime::job_store::JobStore;
 use stasis::prelude::RuntimeComposition;
 use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
@@ -15,6 +13,7 @@ use surrealdb_types::SurrealValue;
 use tokio::sync::RwLock as AsyncRwLock;
 
 use crate::channel_delivery::{self, ChannelDeliveryTarget};
+use crate::runtime_composition_ext::RuntimeCompositionExt;
 
 const TABLE: &str = "turn_continuation_record";
 
@@ -235,32 +234,20 @@ pub async fn replay_dead_letter_job(
     runtime: &RuntimeComposition,
     job_id: &str,
 ) -> anyhow::Result<bool> {
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt
-            .replay_dead_letter_now(job_id)
-            .await
-            .map_err(|err| anyhow::anyhow!("replay dead letter failed: {err}")),
-        RuntimeComposition::Surreal(rt) => rt
-            .replay_dead_letter_now(job_id)
-            .await
-            .map_err(|err| anyhow::anyhow!("replay dead letter failed: {err}")),
-    }
+    runtime
+        .replay_dead_letter_now(job_id)
+        .await
+        .map_err(|err| anyhow::anyhow!("replay dead letter failed: {err}"))
 }
 
 pub async fn materialize_recurring_now(
     runtime: &RuntimeComposition,
     scheduler_id: &str,
 ) -> anyhow::Result<usize> {
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt
-            .materialize_recurring_now(scheduler_id)
-            .await
-            .map_err(|err| anyhow::anyhow!("materialize recurring failed: {err}")),
-        RuntimeComposition::Surreal(rt) => rt
-            .materialize_recurring_now(scheduler_id)
-            .await
-            .map_err(|err| anyhow::anyhow!("materialize recurring failed: {err}")),
-    }
+    runtime
+        .materialize_recurring_now(scheduler_id)
+        .await
+        .map_err(|err| anyhow::anyhow!("materialize recurring failed: {err}"))
 }
 
 pub async fn find_active_job_by_correlation_id(
@@ -268,10 +255,7 @@ pub async fn find_active_job_by_correlation_id(
     correlation_id: &str,
 ) -> Option<String> {
     for state in [JobState::Enqueued, JobState::Leased, JobState::Running] {
-        let jobs = match runtime {
-            RuntimeComposition::InMemory(rt) => rt.job_store.list_by_state(state).await,
-            RuntimeComposition::Surreal(rt) => rt.job_store.list_by_state(state).await,
-        };
+        let jobs = runtime.list_jobs_by_state(state).await;
         let Ok(jobs) = jobs else {
             continue;
         };
@@ -292,20 +276,16 @@ pub async fn patch_existing_job_correlation(
     scope: &TurnContinuationScope,
     tool_name: &str,
 ) -> anyhow::Result<()> {
-    let job = match runtime {
-        RuntimeComposition::InMemory(rt) => rt.job_store.get(job_id).await,
-        RuntimeComposition::Surreal(rt) => rt.job_store.get(job_id).await,
-    }
-    .map_err(|err| anyhow::anyhow!("load job for correlation patch failed: {err}"))?;
+    let job = runtime
+        .get_job(job_id)
+        .await
+        .map_err(|err| anyhow::anyhow!("load job for correlation patch failed: {err}"))?;
 
     let Some(mut job) = job else {
         return Ok(());
     };
     apply_turn_correlation_to_existing_job(&mut job, scope, tool_name);
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt.job_store.save(job).await?,
-        RuntimeComposition::Surreal(rt) => rt.job_store.save(job).await?,
-    }
+    runtime.save_job(job).await?;
     Ok(())
 }
 
@@ -436,10 +416,7 @@ pub async fn resolve_succeeded_job_output_text(
     runtime: &RuntimeComposition,
     job_id: &str,
 ) -> Option<String> {
-    let attempts = match runtime {
-        RuntimeComposition::InMemory(rt) => rt.job_attempt_store.list_by_job_id(job_id).await,
-        RuntimeComposition::Surreal(rt) => rt.job_attempt_store.list_by_job_id(job_id).await,
-    };
+    let attempts = runtime.list_job_attempts(job_id).await;
     let Ok(attempts) = attempts else {
         return None;
     };

@@ -19,6 +19,8 @@ pub trait RuntimeCompositionExt {
     async fn save_job(&self, job: Job) -> Result<()>;
     async fn list_jobs_by_state(&self, state: JobState) -> Result<Vec<Job>>;
     async fn list_job_attempts(&self, job_id: &str) -> Result<Vec<JobAttempt>>;
+    async fn replay_dead_letter_now(&self, job_id: &str) -> Result<bool>;
+    async fn materialize_recurring_now(&self, scheduler_id: &str) -> Result<usize>;
     async fn enqueue_job(&self, job: NewJob) -> Result<()>;
     async fn list_recurring(&self) -> Result<Vec<RecurringDefinition>>;
     async fn save_recurring(&self, definition: RecurringDefinition) -> Result<()>;
@@ -59,6 +61,20 @@ impl RuntimeCompositionExt for RuntimeComposition {
         match self {
             Self::InMemory(runtime) => runtime.job_attempt_store.list_by_job_id(job_id).await,
             Self::Surreal(runtime) => runtime.job_attempt_store.list_by_job_id(job_id).await,
+        }
+    }
+
+    async fn replay_dead_letter_now(&self, job_id: &str) -> Result<bool> {
+        match self {
+            Self::InMemory(runtime) => runtime.replay_dead_letter_now(job_id).await,
+            Self::Surreal(runtime) => runtime.replay_dead_letter_now(job_id).await,
+        }
+    }
+
+    async fn materialize_recurring_now(&self, scheduler_id: &str) -> Result<usize> {
+        match self {
+            Self::InMemory(runtime) => runtime.materialize_recurring_now(scheduler_id).await,
+            Self::Surreal(runtime) => runtime.materialize_recurring_now(scheduler_id).await,
         }
     }
 
