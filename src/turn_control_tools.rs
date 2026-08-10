@@ -8,7 +8,7 @@ use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
 use stasis::application::orchestration::tool_registry::StasisTool;
 
 use crate::semantic_values::TrimmedText;
-use crate::typed_tools::{ToolId, medousa_tool};
+use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 /// Canonical registry name (snake_case).
 pub const COGNITION_TURN_PREPARE_FINAL: &str = "cognition_turn_prepare_final";
@@ -359,7 +359,7 @@ struct TurnPrepareFinalCommand {
 impl From<TurnPrepareFinalInput> for TurnPrepareFinalCommand {
     fn from(input: TurnPrepareFinalInput) -> Self {
         Self {
-            reason: optional_trimmed(input.reason),
+            reason: optional_trimmed(input.reason.into_option()),
         }
     }
 }
@@ -469,28 +469,19 @@ impl<'de> Deserialize<'de> for TurnBeginWorkInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            message: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            goal: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            intent: Option<String>,
+            #[serde(default)]
+            message: CompatOption<String>,
+            #[serde(default)]
+            goal: CompatOption<String>,
+            #[serde(default)]
+            intent: CompatOption<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            message: input.message,
-            goal: input.goal,
-            intent: input.intent,
+            message: input.message.into_option(),
+            goal: input.goal.into_option(),
+            intent: input.intent.into_option(),
         })
     }
 }
@@ -572,16 +563,13 @@ impl<'de> Deserialize<'de> for TurnUpdateUserInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            message: Option<String>,
+            #[serde(default)]
+            message: CompatOption<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            message: input.message,
+            message: input.message.into_option(),
         })
     }
 }
@@ -755,12 +743,12 @@ pub struct CognitionTurnPrepareFinalTool;
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct TurnPrepareFinalInput {
     /// Optional short note for logs (not shown to the user)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "Option<String>",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    reason: Option<String>,
+    reason: CompatOption<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -811,22 +799,16 @@ impl<'de> Deserialize<'de> for TurnFinishInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            message: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            reason: Option<String>,
+            #[serde(default)]
+            message: CompatOption<String>,
+            #[serde(default)]
+            reason: CompatOption<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            message: input.message,
-            reason: input.reason,
+            message: input.message.into_option(),
+            reason: input.reason.into_option(),
         })
     }
 }
@@ -897,28 +879,19 @@ impl<'de> Deserialize<'de> for TurnCheckpointInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            message: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            awaiting: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            reason: Option<String>,
+            #[serde(default)]
+            message: CompatOption<String>,
+            #[serde(default)]
+            awaiting: CompatOption<String>,
+            #[serde(default)]
+            reason: CompatOption<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            message: input.message,
-            awaiting: input.awaiting,
-            reason: input.reason,
+            message: input.message.into_option(),
+            awaiting: input.awaiting.into_option(),
+            reason: input.reason.into_option(),
         })
     }
 }
@@ -997,28 +970,19 @@ impl<'de> Deserialize<'de> for TurnRequestMoreRoundsInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-            )]
-            requested_rounds: Option<usize>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            reason: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            progress_summary: Option<String>,
+            #[serde(default)]
+            requested_rounds: CompatOption<usize>,
+            #[serde(default)]
+            reason: CompatOption<String>,
+            #[serde(default)]
+            progress_summary: CompatOption<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            requested_rounds: input.requested_rounds,
-            reason: input.reason,
-            progress_summary: input.progress_summary,
+            requested_rounds: input.requested_rounds.into_option(),
+            reason: input.reason.into_option(),
+            progress_summary: input.progress_summary.into_option(),
         })
     }
 }
@@ -1261,6 +1225,21 @@ mod tests {
         let tool = CognitionTurnFinishTool;
         let out = tool.invoke(json!({})).await.expect("invoke");
         assert_eq!(out["ok"], false);
+    }
+
+    #[tokio::test]
+    async fn compatibility_option_keeps_wrong_typed_optional_input_lenient() {
+        let tool = CognitionTurnFinishTool;
+        let out = tool
+            .invoke(json!({ "message": 42, "reason": false }))
+            .await
+            .expect("wrong-typed optionals stay handler-visible");
+        assert_eq!(out["ok"], false);
+        assert!(
+            out["error"]
+                .as_str()
+                .is_some_and(|value| value.contains("message is required"))
+        );
     }
 
     #[tokio::test]
