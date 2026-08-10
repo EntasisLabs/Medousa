@@ -16,7 +16,6 @@ use crate::medousa_tool_loop::MedousaToolLoopPipeline;
 use stasis::application::orchestration::tool_registry::{StasisTool, ToolRegistry};
 use stasis::domain::runtime::job_attempt::JobAttemptOutcome;
 use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
-use stasis::ports::outbound::runtime::job_attempt_store::JobAttemptStore;
 use stasis::prelude::{
     RuntimeBackend, RuntimeComposition, StasisError,
 };
@@ -131,10 +130,7 @@ pub(crate) async fn run_grapheme_via_runtime(
         .await
         .map_err(|e| StasisError::PortFailure(format!("runtime process_once failed: {e}")))?;
 
-    let attempts = match &**runtime {
-        RuntimeComposition::InMemory(rt) => rt.job_attempt_store.list_by_job_id(&job_id).await?,
-        RuntimeComposition::Surreal(rt) => rt.job_attempt_store.list_by_job_id(&job_id).await?,
-    };
+    let attempts = runtime.as_ref().list_job_attempts(&job_id).await?;
 
     let last = attempts.last().ok_or_else(|| {
         StasisError::PortFailure(
@@ -569,14 +565,7 @@ impl CognitionGraphemeRunTool {
         let runtime_ref = Arc::clone(&self.runtime);
         let mut raw_output = match process_once(&runtime_ref, "cognition_tui").await {
             Ok(_) => {
-                let attempts = match &*runtime_ref {
-                    RuntimeComposition::InMemory(rt) => {
-                        rt.job_attempt_store.list_by_job_id(&job_id).await
-                    }
-                    RuntimeComposition::Surreal(rt) => {
-                        rt.job_attempt_store.list_by_job_id(&job_id).await
-                    }
-                };
+                let attempts = runtime_ref.list_job_attempts(&job_id).await;
 
                 match attempts {
                     Ok(list) => {
@@ -2059,12 +2048,7 @@ impl CognitionRuntimeJobStatusTool {
             )
         })?;
 
-        let attempts = match &*self.runtime {
-            RuntimeComposition::InMemory(rt) => {
-                rt.job_attempt_store.list_by_job_id(&job_id).await?
-            }
-            RuntimeComposition::Surreal(rt) => rt.job_attempt_store.list_by_job_id(&job_id).await?,
-        };
+        let attempts = self.runtime.list_job_attempts(&job_id).await?;
 
         let last = attempts.last();
         let latest_outcome = last
