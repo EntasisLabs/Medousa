@@ -21,7 +21,7 @@ use crate::events::TuiEvent;
 use crate::mcp_gateway_api::{McpInvokeRequest, McpTurnContext, McpTurnLane};
 use crate::mcp_gateway_client::McpGatewayClient;
 use crate::mcp_turn_token::mint_mcp_turn_token;
-use crate::semantic_values::TrimmedText;
+use crate::semantic_values::{RequiredContent, TrimmedText};
 use crate::tools::{run_grapheme_via_runtime, validate_grapheme_source_for_schedule};
 use crate::turn_continuation::{
     ContinuationAwaitMode, TurnContinuationScope, continuation_tool_metadata,
@@ -261,7 +261,12 @@ pub fn grapheme_source_for_binding(
     tool_input: &Value,
 ) -> stasis::prelude::Result<String> {
     if let Some(source) = tool_input.get("source").and_then(|value| value.as_str()) {
-        return Ok(source.to_string());
+        let source = RequiredContent::new(source.to_string()).map_err(|_| {
+            StasisError::PortFailure(
+                "cognition_capability_invoke: input.source must be non-empty".to_string(),
+            )
+        })?;
+        return Ok(source.into_string());
     }
 
     let query = tool_input
@@ -1463,6 +1468,25 @@ mod tests {
             .expect("source");
         assert!(source.contains("web.duckduckgo"));
         assert!(source.contains("phoenix events"));
+    }
+
+    #[test]
+    fn explicit_grapheme_source_preserves_content_bytes() {
+        let binding = CapabilityBinding::grapheme("custom.operation", 10, true);
+        let source = grapheme_source_for_binding(
+            &binding,
+            &json!({ "source": "  query Custom { value }  \n" }),
+        )
+        .expect("source");
+        assert_eq!(source, "  query Custom { value }  \n");
+    }
+
+    #[test]
+    fn explicit_grapheme_source_rejects_blank_content() {
+        let binding = CapabilityBinding::grapheme("custom.operation", 10, true);
+        let error = grapheme_source_for_binding(&binding, &json!({ "source": " \n\t" }))
+            .expect_err("blank source should fail");
+        assert!(error.to_string().contains("input.source must be non-empty"));
     }
 
     #[test]
