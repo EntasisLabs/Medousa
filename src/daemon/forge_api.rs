@@ -34,6 +34,7 @@ use crate::daemon::forge_projections::{
 };
 use crate::daemon::forge_events::ForgeProjectEventKind;
 use crate::daemon::state::AppState;
+use crate::semantic_values::TrimmedText;
 
 fn publish_item(state: &AppState, item: &WorkItem, kind: &str) {
     state
@@ -1266,43 +1267,67 @@ pub(crate) fn start_code_project_for_session(
         .map_err(|(_, Json(error))| error.error)
 }
 
+#[derive(Debug)]
+struct StartCodeProjectCommand {
+    session_id: TrimmedText,
+    title: TrimmedText,
+    brief: TrimmedText,
+    source: CodeProjectSource,
+    repo_path: Option<TrimmedText>,
+    base_ref: TrimmedText,
+}
+
+impl StartCodeProjectCommand {
+    fn new(session_id: &str, input: StartSessionCodeProjectRequest) -> Result<Self, String> {
+        let StartSessionCodeProjectRequest {
+            title,
+            brief,
+            source,
+            repo_path,
+            base_ref,
+        } = input;
+        let (session_id, title, brief) = match (
+            TrimmedText::new(session_id.to_string()),
+            TrimmedText::new(title),
+            TrimmedText::new(brief),
+        ) {
+            (Ok(session_id), Ok(title), Ok(brief)) => (session_id, title, brief),
+            _ => return Err("session_id, title, and brief are required".to_string()),
+        };
+        let repo_path = repo_path.and_then(|value| TrimmedText::new(value).ok());
+        if source == CodeProjectSource::Repository && repo_path.is_none() {
+            return Err("repo_path is required for an existing repository".to_string());
+        }
+        let base_ref = base_ref
+            .and_then(|value| TrimmedText::new(value).ok())
+            .unwrap_or_else(|| TrimmedText::new("main").expect("literal is nonblank"));
+        Ok(Self {
+            session_id,
+            title,
+            brief,
+            source,
+            repo_path,
+            base_ref,
+        })
+    }
+}
+
 fn start_code_project_for_session_inner(
     state: &AppState,
     session_id: &str,
     body: StartSessionCodeProjectRequest,
 ) -> ApiResult<SessionCodeProjectResponse> {
-    let session_id = session_id.trim();
-    let title = body.title.trim();
-    let brief = body.brief.trim();
-    if session_id.is_empty() || title.is_empty() || brief.is_empty() {
-        return Err(request_error(
-            StatusCode::BAD_REQUEST,
-            "session_id, title, and brief are required",
-        ));
-    }
-
-    let base_ref = body
-        .base_ref
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("main")
-        .to_string();
-    let (repo_path, created_repository) = match body.source {
+    let command = StartCodeProjectCommand::new(session_id, body)
+        .map_err(|error| request_error(StatusCode::BAD_REQUEST, error))?;
+    let session_id = command.session_id.as_str();
+    let title = command.title.as_str();
+    let brief = command.brief.as_str();
+    let base_ref = command.base_ref.as_str().to_string();
+    let (repo_path, created_repository) = match command.source {
         CodeProjectSource::Blank => (create_blank_repository(title, &base_ref)?, true),
         CodeProjectSource::Repository => {
-            let path = body
-                .repo_path
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .ok_or_else(|| {
-                    request_error(
-                        StatusCode::BAD_REQUEST,
-                        "repo_path is required for an existing repository",
-                    )
-                })?;
-            (PathBuf::from(path), false)
+            let path = command.repo_path.as_ref().expect("validated repository path");
+            (PathBuf::from(path.as_str()), false)
         }
     };
 
@@ -8062,6 +8087,62 @@ async fn forge_project_event_stream(
 #[cfg(test)]
 mod source_tests {
     use super::*;
+
+    #[test]
+    fn start_code_project_command_normalizes_request_fields() {
+        let command = StartCodeProjectCommand::new(
+            " session-a ",
+            StartSessionCodeProjectRequest {
+                title: " Project ".into(),
+                brief: " Brief ".into(),
+                source: CodeProjectSource::Repository,
+                repo_path: Some(" /workspace/project ".into()),
+                base_ref: Some("  ".into()),
+            },
+        )
+        .expect("valid project request");
+
+        assert_eq!(command.session_id.as_str(), "session-a");
+        assert_eq!(command.title.as_str(), "Project");
+        assert_eq!(command.brief.as_str(), "Brief");
+        assert_eq!(
+            command.repo_path.as_ref().unwrap().as_str(),
+            "/workspace/project"
+        );
+        assert_eq!(command.base_ref.as_str(), "main");
+    }
+
+    #[test]
+    fn start_code_project_command_rejects_missing_required_values() {
+        let missing_repo = StartCodeProjectCommand::new(
+            "session-a",
+            StartSessionCodeProjectRequest {
+                title: "Project".into(),
+                brief: "Brief".into(),
+                source: CodeProjectSource::Repository,
+                repo_path: Some(" \n\t".into()),
+                base_ref: None,
+            },
+        )
+        .expect_err("repository source requires a path");
+        assert_eq!(
+            missing_repo,
+            "repo_path is required for an existing repository"
+        );
+
+        let missing_title = StartCodeProjectCommand::new(
+            "session-a",
+            StartSessionCodeProjectRequest {
+                title: " \n\t".into(),
+                brief: "Brief".into(),
+                source: CodeProjectSource::Blank,
+                repo_path: None,
+                base_ref: None,
+            },
+        )
+        .expect_err("title is required");
+        assert_eq!(missing_title, "session_id, title, and brief are required");
+    }
 
     #[test]
     fn porcelain_change_status_maps_kinds() {
