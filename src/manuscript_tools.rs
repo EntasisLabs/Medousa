@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use stasis::prelude::StasisError;
 
 use crate::identity_manuscript::{ManuscriptScope, build_manuscript_context, list_manuscripts};
+use crate::semantic_values::TrimmedText;
 use crate::typed_tools::{ToolId, medousa_tool};
 
 const COGNITION_MANUSCRIPT_LIST_ID: ToolId = ToolId::new("cognition_manuscript_list");
@@ -36,6 +37,26 @@ pub struct ManuscriptListInput {
     )]
     #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
     pub limit: Option<usize>,
+}
+
+#[derive(Debug)]
+struct ManuscriptListCommand {
+    prefix: Option<TrimmedText>,
+    limit: usize,
+}
+
+impl TryFrom<ManuscriptListInput> for ManuscriptListCommand {
+    type Error = stasis::prelude::StasisError;
+
+    fn try_from(input: ManuscriptListInput) -> Result<Self, Self::Error> {
+        Ok(Self {
+            prefix: input
+                .prefix
+                .as_deref()
+                .and_then(|value| TrimmedText::new(value).ok()),
+            limit: input.limit.unwrap_or(50).clamp(1, 200),
+        })
+    }
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -74,19 +95,14 @@ impl CognitionManuscriptListTool {
         &self,
         input: ManuscriptListInput,
     ) -> stasis::prelude::Result<ManuscriptListOutput> {
-        let prefix = input
-            .prefix
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
-        let limit = input.limit.unwrap_or(50).clamp(1, 200);
+        let command = ManuscriptListCommand::try_from(input)?;
 
         let mut entries =
             list_manuscripts().map_err(|err| StasisError::PortFailure(err.to_string()))?;
-        if let Some(prefix) = prefix {
-            entries.retain(|entry| entry.id.starts_with(prefix));
+        if let Some(prefix) = command.prefix.as_ref() {
+            entries.retain(|entry| entry.id.starts_with(prefix.as_str()));
         }
-        entries.truncate(limit);
+        entries.truncate(command.limit);
 
         let manuscripts = entries
             .into_iter()
@@ -130,6 +146,26 @@ pub struct ManuscriptResolveInput {
     )]
     #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
     pub include_prompt_preview: Option<bool>,
+}
+
+#[derive(Debug)]
+struct ManuscriptResolveCommand {
+    id: TrimmedText,
+    include_prompt_preview: bool,
+}
+
+impl TryFrom<ManuscriptResolveInput> for ManuscriptResolveCommand {
+    type Error = stasis::prelude::StasisError;
+
+    fn try_from(input: ManuscriptResolveInput) -> Result<Self, Self::Error> {
+        let id = TrimmedText::new(input.id).map_err(|_| {
+            StasisError::PortFailure("cognition_manuscript_resolve: id is required".to_string())
+        })?;
+        Ok(Self {
+            id,
+            include_prompt_preview: input.include_prompt_preview.unwrap_or(false),
+        })
+    }
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -192,21 +228,17 @@ impl CognitionManuscriptResolveTool {
         &self,
         input: ManuscriptResolveInput,
     ) -> stasis::prelude::Result<ManuscriptResolveOutput> {
-        let id = input.id.trim();
-        if id.is_empty() {
-            return Err(StasisError::PortFailure(
-                "cognition_manuscript_resolve: id is required".to_string(),
-            ));
-        }
-        let include_prompt_preview = input.include_prompt_preview.unwrap_or(false);
+        let command = ManuscriptResolveCommand::try_from(input)?;
 
-        let context = build_manuscript_context(id)
+        let context = build_manuscript_context(command.id.as_str())
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
-        let prompt_preview = include_prompt_preview.then(|| ManuscriptPromptPreview {
-            voice_appendix: truncate_preview(context.voice_appendix.as_deref()),
-            system_appendix: truncate_preview(context.system_appendix.as_deref()),
-            task_template: truncate_preview(context.task_template.as_deref()),
-        });
+        let prompt_preview = command
+            .include_prompt_preview
+            .then(|| ManuscriptPromptPreview {
+                voice_appendix: truncate_preview(context.voice_appendix.as_deref()),
+                system_appendix: truncate_preview(context.system_appendix.as_deref()),
+                task_template: truncate_preview(context.task_template.as_deref()),
+            });
         Ok(ManuscriptResolveOutput {
             ok: true,
             manuscript: ResolvedManuscript {
@@ -267,5 +299,29 @@ mod tests {
         let output = tool.invoke(json!({})).await.expect("list");
         assert!(output["dirs"]["project"].is_string());
         assert!(output["manuscripts"].is_array());
+    }
+
+    #[test]
+    fn manuscript_list_command_normalizes_prefix_and_clamps_limit() {
+        let command = ManuscriptListCommand::try_from(ManuscriptListInput {
+            prefix: Some("  morning  ".to_string()),
+            limit: Some(999),
+        })
+        .expect("command");
+        assert_eq!(
+            command.prefix.as_ref().map(TrimmedText::as_str),
+            Some("morning")
+        );
+        assert_eq!(command.limit, 200);
+    }
+
+    #[test]
+    fn manuscript_resolve_command_rejects_blank_id() {
+        let error = ManuscriptResolveCommand::try_from(ManuscriptResolveInput {
+            id: " \n\t".to_string(),
+            include_prompt_preview: None,
+        })
+        .expect_err("blank manuscript id should fail");
+        assert!(error.to_string().contains("id is required"));
     }
 }
