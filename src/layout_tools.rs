@@ -11,7 +11,7 @@ use stasis::prelude::{Result as StasisResult, StasisError};
 
 use crate::environment_store::{environment_hub, resolve_profile_id};
 use crate::semantic_values::TrimmedText;
-use crate::typed_tools::{ToolId, medousa_tool};
+use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_LAYOUT_GET: &str = "cognition_layout_get";
 pub const COGNITION_LAYOUT_APPLY: &str = "cognition_layout_apply";
@@ -35,12 +35,12 @@ struct CognitionLayoutGetTool;
 #[derive(Debug, Deserialize, JsonSchema)]
 struct LayoutSurfaceInput {
     surface_id: String,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    profile_id: Option<String>,
+    profile_id: CompatOption<String>,
 }
 
 #[derive(Debug)]
@@ -57,6 +57,7 @@ impl TryFrom<LayoutSurfaceInput> for LayoutSurfaceCommand {
             surface_id: required_layout_identifier(input.surface_id, "surface_id")?,
             profile_id: input
                 .profile_id
+                .into_option()
                 .and_then(|value| TrimmedText::new(value).ok()),
         })
     }
@@ -177,12 +178,12 @@ struct LayoutApplyInput {
     surface_id: String,
     /// LayoutNode tree — type vstack|hstack|v_stack|h_stack|grid|component; distribution fill_equally|fillEqually
     layout_root: LayoutRootInput,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    profile_id: Option<String>,
+    profile_id: CompatOption<String>,
 }
 
 #[derive(Debug)]
@@ -201,6 +202,7 @@ impl TryFrom<LayoutApplyInput> for LayoutApplyCommand {
             layout_root: input.layout_root.0,
             profile_id: input
                 .profile_id
+                .into_option()
                 .and_then(|value| TrimmedText::new(value).ok()),
         })
     }
@@ -351,7 +353,7 @@ mod tests {
     fn layout_commands_normalize_surface_and_profile_identifiers() {
         let surface = LayoutSurfaceCommand::try_from(LayoutSurfaceInput {
             surface_id: " custom-surface ".to_string(),
-            profile_id: Some(" profile-a ".to_string()),
+            profile_id: Some(" profile-a ".to_string()).into(),
         })
         .expect("surface command");
         assert_eq!(surface.surface_id.as_str(), "custom-surface");
@@ -366,7 +368,7 @@ mod tests {
                 id: "component-a".to_string(),
                 flex: Some(2),
             }),
-            profile_id: None,
+            profile_id: None.into(),
         })
         .expect("apply command");
         assert_eq!(apply.surface_id.as_str(), "custom-surface");
@@ -377,9 +379,27 @@ mod tests {
     fn layout_surface_command_rejects_blank_surface_id() {
         let error = LayoutSurfaceCommand::try_from(LayoutSurfaceInput {
             surface_id: " \n\t".to_string(),
-            profile_id: None,
+            profile_id: None.into(),
         })
         .expect_err("blank surface id should fail");
         assert!(error.to_string().contains("surface_id is required"));
+    }
+
+    #[test]
+    fn layout_wire_profiles_remain_lenient_for_legacy_values() {
+        let surface: LayoutSurfaceInput = serde_json::from_value(serde_json::json!({
+            "surface_id": "custom-surface",
+            "profile_id": 42,
+        }))
+        .expect("surface input");
+        assert!(surface.profile_id.into_option().is_none());
+
+        let apply: LayoutApplyInput = serde_json::from_value(serde_json::json!({
+            "surface_id": "custom-surface",
+            "layout_root": {"type": "component", "id": "component-a"},
+            "profile_id": false,
+        }))
+        .expect("apply input");
+        assert!(apply.profile_id.into_option().is_none());
     }
 }
