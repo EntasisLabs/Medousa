@@ -26,6 +26,7 @@ use crate::locus_memory::{
     resolve_locus_ingest_profile, resolve_memory_tool_session_id_typed, store_failure_guidance,
     typed_schema_first_guidance, typed_semantic_index_schema_guidance, validate_limit,
 };
+use crate::semantic_values::{RequiredContent, TrimmedText};
 use crate::turn_continuation::TurnContinuationScope;
 use crate::typed_tools::{ToolId, medousa_tool};
 
@@ -470,6 +471,53 @@ impl<'de> Deserialize<'de> for MemoryStoreInput {
     }
 }
 
+#[derive(Debug)]
+struct MemoryStoreCommand {
+    node: RequiredContent,
+    session_id: Option<TrimmedText>,
+    semantic_tags: Vec<TrimmedText>,
+    vibe_signature: Option<TrimmedText>,
+}
+
+impl TryFrom<MemoryStoreInput> for MemoryStoreCommand {
+    type Error = StasisError;
+
+    fn try_from(input: MemoryStoreInput) -> Result<Self, Self::Error> {
+        let node = input
+            .node
+            .and_then(|value| RequiredContent::new(value).ok())
+            .or_else(|| {
+                input
+                    .content
+                    .and_then(|value| RequiredContent::new(value).ok())
+            })
+            .ok_or_else(|| {
+                StasisError::PortFailure(
+                    "cognition_memory_store: `node` (full STTP string) is required. \
+                     Call cognition_memory_schema first."
+                        .to_string(),
+                )
+            })?;
+        let semantic_tags = input
+            .semantic_tags
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|value| TrimmedText::new(value).ok())
+            .collect();
+
+        Ok(Self {
+            node,
+            session_id: input
+                .session_id
+                .and_then(|value| TrimmedText::new(value).ok()),
+            semantic_tags,
+            vibe_signature: input
+                .vibe_signature
+                .and_then(|value| TrimmedText::new(value).ok()),
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct MemoryStoreErrorOutput {
     code: String,
@@ -506,28 +554,11 @@ impl CognitionMemoryStoreTool {
         &self,
         input: MemoryStoreInput,
     ) -> stasis::prelude::Result<MemoryStoreOutput> {
-        let node = input
-            .node
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .or_else(|| {
-                input
-                    .content
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-            })
-            .ok_or_else(|| {
-                StasisError::PortFailure(
-                    "cognition_memory_store: `node` (full STTP string) is required. \
-                     Call cognition_memory_schema first."
-                        .to_string(),
-                )
-            })?;
+        let command = MemoryStoreCommand::try_from(input)?;
+        let node = command.node.into_string();
 
         let session_id = resolve_memory_tool_session_id_typed(
-            input.session_id.as_deref(),
+            command.session_id.as_ref().map(TrimmedText::as_str),
             &self.turn_scope,
             &self.fallback_chat_session_id,
             self.workshop_dynamic,
@@ -541,12 +572,9 @@ impl CognitionMemoryStoreTool {
         )
         .await;
 
-        let vibe_signature = input
+        let vibe_signature = command
             .vibe_signature
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(str::to_string)
+            .map(TrimmedText::into_string)
             .unwrap_or_else(|| {
                 crate::agent_runtime::derive_vibe_signature(
                     &session_id,
@@ -556,14 +584,13 @@ impl CognitionMemoryStoreTool {
                 )
             });
         let mut tags = crate::locus_semantic_tags::default_workshop_semantic_tags(&session_id);
-        if let Some(extra) = input.semantic_tags {
-            for tag in extra {
-                if let Some(tag) = optional_nonempty(&tag) {
-                    tags.push(tag.to_string());
-                }
-            }
-        }
-        let tagged_node = crate::locus_semantic_tags::inject_semantic_tags(node, &tags);
+        tags.extend(
+            command
+                .semantic_tags
+                .into_iter()
+                .map(TrimmedText::into_string),
+        );
+        let tagged_node = crate::locus_semantic_tags::inject_semantic_tags(&node, &tags);
         let raw_node = crate::locus_memory::enrich_sttp_node_with_vibe_signature(
             &tagged_node,
             &vibe_signature,
@@ -1379,6 +1406,36 @@ impl<'de> Deserialize<'de> for MemoryRecallInput {
     }
 }
 
+#[derive(Debug)]
+struct MemoryRecallCommand {
+    query: TrimmedText,
+    session_id: MemorySessionScopeInput,
+    limit: usize,
+    semantic_tags: Option<CompatibleSemanticTags>,
+    tag_prefix: Option<TrimmedText>,
+}
+
+impl TryFrom<MemoryRecallInput> for MemoryRecallCommand {
+    type Error = StasisError;
+
+    fn try_from(input: MemoryRecallInput) -> Result<Self, Self::Error> {
+        let query = input.query.ok_or_else(|| {
+            StasisError::PortFailure("cognition_memory_recall: query is required".to_string())
+        })?;
+        Ok(Self {
+            query: TrimmedText::new(query).map_err(|_| {
+                StasisError::PortFailure("cognition_memory_recall: query is required".to_string())
+            })?,
+            session_id: input.session_id,
+            limit: input.limit.unwrap_or(5).min(20),
+            semantic_tags: input.semantic_tags,
+            tag_prefix: input
+                .tag_prefix
+                .and_then(|value| TrimmedText::new(value).ok()),
+        })
+    }
+}
+
 #[medousa_tool(id = COGNITION_MEMORY_RECALL_ID)]
 impl CognitionMemoryRecallTool {
     /// Retrieve memory by natural-language keywords (legacy). Prefer cognition_memory_context with explicit AVEC when possible. Optional semantic_tags or tag_prefix for indexed filtering. Pass session_id to scope to one session, or null to search across all sessions.
@@ -1386,24 +1443,23 @@ impl CognitionMemoryRecallTool {
         &self,
         input: MemoryRecallInput,
     ) -> stasis::prelude::Result<MemoryContextOutput> {
-        let query = input.query.as_deref().ok_or_else(|| {
-            StasisError::PortFailure("cognition_memory_recall: query is required".to_string())
-        })?;
-        let limit = input.limit.unwrap_or(5).min(20);
+        let command = MemoryRecallCommand::try_from(input)?;
+        let query = command.query.into_string();
+        let limit = command.limit;
 
-        emit_invoked(&self.event_tx, COGNITION_MEMORY_RECALL_ID.as_str(), query).await;
+        emit_invoked(&self.event_tx, COGNITION_MEMORY_RECALL_ID.as_str(), &query).await;
 
         let (s, f, l, a) = DEFAULT_RECALL_AVEC;
         self.context_tool
             .invoke_typed(MemoryContextInput {
-                session_id: input.session_id,
+                session_id: command.session_id,
                 stability: Some(s as f64),
                 friction: Some(f as f64),
                 logic: Some(l as f64),
                 autonomy: Some(a as f64),
-                context_keywords: Some(vec![query.to_string()]),
-                semantic_tags: input.semantic_tags,
-                tag_prefix: input.tag_prefix,
+                context_keywords: Some(vec![query]),
+                semantic_tags: command.semantic_tags,
+                tag_prefix: command.tag_prefix.map(TrimmedText::into_string),
                 limit: Some(limit),
                 alpha: None,
                 beta: None,
@@ -1788,6 +1844,82 @@ mod compatibility_tests {
                 .and_then(CompatibleSemanticTags::as_deref),
             Some(["profile:work".to_string(), "session".to_string()].as_slice())
         );
+    }
+
+    #[test]
+    fn memory_commands_preserve_sttp_boundaries_and_normalize_filters() {
+        let raw_node = "  ⊕⟨ prime: { context_summary: \"hello\" } ⟩  \n";
+        let store = MemoryStoreCommand::try_from(MemoryStoreInput {
+            node: Some(raw_node.to_string()),
+            session_id: Some(" session-a ".to_string()),
+            semantic_tags: Some(vec![" profile:work ".to_string(), " \n".to_string()]),
+            content: Some("fallback".to_string()),
+            vibe_signature: Some(" steady ".to_string()),
+        })
+        .expect("store command");
+        assert_eq!(store.node.as_str(), raw_node);
+        assert_eq!(
+            store.session_id.as_ref().map(TrimmedText::as_str),
+            Some("session-a")
+        );
+        assert_eq!(store.semantic_tags.len(), 1);
+        assert_eq!(store.semantic_tags[0].as_str(), "profile:work");
+        assert_eq!(
+            store.vibe_signature.as_ref().map(TrimmedText::as_str),
+            Some("steady")
+        );
+
+        let recall = MemoryRecallCommand::try_from(MemoryRecallInput {
+            query: Some("  decision  ".to_string()),
+            session_id: MemorySessionScopeInput::Global,
+            limit: Some(999),
+            semantic_tags: None,
+            tag_prefix: Some(" profile: ".to_string()),
+        })
+        .expect("recall command");
+        assert_eq!(recall.query.as_str(), "decision");
+        assert_eq!(recall.limit, 20);
+        assert_eq!(
+            recall.tag_prefix.as_ref().map(TrimmedText::as_str),
+            Some("profile:")
+        );
+    }
+
+    #[test]
+    fn memory_store_command_uses_legacy_content_without_trimming_bytes() {
+        let raw_content = "  legacy STTP  \n";
+        let store = MemoryStoreCommand::try_from(MemoryStoreInput {
+            node: Some(" \n\t".to_string()),
+            session_id: None,
+            semantic_tags: None,
+            content: Some(raw_content.to_string()),
+            vibe_signature: None,
+        })
+        .expect("legacy content fallback");
+        assert_eq!(store.node.as_str(), raw_content);
+    }
+
+    #[test]
+    fn memory_commands_reject_blank_required_content() {
+        let store_error = MemoryStoreCommand::try_from(MemoryStoreInput {
+            node: Some(" \n\t".to_string()),
+            session_id: None,
+            semantic_tags: None,
+            content: None,
+            vibe_signature: None,
+        })
+        .expect_err("blank memory node should fail");
+        assert!(store_error.to_string().contains("full STTP string"));
+
+        let recall_error = MemoryRecallCommand::try_from(MemoryRecallInput {
+            query: Some(" \n\t".to_string()),
+            session_id: MemorySessionScopeInput::Missing,
+            limit: None,
+            semantic_tags: None,
+            tag_prefix: None,
+        })
+        .expect_err("blank recall query should fail");
+        assert!(recall_error.to_string().contains("query is required"));
     }
 }
 
