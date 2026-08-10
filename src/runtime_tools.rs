@@ -25,7 +25,7 @@ use crate::recurring_delivery::{
 use crate::recurring_feed::{RecurringFeedSpec, bind_recurring_feed_spec_for_registration};
 use crate::recurring_schedule::RecurringScheduleSpec;
 use crate::runtime_composition_ext::RuntimeCompositionExt;
-use crate::semantic_values::TrimmedText;
+use crate::semantic_values::{RequiredContent, TrimmedText};
 use crate::tools::validate_grapheme_source_for_schedule;
 use crate::turn_continuation::{
     ContinuationAwaitMode, StoredDeliveryTarget, TurnContinuationScope, continuation_tool_metadata,
@@ -943,6 +943,78 @@ impl RuntimeRecurringRegisterInput {
     }
 }
 
+#[derive(Debug)]
+struct RuntimeRecurringRegisterCommand {
+    source: Option<RequiredContent>,
+    job_type: TrimmedText,
+    payload_template_ref: Option<TrimmedText>,
+    cron_expr: TrimmedText,
+    timezone: TrimmedText,
+    queue: TrimmedText,
+    recurring_id: Option<TrimmedText>,
+    jitter_seconds: i64,
+    max_attempts: u32,
+    enabled: bool,
+    start_immediately: bool,
+    delivery: Option<RecurringDeliverySpec>,
+    feeds: Option<RecurringFeedSpec>,
+}
+
+impl TryFrom<RuntimeRecurringRegisterInput> for RuntimeRecurringRegisterCommand {
+    type Error = StasisError;
+
+    fn try_from(input: RuntimeRecurringRegisterInput) -> Result<Self, Self::Error> {
+        let source = input
+            .source
+            .and_then(|value| RequiredContent::new(value).ok());
+        let job_type = input
+            .job_type
+            .and_then(|value| TrimmedText::new(value).ok())
+            .unwrap_or_else(|| {
+                TrimmedText::new(default_grapheme_job_type()).expect("literal is nonblank")
+            });
+        let payload_template_ref = input
+            .payload_template_ref
+            .and_then(|value| TrimmedText::new(value).ok());
+        let cron_expr = TrimmedText::new(input.cron_expr.unwrap_or_default()).map_err(|_| {
+            StasisError::PortFailure(
+                "cognition_runtime_recurring_register: cron_expr is required".to_string(),
+            )
+        })?;
+        let timezone = input
+            .timezone
+            .and_then(|value| TrimmedText::new(value).ok())
+            .unwrap_or_else(|| {
+                TrimmedText::new(default_runtime_timezone()).expect("literal is nonblank")
+            });
+        let queue = input
+            .queue
+            .and_then(|value| TrimmedText::new(value).ok())
+            .unwrap_or_else(|| {
+                TrimmedText::new(default_runtime_queue()).expect("literal is nonblank")
+            });
+        let recurring_id = input
+            .recurring_id
+            .and_then(|value| TrimmedText::new(value).ok());
+
+        Ok(Self {
+            source,
+            job_type,
+            payload_template_ref,
+            cron_expr,
+            timezone,
+            queue,
+            recurring_id,
+            jitter_seconds: input.jitter_seconds.unwrap_or(0),
+            max_attempts: input.max_attempts.unwrap_or(1) as u32,
+            enabled: input.enabled.unwrap_or(true),
+            start_immediately: input.start_immediately.unwrap_or(false),
+            delivery: input.delivery,
+            feeds: input.feeds,
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(untagged)]
 pub enum RuntimeRecurringRegisterOutput {
@@ -975,27 +1047,33 @@ impl CognitionRuntimeRecurringRegisterTool {
         &self,
         input: RuntimeRecurringRegisterInput,
     ) -> stasis::prelude::Result<RuntimeRecurringRegisterOutput> {
-        let cron_expr = input.cron_expr.as_deref().ok_or_else(|| {
-            StasisError::PortFailure(
-                "cognition_runtime_recurring_register: cron_expr is required".to_string(),
-            )
-        })?;
-        let job_type = input.job_type.as_deref().unwrap_or("workflow.grapheme.run");
-        let payload_template_ref = if let Some(explicit) = input
-            .payload_template_ref
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            explicit.to_string()
-        } else if job_type == "workflow.grapheme.run" {
-            let source = input.source.as_deref().ok_or_else(|| {
+        let command = RuntimeRecurringRegisterCommand::try_from(input)?;
+        let RuntimeRecurringRegisterCommand {
+            source,
+            job_type,
+            payload_template_ref,
+            cron_expr,
+            timezone,
+            queue,
+            recurring_id: requested_recurring_id,
+            jitter_seconds,
+            max_attempts,
+            enabled,
+            start_immediately,
+            delivery,
+            feeds,
+        } = command;
+        let payload_template_ref = if let Some(explicit) = payload_template_ref {
+            explicit.into_string()
+        } else if job_type.as_str() == "workflow.grapheme.run" {
+            let source = source.as_ref().ok_or_else(|| {
                 StasisError::PortFailure(
                     "cognition_runtime_recurring_register: source is required for workflow.grapheme.run"
                         .to_string(),
                 )
             })?;
-            let validation = validate_grapheme_source_for_schedule(&self.runtime, source).await?;
+            let validation =
+                validate_grapheme_source_for_schedule(&self.runtime, source.as_str()).await?;
             if !validation
                 .get("validated")
                 .and_then(|v| v.as_bool())
@@ -1011,7 +1089,7 @@ impl CognitionRuntimeRecurringRegisterTool {
                     validation: ExternalJson::new(validation),
                 });
             }
-            format!("grapheme:inline:{source}")
+            format!("grapheme:inline:{}", source.as_str())
         } else {
             return Err(StasisError::PortFailure(
                 "cognition_runtime_recurring_register: payload_template_ref is required for non-grapheme job types"
@@ -1019,27 +1097,17 @@ impl CognitionRuntimeRecurringRegisterTool {
             ));
         };
 
-        let recurring_id = input
-            .recurring_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
+        let recurring_id = requested_recurring_id
+            .map(TrimmedText::into_string)
             .unwrap_or_else(|| format!("recur-{}", Uuid::new_v4().simple()));
-        let queue = input.queue.as_deref().unwrap_or("default");
-        let timezone = input.timezone.as_deref().unwrap_or("UTC");
-        let jitter_seconds = input.jitter_seconds.unwrap_or(0);
-        let max_attempts = input.max_attempts.unwrap_or(1) as u32;
-        let enabled = input.enabled.unwrap_or(true);
-        let start_immediately = input.start_immediately.unwrap_or(false);
 
         let definition = RecurringScheduleSpec::new(
             recurring_id.clone(),
-            queue,
-            job_type,
+            queue.as_str(),
+            job_type.as_str(),
             payload_template_ref,
-            cron_expr,
-            timezone,
+            cron_expr.as_str(),
+            timezone.as_str(),
         )
         .jitter_seconds(jitter_seconds)
         .enabled(enabled)
@@ -1055,9 +1123,9 @@ impl CognitionRuntimeRecurringRegisterTool {
             .unwrap_or_else(|| format!("recurring-{recurring_id}"));
         let (delivery_bound, _) = bind_recurring_delivery_spec_for_registration(
             &recurring_id,
-            cron_expr,
-            timezone,
-            input.delivery.as_ref(),
+            cron_expr.as_str(),
+            timezone.as_str(),
+            delivery.as_ref(),
             DeliveryResolveContext {
                 ambient: ambient.as_ref(),
                 fallback_session_id: fallback_session_id.clone(),
@@ -1065,7 +1133,7 @@ impl CognitionRuntimeRecurringRegisterTool {
         )
         .await?;
         let (feeds_bound, _) =
-            bind_recurring_feed_spec_for_registration(&recurring_id, input.feeds.as_ref()).await?;
+            bind_recurring_feed_spec_for_registration(&recurring_id, feeds.as_ref()).await?;
 
         register_recurring_definition(self.runtime.as_ref(), definition.clone()).await?;
 
@@ -1078,16 +1146,16 @@ impl CognitionRuntimeRecurringRegisterTool {
             .await;
 
         let feeds_bound_recurring = if feeds_bound {
-            input.feeds.map(|feeds| feeds.feed_ids).unwrap_or_default()
+            feeds.map(|feeds| feeds.feed_ids).unwrap_or_default()
         } else {
             Vec::new()
         };
         Ok(RuntimeRecurringRegisterOutput::Registered {
             status: "registered".to_string(),
             recurring_id,
-            job_type: job_type.to_string(),
-            cron_expr: cron_expr.to_string(),
-            timezone: timezone.to_string(),
+            job_type: job_type.into_string(),
+            cron_expr: cron_expr.into_string(),
+            timezone: timezone.into_string(),
             next_run_at_utc: definition.next_run_at.to_rfc3339(),
             enabled,
             delivery_bound,
@@ -2333,6 +2401,51 @@ mod tests {
         assert_eq!(job.job_type.as_deref(), Some("job.type"));
         assert_eq!(job.payload_template_ref.as_deref(), Some("payload"));
         assert_eq!(job.start_immediately, Some(false));
+    }
+
+    #[test]
+    fn recurring_register_command_normalizes_identifiers_and_preserves_source() {
+        let mut input = RuntimeRecurringRegisterInput::job(" job.type ", " payload ", " cron ");
+        input.source = Some("  source bytes\n".into());
+        input.timezone = Some(" UTC ".into());
+        input.queue = Some(" queue-a ".into());
+        input.recurring_id = Some(" recurring-a ".into());
+
+        let command =
+            RuntimeRecurringRegisterCommand::try_from(input).expect("recurring register command");
+        assert_eq!(command.job_type.as_str(), "job.type");
+        assert_eq!(command.payload_template_ref.unwrap().as_str(), "payload");
+        assert_eq!(command.cron_expr.as_str(), "cron");
+        assert_eq!(command.timezone.as_str(), "UTC");
+        assert_eq!(command.queue.as_str(), "queue-a");
+        assert_eq!(command.recurring_id.unwrap().as_str(), "recurring-a");
+        assert_eq!(command.source.unwrap().as_str(), "  source bytes\n");
+    }
+
+    #[test]
+    fn recurring_register_command_owns_defaults_and_required_cron_error() {
+        let mut input = RuntimeRecurringRegisterInput::grapheme("source", "cron");
+        input.timezone = Some(" \n\t".into());
+        input.queue = Some(" \n\t".into());
+        input.recurring_id = Some(" \n\t".into());
+        let command = RuntimeRecurringRegisterCommand::try_from(input)
+            .expect("blank optional values use defaults");
+        assert_eq!(command.job_type.as_str(), "workflow.grapheme.run");
+        assert_eq!(command.timezone.as_str(), "UTC");
+        assert_eq!(command.queue.as_str(), "default");
+        assert!(command.recurring_id.is_none());
+        assert!(command.enabled);
+        assert!(!command.start_immediately);
+
+        let mut missing_cron = RuntimeRecurringRegisterInput::grapheme("source", "cron");
+        missing_cron.cron_expr = None;
+        let error =
+            RuntimeRecurringRegisterCommand::try_from(missing_cron).expect_err("cron is required");
+        assert!(
+            error
+                .to_string()
+                .contains("cognition_runtime_recurring_register: cron_expr is required")
+        );
     }
 
     #[tokio::test]
