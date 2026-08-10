@@ -4,7 +4,6 @@ use chrono::{DateTime, Duration, Utc};
 use serde_json::Value;
 use stasis::application::runtime::runtime_factory::RuntimeComposition;
 use stasis::domain::runtime::job::{Job, JobState};
-use stasis::ports::outbound::runtime::job_store::JobStore;
 
 use crate::agent_runtime::turn_worker::{TurnWorkRecord, TurnWorkStatus, turn_worker_store};
 use crate::daemon_api::{
@@ -15,6 +14,7 @@ use crate::workspace::retention::{self, WorkspaceRetentionConfig};
 use crate::turn_budget_request::{turn_budget_request_store, TurnBudgetRequest, TurnBudgetRequestStatus};
 use crate::openshell_sandbox_run::OPENSHELL_SANDBOX_RUN_JOB_TYPE;
 use crate::workspace::store::workspace_store;
+use crate::runtime_composition_ext::RuntimeCompositionExt;
 
 const WRAPPING_UP_STALE: Duration = Duration::hours(2);
 
@@ -30,10 +30,7 @@ pub async fn list_jobs_by_states(
 ) -> anyhow::Result<Vec<Job>> {
     let mut jobs = Vec::new();
     for state in states {
-        let mut batch = match runtime {
-            RuntimeComposition::InMemory(rt) => rt.job_store.list_by_state(state.clone()).await?,
-            RuntimeComposition::Surreal(rt) => rt.job_store.list_by_state(state.clone()).await?,
-        };
+        let mut batch = runtime.list_jobs_by_state(state.clone()).await?;
         jobs.append(&mut batch);
     }
     Ok(jobs)

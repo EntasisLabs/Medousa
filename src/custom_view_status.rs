@@ -6,9 +6,7 @@ use medousa_types::environment::{
 };
 use medousa_types::layout::resolve_layout_root;
 use serde_json::Value;
-use stasis::domain::runtime::recurring::RecurringDefinition;
 use stasis::prelude::RuntimeComposition;
-use stasis::ports::outbound::runtime::recurring_store::RecurringStore;
 
 use crate::component_runtime_diagnostics::{
     build_component_runtime_diagnostic, RuntimeDiagnosticOptions,
@@ -16,6 +14,7 @@ use crate::component_runtime_diagnostics::{
 use crate::environment_store::EnvironmentHub;
 use crate::feed_store::feed_store;
 use crate::recurring_feed::{self, feeds_binding_to_json, RecurringFeedBinding};
+use crate::runtime_composition_ext::RuntimeCompositionExt;
 
 pub fn surface_nav_visible(spec: &EnvironmentSpec, surface_id: &str) -> bool {
     active_preset_surface_ids(spec)
@@ -46,22 +45,13 @@ fn presentation_artifact_id(config: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-async fn list_recurring_definitions(
-    runtime: &RuntimeComposition,
-) -> stasis::prelude::Result<Vec<RecurringDefinition>> {
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt.recurring_store.list().await,
-        RuntimeComposition::Surreal(rt) => rt.recurring_store.list().await,
-    }
-}
-
 async fn collect_recurring_feed_bindings(
     runtime: Option<&RuntimeComposition>,
 ) -> Vec<(String, RecurringFeedBinding, Option<String>, Option<bool>)> {
     let Some(runtime) = runtime else {
         return Vec::new();
     };
-    let Ok(definitions) = list_recurring_definitions(runtime).await else {
+    let Ok(definitions) = runtime.list_recurring().await else {
         return Vec::new();
     };
     let mut rows = Vec::new();
