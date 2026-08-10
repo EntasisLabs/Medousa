@@ -23,7 +23,7 @@ use crate::skill_execution::{
 };
 use crate::skill_import::resolve_skill_source;
 use crate::turn_continuation::{ContinuationAwaitMode, TurnContinuationScope, wire_turn_child_job};
-use crate::typed_tools::{ToolId, medousa_tool};
+use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_SKILL_DISCOVER: &str = "cognition_skill_discover";
 pub const COGNITION_SKILL_PROPOSE: &str = "cognition_skill_propose";
@@ -60,19 +60,19 @@ pub struct CognitionSkillDiscoverTool;
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SkillDiscoverInput {
     /// Imported skill manuscript id (preferred)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    pub manuscript_id: Option<String>,
+    pub manuscript_id: CompatOption<String>,
     /// Raw skill directory or SKILL.md path before import
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    pub skill_path: Option<String>,
+    pub skill_path: CompatOption<String>,
 }
 
 #[derive(Debug)]
@@ -87,9 +87,11 @@ impl TryFrom<SkillDiscoverInput> for SkillDiscoverCommand {
     fn try_from(input: SkillDiscoverInput) -> Result<Self, Self::Error> {
         let manuscript_id = input
             .manuscript_id
+            .into_option()
             .and_then(|value| TrimmedText::new(value).ok());
         let skill_path = input
             .skill_path
+            .into_option()
             .and_then(|value| TrimmedText::new(value).ok());
         if manuscript_id.is_none() && skill_path.is_none() {
             return Err(StasisError::PortFailure(
@@ -205,12 +207,12 @@ pub struct SkillProposeInput {
     pub manuscript_id: String,
     pub security_level: SkillSecurityLevelInput,
     /// Relative script path (e.g. scripts/run.sh) for sandbox evaluation
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    pub script: Option<String>,
+    pub script: CompatOption<String>,
 }
 
 #[derive(Debug)]
@@ -232,7 +234,10 @@ impl TryFrom<SkillProposeInput> for SkillProposeCommand {
         Ok(Self {
             manuscript_id,
             security_level: input.security_level.into(),
-            script: input.script.and_then(|value| TrimmedText::new(value).ok()),
+            script: input
+                .script
+                .into_option()
+                .and_then(|value| TrimmedText::new(value).ok()),
         })
     }
 }
@@ -345,17 +350,20 @@ fn default_skill_probe_operator_approved() -> bool {
 #[derive(Debug, JsonSchema)]
 pub struct SkillProbeInput {
     #[schemars(required, with = "String")]
-    manuscript_id: Option<String>,
+    manuscript_id: CompatOption<String>,
     /// Relative script path (default: first discovered script)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    script: Option<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    script: CompatOption<String>,
     /// Run grapheme --version before skill script (H6)
     #[schemars(with = "bool", default = "default_skill_probe_check_grapheme")]
-    check_grapheme: Option<bool>,
+    check_grapheme: CompatOption<bool>,
     /// Set true when operator approved a proposal with requires_approval
     #[schemars(with = "bool", default = "default_skill_probe_operator_approved")]
-    operator_approved: Option<bool>,
+    operator_approved: CompatOption<bool>,
 }
 
 impl<'de> Deserialize<'de> for SkillProbeInput {
@@ -365,26 +373,14 @@ impl<'de> Deserialize<'de> for SkillProbeInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            manuscript_id: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            script: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
-            )]
-            check_grapheme: Option<bool>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
-            )]
-            operator_approved: Option<bool>,
+            #[serde(default)]
+            manuscript_id: CompatOption<String>,
+            #[serde(default)]
+            script: CompatOption<String>,
+            #[serde(default)]
+            check_grapheme: CompatOption<bool>,
+            #[serde(default)]
+            operator_approved: CompatOption<bool>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
@@ -409,17 +405,26 @@ impl TryFrom<SkillProbeInput> for SkillProbeCommand {
     type Error = StasisError;
 
     fn try_from(input: SkillProbeInput) -> Result<Self, Self::Error> {
-        let manuscript_id =
-            TrimmedText::new(input.manuscript_id.unwrap_or_default()).map_err(|_| {
+        let manuscript_id = TrimmedText::new(input.manuscript_id.into_option().unwrap_or_default())
+            .map_err(|_| {
                 StasisError::PortFailure(
                     "cognition_skill_probe: manuscript_id is required".to_string(),
                 )
             })?;
         Ok(Self {
             manuscript_id,
-            script: input.script.and_then(|value| TrimmedText::new(value).ok()),
-            check_grapheme: input.check_grapheme.unwrap_or(true),
-            operator_approved: input.operator_approved.unwrap_or(false),
+            script: input
+                .script
+                .into_option()
+                .and_then(|value| TrimmedText::new(value).ok()),
+            check_grapheme: input
+                .check_grapheme
+                .into_option()
+                .unwrap_or_else(default_skill_probe_check_grapheme),
+            operator_approved: input
+                .operator_approved
+                .into_option()
+                .unwrap_or_else(default_skill_probe_operator_approved),
         })
     }
 }
@@ -655,8 +660,8 @@ mod tests {
     #[test]
     fn skill_commands_normalize_identifiers_and_defaults() {
         let discover = SkillDiscoverCommand::try_from(SkillDiscoverInput {
-            manuscript_id: Some(" manuscript-a ".into()),
-            skill_path: Some(" \n\t".into()),
+            manuscript_id: Some(" manuscript-a ".into()).into(),
+            skill_path: Some(" \n\t".into()).into(),
         })
         .expect("discover command");
         assert_eq!(
@@ -668,7 +673,7 @@ mod tests {
         let propose = SkillProposeCommand::try_from(SkillProposeInput {
             manuscript_id: " manuscript-a ".into(),
             security_level: SkillSecurityLevelInput::Sandbox,
-            script: Some(" scripts/run.sh ".into()),
+            script: Some(" scripts/run.sh ".into()).into(),
         })
         .expect("propose command");
         assert_eq!(propose.manuscript_id.as_str(), "manuscript-a");
@@ -676,10 +681,10 @@ mod tests {
         assert_eq!(propose.script.as_ref().unwrap().as_str(), "scripts/run.sh");
 
         let probe = SkillProbeCommand::try_from(SkillProbeInput {
-            manuscript_id: Some(" manuscript-a ".into()),
-            script: Some(" scripts/run.sh ".into()),
-            check_grapheme: None,
-            operator_approved: None,
+            manuscript_id: Some(" manuscript-a ".into()).into(),
+            script: Some(" scripts/run.sh ".into()).into(),
+            check_grapheme: None.into(),
+            operator_approved: None.into(),
         })
         .expect("probe command");
         assert_eq!(probe.manuscript_id.as_str(), "manuscript-a");
@@ -691,8 +696,8 @@ mod tests {
     #[test]
     fn skill_discover_command_requires_a_source() {
         let error = SkillDiscoverCommand::try_from(SkillDiscoverInput {
-            manuscript_id: Some(" \n\t".into()),
-            skill_path: Some(" \n\t".into()),
+            manuscript_id: Some(" \n\t".into()).into(),
+            skill_path: Some(" \n\t".into()).into(),
         })
         .expect_err("source is required");
         assert!(
@@ -700,5 +705,35 @@ mod tests {
                 .to_string()
                 .contains("manuscript_id or skill_path is required")
         );
+    }
+
+    #[test]
+    fn skill_wire_optionals_remain_lenient_for_legacy_values() {
+        let discover: SkillDiscoverInput = serde_json::from_value(serde_json::json!({
+            "manuscript_id": 42,
+            "skill_path": false,
+        }))
+        .expect("discover input");
+        assert!(discover.manuscript_id.into_option().is_none());
+        assert!(discover.skill_path.into_option().is_none());
+
+        let propose: SkillProposeInput = serde_json::from_value(serde_json::json!({
+            "manuscript_id": "manuscript-a",
+            "security_level": "sandbox",
+            "script": [],
+        }))
+        .expect("propose input");
+        assert!(propose.script.into_option().is_none());
+
+        let probe: SkillProbeInput = serde_json::from_value(serde_json::json!({
+            "manuscript_id": "manuscript-a",
+            "script": 9,
+            "check_grapheme": "true",
+            "operator_approved": [],
+        }))
+        .expect("probe input");
+        assert!(probe.script.into_option().is_none());
+        assert!(probe.check_grapheme.into_option().is_none());
+        assert!(probe.operator_approved.into_option().is_none());
     }
 }
