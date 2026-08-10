@@ -8,7 +8,6 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use stasis::application::runtime::in_memory_runtime::{JobExecutionOutcome, JobHandler};
 use stasis::domain::runtime::job::{Job, JobState};
-use stasis::ports::outbound::runtime::job_store::JobStore;
 use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
 
 use crate::agent_runtime::stream_sink::SharedAgentStreamSink;
@@ -129,10 +128,7 @@ pub async fn reconcile_durable_turn_workers(
 }
 
 async fn job_needs_enqueue(composition: &RuntimeComposition, work_id: &str) -> bool {
-    let job = match composition {
-        RuntimeComposition::InMemory(rt) => rt.job_store.get(work_id).await,
-        RuntimeComposition::Surreal(rt) => rt.job_store.get(work_id).await,
-    };
+    let job = composition.get_job(work_id).await;
     let Ok(job) = job else {
         return true;
     };

@@ -14,8 +14,6 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use chrono::{DateTime, Utc};
 use futures_util::stream::{self, Stream};
 use serde_json::Value;
-use stasis::ports::outbound::runtime::job_attempt_store::JobAttemptStore;
-use stasis::ports::outbound::runtime::job_store::JobStore;
 use stasis::prelude::{JobState, RuntimeComposition};
 use tokio::sync::{RwLock, broadcast};
 use uuid::Uuid;
@@ -25,6 +23,7 @@ use crate::channel_delivery;
 use crate::daemon::bounded_set::BoundedDedupSet;
 use crate::daemon::heartbeat::is_missing_runtime_table_error;
 use crate::daemon::state::{AgentTurnJobRecord, AppState};
+use crate::runtime_composition_ext::RuntimeCompositionExt;
 use medousa_engine::TurnStreamRegistryPort;
 
 use crate::daemon::turn_event_channel::TurnEventChannel;
@@ -915,22 +914,12 @@ async fn resolve_job_title_for_vault_footer(
 }
 
 pub async fn job_succeeded(runtime: &RuntimeComposition, job_id: &str) -> bool {
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt
-            .job_store
-            .get(job_id)
-            .await
-            .ok()
-            .flatten()
-            .is_some_and(|job| job.state == JobState::Succeeded),
-        RuntimeComposition::Surreal(rt) => rt
-            .job_store
-            .get(job_id)
-            .await
-            .ok()
-            .flatten()
-            .is_some_and(|job| job.state == JobState::Succeeded),
-    }
+    runtime
+        .get_job(job_id)
+        .await
+        .ok()
+        .flatten()
+        .is_some_and(|job| job.state == JobState::Succeeded)
 }
 
 pub async fn maybe_resume_agent_turn_from_child_job(state: &AppState, child_job_id: &str) -> bool {
@@ -1991,23 +1980,9 @@ pub async fn get_job_attempts_graceful(
     job_id: &str,
 ) -> std::result::Result<Vec<stasis::domain::runtime::job_attempt::JobAttempt>, (StatusCode, String)>
 {
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt
-            .job_attempt_store
-            .list_by_job_id(job_id)
-            .await
-            .map_err(internal_error),
-        RuntimeComposition::Surreal(rt) => {
-            match rt.job_attempt_store.list_by_job_id(job_id).await {
-                Ok(attempts) => Ok(attempts),
-                Err(err) => {
-                    if is_missing_runtime_table_error(&err.to_string()) {
-                        Ok(Vec::new())
-                    } else {
-                        Err(internal_error(err))
-                    }
-                }
-            }
-        }
+    match runtime.list_job_attempts(job_id).await {
+        Ok(attempts) => Ok(attempts),
+        Err(err) if is_missing_runtime_table_error(&err.to_string()) => Ok(Vec::new()),
+        Err(err) => Err(internal_error(err)),
     }
 }
