@@ -468,11 +468,29 @@ async fn assembled_first_party_contracts_match_baseline() {
         return;
     }
 
-    assert_eq!(
-        include_str!("../tests/fixtures/first_party_tool_contracts.json"),
-        rendered,
-        "first-party tool contract drifted; review the model-visible change, then regenerate with MEDOUSA_UPDATE_TOOL_CONTRACT_BASELINE=1 cargo test -p medousa assembled_first_party_contracts_match_baseline"
-    );
+    let baseline = include_str!("../tests/fixtures/first_party_tool_contracts.json");
+    if baseline != rendered {
+        let first_mismatch = baseline
+            .bytes()
+            .zip(rendered.bytes())
+            .position(|(left, right)| left != right)
+            .unwrap_or_else(|| baseline.len().min(rendered.len()));
+        let context_start = first_mismatch.saturating_sub(120);
+        let context_end = (first_mismatch + 160).min(baseline.len().min(rendered.len()));
+        eprintln!(
+            "baseline context: {:?}",
+            baseline.get(context_start..context_end).unwrap_or_default()
+        );
+        eprintln!(
+            "rendered context: {:?}",
+            rendered.get(context_start..context_end).unwrap_or_default()
+        );
+        panic!(
+            "first-party tool contract drifted at byte {first_mismatch} (baseline {} bytes, rendered {} bytes); review the model-visible change, then regenerate with MEDOUSA_UPDATE_TOOL_CONTRACT_BASELINE=1 cargo test -p medousa assembled_first_party_contracts_match_baseline",
+            baseline.len(),
+            rendered.len()
+        );
+    }
 }
 
 fn assert_bootstrap_authorized(

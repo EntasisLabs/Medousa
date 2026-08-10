@@ -61,12 +61,20 @@ impl<T: Serialize> Serialize for CompatOption<T> {
 }
 
 impl<T: JsonSchema> JsonSchema for CompatOption<T> {
+    fn is_referenceable() -> bool {
+        <Option<T>>::is_referenceable()
+    }
+
     fn schema_name() -> String {
-        <Option<T>>::schema_name()
+        format!("CompatOption_{}", T::schema_name())
     }
 
     fn json_schema(generator: &mut SchemaGenerator) -> Schema {
         <Option<T>>::json_schema(generator)
+    }
+
+    fn _schemars_private_is_option() -> bool {
+        <Option<T>>::_schemars_private_is_option()
     }
 }
 
@@ -123,12 +131,20 @@ impl<T: Serialize> Serialize for CompatList<T> {
 }
 
 impl<T: JsonSchema> JsonSchema for CompatList<T> {
+    fn is_referenceable() -> bool {
+        <Option<Vec<T>>>::is_referenceable()
+    }
+
     fn schema_name() -> String {
-        <Option<Vec<T>>>::schema_name()
+        format!("CompatList_{}", T::schema_name())
     }
 
     fn json_schema(generator: &mut SchemaGenerator) -> Schema {
         <Option<Vec<T>>>::json_schema(generator)
+    }
+
+    fn _schemars_private_is_option() -> bool {
+        <Option<Vec<T>>>::_schemars_private_is_option()
     }
 }
 
@@ -208,6 +224,13 @@ mod tests {
         values: CompatList<String>,
     }
 
+    #[allow(dead_code)]
+    #[derive(Debug, schemars::JsonSchema)]
+    struct MixedSchema {
+        regular: Option<String>,
+        compatibility: CompatOption<String>,
+    }
+
     #[test]
     fn compatibility_values_absorb_missing_null_and_wrong_types() {
         let fixture: Fixture = serde_json::from_value(json!({
@@ -247,5 +270,23 @@ mod tests {
         assert_eq!(text.get("type"), Some(&json!(["string", "null"])));
         assert_eq!(flag.get("type"), Some(&json!(["boolean", "null"])));
         assert_eq!(values.get("type"), Some(&json!(["array", "null"])));
+    }
+
+    #[test]
+    fn compatibility_schema_names_do_not_shadow_regular_options() {
+        let schema = schema_for!(MixedSchema);
+        let properties = schema
+            .schema
+            .object
+            .as_ref()
+            .expect("object schema")
+            .properties
+            .clone();
+
+        let regular = serde_json::to_value(&properties["regular"]).expect("regular schema");
+        let compatibility =
+            serde_json::to_value(&properties["compatibility"]).expect("compatibility schema");
+        assert_eq!(regular.get("type"), Some(&json!(["string", "null"])));
+        assert_eq!(compatibility.get("type"), Some(&json!(["string", "null"])));
     }
 }

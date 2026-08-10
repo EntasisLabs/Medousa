@@ -745,7 +745,7 @@ pub struct TurnPrepareFinalInput {
     /// Optional short note for logs (not shown to the user)
     #[serde(default)]
     #[schemars(
-        with = "Option<String>",
+        with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
     reason: CompatOption<String>,

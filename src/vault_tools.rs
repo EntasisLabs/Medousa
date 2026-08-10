@@ -70,8 +70,10 @@ impl CognitionVaultListTool {
 #[derive(Debug, JsonSchema)]
 pub struct VaultListInput {
     /// Optional path prefix filter
+    #[serde(default)]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     pub prefix: Option<String>,
+    #[serde(default)]
     #[schemars(
         with = "usize",
         range(min = 1, max = 200),
@@ -79,9 +81,11 @@ pub struct VaultListInput {
     )]
     pub limit: Option<usize>,
     /// Indexed-style tag filter (match-all), aligned with Locus tags
+    #[serde(default)]
     #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
     pub semantic_tags: Option<Vec<String>>,
     /// Filter notes with tags sharing this prefix
+    #[serde(default)]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     pub tag_prefix: Option<String>,
 }
