@@ -18,7 +18,7 @@ use crate::browser_tools::{COGNITION_BROWSER_ACT, surface_supports_browser_host}
 use crate::events::TuiEvent;
 use crate::semantic_values::TrimmedText;
 use crate::turn_continuation::TurnContinuationScope;
-use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
+use crate::typed_tools::{CompatOption, ExternalJson, ToolId, medousa_tool};
 
 const ACT_ACTIONS: &[&str] = &["click", "type", "press", "scroll", "select", "wait"];
 const HIGH_RISK_ACTIONS: &[&str] = &["click", "select"];
@@ -133,33 +133,48 @@ fn default_browser_act_allow_high_risk() -> bool {
 pub struct BrowserActInput {
     /// Interaction to perform
     #[schemars(required, with = "BrowserActActionSchema")]
-    action: Option<String>,
+    action: CompatOption<String>,
     /// CSS selector of the target element (required for click/type/press/select)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    selector: Option<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    selector: CompatOption<String>,
     /// Text to type (action=type)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    text: Option<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    text: CompatOption<String>,
     /// Key name such as Enter/Tab/Escape (action=press)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    key: Option<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    key: CompatOption<String>,
     /// Vertical scroll delta in px (action=scroll; positive = down)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
-    delta_y: Option<i64>,
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    delta_y: CompatOption<i64>,
     /// Option value to choose (action=select)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    value: Option<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    value: CompatOption<String>,
     /// Wait duration in milliseconds (action=wait)
     #[schemars(with = "i64", default = "default_browser_act_wait_ms")]
-    ms: Option<i64>,
+    ms: CompatOption<i64>,
     /// Set true to act on submit/password/checkout-like targets
     #[schemars(with = "bool", default = "default_browser_act_allow_high_risk")]
-    allow_high_risk: Option<bool>,
+    allow_high_risk: CompatOption<bool>,
 }
 
 impl<'de> Deserialize<'de> for BrowserActInput {
@@ -169,46 +184,22 @@ impl<'de> Deserialize<'de> for BrowserActInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            action: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            selector: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            text: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            key: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_i64"
-            )]
-            delta_y: Option<i64>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            value: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_i64"
-            )]
-            ms: Option<i64>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
-            )]
-            allow_high_risk: Option<bool>,
+            #[serde(default)]
+            action: CompatOption<String>,
+            #[serde(default)]
+            selector: CompatOption<String>,
+            #[serde(default)]
+            text: CompatOption<String>,
+            #[serde(default)]
+            key: CompatOption<String>,
+            #[serde(default)]
+            delta_y: CompatOption<i64>,
+            #[serde(default)]
+            value: CompatOption<String>,
+            #[serde(default)]
+            ms: CompatOption<i64>,
+            #[serde(default)]
+            allow_high_risk: CompatOption<bool>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
@@ -241,9 +232,9 @@ impl TryFrom<BrowserActInput> for BrowserActCommand {
     type Error = stasis::prelude::StasisError;
 
     fn try_from(input: BrowserActInput) -> Result<Self, Self::Error> {
-        let action = BrowserActAction::parse(input.action.as_deref())?;
-        let selector = input
-            .selector
+        let action = BrowserActAction::parse(input.action.into_option().as_deref())?;
+        let selector_value = input.selector.into_option();
+        let selector = selector_value
             .as_deref()
             .and_then(|value| TrimmedText::new(value).ok());
         if action.needs_selector() && selector.is_none() {
@@ -256,12 +247,12 @@ impl TryFrom<BrowserActInput> for BrowserActCommand {
         Ok(Self {
             action,
             selector,
-            text: input.text,
-            key: input.key,
-            delta_y: input.delta_y,
-            value: input.value,
-            ms: input.ms,
-            allow_high_risk: input.allow_high_risk.unwrap_or(false),
+            text: input.text.into_option(),
+            key: input.key.into_option(),
+            delta_y: input.delta_y.into_option(),
+            value: input.value.into_option(),
+            ms: input.ms.into_option(),
+            allow_high_risk: input.allow_high_risk.into_option().unwrap_or(false),
         })
     }
 }
@@ -471,14 +462,14 @@ mod tests {
     #[test]
     fn browser_act_command_normalizes_controls_and_preserves_text() {
         let command = BrowserActCommand::try_from(BrowserActInput {
-            action: Some("  type  ".to_string()),
-            selector: Some("  #search  ".to_string()),
-            text: Some("  keep surrounding text  ".to_string()),
-            key: Some(" Enter ".to_string()),
-            delta_y: None,
-            value: None,
-            ms: None,
-            allow_high_risk: None,
+            action: Some("  type  ".to_string()).into(),
+            selector: Some("  #search  ".to_string()).into(),
+            text: Some("  keep surrounding text  ".to_string()).into(),
+            key: Some(" Enter ".to_string()).into(),
+            delta_y: None.into(),
+            value: None.into(),
+            ms: None.into(),
+            allow_high_risk: None.into(),
         })
         .expect("command");
 
@@ -495,14 +486,14 @@ mod tests {
     #[test]
     fn browser_act_command_requires_selector_for_targeted_actions() {
         let error = BrowserActCommand::try_from(BrowserActInput {
-            action: Some("click".to_string()),
-            selector: None,
-            text: None,
-            key: None,
-            delta_y: None,
-            value: None,
-            ms: None,
-            allow_high_risk: None,
+            action: Some("click".to_string()).into(),
+            selector: None.into(),
+            text: None.into(),
+            key: None.into(),
+            delta_y: None.into(),
+            value: None.into(),
+            ms: None.into(),
+            allow_high_risk: None.into(),
         })
         .expect_err("click without selector should fail");
 
@@ -511,5 +502,28 @@ mod tests {
                 .to_string()
                 .contains("selector is required for action 'click'")
         );
+    }
+
+    #[test]
+    fn browser_act_wire_optionals_remain_lenient_for_legacy_values() {
+        let input: BrowserActInput = serde_json::from_value(serde_json::json!({
+            "action": "click",
+            "selector": 42,
+            "text": false,
+            "key": [],
+            "delta_y": "10",
+            "value": null,
+            "ms": "1000",
+            "allow_high_risk": "true",
+        }))
+        .expect("browser act input");
+        assert_eq!(input.action.into_option().as_deref(), Some("click"));
+        assert!(input.selector.into_option().is_none());
+        assert!(input.text.into_option().is_none());
+        assert!(input.key.into_option().is_none());
+        assert!(input.delta_y.into_option().is_none());
+        assert!(input.value.into_option().is_none());
+        assert!(input.ms.into_option().is_none());
+        assert!(input.allow_high_risk.into_option().is_none());
     }
 }
