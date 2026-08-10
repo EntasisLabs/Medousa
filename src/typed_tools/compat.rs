@@ -88,6 +88,12 @@ impl<T> CompatList<T> {
     }
 }
 
+impl<T> From<Option<Vec<T>>> for CompatList<T> {
+    fn from(value: Option<Vec<T>>) -> Self {
+        Self(value)
+    }
+}
+
 impl<'de, T: DeserializeOwned> Deserialize<'de> for CompatList<T> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

@@ -20,7 +20,7 @@ use crate::environment_store::{environment_hub, resolve_profile_id};
 use crate::feed_bus::{FeedPublishRequest, publish};
 use crate::semantic_values::{RequiredContent, TrimmedText};
 use crate::turn_continuation::TurnContinuationScope;
-use crate::typed_tools::{ToolId, medousa_tool};
+use crate::typed_tools::{CompatList, CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_INTENT_RESOLVE: &str = "cognition_intent_resolve";
 pub const COGNITION_FEED_SUBSCRIBE: &str = "cognition_feed_subscribe";
@@ -56,19 +56,19 @@ impl CognitionIntentResolveTool {
 #[derive(Debug, Deserialize, JsonSchema)]
 struct IntentResolveInput {
     /// Exact intent id, e.g. setup_dashboard or workshop_status
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    intent: Option<String>,
+    intent: CompatOption<String>,
     /// Optional fuzzy query when intent id is unknown
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    query: Option<String>,
+    query: CompatOption<String>,
 }
 
 #[derive(Debug)]
@@ -81,8 +81,14 @@ impl TryFrom<IntentResolveInput> for IntentResolveCommand {
     type Error = StasisError;
 
     fn try_from(input: IntentResolveInput) -> Result<Self, Self::Error> {
-        let intent = input.intent.and_then(|value| TrimmedText::new(value).ok());
-        let query = input.query.and_then(|value| TrimmedText::new(value).ok());
+        let intent = input
+            .intent
+            .into_option()
+            .and_then(|value| TrimmedText::new(value).ok());
+        let query = input
+            .query
+            .into_option()
+            .and_then(|value| TrimmedText::new(value).ok());
         if intent.is_none() && query.is_none() {
             return Err(StasisError::PortFailure(
                 "cognition_intent_resolve: intent or query is required".to_string(),
@@ -121,13 +127,16 @@ impl CognitionFeedSubscribeTool {
 #[derive(Debug, JsonSchema)]
 struct FeedSubscribeInput {
     #[schemars(required, with = "String")]
-    component_id: Option<String>,
+    component_id: CompatOption<String>,
     /// Feed ids such as workshop.pulse
     #[schemars(required, with = "Vec<String>")]
-    feed_ids: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    profile_id: Option<String>,
+    feed_ids: CompatList<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    profile_id: CompatOption<String>,
 }
 
 impl<'de> Deserialize<'de> for FeedSubscribeInput {
@@ -137,21 +146,12 @@ impl<'de> Deserialize<'de> for FeedSubscribeInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            component_id: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string_list"
-            )]
-            feed_ids: Option<Vec<String>>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            profile_id: Option<String>,
+            #[serde(default)]
+            component_id: CompatOption<String>,
+            #[serde(default)]
+            feed_ids: CompatList<String>,
+            #[serde(default)]
+            profile_id: CompatOption<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
@@ -176,6 +176,7 @@ impl TryFrom<FeedSubscribeInput> for FeedSubscribeCommand {
     fn try_from(input: FeedSubscribeInput) -> Result<Self, Self::Error> {
         let component_id = input
             .component_id
+            .into_option()
             .ok_or_else(|| StasisError::PortFailure("component_id required".to_string()))
             .and_then(|value| {
                 TrimmedText::new(value)
@@ -183,6 +184,7 @@ impl TryFrom<FeedSubscribeInput> for FeedSubscribeCommand {
             })?;
         let feed_ids = input
             .feed_ids
+            .into_option()
             .ok_or_else(|| StasisError::PortFailure("feed_ids array required".to_string()))?
             .into_iter()
             .filter_map(|value| TrimmedText::new(value).ok())
@@ -192,6 +194,7 @@ impl TryFrom<FeedSubscribeInput> for FeedSubscribeCommand {
             feed_ids,
             profile_id: input
                 .profile_id
+                .into_option()
                 .and_then(|value| TrimmedText::new(value).ok()),
         })
     }
@@ -386,6 +389,7 @@ impl TryFrom<FeedPublishInput> for FeedPublishCommand {
             payload_slice: input.payload_slice.into_option(),
             profile_id: input
                 .profile_id
+                .into_option()
                 .and_then(|value| TrimmedText::new(value).ok()),
         })
     }
@@ -431,12 +435,12 @@ struct FeedPublishInput {
     #[serde(default)]
     #[schemars(skip_serializing_if = "CompatiblePayloadSlice::is_missing")]
     payload_slice: CompatiblePayloadSlice,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    profile_id: Option<String>,
+    profile_id: CompatOption<String>,
 }
 
 impl CompatiblePayloadSlice {
@@ -489,8 +493,8 @@ mod tests {
     #[test]
     fn feed_commands_normalize_identifiers_and_preserve_summary_content() {
         let intent = IntentResolveCommand::try_from(IntentResolveInput {
-            intent: Some(" setup_dashboard ".to_string()),
-            query: None,
+            intent: Some(" setup_dashboard ".to_string()).into(),
+            query: None.into(),
         })
         .expect("intent command");
         assert_eq!(
@@ -499,13 +503,14 @@ mod tests {
         );
 
         let subscribe = FeedSubscribeCommand::try_from(FeedSubscribeInput {
-            component_id: Some(" component-a ".to_string()),
+            component_id: Some(" component-a ".to_string()).into(),
             feed_ids: Some(vec![
                 " workshop.pulse ".to_string(),
                 " \n".to_string(),
                 "trip.london.trains".to_string(),
-            ]),
-            profile_id: Some(" profile-a ".to_string()),
+            ])
+            .into(),
+            profile_id: Some(" profile-a ".to_string()).into(),
         })
         .expect("subscribe command");
         assert_eq!(subscribe.component_id.as_str(), "component-a");
@@ -520,7 +525,7 @@ mod tests {
                 ref_id: "work-1".to_string(),
             }]),
             payload_slice: CompatiblePayloadSlice::Value(serde_json::json!({"phase": "done"})),
-            profile_id: Some(" profile-a ".to_string()),
+            profile_id: Some(" profile-a ".to_string()).into(),
         })
         .expect("publish command");
         assert_eq!(publish.feed_id.as_str(), "workshop.pulse");
@@ -532,8 +537,8 @@ mod tests {
     #[test]
     fn feed_commands_reject_missing_intent_and_blank_summary() {
         let intent_error = IntentResolveCommand::try_from(IntentResolveInput {
-            intent: Some(" \n".to_string()),
-            query: None,
+            intent: Some(" \n".to_string()).into(),
+            query: None.into(),
         })
         .expect_err("missing intent should fail");
         assert!(
@@ -547,9 +552,41 @@ mod tests {
             summary: " \n\t".to_string(),
             refs: CompatibleFeedRefs::default(),
             payload_slice: CompatiblePayloadSlice::Missing,
-            profile_id: None,
+            profile_id: None.into(),
         })
         .expect_err("blank summary should fail");
         assert!(publish_error.to_string().contains("summary is required"));
+    }
+
+    #[test]
+    fn feed_wire_optionals_remain_lenient_for_legacy_values() {
+        let intent: IntentResolveInput = serde_json::from_value(serde_json::json!({
+            "intent": 42,
+            "query": false,
+        }))
+        .expect("intent input");
+        assert!(intent.intent.into_option().is_none());
+        assert!(intent.query.into_option().is_none());
+
+        let subscribe: FeedSubscribeInput = serde_json::from_value(serde_json::json!({
+            "component_id": 9,
+            "feed_ids": ["workshop.pulse", 2, null],
+            "profile_id": [],
+        }))
+        .expect("subscribe input");
+        assert!(subscribe.component_id.into_option().is_none());
+        assert_eq!(
+            subscribe.feed_ids.into_option(),
+            Some(vec!["workshop.pulse".to_string()])
+        );
+        assert!(subscribe.profile_id.into_option().is_none());
+
+        let publish: FeedPublishInput = serde_json::from_value(serde_json::json!({
+            "feed_id": "workshop.pulse",
+            "summary": "ready",
+            "profile_id": 42,
+        }))
+        .expect("publish input");
+        assert!(publish.profile_id.into_option().is_none());
     }
 }
