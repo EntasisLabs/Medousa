@@ -38,7 +38,7 @@ use crate::identity_write_policy::{
     parse_update_source,
 };
 use crate::semantic_values::{RequiredContent, TrimmedText};
-use crate::typed_tools::{ToolId, medousa_tool};
+use crate::typed_tools::{CompatList, CompatOption, ToolId, medousa_tool};
 
 const COGNITION_IDENTITY_CONTEXT_ID: ToolId = ToolId::new("cognition_identity_context");
 const COGNITION_IDENTITY_PROPOSE_ID: ToolId = ToolId::new("cognition_identity_propose");
@@ -217,46 +217,40 @@ impl CognitionIdentityContextTool {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct IdentityContextInput {
     /// Override identity user id
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    user_id: Option<String>,
+    user_id: CompatOption<String>,
     /// Override persona id
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    persona_id: Option<String>,
+    persona_id: CompatOption<String>,
     /// Override channel id
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    channel_id: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-    )]
+    channel_id: CompatOption<String>,
+    #[serde(default)]
     #[schemars(
         with = "usize",
         range(min = 1, max = 64),
-        skip_serializing_if = "Option::is_none"
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    relationship_limit: Option<usize>,
+    relationship_limit: CompatOption<usize>,
     /// Identity context slice (default: cognitive)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-    )]
+    #[serde(default)]
     #[schemars(
         with = "IdentityContextModeSchema",
-        skip_serializing_if = "Option::is_none"
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    mode: Option<String>,
+    mode: CompatOption<String>,
 }
 
 #[derive(Debug)]
@@ -272,16 +266,17 @@ impl TryFrom<IdentityContextInput> for IdentityContextCommand {
     type Error = StasisError;
 
     fn try_from(input: IdentityContextInput) -> Result<Self, Self::Error> {
+        let user_id = input.user_id.into_option();
+        let persona_id = input.persona_id.into_option();
+        let channel_id = input.channel_id.into_option();
+        let relationship_limit = input.relationship_limit.into_option();
+        let mode = input.mode.into_option();
         Ok(Self {
-            user_id: input.user_id.and_then(|value| TrimmedText::new(value).ok()),
-            persona_id: input
-                .persona_id
-                .and_then(|value| TrimmedText::new(value).ok()),
-            channel_id: input
-                .channel_id
-                .and_then(|value| TrimmedText::new(value).ok()),
-            relationship_limit: input.relationship_limit.unwrap_or(8).clamp(1, 64),
-            mode: parse_identity_context_mode(input.mode.as_deref())?,
+            user_id: user_id.and_then(|value| TrimmedText::new(value).ok()),
+            persona_id: persona_id.and_then(|value| TrimmedText::new(value).ok()),
+            channel_id: channel_id.and_then(|value| TrimmedText::new(value).ok()),
+            relationship_limit: relationship_limit.unwrap_or(8).clamp(1, 64),
+            mode: parse_identity_context_mode(mode.as_deref())?,
         })
     }
 }
@@ -687,55 +682,34 @@ impl<'de> Deserialize<'de> for IdentityProposeInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            entity_type: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            entity_id: Option<String>,
+            #[serde(default)]
+            entity_type: CompatOption<String>,
+            #[serde(default)]
+            entity_id: CompatOption<String>,
             #[serde(default)]
             patch: Option<CompatibleObject>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            source: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
-            )]
-            confidence: Option<f64>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            reason: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            actor: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            expires_at: Option<String>,
+            #[serde(default)]
+            source: CompatOption<String>,
+            #[serde(default)]
+            confidence: CompatOption<f64>,
+            #[serde(default)]
+            reason: CompatOption<String>,
+            #[serde(default)]
+            actor: CompatOption<String>,
+            #[serde(default)]
+            expires_at: CompatOption<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            entity_type: input.entity_type,
-            entity_id: input.entity_id,
+            entity_type: input.entity_type.into_option(),
+            entity_id: input.entity_id.into_option(),
             patch: input.patch,
-            source: input.source,
-            confidence: input.confidence,
-            reason: input.reason,
-            actor: input.actor,
-            expires_at: input.expires_at,
+            source: input.source.into_option(),
+            confidence: input.confidence.into_option(),
+            reason: input.reason.into_option(),
+            actor: input.actor.into_option(),
+            expires_at: input.expires_at.into_option(),
         })
     }
 }
@@ -902,34 +876,22 @@ impl<'de> Deserialize<'de> for IdentityRecallInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            query: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            fact_kind: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-            )]
-            limit: Option<usize>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            user_id: Option<String>,
+            #[serde(default)]
+            query: CompatOption<String>,
+            #[serde(default)]
+            fact_kind: CompatOption<String>,
+            #[serde(default)]
+            limit: CompatOption<usize>,
+            #[serde(default)]
+            user_id: CompatOption<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            query: input.query,
-            fact_kind: input.fact_kind,
-            limit: input.limit,
-            user_id: input.user_id,
+            query: input.query.into_option(),
+            fact_kind: input.fact_kind.into_option(),
+            limit: input.limit.into_option(),
+            user_id: input.user_id.into_option(),
         })
     }
 }
@@ -1147,61 +1109,37 @@ impl<'de> Deserialize<'de> for IdentityRememberInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            fact_kind: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            subject: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            statement: Option<String>,
+            #[serde(default)]
+            fact_kind: CompatOption<String>,
+            #[serde(default)]
+            subject: CompatOption<String>,
+            #[serde(default)]
+            statement: CompatOption<String>,
             #[serde(default)]
             attributes: Option<CompatibleObject>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string_list"
-            )]
-            aliases: Option<Vec<String>>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            source: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
-            )]
-            confidence: Option<f64>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            reason: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            user_id: Option<String>,
+            #[serde(default)]
+            aliases: CompatList<String>,
+            #[serde(default)]
+            source: CompatOption<String>,
+            #[serde(default)]
+            confidence: CompatOption<f64>,
+            #[serde(default)]
+            reason: CompatOption<String>,
+            #[serde(default)]
+            user_id: CompatOption<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            fact_kind: input.fact_kind,
-            subject: input.subject,
-            statement: input.statement,
+            fact_kind: input.fact_kind.into_option(),
+            subject: input.subject.into_option(),
+            statement: input.statement.into_option(),
             attributes: input.attributes,
-            aliases: input.aliases,
-            source: input.source,
-            confidence: input.confidence,
-            reason: input.reason,
-            user_id: input.user_id,
+            aliases: input.aliases.into_option(),
+            source: input.source.into_option(),
+            confidence: input.confidence.into_option(),
+            reason: input.reason.into_option(),
+            user_id: input.user_id.into_option(),
         })
     }
 }
@@ -1442,61 +1380,37 @@ impl<'de> Deserialize<'de> for IdentityCommitInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            proposal_id: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_i64"
-            )]
-            expected_version: Option<i64>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            approver: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            entity_type: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            entity_id: Option<String>,
+            #[serde(default)]
+            proposal_id: CompatOption<String>,
+            #[serde(default)]
+            expected_version: CompatOption<i64>,
+            #[serde(default)]
+            approver: CompatOption<String>,
+            #[serde(default)]
+            entity_type: CompatOption<String>,
+            #[serde(default)]
+            entity_id: CompatOption<String>,
             #[serde(default)]
             patch: Option<CompatibleObject>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            source: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_f64"
-            )]
-            confidence: Option<f64>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            tier: Option<String>,
+            #[serde(default)]
+            source: CompatOption<String>,
+            #[serde(default)]
+            confidence: CompatOption<f64>,
+            #[serde(default)]
+            tier: CompatOption<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            proposal_id: input.proposal_id,
-            expected_version: input.expected_version,
-            approver: input.approver,
-            entity_type: input.entity_type,
-            entity_id: input.entity_id,
+            proposal_id: input.proposal_id.into_option(),
+            expected_version: input.expected_version.into_option(),
+            approver: input.approver.into_option(),
+            entity_type: input.entity_type.into_option(),
+            entity_id: input.entity_id.into_option(),
             patch: input.patch,
-            source: input.source,
-            confidence: input.confidence,
-            tier: input.tier,
+            source: input.source.into_option(),
+            confidence: input.confidence.into_option(),
+            tier: input.tier.into_option(),
         })
     }
 }
@@ -1908,11 +1822,11 @@ mod remember_tests {
     #[test]
     fn identity_context_command_normalizes_ids_and_mode_bounds() {
         let command = IdentityContextCommand::try_from(IdentityContextInput {
-            user_id: Some(" user-a ".to_string()),
-            persona_id: Some(" persona-a ".to_string()),
-            channel_id: Some(" channel-a ".to_string()),
-            relationship_limit: Some(999),
-            mode: Some(" POLICY ".to_string()),
+            user_id: Some(" user-a ".to_string()).into(),
+            persona_id: Some(" persona-a ".to_string()).into(),
+            channel_id: Some(" channel-a ".to_string()).into(),
+            relationship_limit: Some(999).into(),
+            mode: Some(" POLICY ".to_string()).into(),
         })
         .expect("context command");
         assert_eq!(
@@ -1930,11 +1844,11 @@ mod remember_tests {
     #[test]
     fn identity_context_command_rejects_unknown_mode() {
         let error = IdentityContextCommand::try_from(IdentityContextInput {
-            user_id: None,
-            persona_id: None,
-            channel_id: None,
-            relationship_limit: None,
-            mode: Some("unknown".to_string()),
+            user_id: None::<String>.into(),
+            persona_id: None::<String>.into(),
+            channel_id: None::<String>.into(),
+            relationship_limit: None::<usize>.into(),
+            mode: Some("unknown".to_string()).into(),
         })
         .expect_err("unknown identity context mode should fail");
         assert!(
