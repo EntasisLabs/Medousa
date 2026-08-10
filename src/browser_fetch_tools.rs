@@ -9,8 +9,10 @@ use stasis::domain::errors::StasisError;
 use tokio::sync::{mpsc, RwLock};
 
 use crate::browser_host_client::{browser_host_fetch, browser_host_healthy};
-use crate::browser_tools::{surface_supports_browser_host, COGNITION_BROWSER_FETCH};
 use crate::browser_search::surface_from_scope;
+use crate::browser_tools::{
+    BrowserUrlCommand, COGNITION_BROWSER_FETCH, surface_supports_browser_host,
+};
 use crate::events::TuiEvent;
 use crate::turn_continuation::TurnContinuationScope;
 use crate::typed_tools::{ToolId, medousa_tool};
@@ -113,16 +115,9 @@ impl CognitionBrowserFetchTool {
             )));
         }
 
-        let url = input
-            .url
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-            .ok_or_else(|| {
-                StasisError::PortFailure(format!("{COGNITION_BROWSER_FETCH}: url is required"))
-            })?;
-        let max_chars = input.max_chars;
+        let command = BrowserUrlCommand::new(input.url, input.max_chars, COGNITION_BROWSER_FETCH)?;
+        let url = command.url.into_string();
+        let max_chars = command.max_chars;
 
         let _ = self
             .event_tx
