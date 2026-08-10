@@ -713,6 +713,7 @@ mod tests {
         Arc::new(RwLock::new(Some(TurnContinuationScope {
             turn_correlation_id: "turn-1".to_string(),
             session_id: "medousa-home".to_string(),
+            identity_user_id: None,
             original_prompt: "hi".to_string(),
             delivery_target: None,
             provider: "openai".to_string(),

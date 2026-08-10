@@ -241,8 +241,12 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "history",
-                summary: "Drill into prior turn tool receipts by slice id",
-                tools: &["cognition_tool_history_detail"],
+                summary: "Read prior chats or drill into prior turn tool receipts",
+                tools: &[
+                    "cognition_chat_history_search",
+                    "cognition_chat_history_read",
+                    "cognition_tool_history_detail",
+                ],
             },
             ToolDomainCatalogEntry {
                 domain: "identity",

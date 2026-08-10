@@ -19,6 +19,8 @@ pub const TYPED_TOOL_CONTRACTS: &[&str] = &[
     "cognition_calendar_import",
     "cognition_calendar_list",
     "cognition_calendar_update",
+    "cognition_chat_history_read",
+    "cognition_chat_history_search",
     "cognition_capability_list",
     "cognition_capability_invoke",
     "cognition_capability_resolve",

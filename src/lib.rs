@@ -33,6 +33,7 @@ pub mod turn_slice;
 pub mod tool_bootstrap;
 pub(crate) mod tool_catalog;
 pub mod tool_bootstrap_tools;
+pub mod chat_history_tools;
 pub mod tool_history_tools;
 pub mod tool_history_index;
 pub mod tool_history_handlers;

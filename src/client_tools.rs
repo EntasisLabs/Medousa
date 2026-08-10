@@ -598,6 +598,7 @@ mod tests {
         let scope = Arc::new(tokio::sync::RwLock::new(Some(TurnContinuationScope {
             turn_correlation_id: "turn-one".to_string(),
             session_id: "session-one".to_string(),
+            identity_user_id: None,
             original_prompt: "read the page".to_string(),
             delivery_target: None,
             provider: "test".to_string(),

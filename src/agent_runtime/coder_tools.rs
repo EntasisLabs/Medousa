@@ -2249,7 +2249,11 @@ fn coder_domain_tool_ids(domain: ToolDomainId) -> Option<Vec<ToolId>> {
         "causal" => &[super::coder_causal::COGNITION_CODER_CAUSAL_QUERY],
         "world_model" => crate::detamu_tools::DETAMU_COGNITION_TOOLS,
         "experiments" => &[super::coder_experiments::COGNITION_CODER_EXPERIMENT_COMPARE],
-        "history" => &[COGNITION_ENGINEERING_HISTORY],
+        "history" => &[
+            COGNITION_ENGINEERING_HISTORY,
+            crate::chat_history_tools::COGNITION_CHAT_HISTORY_SEARCH,
+            crate::chat_history_tools::COGNITION_CHAT_HISTORY_READ,
+        ],
         "memory" => CODER_ADVANCED_MEMORY_TOOLS,
         "research" => CODER_RESEARCH_TOOLS,
         "capabilities" => CODER_CAPABILITY_TOOLS,
