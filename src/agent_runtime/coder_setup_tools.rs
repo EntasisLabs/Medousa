@@ -18,6 +18,7 @@ use crate::daemon::state::AppState;
 use crate::daemon_api::{
     CodeProjectSource, SessionCodeProjectResponse, StartSessionCodeProjectRequest,
 };
+use crate::semantic_values::{RequiredContent, TrimmedText};
 #[cfg(test)]
 use crate::typed_tools::TypedTool;
 use crate::typed_tools::{ToolId, ToolRegistration, medousa_tool};
@@ -162,6 +163,25 @@ struct ProjectBindInput {
     work_id: Option<String>,
 }
 
+#[derive(Debug)]
+struct ProjectBindCommand {
+    work_id: TrimmedText,
+}
+
+impl TryFrom<ProjectBindInput> for ProjectBindCommand {
+    type Error = StasisError;
+
+    fn try_from(input: ProjectBindInput) -> Result<Self> {
+        let work_id = input
+            .work_id
+            .ok_or_else(|| StasisError::PortFailure("work_id is required".to_string()))?;
+        Ok(Self {
+            work_id: TrimmedText::new(work_id)
+                .map_err(|_| StasisError::PortFailure("work_id is required".to_string()))?,
+        })
+    }
+}
+
 impl<'de> Deserialize<'de> for ProjectBindInput {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
@@ -194,16 +214,12 @@ struct ProjectBindOutput {
 impl CognitionProjectBindTool {
     /// Bind this conversation to a ready Forge project selected by the user. The full Coder workspace becomes active on the next turn.
     async fn invoke_typed(&self, input: ProjectBindInput) -> Result<ProjectBindOutput> {
-        let work_id = input
-            .work_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| StasisError::PortFailure("work_id is required".into()))?;
+        let command = ProjectBindCommand::try_from(input)?;
+        let work_id = command.work_id.into_string();
         let item = self
             .state
             .forge
-            .load(&medousa_forge::model::WorkId::from(work_id.to_string()))
+            .load(&medousa_forge::model::WorkId::from(work_id.clone()))
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
         if !matches!(item.state, WorkState::Ready | WorkState::Executing)
             || item.workspace_environment().is_none()
@@ -212,11 +228,11 @@ impl CognitionProjectBindTool {
                 "project must be available with a governed worktree".into(),
             ));
         }
-        crate::agent_mode_state::set_session_code_binding(&self.session_id, work_id)
+        crate::agent_mode_state::set_session_code_binding(&self.session_id, &work_id)
             .map_err(StasisError::PortFailure)?;
         Ok(ProjectBindOutput {
             ok: true,
-            work_id: work_id.to_string(),
+            work_id,
             title: item.title,
             message: "Project bound. Full Coder tools become active on the next turn.".to_string(),
         })
@@ -243,6 +259,54 @@ struct ProjectCreateInput {
     repo_path: Option<String>,
     #[schemars(with = "String", default = "default_project_base_ref")]
     base_ref: Option<String>,
+}
+
+#[derive(Debug)]
+struct ProjectCreateCommand {
+    title: TrimmedText,
+    brief: RequiredContent,
+    source: CodeProjectSource,
+    repo_path: Option<TrimmedText>,
+    base_ref: TrimmedText,
+}
+
+impl TryFrom<ProjectCreateInput> for ProjectCreateCommand {
+    type Error = StasisError;
+
+    fn try_from(input: ProjectCreateInput) -> Result<Self> {
+        let title = input
+            .title
+            .ok_or_else(|| StasisError::PortFailure("title is required".to_string()))
+            .and_then(|value| {
+                TrimmedText::new(value)
+                    .map_err(|_| StasisError::PortFailure("title is required".to_string()))
+            })?;
+        let brief = input
+            .brief
+            .ok_or_else(|| StasisError::PortFailure("brief is required".to_string()))
+            .and_then(|value| {
+                RequiredContent::new(value)
+                    .map_err(|_| StasisError::PortFailure("brief is required".to_string()))
+            })?;
+        let repo_path = input
+            .repo_path
+            .and_then(|value| TrimmedText::new(value).ok());
+        if input.source == CodeProjectSource::Repository && repo_path.is_none() {
+            return Err(StasisError::PortFailure(
+                "repo_path is required for an existing repository".to_string(),
+            ));
+        }
+        let base_ref = input.base_ref.unwrap_or_else(default_project_base_ref);
+        let base_ref = TrimmedText::new(base_ref)
+            .map_err(|_| StasisError::PortFailure("base_ref is required".to_string()))?;
+        Ok(Self {
+            title,
+            brief,
+            source: input.source,
+            repo_path,
+            base_ref,
+        })
+    }
 }
 
 fn default_project_base_ref() -> String {
@@ -290,20 +354,13 @@ struct ProjectCreateOutput {
 impl CognitionProjectCreateTool {
     /// Create, provision, and bind a code project after the user explicitly asks for project creation. Blank projects are initialized under the connected workshop's Medousa projects directory.
     async fn invoke_typed(&self, input: ProjectCreateInput) -> Result<ProjectCreateOutput> {
+        let command = ProjectCreateCommand::try_from(input)?;
         let request = StartSessionCodeProjectRequest {
-            title: input.title.ok_or_else(|| {
-                StasisError::PortFailure(
-                    "invalid project request: missing field `title`".to_string(),
-                )
-            })?,
-            brief: input.brief.ok_or_else(|| {
-                StasisError::PortFailure(
-                    "invalid project request: missing field `brief`".to_string(),
-                )
-            })?,
-            source: input.source,
-            repo_path: input.repo_path,
-            base_ref: input.base_ref,
+            title: command.title.into_string(),
+            brief: command.brief.into_string(),
+            source: command.source,
+            repo_path: command.repo_path.map(TrimmedText::into_string),
+            base_ref: Some(command.base_ref.into_string()),
         };
         let state = self.state.clone();
         let session_id = self.session_id.clone();
@@ -319,6 +376,54 @@ impl CognitionProjectCreateTool {
             message: "Project created and bound. Full Coder tools become active on the next turn."
                 .to_string(),
         })
+    }
+}
+
+#[cfg(test)]
+mod command_tests {
+    use super::*;
+
+    #[test]
+    fn project_commands_normalize_ids_and_preserve_brief_content() {
+        let bind = ProjectBindCommand::try_from(ProjectBindInput {
+            work_id: Some(" work-123 ".to_string()),
+        })
+        .expect("bind command");
+        assert_eq!(bind.work_id.as_str(), "work-123");
+
+        let raw_brief = "  Build the importer.  \n";
+        let create = ProjectCreateCommand::try_from(ProjectCreateInput {
+            title: Some(" Importer ".to_string()),
+            brief: Some(raw_brief.to_string()),
+            source: CodeProjectSource::Repository,
+            repo_path: Some(" /tmp/importer ".to_string()),
+            base_ref: Some(" main ".to_string()),
+        })
+        .expect("create command");
+        assert_eq!(create.title.as_str(), "Importer");
+        assert_eq!(create.brief.as_str(), raw_brief);
+        assert_eq!(
+            create.repo_path.as_ref().map(TrimmedText::as_str),
+            Some("/tmp/importer")
+        );
+        assert_eq!(create.base_ref.as_str(), "main");
+    }
+
+    #[test]
+    fn project_create_command_enforces_source_specific_repository_path() {
+        let error = ProjectCreateCommand::try_from(ProjectCreateInput {
+            title: Some("Importer".to_string()),
+            brief: Some("Build it".to_string()),
+            source: CodeProjectSource::Repository,
+            repo_path: Some(" \n\t".to_string()),
+            base_ref: None,
+        })
+        .expect_err("repository path should be required");
+        assert!(
+            error
+                .to_string()
+                .contains("repo_path is required for an existing repository")
+        );
     }
 }
 
