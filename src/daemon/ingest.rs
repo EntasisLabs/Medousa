@@ -1845,13 +1845,13 @@ async fn start_ingest_ask_stream(
     );
     state.channel_deliveries.write().await.insert(
         job_id_str.clone(),
-        channel_delivery::ChannelDeliveryTarget {
-            channel: request.channel.clone(),
-            user_id: request.user_id.clone(),
-            channel_id: request.channel_id.clone(),
-            session_id: session_id.to_string(),
-            stream_id: Some(stream_id.clone()),
-        },
+        channel_delivery::ChannelDeliveryTarget::new(
+            request.channel.clone(),
+            request.user_id.clone(),
+            request.channel_id.clone(),
+            session_id.to_string(),
+            Some(stream_id.clone()),
+        ),
     );
     record_job_delivery_pending(state, &job_id_str).await;
 
@@ -1870,26 +1870,26 @@ async fn start_ingest_ask_stream(
     let stream_id_for_task = stream_id.clone();
     let stream_id_for_cleanup = stream_id.clone();
     let session_id_owned = session_id.to_string();
-    let delivery_target = channel_delivery::ChannelDeliveryTarget {
-        channel: request.channel.clone(),
-        user_id: request.user_id.clone(),
-        channel_id: request.channel_id.clone(),
-        session_id: session_id_owned.clone(),
-        stream_id: Some(stream_id.clone()),
-    };
+    let delivery_target = channel_delivery::ChannelDeliveryTarget::new(
+        request.channel.clone(),
+        request.user_id.clone(),
+        request.channel_id.clone(),
+        session_id_owned.clone(),
+        Some(stream_id.clone()),
+    );
 
     let job_id_for_sink = job_id_str.clone();
     let continuation_scope = crate::turn_continuation::TurnContinuationScope {
         turn_correlation_id: job_id_str.clone(),
         session_id: session_id_owned.clone(),
         original_prompt: interactive_request.prompt.clone(),
-        delivery_target: Some(channel_delivery::ChannelDeliveryTarget {
-            channel: request.channel.clone(),
-            user_id: request.user_id.clone(),
-            channel_id: request.channel_id.clone(),
-            session_id: session_id_owned.clone(),
-            stream_id: Some(stream_id.clone()),
-        }),
+        delivery_target: Some(channel_delivery::ChannelDeliveryTarget::new(
+            request.channel.clone(),
+            request.user_id.clone(),
+            request.channel_id.clone(),
+            session_id_owned.clone(),
+            Some(stream_id.clone()),
+        )),
         provider: interactive_request.provider.clone(),
         model: interactive_request.model.clone(),
         response_depth_mode: interactive_request.response_depth_mode.clone(),

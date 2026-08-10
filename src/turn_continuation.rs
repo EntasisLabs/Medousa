@@ -114,13 +114,13 @@ impl From<&ChannelDeliveryTarget> for StoredDeliveryTarget {
 
 impl From<&StoredDeliveryTarget> for ChannelDeliveryTarget {
     fn from(value: &StoredDeliveryTarget) -> Self {
-        Self {
-            channel: value.channel.clone(),
-            user_id: value.user_id.clone(),
-            channel_id: value.channel_id.clone(),
-            session_id: value.session_id.clone(),
-            stream_id: value.stream_id.clone(),
-        }
+        Self::new(
+            value.channel.clone(),
+            value.user_id.clone(),
+            value.channel_id.clone(),
+            value.session_id.clone(),
+            value.stream_id.clone(),
+        )
     }
 }
 

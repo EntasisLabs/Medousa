@@ -113,22 +113,22 @@ pub fn delivery_target_from_interactive_turn(
             .filter(|value| !value.is_empty())
             .map(str::to_string)
             .unwrap_or_else(|| session_id.clone());
-        return ChannelDeliveryTarget {
+        return ChannelDeliveryTarget::interactive(
             channel,
             user_id,
             channel_id,
             session_id,
-            stream_id: Some(turn_id.to_string()),
-        };
+            turn_id,
+        );
     }
 
-    ChannelDeliveryTarget {
-        channel: CHANNEL_INTERACTIVE.to_string(),
-        user_id: session_id.clone(),
-        channel_id: session_id.clone(),
+    ChannelDeliveryTarget::interactive(
+        CHANNEL_INTERACTIVE,
+        session_id.clone(),
+        session_id.clone(),
         session_id,
-        stream_id: Some(turn_id.to_string()),
-    }
+        turn_id,
+    )
 }
 
 /// Where to deliver a completed ingest job (keyed by `job_id` in the daemon).
@@ -139,6 +139,42 @@ pub struct ChannelDeliveryTarget {
     pub channel_id: String,
     pub session_id: String,
     pub stream_id: Option<String>,
+}
+
+impl ChannelDeliveryTarget {
+    /// Construct a target from already-resolved channel identity. Resolution
+    /// and policy remain explicit at the call site.
+    pub fn new(
+        channel: impl Into<String>,
+        user_id: impl Into<String>,
+        channel_id: impl Into<String>,
+        session_id: impl Into<String>,
+        stream_id: Option<String>,
+    ) -> Self {
+        Self {
+            channel: channel.into(),
+            user_id: user_id.into(),
+            channel_id: channel_id.into(),
+            session_id: session_id.into(),
+            stream_id,
+        }
+    }
+
+    pub fn interactive(
+        channel: impl Into<String>,
+        user_id: impl Into<String>,
+        channel_id: impl Into<String>,
+        session_id: impl Into<String>,
+        turn_id: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            channel,
+            user_id,
+            channel_id,
+            session_id,
+            Some(turn_id.into()),
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -536,52 +572,52 @@ pub async fn dispatch_configured_heartbeat_nudges(
     let text = format_heartbeat_nudge(summary);
 
     for chat_id in &config.telegram.heartbeat_chat_ids {
-        let target = ChannelDeliveryTarget {
-            channel: "telegram".to_string(),
-            user_id: "medousa:system:heartbeat".to_string(),
-            channel_id: format!("telegram:chat:{chat_id}"),
-            session_id: "medousa-heartbeat".to_string(),
-            stream_id: None,
-        };
+        let target = ChannelDeliveryTarget::new(
+            "telegram",
+            "medousa:system:heartbeat",
+            format!("telegram:chat:{chat_id}"),
+            "medousa-heartbeat",
+            None,
+        );
         if let Err(err) = dispatch_channel_message(client, &target, &text).await {
             eprintln!("heartbeat telegram dispatch chat_id={chat_id} err={err:#}");
         }
     }
 
     for channel_id in &config.discord.heartbeat_channel_ids {
-        let target = ChannelDeliveryTarget {
-            channel: "discord".to_string(),
-            user_id: "medousa:system:heartbeat".to_string(),
-            channel_id: format!("discord:channel:{channel_id}"),
-            session_id: "medousa-heartbeat".to_string(),
-            stream_id: None,
-        };
+        let target = ChannelDeliveryTarget::new(
+            "discord",
+            "medousa:system:heartbeat",
+            format!("discord:channel:{channel_id}"),
+            "medousa-heartbeat",
+            None,
+        );
         if let Err(err) = dispatch_channel_message(client, &target, &text).await {
             eprintln!("heartbeat discord dispatch channel_id={channel_id} err={err:#}");
         }
     }
 
     for channel_id in &config.slack.heartbeat_channel_ids {
-        let target = ChannelDeliveryTarget {
-            channel: "slack".to_string(),
-            user_id: "medousa:system:heartbeat".to_string(),
-            channel_id: format!("slack:channel:{channel_id}"),
-            session_id: "medousa-heartbeat".to_string(),
-            stream_id: None,
-        };
+        let target = ChannelDeliveryTarget::new(
+            "slack",
+            "medousa:system:heartbeat",
+            format!("slack:channel:{channel_id}"),
+            "medousa-heartbeat",
+            None,
+        );
         if let Err(err) = dispatch_channel_message(client, &target, &text).await {
             eprintln!("heartbeat slack dispatch channel_id={channel_id} err={err:#}");
         }
     }
 
     for chat_jid in &config.whatsapp.heartbeat_chat_jids {
-        let target = ChannelDeliveryTarget {
-            channel: "whatsapp".to_string(),
-            user_id: "medousa:system:heartbeat".to_string(),
-            channel_id: format!("whatsapp:chat:{chat_jid}"),
-            session_id: "medousa-heartbeat".to_string(),
-            stream_id: None,
-        };
+        let target = ChannelDeliveryTarget::new(
+            "whatsapp",
+            "medousa:system:heartbeat",
+            format!("whatsapp:chat:{chat_jid}"),
+            "medousa-heartbeat",
+            None,
+        );
         if let Err(err) = dispatch_channel_message(client, &target, &text).await {
             eprintln!("heartbeat whatsapp dispatch chat_jid={chat_jid} err={err:#}");
         }
@@ -682,7 +718,7 @@ mod tests {
         delivery_target_from_interactive_turn, extract_output_text_from_diagnostics,
         format_for_telegram_markdown_v2, internal_deliver_webhook_url, is_home_channel,
         is_missing_runtime_table_error, normalize_channel_surface, parse_slack_channel_id,
-        parse_telegram_chat_id, truncate_for_slack, truncate_for_telegram,
+        parse_telegram_chat_id, truncate_for_slack, truncate_for_telegram, ChannelDeliveryTarget,
     };
     use crate::daemon_api::{InteractiveTurnRequest, TurnSurfaceContext};
     use crate::stage_routing::StageRoutingMatrix;
@@ -750,6 +786,22 @@ mod tests {
     fn normalize_legacy_home_surface() {
         assert_eq!(normalize_channel_surface("home"), "home-desktop");
         assert_eq!(normalize_channel_surface("home-ios"), "home-ios");
+    }
+
+    #[test]
+    fn target_constructors_keep_correlated_identity_fields() {
+        let target = ChannelDeliveryTarget::interactive(
+            "home-ios",
+            "user-1",
+            "channel-1",
+            "session-1",
+            "turn-1",
+        );
+        assert_eq!(target.channel, "home-ios");
+        assert_eq!(target.user_id, "user-1");
+        assert_eq!(target.channel_id, "channel-1");
+        assert_eq!(target.session_id, "session-1");
+        assert_eq!(target.stream_id.as_deref(), Some("turn-1"));
     }
 
     #[test]

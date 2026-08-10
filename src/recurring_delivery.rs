@@ -328,13 +328,7 @@ fn resolve_explicit_delivery(
         .map(ToString::to_string)
         .unwrap_or_else(|| fallback_session_id.to_string());
 
-    let target = ChannelDeliveryTarget {
-        channel: channel.clone(),
-        user_id,
-        channel_id,
-        session_id,
-        stream_id: None,
-    };
+    let target = ChannelDeliveryTarget::new(channel.clone(), user_id, channel_id, session_id, None);
 
     enforce_delivery_policy(&target, config)?;
     Ok(target)
@@ -382,13 +376,7 @@ async fn resolve_linked_channel_delivery(
         ))
     })?;
 
-    let target = ChannelDeliveryTarget {
-        channel: channel.clone(),
-        user_id,
-        channel_id,
-        session_id,
-        stream_id: None,
-    };
+    let target = ChannelDeliveryTarget::new(channel.clone(), user_id, channel_id, session_id, None);
 
     enforce_delivery_policy(&target, config)?;
     Ok(target)
@@ -457,13 +445,13 @@ fn resolve_product_default_delivery(
                 )
             })?,
         "cli" => {
-            return Ok(ChannelDeliveryTarget {
-                channel: "cli".to_string(),
-                user_id: "cli:user:default".to_string(),
-                channel_id: "cli:session:default".to_string(),
-                session_id: fallback_session_id.to_string(),
-                stream_id: None,
-            });
+            return Ok(ChannelDeliveryTarget::new(
+                "cli",
+                "cli:user:default",
+                "cli:session:default",
+                fallback_session_id,
+                None,
+            ));
         }
         other => {
             return Err(StasisError::PortFailure(format!(
@@ -472,13 +460,13 @@ fn resolve_product_default_delivery(
         }
     };
 
-    let target = ChannelDeliveryTarget {
-        channel: channel.clone(),
-        user_id: default_user_id_for_channel(&channel),
+    let target = ChannelDeliveryTarget::new(
+        channel.clone(),
+        default_user_id_for_channel(&channel),
         channel_id,
-        session_id: fallback_session_id.to_string(),
-        stream_id: None,
-    };
+        fallback_session_id,
+        None,
+    );
 
     enforce_delivery_policy(&target, config)?;
     Ok(target)
