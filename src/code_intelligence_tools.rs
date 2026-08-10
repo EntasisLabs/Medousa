@@ -5,7 +5,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use stasis::prelude::{Result as StasisResult, StasisError};
 
-use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
+use crate::typed_tools::{CompatOption, ExternalJson, ToolId, medousa_tool};
 
 pub const COGNITION_CODE_HOVER: &str = "cognition_code_hover";
 pub const COGNITION_CODE_DEFINITION: &str = "cognition_code_definition";
@@ -108,33 +108,27 @@ pub struct CodeLocationInput {
     /// file:// document URI
     pub uri: String,
     /// 0-based line
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_u64"
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
-    pub line: Option<u64>,
+    pub line: CompatOption<u64>,
     /// 0-based character
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_u64"
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
-    pub character: Option<u64>,
+    pub character: CompatOption<u64>,
     /// Runtime-bound Forge authority, hidden from the advertised base contract.
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-    )]
+    #[serde(default)]
     #[schemars(skip)]
-    pub work_id: Option<String>,
+    pub work_id: CompatOption<String>,
     /// Runtime-bound attempt authority, hidden from the advertised base contract.
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-    )]
+    #[serde(default)]
     #[schemars(skip)]
-    pub attempt_id: Option<String>,
+    pub attempt_id: CompatOption<String>,
 }
 
 impl CodeLocationInput {
@@ -146,21 +140,23 @@ impl CodeLocationInput {
 
     fn line_char(&self) -> (Option<u32>, Option<u32>) {
         (
-            self.line.map(|value| value as u32),
-            self.character.map(|value| value as u32),
+            self.line.as_ref().copied().map(|value| value as u32),
+            self.character.as_ref().copied().map(|value| value as u32),
         )
     }
 
     async fn invoke_proxy(self, path: &str) -> StasisResult<ExternalJson> {
         let uri = self.validated_uri()?.to_string();
         let (line, character) = self.line_char();
+        let work_id = self.work_id.into_option();
+        let attempt_id = self.attempt_id.into_option();
         proxy(
             path,
             &uri,
             line,
             character,
-            self.work_id.as_deref(),
-            self.attempt_id.as_deref(),
+            work_id.as_deref(),
+            attempt_id.as_deref(),
         )
         .await
         .map(ExternalJson::new)
@@ -219,4 +215,31 @@ pub fn register_code_intelligence_tools(
     registry.register_typed_tool(CognitionCodeDiagnosticsTool)?;
     registry.register_typed_tool(CognitionCodeSymbolsTool)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn code_location_wire_optionals_remain_lenient_for_legacy_values() {
+        let input: CodeLocationInput = serde_json::from_value(serde_json::json!({
+            "uri": "file:///workspace/main.rs",
+            "line": "10",
+            "character": false,
+            "work_id": 42,
+            "attempt_id": " attempt-1 ",
+        }))
+        .expect("code location input");
+        assert_eq!(
+            input.validated_uri().expect("uri"),
+            "file:///workspace/main.rs"
+        );
+        assert_eq!(input.line_char(), (None, None));
+        assert!(input.work_id.into_option().is_none());
+        assert_eq!(
+            input.attempt_id.into_option().as_deref(),
+            Some(" attempt-1 ")
+        );
+    }
 }
