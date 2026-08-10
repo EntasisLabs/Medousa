@@ -22,7 +22,7 @@ use stasis::prelude::StasisError;
 use tokio::sync::RwLock;
 
 use crate::turn_continuation::TurnContinuationScope;
-use crate::typed_tools::{ToolId, medousa_tool};
+use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_UI_SCENE: &str = "cognition_ui_scene";
 const COGNITION_UI_SCENE_ID: ToolId = ToolId::new(COGNITION_UI_SCENE);
@@ -98,13 +98,19 @@ pub struct UiSceneInput {
     #[schemars(required, with = "Vec<SceneOperation>", length(min = 1, max = 12))]
     ops: Option<Vec<SceneOperation>>,
     /// Optional scene surface id. Defaults to the chat turn surface.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    surface_id: Option<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    surface_id: CompatOption<String>,
     /// Owning plan_layout revision for ordering (optional).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
-    rev: Option<i64>,
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    rev: CompatOption<i64>,
 }
 
 impl<'de> Deserialize<'de> for UiSceneInput {
@@ -116,16 +122,10 @@ impl<'de> Deserialize<'de> for UiSceneInput {
         struct WireInput {
             #[serde(default, deserialize_with = "deserialize_optional_scene_ops")]
             ops: Option<Vec<SceneOperation>>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            surface_id: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_i64"
-            )]
-            rev: Option<i64>,
+            #[serde(default)]
+            surface_id: CompatOption<String>,
+            #[serde(default)]
+            rev: CompatOption<i64>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
@@ -197,6 +197,7 @@ impl CognitionUiSceneTool {
 
         let surface_id = input
             .surface_id
+            .into_option()
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
@@ -207,7 +208,7 @@ impl CognitionUiSceneTool {
             ops,
             op_count,
             surface_id,
-            rev: input.rev,
+            rev: input.rev.into_option(),
         })
     }
 }
@@ -292,5 +293,17 @@ mod tests {
             .await
             .expect_err("should reject");
         assert!(err.to_string().contains("max 12"));
+    }
+
+    #[test]
+    fn scene_wire_optionals_remain_lenient_for_legacy_values() {
+        let input: UiSceneInput = serde_json::from_value(json!({
+            "ops": [{"op": "plan_layout"}],
+            "surface_id": 42,
+            "rev": "1",
+        }))
+        .expect("scene input");
+        assert!(input.surface_id.into_option().is_none());
+        assert!(input.rev.into_option().is_none());
     }
 }
