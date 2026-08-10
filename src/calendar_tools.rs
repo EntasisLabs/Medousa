@@ -14,7 +14,7 @@ use crate::daemon_api::{
 };
 use crate::events::TuiEvent;
 use crate::semantic_values::{RequiredContent, TrimmedText};
-use crate::typed_tools::{ToolId, medousa_tool};
+use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 const COGNITION_CALENDAR_LIST_ID: ToolId = ToolId::new("cognition_calendar_list");
 const COGNITION_CALENDAR_EXPORT_ID: ToolId = ToolId::new("cognition_calendar_export");
@@ -71,7 +71,7 @@ pub struct CalendarAlarmInput {
     action: Option<String>,
 }
 
-fn deserialize_lenient_calendar_alarms<'de, D>(
+fn deserialize_compat_calendar_alarms<'de, D>(
     deserializer: D,
 ) -> Result<Option<Vec<CalendarAlarmInput>>, D::Error>
 where
@@ -224,81 +224,48 @@ impl CalendarWriteCommand {
 
 #[derive(Deserialize)]
 struct CalendarWriteWire {
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-    )]
-    uid: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-    )]
-    summary: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-    )]
-    description: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-    )]
-    location: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-    )]
-    dtstart: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-    )]
-    dtend: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
-    )]
-    all_day: Option<bool>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-    )]
-    rrule: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-    )]
-    note_path: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_lenient_calendar_alarms")]
+    #[serde(default)]
+    uid: CompatOption<String>,
+    #[serde(default)]
+    summary: CompatOption<String>,
+    #[serde(default)]
+    description: CompatOption<String>,
+    #[serde(default)]
+    location: CompatOption<String>,
+    #[serde(default)]
+    dtstart: CompatOption<String>,
+    #[serde(default)]
+    dtend: CompatOption<String>,
+    #[serde(default)]
+    all_day: CompatOption<bool>,
+    #[serde(default)]
+    rrule: CompatOption<String>,
+    #[serde(default)]
+    note_path: CompatOption<String>,
+    #[serde(default, deserialize_with = "deserialize_compat_calendar_alarms")]
     alarms: Option<Vec<CalendarAlarmInput>>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-    )]
-    path: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-    )]
-    calendar_path: Option<String>,
+    #[serde(default)]
+    path: CompatOption<String>,
+    #[serde(default)]
+    calendar_path: CompatOption<String>,
 }
 
 impl CalendarWriteWire {
     fn into_parts(self) -> (Option<String>, CalendarWriteFieldsInput) {
         (
-            self.uid,
+            self.uid.into_option(),
             CalendarWriteFieldsInput {
-                summary: self.summary,
-                description: self.description,
-                location: self.location,
-                dtstart: self.dtstart,
-                dtend: self.dtend,
-                all_day: self.all_day,
-                rrule: self.rrule,
-                note_path: self.note_path,
+                summary: self.summary.into_option(),
+                description: self.description.into_option(),
+                location: self.location.into_option(),
+                dtstart: self.dtstart.into_option(),
+                dtend: self.dtend.into_option(),
+                all_day: self.all_day.into_option(),
+                rrule: self.rrule.into_option(),
+                note_path: self.note_path.into_option(),
                 alarms: self.alarms,
-                path: self.path,
-                calendar_path: self.calendar_path,
+                path: self.path.into_option(),
+                calendar_path: self.calendar_path.into_option(),
             },
         )
     }
@@ -317,26 +284,26 @@ impl CognitionCalendarListTool {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CalendarListInput {
     /// RFC3339 range start (inclusive)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    from: Option<String>,
+    from: CompatOption<String>,
     /// RFC3339 range end (exclusive)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    to: Option<String>,
+    to: CompatOption<String>,
     /// Vault-relative .ics path (default calendar/personal.ics)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    path: Option<String>,
+    path: CompatOption<String>,
 }
 
 #[derive(Debug)]
@@ -350,10 +317,13 @@ impl TryFrom<CalendarListInput> for CalendarListCommand {
     type Error = StasisError;
 
     fn try_from(input: CalendarListInput) -> Result<Self, Self::Error> {
+        let from = input.from.into_option();
+        let to = input.to.into_option();
+        let path = input.path.into_option();
         Ok(Self {
-            from: parse_rfc3339_str(input.from.as_deref(), "from")?,
-            to: parse_rfc3339_str(input.to.as_deref(), "to")?,
-            path: optional_trimmed(input.path),
+            from: parse_rfc3339_str(from.as_deref(), "from")?,
+            to: parse_rfc3339_str(to.as_deref(), "to")?,
+            path: optional_trimmed(path),
         })
     }
 }
@@ -496,21 +466,15 @@ impl<'de> Deserialize<'de> for CalendarDeleteInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            uid: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            path: Option<String>,
+            #[serde(default)]
+            uid: CompatOption<String>,
+            #[serde(default)]
+            path: CompatOption<String>,
         }
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            uid: input.uid,
-            path: input.path,
+            uid: input.uid.into_option(),
+            path: input.path.into_option(),
         })
     }
 }
@@ -580,27 +544,18 @@ impl<'de> Deserialize<'de> for CalendarImportInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            ics: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            path: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            calendar_path: Option<String>,
+            #[serde(default)]
+            ics: CompatOption<String>,
+            #[serde(default)]
+            path: CompatOption<String>,
+            #[serde(default)]
+            calendar_path: CompatOption<String>,
         }
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            ics: input.ics,
-            path: input.path,
-            calendar_path: input.calendar_path,
+            ics: input.ics.into_option(),
+            path: input.path.into_option(),
+            calendar_path: input.calendar_path.into_option(),
         })
     }
 }
@@ -666,12 +621,12 @@ impl CognitionCalendarExportTool {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CalendarExportInput {
     /// Vault-relative .ics path (default calendar/personal.ics)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    path: Option<String>,
+    path: CompatOption<String>,
 }
 
 #[derive(Debug)]
@@ -684,7 +639,7 @@ impl TryFrom<CalendarExportInput> for CalendarExportCommand {
 
     fn try_from(input: CalendarExportInput) -> Result<Self, Self::Error> {
         Ok(Self {
-            path: optional_trimmed(input.path),
+            path: optional_trimmed(input.path.into_option()),
         })
     }
 }
@@ -760,9 +715,9 @@ mod tests {
         );
 
         let list = CalendarListCommand::try_from(CalendarListInput {
-            from: Some(" 2026-08-09T00:00:00Z ".to_string()),
-            to: Some("2026-08-10T00:00:00Z".to_string()),
-            path: Some(" calendar/team.ics ".to_string()),
+            from: Some(" 2026-08-09T00:00:00Z ".to_string()).into(),
+            to: Some("2026-08-10T00:00:00Z".to_string()).into(),
+            path: Some(" calendar/team.ics ".to_string()).into(),
         })
         .expect("list command");
         assert_eq!(
