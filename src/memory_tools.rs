@@ -1115,22 +1115,19 @@ pub struct MemoryListInput {
         skip_serializing_if = "MemorySessionScopeInput::is_missing"
     )]
     session_id: MemorySessionScopeInput,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-    )]
+    #[serde(default)]
     #[schemars(
         with = "usize",
         range(min = 1, max = 200),
-        skip_serializing_if = "Option::is_none"
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    limit: Option<usize>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string_list"
+    limit: CompatOption<usize>,
+    #[serde(default)]
+    #[schemars(
+        with = "Vec<String>",
+        skip_serializing_if = "crate::typed_tools::CompatList::is_none"
     )]
-    #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
-    context_keywords: Option<Vec<String>>,
+    context_keywords: CompatList<String>,
     /// Indexed Locus tags (match-all)
     #[serde(default)]
     #[schemars(
@@ -1139,12 +1136,12 @@ pub struct MemoryListInput {
     )]
     semantic_tags: Option<CompatibleSemanticTags>,
     /// Match nodes whose indexed tags share this prefix
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    tag_prefix: Option<String>,
+    tag_prefix: CompatOption<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -1169,7 +1166,7 @@ impl CognitionMemoryListTool {
         &self,
         input: MemoryListInput,
     ) -> stasis::prelude::Result<MemoryListOutput> {
-        let limit = input.limit.unwrap_or(50);
+        let limit = input.limit.into_option().unwrap_or(50);
         let limit = validate_limit(limit, "limit").map_err(StasisError::PortFailure)?;
 
         let session_id = resolve_optional_locus_session_scope(
@@ -1180,11 +1177,13 @@ impl CognitionMemoryListTool {
         )
         .await;
 
-        let keywords = normalize_context_keywords(input.context_keywords.as_deref());
+        let context_keywords = input.context_keywords.into_option();
+        let tag_prefix = input.tag_prefix.into_option();
+        let keywords = normalize_context_keywords(context_keywords.as_deref());
 
         emit_invoked(&self.event_tx, COGNITION_MEMORY_LIST_ID.as_str(), "list").await;
 
-        let tag_filter = memory_filter(input.semantic_tags.as_ref(), input.tag_prefix.as_deref());
+        let tag_filter = memory_filter(input.semantic_tags.as_ref(), tag_prefix.as_deref());
         let has_tag_filters = has_tag_filters(&tag_filter);
 
         if keywords.is_empty() && !has_tag_filters {
@@ -1305,34 +1304,25 @@ impl<'de> Deserialize<'de> for MemoryRecallInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            query: Option<String>,
+            #[serde(default)]
+            query: CompatOption<String>,
             #[serde(default)]
             session_id: MemorySessionScopeInput,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-            )]
-            limit: Option<usize>,
+            #[serde(default)]
+            limit: CompatOption<usize>,
             #[serde(default)]
             semantic_tags: Option<CompatibleSemanticTags>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            tag_prefix: Option<String>,
+            #[serde(default)]
+            tag_prefix: CompatOption<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            query: input.query,
+            query: input.query.into_option(),
             session_id: input.session_id,
-            limit: input.limit,
+            limit: input.limit.into_option(),
             semantic_tags: input.semantic_tags,
-            tag_prefix: input.tag_prefix,
+            tag_prefix: input.tag_prefix.into_option(),
         })
     }
 }
@@ -1440,22 +1430,19 @@ pub struct MemoryTagsInput {
     )]
     session_id: MemorySessionScopeInput,
     /// Filter tags by prefix (case-insensitive)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    prefix: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-    )]
+    prefix: CompatOption<String>,
+    #[serde(default)]
     #[schemars(
         with = "usize",
         range(min = 1, max = 500),
-        skip_serializing_if = "Option::is_none"
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    limit: Option<usize>,
+    limit: CompatOption<usize>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -1474,9 +1461,10 @@ impl CognitionMemoryTagsTool {
         &self,
         input: MemoryTagsInput,
     ) -> stasis::prelude::Result<MemoryTagsOutput> {
-        let limit = input.limit.unwrap_or(100).clamp(1, 500);
+        let limit = input.limit.into_option().unwrap_or(100).clamp(1, 500);
         let prefix = input
             .prefix
+            .into_option()
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())

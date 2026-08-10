@@ -86,6 +86,10 @@ impl<T> CompatList<T> {
     pub fn as_ref(&self) -> Option<&[T]> {
         self.0.as_deref()
     }
+
+    pub fn is_none(&self) -> bool {
+        self.0.is_none()
+    }
 }
 
 impl<T> From<Option<Vec<T>>> for CompatList<T> {
