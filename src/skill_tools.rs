@@ -15,6 +15,7 @@ use crate::openshell_handoff::collect_openshell_doctor_report;
 use crate::openshell_sandbox_run::{OPENSHELL_SANDBOX_RUN_JOB_TYPE, OpenshellSandboxRunPayload};
 use crate::runtime_composition_ext::RuntimeCompositionExt;
 use crate::runtime_job_spec::ToolJobSpec;
+use crate::semantic_values::TrimmedText;
 use crate::skill_execution::{
     SkillAdoptionProposal, SkillScriptEntry, SkillScriptRiskClass, SkillSecurityLevel,
     build_sandbox_payload_for_skill, discover_skill_for_manuscript, evaluate_skill_adoption,
@@ -74,6 +75,34 @@ pub struct SkillDiscoverInput {
     pub skill_path: Option<String>,
 }
 
+#[derive(Debug)]
+struct SkillDiscoverCommand {
+    manuscript_id: Option<TrimmedText>,
+    skill_path: Option<TrimmedText>,
+}
+
+impl TryFrom<SkillDiscoverInput> for SkillDiscoverCommand {
+    type Error = StasisError;
+
+    fn try_from(input: SkillDiscoverInput) -> Result<Self, Self::Error> {
+        let manuscript_id = input
+            .manuscript_id
+            .and_then(|value| TrimmedText::new(value).ok());
+        let skill_path = input
+            .skill_path
+            .and_then(|value| TrimmedText::new(value).ok());
+        if manuscript_id.is_none() && skill_path.is_none() {
+            return Err(StasisError::PortFailure(
+                "cognition_skill_discover: manuscript_id or skill_path is required".to_string(),
+            ));
+        }
+        Ok(Self {
+            manuscript_id,
+            skill_path,
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct SkillDiscoverOutput {
     pub skill_id: String,
@@ -93,13 +122,9 @@ impl CognitionSkillDiscoverTool {
         &self,
         input: SkillDiscoverInput,
     ) -> stasis::prelude::Result<SkillDiscoverOutput> {
-        if let Some(id) = input
-            .manuscript_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            let report = discover_skill_for_manuscript(id)
+        let command = SkillDiscoverCommand::try_from(input)?;
+        if let Some(id) = command.manuscript_id.as_ref() {
+            let report = discover_skill_for_manuscript(id.as_str())
                 .map_err(|err| StasisError::PortFailure(err.to_string()))?;
             return Ok(SkillDiscoverOutput {
                 skill_id: report.skill_id,
@@ -112,17 +137,11 @@ impl CognitionSkillDiscoverTool {
             });
         }
 
-        let skill_path = input
+        let skill_path = command
             .skill_path
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| {
-                StasisError::PortFailure(
-                    "cognition_skill_discover: manuscript_id or skill_path is required".to_string(),
-                )
-            })?;
-        let source = resolve_skill_source(std::path::Path::new(skill_path))
+            .as_ref()
+            .expect("discover command validates one source");
+        let source = resolve_skill_source(std::path::Path::new(skill_path.as_str()))
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
         let scripts = crate::skill_execution::discover_skill_scripts(&source)
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
@@ -194,6 +213,30 @@ pub struct SkillProposeInput {
     pub script: Option<String>,
 }
 
+#[derive(Debug)]
+struct SkillProposeCommand {
+    manuscript_id: TrimmedText,
+    security_level: SkillSecurityLevel,
+    script: Option<TrimmedText>,
+}
+
+impl TryFrom<SkillProposeInput> for SkillProposeCommand {
+    type Error = StasisError;
+
+    fn try_from(input: SkillProposeInput) -> Result<Self, Self::Error> {
+        let manuscript_id = TrimmedText::new(input.manuscript_id).map_err(|_| {
+            StasisError::PortFailure(
+                "cognition_skill_propose: manuscript_id is required".to_string(),
+            )
+        })?;
+        Ok(Self {
+            manuscript_id,
+            security_level: input.security_level.into(),
+            script: input.script.and_then(|value| TrimmedText::new(value).ok()),
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct SkillProposalNextTools {
     pub observe: Vec<String>,
@@ -251,18 +294,10 @@ impl CognitionSkillProposeTool {
         &self,
         input: SkillProposeInput,
     ) -> stasis::prelude::Result<SkillProposeOutput> {
-        let manuscript_id = input.manuscript_id.trim();
-        if manuscript_id.is_empty() {
-            return Err(StasisError::PortFailure(
-                "cognition_skill_propose: manuscript_id is required".to_string(),
-            ));
-        }
-        let requested = SkillSecurityLevel::from(input.security_level);
-        let script = input
-            .script
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
+        let command = SkillProposeCommand::try_from(input)?;
+        let manuscript_id = command.manuscript_id.as_str();
+        let requested = command.security_level;
+        let script = command.script.as_ref().map(TrimmedText::as_str);
 
         let discovery = discover_skill_for_manuscript(manuscript_id)
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
@@ -362,6 +397,33 @@ impl<'de> Deserialize<'de> for SkillProbeInput {
     }
 }
 
+#[derive(Debug)]
+struct SkillProbeCommand {
+    manuscript_id: TrimmedText,
+    script: Option<TrimmedText>,
+    check_grapheme: bool,
+    operator_approved: bool,
+}
+
+impl TryFrom<SkillProbeInput> for SkillProbeCommand {
+    type Error = StasisError;
+
+    fn try_from(input: SkillProbeInput) -> Result<Self, Self::Error> {
+        let manuscript_id =
+            TrimmedText::new(input.manuscript_id.unwrap_or_default()).map_err(|_| {
+                StasisError::PortFailure(
+                    "cognition_skill_probe: manuscript_id is required".to_string(),
+                )
+            })?;
+        Ok(Self {
+            manuscript_id,
+            script: input.script.and_then(|value| TrimmedText::new(value).ok()),
+            check_grapheme: input.check_grapheme.unwrap_or(true),
+            operator_approved: input.operator_approved.unwrap_or(false),
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(untagged)]
 pub enum SkillProbeJobOutput {
@@ -413,30 +475,19 @@ impl CognitionSkillProbeTool {
         &self,
         input: SkillProbeInput,
     ) -> stasis::prelude::Result<SkillProbeOutput> {
-        let manuscript_id = input
-            .manuscript_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| {
-                StasisError::PortFailure(
-                    "cognition_skill_probe: manuscript_id is required".to_string(),
-                )
-            })?;
-        let check_grapheme = input.check_grapheme.unwrap_or(true);
-        let operator_approved = input.operator_approved.unwrap_or(false);
+        let command = SkillProbeCommand::try_from(input)?;
+        let manuscript_id = command.manuscript_id.as_str();
+        let check_grapheme = command.check_grapheme;
+        let operator_approved = command.operator_approved;
 
         let discovery = discover_skill_for_manuscript(manuscript_id)
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
         let manuscript = build_manuscript_context(manuscript_id)
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
 
-        let script = input
+        let script = command
             .script
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
+            .map(TrimmedText::into_string)
             .or_else(|| {
                 discovery
                     .scripts
@@ -599,5 +650,55 @@ mod tests {
     fn skill_tool_names_are_prefixed() {
         assert!(is_skill_cognition_tool(COGNITION_SKILL_PROBE));
         assert!(!is_skill_cognition_tool("cognition_memory_recall"));
+    }
+
+    #[test]
+    fn skill_commands_normalize_identifiers_and_defaults() {
+        let discover = SkillDiscoverCommand::try_from(SkillDiscoverInput {
+            manuscript_id: Some(" manuscript-a ".into()),
+            skill_path: Some(" \n\t".into()),
+        })
+        .expect("discover command");
+        assert_eq!(
+            discover.manuscript_id.as_ref().unwrap().as_str(),
+            "manuscript-a"
+        );
+        assert!(discover.skill_path.is_none());
+
+        let propose = SkillProposeCommand::try_from(SkillProposeInput {
+            manuscript_id: " manuscript-a ".into(),
+            security_level: SkillSecurityLevelInput::Sandbox,
+            script: Some(" scripts/run.sh ".into()),
+        })
+        .expect("propose command");
+        assert_eq!(propose.manuscript_id.as_str(), "manuscript-a");
+        assert_eq!(propose.security_level, SkillSecurityLevel::Sandbox);
+        assert_eq!(propose.script.as_ref().unwrap().as_str(), "scripts/run.sh");
+
+        let probe = SkillProbeCommand::try_from(SkillProbeInput {
+            manuscript_id: Some(" manuscript-a ".into()),
+            script: Some(" scripts/run.sh ".into()),
+            check_grapheme: None,
+            operator_approved: None,
+        })
+        .expect("probe command");
+        assert_eq!(probe.manuscript_id.as_str(), "manuscript-a");
+        assert_eq!(probe.script.as_ref().unwrap().as_str(), "scripts/run.sh");
+        assert!(probe.check_grapheme);
+        assert!(!probe.operator_approved);
+    }
+
+    #[test]
+    fn skill_discover_command_requires_a_source() {
+        let error = SkillDiscoverCommand::try_from(SkillDiscoverInput {
+            manuscript_id: Some(" \n\t".into()),
+            skill_path: Some(" \n\t".into()),
+        })
+        .expect_err("source is required");
+        assert!(
+            error
+                .to_string()
+                .contains("manuscript_id or skill_path is required")
+        );
     }
 }
