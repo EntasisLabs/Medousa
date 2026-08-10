@@ -79,11 +79,27 @@ Useful for scripts and CI calling the engine without the TUI.
 
 ## Terminal workspace (`medousa tui`)
 
-Full-screen workspace: turn history, slash commands, artifact previews, settings panel, job rail beside the conversation.
+Full-screen workspace: turn history, slash commands, artifact previews, settings panel, job rail beside the conversation. Home and the TUI are sibling workshop shells over the same daemon — panes for chat, notes, code, review, and terminal (see [tui-home-workspace-parity-plan](../../architecture/tui-home-workspace-parity-plan.md)).
 
 Artifacts: [artifacts-and-presentations.md](artifacts-and-presentations.md) · Vault: [vault-and-library.md](vault-and-library.md)
 
 Connects to Medousa Engine automatically; starts engine if not running (unless `--no-daemon`).
+
+### Connection (workshop switch)
+
+Settings label in Home is **Connection**. In the TUI:
+
+| Action | How |
+|--------|-----|
+| Open picker | `Ctrl+; w` · `/connection` · command palette |
+| Switch URL | Enter on a row, or `/connection http://host:7419` |
+| Paste URL | `u` in the picker |
+
+The picker lists **Local**, workshops from Home’s `{dataDir}/workshops.json` (read-only), and recent daemons. Pane layout is scoped per workshop under `tui_workspaces/{scope}/` (same idea as Home’s `medousa-home-workspace-session-v4:{workshopId}`).
+
+### Chat handoff with Home
+
+Chat turns live on the **daemon** (`/v1/sessions/{id}/history`). Point TUI and Home at the **same workshop URL** and use the **same `session_id`** (`--session` / focused chat tab / Home’s last session) — there is no fork. Pane layouts stay shell-local (TUI JSON vs Home localStorage).
 
 ---
 

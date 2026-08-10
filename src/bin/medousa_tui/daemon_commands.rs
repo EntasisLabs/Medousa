@@ -21,7 +21,7 @@ use super::{
     EventOutcome, TuiState, WorkerCommand, next_worker_request_id, push_obs_alert, queue_worker_command,
 };
 
-fn daemon_client(daemon_url: &str) -> MedousaClient {
+pub(crate) fn daemon_client(daemon_url: &str) -> MedousaClient {
     MedousaClient::with_transport(Arc::new(HttpTransport::new()), daemon_url)
 }
 
@@ -29,7 +29,7 @@ fn sdk_err(err: medousa_sdk::SdkError) -> anyhow::Error {
     anyhow::anyhow!(err.to_string())
 }
 
-pub(crate) fn handle_daemon_command(
+pub(crate) async fn handle_daemon_command(
     parts: &mut SplitWhitespace<'_>,
     state: &mut TuiState,
 ) -> EventOutcome {
@@ -39,18 +39,29 @@ pub(crate) fn handle_daemon_command(
             push_obs_alert(
                 state,
                 format!(
-                    "daemon url={} | commands: /daemon health | /daemon ask <prompt> | /daemon url <url>",
-                    state.daemon_url
+                    "daemon url={}  connection={}  scope={} | /daemon health | /daemon ask | /daemon url <url> | /connection",
+                    state.daemon_url, state.workshop_label, state.workshop_scope
                 ),
             );
         }
         "url" => {
             let next = parts.collect::<Vec<_>>().join(" ");
             if next.trim().is_empty() {
-                push_obs_alert(state, format!("daemon url={}", state.daemon_url));
+                push_obs_alert(
+                    state,
+                    format!(
+                        "daemon url={}  connection={}  scope={}",
+                        state.daemon_url, state.workshop_label, state.workshop_scope
+                    ),
+                );
             } else {
-                state.daemon_url = next.trim().to_string();
-                push_obs_alert(state, format!("✓ daemon url set to {}", state.daemon_url));
+                let _ = super::connection_runtime::apply_connection(
+                    state,
+                    next.trim(),
+                    None,
+                    None,
+                )
+                .await;
             }
         }
         "health" => {

@@ -5,7 +5,42 @@ use medousa::events::TuiEvent;
 
 use super::{ConversationTurn, JobHistoryEntry, TuiState};
 
+fn event_turn_id(event: &TuiEvent) -> Option<u64> {
+    match event {
+        TuiEvent::AgentScratchReset { turn_id }
+        | TuiEvent::AgentPackHold { turn_id, .. }
+        | TuiEvent::AgentChunk { turn_id, .. }
+        | TuiEvent::AgentReasoningChunk { turn_id, .. }
+        | TuiEvent::AgentFinalPending { turn_id, .. }
+        | TuiEvent::AgentNeedsInput { turn_id, .. }
+        | TuiEvent::AgentResponse { turn_id, .. }
+        | TuiEvent::AgentError { turn_id, .. }
+        | TuiEvent::AgentTurnProgress { turn_id, .. }
+        | TuiEvent::TurnBudgetApprovalRequired { turn_id, .. } => Some(*turn_id),
+        _ => None,
+    }
+}
+
 pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
+    let foreign_session = event_turn_id(&event).and_then(|turn_id| {
+        state
+            .turn_sessions
+            .get(&turn_id)
+            .cloned()
+            .filter(|session| session != &state.session_id)
+    });
+    let previous_session = foreign_session
+        .as_deref()
+        .map(|session| super::workspace_runtime::swap_to_session(state, session));
+
+    handle_tui_event_for_focused(event, state).await;
+
+    if let Some(previous) = previous_session {
+        let _ = super::workspace_runtime::swap_to_session(state, &previous);
+    }
+}
+
+async fn handle_tui_event_for_focused(event: TuiEvent, state: &mut TuiState) {
     if !matches!(
         event,
         TuiEvent::AgentChunk { .. } | TuiEvent::AgentReasoningChunk { .. }
@@ -201,6 +236,7 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
             state.is_processing = false;
             state.active_request_task = None;
             state.open_stream_turn_id = None;
+            super::workspace_runtime::clear_stream_turn(state, turn_id);
             let (visible_text, thinking_chunks) = strip_thinking_tags(&text);
             if !state.received_native_reasoning {
                 for chunk in thinking_chunks {
@@ -267,6 +303,7 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
                 state.is_processing = false;
                 state.active_request_task = None;
                 state.open_stream_turn_id = None;
+                super::workspace_runtime::clear_stream_turn(state, turn_id);
             }
             let (visible_text, thinking_chunks) = strip_thinking_tags(&text);
             if !state.received_native_reasoning {
@@ -370,6 +407,7 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
             state.is_processing = false;
             state.active_request_task = None;
             state.open_stream_turn_id = None;
+            super::workspace_runtime::clear_stream_turn(state, turn_id);
             state.active_agent_stream_turn = None;
             state.in_thinking_tag = false;
             state.stream_tag_tail.clear();

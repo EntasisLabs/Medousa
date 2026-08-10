@@ -98,6 +98,16 @@ mod ui_helpers;
 mod ui_render;
 #[path = "medousa_tui/workers.rs"]
 mod workers;
+#[path = "medousa_tui/workspace_runtime.rs"]
+mod workspace_runtime;
+#[path = "medousa_tui/notes_runtime.rs"]
+mod notes_runtime;
+#[path = "medousa_tui/forge_runtime.rs"]
+mod forge_runtime;
+#[path = "medousa_tui/terminal_runtime.rs"]
+mod terminal_runtime;
+#[path = "medousa_tui/connection_runtime.rs"]
+mod connection_runtime;
 
 use agent_runtime::{start_prompt_run, stop_active_generation};
 use editor_runtime::{load_editor_file, run_editor_source_via_runtime, save_editor_buffer};
@@ -232,6 +242,49 @@ struct TuiState {
     markdown_cache: RefCell<HashMap<MarkdownCacheKey, Vec<Line<'static>>>>,
     markdown_cache_order: RefCell<VecDeque<MarkdownCacheKey>>,
     perf_baseline: Option<PerfSnapshot>,
+    /// Home-aligned pane / desktop layout (tmux-style WM).
+    workspace: medousa::tui::workspace::WorkspaceShell,
+    /// Stashed chat views for unfocused sessions.
+    chat_lanes: HashMap<String, workspace_runtime::ChatLane>,
+    /// Ctrl+; prefix chord armed (awaiting % " hjkl z x …).
+    prefix_active: bool,
+    /// turn_id → session_id for routing stream events across panes.
+    turn_sessions: HashMap<u64, String>,
+    /// Background generation tasks for unfocused chat sessions.
+    session_tasks: HashMap<String, tokio::task::JoinHandle<()>>,
+    /// Vault notes picker (Library-lite).
+    notes_picker_query: String,
+    notes_picker_selected: usize,
+    notes_picker_scroll: u16,
+    notes_picker_hits: Vec<NotesPickerHit>,
+    /// Open note buffers keyed by vault path.
+    note_buffers: HashMap<String, NoteBuffer>,
+    /// Forge undertakings picker.
+    forge_picker_hits: Vec<forge_runtime::ForgeItemHit>,
+    forge_picker_selected: usize,
+    forge_picker_query: String,
+    forge_picker_target: forge_runtime::ForgePickerTarget,
+    /// Code desks keyed by work_id.
+    code_workspaces: HashMap<String, forge_runtime::CodeWorkspace>,
+    /// Review desks keyed by work_id.
+    review_workspaces: HashMap<String, forge_runtime::ReviewWorkspace>,
+    /// Terminal panes keyed by shell session_id.
+    terminal_panes: HashMap<String, terminal_runtime::TerminalPane>,
+    /// Attach-task → UI notifications (stdout dirty / status).
+    terminal_event_tx: mpsc::Sender<terminal_runtime::TerminalUiEvent>,
+    /// Existing shell sessions picker.
+    terminal_picker_hits: Vec<terminal_runtime::ShellSessionSummary>,
+    terminal_picker_selected: usize,
+    terminal_picker_query: String,
+    /// Workshop Connection scope (Home v4 analogue) for pane layout persist.
+    workshop_scope: String,
+    workshop_label: String,
+    /// Connection picker (Settings → Connection analogue).
+    connection_picker_hits: Vec<medousa::tui::workshop_connection::ConnectionChoice>,
+    connection_picker_selected: usize,
+    connection_picker_query: String,
+    connection_picker_custom: String,
+    connection_picker_editing_custom: bool,
 }
 
 pub(crate) fn build_tui_platform_config(state: &TuiState) -> TuiPlatformBuildConfig {
@@ -312,6 +365,14 @@ struct PendingSettingsApply {
 enum UiMode {
     Startup,
     Chat,
+    Notes,
+    NotesPicker,
+    Code,
+    Review,
+    ForgePicker,
+    Terminal,
+    TerminalPicker,
+    ConnectionPicker,
     History,
     CommandPalette,
     Settings,
@@ -323,6 +384,26 @@ enum UiMode {
     ThinkingPeek,
     ThinkingPanel,
     GraphemeConsole,
+}
+
+#[derive(Debug, Clone)]
+struct NotesPickerHit {
+    path: String,
+    title: String,
+    snippet: String,
+}
+
+#[derive(Debug, Clone)]
+struct NoteBuffer {
+    #[allow(dead_code)]
+    path: String,
+    title: String,
+    buffer: TextBuffer,
+    content_hash: String,
+    dirty: bool,
+    status: String,
+    scroll: u16,
+    preferred_col: Option<usize>,
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -535,7 +616,19 @@ async fn main() -> Result<()> {
             .as_deref()
             .unwrap_or(medousa::reasoning_effort::REASONING_EFFORT_DEFAULT),
     );
-    let resolved_daemon_url = resolve_daemon_url(daemon_url);
+    // Prefer explicit CLI; else env / last TUI Connection / default local.
+    let resolved_daemon_url = if daemon_url.map(str::trim).is_some_and(|u| !u.is_empty()) {
+        resolve_daemon_url(daemon_url)
+    } else {
+        medousa::tui::workshop_connection::resolve_tui_daemon_url(None)
+    };
+    let (workshop_scope, workshop_label) =
+        connection_runtime::resolve_scope_for_url(&resolved_daemon_url);
+    let _ = medousa::tui::workshop_connection::remember_daemon(
+        &resolved_daemon_url,
+        Some(&workshop_label),
+        Some(&workshop_scope),
+    );
     let tui_platform_config = TuiPlatformBuildConfig::from_names(
         &resolved_backend,
         Some(&resolved_provider),
@@ -570,6 +663,8 @@ async fn main() -> Result<()> {
     let (event_tx, mut event_rx) = mpsc::channel::<TuiEvent>(256);
     let (worker_cmd_tx, worker_cmd_rx) = mpsc::channel::<WorkerCommand>(32);
     let (worker_result_tx, mut worker_result_rx) = mpsc::channel::<WorkerResult>(64);
+    let (terminal_event_tx, mut terminal_event_rx) =
+        mpsc::channel::<terminal_runtime::TerminalUiEvent>(256);
 
     tokio::spawn(worker_loop(worker_cmd_rx, worker_result_tx));
 
@@ -737,7 +832,40 @@ async fn main() -> Result<()> {
         markdown_cache: RefCell::new(HashMap::new()),
         markdown_cache_order: RefCell::new(VecDeque::new()),
         perf_baseline: None,
+        workspace: workspace_runtime::bootstrap_workspace_from_disk(
+            &session_id,
+            &workshop_scope,
+        ),
+        chat_lanes: workspace_runtime::empty_chat_lanes(),
+        prefix_active: false,
+        turn_sessions: HashMap::new(),
+        session_tasks: HashMap::new(),
+        notes_picker_query: String::new(),
+        notes_picker_selected: 0,
+        notes_picker_scroll: 0,
+        notes_picker_hits: Vec::new(),
+        note_buffers: HashMap::new(),
+        forge_picker_hits: Vec::new(),
+        forge_picker_selected: 0,
+        forge_picker_query: String::new(),
+        forge_picker_target: forge_runtime::ForgePickerTarget::Code,
+        code_workspaces: HashMap::new(),
+        review_workspaces: HashMap::new(),
+        terminal_panes: terminal_runtime::empty_terminal_panes(),
+        terminal_event_tx,
+        terminal_picker_hits: Vec::new(),
+        terminal_picker_selected: 0,
+        terminal_picker_query: String::new(),
+        workshop_scope,
+        workshop_label,
+        connection_picker_hits: Vec::new(),
+        connection_picker_selected: 0,
+        connection_picker_query: String::new(),
+        connection_picker_custom: String::new(),
+        connection_picker_editing_custom: false,
     };
+
+    terminal_runtime::restore_terminal_tabs(&mut state).await;
 
     if local_runtime_only {
         push_obs(
@@ -804,6 +932,11 @@ async fn main() -> Result<()> {
             Some(worker_result) = worker_result_rx.recv() => {
                 mark_ui_activity(&mut state);
                 handle_worker_result(worker_result, &mut state);
+                state.ui_dirty = true;
+            }
+            Some(term_event) = terminal_event_rx.recv() => {
+                mark_ui_activity(&mut state);
+                terminal_runtime::handle_terminal_event(term_event, &mut state);
                 state.ui_dirty = true;
             }
             _ = tokio::time::sleep(wake_after) => {}
@@ -964,6 +1097,7 @@ async fn handle_history_key_event(code: KeyCode, state: &mut TuiState) -> EventO
                 state.auto_scroll = true;
                 state.conv_scroll = state.conv_max_scroll;
                 save_last_session_id(&state.session_id);
+                workspace_runtime::rebind_focused_session(state);
                 state.mode = UiMode::Chat;
             }
         }
@@ -1410,6 +1544,37 @@ mod tests {
             markdown_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
             markdown_cache_order: std::cell::RefCell::new(VecDeque::new()),
             perf_baseline: None,
+            workspace: medousa::tui::workspace::WorkspaceShell::bootstrap(
+                "test-session",
+                "Chat",
+            ),
+            chat_lanes: super::workspace_runtime::empty_chat_lanes(),
+            prefix_active: false,
+            turn_sessions: HashMap::new(),
+            session_tasks: HashMap::new(),
+            notes_picker_query: String::new(),
+            notes_picker_selected: 0,
+            notes_picker_scroll: 0,
+            notes_picker_hits: Vec::new(),
+            note_buffers: HashMap::new(),
+            forge_picker_hits: Vec::new(),
+            forge_picker_selected: 0,
+            forge_picker_query: String::new(),
+            forge_picker_target: super::forge_runtime::ForgePickerTarget::Code,
+            code_workspaces: HashMap::new(),
+            review_workspaces: HashMap::new(),
+            terminal_panes: super::terminal_runtime::empty_terminal_panes(),
+            terminal_event_tx: mpsc::channel::<super::terminal_runtime::TerminalUiEvent>(8).0,
+            terminal_picker_hits: Vec::new(),
+            terminal_picker_selected: 0,
+            terminal_picker_query: String::new(),
+            workshop_scope: "personal".to_string(),
+            workshop_label: "Local".to_string(),
+            connection_picker_hits: Vec::new(),
+            connection_picker_selected: 0,
+            connection_picker_query: String::new(),
+            connection_picker_custom: String::new(),
+            connection_picker_editing_custom: false,
         }
     }
 

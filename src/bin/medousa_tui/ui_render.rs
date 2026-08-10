@@ -1,9 +1,11 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
+
+use medousa::tui::workspace::{ShellTabKind, SplitBranchDirection, SplitNode};
 
 use super::{
     ConversationTurn, ObservabilityFilter, TuiState, UiMode, api_key_storage_backend_label,
@@ -33,49 +35,20 @@ pub(crate) fn render(frame: &mut ratatui::Frame, state: &mut TuiState) {
     let content_area = outer[0];
     let input_area = outer[1];
 
-    let left = content_area;
-
-    let conv_title = if state.is_processing {
-        " Conversation  ⟳ "
-    } else {
-        " Conversation "
-    };
-
-    let inner_width = left.width.saturating_sub(2);
-    let conv_text = build_conversation_text(state, &state.conversation, inner_width);
-    let visible_height = left.height.saturating_sub(2);
-    let visual_lines = visual_line_count(&conv_text, inner_width);
-    let max_scroll = visual_lines.saturating_sub(visible_height);
-    state.conv_max_scroll = max_scroll;
-    let safe_scroll = if state.auto_scroll {
-        max_scroll
-    } else {
-        state.conv_scroll.min(max_scroll)
-    };
-    state.conv_scroll = safe_scroll;
-
-    let conv_border = if state.is_processing {
-        Style::default().fg(ui_accent_warn())
-    } else {
-        Style::default().fg(ui_border())
-    };
-
-    let conv_widget = Paragraph::new(conv_text)
-        .block(
-            Block::default()
-                .title(conv_title)
-                .borders(Borders::ALL)
-                .border_style(conv_border)
-                .style(Style::default().bg(ui_panel_bg())),
-        )
-        .style(Style::default().fg(Color::White).bg(ui_panel_bg()))
-        .wrap(Wrap { trim: false })
-        .scroll((safe_scroll, 0));
-    frame.render_widget(conv_widget, left);
+    render_workspace_panes(frame, state, content_area);
 
     let obs_count = state.observability.len();
     let jobs_count = state.job_history.len();
     let drops = state.perf.dropped_events;
+    let pane_n = state.workspace.pane_count();
+    let desk_n = state.workspace.desktops.len();
+    let desk_idx = state
+        .workspace
+        .desktops
+        .iter()
+        .position(|d| d.id == state.workspace.active_desktop_id)
+        .unwrap_or(0)
+        + 1;
 
     let session_short = medousa::session::format_session_history_label(
         &state.session_id,
@@ -88,12 +61,98 @@ pub(crate) fn render(frame: &mut ratatui::Frame, state: &mut TuiState) {
     } else {
         ""
     };
-    let input_title = format!(
-        " {}  depth:{}  session:{session_short}{}  |  obs:{obs_count} jobs:{jobs_count} drops:{drops}  [Ctrl+O for details] ",
-        state.provider_model, state.response_depth_mode, thinking_hint
+    let prefix_hint = if state.prefix_active {
+        "  PREFIX % \" hjkl z x o"
+    } else {
+        "  [Ctrl+; panes]"
+    };
+    let active_kind = state.workspace.active_tab().map(|t| t.kind()).or(
+        match state.mode {
+            UiMode::Notes => Some(ShellTabKind::Notes),
+            UiMode::Code => Some(ShellTabKind::Code),
+            UiMode::Review => Some(ShellTabKind::Review),
+            UiMode::Terminal => Some(ShellTabKind::Terminal),
+            _ => None,
+        },
     );
-    let input_display = format!("  {}_", state.input_buffer);
-    let input_border = if state.is_processing {
+    let input_title = match active_kind {
+        Some(ShellTabKind::Notes) => format!(
+            " Note edit  Ctrl+S save · Ctrl+A ask · Ctrl+; o library  panes:{pane_n} desk:{desk_idx}/{desk_n}{prefix_hint}  |  obs:{obs_count} "
+        ),
+        Some(ShellTabKind::Code) => format!(
+            " Code  Tab tree/buffer · Enter open · Ctrl+S save · Ctrl+R review  panes:{pane_n}{prefix_hint}  |  obs:{obs_count} "
+        ),
+        Some(ShellTabKind::Review) => format!(
+            " Review  [] files · a approve · f finish · u restore · c code  panes:{pane_n}{prefix_hint}  |  obs:{obs_count} "
+        ),
+        Some(ShellTabKind::Terminal) => format!(
+            " Terminal  keys→PTY · Ctrl+C interrupt · Ctrl+Q quit · Ctrl+; t new  panes:{pane_n}{prefix_hint}  |  obs:{obs_count} "
+        ),
+        _ => format!(
+            " {}  depth:{}  conn:{}  session:{session_short}  panes:{pane_n} desk:{desk_idx}/{desk_n}{}{}  |  obs:{obs_count} jobs:{jobs_count} drops:{drops}  [Ctrl+O] ",
+            state.provider_model,
+            state.response_depth_mode,
+            state.workshop_label,
+            thinking_hint,
+            prefix_hint
+        ),
+    };
+    let input_display = match active_kind {
+        Some(ShellTabKind::Notes) => {
+            let path = state
+                .workspace
+                .active_tab()
+                .and_then(|t| t.notes_path())
+                .unwrap_or("");
+            let dirty = state
+                .note_buffers
+                .get(path)
+                .map(|n| n.dirty)
+                .unwrap_or(false);
+            format!("  {}{}", path, if dirty { " *" } else { "" })
+        }
+        Some(ShellTabKind::Code) => {
+            let work_id = state
+                .workspace
+                .active_tab()
+                .and_then(|t| t.code_work_id())
+                .unwrap_or("");
+            let ws = state.code_workspaces.get(work_id);
+            let path = ws.and_then(|w| w.open_path.as_deref()).unwrap_or("(tree)");
+            let dirty = ws.map(|w| w.dirty).unwrap_or(false);
+            format!("  {}{}", path, if dirty { " *" } else { "" })
+        }
+        Some(ShellTabKind::Review) => {
+            let work_id = state
+                .workspace
+                .active_tab()
+                .and_then(|t| t.review_work_id())
+                .unwrap_or("");
+            let review = state.review_workspaces.get(work_id);
+            let file = review
+                .and_then(|r| r.files.get(r.file_selected))
+                .map(|f| f.path.as_str())
+                .unwrap_or("(no files)");
+            format!("  {file}")
+        }
+        Some(ShellTabKind::Terminal) => {
+            let sid = state
+                .workspace
+                .active_tab()
+                .and_then(|t| t.terminal_session_id())
+                .unwrap_or("");
+            let pane = state.terminal_panes.get(sid);
+            let status = pane.map(|p| p.status.as_str()).unwrap_or("missing");
+            let geom = pane
+                .map(|p| format!("{}x{}", p.cols, p.rows))
+                .unwrap_or_else(|| "?x?".to_string());
+            format!("  {sid}  [{status}]  {geom}")
+        }
+        _ => format!("  {}_", state.input_buffer),
+    };
+    let input_border = if state.prefix_active {
+        Style::default().fg(Color::Yellow)
+    } else if state.is_processing {
         Style::default().fg(ui_accent_warn())
     } else {
         Style::default().fg(ui_accent_primary())
@@ -110,7 +169,15 @@ pub(crate) fn render(frame: &mut ratatui::Frame, state: &mut TuiState) {
         .style(Style::default().fg(Color::White).bg(ui_panel_bg()));
     frame.render_widget(input_widget, input_area);
 
-    if state.mode == UiMode::History {
+    if state.mode == UiMode::NotesPicker {
+        render_notes_picker_overlay(frame, state);
+    } else if state.mode == UiMode::ForgePicker {
+        render_forge_picker_overlay(frame, state);
+    } else if state.mode == UiMode::TerminalPicker {
+        render_terminal_picker_overlay(frame, state);
+    } else if state.mode == UiMode::ConnectionPicker {
+        render_connection_picker_overlay(frame, state);
+    } else if state.mode == UiMode::History {
         render_history_overlay(frame, state);
     } else if state.mode == UiMode::CommandPalette {
         render_command_palette_overlay(frame, state);
@@ -133,6 +200,771 @@ pub(crate) fn render(frame: &mut ratatui::Frame, state: &mut TuiState) {
     } else if state.mode == UiMode::GraphemeConsole {
         render_grapheme_console_overlay(frame, state);
     }
+}
+
+fn render_workspace_panes(frame: &mut ratatui::Frame, state: &mut TuiState, area: Rect) {
+    let layout = state.workspace.layout();
+    let zoomed = layout.zoomed_group_id.clone();
+    let active = layout.active_group_id.clone();
+    let root = layout.split_root.clone();
+
+    if let Some(zoom_id) = zoomed {
+        render_group_pane(frame, state, area, &zoom_id, true);
+        return;
+    }
+
+    let mut regions: Vec<(String, Rect)> = Vec::new();
+    collect_pane_regions(&root, area, &mut regions);
+    for (group_id, rect) in regions {
+        let focused = group_id == active;
+        render_group_pane(frame, state, rect, &group_id, focused);
+    }
+}
+
+fn render_group_pane(
+    frame: &mut ratatui::Frame,
+    state: &mut TuiState,
+    area: Rect,
+    group_id: &str,
+    focused: bool,
+) {
+    let kind = state
+        .workspace
+        .group_active_tab(group_id)
+        .map(|t| t.kind())
+        .unwrap_or(ShellTabKind::Chat);
+    match kind {
+        ShellTabKind::Notes => render_notes_pane(frame, state, area, group_id, focused),
+        ShellTabKind::Code => render_code_pane(frame, state, area, group_id, focused),
+        ShellTabKind::Review => render_review_pane(frame, state, area, group_id, focused),
+        ShellTabKind::Terminal => render_terminal_pane(frame, state, area, group_id, focused),
+        _ => render_chat_pane(frame, state, area, group_id, focused),
+    }
+}
+
+fn collect_pane_regions(node: &SplitNode, area: Rect, out: &mut Vec<(String, Rect)>) {
+    match node {
+        SplitNode::Group { id } => out.push((id.clone(), area)),
+        SplitNode::Branch {
+            direction,
+            ratio,
+            a,
+            b,
+            ..
+        } => {
+            let pct_a = ((*ratio) * 100.0).round().clamp(20.0, 80.0) as u16;
+            let pct_b = 100u16.saturating_sub(pct_a);
+            let dir = match direction {
+                SplitBranchDirection::Row => Direction::Vertical,
+                SplitBranchDirection::Column => Direction::Horizontal,
+            };
+            let chunks = Layout::default()
+                .direction(dir)
+                .constraints([
+                    Constraint::Percentage(pct_a),
+                    Constraint::Percentage(pct_b),
+                ])
+                .split(area);
+            collect_pane_regions(a, chunks[0], out);
+            collect_pane_regions(b, chunks[1], out);
+        }
+    }
+}
+
+fn render_chat_pane(
+    frame: &mut ratatui::Frame,
+    state: &mut TuiState,
+    area: Rect,
+    group_id: &str,
+    focused: bool,
+) {
+    let tab_title = state
+        .workspace
+        .group_active_tab(group_id)
+        .map(|t| t.title().to_string())
+        .unwrap_or_else(|| "Chat".to_string());
+    let session_id = state
+        .workspace
+        .group_active_tab(group_id)
+        .and_then(|t| t.chat_session_id().map(str::to_string))
+        .unwrap_or_else(|| state.session_id.clone());
+
+    let processing = super::workspace_runtime::lane_is_processing(state, &session_id);
+    let title = if processing {
+        format!(" {tab_title}  ⟳ ")
+    } else if focused {
+        format!(" {tab_title}  ● ")
+    } else {
+        format!(" {tab_title} ")
+    };
+
+    let inner_width = area.width.saturating_sub(2);
+    // Unfocused panes clone a snapshot so we can still borrow `state` mutably for scroll.
+    let unfocused_turns = if focused {
+        None
+    } else {
+        Some(
+            super::workspace_runtime::lane_conversation(state, &session_id)
+                .map(|slice| slice.to_vec())
+                .unwrap_or_default(),
+        )
+    };
+    let conv_text = match unfocused_turns.as_deref() {
+        Some(turns) => build_conversation_text(state, turns, inner_width),
+        None => build_conversation_text(state, &state.conversation, inner_width),
+    };
+    let visible_height = area.height.saturating_sub(2);
+    let visual_lines = visual_line_count(&conv_text, inner_width);
+    let max_scroll = visual_lines.saturating_sub(visible_height);
+
+    let safe_scroll = if focused {
+        state.conv_max_scroll = max_scroll;
+        let scroll = if state.auto_scroll {
+            max_scroll
+        } else {
+            state.conv_scroll.min(max_scroll)
+        };
+        state.conv_scroll = scroll;
+        scroll
+    } else {
+        state
+            .chat_lanes
+            .get(&session_id)
+            .map(|lane| {
+                if lane.auto_scroll {
+                    max_scroll
+                } else {
+                    lane.conv_scroll.min(max_scroll)
+                }
+            })
+            .unwrap_or(max_scroll)
+    };
+
+    let conv_border = if processing {
+        Style::default().fg(ui_accent_warn())
+    } else if focused {
+        Style::default().fg(ui_accent_primary())
+    } else {
+        Style::default().fg(ui_border())
+    };
+
+    let conv_widget = Paragraph::new(conv_text)
+        .block(
+            Block::default()
+                .title(title)
+                .borders(Borders::ALL)
+                .border_style(conv_border)
+                .style(Style::default().bg(ui_panel_bg())),
+        )
+        .style(Style::default().fg(Color::White).bg(ui_panel_bg()))
+        .wrap(Wrap { trim: false })
+        .scroll((safe_scroll, 0));
+    frame.render_widget(conv_widget, area);
+}
+
+fn render_notes_pane(
+    frame: &mut ratatui::Frame,
+    state: &mut TuiState,
+    area: Rect,
+    group_id: &str,
+    focused: bool,
+) {
+    let path = state
+        .workspace
+        .group_active_tab(group_id)
+        .and_then(|t| t.notes_path().map(str::to_string))
+        .unwrap_or_default();
+    let (title, body, status, dirty, scroll) = state
+        .note_buffers
+        .get(&path)
+        .map(|n| {
+            (
+                n.title.clone(),
+                n.buffer.as_text().to_string(),
+                n.status.clone(),
+                n.dirty,
+                n.scroll,
+            )
+        })
+        .unwrap_or_else(|| {
+            (
+                path.clone(),
+                String::from("(note not loaded)"),
+                String::new(),
+                false,
+                0,
+            )
+        });
+    let dirty_mark = if dirty { "*" } else { "" };
+    let focus_mark = if focused { " ●" } else { "" };
+    let block_title = format!(" Note {title}{dirty_mark}{focus_mark}  {status} ");
+    let border = if focused {
+        Style::default().fg(ui_accent_primary())
+    } else {
+        Style::default().fg(ui_border())
+    };
+    let widget = Paragraph::new(body)
+        .block(
+            Block::default()
+                .title(block_title)
+                .borders(Borders::ALL)
+                .border_style(border)
+                .style(Style::default().bg(ui_panel_bg())),
+        )
+        .style(Style::default().fg(Color::White).bg(ui_panel_bg()))
+        .wrap(Wrap { trim: false })
+        .scroll((scroll, 0));
+    frame.render_widget(widget, area);
+}
+
+fn render_code_pane(
+    frame: &mut ratatui::Frame,
+    state: &mut TuiState,
+    area: Rect,
+    group_id: &str,
+    focused: bool,
+) {
+    use super::forge_runtime::CodeFocus;
+    let work_id = state
+        .workspace
+        .group_active_tab(group_id)
+        .and_then(|t| t.code_work_id().map(str::to_string))
+        .unwrap_or_default();
+    let Some(ws) = state.code_workspaces.get(&work_id) else {
+        let widget = Paragraph::new("(code workspace not loaded — Ctrl+; f)")
+            .block(
+                Block::default()
+                    .title(" Code ")
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(ui_border()))
+                    .style(Style::default().bg(ui_panel_bg())),
+            );
+        frame.render_widget(widget, area);
+        return;
+    };
+
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(32), Constraint::Percentage(68)])
+        .split(area);
+
+    let mut tree_lines: Vec<Line> = Vec::new();
+    for (idx, path) in ws.tree.iter().enumerate() {
+        let selected = idx == ws.tree_selected;
+        let marker = if selected { ">" } else { " " };
+        let style = if selected && ws.focus == CodeFocus::Tree && focused {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        tree_lines.push(Line::from(Span::styled(
+            format!("{marker} {path}"),
+            style,
+        )));
+    }
+    if tree_lines.is_empty() {
+        tree_lines.push(Line::from(Span::styled(
+            "(empty tree)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+    let tree_border = if focused && ws.focus == CodeFocus::Tree {
+        Style::default().fg(ui_accent_primary())
+    } else {
+        Style::default().fg(ui_border())
+    };
+    let tree = Paragraph::new(Text::from(tree_lines))
+        .block(
+            Block::default()
+                .title(format!(" {} files ", ws.title))
+                .borders(Borders::ALL)
+                .border_style(tree_border)
+                .style(Style::default().bg(ui_panel_bg())),
+        )
+        .scroll((ws.tree_scroll, 0));
+    frame.render_widget(tree, chunks[0]);
+
+    let dirty = if ws.dirty { "*" } else { "" };
+    let focus_mark = if focused { " ●" } else { "" };
+    let path = ws.open_path.as_deref().unwrap_or("(no file)");
+    let body = if ws.open_path.is_some() {
+        ws.buffer.as_text().to_string()
+    } else {
+        "Select a file and press Enter".to_string()
+    };
+    let buf_border = if focused && ws.focus == CodeFocus::Buffer {
+        Style::default().fg(ui_accent_primary())
+    } else {
+        Style::default().fg(ui_border())
+    };
+    let editor = Paragraph::new(body)
+        .block(
+            Block::default()
+                .title(format!(" {path}{dirty}{focus_mark}  {} ", ws.status))
+                .borders(Borders::ALL)
+                .border_style(buf_border)
+                .style(Style::default().bg(ui_panel_bg())),
+        )
+        .wrap(Wrap { trim: false })
+        .scroll((ws.scroll, 0));
+    frame.render_widget(editor, chunks[1]);
+}
+
+fn render_review_pane(
+    frame: &mut ratatui::Frame,
+    state: &mut TuiState,
+    area: Rect,
+    group_id: &str,
+    focused: bool,
+) {
+    let work_id = state
+        .workspace
+        .group_active_tab(group_id)
+        .and_then(|t| t.review_work_id().map(str::to_string))
+        .unwrap_or_default();
+    let Some(review) = state.review_workspaces.get(&work_id) else {
+        let widget = Paragraph::new("(review not loaded — Ctrl+; r)")
+            .block(
+                Block::default()
+                    .title(" Review ")
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(ui_border()))
+                    .style(Style::default().bg(ui_panel_bg())),
+            );
+        frame.render_widget(widget, area);
+        return;
+    };
+
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from(Span::styled(
+        format!(
+            "{} · {} · {}",
+            review.title, review.human_phase, review.status
+        ),
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )));
+    if !review.synthesis_summary.is_empty() {
+        lines.push(Line::from(Span::styled(
+            review.synthesis_summary.clone(),
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+    let actions = format!(
+        "approve:{}  finish:{}  files:{}/{}",
+        if review.can_review { "yes" } else { "no" },
+        if review.can_apply { "yes" } else { "no" },
+        review.file_selected.saturating_add(1).min(review.files.len().max(1)),
+        review.files.len()
+    );
+    lines.push(Line::from(Span::styled(
+        actions,
+        Style::default().fg(Color::DarkGray),
+    )));
+    lines.push(Line::from(""));
+
+    if let Some(file) = review.files.get(review.file_selected) {
+        lines.push(Line::from(Span::styled(
+            format!(
+                "{}  (+{}/-{})  {}",
+                file.path, file.additions, file.deletions, file.status
+            ),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )));
+        for row in &file.lines {
+            let style = if row.starts_with('+') && !row.starts_with("──") {
+                Style::default().fg(Color::Green)
+            } else if row.starts_with('-') && !row.starts_with("──") {
+                Style::default().fg(Color::Red)
+            } else if row.starts_with("──") {
+                Style::default().fg(Color::Cyan)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            lines.push(Line::from(Span::styled(row.clone(), style)));
+        }
+    } else {
+        lines.push(Line::from(Span::styled(
+            "(no changed files in this review)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
+    let border = if focused {
+        Style::default().fg(ui_accent_primary())
+    } else {
+        Style::default().fg(ui_border())
+    };
+    let widget = Paragraph::new(Text::from(lines))
+        .block(
+            Block::default()
+                .title(if focused {
+                    " Review  ● "
+                } else {
+                    " Review "
+                })
+                .borders(Borders::ALL)
+                .border_style(border)
+                .style(Style::default().bg(ui_panel_bg())),
+        )
+        .wrap(Wrap { trim: false })
+        .scroll((review.scroll, 0));
+    frame.render_widget(widget, area);
+}
+
+fn render_terminal_pane(
+    frame: &mut ratatui::Frame,
+    state: &mut TuiState,
+    area: Rect,
+    group_id: &str,
+    focused: bool,
+) {
+    let session_id = state
+        .workspace
+        .group_active_tab(group_id)
+        .and_then(|t| t.terminal_session_id().map(str::to_string))
+        .unwrap_or_default();
+    let title = state
+        .workspace
+        .group_active_tab(group_id)
+        .map(|t| t.title().to_string())
+        .unwrap_or_else(|| "Terminal".to_string());
+
+    let inner = Rect {
+        x: area.x.saturating_add(1),
+        y: area.y.saturating_add(1),
+        width: area.width.saturating_sub(2),
+        height: area.height.saturating_sub(2),
+    };
+    if !session_id.is_empty() && inner.width > 0 && inner.height > 0 {
+        super::terminal_runtime::ensure_geometry(state, &session_id, inner.width, inner.height);
+    }
+
+    let border = if focused {
+        Style::default().fg(ui_accent_primary())
+    } else {
+        Style::default().fg(ui_border())
+    };
+    let status = state
+        .terminal_panes
+        .get(&session_id)
+        .map(|p| {
+            if p.connected {
+                "●"
+            } else {
+                "○"
+            }
+        })
+        .unwrap_or("?");
+    let block = Block::default()
+        .title(if focused {
+            format!(" {title}  {status} ")
+        } else {
+            format!(" {title} ")
+        })
+        .borders(Borders::ALL)
+        .border_style(border)
+        .style(Style::default().bg(ui_panel_bg()));
+    frame.render_widget(block, area);
+
+    let Some(pane) = state.terminal_panes.get(&session_id) else {
+        let msg = Paragraph::new("(terminal not attached — Ctrl+; t)")
+            .style(Style::default().fg(Color::DarkGray).bg(ui_panel_bg()));
+        frame.render_widget(msg, inner);
+        return;
+    };
+
+    let Ok(grid) = pane.grid.lock() else {
+        return;
+    };
+    let (cursor_col, cursor_row) = grid.cursor();
+    let cols = grid.cols().min(inner.width) as usize;
+    let rows = grid.rows().min(inner.height) as usize;
+    let mut lines: Vec<Line> = Vec::with_capacity(rows);
+    for row in 0..rows {
+        let mut spans: Vec<Span> = Vec::with_capacity(cols);
+        for col in 0..cols {
+            let cell = grid.cell_at(col as u16, row as u16);
+            let mut style = Style::default().fg(Color::White).bg(ui_panel_bg());
+            if cell.bold {
+                style = style.add_modifier(Modifier::BOLD);
+            }
+            if cell.reverse {
+                style = style.add_modifier(Modifier::REVERSED);
+            }
+            if focused && col as u16 == cursor_col && row as u16 == cursor_row {
+                style = style.bg(Color::White).fg(ui_panel_bg());
+            }
+            spans.push(Span::styled(cell.ch.to_string(), style));
+        }
+        lines.push(Line::from(spans));
+    }
+    drop(grid);
+    let widget = Paragraph::new(Text::from(lines)).style(Style::default().bg(ui_panel_bg()));
+    frame.render_widget(widget, inner);
+}
+
+fn render_connection_picker_overlay(frame: &mut ratatui::Frame, state: &TuiState) {
+    let area = frame.area();
+    let popup = centered_rect(area, 78, 72);
+    frame.render_widget(Clear, popup);
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from(Span::styled(
+        format!(
+            " Connection  current:{}  scope:{} ",
+            state.workshop_label, state.workshop_scope
+        ),
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )));
+    if state.connection_picker_editing_custom {
+        lines.push(Line::from(Span::styled(
+            format!(" Paste URL: {}_  Enter apply · Esc cancel", state.connection_picker_custom),
+            Style::default().fg(Color::Yellow),
+        )));
+    } else {
+        lines.push(Line::from(Span::styled(
+            format!(
+                "Filter: /{}   Enter switch · u paste URL · Esc close · Ctrl+; w",
+                state.connection_picker_query
+            ),
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+    lines.push(Line::from(""));
+    if state.connection_picker_hits.is_empty() && !state.connection_picker_editing_custom {
+        lines.push(Line::from(Span::styled(
+            "No workshops listed — press u to paste a daemon URL",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        for (idx, hit) in state.connection_picker_hits.iter().enumerate() {
+            let selected = idx == state.connection_picker_selected;
+            let marker = if selected { ">" } else { " " };
+            let style = if selected {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            let active = if medousa::tui::workshop_connection::normalize_daemon_url(&hit.url)
+                == medousa::tui::workshop_connection::normalize_daemon_url(&state.daemon_url)
+            {
+                " ●"
+            } else {
+                ""
+            };
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "{marker} {}{active}  [{}]",
+                    hit.label,
+                    super::connection_runtime::choice_subtitle(hit)
+                ),
+                style,
+            )));
+        }
+    }
+    let widget = Paragraph::new(Text::from(lines))
+        .block(
+            Block::default()
+                .title(" Connection ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(ui_accent_primary()))
+                .style(Style::default().bg(ui_modal_bg())),
+        )
+        .wrap(Wrap { trim: false });
+    frame.render_widget(widget, popup);
+}
+
+fn render_terminal_picker_overlay(frame: &mut ratatui::Frame, state: &TuiState) {
+    let area = frame.area();
+    let popup = centered_rect(area, 76, 70);
+    frame.render_widget(Clear, popup);
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from(Span::styled(
+        format!(" Shell sessions  /{} ", state.terminal_picker_query),
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )));
+    lines.push(Line::from(Span::styled(
+        "Type to filter · Enter attach · Ctrl+N new · Esc close · Ctrl+; T",
+        Style::default().fg(Color::DarkGray),
+    )));
+    lines.push(Line::from(""));
+    if state.terminal_picker_hits.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "No sessions (Enter or Ctrl+N creates one — is medousa-session installed?)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        for (idx, hit) in state.terminal_picker_hits.iter().enumerate() {
+            let selected = idx == state.terminal_picker_selected;
+            let marker = if selected { ">" } else { " " };
+            let style = if selected {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            let work = hit
+                .work_id
+                .as_deref()
+                .map(|w| format!(" work:{w}"))
+                .unwrap_or_default();
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "{marker} {}  {} [{}]{work}",
+                    &hit.session_id[..hit.session_id.len().min(12)],
+                    hit.cwd,
+                    hit.root_kind
+                ),
+                style,
+            )));
+        }
+    }
+    let widget = Paragraph::new(Text::from(lines))
+        .block(
+            Block::default()
+                .title(" Attach terminal ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(ui_accent_primary()))
+                .style(Style::default().bg(ui_modal_bg())),
+        )
+        .wrap(Wrap { trim: false });
+    frame.render_widget(widget, popup);
+}
+
+fn render_forge_picker_overlay(frame: &mut ratatui::Frame, state: &TuiState) {
+    let area = frame.area();
+    let popup = centered_rect(area, 76, 70);
+    frame.render_widget(Clear, popup);
+    let target = match state.forge_picker_target {
+        super::forge_runtime::ForgePickerTarget::Code => "Code",
+        super::forge_runtime::ForgePickerTarget::Review => "Review",
+    };
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from(Span::styled(
+        format!(" Undertakings → {target}  /{} ", state.forge_picker_query),
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )));
+    lines.push(Line::from(Span::styled(
+        "Type to filter · Enter open · Esc close · Ctrl+; f/r",
+        Style::default().fg(Color::DarkGray),
+    )));
+    lines.push(Line::from(""));
+    if state.forge_picker_hits.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "No undertakings (is Forge provisioned on the daemon?)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        for (idx, hit) in state.forge_picker_hits.iter().enumerate() {
+            let selected = idx == state.forge_picker_selected;
+            let marker = if selected { ">" } else { " " };
+            let style = if selected {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            let title = if hit.title.is_empty() {
+                hit.id.as_str()
+            } else {
+                hit.title.as_str()
+            };
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "{marker} {title}  [{} / {}]",
+                    hit.human_phase, hit.state
+                ),
+                style,
+            )));
+            if selected && !hit.brief.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    format!("    {}", hit.brief),
+                    Style::default().fg(Color::DarkGray),
+                )));
+            }
+        }
+    }
+    let panel = Paragraph::new(Text::from(lines))
+        .block(
+            Block::default()
+                .title(" Forge ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(ui_accent_primary()))
+                .style(Style::default().bg(ui_modal_bg())),
+        )
+        .wrap(Wrap { trim: false });
+    frame.render_widget(panel, popup);
+}
+
+fn render_notes_picker_overlay(frame: &mut ratatui::Frame, state: &TuiState) {
+    let area = frame.area();
+    let popup = centered_rect(area, 72, 70);
+    frame.render_widget(Clear, popup);
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from(Span::styled(
+        format!(" Library  /{} ", state.notes_picker_query),
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )));
+    lines.push(Line::from(Span::styled(
+        "Type to search · Enter open · Esc close · Ctrl+; o",
+        Style::default().fg(Color::DarkGray),
+    )));
+    lines.push(Line::from(""));
+    if state.notes_picker_hits.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "No notes (is the daemon vault available?)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        for (idx, hit) in state.notes_picker_hits.iter().enumerate() {
+            let selected = idx == state.notes_picker_selected;
+            let marker = if selected { ">" } else { " " };
+            let style = if selected {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            lines.push(Line::from(Span::styled(
+                format!("{marker} {}  ({})", hit.title, hit.path),
+                style,
+            )));
+            if selected && !hit.snippet.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    format!("    {}", hit.snippet),
+                    Style::default().fg(Color::DarkGray),
+                )));
+            }
+        }
+    }
+    let panel = Paragraph::new(Text::from(lines))
+        .block(
+            Block::default()
+                .title(" Notes ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(ui_accent_primary()))
+                .style(Style::default().bg(ui_modal_bg())),
+        )
+        .wrap(Wrap { trim: false });
+    frame.render_widget(panel, popup);
 }
 
 fn render_startup_overlay(frame: &mut ratatui::Frame, state: &TuiState) {

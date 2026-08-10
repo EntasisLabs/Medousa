@@ -81,6 +81,38 @@ pub(crate) async fn handle_key_event(
         return handle_startup_key_event(key, state, tui_rt, event_tx).await;
     }
 
+    if state.prefix_active {
+        return super::workspace_runtime::handle_prefix_key(key, state).await;
+    }
+    if super::workspace_runtime::handle_prefix_trigger(key, state) {
+        return EventOutcome::Continue;
+    }
+
+    if state.mode == UiMode::NotesPicker {
+        return super::notes_runtime::handle_notes_picker_key(key, state).await;
+    }
+    if state.mode == UiMode::ForgePicker {
+        return super::forge_runtime::handle_forge_picker_key(key, state).await;
+    }
+    if state.mode == UiMode::Notes {
+        return super::notes_runtime::handle_notes_key(key, state).await;
+    }
+    if state.mode == UiMode::Code {
+        return super::forge_runtime::handle_code_key(key, state).await;
+    }
+    if state.mode == UiMode::Review {
+        return super::forge_runtime::handle_review_key(key, state).await;
+    }
+    if state.mode == UiMode::TerminalPicker {
+        return super::terminal_runtime::handle_terminal_picker_key(key, state).await;
+    }
+    if state.mode == UiMode::ConnectionPicker {
+        return super::connection_runtime::handle_connection_picker_key(key, state).await;
+    }
+    if state.mode == UiMode::Terminal {
+        return super::terminal_runtime::handle_terminal_key(key, state).await;
+    }
+
     if key.code == KeyCode::Esc {
         if state.mode == UiMode::RuntimeEnv {
             state.mode = UiMode::Settings;

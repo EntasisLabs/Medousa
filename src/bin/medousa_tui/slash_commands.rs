@@ -30,7 +30,80 @@ pub(crate) async fn handle_slash_command(
                 "  /settings open provider, model, and routing".to_string(),
             );
             push_obs_alert(state, "  /usage    context window / token breakdown".to_string());
+            push_obs_alert(state, "  /notes    open vault library picker (Ctrl+; o)".to_string());
+            push_obs_alert(state, "  /code     open Forge code desk (Ctrl+; f)".to_string());
+            push_obs_alert(state, "  /review   open Forge review desk (Ctrl+; r)".to_string());
+            push_obs_alert(
+                state,
+                "  /terminal open workshop shell pane (Ctrl+; t / T)".to_string(),
+            );
+            push_obs_alert(
+                state,
+                "  /connection switch workshop daemon (Ctrl+; w)".to_string(),
+            );
             push_obs_alert(state, "  /close    quit medousa_tui".to_string());
+        }
+        "/notes" | "/library" => {
+            let rest = parts.collect::<Vec<_>>().join(" ");
+            let rest = rest.trim();
+            if rest.is_empty() {
+                notes_runtime::open_notes_picker(state).await;
+            } else if rest.starts_with("new ") {
+                let path = rest.trim_start_matches("new ").trim();
+                if path.is_empty() {
+                    push_obs_alert(state, "⚠ usage: /notes new <path.md>".to_string());
+                } else {
+                    let _ = notes_runtime::create_note(state, path, "# \n\n").await;
+                }
+            } else {
+                let _ = notes_runtime::open_note_path(state, rest).await;
+            }
+        }
+        "/forge" | "/code" => {
+            let rest = parts.collect::<Vec<_>>().join(" ");
+            let rest = rest.trim();
+            if rest.is_empty() {
+                forge_runtime::open_forge_picker(
+                    state,
+                    forge_runtime::ForgePickerTarget::Code,
+                )
+                .await;
+            } else {
+                let _ = forge_runtime::open_code_work(state, rest, rest).await;
+            }
+        }
+        "/review" => {
+            let rest = parts.collect::<Vec<_>>().join(" ");
+            let rest = rest.trim();
+            if rest.is_empty() {
+                forge_runtime::open_forge_picker(
+                    state,
+                    forge_runtime::ForgePickerTarget::Review,
+                )
+                .await;
+            } else {
+                let _ = forge_runtime::open_review_work(state, rest, rest).await;
+            }
+        }
+        "/terminal" | "/term" | "/shell" => {
+            let rest = parts.collect::<Vec<_>>().join(" ");
+            let rest = rest.trim();
+            if rest.is_empty() {
+                let _ = terminal_runtime::open_new_terminal(state).await;
+            } else if rest == "list" || rest == "picker" {
+                terminal_runtime::open_terminal_picker(state).await;
+            } else {
+                let _ = terminal_runtime::attach_or_create_terminal(state, Some(rest), None).await;
+            }
+        }
+        "/connection" | "/connect" | "/workshop" => {
+            let rest = parts.collect::<Vec<_>>().join(" ");
+            let rest = rest.trim();
+            if rest.is_empty() {
+                connection_runtime::open_connection_picker(state);
+            } else {
+                let _ = connection_runtime::apply_connection(state, rest, None, None).await;
+            }
         }
         "/new" => {
             slash_command_services::handle_new_session_command(state, tui_rt, event_tx).await;
@@ -336,7 +409,7 @@ pub(crate) async fn handle_slash_command(
             }
         }
         "/daemon" => {
-            return handle_daemon_command(&mut parts, state);
+            return handle_daemon_command(&mut parts, state).await;
         }
         "/budget" => {
             let sub = parts.next().unwrap_or("list");

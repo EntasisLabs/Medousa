@@ -247,6 +247,22 @@ pub(crate) async fn start_prompt_run(
     prompt: String,
     persist_user_turn: bool,
 ) {
+    if state.is_processing {
+        super::push_obs(
+            state,
+            "⚠ this pane is already running a turn (Ctrl+G to stop)".to_string(),
+        );
+        return;
+    }
+    if super::workspace_runtime::live_stream_count(state)
+        >= super::workspace_runtime::MAX_LIVE_STREAMS
+    {
+        super::push_obs(
+            state,
+            "⚠ live stream cap reached (max 4) — wait or stop a turn".to_string(),
+        );
+        return;
+    }
     if !state.local_runtime_only {
         match attempt_daemon_interactive_turn(state, &prompt, persist_user_turn).await {
             Ok(response) => {
@@ -316,6 +332,7 @@ pub(crate) async fn start_prompt_run(
     state.in_thinking_tag = false;
     state.stream_tag_tail.clear();
     state.received_native_reasoning = false;
+    super::workspace_runtime::register_stream_turn(state, turn_id);
 
     if persist_user_turn {
         let user_turn = medousa::turn_parts::user_conversation_turn(prompt.clone());
@@ -742,6 +759,7 @@ async fn start_daemon_stream_prompt_run(
     state.stream_tag_tail.clear();
     state.received_native_reasoning = false;
     state.pending_response_verified = None;
+    super::workspace_runtime::register_stream_turn(state, turn_id);
 
     if persist_user_turn {
         let user_turn = medousa::turn_parts::user_conversation_turn(prompt.to_string());
@@ -1104,6 +1122,7 @@ fn build_prior_messages(
 }
 
 pub(crate) fn stop_active_generation(state: &mut TuiState) {
+    let turn_id = state.open_stream_turn_id;
     if let Some(task) = state.active_request_task.take() {
         task.abort();
         state.is_processing = false;
@@ -1112,6 +1131,10 @@ pub(crate) fn stop_active_generation(state: &mut TuiState) {
         state.pending_response_verified = None;
         state.pending_agent_chunk_delta.clear();
         state.pending_agent_chunk_count = 0;
+        if let Some(tid) = turn_id {
+            super::workspace_runtime::clear_stream_turn(state, tid);
+        }
+        state.session_tasks.remove(&state.session_id);
         super::flush_thinking_buffer(state);
         super::push_obs(state, "■ generation stopped".to_string());
     }

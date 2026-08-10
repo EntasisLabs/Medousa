@@ -79,7 +79,10 @@ substitute for these behavioral guarantees.
 
 - Rebuilding the Home shell, canvas, settings, onboarding, or full workshop IA
   in each host.
-- Making TUI feature-complete with Home.
+- Making TUI feature-complete with Home (Anywhere scope). Selective TUI ↔ Home
+  **workspace** parity (panes, notes, code, review, chat) is a sibling-shell
+  epic — see [tui-home-workspace-parity-plan.md](tui-home-workspace-parity-plan.md)
+  — not an Anywhere host-plugin goal.
 - Giving plugins a second filesystem or vault authority.
 - Embedding inference or the turn loop in a plugin.
 - Requiring every daemon capability to have a bespoke plugin UI.

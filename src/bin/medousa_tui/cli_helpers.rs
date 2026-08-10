@@ -53,7 +53,16 @@ pub(crate) fn print_help() {
     println!("  Ctrl+T       Toggle thinking detail panel");
     println!("  Ctrl+G       Stop active generation");
     println!("  Esc          Close current menu");
-    println!("  Ctrl+C       Quit");
+    println!("  Ctrl+;       Pane prefix (then % \" h/j/k/l z x c o f r t/T w n/p 1-4 ?)");
+    println!("  Ctrl+; o     Open vault notes picker");
+    println!("  Ctrl+; f     Open Forge code picker");
+    println!("  Ctrl+; r     Open Forge review picker");
+    println!("  Ctrl+; t     Open new workshop terminal pane");
+    println!("  Ctrl+; T     Attach existing shell session");
+    println!("  Ctrl+; w     Connection picker (workshop / daemon)");
+    println!("  Ctrl+S       Save focused note/code file");
+    println!("  Ctrl+A       Ask about focused note (new chat tab)");
+    println!("  Ctrl+C       Quit (in terminal pane: send to PTY; Ctrl+Q quits)");
     println!();
     println!("HISTORY:");
     println!(
@@ -63,6 +72,11 @@ pub(crate) fn print_help() {
     println!();
     println!("SLASH COMMANDS:");
     println!("  /new                    Start fresh session");
+    println!("  /notes [path|new path]  Vault library picker / open / create");
+    println!("  /code [work_id]         Forge code desk / picker");
+    println!("  /review [work_id]       Forge review desk / picker");
+    println!("  /terminal [id|list]     Workshop shell pane / attach / picker");
+    println!("  /connection [url]       Workshop Connection picker / switch URL");
     println!("  /history                Open session history menu");
     println!("  /name                   Show current session display name");
     println!("  /name <label>           Set global session display name (Surreal when daemon uses it)");
