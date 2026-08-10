@@ -15,7 +15,7 @@ use crate::browser_tools::{
 };
 use crate::events::TuiEvent;
 use crate::turn_continuation::TurnContinuationScope;
-use crate::typed_tools::{ToolId, medousa_tool};
+use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 const COGNITION_BROWSER_FETCH_ID: ToolId = ToolId::new(COGNITION_BROWSER_FETCH);
 
@@ -60,7 +60,7 @@ where
 pub struct BrowserFetchInput {
     /// Absolute URL to fetch
     #[schemars(required, with = "String")]
-    url: Option<String>,
+    url: CompatOption<String>,
     /// Maximum excerpt length in characters
     #[schemars(with = "i64", default = "default_browser_max_chars")]
     max_chars: usize,
@@ -73,11 +73,8 @@ impl<'de> Deserialize<'de> for BrowserFetchInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            url: Option<String>,
+            #[serde(default)]
+            url: CompatOption<String>,
             #[serde(
                 default = "default_browser_max_chars",
                 deserialize_with = "deserialize_browser_max_chars"
@@ -115,7 +112,11 @@ impl CognitionBrowserFetchTool {
             )));
         }
 
-        let command = BrowserUrlCommand::new(input.url, input.max_chars, COGNITION_BROWSER_FETCH)?;
+        let command = BrowserUrlCommand::new(
+            input.url.into_option(),
+            input.max_chars,
+            COGNITION_BROWSER_FETCH,
+        )?;
         let url = command.url.into_string();
         let max_chars = command.max_chars;
 
@@ -162,4 +163,20 @@ pub fn register_browser_fetch_tool(
 ) -> stasis::prelude::Result<()> {
     registry.register_typed_tool(CognitionBrowserFetchTool::new(turn_scope, event_tx))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fetch_wire_url_remains_lenient_for_legacy_values() {
+        let input: BrowserFetchInput = serde_json::from_value(serde_json::json!({
+            "url": false,
+            "max_chars": [],
+        }))
+        .expect("fetch input");
+        assert!(input.url.into_option().is_none());
+        assert_eq!(input.max_chars, 4_000);
+    }
 }
