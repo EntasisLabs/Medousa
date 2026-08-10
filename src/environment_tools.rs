@@ -18,7 +18,7 @@ use tokio::sync::RwLock;
 use crate::environment_store::{environment_hub, resolve_profile_id};
 use crate::semantic_values::TrimmedText;
 use crate::turn_continuation::TurnContinuationScope;
-use crate::typed_tools::{ToolId, medousa_tool};
+use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_ENVIRONMENT_GET: &str = "cognition_environment_get";
 pub const COGNITION_ENVIRONMENT_APPLY: &str = "cognition_environment_apply";
@@ -107,12 +107,12 @@ struct CognitionEnvironmentGetTool;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct EnvironmentProfileInput {
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    profile_id: Option<String>,
+    profile_id: CompatOption<String>,
 }
 
 #[derive(Debug)]
@@ -127,6 +127,7 @@ impl TryFrom<EnvironmentProfileInput> for EnvironmentProfileCommand {
         Ok(Self {
             profile_id: input
                 .profile_id
+                .into_option()
                 .and_then(|value| TrimmedText::new(value).ok()),
         })
     }
@@ -321,12 +322,12 @@ struct CognitionEnvironmentActivatePresetTool;
 struct EnvironmentActivatePresetInput {
     /// Layout preset id from environment_get layoutPresets
     preset_id: String,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    profile_id: Option<String>,
+    profile_id: CompatOption<String>,
 }
 
 #[derive(Debug)]
@@ -345,6 +346,7 @@ impl TryFrom<EnvironmentActivatePresetInput> for EnvironmentActivatePresetComman
             preset_id,
             profile_id: input
                 .profile_id
+                .into_option()
                 .and_then(|value| TrimmedText::new(value).ok()),
         })
     }
@@ -417,12 +419,12 @@ struct CognitionComponentGetTool;
 #[derive(Debug, Deserialize, JsonSchema)]
 struct ComponentIdInput {
     component_id: String,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    profile_id: Option<String>,
+    profile_id: CompatOption<String>,
 }
 
 #[derive(Debug)]
@@ -440,6 +442,7 @@ impl TryFrom<ComponentIdInput> for ComponentIdCommand {
                 .map_err(|_| StasisError::PortFailure("component_id required".to_string()))?,
             profile_id: input
                 .profile_id
+                .into_option()
                 .and_then(|value| TrimmedText::new(value).ok()),
         })
     }
@@ -541,9 +544,12 @@ impl JsonSchema for CompatibleComponentInput {
 struct ComponentCreateInput {
     #[schemars(required)]
     component: CompatibleComponentInput,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    profile_id: Option<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    profile_id: CompatOption<String>,
 }
 
 impl<'de> Deserialize<'de> for ComponentCreateInput {
@@ -555,11 +561,8 @@ impl<'de> Deserialize<'de> for ComponentCreateInput {
         struct WireInput {
             #[serde(default)]
             component: CompatibleComponentInput,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            profile_id: Option<String>,
+            #[serde(default)]
+            profile_id: CompatOption<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
@@ -584,6 +587,7 @@ impl TryFrom<ComponentCreateInput> for ComponentCreateCommand {
             component: input.component.into_result()?,
             profile_id: input
                 .profile_id
+                .into_option()
                 .and_then(|value| TrimmedText::new(value).ok()),
         })
     }
@@ -800,14 +804,17 @@ impl JsonSchema for ComponentPatchInput {
 #[derive(Debug, JsonSchema)]
 struct ComponentUpdateInput {
     #[schemars(required, with = "String")]
-    component_id: Option<String>,
+    component_id: CompatOption<String>,
     /// Partial update — label, surfaceId|surface_id, slot, config, presentation
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     #[schemars(with = "ComponentPatchInput", skip_serializing_if = "Option::is_none")]
     patch: Option<ComponentPatchInput>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    profile_id: Option<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    profile_id: CompatOption<String>,
 }
 
 impl<'de> Deserialize<'de> for ComponentUpdateInput {
@@ -817,18 +824,12 @@ impl<'de> Deserialize<'de> for ComponentUpdateInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            component_id: Option<String>,
+            #[serde(default)]
+            component_id: CompatOption<String>,
             #[serde(default)]
             patch: Option<ComponentPatchInput>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            profile_id: Option<String>,
+            #[serde(default)]
+            profile_id: CompatOption<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
@@ -854,6 +855,7 @@ impl TryFrom<ComponentUpdateInput> for ComponentUpdateCommand {
         Ok(Self {
             component_id: input
                 .component_id
+                .into_option()
                 .ok_or_else(|| StasisError::PortFailure("component_id required".to_string()))
                 .and_then(|value| {
                     TrimmedText::new(value)
@@ -862,6 +864,7 @@ impl TryFrom<ComponentUpdateInput> for ComponentUpdateCommand {
             patch: input.patch.unwrap_or_default(),
             profile_id: input
                 .profile_id
+                .into_option()
                 .and_then(|value| TrimmedText::new(value).ok()),
         })
     }
@@ -1238,7 +1241,7 @@ mod demo_tests {
     #[test]
     fn environment_commands_normalize_ids_and_keep_component_config_opaque() {
         let profile = EnvironmentProfileCommand::try_from(EnvironmentProfileInput {
-            profile_id: Some(" profile-a ".to_string()),
+            profile_id: Some(" profile-a ".to_string()).into(),
         })
         .expect("profile command");
         assert_eq!(
@@ -1259,16 +1262,16 @@ mod demo_tests {
         };
         let create = ComponentCreateCommand::try_from(ComponentCreateInput {
             component: CompatibleComponentInput::Parsed(component.clone()),
-            profile_id: Some(" profile-a ".to_string()),
+            profile_id: Some(" profile-a ".to_string()).into(),
         })
         .expect("create command");
         assert_eq!(create.component.id, "component-a");
         assert_eq!(create.component.config["future"]["keep"], Value::Bool(true));
 
         let update = ComponentUpdateCommand::try_from(ComponentUpdateInput {
-            component_id: Some(" component-a ".to_string()),
+            component_id: Some(" component-a ".to_string()).into(),
             patch: None,
-            profile_id: None,
+            profile_id: None.into(),
         })
         .expect("update command");
         assert_eq!(update.component_id.as_str(), "component-a");
@@ -1282,16 +1285,56 @@ mod demo_tests {
     fn component_commands_reject_blank_identifiers() {
         let error = ComponentIdCommand::try_from(ComponentIdInput {
             component_id: " \n\t".to_string(),
-            profile_id: None,
+            profile_id: None.into(),
         })
         .expect_err("blank component id should fail");
         assert!(error.to_string().contains("component_id required"));
 
         let error = EnvironmentActivatePresetCommand::try_from(EnvironmentActivatePresetInput {
             preset_id: " \n\t".to_string(),
-            profile_id: None,
+            profile_id: None.into(),
         })
         .expect_err("blank preset id should fail");
         assert!(error.to_string().contains("preset_id is required"));
+    }
+
+    #[test]
+    fn environment_wire_optionals_remain_lenient_for_legacy_values() {
+        let profile: EnvironmentProfileInput =
+            serde_json::from_value(json!({ "profile_id": 42 })).expect("profile input");
+        assert!(profile.profile_id.into_option().is_none());
+
+        let activate: EnvironmentActivatePresetInput = serde_json::from_value(json!({
+            "preset_id": "focus",
+            "profile_id": false,
+        }))
+        .expect("activate input");
+        assert!(activate.profile_id.into_option().is_none());
+
+        let component: ComponentIdInput = serde_json::from_value(json!({
+            "component_id": "component-a",
+            "profile_id": [],
+        }))
+        .expect("component id input");
+        assert!(component.profile_id.into_option().is_none());
+
+        let create: ComponentCreateInput =
+            serde_json::from_value(json!({ "profile_id": 9 })).expect("create input");
+        assert!(create.profile_id.into_option().is_none());
+        assert_eq!(
+            create
+                .component
+                .into_result()
+                .expect_err("missing component"),
+            "component required"
+        );
+
+        let update: ComponentUpdateInput = serde_json::from_value(json!({
+            "component_id": true,
+            "profile_id": {"legacy": true},
+        }))
+        .expect("update input");
+        assert!(update.component_id.into_option().is_none());
+        assert!(update.profile_id.into_option().is_none());
     }
 }
