@@ -16,7 +16,7 @@ use crate::events::TuiEvent;
 use crate::locus_semantic_tags::parse_semantic_tags_from_value;
 use crate::semantic_values::{RequiredContent, TrimmedText};
 use crate::turn_continuation::TurnContinuationScope;
-use crate::typed_tools::{ToolId, medousa_tool};
+use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 use crate::vault::VaultService;
 
 const READ_BUDGET_CHARS: usize = 12_000;
@@ -67,19 +67,11 @@ impl CognitionVaultListTool {
     }
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, JsonSchema)]
 pub struct VaultListInput {
     /// Optional path prefix filter
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-    )]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     pub prefix: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-    )]
     #[schemars(
         with = "usize",
         range(min = 1, max = 200),
@@ -87,19 +79,41 @@ pub struct VaultListInput {
     )]
     pub limit: Option<usize>,
     /// Indexed-style tag filter (match-all), aligned with Locus tags
-    #[serde(default, deserialize_with = "deserialize_lenient_semantic_tags")]
     #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
     pub semantic_tags: Option<Vec<String>>,
     /// Filter notes with tags sharing this prefix
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-    )]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     pub tag_prefix: Option<String>,
 }
 
-fn deserialize_lenient_semantic_tags<'de, D>(
+impl<'de> Deserialize<'de> for VaultListInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireInput {
+            #[serde(default)]
+            prefix: CompatOption<String>,
+            #[serde(default)]
+            limit: CompatOption<usize>,
+            #[serde(default, deserialize_with = "deserialize_compat_semantic_tags")]
+            semantic_tags: Option<Vec<String>>,
+            #[serde(default)]
+            tag_prefix: CompatOption<String>,
+        }
+
+        let input = WireInput::deserialize(deserializer)?;
+        Ok(Self {
+            prefix: input.prefix.into_option(),
+            limit: input.limit.into_option(),
+            semantic_tags: input.semantic_tags,
+            tag_prefix: input.tag_prefix.into_option(),
+        })
+    }
+}
+
+fn deserialize_compat_semantic_tags<'de, D>(
     deserializer: D,
 ) -> Result<Option<Vec<String>>, D::Error>
 where
@@ -205,34 +219,22 @@ impl<'de> Deserialize<'de> for VaultReadInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            path: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-            )]
-            max_chars: Option<usize>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-            )]
-            line_start: Option<usize>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-            )]
-            line_end: Option<usize>,
+            #[serde(default)]
+            path: CompatOption<String>,
+            #[serde(default)]
+            max_chars: CompatOption<usize>,
+            #[serde(default)]
+            line_start: CompatOption<usize>,
+            #[serde(default)]
+            line_end: CompatOption<usize>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            path: input.path,
-            max_chars: input.max_chars,
-            line_start: input.line_start,
-            line_end: input.line_end,
+            path: input.path.into_option(),
+            max_chars: input.max_chars.into_option(),
+            line_start: input.line_start.into_option(),
+            line_end: input.line_end.into_option(),
         })
     }
 }
@@ -359,34 +361,22 @@ impl<'de> Deserialize<'de> for VaultGrepInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            path: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            pattern: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-            )]
-            context_lines: Option<usize>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-            )]
-            limit: Option<usize>,
+            #[serde(default)]
+            path: CompatOption<String>,
+            #[serde(default)]
+            pattern: CompatOption<String>,
+            #[serde(default)]
+            context_lines: CompatOption<usize>,
+            #[serde(default)]
+            limit: CompatOption<usize>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            path: input.path,
-            pattern: input.pattern,
-            context_lines: input.context_lines,
-            limit: input.limit,
+            path: input.path.into_option(),
+            pattern: input.pattern.into_option(),
+            context_lines: input.context_lines.into_option(),
+            limit: input.limit.into_option(),
         })
     }
 }
@@ -425,25 +415,22 @@ impl CognitionVaultSearchTool {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct VaultSearchInput {
     /// Full-text query (optional if semantic_tags set)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    q: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_lenient_semantic_tags")]
+    q: CompatOption<String>,
+    #[serde(default, deserialize_with = "deserialize_compat_semantic_tags")]
     #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
     semantic_tags: Option<Vec<String>>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-    )]
+    #[serde(default)]
     #[schemars(
         with = "usize",
         range(min = 1, max = 50),
-        skip_serializing_if = "Option::is_none"
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    limit: Option<usize>,
+    limit: CompatOption<usize>,
 }
 
 #[derive(Debug)]
@@ -457,8 +444,9 @@ impl TryFrom<VaultSearchInput> for VaultSearchCommand {
     type Error = stasis::prelude::StasisError;
 
     fn try_from(input: VaultSearchInput) -> Result<Self, Self::Error> {
-        let query = input
-            .q
+        let query_value = input.q.into_option();
+        let limit = input.limit.into_option();
+        let query = query_value
             .as_deref()
             .and_then(|value| TrimmedText::new(value).ok());
         if query.is_none() && input.semantic_tags.is_none() {
@@ -469,7 +457,7 @@ impl TryFrom<VaultSearchInput> for VaultSearchCommand {
         Ok(Self {
             query,
             semantic_tags: input.semantic_tags,
-            limit: input.limit.unwrap_or(20),
+            limit: limit.unwrap_or(20),
         })
     }
 }
@@ -507,22 +495,19 @@ impl CognitionVaultTagsTool {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct VaultTagsInput {
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    prefix: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-    )]
+    prefix: CompatOption<String>,
+    #[serde(default)]
     #[schemars(
         with = "usize",
         range(min = 1, max = 500),
-        skip_serializing_if = "Option::is_none"
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    limit: Option<usize>,
+    limit: CompatOption<usize>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -539,12 +524,12 @@ impl CognitionVaultTagsTool {
         &self,
         input: VaultTagsInput,
     ) -> stasis::prelude::Result<VaultTagsOutput> {
-        let prefix = input
-            .prefix
+        let prefix_value = input.prefix.into_option();
+        let prefix = prefix_value
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty());
-        let limit = input.limit.unwrap_or(100).clamp(1, 500);
+        let limit = input.limit.into_option().unwrap_or(100).clamp(1, 500);
         emit_invoked(
             &self.event_tx,
             COGNITION_VAULT_TAGS_ID.as_str(),
@@ -674,41 +659,29 @@ impl<'de> Deserialize<'de> for VaultWriteInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            path: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            content: Option<String>,
+            #[serde(default)]
+            path: CompatOption<String>,
+            #[serde(default)]
+            content: CompatOption<String>,
             #[serde(default)]
             session_id: LenientStringPresence,
-            #[serde(default, deserialize_with = "deserialize_lenient_semantic_tags")]
+            #[serde(default, deserialize_with = "deserialize_compat_semantic_tags")]
             semantic_tags: Option<Vec<String>>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
-            )]
-            auto_workshop_tags: Option<bool>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            if_match: Option<String>,
+            #[serde(default)]
+            auto_workshop_tags: CompatOption<bool>,
+            #[serde(default)]
+            if_match: CompatOption<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            path: input.path,
-            content: input.content,
+            path: input.path.into_option(),
+            content: input.content.into_option(),
             session_id: input.session_id.value,
             session_id_provided: input.session_id.provided,
             semantic_tags: input.semantic_tags,
-            auto_workshop_tags: input.auto_workshop_tags,
-            if_match: input.if_match,
+            auto_workshop_tags: input.auto_workshop_tags.into_option(),
+            if_match: input.if_match.into_option(),
         })
     }
 }
@@ -796,14 +769,13 @@ impl<'de> Deserialize<'de> for VaultDeleteInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            path: Option<String>,
+            #[serde(default)]
+            path: CompatOption<String>,
         }
         let input = WireInput::deserialize(deserializer)?;
-        Ok(Self { path: input.path })
+        Ok(Self {
+            path: input.path.into_option(),
+        })
     }
 }
 
@@ -877,21 +849,15 @@ impl<'de> Deserialize<'de> for VaultMoveInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            from_path: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            to_path: Option<String>,
+            #[serde(default)]
+            from_path: CompatOption<String>,
+            #[serde(default)]
+            to_path: CompatOption<String>,
         }
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
-            from_path: input.from_path,
-            to_path: input.to_path,
+            from_path: input.from_path.into_option(),
+            to_path: input.to_path.into_option(),
         })
     }
 }
@@ -1072,9 +1038,9 @@ mod tests {
     #[test]
     fn vault_search_and_move_commands_validate_cross_field_inputs() {
         let search = super::VaultSearchCommand::try_from(super::VaultSearchInput {
-            q: Some("  async rust  ".to_string()),
+            q: Some("  async rust  ".to_string()).into(),
             semantic_tags: None,
-            limit: Some(7),
+            limit: Some(7).into(),
         })
         .expect("search command");
         assert_eq!(
@@ -1092,9 +1058,9 @@ mod tests {
         assert_eq!(move_command.to_path.as_str(), "new.md");
 
         let error = super::VaultSearchCommand::try_from(super::VaultSearchInput {
-            q: Some(" \n".to_string()),
+            q: Some(" \n".to_string()).into(),
             semantic_tags: None,
-            limit: None,
+            limit: None::<usize>.into(),
         })
         .expect_err("empty search command should fail");
         assert!(error.to_string().contains("q or semantic_tags is required"));
