@@ -14,7 +14,7 @@ use crate::environment_store::{environment_hub, resolve_profile_id};
 use crate::semantic_values::TrimmedText;
 use crate::session::load_history;
 use crate::turn_continuation::TurnContinuationScope;
-use crate::typed_tools::{ToolId, medousa_tool};
+use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_CONTEXT_FOLLOW_POINTER: &str = "cognition_context_follow_pointer";
 pub const COGNITION_CONTEXT_LIST_POINTERS: &str = "cognition_context_list_pointers";
@@ -45,7 +45,7 @@ fn default_pointer_scope() -> String {
 #[derive(Debug, JsonSchema)]
 struct ContextFollowPointerInput {
     #[schemars(required, with = "String")]
-    pointer_id: Option<String>,
+    pointer_id: CompatOption<String>,
     #[serde(default = "default_pointer_scope")]
     scope: String,
 }
@@ -82,6 +82,7 @@ impl TryFrom<ContextFollowPointerInput> for ContextFollowPointerCommand {
     fn try_from(input: ContextFollowPointerInput) -> Result<Self, Self::Error> {
         let pointer_id = input
             .pointer_id
+            .into_option()
             .ok_or_else(|| StasisError::PortFailure("pointer_id required".to_string()))?;
         Ok(Self {
             pointer_id: TrimmedText::new(pointer_id)
@@ -98,22 +99,19 @@ impl<'de> Deserialize<'de> for ContextFollowPointerInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            pointer_id: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            scope: Option<String>,
+            #[serde(default)]
+            pointer_id: CompatOption<String>,
+            #[serde(default)]
+            scope: CompatOption<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
             pointer_id: input.pointer_id,
-            scope: input.scope.unwrap_or_else(default_pointer_scope),
+            scope: input
+                .scope
+                .into_option()
+                .unwrap_or_else(default_pointer_scope),
         })
     }
 }
@@ -240,7 +238,7 @@ mod tests {
     #[test]
     fn pointer_command_normalizes_id_and_scope() {
         let command = ContextFollowPointerCommand::try_from(ContextFollowPointerInput {
-            pointer_id: Some(" session-a ".to_string()),
+            pointer_id: Some(" session-a ".to_string()).into(),
             scope: " LAST_3_TURNS ".to_string(),
         })
         .expect("pointer command");
@@ -254,10 +252,32 @@ mod tests {
     #[test]
     fn pointer_command_rejects_blank_pointer_id() {
         let error = ContextFollowPointerCommand::try_from(ContextFollowPointerInput {
-            pointer_id: Some(" \n\t".to_string()),
+            pointer_id: Some(" \n\t".to_string()).into(),
             scope: default_pointer_scope(),
         })
         .expect_err("blank pointer id should fail");
         assert!(error.to_string().contains("pointer_id required"));
+    }
+
+    #[test]
+    fn pointer_wire_optionals_remain_lenient_for_legacy_values() {
+        let missing: ContextFollowPointerInput = serde_json::from_value(serde_json::json!({
+            "pointer_id": 42,
+            "scope": false,
+        }))
+        .expect("pointer input");
+        assert!(missing.pointer_id.into_option().is_none());
+        assert_eq!(missing.scope, "last_5_turns");
+
+        let explicit: ContextFollowPointerInput = serde_json::from_value(serde_json::json!({
+            "pointer_id": "session-a",
+            "scope": "last_3_turns",
+        }))
+        .expect("explicit pointer input");
+        assert_eq!(
+            explicit.pointer_id.into_option().as_deref(),
+            Some("session-a")
+        );
+        assert_eq!(explicit.scope, "last_3_turns");
     }
 }
