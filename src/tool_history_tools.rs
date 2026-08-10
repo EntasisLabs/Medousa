@@ -14,7 +14,7 @@ use crate::turn_slice::{
     DEFAULT_TOOL_HISTORY_DETAIL_CHARS, DEFAULT_TOOL_HISTORY_SUMMARY_TURNS, tool_history_detail_markdown,
     tool_history_summary_rows, ToolHistorySliceRow,
 };
-use crate::typed_tools::{ToolId, medousa_tool};
+use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_TOOL_HISTORY_SUMMARY: &str = "cognition_tool_history_summary";
 pub const COGNITION_TOOL_HISTORY_DETAIL: &str = "cognition_tool_history_detail";
@@ -52,37 +52,34 @@ pub struct CognitionToolHistorySummaryTool {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ToolHistorySummaryInput {
     /// Session id (defaults to active turn session)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    session_id: Option<String>,
+    session_id: CompatOption<String>,
     /// Recent turns to include (default 5)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-    )]
+    #[serde(default)]
     #[schemars(
         with = "usize",
         range(min = 1, max = 24),
-        skip_serializing_if = "Option::is_none"
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    last_k: Option<usize>,
+    last_k: CompatOption<usize>,
     /// Optional substring filter on tool names
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    tool_filter: Option<String>,
+    tool_filter: CompatOption<String>,
     /// Optional keyword filter on slice line / goal / outcomes
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    keyword: Option<String>,
+    keyword: CompatOption<String>,
 }
 
 #[derive(Debug)]
@@ -98,13 +95,14 @@ impl TryFrom<ToolHistorySummaryInput> for ToolHistorySummaryCommand {
 
     fn try_from(input: ToolHistorySummaryInput) -> Result<Self, Self::Error> {
         Ok(Self {
-            session_id: optional_trimmed(input.session_id),
+            session_id: optional_trimmed(input.session_id.into_option()),
             last_k: input
                 .last_k
+                .into_option()
                 .unwrap_or(DEFAULT_TOOL_HISTORY_SUMMARY_TURNS)
                 .clamp(1, 24),
-            tool_filter: optional_trimmed(input.tool_filter),
-            keyword: optional_trimmed(input.keyword),
+            tool_filter: optional_trimmed(input.tool_filter.into_option()),
+            keyword: optional_trimmed(input.keyword.into_option()),
         })
     }
 }
@@ -159,27 +157,30 @@ pub struct CognitionToolHistoryDetailTool {
 
 #[derive(Debug, JsonSchema)]
 pub struct ToolHistoryDetailInput {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    session_id: Option<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    session_id: CompatOption<String>,
     /// Turn slice id, e.g. turn:5
     #[schemars(required, with = "String")]
-    slice_id: Option<String>,
+    slice_id: CompatOption<String>,
     /// Optional single tool round
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     #[schemars(
         with = "usize",
         range(min = 1),
-        skip_serializing_if = "Option::is_none"
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    tool_round: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tool_round: CompatOption<usize>,
+    #[serde(default)]
     #[schemars(
         with = "usize",
         range(min = 256, max = 24000),
-        skip_serializing_if = "Option::is_none"
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    max_chars: Option<usize>,
+    max_chars: CompatOption<usize>,
 }
 
 impl<'de> Deserialize<'de> for ToolHistoryDetailInput {
@@ -189,26 +190,14 @@ impl<'de> Deserialize<'de> for ToolHistoryDetailInput {
     {
         #[derive(Deserialize)]
         struct WireInput {
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            session_id: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-            )]
-            slice_id: Option<String>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-            )]
-            tool_round: Option<usize>,
-            #[serde(
-                default,
-                deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
-            )]
-            max_chars: Option<usize>,
+            #[serde(default)]
+            session_id: CompatOption<String>,
+            #[serde(default)]
+            slice_id: CompatOption<String>,
+            #[serde(default)]
+            tool_round: CompatOption<usize>,
+            #[serde(default)]
+            max_chars: CompatOption<usize>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
@@ -234,11 +223,12 @@ impl TryFrom<ToolHistoryDetailInput> for ToolHistoryDetailCommand {
 
     fn try_from(input: ToolHistoryDetailInput) -> Result<Self, Self::Error> {
         Ok(Self {
-            session_id: optional_trimmed(input.session_id),
-            slice_id: required_slice_id(input.slice_id)?,
-            tool_round: input.tool_round,
+            session_id: optional_trimmed(input.session_id.into_option()),
+            slice_id: required_slice_id(input.slice_id.into_option())?,
+            tool_round: input.tool_round.into_option(),
             max_chars: input
                 .max_chars
+                .into_option()
                 .unwrap_or(DEFAULT_TOOL_HISTORY_DETAIL_CHARS)
                 .clamp(256, 24_000),
         })
@@ -328,10 +318,10 @@ mod tests {
     #[test]
     fn history_commands_normalize_filters_and_bound_detail_reads() {
         let summary = ToolHistorySummaryCommand::try_from(ToolHistorySummaryInput {
-            session_id: Some(" session-a ".to_string()),
-            last_k: Some(999),
-            tool_filter: Some(" cognition_ ".to_string()),
-            keyword: Some(" outcome ".to_string()),
+            session_id: Some(" session-a ".to_string()).into(),
+            last_k: Some(999).into(),
+            tool_filter: Some(" cognition_ ".to_string()).into(),
+            keyword: Some(" outcome ".to_string()).into(),
         })
         .expect("summary command");
         assert_eq!(
@@ -345,10 +335,10 @@ mod tests {
         );
 
         let detail = ToolHistoryDetailCommand::try_from(ToolHistoryDetailInput {
-            session_id: Some(" session-a ".to_string()),
-            slice_id: Some(" turn:4 ".to_string()),
-            tool_round: Some(2),
-            max_chars: Some(99_999),
+            session_id: Some(" session-a ".to_string()).into(),
+            slice_id: Some(" turn:4 ".to_string()).into(),
+            tool_round: Some(2).into(),
+            max_chars: Some(99_999).into(),
         })
         .expect("detail command");
         assert_eq!(detail.slice_id.as_str(), "turn:4");
@@ -358,12 +348,39 @@ mod tests {
     #[test]
     fn history_detail_command_rejects_blank_slice_id() {
         let error = ToolHistoryDetailCommand::try_from(ToolHistoryDetailInput {
-            session_id: None,
-            slice_id: Some(" \n\t".to_string()),
-            tool_round: None,
-            max_chars: None,
+            session_id: None.into(),
+            slice_id: Some(" \n\t".to_string()).into(),
+            tool_round: None.into(),
+            max_chars: None.into(),
         })
         .expect_err("blank slice id should fail");
         assert!(error.to_string().contains("slice_id is required"));
+    }
+
+    #[test]
+    fn history_wire_optionals_remain_lenient_for_legacy_values() {
+        let summary: ToolHistorySummaryInput = serde_json::from_value(serde_json::json!({
+            "session_id": 42,
+            "last_k": "24",
+            "tool_filter": false,
+            "keyword": [],
+        }))
+        .expect("summary input");
+        assert!(summary.session_id.into_option().is_none());
+        assert!(summary.last_k.into_option().is_none());
+        assert!(summary.tool_filter.into_option().is_none());
+        assert!(summary.keyword.into_option().is_none());
+
+        let detail: ToolHistoryDetailInput = serde_json::from_value(serde_json::json!({
+            "session_id": 9,
+            "slice_id": false,
+            "tool_round": "2",
+            "max_chars": [],
+        }))
+        .expect("detail input");
+        assert!(detail.session_id.into_option().is_none());
+        assert!(detail.slice_id.into_option().is_none());
+        assert!(detail.tool_round.into_option().is_none());
+        assert!(detail.max_chars.into_option().is_none());
     }
 }
