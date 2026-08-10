@@ -11,6 +11,7 @@ use tokio::sync::RwLock;
 
 use crate::context_pointer_index::resolve_pointer_slice;
 use crate::environment_store::{environment_hub, resolve_profile_id};
+use crate::semantic_values::TrimmedText;
 use crate::session::load_history;
 use crate::turn_continuation::TurnContinuationScope;
 use crate::typed_tools::{ToolId, medousa_tool};
@@ -47,6 +48,47 @@ struct ContextFollowPointerInput {
     pointer_id: Option<String>,
     #[serde(default = "default_pointer_scope")]
     scope: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PointerScope(usize);
+
+impl PointerScope {
+    fn parse(value: String) -> Self {
+        let normalized = value.trim().to_ascii_lowercase();
+        let turns = normalized
+            .strip_prefix("last_")
+            .and_then(|value| value.strip_suffix("_turns"))
+            .and_then(|value| value.parse::<usize>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(5);
+        Self(turns)
+    }
+
+    fn as_string(self) -> String {
+        format!("last_{}_turns", self.0)
+    }
+}
+
+#[derive(Debug)]
+struct ContextFollowPointerCommand {
+    pointer_id: TrimmedText,
+    scope: PointerScope,
+}
+
+impl TryFrom<ContextFollowPointerInput> for ContextFollowPointerCommand {
+    type Error = StasisError;
+
+    fn try_from(input: ContextFollowPointerInput) -> Result<Self, Self::Error> {
+        let pointer_id = input
+            .pointer_id
+            .ok_or_else(|| StasisError::PortFailure("pointer_id required".to_string()))?;
+        Ok(Self {
+            pointer_id: TrimmedText::new(pointer_id)
+                .map_err(|_| StasisError::PortFailure("pointer_id required".to_string()))?,
+            scope: PointerScope::parse(input.scope),
+        })
+    }
 }
 
 impl<'de> Deserialize<'de> for ContextFollowPointerInput {
@@ -92,11 +134,9 @@ impl CognitionContextFollowPointerTool {
         &self,
         input: ContextFollowPointerInput,
     ) -> stasis::prelude::Result<ContextFollowPointerOutput> {
-        let pointer_id = input
-            .pointer_id
-            .as_deref()
-            .ok_or_else(|| StasisError::PortFailure("pointer_id required".to_string()))?;
-        let scope = input.scope.as_str();
+        let command = ContextFollowPointerCommand::try_from(input)?;
+        let pointer_id = command.pointer_id.into_string();
+        let scope = command.scope.as_string();
 
         let active_session =
             crate::runtime_session::require_active_chat_session_id_async(
@@ -120,23 +160,23 @@ impl CognitionContextFollowPointerTool {
         let pointer = digest
             .pointers
             .iter()
-            .find(|p| p.id == pointer_id)
+            .find(|p| p.id == pointer_id.as_str())
             .cloned()
             .ok_or_else(|| {
                 StasisError::PortFailure(format!("pointer not found in digest: {pointer_id}"))
             })?;
 
         let history = if pointer.kind == POINTER_KIND_SESSION {
-            Some(load_history(pointer_id))
+            Some(load_history(&pointer_id))
         } else {
             None
         };
         let (content, truncated) =
-            resolve_pointer_slice(&pointer, scope, history.as_deref());
+            resolve_pointer_slice(&pointer, &scope, history.as_deref());
 
         Ok(ContextFollowPointerOutput {
             ok: true,
-            pointer_id: pointer_id.to_string(),
+            pointer_id,
             kind: pointer.kind,
             content,
             truncated,
@@ -190,5 +230,34 @@ impl CognitionContextListPointersTool {
             digest,
             block,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pointer_command_normalizes_id_and_scope() {
+        let command = ContextFollowPointerCommand::try_from(ContextFollowPointerInput {
+            pointer_id: Some(" session-a ".to_string()),
+            scope: " LAST_3_TURNS ".to_string(),
+        })
+        .expect("pointer command");
+        assert_eq!(command.pointer_id.as_str(), "session-a");
+        assert_eq!(command.scope.as_string(), "last_3_turns");
+
+        let fallback = PointerScope::parse("unsupported".to_string());
+        assert_eq!(fallback.as_string(), "last_5_turns");
+    }
+
+    #[test]
+    fn pointer_command_rejects_blank_pointer_id() {
+        let error = ContextFollowPointerCommand::try_from(ContextFollowPointerInput {
+            pointer_id: Some(" \n\t".to_string()),
+            scope: default_pointer_scope(),
+        })
+        .expect_err("blank pointer id should fail");
+        assert!(error.to_string().contains("pointer_id required"));
     }
 }
