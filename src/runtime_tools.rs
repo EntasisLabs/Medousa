@@ -1768,16 +1768,77 @@ pub struct RuntimeWorkflowScheduleInput {
     feeds: Option<RecurringFeedSpec>,
 }
 
-impl RuntimeWorkflowScheduleInput {
+#[derive(Debug)]
+struct RuntimeWorkflowScheduleCommand {
+    name: Option<TrimmedText>,
+    strategy: WorkflowStrategyInput,
+    mode: TrimmedText,
+    steps: Vec<WorkflowStepSpec>,
+    on_failure: WorkflowFailureInput,
+    note: Option<String>,
+    queue: TrimmedText,
+    cron_expr: TrimmedText,
+    timezone: TrimmedText,
+    recurring_id: Option<TrimmedText>,
+    jitter_seconds: i64,
+    max_attempts: u32,
+    enabled: bool,
+    start_immediately: bool,
+    delivery: Option<RecurringDeliverySpec>,
+    feeds: Option<RecurringFeedSpec>,
+}
+
+impl TryFrom<RuntimeWorkflowScheduleInput> for RuntimeWorkflowScheduleCommand {
+    type Error = StasisError;
+
+    fn try_from(input: RuntimeWorkflowScheduleInput) -> Result<Self, Self::Error> {
+        let required = |value: String, field: &str| {
+            TrimmedText::new(value).map_err(|_| {
+                StasisError::PortFailure(format!(
+                    "cognition_runtime_workflow_schedule: {field} is required"
+                ))
+            })
+        };
+        let name = input.name.and_then(|value| TrimmedText::new(value).ok());
+        let mode = required(input.mode, "mode")?;
+        let queue = required(input.queue, "queue")?;
+        let cron_expr = required(input.cron_expr.unwrap_or_default(), "cron_expr")?;
+        let timezone = required(input.timezone, "timezone")?;
+        let recurring_id = input
+            .recurring_id
+            .and_then(|value| TrimmedText::new(value).ok());
+
+        Ok(Self {
+            name,
+            strategy: input.strategy,
+            mode,
+            steps: input.steps.0,
+            on_failure: input.on_failure,
+            note: input.note,
+            queue,
+            cron_expr,
+            timezone,
+            recurring_id,
+            jitter_seconds: input.jitter_seconds,
+            max_attempts: input.max_attempts as u32,
+            enabled: input.enabled,
+            start_immediately: input.start_immediately,
+            delivery: input.delivery,
+            feeds: input.feeds,
+        })
+    }
+}
+
+impl RuntimeWorkflowScheduleCommand {
     fn request(&self) -> WorkflowRunRequest {
         WorkflowRunRequest {
-            name: self.name.clone(),
+            name: self.name.as_ref().map(ToString::to_string),
             strategy: self.strategy.as_str().to_string(),
-            mode: self.mode.clone(),
-            steps: self.steps.0.clone(),
+            mode: self.mode.to_string(),
+            steps: self.steps.clone(),
             on_failure: self.on_failure.as_str().to_string(),
             note: self.note.clone(),
-            queue: Some(self.queue.clone()),
+            queue: Some(self.queue.to_string()),
         }
     }
 }
@@ -1813,7 +1874,8 @@ impl CognitionRuntimeWorkflowScheduleTool {
         &self,
         input: RuntimeWorkflowScheduleInput,
     ) -> stasis::prelude::Result<RuntimeWorkflowScheduleOutput> {
-        let request = input.request();
+        let command = RuntimeWorkflowScheduleCommand::try_from(input)?;
+        let request = command.request();
         validate_workflow_request(&request)?;
         if let Some(rejection) =
             validate_grapheme_steps_for_workflow(self.runtime.as_ref(), &request).await?
@@ -1821,37 +1883,29 @@ impl CognitionRuntimeWorkflowScheduleTool {
             return Ok(RuntimeWorkflowScheduleOutput::Rejected(rejection));
         }
 
-        let cron_expr = input.cron_expr.as_deref().ok_or_else(|| {
-            StasisError::PortFailure(
-                "cognition_runtime_workflow_schedule: cron_expr is required".to_string(),
-            )
-        })?;
-
         let workflow_id = new_workflow_id();
         let payload = build_workflow_payload(&workflow_id, &request, "scheduled");
         let payload_template_ref = encode_workflow_payload(&payload)?;
 
-        let recurring_id = input
+        let recurring_id = command
             .recurring_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
+            .as_ref()
+            .map(ToString::to_string)
             .unwrap_or_else(|| format!("wf-recur-{}", Uuid::new_v4().simple()));
 
         let now = Utc::now();
         let definition = RecurringScheduleSpec::new(
             recurring_id.clone(),
-            input.queue.clone(),
+            command.queue.as_str(),
             WORKFLOW_SEQUENTIAL_JOB_TYPE,
             payload_template_ref,
-            cron_expr,
-            input.timezone.clone(),
+            command.cron_expr.as_str(),
+            command.timezone.as_str(),
         )
-        .jitter_seconds(input.jitter_seconds)
-        .enabled(input.enabled)
-        .max_attempts(input.max_attempts as u32)
-        .start_immediately(input.start_immediately)
+        .jitter_seconds(command.jitter_seconds)
+        .enabled(command.enabled)
+        .max_attempts(command.max_attempts)
+        .start_immediately(command.start_immediately)
         .build(now)?;
 
         let scope = self.turn_scope.read().await.clone();
@@ -1862,9 +1916,9 @@ impl CognitionRuntimeWorkflowScheduleTool {
             .unwrap_or_else(|| format!("recurring-{recurring_id}"));
         let (delivery_bound, _) = bind_recurring_delivery_spec_for_registration(
             &recurring_id,
-            cron_expr,
-            &input.timezone,
-            input.delivery.as_ref(),
+            command.cron_expr.as_str(),
+            command.timezone.as_str(),
+            command.delivery.as_ref(),
             DeliveryResolveContext {
                 ambient: ambient.as_ref(),
                 fallback_session_id: fallback_session_id.clone(),
@@ -1872,12 +1926,13 @@ impl CognitionRuntimeWorkflowScheduleTool {
         )
         .await?;
         let (feeds_bound, _) =
-            bind_recurring_feed_spec_for_registration(&recurring_id, input.feeds.as_ref()).await?;
+            bind_recurring_feed_spec_for_registration(&recurring_id, command.feeds.as_ref())
+                .await?;
 
         register_recurring_definition(self.runtime.as_ref(), definition.clone()).await?;
 
         let mut materialized_job_id = None;
-        if input.start_immediately {
+        if command.start_immediately {
             let _ = materialize_recurring_now(self.runtime.as_ref(), "cognition_tui")
                 .await
                 .map_err(|err| {
@@ -1928,7 +1983,7 @@ impl CognitionRuntimeWorkflowScheduleTool {
             .event_tx
             .send(TuiEvent::ToolInvoked {
                 tool_name: COGNITION_RUNTIME_WORKFLOW_SCHEDULE_ID.as_str().to_string(),
-                input_summary: format!("{workflow_id} @ {cron_expr}"),
+                input_summary: format!("{workflow_id} @ {}", command.cron_expr.as_str()),
             })
             .await;
 
@@ -1948,13 +2003,13 @@ impl CognitionRuntimeWorkflowScheduleTool {
                 status: "scheduled".to_string(),
                 strategy: request.strategy,
                 recurring_id,
-                cron_expr: cron_expr.to_string(),
-                timezone: input.timezone,
+                cron_expr: command.cron_expr.into_string(),
+                timezone: command.timezone.into_string(),
                 next_run_at_utc: definition.next_run_at.to_rfc3339(),
                 lane: "scheduled".to_string(),
                 delivery_bound,
                 feeds_bound,
-                start_immediately: input.start_immediately,
+                start_immediately: command.start_immediately,
                 materialized_job_id,
                 continuation,
             },
@@ -2445,6 +2500,77 @@ mod tests {
             error
                 .to_string()
                 .contains("cognition_runtime_recurring_register: cron_expr is required")
+        );
+    }
+
+    #[test]
+    fn workflow_schedule_command_normalizes_schedule_fields_once() {
+        let command = RuntimeWorkflowScheduleCommand::try_from(RuntimeWorkflowScheduleInput {
+            name: Some(" Workflow name ".into()),
+            strategy: WorkflowStrategyInput::Concurrent,
+            mode: " default ".into(),
+            steps: CompatibleWorkflowSteps(vec![WorkflowStepSpec::Prompt {
+                id: "step-1".into(),
+                user_prompt: "hello".into(),
+                system_prompt: None,
+            }]),
+            on_failure: WorkflowFailureInput::Continue,
+            note: Some("  preserve this note\n".into()),
+            queue: " queue-a ".into(),
+            cron_expr: Some(" cron ".into()),
+            timezone: " UTC ".into(),
+            recurring_id: Some(" workflow-recur ".into()),
+            jitter_seconds: 4,
+            max_attempts: 3,
+            enabled: false,
+            start_immediately: true,
+            delivery: None,
+            feeds: None,
+        })
+        .expect("workflow schedule command");
+
+        let request = command.request();
+        assert_eq!(command.name.as_ref().unwrap().as_str(), "Workflow name");
+        assert_eq!(command.mode.as_str(), "default");
+        assert_eq!(command.queue.as_str(), "queue-a");
+        assert_eq!(command.cron_expr.as_str(), "cron");
+        assert_eq!(command.timezone.as_str(), "UTC");
+        assert_eq!(
+            command.recurring_id.as_ref().unwrap().as_str(),
+            "workflow-recur"
+        );
+        assert_eq!(request.strategy, "concurrent");
+        assert_eq!(request.mode, "default");
+        assert_eq!(request.queue.as_deref(), Some("queue-a"));
+        assert_eq!(request.note.as_deref(), Some("  preserve this note\n"));
+        assert_eq!(request.steps.len(), 1);
+    }
+
+    #[test]
+    fn workflow_schedule_command_rejects_blank_schedule_fields() {
+        let input = RuntimeWorkflowScheduleInput {
+            name: None,
+            strategy: WorkflowStrategyInput::Sequential,
+            mode: "default".into(),
+            steps: CompatibleWorkflowSteps(Vec::new()),
+            on_failure: WorkflowFailureInput::Stop,
+            note: None,
+            queue: " \n\t".into(),
+            cron_expr: Some("cron".into()),
+            timezone: "UTC".into(),
+            recurring_id: None,
+            jitter_seconds: 0,
+            max_attempts: 1,
+            enabled: true,
+            start_immediately: false,
+            delivery: None,
+            feeds: None,
+        };
+        let error = RuntimeWorkflowScheduleCommand::try_from(input).expect_err("queue is required");
+        assert!(
+            error
+                .to_string()
+                .contains("cognition_runtime_workflow_schedule: queue is required")
         );
     }
 
