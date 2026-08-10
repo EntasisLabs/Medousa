@@ -135,7 +135,7 @@ impl TryFrom<&RecurringFeedSpec> for RecurringFeedBinding {
 
 impl RecurringFeedSpec {
     pub fn try_into_binding(&self) -> StasisResult<RecurringFeedBinding> {
-        self.try_into().map_err(Into::into)
+        self.try_into()
     }
 }
 
