@@ -18,6 +18,7 @@ use tokio::sync::RwLock;
 use crate::capability_catalog::CapabilityRegistry;
 use crate::environment_store::{environment_hub, resolve_profile_id};
 use crate::feed_bus::{FeedPublishRequest, publish};
+use crate::semantic_values::{RequiredContent, TrimmedText};
 use crate::turn_continuation::TurnContinuationScope;
 use crate::typed_tools::{ToolId, medousa_tool};
 
@@ -70,6 +71,27 @@ struct IntentResolveInput {
     query: Option<String>,
 }
 
+#[derive(Debug)]
+struct IntentResolveCommand {
+    intent: Option<TrimmedText>,
+    query: Option<TrimmedText>,
+}
+
+impl TryFrom<IntentResolveInput> for IntentResolveCommand {
+    type Error = StasisError;
+
+    fn try_from(input: IntentResolveInput) -> Result<Self, Self::Error> {
+        let intent = input.intent.and_then(|value| TrimmedText::new(value).ok());
+        let query = input.query.and_then(|value| TrimmedText::new(value).ok());
+        if intent.is_none() && query.is_none() {
+            return Err(StasisError::PortFailure(
+                "cognition_intent_resolve: intent or query is required".to_string(),
+            ));
+        }
+        Ok(Self { intent, query })
+    }
+}
+
 #[medousa_tool(id = COGNITION_INTENT_RESOLVE_ID)]
 impl CognitionIntentResolveTool {
     /// Resolve an operator intent or fuzzy query to capabilities with suggested feed ids and component templates.
@@ -77,22 +99,9 @@ impl CognitionIntentResolveTool {
         &self,
         input: IntentResolveInput,
     ) -> stasis::prelude::Result<IntentResolveResponse> {
-        let intent = input
-            .intent
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
-        let query = input
-            .query
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
-
-        if intent.is_none() && query.is_none() {
-            return Err(StasisError::PortFailure(
-                "cognition_intent_resolve: intent or query is required".to_string(),
-            ));
-        }
+        let command = IntentResolveCommand::try_from(input)?;
+        let intent = command.intent.as_ref().map(TrimmedText::as_str);
+        let query = command.query.as_ref().map(TrimmedText::as_str);
 
         let registry = self.capability_registry.read().await;
         Ok(registry.resolve_intent(intent, query))
@@ -154,6 +163,40 @@ impl<'de> Deserialize<'de> for FeedSubscribeInput {
     }
 }
 
+#[derive(Debug)]
+struct FeedSubscribeCommand {
+    component_id: TrimmedText,
+    feed_ids: Vec<TrimmedText>,
+    profile_id: Option<TrimmedText>,
+}
+
+impl TryFrom<FeedSubscribeInput> for FeedSubscribeCommand {
+    type Error = StasisError;
+
+    fn try_from(input: FeedSubscribeInput) -> Result<Self, Self::Error> {
+        let component_id = input
+            .component_id
+            .ok_or_else(|| StasisError::PortFailure("component_id required".to_string()))
+            .and_then(|value| {
+                TrimmedText::new(value)
+                    .map_err(|_| StasisError::PortFailure("component_id required".to_string()))
+            })?;
+        let feed_ids = input
+            .feed_ids
+            .ok_or_else(|| StasisError::PortFailure("feed_ids array required".to_string()))?
+            .into_iter()
+            .filter_map(|value| TrimmedText::new(value).ok())
+            .collect();
+        Ok(Self {
+            component_id,
+            feed_ids,
+            profile_id: input
+                .profile_id
+                .and_then(|value| TrimmedText::new(value).ok()),
+        })
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(untagged)]
 enum FeedSubscribeOutput {
@@ -179,19 +222,15 @@ impl CognitionFeedSubscribeTool {
         &self,
         input: FeedSubscribeInput,
     ) -> stasis::prelude::Result<FeedSubscribeOutput> {
-        let profile_id = profile_from_typed_input(input.profile_id.as_deref());
-        let component_id = input
-            .component_id
-            .as_deref()
-            .ok_or_else(|| StasisError::PortFailure("component_id required".to_string()))?;
-        let feed_ids = input
+        let command = FeedSubscribeCommand::try_from(input)?;
+        let profile_id =
+            profile_from_typed_input(command.profile_id.as_ref().map(TrimmedText::as_str));
+        let component_id = command.component_id.as_str().to_string();
+        let feed_ids = command
             .feed_ids
-            .ok_or_else(|| StasisError::PortFailure("feed_ids array required".to_string()))?
-            .into_iter()
-            .filter_map(|value| {
-                let value = value.trim();
-                (!value.is_empty()).then(|| value.to_string())
-            })
+            .iter()
+            .map(TrimmedText::as_str)
+            .map(str::to_string)
             .collect::<Vec<_>>();
 
         if feed_ids.is_empty() {
@@ -323,6 +362,35 @@ impl CompatiblePayloadSlice {
     }
 }
 
+#[derive(Debug)]
+struct FeedPublishCommand {
+    feed_id: TrimmedText,
+    summary: RequiredContent,
+    refs: Vec<FeedRef>,
+    payload_slice: Option<Value>,
+    profile_id: Option<TrimmedText>,
+}
+
+impl TryFrom<FeedPublishInput> for FeedPublishCommand {
+    type Error = StasisError;
+
+    fn try_from(input: FeedPublishInput) -> Result<Self, Self::Error> {
+        let feed_id = TrimmedText::new(input.feed_id)
+            .map_err(|_| StasisError::PortFailure("feed_id is required".to_string()))?;
+        let summary = RequiredContent::new(input.summary)
+            .map_err(|_| StasisError::PortFailure("summary is required".to_string()))?;
+        Ok(Self {
+            feed_id,
+            summary,
+            refs: input.refs.0,
+            payload_slice: input.payload_slice.into_option(),
+            profile_id: input
+                .profile_id
+                .and_then(|value| TrimmedText::new(value).ok()),
+        })
+    }
+}
+
 impl<'de> Deserialize<'de> for CompatiblePayloadSlice {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -391,21 +459,16 @@ impl CognitionFeedPublishTool {
         &self,
         input: FeedPublishInput,
     ) -> stasis::prelude::Result<FeedPublishOutput> {
-        let profile_id = resolve_profile_id(
-            input
-                .profile_id
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty()),
-        );
+        let command = FeedPublishCommand::try_from(input)?;
+        let profile_id = resolve_profile_id(command.profile_id.as_ref().map(TrimmedText::as_str));
 
         let event = publish(FeedPublishRequest {
             profile_id: Some(profile_id),
-            feed_id: input.feed_id,
+            feed_id: command.feed_id.into_string(),
             source: FeedSource::Agent,
-            summary: input.summary,
-            refs: input.refs.0,
-            payload_slice: input.payload_slice.into_option(),
+            summary: command.summary.into_string(),
+            refs: command.refs,
+            payload_slice: command.payload_slice,
             payload_max_bytes: None,
         })
         .await
@@ -417,4 +480,76 @@ impl CognitionFeedPublishTool {
 
 fn profile_from_typed_input(profile_id: Option<&str>) -> String {
     resolve_profile_id(profile_id.map(str::trim).filter(|value| !value.is_empty()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn feed_commands_normalize_identifiers_and_preserve_summary_content() {
+        let intent = IntentResolveCommand::try_from(IntentResolveInput {
+            intent: Some(" setup_dashboard ".to_string()),
+            query: None,
+        })
+        .expect("intent command");
+        assert_eq!(
+            intent.intent.as_ref().map(TrimmedText::as_str),
+            Some("setup_dashboard")
+        );
+
+        let subscribe = FeedSubscribeCommand::try_from(FeedSubscribeInput {
+            component_id: Some(" component-a ".to_string()),
+            feed_ids: Some(vec![
+                " workshop.pulse ".to_string(),
+                " \n".to_string(),
+                "trip.london.trains".to_string(),
+            ]),
+            profile_id: Some(" profile-a ".to_string()),
+        })
+        .expect("subscribe command");
+        assert_eq!(subscribe.component_id.as_str(), "component-a");
+        assert_eq!(subscribe.feed_ids.len(), 2);
+        assert_eq!(subscribe.feed_ids[0].as_str(), "workshop.pulse");
+
+        let publish = FeedPublishCommand::try_from(FeedPublishInput {
+            feed_id: " workshop.pulse ".to_string(),
+            summary: "  Worker ready  \n".to_string(),
+            refs: CompatibleFeedRefs(vec![FeedRef {
+                ref_type: "work".to_string(),
+                ref_id: "work-1".to_string(),
+            }]),
+            payload_slice: CompatiblePayloadSlice::Value(serde_json::json!({"phase": "done"})),
+            profile_id: Some(" profile-a ".to_string()),
+        })
+        .expect("publish command");
+        assert_eq!(publish.feed_id.as_str(), "workshop.pulse");
+        assert_eq!(publish.summary.as_str(), "  Worker ready  \n");
+        assert_eq!(publish.refs.len(), 1);
+        assert!(publish.payload_slice.is_some());
+    }
+
+    #[test]
+    fn feed_commands_reject_missing_intent_and_blank_summary() {
+        let intent_error = IntentResolveCommand::try_from(IntentResolveInput {
+            intent: Some(" \n".to_string()),
+            query: None,
+        })
+        .expect_err("missing intent should fail");
+        assert!(
+            intent_error
+                .to_string()
+                .contains("intent or query is required")
+        );
+
+        let publish_error = FeedPublishCommand::try_from(FeedPublishInput {
+            feed_id: "workshop.pulse".to_string(),
+            summary: " \n\t".to_string(),
+            refs: CompatibleFeedRefs::default(),
+            payload_slice: CompatiblePayloadSlice::Missing,
+            profile_id: None,
+        })
+        .expect_err("blank summary should fail");
+        assert!(publish_error.to_string().contains("summary is required"));
+    }
 }
