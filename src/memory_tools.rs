@@ -1849,6 +1849,36 @@ mod compatibility_tests {
         .expect_err("blank recall query should fail");
         assert!(recall_error.to_string().contains("query is required"));
     }
+
+    #[test]
+    fn evict_input_keeps_legacy_lenient_optional_values_at_the_wire_boundary() {
+        let input: MemoryEvictInput = serde_json::from_value(json!({
+            "mode": 7,
+            "dry_run": "preview",
+            "force": null,
+            "session_id": 42,
+            "tiers": [" working ", 9, "archive"],
+            "node_ids": "node-a",
+            "sync_keys": ["sync-a", null, "sync-b"],
+            "max_nodes": -1
+        }))
+        .expect("compatible eviction input");
+
+        assert!(input.mode.is_none());
+        assert!(input.dry_run.is_none());
+        assert!(input.force.is_none());
+        assert!(input.session_id.is_none());
+        assert_eq!(
+            input.tiers.into_option(),
+            Some(vec![" working ".to_string(), "archive".to_string()])
+        );
+        assert!(input.node_ids.is_none());
+        assert_eq!(
+            input.sync_keys.into_option(),
+            Some(vec!["sync-a".to_string(), "sync-b".to_string()])
+        );
+        assert!(input.max_nodes.is_none());
+    }
 }
 
 fn parse_evict_mode(value: Option<&str>) -> MemoryEvictMode {
@@ -1878,64 +1908,61 @@ enum MemoryEvictModeSchema {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct MemoryEvictInput {
     /// Eviction strategy (default: by_filter)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
-    )]
+    #[serde(default)]
     #[schemars(
         with = "MemoryEvictModeSchema",
-        skip_serializing_if = "Option::is_none"
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    mode: Option<String>,
+    mode: CompatOption<String>,
     /// Preview deletions without applying (default: true)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
+    #[serde(default)]
+    #[schemars(
+        with = "bool",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
-    dry_run: Option<bool>,
+    dry_run: CompatOption<bool>,
     /// Bypass inbound-reference blocks (default: false)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_bool"
+    #[serde(default)]
+    #[schemars(
+        with = "bool",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
-    force: Option<bool>,
+    force: CompatOption<bool>,
     /// Locus session scope (defaults to current turn session)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string"
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    session_id: Option<String>,
+    session_id: CompatOption<String>,
     /// Filter tiers for by_filter mode
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string_list"
+    #[serde(default)]
+    #[schemars(
+        with = "Vec<String>",
+        skip_serializing_if = "crate::typed_tools::CompatList::is_none"
     )]
-    #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
-    tiers: Option<Vec<String>>,
+    tiers: CompatList<String>,
     /// Node ids for by_node_ids mode
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string_list"
+    #[serde(default)]
+    #[schemars(
+        with = "Vec<String>",
+        skip_serializing_if = "crate::typed_tools::CompatList::is_none"
     )]
-    #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
-    node_ids: Option<Vec<String>>,
+    node_ids: CompatList<String>,
     /// Sync keys for by_sync_keys mode
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_string_list"
+    #[serde(default)]
+    #[schemars(
+        with = "Vec<String>",
+        skip_serializing_if = "crate::typed_tools::CompatList::is_none"
     )]
-    #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
-    sync_keys: Option<Vec<String>>,
+    sync_keys: CompatList<String>,
     /// Safety cap on nodes touched (default: 5000)
-    #[serde(
-        default,
-        deserialize_with = "crate::typed_tools::deserialize_lenient_optional_usize"
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
-    max_nodes: Option<usize>,
+    max_nodes: CompatOption<usize>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -1956,13 +1983,22 @@ impl CognitionMemoryEvictTool {
         &self,
         input: MemoryEvictInput,
     ) -> stasis::prelude::Result<MemoryEvictOutput> {
-        let mode = parse_evict_mode(input.mode.as_deref());
-        let dry_run = input.dry_run.unwrap_or(true);
-        let force = input.force.unwrap_or(false);
-        let max_nodes = input.max_nodes.unwrap_or(5000).clamp(1, 50_000);
+        let mode_value = input.mode.into_option();
+        let session_id = input.session_id.into_option();
+        let tiers = input.tiers.into_option();
+        let node_ids = input.node_ids.into_option();
+        let sync_keys = input.sync_keys.into_option();
+        let mode = parse_evict_mode(mode_value.as_deref());
+        let dry_run = input.dry_run.into_option().unwrap_or(true);
+        let force = input.force.into_option().unwrap_or(false);
+        let max_nodes = input
+            .max_nodes
+            .into_option()
+            .unwrap_or(5000)
+            .clamp(1, 50_000);
 
         let locus_session = resolve_memory_tool_session_id_typed(
-            input.session_id.as_deref(),
+            session_id.as_deref(),
             &self.turn_scope,
             &self.fallback_chat_session_id,
             self.workshop_dynamic,
@@ -1976,7 +2012,7 @@ impl CognitionMemoryEvictTool {
         if tenant != LOCUS_DEFAULT_TENANT {
             scope.tenant_id = Some(tenant);
         }
-        if let Some(tiers) = input.tiers {
+        if let Some(tiers) = tiers {
             scope.tiers = Some(
                 tiers
                     .into_iter()
@@ -1985,13 +2021,13 @@ impl CognitionMemoryEvictTool {
             );
         }
 
-        let node_ids = input.node_ids.map(|items| {
+        let node_ids = node_ids.map(|items| {
             items
                 .into_iter()
                 .filter_map(|value| optional_nonempty(&value).map(str::to_string))
                 .collect::<Vec<_>>()
         });
-        let sync_keys = input.sync_keys.map(|items| {
+        let sync_keys = sync_keys.map(|items| {
             items
                 .into_iter()
                 .filter_map(|value| optional_nonempty(&value).map(str::to_string))
