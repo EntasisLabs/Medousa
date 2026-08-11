@@ -3260,6 +3260,56 @@ pub struct AgentRuntimeListResponse {
     pub runtimes: Vec<AgentRuntimeInfo>,
 }
 
+// --- Native ChatGPT account connection (`/v1/auth/chatgpt`) ---
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ChatGptOAuthStatusResponse {
+    /// `signed_out`, `connected`, `refresh_required`, or `reauth_required`.
+    pub status: String,
+    pub connected: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at_utc: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct BeginChatGptOAuthResponse {
+    /// Opaque daemon-local handle. It contains no OAuth credential material.
+    pub login_id: String,
+    pub verification_url: String,
+    pub user_code: String,
+    pub expires_at_utc: DateTime<Utc>,
+    pub poll_interval_seconds: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CompleteChatGptOAuthRequest {
+    pub login_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CompleteChatGptOAuthResponse {
+    /// `pending` or `connected`.
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry_after_seconds: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connection: Option<ChatGptOAuthStatusResponse>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct DisconnectChatGptOAuthResponse {
+    pub disconnected: bool,
+    /// Revocation is best-effort; local credentials are always removed.
+    pub revoked: bool,
+}
+
 /// Bounded, user-intent-oriented context carried from the permanent Code
 /// workspace into an external coding-agent prompt. Paths are relative to the
 /// governed Forge worktree; the daemon remains authoritative for the cwd.

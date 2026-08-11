@@ -137,6 +137,7 @@ pub mod inference_profiles;
 pub mod inference_profiles_handlers;
 pub mod model_route;
 pub mod inference_router;
+pub mod chatgpt_oauth;
 pub mod stt;
 pub mod stt_handlers;
 pub mod user_profiles;

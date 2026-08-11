@@ -225,6 +225,31 @@ See [vault.md](vault.md).
 
 ---
 
+## Native ChatGPT account authentication
+
+These endpoints connect a ChatGPT account to the daemon-owned native Medousa
+runtime. They do not use or modify the Codex CLI login. Tokens and the device
+authorization secret never leave the daemon; clients receive only the user code,
+an opaque login id, connection status, account id, and expiry.
+
+| Method | Path | Types / purpose |
+|--------|------|-----------------|
+| GET | `/v1/auth/chatgpt` | `ChatGptOAuthStatusResponse` |
+| POST | `/v1/auth/chatgpt/begin` | Start device authorization → `BeginChatGptOAuthResponse` |
+| POST | `/v1/auth/chatgpt/complete` | Poll once with `CompleteChatGptOAuthRequest` → `CompleteChatGptOAuthResponse` |
+| POST | `/v1/auth/chatgpt/refresh` | Refresh now → `ChatGptOAuthStatusResponse` |
+| DELETE | `/v1/auth/chatgpt` | Revoke best-effort and delete local credentials → `DisconnectChatGptOAuthResponse` |
+
+`complete` is intentionally non-blocking. While authorization is pending, the
+response includes `retry_after_seconds`; clients should wait and call it again.
+This makes the same flow usable when Home and the workshop daemon are on
+different machines. The daemon refreshes within five minutes of expiry and
+deduplicates concurrent refreshes. An upstream authentication failure permits
+one refresh-and-retry; a permanent refresh failure changes status to
+`reauth_required`.
+
+---
+
 ## Agents (hot-swappable runtimes)
 
 External ACP agents (Cursor / Codex). Clients use the Medousa SDK `agents()` accessor — not raw ACP. Native Medousa turns remain on `/v1/turns` + interactive.

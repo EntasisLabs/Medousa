@@ -237,7 +237,8 @@ Exit gate:
 
 ### Phase 2 — daemon-owned ChatGPT OAuth broker
 
-Status: pending Phase 1.
+Status: implemented; daemon broker, remote-safe HTTP contract, and lifecycle
+validation complete.
 
 Deliverables:
 
