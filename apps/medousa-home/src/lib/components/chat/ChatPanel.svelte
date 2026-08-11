@@ -100,7 +100,6 @@
   } from "$lib/utils/slashMenuPlacement";
   import OfflineChatGate from "$lib/components/chat/OfflineChatGate.svelte";
   import LiquidCardDetailSheet from "$lib/components/chat/LiquidCardDetailSheet.svelte";
-  import ChatRuntimePicker from "$lib/components/chat/ChatRuntimePicker.svelte";
   import ChatAgentModePicker from "$lib/components/chat/ChatAgentModePicker.svelte";
   import { pendingMediaLabels } from "$lib/utils/chatMediaUpload";
   import { hasVisionMediaRefs } from "$lib/types/media";
@@ -1745,24 +1744,22 @@
         mobile={workshop || useMobileChatLayout}
         disabled={connection.offline}
         composerBlocked={chat.composerBlocked}
-        modelPickerEnabled={sessionRuntime === "medousa"}
+        modelPickerEnabled
+        agentRuntime={sessionRuntime}
+        {agentConfigOptions}
+        agentRuntimePending={preparingAgent}
+        onAgentRuntimeChange={onRuntimeChange}
+        onAgentConfigChange={updateAgentConfig}
         bind:element={composerTextareaEl}
         onkeydown={handleKeydown}
         onCursorChange={(cursor) => (draftCursor = cursor)}
       />
       {#if !workshop && !embedded}
         <div class="chat-runtime-under">
-          <ChatRuntimePicker
-            value={sessionRuntime}
+          <ChatAgentModePicker
+            sessionId={panelSessionId}
             disabled={connection.offline || chat.composerBlocked || preparingAgent}
-            onChange={onRuntimeChange}
           />
-          {#if sessionRuntime === "medousa"}
-            <ChatAgentModePicker
-              sessionId={panelSessionId}
-              disabled={connection.offline || chat.composerBlocked}
-            />
-          {/if}
           <ComposerTurnControls
             disabled={connection.offline || chat.composerBlocked}
             showNativeControls={sessionRuntime === "medousa"}
@@ -1770,6 +1767,7 @@
           {#if sessionRuntime !== "medousa"}
             <AgentSessionControls
               options={agentConfigOptions}
+              includeModel={false}
               disabled={connection.offline || chat.composerBlocked || preparingAgent}
               onChange={updateAgentConfig}
             />

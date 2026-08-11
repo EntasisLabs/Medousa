@@ -4051,6 +4051,86 @@
     @apply border-b border-surface-700/35 px-3 py-2.5;
   }
 
+  .composer-model-source {
+    @apply border-b border-surface-700/35 px-2.5 pb-2 pt-2.5;
+  }
+
+  .composer-model-source-current {
+    @apply flex items-center justify-between gap-3 px-1 pb-2;
+  }
+
+  .composer-model-source-kicker {
+    @apply text-[10px] font-semibold uppercase tracking-[0.12em] text-content-quiet;
+  }
+
+  .composer-model-source-summary {
+    @apply min-w-0 truncate text-[10px] text-content-tertiary;
+  }
+
+  .composer-model-source-list {
+    @apply space-y-0.5;
+  }
+
+  .composer-model-source-option {
+    @apply flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors;
+  }
+
+  .composer-model-source-option:hover {
+    background: rgb(var(--color-surface-800) / 0.55);
+  }
+
+  .composer-model-source-option-active {
+    background: rgb(var(--color-surface-800) / 0.42);
+  }
+
+  .composer-model-source-option-locked {
+    @apply text-content-quiet;
+  }
+
+  .composer-model-source-icon {
+    @apply flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-content-tertiary;
+    background: rgb(var(--color-surface-800) / 0.58);
+  }
+
+  .composer-model-source-copy {
+    @apply flex min-w-0 flex-1 flex-col;
+  }
+
+  .composer-model-source-name {
+    @apply text-[12px] font-medium text-surface-100;
+  }
+
+  .composer-model-source-detail {
+    @apply truncate text-[10px] text-content-quiet;
+  }
+
+  .composer-model-source-state {
+    @apply shrink-0 text-content-link;
+  }
+
+  .composer-model-provider-strip {
+    @apply flex gap-1 overflow-x-auto border-b border-surface-700/35 px-3 py-2;
+    scrollbar-width: none;
+  }
+
+  .composer-model-provider-strip::-webkit-scrollbar {
+    display: none;
+  }
+
+  .composer-model-provider-option {
+    @apply shrink-0 rounded-md px-2 py-1 text-[11px] text-content-quiet transition-colors;
+  }
+
+  .composer-model-provider-option:hover {
+    @apply text-content-secondary;
+    background: rgb(var(--color-surface-800) / 0.5);
+  }
+
+  .composer-model-provider-option-active {
+    @apply text-surface-100;
+    background: rgb(var(--color-surface-800) / 0.72);
+  }
+
   .composer-model-search {
     @apply flex items-center gap-2;
   }

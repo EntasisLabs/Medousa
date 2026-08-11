@@ -7,6 +7,7 @@ Integrator / self-host cookbooks: [../cookbook/README.md](../cookbook/README.md)
 | Guide | You want to… |
 |-------|----------------|
 | [Getting started](getting-started.md) | Download → welcome → first chat |
+| [Models and agent sources](models-and-agent-sources.md) | Choose Medousa, ChatGPT, Cursor, providers, and models in chat |
 | [Packages](packages.md) | Add offline brain, adapters, CLI, MCP from Settings |
 | [Workshop & Automations](workshop-and-automations.md) | Flows, schedules, specialists, background work |
 | [Phone pairing](phone-pairing.md) | iOS / Android as a portal |

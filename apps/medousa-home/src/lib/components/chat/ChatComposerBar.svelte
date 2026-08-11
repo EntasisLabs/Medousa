@@ -16,6 +16,8 @@
   import { settings } from "$lib/stores/settings.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
   import { haptic } from "$lib/haptics";
+  import type { AgentSessionConfigOption } from "$lib/daemon";
+  import type { ChatAgentRuntime } from "$lib/utils/sessionAgentRuntime";
   import {
     idleVoiceWaveform,
     pushVoiceWaveSample,
@@ -38,8 +40,13 @@
     composerBlocked?: boolean;
     /** Hide attachment hint + model picker (Presence empty landing). */
     quietChrome?: boolean;
-    /** Model selection only applies to native Medousa turns. */
+    /** Expose the source-aware model selector in this composer. */
     modelPickerEnabled?: boolean;
+    agentRuntime?: ChatAgentRuntime;
+    agentConfigOptions?: AgentSessionConfigOption[];
+    agentRuntimePending?: boolean;
+    onAgentRuntimeChange?: (runtime: ChatAgentRuntime) => void;
+    onAgentConfigChange?: (configId: string, value: unknown) => void | Promise<void>;
     onkeydown?: (event: KeyboardEvent) => void;
     onfocus?: () => void;
     onblur?: () => void;
@@ -54,6 +61,11 @@
     composerBlocked = false,
     quietChrome = false,
     modelPickerEnabled = true,
+    agentRuntime = "medousa",
+    agentConfigOptions = [],
+    agentRuntimePending = false,
+    onAgentRuntimeChange,
+    onAgentConfigChange,
     onkeydown,
     onfocus,
     onblur,
@@ -62,7 +74,9 @@
   }: Props = $props();
 
   const showModelPicker = $derived(
-    settings.showChatModelPicker && !quietChrome && modelPickerEnabled,
+    !quietChrome &&
+      modelPickerEnabled &&
+      (settings.showChatModelPicker || onAgentRuntimeChange !== undefined),
   );
   const placeholder = $derived(
     chat.hasWorkshopHandoff()
@@ -334,7 +348,15 @@
           {#if isTauriMobilePlatform()}
             <MobileComposerTurnSettings disabled={blocked} quiet />
           {:else}
-            <ChatModelPicker disabled={blocked} quiet />
+            <ChatModelPicker
+              disabled={blocked}
+              quiet
+              {agentRuntime}
+              {agentConfigOptions}
+              {agentRuntimePending}
+              onRuntimeChange={onAgentRuntimeChange}
+              onAgentConfigChange={onAgentConfigChange}
+            />
           {/if}
         {/if}
 
@@ -441,7 +463,15 @@
       <ComposerAgentChip showChip bind:open={agentOpen} anchorEl={plusAnchorEl} />
 
       {#if showModelPicker}
-        <ChatModelPicker disabled={blocked} quiet />
+        <ChatModelPicker
+          disabled={blocked}
+          quiet
+          {agentRuntime}
+          {agentConfigOptions}
+          {agentRuntimePending}
+          onRuntimeChange={onAgentRuntimeChange}
+          onAgentConfigChange={onAgentConfigChange}
+        />
       {/if}
 
       <span class="composer-bar-footer-spacer" aria-hidden="true"></span>
