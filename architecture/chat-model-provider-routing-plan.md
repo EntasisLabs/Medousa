@@ -264,7 +264,8 @@ Exit gate:
 
 ### Phase 3 — native Codex Responses HTTP/SSE adapter
 
-Status: pending Phase 2.
+Status: in progress; routed HTTP/SSE client and request fixture validation
+implemented, pending an entitled-account live probe.
 
 Deliverables:
 

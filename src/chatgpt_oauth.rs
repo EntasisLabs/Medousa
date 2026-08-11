@@ -362,7 +362,6 @@ impl ChatGptOAuthBroker {
 
     /// Returns request credentials, refreshing once when expiry is within five
     /// minutes. Phase 3's transport consumes this method without owning tokens.
-    #[allow(dead_code)] // Consumed by the Phase 3 native Responses transport.
     pub(crate) async fn credentials_for_request(&self) -> Result<(String, String), OAuthError> {
         let snapshot = self
             .cached
@@ -397,7 +396,6 @@ impl ChatGptOAuthBroker {
     /// Refreshes after one upstream authentication failure, but only if the
     /// failing token is still current. Concurrent 401s therefore share one
     /// refresh and one persisted token rotation.
-    #[allow(dead_code)] // Consumed by the Phase 3 one-retry-on-401 path.
     pub(crate) async fn refresh_after_unauthorized(
         &self,
         rejected_access_token: &str,
@@ -702,6 +700,18 @@ pub async fn refresh() -> Result<ChatGptOAuthStatusResponse, OAuthError> {
 
 pub async fn disconnect() -> Result<DisconnectChatGptOAuthResponse, OAuthError> {
     broker().disconnect().await
+}
+
+pub(crate) async fn request_credentials() -> Result<(String, String), OAuthError> {
+    broker().credentials_for_request().await
+}
+
+pub(crate) async fn refresh_request_credentials(
+    rejected_access_token: &str,
+) -> Result<(String, String), OAuthError> {
+    broker()
+        .refresh_after_unauthorized(rejected_access_token)
+        .await
 }
 
 #[cfg(test)]
