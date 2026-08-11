@@ -170,7 +170,9 @@ describe("chatMessageToScene — user / system", () => {
       ...msg({ role: "user", content: "look" }),
       mediaAttachments: [{ mediaId: "x", mime: "image/png", label: "shot" }],
     } as ChatMessage;
-    expect(findNode(chatMessageToScene(message), "m1:media")?.type).toBe("chat_media");
+    const scene = chatMessageToScene(message);
+    expect(findNode(scene, "m1:media")?.type).toBe("chat_media");
+    expect(scene.slots?.flow?.map((node) => node.id)).toEqual(["m1:media", "m1:body"]);
   });
 });
 

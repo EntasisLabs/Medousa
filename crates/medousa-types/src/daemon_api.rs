@@ -1700,6 +1700,11 @@ pub struct InteractiveTurnStreamEvent {
     pub reasoning_delta: Option<String>,
     pub final_text: Option<String>,
     pub tool_names: Option<Vec<String>>,
+    /// Successful inference route after provider fallback resolution.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_model: Option<String>,
     pub terminal: bool,
     pub emitted_at_utc: DateTime<Utc>,
     /// Turn budget approval pause — card id for Home deep link / notifications.
@@ -3258,6 +3263,63 @@ pub struct AgentRuntimeInfo {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct AgentRuntimeListResponse {
     pub runtimes: Vec<AgentRuntimeInfo>,
+}
+
+// --- Native ChatGPT account connection (`/v1/auth/chatgpt`) ---
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ChatGptOAuthStatusResponse {
+    /// `signed_out`, `connected`, `refresh_required`, or `reauth_required`.
+    pub status: String,
+    pub connected: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at_utc: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct BeginChatGptOAuthResponse {
+    /// Opaque daemon-local handle. It contains no OAuth credential material.
+    pub login_id: String,
+    pub verification_url: String,
+    pub user_code: String,
+    pub expires_at_utc: DateTime<Utc>,
+    pub poll_interval_seconds: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CompleteChatGptOAuthRequest {
+    pub login_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CompleteChatGptOAuthResponse {
+    /// `pending` or `connected`.
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry_after_seconds: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connection: Option<ChatGptOAuthStatusResponse>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct DisconnectChatGptOAuthResponse {
+    pub disconnected: bool,
+    /// Revocation is best-effort; local credentials are always removed.
+    pub revoked: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ChatGptModelListResponse {
+    /// Account-entitled model slugs returned by the ChatGPT Codex backend.
+    pub models: Vec<String>,
 }
 
 /// Bounded, user-intent-oriented context carried from the permanent Code

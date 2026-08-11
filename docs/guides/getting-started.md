@@ -83,6 +83,10 @@ Useful early asks:
 - *“What’s in my vault?”* (after you add a folder)
 - *“Build me a simple notes canvas.”*
 
+To include a screenshot or document, choose **+ → Attach** or drag files onto
+the composer. The files appear as removable chips before you send; each message
+can include up to five attachments.
+
 ---
 
 ## 4. Orient yourself (desktop)

@@ -3603,17 +3603,26 @@
 
   /* Quiet turn actions — bottom of assistant beat, hover/focus reveal */
   .chat-turn-actions {
-    @apply mt-2 flex items-center justify-end gap-1 opacity-0 transition-opacity duration-200;
+    @apply mt-2 flex items-center justify-end gap-1;
+  }
+
+  .chat-model-receipt {
+    @apply mr-auto inline-flex items-center gap-1 text-[11px] text-content-tertiary;
+  }
+
+  .chat-turn-action {
+    @apply opacity-0 transition-opacity duration-200;
   }
 
   .chat-turn-actions--mobile {
     opacity: 0.4;
   }
 
-  .group:hover .chat-turn-actions,
-  .group:focus-within .chat-turn-actions,
-  .chat-turn-actions--mobile:hover,
-  .chat-turn-actions--mobile:focus-within {
+  .group:hover .chat-turn-action,
+  .group:focus-within .chat-turn-action,
+  .chat-turn-actions--mobile .chat-turn-action,
+  .chat-turn-actions--mobile:hover .chat-turn-action,
+  .chat-turn-actions--mobile:focus-within .chat-turn-action {
     @apply opacity-100;
   }
 
@@ -3678,6 +3687,25 @@
 
   .chat-composer-shell {
     @apply items-center gap-1 px-1.5 py-1;
+  }
+
+  .chat-composer-drop-target {
+    @apply relative;
+  }
+
+  .chat-composer-drop-overlay {
+    @apply pointer-events-none absolute inset-0 z-[230] flex items-center justify-center rounded-2xl border border-dashed text-xs font-medium;
+    border-color: rgb(var(--color-primary-400) / 0.72);
+    color: rgb(var(--color-primary-200));
+    background: rgb(var(--color-surface-950) / 0.82);
+    box-shadow:
+      inset 0 0 0 1px rgb(var(--color-primary-500) / 0.12),
+      0 0 0 3px rgb(var(--color-primary-500) / 0.08);
+    backdrop-filter: blur(8px);
+  }
+
+  .chat-composer-drop-target-active .chat-composer-shell {
+    border-color: rgb(var(--color-primary-400) / 0.45);
   }
 
   .chat-composer-bar.chat-composer-shell {
@@ -3761,7 +3789,7 @@
   }
 
   .composer-attachment-chips {
-    @apply mx-8 mb-1.5 flex flex-wrap gap-1.5;
+    @apply mx-8 mb-2 flex flex-wrap items-end gap-2;
   }
 
   .composer-voice-status {
@@ -3970,6 +3998,81 @@
     @apply inline-flex h-5 w-5 items-center justify-center rounded-full text-content-quiet hover:bg-surface-700 hover:text-surface-200 disabled:opacity-40;
   }
 
+  .composer-attachment-preview {
+    @apply relative m-0 w-[5.5rem] overflow-hidden rounded-xl border border-surface-500/40 bg-surface-900/80;
+    box-shadow: 0 5px 16px rgb(var(--color-surface-950) / 0.22);
+  }
+
+  .composer-attachment-preview-image {
+    @apply block h-[4.25rem] w-full object-cover;
+  }
+
+  .composer-attachment-preview-label {
+    @apply truncate border-t border-surface-600/35 px-2 py-1 text-[10px] leading-tight text-content-tertiary;
+  }
+
+  .composer-attachment-preview-remove {
+    @apply absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded-full border border-surface-500/45 text-surface-200 shadow-sm transition hover:bg-surface-800 disabled:opacity-40;
+    background: rgb(var(--color-surface-950) / 0.85);
+    backdrop-filter: blur(8px);
+  }
+
+  .chat-media-parts {
+    @apply mt-1.5 flex flex-wrap justify-end gap-2;
+  }
+
+  .chat-media-thumbnail {
+    @apply relative block h-[6.75rem] w-36 overflow-hidden rounded-xl border border-surface-500/35 bg-surface-900/55 text-left transition;
+    box-shadow: 0 7px 22px rgb(var(--color-surface-950) / 0.2);
+  }
+
+  .chat-media-thumbnail:hover {
+    border-color: rgb(var(--color-surface-400) / 0.55);
+    transform: translateY(-1px);
+  }
+
+  .chat-media-parts-compact .chat-media-thumbnail {
+    @apply h-[5.25rem] w-28;
+  }
+
+  .chat-media-thumbnail-image {
+    @apply h-full w-full object-cover;
+  }
+
+  .chat-media-thumbnail-shine {
+    @apply pointer-events-none absolute inset-0;
+    box-shadow: inset 0 0 0 1px rgb(var(--color-surface-50) / 0.04);
+  }
+
+  .chat-media-file {
+    @apply inline-flex max-w-full items-center rounded-full border border-surface-500/45 bg-surface-800/80 px-2.5 py-1 text-[11px] text-primary-200;
+  }
+
+  .chat-media-preview-backdrop {
+    @apply fixed inset-0 z-[260] flex items-center justify-center p-6;
+    background: rgb(var(--color-surface-950) / 0.84);
+    backdrop-filter: blur(14px);
+  }
+
+  .chat-media-preview-dialog {
+    @apply relative flex max-h-full max-w-full flex-col overflow-hidden rounded-2xl border border-surface-500/35 shadow-2xl;
+    background: rgb(var(--color-surface-950));
+  }
+
+  .chat-media-preview-image {
+    @apply block max-h-[82vh] max-w-[88vw] object-contain;
+  }
+
+  .chat-media-preview-label {
+    @apply max-w-[88vw] truncate border-t border-surface-600/35 px-3 py-2 text-xs text-content-tertiary;
+  }
+
+  .chat-media-preview-close {
+    @apply absolute right-2 top-2 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full border border-surface-500/45 text-surface-200 shadow-md transition hover:bg-surface-800;
+    background: rgb(var(--color-surface-950) / 0.8);
+    backdrop-filter: blur(10px);
+  }
+
   .composer-model-picker {
     @apply relative shrink-0;
   }
@@ -4049,6 +4152,86 @@
 
   .composer-model-panel-search {
     @apply border-b border-surface-700/35 px-3 py-2.5;
+  }
+
+  .composer-model-source {
+    @apply border-b border-surface-700/35 px-2.5 pb-2 pt-2.5;
+  }
+
+  .composer-model-source-current {
+    @apply flex items-center justify-between gap-3 px-1 pb-2;
+  }
+
+  .composer-model-source-kicker {
+    @apply text-[10px] font-semibold uppercase tracking-[0.12em] text-content-quiet;
+  }
+
+  .composer-model-source-summary {
+    @apply min-w-0 truncate text-[10px] text-content-tertiary;
+  }
+
+  .composer-model-source-list {
+    @apply space-y-0.5;
+  }
+
+  .composer-model-source-option {
+    @apply flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors;
+  }
+
+  .composer-model-source-option:hover {
+    background: rgb(var(--color-surface-800) / 0.55);
+  }
+
+  .composer-model-source-option-active {
+    background: rgb(var(--color-surface-800) / 0.42);
+  }
+
+  .composer-model-source-option-locked {
+    @apply text-content-quiet;
+  }
+
+  .composer-model-source-icon {
+    @apply flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-content-tertiary;
+    background: rgb(var(--color-surface-800) / 0.58);
+  }
+
+  .composer-model-source-copy {
+    @apply flex min-w-0 flex-1 flex-col;
+  }
+
+  .composer-model-source-name {
+    @apply text-[12px] font-medium text-surface-100;
+  }
+
+  .composer-model-source-detail {
+    @apply truncate text-[10px] text-content-quiet;
+  }
+
+  .composer-model-source-state {
+    @apply shrink-0 text-content-link;
+  }
+
+  .composer-model-provider-strip {
+    @apply flex gap-1 overflow-x-auto border-b border-surface-700/35 px-3 py-2;
+    scrollbar-width: none;
+  }
+
+  .composer-model-provider-strip::-webkit-scrollbar {
+    display: none;
+  }
+
+  .composer-model-provider-option {
+    @apply inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] text-content-quiet transition-colors;
+  }
+
+  .composer-model-provider-option:hover {
+    @apply text-content-secondary;
+    background: rgb(var(--color-surface-800) / 0.5);
+  }
+
+  .composer-model-provider-option-active {
+    @apply text-surface-100;
+    background: rgb(var(--color-surface-800) / 0.72);
   }
 
   .composer-model-search {
@@ -4138,6 +4321,14 @@
 
   .composer-model-list-empty {
     @apply flex flex-col items-center justify-center gap-2 px-4 py-8 text-center text-xs text-content-quiet;
+  }
+
+  .composer-model-connect {
+    @apply rounded-md border border-surface-600/45 px-2.5 py-1 text-[11px] font-medium text-content-secondary transition-colors;
+  }
+
+  .composer-model-connect:hover {
+    @apply border-surface-500/60 bg-surface-800/55 text-surface-100;
   }
 
   .composer-model-mobile-note {

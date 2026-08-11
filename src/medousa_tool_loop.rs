@@ -427,14 +427,13 @@ impl MedousaToolLoopPipeline {
                 let messages =
                     turn_ctx.build_model_messages(shared_inputs.system_prompt.as_deref());
                 let chat_request = ChatRequest::new(messages).with_tools(tools.clone());
-                let mut response = match chunk_tx {
+                let response = match chunk_tx {
                     Some(tx) => {
-                        match complete_chat_stream_with_serde_retry(
+                        match complete_chat_stream_once(
                             &self.prompt_pipeline,
                             chat_request.clone(),
                             shared_inputs.context_clone(),
                             Some(tx),
-                            completion_gate.as_deref(),
                         )
                         .await?
                         {
@@ -459,11 +458,10 @@ impl MedousaToolLoopPipeline {
                         }
                     }
                     None => {
-                        match complete_chat_with_serde_retry(
+                        match complete_chat_once(
                             &self.prompt_pipeline,
                             chat_request.clone(),
                             shared_inputs.context_clone(),
-                            completion_gate.as_deref(),
                         )
                         .await?
                         {
@@ -488,31 +486,11 @@ impl MedousaToolLoopPipeline {
                         }
                     }
                 };
-                let mut maybe_text = response
+                let maybe_text = response
                     .first_text()
                     .map(|value| value.trim().to_string())
                     .filter(|value| !value.is_empty());
-                let mut tool_calls = response.clone().into_tool_calls();
-
-                // Some providers stream assistant text but omit tool_calls from the stream
-                // capture; retry once without streaming before treating text as final.
-                if tool_calls.is_empty()
-                    && invocations.is_empty()
-                    && !has_selected_tool
-                    && chunk_tx.is_some()
-                    && maybe_text.is_some()
-                {
-                    response = self
-                        .prompt_pipeline
-                        .complete_chat(chat_request, shared_inputs.context_clone())
-                        .await?
-                        .response;
-                    maybe_text = response
-                        .first_text()
-                        .map(|value| value.trim().to_string())
-                        .filter(|value| !value.is_empty());
-                    tool_calls = response.clone().into_tool_calls();
-                }
+                let tool_calls = response.into_tool_calls();
 
                 if tool_calls.is_empty() {
                     if invocations.is_empty() && has_selected_tool {
@@ -1928,73 +1906,35 @@ async fn inject_malformed_tool_json_guidance(
     push_turn_control_message(messages, MALFORMED_TOOL_JSON_GUIDANCE);
 }
 
-/// Complete chat; on Serde JSON tool-arg parse failure, retry once silently.
-/// If the retry also fails with the same class of error, return
-/// [`ChatCompletionOutcome::MalformedToolJson`] so the loop can coach the model
-/// instead of failing the turn to the principal.
-async fn complete_chat_with_serde_retry(
+/// Complete chat once. A malformed tool call returns control to the loop so the
+/// model can self-correct with the failed round represented in turn state.
+async fn complete_chat_once(
     pipeline: &PromptExecutionPipeline,
     request: ChatRequest,
     context: PromptExecutionContext,
-    gate: Option<&ToolLoopCompletionGate<'_>>,
 ) -> Result<ChatCompletionOutcome> {
-    match pipeline
-        .complete_chat(request.clone(), context.clone())
-        .await
-    {
+    match pipeline.complete_chat(request, context).await {
         Ok(completion) => Ok(ChatCompletionOutcome::Ok(Box::new(completion.response))),
         Err(err) if is_serde_json_completion_error(&err) => {
-            if let Some(gate) = gate
-                && let Some(sink) = gate.sink.as_ref()
-            {
-                sink.notice(
-                    "◈ model_tool_json_retry malformed tool-call JSON — silent retry once"
-                        .to_string(),
-                )
-                .await;
-            }
-            match pipeline.complete_chat(request, context).await {
-                Ok(completion) => Ok(ChatCompletionOutcome::Ok(Box::new(completion.response))),
-                Err(retry_err) if is_serde_json_completion_error(&retry_err) => {
-                    Ok(ChatCompletionOutcome::MalformedToolJson)
-                }
-                Err(retry_err) => Err(retry_err),
-            }
+            Ok(ChatCompletionOutcome::MalformedToolJson)
         }
         Err(err) => Err(err),
     }
 }
 
-async fn complete_chat_stream_with_serde_retry(
+async fn complete_chat_stream_once(
     pipeline: &PromptExecutionPipeline,
     request: ChatRequest,
     context: PromptExecutionContext,
     chunk_tx: Option<&mpsc::UnboundedSender<StreamDelta>>,
-    gate: Option<&ToolLoopCompletionGate<'_>>,
 ) -> Result<ChatCompletionOutcome> {
     match pipeline
-        .complete_chat_stream(request.clone(), context.clone(), chunk_tx)
+        .complete_chat_stream(request, context, chunk_tx)
         .await
     {
         Ok(completion) => Ok(ChatCompletionOutcome::Ok(Box::new(completion.response))),
         Err(err) if is_serde_json_completion_error(&err) => {
-            if let Some(gate) = gate
-                && let Some(sink) = gate.sink.as_ref()
-            {
-                sink.notice(
-                        "◈ model_tool_json_retry malformed streamed tool-call JSON — silent non-stream retry"
-                            .to_string(),
-                    )
-                    .await;
-            }
-            // Fall back to non-stream completion (same strategy as empty tool_calls).
-            match pipeline.complete_chat(request, context).await {
-                Ok(completion) => Ok(ChatCompletionOutcome::Ok(Box::new(completion.response))),
-                Err(retry_err) if is_serde_json_completion_error(&retry_err) => {
-                    Ok(ChatCompletionOutcome::MalformedToolJson)
-                }
-                Err(retry_err) => Err(retry_err),
-            }
+            Ok(ChatCompletionOutcome::MalformedToolJson)
         }
         Err(err) => Err(err),
     }

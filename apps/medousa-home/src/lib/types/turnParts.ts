@@ -11,8 +11,8 @@ export interface TurnArtifactRef {
   label?: string | null;
 }
 
-
 export type TurnPart =
+  | { kind: "model_receipt"; provider: string; model: string }
   | { kind: "text"; markdown: string }
   | { kind: "progress"; markdown: string }
   | { kind: "reasoning"; markdown: string }
@@ -54,6 +54,18 @@ export type TurnPart =
       presentation?: string | null;
       height_px?: number | null;
     };
+
+export function modelReceiptFromParts(
+  parts?: TurnPart[] | null,
+): { provider: string; model: string } | null {
+  if (!parts?.length) return null;
+  const receipt = parts.find(
+    (part): part is Extract<TurnPart, { kind: "model_receipt" }> =>
+      part.kind === "model_receipt",
+  );
+  if (!receipt?.provider.trim() || !receipt.model.trim()) return null;
+  return { provider: receipt.provider.trim(), model: receipt.model.trim() };
+}
 
 export function toolRunsFromParts(parts?: TurnPart[] | null): ToolRunState[] | undefined {
   if (!parts?.length) return undefined;

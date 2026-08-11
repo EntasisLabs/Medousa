@@ -9,10 +9,11 @@
   interface Props {
     options: AgentSessionConfigOption[];
     disabled?: boolean;
+    includeModel?: boolean;
     onChange?: (configId: string, value: unknown) => void | Promise<void>;
   }
 
-  let { options, disabled = false, onChange }: Props = $props();
+  let { options, disabled = false, includeModel = true, onChange }: Props = $props();
   let openId = $state<string | null>(null);
   let savingId = $state<string | null>(null);
   let rootEl = $state<HTMLDivElement | null>(null);
@@ -23,8 +24,7 @@
     options.filter(
       (option) =>
         option.type === "select" &&
-        (option.id === "model" ||
-          option.category === "model" ||
+        ((includeModel && (option.id === "model" || option.category === "model")) ||
           option.id === "reasoning_effort" ||
           option.category === "thought_level"),
     ),

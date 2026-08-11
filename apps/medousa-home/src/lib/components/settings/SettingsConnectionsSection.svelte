@@ -1,10 +1,9 @@
 <script lang="ts">
   /**
-   * Settings → Connections — ChatGPT (Codex) + Cursor account sign-in.
-   * Credentials stay in the vendor CLI stores; Medousa only orchestrates
-   * `codex login` / `cursor agent login` and reads sign-in state.
+   * Settings → Connections — daemon-owned ChatGPT OAuth plus Codex/Cursor
+   * vendor runtime sign-in. These credential routes intentionally stay separate.
    */
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import {
     ArrowUpRight,
     Check,
@@ -28,18 +27,54 @@
     installAccountCli,
   } from "$lib/utils/accountConnections";
   import { openGuide } from "$lib/guide/openGuide";
+  import { openUrlInDefaultBrowser } from "$lib/utils/browserActions";
+  import {
+    beginChatGptOAuth,
+    chatGptOAuthReady,
+    completeChatGptOAuth,
+    disconnectChatGptOAuth,
+    getChatGptOAuthConnection,
+    type BeginChatGptOAuthResponse,
+    type ChatGptOAuthConnection,
+  } from "$lib/utils/chatgptOAuth";
 
   let actionBusy = $state<string | null>(null);
   let actionNote = $state<string | null>(null);
   let actionError = $state<string | null>(null);
   let waitingFor = $state<"chatgpt" | "cursor" | null>(null);
+  let nativeChatGpt = $state<ChatGptOAuthConnection | null>(null);
+  let nativeChatGptLoading = $state(false);
+  let nativeLogin = $state<BeginChatGptOAuthResponse | null>(null);
+  let nativeLoginCancelled = false;
 
   onMount(() => {
     void accountConnections.refresh(true);
+    void refreshNativeChatGpt();
+  });
+
+  onDestroy(() => {
+    nativeLoginCancelled = true;
   });
 
   const USE_HINT =
-    "In Chat, open the runtime menu next to the composer (Medousa / Cursor / ChatGPT), pick the agent, then send a message.";
+    "In Chat, choose the runtime under the composer, then choose its provider and model inside the composer.";
+
+  const nativeChatGptReady = $derived(chatGptOAuthReady(nativeChatGpt));
+
+  async function refreshNativeChatGpt() {
+    nativeChatGptLoading = true;
+    try {
+      nativeChatGpt = await getChatGptOAuthConnection();
+    } catch (err) {
+      actionError = err instanceof Error ? err.message : String(err);
+    } finally {
+      nativeChatGptLoading = false;
+    }
+  }
+
+  async function refreshAllConnections() {
+    await Promise.all([accountConnections.refresh(true), refreshNativeChatGpt()]);
+  }
 
   async function withAction(key: string, fn: () => Promise<string | null>) {
     if (actionBusy) return;
@@ -71,8 +106,8 @@
     return "Still waiting for sign-in — finish in the browser or terminal, then tap Refresh here.";
   }
 
-  async function signInChatGpt() {
-    await withAction("chatgpt-login", async () => {
+  async function signInCodex() {
+    await withAction("codex-login", async () => {
       try {
         const start = await beginChatgptDeviceLogin();
         actionNote = start.code
@@ -89,6 +124,47 @@
         return await waitForSignIn("chatgpt");
       }
     });
+  }
+
+  async function signInNativeChatGpt() {
+    await withAction("native-chatgpt-login", async () => {
+      nativeLoginCancelled = false;
+      nativeLogin = await beginChatGptOAuth();
+      await openUrlInDefaultBrowser(nativeLogin.verification_url);
+      actionNote = `Enter code ${nativeLogin.user_code} in the browser. Waiting for approval…`;
+
+      while (!nativeLoginCancelled && Date.now() < Date.parse(nativeLogin.expires_at_utc)) {
+        const result = await completeChatGptOAuth(nativeLogin.login_id);
+        if (result.status === "connected") {
+          nativeChatGpt = result.connection ?? (await getChatGptOAuthConnection());
+          nativeLogin = null;
+          return "ChatGPT is connected to the Medousa runtime. Choose OpenAI · ChatGPT account in Chat.";
+        }
+        const delaySeconds = Math.max(
+          1,
+          result.retry_after_seconds ?? nativeLogin.poll_interval_seconds,
+        );
+        await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
+      }
+      nativeLogin = null;
+      if (nativeLoginCancelled) return null;
+      throw new Error("ChatGPT sign-in expired. Start it again to receive a new code.");
+    });
+  }
+
+  async function signOutNativeChatGpt() {
+    await withAction("native-chatgpt-logout", async () => {
+      nativeLoginCancelled = true;
+      await disconnectChatGptOAuth();
+      nativeChatGpt = await getChatGptOAuthConnection();
+      nativeLogin = null;
+      return "ChatGPT disconnected from the Medousa runtime.";
+    });
+  }
+
+  async function reopenNativeLogin() {
+    if (!nativeLogin) return;
+    await openUrlInDefaultBrowser(nativeLogin.verification_url);
   }
 
   async function signInCursor() {
@@ -115,7 +191,9 @@
 
   const supported = accountConnectionsSupported();
   const anySignedIn = $derived(
-    accountConnections.isSignedIn("chatgpt") || accountConnections.isSignedIn("cursor"),
+    nativeChatGptReady ||
+      accountConnections.isSignedIn("chatgpt") ||
+      accountConnections.isSignedIn("cursor"),
   );
 </script>
 
@@ -124,9 +202,8 @@
     <div class="min-w-0 flex-1">
       <h2 class="text-base font-semibold text-surface-50">Connections</h2>
       <p class="workshop-faint mt-1 text-sm">
-        Sign in with ChatGPT or Cursor, then pick that runtime in Chat to run
-        their coding agent. Credentials stay with the vendor CLIs — Medousa never
-        sees your tokens.
+        Connect ChatGPT directly to Medousa, or sign in to the Codex and Cursor
+        runtimes. Each connection stays isolated to the runtime that owns it.
       </p>
     </div>
     <button
@@ -134,8 +211,8 @@
       class="workshop-rail-btn shrink-0"
       title="Refresh status"
       aria-label="Refresh status"
-      disabled={accountConnections.loading || actionBusy != null}
-      onclick={() => void accountConnections.refresh(true)}
+      disabled={accountConnections.loading || nativeChatGptLoading || actionBusy != null}
+      onclick={() => void refreshAllConnections()}
     >
       <RefreshCw size={15} strokeWidth={1.85} />
     </button>
@@ -154,15 +231,100 @@
     {/if}
 
     <ol class="connections-steps workshop-faint mt-3">
-      <li><strong>Install</strong> the CLI if needed (button on the card).</li>
-      <li><strong>Sign in</strong> — browser or terminal opens; finish there.</li>
+      <li><strong>Choose ownership</strong> — Medousa, Codex, or Cursor.</li>
+      <li><strong>Sign in</strong> to that connection; credentials are not shared.</li>
       <li>
-        <strong>In Chat</strong>, open the runtime menu next to the composer and
-        choose <em>ChatGPT / Codex</em> or <em>Cursor</em>, then send a message.
+        <strong>In Chat</strong>, choose the runtime under the composer. For
+        Medousa, choose the provider inside the model picker.
       </li>
     </ol>
 
     <div class="connections-cards mt-3">
+      <div class="connections-card" data-account="native-chatgpt">
+        <div class="connections-card-head">
+          <span class="connections-card-icon" aria-hidden="true">
+            <Sparkles size={16} strokeWidth={1.85} />
+          </span>
+          <div class="min-w-0 flex-1">
+            <p class="connections-card-title">ChatGPT account</p>
+            <p class="connections-card-sub workshop-faint">Medousa runtime · subscription usage</p>
+          </div>
+          <span
+            class="connections-status"
+            class:connections-status--in={nativeChatGptReady}
+            class:connections-status--out={nativeChatGpt?.status === "signed_out" || nativeChatGpt?.status === "reauth_required"}
+            class:connections-status--wait={nativeChatGptLoading || actionBusy === "native-chatgpt-login"}
+          >
+            {#if nativeChatGptLoading}
+              Checking…
+            {:else if actionBusy === "native-chatgpt-login"}
+              Waiting…
+            {:else if nativeChatGptReady}
+              <Check size={12} strokeWidth={2.5} /> Connected
+            {:else if nativeChatGpt?.status === "reauth_required"}
+              Reconnect
+            {:else}
+              Not connected
+            {/if}
+          </span>
+        </div>
+
+        {#if nativeLogin}
+          <div class="connections-device-auth">
+            <p class="connections-note workshop-faint">Enter this code in the ChatGPT sign-in page:</p>
+            <code class="connections-device-code font-mono">{nativeLogin.user_code}</code>
+          </div>
+        {:else if nativeChatGptReady}
+          <p class="connections-note workshop-faint">
+            Ready for Medousa’s General and Coder agents. In Chat, keep the
+            Medousa runtime and choose OpenAI · ChatGPT account.
+          </p>
+        {:else if nativeChatGpt?.status === "reauth_required"}
+          <p class="connections-note workshop-faint">
+            The saved session can no longer refresh. Sign in again to restore it.
+          </p>
+        {:else}
+          <p class="connections-note workshop-faint">
+            Uses your ChatGPT subscription while Medousa keeps ownership of the
+            agent loop and tools. This is separate from the Codex runtime below.
+          </p>
+        {/if}
+
+        <div class="connections-card-actions">
+          {#if nativeLogin}
+            <button
+              type="button"
+              class="btn btn-sm variant-filled-primary"
+              onclick={() => void reopenNativeLogin()}
+            >
+              <ArrowUpRight size={13} strokeWidth={2} /> Open sign-in
+            </button>
+          {:else if nativeChatGptReady}
+            <button type="button" class="btn btn-sm variant-filled-primary" onclick={openChat}>
+              <MessageSquare size={13} strokeWidth={2} /> Open Chat
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm variant-soft-surface"
+              disabled={actionBusy != null}
+              onclick={() => void signOutNativeChatGpt()}
+            >
+              <LogOut size={13} strokeWidth={2} /> Disconnect
+            </button>
+          {:else}
+            <button
+              type="button"
+              class="btn btn-sm variant-filled-primary"
+              disabled={actionBusy != null || nativeChatGptLoading}
+              onclick={() => void signInNativeChatGpt()}
+            >
+              <LogIn size={13} strokeWidth={2} />
+              {nativeChatGpt?.status === "reauth_required" ? "Reconnect" : "Connect ChatGPT"}
+            </button>
+          {/if}
+        </div>
+      </div>
+
       {#each [
         { info: accountConnections.connections?.chatgpt, account: "chatgpt" as const, icon: "chatgpt" },
         { info: accountConnections.connections?.cursor, account: "cursor" as const, icon: "cursor" },
@@ -179,11 +341,11 @@
             </span>
             <div class="min-w-0 flex-1">
               <p class="connections-card-title">
-                {card.account === "chatgpt" ? "ChatGPT" : "Cursor"}
+                {card.account === "chatgpt" ? "Codex" : "Cursor"}
               </p>
               <p class="connections-card-sub workshop-faint">
                 {card.account === "chatgpt"
-                  ? "Subscription chat + Codex coding agent"
+                  ? "Codex runtime · ChatGPT account"
                   : "Cursor coding agent"}
               </p>
             </div>
@@ -218,8 +380,8 @@
           {:else if info?.authStatus === "signed_in"}
             <p class="connections-note workshop-faint">
               Ready. In Chat, pick
-              {card.account === "chatgpt" ? "ChatGPT / Codex" : "Cursor"}
-              from the runtime menu next to the composer.
+              {card.account === "chatgpt" ? "Codex" : "Cursor"}
+              from the runtime control under the composer.
             </p>
           {:else if info?.authStatus === "signed_out"}
             <p class="connections-note workshop-faint">
@@ -262,12 +424,12 @@
                 class="btn btn-sm variant-filled-primary"
                 disabled={actionBusy != null}
                 onclick={() =>
-                  void (card.account === "chatgpt" ? signInChatGpt() : signInCursor())}
+                  void (card.account === "chatgpt" ? signInCodex() : signInCursor())}
               >
                 <LogIn size={13} strokeWidth={2} />
                 {waitingFor === card.account
                   ? "Waiting…"
-                  : actionBusy === `${card.account}-login` || actionBusy === "chatgpt-login"
+                  : actionBusy === `${card.account}-login` || actionBusy === "codex-login"
                     ? "Signing in…"
                     : "Sign in"}
               </button>
@@ -312,11 +474,6 @@
   .connections-steps strong {
     color: rgb(var(--color-surface-100));
     font-weight: 600;
-  }
-
-  .connections-steps em {
-    font-style: normal;
-    color: rgb(var(--theme-link));
   }
 
   .connections-cards {
@@ -397,6 +554,23 @@
     margin: 0;
     font-size: 0.75rem;
     line-height: 1.35;
+  }
+
+  .connections-device-auth {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    border-radius: 0.55rem;
+    border: 1px solid rgb(var(--color-surface-600) / 0.35);
+    background: rgb(var(--color-surface-800) / 0.42);
+    padding: 0.6rem 0.7rem;
+  }
+
+  .connections-device-code {
+    color: rgb(var(--color-surface-100));
+    font-size: 1rem;
+    font-weight: 650;
+    letter-spacing: 0.12em;
   }
 
   .connections-card-actions {

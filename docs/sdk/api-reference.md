@@ -179,6 +179,22 @@ For a conversation in Coder mode, `create_session` requires the bound Forge
 `work_id` and returns `409 Conflict` when it is absent. General-mode external
 agent chats may remain unbound.
 
+### Native ChatGPT account connection
+
+Until a dedicated SDK accessor lands, integrations use the SDK's raw HTTP
+client for the daemon-owned device flow:
+
+| HTTP | Types |
+|------|-------|
+| `GET /v1/auth/chatgpt` | `ChatGptOAuthStatusResponse` |
+| `POST /v1/auth/chatgpt/begin` | `BeginChatGptOAuthResponse` |
+| `POST /v1/auth/chatgpt/complete` | `CompleteChatGptOAuthRequest` → `CompleteChatGptOAuthResponse` |
+| `POST /v1/auth/chatgpt/refresh` | `ChatGptOAuthStatusResponse` |
+| `DELETE /v1/auth/chatgpt` | `DisconnectChatGptOAuthResponse` |
+
+The SDK client must poll `complete` according to `retry_after_seconds`; it must
+not persist the returned user code or attempt to obtain daemon token material.
+
 ---
 
 ## `runtime()`

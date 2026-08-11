@@ -6,6 +6,7 @@ use reqwest::multipart;
 
 use crate::inference_profiles::InferenceTarget;
 use crate::inference_profiles::InferenceProfileKind;
+use crate::inference_router::ProviderCredentialRequirement;
 use crate::inference_router::{self, CapabilityRequirement};
 use crate::session::load_provider_api_key;
 use crate::turn_failure::TurnFailure;
@@ -128,12 +129,18 @@ async fn transcribe_with_target(
         .post(transcription_url(&base_url))
         .multipart(form);
 
-    if inference_router::provider_needs_api_key(&target.provider) {
-        let api_key = load_provider_api_key(&target.provider).ok_or_else(|| {
-            "Add a speech input API key in Settings → Voice → Speech input (or reuse your chat API key)."
-                .to_string()
-        })?;
-        req = req.bearer_auth(api_key);
+    match inference_router::provider_credential_requirement(&target.provider) {
+        ProviderCredentialRequirement::None => {}
+        ProviderCredentialRequirement::ApiKey => {
+            let api_key = load_provider_api_key(&target.provider).ok_or_else(|| {
+                "Add a speech input API key in Settings → Voice → Speech input (or reuse your chat API key)."
+                    .to_string()
+            })?;
+            req = req.bearer_auth(api_key);
+        }
+        ProviderCredentialRequirement::ChatGptOAuth => {
+            return Err("ChatGPT account inference does not provide speech transcription.".into());
+        }
     }
 
     let response = req.send().await.map_err(|err| {
@@ -179,16 +186,18 @@ fn resolve_stt_base_url(target: &InferenceTarget) -> Option<String> {
 }
 
 fn missing_target_reason(target: &InferenceTarget) -> String {
-    if inference_router::provider_needs_api_key(&target.provider)
-        && !crate::session::provider_api_key_configured(&target.provider)
-    {
-        "Add a speech input API key in Settings → Voice → Speech input (or reuse your chat API key)."
-            .to_string()
-    } else {
-        format!(
+    match inference_router::target_ineligibility_reason(target, CapabilityRequirement::None) {
+        Some("missing_api_key") => {
+            "Add a speech input API key in Settings → Voice → Speech input (or reuse your chat API key)."
+                .to_string()
+        }
+        Some("missing_chatgpt_oauth") => {
+            "Connect a ChatGPT account before using this inference route.".to_string()
+        }
+        _ => format!(
             "Speech input target {}:{} is not ready — check Settings → Voice → Speech input.",
             target.provider, target.model
-        )
+        ),
     }
 }
 

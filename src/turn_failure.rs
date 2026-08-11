@@ -80,7 +80,7 @@ impl TurnFailure {
             category: TurnFailureCategory::Unknown,
             operator_message: operator_message_for(TurnFailureCategory::Unknown, debug_message),
             debug_message: debug_message.to_string(),
-            retryable: true,
+            retryable: false,
         }
     }
 
@@ -138,6 +138,9 @@ fn classify_category(raw: &str) -> TurnFailureCategory {
     {
         return TurnFailureCategory::Timeout;
     }
+    if text.contains("400") || text.contains("bad request") {
+        return TurnFailureCategory::Validation;
+    }
     if text.contains("connection")
         || text.contains("transport")
         || text.contains("temporar")
@@ -160,7 +163,6 @@ fn category_is_retryable(category: TurnFailureCategory) -> bool {
         TurnFailureCategory::RateLimit
             | TurnFailureCategory::ProviderDown
             | TurnFailureCategory::Timeout
-            | TurnFailureCategory::Unknown
     )
 }
 
@@ -235,6 +237,22 @@ mod tests {
     fn cancelled_is_not_retryable() {
         let failure = TurnFailure::cancelled();
         assert_eq!(failure.category, TurnFailureCategory::Cancelled);
+        assert!(!failure.retryable);
+    }
+
+    #[test]
+    fn bad_request_is_validation_and_not_retryable() {
+        let failure = TurnFailure::from_debug(
+            "HTTP 400 Bad Request: {\"detail\":\"Stream must be set to true\"}",
+        );
+        assert_eq!(failure.category, TurnFailureCategory::Validation);
+        assert!(!failure.retryable);
+    }
+
+    #[test]
+    fn unknown_failure_is_not_retryable() {
+        let failure = TurnFailure::from_debug("provider returned an unexplained response");
+        assert_eq!(failure.category, TurnFailureCategory::Unknown);
         assert!(!failure.retryable);
     }
 }

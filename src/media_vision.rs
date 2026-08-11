@@ -86,7 +86,10 @@ pub fn plan_turn_media(
     let mut image_parts = Vec::new();
     let mut vision_image_ids = HashSet::new();
 
-    for media_ref in media_refs.iter().filter(|media_ref| is_image_media_ref(media_ref)) {
+    for media_ref in media_refs
+        .iter()
+        .filter(|media_ref| is_image_media_ref(media_ref))
+    {
         if image_parts.len() >= MAX_VISION_IMAGES_PER_TURN {
             break;
         }
@@ -106,11 +109,7 @@ pub fn plan_turn_media(
             .clone()
             .or(record.label.clone())
             .filter(|value| !value.trim().is_empty());
-        image_parts.push(ContentPart::from_binary_base64(
-            record.mime,
-            encoded,
-            label,
-        ));
+        image_parts.push(ContentPart::from_binary_base64(record.mime, encoded, label));
         vision_image_ids.insert(media_ref.media_id.clone());
     }
 
@@ -132,7 +131,11 @@ pub fn is_image_media_ref(media_ref: &MediaRef) -> bool {
     if media_ref.kind == "image" {
         return true;
     }
-    media_ref.mime.trim().to_ascii_lowercase().starts_with("image/")
+    media_ref
+        .mime
+        .trim()
+        .to_ascii_lowercase()
+        .starts_with("image/")
 }
 
 pub fn has_vision_media(media_refs: &[MediaRef]) -> bool {
@@ -169,6 +172,7 @@ mod tests {
     fn openai_vision_models_detected() {
         assert!(supports_vision("openai", "gpt-4o-mini"));
         assert!(supports_vision("openai", "gpt-4.1-mini"));
+        assert!(supports_vision("openai-codex", "gpt-5.6-sol"));
         assert!(!supports_vision("openai", "gpt-3.5-turbo"));
     }
 

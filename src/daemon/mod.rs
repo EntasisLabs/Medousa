@@ -5,6 +5,7 @@ pub mod forge_projections;
 pub mod forge_events;
 pub mod forge_watch;
 pub mod bounded_set;
+pub mod chatgpt_oauth;
 pub mod coding_engine_host;
 pub mod detamu_host;
 pub mod shell_session_host;

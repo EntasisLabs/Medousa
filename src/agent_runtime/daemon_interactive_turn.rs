@@ -247,6 +247,21 @@ impl InteractiveTurnStreamSink {
 
 #[async_trait]
 impl AgentStreamSink for InteractiveTurnStreamSink {
+    async fn model_receipt(&self, _turn_id: u64, provider: String, model: String) {
+        if self.emit_cancelled_if_needed().await {
+            return;
+        }
+        if let Ok(mut parts) = self.parts.lock() {
+            parts.set_model_receipt(&provider, &model);
+        }
+        self.publish_tracked(interactive_turn_runtime::model_receipt_stream_event(
+            &self.turn_id,
+            &provider,
+            &model,
+        ))
+        .await;
+    }
+
     async fn content_chunk(&self, _turn_id: u64, delta: String) {
         if self.emit_cancelled_if_needed().await {
             return;
@@ -1042,258 +1057,257 @@ async fn run_agent_turn_inner(
         mode_context_appendix,
         tool_registry_override,
     ) = if agent_mode.id == crate::daemon_api::AgentModeId::Coder {
-            let Some(forge) = forge else {
+        let Some(forge) = forge else {
+            sink.agent_error(
+                1,
+                "Coder mode requires daemon-hosted Forge authority".to_string(),
+            )
+            .await;
+            return;
+        };
+        if resolved_code_context.work_id.is_none() {
+            let Some(state) = project_state.clone() else {
                 sink.agent_error(
                     1,
-                    "Coder mode requires daemon-hosted Forge authority".to_string(),
+                    "Coder project setup requires daemon-hosted Forge authority".to_string(),
                 )
                 .await;
                 return;
             };
-            if resolved_code_context.work_id.is_none() {
-                let Some(state) = project_state.clone() else {
-                    sink.agent_error(
-                        1,
-                        "Coder project setup requires daemon-hosted Forge authority".to_string(),
-                    )
-                    .await;
+            let registry = match super::coder_setup_tools::CoderSetupToolRegistry::new(
+                agent_rt.tool_registry.clone(),
+                state,
+                session_id.clone(),
+            ) {
+                Ok(registry) => Arc::new(registry),
+                Err(err) => {
+                    sink.agent_error(1, format!("cannot prepare Coder project setup: {err}"))
+                        .await;
                     return;
-                };
-                let registry = match super::coder_setup_tools::CoderSetupToolRegistry::new(
-                    agent_rt.tool_registry.clone(),
-                    state,
-                    session_id.clone(),
-                ) {
-                    Ok(registry) => Arc::new(registry),
-                    Err(err) => {
-                        sink.agent_error(1, format!("cannot prepare Coder project setup: {err}"))
-                            .await;
-                        return;
-                    }
-                };
-                let registry_override: Arc<
-                    dyn stasis::application::orchestration::tool_registry::ToolRegistry,
-                > = registry;
-                (None, None, None, None, None, Some(registry_override))
-            } else {
-                agent_mode.coder_phase = Some(super::modes::CoderRuntimePhase::Work);
-                let work_id = medousa_forge::model::WorkId::from(
-                    resolved_code_context
-                        .work_id
-                        .as_deref()
-                        .unwrap_or_default()
-                        .trim()
-                        .to_string(),
-                );
-                let executor = medousa_forge::model::ExecutorDescriptor {
-                    kind: "medousa-coder".into(),
-                    detail: serde_json::json!({
-                        "session_id": session_id.clone(),
-                        "turn_id": turn_id,
-                        "contract_revision": agent_mode.contract_revision,
-                    }),
-                };
-                let mut recovery_plan =
-                    match super::coder_turn_checkpoint::plan_coder_recovery(
-                        &checkpoint_store,
-                        &forge,
-                        &super::coder_activity::coder_activity_store(),
-                        &session_id,
-                        &work_id,
-                    ) {
-                        Ok(plan) => plan,
-                        Err(err) => {
-                            sink.notice(format!(
-                                "⚠ Coder recovery index unavailable; starting from Forge state: {err}"
-                            ))
-                            .await;
-                            super::coder_turn_checkpoint::CoderRecoveryPlan::Fresh
-                        }
-                    };
-                if let Some(checkpoint) = recovery_plan.exact_checkpoint()
-                    && (checkpoint.agent_mode != "coder"
-                        || checkpoint.contract_revision != agent_mode.contract_revision)
-                {
-                    recovery_plan = super::coder_turn_checkpoint::CoderRecoveryPlan::Semantic {
-                        checkpoint: checkpoint.clone(),
-                        reason: "Coder mode contract changed since the checkpoint".into(),
-                    };
                 }
-                let source_attempt = recovery_plan.exact_checkpoint().map(|checkpoint| {
-                    medousa_forge::model::AttemptId::from(checkpoint.forge.attempt_id.clone())
-                });
-                let can_rebind_source = source_attempt.as_ref().is_some_and(|source| {
-                    forge.load(&work_id).is_ok_and(|item| {
-                        !item.has_active_attempts()
-                            && item
-                                .attempt(source)
-                                .and_then(|attempt| attempt.environment.as_ref())
-                                .is_some()
-                    })
-                });
-                if source_attempt.is_some()
-                    && !can_rebind_source
-                    && let Some(checkpoint) = recovery_plan.exact_checkpoint().cloned()
-                {
-                    recovery_plan = super::coder_turn_checkpoint::CoderRecoveryPlan::Semantic {
-                        checkpoint,
-                        reason: "exact Forge environment can no longer be rebound".into(),
-                    };
+            };
+            let registry_override: Arc<
+                dyn stasis::application::orchestration::tool_registry::ToolRegistry,
+            > = registry;
+            (None, None, None, None, None, Some(registry_override))
+        } else {
+            agent_mode.coder_phase = Some(super::modes::CoderRuntimePhase::Work);
+            let work_id = medousa_forge::model::WorkId::from(
+                resolved_code_context
+                    .work_id
+                    .as_deref()
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string(),
+            );
+            let executor = medousa_forge::model::ExecutorDescriptor {
+                kind: "medousa-coder".into(),
+                detail: serde_json::json!({
+                    "session_id": session_id.clone(),
+                    "turn_id": turn_id,
+                    "contract_revision": agent_mode.contract_revision,
+                }),
+            };
+            let mut recovery_plan = match super::coder_turn_checkpoint::plan_coder_recovery(
+                &checkpoint_store,
+                &forge,
+                &super::coder_activity::coder_activity_store(),
+                &session_id,
+                &work_id,
+            ) {
+                Ok(plan) => plan,
+                Err(err) => {
+                    sink.notice(format!(
+                        "⚠ Coder recovery index unavailable; starting from Forge state: {err}"
+                    ))
+                    .await;
+                    super::coder_turn_checkpoint::CoderRecoveryPlan::Fresh
                 }
-                let begin_result = if can_rebind_source {
-                    match forge.begin_isolated_attempt_from(
-                        &work_id,
-                        source_attempt.as_ref().expect("checked source attempt"),
-                        executor.clone(),
-                        Some(std::process::id()),
-                        &medousa_forge::forge::Forge::system_actor(),
-                    ) {
-                        Ok(value) => Ok(value),
-                        Err(rebind_err) => {
-                            if let Some(checkpoint) = recovery_plan.exact_checkpoint().cloned() {
-                                recovery_plan =
-                                    super::coder_turn_checkpoint::CoderRecoveryPlan::Semantic {
-                                        checkpoint,
-                                        reason: format!(
-                                            "exact Forge environment rebind failed: {rebind_err}"
-                                        ),
-                                    };
-                            }
-                            forge.begin_isolated_attempt(
-                                &work_id,
-                                executor,
-                                Some(std::process::id()),
-                                &medousa_forge::forge::Forge::system_actor(),
-                            )
-                        }
-                    }
-                } else {
-                    forge.begin_isolated_attempt(
-                        &work_id,
-                        executor,
-                        Some(std::process::id()),
-                        &medousa_forge::forge::Forge::system_actor(),
-                    )
+            };
+            if let Some(checkpoint) = recovery_plan.exact_checkpoint()
+                && (checkpoint.agent_mode != "coder"
+                    || checkpoint.contract_revision != agent_mode.contract_revision)
+            {
+                recovery_plan = super::coder_turn_checkpoint::CoderRecoveryPlan::Semantic {
+                    checkpoint: checkpoint.clone(),
+                    reason: "Coder mode contract changed since the checkpoint".into(),
                 };
-                let (item, lease) = match begin_result {
-                    Ok(value) => value,
-                    Err(err) => {
-                        sink.agent_error(1, format!("cannot acquire Coder authority: {err}"))
-                            .await;
-                        return;
-                    }
+            }
+            let source_attempt = recovery_plan.exact_checkpoint().map(|checkpoint| {
+                medousa_forge::model::AttemptId::from(checkpoint.forge.attempt_id.clone())
+            });
+            let can_rebind_source = source_attempt.as_ref().is_some_and(|source| {
+                forge.load(&work_id).is_ok_and(|item| {
+                    !item.has_active_attempts()
+                        && item
+                            .attempt(source)
+                            .and_then(|attempt| attempt.environment.as_ref())
+                            .is_some()
+                })
+            });
+            if source_attempt.is_some()
+                && !can_rebind_source
+                && let Some(checkpoint) = recovery_plan.exact_checkpoint().cloned()
+            {
+                recovery_plan = super::coder_turn_checkpoint::CoderRecoveryPlan::Semantic {
+                    checkpoint,
+                    reason: "exact Forge environment can no longer be rebound".into(),
                 };
-                let recovery_note = recovery_plan.prompt_note();
-                let entry = match super::coder_mode::compile_coder_entry_for_attempt(
-                    &forge,
-                    &resolved_code_context,
-                    &lease.attempt_id,
+            }
+            let begin_result = if can_rebind_source {
+                match forge.begin_isolated_attempt_from(
+                    &work_id,
+                    source_attempt.as_ref().expect("checked source attempt"),
+                    executor.clone(),
+                    Some(std::process::id()),
+                    &medousa_forge::forge::Forge::system_actor(),
                 ) {
-                    Ok(entry) => Arc::new(entry),
-                    Err(err) => {
-                        let _ = forge.interrupt_attempt(
-                            &lease,
-                            medousa_forge::model::RecoveryDisposition::RestartAllowed,
+                    Ok(value) => Ok(value),
+                    Err(rebind_err) => {
+                        if let Some(checkpoint) = recovery_plan.exact_checkpoint().cloned() {
+                            recovery_plan =
+                                super::coder_turn_checkpoint::CoderRecoveryPlan::Semantic {
+                                    checkpoint,
+                                    reason: format!(
+                                        "exact Forge environment rebind failed: {rebind_err}"
+                                    ),
+                                };
+                        }
+                        forge.begin_isolated_attempt(
+                            &work_id,
+                            executor,
+                            Some(std::process::id()),
                             &medousa_forge::forge::Forge::system_actor(),
-                        );
-                        sink.agent_error(1, err.to_string()).await;
-                        return;
+                        )
                     }
-                };
-                if let Err(err) =
-                    crate::agent_mode_state::set_session_code_binding(&session_id, &entry.work_id)
-                {
+                }
+            } else {
+                forge.begin_isolated_attempt(
+                    &work_id,
+                    executor,
+                    Some(std::process::id()),
+                    &medousa_forge::forge::Forge::system_actor(),
+                )
+            };
+            let (item, lease) = match begin_result {
+                Ok(value) => value,
+                Err(err) => {
+                    sink.agent_error(1, format!("cannot acquire Coder authority: {err}"))
+                        .await;
+                    return;
+                }
+            };
+            let recovery_note = recovery_plan.prompt_note();
+            let entry = match super::coder_mode::compile_coder_entry_for_attempt(
+                &forge,
+                &resolved_code_context,
+                &lease.attempt_id,
+            ) {
+                Ok(entry) => Arc::new(entry),
+                Err(err) => {
                     let _ = forge.interrupt_attempt(
                         &lease,
                         medousa_forge::model::RecoveryDisposition::RestartAllowed,
                         &medousa_forge::forge::Forge::system_actor(),
                     );
-                    sink.agent_error(
-                        1,
-                        format!("cannot preserve Coder undertaking binding: {err}"),
-                    )
-                    .await;
+                    sink.agent_error(1, err.to_string()).await;
                     return;
                 }
-                let identity = super::coder_activity::CoderAgentIdentity::for_turn(
-                    &session_id,
-                    turn_id,
-                    &lease.attempt_id.to_string(),
+            };
+            if let Err(err) =
+                crate::agent_mode_state::set_session_code_binding(&session_id, &entry.work_id)
+            {
+                let _ = forge.interrupt_attempt(
+                    &lease,
+                    medousa_forge::model::RecoveryDisposition::RestartAllowed,
+                    &medousa_forge::forge::Forge::system_actor(),
                 );
-                let authority = match super::coder_tools::CoderTurnLease::new(
-                    forge,
-                    lease,
-                    super::coder_activity::coder_activity_store(),
-                    identity,
-                ) {
-                    Ok(authority) => Arc::new(authority),
-                    Err(err) => {
-                        sink.agent_error(1, format!("cannot enter Coder shared space: {err}"))
-                            .await;
-                        return;
-                    }
-                };
-                let registry = Arc::new(super::coder_tools::CoderBoundToolRegistry::new_with_catalog(
+                sink.agent_error(
+                    1,
+                    format!("cannot preserve Coder undertaking binding: {err}"),
+                )
+                .await;
+                return;
+            }
+            let identity = super::coder_activity::CoderAgentIdentity::for_turn(
+                &session_id,
+                turn_id,
+                &lease.attempt_id.to_string(),
+            );
+            let authority = match super::coder_tools::CoderTurnLease::new(
+                forge,
+                lease,
+                super::coder_activity::coder_activity_store(),
+                identity,
+            ) {
+                Ok(authority) => Arc::new(authority),
+                Err(err) => {
+                    sink.agent_error(1, format!("cannot enter Coder shared space: {err}"))
+                        .await;
+                    return;
+                }
+            };
+            let registry = Arc::new(
+                super::coder_tools::CoderBoundToolRegistry::new_with_catalog(
                     agent_rt.tool_registry.clone(),
                     agent_rt.tool_catalog.clone(),
                     &authority,
                     entry.clone(),
                     item.policy,
-                ));
-                if let Some(checkpoint) = recovery_plan.exact_checkpoint()
-                    && let Err(err) = registry.restore_checkpoint_surface(
-                        &checkpoint.visible_tools,
-                        checkpoint.locus_cursor.as_deref(),
-                    )
-                {
-                    sink.notice(format!(
-                        "⚠ exact Coder tool-surface restore degraded: {err}"
-                    ))
-                    .await;
-                }
-                let shared_space_appendix = match registry.initial_prompt_appendix().await {
-                    Ok(appendix) => appendix,
-                    Err(err) => {
-                        sink.agent_error(1, err.to_string()).await;
-                        return;
-                    }
-                };
-                let registry_override: Arc<
-                    dyn stasis::application::orchestration::tool_registry::ToolRegistry,
-                > = registry.clone();
-                let resume_checkpoint = recovery_plan.exact_checkpoint().cloned();
-                if let super::coder_turn_checkpoint::CoderRecoveryPlan::Semantic {
-                    checkpoint,
-                    reason,
-                } = &recovery_plan
-                    && let Err(err) = checkpoint_store.mark_superseded(checkpoint, reason)
-                {
-                    tracing::warn!(error = %err, "failed to supersede unsafe Coder checkpoint");
-                }
-                if let Some(note) = recovery_note.as_ref() {
-                    sink.notice(note.lines().take(5).collect::<Vec<_>>().join(" "))
-                        .await;
-                }
-                let recovery_appendix = recovery_note
-                    .map(|note| format!("\n\n{note}"))
-                    .unwrap_or_default();
-                (
-                    Some(authority),
-                    Some(registry),
-                    Some(entry.clone()),
-                    resume_checkpoint,
-                    Some(format!(
-                        "{}\n\n{}{}",
-                        entry.prompt_appendix(),
-                        shared_space_appendix,
-                        recovery_appendix,
-                    )),
-                    Some(registry_override),
+                ),
+            );
+            if let Some(checkpoint) = recovery_plan.exact_checkpoint()
+                && let Err(err) = registry.restore_checkpoint_surface(
+                    &checkpoint.visible_tools,
+                    checkpoint.locus_cursor.as_deref(),
                 )
+            {
+                sink.notice(format!(
+                    "⚠ exact Coder tool-surface restore degraded: {err}"
+                ))
+                .await;
             }
-        } else {
-            (None, None, None, None, None, None)
-        };
+            let shared_space_appendix = match registry.initial_prompt_appendix().await {
+                Ok(appendix) => appendix,
+                Err(err) => {
+                    sink.agent_error(1, err.to_string()).await;
+                    return;
+                }
+            };
+            let registry_override: Arc<
+                dyn stasis::application::orchestration::tool_registry::ToolRegistry,
+            > = registry.clone();
+            let resume_checkpoint = recovery_plan.exact_checkpoint().cloned();
+            if let super::coder_turn_checkpoint::CoderRecoveryPlan::Semantic { checkpoint, reason } =
+                &recovery_plan
+                && let Err(err) = checkpoint_store.mark_superseded(checkpoint, reason)
+            {
+                tracing::warn!(error = %err, "failed to supersede unsafe Coder checkpoint");
+            }
+            if let Some(note) = recovery_note.as_ref() {
+                sink.notice(note.lines().take(5).collect::<Vec<_>>().join(" "))
+                    .await;
+            }
+            let recovery_appendix = recovery_note
+                .map(|note| format!("\n\n{note}"))
+                .unwrap_or_default();
+            (
+                Some(authority),
+                Some(registry),
+                Some(entry.clone()),
+                resume_checkpoint,
+                Some(format!(
+                    "{}\n\n{}{}",
+                    entry.prompt_appendix(),
+                    shared_space_appendix,
+                    recovery_appendix,
+                )),
+                Some(registry_override),
+            )
+        }
+    } else {
+        (None, None, None, None, None, None)
+    };
     sink.notice(format!(
         "◈ agent_mode id={} source={:?} contract={} lane={:?}",
         agent_mode.id.as_str(),
@@ -1310,29 +1324,56 @@ async fn run_agent_turn_inner(
 
     let saved_defaults = crate::session::load_tui_defaults();
     let settings = runtime_settings_for_interactive_turn(backend, &request);
-    let main_target = crate::inference_profiles::main_target(&saved_defaults);
-    let vision_target = if has_vision_media {
-        match crate::inference_profiles::vision_target(&saved_defaults) {
-            Some(target) => target,
-            None => {
-                sink.agent_error(
-                    1,
-                    "Configure a vision model in Settings → Models before sending images."
-                        .to_string(),
-                )
-                .await;
-                return;
-            }
-        }
+    let stage_routing = stage_routing_for_interactive_turn(&request);
+    let final_route = stage_routing.get("final_response").cloned();
+    let verifier_route = stage_routing.get("verifier").cloned();
+    let selected_target = final_route
+        .as_ref()
+        .map(|route| crate::inference_profiles::InferenceTarget {
+            provider: route.provider.clone(),
+            model: route.model.clone(),
+            base_url: (route
+                .provider
+                .eq_ignore_ascii_case(settings.provider.trim())
+                && !settings.base_url.trim().is_empty())
+            .then(|| settings.base_url.clone()),
+        })
+        .unwrap_or_else(|| crate::inference_profiles::InferenceTarget {
+            provider: settings.provider.clone(),
+            model: settings.model.clone(),
+            base_url: (!settings.base_url.trim().is_empty()).then(|| settings.base_url.clone()),
+        });
+    let inference_profile_kind = if has_vision_media {
+        crate::inference_profiles::InferenceProfileKind::Vision
     } else {
-        main_target.clone()
+        crate::inference_profiles::InferenceProfileKind::Main
+    };
+    let mut inference_targets = if has_vision_media {
+        crate::inference_router::vision_targets_for_turn(selected_target, &saved_defaults)
+    } else {
+        crate::inference_router::main_targets_for_turn(selected_target, &saved_defaults)
+    };
+    if has_vision_media {
+        inference_targets.retain(|target| {
+            crate::model_capability_registry::registry()
+                .supports_vision(&target.provider, &target.model)
+        });
+    }
+    let Some(active_inference_target) = inference_targets.first().cloned() else {
+        sink.agent_error(
+            1,
+            "The selected model cannot read images. Choose a vision-capable model or configure a Vision fallback in Settings → Models."
+                .to_string(),
+        )
+        .await;
+        return;
     };
     let vision_plan = if has_vision_media {
         match media_vision::plan_turn_media(
             &session_id,
             &request.media_refs,
-            &vision_target.provider,
-            &vision_target.model,
+            &active_inference_target.provider,
+            &active_inference_target.model,
         ) {
             Ok(plan) => plan,
             Err(err) => {
@@ -1366,15 +1407,13 @@ async fn run_agent_turn_inner(
     };
 
     if has_vision_media
-        && let Some(notice) =
-            vision_plan.stream_notice(&vision_target.provider, &vision_target.model)
+        && let Some(notice) = vision_plan.stream_notice(
+            &active_inference_target.provider,
+            &active_inference_target.model,
+        )
     {
         sink.notice(notice).await;
     }
-
-    let stage_routing = stage_routing_for_interactive_turn(&request);
-    let final_route = stage_routing.get("final_response").cloned();
-    let verifier_route = stage_routing.get("verifier").cloned();
 
     let active_turn_resume =
         super::coder_turn_checkpoint::CoderTurnCheckpointController::initial_resume_state(
@@ -1388,10 +1427,10 @@ async fn run_agent_turn_inner(
         coder_entry.as_ref(),
         project_state.as_ref().map(|state| state.forge.clone()),
     ) {
-        let (checkpoint_provider, checkpoint_model) = final_route
-            .as_ref()
-            .map(|route| (route.provider.clone(), route.model.clone()))
-            .unwrap_or_else(|| (vision_target.provider.clone(), vision_target.model.clone()));
+        let (checkpoint_provider, checkpoint_model) = (
+            active_inference_target.provider.clone(),
+            active_inference_target.model.clone(),
+        );
         match super::coder_turn_checkpoint::CoderTurnCheckpointController::new(
             super::coder_turn_checkpoint::CoderTurnCheckpointControllerParams {
                 store: checkpoint_store.clone(),
@@ -1591,11 +1630,8 @@ async fn run_agent_turn_inner(
         scheduled_tool_allowlist,
         media_refs: request.media_refs.clone(),
         vision_plan,
-        inference_profile_kind: if has_vision_media {
-            crate::inference_profiles::InferenceProfileKind::Vision
-        } else {
-            crate::inference_profiles::InferenceProfileKind::Main
-        },
+        inference_profile_kind,
+        inference_targets,
         surface: request.surface.clone(),
         round_context_provider: coder_registry
             .clone()
@@ -1712,6 +1748,10 @@ struct TurnOutcomeTrackingSink {
 
 #[async_trait]
 impl AgentStreamSink for TurnOutcomeTrackingSink {
+    async fn model_receipt(&self, turn_id: u64, provider: String, model: String) {
+        self.inner.model_receipt(turn_id, provider, model).await;
+    }
+
     async fn content_chunk(&self, turn_id: u64, delta: String) {
         self.inner.content_chunk(turn_id, delta).await;
     }

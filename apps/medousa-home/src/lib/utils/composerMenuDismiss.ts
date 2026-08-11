@@ -16,8 +16,11 @@ export function attachComposerMenuDismiss(options: {
       if (options.isInside(event.target as Node | null)) return;
       options.onDismiss();
     };
-    document.addEventListener("click", onDocClick);
-    removeClick = () => document.removeEventListener("click", onDocClick);
+    // Inspect the original DOM boundary before an action handler can replace or
+    // remove its clicked element. Bubble-phase inspection can mistake those
+    // internal transitions for outside clicks and dismiss the entire popover.
+    document.addEventListener("click", onDocClick, true);
+    removeClick = () => document.removeEventListener("click", onDocClick, true);
   }, 0);
 
   document.addEventListener("keydown", onKey);

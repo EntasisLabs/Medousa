@@ -40,6 +40,18 @@ const PROVIDERS: &[ProviderSpec] = &[
         validation: ProviderValidation::OpenAiCompatible,
     },
     ProviderSpec {
+        id: "openai-codex",
+        label: "OpenAI · ChatGPT account",
+        category: "featured",
+        default_model: "gpt-5.6-sol",
+        needs_api_key: false,
+        supports_custom_base_url: false,
+        default_base_url: None,
+        key_hint: None,
+        blurb: "ChatGPT subscription models with the Medousa runtime",
+        validation: ProviderValidation::AcceptKey,
+    },
+    ProviderSpec {
         id: "anthropic",
         label: "Anthropic",
         category: "featured",
@@ -418,6 +430,19 @@ mod tests {
         assert!(find_provider("deepseek").is_some());
         assert!(find_provider("ollama").is_some());
         assert!(find_provider("custom").is_some());
+        assert!(find_provider("openai-codex").is_some());
+    }
+
+    #[test]
+    fn chatgpt_oauth_route_is_selectable() {
+        let route = find_provider("openai-codex").expect("route metadata");
+        assert!(!route.needs_api_key);
+        assert!(
+            providers_catalog()
+                .providers
+                .iter()
+                .any(|entry| entry.id == "openai-codex")
+        );
     }
 
     #[test]

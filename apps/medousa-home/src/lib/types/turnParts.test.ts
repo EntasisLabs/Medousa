@@ -4,6 +4,7 @@ import {
   composeTurnMarkdown,
   hostContextFromParts,
   hostContextLabel,
+  modelReceiptFromParts,
   progressFromParts,
   toolRunsFromParts,
   uiArtifactsFromParts,
@@ -11,6 +12,14 @@ import {
 } from "$lib/types/turnParts";
 
 describe("turnParts", () => {
+  it("returns the daemon-observed inference route", () => {
+    expect(
+      modelReceiptFromParts([
+        { kind: "model_receipt", provider: "openai-codex", model: "gpt-5.6-sol" },
+      ]),
+    ).toEqual({ provider: "openai-codex", model: "gpt-5.6-sol" });
+  });
+
   it("parses progress parts from persisted timeline JSON", () => {
     const parts = JSON.parse(
       '[{"kind":"tool_run","run_id":"tr-1","tool_name":"cognition_memory_context","status":"succeeded","input_summary":"session","started_at":"2026-06-25T12:00:00Z"},{"kind":"progress","markdown":"Pulling context…"},{"kind":"text","markdown":"Final answer."}]',

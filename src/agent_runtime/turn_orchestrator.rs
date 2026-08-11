@@ -94,11 +94,53 @@ impl TurnStreamBridge {
             .expect("stream bridge sender requested after drain")
     }
 
+    fn sender_clone(&self) -> tokio::sync::mpsc::UnboundedSender<StreamDelta> {
+        self.sender().clone()
+    }
+
     async fn drain(&mut self) {
         self.sender.take();
         if let Some(pump) = self.pump.take() {
             let _ = pump.await;
         }
+    }
+}
+
+/// Owns one inference attempt's stream so retry/fallback decisions happen only
+/// after every delta from that attempt has been observed.
+struct AttemptStreamBridge {
+    sender: Option<tokio::sync::mpsc::UnboundedSender<StreamDelta>>,
+    pump: tokio::task::JoinHandle<bool>,
+}
+
+impl AttemptStreamBridge {
+    fn new(target: tokio::sync::mpsc::UnboundedSender<StreamDelta>) -> Self {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<StreamDelta>();
+        let pump = tokio::spawn(async move {
+            let mut emitted = false;
+            while let Some(delta) = receiver.recv().await {
+                emitted |= match &delta {
+                    StreamDelta::Content(text)
+                    | StreamDelta::Reasoning(text)
+                    | StreamDelta::ThoughtSignature(text) => !text.is_empty(),
+                };
+                let _ = target.send(delta);
+            }
+            emitted
+        });
+        Self {
+            sender: Some(sender),
+            pump,
+        }
+    }
+
+    fn sender(&self) -> &tokio::sync::mpsc::UnboundedSender<StreamDelta> {
+        self.sender.as_ref().expect("attempt sender already closed")
+    }
+
+    async fn finish(mut self) -> bool {
+        self.sender.take();
+        self.pump.await.unwrap_or(true)
     }
 }
 
@@ -328,6 +370,7 @@ pub struct LocalTurnExecutionParams {
     pub session_scratch_seed: TurnScratchpad,
     pub current_turn_user_message: ChatMessage,
     pub inference_profile_kind: crate::inference_profiles::InferenceProfileKind,
+    pub inference_targets: Vec<crate::inference_profiles::InferenceTarget>,
     pub supports_ui_artifacts: bool,
     pub supports_liquid_markdown: bool,
     pub supports_browser_host: bool,
@@ -360,6 +403,7 @@ pub struct AssembleLocalTurnParams<'a> {
     pub media_refs: Vec<crate::daemon_api::MediaRef>,
     pub vision_plan: crate::media_vision::TurnMediaVisionPlan,
     pub inference_profile_kind: crate::inference_profiles::InferenceProfileKind,
+    pub inference_targets: Vec<crate::inference_profiles::InferenceTarget>,
     pub surface: Option<crate::daemon_api::TurnSurfaceContext>,
     pub round_context_provider: Option<Arc<dyn super::turn_context::ToolRoundContextProvider>>,
     pub evidence_undertaking_id: Option<String>,
@@ -474,16 +518,33 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
         params.scheduled_tool_allowlist.clone(),
     );
 
+    let primary_inference_target = params.inference_targets.first();
+    let execution_provider = primary_inference_target
+        .map(|target| target.provider.clone())
+        .unwrap_or_else(|| params.settings.provider.clone());
+    let execution_model = primary_inference_target
+        .map(|target| target.model.clone())
+        .unwrap_or_else(|| params.settings.model.clone());
+    let execution_base_url = primary_inference_target
+        .and_then(|target| target.base_url.clone())
+        .or_else(|| {
+            (!params.settings.base_url.trim().is_empty()).then(|| params.settings.base_url.clone())
+        });
+    let no_tools_pipeline = turn_services::build_prompt_pipeline_for_target(
+        &execution_provider,
+        &execution_model,
+        execution_base_url.as_deref(),
+    );
+
     AssembledLocalTurn {
         execution: LocalTurnExecutionParams {
             agent_mode: params.prepared.agent_mode,
             turn_id: params.turn_id,
             session_id: params.session_id.to_string(),
             backend: params.settings.backend.clone(),
-            provider: params.settings.provider.clone(),
-            model: params.settings.model.clone(),
-            base_url: (!params.settings.base_url.trim().is_empty())
-                .then(|| params.settings.base_url.clone()),
+            provider: execution_provider,
+            model: execution_model,
+            base_url: execution_base_url,
             response_depth_mode: params.response_depth_mode.to_string(),
             reasoning_effort: params.reasoning_effort.to_string(),
             worker_scheduler: params.tui_rt.worker_scheduler.clone(),
@@ -496,10 +557,7 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
             turn_scope: params.tui_rt.turn_scope.clone(),
             activation: activation.clone(),
             pipeline: pipeline_selection.pipeline.clone(),
-            no_tools_pipeline: turn_services::build_prompt_pipeline_for_turn(
-                params.final_route,
-                params.settings,
-            ),
+            no_tools_pipeline,
             prior_messages: prior_build.messages.clone(),
             prompt_for_request,
             original_prompt: params.prompt.to_string(),
@@ -543,6 +601,7 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
             ),
             current_turn_user_message,
             inference_profile_kind: params.inference_profile_kind,
+            inference_targets: params.inference_targets,
             supports_ui_artifacts: crate::ui_present_tools::surface_supports_ui_artifacts(
                 params.surface.as_ref(),
             ),
@@ -841,6 +900,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         session_scratch_seed,
         current_turn_user_message,
         inference_profile_kind,
+        inference_targets,
         supports_ui_artifacts: _,
         supports_liquid_markdown: _,
         supports_browser_host: _,
@@ -1090,6 +1150,8 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         stream_bridge.drain().await;
         match prompt_only_result {
             Ok(completion) => {
+                sink.model_receipt(turn_id, provider.clone(), model.clone())
+                    .await;
                 let final_text = completion
                     .response
                     .into_first_text()
@@ -1231,7 +1293,6 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         .filter(|rounds| *rounds > 0)
         .unwrap_or(activation.max_tool_rounds)
         .max(1);
-    let inference_targets = crate::inference_router::profile_targets(inference_profile_kind);
     let inference_target_total = inference_targets.len().max(1);
     let mut first_attempt: Option<
         Result<
@@ -1240,21 +1301,18 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         >,
     > = None;
     let mut inference_last_err = String::new();
+    let mut visible_output_emitted = false;
 
     'inference_targets: for (attempt_index, target) in inference_targets.iter().enumerate() {
-        if !crate::inference_router::target_is_eligible(target, capability_required) {
+        if let Some(reason) =
+            crate::inference_router::target_ineligibility_reason(target, capability_required)
+        {
             sink.notice(crate::inference_router::telemetry_line(
                 inference_profile_kind,
                 attempt_index,
                 inference_target_total,
                 target,
-                if crate::inference_router::provider_needs_api_key(&target.provider)
-                    && !crate::session::provider_api_key_configured(&target.provider)
-                {
-                    "missing_api_key"
-                } else {
-                    "missing_capability"
-                },
+                reason,
             ))
             .await;
             continue;
@@ -1305,24 +1363,38 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 pending_active_turn_resume.take(),
             );
 
-            match attempt_pipeline
+            let attempt_stream = AttemptStreamBridge::new(stream_bridge.sender_clone());
+            let attempt_result = attempt_pipeline
                 .execute_with_stream_prior_messages_max_rounds(
                     request.clone(),
                     prior_messages.clone(),
-                    Some(stream_bridge.sender()),
+                    Some(attempt_stream.sender()),
                     loop_max_rounds,
                     Some(&mut completion_gate),
                     Some(current_turn_user_message.clone()),
                 )
-                .await
-            {
+                .await;
+            let attempt_emitted = attempt_stream.finish().await;
+            visible_output_emitted |= attempt_emitted;
+
+            match attempt_result {
                 Ok(response) => {
+                    sink.model_receipt(turn_id, target.provider.clone(), target.model.clone())
+                        .await;
                     first_attempt = Some(Ok(response));
                     break 'inference_targets;
                 }
                 Err(err) => {
                     let failure = crate::turn_failure::TurnFailure::from_debug(&err.to_string());
                     inference_last_err = failure.debug_message.clone();
+                    if attempt_emitted {
+                        sink.notice(
+                            "◈ retry_policy retry_count=0 retry_reason=visible_output".to_string(),
+                        )
+                        .await;
+                        first_attempt = Some(Err(err));
+                        break 'inference_targets;
+                    }
                     // Without a safe-boundary checkpoint, a fresh Coder retry
                     // could replay a tool effect whose result never reached the
                     // provider transcript. Stop and recover from Forge/activity
@@ -1366,8 +1438,10 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                             failure.category_label(),
                         ))
                         .await;
+                        break;
                     }
-                    break;
+                    first_attempt = Some(Err(err));
+                    break 'inference_targets;
                 }
             }
         }
@@ -1565,7 +1639,9 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         }
         Some(Err(err)) => {
             let err_text = err.to_string();
-            if let Some(reason) = legacy_retryable_runtime_reason(&err_text, is_coder_turn) {
+            if !visible_output_emitted
+                && let Some(reason) = legacy_retryable_runtime_reason(&err_text, is_coder_turn)
+            {
                 // Retry uses the same tool-round budget as the primary loop unless the
                 // operator explicitly set a lower retry_runtime_max_rounds cap.
                 let retry_rounds = activation
@@ -1574,6 +1650,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     .max(1);
                 let mut last_err = err_text;
                 let mut retry_count = 0usize;
+                let mut retry_stopped_after_output = false;
                 while retry_count < retry_max_retries {
                     retry_count = retry_count.saturating_add(1);
                     sink.notice(format!(
@@ -1603,6 +1680,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     }
                     orchestration_state.final_mode = "tool_loop_retry".to_string();
 
+                    let retry_stream = AttemptStreamBridge::new(stream_bridge.sender_clone());
                     let retry_result = {
                         let initial_worker_scratch = scratch_seed_for_tool_loop(
                             &session_scratch_seed,
@@ -1622,13 +1700,14 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                             .execute_with_stream_prior_messages_max_rounds(
                                 request.clone(),
                                 prior_messages.clone(),
-                                Some(stream_bridge.sender()),
+                                Some(retry_stream.sender()),
                                 retry_rounds,
                                 Some(&mut retry_gate),
                                 None,
                             )
                             .await
                     };
+                    let retry_emitted = retry_stream.finish().await;
 
                     match retry_result {
                         Ok(response) => {
@@ -1652,25 +1731,38 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                         }
                         Err(retry_err) => {
                             last_err = format!("{}", retry_err);
+                            if retry_emitted {
+                                retry_stopped_after_output = true;
+                                sink.notice(
+                                    "◈ retry_policy stopped retry_reason=visible_output"
+                                        .to_string(),
+                                )
+                                .await;
+                                break;
+                            }
                         }
                     }
                 }
-                orchestration_state.final_mode = "tool_loop_retry_exhausted".to_string();
+                let retry_failure = if retry_stopped_after_output {
+                    format!("{reason} (retry stopped after visible output: {last_err})")
+                } else {
+                    format!("{reason} (retry exhausted: {last_err})")
+                };
+                orchestration_state.final_mode = if retry_stopped_after_output {
+                    "tool_loop_retry_stopped_after_output".to_string()
+                } else {
+                    "tool_loop_retry_exhausted".to_string()
+                };
                 mark_active_turn_checkpoint(
                     active_turn_checkpoint_sink.as_ref(),
                     super::coder_turn_checkpoint::ActiveTurnCheckpointStatus::RecoverableFailure,
                     super::coder_turn_checkpoint::SafeCheckpointBoundary::RecoverableFailure,
-                    &format!("{reason} (retry exhausted: {last_err})"),
+                    &retry_failure,
                     &orchestration_state,
                 );
                 stream_bridge.drain().await;
-                deliver_turn_failure(
-                    &sink,
-                    turn_id,
-                    &format!("{reason} (retry exhausted: {last_err})"),
-                    &mut orchestration_state,
-                )
-                .await;
+                deliver_turn_failure(&sink, turn_id, &retry_failure, &mut orchestration_state)
+                    .await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
             } else {
                 sink.notice("◈ retry_policy retry_count=0 retry_reason=not_runtime".to_string())
@@ -1786,6 +1878,37 @@ mod stream_bridge_tests {
             *concrete.events.lock().expect("events lock"),
             vec!["first", "second", "terminal"]
         );
+    }
+
+    #[tokio::test]
+    async fn attempt_bridge_reports_visible_output_before_retry_decision() {
+        let concrete = Arc::new(OrderedSink::default());
+        let sink: SharedAgentStreamSink = concrete.clone();
+        let mut bridge = TurnStreamBridge::new(sink, 8);
+        let attempt = AttemptStreamBridge::new(bridge.sender_clone());
+
+        attempt
+            .sender()
+            .send(StreamDelta::Content("visible".to_string()))
+            .expect("attempt delta");
+
+        assert!(attempt.finish().await);
+        bridge.drain().await;
+        assert_eq!(
+            *concrete.events.lock().expect("events lock"),
+            vec!["visible"]
+        );
+    }
+
+    #[tokio::test]
+    async fn attempt_bridge_allows_pre_output_failure_routing() {
+        let concrete = Arc::new(OrderedSink::default());
+        let sink: SharedAgentStreamSink = concrete;
+        let mut bridge = TurnStreamBridge::new(sink, 9);
+        let attempt = AttemptStreamBridge::new(bridge.sender_clone());
+
+        assert!(!attempt.finish().await);
+        bridge.drain().await;
     }
 
     #[test]

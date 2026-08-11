@@ -526,6 +526,27 @@ pub fn build_core_router(state: AppState) -> Router {
             "/v1/agents/permission-requests/{request_id}/deny",
             post(crate::daemon::agents::deny_agent_permission_request),
         )
+        .route(
+            "/v1/auth/chatgpt",
+            get(crate::daemon::chatgpt_oauth::status)
+                .delete(crate::daemon::chatgpt_oauth::disconnect),
+        )
+        .route(
+            "/v1/auth/chatgpt/begin",
+            post(crate::daemon::chatgpt_oauth::begin),
+        )
+        .route(
+            "/v1/auth/chatgpt/complete",
+            post(crate::daemon::chatgpt_oauth::complete),
+        )
+        .route(
+            "/v1/auth/chatgpt/refresh",
+            post(crate::daemon::chatgpt_oauth::refresh),
+        )
+        .route(
+            "/v1/auth/chatgpt/models",
+            get(crate::daemon::chatgpt_oauth::models),
+        )
         .route("/v1/runtime/artifact/command", post(artifact_command))
         .route("/v1/runtime/artifact/fetch", post(artifact_fetch))
         .route("/v1/runtime/artifact/write", post(artifact_write))

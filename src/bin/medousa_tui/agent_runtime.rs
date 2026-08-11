@@ -622,6 +622,11 @@ pub(crate) async fn start_prompt_run(
     let model = state.settings.model.clone();
     let base_url =
         (!state.settings.base_url.trim().is_empty()).then(|| state.settings.base_url.clone());
+    let inference_targets = vec![medousa::inference_profiles::InferenceTarget {
+        provider: provider.clone(),
+        model: model.clone(),
+        base_url: base_url.clone(),
+    }];
     let response_depth_mode = state.response_depth_mode.clone();
     let reasoning_effort = state.reasoning_effort.clone();
     let handle = tokio::spawn(async move {
@@ -678,6 +683,7 @@ pub(crate) async fn start_prompt_run(
                 session_scratch_seed,
                 current_turn_user_message,
                 inference_profile_kind: medousa::inference_profiles::InferenceProfileKind::Main,
+                inference_targets,
                 supports_ui_artifacts: false,
                 supports_liquid_markdown: false,
                 supports_browser_host: false,

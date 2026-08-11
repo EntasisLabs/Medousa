@@ -100,6 +100,7 @@ fn visible_turn_text(turn: &ConversationTurn) -> Option<String> {
             TurnPart::Text { markdown } | TurnPart::Progress { markdown } => Some(markdown.trim()),
             TurnPart::Handoff { text, .. } => Some(text.trim()),
             TurnPart::Reasoning { .. }
+            | TurnPart::ModelReceipt { .. }
             | TurnPart::ToolRun { .. }
             | TurnPart::UserMedia { .. }
             | TurnPart::HostContext { .. }

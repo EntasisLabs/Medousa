@@ -24,6 +24,7 @@ struct PendingToolRun {
 #[derive(Debug, Default)]
 pub struct TurnPartsAccumulator {
     reasoning: String,
+    model_receipt: Option<(String, String)>,
     tool_runs: Vec<PendingToolRun>,
     progress_notes: Vec<String>,
     attachment_parts: Vec<TurnPart>,
@@ -45,6 +46,10 @@ impl TurnPartsAccumulator {
 
     pub fn scratch_reset(&mut self) {
         self.reasoning.clear();
+    }
+
+    pub fn set_model_receipt(&mut self, provider: &str, model: &str) {
+        self.model_receipt = Some((provider.to_string(), model.to_string()));
     }
 
     /// Preserve streamed prose before the next tool round clears the live draft buffer.
@@ -94,27 +99,24 @@ impl TurnPartsAccumulator {
         height_px: Option<u32>,
     ) {
         for part in &mut self.attachment_parts {
-            if let TurnPart::AttachmentRef { artifact_id: existing, .. } = part
-                && existing == previous_artifact_id {
-                    *part = TurnPart::AttachmentRef {
-                        artifact_id: artifact_id.to_string(),
-                        mime: mime.to_string(),
-                        label: label.to_string(),
-                        byte_size,
-                        presentation,
-                        height_px,
-                    };
-                    return;
-                }
+            if let TurnPart::AttachmentRef {
+                artifact_id: existing,
+                ..
+            } = part
+                && existing == previous_artifact_id
+            {
+                *part = TurnPart::AttachmentRef {
+                    artifact_id: artifact_id.to_string(),
+                    mime: mime.to_string(),
+                    label: label.to_string(),
+                    byte_size,
+                    presentation,
+                    height_px,
+                };
+                return;
+            }
         }
-        self.push_attachment_ref(
-            artifact_id,
-            mime,
-            label,
-            byte_size,
-            presentation,
-            height_px,
-        );
+        self.push_attachment_ref(artifact_id, mime, label, byte_size, presentation, height_px);
     }
 
     pub fn tool_started(
@@ -188,6 +190,9 @@ impl TurnPartsAccumulator {
         handoff: Option<(String, Option<String>)>,
     ) -> Vec<TurnPart> {
         let mut parts = self.tool_run_parts();
+        if let Some((provider, model)) = self.model_receipt.take() {
+            parts.push(TurnPart::ModelReceipt { provider, model });
+        }
         parts.extend(std::mem::take(&mut self.attachment_parts));
         for note in std::mem::take(&mut self.progress_notes) {
             parts.push(TurnPart::Progress { markdown: note });
@@ -291,11 +296,7 @@ pub fn conversation_turn_from_parts_at(
         timestamp,
         tool_names,
         answer_state,
-        parts: if parts.is_empty() {
-            None
-        } else {
-            Some(parts)
-        },
+        parts: if parts.is_empty() { None } else { Some(parts) },
         slice_summary: None,
         speaker_profile_id: None,
     }
@@ -322,11 +323,8 @@ pub fn user_conversation_turn_with_context_media_and_speaker(
     media_refs: &[crate::daemon_api::MediaRef],
     speaker_profile_id: Option<&str>,
 ) -> ConversationTurn {
-    let mut turn = user_conversation_turn_with_media_and_speaker(
-        content,
-        media_refs,
-        speaker_profile_id,
-    );
+    let mut turn =
+        user_conversation_turn_with_media_and_speaker(content, media_refs, speaker_profile_id);
     if let Some(context) = host_context {
         turn.parts
             .get_or_insert_with(Vec::new)
@@ -360,6 +358,7 @@ pub fn compose_parts_markdown(parts: &[TurnPart]) -> String {
     let mut out = String::new();
     for part in parts {
         match part {
+            TurnPart::ModelReceipt { .. } => {}
             TurnPart::Text { markdown } => {
                 if !out.is_empty() && !out.ends_with('\n') {
                     out.push('\n');
@@ -394,9 +393,7 @@ pub fn compose_parts_markdown(parts: &[TurnPart]) -> String {
                 }
             }
             TurnPart::Handoff {
-                handoff_kind,
-                text,
-                ..
+                handoff_kind, text, ..
             } => {
                 out.push_str(&format!("\n\n> [!note] Handoff ({handoff_kind})\n> "));
                 out.push_str(&text.replace('\n', "\n> "));
@@ -461,7 +458,9 @@ mod tests {
         let turn = acc.finalize_assistant_turn("Final answer.".into(), vec!["search".into()], None);
         let parts = turn.parts.expect("parts");
         assert!(matches!(&parts[0], TurnPart::ToolRun { .. }));
-        assert!(matches!(&parts[1], TurnPart::Progress { markdown } if markdown == "Pulling context…"));
+        assert!(
+            matches!(&parts[1], TurnPart::Progress { markdown } if markdown == "Pulling context…")
+        );
         assert!(matches!(&parts[2], TurnPart::Text { markdown } if markdown == "Final answer."));
     }
 
@@ -478,6 +477,18 @@ mod tests {
         assert!(matches!(&parts[0], TurnPart::ToolRun { tool_name, .. } if tool_name == "search"));
         assert!(matches!(&parts[1], TurnPart::Reasoning { .. }));
         assert!(matches!(&parts[2], TurnPart::Text { markdown } if markdown == "Hello"));
+    }
+
+    #[test]
+    fn assistant_turn_persists_model_receipt() {
+        let mut acc = TurnPartsAccumulator::default();
+        acc.set_model_receipt("openai-codex", "gpt-5.6-sol");
+        let turn = acc.finalize_assistant_turn("Hello".into(), vec![], None);
+        assert!(turn.parts.as_deref().is_some_and(|parts| matches!(
+            parts.first(),
+            Some(TurnPart::ModelReceipt { provider, model })
+                if provider == "openai-codex" && model == "gpt-5.6-sol"
+        )));
     }
 
     #[test]
@@ -542,7 +553,9 @@ mod tests {
         );
         assert_eq!(turn.content, "Explain this");
         assert!(turn.parts.as_deref().is_some_and(|parts| {
-            parts.iter().any(|part| matches!(part, TurnPart::HostContext { .. }))
+            parts
+                .iter()
+                .any(|part| matches!(part, TurnPart::HostContext { .. }))
         }));
     }
 }

@@ -15,7 +15,6 @@
     getSessionAgentMode,
     getSessionCodeBinding,
     setSessionCodeBinding,
-    startSessionCodeProject,
   } from "$lib/daemon";
   import {
     getUndertaking,
@@ -33,6 +32,7 @@
     startTrackedAgent,
   } from "$lib/utils/undertakingWorkspace";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
+  import CodeProjectCreationFlow from "$lib/components/code/CodeProjectCreationFlow.svelte";
   import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
   import { attachComposerMenuDismiss } from "$lib/utils/composerMenuDismiss";
   import { placeToolbarPopover } from "$lib/utils/railPopover";
@@ -59,8 +59,6 @@
   let chooserTriggerEl = $state<HTMLButtonElement | null>(null);
   let chooserPanelEl = $state<HTMLDivElement | null>(null);
   let creating = $state(false);
-  let newTitle = $state("");
-  let newBrief = $state("");
   let observedBindingWorkId: string | null | undefined = undefined;
 
   async function hydrateSharedBinding(sessionId: string) {
@@ -121,7 +119,7 @@
       placeToolbarPopover(chooserTriggerEl, chooserPanelEl, {
         prefer: header ? "below" : "above",
         align: "start",
-        width: 18 * 16,
+        width: (creating ? 23 : 18) * 16,
         maxHeightRatio: 0.72,
         gap: 6,
         pad: 8,
@@ -244,36 +242,10 @@
     }
   }
 
-  async function createProject() {
-    const sessionId = chat.sessionId;
-    if (!sessionId || !newTitle.trim() || busy) return;
-    busy = true;
-    error = null;
-    try {
-      const created = await startSessionCodeProject(sessionId, {
-        title: newTitle.trim(),
-        brief: newBrief.trim() || newTitle.trim(),
-        source: "blank",
-      });
-      const item = await getUndertaking(created.work_id);
-      if (chat.sessionId !== sessionId) return;
-      undertakings.setActiveFromItem(item);
-      undertakings.bindChat(sessionId);
-      observedBindingWorkId = created.work_id;
-      window.dispatchEvent(
-        new CustomEvent("medousa-code-project-binding-changed", {
-          detail: { sessionId, workId: created.work_id },
-        }),
-      );
-      newTitle = "";
-      newBrief = "";
-      creating = false;
-      chooserOpen = false;
-    } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
-    } finally {
-      busy = false;
-    }
+  function finishSharedCreation(item: ItemProjection) {
+    observedBindingWorkId = item.id;
+    creating = false;
+    chooserOpen = false;
   }
 </script>
 
@@ -404,30 +376,29 @@
       <BodyPortal>
       <div
         bind:this={chooserPanelEl}
-        class="z-50 w-72 rounded-xl border border-surface-500/40 bg-surface-900/95 p-2 text-xs shadow-2xl backdrop-blur"
+        class="z-50 {creating ? 'w-[23rem]' : 'w-72'} overflow-hidden rounded-xl border border-surface-500/40 bg-surface-900/95 {creating ? 'p-0' : 'p-2'} text-xs shadow-2xl backdrop-blur"
         role="dialog"
         aria-label="Choose or create project"
       >
-        <p class="px-1.5 pb-1.5 text-[10px] font-medium uppercase tracking-wide text-content-quiet">Continue a project</p>
-        {#each undertakings.items.filter((item) => ["ready", "executing"].includes(item.state) && item.environment?.worktree).slice(0, 6) as item (item.id)}
-          <button type="button" class="context-action" disabled={busy} onclick={() => void bindProject(item)}>
-            <CircleDot size={13} />
-            <span class="truncate">{item.title}</span>
-          </button>
-        {:else}
-          <p class="px-1.5 py-2 text-content-quiet">No ready projects yet.</p>
-        {/each}
-        <div class="my-1 border-t border-surface-500/25"></div>
         {#if creating}
-          <form class="space-y-1.5 p-1" onsubmit={(event) => { event.preventDefault(); void createProject(); }}>
-            <input class="w-full rounded-md border border-surface-500/40 bg-surface-950 px-2 py-1.5 text-surface-100" placeholder="Project name" bind:value={newTitle} />
-            <textarea class="w-full resize-none rounded-md border border-surface-500/40 bg-surface-950 px-2 py-1.5 text-surface-100" rows="2" placeholder="What should Medousa build?" bind:value={newBrief}></textarea>
-            <div class="flex justify-end gap-1.5">
-              <button type="button" class="btn btn-sm variant-ghost-surface" onclick={() => (creating = false)}>Cancel</button>
-              <button type="submit" class="btn btn-sm variant-filled-primary" disabled={busy || !newTitle.trim()}>Create and bind</button>
-            </div>
-          </form>
+          <CodeProjectCreationFlow
+            presentation="popover"
+            sessionId={chat.sessionId}
+            onCancel={() => (creating = false)}
+            onCreated={finishSharedCreation}
+            onContinue={finishSharedCreation}
+          />
         {:else}
+          <p class="px-1.5 pb-1.5 text-[10px] font-medium uppercase tracking-wide text-content-quiet">Continue a project</p>
+          {#each undertakings.items.filter((item) => ["ready", "executing"].includes(item.state) && item.environment?.worktree).slice(0, 6) as item (item.id)}
+            <button type="button" class="context-action" disabled={busy} onclick={() => void bindProject(item)}>
+              <CircleDot size={13} />
+              <span class="truncate">{item.title}</span>
+            </button>
+          {:else}
+            <p class="px-1.5 py-2 text-content-quiet">No ready projects yet.</p>
+          {/each}
+          <div class="my-1 border-t border-surface-500/25"></div>
           <button type="button" class="context-action" onclick={() => (creating = true)}>
             <FolderPlus size={14} />
             Create a new project

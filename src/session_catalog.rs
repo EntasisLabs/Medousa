@@ -12,15 +12,13 @@ use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use stasis::prelude::RuntimeComposition;
-use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
 use surrealdb_types::SurrealValue;
 use tokio::runtime::Handle;
 
 use crate::identity_memory::DEFAULT_USER_ID;
-use crate::session::{
-    atomic_write, medousa_data_dir, ConversationTurn, SessionHistorySummary,
-};
+use crate::session::{ConversationTurn, SessionHistorySummary, atomic_write, medousa_data_dir};
 use crate::turn_parts::TurnPart;
 use crate::verification_store::VerificationRunRecord;
 
@@ -47,9 +45,8 @@ const SCHEMA_STATEMENTS: &[&str] = &[
     "DEFINE INDEX idx_session_catalog_session_id ON TABLE session_catalog COLUMNS session_id UNIQUE",
 ];
 
-const SCHEMA_MIGRATIONS: &[&str] = &[
-    "REMOVE INDEX IF EXISTS idx_session_catalog_last_activity ON TABLE session_catalog",
-];
+const SCHEMA_MIGRATIONS: &[&str] =
+    &["REMOVE INDEX IF EXISTS idx_session_catalog_last_activity ON TABLE session_catalog"];
 
 static SESSION_CATALOG_STORE: Lazy<RwLock<Arc<dyn SessionCatalogStore>>> =
     Lazy::new(|| RwLock::new(Arc::new(FileSessionCatalogStore)));
@@ -199,11 +196,14 @@ fn turn_text_line(turn: &ConversationTurn, max_chars: usize) -> Option<String> {
                 TurnPart::Text { markdown } | TurnPart::Reasoning { markdown } => markdown,
                 TurnPart::Progress { markdown } => markdown,
                 TurnPart::Handoff { text, .. } => text,
-                TurnPart::UserMedia { label, media_id, .. } => {
-                    label.as_deref().unwrap_or(media_id.as_str())
-                }
+                TurnPart::UserMedia {
+                    label, media_id, ..
+                } => label.as_deref().unwrap_or(media_id.as_str()),
                 TurnPart::AttachmentRef { label, .. } => label.as_str(),
-                TurnPart::HostContext { .. } | TurnPart::ToolRun { .. } | TurnPart::Unknown => continue,
+                TurnPart::HostContext { .. }
+                | TurnPart::ModelReceipt { .. }
+                | TurnPart::ToolRun { .. }
+                | TurnPart::Unknown => continue,
             };
             if let Some(line) = preview_line_from_content(text) {
                 return Some(truncate_chars(&line, max_chars));
@@ -224,9 +224,7 @@ fn truncate_chars(value: &str, max_chars: usize) -> String {
 /// Supported rail channel surfaces (matches Home `hostContextLabel` keys).
 pub fn sticky_origin_surface(source: &str) -> Option<String> {
     match source.trim().to_ascii_lowercase().as_str() {
-        "vscode" | "neovim" | "obsidian" | "browser" => {
-            Some(source.trim().to_ascii_lowercase())
-        }
+        "vscode" | "neovim" | "obsidian" | "browser" => Some(source.trim().to_ascii_lowercase()),
         _ => None,
     }
 }
@@ -405,9 +403,10 @@ impl SessionCatalogStore for CachingSessionCatalogStore {
 
     fn get_row(&self, session_id: &str) -> Option<SessionCatalogRow> {
         if let Ok(cache) = self.cache.read()
-            && let Some(row) = cache.get(session_id) {
-                return Some(row.clone());
-            }
+            && let Some(row) = cache.get(session_id)
+        {
+            return Some(row.clone());
+        }
         let row = self.inner.get_row(session_id)?;
         if let Ok(mut cache) = self.cache.write() {
             cache.insert(session_id.to_string(), row.clone());
@@ -476,13 +475,7 @@ impl SessionCatalogStore for FileSessionCatalogStore {
 
         let mut rows = entries
             .filter_map(|entry| entry.ok())
-            .filter(|entry| {
-                entry
-                    .path()
-                    .extension()
-                    .and_then(|ext| ext.to_str())
-                    == Some("json")
-            })
+            .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("json"))
             .filter_map(|entry| {
                 let raw = std::fs::read_to_string(entry.path()).ok()?;
                 serde_json::from_str::<SessionCatalogRow>(&raw).ok()
@@ -503,11 +496,7 @@ impl SessionCatalogStore for FileSessionCatalogStore {
                 entries
                     .filter_map(|entry| entry.ok())
                     .filter(|entry| {
-                        entry
-                            .path()
-                            .extension()
-                            .and_then(|ext| ext.to_str())
-                            == Some("json")
+                        entry.path().extension().and_then(|ext| ext.to_str()) == Some("json")
                     })
                     .count()
             })
@@ -734,11 +723,8 @@ impl SessionCatalogStore for SurrealSessionCatalogStore {
 
     fn row_count(&self) -> usize {
         let sql = "SELECT count() AS total FROM type::table($table) GROUP ALL";
-        let mut response = match block_on(
-            self.db
-                .query(sql)
-                .bind(("table", SESSION_CATALOG_TABLE)),
-        ) {
+        let mut response = match block_on(self.db.query(sql).bind(("table", SESSION_CATALOG_TABLE)))
+        {
             Ok(response) => response,
             Err(_) => return 0,
         };
@@ -838,9 +824,7 @@ pub async fn init_session_catalog_with_runtime(runtime: &RuntimeComposition) {
                 "Surreal session catalog schema init error: {err}; keeping file-backed catalog"
             );
         } else {
-            eprintln!(
-                "Surreal runtime detected; session catalog switched to SurrealDB backend"
-            );
+            eprintln!("Surreal runtime detected; session catalog switched to SurrealDB backend");
         }
     }
 
@@ -892,10 +876,11 @@ pub fn record_turn_appended(session_id: &str, turn: &ConversationTurn) {
     }
 
     if row.display_name.is_none()
-        && let Some(title) = auto_title_from_turn(turn) {
-            row.display_name = Some(title.clone());
-            let _ = crate::session_meta_store::set_session_display_name(session_id, &title);
-        }
+        && let Some(title) = auto_title_from_turn(turn)
+    {
+        row.display_name = Some(title.clone());
+        let _ = crate::session_meta_store::set_session_display_name(session_id, &title);
+    }
 
     apply_origin_from_turn(&mut row, turn);
 
@@ -1031,11 +1016,7 @@ pub fn list_sessions_page(
     let limit = limit.max(1);
     let decoded_cursor = cursor.and_then(decode_list_cursor);
     let fetch_limit = limit.saturating_add(1);
-    let rows = catalog_store().list_rows_page(
-        fetch_limit,
-        query,
-        decoded_cursor.as_ref(),
-    );
+    let rows = catalog_store().list_rows_page(fetch_limit, query, decoded_cursor.as_ref());
     let has_more = rows.len() > limit;
     let page_rows: Vec<_> = rows
         .into_iter()
@@ -1150,8 +1131,7 @@ pub fn find_unique_session_id_by_display_name_case_insensitive(name: &str) -> Op
     if lower.is_empty() {
         return None;
     }
-    let matches = catalog_store()
-        .find_session_ids_by_display_name_lower(&lower, 2);
+    let matches = catalog_store().find_session_ids_by_display_name_lower(&lower, 2);
     if matches.len() == 1 {
         Some(matches[0].clone())
     } else {
@@ -1243,8 +1223,7 @@ fn backfill_from_legacy_stores(limit: usize) -> Result<usize, String> {
     Ok(count)
 }
 
-fn group_latest_verifications(
-) -> (
+fn group_latest_verifications() -> (
     HashMap<String, (VerificationRunRecord, f32)>,
     HashMap<String, usize>,
 ) {
@@ -1292,13 +1271,7 @@ mod tests {
         set_catalog_store(Arc::new(FileSessionCatalogStore));
 
         let at = Utc.with_ymd_and_hms(2026, 6, 8, 12, 0, 0).unwrap();
-        let turn = ConversationTurn::plain(
-            "user",
-            "hello world".to_string(),
-            at,
-            vec![],
-            None,
-        );
+        let turn = ConversationTurn::plain("user", "hello world".to_string(), at, vec![], None);
         let session_id = format!("sess-a-{suffix}");
         record_turn_appended(&session_id, &turn);
         record_turn_appended(&session_id, &turn);
@@ -1335,13 +1308,7 @@ mod tests {
     #[test]
     fn auto_title_skips_assistant_turns() {
         let at = Utc.with_ymd_and_hms(2026, 6, 8, 12, 0, 0).unwrap();
-        let turn = ConversationTurn::plain(
-            "assistant",
-            "I can help".to_string(),
-            at,
-            vec![],
-            None,
-        );
+        let turn = ConversationTurn::plain("assistant", "I can help".to_string(), at, vec![], None);
         assert!(auto_title_from_turn(&turn).is_none());
     }
 
@@ -1507,19 +1474,17 @@ mod tests {
             (sess_alpha.as_str(), format!("{needle} planning notes")),
             (sess_beta.as_str(), format!("{needle} morning brief draft")),
         ] {
-            let turn = ConversationTurn::plain(
-                "user",
-                preview,
-                at,
-                vec![],
-                None,
-            );
+            let turn = ConversationTurn::plain("user", preview, at, vec![], None);
             record_turn_appended(session_id, &turn);
         }
 
         let page = list_sessions_page(10, Some(&needle), None, None);
         assert_eq!(page.sessions.len(), 2);
-        assert!(page.sessions.iter().any(|session| session.session_id == sess_alpha));
+        assert!(
+            page.sessions
+                .iter()
+                .any(|session| session.session_id == sess_alpha)
+        );
 
         let first = list_sessions_page(1, Some(&needle), None, None);
         assert_eq!(first.sessions.len(), 1);

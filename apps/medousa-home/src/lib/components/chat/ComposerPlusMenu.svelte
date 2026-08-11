@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick } from "svelte";
   import { Bot, LoaderCircle, Paperclip, Plus, UserRound } from "@lucide/svelte";
+  import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { attachComposerMenuDismiss } from "$lib/utils/composerMenuDismiss";
   import { placeComposerPopover } from "$lib/utils/railPopover";
@@ -97,34 +98,36 @@
 </button>
 
 {#if open}
-  <div
-    bind:this={menuEl}
-    class="composer-anchored-menu composer-plus-menu-panel"
-    role="menu"
-    aria-label="Composer actions"
-  >
-    <button type="button" class="composer-plus-menu-item" role="menuitem" onclick={attach}>
-      <Paperclip size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
-      <span>Attach</span>
-    </button>
-    {#if showWorkshop && onWorkshop}
-      <button
-        type="button"
-        class="composer-plus-menu-item"
-        role="menuitem"
-        onclick={pickWorkshop}
-      >
-        <span class="composer-plus-menu-dot" aria-hidden="true"></span>
-        <span>Workshop</span>
+  <BodyPortal>
+    <div
+      bind:this={menuEl}
+      class="composer-anchored-menu composer-plus-menu-panel"
+      role="menu"
+      aria-label="Composer actions"
+    >
+      <button type="button" class="composer-plus-menu-item" role="menuitem" onclick={attach}>
+        <Paperclip size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
+        <span>Attach</span>
       </button>
-    {/if}
-    <button type="button" class="composer-plus-menu-item" role="menuitem" onclick={pickProfile}>
-      <UserRound size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
-      <span>Profile</span>
-    </button>
-    <button type="button" class="composer-plus-menu-item" role="menuitem" onclick={pickAgent}>
-      <Bot size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
-      <span>Agent</span>
-    </button>
-  </div>
+      {#if showWorkshop && onWorkshop}
+        <button
+          type="button"
+          class="composer-plus-menu-item"
+          role="menuitem"
+          onclick={pickWorkshop}
+        >
+          <span class="composer-plus-menu-dot" aria-hidden="true"></span>
+          <span>Workshop</span>
+        </button>
+      {/if}
+      <button type="button" class="composer-plus-menu-item" role="menuitem" onclick={pickProfile}>
+        <UserRound size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
+        <span>Profile</span>
+      </button>
+      <button type="button" class="composer-plus-menu-item" role="menuitem" onclick={pickAgent}>
+        <Bot size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
+        <span>Agent</span>
+      </button>
+    </div>
+  </BodyPortal>
 {/if}

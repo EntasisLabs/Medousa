@@ -14,8 +14,10 @@
   import { chat } from "$lib/stores/chat.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import { settings } from "$lib/stores/settings.svelte";
-  import { isTauriMobilePlatform } from "$lib/platform";
+  import { isTauri, isTauriMobilePlatform } from "$lib/platform";
   import { haptic } from "$lib/haptics";
+  import type { AgentSessionConfigOption } from "$lib/daemon";
+  import type { ChatAgentRuntime } from "$lib/utils/sessionAgentRuntime";
   import {
     idleVoiceWaveform,
     pushVoiceWaveSample,
@@ -38,8 +40,13 @@
     composerBlocked?: boolean;
     /** Hide attachment hint + model picker (Presence empty landing). */
     quietChrome?: boolean;
-    /** Model selection only applies to native Medousa turns. */
+    /** Expose the source-aware model selector in this composer. */
     modelPickerEnabled?: boolean;
+    agentRuntime?: ChatAgentRuntime;
+    agentConfigOptions?: AgentSessionConfigOption[];
+    agentRuntimePending?: boolean;
+    onAgentRuntimeChange?: (runtime: ChatAgentRuntime) => void;
+    onAgentConfigChange?: (configId: string, value: unknown) => void | Promise<void>;
     onkeydown?: (event: KeyboardEvent) => void;
     onfocus?: () => void;
     onblur?: () => void;
@@ -54,6 +61,11 @@
     composerBlocked = false,
     quietChrome = false,
     modelPickerEnabled = true,
+    agentRuntime = "medousa",
+    agentConfigOptions = [],
+    agentRuntimePending = false,
+    onAgentRuntimeChange,
+    onAgentConfigChange,
     onkeydown,
     onfocus,
     onblur,
@@ -62,7 +74,9 @@
   }: Props = $props();
 
   const showModelPicker = $derived(
-    settings.showChatModelPicker && !quietChrome && modelPickerEnabled,
+    !quietChrome &&
+      modelPickerEnabled &&
+      (settings.showChatModelPicker || onAgentRuntimeChange !== undefined),
   );
   const placeholder = $derived(
     chat.hasWorkshopHandoff()
@@ -92,6 +106,8 @@
   let agentOpen = $state(false);
   let workshopOpen = $state(false);
   let stoppingTurn = $state(false);
+  let dropActive = $state(false);
+  let dropTargetEl = $state<HTMLDivElement | null>(null);
 
   let voiceSession: ComposerAudioCaptureSession | null = null;
   let waveFrame = 0;
@@ -112,6 +128,60 @@
 
   onMount(() => {
     void refreshSttStatus();
+
+    if (!isTauri() || isTauriMobilePlatform()) return;
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+
+    void (async () => {
+      const [{ getCurrentWebview }, { getCurrentWindow }] = await Promise.all([
+        import("@tauri-apps/api/webview"),
+        import("@tauri-apps/api/window"),
+      ]);
+      const scaleFactor = await getCurrentWindow().scaleFactor();
+      if (disposed) return;
+
+      unlisten = await getCurrentWebview().onDragDropEvent(({ payload }) => {
+        if (payload.type === "leave") {
+          dropActive = false;
+          return;
+        }
+
+        const rect = dropTargetEl?.getBoundingClientRect();
+        const x = payload.position.x / scaleFactor;
+        const y = payload.position.y / scaleFactor;
+        const inside = Boolean(
+          rect &&
+            rect.width > 0 &&
+            rect.height > 0 &&
+            x >= rect.left &&
+            x <= rect.right &&
+            y >= rect.top &&
+            y <= rect.bottom,
+        );
+
+        if (payload.type === "drop") {
+          dropActive = false;
+          if (inside && !blocked && payload.paths.length > 0) {
+            void chat.attachDroppedPaths(payload.paths);
+          }
+          return;
+        }
+
+        dropActive = inside && !blocked;
+      });
+
+      if (disposed) {
+        unlisten();
+        unlisten = null;
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+      unlisten = null;
+    };
   });
 
   onDestroy(() => {
@@ -124,6 +194,43 @@
     const status = await composerSttStatus();
     sttAvailable = status.available;
     sttReason = status.reason;
+  }
+
+  function carriesFiles(event: DragEvent): boolean {
+    return Array.from(event.dataTransfer?.types ?? []).includes("Files");
+  }
+
+  function handleDragEnter(event: DragEvent) {
+    if (blocked || !carriesFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dropActive = true;
+  }
+
+  function handleDragOver(event: DragEvent) {
+    if (blocked || !carriesFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    dropActive = true;
+  }
+
+  function handleDragLeave(event: DragEvent) {
+    const next = event.relatedTarget;
+    if (next instanceof Node && event.currentTarget instanceof Node) {
+      if (event.currentTarget.contains(next)) return;
+    }
+    dropActive = false;
+  }
+
+  function handleDrop(event: DragEvent) {
+    if (!carriesFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dropActive = false;
+    if (blocked) return;
+    const files = Array.from(event.dataTransfer?.files ?? []);
+    if (files.length > 0) void chat.attachDroppedFiles(files);
   }
 
   async function stopActiveTurn() {
@@ -251,6 +358,23 @@
   }
 </script>
 
+<div
+  bind:this={dropTargetEl}
+  class="chat-composer-drop-target"
+  class:chat-composer-drop-target-active={dropActive}
+  role="group"
+  aria-label="Message composer; drop files to attach"
+  ondragenter={handleDragEnter}
+  ondragover={handleDragOver}
+  ondragleave={handleDragLeave}
+  ondrop={handleDrop}
+>
+{#if dropActive}
+  <div class="chat-composer-drop-overlay" aria-hidden="true">
+    <span>Drop to attach</span>
+  </div>
+{/if}
+
 <ChatAttachmentChips {disabled} />
 
 {#if voiceError}
@@ -334,7 +458,14 @@
           {#if isTauriMobilePlatform()}
             <MobileComposerTurnSettings disabled={blocked} quiet />
           {:else}
-            <ChatModelPicker disabled={blocked} quiet />
+            <ChatModelPicker
+              disabled={blocked}
+              quiet
+              {agentRuntime}
+              {agentConfigOptions}
+              {agentRuntimePending}
+              onAgentConfigChange={onAgentConfigChange}
+            />
           {/if}
         {/if}
 
@@ -441,7 +572,14 @@
       <ComposerAgentChip showChip bind:open={agentOpen} anchorEl={plusAnchorEl} />
 
       {#if showModelPicker}
-        <ChatModelPicker disabled={blocked} quiet />
+        <ChatModelPicker
+          disabled={blocked}
+          quiet
+          {agentRuntime}
+          {agentConfigOptions}
+          {agentRuntimePending}
+          onAgentConfigChange={onAgentConfigChange}
+        />
       {/if}
 
       <span class="composer-bar-footer-spacer" aria-hidden="true"></span>
@@ -486,3 +624,4 @@
   {/if}
 </div>
 {/if}
+</div>

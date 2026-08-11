@@ -174,7 +174,8 @@ pub(crate) fn atomic_write(path: &PathBuf, bytes: &[u8]) -> std::io::Result<()> 
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if path.ends_with("api_key")
+        if path.parent().is_some_and(|parent| parent.ends_with("secrets"))
+            || path.ends_with("api_key")
             || path.ends_with("discord_bot_token")
             || path.ends_with("telegram_bot_token")
             || path.ends_with("slack_bot_token")
@@ -353,6 +354,10 @@ pub fn load_provider_api_key(provider: &str) -> Option<String> {
 
 pub fn provider_api_key_configured(provider: &str) -> bool {
     load_provider_api_key(provider).is_some()
+}
+
+pub fn chatgpt_oauth_configured() -> bool {
+    crate::chatgpt_oauth::configured()
 }
 
 pub fn save_provider_api_key(provider: &str, api_key: Option<&str>) {

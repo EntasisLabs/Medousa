@@ -98,6 +98,17 @@ const LOCAL_CATALOG: ProvidersListResult = {
       blurb: "GPT-5.4 family",
     },
     {
+      id: "openai-codex",
+      label: "OpenAI · ChatGPT account",
+      category: "featured",
+      defaultModel: "gpt-5.6-sol",
+      needsApiKey: false,
+      supportsCustomBaseUrl: false,
+      defaultBaseUrl: null,
+      keyHint: null,
+      blurb: "ChatGPT subscription models with the Medousa runtime",
+    },
+    {
       id: "anthropic",
       label: "Anthropic",
       category: "featured",
