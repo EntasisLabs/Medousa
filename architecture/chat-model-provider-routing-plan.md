@@ -276,6 +276,9 @@ Deliverables:
 - Preserve text, reasoning summaries/signatures, tool calls, tool outputs,
   usage, cancellation, and error bodies across the adapter.
 - Add account-backed model discovery without using the public OpenAI models API.
+- Version the ChatGPT Codex transport contract independently from the Medousa
+  product version; use the same compatibility identity for catalog and response
+  requests so model visibility cannot outrun request compatibility.
 - Persist and display the daemon-observed successful provider/model route on
   each assistant response so fallback is visible rather than inferred.
 

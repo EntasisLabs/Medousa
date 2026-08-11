@@ -41,6 +41,8 @@ disconnected independently.
 While connected, the picker refreshes from the ChatGPT account's Codex model
 catalog. The list therefore follows that account's current entitlements; if the
 catalog cannot be reached, Medousa keeps its curated fallback choice available.
+The adapter carries a separately versioned Codex-backend compatibility identity;
+Medousa's own app version is never sent as the Codex protocol version.
 
 Completed Medousa replies show a small model receipt below the answer. This is
 the successful provider/model route observed by the daemon after fallback, so

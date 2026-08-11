@@ -17,6 +17,9 @@ use crate::daemon_api::{
     BeginChatGptOAuthResponse, ChatGptModelListResponse, ChatGptOAuthStatusResponse,
     CompleteChatGptOAuthResponse, DisconnectChatGptOAuthResponse,
 };
+use crate::openai_codex_chat_client::{
+    CODEX_COMPAT_ORIGINATOR, CODEX_COMPAT_VERSION, codex_compat_user_agent,
+};
 
 const DEFAULT_ISSUER: &str = "https://auth.openai.com";
 const DEFAULT_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
@@ -509,15 +512,12 @@ impl ChatGptOAuthBroker {
     ) -> Result<reqwest::Response, OAuthError> {
         self.client
             .get(url)
-            .query(&[("client_version", env!("CARGO_PKG_VERSION"))])
+            .query(&[("client_version", CODEX_COMPAT_VERSION)])
             .bearer_auth(access_token)
             .header("ChatGPT-Account-ID", account_id)
-            .header("Originator", "medousa")
-            .header(
-                "User-Agent",
-                format!("medousa/{}", env!("CARGO_PKG_VERSION")),
-            )
-            .header("Version", env!("CARGO_PKG_VERSION"))
+            .header("Originator", CODEX_COMPAT_ORIGINATOR)
+            .header("User-Agent", codex_compat_user_agent())
+            .header("Version", CODEX_COMPAT_VERSION)
             .send()
             .await
             .map_err(|_| OAuthError::Transport)
@@ -1045,13 +1045,28 @@ mod tests {
 
     #[tokio::test]
     async fn account_model_catalog_uses_oauth_identity_and_picker_visibility() {
-        async fn models(headers: axum::http::HeaderMap) -> Json<serde_json::Value> {
+        async fn models(
+            headers: axum::http::HeaderMap,
+            axum::extract::Query(query): axum::extract::Query<HashMap<String, String>>,
+        ) -> Json<serde_json::Value> {
             assert_eq!(
                 headers.get("authorization").unwrap(),
                 "Bearer access-secret"
             );
             assert_eq!(headers.get("chatgpt-account-id").unwrap(), "acct_123");
-            assert_eq!(headers.get("originator").unwrap(), "medousa");
+            assert_eq!(
+                headers.get("originator").unwrap(),
+                CODEX_COMPAT_ORIGINATOR
+            );
+            assert_eq!(headers.get("version").unwrap(), CODEX_COMPAT_VERSION);
+            assert_eq!(
+                headers.get("user-agent").unwrap(),
+                codex_compat_user_agent().as_str()
+            );
+            assert_eq!(
+                query.get("client_version").map(String::as_str),
+                Some(CODEX_COMPAT_VERSION)
+            );
             Json(serde_json::json!({
                 "models": [
                     { "slug": "gpt-visible-slow", "visibility": "list", "priority": 10 },

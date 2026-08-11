@@ -14,6 +14,15 @@ use tokio::sync::mpsc;
 use crate::inference_router::OPENAI_CODEX_PROVIDER_ID;
 
 const DEFAULT_RESPONSES_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
+/// Version of the Codex backend contract implemented by this adapter. This is
+/// intentionally independent from Medousa's product version: the ChatGPT Codex
+/// backend gates newer models on this protocol identity.
+pub(crate) const CODEX_COMPAT_VERSION: &str = "0.145.0";
+pub(crate) const CODEX_COMPAT_ORIGINATOR: &str = "codex_cli_rs";
+
+pub(crate) fn codex_compat_user_agent() -> String {
+    format!("{CODEX_COMPAT_ORIGINATOR}/{CODEX_COMPAT_VERSION}")
+}
 
 #[derive(Clone)]
 pub struct OpenAiCodexChatClient {
@@ -271,12 +280,9 @@ fn request_headers(access_token: &str, account_id: &str) -> Headers {
         ("ChatGPT-Account-ID", account_id.to_string()),
         ("Content-Type", "application/json".to_string()),
         ("Accept", "text/event-stream, application/json".to_string()),
-        ("Originator", "medousa".to_string()),
-        (
-            "User-Agent",
-            format!("medousa/{}", env!("CARGO_PKG_VERSION")),
-        ),
-        ("Version", env!("CARGO_PKG_VERSION").to_string()),
+        ("Originator", CODEX_COMPAT_ORIGINATOR.to_string()),
+        ("User-Agent", codex_compat_user_agent()),
+        ("Version", CODEX_COMPAT_VERSION.to_string()),
     ])
 }
 
@@ -333,6 +339,21 @@ mod tests {
             "acct_123"
         );
         assert!(!headers.contains_key(&"X-API-Key".to_string()));
+        assert_eq!(
+            headers
+                .get(&"Originator".to_string())
+                .unwrap()
+                .as_str(),
+            CODEX_COMPAT_ORIGINATOR
+        );
+        assert_eq!(
+            headers.get(&"Version".to_string()).unwrap().as_str(),
+            CODEX_COMPAT_VERSION
+        );
+        assert_eq!(
+            headers.get(&"User-Agent".to_string()).unwrap().as_str(),
+            codex_compat_user_agent()
+        );
     }
 
     #[test]
