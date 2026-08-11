@@ -80,6 +80,8 @@ pub enum ConnectionSource {
     Local,
     HomeRegistry,
     Recent,
+    /// mDNS LAN discovery (`_medousa._tcp`).
+    Lan,
     Custom,
 }
 
@@ -325,6 +327,7 @@ pub fn source_label(source: ConnectionSource) -> &'static str {
         ConnectionSource::Local => "local",
         ConnectionSource::HomeRegistry => "home",
         ConnectionSource::Recent => "recent",
+        ConnectionSource::Lan => "lan",
         ConnectionSource::Custom => "url",
     }
 }

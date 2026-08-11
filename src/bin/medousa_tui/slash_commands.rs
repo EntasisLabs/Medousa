@@ -33,6 +33,7 @@ pub(crate) async fn handle_slash_command(
             push_obs_alert(state, "  /notes    open vault library picker (Ctrl+; o)".to_string());
             push_obs_alert(state, "  /code     open Forge code desk (Ctrl+; f)".to_string());
             push_obs_alert(state, "  /review   open Forge review desk (Ctrl+; r)".to_string());
+            push_obs_alert(state, "  /seal     seal focused code lease → review (Ctrl+E)".to_string());
             push_obs_alert(
                 state,
                 "  /terminal open workshop shell pane (Ctrl+; t / T)".to_string(),
@@ -84,6 +85,9 @@ pub(crate) async fn handle_slash_command(
             } else {
                 let _ = forge_runtime::open_review_work(state, rest, rest).await;
             }
+        }
+        "/seal" => {
+            forge_runtime::seal_active_code(state).await;
         }
         "/terminal" | "/term" | "/shell" => {
             let rest = parts.collect::<Vec<_>>().join(" ");

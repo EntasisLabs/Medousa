@@ -69,6 +69,9 @@ pub(crate) struct ReviewWorkspace {
     pub title: String,
     pub human_phase: String,
     pub synthesis_summary: String,
+    /// Provenance chips: "You · Codex · Terminal" (Home DiffStack attribution).
+    pub attribution_line: String,
+    pub disposition: Option<String>,
     pub evidence_id: Option<String>,
     pub evidence_digest: Option<String>,
     pub decision_id: Option<String>,
@@ -261,6 +264,13 @@ async fn load_review_workspace(
         id: Option<String>,
     }
     #[derive(Deserialize)]
+    struct Attribution {
+        #[serde(default)]
+        kind: String,
+        #[serde(default)]
+        label: String,
+    }
+    #[derive(Deserialize)]
     struct ReviewProj {
         #[serde(default)]
         title: String,
@@ -278,6 +288,10 @@ async fn load_review_workspace(
         synthesis: Option<Synthesis>,
         #[serde(default)]
         decision: Option<Decision>,
+        #[serde(default)]
+        attribution: Vec<Attribution>,
+        #[serde(default)]
+        disposition: Option<String>,
     }
     #[derive(Deserialize)]
     struct DiffLine {
@@ -289,6 +303,14 @@ async fn load_review_workspace(
     #[derive(Deserialize)]
     struct DiffHunk {
         #[serde(default)]
+        old_start: usize,
+        #[serde(default)]
+        old_count: usize,
+        #[serde(default)]
+        new_start: usize,
+        #[serde(default)]
+        new_count: usize,
+        #[serde(default)]
         lines: Vec<DiffLine>,
     }
     #[derive(Deserialize)]
@@ -299,11 +321,33 @@ async fn load_review_workspace(
         #[serde(default)]
         reviewed_oid: String,
         #[serde(default)]
+        binary: bool,
+        #[serde(default)]
         hunks: Vec<DiffHunk>,
     }
 
     let review_path = format!("/v1/forge/items/{work_id}/review");
     let proj: ReviewProj = forge_get(daemon_url, &review_path).await?;
+    let attribution_line = if proj.attribution.is_empty() {
+        String::new()
+    } else {
+        proj.attribution
+            .iter()
+            .map(|a| {
+                if !a.label.trim().is_empty() {
+                    a.label.clone()
+                } else {
+                    match a.kind.as_str() {
+                        "human" => "You".to_string(),
+                        "agent" => "Agent".to_string(),
+                        "terminal" => "Terminal".to_string(),
+                        other => other.to_string(),
+                    }
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" · ")
+    };
     let mut files = Vec::new();
     for changed in proj.changed_files.iter().take(24) {
         let enc = urlencoding_path(&changed.path);
@@ -318,20 +362,28 @@ async fn load_review_workspace(
                     "── {} ({}) ──",
                     diff.path, diff.status
                 ));
-                for hunk in diff.hunks {
-                    for line in hunk.lines {
-                        let prefix = match line.kind.as_str() {
-                            "addition" => {
-                                additions += 1;
-                                '+'
-                            }
-                            "deletion" => {
-                                deletions += 1;
-                                '-'
-                            }
-                            _ => ' ',
-                        };
-                        lines.push(format!("{prefix}{}", line.content));
+                if diff.binary {
+                    lines.push("  (binary — no text preview)".to_string());
+                } else {
+                    for hunk in diff.hunks {
+                        lines.push(format!(
+                            "@@ -{},{} +{},{} @@",
+                            hunk.old_start, hunk.old_count, hunk.new_start, hunk.new_count
+                        ));
+                        for line in hunk.lines {
+                            let prefix = match line.kind.as_str() {
+                                "addition" => {
+                                    additions += 1;
+                                    '+'
+                                }
+                                "deletion" => {
+                                    deletions += 1;
+                                    '-'
+                                }
+                                _ => ' ',
+                            };
+                            lines.push(format!("{prefix}{}", line.content));
+                        }
                     }
                 }
                 if lines.len() == 1 {
@@ -380,6 +432,8 @@ async fn load_review_workspace(
         },
         human_phase: proj.human_phase,
         synthesis_summary: summary,
+        attribution_line,
+        disposition: proj.disposition,
         evidence_id: proj.evidence_id,
         evidence_digest: proj.evidence_digest,
         decision_id: proj.decision.and_then(|d| d.id),
@@ -458,6 +512,96 @@ async fn ensure_lease(state: &mut TuiState, work_id: &str) -> Result<(), String>
         ws.status = "lease acquired".to_string();
     }
     Ok(())
+}
+
+/// Seal the active code desk lease → evidence for Review (Home `sealLease` parity).
+pub(crate) async fn seal_active_code(state: &mut TuiState) {
+    let Some(work_id) = state
+        .workspace
+        .active_tab()
+        .and_then(|t| t.code_work_id().map(str::to_string))
+    else {
+        super::push_obs(state, "⚠ no code tab focused".to_string());
+        return;
+    };
+    if state
+        .code_workspaces
+        .get(&work_id)
+        .is_some_and(|ws| ws.dirty)
+    {
+        save_active_code(state).await;
+        if state
+            .code_workspaces
+            .get(&work_id)
+            .is_some_and(|ws| ws.dirty)
+        {
+            super::push_obs(state, "⚠ save before seal failed — fix and retry".to_string());
+            return;
+        }
+    }
+    if let Err(err) = ensure_lease(state, &work_id).await {
+        super::push_obs(state, format!("⚠ begin attempt failed: {err}"));
+        return;
+    }
+    let Some(ws) = state.code_workspaces.get(&work_id) else {
+        return;
+    };
+    let (Some(lease_id), Some(generation)) = (ws.lease_id.clone(), ws.lease_generation) else {
+        super::push_obs(state, "⚠ no lease to seal".to_string());
+        return;
+    };
+    let title = ws.title.clone();
+    let api = format!("/v1/forge/leases/{lease_id}/complete");
+    match forge_post::<serde_json::Value>(
+        &state.daemon_url,
+        &api,
+        json!({ "generation": generation }),
+    )
+    .await
+    {
+        Ok(_) => {
+            if let Some(ws) = state.code_workspaces.get_mut(&work_id) {
+                ws.lease_id = None;
+                ws.lease_generation = None;
+                ws.status = "sealed → review".to_string();
+            }
+            super::push_obs(state, format!("✓ sealed {title} — opening review"));
+            let _ = open_review_work(state, &work_id, &title).await;
+        }
+        Err(err) => {
+            // Retry once with ack_risks when policy demands it.
+            if err.to_ascii_lowercase().contains("ack")
+                || err.to_ascii_lowercase().contains("risk")
+            {
+                match forge_post::<serde_json::Value>(
+                    &state.daemon_url,
+                    &api,
+                    json!({ "generation": generation, "ack_risks": true }),
+                )
+                .await
+                {
+                    Ok(_) => {
+                        if let Some(ws) = state.code_workspaces.get_mut(&work_id) {
+                            ws.lease_id = None;
+                            ws.lease_generation = None;
+                            ws.status = "sealed → review".to_string();
+                        }
+                        super::push_obs(
+                            state,
+                            format!("✓ sealed {title} (acked risks) — opening review"),
+                        );
+                        let _ = open_review_work(state, &work_id, &title).await;
+                        return;
+                    }
+                    Err(err2) => {
+                        super::push_obs(state, format!("⚠ seal failed: {err2}"));
+                        return;
+                    }
+                }
+            }
+            super::push_obs(state, format!("⚠ seal failed: {err}"));
+        }
+    }
 }
 
 pub(crate) async fn save_active_code(state: &mut TuiState) {
@@ -741,6 +885,11 @@ pub(crate) async fn handle_code_key(
 
     if key.code == KeyCode::Char('s') && key.modifiers.contains(KeyModifiers::CONTROL) {
         save_active_code(state).await;
+        return EventOutcome::Continue;
+    }
+    if key.code == KeyCode::Char('e') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        // Seal lease → evidence (Home seal path). Avoids Ctrl+S clash.
+        seal_active_code(state).await;
         return EventOutcome::Continue;
     }
     if key.code == KeyCode::Char('r') && key.modifiers.contains(KeyModifiers::CONTROL) {

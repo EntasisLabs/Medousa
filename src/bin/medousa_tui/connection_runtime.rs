@@ -3,6 +3,8 @@
 //! Settings UI label is **Connection** (aligned with Home). Does not invent a
 //! second workshop registry; reads Home's `workshops.json` when present.
 
+use std::time::Duration;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use medousa::tui::workshop_connection::{
     self, ConnectionChoice, ConnectionSource, normalize_daemon_url, remember_daemon,
@@ -32,6 +34,23 @@ pub(crate) fn open_connection_picker(state: &mut TuiState) {
 
 pub(crate) fn refresh_connection_picker(state: &mut TuiState) {
     let mut choices = workshop_connection::connection_choices();
+    // Preserve LAN discoveries from the last browse (cold-start path).
+    let lan_hits: Vec<ConnectionChoice> = state
+        .connection_picker_hits
+        .iter()
+        .filter(|c| c.source == ConnectionSource::Lan)
+        .cloned()
+        .collect();
+    let mut seen: std::collections::HashSet<String> = choices
+        .iter()
+        .map(|c| normalize_daemon_url(&c.url))
+        .collect();
+    for lan in lan_hits {
+        let url = normalize_daemon_url(&lan.url);
+        if seen.insert(url) {
+            choices.push(lan);
+        }
+    }
     let q = state.connection_picker_query.trim().to_ascii_lowercase();
     if !q.is_empty() {
         choices.retain(|c| {
@@ -45,6 +64,61 @@ pub(crate) fn refresh_connection_picker(state: &mut TuiState) {
     state.connection_picker_hits = choices;
     if state.connection_picker_selected >= state.connection_picker_hits.len() {
         state.connection_picker_selected = state.connection_picker_hits.len().saturating_sub(1);
+    }
+}
+
+/// Browse LAN via in-process mDNS (works without a reachable daemon).
+pub(crate) async fn browse_lan_workshops(state: &mut TuiState) {
+    super::push_obs(state, "◈ browsing LAN for workshops…".to_string());
+    let browse = tokio::task::spawn_blocking(|| {
+        medousa::pairing::mdns::browse_workshops(Duration::from_millis(1500))
+    })
+    .await;
+    match browse {
+        Ok(Ok(workshops)) => {
+            let mut seen: std::collections::HashSet<String> = state
+                .connection_picker_hits
+                .iter()
+                .map(|c| normalize_daemon_url(&c.url))
+                .collect();
+            let mut added = 0usize;
+            for workshop in workshops {
+                let url = normalize_daemon_url(&workshop.daemon_url);
+                if !seen.insert(url.clone()) {
+                    continue;
+                }
+                let label = workshop
+                    .peer_name
+                    .clone()
+                    .filter(|s| !s.trim().is_empty())
+                    .unwrap_or_else(|| workshop.instance_name.clone());
+                state.connection_picker_hits.push(ConnectionChoice {
+                    url,
+                    label,
+                    workshop_id: workshop.device_id.clone(),
+                    source: ConnectionSource::Lan,
+                });
+                added += 1;
+            }
+            if state.connection_picker_selected >= state.connection_picker_hits.len() {
+                state.connection_picker_selected =
+                    state.connection_picker_hits.len().saturating_sub(1);
+            }
+            super::push_obs(
+                state,
+                if added == 0 {
+                    "◈ LAN browse: no new workshops".to_string()
+                } else {
+                    format!("✓ LAN browse: {added} workshop(s)")
+                },
+            );
+        }
+        Ok(Err(err)) => {
+            super::push_obs(state, format!("⚠ LAN browse failed: {err}"));
+        }
+        Err(err) => {
+            super::push_obs(state, format!("⚠ LAN browse task failed: {err}"));
+        }
     }
 }
 
@@ -213,6 +287,10 @@ pub(crate) async fn handle_connection_picker_key(
                 state.connection_picker_custom.clear();
                 EventOutcome::Continue
             }
+            KeyCode::Char('l') => {
+                browse_lan_workshops(state).await;
+                EventOutcome::Continue
+            }
             KeyCode::Backspace => {
                 state.connection_picker_query.pop();
                 refresh_connection_picker(state);
@@ -245,6 +323,7 @@ pub(crate) fn source_glyph(source: ConnectionSource) -> &'static str {
         ConnectionSource::Local => "⌂",
         ConnectionSource::HomeRegistry => "◈",
         ConnectionSource::Recent => "↻",
+        ConnectionSource::Lan => "⌁",
         ConnectionSource::Custom => "✎",
     }
 }

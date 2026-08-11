@@ -393,6 +393,13 @@ struct NotesPickerHit {
     snippet: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NotesFocus {
+    Tree,
+    Buffer,
+    Backlinks,
+}
+
 #[derive(Debug, Clone)]
 struct NoteBuffer {
     #[allow(dead_code)]
@@ -401,9 +408,22 @@ struct NoteBuffer {
     buffer: TextBuffer,
     content_hash: String,
     dirty: bool,
+    /// True when last save hit an If-Match / content_hash conflict (412).
+    conflict: bool,
     status: String,
     scroll: u16,
     preferred_col: Option<usize>,
+    /// Vault note paths (Library tree sidebar).
+    tree: Vec<String>,
+    tree_selected: usize,
+    tree_scroll: u16,
+    /// Incoming backlinks for the open note.
+    backlinks: Vec<String>,
+    /// Outbound wikilinks (shown in the links panel).
+    wikilinks_out: Vec<String>,
+    links_selected: usize,
+    links_scroll: u16,
+    focus: NotesFocus,
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
