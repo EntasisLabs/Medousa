@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, tick } from "svelte";
+  import { onDestroy, tick, untrack } from "svelte";
   import { ArrowDown, LoaderCircle } from "@lucide/svelte";
   import ChatAsyncToolsHint from "$lib/components/chat/ChatAsyncToolsHint.svelte";
   import ChatChangeReceipt from "$lib/components/chat/ChatChangeReceipt.svelte";
@@ -21,6 +21,7 @@
   import { undertakings } from "$lib/stores/undertakings.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { activeCodeContext } from "$lib/utils/undertakingWorkspace";
+  import { planAgentWorkspace } from "$lib/utils/agentWorkspacePlan";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -51,9 +52,11 @@
     getSessionAgentRuntime,
     getSessionAgentSessionId,
     getSessionAgentConfigOptions,
+    getSessionAgentWorkId,
     setSessionAgentRuntime,
     setSessionAgentSessionId,
     setSessionAgentConfigOptions,
+    setSessionAgentWorkId,
     type ChatAgentRuntime,
   } from "$lib/utils/sessionAgentRuntime";
   import type { TurnTicketResponse } from "$lib/types/session";
@@ -752,36 +755,12 @@
     codeProjectSetupAuthorized = false,
   ) {
     const runtime = getSessionAgentRuntime(chat.sessionId);
-    if (runtime !== "medousa" && mode === "interactive") {
-      let agentSessionId = getSessionAgentSessionId(chat.sessionId);
-      let streamUrl = agentSessionId ? agentSessionStreamUrl(agentSessionId) : "";
-      let streamReady = true;
-      let acceptedAt = new Date().toISOString();
-
-      if (!agentSessionId) {
-        // Only pass work_id when this chat is already bound to an undertaking
-        // (Start Codex/Cursor from Undertakings, or prior bind).
-        const workIdForSession = undertakings.active?.boundChatSessionIds.includes(
-          chat.sessionId,
-        )
-          ? undertakings.active.workId
-          : null;
-        const acceptedAgent = await createAgentSession({
-          session_id: chat.sessionId,
-          runtime,
-          // Prompt is sent separately after we attach the stream, so no ACP
-          // events are emitted before Home is listening.
-          prompt: undefined,
-          work_id: workIdForSession,
-        });
-        agentSessionId = acceptedAgent.agent_session_id;
-        setSessionAgentSessionId(chat.sessionId, agentSessionId);
-        agentConfigOptions = acceptedAgent.config_options ?? [];
-        setSessionAgentConfigOptions(chat.sessionId, agentConfigOptions);
-        streamUrl = acceptedAgent.stream_url;
-        streamReady = acceptedAgent.stream_ready;
-        acceptedAt = acceptedAgent.accepted_at_utc ?? acceptedAt;
-      }
+    if (runtime !== "medousa" && mode === "interactive" && !codeProjectSetupAuthorized) {
+      const prepared = await synchronizeAgentSession(chat.sessionId, runtime, {
+        openChooserWhenMissing: true,
+      });
+      if (!prepared) throw new Error("Choose a project before starting a coding agent.");
+      const { agentSessionId, streamUrl, streamReady, acceptedAt } = prepared;
 
       const ticket: TurnTicketResponse = {
         turn_id: agentSessionId,
@@ -861,58 +840,203 @@
   let agentConfigOptions = $state<AgentSessionConfigOption[]>(
     getSessionAgentConfigOptions(chat.sessionId) as AgentSessionConfigOption[],
   );
-  let preparingAgent = $state(false);
+  let agentLifecyclePending = $state(0);
+  const preparingAgent = $derived(agentLifecyclePending > 0);
+  let agentLifecycleQueue: Promise<void> = Promise.resolve();
 
-  $effect(() => {
-    sessionRuntime = getSessionAgentRuntime(chat.sessionId);
-    agentConfigOptions = getSessionAgentConfigOptions(
-      chat.sessionId,
-    ) as AgentSessionConfigOption[];
-  });
+  type PreparedAgentSession = {
+    agentSessionId: string;
+    streamUrl: string;
+    streamReady: boolean;
+    acceptedAt: string;
+  };
 
-  function onRuntimeChange(value: ChatAgentRuntime) {
-    const previousId = getSessionAgentSessionId(chat.sessionId);
-    sessionRuntime = value;
-    setSessionAgentRuntime(chat.sessionId, value);
-    if (previousId) {
-      void cancelAgentSession(previousId).catch(() => {
-        // Best-effort — local id already cleared by setSessionAgentRuntime.
-      });
-    }
-    agentConfigOptions = [];
-    if (value !== "medousa") {
-      void prepareAgentSession(value).catch(() => {
-        // Sending the first message retries creation and surfaces the error in
-        // the normal composer failure path.
-      });
-    }
+  function queueAgentLifecycle<T>(operation: () => Promise<T>): Promise<T> {
+    agentLifecyclePending += 1;
+    const queued = agentLifecycleQueue.catch(() => undefined).then(operation);
+    agentLifecycleQueue = queued.then(
+      () => undefined,
+      () => undefined,
+    );
+    return queued.finally(() => {
+      agentLifecyclePending = Math.max(0, agentLifecyclePending - 1);
+    });
   }
 
-  async function prepareAgentSession(runtimeChoice: Exclude<ChatAgentRuntime, "medousa">) {
-    const sessionId = chat.sessionId;
-    if (preparingAgent || getSessionAgentSessionId(sessionId)) return;
-    preparingAgent = true;
+  async function cancelKnownAgent(sessionId: string, agentSessionId: string) {
     try {
-      const workId = undertakings.active?.boundChatSessionIds.includes(sessionId)
-        ? undertakings.active.workId
-        : null;
+      await cancelAgentSession(agentSessionId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!/unknown agent session|not found|404/i.test(message)) throw err;
+    }
+    clearSessionAgentSessionId(sessionId);
+    setSessionAgentConfigOptions(sessionId, []);
+    if (chat.sessionId === sessionId) agentConfigOptions = [];
+  }
+
+  function synchronizeAgentSession(
+    sessionId: string,
+    runtimeChoice: Exclude<ChatAgentRuntime, "medousa">,
+    options?: { openChooserWhenMissing?: boolean; stopWhenUnbound?: boolean },
+  ): Promise<PreparedAgentSession | null> {
+    return queueAgentLifecycle(async () => {
+      const [binding, mode] = await Promise.all([
+        getSessionCodeBinding(sessionId),
+        getSessionAgentMode(sessionId),
+      ]);
+      if (getSessionAgentRuntime(sessionId) !== runtimeChoice) return null;
+
+      const bindingWorkId = binding.work_id?.trim() || null;
+      const currentAgentId = getSessionAgentSessionId(sessionId);
+      const action =
+        options?.stopWhenUnbound && !bindingWorkId
+          ? currentAgentId
+            ? "stop"
+            : "keep"
+          : planAgentWorkspace({
+              runtime: runtimeChoice,
+              mode: mode.effective_mode,
+              bindingWorkId,
+              agentSessionId: currentAgentId,
+              agentWorkId: getSessionAgentWorkId(sessionId),
+            });
+
+      if ((action === "stop" || action === "restart") && currentAgentId) {
+        await cancelKnownAgent(sessionId, currentAgentId);
+      }
+      if (action === "stop" || action === "wait_for_project") {
+        if (options?.openChooserWhenMissing && chat.sessionId === sessionId) {
+          window.dispatchEvent(new CustomEvent("medousa-open-code-project-chooser"));
+        }
+        return null;
+      }
+
+      const retainedAgentId = getSessionAgentSessionId(sessionId);
+      if (action === "keep" && retainedAgentId) {
+        return {
+          agentSessionId: retainedAgentId,
+          streamUrl: agentSessionStreamUrl(retainedAgentId),
+          streamReady: true,
+          acceptedAt: new Date().toISOString(),
+        };
+      }
+
       const accepted = await createAgentSession({
         session_id: sessionId,
         runtime: runtimeChoice,
-        work_id: workId,
+        // The daemon resolves this work id to the governed worktree and
+        // overrides any client cwd. Plain general chat deliberately uses null.
+        work_id: bindingWorkId,
       });
-      if (getSessionAgentRuntime(sessionId) !== runtimeChoice) {
-        void cancelAgentSession(accepted.agent_session_id);
-        return;
+      const latestBinding = await getSessionCodeBinding(sessionId);
+      const latestWorkId = latestBinding.work_id?.trim() || null;
+      if (
+        getSessionAgentRuntime(sessionId) !== runtimeChoice ||
+        latestWorkId !== bindingWorkId
+      ) {
+        await cancelAgentSession(accepted.agent_session_id).catch(() => undefined);
+        return null;
       }
+
       setSessionAgentSessionId(sessionId, accepted.agent_session_id);
-      const options = accepted.config_options ?? [];
-      setSessionAgentConfigOptions(sessionId, options);
-      if (chat.sessionId === sessionId) agentConfigOptions = options;
-    } finally {
-      preparingAgent = false;
-    }
+      setSessionAgentWorkId(sessionId, bindingWorkId);
+      const configOptions = accepted.config_options ?? [];
+      setSessionAgentConfigOptions(sessionId, configOptions);
+      if (chat.sessionId === sessionId) agentConfigOptions = configOptions;
+      return {
+        agentSessionId: accepted.agent_session_id,
+        streamUrl: accepted.stream_url,
+        streamReady: accepted.stream_ready,
+        acceptedAt: accepted.accepted_at_utc ?? new Date().toISOString(),
+      };
+    });
   }
+
+  $effect(() => {
+    const sessionId = chat.sessionId;
+    const runtimeChoice = getSessionAgentRuntime(sessionId);
+    sessionRuntime = runtimeChoice;
+    agentConfigOptions = getSessionAgentConfigOptions(
+      sessionId,
+    ) as AgentSessionConfigOption[];
+    if (runtimeChoice !== "medousa") {
+      // The lifecycle queue updates its busy counter synchronously. Keep that
+      // counter outside this bootstrap effect's dependency graph.
+      void untrack(() => synchronizeAgentSession(sessionId, runtimeChoice)).catch(
+        () => {
+          // First send retries and surfaces connection/provider errors.
+        },
+      );
+    }
+  });
+
+  function onRuntimeChange(value: ChatAgentRuntime) {
+    const sessionId = chat.sessionId;
+    const previousRuntime = getSessionAgentRuntime(sessionId);
+    const previousId = getSessionAgentSessionId(sessionId);
+    const previousWorkId = getSessionAgentWorkId(sessionId);
+    const previousConfigOptions = getSessionAgentConfigOptions(sessionId);
+    sessionRuntime = value;
+    setSessionAgentRuntime(sessionId, value);
+    agentConfigOptions = [];
+    void (async () => {
+      if (previousId) {
+        try {
+          await queueAgentLifecycle(() => cancelKnownAgent(sessionId, previousId));
+        } catch (err) {
+          // A failed provider cancellation must not strand an unreachable ACP
+          // process. Restore the prior local handle so Stop/retry still works.
+          if (getSessionAgentRuntime(sessionId) === value) {
+            setSessionAgentRuntime(sessionId, previousRuntime);
+            setSessionAgentSessionId(sessionId, previousId);
+            if (previousWorkId !== undefined) {
+              setSessionAgentWorkId(sessionId, previousWorkId);
+            }
+            setSessionAgentConfigOptions(sessionId, previousConfigOptions);
+            if (chat.sessionId === sessionId) {
+              sessionRuntime = previousRuntime;
+              agentConfigOptions = previousConfigOptions as AgentSessionConfigOption[];
+              chat.setError(err instanceof Error ? err.message : String(err));
+            }
+          }
+          return;
+        }
+      }
+      if (value !== "medousa") {
+        await synchronizeAgentSession(sessionId, value, { openChooserWhenMissing: true }).catch(
+          () => {
+            // Sending the first message retries and surfaces provider errors.
+          },
+        );
+      }
+    })();
+  }
+
+  $effect(() => {
+    const onBindingChanged = (
+      event: Event & { detail?: { sessionId?: string; workId?: string | null } },
+    ) => {
+      const sessionId = event.detail?.sessionId?.trim();
+      if (!sessionId || sessionId !== chat.sessionId) return;
+      const runtimeChoice = getSessionAgentRuntime(sessionId);
+      if (runtimeChoice === "medousa") return;
+      void synchronizeAgentSession(sessionId, runtimeChoice, {
+        stopWhenUnbound: !event.detail?.workId,
+      }).catch((err) => {
+        chat.setError(err instanceof Error ? err.message : String(err));
+      });
+    };
+    window.addEventListener(
+      "medousa-code-project-binding-changed",
+      onBindingChanged as EventListener,
+    );
+    return () =>
+      window.removeEventListener(
+        "medousa-code-project-binding-changed",
+        onBindingChanged as EventListener,
+      );
+  });
 
   async function updateAgentConfig(configId: string, value: unknown) {
     const agentSessionId = getSessionAgentSessionId(chat.sessionId);
@@ -1630,7 +1754,7 @@
         <div class="chat-runtime-under">
           <ChatRuntimePicker
             value={sessionRuntime}
-            disabled={connection.offline || chat.composerBlocked}
+            disabled={connection.offline || chat.composerBlocked || preparingAgent}
             onChange={onRuntimeChange}
           />
           {#if sessionRuntime === "medousa"}

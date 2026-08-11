@@ -61,6 +61,7 @@
   let creating = $state(false);
   let newTitle = $state("");
   let newBrief = $state("");
+  let observedBindingWorkId: string | null | undefined = undefined;
 
   async function hydrateSharedBinding(sessionId: string) {
     if (!sessionId) return;
@@ -71,6 +72,18 @@
       ]);
       if (chat.sessionId !== sessionId) return;
       activeMode = mode.effective_mode;
+      const nextWorkId = binding.work_id?.trim() || null;
+      if (
+        (observedBindingWorkId !== undefined && observedBindingWorkId !== nextWorkId) ||
+        (observedBindingWorkId === undefined && nextWorkId)
+      ) {
+        window.dispatchEvent(
+          new CustomEvent("medousa-code-project-binding-changed", {
+            detail: { sessionId, workId: nextWorkId },
+          }),
+        );
+      }
+      observedBindingWorkId = nextWorkId;
       if (!binding.work_id) {
         undertakings.detachChat(sessionId);
         return;
@@ -92,6 +105,7 @@
     if (!chatOnly) return;
     const sessionId = chat.sessionId;
     activeMode = "general";
+    observedBindingWorkId = undefined;
     chooserOpen = false;
     creating = false;
     void hydrateSharedBinding(sessionId);
@@ -183,10 +197,17 @@
   }
 
   async function detach() {
-    if (chat.sessionId) {
-      undertakings.detachChat(chat.sessionId);
+    const sessionId = chat.sessionId;
+    if (sessionId) {
+      undertakings.detachChat(sessionId);
       try {
-        await clearSessionCodeBinding(chat.sessionId);
+        await clearSessionCodeBinding(sessionId);
+        observedBindingWorkId = null;
+        window.dispatchEvent(
+          new CustomEvent("medousa-code-project-binding-changed", {
+            detail: { sessionId, workId: null },
+          }),
+        );
       } catch {
         // Clearing the binding is independent from changing the active mode.
       }
@@ -200,13 +221,21 @@
   }
 
   async function bindProject(item: ItemProjection) {
-    if (!chat.sessionId || busy) return;
+    const sessionId = chat.sessionId;
+    if (!sessionId || busy) return;
     busy = true;
     error = null;
     try {
-      await setSessionCodeBinding(chat.sessionId, item.id);
+      await setSessionCodeBinding(sessionId, item.id);
+      if (chat.sessionId !== sessionId) return;
       undertakings.setActiveFromItem(item);
-      undertakings.bindChat(chat.sessionId);
+      undertakings.bindChat(sessionId);
+      observedBindingWorkId = item.id;
+      window.dispatchEvent(
+        new CustomEvent("medousa-code-project-binding-changed", {
+          detail: { sessionId, workId: item.id },
+        }),
+      );
       chooserOpen = false;
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -216,18 +245,26 @@
   }
 
   async function createProject() {
-    if (!chat.sessionId || !newTitle.trim() || busy) return;
+    const sessionId = chat.sessionId;
+    if (!sessionId || !newTitle.trim() || busy) return;
     busy = true;
     error = null;
     try {
-      const created = await startSessionCodeProject(chat.sessionId, {
+      const created = await startSessionCodeProject(sessionId, {
         title: newTitle.trim(),
         brief: newBrief.trim() || newTitle.trim(),
         source: "blank",
       });
       const item = await getUndertaking(created.work_id);
+      if (chat.sessionId !== sessionId) return;
       undertakings.setActiveFromItem(item);
-      undertakings.bindChat(chat.sessionId);
+      undertakings.bindChat(sessionId);
+      observedBindingWorkId = created.work_id;
+      window.dispatchEvent(
+        new CustomEvent("medousa-code-project-binding-changed", {
+          detail: { sessionId, workId: created.work_id },
+        }),
+      );
       newTitle = "";
       newBrief = "";
       creating = false;

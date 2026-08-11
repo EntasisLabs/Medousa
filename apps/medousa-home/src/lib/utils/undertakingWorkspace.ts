@@ -22,6 +22,7 @@ import {
   getSessionAgentSessionId,
   setSessionAgentRuntime,
   setSessionAgentSessionId,
+  setSessionAgentWorkId,
 } from "$lib/utils/sessionAgentRuntime";
 import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
 import { landCodeWorkingSet as landCodeWorkingSetThroughController } from "$lib/utils/codeWorkspaceController";
@@ -148,6 +149,7 @@ export async function startTrackedAgent(
   });
   setSessionAgentRuntime(sessionId, runtime);
   setSessionAgentSessionId(sessionId, accepted.agent_session_id);
+  setSessionAgentWorkId(sessionId, item.id);
   undertakings.setActiveFromItem(item, { executorKind: runtime });
   undertakings.bindChat(sessionId);
   await setSessionCodeBinding(sessionId, item.id);

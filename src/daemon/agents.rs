@@ -16,7 +16,7 @@ use medousa_acp_client::{
 };
 use medousa_forge::model::WorkId;
 use medousa_types::{
-    AgentPermissionRequestListQuery, AgentPermissionRequestListResponse,
+    AgentModeId, AgentPermissionRequestListQuery, AgentPermissionRequestListResponse,
     AgentPermissionResolveRequest, AgentPermissionResolveResponse, AgentRuntimeInfo,
     AgentRuntimeListResponse, AgentSessionConfigOption, AgentSessionPromptRequest,
     AgentSessionPromptResponse, CancelAgentSessionResponse, CodeIntentContext,
@@ -106,6 +106,10 @@ impl TryFrom<CreateAgentSessionRequest> for CreateAgentSessionCommand {
     }
 }
 
+fn coder_session_missing_project(mode: AgentModeId, has_work_id: bool) -> bool {
+    mode == AgentModeId::Coder && !has_work_id
+}
+
 #[derive(Debug)]
 struct AgentSessionPromptCommand {
     prompt: RequiredContent,
@@ -167,6 +171,15 @@ pub async fn create_agent_session(
         return Err((
             StatusCode::BAD_REQUEST,
             "medousa runtime uses /v1/turns — pick cursor or codex for /v1/agents".into(),
+        ));
+    }
+
+    let session_mode = crate::agent_mode_state::get_session_mode(&session_id)
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?;
+    if coder_session_missing_project(session_mode.effective_mode, command.work_id.is_some()) {
+        return Err((
+            StatusCode::CONFLICT,
+            "choose or create a project before starting Cursor or Codex in Coder mode".into(),
         ));
     }
 
@@ -1344,5 +1357,12 @@ mod tests {
         })
         .expect_err("blank prompt should fail");
         assert_eq!(prompt_error, "prompt is required");
+    }
+
+    #[test]
+    fn coder_external_agents_require_a_project_binding() {
+        assert!(coder_session_missing_project(AgentModeId::Coder, false));
+        assert!(!coder_session_missing_project(AgentModeId::Coder, true));
+        assert!(!coder_session_missing_project(AgentModeId::General, false));
     }
 }

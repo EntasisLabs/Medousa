@@ -46,6 +46,13 @@ current message through a restricted setup phase: it can list, bind, or create
 a project, but receives no repository mutation or command authority until the
 following bound turn.
 
+Cursor and Codex start only after the conversation has a project. Medousa
+resolves that durable binding on the workshop daemon and launches the external
+agent inside the project's governed working copy. Switching projects stops the
+old agent session and starts or resumes it in the newly selected project;
+detaching a project stops the project-bound agent instead of leaving it active
+in the previous folder. Plain General-mode external chats may remain unbound.
+
 If repository or tree APIs return 404, Medousa reports that the workshop daemon
 is older than the project tools — rebuild and restart `medousa_daemon` from this
 checkout rather than showing a fake-ready empty editor. If the project has no

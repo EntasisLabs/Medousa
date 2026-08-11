@@ -11,6 +11,7 @@
 const STORAGE_KEY = "medousa-home-agent-runtime-v1";
 const AGENT_SESSION_KEY = "medousa-home-agent-session-v1";
 const AGENT_CONFIG_KEY = "medousa-home-agent-config-v1";
+const AGENT_WORK_KEY = "medousa-home-agent-work-v1";
 
 export type ChatAgentRuntime = "medousa" | "cursor" | "codex";
 
@@ -63,6 +64,28 @@ function saveAgentSessionMap(map: Record<string, string>) {
   localStorage.setItem(AGENT_SESSION_KEY, JSON.stringify(map));
 }
 
+function loadAgentWorkMap(): Record<string, string | null> {
+  if (typeof localStorage === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(AGENT_WORK_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const out: Record<string, string | null> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (value === null) out[key] = null;
+      else if (typeof value === "string" && value.trim()) out[key] = value.trim();
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function saveAgentWorkMap(map: Record<string, string | null>) {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(AGENT_WORK_KEY, JSON.stringify(map));
+}
+
 export function getSessionAgentRuntime(sessionId: string): ChatAgentRuntime {
   const trimmed = sessionId.trim();
   if (!trimmed) return "medousa";
@@ -91,8 +114,32 @@ export function setSessionAgentSessionId(
   saveAgentSessionMap(map);
 }
 
+/** Forge work item used when the current ACP process was created; `null` means plain chat. */
+export function getSessionAgentWorkId(sessionId: string): string | null | undefined {
+  const trimmed = sessionId.trim();
+  if (!trimmed) return undefined;
+  return loadAgentWorkMap()[trimmed];
+}
+
+export function setSessionAgentWorkId(sessionId: string, workId: string | null) {
+  const trimmed = sessionId.trim();
+  if (!trimmed) return;
+  const map = loadAgentWorkMap();
+  map[trimmed] = workId?.trim() || null;
+  saveAgentWorkMap(map);
+}
+
+export function clearSessionAgentWorkId(sessionId: string) {
+  const trimmed = sessionId.trim();
+  if (!trimmed) return;
+  const map = loadAgentWorkMap();
+  delete map[trimmed];
+  saveAgentWorkMap(map);
+}
+
 export function clearSessionAgentSessionId(sessionId: string) {
   setSessionAgentSessionId(sessionId, null);
+  clearSessionAgentWorkId(sessionId);
 }
 
 export function getSessionAgentConfigOptions(sessionId: string): unknown[] {

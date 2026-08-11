@@ -175,6 +175,10 @@ Hot-swappable external agent runtimes (Cursor / Codex via ACP). Native Medousa t
 `CodeIntentContext`. Prefer it over embedding workspace paths, selections, or
 diagnostics into provider-specific prompt text.
 
+For a conversation in Coder mode, `create_session` requires the bound Forge
+`work_id` and returns `409 Conflict` when it is absent. General-mode external
+agent chats may remain unbound.
+
 ---
 
 ## `runtime()`
