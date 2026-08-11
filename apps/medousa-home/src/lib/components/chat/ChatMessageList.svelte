@@ -22,6 +22,7 @@
     presentWorkerThreadMessages,
   } from "$lib/utils/presentChatTurns";
   import { copyTextToClipboard } from "$lib/utils/vaultClipboard";
+  import { formatModelDisplayName } from "$lib/utils/formatModelDisplay";
 
   interface Props {
     messages: ChatMessage[];
@@ -127,8 +128,19 @@
   {@const showCopy = canCopyAssistantTurn(assistant)}
   {@const showShare = canCopyAssistantTurn(assistant)}
   {@const showSave = onSaveToVault && canSaveAssistantTurn(assistant)}
-  {#if showCopy || showShare || showSave}
+  {#if assistant.responseModel || showCopy || showShare || showSave}
     <div class="chat-turn-actions" class:chat-turn-actions--mobile={mobile}>
+      {#if assistant.responseModel}
+        <span
+          class="chat-model-receipt"
+          title={`Successful inference route reported by Medousa: ${assistant.responseProvider ?? "provider"} · ${assistant.responseModel}`}
+        >
+          {formatModelDisplayName(assistant.responseModel, 28)}
+          {#if assistant.responseProvider === "openai-codex"}
+            <span aria-hidden="true">·</span> ChatGPT
+          {/if}
+        </span>
+      {/if}
       {#if showCopy}
         <button
           type="button"

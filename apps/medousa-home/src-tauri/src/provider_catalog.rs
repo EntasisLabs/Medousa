@@ -406,9 +406,6 @@ pub fn providers_catalog() -> ProvidersListResult {
         ],
         providers: PROVIDERS
             .iter()
-            // Phase 1 registers the canonical route but keeps it out of user
-            // selection until the daemon-owned OAuth broker and transport land.
-            .filter(|spec| spec.id != "openai-codex")
             .map(|spec| ProviderCatalogEntry {
                 id: spec.id.to_string(),
                 label: spec.label.to_string(),
@@ -437,14 +434,14 @@ mod tests {
     }
 
     #[test]
-    fn chatgpt_oauth_route_is_registered_but_not_selectable_yet() {
+    fn chatgpt_oauth_route_is_selectable() {
         let route = find_provider("openai-codex").expect("route metadata");
         assert!(!route.needs_api_key);
         assert!(
             providers_catalog()
                 .providers
                 .iter()
-                .all(|entry| entry.id != "openai-codex")
+                .any(|entry| entry.id == "openai-codex")
         );
     }
 

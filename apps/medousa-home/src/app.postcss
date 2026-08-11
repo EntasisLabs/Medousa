@@ -3603,17 +3603,26 @@
 
   /* Quiet turn actions — bottom of assistant beat, hover/focus reveal */
   .chat-turn-actions {
-    @apply mt-2 flex items-center justify-end gap-1 opacity-0 transition-opacity duration-200;
+    @apply mt-2 flex items-center justify-end gap-1;
+  }
+
+  .chat-model-receipt {
+    @apply mr-auto inline-flex items-center gap-1 text-[11px] text-content-tertiary;
+  }
+
+  .chat-turn-action {
+    @apply opacity-0 transition-opacity duration-200;
   }
 
   .chat-turn-actions--mobile {
     opacity: 0.4;
   }
 
-  .group:hover .chat-turn-actions,
-  .group:focus-within .chat-turn-actions,
-  .chat-turn-actions--mobile:hover,
-  .chat-turn-actions--mobile:focus-within {
+  .group:hover .chat-turn-action,
+  .group:focus-within .chat-turn-action,
+  .chat-turn-actions--mobile .chat-turn-action,
+  .chat-turn-actions--mobile:hover .chat-turn-action,
+  .chat-turn-actions--mobile:focus-within .chat-turn-action {
     @apply opacity-100;
   }
 
@@ -4118,7 +4127,7 @@
   }
 
   .composer-model-provider-option {
-    @apply shrink-0 rounded-md px-2 py-1 text-[11px] text-content-quiet transition-colors;
+    @apply inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] text-content-quiet transition-colors;
   }
 
   .composer-model-provider-option:hover {
@@ -4218,6 +4227,14 @@
 
   .composer-model-list-empty {
     @apply flex flex-col items-center justify-center gap-2 px-4 py-8 text-center text-xs text-content-quiet;
+  }
+
+  .composer-model-connect {
+    @apply rounded-md border border-surface-600/45 px-2.5 py-1 text-[11px] font-medium text-content-secondary transition-colors;
+  }
+
+  .composer-model-connect:hover {
+    @apply border-surface-500/60 bg-surface-800/55 text-surface-100;
   }
 
   .composer-model-mobile-note {

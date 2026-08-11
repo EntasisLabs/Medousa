@@ -14,8 +14,8 @@ use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
 
 use crate::daemon_api::{
-    BeginChatGptOAuthResponse, ChatGptOAuthStatusResponse, CompleteChatGptOAuthResponse,
-    DisconnectChatGptOAuthResponse,
+    BeginChatGptOAuthResponse, ChatGptModelListResponse, ChatGptOAuthStatusResponse,
+    CompleteChatGptOAuthResponse, DisconnectChatGptOAuthResponse,
 };
 
 const DEFAULT_ISSUER: &str = "https://auth.openai.com";
@@ -24,6 +24,7 @@ const CREDENTIAL_SERVICE: &str = "medousa.chatgpt";
 const CREDENTIAL_ACCOUNT: &str = "native_oauth";
 const DEVICE_CODE_LIFETIME_MINUTES: i64 = 15;
 const REFRESH_WINDOW_MINUTES: i64 = 5;
+const DEFAULT_MODELS_URL: &str = "https://chatgpt.com/backend-api/codex/models";
 
 #[derive(Clone)]
 struct OAuthConfig {
@@ -471,6 +472,101 @@ impl ChatGptOAuthBroker {
         })
     }
 
+    pub async fn list_models(&self) -> Result<ChatGptModelListResponse, OAuthError> {
+        let url = std::env::var("MEDOUSA_CHATGPT_MODELS_URL")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| DEFAULT_MODELS_URL.to_string());
+        self.list_models_from_url(&url).await
+    }
+
+    async fn list_models_from_url(
+        &self,
+        url: &str,
+    ) -> Result<ChatGptModelListResponse, OAuthError> {
+        let credentials = self.credentials_for_request().await?;
+        let response = self
+            .request_models_once(&url, &credentials.0, &credentials.1)
+            .await?;
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            let refreshed = self.refresh_after_unauthorized(&credentials.0).await?;
+            return self
+                .parse_models_response(
+                    self.request_models_once(&url, &refreshed.0, &refreshed.1)
+                        .await?,
+                )
+                .await;
+        }
+        self.parse_models_response(response).await
+    }
+
+    async fn request_models_once(
+        &self,
+        url: &str,
+        access_token: &str,
+        account_id: &str,
+    ) -> Result<reqwest::Response, OAuthError> {
+        self.client
+            .get(url)
+            .query(&[("client_version", env!("CARGO_PKG_VERSION"))])
+            .bearer_auth(access_token)
+            .header("ChatGPT-Account-ID", account_id)
+            .header("Originator", "medousa")
+            .header(
+                "User-Agent",
+                format!("medousa/{}", env!("CARGO_PKG_VERSION")),
+            )
+            .header("Version", env!("CARGO_PKG_VERSION"))
+            .send()
+            .await
+            .map_err(|_| OAuthError::Transport)
+    }
+
+    async fn parse_models_response(
+        &self,
+        response: reqwest::Response,
+    ) -> Result<ChatGptModelListResponse, OAuthError> {
+        #[derive(Deserialize)]
+        struct ModelsResponse {
+            models: Vec<ModelInfo>,
+        }
+        #[derive(Deserialize)]
+        struct ModelInfo {
+            slug: String,
+            #[serde(default)]
+            visibility: String,
+            #[serde(default)]
+            priority: i32,
+        }
+
+        if !response.status().is_success() {
+            return Err(OAuthError::ModelCatalogUnavailable(
+                response.status().as_u16(),
+            ));
+        }
+        let mut models = response
+            .json::<ModelsResponse>()
+            .await
+            .map_err(|_| OAuthError::InvalidModelCatalogResponse)?
+            .models;
+        models.retain(|model| model.visibility.is_empty() || model.visibility == "list");
+        models.sort_by(|left, right| {
+            right
+                .priority
+                .cmp(&left.priority)
+                .then_with(|| left.slug.cmp(&right.slug))
+        });
+        models.dedup_by(|left, right| left.slug == right.slug);
+        Ok(ChatGptModelListResponse {
+            models: models
+                .into_iter()
+                .map(|model| model.slug.trim().to_string())
+                .filter(|slug| !slug.is_empty())
+                .collect(),
+        })
+    }
+
     fn persist(&self, credentials: CredentialEnvelope) -> Result<(), OAuthError> {
         self.store.save(&credentials)?;
         *self.cached.write().expect("ChatGPT credential cache lock") = Some(credentials);
@@ -636,6 +732,8 @@ pub enum OAuthError {
     TokenExpiryMissing,
     CredentialStorage,
     StoredCredentialsInvalid,
+    ModelCatalogUnavailable(u16),
+    InvalidModelCatalogResponse,
     Transport,
 }
 
@@ -663,6 +761,12 @@ impl std::fmt::Display for OAuthError {
             Self::TokenExpiryMissing => "ChatGPT token expiry was missing".to_string(),
             Self::CredentialStorage => "ChatGPT credential storage failed".to_string(),
             Self::StoredCredentialsInvalid => "stored ChatGPT credentials were invalid".to_string(),
+            Self::ModelCatalogUnavailable(status) => {
+                format!("ChatGPT model catalog is unavailable (HTTP {status})")
+            }
+            Self::InvalidModelCatalogResponse => {
+                "ChatGPT model catalog response was invalid".to_string()
+            }
             Self::Transport => "ChatGPT authentication service could not be reached".to_string(),
         };
         formatter.write_str(&message)
@@ -700,6 +804,10 @@ pub async fn refresh() -> Result<ChatGptOAuthStatusResponse, OAuthError> {
 
 pub async fn disconnect() -> Result<DisconnectChatGptOAuthResponse, OAuthError> {
     broker().disconnect().await
+}
+
+pub async fn list_models() -> Result<ChatGptModelListResponse, OAuthError> {
+    broker().list_models().await
 }
 
 pub(crate) async fn request_credentials() -> Result<(String, String), OAuthError> {
@@ -933,6 +1041,47 @@ mod tests {
             jwt_string_claim(&token, "chatgpt_account_id").as_deref(),
             Some("acct_nested")
         );
+    }
+
+    #[tokio::test]
+    async fn account_model_catalog_uses_oauth_identity_and_picker_visibility() {
+        async fn models(headers: axum::http::HeaderMap) -> Json<serde_json::Value> {
+            assert_eq!(
+                headers.get("authorization").unwrap(),
+                "Bearer access-secret"
+            );
+            assert_eq!(headers.get("chatgpt-account-id").unwrap(), "acct_123");
+            assert_eq!(headers.get("originator").unwrap(), "medousa");
+            Json(serde_json::json!({
+                "models": [
+                    { "slug": "gpt-visible-slow", "visibility": "list", "priority": 10 },
+                    { "slug": "gpt-hidden", "visibility": "hide", "priority": 100 },
+                    { "slug": "gpt-visible-fast", "visibility": "list", "priority": 20 }
+                ]
+            }))
+        }
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let router = axum::Router::new().route("/models", axum::routing::get(models));
+        tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+
+        let store = Arc::new(MemoryStore::default());
+        store
+            .save(&credentials(Utc::now() + ChronoDuration::hours(1)))
+            .unwrap();
+        let broker = ChatGptOAuthBroker::new(
+            OAuthConfig {
+                issuer: "http://unused".to_string(),
+                client_id: "test-client".to_string(),
+            },
+            store,
+        );
+        let result = broker
+            .list_models_from_url(&format!("http://{address}/models"))
+            .await
+            .unwrap();
+        assert_eq!(result.models, vec!["gpt-visible-fast", "gpt-visible-slow"]);
     }
 
     #[tokio::test]

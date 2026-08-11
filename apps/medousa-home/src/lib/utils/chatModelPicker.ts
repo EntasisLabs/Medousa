@@ -29,6 +29,7 @@ export interface ChatModelPickGroup {
 
 const PROVIDER_LABELS: Record<string, string> = {
   openai: "OpenAI",
+  "openai-codex": "OpenAI · ChatGPT account",
   anthropic: "Anthropic",
   google: "Google",
   deepseek: "DeepSeek",
@@ -217,7 +218,7 @@ export function filterChatModelOptions(
 /** Two-letter monogram for composer model badge. */
 export function providerMonogram(provider: string): string {
   const id = provider.trim().toLowerCase();
-  if (id === "openai") return "OA";
+  if (id === "openai" || id === "openai-codex") return "OA";
   if (id === "anthropic") return "AN";
   if (id === "ollama") return "OL";
   if (id === "groq") return "GQ";

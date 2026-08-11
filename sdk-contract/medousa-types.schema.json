@@ -10237,6 +10237,19 @@
         "format": "uint",
         "minimum": 0.0
       },
+      "response_model": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "response_provider": {
+        "description": "Successful inference route after provider fallback resolution.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "root_artifact_id": {
         "description": "Root artifact lineage id for revision chains.",
         "type": [
@@ -13904,6 +13917,29 @@
       "TurnPart": {
         "oneOf": [
           {
+            "description": "Successful inference route for this assistant turn. This records the daemon-observed route after fallback, not the composer's requested pick.",
+            "type": "object",
+            "required": [
+              "kind",
+              "model",
+              "provider"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "model_receipt"
+                ]
+              },
+              "model": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              }
+            }
+          },
+          {
             "type": "object",
             "required": [
               "kind",
@@ -14772,6 +14808,29 @@
       },
       "TurnPart": {
         "oneOf": [
+          {
+            "description": "Successful inference route for this assistant turn. This records the daemon-observed route after fallback, not the composer's requested pick.",
+            "type": "object",
+            "required": [
+              "kind",
+              "model",
+              "provider"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "model_receipt"
+                ]
+              },
+              "model": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              }
+            }
+          },
           {
             "type": "object",
             "required": [

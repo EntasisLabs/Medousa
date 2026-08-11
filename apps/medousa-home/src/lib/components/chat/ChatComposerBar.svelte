@@ -354,7 +354,6 @@
               {agentRuntime}
               {agentConfigOptions}
               {agentRuntimePending}
-              onRuntimeChange={onAgentRuntimeChange}
               onAgentConfigChange={onAgentConfigChange}
             />
           {/if}
@@ -469,7 +468,6 @@
           {agentRuntime}
           {agentConfigOptions}
           {agentRuntimePending}
-          onRuntimeChange={onAgentRuntimeChange}
           onAgentConfigChange={onAgentConfigChange}
         />
       {/if}

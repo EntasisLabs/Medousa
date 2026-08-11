@@ -3,9 +3,7 @@
 
 use chrono::Utc;
 use medousa_engine::{SequencedTurnEvent, TurnEvent};
-use medousa_types::daemon_api::{
-    InteractiveTurnStreamEvent,
-};
+use medousa_types::daemon_api::InteractiveTurnStreamEvent;
 
 /// Lift a live SSE payload into the typed spine vocabulary for journaling.
 pub fn stream_event_to_turn_event(event: &InteractiveTurnStreamEvent) -> TurnEvent {
@@ -130,10 +128,7 @@ pub fn stream_event_to_turn_event(event: &InteractiveTurnStreamEvent) -> TurnEve
             progress_summary: event.operator_message.clone(),
         },
         "browser_challenge" => TurnEvent::BrowserChallenge {
-            session_id: event
-                .browser_session_id
-                .clone()
-                .unwrap_or_default(),
+            session_id: event.browser_session_id.clone().unwrap_or_default(),
             challenge_url: event.browser_challenge_url.clone().unwrap_or_default(),
             reason: event.message.clone(),
         },
@@ -164,10 +159,7 @@ pub fn sequenced_to_stream_event(sequenced: &SequencedTurnEvent) -> InteractiveT
     let seq = sequenced.seq();
     match &sequenced.event {
         TurnEvent::StreamMirror(value) => {
-            let mut map = value
-                .as_object()
-                .cloned()
-                .unwrap_or_default();
+            let mut map = value.as_object().cloned().unwrap_or_default();
             map.insert(
                 "turn_id".to_string(),
                 serde_json::Value::String(turn_id.to_string()),
@@ -202,7 +194,10 @@ fn typed_turn_event_to_stream(
             base.phase = "streaming".to_string();
             base.reasoning_delta = Some(delta.clone());
         }
-        TurnEvent::Progress { message, tool_names } => {
+        TurnEvent::Progress {
+            message,
+            tool_names,
+        } => {
             base.event_type = "turn_progress".to_string();
             base.phase = "tool_loop".to_string();
             base.message = message.clone();
@@ -260,9 +255,7 @@ fn typed_turn_event_to_stream(
             base.tool_round = Some(*tool_round);
         }
         TurnEvent::FinalResponse {
-            text,
-            tool_names,
-            ..
+            text, tool_names, ..
         } => {
             base.event_type = "final".to_string();
             base.phase = "completed".to_string();
@@ -272,9 +265,7 @@ fn typed_turn_event_to_stream(
             base.terminal = true;
         }
         TurnEvent::NeedsInput {
-            text,
-            tool_names,
-            ..
+            text, tool_names, ..
         } => {
             base.event_type = "needs_input".to_string();
             base.phase = "awaiting_operator".to_string();
@@ -284,9 +275,7 @@ fn typed_turn_event_to_stream(
             base.terminal = true;
         }
         TurnEvent::Checkpoint {
-            text,
-            tool_names,
-            ..
+            text, tool_names, ..
         } => {
             base.event_type = "checkpoint".to_string();
             base.phase = "awaiting_operator".to_string();
@@ -367,6 +356,8 @@ fn empty_stream_event(turn_id: &str) -> InteractiveTurnStreamEvent {
         reasoning_delta: None,
         final_text: None,
         tool_names: None,
+        response_provider: None,
+        response_model: None,
         terminal: false,
         emitted_at_utc: Utc::now(),
         budget_request_id: None,

@@ -67,6 +67,8 @@ export interface InteractiveTurnStreamEvent {
   previous_artifact_id?: string | null;
   reasoning_delta?: string | null;
   requested_rounds?: number | null;
+  response_model?: string | null;
+  response_provider?: string | null;
   root_artifact_id?: string | null;
   seq?: number;
   terminal: boolean;

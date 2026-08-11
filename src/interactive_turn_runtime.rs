@@ -190,7 +190,10 @@ fn legacy_stream_message(messages: &StreamMessages) -> String {
         .unwrap_or_default()
 }
 
-pub fn content_delta_stream_event(turn_id: &str, delta: &str) -> Result<InteractiveTurnStreamEvent> {
+pub fn content_delta_stream_event(
+    turn_id: &str,
+    delta: &str,
+) -> Result<InteractiveTurnStreamEvent> {
     let mut event = build_event(turn_id, "content_delta", "streaming", "")?;
     event.content_delta = Some(delta.to_string());
     Ok(event)
@@ -257,6 +260,22 @@ pub fn turn_checkpoint_stream_event(
 
 pub fn final_stream_event(turn_id: &str, final_text: &str) -> Result<InteractiveTurnStreamEvent> {
     final_stream_event_with_tools(turn_id, final_text, Vec::new())
+}
+
+pub fn model_receipt_stream_event(
+    turn_id: &str,
+    provider: &str,
+    model: &str,
+) -> Result<InteractiveTurnStreamEvent> {
+    let mut event = build_event(
+        turn_id,
+        "model_receipt",
+        "inference",
+        "Inference route selected",
+    )?;
+    event.response_provider = Some(provider.trim().to_string());
+    event.response_model = Some(model.trim().to_string());
+    Ok(event)
 }
 
 pub fn final_stream_event_with_tools(
@@ -383,7 +402,10 @@ pub fn needs_input_stream_event_with_tools(
 }
 
 pub fn error_stream_event(turn_id: &str, message: &str) -> Result<InteractiveTurnStreamEvent> {
-    error_stream_event_from_failure(turn_id, &crate::turn_failure::TurnFailure::from_debug(message))
+    error_stream_event_from_failure(
+        turn_id,
+        &crate::turn_failure::TurnFailure::from_debug(message),
+    )
 }
 
 pub fn error_stream_event_from_failure(
@@ -619,7 +641,12 @@ fn build_event(
     phase: &str,
     message: &str,
 ) -> Result<InteractiveTurnStreamEvent> {
-    build_event_messages(turn_id, event_type, phase, classify_stream_messages(phase, message))
+    build_event_messages(
+        turn_id,
+        event_type,
+        phase,
+        classify_stream_messages(phase, message),
+    )
 }
 
 fn build_event_messages(
@@ -646,6 +673,8 @@ fn build_event_messages(
         reasoning_delta: None,
         final_text: None,
         tool_names: None,
+        response_provider: None,
+        response_model: None,
         terminal: false,
         emitted_at_utc: Utc::now(),
         budget_request_id: None,
@@ -677,6 +706,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn model_receipt_carries_successful_route_without_finishing_turn() {
+        let event =
+            model_receipt_stream_event("turn-1", "openai-codex", "gpt-5.6-sol").expect("receipt");
+        assert_eq!(event.event_type, "model_receipt");
+        assert_eq!(event.response_provider.as_deref(), Some("openai-codex"));
+        assert_eq!(event.response_model.as_deref(), Some("gpt-5.6-sol"));
+        assert!(!event.terminal);
+    }
+
+    #[test]
     fn artifact_presented_stream_event_roundtrips() {
         let event = artifact_presented_stream_event(
             "turn-1",
@@ -693,7 +732,10 @@ mod tests {
         assert_eq!(event.event_type, "artifact_presented");
         let json = serde_json::to_string(&event).expect("json");
         let parsed: InteractiveTurnStreamEvent = serde_json::from_str(&json).expect("parse");
-        assert_eq!(parsed.ui_artifact.as_ref().map(|a| a.label.as_str()), Some("Chart"));
+        assert_eq!(
+            parsed.ui_artifact.as_ref().map(|a| a.label.as_str()),
+            Some("Chart")
+        );
     }
 
     #[test]
@@ -748,13 +790,13 @@ mod tests {
 
     #[test]
     fn status_stream_event_keeps_legacy_message_for_tui() {
-        let event =
-            debug_status_stream_event("turn-1", "orchestration", "◈ activation heuristic class=tool")
-                .expect("event");
-        assert_eq!(
-            event.message,
-            "◈ activation heuristic class=tool"
-        );
+        let event = debug_status_stream_event(
+            "turn-1",
+            "orchestration",
+            "◈ activation heuristic class=tool",
+        )
+        .expect("event");
+        assert_eq!(event.message, "◈ activation heuristic class=tool");
         assert!(event.operator_message.is_none());
         assert_eq!(
             event.debug_message.as_deref(),

@@ -2,20 +2,16 @@
   import { onMount } from "svelte";
   import {
     ArrowUpRight,
-    Bot,
     Check,
     ChevronDown,
     LoaderCircle,
     LogIn,
-    MousePointer2,
     Search,
-    Terminal,
   } from "@lucide/svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
-  import { accountConnections } from "$lib/stores/accountConnections.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
   import { workshopModelOnHostHint } from "$lib/platformCopy";
   import { loadTuiDefaultsSummary } from "$lib/config";
@@ -47,9 +43,14 @@
   import {
     agentModelConfigOption,
     agentModelDisplayLabel,
-    modelSourceDetail,
     modelSourceLabel,
   } from "$lib/utils/chatModelRoute";
+  import {
+    chatGptOAuthReady,
+    getChatGptOAuthConnection,
+    listChatGptOAuthModels,
+    type ChatGptOAuthConnection,
+  } from "$lib/utils/chatgptOAuth";
 
   interface Props {
     disabled?: boolean;
@@ -59,7 +60,6 @@
     agentRuntime?: ChatAgentRuntime;
     agentConfigOptions?: AgentSessionConfigOption[];
     agentRuntimePending?: boolean;
-    onRuntimeChange?: (runtime: ChatAgentRuntime) => void;
     onAgentConfigChange?: (configId: string, value: unknown) => void | Promise<void>;
   }
 
@@ -70,7 +70,6 @@
     agentRuntime = "medousa",
     agentConfigOptions = [],
     agentRuntimePending = false,
-    onRuntimeChange,
     onAgentConfigChange,
   }: Props = $props();
 
@@ -84,21 +83,16 @@
   let menuEl: HTMLDivElement | undefined = $state();
   let triggerEl: HTMLButtonElement | undefined = $state();
   let selectedNativeProvider = $state(runtime.provider);
+  let chatGptConnection = $state<ChatGptOAuthConnection | null>(null);
+  let chatGptConnectionLoading = $state(false);
+  let chatGptConnectionError = $state(false);
 
   let loadingLiveModels = $state(false);
   let capabilityMap = $state<Map<string, ModelCapabilityRecord>>(new Map());
-  const SOURCES: ChatAgentRuntime[] = ["medousa", "codex", "cursor"];
-
-  const nativeProviderLabel = $derived(
-    resolveProviderLabel(catalogSnapshot, runtime.provider),
-  );
   const displayName = $derived.by(() =>
     agentRuntime === "medousa"
       ? resolveModelDisplayLabel(runtime.provider, runtime.model)
       : agentModelDisplayLabel(agentRuntime, agentConfigOptions),
-  );
-  const sourceDetail = $derived(
-    modelSourceDetail(agentRuntime, nativeProviderLabel, runtime.provider),
   );
   const externalModelOption = $derived(agentModelConfigOption(agentConfigOptions));
   const activeKey = $derived(modelPickKey(runtime.provider, runtime.model));
@@ -138,6 +132,10 @@
     groupedOptions.filter((group) => group.options.length > 0),
   );
   const nativeMobileReadonly = $derived(readonly || isTauriMobilePlatform());
+  const nativeChatGptSelected = $derived(
+    selectedNativeProvider.trim().toLowerCase() === "openai-codex",
+  );
+  const nativeChatGptReady = $derived(chatGptOAuthReady(chatGptConnection));
 
   function optionTier(option: ChatModelPickOption): string | null {
     if (!option.hint || option.hint === "Active") return null;
@@ -146,7 +144,7 @@
 
   onMount(() => {
     void bootstrap();
-    void accountConnections.refresh();
+    void refreshChatGptConnection();
     const onDocClick = (event: MouseEvent) => {
       if (!open) return;
       const target = event.target as Node | null;
@@ -163,6 +161,19 @@
       document.removeEventListener("keydown", onKey);
     };
   });
+
+  async function refreshChatGptConnection() {
+    chatGptConnectionLoading = true;
+    chatGptConnectionError = false;
+    try {
+      chatGptConnection = await getChatGptOAuthConnection();
+    } catch {
+      chatGptConnection = null;
+      chatGptConnectionError = true;
+    } finally {
+      chatGptConnectionLoading = false;
+    }
+  }
 
   $effect(() => {
     if (agentRuntime === "medousa") selectedNativeProvider = runtime.provider;
@@ -253,7 +264,9 @@
     if (nativeMobileReadonly || !catalogSnapshot) return;
     loadingLiveModels = true;
     try {
-      const result = await listProviderModels({ provider });
+      const result = provider.trim().toLowerCase() === "openai-codex"
+        ? await listChatGptOAuthModels()
+        : await listProviderModels({ provider });
       if (result.models.length > 0) {
         rebuildOptions(catalogSnapshot, probeSnapshot, favorites, result.models, provider);
       }
@@ -271,6 +284,7 @@
       search = "";
       if (agentRuntime === "medousa") {
         selectedNativeProvider = runtime.provider;
+        void refreshChatGptConnection();
         void refreshLiveModelsForProvider(runtime.provider);
       }
     }
@@ -285,27 +299,6 @@
     await runtime.applyModel(option.provider, option.model);
   }
 
-  function sourceLocked(source: ChatAgentRuntime): boolean {
-    if (source === "medousa") return false;
-    const account = source === "codex" ? "chatgpt" : "cursor";
-    const info = accountConnections.connection(account);
-    if (!info) return false;
-    return !info.binaryPresent || info.authStatus === "signed_out";
-  }
-
-  function sourceOptionDetail(source: ChatAgentRuntime): string {
-    if (source === "medousa") {
-      return modelSourceDetail("medousa", nativeProviderLabel, runtime.provider);
-    }
-    if (sourceLocked(source)) {
-      const account = source === "codex" ? "chatgpt" : "cursor";
-      const info = accountConnections.connection(account);
-      if (info && !info.binaryPresent) return "Install in Settings → Connections";
-      return "Sign in through Settings → Connections";
-    }
-    return modelSourceDetail(source, nativeProviderLabel, runtime.provider);
-  }
-
   function openConnections() {
     open = false;
     settingsNav.setActiveSection("connections");
@@ -313,20 +306,14 @@
     else layout.navigateDesktop("settings");
   }
 
-  function selectSource(source: ChatAgentRuntime) {
-    if (sourceLocked(source)) {
-      openConnections();
-      return;
-    }
-    if (source === agentRuntime) return;
-    search = "";
-    onRuntimeChange?.(source);
-  }
-
   function selectNativeProvider(provider: string) {
     selectedNativeProvider = provider;
     search = "";
     void refreshLiveModelsForProvider(provider);
+  }
+
+  function nativeProviderButtonLabel(provider: string, label: string): string {
+    return provider.trim().toLowerCase() === "openai" ? "OpenAI · API key" : label;
   }
 
   async function selectExternalModel(value: unknown) {
@@ -346,6 +333,7 @@
       search = "";
       if (agentRuntime === "medousa") {
         selectedNativeProvider = runtime.provider;
+        void refreshChatGptConnection();
         void refreshLiveModelsForProvider(runtime.provider);
       }
     }
@@ -360,16 +348,6 @@
     layout.navigateDesktop("settings");
   }
 </script>
-
-{#snippet sourceIcon(source: ChatAgentRuntime, size = 14)}
-  {#if source === "codex"}
-    <Terminal {size} strokeWidth={1.85} />
-  {:else if source === "cursor"}
-    <MousePointer2 {size} strokeWidth={1.85} />
-  {:else}
-    <Bot {size} strokeWidth={1.85} />
-  {/if}
-{/snippet}
 
 <div class="composer-model-picker" class:composer-model-picker-quiet={quiet}>
   <button
@@ -398,50 +376,22 @@
   {#if open}
     <div bind:this={menuEl} class="composer-model-panel" role="dialog" aria-label="Choose model">
       {#if !nativeMobileReadonly}
-        <div class="composer-model-source">
-          <div class="composer-model-source-current">
-            <span class="composer-model-source-kicker">Model source</span>
-            <span class="composer-model-source-summary">
-              {modelSourceLabel(agentRuntime)} · {sourceDetail}
-            </span>
-          </div>
-          <div class="composer-model-source-list" role="listbox" aria-label="Choose model source">
-            {#each SOURCES as source (source)}
-              {@const locked = sourceLocked(source)}
-              <button
-                type="button"
-                class="composer-model-source-option"
-                class:composer-model-source-option-active={source === agentRuntime}
-                class:composer-model-source-option-locked={locked}
-                role="option"
-                aria-selected={source === agentRuntime}
-                aria-disabled={locked}
-                onclick={() => selectSource(source)}
-              >
-                <span class="composer-model-source-icon">{@render sourceIcon(source)}</span>
-                <span class="composer-model-source-copy">
-                  <span class="composer-model-source-name">{modelSourceLabel(source)}</span>
-                  <span class="composer-model-source-detail">{sourceOptionDetail(source)}</span>
-                </span>
-                {#if locked}
-                  <LogIn size={13} class="composer-model-source-state" />
-                {:else if source === agentRuntime}
-                  <Check size={14} class="composer-model-source-state" />
-                {/if}
-              </button>
-            {/each}
-          </div>
-        </div>
-
         {#if agentRuntime === "medousa"}
-          <div class="composer-model-provider-strip" aria-label="Choose provider">
+          <div class="composer-model-provider-strip" role="listbox" aria-label="Choose provider">
             {#each nativeProviderGroups as group (group.provider)}
               <button
                 type="button"
                 class="composer-model-provider-option"
                 class:composer-model-provider-option-active={group.provider === selectedNativeProvider}
+                role="option"
+                aria-selected={group.provider === selectedNativeProvider}
                 onclick={() => selectNativeProvider(group.provider)}
-              >{group.label}</button>
+              >
+                {nativeProviderButtonLabel(group.provider, group.label)}
+                {#if group.provider === "openai-codex" && !nativeChatGptReady}
+                  <LogIn size={11} strokeWidth={2} />
+                {/if}
+              </button>
             {/each}
           </div>
           <div class="composer-model-panel-search">
@@ -457,7 +407,24 @@
           </div>
 
           <ul class="composer-model-list" role="listbox">
-            {#if loading || loadingLiveModels}
+            {#if nativeChatGptSelected && chatGptConnectionLoading}
+              <li class="composer-model-list-empty">
+                <LoaderCircle size={16} class="animate-spin opacity-60" />
+                <span>Checking ChatGPT account…</span>
+              </li>
+            {:else if nativeChatGptSelected && !nativeChatGptReady}
+              <li class="composer-model-list-empty">
+                <LogIn size={17} strokeWidth={1.85} />
+                <span>{chatGptConnectionError
+                    ? "Could not verify the ChatGPT connection"
+                    : chatGptConnection?.status === "reauth_required"
+                      ? "Reconnect your ChatGPT account to continue"
+                      : "Connect a ChatGPT account to use subscription models"}</span>
+                <button type="button" class="composer-model-connect" onclick={openConnections}>
+                  {chatGptConnection?.status === "reauth_required" ? "Reconnect" : "Open Connections"}
+                </button>
+              </li>
+            {:else if loading || loadingLiveModels}
               <li class="composer-model-list-empty">
                 <LoaderCircle size={16} class="animate-spin opacity-60" />
                 <span>{loading ? "Loading models…" : "Refreshing models…"}</span>
@@ -546,11 +513,13 @@
       <button
         type="button"
         class="composer-model-panel-footer"
-        onclick={agentRuntime === "medousa" ? openModelsSettings : openConnections}
+        onclick={agentRuntime === "medousa" && !nativeChatGptSelected
+          ? openModelsSettings
+          : openConnections}
       >
         <span>{nativeMobileReadonly
             ? "Open Models"
-            : agentRuntime === "medousa"
+            : agentRuntime === "medousa" && !nativeChatGptSelected
               ? "Manage models and providers"
               : "Manage account connection"}</span>
         <ArrowUpRight size={14} />

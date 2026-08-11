@@ -27,6 +27,7 @@ export function credentialRouteFor(
   if (runtime === "codex") return "chatgpt-account";
   if (runtime === "cursor") return "cursor-account";
   const normalized = provider.trim().toLowerCase();
+  if (normalized === "openai-codex") return "chatgpt-account";
   return normalized === "ollama" || normalized === "medousa-local"
     ? "local"
     : "api-key";

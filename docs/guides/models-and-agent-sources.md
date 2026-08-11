@@ -1,32 +1,54 @@
-# Models and agent sources
+# Models, providers, and runtimes
 
-The model name in the chat composer is also the entry point for choosing who
-runs the conversation. The closed control stays quiet and shows only the active
-model. Select it to see the current provider or connected account.
+The runtime control under the composer chooses who owns the agent loop:
+**Medousa**, **Codex**, or **Cursor**. The model control inside the composer stays
+quiet and shows only the active model.
 
-## Choose a source
+## Choose a runtime
 
-The expanded model picker offers three sources:
+Use the runtime control under the composer:
 
 - **Medousa** uses Medousa's native agent loop with a configured model provider
-  or local model. Choose the provider first, then its model.
-- **ChatGPT** currently uses the connected OpenAI account through the Codex
-  runtime, which owns that agent loop. The available models come from that
-  connected session.
+  or local model.
+- **Codex** uses the connected ChatGPT account through the Codex runtime, which
+  owns that agent loop.
 - **Cursor** uses the connected Cursor account and the models advertised by its
   session.
 
-If ChatGPT or Cursor is not ready, its source remains visible and opens
-**Settings → Connections** for installation or sign-in. Configure API-key and
-local providers under **Settings → Models**.
+If Codex or Cursor is not ready, its runtime option opens **Settings →
+Connections** for installation or sign-in.
+
+## Choose a provider and model
+
+When Medousa owns the loop, open the model picker and choose a provider first,
+then a model from that provider. Configure API-key and local providers under
+**Settings → Models**.
 
 ChatGPT subscriptions and OpenAI API usage are separate. The OpenAI provider
-will offer two explicit connections under **Medousa**: **API key** uses public
-OpenAI API billing, while **ChatGPT account** uses subscription-backed Codex
-model access and keeps Medousa's agent loop. This native ChatGPT-account
-connection is not available yet. Until it lands, choosing OpenAI under Medousa
-uses an API key; choosing ChatGPT uses the connected account through the Codex
-runtime. Medousa never silently moves credentials between those routes.
+offers two explicit routes under **Medousa**: **OpenAI · API key** uses public
+OpenAI API billing, while **OpenAI · ChatGPT account** uses subscription-backed
+model access and keeps Medousa's agent loop. The ChatGPT-account route appears
+as ready only when the workshop daemon has a connected native account. Medousa
+never silently moves credentials between these routes.
+
+To connect the native route, open **Settings → Connections**, find **ChatGPT
+account — Medousa runtime**, and choose **Connect ChatGPT**. Medousa opens the
+verification page and displays the device code to enter. The card updates when
+authorization completes. This connection is stored and refreshed by the
+workshop daemon; it is separate from the **Codex runtime** card and can be
+disconnected independently.
+
+While connected, the picker refreshes from the ChatGPT account's Codex model
+catalog. The list therefore follows that account's current entitlements; if the
+catalog cannot be reached, Medousa keeps its curated fallback choice available.
+
+Completed Medousa replies show a small model receipt below the answer. This is
+the successful provider/model route observed by the daemon after fallback, so
+it can differ from the model that was initially requested.
+
+When Codex or Cursor owns the loop, the model picker contains only the choices
+advertised by that runtime. Runtime selection stays under the composer, so it
+is not duplicated inside the model picker.
 
 ## Choose General or Coder
 
@@ -37,6 +59,6 @@ Source and mode are independent:
 - **Coder** is repository-aware and requires a governed Forge project. Choose or
   create that project from the project control above chat.
 
-General/Coder remains available with Medousa, ChatGPT/Codex, and Cursor. When an
+General/Coder remains available with Medousa, Codex, and Cursor. When an
 external source runs in Coder mode, Medousa launches it inside the governed
 project worktree rather than an arbitrary folder.

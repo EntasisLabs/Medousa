@@ -543,6 +543,10 @@ pub fn build_core_router(state: AppState) -> Router {
             "/v1/auth/chatgpt/refresh",
             post(crate::daemon::chatgpt_oauth::refresh),
         )
+        .route(
+            "/v1/auth/chatgpt/models",
+            get(crate::daemon::chatgpt_oauth::models),
+        )
         .route("/v1/runtime/artifact/command", post(artifact_command))
         .route("/v1/runtime/artifact/fetch", post(artifact_fetch))
         .route("/v1/runtime/artifact/write", post(artifact_write))

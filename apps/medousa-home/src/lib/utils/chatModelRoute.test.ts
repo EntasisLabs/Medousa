@@ -42,6 +42,7 @@ describe("chat model route", () => {
     expect(modelSourceDetail("medousa", "Ollama", "ollama")).toBe("Ollama · Local");
     expect(credentialRouteFor("codex", "openai")).toBe("chatgpt-account");
     expect(credentialRouteFor("medousa", "openai")).toBe("api-key");
+    expect(credentialRouteFor("medousa", "openai-codex")).toBe("chatgpt-account");
     expect(
       chatModelRouteKey({
         runtime: "codex",

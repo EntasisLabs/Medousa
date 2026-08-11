@@ -46,7 +46,7 @@ instead of inventing a second model registry.
 | Runtime | Connection | Model discovery | Loop owner | Billing/entitlement | Status |
 | --- | --- | --- | --- | --- | --- |
 | Medousa | Provider API key or local endpoint | Medousa provider catalog | Medousa | Provider account | Implemented |
-| Medousa | ChatGPT OAuth through the Codex Responses transport | Account-entitled Codex model catalog | Medousa | ChatGPT/Codex subscription quota | Planned in this branch |
+| Medousa | ChatGPT OAuth through the Codex Responses transport | Account-entitled Codex model catalog | Medousa | ChatGPT/Codex subscription quota | Implemented in this branch |
 | Codex | ChatGPT account | ACP session config | Codex | ChatGPT/Codex entitlement | Implemented |
 | Cursor | Cursor account | ACP session config | Cursor | Cursor entitlement | Implemented |
 
@@ -276,6 +276,8 @@ Deliverables:
 - Preserve text, reasoning summaries/signatures, tool calls, tool outputs,
   usage, cancellation, and error bodies across the adapter.
 - Add account-backed model discovery without using the public OpenAI models API.
+- Persist and display the daemon-observed successful provider/model route on
+  each assistant response so fallback is visible rather than inferred.
 
 Tests:
 
@@ -315,7 +317,12 @@ Exit gate:
 
 ### Phase 5 — connection choice and model discovery UX
 
-Status: pending a working native transport.
+Status: implemented; validation complete, pending the entitled-account live
+probe. The chat picker keeps runtime selection under the composer, exposes
+native providers only for the Medousa runtime, and makes the OpenAI API-key and
+connected ChatGPT-account routes explicitly selectable. Settings provides a
+separate daemon-owned device login, status, reauthentication, and disconnect
+flow without changing the Codex CLI-owned connection.
 
 Deliverables:
 

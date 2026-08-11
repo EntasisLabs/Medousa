@@ -45,6 +45,12 @@ export const PROVIDER_DEFAULT_MODELS: Record<string, string> = {
 
 /** Curated frontier picks shown in composer and settings. */
 export const CURATED_MODEL_PICKS: ModelPick[] = [
+  {
+    provider: "openai-codex",
+    model: "gpt-5.6-sol",
+    label: "GPT-5.6 Sol",
+    hint: "ChatGPT account",
+  },
   { provider: "openai", model: "gpt-5.4", label: "GPT-5.4", hint: "OpenAI flagship" },
   { provider: "openai", model: "gpt-5.4-mini", label: "GPT-5.4 Mini", hint: "Fast & efficient" },
   { provider: "anthropic", model: "claude-sonnet-4-6", label: "Sonnet 4.6", hint: "Best balance" },

@@ -79,6 +79,12 @@ pub struct TurnArtifactRef {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TurnPart {
+    /// Successful inference route for this assistant turn. This records the
+    /// daemon-observed route after fallback, not the composer's requested pick.
+    ModelReceipt {
+        provider: String,
+        model: String,
+    },
     Text {
         markdown: String,
     },

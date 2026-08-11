@@ -23,12 +23,7 @@ pub trait AgentStreamSink: Send + Sync {
         let _ = (turn_id, message, tool_names);
     }
     /// Host content-pack hold — ambiguous prose held for one resolution round; do not wipe UI draft.
-    async fn agent_pack_hold(
-        &self,
-        turn_id: u64,
-        fragments: Vec<String>,
-        tool_names: Vec<String>,
-    ) {
+    async fn agent_pack_hold(&self, turn_id: u64, fragments: Vec<String>, tool_names: Vec<String>) {
         let _ = (turn_id, fragments, tool_names);
     }
     async fn agent_turn_checkpoint(&self, turn_id: u64, message: String, tool_names: Vec<String>) {
@@ -54,6 +49,9 @@ pub trait AgentStreamSink: Send + Sync {
             .await;
     }
     async fn agent_error(&self, turn_id: u64, message: String);
+    async fn model_receipt(&self, turn_id: u64, provider: String, model: String) {
+        let _ = (turn_id, provider, model);
+    }
     async fn notice(&self, message: String);
     async fn tool_invoked(&self, tool_name: String, input_summary: String);
     async fn tool_payload(

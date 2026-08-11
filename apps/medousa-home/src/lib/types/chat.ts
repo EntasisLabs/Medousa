@@ -60,6 +60,9 @@ export interface ChatMessage {
   answerState?: string | null;
   /** Turn ticket that produced this bubble. */
   turnId?: string | null;
+  /** Daemon-observed successful inference route after fallback resolution. */
+  responseProvider?: string | null;
+  responseModel?: string | null;
   /** Stage-direction whisper (e.g. worker handoff ack) above the main voice. */
   stageWhisper?: string | null;
   /** `ask` = background /ask lane; `worker` = delegated workshop lane; `chat` = principal conversation (default). */
@@ -135,6 +138,8 @@ export interface InteractiveTurnStreamEvent {
   reasoning_delta?: string | null;
   final_text?: string | null;
   tool_names?: string[] | null;
+  response_provider?: string | null;
+  response_model?: string | null;
   terminal: boolean;
   emitted_at_utc: string;
   budget_request_id?: string | null;

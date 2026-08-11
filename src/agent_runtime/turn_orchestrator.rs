@@ -1313,6 +1313,8 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 .await
             {
                 Ok(response) => {
+                    sink.model_receipt(turn_id, target.provider.clone(), target.model.clone())
+                        .await;
                     first_attempt = Some(Ok(response));
                     break 'inference_targets;
                 }

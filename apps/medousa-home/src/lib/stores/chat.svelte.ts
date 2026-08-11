@@ -28,7 +28,7 @@ import type {
 } from "$lib/types/session";
 import type { WorkCard } from "$lib/types/workspace";
 import { isAskJobId, askJobIdFromSession, askSessionId } from "$lib/types/askJob";
-import { hostContextFromParts, reasoningFromParts, progressFromParts, toolRunsFromParts, userMediaFromParts, uiArtifactsFromParts } from "$lib/types/turnParts";
+import { hostContextFromParts, modelReceiptFromParts, reasoningFromParts, progressFromParts, toolRunsFromParts, userMediaFromParts, uiArtifactsFromParts } from "$lib/types/turnParts";
 import { mapStreamUiArtifact, replaceUiArtifactEntry } from "$lib/types/artifact";
 import { chatScenes } from "$lib/liquid/surfaces/chat/chatScenes.svelte";
 import { chatInteractions } from "$lib/liquid/surfaces/chat/chatInteractions";
@@ -2701,6 +2701,19 @@ export class ChatStore {
     const current = this.messages[idx];
     let content = current.content;
 
+    if (event.event_type === "model_receipt") {
+      const responseProvider = event.response_provider?.trim();
+      const responseModel = event.response_model?.trim();
+      if (responseProvider && responseModel) {
+        this.messages = [
+          ...this.messages.slice(0, idx),
+          { ...current, responseProvider, responseModel },
+          ...this.messages.slice(idx + 1),
+        ];
+      }
+      return;
+    }
+
     // ACP external agents (Cursor / Codex) emit "assistant_message" as a
     // cumulative snapshot. Swap content instead of appending so replies read
     // like a normal chat answer, not a duplicated transcript.
@@ -3507,24 +3520,29 @@ function mapTurns(
   const lane = options?.lane ?? "chat";
   const askJobId = options?.askJobId ?? null;
   const sessionId = options?.sessionId?.trim() || "session";
-  return turns.map((turn, index) => ({
-    id: `${sessionId}:${turn.timestamp}:${turn.role}:${index}`,
-    role: normalizeRole(turn.role),
-    content: turn.content,
-    lane,
-    askJobId,
-    turnIndex: index + 1,
-    answerState: turn.answer_state ?? null,
-    tools: turn.tool_names?.length ? turn.tool_names : undefined,
-    toolRuns: toolRunsFromParts(turn.parts ?? null),
-    uiArtifacts: uiArtifactsFromParts(turn.parts ?? null),
-    reasoning: reasoningFromParts(turn.parts ?? null),
-    statusLine:
-      turn.role === "assistant" ? progressFromParts(turn.parts ?? null) : null,
-    mediaAttachments: userMediaFromParts(turn.parts ?? null),
-    hostContext: hostContextFromParts(turn.parts ?? null),
-    speakerProfileId: turn.speaker_profile_id?.trim() || null,
-  }));
+  return turns.map((turn, index) => {
+    const modelReceipt = modelReceiptFromParts(turn.parts ?? null);
+    return {
+      id: `${sessionId}:${turn.timestamp}:${turn.role}:${index}`,
+      role: normalizeRole(turn.role),
+      content: turn.content,
+      lane,
+      askJobId,
+      turnIndex: index + 1,
+      answerState: turn.answer_state ?? null,
+      tools: turn.tool_names?.length ? turn.tool_names : undefined,
+      toolRuns: toolRunsFromParts(turn.parts ?? null),
+      uiArtifacts: uiArtifactsFromParts(turn.parts ?? null),
+      reasoning: reasoningFromParts(turn.parts ?? null),
+      statusLine:
+        turn.role === "assistant" ? progressFromParts(turn.parts ?? null) : null,
+      mediaAttachments: userMediaFromParts(turn.parts ?? null),
+      hostContext: hostContextFromParts(turn.parts ?? null),
+      speakerProfileId: turn.speaker_profile_id?.trim() || null,
+      responseProvider: modelReceipt?.provider ?? null,
+      responseModel: modelReceipt?.model ?? null,
+    };
+  });
 }
 
 function loadPinnedIds(): string[] {

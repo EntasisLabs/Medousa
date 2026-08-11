@@ -1700,6 +1700,11 @@ pub struct InteractiveTurnStreamEvent {
     pub reasoning_delta: Option<String>,
     pub final_text: Option<String>,
     pub tool_names: Option<Vec<String>>,
+    /// Successful inference route after provider fallback resolution.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_model: Option<String>,
     pub terminal: bool,
     pub emitted_at_utc: DateTime<Utc>,
     /// Turn budget approval pause — card id for Home deep link / notifications.
@@ -3308,6 +3313,13 @@ pub struct DisconnectChatGptOAuthResponse {
     pub disconnected: bool,
     /// Revocation is best-effort; local credentials are always removed.
     pub revoked: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ChatGptModelListResponse {
+    /// Account-entitled model slugs returned by the ChatGPT Codex backend.
+    pub models: Vec<String>,
 }
 
 /// Bounded, user-intent-oriented context carried from the permanent Code
