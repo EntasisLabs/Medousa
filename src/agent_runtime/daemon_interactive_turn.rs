@@ -1324,29 +1324,56 @@ async fn run_agent_turn_inner(
 
     let saved_defaults = crate::session::load_tui_defaults();
     let settings = runtime_settings_for_interactive_turn(backend, &request);
-    let main_target = crate::inference_profiles::main_target(&saved_defaults);
-    let vision_target = if has_vision_media {
-        match crate::inference_profiles::vision_target(&saved_defaults) {
-            Some(target) => target,
-            None => {
-                sink.agent_error(
-                    1,
-                    "Configure a vision model in Settings → Models before sending images."
-                        .to_string(),
-                )
-                .await;
-                return;
-            }
-        }
+    let stage_routing = stage_routing_for_interactive_turn(&request);
+    let final_route = stage_routing.get("final_response").cloned();
+    let verifier_route = stage_routing.get("verifier").cloned();
+    let selected_target = final_route
+        .as_ref()
+        .map(|route| crate::inference_profiles::InferenceTarget {
+            provider: route.provider.clone(),
+            model: route.model.clone(),
+            base_url: (route
+                .provider
+                .eq_ignore_ascii_case(settings.provider.trim())
+                && !settings.base_url.trim().is_empty())
+            .then(|| settings.base_url.clone()),
+        })
+        .unwrap_or_else(|| crate::inference_profiles::InferenceTarget {
+            provider: settings.provider.clone(),
+            model: settings.model.clone(),
+            base_url: (!settings.base_url.trim().is_empty()).then(|| settings.base_url.clone()),
+        });
+    let inference_profile_kind = if has_vision_media {
+        crate::inference_profiles::InferenceProfileKind::Vision
     } else {
-        main_target.clone()
+        crate::inference_profiles::InferenceProfileKind::Main
+    };
+    let mut inference_targets = if has_vision_media {
+        crate::inference_router::vision_targets_for_turn(selected_target, &saved_defaults)
+    } else {
+        crate::inference_router::main_targets_for_turn(selected_target, &saved_defaults)
+    };
+    if has_vision_media {
+        inference_targets.retain(|target| {
+            crate::model_capability_registry::registry()
+                .supports_vision(&target.provider, &target.model)
+        });
+    }
+    let Some(active_inference_target) = inference_targets.first().cloned() else {
+        sink.agent_error(
+            1,
+            "The selected model cannot read images. Choose a vision-capable model or configure a Vision fallback in Settings → Models."
+                .to_string(),
+        )
+        .await;
+        return;
     };
     let vision_plan = if has_vision_media {
         match media_vision::plan_turn_media(
             &session_id,
             &request.media_refs,
-            &vision_target.provider,
-            &vision_target.model,
+            &active_inference_target.provider,
+            &active_inference_target.model,
         ) {
             Ok(plan) => plan,
             Err(err) => {
@@ -1380,15 +1407,13 @@ async fn run_agent_turn_inner(
     };
 
     if has_vision_media
-        && let Some(notice) =
-            vision_plan.stream_notice(&vision_target.provider, &vision_target.model)
+        && let Some(notice) = vision_plan.stream_notice(
+            &active_inference_target.provider,
+            &active_inference_target.model,
+        )
     {
         sink.notice(notice).await;
     }
-
-    let stage_routing = stage_routing_for_interactive_turn(&request);
-    let final_route = stage_routing.get("final_response").cloned();
-    let verifier_route = stage_routing.get("verifier").cloned();
 
     let active_turn_resume =
         super::coder_turn_checkpoint::CoderTurnCheckpointController::initial_resume_state(
@@ -1402,10 +1427,10 @@ async fn run_agent_turn_inner(
         coder_entry.as_ref(),
         project_state.as_ref().map(|state| state.forge.clone()),
     ) {
-        let (checkpoint_provider, checkpoint_model) = final_route
-            .as_ref()
-            .map(|route| (route.provider.clone(), route.model.clone()))
-            .unwrap_or_else(|| (vision_target.provider.clone(), vision_target.model.clone()));
+        let (checkpoint_provider, checkpoint_model) = (
+            active_inference_target.provider.clone(),
+            active_inference_target.model.clone(),
+        );
         match super::coder_turn_checkpoint::CoderTurnCheckpointController::new(
             super::coder_turn_checkpoint::CoderTurnCheckpointControllerParams {
                 store: checkpoint_store.clone(),
@@ -1605,11 +1630,8 @@ async fn run_agent_turn_inner(
         scheduled_tool_allowlist,
         media_refs: request.media_refs.clone(),
         vision_plan,
-        inference_profile_kind: if has_vision_media {
-            crate::inference_profiles::InferenceProfileKind::Vision
-        } else {
-            crate::inference_profiles::InferenceProfileKind::Main
-        },
+        inference_profile_kind,
+        inference_targets,
         surface: request.surface.clone(),
         round_context_provider: coder_registry
             .clone()

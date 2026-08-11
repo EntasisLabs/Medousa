@@ -102,9 +102,6 @@
   import LiquidCardDetailSheet from "$lib/components/chat/LiquidCardDetailSheet.svelte";
   import ChatAgentModePicker from "$lib/components/chat/ChatAgentModePicker.svelte";
   import { pendingMediaLabels } from "$lib/utils/chatMediaUpload";
-  import { hasVisionMediaRefs } from "$lib/types/media";
-  import { visionProfileReady } from "$lib/types/inferenceProfiles";
-  import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { switchMobileTab } from "$lib/mobileNavigation";
   import { automationsNav } from "$lib/stores/automationsNav.svelte";
   import { flowDraft } from "$lib/stores/flowDraft.svelte";
@@ -1086,17 +1083,6 @@
     );
     const hasAttachments = chat.pendingMediaRefs.length > 0;
     if (!prompt && !hasAttachments) return;
-    if (hasVisionMediaRefs(chat.pendingMediaRefs)) {
-      if (!workshopDefaults.loaded) {
-        await workshopDefaults.load();
-      }
-      if (!visionProfileReady(workshopDefaults.draft.inferenceProfiles)) {
-        chat.setError(
-          "Configure a vision model in Settings → Medousa Agent before sending images.",
-        );
-        return;
-      }
-    }
     if (!allowUnboundCoderSend && !activeCodeContext(chat.sessionId)) {
       const [agentMode, binding] = await Promise.all([
         getSessionAgentMode(chat.sessionId),

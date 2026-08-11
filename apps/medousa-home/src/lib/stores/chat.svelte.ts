@@ -33,7 +33,12 @@ import { mapStreamUiArtifact, replaceUiArtifactEntry } from "$lib/types/artifact
 import { chatScenes } from "$lib/liquid/surfaces/chat/chatScenes.svelte";
 import { chatInteractions } from "$lib/liquid/surfaces/chat/chatInteractions";
 import type { MediaRef } from "$lib/types/media";
-import { chatMediaAttachmentsFromRefs } from "$lib/utils/chatMediaUpload";
+import {
+  attachChatFiles,
+  chatMediaAttachmentsFromRefs,
+  uploadChatFiles,
+  uploadChatPaths,
+} from "$lib/utils/chatMediaUpload";
 import { formatSessionLabel } from "$lib/utils/formatSession";
 import {
   stageWhisperAfterFinish,
@@ -3369,6 +3374,28 @@ export class ChatStore {
   }
 
   async attachFilesFromPicker() {
+    await this.attachPendingMedia((slots) =>
+      attachChatFiles(this.sessionId, { maxNew: slots }),
+    );
+  }
+
+  async attachDroppedFiles(files: File[]) {
+    if (files.length === 0) return;
+    await this.attachPendingMedia((slots) =>
+      uploadChatFiles(this.sessionId, files.slice(0, slots)),
+    );
+  }
+
+  async attachDroppedPaths(paths: string[]) {
+    if (paths.length === 0) return;
+    await this.attachPendingMedia((slots) =>
+      uploadChatPaths(this.sessionId, paths.slice(0, slots)),
+    );
+  }
+
+  private async attachPendingMedia(
+    load: (slots: number) => Promise<MediaRef[]>,
+  ) {
     if (this.pendingMediaUploading) return;
     const slots = MAX_MEDIA_REFS_PER_TURN - this.pendingMediaRefs.length;
     if (slots <= 0) {
@@ -3379,8 +3406,7 @@ export class ChatStore {
     }
     this.pendingMediaUploading = true;
     try {
-      const { attachChatFiles } = await import("$lib/utils/chatMediaUpload");
-      const refs = await attachChatFiles(this.sessionId, { maxNew: slots });
+      const refs = await load(slots);
       if (refs.length > 0) {
         this.pendingMediaRefs = [...this.pendingMediaRefs, ...refs];
         this.streamError = null;

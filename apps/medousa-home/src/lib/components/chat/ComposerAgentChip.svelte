@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick } from "svelte";
   import { Bot, ChevronDown, X } from "@lucide/svelte";
+  import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { activeAgent } from "$lib/stores/activeAgent.svelte";
   import { catalog } from "$lib/stores/catalog.svelte";
   import { layout } from "$lib/stores/layout.svelte";
@@ -137,12 +138,13 @@
 {/if}
 
 {#if open}
-  <div
-    bind:this={menuEl}
-    class="composer-anchored-menu"
-    role="dialog"
-    aria-label="Choose agent"
-  >
+  <BodyPortal>
+    <div
+      bind:this={menuEl}
+      class="composer-anchored-menu"
+      role="dialog"
+      aria-label="Choose agent"
+    >
     <header class="composer-anchored-menu-header">
       <div class="min-w-0">
         <h2 class="text-sm font-semibold text-surface-50">Who runs this</h2>
@@ -187,5 +189,6 @@
         Manage agents in Workspace…
       </button>
     </div>
-  </div>
+    </div>
+  </BodyPortal>
 {/if}

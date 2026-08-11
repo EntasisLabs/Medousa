@@ -317,10 +317,7 @@ mod tests {
         );
         assert!(!headers.contains_key(&"X-API-Key".to_string()));
         assert_eq!(
-            headers
-                .get(&"Originator".to_string())
-                .unwrap()
-                .as_str(),
+            headers.get(&"Originator".to_string()).unwrap().as_str(),
             CODEX_COMPAT_ORIGINATOR
         );
         assert_eq!(
@@ -379,10 +376,24 @@ mod tests {
         let client =
             OpenAiCodexChatClient::with_url("gpt-5.6-sol", format!("http://{address}/responses"));
         let (tx, mut rx) = mpsc::unbounded_channel();
+        let image_base64 = Arc::<str>::from(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
+        );
+        let request = ChatRequest::new(vec![genai::chat::ChatMessage::user(
+            MessageContent::from_parts(vec![
+                genai::chat::ContentPart::from_text("inspect the image"),
+                genai::chat::ContentPart::from_binary_base64(
+                    "image/png",
+                    image_base64,
+                    Some("pixel.png".to_string()),
+                ),
+            ]),
+        )])
+        .with_system("use tools");
         let response = client
             .stream_once(
                 &("oauth-secret".to_string(), "acct_123".to_string()),
-                ChatRequest::from_user("inspect the file").with_system("use tools"),
+                request,
                 None,
                 Some(&tx),
             )
@@ -406,5 +417,24 @@ mod tests {
         assert_eq!(body["instructions"], "use tools");
         assert_eq!(body["store"], false);
         assert_eq!(body["stream"], true);
+        let user_content = body["input"]
+            .as_array()
+            .and_then(|items| {
+                items.iter().find_map(|item| {
+                    (item["role"] == "user")
+                        .then(|| item["content"].as_array())
+                        .flatten()
+                })
+            })
+            .expect("user content parts");
+        assert_eq!(user_content[0]["type"], "input_text");
+        assert_eq!(user_content[0]["text"], "inspect the image");
+        assert_eq!(user_content[1]["type"], "input_image");
+        assert_eq!(user_content[1]["detail"], "auto");
+        assert!(
+            user_content[1]["image_url"]
+                .as_str()
+                .is_some_and(|url| url.starts_with("data:image/png;base64,"))
+        );
     }
 }

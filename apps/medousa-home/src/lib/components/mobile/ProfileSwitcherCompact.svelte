@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick } from "svelte";
   import { ChevronDown, X } from "@lucide/svelte";
+  import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
@@ -161,12 +162,13 @@
 {/if}
 
 {#if open}
-  <div
-    bind:this={menuEl}
-    class="composer-anchored-menu"
-    role="dialog"
-    aria-label="Switch profile"
-  >
+  <BodyPortal>
+    <div
+      bind:this={menuEl}
+      class="composer-anchored-menu"
+      role="dialog"
+      aria-label="Switch profile"
+    >
     <header class="composer-anchored-menu-header">
       <div class="min-w-0">
         <h2 class="text-sm font-semibold text-surface-50">You · profile</h2>
@@ -210,5 +212,6 @@
         Teach Medousa &amp; manage profiles →
       </button>
     </div>
-  </div>
+    </div>
+  </BodyPortal>
 {/if}

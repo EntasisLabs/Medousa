@@ -79,6 +79,75 @@ pub fn profile_targets_from_defaults(
     targets
 }
 
+/// Resolve an image turn from the user's selected model first, then the
+/// explicitly configured vision profile. Eligibility filtering happens at
+/// execution time so a text-only primary target naturally falls through.
+pub fn vision_targets_for_turn(
+    primary: InferenceTarget,
+    defaults: &crate::session::TuiDefaults,
+) -> Vec<InferenceTarget> {
+    let mut targets = vec![primary];
+    if let Some(profile) = defaults
+        .inference_profiles
+        .as_ref()
+        .and_then(|profiles| profiles.vision.clone())
+        .and_then(|profile| profile.trimmed())
+    {
+        targets.push(profile.as_target());
+        targets.extend(
+            profile
+                .fallbacks
+                .into_iter()
+                .filter_map(|target| target.trimmed()),
+        );
+    }
+    deduplicate_targets(&mut targets);
+    targets
+}
+
+/// Preserve a per-turn model selection while retaining its configured main
+/// fallbacks when the selection is the saved main profile.
+pub fn main_targets_for_turn(
+    primary: InferenceTarget,
+    defaults: &crate::session::TuiDefaults,
+) -> Vec<InferenceTarget> {
+    let mut targets = vec![primary.clone()];
+    if let Some(profile) = defaults
+        .inference_profiles
+        .as_ref()
+        .and_then(|profiles| profiles.main.clone())
+        .and_then(|profile| profile.trimmed())
+        && same_target(&profile.as_target(), &primary)
+    {
+        targets.extend(
+            profile
+                .fallbacks
+                .into_iter()
+                .filter_map(|target| target.trimmed()),
+        );
+    }
+    deduplicate_targets(&mut targets);
+    targets
+}
+
+fn deduplicate_targets(targets: &mut Vec<InferenceTarget>) {
+    let mut unique = Vec::<InferenceTarget>::new();
+    targets.retain(|target| {
+        if unique.iter().any(|existing| same_target(existing, target)) {
+            false
+        } else {
+            unique.push(target.clone());
+            true
+        }
+    });
+}
+
+fn same_target(left: &InferenceTarget, right: &InferenceTarget) -> bool {
+    left.provider.eq_ignore_ascii_case(&right.provider)
+        && left.model.eq_ignore_ascii_case(&right.model)
+        && left.base_url == right.base_url
+}
+
 pub fn target_is_eligible(target: &InferenceTarget, required: CapabilityRequirement) -> bool {
     target_ineligibility_reason(target, required).is_none()
 }
@@ -329,5 +398,86 @@ mod tests {
         assert_eq!(targets.len(), 2);
         assert_eq!(targets[0].provider, OPENAI_CODEX_PROVIDER_ID);
         assert_eq!(targets[1].provider, "openai");
+    }
+
+    #[test]
+    fn vision_targets_prefer_selected_model_then_configured_fallback() {
+        let mut defaults = crate::session::TuiDefaults::default();
+        defaults.inference_profiles = Some(crate::inference_profiles::InferenceProfilesConfig {
+            main: None,
+            vision: Some(InferenceProfile {
+                provider: "openai".into(),
+                model: "gpt-4.1-mini".into(),
+                base_url: None,
+                fallbacks: Vec::new(),
+            }),
+            stt: None,
+        });
+
+        let targets = vision_targets_for_turn(
+            InferenceTarget {
+                provider: OPENAI_CODEX_PROVIDER_ID.into(),
+                model: "gpt-5.6-sol".into(),
+                base_url: None,
+            },
+            &defaults,
+        );
+
+        assert_eq!(targets.len(), 2);
+        assert_eq!(targets[0].provider, OPENAI_CODEX_PROVIDER_ID);
+        assert_eq!(targets[0].model, "gpt-5.6-sol");
+        assert_eq!(targets[1].provider, "openai");
+        assert_eq!(targets[1].model, "gpt-4.1-mini");
+    }
+
+    #[test]
+    fn duplicate_vision_profile_does_not_repeat_selected_target() {
+        let primary = InferenceTarget {
+            provider: OPENAI_CODEX_PROVIDER_ID.into(),
+            model: "gpt-5.6-sol".into(),
+            base_url: None,
+        };
+        let mut defaults = crate::session::TuiDefaults::default();
+        defaults.inference_profiles = Some(crate::inference_profiles::InferenceProfilesConfig {
+            main: None,
+            vision: Some(InferenceProfile {
+                provider: primary.provider.clone(),
+                model: primary.model.clone(),
+                base_url: None,
+                fallbacks: Vec::new(),
+            }),
+            stt: None,
+        });
+
+        assert_eq!(vision_targets_for_turn(primary, &defaults).len(), 1);
+    }
+
+    #[test]
+    fn main_turn_override_is_not_replaced_by_saved_profile() {
+        let mut defaults = crate::session::TuiDefaults::default();
+        defaults.inference_profiles = Some(crate::inference_profiles::InferenceProfilesConfig {
+            main: Some(InferenceProfile {
+                provider: "anthropic".into(),
+                model: "claude-sonnet-4".into(),
+                base_url: None,
+                fallbacks: vec![InferenceTarget {
+                    provider: "openai".into(),
+                    model: "gpt-5.6".into(),
+                    base_url: None,
+                }],
+            }),
+            vision: None,
+            stt: None,
+        });
+        let selected = InferenceTarget {
+            provider: OPENAI_CODEX_PROVIDER_ID.into(),
+            model: "gpt-5.6-sol".into(),
+            base_url: None,
+        };
+
+        assert_eq!(
+            main_targets_for_turn(selected.clone(), &defaults),
+            vec![selected]
+        );
     }
 }

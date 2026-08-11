@@ -370,6 +370,7 @@ pub struct LocalTurnExecutionParams {
     pub session_scratch_seed: TurnScratchpad,
     pub current_turn_user_message: ChatMessage,
     pub inference_profile_kind: crate::inference_profiles::InferenceProfileKind,
+    pub inference_targets: Vec<crate::inference_profiles::InferenceTarget>,
     pub supports_ui_artifacts: bool,
     pub supports_liquid_markdown: bool,
     pub supports_browser_host: bool,
@@ -402,6 +403,7 @@ pub struct AssembleLocalTurnParams<'a> {
     pub media_refs: Vec<crate::daemon_api::MediaRef>,
     pub vision_plan: crate::media_vision::TurnMediaVisionPlan,
     pub inference_profile_kind: crate::inference_profiles::InferenceProfileKind,
+    pub inference_targets: Vec<crate::inference_profiles::InferenceTarget>,
     pub surface: Option<crate::daemon_api::TurnSurfaceContext>,
     pub round_context_provider: Option<Arc<dyn super::turn_context::ToolRoundContextProvider>>,
     pub evidence_undertaking_id: Option<String>,
@@ -516,16 +518,33 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
         params.scheduled_tool_allowlist.clone(),
     );
 
+    let primary_inference_target = params.inference_targets.first();
+    let execution_provider = primary_inference_target
+        .map(|target| target.provider.clone())
+        .unwrap_or_else(|| params.settings.provider.clone());
+    let execution_model = primary_inference_target
+        .map(|target| target.model.clone())
+        .unwrap_or_else(|| params.settings.model.clone());
+    let execution_base_url = primary_inference_target
+        .and_then(|target| target.base_url.clone())
+        .or_else(|| {
+            (!params.settings.base_url.trim().is_empty()).then(|| params.settings.base_url.clone())
+        });
+    let no_tools_pipeline = turn_services::build_prompt_pipeline_for_target(
+        &execution_provider,
+        &execution_model,
+        execution_base_url.as_deref(),
+    );
+
     AssembledLocalTurn {
         execution: LocalTurnExecutionParams {
             agent_mode: params.prepared.agent_mode,
             turn_id: params.turn_id,
             session_id: params.session_id.to_string(),
             backend: params.settings.backend.clone(),
-            provider: params.settings.provider.clone(),
-            model: params.settings.model.clone(),
-            base_url: (!params.settings.base_url.trim().is_empty())
-                .then(|| params.settings.base_url.clone()),
+            provider: execution_provider,
+            model: execution_model,
+            base_url: execution_base_url,
             response_depth_mode: params.response_depth_mode.to_string(),
             reasoning_effort: params.reasoning_effort.to_string(),
             worker_scheduler: params.tui_rt.worker_scheduler.clone(),
@@ -538,10 +557,7 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
             turn_scope: params.tui_rt.turn_scope.clone(),
             activation: activation.clone(),
             pipeline: pipeline_selection.pipeline.clone(),
-            no_tools_pipeline: turn_services::build_prompt_pipeline_for_turn(
-                params.final_route,
-                params.settings,
-            ),
+            no_tools_pipeline,
             prior_messages: prior_build.messages.clone(),
             prompt_for_request,
             original_prompt: params.prompt.to_string(),
@@ -585,6 +601,7 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
             ),
             current_turn_user_message,
             inference_profile_kind: params.inference_profile_kind,
+            inference_targets: params.inference_targets,
             supports_ui_artifacts: crate::ui_present_tools::surface_supports_ui_artifacts(
                 params.surface.as_ref(),
             ),
@@ -883,6 +900,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         session_scratch_seed,
         current_turn_user_message,
         inference_profile_kind,
+        inference_targets,
         supports_ui_artifacts: _,
         supports_liquid_markdown: _,
         supports_browser_host: _,
@@ -1132,6 +1150,8 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         stream_bridge.drain().await;
         match prompt_only_result {
             Ok(completion) => {
+                sink.model_receipt(turn_id, provider.clone(), model.clone())
+                    .await;
                 let final_text = completion
                     .response
                     .into_first_text()
@@ -1273,7 +1293,6 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         .filter(|rounds| *rounds > 0)
         .unwrap_or(activation.max_tool_rounds)
         .max(1);
-    let inference_targets = crate::inference_router::profile_targets(inference_profile_kind);
     let inference_target_total = inference_targets.len().max(1);
     let mut first_attempt: Option<
         Result<

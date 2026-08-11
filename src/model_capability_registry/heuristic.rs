@@ -39,7 +39,7 @@ pub fn infer_supports_vision(provider: &str, model: &str) -> bool {
     }
 
     match provider {
-        "openai" | "azure-openai" | "azure_openai" | "openrouter" => {
+        "openai" | "openai-codex" | "azure-openai" | "azure_openai" | "openrouter" => {
             model.starts_with("gpt-4o")
                 || model.starts_with("gpt-4.1")
                 || model.starts_with("gpt-4-turbo")
@@ -65,5 +65,16 @@ pub fn infer_supports_vision(provider: &str, model: &str) -> bool {
                 || model.contains("minicpm-v")
         }
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chatgpt_account_gpt5_models_support_vision() {
+        assert!(infer_supports_vision("openai-codex", "gpt-5.6-sol"));
+        assert!(infer_supports_vision("openai-codex", "gpt-5.6-luna"));
     }
 }

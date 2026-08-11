@@ -166,12 +166,12 @@ function toolRunsFromNames(tools: string[] | undefined): ToolRunState[] {
 function plainFlow(message: ChatMessage): SceneNode[] {
   const flow: SceneNode[] = [];
   const id = message.id;
-  if (message.content?.trim()) {
-    flow.push(child(`${id}:body`, "prose", { markdown: message.content, plain: true }));
-  }
   const attachments = message.mediaAttachments ?? [];
   if (attachments.length > 0) {
     flow.push(child(`${id}:media`, "chat_media", { attachments }));
+  }
+  if (message.content?.trim()) {
+    flow.push(child(`${id}:body`, "prose", { markdown: message.content, plain: true }));
   }
   return flow;
 }

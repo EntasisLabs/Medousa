@@ -9,11 +9,6 @@ import {
   MAX_MEDIA_REFS_PER_TURN,
 } from "$lib/utils/normieErrors";
 import { guessMimeFromPath } from "$lib/utils/vaultAttachments";
-import { isTauri } from "$lib/window";
-
-function fileNameFromPath(path: string): string {
-  return path.split("/").pop()?.split("\\").pop() ?? path;
-}
 
 export async function pickChatAttachmentFiles(): Promise<File[]> {
   return new Promise((resolve) => {
@@ -60,6 +55,29 @@ export async function uploadChatFiles(
   return refs;
 }
 
+function fileNameFromPath(path: string): string {
+  return path.split(/[\\/]/).pop()?.trim() || path;
+}
+
+/** Upload native desktop drops, whose Tauri event exposes paths rather than File objects. */
+export async function uploadChatPaths(
+  sessionId: string,
+  paths: string[],
+): Promise<MediaRef[]> {
+  const refs: MediaRef[] = [];
+  for (const path of paths) {
+    const label = fileNameFromPath(path);
+    try {
+      const response = await uploadMediaPath(sessionId, path, label);
+      refs.push(mediaRefFromUpload(response, label));
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : String(err);
+      throw new Error(friendlyMediaUploadError(raw, label));
+    }
+  }
+  return refs;
+}
+
 export async function attachChatFiles(
   sessionId: string,
   options?: { maxNew?: number },
@@ -71,28 +89,6 @@ export async function attachChatFiles(
         `too many attachments (max ${MAX_MEDIA_REFS_PER_TURN})`,
       ),
     );
-  }
-
-  if (isTauri()) {
-    const { open } = await import("@tauri-apps/plugin-dialog");
-    const selected = await open({
-      multiple: true,
-      title: "Attach files",
-    });
-    if (!selected) return [];
-    const paths = (Array.isArray(selected) ? selected : [selected]).slice(0, maxNew);
-    const refs: MediaRef[] = [];
-    for (const path of paths) {
-      const name = fileNameFromPath(path);
-      try {
-        const response = await uploadMediaPath(sessionId, path, name);
-        refs.push(mediaRefFromUpload(response, name));
-      } catch (err) {
-        const raw = err instanceof Error ? err.message : String(err);
-        throw new Error(friendlyMediaUploadError(raw, name));
-      }
-    }
-    return refs;
   }
 
   const files = (await pickChatAttachmentFiles()).slice(0, maxNew);
