@@ -40,11 +40,13 @@ to move between the project, Review, Terminal, and a coding agent without
 rebuilding context. It shows the current stage and collaborator.
 
 Coder mode does not require choosing a project first. In chat, switch to
-**Coder**, then use **Choose or create project** to continue ready work or
-initialize a blank codebase. **Let Medousa choose or create it** sends the
-current message through a restricted setup phase: it can list, bind, or create
-a project, but receives no repository mutation or command authority until the
-following bound turn.
+**Coder**, then use **Choose or create project** to continue ready work or open
+the same repository-and-branch setup used by Code. Creating from chat keeps the
+picker open and binds the resulting governed working copy back to that chat;
+there is no separate miniature creation path. **Let Medousa choose or create
+it** sends the current message through a restricted setup phase: it can list,
+bind, or create a project, but receives no repository mutation or command
+authority until the following bound turn.
 
 Cursor and Codex start only after the conversation has a project. Medousa
 resolves that durable binding on the workshop daemon and launches the external
