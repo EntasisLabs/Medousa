@@ -82,19 +82,6 @@ impl OpenAiCodexChatClient {
             .map_err(|error| StasisError::PortFailure(error.to_string()))
     }
 
-    async fn complete_once(
-        &self,
-        credentials: &(String, String),
-        request: ChatRequest,
-        options: Option<&ChatOptions>,
-    ) -> genai::Result<ChatResponse> {
-        let options =
-            apply_model_reasoning_suffix(&self.model, options.cloned().unwrap_or_default());
-        self.client(&credentials.0, &credentials.1)
-            .exec_chat(self.model_target(), request, Some(&options))
-            .await
-    }
-
     async fn stream_once(
         &self,
         credentials: &(String, String),
@@ -156,11 +143,10 @@ impl OpenAiCodexChatClient {
             }
         }
 
-        let content = match captured_content {
-            Some(content) => content,
-            None if !streamed_text.is_empty() => MessageContent::from_text(streamed_text),
-            None => MessageContent::default(),
-        };
+        let mut content = captured_content.unwrap_or_default();
+        if content.first_text().is_none() && !streamed_text.is_empty() {
+            content.extend_front(MessageContent::from_text(streamed_text));
+        }
         let reasoning_content = captured_reasoning_content
             .or_else(|| (!reasoning_text.trim().is_empty()).then_some(reasoning_text));
         Ok(ChatResponse {
@@ -185,17 +171,17 @@ impl AiChatClient for OpenAiCodexChatClient {
     ) -> StasisResult<ChatResponse> {
         let credentials = self.credentials().await?;
         match self
-            .complete_once(&credentials, request.clone(), options)
+            .stream_once(&credentials, request.clone(), options, None)
             .await
         {
             Ok(response) => Ok(response),
             Err(error) if is_unauthorized(&error) => {
                 let refreshed = self.refreshed_credentials(&credentials.0).await?;
-                self.complete_once(&refreshed, request, options)
+                self.stream_once(&refreshed, request, options, None)
                     .await
-                    .map_err(|error| transport_error(&self.model, "completion", error))
+                    .map_err(|error| transport_error(&self.model, "stream", error))
             }
-            Err(error) => Err(transport_error(&self.model, "completion", error)),
+            Err(error) => Err(transport_error(&self.model, "stream", error)),
         }
     }
 
@@ -206,27 +192,19 @@ impl AiChatClient for OpenAiCodexChatClient {
         chunk_tx: Option<&mpsc::UnboundedSender<StreamDelta>>,
     ) -> StasisResult<ChatResponse> {
         let credentials = self.credentials().await?;
-        let response = match self
+        match self
             .stream_once(&credentials, request.clone(), options, chunk_tx)
             .await
         {
-            Ok(response) => response,
+            Ok(response) => Ok(response),
             Err(error) if is_unauthorized(&error) => {
                 let refreshed = self.refreshed_credentials(&credentials.0).await?;
                 self.stream_once(&refreshed, request.clone(), options, chunk_tx)
                     .await
-                    .map_err(|error| transport_error(&self.model, "stream", error))?
+                    .map_err(|error| transport_error(&self.model, "stream", error))
             }
-            Err(error) => return Err(transport_error(&self.model, "stream", error)),
-        };
-        if response.first_text().is_none() && response.content.tool_calls().is_empty() {
-            let fallback = self.complete(request, options).await?;
-            if let (Some(tx), Some(text)) = (chunk_tx, fallback.first_text()) {
-                let _ = tx.send(StreamDelta::Content(text.to_string()));
-            }
-            return Ok(fallback);
+            Err(error) => Err(transport_error(&self.model, "stream", error)),
         }
-        Ok(response)
     }
 }
 
@@ -306,7 +284,6 @@ fn transport_error(model: &str, operation: &str, error: genai::Error) -> StasisE
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::Json;
     use axum::extract::State;
     use axum::http::HeaderMap;
     use std::sync::{Arc, Mutex};
@@ -364,69 +341,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn responses_request_carries_account_route_and_normalizes_text() {
+    async fn sse_fixture_normalizes_text_reasoning_tools_and_usage() {
         #[derive(Clone, Default)]
         struct Capture(Arc<Mutex<Option<(HeaderMap, serde_json::Value)>>>);
 
         async fn respond(
             State(capture): State<Capture>,
             headers: HeaderMap,
-            Json(body): Json<serde_json::Value>,
-        ) -> Json<serde_json::Value> {
+            axum::Json(body): axum::Json<serde_json::Value>,
+        ) -> axum::response::Response {
             *capture.0.lock().unwrap() = Some((headers, body));
-            Json(serde_json::json!({
-                "id": "resp_medousa_test",
-                "status": "completed",
-                "model": "gpt-5.6-sol",
-                "output": [{
-                    "type": "message",
-                    "role": "assistant",
-                    "content": [{
-                        "type": "output_text",
-                        "text": "native route works",
-                        "annotations": []
-                    }]
-                }],
-                "usage": {
-                    "input_tokens": 3,
-                    "output_tokens": 4,
-                    "total_tokens": 7
-                }
-            }))
-        }
-
-        let capture = Capture::default();
-        let router = axum::Router::new()
-            .route("/responses", axum::routing::post(respond))
-            .with_state(capture.clone());
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-
-        let client =
-            OpenAiCodexChatClient::with_url("gpt-5.6-sol", format!("http://{address}/responses"));
-        let response = client
-            .complete_once(
-                &("oauth-secret".to_string(), "acct_123".to_string()),
-                ChatRequest::from_user("hello").with_system("be useful"),
-                None,
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.first_text(), Some("native route works"));
-
-        let (headers, body) = capture.0.lock().unwrap().take().unwrap();
-        assert_eq!(headers.get("authorization").unwrap(), "Bearer oauth-secret");
-        assert_eq!(headers.get("chatgpt-account-id").unwrap(), "acct_123");
-        assert_eq!(body["model"], "gpt-5.6-sol");
-        assert_eq!(body["instructions"], "be useful");
-        assert_eq!(body["store"], false);
-        assert_eq!(body["stream"], false);
-    }
-
-    #[tokio::test]
-    async fn sse_fixture_normalizes_text_reasoning_tools_and_usage() {
-        async fn respond() -> axum::response::Response {
             let fixture = concat!(
                 "event: response.output_text.delta\n",
                 "data: {\"type\":\"response.output_text.delta\",\"delta\":\"answer\"}\n\n",
@@ -445,7 +369,10 @@ mod tests {
                 .unwrap()
         }
 
-        let router = axum::Router::new().route("/responses", axum::routing::post(respond));
+        let capture = Capture::default();
+        let router = axum::Router::new()
+            .route("/responses", axum::routing::post(respond))
+            .with_state(capture.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
@@ -471,5 +398,13 @@ mod tests {
         assert_eq!(response.usage.total_tokens, Some(7));
         assert!(matches!(rx.try_recv(), Ok(StreamDelta::Content(text)) if text == "answer"));
         assert!(matches!(rx.try_recv(), Ok(StreamDelta::Reasoning(text)) if text == "thinking"));
+
+        let (headers, body) = capture.0.lock().unwrap().take().unwrap();
+        assert_eq!(headers.get("authorization").unwrap(), "Bearer oauth-secret");
+        assert_eq!(headers.get("chatgpt-account-id").unwrap(), "acct_123");
+        assert_eq!(body["model"], "gpt-5.6-sol");
+        assert_eq!(body["instructions"], "use tools");
+        assert_eq!(body["store"], false);
+        assert_eq!(body["stream"], true);
     }
 }

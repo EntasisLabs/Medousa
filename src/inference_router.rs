@@ -132,9 +132,7 @@ pub fn should_advance_fallback(category: TurnFailureCategory) -> bool {
 pub fn should_retry_same_target(category: TurnFailureCategory) -> bool {
     matches!(
         category,
-        TurnFailureCategory::Timeout
-            | TurnFailureCategory::ProviderDown
-            | TurnFailureCategory::Unknown
+        TurnFailureCategory::Timeout | TurnFailureCategory::ProviderDown
     )
 }
 
@@ -275,6 +273,11 @@ mod tests {
     #[test]
     fn timeout_retries_before_advance() {
         assert!(should_retry_same_target(TurnFailureCategory::Timeout));
+    }
+
+    #[test]
+    fn unknown_failures_do_not_replay_the_turn() {
+        assert!(!should_retry_same_target(TurnFailureCategory::Unknown));
     }
 
     #[test]
