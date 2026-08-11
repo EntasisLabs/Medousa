@@ -40,6 +40,18 @@ const PROVIDERS: &[ProviderSpec] = &[
         validation: ProviderValidation::OpenAiCompatible,
     },
     ProviderSpec {
+        id: "openai-codex",
+        label: "OpenAI · ChatGPT account",
+        category: "featured",
+        default_model: "gpt-5.6-sol",
+        needs_api_key: false,
+        supports_custom_base_url: false,
+        default_base_url: None,
+        key_hint: None,
+        blurb: "ChatGPT subscription models with the Medousa runtime",
+        validation: ProviderValidation::AcceptKey,
+    },
+    ProviderSpec {
         id: "anthropic",
         label: "Anthropic",
         category: "featured",
@@ -394,6 +406,9 @@ pub fn providers_catalog() -> ProvidersListResult {
         ],
         providers: PROVIDERS
             .iter()
+            // Phase 1 registers the canonical route but keeps it out of user
+            // selection until the daemon-owned OAuth broker and transport land.
+            .filter(|spec| spec.id != "openai-codex")
             .map(|spec| ProviderCatalogEntry {
                 id: spec.id.to_string(),
                 label: spec.label.to_string(),
@@ -418,6 +433,19 @@ mod tests {
         assert!(find_provider("deepseek").is_some());
         assert!(find_provider("ollama").is_some());
         assert!(find_provider("custom").is_some());
+        assert!(find_provider("openai-codex").is_some());
+    }
+
+    #[test]
+    fn chatgpt_oauth_route_is_registered_but_not_selectable_yet() {
+        let route = find_provider("openai-codex").expect("route metadata");
+        assert!(!route.needs_api_key);
+        assert!(
+            providers_catalog()
+                .providers
+                .iter()
+                .all(|entry| entry.id != "openai-codex")
+        );
     }
 
     #[test]

@@ -1242,19 +1242,15 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
     let mut inference_last_err = String::new();
 
     'inference_targets: for (attempt_index, target) in inference_targets.iter().enumerate() {
-        if !crate::inference_router::target_is_eligible(target, capability_required) {
+        if let Some(reason) =
+            crate::inference_router::target_ineligibility_reason(target, capability_required)
+        {
             sink.notice(crate::inference_router::telemetry_line(
                 inference_profile_kind,
                 attempt_index,
                 inference_target_total,
                 target,
-                if crate::inference_router::provider_needs_api_key(&target.provider)
-                    && !crate::session::provider_api_key_configured(&target.provider)
-                {
-                    "missing_api_key"
-                } else {
-                    "missing_capability"
-                },
+                reason,
             ))
             .await;
             continue;

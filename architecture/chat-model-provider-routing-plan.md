@@ -206,7 +206,7 @@ Exit gate:
 
 ### Phase 1 — explicit inference route and credential requirements
 
-Status: next.
+Status: implemented; validation complete.
 
 Deliverables:
 

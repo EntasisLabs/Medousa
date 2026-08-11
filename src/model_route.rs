@@ -252,6 +252,33 @@ mod tests {
     }
 
     #[test]
+    fn openai_api_and_chatgpt_oauth_routes_remain_distinct() {
+        let api = resolve_model_hint(Some("openai:gpt-5.6-sol"), "anthropic").expect("api");
+        let oauth =
+            resolve_model_hint(Some("openai-codex:gpt-5.6-sol"), "anthropic").expect("oauth");
+        assert_eq!(api, ("openai".into(), "gpt-5.6-sol".into()));
+        assert_eq!(oauth, ("openai-codex".into(), "gpt-5.6-sol".into()));
+        assert_ne!(api, oauth);
+    }
+
+    #[test]
+    fn delegated_stage_route_preserves_chatgpt_oauth_provider() {
+        let mut matrix = StageRoutingMatrix::default_for("openai", "gpt-5.6-sol");
+        matrix.verifier.provider = "openai-codex".into();
+        matrix.verifier.model = "gpt-5.6-sol".into();
+
+        let route = resolve_delegated_llm_route(DelegatedLlmRoute {
+            host_provider: "openai",
+            host_model: "gpt-5.6-sol",
+            model_hint: None,
+            stage_role: Some("verifier"),
+            stage_matrix: Some(&matrix),
+        });
+
+        assert_eq!(route, ("openai-codex".into(), "gpt-5.6-sol".into()));
+    }
+
+    #[test]
     fn cross_provider_base_url_does_not_inherit_host_endpoint() {
         let url = resolve_route_base_url(
             "deepseek",

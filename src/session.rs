@@ -355,6 +355,13 @@ pub fn provider_api_key_configured(provider: &str) -> bool {
     load_provider_api_key(provider).is_some()
 }
 
+/// Native ChatGPT OAuth is introduced in routing Phase 2. Keep the Phase 1
+/// provider route explicitly unavailable rather than probing API-key storage or
+/// another application's credential files.
+pub fn chatgpt_oauth_configured() -> bool {
+    false
+}
+
 pub fn save_provider_api_key(provider: &str, api_key: Option<&str>) {
     let provider = provider.trim().to_ascii_lowercase();
     if provider.is_empty() {
