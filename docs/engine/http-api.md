@@ -246,6 +246,11 @@ cursor/selection, open files, diagnostics, and last verification). The daemon
 formats this for the selected ACP provider; clients should not construct
 provider-specific prompt wrappers.
 
+When the Medousa conversation's effective mode is `coder`, session creation
+must include its Forge `work_id`; otherwise the daemon returns `409 Conflict`.
+The daemon resolves that id and forces the ACP process into the governed
+worktree. General-mode ACP sessions may omit `work_id` for plain chat.
+
 Native interactive turn and turn-ticket requests also accept `code_context`.
 For Coder mode it is advisory editor state only: the daemon re-resolves the
 undertaking, worktree, branch, baseline, dirty paths, and repository

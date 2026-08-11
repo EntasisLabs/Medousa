@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::session::{ConversationTurn, SessionHistorySummary};
 use crate::stage_routing::StageRoutingMatrix;
@@ -10,8 +11,7 @@ pub const DEFAULT_DAEMON_URL: &str = "http://127.0.0.1:7419";
 pub const DEFAULT_DAEMON_PORT: u16 = 7419;
 
 pub fn parse_daemon_bind_port(bind: &str) -> u16 {
-    bind
-        .rsplit(':')
+    bind.rsplit(':')
         .next()
         .and_then(|port| port.parse().ok())
         .unwrap_or(DEFAULT_DAEMON_PORT)
@@ -1019,27 +1019,47 @@ pub struct ArtifactVerificationPolicyInput {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(tag = "command", rename_all = "snake_case")]
 pub enum ArtifactCommandSpec {
-    Lookup { query: Option<String> },
-    Chunks { query: Option<String> },
-    List { limit: usize },
+    Lookup {
+        query: Option<String>,
+    },
+    Chunks {
+        query: Option<String>,
+    },
+    List {
+        limit: usize,
+    },
     Maintain {
         max_per_session: usize,
         max_age_days: i64,
     },
-    Extract { query: Option<String> },
-    Extractions { limit: usize },
+    Extract {
+        query: Option<String>,
+    },
+    Extractions {
+        limit: usize,
+    },
     Pack {
         artifact_query: String,
         max_tokens: usize,
         max_claims: usize,
         max_chunks: usize,
     },
-    Packs { limit: usize },
-    PackUse { query: Option<String> },
+    Packs {
+        limit: usize,
+    },
+    PackUse {
+        query: Option<String>,
+    },
     PackAuto,
-    Verify { query: Option<String> },
-    Verifications { limit: usize },
-    Verification { query: Option<String> },
+    Verify {
+        query: Option<String>,
+    },
+    Verifications {
+        limit: usize,
+    },
+    Verification {
+        query: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1104,9 +1124,15 @@ pub struct RuntimeVerifyPolicyState {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(tag = "command", rename_all = "snake_case")]
 pub enum RuntimeConfigCommandSpec {
-    Model { args: Vec<String> },
-    Depth { mode: Option<String> },
-    Reasoning { mode: Option<String> },
+    Model {
+        args: Vec<String>,
+    },
+    Depth {
+        mode: Option<String>,
+    },
+    Reasoning {
+        mode: Option<String>,
+    },
     VerifyPolicy {
         args: Vec<String>,
         current: RuntimeVerifyPolicyState,
@@ -3310,6 +3336,51 @@ pub struct CreateAgentSessionResponse {
     /// True when the session was attached via ACP `session/resume` (or load).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resumed: Option<bool>,
+    /// Runtime-advertised ACP session controls. Clients must render these
+    /// capability-first rather than assuming every agent supports model or
+    /// reasoning selection.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub config_options: Vec<AgentSessionConfigOption>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentSessionConfigChoice {
+    pub value: Value,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentSessionConfigOption {
+    pub id: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    #[serde(rename = "type")]
+    pub kind: String,
+    #[serde(rename = "currentValue")]
+    pub current_value: Value,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<AgentSessionConfigChoice>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct SetAgentSessionConfigOptionRequest {
+    pub config_id: String,
+    pub value: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct SetAgentSessionConfigOptionResponse {
+    pub agent_session_id: String,
+    pub config_options: Vec<AgentSessionConfigOption>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -56,6 +56,7 @@ function createUndertakingsStore() {
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let eventStreamConnecting = false;
   let eventRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  let eventRevision = $state(0);
   const pendingEventWorkIds = new Set<string>();
 
   const active = $derived(contexts[groupKey()] ?? null);
@@ -367,6 +368,7 @@ function createUndertakingsStore() {
       eventRefreshTimer = null;
       const changed = new Set(pendingEventWorkIds);
       pendingEventWorkIds.clear();
+      eventRevision += 1;
       void refreshList(true);
       const currentActive = contexts[groupKey()];
       const currentId = selectedId || currentActive?.workId || "";
@@ -433,6 +435,7 @@ function createUndertakingsStore() {
     if (eventRefreshTimer) clearTimeout(eventRefreshTimer);
     eventRefreshTimer = null;
     pendingEventWorkIds.clear();
+    eventRevision = 0;
     items = [];
     loading = false;
     error = null;
@@ -464,6 +467,10 @@ function createUndertakingsStore() {
     },
     get active() {
       return active;
+    },
+    /** Increments after coalesced Forge events so live change surfaces can refresh. */
+    get eventRevision() {
+      return eventRevision;
     },
     refreshList,
     select,

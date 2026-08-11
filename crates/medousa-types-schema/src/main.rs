@@ -143,6 +143,10 @@ fn main() {
     export_type!(schemas, AgentRuntimeListResponse, "AgentRuntimeListResponse");
     export_type!(schemas, CreateAgentSessionRequest, "CreateAgentSessionRequest");
     export_type!(schemas, CreateAgentSessionResponse, "CreateAgentSessionResponse");
+    export_type!(schemas, AgentSessionConfigChoice, "AgentSessionConfigChoice");
+    export_type!(schemas, AgentSessionConfigOption, "AgentSessionConfigOption");
+    export_type!(schemas, SetAgentSessionConfigOptionRequest, "SetAgentSessionConfigOptionRequest");
+    export_type!(schemas, SetAgentSessionConfigOptionResponse, "SetAgentSessionConfigOptionResponse");
     export_type!(schemas, AgentSessionPromptRequest, "AgentSessionPromptRequest");
     export_type!(schemas, AgentSessionPromptResponse, "AgentSessionPromptResponse");
     export_type!(schemas, CancelAgentSessionResponse, "CancelAgentSessionResponse");

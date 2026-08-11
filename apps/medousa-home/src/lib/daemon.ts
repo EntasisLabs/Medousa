@@ -438,6 +438,23 @@ export type CreateAgentSessionResponse = {
   accepted_at_utc?: string;
   work_id?: string | null;
   resumed?: boolean | null;
+  config_options?: AgentSessionConfigOption[];
+};
+
+export type AgentSessionConfigChoice = {
+  value: unknown;
+  name: string;
+  description?: string | null;
+};
+
+export type AgentSessionConfigOption = {
+  id: string;
+  name: string;
+  description?: string | null;
+  category?: string | null;
+  type: string;
+  currentValue: unknown;
+  options?: AgentSessionConfigChoice[];
 };
 
 export type AgentSessionPromptRequest = {
@@ -465,6 +482,17 @@ export async function promptAgentSession(
   return invoke("agents_prompt", {
     agentSessionId,
     request: { prompt, code_context: codeContext ?? undefined },
+  });
+}
+
+export async function setAgentSessionConfigOption(
+  agentSessionId: string,
+  configId: string,
+  value: unknown,
+): Promise<{ agent_session_id: string; config_options: AgentSessionConfigOption[] }> {
+  return invoke("agents_set_config_option", {
+    agentSessionId,
+    request: { config_id: configId, value },
   });
 }
 

@@ -320,7 +320,9 @@ pub fn build_feature_routers(
         ))
         .merge(workspace_router)
         .merge(crate::daemon::forge_api::forge_router(state.clone()))
-        .merge(crate::daemon::forge_preview::forge_preview_router(state.clone()))
+        .merge(crate::daemon::forge_preview::forge_preview_router(
+            state.clone(),
+        ))
         .merge(crate::daemon::coding_engine_host::coding_engine_router(
             state.clone(),
         ))
@@ -400,7 +402,10 @@ pub fn build_core_router(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/v1/stats", get(stats))
         .route("/v1/runtime/defaults", get(runtime_defaults))
-        .route("/v1/agent-modes", get(crate::daemon_handlers::list_agent_modes))
+        .route(
+            "/v1/agent-modes",
+            get(crate::daemon_handlers::list_agent_modes),
+        )
         .route(
             "/v1/agent-modes/policy",
             get(crate::daemon_handlers::get_agent_mode_transition_policy)
@@ -496,6 +501,10 @@ pub fn build_core_router(state: AppState) -> Router {
         .route(
             "/v1/agents/sessions/{agent_session_id}/prompt",
             post(crate::daemon::agents::prompt_agent_session),
+        )
+        .route(
+            "/v1/agents/sessions/{agent_session_id}/config",
+            post(crate::daemon::agents::set_agent_session_config_option),
         )
         .route(
             "/v1/agents/sessions/{agent_session_id}/stream",

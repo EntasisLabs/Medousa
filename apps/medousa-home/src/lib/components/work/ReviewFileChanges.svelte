@@ -16,7 +16,7 @@
     review: ReviewProjection;
     busy?: boolean;
     onOpenFile: (path: string, line?: number) => void | Promise<void>;
-    onRestore: (comparison: ReviewFileDiff) => Promise<void>;
+    onRestore?: (comparison: ReviewFileDiff) => Promise<void>;
     onComment?: (input: {
       path: string;
       side: "new" | "old";
@@ -469,10 +469,12 @@
                               collapsedPaths={[]}
                               onToggleCollapsed={() => {}}
                               onOpenFile={(path, line) => onOpenFile(path, line)}
-                              onRestoreFile={async (path) => {
-                                const comparison = fileDiffs[path];
-                                if (comparison) await onRestore(comparison);
-                              }}
+                              onRestoreFile={onRestore
+                                ? async (path) => {
+                                    const comparison = fileDiffs[path];
+                                    if (comparison) await onRestore(comparison);
+                                  }
+                                : undefined}
                               onComment={onComment
                                 ? (input) =>
                                     onComment({
@@ -506,10 +508,12 @@
                       collapsedPaths={[]}
                       onToggleCollapsed={() => {}}
                       onOpenFile={(path, line) => onOpenFile(path, line)}
-                      onRestoreFile={async (path) => {
-                        const comparison = fileDiffs[path];
-                        if (comparison) await onRestore(comparison);
-                      }}
+                      onRestoreFile={onRestore
+                        ? async (path) => {
+                            const comparison = fileDiffs[path];
+                            if (comparison) await onRestore(comparison);
+                          }
+                        : undefined}
                       onComment={onComment
                         ? (input) =>
                             onComment({
@@ -531,10 +535,12 @@
                     collapsedPaths={[]}
                     onToggleCollapsed={() => {}}
                     onOpenFile={(path, line) => onOpenFile(path, line)}
-                    onRestoreFile={async (path) => {
-                      const comparison = fileDiffs[path];
-                      if (comparison) await onRestore(comparison);
-                    }}
+                    onRestoreFile={onRestore
+                      ? async (path) => {
+                          const comparison = fileDiffs[path];
+                          if (comparison) await onRestore(comparison);
+                        }
+                      : undefined}
                     onComment={onComment
                       ? (input) =>
                           onComment({

@@ -734,6 +734,89 @@
       }
     }
   },
+  "AgentSessionConfigChoice": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentSessionConfigChoice",
+    "type": "object",
+    "required": [
+      "name",
+      "value"
+    ],
+    "properties": {
+      "description": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "name": {
+        "type": "string"
+      },
+      "value": true
+    }
+  },
+  "AgentSessionConfigOption": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentSessionConfigOption",
+    "type": "object",
+    "required": [
+      "currentValue",
+      "id",
+      "name",
+      "type"
+    ],
+    "properties": {
+      "category": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "currentValue": true,
+      "description": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "id": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "options": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/AgentSessionConfigChoice"
+        }
+      },
+      "type": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "AgentSessionConfigChoice": {
+        "type": "object",
+        "required": [
+          "name",
+          "value"
+        ],
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "value": true
+        }
+      }
+    }
+  },
   "AgentSessionPromptRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "AgentSessionPromptRequest",
@@ -2924,6 +3007,13 @@
       "agent_session_id": {
         "type": "string"
       },
+      "config_options": {
+        "description": "Runtime-advertised ACP session controls. Clients must render these capability-first rather than assuming every agent supports model or reasoning selection.",
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/AgentSessionConfigOption"
+        }
+      },
       "phase": {
         "type": "string"
       },
@@ -2951,6 +3041,66 @@
           "string",
           "null"
         ]
+      }
+    },
+    "definitions": {
+      "AgentSessionConfigChoice": {
+        "type": "object",
+        "required": [
+          "name",
+          "value"
+        ],
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "value": true
+        }
+      },
+      "AgentSessionConfigOption": {
+        "type": "object",
+        "required": [
+          "currentValue",
+          "id",
+          "name",
+          "type"
+        ],
+        "properties": {
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "currentValue": true,
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/AgentSessionConfigChoice"
+            }
+          },
+          "type": {
+            "type": "string"
+          }
+        }
       }
     }
   },
@@ -14989,6 +15139,101 @@
       },
       "session_id": {
         "type": "string"
+      }
+    }
+  },
+  "SetAgentSessionConfigOptionRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SetAgentSessionConfigOptionRequest",
+    "type": "object",
+    "required": [
+      "config_id",
+      "value"
+    ],
+    "properties": {
+      "config_id": {
+        "type": "string"
+      },
+      "value": true
+    }
+  },
+  "SetAgentSessionConfigOptionResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SetAgentSessionConfigOptionResponse",
+    "type": "object",
+    "required": [
+      "agent_session_id",
+      "config_options"
+    ],
+    "properties": {
+      "agent_session_id": {
+        "type": "string"
+      },
+      "config_options": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/AgentSessionConfigOption"
+        }
+      }
+    },
+    "definitions": {
+      "AgentSessionConfigChoice": {
+        "type": "object",
+        "required": [
+          "name",
+          "value"
+        ],
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "value": true
+        }
+      },
+      "AgentSessionConfigOption": {
+        "type": "object",
+        "required": [
+          "currentValue",
+          "id",
+          "name",
+          "type"
+        ],
+        "properties": {
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "currentValue": true,
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/AgentSessionConfigChoice"
+            }
+          },
+          "type": {
+            "type": "string"
+          }
+        }
       }
     }
   },

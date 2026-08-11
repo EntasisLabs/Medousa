@@ -46,6 +46,13 @@ current message through a restricted setup phase: it can list, bind, or create
 a project, but receives no repository mutation or command authority until the
 following bound turn.
 
+Cursor and Codex start only after the conversation has a project. Medousa
+resolves that durable binding on the workshop daemon and launches the external
+agent inside the project's governed working copy. Switching projects stops the
+old agent session and starts or resumes it in the newly selected project;
+detaching a project stops the project-bound agent instead of leaving it active
+in the previous folder. Plain General-mode external chats may remain unbound.
+
 If repository or tree APIs return 404, Medousa reports that the workshop daemon
 is older than the project tools — rebuild and restart `medousa_daemon` from this
 checkout rather than showing a fake-ready empty editor. If the project has no
@@ -252,10 +259,24 @@ impact.”
 ## Review and Understand
 
 Review starts by answering what this seal did and why each file changed, then
-lets you dig into symbols and diffs only when something smells wrong. It opens
-as a **separate Workshop tab** for the project. Human edits, coding-agent
-attempts, and Terminal work all land on that same Review — there is no separate
-“user commit” center.
+lets you dig into symbols and diffs only when something smells wrong. It can
+open from a bound Coder conversation without leaving chat, or as a **separate
+Workshop tab** for deeper editing. Human edits, coding-agent attempts, and
+Terminal work all land on that same Review — there is no separate “user commit”
+center.
+
+While a coding attempt is still active, the bottom of its conversation shows a
+live **Working changes** receipt with the current file inventory and line
+counts. **Review** opens a responsive chat sheet backed by the same baseline
+diffs used in Code. When the attempt seals, the receipt becomes **Ready for
+review** and adds verification and risk signals. This is intentionally a
+workspace-wide change receipt; it does not claim that one assistant message
+authored every displayed edit.
+
+Sealed diffs support the same line comments inside chat. Open comments are
+carried into **Ask Medousa to revise**, which places the revision request in the
+composer for inspection before sending. **Open in Code** remains available when
+the task needs direct editing or the full project review workflow.
 
 The first viewport shows an **outcome** line, quiet status chips (who wrote it,
 checks, follow-up to your comments), and a **file skim**: path, symbol count

@@ -2,7 +2,8 @@ use medousa_types::{
     AgentPermissionRequestListResponse, AgentPermissionResolveRequest,
     AgentPermissionResolveResponse, AgentRuntimeListResponse, AgentSessionPromptRequest,
     AgentSessionPromptResponse, CancelAgentSessionResponse, CreateAgentSessionRequest,
-    CreateAgentSessionResponse,
+    CreateAgentSessionResponse, SetAgentSessionConfigOptionRequest,
+    SetAgentSessionConfigOptionResponse,
 };
 use tauri::State;
 
@@ -41,6 +42,19 @@ pub async fn agents_prompt(
     client(&state)
         .agents()
         .prompt(agent_session_id.trim(), &request)
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn agents_set_config_option(
+    state: State<'_, DaemonState>,
+    agent_session_id: String,
+    request: SetAgentSessionConfigOptionRequest,
+) -> Result<SetAgentSessionConfigOptionResponse, String> {
+    client(&state)
+        .agents()
+        .set_config_option(agent_session_id.trim(), &request)
         .await
         .map_err(sdk_error)
 }

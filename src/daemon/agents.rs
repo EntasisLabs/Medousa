@@ -16,11 +16,12 @@ use medousa_acp_client::{
 };
 use medousa_forge::model::WorkId;
 use medousa_types::{
-    AgentPermissionRequestListQuery, AgentPermissionRequestListResponse,
+    AgentModeId, AgentPermissionRequestListQuery, AgentPermissionRequestListResponse,
     AgentPermissionResolveRequest, AgentPermissionResolveResponse, AgentRuntimeInfo,
-    AgentRuntimeListResponse, AgentSessionPromptRequest, AgentSessionPromptResponse,
-    CancelAgentSessionResponse, CodeIntentContext, CreateAgentSessionRequest,
-    CreateAgentSessionResponse, InteractiveTurnStreamEvent,
+    AgentRuntimeListResponse, AgentSessionConfigOption, AgentSessionPromptRequest,
+    AgentSessionPromptResponse, CancelAgentSessionResponse, CodeIntentContext,
+    CreateAgentSessionRequest, CreateAgentSessionResponse, InteractiveTurnStreamEvent,
+    SetAgentSessionConfigOptionRequest, SetAgentSessionConfigOptionResponse,
 };
 use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
@@ -105,6 +106,10 @@ impl TryFrom<CreateAgentSessionRequest> for CreateAgentSessionCommand {
     }
 }
 
+fn coder_session_missing_project(mode: AgentModeId, has_work_id: bool) -> bool {
+    mode == AgentModeId::Coder && !has_work_id
+}
+
 #[derive(Debug)]
 struct AgentSessionPromptCommand {
     prompt: RequiredContent,
@@ -166,6 +171,15 @@ pub async fn create_agent_session(
         return Err((
             StatusCode::BAD_REQUEST,
             "medousa runtime uses /v1/turns — pick cursor or codex for /v1/agents".into(),
+        ));
+    }
+
+    let session_mode = crate::agent_mode_state::get_session_mode(&session_id)
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?;
+    if coder_session_missing_project(session_mode.effective_mode, command.work_id.is_some()) {
+        return Err((
+            StatusCode::CONFLICT,
+            "choose or create a project before starting Cursor or Codex in Coder mode".into(),
         ));
     }
 
@@ -329,6 +343,8 @@ pub async fn create_agent_session(
                 format!("ACP create_or_resume_session failed: {e}"),
             )
         })?;
+    let config_options =
+        parse_config_options(ACP_CLIENT.session_config_options(&acp_session).await);
 
     let adapter = TurnStreamRegistryPortAdapter::new(state.interactive_turn_streams.clone());
     if !adapter.register_stream(&agent_session_id).await {
@@ -408,6 +424,49 @@ pub async fn create_agent_session(
         accepted_at_utc,
         work_id: forge_work_id.map(|id| id.to_string()),
         resumed: Some(resumed),
+        config_options,
+    }))
+}
+
+fn parse_config_options(values: Vec<serde_json::Value>) -> Vec<AgentSessionConfigOption> {
+    values
+        .into_iter()
+        .filter_map(|value| match serde_json::from_value(value) {
+            Ok(option) => Some(option),
+            Err(error) => {
+                tracing::warn!(%error, "ignoring malformed ACP session config option");
+                None
+            }
+        })
+        .collect()
+}
+
+pub async fn set_agent_session_config_option(
+    AxumPath(agent_session_id): AxumPath<String>,
+    Json(body): Json<SetAgentSessionConfigOptionRequest>,
+) -> Result<Json<SetAgentSessionConfigOptionResponse>, (StatusCode, String)> {
+    let config_id = TrimmedText::new(body.config_id)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "config_id is required".into()))?;
+    let live = {
+        let guard = AGENT_SESSIONS.read().await;
+        guard
+            .by_agent_session
+            .get(agent_session_id.trim())
+            .cloned()
+            .ok_or_else(|| {
+                (
+                    StatusCode::NOT_FOUND,
+                    format!("unknown agent session '{agent_session_id}'"),
+                )
+            })?
+    };
+    let values = ACP_CLIENT
+        .set_session_config_option(&live.acp_session_id, config_id.as_str(), body.value)
+        .await
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    Ok(Json(SetAgentSessionConfigOptionResponse {
+        agent_session_id: live.agent_session_id,
+        config_options: parse_config_options(values),
     }))
 }
 
@@ -1298,5 +1357,12 @@ mod tests {
         })
         .expect_err("blank prompt should fail");
         assert_eq!(prompt_error, "prompt is required");
+    }
+
+    #[test]
+    fn coder_external_agents_require_a_project_binding() {
+        assert!(coder_session_missing_project(AgentModeId::Coder, false));
+        assert!(!coder_session_missing_project(AgentModeId::Coder, true));
+        assert!(!coder_session_missing_project(AgentModeId::General, false));
     }
 }
