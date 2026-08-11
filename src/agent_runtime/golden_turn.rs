@@ -89,9 +89,7 @@ fn tool_response(calls: Vec<ToolCall>) -> ChatResponse {
 }
 
 /// Deterministic scripted chat client. Each model round pops the next scripted
-/// response; once the script is exhausted it saturates on the final step so the
-/// loop's internal stream→non-stream retry (which issues an extra call for a
-/// text-only streamed round) observes identical output rather than diverging.
+/// response; once the script is exhausted it saturates on the final step.
 struct ScriptedClient {
     steps: Vec<ChatResponse>,
     idx: Mutex<usize>,
@@ -348,6 +346,7 @@ struct GoldenOutcome {
     events: Vec<Ev>,
     event_kinds: Vec<String>,
     streamed: Vec<String>,
+    request_count: usize,
 }
 
 /// Run the real tool loop against a scripted model and capture the observable
@@ -365,8 +364,9 @@ async fn run_golden(
     registry.register_tool(CognitionTurnFinishTool).unwrap();
     registry.register_tool(CognitionTurnCheckpointTool).unwrap();
 
+    let client = Arc::new(ScriptedClient::new(steps));
     let pipeline = MedousaToolLoopPipeline::new(
-        PromptExecutionPipeline::new(Arc::new(ScriptedClient::new(steps))),
+        PromptExecutionPipeline::new(client.clone()),
         Arc::new(registry),
     );
 
@@ -437,6 +437,7 @@ async fn run_golden(
         events: sink_concrete.snapshot(),
         event_kinds: sink_concrete.kinds(),
         streamed: streamed.lock().unwrap().clone(),
+        request_count: client.requests().len(),
     }
 }
 
@@ -772,6 +773,7 @@ async fn golden_streamed_content_reaches_sink() {
 
     assert_eq!(outcome.termination_reason, "no_tools_prose");
     assert_eq!(outcome.rounds_executed, 1);
+    assert_eq!(outcome.request_count, 1);
     assert_eq!(outcome.streamed, vec![first.to_string()]);
     assert_eq!(
         outcome
