@@ -143,7 +143,9 @@ brain**.
 | Can’t chat / engine down | **Settings → Connection** — restart engine; wait until health looks good |
 | Offline path blocked | **Settings → Packages** — install Offline brain, then download a model |
 | macOS blocks the app | Right-click → Open the first time, or allow in Privacy & Security |
-| Windows console flash | Rebuild with current Home — daemon should spawn without a console window |
+| Windows console flash / PowerShell windows popping | Update to current packages; workshop sidecars and language servers spawn with no console window. Restart the workshop after upgrading shell-session / coding-engine |
+| Terminal or Code returns 503 / “health timed out” | Settings → Packages — reinstall **shell-session** and **coding-engine**, then restart the workshop. Closing flashed console windows kills those hosts |
+| C# Problems on every non-`Program.cs` file | Install `csharp-ls` (`dotnet tool install -g csharp-ls`) or OmniSharp on PATH; open a folder with a `.sln`/`.csproj` so the server loads the project instead of single-file mode |
 
 Still stuck? [Doctor & health](../runbooks/doctor-and-health.md) (power users) or
 open a GitHub issue (not for security — see [SECURITY.md](../../SECURITY.md)).

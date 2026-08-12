@@ -62,26 +62,49 @@ fn path_to_file_uri(path: &Path) -> String {
 }
 
 pub(crate) fn initialization_options(language: &LanguageId) -> Value {
-    if language.as_str() != "rust" {
-        return Value::Null;
+    match language.as_str() {
+        "rust" => json!({
+            "cachePriming": { "enable": false },
+            "cargo": {
+                "allTargets": false,
+                "autoreload": false,
+                "buildScripts": { "enable": false }
+            },
+            "checkOnSave": false,
+            "lru": { "capacity": 64 },
+            "numThreads": 2,
+            "procMacro": { "enable": false }
+        }),
+        // Prefer MSBuild/SDK project load over single-file script/"program"
+        // analysis so non-entry .cs files parse as ordinary compilation units.
+        "csharp" => json!({
+            "RoslynExtensionsOptions": {
+                "EnableAnalyzersSupport": true,
+                "EnableImportCompletion": true
+            },
+            "FormattingOptions": {
+                "EnableEditorConfigSupport": true
+            },
+            "MsBuild": {
+                "LoadProjectsOnDemand": false
+            },
+            "Sdk": {
+                "IncludePrereleases": true
+            }
+        }),
+        _ => Value::Null,
     }
-    json!({
-        "cachePriming": { "enable": false },
-        "cargo": {
-            "allTargets": false,
-            "autoreload": false,
-            "buildScripts": { "enable": false }
-        },
-        "checkOnSave": false,
-        "lru": { "capacity": 64 },
-        "numThreads": 2,
-        "procMacro": { "enable": false }
-    })
 }
 
 pub(crate) fn workspace_settings(language: &LanguageId) -> Value {
     match language.as_str() {
         "rust" => json!({ "rust-analyzer": initialization_options(language) }),
+        "csharp" => json!({
+            "csharp": {
+                "enable": true
+            },
+            "omnisharp": initialization_options(language)
+        }),
         "svelte" => json!({
             "svelte": {
                 "plugin": {
@@ -270,13 +293,23 @@ impl LiveSession {
         self.lifecycle
             .initializing(format!("Initializing {}", self.key.language))
             .await;
+        let language_root = &self.key.language_root;
+        let root_name = language_root
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("workspace");
         let init = json!({
             "jsonrpc": "2.0",
             "id": id,
             "method": "initialize",
             "params": {
-                "processId": null,
+                "processId": std::process::id(),
                 "rootUri": root_uri,
+                "rootPath": language_root.to_string_lossy(),
+                "workspaceFolders": [{
+                    "uri": root_uri,
+                    "name": root_name
+                }],
                 "initializationOptions": initialization_options(&self.key.language),
                 "capabilities": {
                     "textDocument": {
@@ -311,7 +344,7 @@ impl LiveSession {
         // initialize response past this listener.
         let mut rx = self.outbound.subscribe();
         self.write_message(&init.to_string()).await?;
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
         let capabilities = loop {
             self.ensure_open()?;
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
@@ -647,6 +680,19 @@ mod tests {
         assert_eq!(
             initialization_options(&LanguageId::new("typescript")),
             Value::Null
+        );
+    }
+
+    #[test]
+    fn csharp_sessions_request_project_aware_omnisharp_options() {
+        let options = initialization_options(&LanguageId::new("csharp"));
+        assert_eq!(
+            options.pointer("/MsBuild/LoadProjectsOnDemand"),
+            Some(&json!(false))
+        );
+        assert_eq!(
+            options.pointer("/RoslynExtensionsOptions/EnableAnalyzersSupport"),
+            Some(&json!(true))
         );
     }
 

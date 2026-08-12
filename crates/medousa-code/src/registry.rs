@@ -174,8 +174,8 @@ impl ServerRegistry {
         reg.register(stdio_spec(
             "csharp",
             "omnisharp",
-            &["*.sln", "*.csproj"],
-            &["-lsp"],
+            &["*.sln", "*.slnx", "*.csproj"],
+            &["-lsp", "-z"],
             &["cs"],
             None,
         ));
@@ -396,6 +396,22 @@ mod tests {
         std::fs::write(project.join("App.csproj"), "<Project></Project>").unwrap();
         let file = project.join("Program.cs");
         std::fs::write(&file, "class Program {}").unwrap();
+        let root = ServerRegistry::with_defaults().resolve_root(
+            &LanguageId::new("csharp"),
+            &file,
+            &project,
+        );
+        assert_eq!(root, project.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn resolve_root_supports_slnx_markers() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(project.join("App.slnx"), "").unwrap();
+        let file = project.join("Lib.cs");
+        std::fs::write(&file, "namespace Lib; public class A {}").unwrap();
         let root = ServerRegistry::with_defaults().resolve_root(
             &LanguageId::new("csharp"),
             &file,

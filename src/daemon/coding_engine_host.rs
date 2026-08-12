@@ -26,6 +26,9 @@ use crate::paths::medousa_data_dir;
 
 const DEFAULT_BIND: &str = "127.0.0.1:7861";
 const EXPECTED_API_REVISION: u32 = 1;
+/// Windows Defender / cold start often exceeds the old 1s probe window.
+const HEALTH_WAIT_ATTEMPTS: u32 = 100;
+const HEALTH_WAIT_INTERVAL_MS: u64 = 50;
 
 #[derive(Debug, Default)]
 pub struct CodingEngineHost {
@@ -282,6 +285,7 @@ pub async fn ensure_coding_engine(host: &CodingEngineHost) -> CodingEngineInfo {
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .kill_on_drop(true);
+            medousa_host::hide_tokio_subprocess_window(&mut cmd);
             for root in &required_roots {
                 cmd.arg("--allow-root").arg(root);
             }
@@ -297,8 +301,8 @@ pub async fn ensure_coding_engine(host: &CodingEngineHost) -> CodingEngineInfo {
         }
     }
 
-    for _ in 0..20 {
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    for _ in 0..HEALTH_WAIT_ATTEMPTS {
+        tokio::time::sleep(std::time::Duration::from_millis(HEALTH_WAIT_INTERVAL_MS)).await;
         match probe_health(&health_url, &required_roots).await {
             HealthProbe::Compatible => return info(true, "coding engine started".into()),
             HealthProbe::Incompatible(reason) => {
@@ -308,6 +312,14 @@ pub async fn ensure_coding_engine(host: &CodingEngineHost) -> CodingEngineInfo {
                 );
             }
             HealthProbe::Unreachable => {}
+        }
+    }
+
+    {
+        let mut guard = host.child.lock().await;
+        if let Some(mut child) = guard.take() {
+            let _ = child.start_kill();
+            tracing::warn!("killed medousa-code after health timeout so the next request can respawn");
         }
     }
 

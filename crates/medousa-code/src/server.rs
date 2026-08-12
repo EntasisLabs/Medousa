@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 use tower_http::cors::CorsLayer;
 use url::Url;
 
-use crate::backend::{LanguageServerBackend, command_available, spawn_backend};
+use crate::backend::{LanguageServerBackend, command_available, csharp_tooling_available, spawn_backend};
 use crate::detamu::{DetamuDocumentSnapshot, DetamuServerHandle};
 use crate::diagnostics::WorkspaceDiagnosticStore;
 use crate::document::DocumentStore;
@@ -808,7 +808,13 @@ async fn language_matrix(
             let command = spec.kind.command_name().map(str::to_string);
             let binary_available = match &spec.kind {
                 crate::registry::ServerKind::Grapheme => true,
-                crate::registry::ServerKind::Stdio { command } => command_available(command),
+                crate::registry::ServerKind::Stdio { command } => {
+                    if spec.language.as_str() == "csharp" {
+                        csharp_tooling_available()
+                    } else {
+                        command_available(command)
+                    }
+                }
             };
             json!({
                 "language": spec.language,

@@ -249,6 +249,19 @@ pub fn hide_subprocess_window(command: &mut Command) {
 #[cfg(not(windows))]
 pub fn hide_subprocess_window(_command: &mut Command) {}
 
+/// Same as [`hide_subprocess_window`] for `tokio::process::Command`.
+/// Sidecars (`medousa-session` / `medousa-code`) and language servers must use
+/// this on Windows or console flashes spam the desktop and closing them kills
+/// the child before health probes succeed.
+#[cfg(windows)]
+pub fn hide_tokio_subprocess_window(command: &mut tokio::process::Command) {
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+pub fn hide_tokio_subprocess_window(_command: &mut tokio::process::Command) {}
+
 #[cfg(test)]
 mod tests {
     use super::WORKSHOP_SIDECAR_PROCESS_NAMES;

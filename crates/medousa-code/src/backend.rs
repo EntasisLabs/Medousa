@@ -45,10 +45,72 @@ pub async fn spawn_backend(
             .await;
             Ok(Arc::new(GraphemeBackend::spawn()))
         }
-        ServerKind::Stdio { command } => Ok(Arc::new(
-            StdioBackend::spawn(command, &spec.args, workspace_root, logs).await?,
-        )),
+        ServerKind::Stdio { command } => {
+            let (command, args) = resolve_stdio_launch(spec.language.as_str(), command, &spec.args, workspace_root);
+            Ok(Arc::new(
+                StdioBackend::spawn(&command, &args, workspace_root, logs).await?,
+            ))
+        }
     }
+}
+
+/// Prefer `csharp-ls` when present; otherwise OmniSharp with LSP + zero-based
+/// indices. Attach an explicit solution/project so library files load as part
+/// of the MSBuild project instead of fragile single-file "program" analysis.
+pub fn resolve_csharp_launch(workspace_root: &std::path::Path) -> (String, Vec<String>) {
+    let solution = discover_csharp_project(workspace_root);
+    if command_available("csharp-ls") {
+        let mut args = Vec::new();
+        if let Some(solution) = solution {
+            args.push("--solution".into());
+            args.push(solution.to_string_lossy().into_owned());
+        }
+        return ("csharp-ls".into(), args);
+    }
+    let mut args = vec!["-lsp".into(), "-z".into()];
+    if let Some(solution) = solution {
+        args.push("-s".into());
+        args.push(solution.to_string_lossy().into_owned());
+    }
+    ("omnisharp".into(), args)
+}
+
+fn resolve_stdio_launch(
+    language: &str,
+    command: &str,
+    args: &[String],
+    workspace_root: &std::path::Path,
+) -> (String, Vec<String>) {
+    if language == "csharp" {
+        return resolve_csharp_launch(workspace_root);
+    }
+    (command.to_string(), args.to_vec())
+}
+
+fn discover_csharp_project(workspace_root: &std::path::Path) -> Option<PathBuf> {
+    let mut solutions = Vec::new();
+    let mut projects = Vec::new();
+    let entries = std::fs::read_dir(workspace_root).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        let lower = name.to_ascii_lowercase();
+        if lower.ends_with(".sln") || lower.ends_with(".slnx") {
+            solutions.push(path);
+        } else if lower.ends_with(".csproj") {
+            projects.push(path);
+        }
+    }
+    solutions.sort();
+    projects.sort();
+    solutions.into_iter().next().or_else(|| projects.into_iter().next())
+}
+
+/// Whether csharp tooling is available via csharp-ls or OmniSharp.
+pub fn csharp_tooling_available() -> bool {
+    command_available("csharp-ls") || command_available("omnisharp")
 }
 
 fn data_dir_bin() -> Option<PathBuf> {
@@ -212,13 +274,16 @@ impl StdioBackend {
             ),
         )
         .await;
-        let mut child = Command::new(&resolved)
+        let mut child_cmd = Command::new(&resolved);
+        child_cmd
             .args(args)
             .current_dir(workspace_root)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .kill_on_drop(true)
+            .kill_on_drop(true);
+        medousa_host::hide_tokio_subprocess_window(&mut child_cmd);
+        let mut child = child_cmd
             .spawn()
             .map_err(|e| BackendError::Spawn(format!("{}: {e}", resolved.display())))?;
         let stdin = child
@@ -274,5 +339,35 @@ impl LanguageServerBackend for StdioBackend {
         if let Some(stderr_task) = self.stderr_task.lock().await.take() {
             stderr_task.abort();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn csharp_launch_prefers_solution_over_csproj() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("App.csproj"), "<Project></Project>").unwrap();
+        std::fs::write(dir.path().join("App.sln"), "").unwrap();
+        let (command, args) = resolve_csharp_launch(dir.path());
+        assert!(command == "csharp-ls" || command == "omnisharp");
+        assert!(args.iter().any(|arg| arg.ends_with("App.sln")));
+        if command == "omnisharp" {
+            assert!(args.iter().any(|arg| arg == "-lsp"));
+            assert!(args.iter().any(|arg| arg == "-z"));
+            assert!(args.windows(2).any(|pair| pair[0] == "-s"));
+        } else {
+            assert!(args.windows(2).any(|pair| pair[0] == "--solution"));
+        }
+    }
+
+    #[test]
+    fn csharp_launch_falls_back_to_csproj() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Lib.csproj"), "<Project></Project>").unwrap();
+        let (_command, args) = resolve_csharp_launch(dir.path());
+        assert!(args.iter().any(|arg| arg.ends_with("Lib.csproj")));
     }
 }
