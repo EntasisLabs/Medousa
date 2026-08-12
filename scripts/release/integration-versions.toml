@@ -1,7 +1,7 @@
 # Companion integrations are versioned independently from the Medousa train.
 
 [integrations]
-vscode = "0.1.0"
-neovim = "0.1.0"
-browser = "0.1.0"
-obsidian = "0.1.0"
+vscode = "0.2.0"
+neovim = "0.2.0"
+browser = "0.2.0"
+obsidian = "0.2.0"

@@ -1,6 +1,6 @@
 {
   "name": "medousa-browser",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A page-aware Medousa companion for Chromium browsers",
   "private": true,
   "type": "module",

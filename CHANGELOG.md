@@ -7,6 +7,31 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-08-11
+
+### Added
+
+- **Conversation modes everywhere** — General and Coder modes, governed project selection, and project creation now follow daemon-owned conversations across Medousa, VS Code, and Neovim.
+- **Account-backed agent routes** — connect ChatGPT for Medousa's native runtime or run Codex and Cursor as external agents inside the conversation's governed project worktree.
+- **Code workbench depth** — repository search and replace, cross-file navigation and refactors, Problems and Structure views, streamed tasks, private preview URLs, Git changes, blame, restore, and review comments now share one project workspace.
+- **Durable concurrent coding** — isolated attempt worktrees, checkpoints, bounded working memory, visible subagent evidence, resource coordination, and restart recovery keep parallel agents governable.
+- **Portable Liquid Markdown** — the shared parser and browser renderer let first-party host adapters render Liquid content without importing Medousa's full UI.
+- **Vision attachments** — account-backed chat turns can include bounded image attachments from the composer.
+- **TUI workspace parity** — notes, links, syntax, scrollback, LAN browsing, note conflict handling, sealing, and terminal color support expanded the keyboard-first client.
+
+### Changed
+
+- The runtime and model controls now distinguish Medousa, Codex, Cursor, API-key providers, and the native ChatGPT account route without conflating their credentials or billing paths.
+- First-party tool contracts now use typed runtime boundaries while preserving compatibility schemas and actionable validation errors.
+- Mobile chat, navigation, library, pairing, settings, and home surfaces were aligned with the desktop workshop model.
+- Companion integrations advance to **0.2.0**. VS Code and Obsidian render portable Liquid Markdown; VS Code and Neovim also share the expanded Coder/project workflow. Browser and Neovim continue to render their existing safe Markdown surfaces.
+
+### Fixed
+
+- Stream ownership and completion are deterministic, preventing duplicate assistant responses and premature turn completion.
+- Code tabs, project events, language-server recovery, terminal PTYs, and the Home project selector recover cleanly across navigation and reconnects.
+- Mobile turn ownership and recurring schedule behavior no longer drift during background or navigation transitions.
+
 ## [0.8.0] — 2026-08-02
 
 ### Added
@@ -314,6 +339,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 - Product path is **Home-first**: download the app, chat, then add packages from Settings; Installer remains an advanced/repair escape hatch
 - Connection → Extras and welcome-wizard offline CTAs open Settings → Packages instead of launching the Installer by default
 
+[0.9.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.9.0
 [0.8.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.8.0
 [0.6.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.6.0
 [0.5.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.5.0

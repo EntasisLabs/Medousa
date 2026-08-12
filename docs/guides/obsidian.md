@@ -59,6 +59,11 @@ Click the conversation title in the chat header to search, switch, rename,
 delete, or start conversations. Once a reply settles, its **Copy**, **Save as
 note**, and **Append to note** actions appear beneath the answer.
 
+Assistant replies use Obsidian's Markdown renderer and also support portable
+Liquid Markdown cards, charts, reports, tabs, slides, and actions. Vault-relative
+media stays vault-aware. Home-only chart editing and live feed loading remain in
+Medousa.
+
 ## Note safety
 
 The plugin never silently mutates a note. New notes use create-only daemon

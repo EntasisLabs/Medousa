@@ -12,7 +12,7 @@ From the Medousa repository:
 cd integrations/vscode
 npm install
 npm run package
-code --install-extension medousa-vscode-0.1.0.vsix --force
+code --install-extension medousa-vscode-0.2.0.vsix --force
 ```
 
 Reload VS Code after installing, then select the Medousa icon in the activity
@@ -73,9 +73,11 @@ expiry and auto-accept behavior use the policy configured in Medousa.
 - **+** starts a new conversation.
 - **↗** hands advanced work to Medousa.
 
-Answers support Markdown and fenced code. Code blocks can be copied or inserted
-at the active selection after confirmation. Tool activity stays collapsed and
-approval requests appear only when Medousa needs attention.
+Answers support Markdown, fenced code, and portable Liquid Markdown cards,
+charts, reports, tabs, slides, and actions. Home-only chart editing and live
+feed loading remain in Medousa. Code blocks can be copied or inserted at the
+active selection after confirmation. Tool activity stays collapsed and approval
+requests appear only when Medousa needs attention.
 
 Settled replies include **Copy**, **Share**, and **Library** actions. In VS Code,
 Share copies the reply to the system clipboard so it can be pasted into any
