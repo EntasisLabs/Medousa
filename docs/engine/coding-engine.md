@@ -153,6 +153,11 @@ Lua/Swift). Those servers still resolve from `{dataDir}/bin` or `PATH`; they do
 not yet ship as Medousa package ids, so Repair explains the missing binary
 instead of installing an unrelated pack.
 
+C# prefers `csharp-ls` when it is on `PATH`, otherwise OmniSharp (`-lsp -z`).
+Either way the orchestrator attaches the nearest `.sln` / `.slnx` / `.csproj` in
+the language root so library files load as project members instead of
+single-file “program” analysis.
+
 `.svelte` files resolve a language root from `svelte.config.*` or the nearest
 `package.json` inside the governed worktree. Editor **Repair language support**
 installs `coding-engine` plus the language's package (`langservers` for this

@@ -219,10 +219,6 @@ fn inject_mobile_embed_fix(app: &AppHandle) {
 /// Default bottom tab bar — matches `--mobile-bottom-chrome-height` fallback (5.5rem).
 const MOBILE_BOTTOM_CHROME_DEFAULT: f64 = 88.0;
 
-/// Left nav rail width — must match `.workshop-icon-rail` (`w-[52px]`).
-const NAV_RAIL_WIDTH: f64 = 52.0;
-/// Collapsed activity strip — must match `ACTIVITY_STRIP` in desktopRails.ts.
-const ACTIVITY_STRIP_WIDTH: f64 = 28.0;
 /// Status footer — must match `.workshop-status` `h-8`.
 const STATUS_BAR_HEIGHT: f64 = 32.0;
 /// Work rail — retired from layout (in-motion lives in StatusBar peek). Kept at 0.
@@ -935,24 +931,22 @@ fn chrome_builder(label: &'static str) -> WebviewBuilder<tauri::Wry> {
 
 fn default_embed_layout() -> EmbedLayoutParams {
     EmbedLayoutParams {
-        activity_width: 288.0,
-        activity_collapsed: false,
+        // Activity rail was removed from WorkshopShell; keep the field for
+        // wire compatibility but never reserve horizontal space for it.
+        activity_width: 0.0,
+        activity_collapsed: true,
         work_rail_visible: false,
         content_top: None,
     }
 }
 
-/// Fixed Rust layout for the embedded pane — mirrors pop-out `apply_popout_layout`.
+/// Fixed Rust layout for the embedded pane — last-resort fallback when Freeform
+/// DOM bounds are unavailable. Mirrors current shell chrome (no activity rail).
 fn compute_embedded_bounds(
     window: &tauri::Window,
     params: EmbedLayoutParams,
 ) -> Result<EmbedBounds, String> {
     let (win_w, win_h) = window_inner_logical(window)?;
-    let activity_w = if params.activity_collapsed {
-        ACTIVITY_STRIP_WIDTH
-    } else {
-        params.activity_width.max(ACTIVITY_STRIP_WIDTH)
-    };
     let bottom_chrome = STATUS_BAR_HEIGHT
         + if params.work_rail_visible {
             WORK_RAIL_HEIGHT
@@ -964,10 +958,12 @@ fn compute_embedded_bounds(
         .filter(|value| *value > 0.0)
         .unwrap_or(CHROME_HEIGHT_LOGICAL);
 
+    // Do not reserve a fixed nav rail or activity strip — MasterRail width is
+    // dynamic (0 when collapsed). Freeform DOM measure owns precise placement.
     Ok(EmbedBounds {
-        x: NAV_RAIL_WIDTH,
+        x: 0.0,
         y: chrome_top,
-        width: (win_w - NAV_RAIL_WIDTH - activity_w).max(8.0),
+        width: win_w.max(8.0),
         height: (win_h - chrome_top - bottom_chrome).max(8.0),
     })
 }
@@ -1061,6 +1057,23 @@ fn dom_bounds_to_window_child_bounds(
         y: dom.y + shell_y + adj_y,
         width: dom.width,
         height: dom.height,
+    })
+}
+
+/// Keep child webviews inside the workshop window so a slightly oversized DOM
+/// measure (100vw / flex overflow / zoom) cannot paint under shell chrome.
+fn clamp_embed_bounds_to_window(app: &AppHandle, bounds: EmbedBounds) -> Result<EmbedBounds, String> {
+    let window = workshop_window(app)?;
+    let (win_w, win_h) = window_inner_logical(&window)?;
+    let x = bounds.x.clamp(0.0, (win_w - 8.0).max(0.0));
+    let y = bounds.y.clamp(0.0, (win_h - 8.0).max(0.0));
+    let width = bounds.width.max(8.0).min((win_w - x).max(8.0));
+    let height = bounds.height.max(8.0).min((win_h - y).max(8.0));
+    Ok(EmbedBounds {
+        x,
+        y,
+        width,
+        height,
     })
 }
 
@@ -1588,7 +1601,7 @@ fn apply_embedded_bounds(app: &AppHandle, bounds: EmbedBounds) -> Result<(), Str
 }
 
 fn apply_embedded_dom_bounds(app: &AppHandle, dom: EmbedBounds) -> Result<(), String> {
-    let target = dom_bounds_to_window_child_bounds(app, dom)?;
+    let target = clamp_embed_bounds_to_window(app, dom_bounds_to_window_child_bounds(app, dom)?)?;
     apply_embedded_bounds(app, target)?;
 
     // Gap chase is macOS-only (flipped contentView / title-bar inset mismatch).

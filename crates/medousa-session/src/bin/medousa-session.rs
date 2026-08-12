@@ -1,5 +1,9 @@
 //! medousa-session — workshop shell session host binary.
 
+// Hide the console on Windows release builds when launched as a workshop
+// sidecar (daemon also passes CREATE_NO_WINDOW at spawn).
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use std::net::SocketAddr;
 use std::path::PathBuf;
 

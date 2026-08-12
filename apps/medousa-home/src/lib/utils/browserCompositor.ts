@@ -364,6 +364,7 @@ export function createBrowserCompositor(
 
     if (!resizeListenerBound) {
       window.addEventListener("resize", scheduleLayout);
+      window.addEventListener("medousa-content-zoom-changed", scheduleLayout);
       resizeListenerBound = true;
     }
     void ensureTauriResizeListener();
@@ -379,6 +380,7 @@ export function createBrowserCompositor(
     resizeObserver = null;
     if (resizeListenerBound) {
       window.removeEventListener("resize", scheduleLayout);
+      window.removeEventListener("medousa-content-zoom-changed", scheduleLayout);
       resizeListenerBound = false;
     }
     tauriResizeUnlisten?.();

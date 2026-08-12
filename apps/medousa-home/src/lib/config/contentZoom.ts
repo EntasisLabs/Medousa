@@ -66,7 +66,12 @@ export function applyContentZoomCss(value: number = readContentZoom()): number {
   if (typeof document !== "undefined") {
     clearCssZoomHacks(document.documentElement);
   }
-  void applyNativeWebviewZoom(zoom);
+  void applyNativeWebviewZoom(zoom).then(() => {
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(
+      new CustomEvent("medousa-content-zoom-changed", { detail: { zoom } }),
+    );
+  });
   return zoom;
 }
 

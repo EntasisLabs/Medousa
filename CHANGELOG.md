@@ -7,6 +7,15 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-08-12
+
+### Fixed
+
+- **Windows console spam** — workshop sidecars (`medousa-session`, `medousa-code`), language servers, and Forge script spawns no longer flash visible console windows. Closing those windows no longer kills the host before health succeeds.
+- **Terminal / Review 503 on Windows** — shell-session reaps dead children, both sidecars wait longer for health, and timed-out hosts are cleared so the next request can respawn instead of sticky “health timed out” failures.
+- **C# language server** — prefers `csharp-ls` when available, otherwise OmniSharp with `-lsp -z` and an attached `.sln` / `.csproj`; agent initialize now sends workspace folders so non-entry `.cs` files parse as project members instead of single-file “program” analysis.
+- **Desktop browser width** — the in-app Web surface no longer overflows `100vw` / flex min-content past the shell. Native embed bounds clamp to the window and correct for content zoom so the right edge is not clipped by shell chrome.
+
 ## [0.9.0] — 2026-08-11
 
 ### Added
@@ -339,6 +348,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 - Product path is **Home-first**: download the app, chat, then add packages from Settings; Installer remains an advanced/repair escape hatch
 - Connection → Extras and welcome-wizard offline CTAs open Settings → Packages instead of launching the Installer by default
 
+[0.9.1]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.9.1
 [0.9.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.9.0
 [0.8.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.8.0
 [0.6.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.6.0

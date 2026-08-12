@@ -59,13 +59,15 @@ impl<'a> ScriptAdapter<'a> {
             .ok_or_else(|| ForgeError::EnvironmentDrift("no environment".into()))?;
 
         let started = chrono::Utc::now();
-        let mut child = Command::new(&argv[0])
-            .args(&argv[1..])
+        let mut cmd = Command::new(&argv[0]);
+        cmd.args(&argv[1..])
             .current_dir(&env.worktree)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .env("GIT_TERMINAL_PROMPT", "0")
+            .env("GIT_TERMINAL_PROMPT", "0");
+        medousa_host::hide_subprocess_window(&mut cmd);
+        let mut child = cmd
             .spawn()
             .map_err(|e| ForgeError::Git(format!("failed to spawn {}: {e}", argv[0])))?;
         let pid = child.id();

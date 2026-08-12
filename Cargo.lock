@@ -7443,7 +7443,7 @@ dependencies = [
 
 [[package]]
 name = "medousa"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "a2",
  "anyhow",
@@ -7537,7 +7537,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-acp-client"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7549,7 +7549,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-adapter-common"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anyhow",
  "futures-util",
@@ -7562,7 +7562,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-browser-bridge"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "medousa-browser-lite",
  "once_cell",
@@ -7573,7 +7573,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-browser-lite"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "chrono",
  "once_cell",
@@ -7588,7 +7588,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-code"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7597,6 +7597,7 @@ dependencies = [
  "dirs 5.0.1",
  "futures-util",
  "grapheme-lsp",
+ "medousa-host",
  "serde",
  "serde_json",
  "tempfile",
@@ -7611,7 +7612,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-discord"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anyhow",
  "medousa-adapter-common",
@@ -7624,7 +7625,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-engine"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -7637,7 +7638,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-forge"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "chrono",
  "fs2",
@@ -7653,7 +7654,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-host"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "dirs 5.0.1",
  "libc",
@@ -7664,7 +7665,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-install-support"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "chrono",
  "dirs 6.0.0",
@@ -7683,7 +7684,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-iroh-http"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anyhow",
  "httparse",
@@ -7694,7 +7695,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-local-engine"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anyhow",
  "axum 0.8.9",
@@ -7708,7 +7709,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-local-inference"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anyhow",
  "ash",
@@ -7734,7 +7735,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-mcp-gateway"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anyhow",
  "axum 0.8.9",
@@ -7752,7 +7753,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-mcp-server"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anyhow",
  "reqwest 0.12.28",
@@ -7765,7 +7766,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-sdk"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "bytes",
  "eventsource-stream",
@@ -7781,7 +7782,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-sdk-iroh"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "bytes",
  "futures-util",
@@ -7795,7 +7796,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-session"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7817,7 +7818,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-slack"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anyhow",
  "dirs 5.0.1",
@@ -7833,7 +7834,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-telegram"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anyhow",
  "medousa-adapter-common",
@@ -7847,7 +7848,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-tool-macros"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "async-trait",
  "proc-macro2",
@@ -7861,7 +7862,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-types"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -7875,7 +7876,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-types-schema"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "medousa-types",
  "schemars 0.8.22",

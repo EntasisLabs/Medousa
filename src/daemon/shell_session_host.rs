@@ -26,6 +26,9 @@ use crate::paths::medousa_data_dir;
 
 const DEFAULT_BIND: &str = "127.0.0.1:7862";
 const EXPECTED_API_REVISION: u32 = 3;
+/// Windows Defender / cold start often exceeds the old 1s probe window.
+const HEALTH_WAIT_ATTEMPTS: u32 = 100;
+const HEALTH_WAIT_INTERVAL_MS: u64 = 50;
 
 #[derive(Debug, Default)]
 pub struct ShellSessionHost {
@@ -208,6 +211,19 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
 
     {
         let mut guard = host.child.lock().await;
+        if let Some(child) = guard.as_mut() {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    tracing::warn!(%status, "previous medousa-session process exited");
+                    *guard = None;
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    tracing::warn!(error = %err, "failed to inspect medousa-session process");
+                    *guard = None;
+                }
+            }
+        }
         if guard.is_none() {
             let mut cmd = Command::new(&bin);
             cmd.arg("--bind")
@@ -218,6 +234,7 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .kill_on_drop(true);
+            medousa_host::hide_tokio_subprocess_window(&mut cmd);
             for root in &required_roots {
                 cmd.arg("--allow-root").arg(root);
             }
@@ -233,8 +250,8 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
         }
     }
 
-    for _ in 0..20 {
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    for _ in 0..HEALTH_WAIT_ATTEMPTS {
+        tokio::time::sleep(std::time::Duration::from_millis(HEALTH_WAIT_INTERVAL_MS)).await;
         match probe_health(&health_url, &required_roots).await {
             HealthProbe::Compatible => return info(true, "session host started".into()),
             HealthProbe::Incompatible(reason) => {
@@ -246,6 +263,14 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
                 );
             }
             HealthProbe::Unreachable => {}
+        }
+    }
+
+    {
+        let mut guard = host.child.lock().await;
+        if let Some(mut child) = guard.take() {
+            let _ = child.start_kill();
+            tracing::warn!("killed medousa-session after health timeout so the next request can respawn");
         }
     }
 

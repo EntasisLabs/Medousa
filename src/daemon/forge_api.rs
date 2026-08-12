@@ -6823,7 +6823,7 @@ fn background_command(program: impl AsRef<OsStr>) -> Command {
 #[cfg(windows)]
 fn background_tokio_command(program: impl AsRef<OsStr>) -> tokio::process::Command {
     let mut command = tokio::process::Command::new(program);
-    command.creation_flags(0x0800_0000);
+    medousa_host::hide_tokio_subprocess_window(&mut command);
     command
 }
 
