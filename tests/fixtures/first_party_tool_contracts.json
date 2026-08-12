@@ -1170,7 +1170,7 @@
             "type": "string"
           },
           "wait_ms": {
-            "description": "How long to stream output (default 3000, max 15000)",
+            "description": "How long to wait for command completion (default 15000, max 15000)",
             "type": "integer"
           },
           "work_id": {
@@ -3995,7 +3995,7 @@
             "type": "string"
           },
           "wait_ms": {
-            "description": "How long to stream output (default 3000, max 15000)",
+            "description": "How long to wait for command completion (default 15000, max 15000)",
             "type": "integer"
           },
           "work_id": {

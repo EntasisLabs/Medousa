@@ -25,7 +25,9 @@ pub fn pack_hold_resolution_control_message() -> String {
          tools_used=true; consecutive_non_tool_responses=1.\n\
          Next: a tool call continues work and resets the prose count; a non-tool response ends \
          the turn and preserves both responses; cognition_turn_finish ends immediately and appends \
-         its message to the held response."
+         its message to the held response. If continuing, call the next tool now instead of \
+         narrating intended work. Use cognition_turn_update_user in a tool round for visible \
+         interim status."
     )
 }
 
@@ -56,6 +58,7 @@ Runtime boundary (enforced by the daemon):
 - Chat (host): memory, identity, runtime, vault read, quick cognition_web_search/cognition_browser_fetch, cognition_turn_begin_work(message, goal) for multi-tool execution, cognition_spawn_turn_worker for parallel research.
 - cognition_turn_begin_work enters the bound Workshop (one per session) — Chat ends with ack; synthesis delivers on the same thread.
 - Completion is event-driven: before any tool call, a non-tool response ends the turn. After any tool call, tools continue/reset the prose count; two consecutive non-tool responses end the turn and both are preserved. cognition_turn_finish ends immediately and appends its message to one held response. Prose wording is never classified.
+- Continuing work requires a tool call in the current model response. If you say you will inspect, run, or fix something next, call that tool now. Use cognition_turn_update_user in a tool round for visible interim status that does not end execution.
 - Mid-task handoff: cognition_turn_checkpoint. Parallel delegate: cognition_spawn_turn_worker in a tool round.
 - UI stream draft may reset between rounds; [MEDOUSA_SCRATCH] engine notes persist across rounds and client disconnect."#;
 
@@ -558,5 +561,14 @@ mod tests {
         assert!(msg.contains("cognition_turn_finish"));
         assert!(msg.contains("preserves both responses"));
         assert!(msg.contains("tool call continues work and resets"));
+        assert!(msg.contains("call the next tool now"));
+        assert!(msg.contains("cognition_turn_update_user"));
+    }
+
+    #[test]
+    fn runtime_boundary_explains_how_to_continue_after_interim_status() {
+        assert!(TURN_RUNTIME_BOUNDARY_APPENDIX.contains("requires a tool call"));
+        assert!(TURN_RUNTIME_BOUNDARY_APPENDIX.contains("call that tool now"));
+        assert!(TURN_RUNTIME_BOUNDARY_APPENDIX.contains("cognition_turn_update_user"));
     }
 }

@@ -796,10 +796,10 @@ export function onEnvironmentEvent<T>(
 }
 
 export function onEnvironmentError(
-  handler: (message: string) => void,
+  handler: (error: StreamErrorPayload) => void,
 ): Promise<UnlistenFn> {
-  return listen<{ message: string }>("environment://error", (event) => {
-    handler(event.payload.message);
+  return listen<StreamErrorPayload>("environment://error", (event) => {
+    handler(event.payload);
   });
 }
 
@@ -971,6 +971,13 @@ export async function stopInteractiveStreamTurn(turnId: string): Promise<void> {
   return invoke("interactive_stream_stop_turn", { turnId });
 }
 
+export type StreamErrorPayload = {
+  message: string;
+  recoverable?: boolean;
+  transport?: string;
+  stage?: string;
+};
+
 export function onWorkspaceEvent<T>(
   handler: (payload: T) => void,
 ): Promise<UnlistenFn> {
@@ -984,10 +991,10 @@ export function onWorkspaceEvent<T>(
 }
 
 export function onWorkspaceError(
-  handler: (message: string) => void,
+  handler: (error: StreamErrorPayload) => void,
 ): Promise<UnlistenFn> {
-  return listen<{ message: string }>("workspace://error", (event) => {
-    handler(event.payload.message);
+  return listen<StreamErrorPayload>("workspace://error", (event) => {
+    handler(event.payload);
   });
 }
 
@@ -1004,10 +1011,10 @@ export function onInteractiveEvent<T>(
 }
 
 export function onInteractiveError(
-  handler: (message: string) => void,
+  handler: (error: StreamErrorPayload) => void,
 ): Promise<UnlistenFn> {
-  return listen<{ message: string }>("interactive://error", (event) => {
-    handler(event.payload.message);
+  return listen<StreamErrorPayload>("interactive://error", (event) => {
+    handler(event.payload);
   });
 }
 

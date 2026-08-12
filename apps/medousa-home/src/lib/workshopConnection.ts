@@ -179,8 +179,8 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
     }),
   );
   unlisteners.push(
-    onEnvironmentError((message) => {
-      environment.setError(message);
+    onEnvironmentError((error) => {
+      environment.setError(error.message);
       scheduleEnvironmentStreamReconnect();
     }),
   );
@@ -198,8 +198,8 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
     }),
   );
   unlisteners.push(
-    onWorkspaceError((message) => {
-      workspace.setError(message);
+    onWorkspaceError((error) => {
+      workspace.setError(error.message);
       scheduleWorkspaceStreamReconnect();
     }),
   );
@@ -235,9 +235,9 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
     }),
   );
   unlisteners.push(
-    onInteractiveError((message) => {
-      chat.noteStreamFailure(message, {
-        recoverable: isRecoverableStreamError(message),
+    onInteractiveError((error) => {
+      chat.noteStreamFailure(error.message, {
+        recoverable: error.recoverable ?? isRecoverableStreamError(error.message),
       });
       scheduleInteractiveStreamRecover();
     }),
