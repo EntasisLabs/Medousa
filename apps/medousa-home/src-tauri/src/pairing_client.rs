@@ -7,6 +7,7 @@ use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey};
 use rand::RngCore;
 use rand::rngs::OsRng;
 use reqwest::{Client, Url};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -137,7 +138,8 @@ pub async fn pair_complete_from_qr(
         .to_string();
 
     let client = http_client()?;
-    let status = fetch_pair_status(&client, &daemon_url).await?;
+    let bootstrap_ticket = parsed_qr.iroh_ticket.as_deref();
+    let status = fetch_pair_status(&client, &daemon_url, bootstrap_ticket).await?;
     verify_qr_trust(&parsed_qr, &status)?;
 
     let identity = PhoneIdentity::load_or_create()?;
@@ -149,6 +151,7 @@ pub async fn pair_complete_from_qr(
         &phone_name,
         &base64url_encode(identity.verifying_key.as_bytes()),
         role,
+        bootstrap_ticket,
     )
     .await?;
 
@@ -172,6 +175,7 @@ pub async fn pair_complete_from_qr(
         session_id,
         &signed_nonce,
         &phone_nonce_b64,
+        bootstrap_ticket,
     )
     .await?;
 
@@ -464,7 +468,14 @@ async fn fetch_iroh_ticket(client: &Client, daemon_url: &str) -> Result<String, 
     Ok(payload.ticket)
 }
 
-async fn fetch_pair_status(client: &Client, daemon_url: &str) -> Result<PairStatusPayload, String> {
+async fn fetch_pair_status(
+    client: &Client,
+    daemon_url: &str,
+    iroh_ticket: Option<&str>,
+) -> Result<PairStatusPayload, String> {
+    if let Some(ticket) = iroh_ticket {
+        return iroh_pairing_json(ticket, "GET", "/pair/status", None).await;
+    }
     let response = client
         .get(format!("{daemon_url}/pair/status"))
         .send()
@@ -489,16 +500,26 @@ async fn post_pair_init(
     phone_name: &str,
     public_key: &str,
     role: &str,
+    iroh_ticket: Option<&str>,
 ) -> Result<PairInitPayload, String> {
+    let body = serde_json::json!({
+        "qrToken": qr_token,
+        "phoneId": phone_id,
+        "phoneName": phone_name,
+        "publicKey": public_key,
+        "role": role,
+    });
+    if let Some(ticket) = iroh_ticket {
+        let payload: PairInitPayload =
+            iroh_pairing_json(ticket, "POST", "/pair/init", Some(&body)).await?;
+        if payload.status != "challenge" {
+            return Err(init_failure_message(payload.reason.as_deref()));
+        }
+        return Ok(payload);
+    }
     let response = client
         .post(format!("{daemon_url}/pair/init"))
-        .json(&serde_json::json!({
-            "qrToken": qr_token,
-            "phoneId": phone_id,
-            "phoneName": phone_name,
-            "publicKey": public_key,
-            "role": role,
-        }))
+        .json(&body)
         .send()
         .await
         .map_err(|err| format!("Pair init failed: {err}"))?;
@@ -519,14 +540,19 @@ async fn post_pair_verify(
     session_id: &str,
     signed_nonce: &str,
     phone_nonce: &str,
+    iroh_ticket: Option<&str>,
 ) -> Result<PairVerifyPayload, String> {
+    let body = serde_json::json!({
+        "sessionId": session_id,
+        "signedNonce": signed_nonce,
+        "phoneNonce": phone_nonce,
+    });
+    if let Some(ticket) = iroh_ticket {
+        return iroh_pairing_json(ticket, "POST", "/pair/verify", Some(&body)).await;
+    }
     let response = client
         .post(format!("{daemon_url}/pair/verify"))
-        .json(&serde_json::json!({
-            "sessionId": session_id,
-            "signedNonce": signed_nonce,
-            "phoneNonce": phone_nonce,
-        }))
+        .json(&body)
         .send()
         .await
         .map_err(|err| format!("Pair verify failed: {err}"))?;
@@ -535,6 +561,44 @@ async fn post_pair_verify(
         .json::<PairVerifyPayload>()
         .await
         .map_err(|err| err.to_string())
+}
+
+async fn iroh_pairing_json<T: DeserializeOwned>(
+    ticket: &str,
+    method: &str,
+    path: &str,
+    body: Option<&serde_json::Value>,
+) -> Result<T, String> {
+    let encoded = body
+        .map(serde_json::to_vec)
+        .transpose()
+        .map_err(|err| format!("Encode Iroh pairing request failed: {err}"))?;
+    let headers = encoded
+        .as_ref()
+        .map(|_| vec![("Content-Type", "application/json")])
+        .unwrap_or_default();
+    let mut response =
+        medousa_iroh_http::iroh_http_request(ticket, method, path, &headers, encoded.as_deref())
+            .await
+            .map_err(|err| format!("Cannot reach workshop over Iroh: {err}"))?;
+    let status = response.status;
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .body
+        .read_chunk()
+        .await
+        .map_err(|err| format!("Read Iroh pairing response failed: {err}"))?
+    {
+        bytes.extend_from_slice(&chunk);
+    }
+    if !(200..300).contains(&status) {
+        let message = String::from_utf8_lossy(&bytes);
+        return Err(format!(
+            "Workshop pairing over Iroh returned HTTP {status}: {message}"
+        ));
+    }
+    serde_json::from_slice(&bytes)
+        .map_err(|err| format!("Invalid workshop pairing response over Iroh: {err}"))
 }
 
 fn parse_pair_qr_url(raw: &str) -> Result<ParsedQr, String> {

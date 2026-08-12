@@ -10,8 +10,9 @@ Your phone is a window. The Mac/PC (or a workshop host) runs Medousa Engine.
 ## Before you pair
 
 1. Desktop Medousa is open and the engine is healthy (**Settings → Connection**).
-2. Phone and desktop are on the **same trusted Wi‑Fi** for first pair (café Wi‑Fi
-   is a bad idea).
+2. For a compact QR, phone and host are on the **same trusted Wi‑Fi** for first
+   pair (café Wi‑Fi is a bad idea). An off-LAN host can instead issue a full Iroh
+   invite as described below.
 3. Install the Medousa companion from TestFlight / store when available, or a
    dev build ([mobile-and-lan cookbook](../cookbook/mobile-and-lan.md)).
 
@@ -26,6 +27,21 @@ Your phone is a window. The Mac/PC (or a workshop host) runs Medousa Engine.
 
 After pairing, you can leave the LAN pairing window off. Already-paired clients
 keep working over the private tunnel (Iroh) when you’re off the LAN.
+
+## Pair with a VPS or other off-LAN host
+
+Keep the daemon on loopback; port 7419 does not need to be exposed publicly.
+On the host, print a full v2 invite containing the Iroh ticket:
+
+```bash
+medousa start daemon-restart
+medousa pair qr --full
+```
+
+Copy the complete `medousa://pair/2.0?...` URL. In the mobile app, choose the
+pair/join-workshop flow and paste that full URL. The initial pairing ceremony
+and subsequent workshop traffic use Iroh, so the phone does not need to reach
+the host's LAN or public IP address.
 
 ---
 
