@@ -1138,15 +1138,24 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             runner: [self-hosted, Linux, X64]
+            # Default cargo parallelism is fine on ubuntu-latest (~16 GB).
+            cargo_build_jobs: ""
           - target: aarch64-apple-darwin
             os: macos-14
             runner: [self-hosted, macOS, ARM64]
+            # Hosted macOS ARM is ~7 GB RAM; mistralrs LLVM peaks need a cap.
+            cargo_build_jobs: "2"
           - target: x86_64-apple-darwin
             os: macos-15-intel
             runner: [self-hosted, macOS, X64]
+            # macos-15-intel (~14 GB / 4 cores) OOMs / swap-thrashes under
+            # default jobs while compiling mistralrs+Metal, then reports
+            # "hosted runner lost communication" (v0.9.0 release).
+            cargo_build_jobs: "1"
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             runner: [self-hosted, Windows, X64]
+            cargo_build_jobs: ""
     steps:
       - uses: actions/checkout@v5
 
@@ -1166,6 +1175,8 @@ jobs:
           shared-key: release-local-brain-${{ matrix.target }}
 
       - name: Build offline brain
+        env:
+          CARGO_BUILD_JOBS: ${{ matrix.cargo_build_jobs }}
         run: ./scripts/release/build-local-brain.sh --target "${{ matrix.target }}"
 
       - name: Package offline brain
