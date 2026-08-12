@@ -461,6 +461,7 @@ export function defaultEnvironmentSpec(
           "work",
           "code",
           "notes",
+          "web",
           "files",
           "artifacts",
           "map",

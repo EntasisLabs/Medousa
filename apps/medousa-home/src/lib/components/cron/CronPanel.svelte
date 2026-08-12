@@ -23,7 +23,7 @@
   let confirmDeleteId = $state<string | null>(null);
 
   let createPrompt = $state("");
-  let createCron = $state("0 9 * * *");
+  let createCron = $state("0 0 9 * * * *");
   let createTimezone = $state("UTC");
   let createManuscript = $state<string | undefined>(undefined);
 
@@ -79,7 +79,7 @@
   async function submitCreate() {
     await recurring.register({
       prompt: createPrompt.trim() || "Scheduled task",
-      cron_expr: createCron.trim() || "0 9 * * *",
+      cron_expr: createCron.trim() || "0 0 9 * * * *",
       manuscript_id: createManuscript,
       timezone: createTimezone.trim() || "UTC",
       model_hint: runtime.model,

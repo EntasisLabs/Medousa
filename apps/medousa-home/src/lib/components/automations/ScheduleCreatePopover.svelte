@@ -30,7 +30,7 @@
 
   let createTitle = $state("");
   let createPrompt = $state("");
-  let createCron = $state("0 9 * * *");
+  let createCron = $state("0 0 9 * * * *");
   let createTimezone = $state(browserTimezone());
   let createManuscript = $state<string | undefined>(undefined);
   let createDeliveryMode = $state<AutomationDeliveryMode>("in_app");
@@ -64,7 +64,7 @@
     const response = await automations.register({
       display_name: createTitle.trim() || undefined,
       prompt: createPrompt.trim() || "Scheduled task",
-      cron_expr: createCron.trim() || "0 9 * * *",
+      cron_expr: createCron.trim() || "0 0 9 * * * *",
       manuscript_id: createManuscript,
       timezone: createTimezone.trim() || "UTC",
       model_hint: runtime.model,

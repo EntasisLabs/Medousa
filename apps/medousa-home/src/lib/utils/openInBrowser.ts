@@ -57,12 +57,15 @@ export async function openInBrowser(
 
   if (options?.openWorkshop) {
     if (layout.isMobile) {
+      // Keep the page usable — expanded sheet covers the verification / page.
+      // Dock stays available; full Chat is one tap via the workshop header.
       const { browserWorkshop } = await import("$lib/stores/browserWorkshop.svelte");
       browserWorkshop.openForBrowser({
         sessionId,
         tabGroupId: browser.tabGroupId,
         scopeLabel: humanBrowser.scopeLabel,
       });
+      browserWorkshop.minimized = true;
     } else {
       const { launchBrowserWorkshop } = await import("$lib/utils/launchBrowserWorkshop");
       await launchBrowserWorkshop({

@@ -1,34 +1,24 @@
-import type { EnvironmentSpec, MobileAskEntry } from "$lib/types/environment";
-import { defaultEnvironmentSpec } from "$lib/utils/environmentDefault";
+import type { MobileAskEntry } from "$lib/types/environment";
 import { MOBILE_TABS, type MobileTab } from "$lib/types/mobile";
 
-const TAB_REQUIRED_SURFACE: Record<Exclude<MobileTab, "more" | "home">, string> = {
-  chat: "chat",
-  notes: "notes",
-  web: "web",
-};
+/**
+ * Primary mobile destinations (destinations menu). Always reachable —
+ * layout presets / legacy `tabBar: "minimal"` used to hide Notes/Web from the
+ * retired bottom tab bar, which bounced those destinations back to Home.
+ */
+const PRIMARY_MOBILE_TABS = new Set<MobileTab>([
+  "home",
+  "chat",
+  "notes",
+  "web",
+  "more",
+]);
 
-function activePresetSurfaceIds(spec: EnvironmentSpec): Set<string> {
-  const preset = spec.layoutPresets?.find((entry) => entry.active);
-  const ids = preset?.surfaces ?? spec.surfaces.map((surface) => surface.id);
-  return new Set(ids);
-}
-
-/** Mobile tabs visible for the active preset and shellChrome.mobile.tabBar mode. */
-export function visibleMobileTabs(spec?: EnvironmentSpec | null): MobileTab[] {
-  const resolved = spec ?? defaultEnvironmentSpec();
-  const presetIds = activePresetSurfaceIds(resolved);
-  const tabBar = resolved.shellChrome?.mobile?.tabBar ?? "full";
-
-  return MOBILE_TABS.map((tab) => tab.id).filter((tab) => {
-    if (tab === "more") return true;
-    if (tabBar === "minimal" && (tab === "notes" || tab === "web")) {
-      return false;
-    }
-    if (tab === "home") return true;
-    const required = TAB_REQUIRED_SURFACE[tab as keyof typeof TAB_REQUIRED_SURFACE];
-    return presetIds.has(required);
-  });
+/** Mobile tabs reachable from the destinations menu / swipe order. */
+export function visibleMobileTabs(_spec?: unknown): MobileTab[] {
+  return MOBILE_TABS.map((tab) => tab.id).filter((tab) =>
+    PRIMARY_MOBILE_TABS.has(tab),
+  );
 }
 
 export function showBuiltinHomeInlineAsk(askEntry: MobileAskEntry | null | undefined): boolean {

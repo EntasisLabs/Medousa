@@ -7,7 +7,7 @@ export class AutomationDraftStore {
   openCreate(draft?: Partial<AutomationCreateDraft>) {
     this.createDraft = {
       prompt: draft?.prompt ?? "",
-      cron_expr: draft?.cron_expr ?? "0 9 * * *",
+      cron_expr: draft?.cron_expr ?? "0 0 9 * * * *",
       display_name: draft?.display_name,
       manuscript_id: draft?.manuscript_id,
       timezone: draft?.timezone ?? "UTC",

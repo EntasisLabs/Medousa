@@ -34,7 +34,8 @@ export async function launchBrowserWorkshop(input?: {
       tabGroupId: browser.tabGroupId,
       scopeLabel: humanBrowser.scopeLabel,
     });
-    if (input?.openMinimized) browserWorkshop.minimized = true;
+    // Default to docked on mobile so the browser page stays visible.
+    browserWorkshop.minimized = input?.openMinimized !== false;
     return;
   }
 

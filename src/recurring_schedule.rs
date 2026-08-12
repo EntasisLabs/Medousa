@@ -8,6 +8,27 @@ pub const MIN_SCHEDULE_INTERVAL_SECS: i64 = 60;
 pub const CRON_FORMAT_HINT: &str =
     "sec min hour day-of-month month day-of-week year (example every 4h: 0 0 */4 * * * *)";
 
+/// Expand common 5/6-field Unix cron into the 7-field form Stasis expects.
+///
+/// - 5 fields (`min hour dom month dow`) → `0 min hour dom month dow *`
+/// - 6 fields (`sec min hour dom month dow`) → `sec min hour dom month dow *`
+/// - 7 fields left unchanged
+pub fn normalize_recurring_cron_expr(cron_expr: &str) -> String {
+    let trimmed = cron_expr.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    let parts: Vec<&str> = trimmed.split_whitespace().collect();
+    match parts.len() {
+        5 => format!("0 {} {} {} {} {} *", parts[0], parts[1], parts[2], parts[3], parts[4]),
+        6 => format!(
+            "{} {} {} {} {} {} *",
+            parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]
+        ),
+        _ => trimmed.to_string(),
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RecurringStartPolicy {
     #[default]
@@ -92,12 +113,15 @@ impl RecurringScheduleSpec {
         require_non_blank("cron_expr", &self.cron_expr)?;
         require_non_blank("timezone", &self.timezone)?;
 
+        let cron_expr = normalize_recurring_cron_expr(&self.cron_expr);
+        require_non_blank("cron_expr", &cron_expr)?;
+
         let mut definition = RecurringDefinition {
             id: self.id,
             queue: self.queue,
             job_type: self.job_type,
             payload_template_ref: self.payload_template_ref,
-            cron_expr: self.cron_expr,
+            cron_expr,
             timezone: self.timezone,
             jitter_seconds: self.jitter_seconds,
             enabled: self.enabled,
@@ -184,5 +208,20 @@ mod tests {
         .build(now())
         .unwrap_err();
         assert!(error.to_string().contains("recurring_id is required"));
+    }
+
+    #[test]
+    fn build_accepts_five_field_unix_cron() {
+        let definition = RecurringScheduleSpec::new(
+            "recur-5field",
+            "default",
+            "workflow.test",
+            "payload",
+            "0 9 * * *",
+            "UTC",
+        )
+        .build(now())
+        .expect("5-field cron should normalize");
+        assert_eq!(definition.cron_expr, "0 0 9 * * * *");
     }
 }

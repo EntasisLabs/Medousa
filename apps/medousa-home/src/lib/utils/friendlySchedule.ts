@@ -25,6 +25,20 @@ const WEEKDAY_LABELS = [
   "Saturday",
 ] as const;
 
+/** Daemon / Stasis expect 7-field cron: sec min hour dom month dow year. */
+export function toSevenFieldCron(cron: string): string {
+  const trimmed = cron.trim();
+  if (!trimmed) return "";
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 5) {
+    return `0 ${parts[0]} ${parts[1]} ${parts[2]} ${parts[3]} ${parts[4]} *`;
+  }
+  if (parts.length === 6) {
+    return `${parts[0]} ${parts[1]} ${parts[2]} ${parts[3]} ${parts[4]} ${parts[5]} *`;
+  }
+  return trimmed;
+}
+
 export function browserTimezone(): string {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -39,7 +53,7 @@ export function defaultFriendlySchedule(): FriendlyScheduleState {
     hour: 9,
     minute: 0,
     weekday: 1,
-    customCron: "0 9 * * *",
+    customCron: "0 0 9 * * * *",
   };
 }
 
@@ -59,22 +73,59 @@ export function parseTime24(value: string): { hour: number; minute: number } | n
 export function friendlyToCron(state: FriendlyScheduleState): string {
   if (state.frequency === "none") return "";
   if (state.frequency === "custom") {
-    return state.customCron.trim();
+    return toSevenFieldCron(state.customCron);
   }
   const minute = state.minute;
   const hour = state.hour;
   switch (state.frequency) {
     case "daily":
-      return `${minute} ${hour} * * *`;
+      return `0 ${minute} ${hour} * * * *`;
     case "weekdays":
-      return `${minute} ${hour} * * 1-5`;
+      return `0 ${minute} ${hour} * * 1-5 *`;
     case "weekends":
-      return `${minute} ${hour} * * 0,6`;
+      return `0 ${minute} ${hour} * * 0,6 *`;
     case "weekly":
-      return `${minute} ${hour} * * ${state.weekday}`;
+      return `0 ${minute} ${hour} * * ${state.weekday} *`;
     default:
-      return `${minute} ${hour} * * *`;
+      return `0 ${minute} ${hour} * * * *`;
   }
+}
+
+function scheduleFields(parts: string[]): {
+  minute: string;
+  hour: string;
+  dom: string;
+  mon: string;
+  dow: string;
+} | null {
+  if (parts.length >= 7) {
+    return {
+      minute: parts[1],
+      hour: parts[2],
+      dom: parts[3],
+      mon: parts[4],
+      dow: parts[5],
+    };
+  }
+  if (parts.length === 6) {
+    return {
+      minute: parts[1],
+      hour: parts[2],
+      dom: parts[3],
+      mon: parts[4],
+      dow: parts[5],
+    };
+  }
+  if (parts.length === 5) {
+    return {
+      minute: parts[0],
+      hour: parts[1],
+      dom: parts[2],
+      mon: parts[3],
+      dow: parts[4],
+    };
+  }
+  return null;
 }
 
 export function cronToFriendly(cron: string): FriendlyScheduleState {
@@ -84,7 +135,8 @@ export function cronToFriendly(cron: string): FriendlyScheduleState {
   }
 
   const parts = trimmed.split(/\s+/);
-  if (parts.length < 5) {
+  const fields = scheduleFields(parts);
+  if (!fields) {
     return {
       ...defaultFriendlySchedule(),
       frequency: "custom",
@@ -92,7 +144,7 @@ export function cronToFriendly(cron: string): FriendlyScheduleState {
     };
   }
 
-  const [minPart, hourPart, dom, mon, dow] = parts;
+  const { minute: minPart, hour: hourPart, dom, mon, dow } = fields;
   if (dom !== "*" || mon !== "*") {
     return {
       ...defaultFriendlySchedule(),
@@ -105,6 +157,7 @@ export function cronToFriendly(cron: string): FriendlyScheduleState {
   const hour = Number.parseInt(hourPart, 10);
   const safeMinute = Number.isFinite(minute) ? minute : 0;
   const safeHour = Number.isFinite(hour) ? hour : 9;
+  const normalized = toSevenFieldCron(trimmed);
 
   if (dow === "*") {
     return {
@@ -112,7 +165,7 @@ export function cronToFriendly(cron: string): FriendlyScheduleState {
       hour: safeHour,
       minute: safeMinute,
       weekday: 1,
-      customCron: trimmed,
+      customCron: normalized,
     };
   }
   if (dow === "1-5") {
@@ -121,7 +174,7 @@ export function cronToFriendly(cron: string): FriendlyScheduleState {
       hour: safeHour,
       minute: safeMinute,
       weekday: 1,
-      customCron: trimmed,
+      customCron: normalized,
     };
   }
   if (dow === "0,6" || dow === "6,0") {
@@ -130,7 +183,7 @@ export function cronToFriendly(cron: string): FriendlyScheduleState {
       hour: safeHour,
       minute: safeMinute,
       weekday: 0,
-      customCron: trimmed,
+      customCron: normalized,
     };
   }
   if (/^[0-6]$/.test(dow)) {
@@ -139,7 +192,7 @@ export function cronToFriendly(cron: string): FriendlyScheduleState {
       hour: safeHour,
       minute: safeMinute,
       weekday: Number.parseInt(dow, 10),
-      customCron: trimmed,
+      customCron: normalized,
     };
   }
 
@@ -148,7 +201,7 @@ export function cronToFriendly(cron: string): FriendlyScheduleState {
     hour: safeHour,
     minute: safeMinute,
     weekday: 1,
-    customCron: trimmed,
+    customCron: normalized,
   };
 }
 

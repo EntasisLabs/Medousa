@@ -1,4 +1,5 @@
 import type { SessionSummary } from "$lib/types/session";
+import type { RepositoryCatalogEntry } from "$lib/forge";
 import { formatSessionLabel } from "$lib/utils/formatSession";
 
 export type HomeContinueRow = {
@@ -6,6 +7,16 @@ export type HomeContinueRow = {
   title: string;
   preview: string;
   relativeTime: string;
+};
+
+export type HomeProjectRow = {
+  path: string;
+  title: string;
+  preview: string;
+  relativeTime: string;
+  /** Open this undertaking when present; otherwise land on Code explorer. */
+  workId: string | null;
+  workTitle: string | null;
 };
 
 /** Strip common markdown so Home previews never leak raw `**` / `` ` ``. */
@@ -37,6 +48,59 @@ export function homeContinueRows(
       relativeTime: relativeSessionTime(session.last_timestamp),
     };
   });
+}
+
+const ACTIVE_PROJECT_PHASES = new Set(["work", "prepare", "review"]);
+
+function pickProjectWork(entry: RepositoryCatalogEntry): {
+  id: string;
+  title: string;
+} | null {
+  const projects = entry.existing_projects ?? [];
+  if (projects.length === 0) return null;
+  const active = projects.find((project) =>
+    ACTIVE_PROJECT_PHASES.has(project.human_phase),
+  );
+  const pick = active ?? projects[0];
+  return { id: pick.id, title: pick.title };
+}
+
+/** Recent code repositories for Home — pinned first, then last used. */
+export function homeProjectRows(
+  entries: RepositoryCatalogEntry[],
+  limit = 3,
+): HomeProjectRow[] {
+  return entries
+    .filter((entry) => entry.available && !entry.archived)
+    .slice()
+    .sort((a, b) => {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+      const aTs = Date.parse(a.last_used_at) || 0;
+      const bTs = Date.parse(b.last_used_at) || 0;
+      return bTs - aTs;
+    })
+    .slice(0, Math.max(0, limit))
+    .map((entry) => {
+      const work = pickProjectWork(entry);
+      const branch =
+        entry.current_branch?.trim() ||
+        entry.suggested_base_ref?.trim() ||
+        "";
+      const preview =
+        work?.title?.trim() ||
+        branch ||
+        (entry.dirty
+          ? `${entry.changed_files || 0} changed`
+          : "Repository");
+      return {
+        path: entry.path,
+        title: entry.display_name?.trim() || entry.path,
+        preview,
+        relativeTime: relativeSessionTime(entry.last_used_at),
+        workId: work?.id ?? null,
+        workTitle: work?.title ?? null,
+      };
+    });
 }
 
 export function relativeSessionTime(iso?: string | null): string {

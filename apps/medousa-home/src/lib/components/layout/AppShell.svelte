@@ -217,6 +217,8 @@
 {:else}
   <MobileBrowserWorkshop
     onOpenFullChat={async () => {
+      const { browserWorkshop } = await import("$lib/stores/browserWorkshop.svelte");
+      browserWorkshop.close();
       layout.setMobileTab("chat");
       await chat.ensureSessionHydrated();
     }}

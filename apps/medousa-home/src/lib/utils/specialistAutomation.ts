@@ -12,7 +12,7 @@ export function automationDraftForSpecialist(
   return {
     display_name: entry.name,
     prompt: taskTemplate || `Run ${entry.name} on schedule`,
-    cron_expr: resolved?.schedule_cron?.trim() || "0 9 * * *",
+    cron_expr: resolved?.schedule_cron?.trim() || "0 0 9 * * * *",
     manuscript_id: entry.id,
   };
 }
