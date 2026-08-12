@@ -158,7 +158,7 @@
             <input
               class="agent-liquid-input mt-1 font-mono"
               bind:value={scheduleCron}
-              placeholder="0 9 * * *"
+              placeholder="0 0 9 * * * *"
               aria-label="Default schedule cron"
             />
           </label>

@@ -22,19 +22,20 @@
     type PeerHomePreview,
   } from "$lib/utils/peerHomePreview";
   import {
-    formatCardSubtitle,
-    formatCardTitle,
-  } from "$lib/utils/formatWork";
-  import {
-    homeActivityWhisper,
     homeContinueRows,
     homeNotesDateParts,
+    homeProjectRows,
     peerInitials,
+    type HomeProjectRow,
   } from "$lib/utils/homeContinue";
+  import {
+    listForgeRepositories,
+    type RepositoryCatalogEntry,
+  } from "$lib/forge";
   import { isTauri } from "$lib/window";
-  import type { WorkCard } from "$lib/types/workspace";
   import { haptic } from "$lib/haptics";
   import { workshops } from "$lib/stores/workshops.svelte";
+  import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
   import { Building2, Home, Radio, Users } from "@lucide/svelte";
   import {
@@ -145,61 +146,23 @@
   const continueLead = $derived(continueRows[0] ?? null);
   const continueWhispers = $derived(continueRows.slice(1));
 
+  let projectCatalog = $state<RepositoryCatalogEntry[]>([]);
+  const projectRows = $derived(homeProjectRows(projectCatalog, 3));
+  const projectLead = $derived(projectRows[0] ?? null);
+  const projectWhispers = $derived(projectRows.slice(1));
+  let projectsHydrated = $state(false);
+
   const peerAvatarLabels = $derived(
     peerPreview.stripThreads.slice(0, 3).map((thread) => thread.label),
   );
 
-  type HomeActivityBeat = {
-    cardId: string | null;
-    status: "done" | "need" | "motion";
-    statusLabel: string;
-    title: string;
-    line: string | null;
-  };
-
-  /** Only live / actionable beats — never a settled "Done" under All clear. */
-  const lastActivity = $derived.by((): HomeActivityBeat | null => {
-    const pending = workspace.pendingAskCompletion;
-    if (pending) {
-      return {
-        cardId: pending.jobId,
-        status: "done",
-        statusLabel: "Done",
-        title: (pending.title ?? "").trim() || "Ask ready",
-        line: "Tap to open the result",
-      };
-    }
-
+  const firstBlockedCardId = $derived.by(() => {
     const blockedCard =
       workspace.cards.find((card) => card.column === "blocked") ??
       partition.stuck[0] ??
       null;
-    if (blockedCard) {
-      return beatFromCard(blockedCard, "need", "Needs you");
-    }
-
-    const motionCard = workspace.primaryInMotionCard();
-    if (motionCard) {
-      return beatFromCard(motionCard, "motion", "In motion");
-    }
-
-    return null;
+    return blockedCard?.id ?? null;
   });
-
-  function beatFromCard(
-    card: WorkCard,
-    status: HomeActivityBeat["status"],
-    statusLabel: string,
-  ): HomeActivityBeat {
-    const title = formatCardTitle(card);
-    return {
-      cardId: card.id,
-      status,
-      statusLabel,
-      title,
-      line: homeActivityWhisper(statusLabel, title, formatCardSubtitle(card)),
-    };
-  }
 
   const peersHaveSignal = $derived(peerPreview.unreadTotal > 0);
   const peersQuietLabel = $derived.by(() => {
@@ -210,7 +173,6 @@
   });
 
   let scrollEl: HTMLDivElement | undefined = $state();
-  let activityEl: HTMLElement | undefined = $state();
   let pullY = $state(0);
   let refreshing = $state(false);
   let touchStartY = 0;
@@ -225,6 +187,13 @@
     if (!health?.ok) return;
     sessionsHydrated = true;
     void chat.refreshSessions();
+  });
+
+  $effect(() => {
+    if (projectsHydrated) return;
+    if (!health?.ok) return;
+    projectsHydrated = true;
+    void refreshProjects();
   });
 
   $effect(() => {
@@ -248,6 +217,7 @@
   onMount(() => {
     if (!isTauri()) {
       void chat.refreshSessions();
+      void refreshProjects();
       return;
     }
     void refreshPeerPreview();
@@ -265,13 +235,23 @@
     peerPreview = await fetchPeerHomePreview();
   }
 
+  async function refreshProjects() {
+    try {
+      projectCatalog = await listForgeRepositories();
+    } catch {
+      // Forge may be unavailable — Home just omits the projects block.
+      projectCatalog = [];
+    }
+  }
+
   function onStatusTap() {
     if (isOffline) {
       onOpenSettings();
       return;
     }
-    if (lastActivity) {
-      activityEl?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (blocked > 0 && firstBlockedCardId) {
+      haptic("light");
+      void onSelectCard(firstBlockedCardId);
       return;
     }
     if (peerPreview.unreadTotal > 0) {
@@ -299,12 +279,15 @@
     await onOpenChat(sessionId);
   }
 
-  async function openActivity() {
-    if (!lastActivity?.cardId) return;
+  async function openProject(row: HomeProjectRow) {
     haptic("light");
-    // AskCompletionModal is hosted by MobileShell when pending — don't select a fake card id.
-    if (workspace.pendingAskCompletion) return;
-    await onSelectCard(lastActivity.cardId);
+    layout.openMore("code");
+    if (row.workId) {
+      await lmeWorkspace.openCodeWorkspace(
+        row.workId,
+        row.workTitle ?? row.title,
+      );
+    }
   }
 
   async function refresh() {
@@ -312,6 +295,7 @@
       workspace.prefetchCardDetails(),
       refreshPeerPreview(),
       chat.refreshSessions(),
+      refreshProjects(),
       vault.notes.length === 0 ? vault.refreshNotes() : Promise.resolve(),
     ]);
   }
@@ -391,7 +375,7 @@
     {/if}
 
     <div class="px-5 pb-8 pt-3">
-      <div class="mobile-home-brand">
+      <div class="mobile-home-brand mobile-home-rise" style="--home-rise-delay: 0ms">
         <h1 class="mobile-home-greeting">{greeting}</h1>
         <div class="mobile-home-meta">
           <button
@@ -454,7 +438,7 @@
       />
 
       {#if peersHaveSignal}
-        <div class="mobile-home-glance">
+        <div class="mobile-home-glance mobile-home-rise" style="--home-rise-delay: 40ms">
           <button type="button" class="mobile-home-glance-tile" onclick={openPeers}>
             <span class="mobile-home-glance-kicker">Peers</span>
             <span class="mobile-home-glance-hero">{peerPreview.unreadTotal}</span>
@@ -484,7 +468,8 @@
       {:else}
         <button
           type="button"
-          class="mobile-home-glance-tile mobile-home-glance-tile--daily"
+          class="mobile-home-glance-tile mobile-home-glance-tile--daily mobile-home-rise"
+          style="--home-rise-delay: 40ms"
           onclick={() => void openDailyNote()}
         >
           <span class="mobile-home-glance-kicker mobile-home-glance-kicker-accent">
@@ -499,7 +484,7 @@
       {/if}
 
       {#if continueLead}
-        <div class="mobile-home-continue">
+        <div class="mobile-home-continue mobile-home-rise" style="--home-rise-delay: 60ms">
           <p class="mobile-home-continue-kicker">Continue</p>
           <button
             type="button"
@@ -531,28 +516,37 @@
         </div>
       {/if}
 
-      {#if lastActivity}
-        <button
-          bind:this={activityEl}
-          type="button"
-          id="home-last-activity"
-          class="mobile-home-activity"
-          onclick={() => void openActivity()}
-        >
-          <p class="mobile-home-activity-kicker">Last activity</p>
-          <p
-            class="mobile-home-activity-status"
-            class:mobile-home-activity-status-done={lastActivity.status === "done"}
-            class:mobile-home-activity-status-need={lastActivity.status === "need"}
-            class:mobile-home-activity-status-motion={lastActivity.status === "motion"}
+      {#if projectLead}
+        <div class="mobile-home-continue mobile-home-rise" style="--home-rise-delay: 110ms">
+          <p class="mobile-home-continue-kicker">Projects</p>
+          <button
+            type="button"
+            class="mobile-home-continue-lead"
+            onclick={() => void openProject(projectLead)}
           >
-            {lastActivity.statusLabel}
-          </p>
-          <p class="mobile-home-activity-title">{lastActivity.title}</p>
-          {#if lastActivity.line}
-            <p class="mobile-home-activity-line">{lastActivity.line}</p>
-          {/if}
-        </button>
+            <div class="mobile-home-continue-lead-top">
+              <span class="mobile-home-continue-lead-title">{projectLead.title}</span>
+              {#if projectLead.relativeTime}
+                <span class="mobile-home-continue-time">{projectLead.relativeTime}</span>
+              {/if}
+            </div>
+            {#if projectLead.preview}
+              <span class="mobile-home-continue-preview">{projectLead.preview}</span>
+            {/if}
+          </button>
+          {#each projectWhispers as row (row.path)}
+            <button
+              type="button"
+              class="mobile-home-continue-whisper"
+              onclick={() => void openProject(row)}
+            >
+              <span class="mobile-home-continue-whisper-title">{row.title}</span>
+              {#if row.relativeTime}
+                <span class="mobile-home-continue-time">{row.relativeTime}</span>
+              {/if}
+            </button>
+          {/each}
+        </div>
       {/if}
     </div>
   </div>

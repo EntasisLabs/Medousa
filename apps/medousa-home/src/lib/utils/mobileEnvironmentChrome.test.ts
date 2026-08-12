@@ -17,7 +17,7 @@ describe("mobileEnvironmentChrome", () => {
     ]);
   });
 
-  it("hides notes and web in minimal tab bar mode", () => {
+  it("keeps Notes and Web reachable even in legacy minimal tab bar mode", () => {
     const spec = defaultEnvironmentSpec();
     spec.shellChrome = {
       mobile: {
@@ -26,7 +26,13 @@ describe("mobileEnvironmentChrome", () => {
         tabBar: "minimal",
       },
     };
-    expect(visibleMobileTabs(spec)).toEqual(["home", "chat", "more"]);
+    expect(visibleMobileTabs(spec)).toEqual([
+      "home",
+      "chat",
+      "notes",
+      "web",
+      "more",
+    ]);
   });
 
   it("shell FAB for fab ask on builtin home", () => {

@@ -12,6 +12,7 @@
     ListFilter,
     Menu,
     MessageCircle,
+    MessagesSquare,
     MoreHorizontal,
     OctagonX,
     Pencil,
@@ -27,6 +28,7 @@
     Wrench,
   } from "@lucide/svelte";
   import type { Component } from "svelte";
+  import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import { vault } from "$lib/stores/vault.svelte";
@@ -50,6 +52,8 @@
     workshopBrandCssVars,
   } from "$lib/types/workshopRegistry";
 
+  let sessionsMenuOpen = $state(false);
+
   const surface = $derived(
     resolveMobileChromeSurface(
       layout.mobileTab,
@@ -57,6 +61,12 @@
       layout.moreDestination,
     ),
   );
+
+  $effect(() => {
+    if (surface !== "chat" && sessionsMenuOpen) {
+      sessionsMenuOpen = false;
+    }
+  });
 
   const automationsMode = $derived.by((): AutomationsChromeMode => {
     if (surface !== "automations") return "browse";
@@ -77,7 +87,7 @@
   const icons: Partial<Record<MobileChromeActionId, Component>> = {
     menu: Menu,
     back: ChevronLeft,
-    sessions: History,
+    sessions: MessagesSquare,
     identity: UserRound,
     search: Search,
     notesFilter: ListFilter,
@@ -135,10 +145,10 @@
         layout.setLibraryView("list");
         return;
       case "sessions":
-        layout.setIdentityDrawerOpen(false);
-        layout.toggleSessionDrawer();
+        // Handled by the sessions OverflowMenu (New chat / Previous sessions).
         return;
       case "identity":
+        sessionsMenuOpen = false;
         layout.setSessionDrawerOpen(false);
         layout.toggleIdentityDrawer();
         return;
@@ -264,7 +274,7 @@
       case "workshop":
         return `Workshop — ${workshops.activeLabel}`;
       case "sessions":
-        return "Session history";
+        return "Sessions";
       case "identity":
         return "Open identity";
       case "search":
@@ -344,6 +354,21 @@
         return false;
     }
   }
+
+  async function createNewChat() {
+    haptic("medium");
+    sessionsMenuOpen = false;
+    layout.setIdentityDrawerOpen(false);
+    layout.setSessionDrawerOpen(false);
+    await chat.newSession();
+  }
+
+  function openPreviousSessions() {
+    haptic("light");
+    sessionsMenuOpen = false;
+    layout.setIdentityDrawerOpen(false);
+    layout.setSessionDrawerOpen(true);
+  }
 </script>
 
 <header class="mobile-top-chrome" data-chrome-surface={surface} data-automations-mode={automationsMode}>
@@ -366,7 +391,52 @@
 
   <div class="mobile-chrome-actions">
     {#each trailing as action (action)}
-      {#if action === "workshop"}
+      {#if action === "sessions"}
+        <OverflowMenu
+          bind:open={sessionsMenuOpen}
+          align="right"
+          label="Sessions"
+          title="Sessions"
+          panelWidth={12.5 * 16}
+          panelClass="w-[12.5rem] rounded-xl border border-surface-500/40 bg-surface-900/95 p-1 shadow-xl backdrop-blur"
+          onOpenChange={(open) => {
+            if (open) haptic("light");
+          }}
+        >
+          {#snippet trigger({ open, toggle })}
+            <button
+              type="button"
+              class="mobile-chrome-icon"
+              class:mobile-chrome-icon-active={open}
+              aria-label="Sessions"
+              title="Sessions"
+              aria-expanded={open}
+              aria-haspopup="menu"
+              onclick={toggle}
+            >
+              <MessagesSquare size={18} strokeWidth={1.75} />
+            </button>
+          {/snippet}
+          <button
+            type="button"
+            role="menuitem"
+            class="vault-menu-item rounded-lg"
+            onclick={() => void createNewChat()}
+          >
+            <Plus size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
+            New chat
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            class="vault-menu-item rounded-lg"
+            onclick={openPreviousSessions}
+          >
+            <History size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
+            Previous sessions
+          </button>
+        </OverflowMenu>
+      {:else if action === "workshop"}
         <button
           type="button"
           class="mobile-chrome-icon mobile-chrome-workshop"

@@ -123,6 +123,9 @@ export function switchMobileTab(tab: MobileTab): void {
   if (tab === "chat") {
     void chat.refreshSessions();
     void chat.ensureSessionHydrated();
+    void import("$lib/stores/browserWorkshop.svelte").then(({ browserWorkshop }) => {
+      if (browserWorkshop.open) browserWorkshop.close();
+    });
   }
 }
 

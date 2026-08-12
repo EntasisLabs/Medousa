@@ -289,7 +289,7 @@
               value={schedule.customCron}
               oninput={(event) =>
                 onCustomCronChange((event.currentTarget as HTMLInputElement).value)}
-              placeholder="0 9 * * *"
+              placeholder="0 0 9 * * * *"
               spellcheck="false"
               aria-label="Cron expression"
             />
@@ -391,7 +391,7 @@
             class="cron-field-input font-mono text-sm"
             value={schedule.customCron}
             oninput={(event) => onCustomCronChange((event.currentTarget as HTMLInputElement).value)}
-            placeholder="0 9 * * *"
+            placeholder="0 0 9 * * * *"
             spellcheck="false"
             aria-label="Cron expression"
           />

@@ -1024,31 +1024,21 @@ export class ChatStore {
       const attached = await this.tryReattachActiveTurn(cards);
       if (!stillSameSession()) return;
 
-      // Handoff / budget turns are not live interactive streams — synthesis lands via
-      // workspace cards + session history. Blocking history merge here left mobile
-      // stuck until a hard refresh after workshop mode finished.
+      // Only skip history merge when we actually own a live daemon stream.
+      // Local-only "live" turns after mobile SSE death used to block merge forever
+      // and fork follow-ups into the background ask lane.
       const liveStream =
-        this.messages.some(
+        attached &&
+        (this.messages.some(
           (message) =>
             message.streaming &&
             message.lane !== "worker" &&
             message.phase !== "budget_blocked",
         ) ||
-        [...this.turns.values()].some(
-          (turn) =>
-            !turn.terminal &&
-            turn.mode === "interactive" &&
-            turn.phase !== "worker_handoff" &&
-            turn.phase !== "workshop_handoff" &&
-            turn.phase !== "budget_blocked",
-        );
+          this.hasLiveInteractiveTurn());
 
-      // Merging daemon history mid-stream duplicates local user/assistant bubbles.
       if (liveStream) {
         this.sanitizeTranscript();
-        if (attached && options?.notice !== false && this.historyNotice == null) {
-          this.historyNotice = "Reconnected to live turn";
-        }
         return;
       }
 
@@ -1058,10 +1048,7 @@ export class ChatStore {
       const daemonMessages = mapTurns(history.turns, { sessionId });
       this.messages = mergeTranscript(this.messages, daemonMessages);
       this.sanitizeTranscript();
-
-      if (attached && options?.notice !== false && this.historyNotice == null) {
-        this.historyNotice = "Reconnected to live turn";
-      }
+      // Live reattach is silent; reloadCurrentSession still notices restored turns.
     } catch (err) {
       this.noteResumeFailure(err);
     }
@@ -1322,6 +1309,9 @@ export class ChatStore {
         const legacy = await getActiveSessionTurn(sessionId);
         if (!legacy.active || !legacy.turn) {
           this.activeTurnId = null;
+          // Daemon finished (or never had) an interactive turn — release any
+          // stale local lease left behind when mobile SSE died mid-turn.
+          this.clearOrphanedInteractiveTurns();
           return false;
         }
         response.turns.push({
@@ -1372,6 +1362,68 @@ export class ChatStore {
   /** @deprecated use tryReattachActiveTurn(cards) */
   async tryReattachAskTurns(cards: WorkCard[]): Promise<boolean> {
     return this.tryReattachActiveTurn(cards);
+  }
+
+  /**
+   * Daemon reports no active interactive turn, but local state still looks live
+   * (typical after iOS/Android kills SSE). Finish streaming bubbles and settle
+   * so follow-ups stay in the chat lane instead of forking to background asks.
+   */
+  clearOrphanedInteractiveTurns() {
+    const orphanIds: string[] = [];
+    for (const [turnId, turn] of this.turns) {
+      if (turn.terminal || turn.mode !== "interactive") continue;
+      if (this.isComposerOpenDuringHandoff(turnId, turn.phase)) continue;
+      orphanIds.push(turnId);
+    }
+
+    for (const turnId of orphanIds) {
+      const turn = this.turns.get(turnId);
+      const messageId = turn?.messageId?.trim() || null;
+      if (messageId) {
+        const idx = this.messages.findIndex((message) => message.id === messageId);
+        if (idx >= 0) {
+          const current = this.messages[idx];
+          this.messages = [
+            ...this.messages.slice(0, idx),
+            {
+              ...current,
+              streaming: false,
+              failed: false,
+              errorLine: null,
+              errorDetail: null,
+              answerState: current.content.trim() ? current.answerState : null,
+              phase: null,
+              statusLine: null,
+            },
+            ...this.messages.slice(idx + 1),
+          ];
+        }
+        if (this.assistantId === messageId) {
+          this.assistantId = null;
+        }
+      }
+      this.settleTurn(turnId);
+    }
+
+    // Streaming assistants with no matching turn entry (evicted owners).
+    for (const message of this.messages) {
+      if (
+        !message.streaming ||
+        message.role !== "assistant" ||
+        message.lane === "worker" ||
+        message.phase === "budget_blocked"
+      ) {
+        continue;
+      }
+      const turnId = message.turnId?.trim();
+      if (turnId && this.turns.has(turnId)) continue;
+      this.finishMessage(message.id);
+    }
+
+    if (orphanIds.length > 0) {
+      this.streamError = null;
+    }
   }
 
   private reattachContextFor(record: TurnTicketRecord) {

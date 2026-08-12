@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { SessionSummary } from "$lib/types/session";
+import type { RepositoryCatalogEntry } from "$lib/forge";
 import {
   homeActivityWhisper,
   homeContinueRows,
   homeNotesDateParts,
+  homeProjectRows,
   peerInitials,
   relativeSessionTime,
   stripMarkdownPreview,
@@ -63,6 +65,100 @@ describe("homeContinueRows", () => {
 
   it("returns empty when there are no sessions", () => {
     expect(homeContinueRows([])).toEqual([]);
+  });
+});
+
+describe("homeProjectRows", () => {
+  function repo(
+    overrides: Partial<RepositoryCatalogEntry> &
+      Pick<RepositoryCatalogEntry, "path" | "display_name" | "last_used_at">,
+  ): RepositoryCatalogEntry {
+    return {
+      pinned: false,
+      archived: false,
+      available: true,
+      dirty: false,
+      changed_files: 0,
+      remotes: [],
+      existing_projects: [],
+      state_explanation: "",
+      trust_explanation: "",
+      current_branch: "main",
+      suggested_base_ref: "main",
+      ...overrides,
+    };
+  }
+
+  it("orders pinned then most recently used", () => {
+    const rows = homeProjectRows([
+      repo({
+        path: "/a",
+        display_name: "alpha",
+        last_used_at: new Date(Date.now() - 60_000).toISOString(),
+      }),
+      repo({
+        path: "/b",
+        display_name: "bravo",
+        last_used_at: new Date(Date.now() - 3_600_000).toISOString(),
+        pinned: true,
+      }),
+      repo({
+        path: "/c",
+        display_name: "charlie",
+        last_used_at: new Date(Date.now() - 5_000).toISOString(),
+      }),
+    ]);
+    expect(rows.map((row) => row.title)).toEqual(["bravo", "charlie", "alpha"]);
+  });
+
+  it("skips unavailable and archived repos", () => {
+    const rows = homeProjectRows([
+      repo({
+        path: "/gone",
+        display_name: "gone",
+        last_used_at: new Date().toISOString(),
+        available: false,
+      }),
+      repo({
+        path: "/old",
+        display_name: "old",
+        last_used_at: new Date().toISOString(),
+        archived: true,
+      }),
+      repo({
+        path: "/ok",
+        display_name: "ok",
+        last_used_at: new Date().toISOString(),
+      }),
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].title).toBe("ok");
+  });
+
+  it("prefers an active existing project for open target", () => {
+    const rows = homeProjectRows([
+      repo({
+        path: "/medousa",
+        display_name: "Medousa",
+        last_used_at: new Date().toISOString(),
+        existing_projects: [
+          {
+            id: "done-1",
+            title: "Finished polish",
+            state: "done",
+            human_phase: "done",
+          },
+          {
+            id: "work-1",
+            title: "Home projects",
+            state: "active",
+            human_phase: "work",
+          },
+        ],
+      }),
+    ]);
+    expect(rows[0].workId).toBe("work-1");
+    expect(rows[0].preview).toBe("Home projects");
   });
 });
 

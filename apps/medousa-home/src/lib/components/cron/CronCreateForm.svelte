@@ -55,7 +55,7 @@
         <input
           class="cron-field-input font-mono"
           bind:value={cronExpr}
-          placeholder="0 9 * * *"
+          placeholder="0 0 9 * * * *"
           autocapitalize="off"
           autocorrect="off"
           spellcheck="false"

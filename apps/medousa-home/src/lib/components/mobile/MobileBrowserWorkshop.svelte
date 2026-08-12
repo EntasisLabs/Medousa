@@ -2,7 +2,7 @@
   import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
   import BrowserControlHandoff from "$lib/components/browser/BrowserControlHandoff.svelte";
   import { browserWorkshop } from "$lib/stores/browserWorkshop.svelte";
-  import { chat } from "$lib/stores/chat.svelte";
+  import { layout } from "$lib/stores/layout.svelte";
   import { haptic } from "$lib/haptics";
   import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
 
@@ -19,6 +19,21 @@
     haptic("light");
     browserWorkshop.close();
   }
+
+  function openFullChat() {
+    haptic("light");
+    browserWorkshop.close();
+    onOpenFullChat?.();
+  }
+
+  // Mirror desktop BrowserWorkshop: leaving Web dismisses the overlay so it
+  // never hangs as a PiP dock over Home/Chat.
+  $effect(() => {
+    if (!browserWorkshop.open) return;
+    if (layout.mobileTab !== "web") {
+      browserWorkshop.close();
+    }
+  });
 
   $effect(() => {
     if (!browserWorkshop.open || browserWorkshop.minimized || !sheetEl) return;
@@ -48,6 +63,13 @@
             <p class="text-content-tertiary truncate text-[11px]">{browserWorkshop.scopeLabel}</p>
           </div>
           <BrowserControlHandoff compact={true} />
+          <button
+            type="button"
+            class="btn btn-sm variant-ghost-surface shrink-0"
+            onclick={openFullChat}
+          >
+            Chat
+          </button>
           <button type="button" class="btn btn-sm variant-ghost-surface shrink-0" onclick={dismiss}>
             Close
           </button>
@@ -59,7 +81,7 @@
           embedded={true}
           workshop={true}
           mobile={true}
-          onOpenContext={() => onOpenFullChat?.()}
+          onOpenContext={() => openFullChat()}
         />
       </div>
     </div>

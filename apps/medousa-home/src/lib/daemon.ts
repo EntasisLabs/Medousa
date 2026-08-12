@@ -47,6 +47,7 @@ import type {
   UpdateRecurringRequest,
   UpdateRecurringResponse,
 } from "$lib/types/recurring";
+import { toSevenFieldCron } from "$lib/utils/friendlySchedule";
 import type {
   ContinuationStatusResponse,
   DaemonStatsResponse,
@@ -1776,9 +1777,13 @@ export async function updateRecurring(
   recurringId: string,
   request: UpdateRecurringRequest,
 ): Promise<UpdateRecurringResponse> {
+  const next =
+    request.cron_expr != null
+      ? { ...request, cron_expr: toSevenFieldCron(request.cron_expr) }
+      : request;
   return invoke<UpdateRecurringResponse>("recurring_update", {
     recurringId,
-    request,
+    request: next,
   });
 }
 
@@ -1910,7 +1915,7 @@ export async function registerRecurringPrompt(request: {
       prompt: request.prompt,
       system_prompt:
         "Medousa runtime collaborator — evidence-led, concise, warm continuity. The principal owns the workspace; honor AVEC, STTP, and continuity blocks when present. Tool receipts ground claims.",
-      cron_expr: request.cron_expr,
+      cron_expr: toSevenFieldCron(request.cron_expr),
       timezone: request.timezone ?? "UTC",
       jitter_seconds: 0,
       enabled: request.enabled ?? true,

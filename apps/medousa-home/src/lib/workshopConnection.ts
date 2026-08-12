@@ -152,12 +152,15 @@ async function recoverInteractiveStreams(): Promise<void> {
   const attached = await chat.tryReattachActiveTurn(workspace.cards);
   if (attached) {
     interactiveReconnect.noteSuccess();
-  }
-  if (!attached && needsStream) {
-    chat.noteStreamFailure("Could not reattach to live turn", { recoverable: true });
-  } else if (attached || !needsStream) {
     chat.streamError = null;
+    return;
   }
+  // Daemon idle clears orphans inside tryReattach; only alarm when still live.
+  if (needsStream && chat.hasLiveInteractiveTurn()) {
+    chat.noteStreamFailure("Could not reattach to live turn", { recoverable: true });
+    return;
+  }
+  chat.streamError = null;
 }
 
 /** Restart SSE pipes without a full settings/runtime reload. */
