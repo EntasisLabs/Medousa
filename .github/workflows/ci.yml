@@ -42,6 +42,9 @@ jobs:
       - name: Guard wmi windows/windows-core lock alignment
         working-directory: ${{ github.workspace }}
         run: ./scripts/ci/check-wmi-windows-alignment.sh
+      - name: Check streamed CLI installer
+        working-directory: ${{ github.workspace }}
+        run: ./scripts/ci/check-streamed-install.sh
       - uses: actions/setup-node@v5
         with:
           node-version: "22"

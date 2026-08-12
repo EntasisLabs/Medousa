@@ -122,7 +122,9 @@
   }
 
   async function continueSetup() {
+    let parsedPairLink = null as ReturnType<typeof parsePairQrUrl>;
     if (connectMode === "pair" && pairLink.trim()) {
+      parsedPairLink = parsePairQrUrl(pairLink);
       applyPairLink(pairLink);
     }
 
@@ -137,18 +139,17 @@
     wizard.busy = true;
     wizard.error = null;
     try {
-      await setDaemonUrl(daemonUrl.trim());
-      if (!connected) {
-        await testConnection(false);
-      }
-      if (!connected) {
-        wizard.error =
-          statusMessage ??
-          "Could not connect yet. Check that Medousa is running on your computer and on the same Wi‑Fi.";
-        return;
-      }
-
       if (connectMode === "pair" && pairLink.trim()) {
+        const canBootstrapOverIroh = Boolean(parsedPairLink?.irohTicket);
+        if (!canBootstrapOverIroh && !connected) {
+          await testConnection(false);
+        }
+        if (!canBootstrapOverIroh && !connected) {
+          wizard.error =
+            statusMessage ??
+            "Could not connect yet. Check that Medousa is running on your computer and on the same Wi‑Fi.";
+          return;
+        }
         try {
           const paired = await completePairingFromQr({
             qrUrl: pairLink.trim(),
@@ -161,6 +162,17 @@
           statusMessage = `Paired with ${paired.workshopPeerName} — you're ready to talk.`;
         } catch (err) {
           wizard.error = err instanceof Error ? err.message : String(err);
+          return;
+        }
+      } else {
+        await setDaemonUrl(daemonUrl.trim());
+        if (!connected) {
+          await testConnection(false);
+        }
+        if (!connected) {
+          wizard.error =
+            statusMessage ??
+            "Could not connect yet. Check that Medousa is running on your computer and on the same Wi‑Fi.";
           return;
         }
       }

@@ -42,14 +42,14 @@ disk — day-to-day extras are **Settings → Packages**.
 One command installs the **engine** package (launcher, daemon, CLI, TUI) to `~/.local/bin`:
 
 ```bash
-export MEDOUSA_RELEASE_BASE_URL=https://releases.example.com/medousa
-./scripts/install.sh
+curl -fsSL https://raw.githubusercontent.com/EntasisLabs/Medousa/main/scripts/install.sh | bash
 ```
 
-Self-hosted registry with pinned version:
+Pinned version from the public release CDN:
 
 ```bash
-./scripts/install.sh --registry-url https://releases.example.com/medousa --version v0.1.0
+curl -fsSL https://raw.githubusercontent.com/EntasisLabs/Medousa/main/scripts/install.sh \
+  | bash -s -- --registry-url https://releases.entasislabs.com/medousa --version v0.9.1
 ```
 
 Air-gap / local artifact (engine tarball):
@@ -75,8 +75,8 @@ medousa packages status
 Verify install:
 
 ```bash
-./scripts/install.sh --verify-only
 medousa doctor
+medousa packages status
 ```
 ---
 
