@@ -55,6 +55,9 @@ export function isRecoverableStreamError(message: string): boolean {
   if (!trimmed) return true;
   return (
     trimmed.includes("SSE stream ended unexpectedly") ||
+    trimmed.includes("read HTTP response") ||
+    trimmed.includes("read iroh HTTP body") ||
+    trimmed.includes("connection lost") ||
     trimmed.includes("cannot reach") ||
     trimmed.startsWith("HTTP ")
   );

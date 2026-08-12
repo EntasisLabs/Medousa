@@ -4,6 +4,33 @@ use tauri::{AppHandle, Emitter};
 
 use crate::workshop_transport::WorkshopByteStream;
 
+#[derive(Clone, serde::Serialize)]
+struct StreamErrorEvent<'a> {
+    message: &'a str,
+    recoverable: bool,
+    transport: &'a str,
+    stage: &'a str,
+}
+
+fn emit_stream_error(
+    app: &AppHandle,
+    event_name: &str,
+    message: &str,
+    recoverable: bool,
+    transport: &str,
+    stage: &str,
+) {
+    let _ = app.emit(
+        event_name,
+        StreamErrorEvent {
+            message,
+            recoverable,
+            transport,
+            stage,
+        },
+    );
+}
+
 pub async fn stream_sse_json<T, F>(
     app: &AppHandle,
     client: &Client,
@@ -19,10 +46,7 @@ pub async fn stream_sse_json<T, F>(
     let response = match client.get(url).send().await {
         Ok(response) => response,
         Err(err) => {
-            let _ = app.emit(
-                error_event,
-                serde_json::json!({ "message": err.to_string() }),
-            );
+            emit_stream_error(app, error_event, &err.to_string(), true, "http", "connect");
             return;
         }
     };
@@ -30,9 +54,13 @@ pub async fn stream_sse_json<T, F>(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        let _ = app.emit(
+        emit_stream_error(
+            app,
             error_event,
-            serde_json::json!({ "message": format!("HTTP {status}: {body}") }),
+            &format!("HTTP {status}: {body}"),
+            status.is_server_error() || status.as_u16() == 408 || status.as_u16() == 429,
+            "http",
+            "response_status",
         );
         return;
     }
@@ -82,7 +110,7 @@ pub async fn stream_sse_json_workshop<T, F>(
             Ok(Some(chunk)) => chunk,
             Ok(None) => break,
             Err(err) => {
-                let _ = app.emit(error_event, serde_json::json!({ "message": err }));
+                emit_stream_error(app, error_event, &err, true, "workshop", "read");
                 break;
             }
         };
@@ -92,9 +120,13 @@ pub async fn stream_sse_json_workshop<T, F>(
     }
 
     if !*cancel_rx.borrow() {
-        let _ = app.emit(
+        emit_stream_error(
+            app,
             error_event,
-            serde_json::json!({ "message": "SSE stream ended unexpectedly" }),
+            "SSE stream ended unexpectedly",
+            true,
+            "workshop",
+            "eof",
         );
     }
 }
@@ -130,9 +162,13 @@ async fn pump_sse_stream<S, T, F>(
 
         let Some(chunk) = next else {
             if !*cancel.borrow() {
-                let _ = app.emit(
+                emit_stream_error(
+                    app,
                     error_event,
-                    serde_json::json!({ "message": "SSE stream ended unexpectedly" }),
+                    "SSE stream ended unexpectedly",
+                    true,
+                    "http",
+                    "eof",
                 );
             }
             break;
@@ -141,10 +177,7 @@ async fn pump_sse_stream<S, T, F>(
         let chunk = match chunk {
             Ok(bytes) => bytes,
             Err(err) => {
-                let _ = app.emit(
-                    error_event,
-                    serde_json::json!({ "message": err.to_string() }),
-                );
+                emit_stream_error(app, error_event, &err.to_string(), true, "http", "read");
                 break;
             }
         };
@@ -178,9 +211,13 @@ fn drain_sse_buffer<T, F>(
                 let _ = app.emit(event_name, &data);
             }
             Err(err) => {
-                let _ = app.emit(
+                emit_stream_error(
+                    app,
                     error_event,
-                    serde_json::json!({ "message": format!("invalid SSE JSON: {err}") }),
+                    &format!("invalid SSE JSON: {err}"),
+                    false,
+                    "sse",
+                    "decode",
                 );
             }
         }

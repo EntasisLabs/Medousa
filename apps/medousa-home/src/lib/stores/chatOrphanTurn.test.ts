@@ -136,4 +136,46 @@ describe("orphaned interactive turn lease", () => {
       ),
     ).toBe(true);
   });
+
+  it("keeps the assistant bubble live across a recoverable stream failure", async () => {
+    const { store } = await loadStore();
+    store.beginTurn("hello", {
+      turn_id: "turn-recoverable",
+      session_id: store.sessionId,
+      mode: "interactive",
+      phase: "streaming",
+      accepted_at_utc: new Date().toISOString(),
+      stream_url: "interactive://stream/turn-recoverable",
+      stream_ready: true,
+      workspace_card_id: null,
+    });
+
+    store.noteStreamFailure("read HTTP response", { recoverable: true });
+
+    const assistant = store.messages.find((message) => message.role === "assistant");
+    expect(assistant?.failed).not.toBe(true);
+    expect(assistant?.streaming).toBe(true);
+    expect(store.hasLiveInteractiveTurn()).toBe(true);
+  });
+
+  it("fails and settles the assistant bubble for a non-recoverable stream error", async () => {
+    const { store } = await loadStore();
+    store.beginTurn("hello", {
+      turn_id: "turn-non-recoverable",
+      session_id: store.sessionId,
+      mode: "interactive",
+      phase: "streaming",
+      accepted_at_utc: new Date().toISOString(),
+      stream_url: "interactive://stream/turn-non-recoverable",
+      stream_ready: true,
+      workspace_card_id: null,
+    });
+
+    store.noteStreamFailure("invalid SSE JSON", { recoverable: false });
+
+    const assistant = store.messages.find((message) => message.role === "assistant");
+    expect(assistant?.failed).toBe(true);
+    expect(assistant?.streaming).toBe(false);
+    expect(store.hasLiveInteractiveTurn()).toBe(false);
+  });
 });

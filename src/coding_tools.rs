@@ -1496,6 +1496,7 @@ impl CognitionShellSessionRunTool {
             payload.as_deref().map(str::as_bytes),
             wait_ms,
             after_sequence,
+            None,
         )
         .await?;
         Ok(ShellSessionRunOutput {
@@ -1516,6 +1517,7 @@ struct SessionStreamOutput {
     next_sequence: u64,
     replay_truncated: bool,
     output_truncated: bool,
+    completion_exit_code: Option<i32>,
 }
 
 async fn stream_session_input(
@@ -1523,6 +1525,7 @@ async fn stream_session_input(
     input: Option<&[u8]>,
     wait_ms: u64,
     after_sequence: Option<u64>,
+    completion_marker: Option<&str>,
 ) -> StasisResult<SessionStreamOutput> {
     use futures_util::{SinkExt, StreamExt};
     use tokio_tungstenite::tungstenite::Message;
@@ -1556,6 +1559,7 @@ async fn stream_session_input(
     let mut next_sequence = after_sequence.unwrap_or(0);
     let mut replay_truncated = false;
     let mut output_truncated = false;
+    let mut completion_exit_code = None;
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(wait_ms);
     while std::time::Instant::now() < deadline {
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
@@ -1579,6 +1583,13 @@ async fn stream_session_input(
                                 }
                                 if output.len() >= MAX_SHELL_OUTPUT_BYTES {
                                     output_truncated = true;
+                                    break;
+                                }
+                                if let Some(marker) = completion_marker
+                                    && let Some(exit_code) =
+                                        take_command_completion(&mut output, marker)
+                                {
+                                    completion_exit_code = Some(exit_code);
                                     break;
                                 }
                             }
@@ -1610,6 +1621,12 @@ async fn stream_session_input(
                     output_truncated = true;
                     break;
                 }
+                if let Some(marker) = completion_marker
+                    && let Some(exit_code) = take_command_completion(&mut output, marker)
+                {
+                    completion_exit_code = Some(exit_code);
+                    break;
+                }
             }
             Ok(Some(Ok(Message::Close(_)))) | Ok(None) => break,
             Ok(Some(Err(_))) => break,
@@ -1624,7 +1641,53 @@ async fn stream_session_input(
         next_sequence,
         replay_truncated,
         output_truncated,
+        completion_exit_code,
     })
+}
+
+fn one_shot_completion_marker() -> String {
+    format!("__MEDOUSA_COMMAND_DONE_{}__", uuid::Uuid::new_v4().simple())
+}
+
+fn wrap_one_shot_command(command: &str, marker: &str) -> String {
+    format!(
+        "(\nexport PAGER=cat GIT_PAGER=cat SYSTEMD_PAGER=cat PAGERSECURE=0 LESS=FRX;\n{command}\n)\n__medousa_command_status=$?\nprintf '\\n%s:%d\\n' '{marker}' \"$__medousa_command_status\"\n"
+    )
+}
+
+fn take_command_completion(output: &mut String, marker: &str) -> Option<i32> {
+    let needle = format!("{marker}:");
+    let mut search_from = 0;
+    while let Some(relative) = output.get(search_from..)?.find(&needle) {
+        let marker_start = search_from + relative;
+        let code_start = marker_start + needle.len();
+        let suffix = output.get(code_start..)?;
+        let code_len = suffix.find(['\r', '\n']).unwrap_or(suffix.len());
+        let raw_code = suffix[..code_len].trim();
+        if !raw_code.is_empty()
+            && raw_code
+                .chars()
+                .enumerate()
+                .all(|(index, ch)| ch.is_ascii_digit() || (index == 0 && ch == '-'))
+            && let Ok(exit_code) = raw_code.parse::<i32>()
+        {
+            let line_start = output[..marker_start]
+                .rfind('\n')
+                .map_or(marker_start, |index| index + 1);
+            let mut line_end = code_start + code_len;
+            while output
+                .as_bytes()
+                .get(line_end)
+                .is_some_and(|byte| matches!(*byte, b'\r' | b'\n'))
+            {
+                line_end += 1;
+            }
+            output.replace_range(line_start..line_end, "");
+            return Some(exit_code);
+        }
+        search_from = code_start;
+    }
+    None
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1755,7 +1818,7 @@ struct CoderShellRunInput {
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
     attempt_id: CompatOption<String>,
-    /// How long to stream output (default 3000, max 15000)
+    /// How long to wait for command completion (default 15000, max 15000)
     #[serde(default)]
     #[schemars(
         with = "i64",
@@ -1779,6 +1842,9 @@ struct CoderShellRunOutput {
     next_sequence: u64,
     replay_truncated: bool,
     output_truncated: bool,
+    completed: bool,
+    exit_code: Option<i32>,
+    interrupted: bool,
 }
 
 #[medousa_tool(id = COGNITION_CODER_SHELL_RUN_ID)]
@@ -1801,7 +1867,7 @@ impl CognitionCoderShellRunTool {
         let wait_ms = input
             .wait_ms
             .into_option()
-            .unwrap_or(3000)
+            .unwrap_or(15_000)
             .clamp(100, 15_000);
         let session_id = match session_id_input
             .as_deref()
@@ -1819,16 +1885,26 @@ impl CognitionCoderShellRunTool {
                 daemon_session_id(&created)?
             }
         };
-        let payload = format!("{command}\n");
+        let completion_marker = one_shot_completion_marker();
+        let payload = wrap_one_shot_command(&command, &completion_marker);
         let stream = stream_session_input(
             &session_id,
             Some(payload.as_bytes()),
             wait_ms,
             after_sequence,
+            Some(&completion_marker),
         )
         .await?;
+        let completed = stream.completion_exit_code.is_some();
+        let interrupted = !completed
+            && daemon_post(
+                &format!("/v1/sessions/shell/{session_id}/signal"),
+                json!({ "signal": "interrupt" }),
+            )
+            .await
+            .is_ok();
         Ok(CoderShellRunOutput {
-            ok: stream.input_written,
+            ok: stream.input_written && stream.completion_exit_code == Some(0),
             surface: "coder_pty".to_string(),
             session_id,
             command,
@@ -1837,6 +1913,9 @@ impl CognitionCoderShellRunTool {
             next_sequence: stream.next_sequence,
             replay_truncated: stream.replay_truncated,
             output_truncated: stream.output_truncated,
+            completed,
+            exit_code: stream.completion_exit_code,
+            interrupted,
         })
     }
 }
@@ -1893,6 +1972,26 @@ mod tests {
         let mut next_sequence = 42;
         accept_shell_ready_watermark(&mut next_sequence, 10);
         assert_eq!(next_sequence, 10);
+    }
+
+    #[test]
+    fn one_shot_wrapper_scopes_noninteractive_pager_environment() {
+        let wrapped = wrap_one_shot_command("git log --oneline -3", "__DONE__");
+        assert!(wrapped.starts_with("(\nexport PAGER=cat GIT_PAGER=cat"));
+        assert!(wrapped.contains("git log --oneline -3"));
+        assert!(wrapped.contains("printf '\\n%s:%d\\n' '__DONE__'"));
+    }
+
+    #[test]
+    fn completion_parser_ignores_echoed_format_and_extracts_exit_code() {
+        let marker = "__MEDOUSA_COMMAND_DONE_test__";
+        let mut output = format!(
+            "printf '%s:%d' '{marker}' \"$status\"\r\ncommand output\r\n{marker}:7\r\nprompt% "
+        );
+        assert_eq!(take_command_completion(&mut output, marker), Some(7));
+        assert!(output.contains("command output"));
+        assert!(output.contains("prompt% "));
+        assert!(!output.contains(&format!("{marker}:7")));
     }
 
     #[test]

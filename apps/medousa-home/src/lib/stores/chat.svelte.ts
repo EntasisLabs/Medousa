@@ -3304,7 +3304,7 @@ export class ChatStore {
       )?.messageId ??
       null;
 
-    if (liveTurn && messageId) {
+    if (!recoverable && liveTurn && messageId) {
       this.markMessageFailed(messageId, friendlyUserError(message));
       if (this.assistantId === messageId) {
         this.assistantId = null;
