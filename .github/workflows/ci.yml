@@ -62,10 +62,26 @@ jobs:
             integrations/vscode/package-lock.json
             integrations/obsidian/package-lock.json
             integrations/browser/package-lock.json
-      - uses: rhysd/action-setup-vim@v1
-        with:
-          version: v0.10.4
-          neovim: true
+      - name: Install Neovim v0.10.4
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_json="$(curl --fail --silent --show-error --retry 5 \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/neovim/neovim/releases/tags/v0.10.4)"
+          asset_id="$(jq -r '.assets[] | select(.name == "nvim-linux-x86_64.tar.gz") | .id' <<<"${release_json}")"
+          [[ "${asset_id}" =~ ^[0-9]+$ ]]
+          archive="${RUNNER_TEMP}/nvim-linux-x86_64.tar.gz"
+          curl --fail --location --silent --show-error --retry 5 \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/octet-stream" \
+            "https://api.github.com/repos/neovim/neovim/releases/assets/${asset_id}" \
+            -o "${archive}"
+          echo "95aaa8e89473f5421114f2787c13ae0ec6e11ebbd1a13a1bd6fcf63420f8073f  ${archive}" | sha256sum --check
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}"
+          echo "${RUNNER_TEMP}/nvim-linux-x86_64/bin" >> "${GITHUB_PATH}"
       - name: Install integration dependencies
         run: |
           npm ci --prefix integrations/vscode

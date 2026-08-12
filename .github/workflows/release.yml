@@ -833,6 +833,7 @@ jobs:
         run: npm ci
 
       - name: Guard wmi windows/windows-core lock alignment
+        working-directory: ${{ github.workspace }}
         run: ./scripts/ci/check-wmi-windows-alignment.sh
 
       - name: Build desktop app
