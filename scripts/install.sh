@@ -6,9 +6,38 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MEDOUSA_GITHUB_REPO="${MEDOUSA_GITHUB_REPO:-EntasisLabs/Medousa}"
+MEDOUSA_INSTALL_SCRIPT_REF="${MEDOUSA_INSTALL_SCRIPT_REF:-main}"
+SCRIPT_PATH="${BASH_SOURCE[0]-}"
+SCRIPT_DIR=""
+COMMON_SH=""
+BOOTSTRAP_DIR=""
+
+if [[ -n "${SCRIPT_PATH}" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "${SCRIPT_PATH}")" && pwd)"
+  COMMON_SH="${SCRIPT_DIR}/release/common.sh"
+fi
+
+# `curl .../install.sh | bash` has no neighboring release/common.sh. Fetch the
+# one from the same repository ref into a temporary layout; repo/source installs
+# continue to use the checked-in helper directly.
+if [[ -z "${COMMON_SH}" || ! -f "${COMMON_SH}" ]]; then
+  command -v curl >/dev/null 2>&1 || {
+    echo "[medousa-install] error: curl is required for a streamed install" >&2
+    exit 1
+  }
+  BOOTSTRAP_DIR="$(mktemp -d)"
+  trap 'rm -rf "${BOOTSTRAP_DIR}"' EXIT
+  mkdir -p "${BOOTSTRAP_DIR}/release"
+  COMMON_SH="${BOOTSTRAP_DIR}/release/common.sh"
+  COMMON_URL="${MEDOUSA_INSTALL_COMMON_URL:-https://raw.githubusercontent.com/${MEDOUSA_GITHUB_REPO}/${MEDOUSA_INSTALL_SCRIPT_REF}/scripts/release/common.sh}"
+  curl --fail --silent --show-error --location --retry 5 \
+    "${COMMON_URL}" \
+    -o "${COMMON_SH}"
+fi
+
 # shellcheck source=release/common.sh
-source "${SCRIPT_DIR}/release/common.sh"
+source "${COMMON_SH}"
 
 MEDOUSA_VERSION="${MEDOUSA_VERSION:-latest}"
 REGISTRY_URL="${MEDOUSA_RELEASE_BASE_URL:-}"
@@ -22,6 +51,7 @@ DRY_RUN=0
 FORCE=0
 SKIP_CHECKSUM=0
 VERIFY_ONLY=0
+UNINSTALL=0
 INSTALL_PROFILE=""
 PULL_LOCAL_BRAIN=0
 
@@ -58,13 +88,15 @@ Environment:
   MEDOUSA_RELEASE_CHANNEL     Release channel (default: stable)
   MEDOUSA_RELEASE_MANIFEST_URL  Override manifest URL
   MEDOUSA_GITHUB_REPO   GitHub repo fallback (owner/name, default: ${MEDOUSA_GITHUB_REPO})
+  MEDOUSA_INSTALL_SCRIPT_REF  Git ref used to fetch helpers for curl-piped installs (default: main)
+  MEDOUSA_INSTALL_COMMON_URL  Override helper URL for mirrors/testing
   MEDOUSA_VERSION       Same as --version
   MEDOUSA_INSTALL_DIR   Same as --install-dir
   MEDOUSA_STATE_DIR     Install metadata directory (default: ~/.local/share/medousa)
 
 Examples:
   # Production: pinned release from CDN / GitHub
-  curl -fsSL https://raw.githubusercontent.com/${MEDOUSA_GITHUB_REPO}/main/scripts/install.sh | bash -s -- --version v0.1.0
+  curl -fsSL https://raw.githubusercontent.com/${MEDOUSA_GITHUB_REPO}/main/scripts/install.sh | bash -s -- --version v0.9.1
 
   # Enterprise / air-gap: local engine artifact
   ./scripts/install.sh --from-dist dist/engine-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
@@ -470,20 +502,20 @@ postflight_install() {
   log "post-install checks passed (launcher + daemon executable, set fingerprint OK)"
 }
 
-install_from_archive() {
+install_from_archive() (
   local archive_path="$1"
   local target="$2"
   local version="$3"
   local tmp payload_root
 
   tmp="$(mktemp -d)"
-  trap 'rm -rf "${tmp}"' RETURN
+  trap 'rm -rf "${tmp}"' EXIT
 
   log "extracting $(basename "${archive_path}")"
   run tar -xzf "${archive_path}" -C "${tmp}"
   payload_root="$(find_payload_root "${tmp}")"
   install_payload "${payload_root}" "${target}" "${version}" "archive:$(basename "${archive_path}")"
-}
+)
 
 resolve_release_tag() {
   if [[ "${MEDOUSA_VERSION}" != "latest" ]]; then
@@ -556,7 +588,7 @@ verify_archive_checksum() {
   log "archive checksum verified"
 }
 
-install_from_release() {
+install_from_release() (
   local target="$1"
   local tmp archive_path checksums_path version_tag version archive_name engine_version
 
@@ -565,7 +597,7 @@ install_from_release() {
   medousa_require_cmd tar
 
   tmp="$(mktemp -d)"
-  trap 'rm -rf "${tmp}"' RETURN
+  trap 'rm -rf "${tmp}"' EXIT
 
   version_tag="$(resolve_release_tag)"
   version="${version_tag#v}"
@@ -585,7 +617,7 @@ install_from_release() {
   fi
 
   install_from_archive "${archive_path}" "${target}" "${engine_version}"
-}
+)
 
 # Resolve engine package version from channel release-manifest when registry is set.
 resolve_engine_package_version() {
@@ -781,7 +813,7 @@ main() {
   log "  2. medousa setup          # first-time configuration"
   log "  3. medousa doctor         # health check"
   log "  4. medousa pull <name>    # optional: mcp-gateway, telegram, local-brain, …"
-  log "  5. ./scripts/install.sh --verify-only   # validate engine binary set"
+  log "  5. medousa packages status # inspect installed/optional packages"
   log ""
 }
 
