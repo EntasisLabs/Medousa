@@ -147,6 +147,7 @@ pub fn parse_tool_call_mode(value: &str) -> ToolCallMode {
     }
 }
 
+#[allow(clippy::too_many_arguments)] // prior-message windows travel together
 pub fn build_prior_messages(
     tool_catalog: &crate::typed_tools::ToolCatalog,
     session_id: &str,

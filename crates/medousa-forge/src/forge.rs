@@ -1506,6 +1506,7 @@ impl Forge {
     }
 
     /// Add a line-anchored review comment while the item awaits review.
+    #[allow(clippy::too_many_arguments)] // comment placement fields travel together
     pub fn add_review_comment(
         &self,
         work_id: &WorkId,
@@ -1545,7 +1546,7 @@ impl Forge {
         }
 
         let attempt = match attempt_id {
-            Some(id) => item.attempt(&id).ok_or_else(|| ForgeError::AttemptNotFound(id))?,
+            Some(id) => item.attempt(&id).ok_or(ForgeError::AttemptNotFound(id))?,
             None => item
                 .attempts
                 .iter()

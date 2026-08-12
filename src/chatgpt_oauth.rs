@@ -490,13 +490,13 @@ impl ChatGptOAuthBroker {
     ) -> Result<ChatGptModelListResponse, OAuthError> {
         let credentials = self.credentials_for_request().await?;
         let response = self
-            .request_models_once(&url, &credentials.0, &credentials.1)
+            .request_models_once(url, &credentials.0, &credentials.1)
             .await?;
         if response.status() == reqwest::StatusCode::UNAUTHORIZED {
             let refreshed = self.refresh_after_unauthorized(&credentials.0).await?;
             return self
                 .parse_models_response(
-                    self.request_models_once(&url, &refreshed.0, &refreshed.1)
+                    self.request_models_once(url, &refreshed.0, &refreshed.1)
                         .await?,
                 )
                 .await;

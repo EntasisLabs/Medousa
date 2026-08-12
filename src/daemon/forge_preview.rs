@@ -39,7 +39,7 @@ pub fn extract_ready_url(text: &str) -> Option<String> {
     let raw = url_re
         .find(text)?
         .as_str()
-        .trim_end_matches(|ch| matches!(ch, '.' | ',' | ';' | ')' | ']' | '"' | '\''));
+        .trim_end_matches(['.', ',', ';', ')', ']', '"', '\'']);
     normalize_loopback_url(raw)
 }
 
@@ -232,7 +232,7 @@ async fn proxy_preview(_state: AppState, token: String, rest: String, req: Reque
         }
     }
     let stream = upstream_response.bytes_stream().map(|chunk| {
-        chunk.map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err.to_string()))
+        chunk.map_err(|err| std::io::Error::other(err.to_string()))
     });
     response
         .body(Body::from_stream(stream))

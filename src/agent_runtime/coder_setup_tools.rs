@@ -378,6 +378,28 @@ impl CognitionProjectCreateTool {
 }
 
 #[cfg(test)]
+fn contract_tool_definition<T: TypedTool>() -> Tool {
+    let contract = T::contract();
+    Tool::new(contract.id.as_str())
+        .with_description(contract.description)
+        .with_schema(contract.input_schema.clone())
+}
+
+#[cfg(test)]
+pub(crate) fn contract_tool_definitions() -> Vec<Tool> {
+    vec![
+        contract_tool_definition::<CognitionProjectListTool>(),
+        contract_tool_definition::<CognitionProjectBindTool>(),
+        contract_tool_definition::<CognitionProjectCreateTool>(),
+    ]
+}
+
+#[cfg(test)]
+pub(crate) fn typed_contract_ids() -> [ToolId; 3] {
+    [PROJECT_LIST_ID, PROJECT_BIND_ID, PROJECT_CREATE_ID]
+}
+
+#[cfg(test)]
 mod command_tests {
     use super::*;
 
@@ -432,26 +454,4 @@ mod command_tests {
         .expect("project bind input");
         assert!(input.work_id.into_option().is_none());
     }
-}
-
-#[cfg(test)]
-fn contract_tool_definition<T: TypedTool>() -> Tool {
-    let contract = T::contract();
-    Tool::new(contract.id.as_str())
-        .with_description(contract.description)
-        .with_schema(contract.input_schema.clone())
-}
-
-#[cfg(test)]
-pub(crate) fn contract_tool_definitions() -> Vec<Tool> {
-    vec![
-        contract_tool_definition::<CognitionProjectListTool>(),
-        contract_tool_definition::<CognitionProjectBindTool>(),
-        contract_tool_definition::<CognitionProjectCreateTool>(),
-    ]
-}
-
-#[cfg(test)]
-pub(crate) fn typed_contract_ids() -> [ToolId; 3] {
-    [PROJECT_LIST_ID, PROJECT_BIND_ID, PROJECT_CREATE_ID]
 }
