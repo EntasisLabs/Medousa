@@ -378,21 +378,23 @@ mod tests {
 
     #[test]
     fn main_profile_preserves_api_and_oauth_as_separate_targets() {
-        let mut defaults = crate::session::TuiDefaults::default();
-        defaults.inference_profiles = Some(crate::inference_profiles::InferenceProfilesConfig {
-            main: Some(InferenceProfile {
-                provider: OPENAI_CODEX_PROVIDER_ID.into(),
-                model: "gpt-5.6-sol".into(),
-                base_url: None,
-                fallbacks: vec![InferenceTarget {
-                    provider: "openai".into(),
+        let defaults = crate::session::TuiDefaults {
+            inference_profiles: Some(crate::inference_profiles::InferenceProfilesConfig {
+                main: Some(InferenceProfile {
+                    provider: OPENAI_CODEX_PROVIDER_ID.into(),
                     model: "gpt-5.6-sol".into(),
                     base_url: None,
-                }],
+                    fallbacks: vec![InferenceTarget {
+                        provider: "openai".into(),
+                        model: "gpt-5.6-sol".into(),
+                        base_url: None,
+                    }],
+                }),
+                vision: None,
+                stt: None,
             }),
-            vision: None,
-            stt: None,
-        });
+            ..Default::default()
+        };
 
         let targets = profile_targets_from_defaults(InferenceProfileKind::Main, &defaults);
         assert_eq!(targets.len(), 2);
@@ -402,17 +404,19 @@ mod tests {
 
     #[test]
     fn vision_targets_prefer_selected_model_then_configured_fallback() {
-        let mut defaults = crate::session::TuiDefaults::default();
-        defaults.inference_profiles = Some(crate::inference_profiles::InferenceProfilesConfig {
-            main: None,
-            vision: Some(InferenceProfile {
-                provider: "openai".into(),
-                model: "gpt-4.1-mini".into(),
-                base_url: None,
-                fallbacks: Vec::new(),
+        let defaults = crate::session::TuiDefaults {
+            inference_profiles: Some(crate::inference_profiles::InferenceProfilesConfig {
+                main: None,
+                vision: Some(InferenceProfile {
+                    provider: "openai".into(),
+                    model: "gpt-4.1-mini".into(),
+                    base_url: None,
+                    fallbacks: Vec::new(),
+                }),
+                stt: None,
             }),
-            stt: None,
-        });
+            ..Default::default()
+        };
 
         let targets = vision_targets_for_turn(
             InferenceTarget {
@@ -437,38 +441,42 @@ mod tests {
             model: "gpt-5.6-sol".into(),
             base_url: None,
         };
-        let mut defaults = crate::session::TuiDefaults::default();
-        defaults.inference_profiles = Some(crate::inference_profiles::InferenceProfilesConfig {
-            main: None,
-            vision: Some(InferenceProfile {
-                provider: primary.provider.clone(),
-                model: primary.model.clone(),
-                base_url: None,
-                fallbacks: Vec::new(),
+        let defaults = crate::session::TuiDefaults {
+            inference_profiles: Some(crate::inference_profiles::InferenceProfilesConfig {
+                main: None,
+                vision: Some(InferenceProfile {
+                    provider: primary.provider.clone(),
+                    model: primary.model.clone(),
+                    base_url: None,
+                    fallbacks: Vec::new(),
+                }),
+                stt: None,
             }),
-            stt: None,
-        });
+            ..Default::default()
+        };
 
         assert_eq!(vision_targets_for_turn(primary, &defaults).len(), 1);
     }
 
     #[test]
     fn main_turn_override_is_not_replaced_by_saved_profile() {
-        let mut defaults = crate::session::TuiDefaults::default();
-        defaults.inference_profiles = Some(crate::inference_profiles::InferenceProfilesConfig {
-            main: Some(InferenceProfile {
-                provider: "anthropic".into(),
-                model: "claude-sonnet-4".into(),
-                base_url: None,
-                fallbacks: vec![InferenceTarget {
-                    provider: "openai".into(),
-                    model: "gpt-5.6".into(),
+        let defaults = crate::session::TuiDefaults {
+            inference_profiles: Some(crate::inference_profiles::InferenceProfilesConfig {
+                main: Some(InferenceProfile {
+                    provider: "anthropic".into(),
+                    model: "claude-sonnet-4".into(),
                     base_url: None,
-                }],
+                    fallbacks: vec![InferenceTarget {
+                        provider: "openai".into(),
+                        model: "gpt-5.6".into(),
+                        base_url: None,
+                    }],
+                }),
+                vision: None,
+                stt: None,
             }),
-            vision: None,
-            stt: None,
-        });
+            ..Default::default()
+        };
         let selected = InferenceTarget {
             provider: OPENAI_CODEX_PROVIDER_ID.into(),
             model: "gpt-5.6-sol".into(),

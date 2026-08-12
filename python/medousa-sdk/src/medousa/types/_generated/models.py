@@ -65,6 +65,12 @@ class AgentRuntimeInfo(MedousaModel):
     )
 
 
+class AgentSessionConfigChoice(MedousaModel):
+    description: str | None = None
+    name: str
+    value: Any
+
+
 class CodeIntentContext(MedousaModel):
     active_path: str | None = None
     containing_symbol: str | None = None
@@ -350,6 +356,16 @@ class TurnSurfaceContext(MedousaModel):
         description='When true, the connected client can render sandboxed HTML UI artifacts (`cognition_ui_present`). Channel adapters and clients set this — the daemon does not infer it from channel name.',
     )
     user_id: str | None = None
+
+
+class AgentSessionConfigOption(MedousaModel):
+    category: str | None = None
+    currentValue: Any
+    description: str | None = None
+    id: str
+    name: str
+    options: list[AgentSessionConfigChoice] | None = None
+    type: str
 
 
 class ActivityRailMode(Enum):
@@ -654,6 +670,12 @@ class StreamUiScene(MedousaModel):
     turn_id: str | None = Field(
         None, description='Owning turn id (stamped by the stream event builder).'
     )
+
+
+class ToolInputParam(MedousaModel):
+    key: str
+    truncated: bool | None = False
+    value: str
 
 
 class JobCitationResponse(MedousaModel):
@@ -1024,16 +1046,17 @@ class TurnArtifactRef(MedousaModel):
 
 
 class Kind(Enum):
-    text = 'text'
+    model_receipt = 'model_receipt'
 
 
 class TurnPart1(MedousaModel):
     kind: Kind
-    markdown: str
+    model: str
+    provider: str
 
 
 class Kind1(Enum):
-    progress = 'progress'
+    text = 'text'
 
 
 class TurnPart2(MedousaModel):
@@ -1042,7 +1065,7 @@ class TurnPart2(MedousaModel):
 
 
 class Kind2(Enum):
-    reasoning = 'reasoning'
+    progress = 'progress'
 
 
 class TurnPart3(MedousaModel):
@@ -1051,14 +1074,23 @@ class TurnPart3(MedousaModel):
 
 
 class Kind3(Enum):
-    tool_run = 'tool_run'
+    reasoning = 'reasoning'
 
 
 class TurnPart4(MedousaModel):
+    kind: Kind3
+    markdown: str
+
+
+class Kind4(Enum):
+    tool_run = 'tool_run'
+
+
+class TurnPart5(MedousaModel):
     artifact_refs: list[TurnArtifactRef] | None = None
     finished_at: AwareDatetime | None = None
     input_summary: str
-    kind: Kind3
+    kind: Kind4
     output_summary: str | None = None
     run_id: str
     started_at: AwareDatetime
@@ -1067,53 +1099,53 @@ class TurnPart4(MedousaModel):
     tool_round: int | None = Field(None, ge=0)
 
 
-class Kind4(Enum):
+class Kind5(Enum):
     handoff = 'handoff'
 
 
-class TurnPart5(MedousaModel):
+class TurnPart6(MedousaModel):
     handoff_kind: str
-    kind: Kind4
+    kind: Kind5
     text: str
     work_id: str | None = None
 
 
-class Kind5(Enum):
+class Kind6(Enum):
     user_media = 'user_media'
 
 
-class TurnPart6(MedousaModel):
+class TurnPart7(MedousaModel):
     byte_size: int | None = Field(None, ge=0)
-    kind: Kind5
+    kind: Kind6
     label: str | None = None
     media_id: str
     mime: str
 
 
-class Kind6(Enum):
+class Kind7(Enum):
     host_context = 'host_context'
 
 
-class Kind7(Enum):
+class Kind8(Enum):
     attachment_ref = 'attachment_ref'
 
 
-class TurnPart8(MedousaModel):
+class TurnPart9(MedousaModel):
     artifact_id: str
     byte_size: int | None = Field(None, ge=0)
     height_px: int | None = Field(None, ge=0)
-    kind: Kind7
+    kind: Kind8
     label: str
     mime: str
     presentation: str | None = None
 
 
-class Kind8(Enum):
+class Kind9(Enum):
     unknown = 'unknown'
 
 
-class TurnPart9(MedousaModel):
-    kind: Kind8
+class TurnPart10(MedousaModel):
+    kind: Kind9
 
 
 class TurnSliceSummary(MedousaModel):
@@ -1284,6 +1316,18 @@ class WorkBoardColumn(Enum):
 
 class WorkCardId(RootModel[str]):
     root: str
+
+
+class WorkerToolActivityDto(MedousaModel):
+    finished_at: AwareDatetime | None = None
+    input_params: list[ToolInputParam] | None = None
+    input_summary: str | None = None
+    name: str
+    output_summary: str | None = None
+    round: int | None = Field(0, ge=0)
+    run_id: str | None = ''
+    started_at: AwareDatetime
+    status: str | None = Field('', description='running | succeeded | failed')
 
 
 class WorkspaceEventActor(Enum):
@@ -1582,6 +1626,10 @@ class CreateAgentSessionRequest(MedousaModel):
 class CreateAgentSessionResponse(MedousaModel):
     accepted_at_utc: AwareDatetime
     agent_session_id: str
+    config_options: list[AgentSessionConfigOption] | None = Field(
+        None,
+        description='Runtime-advertised ACP session controls. Clients must render these capability-first rather than assuming every agent supports model or reasoning selection.',
+    )
     phase: str
     resumed: bool | None = Field(
         None, description='True when the session was attached via ACP `session/resume` (or load).'
@@ -1789,6 +1837,10 @@ class InteractiveTurnStreamEvent(MedousaModel):
     )
     reasoning_delta: str | None = None
     requested_rounds: int | None = Field(None, ge=0)
+    response_model: str | None = None
+    response_provider: str | None = Field(
+        None, description='Successful inference route after provider fallback resolution.'
+    )
     root_artifact_id: str | None = Field(
         None, description='Root artifact lineage id for revision chains.'
     )
@@ -1799,6 +1851,10 @@ class InteractiveTurnStreamEvent(MedousaModel):
     )
     terminal: bool
     tool_artifact_refs: list[StreamToolArtifactRef] | None = None
+    tool_input_params: list[ToolInputParam] | None = Field(
+        None,
+        description='Redacted key/value arguments so chat can show `query: "…"`, not just the tool name.',
+    )
     tool_input_summary: str | None = None
     tool_name: str | None = None
     tool_names: list[str] | None = None
@@ -2019,6 +2075,16 @@ class SessionSetDisplayNameRequest(MedousaModel):
 class SessionSetDisplayNameResponse(MedousaModel):
     display_name: str
     session_id: str
+
+
+class SetAgentSessionConfigOptionRequest(MedousaModel):
+    config_id: str
+    value: Any
+
+
+class SetAgentSessionConfigOptionResponse(MedousaModel):
+    agent_session_id: str
+    config_options: list[AgentSessionConfigOption]
 
 
 class SetSessionAgentModeRequest(MedousaModel):
@@ -2328,9 +2394,9 @@ class RuntimeConfigCommandSpec(
     root: RuntimeConfigCommandSpec1 | RuntimeConfigCommandSpec2 | RuntimeConfigCommandSpec3 | RuntimeConfigCommandSpec4
 
 
-class TurnPart7(MedousaModel):
+class TurnPart8(MedousaModel):
     context: HostTurnContext
-    kind: Kind6
+    kind: Kind7
 
 
 class TurnPart(
@@ -2344,9 +2410,10 @@ class TurnPart(
         | TurnPart7
         | TurnPart8
         | TurnPart9
+        | TurnPart10
     ]
 ):
-    root: TurnPart1 | TurnPart2 | TurnPart3 | TurnPart4 | TurnPart5 | TurnPart6 | TurnPart7 | TurnPart8 | TurnPart9
+    root: TurnPart1 | TurnPart2 | TurnPart3 | TurnPart4 | TurnPart5 | TurnPart6 | TurnPart7 | TurnPart8 | TurnPart9 | TurnPart10
 
 
 class WorkCard(MedousaModel):
@@ -2356,6 +2423,21 @@ class WorkCard(MedousaModel):
     status_label: str
     title: str
     updated_at_utc: AwareDatetime
+
+
+class WorkerProgressDto(MedousaModel):
+    column: WorkBoardColumn
+    live_output: str | None = None
+    live_status_line: str | None = None
+    live_thinking: str | None = None
+    live_tool_activity: list[WorkerToolActivityDto] | None = None
+    model: str | None = None
+    result_excerpt: str | None = None
+    session_id: str | None = None
+    terminal: bool
+    thinking_finished_at: AwareDatetime | None = None
+    thinking_started_at: AwareDatetime | None = None
+    work_id: str
 
 
 class WorkspaceEvent(MedousaModel):
@@ -2488,6 +2570,10 @@ class WorkspaceStreamEvent(MedousaModel):
     feed_event: WorkspaceEvent | None = None
     snapshot: WorkspaceSnapshot | None = None
     stream_event_type: str
+    worker_progress: WorkerProgressDto | None = Field(
+        None,
+        description='Live subagent progress rides along with `card_upserted` for turn-worker cards so chat can tick without a detail round trip.',
+    )
     workspace_revision: int = Field(..., ge=0)
 
 

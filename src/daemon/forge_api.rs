@@ -2915,12 +2915,12 @@ async fn save_workspace_state(
         let (_, clean) = resolve_source_path(&environment.worktree, secondary_path)?;
         *secondary_path = clean;
     }
-    if let Some(layout) = body.state.layout.as_mut() {
-        if let Some(panel) = layout.context_panel.as_deref() {
-            match panel {
-                "problems" | "outline" | "references" | "language" => {}
-                _ => layout.context_panel = None,
-            }
+    if let Some(layout) = body.state.layout.as_mut()
+        && let Some(panel) = layout.context_panel.as_deref()
+    {
+        match panel {
+            "problems" | "outline" | "references" | "language" => {}
+            _ => layout.context_panel = None,
         }
     }
     let open_paths = body
@@ -4498,7 +4498,7 @@ fn apply_hunks_except(
         .enumerate()
         .filter(|(index, _)| *index != skip)
         .collect();
-    ordered.sort_by(|a, b| b.1.old_start.cmp(&a.1.old_start));
+    ordered.sort_by_key(|b| std::cmp::Reverse(b.1.old_start));
     for (_, hunk) in ordered {
         let start = hunk.old_start.saturating_sub(1);
         if start > lines.len() {

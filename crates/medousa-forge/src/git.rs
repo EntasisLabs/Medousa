@@ -1053,7 +1053,7 @@ pub struct BranchTracking {
 pub fn parse_porcelain_v2_branch(data: &[u8]) -> BranchTracking {
     let text = String::from_utf8_lossy(data);
     let mut tracking = BranchTracking::default();
-    for record in text.split(|c| c == '\0' || c == '\n').filter(|s| !s.is_empty()) {
+    for record in text.split(['\0', '\n']).filter(|s| !s.is_empty()) {
         let Some(rest) = record.strip_prefix("# branch.") else {
             continue;
         };
