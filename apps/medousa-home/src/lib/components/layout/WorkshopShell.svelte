@@ -188,7 +188,7 @@
 
 <div
   bind:this={shellRootEl}
-  class="flex h-screen w-screen flex-col text-surface-50 workshop-app-root"
+  class="flex h-full min-h-0 w-full min-w-0 flex-col text-surface-50 workshop-app-root"
   data-debug-label="app-root"
 >
   <AppTitlebar />

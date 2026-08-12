@@ -193,7 +193,7 @@
 
 <div
   bind:this={panelEl}
-  class="human-browser-panel flex h-full min-h-0 flex-col"
+  class="human-browser-panel flex h-full min-h-0 min-w-0 w-full flex-col"
   data-browser-panel
   data-debug-label="browser-panel"
 >
@@ -269,7 +269,7 @@
 
   <div
     bind:this={embedHostEl}
-    class="human-browser-embed relative min-h-0 flex-1 overflow-hidden"
+    class="human-browser-embed relative min-h-0 min-w-0 w-full flex-1 overflow-hidden"
     data-browser-embed-host
     data-debug-label="browser-embed-host"
   >

@@ -20,6 +20,6 @@
   let { children } = $props();
 </script>
 
-<div class="h-full">
+<div class="h-full w-full min-h-0 min-w-0">
   {@render children()}
 </div>

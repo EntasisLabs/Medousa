@@ -68,15 +68,69 @@ export function measureEmbedHostBounds(
 }
 
 /**
- * Desktop native embed — use the embed host rect directly so native bounds match
- * `[data-browser-embed-host]` (same box as the debug overlay).
+ * Desktop native embed — use the embed host rect, corrected for Tauri webview
+ * zoom and clamped to the shell viewport so the child never paints past the
+ * window / shell chrome on the right edge.
  */
 export function measureDesktopBrowserEmbedBounds(
   _panel: HTMLElement,
   _chrome: HTMLElement,
   host: HTMLElement,
 ): MobileBrowserBounds | null {
-  return measureEmbedHostBounds(host);
+  const measured = measureEmbedHostBounds(host);
+  if (!measured) return null;
+  return clampDesktopEmbedBoundsToViewport(scaleDesktopEmbedBoundsForZoom(measured));
+}
+
+/** Tauri `setZoom` shrinks/grows CSS pixels inside a fixed webview; map to window child coords. */
+export function scaleDesktopEmbedBoundsForZoom(
+  bounds: MobileBrowserBounds,
+  zoom: number = readDesktopContentZoom(),
+): MobileBrowserBounds {
+  const factor = Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
+  if (Math.abs(factor - 1) < 0.001) return bounds;
+  return {
+    x: bounds.x * factor,
+    y: bounds.y * factor,
+    width: bounds.width * factor,
+    height: bounds.height * factor,
+  };
+}
+
+/** Keep native embeds inside the visible shell viewport. */
+export function clampDesktopEmbedBoundsToViewport(
+  bounds: MobileBrowserBounds,
+  viewport: { width: number; height: number } = readDesktopViewportSize(),
+): MobileBrowserBounds {
+  const maxRight = Math.max(8, viewport.width);
+  const maxBottom = Math.max(8, viewport.height);
+  const x = Math.min(Math.max(0, bounds.x), maxRight - 8);
+  const y = Math.min(Math.max(0, bounds.y), maxBottom - 8);
+  const right = Math.min(maxRight, Math.max(x + 8, bounds.x + bounds.width));
+  const bottom = Math.min(maxBottom, Math.max(y + 8, bounds.y + bounds.height));
+  return {
+    x,
+    y,
+    width: Math.max(8, right - x),
+    height: Math.max(8, bottom - y),
+  };
+}
+
+function readDesktopContentZoom(): number {
+  if (typeof localStorage === "undefined") return 1;
+  const raw = localStorage.getItem("medousa-home-content-zoom");
+  if (raw == null) return 1;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return 1;
+  return Math.min(1.6, Math.max(0.7, n));
+}
+
+function readDesktopViewportSize(): { width: number; height: number } {
+  if (typeof window === "undefined") return { width: 8, height: 8 };
+  return {
+    width: window.innerWidth || document.documentElement.clientWidth || 8,
+    height: window.innerHeight || document.documentElement.clientHeight || 8,
+  };
 }
 
 /** Full panel bounds. */
