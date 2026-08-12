@@ -39,6 +39,9 @@ jobs:
         working-directory: apps/medousa-home
     steps:
       - uses: actions/checkout@v5
+      - name: Guard wmi windows/windows-core lock alignment
+        working-directory: ${{ github.workspace }}
+        run: ./scripts/ci/check-wmi-windows-alignment.sh
       - uses: actions/setup-node@v5
         with:
           node-version: "22"
