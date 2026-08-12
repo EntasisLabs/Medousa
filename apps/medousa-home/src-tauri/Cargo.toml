@@ -82,6 +82,9 @@ tauri-plugin-ios-webview-insets = "0.1"
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.38"
+# Stay on 0.61 with tauri/webview2. iroh→netwatch→wmi also pulls windows 0.62;
+# after cargo updates, confirm scripts/ci/check-wmi-windows-alignment.sh still
+# passes (wmi must lock a matched windows + windows-core pair, usually both 0.62).
 windows = { version = "0.61", features = [
   "Win32_System_Power",
   "Win32_UI_Input_KeyboardAndMouse",

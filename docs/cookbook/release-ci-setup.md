@@ -266,6 +266,7 @@ All matrix jobs set **`shell: bash`**. Windows runners default to PowerShell; re
 | Bootstrap points at ancient `Medousa_0.1.0_*` / wrong arch / empty `sha256` | Old finders took the first `Medousa_*` in a full R2 dump with no version/arch filter. Merge latest `scripts/release/common.sh`, then **Republish manifests** (syncs only current `package-versions.toml` stamps) |
 | SmartScreen on Windows | Set Azure variables/secrets per [azure-windows-signing.md](azure-windows-signing.md) |
 | `local-brain (x86_64-apple-darwin)` “hosted runner lost communication” | mistralrs+Metal OOMs/`swap`-thrashes macos-15-intel under default cargo parallelism — keep `CARGO_BUILD_JOBS=1` on that matrix leg (`build-local-brain`) |
+| `app (windows-x64)` fails compiling `wmi` (`windows_result` / `IUnknownImpl`) | Lockfile resolved `wmi` with mismatched `windows` + `windows-core` (e.g. 0.62 + 0.61). Run `./scripts/ci/check-wmi-windows-alignment.sh` and restore a matched pair in `apps/medousa-home/src-tauri/Cargo.lock` |
 | GitHub Release “tag exists” | Bump version or delete old tag |
 
 See also: [release-to-r2.md](release-to-r2.md) for local/manual releases.
