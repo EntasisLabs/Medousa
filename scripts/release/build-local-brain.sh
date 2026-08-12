@@ -87,8 +87,27 @@ BIN_DIR="${OUTPUT}/bin"
 mkdir -p "${BIN_DIR}"
 
 export CARGO_TARGET_DIR="$(medousa_cargo_target_root)"
+
+# Empty env from CI matrix legs that omit a jobs cap must not reach cargo.
+if [[ -z "${CARGO_BUILD_JOBS:-}" ]]; then
+  unset CARGO_BUILD_JOBS
+fi
+
+# mistralrs + Metal LLVM peaks can OOM GitHub-hosted macOS (~7–14 GB). When
+# unset in CI, cap parallelism so the runner agent is not killed ("hosted
+# runner lost communication"). Explicit CARGO_BUILD_JOBS always wins.
+if [[ -z "${CARGO_BUILD_JOBS:-}" && "${CI:-}" == "true" ]]; then
+  case "${TARGET}" in
+    x86_64-apple-darwin) export CARGO_BUILD_JOBS=1 ;;
+    *-apple-darwin) export CARGO_BUILD_JOBS=2 ;;
+  esac
+fi
+
 medousa_log "building medousa_local (${FEATURE}) for ${TARGET}"
 medousa_log "CARGO_TARGET_DIR=${CARGO_TARGET_DIR}"
+if [[ -n "${CARGO_BUILD_JOBS:-}" ]]; then
+  medousa_log "CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS}"
+fi
 cargo build --release -p medousa-local-inference --bin medousa_local --features "${FEATURE}" --target "${TARGET}"
 
 SRC="$(medousa_find_release_binary medousa_local "${TARGET}")"
