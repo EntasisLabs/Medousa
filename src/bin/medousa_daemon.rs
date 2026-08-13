@@ -312,6 +312,9 @@ async fn main() -> Result<()> {
     let addr: SocketAddr = bind
         .parse()
         .with_context(|| format!("invalid --bind address: {bind}"))?;
+    let pairing_enabled = medousa::pairing::pairing_enabled_from_env();
+    medousa::peer_scope::validate_listener_security(addr, pairing_enabled)
+        .map_err(anyhow::Error::msg)?;
     let listener = tokio::net::TcpListener::bind(addr).await.with_context(|| {
         format!("failed to bind medousa daemon on {addr} — another daemon may already be running")
     })?;
@@ -522,7 +525,7 @@ async fn main() -> Result<()> {
         local_device_id: "local".to_string(),
         local_peer_name: "Medousa".to_string(),
     };
-    let pairing_router = if medousa::pairing::pairing_enabled_from_env() {
+    let pairing_router = if pairing_enabled {
         let identity = medousa::pairing::DeviceIdentity::load_or_create()
             .context("failed to load pairing device identity")?;
         #[cfg(feature = "iroh-transport")]
@@ -646,7 +649,8 @@ async fn main() -> Result<()> {
         local_device_id: share_api_state.local_device_id.clone(),
         local_peer_name: share_api_state.local_peer_name.clone(),
     };
-    let peer_scope_pairing = peer_message_state.pairing.clone();
+    let daemon_access_state =
+        medousa::peer_scope::DaemonAccessState::new(peer_message_state.pairing.clone());
     let mesh_api_state = medousa::mesh::MeshApiState {
         pairing: peer_message_state.pairing.clone(),
         local_device_id: peer_message_state.local_device_id.clone(),
@@ -657,12 +661,10 @@ async fn main() -> Result<()> {
             peer_message_state,
         ))
         .merge(medousa::mesh::mesh_router(mesh_api_state));
-    if let Some(pairing) = peer_scope_pairing {
-        app = app.layer(axum::middleware::from_fn_with_state(
-            pairing,
-            medousa::peer_scope::reject_peer_scope_escalation,
-        ));
-    }
+    app = app.layer(axum::middleware::from_fn_with_state(
+        daemon_access_state,
+        medousa::peer_scope::enforce_daemon_access,
+    ));
     let _mdns_advertiser = mdns_advertiser;
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);

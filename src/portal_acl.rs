@@ -1,8 +1,8 @@
 //! Shared-mode portal settings ACL.
 //!
-//! Personal mode keeps today's behavior (Peer allowlist only). In Shared mode,
-//! remote callers need a valid Portal bearer; org-admin paths require the
-//! bound `user:root` seat. Genuine loopback (not Iroh-proxied) remains root.
+//! Remote callers need a valid scoped bearer in both Personal and Shared mode.
+//! In Shared mode, org-admin paths require the bound `user:root` seat. Genuine
+//! loopback (not Iroh-proxied) retains the temporary H01 compatibility path.
 
 use axum::http::Method;
 
@@ -61,10 +61,7 @@ pub fn classify_path(method: &Method, path: &str) -> PortalPathClass {
 }
 
 fn is_public_path(path: &str) -> bool {
-    matches!(
-        path,
-        "/health" | "/pair/init" | "/pair/verify" | "/pair/code"
-    )
+    matches!(path, "/health" | "/pair/init" | "/pair/verify")
 }
 
 fn is_admin_path(method: &Method, path: &str) -> bool {
@@ -97,9 +94,7 @@ fn is_admin_path(method: &Method, path: &str) -> bool {
     }
 
     // Vault host configuration + Versions/Git (content/search stay member).
-    if path == "/v1/vault/roots"
-        || path == "/v1/vault/active"
-        || path.starts_with("/v1/vault/git/")
+    if path == "/v1/vault/roots" || path == "/v1/vault/active" || path.starts_with("/v1/vault/git/")
     {
         return true;
     }
@@ -150,13 +145,24 @@ pub fn authorize_request(
 
     let class = classify_path(method, path);
 
-    // Personal installs: keep Peer allowlist only; Portal (or no bearer) stays open.
+    // Personal mode changes tenancy, not network authentication. Portal
+    // credentials retain the existing full Personal-workshop authority during
+    // the H01 capability migration; anonymous remote callers get bootstrap only.
     if !shared_mode {
-        return match record.map(|r| r.role) {
-            Some(PairingRole::Peer) if !path_allowed_for_peer(path) => {
-                PortalAclDecision::Deny("Peer credentials can only use inbox and share surfaces")
-            }
-            _ => PortalAclDecision::Allow,
+        return match class {
+            PortalPathClass::Public => PortalAclDecision::Allow,
+            PortalPathClass::PeerSurface => match record {
+                Some(r) if r.role.allows_peer_surface() => PortalAclDecision::Allow,
+                Some(_) => PortalAclDecision::Deny("credentials cannot use this surface"),
+                None => PortalAclDecision::Deny("Bearer session token required"),
+            },
+            PortalPathClass::Member | PortalPathClass::Admin => match record {
+                Some(r) if r.role.allows_full_portal() => PortalAclDecision::Allow,
+                Some(_) => PortalAclDecision::Deny(
+                    "Peer credentials can only use inbox and share surfaces",
+                ),
+                None => PortalAclDecision::Deny("Bearer session token required"),
+            },
         };
     }
 
@@ -252,7 +258,7 @@ mod tests {
     }
 
     #[test]
-    fn personal_mode_blocks_peer_escalation_only() {
+    fn personal_mode_requires_remote_credentials() {
         let peer = record(PairingRole::Peer, None);
         assert!(
             !authorize_request(false, false, Some(&peer), &Method::POST, "/v1/turns").is_allow()
@@ -266,6 +272,9 @@ mod tests {
             authorize_request(false, false, Some(&portal), &Method::PUT, "/v1/shared-mode")
                 .is_allow()
         );
+        assert!(!authorize_request(false, false, None, &Method::POST, "/v1/turns").is_allow());
+        assert!(authorize_request(false, false, None, &Method::GET, "/health").is_allow());
+        assert!(!authorize_request(false, false, None, &Method::GET, "/pair/code").is_allow());
     }
 
     #[test]
@@ -284,7 +293,8 @@ mod tests {
         );
         assert!(!authorize_request(false, true, None, &Method::POST, "/v1/turns").is_allow());
         assert!(
-            authorize_request(false, true, Some(&alice), &Method::GET, "/v1/shared-mode").is_allow()
+            authorize_request(false, true, Some(&alice), &Method::GET, "/v1/shared-mode")
+                .is_allow()
         );
     }
 }
