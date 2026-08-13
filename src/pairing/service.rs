@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
@@ -166,6 +165,13 @@ pub enum RevokePairingResult {
     Removed,
     NotFound,
     Unauthorized,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RevokePairingAuthority<'a> {
+    Unauthenticated,
+    Credential(&'a str),
+    Administrator,
 }
 
 #[derive(Debug, Clone)]
@@ -515,17 +521,21 @@ impl PairingService {
 
     pub async fn pair_heartbeat(
         &self,
-        bearer_token: Option<&str>,
+        credential_id: Option<&str>,
         body: Option<PairHeartbeatRequest>,
     ) -> Result<PairHeartbeatResponse> {
-        let Some(token) = bearer_token else {
+        let Some(credential_id) = credential_id else {
             return Ok(PairHeartbeatResponse {
                 status: "unauthorized".to_string(),
                 device_time: Utc::now(),
                 reason: Some("missing_token".to_string()),
             });
         };
-        let record = self.find_by_session_token(token)?;
+        let record = self
+            .store
+            .list_paired()?
+            .into_iter()
+            .find(|record| record.pairing_id == credential_id);
         let Some(record) = record else {
             return Ok(PairHeartbeatResponse {
                 status: "unauthorized".to_string(),
@@ -533,13 +543,6 @@ impl PairingService {
                 reason: Some("invalid_token".to_string()),
             });
         };
-        if self.store.is_revoked(&record.pairing_id)? {
-            return Ok(PairHeartbeatResponse {
-                status: "unauthorized".to_string(),
-                device_time: Utc::now(),
-                reason: Some("revoked".to_string()),
-            });
-        }
         if record.session_token_expiry < Utc::now() {
             return Ok(PairHeartbeatResponse {
                 status: "unauthorized".to_string(),
@@ -662,15 +665,17 @@ impl PairingService {
         Ok(out)
     }
 
-    /// Revoke a pairing. `trusted_local` must be true only for genuine loopback
-    /// that is not Iroh-proxied (see [`crate::remote_trust::is_trusted_local`]).
     pub async fn revoke_pairing(
         &self,
         pairing_id: &str,
-        bearer_token: Option<&str>,
-        trusted_local: bool,
+        authority: RevokePairingAuthority<'_>,
     ) -> Result<RevokePairingResult> {
-        if !authorize_pairing_revoke(self, pairing_id, bearer_token, trusted_local)? {
+        let authorized = match authority {
+            RevokePairingAuthority::Administrator => true,
+            RevokePairingAuthority::Credential(credential_id) => credential_id == pairing_id,
+            RevokePairingAuthority::Unauthenticated => false,
+        };
+        if !authorized {
             return Ok(RevokePairingResult::Unauthorized);
         }
         let paired = self.store.list_paired()?;
@@ -813,6 +818,17 @@ impl PairingService {
         self.store.get_by_phone_id(phone_id)
     }
 
+    /// Resolve an already-authenticated opaque credential ID to its current
+    /// pairing record. Revoked and expired records are never returned.
+    pub fn find_by_pairing_id(&self, pairing_id: &str) -> Result<Option<PairedDeviceRecord>> {
+        Ok(self
+            .store
+            .list_paired()?
+            .into_iter()
+            .find(|record| record.pairing_id == pairing_id)
+            .filter(|record| record.session_token_expiry >= Utc::now()))
+    }
+
     /// Persist mesh grants on the pairing record and refresh the mesh registry projection.
     pub fn set_mesh_grants(
         &self,
@@ -831,15 +847,6 @@ impl PairingService {
         self.store.save_record(&record)?;
         let _ = crate::mesh::registry::upsert_from_pairing(&record);
         Ok(record)
-    }
-
-    pub fn authorize_bearer_token(&self, token: &str) -> Result<bool> {
-        Ok(self.resolve_bearer_role(token)?.is_some())
-    }
-
-    /// Returns the pairing role when the bearer is valid and unexpired.
-    pub fn resolve_bearer_role(&self, token: &str) -> Result<Option<PairingRole>> {
-        Ok(self.resolve_bearer_record(token)?.map(|record| record.role))
     }
 
     /// Returns the paired device when the bearer is valid and unexpired.
@@ -865,47 +872,17 @@ impl PairingService {
             .filter(|id| !id.is_empty()))
     }
 
-    /// Peer-scoped tokens may only use inbox/share surfaces (and pairing heartbeat).
-    pub fn bearer_allows_path(&self, token: &str, path: &str) -> Result<bool> {
-        let Some(role) = self.resolve_bearer_role(token)? else {
-            return Ok(false);
-        };
-        if role.allows_full_portal() {
-            return Ok(true);
-        }
-        Ok(path_allowed_for_peer(path))
-    }
-}
-
-pub fn path_allowed_for_peer(path: &str) -> bool {
-    let path = path.split('?').next().unwrap_or(path);
-    path.starts_with("/v1/peer/")
-        || path.starts_with("/v1/share/")
-        || path.starts_with("/v1/mesh/")
-        || path == "/pair/heartbeat"
-        || path == "/pair/status"
-        || path == "/pair/iroh-ticket"
 }
 
 #[cfg(test)]
 mod peer_role_tests {
-    use super::{path_allowed_for_peer, PairingRole};
+    use super::PairingRole;
 
     #[test]
     fn pairing_role_defaults_to_portal() {
         assert_eq!(PairingRole::parse(None), PairingRole::Portal);
         assert_eq!(PairingRole::parse(Some("portal")), PairingRole::Portal);
         assert_eq!(PairingRole::parse(Some("peer")), PairingRole::Peer);
-    }
-
-    #[test]
-    fn peer_paths_are_allowlisted() {
-        assert!(path_allowed_for_peer("/v1/peer/messages"));
-        assert!(path_allowed_for_peer("/v1/share/push"));
-        assert!(path_allowed_for_peer("/v1/mesh/peers"));
-        assert!(path_allowed_for_peer("/pair/heartbeat"));
-        assert!(!path_allowed_for_peer("/v1/vault/notes"));
-        assert!(!path_allowed_for_peer("/v1/interactive/turn"));
     }
 }
 
@@ -941,28 +918,6 @@ fn format_short_code(raw: &str) -> String {
     format!("{}-{}-{}", &raw[0..3], &raw[3..5], &raw[5..6])
 }
 
-fn authorize_pairing_revoke(
-    service: &PairingService,
-    pairing_id: &str,
-    bearer_token: Option<&str>,
-    trusted_local: bool,
-) -> Result<bool> {
-    if trusted_local {
-        return Ok(true);
-    }
-    let Some(token) = bearer_token else {
-        return Ok(false);
-    };
-    let Some(record) = service.resolve_bearer_record(token)? else {
-        return Ok(false);
-    };
-    // Shared-mode root may revoke any seat; others may only revoke themselves.
-    if crate::portal_acl::is_root_portal(&record) {
-        return Ok(true);
-    }
-    Ok(record.pairing_id == pairing_id)
-}
-
 pub fn resolve_peer_name() -> String {
     std::env::var("MEDOUSA_PEER_NAME")
         .ok()
@@ -984,31 +939,6 @@ pub fn resolve_advertise_address(bind: &str) -> String {
 
 pub fn pairing_enabled_from_env() -> bool {
     !truthy_env("MEDOUSA_PAIRING_DISABLE")
-}
-
-static WORKSHOP_PAIRING: OnceLock<Arc<PairingService>> = OnceLock::new();
-
-/// Register the process pairing service so turn/session handlers can resolve bearer→profile.
-pub fn init_workshop_pairing(service: Arc<PairingService>) {
-    let _ = WORKSHOP_PAIRING.set(service);
-}
-
-pub fn workshop_pairing() -> Option<Arc<PairingService>> {
-    WORKSHOP_PAIRING.get().cloned()
-}
-
-/// Bound Shared-mode profile for a request bearer, if any.
-pub fn resolve_request_profile_id(headers: &axum::http::HeaderMap) -> Option<String> {
-    let token = headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .map(str::trim)
-        .filter(|value| !value.is_empty())?;
-    workshop_pairing()?
-        .resolve_bearer_profile_id(token)
-        .ok()
-        .flatten()
 }
 
 pub fn pairing_qr_v1_from_env() -> bool {
@@ -1065,6 +995,49 @@ mod tests {
                 endpoint_id: "abc123".repeat(8),
             }),
         ))
+    }
+
+    async fn pair_test_phone(
+        service: &PairingService,
+        role: Option<&str>,
+    ) -> (String, String, String) {
+        let qr = service.current_qr().await.expect("qr");
+        let token = extract_query_param(&qr.url, "t").expect("token");
+        let phone = SigningKey::generate(&mut OsRng);
+        let phone_id = format!("phone-test-{}", Uuid::new_v4());
+        let init = service
+            .pair_init(
+                PairInitRequest {
+                    qr_token: Some(token),
+                    short_code: None,
+                    phone_id: phone_id.clone(),
+                    phone_name: "Test Phone".to_string(),
+                    public_key: verifying_key_to_b64(&phone.verifying_key()),
+                    role: role.map(str::to_string),
+                },
+                "127.0.0.1",
+            )
+            .await
+            .expect("init");
+        assert_eq!(init.status, "challenge");
+        let signed_nonce =
+            sign_message(&phone, init.server_nonce.as_deref().expect("server nonce"));
+        let mut phone_nonce = [0u8; 32];
+        OsRng.fill_bytes(&mut phone_nonce);
+        let verify = service
+            .pair_verify(PairVerifyRequest {
+                session_id: init.session_id.expect("session"),
+                signed_nonce,
+                phone_nonce: base64url_encode(&phone_nonce),
+            })
+            .await
+            .expect("verify");
+        assert_eq!(verify.status, "paired");
+        (
+            verify.pairing_id.expect("pairing"),
+            verify.session_token.expect("session token"),
+            phone_id,
+        )
     }
 
     #[tokio::test]
@@ -1125,80 +1098,62 @@ mod tests {
     #[tokio::test]
     async fn full_pairing_handshake() {
         let service = test_service();
-        let qr = service.current_qr().await.expect("qr");
-        let token = extract_query_param(&qr.url, "t").expect("token");
-        let phone = SigningKey::generate(&mut OsRng);
-        let init = service
-            .pair_init(
-                PairInitRequest {
-                    qr_token: Some(token),
-                    short_code: None,
-                    phone_id: "phone0002".to_string(),
-                    phone_name: "Phone B".to_string(),
-                    public_key: verifying_key_to_b64(&phone.verifying_key()),
-                    role: None,
-                },
-                "127.0.0.1",
-            )
-            .await
-            .expect("init");
-        assert_eq!(init.status, "challenge");
-        let session_id = init.session_id.expect("session");
-        let server_nonce = init.server_nonce.expect("nonce");
-        let signed_nonce = sign_message(&phone, &server_nonce);
-        let mut phone_nonce = [0u8; 32];
-        OsRng.fill_bytes(&mut phone_nonce);
-        let verify = service
-            .pair_verify(PairVerifyRequest {
-                session_id,
-                signed_nonce,
-                phone_nonce: base64url_encode(&phone_nonce),
-            })
-            .await
-            .expect("verify");
-        assert_eq!(verify.status, "paired");
-        assert!(verify.session_token.is_some());
+        let (pairing_id, session_token, phone_id) = pair_test_phone(&service, None).await;
+        assert!(
+            service
+                .resolve_bearer_record(&session_token)
+                .unwrap()
+                .is_some()
+        );
+        assert!(service.find_by_pairing_id(&pairing_id).unwrap().is_some());
+        assert_eq!(
+            service
+                .pair_heartbeat(Some(&pairing_id), None)
+                .await
+                .expect("heartbeat")
+                .status,
+            "ok"
+        );
+        assert_eq!(
+            service
+                .pair_heartbeat(Some(&session_token), None)
+                .await
+                .expect("raw bearer is not an internal credential id")
+                .status,
+            "unauthorized"
+        );
+        service.store.delete_record(&phone_id).expect("cleanup");
     }
 
     #[tokio::test]
-    async fn revoke_requires_loopback_or_matching_session_token() {
+    async fn expired_session_token_is_rejected() {
         let service = test_service();
-        let qr = service.current_qr().await.expect("qr");
-        let token = extract_query_param(&qr.url, "t").expect("token");
-        let phone = SigningKey::generate(&mut OsRng);
-        let init = service
-            .pair_init(
-                PairInitRequest {
-                    qr_token: Some(token),
-                    short_code: None,
-                    phone_id: "phone-revoke".to_string(),
-                    phone_name: "Phone R".to_string(),
-                    public_key: verifying_key_to_b64(&phone.verifying_key()),
-                    role: Some("portal".to_string()),
-                },
-                "127.0.0.1",
-            )
-            .await
-            .expect("init");
-        let session_id = init.session_id.expect("session");
-        let server_nonce = init.server_nonce.expect("nonce");
-        let signed_nonce = sign_message(&phone, &server_nonce);
-        let mut phone_nonce = [0u8; 32];
-        OsRng.fill_bytes(&mut phone_nonce);
-        let verify = service
-            .pair_verify(PairVerifyRequest {
-                session_id,
-                signed_nonce,
-                phone_nonce: base64url_encode(&phone_nonce),
-            })
-            .await
-            .expect("verify");
-        let pairing_id = verify.pairing_id.expect("pairing");
-        let session_token = verify.session_token.expect("token");
+        let (pairing_id, session_token, phone_id) = pair_test_phone(&service, None).await;
+        let mut record = service
+            .find_by_phone_id(&phone_id)
+            .expect("read pairing")
+            .expect("pairing record");
+        record.session_token_expiry = Utc::now() - chrono::Duration::seconds(1);
+        service.store.save_record(&record).expect("expire pairing");
+
+        assert!(
+            service
+                .resolve_bearer_record(&session_token)
+                .unwrap()
+                .is_none()
+        );
+        assert!(service.find_by_pairing_id(&pairing_id).unwrap().is_none());
+        service.store.delete_record(&phone_id).expect("cleanup");
+    }
+
+    #[tokio::test]
+    async fn revoke_requires_matching_credential_authority() {
+        let service = test_service();
+        let (pairing_id, session_token, _) = pair_test_phone(&service, Some("portal")).await;
 
         assert_eq!(
             service
-                .revoke_pairing(&pairing_id, None, false)
+                .revoke_pairing(&pairing_id, RevokePairingAuthority::Unauthenticated)
                 .await
                 .expect("revoke"),
             RevokePairingResult::Unauthorized
@@ -1206,11 +1161,32 @@ mod tests {
 
         assert_eq!(
             service
-                .revoke_pairing(&pairing_id, Some(&session_token), false)
+                .revoke_pairing(
+                    &pairing_id,
+                    RevokePairingAuthority::Credential(&session_token),
+                )
+                .await
+                .expect("revoke"),
+            RevokePairingResult::Unauthorized
+        );
+
+        assert_eq!(
+            service
+                .revoke_pairing(
+                    &pairing_id,
+                    RevokePairingAuthority::Credential(&pairing_id),
+                )
                 .await
                 .expect("revoke"),
             RevokePairingResult::Removed
         );
+        assert!(
+            service
+                .resolve_bearer_record(&session_token)
+                .unwrap()
+                .is_none()
+        );
+        assert!(service.find_by_pairing_id(&pairing_id).unwrap().is_none());
     }
 
     fn extract_query_param(url: &str, key: &str) -> Option<String> {

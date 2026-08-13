@@ -21,7 +21,9 @@ use medousa::daemon::heartbeat::{
 use medousa::daemon::ingest::{
     job_succeeded, maybe_resume_agent_turn_from_child_job, resolve_api_model_routing,
 };
-use medousa::daemon::router::{build_daemon_router, parse_dashboard_action_auth};
+use medousa::daemon::router::{
+    build_daemon_router, build_liveness_router, parse_dashboard_action_auth,
+};
 use medousa::daemon::state::AppState;
 use medousa::daemon::worker_host::{run_materializer_loop, run_worker_host};
 use medousa::daemon_api::DEFAULT_DAEMON_BIND;
@@ -312,6 +314,9 @@ async fn main() -> Result<()> {
     let addr: SocketAddr = bind
         .parse()
         .with_context(|| format!("invalid --bind address: {bind}"))?;
+    let pairing_enabled = medousa::pairing::pairing_enabled_from_env();
+    medousa::peer_scope::validate_listener_security(addr, pairing_enabled)
+        .map_err(anyhow::Error::msg)?;
     let listener = tokio::net::TcpListener::bind(addr).await.with_context(|| {
         format!("failed to bind medousa daemon on {addr} — another daemon may already be running")
     })?;
@@ -522,7 +527,7 @@ async fn main() -> Result<()> {
         local_device_id: "local".to_string(),
         local_peer_name: "Medousa".to_string(),
     };
-    let pairing_router = if medousa::pairing::pairing_enabled_from_env() {
+    let pairing_routers = if pairing_enabled {
         let identity = medousa::pairing::DeviceIdentity::load_or_create()
             .context("failed to load pairing device identity")?;
         #[cfg(feature = "iroh-transport")]
@@ -569,7 +574,6 @@ async fn main() -> Result<()> {
             model.map(|value| value.to_string()),
             iroh_info,
         ));
-        medousa::pairing::init_workshop_pairing(pairing_service.clone());
         if medousa::pairing::mdns_should_advertise(bind) {
             let mut txt = std::collections::HashMap::new();
             txt.insert("dv".to_string(), pairing_service.device_id().to_string());
@@ -628,41 +632,97 @@ async fn main() -> Result<()> {
             local_device_id: pairing_service.device_id().to_string(),
             local_peer_name: pairing_service.peer_name().to_string(),
         };
-        Some(medousa::pairing_handlers::routes().with_state(
-            medousa::pairing_handlers::PairingApiState {
-                service: pairing_service,
-            },
+        let pairing_state = medousa::pairing_handlers::PairingApiState {
+            service: pairing_service,
+        };
+        Some((
+            medousa::pairing_handlers::bootstrap_routes().with_state(pairing_state.clone()),
+            medousa::pairing_handlers::protected_surface().with_state(pairing_state),
         ))
     } else {
         None
     };
 
     let mut app = build_daemon_router(state.clone(), &dashboard_action_auth);
-    if let Some(pairing_router) = pairing_router {
-        app = app.merge(pairing_router);
+    let mut bootstrap = build_liveness_router();
+    let mut declared = medousa::daemon::router::build_identity_surface()
+        .merge(medousa::daemon::router::build_runtime_admin_surface())
+        .merge(medousa::daemon::runtime_tui_defaults::surface())
+        .merge(medousa::inference_profiles_handlers::surface())
+        .merge(medousa::daemon::jobs::recurring_surface())
+        .merge(medousa::daemon::jobs::workspace_retry_surface())
+        .merge(medousa::daemon::router::build_workshop_surface())
+        .merge(medousa::daemon::router::build_core_service_surface())
+        .merge(
+            medousa::mcp_daemon_handlers::capability_surface().with_state(
+                medousa::mcp_daemon_handlers::CapabilityApiState {
+                    agent_runtime: state.platform.agent_handle(),
+                },
+            ),
+        )
+        .merge(
+            medousa::turn_budget_handlers::budget_surface()
+                .with_state(medousa::turn_budget_handlers::TurnBudgetHandlerState),
+        )
+        .with_state(state.clone());
+    if let Some((pairing_bootstrap, pairing_protected)) = pairing_routers {
+        bootstrap = bootstrap.merge(pairing_bootstrap);
+        declared = declared.merge(pairing_protected);
     }
     let peer_message_state = medousa::peer_message_handlers::PeerMessageApiState {
         pairing: share_api_state.pairing.clone(),
         local_device_id: share_api_state.local_device_id.clone(),
         local_peer_name: share_api_state.local_peer_name.clone(),
     };
-    let peer_scope_pairing = peer_message_state.pairing.clone();
+    let daemon_access_state =
+        medousa::peer_scope::DaemonAccessState::new(peer_message_state.pairing.clone())
+            .with_mcp_policy_token(medousa::mcp_gateway::resolve_mcp_policy_token());
     let mesh_api_state = medousa::mesh::MeshApiState {
         pairing: peer_message_state.pairing.clone(),
         local_device_id: peer_message_state.local_device_id.clone(),
     };
-    app = app
-        .merge(medousa::share_handlers::share_router(share_api_state))
-        .merge(medousa::peer_message_handlers::peer_message_router(
-            peer_message_state,
+    declared = declared
+        .merge(
+            medousa::workspace_handlers::workspace_surface().with_state(
+                medousa::workspace_handlers::WorkspaceHandlerState {
+                    composition: std::sync::Arc::new(state.composition().clone()),
+                },
+            ),
+        )
+        .merge(medousa::daemon::agents::permission_surface())
+        .merge(medousa::vault_handlers::vault_surface())
+        .merge(
+            medousa::mcp_daemon_handlers::gateway_status_surface().with_state(
+                medousa::mcp_daemon_handlers::CapabilityApiState {
+                    agent_runtime: state.platform.agent_handle(),
+                },
+            ),
+        )
+        .merge(medousa::mcp_daemon_handlers::policy_surface().with_state(
+            medousa::mcp_daemon_handlers::McpPolicyApiState {
+                identity_service: state.identity_service.clone(),
+            },
         ))
-        .merge(medousa::mesh::mesh_router(mesh_api_state));
-    if let Some(pairing) = peer_scope_pairing {
-        app = app.layer(axum::middleware::from_fn_with_state(
-            pairing,
-            medousa::peer_scope::reject_peer_scope_escalation,
-        ));
-    }
+        .merge(
+            medousa::environment_handlers::environment_surface().with_state(
+                medousa::environment_handlers::EnvironmentApiState {
+                    hub: medousa::environment_store::environment_hub(),
+                    runtime: Some(std::sync::Arc::new(state.composition().clone())),
+                },
+            ),
+        )
+        .merge(medousa::share_handlers::share_surface().with_state(share_api_state))
+        .merge(
+            medousa::peer_message_handlers::peer_message_surface()
+                .with_state(peer_message_state),
+        )
+        .merge(medousa::mesh::handlers::mesh_surface().with_state(mesh_api_state));
+    app = medousa::peer_scope::assemble_daemon_access_boundary_with_declared(
+        app,
+        declared,
+        bootstrap,
+        daemon_access_state,
+    );
     let _mdns_advertiser = mdns_advertiser;
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);

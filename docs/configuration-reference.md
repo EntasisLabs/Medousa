@@ -65,7 +65,7 @@ Medousa resolves LLM settings in order: **saved defaults → env → built-in de
 |----------|---------|---------|
 | `MEDOUSA_DAEMON_URL` | Engine base URL for clients | `http://127.0.0.1:7419` |
 | `STASIS_DAEMON_URL` | Legacy alias | |
-| `MEDOUSA_DAEMON_PUBLIC_URL` | Advertised URL for SSE/stream (mobile/LAN) | Auto with `--public` |
+| `MEDOUSA_DAEMON_PUBLIC_URL` | Advertised URL for SSE/stream during non-loopback development; does not secure the daemon | Auto with `--public` |
 | `MEDOUSA_DEV_HOST` | Dev Vite host → daemon URL hint | unset |
 | `MEDOUSA_MEDOUSA_DAEMON_BIN` | Explicit path to `medousa_daemon` | Tauri sidecar or PATH |
 | `MEDOUSA_PROJECT_ROOT` | Vault / project root override | unset |
@@ -188,7 +188,15 @@ in **Settings → Runtime Controls → Worker capacity**; restart the engine aft
 | `MEDOUSA_PAIRING_ADVERTISE` | Force mDNS when not `--public` |
 | `MEDOUSA_PAIRING_DISABLE_TLS` | Dev only — plaintext pairing |
 
-See [first-run-and-lan-pairing-plan.md](../architecture/archive/first-run-and-lan-pairing-plan.md).
+> **Security warning:** `--public` currently exposes the complete daemon router
+> without mandatory credentials on every personal-mode route. These variables
+> change discovery and addressing; they do not create an authentication
+> boundary. Prefer Iroh and never expose port 7419 to the internet or an
+> untrusted LAN. See [Mobile & LAN](cookbook/mobile-and-lan.md) and
+> [hardening H01](../architecture/hardening/README.md).
+
+Historical design context:
+[first-run-and-lan-pairing-plan.md](../architecture/archive/first-run-and-lan-pairing-plan.md).
 
 ---
 

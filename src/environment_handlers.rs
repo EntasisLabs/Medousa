@@ -1,10 +1,10 @@
 //! HTTP handlers for `/v1/environment/*`.
 
+use axum::Json;
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::routing::{get, post};
-use axum::{Json, Router};
 use chrono::Utc;
 use futures_util::stream::{self, Stream};
 use medousa_types::environment::{
@@ -13,13 +13,17 @@ use medousa_types::environment::{
     EnvironmentStreamEvent, EnvironmentStreamQuery, EnvironmentValidateRequest,
     EnvironmentValidateResponse,
 };
-use std::sync::Arc;
-use stasis::prelude::RuntimeComposition;
 use medousa_types::environment_validate::validate_environment_spec;
+use stasis::prelude::RuntimeComposition;
 use std::convert::Infallible;
+use std::sync::Arc;
 use std::time::Duration;
 
-use crate::environment_store::{resolve_profile_id, EnvironmentHub};
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
+use crate::environment_store::{EnvironmentHub, resolve_profile_id};
+use crate::request_principal::Capability;
 
 #[derive(Clone)]
 pub struct EnvironmentApiState {
@@ -35,19 +39,92 @@ struct EnvironmentStatusQuery {
     include_runtime: Option<bool>,
 }
 
-pub fn environment_router(state: EnvironmentApiState) -> Router {
-    Router::new()
-        .route("/v1/environment/spec", get(get_spec).put(put_spec))
-        .route("/v1/environment/status", get(get_status))
-        .route("/v1/environment/spec/validate", post(validate_spec))
-        .route("/v1/environment/spec/propose", post(propose_spec))
-        .route("/v1/environment/spec/pending", get(get_pending).delete(dismiss_pending))
+pub fn environment_surface() -> DeclaredRouter<EnvironmentApiState> {
+    DeclaredRouter::default()
+        .methods([
+            (
+                environment_policy(axum::http::Method::GET, "/v1/environment/spec", 1024),
+                get(get_spec),
+            ),
+            (
+                environment_policy(axum::http::Method::PUT, "/v1/environment/spec", 1024 * 1024),
+                axum::routing::put(put_spec),
+            ),
+        ])
         .route(
-            "/v1/environment/spec/pending/apply",
+            environment_policy(axum::http::Method::GET, "/v1/environment/status", 1024),
+            get(get_status),
+        )
+        .route(
+            environment_policy(
+                axum::http::Method::POST,
+                "/v1/environment/spec/validate",
+                1024 * 1024,
+            ),
+            post(validate_spec),
+        )
+        .route(
+            environment_policy(
+                axum::http::Method::POST,
+                "/v1/environment/spec/propose",
+                1024 * 1024,
+            ),
+            post(propose_spec),
+        )
+        .methods([
+            (
+                environment_policy(
+                    axum::http::Method::GET,
+                    "/v1/environment/spec/pending",
+                    1024,
+                ),
+                get(get_pending),
+            ),
+            (
+                environment_policy(
+                    axum::http::Method::DELETE,
+                    "/v1/environment/spec/pending",
+                    1024,
+                ),
+                axum::routing::delete(dismiss_pending),
+            ),
+        ])
+        .route(
+            environment_policy(
+                axum::http::Method::POST,
+                "/v1/environment/spec/pending/apply",
+                1024,
+            ),
             post(apply_pending),
         )
-        .route("/v1/environment/spec/stream", get(stream_spec))
-        .with_state(state)
+        .route(
+            environment_stream_policy("/v1/environment/spec/stream"),
+            get(stream_spec),
+        )
+}
+
+fn environment_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    body_limit: usize,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Administration,
+        required_capability: Some(Capability::AdminRuntime),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class: RateLimitClass::Administration,
+    }
+}
+
+fn environment_stream_policy(path: &'static str) -> RoutePolicy {
+    RoutePolicy {
+        rate_limit_class: RateLimitClass::Stream,
+        ..environment_policy(axum::http::Method::GET, path, 1024)
+    }
 }
 
 async fn get_spec(
@@ -55,11 +132,7 @@ async fn get_spec(
     Query(query): Query<EnvironmentStreamQuery>,
 ) -> Result<Json<EnvironmentSpecResponse>, (StatusCode, String)> {
     let profile_id = resolve_profile_id(query.profile_id.as_deref());
-    let record = state
-        .hub
-        .get(&profile_id)
-        .await
-        .map_err(internal_error)?;
+    let record = state.hub.get(&profile_id).await.map_err(internal_error)?;
     Ok(Json(EnvironmentSpecResponse {
         spec: record.spec,
         revision: record.revision,
@@ -195,11 +268,7 @@ async fn stream_spec(
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, (StatusCode, String)> {
     let profile_id = resolve_profile_id(query.profile_id.as_deref());
     let since = query.since_revision.unwrap_or(0);
-    let record = state
-        .hub
-        .get(&profile_id)
-        .await
-        .map_err(internal_error)?;
+    let record = state.hub.get(&profile_id).await.map_err(internal_error)?;
 
     let initial = EnvironmentStreamEvent {
         revision: record.revision,
@@ -256,4 +325,29 @@ fn summarize_spec_diff(spec: &medousa_types::environment::EnvironmentSpec) -> St
 
 fn internal_error(err: impl std::fmt::Display) -> (StatusCode, String) {
     (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn environment_inventory_is_explicitly_runtime_admin() {
+        let entries = environment_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 9);
+        assert!(entries.iter().all(|entry| {
+            entry.group == RouteGroup::Administration
+                && entry.required_capability == Some("admin.runtime")
+        }));
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.rate_limit_class == RateLimitClass::Stream)
+                .count(),
+            1
+        );
+    }
 }

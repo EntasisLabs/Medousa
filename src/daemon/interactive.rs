@@ -7,8 +7,8 @@ use medousa_engine::{
 };
 
 use axum::Json;
-use axum::extract::{Path as AxumPath, Query, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::extract::{Extension, Path as AxumPath, Query, State};
+use axum::http::StatusCode;
 use chrono::Utc;
 use serde::Deserialize;
 use uuid::Uuid;
@@ -295,16 +295,19 @@ pub async fn spawn_turn_ticket(
     })
 }
 
-fn apply_bearer_identity(headers: &HeaderMap, request_identity: &mut Option<String>) {
+fn apply_principal_identity(
+    principal: &crate::request_principal::RequestPrincipal,
+    request_identity: &mut Option<String>,
+) {
     // Portal/shared seats: bound pairing profile wins over client-supplied identity.
-    if let Some(bound) = crate::pairing::resolve_request_profile_id(headers) {
-        *request_identity = Some(bound);
+    if let Some(bound) = principal.profile_id() {
+        *request_identity = Some(bound.to_string());
     }
 }
 
 pub async fn create_turn_ticket(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(principal): Extension<crate::request_principal::RequestPrincipal>,
     Json(mut request): Json<CreateTurnTicketRequest>,
 ) -> Result<Json<TurnTicketResponse>, (StatusCode, String)> {
     let session_id = request.session_id.trim().to_string();
@@ -317,7 +320,7 @@ pub async fn create_turn_ticket(
     if request.prompt.trim().is_empty() && request.media_refs.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "prompt is required".to_string()));
     }
-    apply_bearer_identity(&headers, &mut request.identity_user_id);
+    apply_principal_identity(&principal, &mut request.identity_user_id);
 
     let (provider, model) = if request.provider.trim().is_empty() || request.model.trim().is_empty()
     {
@@ -414,11 +417,11 @@ pub async fn list_session_turns(
 
 pub async fn start_interactive_turn(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(principal): Extension<crate::request_principal::RequestPrincipal>,
     Json(request): Json<InteractiveTurnRequest>,
 ) -> Result<Json<InteractiveTurnResponse>, (StatusCode, String)> {
     let mut identity_user_id = request.identity_user_id.clone();
-    apply_bearer_identity(&headers, &mut identity_user_id);
+    apply_principal_identity(&principal, &mut identity_user_id);
     let ticket_request = CreateTurnTicketRequest {
         session_id: request.session_id.clone(),
         prompt: request.prompt.clone(),

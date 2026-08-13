@@ -30,4 +30,4 @@ def test_sync_client_health(monkeypatch):
 
     health = client.health().get()
     assert health.status == "ok"
-    assert calls == [("http://127.0.0.1:7419", "/health")]
+    assert calls == [("http://127.0.0.1:7419", "/v1/health")]

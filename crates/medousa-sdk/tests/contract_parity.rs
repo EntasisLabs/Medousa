@@ -2,7 +2,7 @@
 
 /// (accessor, method, http_method, path_template)
 pub const PARITY_ROUTES: &[(&str, &str, &str, &str)] = &[
-    ("health", "get", "GET", "/health"),
+    ("health", "get", "GET", "/v1/health"),
     ("ingest", "post", "POST", "/v1/ingest"),
     ("local_models", "hardware", "GET", "/v1/local/hardware"),
     ("local_models", "catalog", "GET", "/v1/local/catalog"),

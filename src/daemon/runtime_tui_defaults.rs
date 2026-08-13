@@ -1,20 +1,57 @@
 //! Full workshop `tui_defaults.json` read/write for per-engine settings parity.
 
-use axum::{Json, Router, http::StatusCode, routing::get};
+use axum::{Json, http::StatusCode, routing::get};
 use serde_json::Value;
 
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
+use crate::daemon::state::AppState;
 use crate::session::{load_tui_defaults_value, save_tui_defaults_merged};
 
-pub fn routes() -> Router {
-    Router::new()
-        .route(
-            "/v1/runtime/tui-defaults",
-            get(get_tui_defaults).put(put_tui_defaults),
-        )
-        .route(
-            "/v1/runtime/workers",
-            get(get_runtime_workers).put(put_runtime_workers),
-        )
+pub fn surface() -> DeclaredRouter<AppState> {
+    DeclaredRouter::default()
+        .methods([
+            (
+                runtime_policy(axum::http::Method::GET, "/v1/runtime/tui-defaults", 1024),
+                get(get_tui_defaults),
+            ),
+            (
+                runtime_policy(
+                    axum::http::Method::PUT,
+                    "/v1/runtime/tui-defaults",
+                    1024 * 1024,
+                ),
+                axum::routing::put(put_tui_defaults),
+            ),
+        ])
+        .methods([
+            (
+                runtime_policy(axum::http::Method::GET, "/v1/runtime/workers", 1024),
+                get(get_runtime_workers),
+            ),
+            (
+                runtime_policy(axum::http::Method::PUT, "/v1/runtime/workers", 64 * 1024),
+                axum::routing::put(put_runtime_workers),
+            ),
+        ])
+}
+
+fn runtime_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    body_limit: usize,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Administration,
+        required_capability: Some(crate::request_principal::Capability::AdminRuntime),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class: RateLimitClass::Administration,
+    }
 }
 
 async fn get_runtime_workers() -> Json<crate::product_config::RuntimeWorkerConfig> {

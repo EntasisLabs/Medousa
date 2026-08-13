@@ -4,6 +4,9 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
 
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
 use crate::daemon_api::{
     TurnBudgetApproveRequest, TurnBudgetDenyRequest, TurnBudgetRequestListQuery,
     TurnBudgetRequestListResponse, TurnBudgetRequestRecord, TurnBudgetRequestResponse,
@@ -12,6 +15,73 @@ use crate::turn_budget_request::{turn_budget_request_store, TurnBudgetRequestSta
 
 #[derive(Clone, Default)]
 pub struct TurnBudgetHandlerState;
+
+pub fn budget_surface() -> DeclaredRouter<TurnBudgetHandlerState> {
+    use axum::routing::{get, post};
+
+    use crate::request_principal::Capability;
+
+    DeclaredRouter::default()
+        .route(
+            budget_policy(
+                axum::http::Method::GET,
+                "/v1/turns/budget-requests",
+                Capability::WorkshopRead,
+                1024,
+                RateLimitClass::Read,
+            ),
+            get(list_turn_budget_requests),
+        )
+        .route(
+            budget_policy(
+                axum::http::Method::GET,
+                "/v1/turns/budget-requests/{request_id}",
+                Capability::WorkshopRead,
+                1024,
+                RateLimitClass::Read,
+            ),
+            get(get_turn_budget_request),
+        )
+        .route(
+            budget_policy(
+                axum::http::Method::POST,
+                "/v1/turns/budget-requests/{request_id}/approve",
+                Capability::AdminExecute,
+                64 * 1024,
+                RateLimitClass::Administration,
+            ),
+            post(approve_turn_budget_request),
+        )
+        .route(
+            budget_policy(
+                axum::http::Method::POST,
+                "/v1/turns/budget-requests/{request_id}/deny",
+                Capability::AdminExecute,
+                64 * 1024,
+                RateLimitClass::Administration,
+            ),
+            post(deny_turn_budget_request),
+        )
+}
+
+fn budget_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    required_capability: crate::request_principal::Capability,
+    body_limit: usize,
+    rate_limit_class: RateLimitClass,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Portal,
+        required_capability: Some(required_capability),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class,
+    }
+}
 
 pub async fn list_turn_budget_requests(
     Query(query): Query<TurnBudgetRequestListQuery>,

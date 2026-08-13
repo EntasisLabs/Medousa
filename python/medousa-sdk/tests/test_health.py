@@ -19,11 +19,11 @@ HEALTH_PAYLOAD = {
 
 @pytest.mark.asyncio
 async def test_health_get():
-    transport = MockTransport({("GET", "/health"): lambda *_: HEALTH_PAYLOAD})
+    transport = MockTransport({("GET", "/v1/health"): lambda *_: HEALTH_PAYLOAD})
     client = MedousaClient("http://127.0.0.1:7419", transport=transport)
 
     health = await client.health().get()
 
     assert health.status == "ok"
     assert health.backend == "sqlite"
-    assert transport.calls[0] == ("GET", "/health", None)
+    assert transport.calls[0] == ("GET", "/v1/health", None)

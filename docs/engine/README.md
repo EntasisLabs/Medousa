@@ -80,9 +80,20 @@ SDK: [../sdk/README.md](../sdk/README.md)
 
 ## Trust & operations
 
-- **Loopback by default** — `127.0.0.1:7419`; use `--public` + pairing for LAN phones.
+- **Loopback by default** — keep the daemon on `127.0.0.1:7419` and use an
+  authenticated private transport such as the paired Iroh path for remote
+  clients.
+- **Current non-loopback warning** — non-loopback startup requires pairing and
+  remote application routes require a valid bearer in Personal and Shared mode.
+  The broader H01 capability, origin/host, bootstrap-window, local-credential,
+  and revocation work is not complete. Do not expose the daemon to the internet,
+  an untrusted LAN, guest Wi-Fi, or a shared development network. Remediation is
+  tracked in [the hardening program](../../architecture/hardening/README.md)
+  (H01/SEC-001).
 - **Policy profiles** — interactive vs scheduled lanes; OpenShell sandbox for skill scripts.
-- **Observability** — `/health`, `/v1/stats`, Stasis dashboard mount, `medousa doctor` (add `--local-engine` to probe offline brain on `:7421`).
+- **Observability** — public constant `/health` liveness, protected `/v1/health`
+  details, `/v1/stats`, Stasis dashboard mount, and `medousa doctor` (add
+  `--local-engine` to probe offline brain on `:7421`).
 
 Deep architecture: [enterprise-architecture-and-flow-guide.md](../../architecture/enterprise-architecture-and-flow-guide.md), [component-daemon.md](../../architecture/component-daemon.md).
 

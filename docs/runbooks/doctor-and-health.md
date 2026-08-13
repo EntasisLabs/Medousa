@@ -11,7 +11,10 @@ medousa doctor
 curl -s http://127.0.0.1:7419/health | jq .
 ```
 
-`GET /health` returns agent runtime version, tool count, last turn latency (`HealthResponse`).
+`GET /health` is a constant-size liveness check containing only `status` and
+`apiVersion`. `medousa doctor` and the SDK use protected `GET /v1/health` for
+agent runtime version, tool count, last-turn latency, and profile details
+(`HealthResponse`).
 
 SDK: `client.health().get().await?`
 

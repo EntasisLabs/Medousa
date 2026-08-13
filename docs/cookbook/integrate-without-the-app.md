@@ -109,9 +109,16 @@ Embed **Locus memory** in your app: same user_id across your UI and Medousa Engi
 
 ## Pattern 8 — Pairing & edge devices
 
-LAN QR protocol (`GET /qr`, `/pair/*`) for phones or kiosks talking to a edge-hosted engine.
+QR protocol (`GET /qr`, `/pair/*`) for phones or kiosks talking to an
+edge-hosted engine. Prefer the authenticated Iroh transport for off-host
+clients.
 
-Run engine with `--public` on factory floor Mac mini; phones scan QR — no Medousa app required on kiosk.
+Do not run the current engine with `--public` on a factory-floor or other shared
+network. It exposes the complete daemon router without mandatory credentials on
+every personal-mode route. Until [hardening H01](../../architecture/hardening/README.md)
+ships, keep the engine on loopback and use Iroh, or place experimental LAN
+access behind a separately authenticated, tightly firewalled proxy on an
+isolated network.
 
 ---
 

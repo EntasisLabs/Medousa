@@ -19,6 +19,7 @@ Audience tags used throughout `docs/`:
 | Task-oriented how-tos (ops/integrators) | [`docs/cookbook/`](cookbook/) | Install, channels, mobile, custom UI |
 | Env vars and ops | [`configuration-reference.md`](configuration-reference.md), [`docs/runbooks/`](runbooks/) | |
 | Turn FSM, component design, epics | [`architecture/`](../architecture/) | Living plans; **not** duplicated in `docs/engine/` |
+| Security/performance remediation | [`architecture/hardening/`](../architecture/hardening/) | Program ledger, execution plans, and verification evidence; update canonical `docs/` only as behavior ships |
 | Engine crate (`medousa-engine`) | [`architecture/component-engine.md`](../architecture/component-engine.md) | Spine, ports, `run_turn` — contributor-only |
 | Comms / observability (daemon) | [`architecture/component-daemon.md`](../architecture/component-daemon.md), [`daemon-modules.md`](architecture/daemon-modules.md) | Operator env vars in configuration-reference |
 | Shipped milestone history | [`architecture/archive/`](../architecture/archive/) | Historical only — add staleness banner |
@@ -51,6 +52,10 @@ When shipping a user-facing or integrator-facing feature:
 5. Update [`docs/README.md`](README.md) index if you add a new top-level guide.
 6. Engine crate boundary change → update [`architecture/component-engine.md`](../architecture/component-engine.md) and [`daemon-modules.md`](architecture/daemon-modules.md).
 7. Run [`scripts/verify-docs.sh`](../scripts/verify-docs.sh) (use `--strict` in CI).
+8. Changes closing a repo-wide hardening finding must update its primary
+   workstream ledger and attach the required verification evidence. A merged
+   implementation without migration, evidence, and canonical docs is not
+   `Shipped`.
 
 ## Subsystem coverage checklist
 

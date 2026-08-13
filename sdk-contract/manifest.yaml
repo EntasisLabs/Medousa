@@ -8,7 +8,7 @@ methods:
   - accessor: health
     method: get
     http: GET
-    path: /health
+    path: /v1/health
     response_type: HealthResponse
     streaming: false
     sync: true

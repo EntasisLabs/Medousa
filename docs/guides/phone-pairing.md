@@ -28,6 +28,13 @@ Your phone is a window. The Mac/PC (or a workshop host) runs Medousa Engine.
 After pairing, you can leave the LAN pairing window off. Already-paired clients
 keep working over the private tunnel (Iroh) when you’re off the LAN.
 
+> **Current security limitation:** opening the LAN pairing window binds the
+> complete daemon API to the LAN; pairing does not yet make credentials
+> mandatory on every personal-mode route. Use only a private, isolated network,
+> close the window immediately, and prefer the full Iroh invite below. Never use
+> the LAN window on guest/café Wi-Fi or expose port 7419 to the internet. See
+> [hardening H01](../../architecture/hardening/README.md).
+
 ## Pair with a VPS or other off-LAN host
 
 Keep the daemon on loopback; port 7419 does not need to be exposed publicly.
@@ -73,7 +80,7 @@ Same crypto family; different product scope.
 | Issue | Fix |
 |-------|-----|
 | QR won’t scan | Move closer; use **Copy link** / full invite if off-LAN |
-| Pairing fails | Turn on **LAN pairing** briefly under Settings → Nearby, pair, then turn it **off** |
+| Pairing fails | Prefer a full Iroh invite. If an isolated trusted LAN is the only option, open **LAN pairing** only for the ceremony and turn it off immediately. |
 | Phone offline later | Confirm desktop engine is running; tunnel needs the host up |
 | Push / Live Activities | Operator setup: [mobile push runbook](../runbooks/mobile-push-deployment.md) |
 

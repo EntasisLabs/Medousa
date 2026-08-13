@@ -19,6 +19,7 @@ Living documentation for system shape, component boundaries, and active roadmap.
 | [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md) | **Turn loop, FSM, host/worker bus, lanes, Specialists** |
 | [coder-durability-memory-and-tool-surface.md](coder-durability-memory-and-tool-surface.md) | **Coder recovery, worktree STTP memory, and dynamic tools** |
 | [typed-tool-contract-runtime-plan.md](typed-tool-contract-runtime-plan.md) | **Typed tool macro, catalog, mode envelopes, and hexagonal runtime migration** |
+| [hardening/README.md](hardening/README.md) | **Security, correctness, performance, and architecture hardening program** |
 | [component-engine.md](component-engine.md) | **Durable turn spine, `run_turn`, port traits (`medousa-engine`)** |
 | [system-overview.md](system-overview.md) | End-to-end system shape |
 | [interaction-and-state-model.md](interaction-and-state-model.md) | Who owns what state |
@@ -60,6 +61,7 @@ Shipped product features: [artifacts](../docs/engine/artifacts.md), [mobile shel
 
 | Doc | Topic |
 |-----|--------|
+| [hardening/README.md](hardening/README.md) | **Repo-wide hardening** — authority containment, trustworthy state, bounded hot paths, and enforced architecture |
 | [agent-runtime-modes-plan.md](agent-runtime-modes-plan.md) | **Agent runtime modes** — General parity, mode transitions, and Medousa Coder |
 | [typed-tool-contract-runtime-plan.md](typed-tool-contract-runtime-plan.md) | **Typed tool contracts** — stateful macro, catalog/policy split, mode metadata, and Stasis upstream path |
 | [code-surface-bridge-plan.md](code-surface-bridge-plan.md) | **Code surface bridge** — Workshop-owned chrome, unified Review DiffStack, buffer polish |

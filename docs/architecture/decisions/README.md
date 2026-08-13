@@ -13,7 +13,22 @@ Short, durable decisions — not sprint plans. For build history see [../../../a
 | [adr-008-hot-swappable-agent-runtime.md](adr-008-hot-swappable-agent-runtime.md) | Hot-swappable agentic runtime (MCP + ACP bones) | Accepted |
 | [adr-009-vault-workbooks.md](adr-009-vault-workbooks.md) | Vault workbooks + overlay formulas | Accepted |
 | [adr-010-slides-player-and-layers.md](adr-010-slides-player-and-layers.md) | Slides player + declarative CSS layers | Accepted |
+| [adr-010-virtual-shell-workspaces.md](adr-010-virtual-shell-workspaces.md) | Virtual shell workspaces | Accepted |
+| [adr-011-shared-mode-portal-and-mesh.md](adr-011-shared-mode-portal-and-mesh.md) | Shared mode seats, portal, and peer mesh | Accepted |
 | [adr-012-medousa-anywhere-surfaces.md](adr-012-medousa-anywhere-surfaces.md) | Native host surfaces vs external-agent adapters | Accepted |
+| [adr-013-daemon-trust-zones-and-auth.md](adr-013-daemon-trust-zones-and-auth.md) | Daemon trust zones and mandatory authentication | Proposed |
+| [adr-014-identifier-and-filesystem-authority.md](adr-014-identifier-and-filesystem-authority.md) | Typed identifiers and handle-relative filesystem authority | Proposed |
+| [adr-015-bounded-durable-turn-pipeline.md](adr-015-bounded-durable-turn-pipeline.md) | Bounded single-writer durable turn pipeline | Proposed |
+| [adr-016-transactional-store-ownership.md](adr-016-transactional-store-ownership.md) | Transactional store ownership and crash consistency | Proposed |
+| [adr-017-request-scoped-runtime-context.md](adr-017-request-scoped-runtime-context.md) | Request-scoped runtime context and exact ownership | Proposed |
+| [adr-018-untrusted-webview-isolation.md](adr-018-untrusted-webview-isolation.md) | Untrusted webview isolation and minimal browser bridge | Proposed |
+| [adr-019-generated-api-contract.md](adr-019-generated-api-contract.md) | Route-owned generated API and client contract | Proposed |
+| [adr-020-feature-boundaries-and-lazy-runtime.md](adr-020-feature-boundaries-and-lazy-runtime.md) | Feature boundaries, lazy runtime, and optional workloads | Proposed |
+
+> **Numbering note:** two accepted decisions were independently assigned
+> ADR-010. Their filenames and identifiers remain unchanged so existing links
+> and history do not lie. New decisions continue at ADR-013; the collision can
+> be resolved only by a separate explicit supersession/alias decision.
 
 ## Template
 

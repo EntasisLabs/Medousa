@@ -274,7 +274,7 @@ impl BlockingMedousaClient {
 #[cfg(feature = "blocking")]
 impl BlockingHealthApi<'_> {
     pub fn get(&self) -> Result<HealthResponse, SdkError> {
-        self.http.get("/health")
+        self.http.get("/v1/health")
     }
 }
 

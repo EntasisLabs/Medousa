@@ -2186,7 +2186,7 @@ fn fetch_daemon_health(daemon_url: &str) -> Result<medousa::HealthResponse> {
     let response = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(3))
         .build()?
-        .get(format!("{daemon_url}/health"))
+        .get(format!("{daemon_url}/v1/health"))
         .send()?
         .error_for_status()?;
     Ok(response.json()?)

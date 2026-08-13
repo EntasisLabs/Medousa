@@ -1,34 +1,155 @@
 use std::sync::Arc;
 
-use axum::extract::{ConnectInfo, Path, Query, State};
-use axum::http::{HeaderMap, StatusCode, header::AUTHORIZATION};
+use axum::extract::{ConnectInfo, Extension, Path, Query, State};
+use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::{Json, routing::{delete, get, post}, Router};
+use axum::{
+    Json, Router,
+    routing::{delete, get, post},
+};
 use serde::Deserialize;
 
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
 use crate::pairing::{
     PairHeartbeatRequest, PairInitRequest, PairVerifyRequest, PairingService,
-    RevokePairingResult,
+    RevokePairingAuthority, RevokePairingResult,
 };
+use crate::request_principal::{Capability, PrincipalKind, RequestPrincipal};
 
 #[derive(Clone)]
 pub struct PairingApiState {
     pub service: Arc<PairingService>,
 }
 
-pub fn routes() -> Router<PairingApiState> {
-    Router::new()
-        .route("/pair/status", get(pair_status))
-        .route("/pair/iroh-ticket", get(get_iroh_ticket))
-        .route("/qr", get(get_qr))
-        .route("/qr/rotate", post(rotate_qr))
-        .route("/qr/image", get(get_qr_image))
-        .route("/qr.png", get(get_qr_png))
-        .route("/pair/code", get(get_pair_code))
-        .route("/pair/init", post(pair_init))
-        .route("/pair/verify", post(pair_verify))
-        .route("/pair/heartbeat", get(pair_heartbeat).post(pair_heartbeat_post))
-        .route("/pair/{pairing_id}", delete(revoke_pairing))
+/// Anonymous pairing ceremony routes. H01 will add the active-window and
+/// admission limits; no administrative/readback route belongs here.
+pub fn bootstrap_routes() -> Router<PairingApiState> {
+    bootstrap_surface().into_router()
+}
+
+pub fn bootstrap_surface() -> DeclaredRouter<PairingApiState> {
+    DeclaredRouter::default()
+        .route(
+            RoutePolicy {
+                method: axum::http::Method::POST,
+                path: "/pair/init",
+                group: RouteGroup::PairingCeremony,
+                required_capability: None,
+                bootstrap_public: true,
+                browser_policy: BrowserPolicy::Public,
+                body_limit: 16 * 1024,
+                rate_limit_class: RateLimitClass::PairingCeremony,
+            },
+            post(pair_init),
+        )
+        .route(
+            RoutePolicy {
+                method: axum::http::Method::POST,
+                path: "/pair/verify",
+                group: RouteGroup::PairingCeremony,
+                required_capability: None,
+                bootstrap_public: true,
+                browser_policy: BrowserPolicy::Public,
+                body_limit: 8 * 1024,
+                rate_limit_class: RateLimitClass::PairingCeremony,
+            },
+            post(pair_verify),
+        )
+}
+
+/// Pairing administration and authenticated peer lifecycle routes.
+pub fn protected_routes() -> Router<PairingApiState> {
+    protected_surface().into_router()
+}
+
+pub fn protected_surface() -> DeclaredRouter<PairingApiState> {
+    DeclaredRouter::default()
+        .route(
+            peer_policy(axum::http::Method::GET, "/pair/status", 1024),
+            get(pair_status),
+        )
+        .route(
+            peer_policy(axum::http::Method::GET, "/pair/iroh-ticket", 1024),
+            get(get_iroh_ticket),
+        )
+        .route(
+            admin_policy(axum::http::Method::GET, "/qr", 1024),
+            get(get_qr),
+        )
+        .route(
+            admin_policy(axum::http::Method::POST, "/qr/rotate", 16 * 1024),
+            post(rotate_qr),
+        )
+        .route(
+            admin_policy(axum::http::Method::GET, "/qr/image", 1024),
+            get(get_qr_image),
+        )
+        .route(
+            admin_policy(axum::http::Method::GET, "/qr.png", 1024),
+            get(get_qr_png),
+        )
+        .route(
+            admin_policy(axum::http::Method::GET, "/pair/code", 1024),
+            get(get_pair_code),
+        )
+        .methods([
+            (
+                peer_policy(axum::http::Method::GET, "/pair/heartbeat", 1024),
+                get(pair_heartbeat),
+            ),
+            (
+                peer_policy(axum::http::Method::POST, "/pair/heartbeat", 64 * 1024),
+                post(pair_heartbeat_post),
+            ),
+        ])
+        .route(
+            peer_policy(axum::http::Method::DELETE, "/pair/{pairing_id}", 1024),
+            delete(revoke_pairing),
+        )
+}
+
+fn peer_policy(method: axum::http::Method, path: &'static str, body_limit: usize) -> RoutePolicy {
+    protected_policy(
+        method,
+        path,
+        RouteGroup::PeerExchange,
+        Capability::PeerExchange,
+        body_limit,
+        RateLimitClass::PeerExchange,
+    )
+}
+
+fn admin_policy(method: axum::http::Method, path: &'static str, body_limit: usize) -> RoutePolicy {
+    protected_policy(
+        method,
+        path,
+        RouteGroup::Administration,
+        Capability::AdminIdentity,
+        body_limit,
+        RateLimitClass::Administration,
+    )
+}
+
+fn protected_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    group: RouteGroup,
+    required_capability: Capability,
+    body_limit: usize,
+    rate_limit_class: RateLimitClass,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group,
+        required_capability: Some(required_capability),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class,
+    }
 }
 
 async fn pair_status(
@@ -159,7 +280,10 @@ async fn pair_init(
     } else {
         StatusCode::BAD_REQUEST
     };
-    Ok((status, Json(serde_json::to_value(response).unwrap_or_default())))
+    Ok((
+        status,
+        Json(serde_json::to_value(response).unwrap_or_default()),
+    ))
 }
 
 async fn pair_verify(
@@ -173,7 +297,10 @@ async fn pair_verify(
             } else {
                 StatusCode::BAD_REQUEST
             };
-            Ok((status, Json(serde_json::to_value(response).unwrap_or_default())))
+            Ok((
+                status,
+                Json(serde_json::to_value(response).unwrap_or_default()),
+            ))
         }
         Err(_) => Err(StatusCode::BAD_REQUEST),
     }
@@ -181,28 +308,27 @@ async fn pair_verify(
 
 async fn pair_heartbeat(
     State(state): State<PairingApiState>,
-    headers: HeaderMap,
+    Extension(principal): Extension<RequestPrincipal>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), StatusCode> {
-    run_pair_heartbeat(&state, &headers, None).await
+    run_pair_heartbeat(&state, &principal, None).await
 }
 
 async fn pair_heartbeat_post(
     State(state): State<PairingApiState>,
-    headers: HeaderMap,
+    Extension(principal): Extension<RequestPrincipal>,
     Json(body): Json<PairHeartbeatRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), StatusCode> {
-    run_pair_heartbeat(&state, &headers, Some(body)).await
+    run_pair_heartbeat(&state, &principal, Some(body)).await
 }
 
 async fn run_pair_heartbeat(
     state: &PairingApiState,
-    headers: &HeaderMap,
+    principal: &RequestPrincipal,
     body: Option<PairHeartbeatRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), StatusCode> {
-    let token = bearer_token(headers);
     let response = state
         .service
-        .pair_heartbeat(token, body)
+        .pair_heartbeat(principal.credential_id().map(|id| id.as_str()), body)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let status = if response.status == "ok" {
@@ -210,22 +336,25 @@ async fn run_pair_heartbeat(
     } else {
         StatusCode::UNAUTHORIZED
     };
-    Ok((status, Json(serde_json::to_value(response).unwrap_or_default())))
+    Ok((
+        status,
+        Json(serde_json::to_value(response).unwrap_or_default()),
+    ))
 }
 
 async fn revoke_pairing(
     State(state): State<PairingApiState>,
-    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-    headers: HeaderMap,
+    Extension(principal): Extension<RequestPrincipal>,
     Path(pairing_id): Path<String>,
 ) -> Result<StatusCode, StatusCode> {
-    let token = bearer_token(&headers);
-    let trusted_local = crate::remote_trust::is_trusted_local(addr.ip(), &headers);
-    match state
-        .service
-        .revoke_pairing(&pairing_id, token, trusted_local)
-        .await
-    {
+    let authority = match principal.kind() {
+        PrincipalKind::LegacyLocal | PrincipalKind::Root => RevokePairingAuthority::Administrator,
+        _ => principal
+            .credential_id()
+            .map(|id| RevokePairingAuthority::Credential(id.as_str()))
+            .unwrap_or(RevokePairingAuthority::Unauthenticated),
+    };
+    match state.service.revoke_pairing(&pairing_id, authority).await {
         Ok(RevokePairingResult::Removed) => Ok(StatusCode::NO_CONTENT),
         Ok(RevokePairingResult::NotFound) => Err(StatusCode::NOT_FOUND),
         Ok(RevokePairingResult::Unauthorized) => Err(StatusCode::UNAUTHORIZED),
@@ -233,11 +362,47 @@ async fn revoke_pairing(
     }
 }
 
-fn bearer_token(headers: &HeaderMap) -> Option<&str> {
-    headers
-        .get(AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pairing_bootstrap_inventory_is_exact() {
+        let entries = bootstrap_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].method, "POST");
+        assert_eq!(entries[0].path, "/pair/init");
+        assert_eq!(entries[0].body_limit, 16 * 1024);
+        assert_eq!(entries[1].method, "POST");
+        assert_eq!(entries[1].path, "/pair/verify");
+        assert_eq!(entries[1].body_limit, 8 * 1024);
+        assert!(entries.iter().all(|entry| entry.bootstrap_public));
+    }
+
+    #[test]
+    fn protected_pairing_inventory_separates_peer_and_admin_authority() {
+        let entries = protected_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 10);
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("peer.exchange"))
+                .count(),
+            5
+        );
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("admin.identity"))
+                .count(),
+            5
+        );
+        assert!(entries.iter().all(|entry| !entry.bootstrap_public));
+    }
 }

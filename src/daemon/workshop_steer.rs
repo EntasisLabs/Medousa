@@ -1,13 +1,12 @@
 use axum::Json;
-use axum::extract::{ConnectInfo, Path, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::extract::{Extension, Path, State};
+use axum::http::StatusCode;
 use serde::Deserialize;
 use serde_json::json;
-use std::net::SocketAddr;
 
 use crate::agent_runtime::turn_worker_tools::steer_bound_workshop_for_session;
 use crate::daemon::state::AppState;
-use crate::remote_trust::is_trusted_local;
+use crate::request_principal::{PrincipalKind, RequestPrincipal};
 
 #[derive(Debug, Deserialize)]
 pub struct WorkshopSteerRequest {
@@ -16,12 +15,11 @@ pub struct WorkshopSteerRequest {
 
 pub async fn steer_bound_workshop_handler(
     State(_state): State<AppState>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    headers: HeaderMap,
+    Extension(principal): Extension<RequestPrincipal>,
     Path(session_id): Path<String>,
     Json(body): Json<WorkshopSteerRequest>,
 ) -> (StatusCode, Json<serde_json::Value>) {
-    let speaker = resolve_steer_speaker(addr.ip(), &headers);
+    let speaker = resolve_steer_speaker(&principal);
     match steer_bound_workshop_for_session(session_id.trim(), body.message.trim(), speaker) {
         Ok(value) => {
             let status = if value.is_ok() {
@@ -40,12 +38,34 @@ pub async fn steer_bound_workshop_handler(
     }
 }
 
-fn resolve_steer_speaker(ip: std::net::IpAddr, headers: &HeaderMap) -> Option<String> {
-    if let Some(bound) = crate::pairing::resolve_request_profile_id(headers) {
-        return Some(bound);
+fn resolve_steer_speaker(principal: &RequestPrincipal) -> Option<String> {
+    if let Some(bound) = principal.profile_id() {
+        return Some(bound.to_string());
     }
-    if is_trusted_local(ip, headers) {
+    if principal.kind() == PrincipalKind::LegacyLocal {
         return Some(crate::user_profiles::resolve_workshop_identity_user_id());
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::request_principal::TransportClass;
+
+    #[test]
+    fn anonymous_principal_cannot_select_a_speaker() {
+        assert_eq!(
+            resolve_steer_speaker(&RequestPrincipal::anonymous(TransportClass::Direct)),
+            None
+        );
+    }
+
+    #[test]
+    fn legacy_local_uses_the_workshop_identity() {
+        assert_eq!(
+            resolve_steer_speaker(&RequestPrincipal::legacy_local()),
+            Some(crate::user_profiles::resolve_workshop_identity_user_id())
+        );
+    }
 }

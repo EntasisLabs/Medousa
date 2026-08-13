@@ -14,7 +14,7 @@ Rust async methods require `medousa-sdk` feature `async` (default). SSE requires
 
 | Method | HTTP | Response type |
 |--------|------|---------------|
-| `get()` | `GET /health` | `HealthResponse` |
+| `get()` | `GET /v1/health` | `HealthResponse` |
 
 ---
 

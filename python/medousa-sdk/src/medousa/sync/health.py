@@ -14,5 +14,5 @@ class HealthApiSync:
         self._client = client
 
     def get(self) -> HealthResponse:
-        value = self._client._transport.get_json(self._client.base_url, "/health")
+        value = self._client._transport.get_json(self._client.base_url, "/v1/health")
         return decode(HealthResponse, value)
