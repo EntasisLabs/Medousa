@@ -6,9 +6,10 @@ use std::sync::Arc;
 use axum::Router;
 use axum::body::Body;
 use axum::extract::{ConnectInfo, State};
-use axum::http::{Request, StatusCode};
+use axum::http::header::{CONTENT_TYPE, WWW_AUTHENTICATE};
+use axum::http::{HeaderValue, Request, StatusCode};
 use axum::middleware::Next;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 
 use crate::pairing::PairingService;
 use crate::portal_acl::{PortalAclDecision, authorize_request};
@@ -41,6 +42,44 @@ impl DaemonAccessState {
 enum AccessSurface {
     Bootstrap,
     Protected,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AccessDenial {
+    AuthenticationRequired,
+    InvalidCredential,
+    Forbidden,
+}
+
+impl AccessDenial {
+    fn into_response(self) -> Response {
+        let (status, body) = match self {
+            Self::AuthenticationRequired => (
+                StatusCode::UNAUTHORIZED,
+                r#"{"code":"authentication_required","message":"authentication is required"}"#,
+            ),
+            Self::InvalidCredential => (
+                StatusCode::UNAUTHORIZED,
+                r#"{"code":"invalid_credential","message":"the credential is invalid or expired"}"#,
+            ),
+            Self::Forbidden => (
+                StatusCode::FORBIDDEN,
+                r#"{"code":"forbidden","message":"the credential cannot access this resource"}"#,
+            ),
+        };
+        let mut response = Response::builder()
+            .status(status)
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(body))
+            .expect("static access denial response");
+        if status == StatusCode::UNAUTHORIZED {
+            response.headers_mut().insert(
+                WWW_AUTHENTICATE,
+                HeaderValue::from_static("Bearer realm=\"medousa\""),
+            );
+        }
+        response
+    }
 }
 
 /// Assemble the final HTTP authority boundary. Both route groups traverse the
@@ -101,7 +140,7 @@ pub async fn enforce_daemon_access(
     // A malformed, ambiguous, or unknown credential must not fall back to
     // anonymous bootstrap authority.
     if !matches!(credential, BearerCredential::Missing) && record.is_none() {
-        return (StatusCode::UNAUTHORIZED, "invalid bearer credential").into_response();
+        return AccessDenial::InvalidCredential.into_response();
     }
 
     if matches!(state.surface, AccessSurface::Bootstrap) {
@@ -114,7 +153,7 @@ pub async fn enforce_daemon_access(
     }
 
     if !trusted_local && record.is_none() {
-        return (StatusCode::UNAUTHORIZED, "Bearer session token required").into_response();
+        return AccessDenial::AuthenticationRequired.into_response();
     }
 
     let shared_mode = crate::shared_mode::is_shared_mode();
@@ -129,13 +168,12 @@ pub async fn enforce_daemon_access(
             request.extensions_mut().insert(principal);
             next.run(request).await
         }
-        PortalAclDecision::Deny(reason) => {
-            let status = if record.is_some() {
-                StatusCode::FORBIDDEN
+        PortalAclDecision::Deny(_reason) => {
+            if record.is_some() {
+                AccessDenial::Forbidden.into_response()
             } else {
-                StatusCode::UNAUTHORIZED
-            };
-            (status, reason).into_response()
+                AccessDenial::AuthenticationRequired.into_response()
+            }
         }
     }
 }
@@ -170,6 +208,7 @@ fn bearer_credential(headers: &axum::http::HeaderMap) -> BearerCredential<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::body::to_bytes;
     use axum::http::header::AUTHORIZATION;
     use axum::routing::get;
     use tower::ServiceExt;
@@ -203,6 +242,16 @@ mod tests {
         source: &str,
         values: &[&str],
     ) -> StatusCode {
+        response_with_authorization_values(path, source, values)
+            .await
+            .status()
+    }
+
+    async fn response_with_authorization_values(
+        path: &str,
+        source: &str,
+        values: &[&str],
+    ) -> Response {
         let mut request = Request::builder().uri(path).body(Body::empty()).unwrap();
         request.extensions_mut().insert(ConnectInfo(
             source.parse::<SocketAddr>().expect("valid source"),
@@ -216,7 +265,6 @@ mod tests {
             .oneshot(request)
             .await
             .expect("middleware response")
-            .status()
     }
 
     #[test]
@@ -285,6 +333,57 @@ mod tests {
                 StatusCode::UNAUTHORIZED
             );
         }
+    }
+
+    #[tokio::test]
+    async fn access_denials_are_stable_json_and_challenge_on_401() {
+        let cases = [
+            (
+                AccessDenial::AuthenticationRequired,
+                StatusCode::UNAUTHORIZED,
+                r#"{"code":"authentication_required","message":"authentication is required"}"#,
+            ),
+            (
+                AccessDenial::InvalidCredential,
+                StatusCode::UNAUTHORIZED,
+                r#"{"code":"invalid_credential","message":"the credential is invalid or expired"}"#,
+            ),
+            (
+                AccessDenial::Forbidden,
+                StatusCode::FORBIDDEN,
+                r#"{"code":"forbidden","message":"the credential cannot access this resource"}"#,
+            ),
+        ];
+
+        for (denial, status, expected_body) in cases {
+            let response = denial.into_response();
+            assert_eq!(response.status(), status);
+            assert_eq!(
+                response.headers().get(CONTENT_TYPE).unwrap(),
+                "application/json"
+            );
+            assert_eq!(
+                response
+                    .headers()
+                    .get(WWW_AUTHENTICATE)
+                    .map(|value| value.to_str().unwrap()),
+                (status == StatusCode::UNAUTHORIZED).then_some("Bearer realm=\"medousa\"")
+            );
+            let body = to_bytes(response.into_body(), 256).await.unwrap();
+            assert_eq!(body.as_ref(), expected_body.as_bytes());
+        }
+    }
+
+    #[tokio::test]
+    async fn invalid_credential_response_does_not_echo_the_secret() {
+        let response = response_with_authorization_values(
+            "/health",
+            "192.0.2.10:43100",
+            &["Bearer super-secret-token"],
+        )
+        .await;
+        let body = to_bytes(response.into_body(), 256).await.unwrap();
+        assert!(!String::from_utf8_lossy(&body).contains("super-secret-token"));
     }
 
     #[tokio::test]
