@@ -119,9 +119,9 @@ current.
 
 | Record | Purpose | State |
 | --- | --- | --- |
-| `verification/security-abuse-matrix.md` | Credentials, route exposure, CORS/CSRF, traversal, symlinks, and webview IPC abuse | Proposed |
-| `verification/crash-concurrency-matrix.md` | Kill points, concurrent mutations/turns, cancellation, replay, and deletion | Proposed |
-| `verification/performance-budgets.md` | Reproducible datasets, machines, metrics, baselines, and regression budgets | Proposed |
+| [Security abuse matrix](verification/security-abuse-matrix.md) | Credentials, route exposure, CORS/CSRF, traversal, symlinks, and webview IPC abuse | Draft baseline contract |
+| [Crash/concurrency matrix](verification/crash-concurrency-matrix.md) | Kill points, concurrent mutations/turns, cancellation, replay, and deletion | Draft baseline contract |
+| [Performance budgets](verification/performance-budgets.md) | Reproducible datasets, machines, metrics, baselines, and regression budgets | Draft baseline contract |
 
 Verification records contain commands, fixtures, environment identity, raw
 artifact locations, and pass/fail thresholds. Results should be append-only or
@@ -200,6 +200,6 @@ Implementation PRs update the relevant canonical surfaces as they ship:
 - [x] Correct the ADR index without renumbering accepted history.
 - [x] Remove duplicate roadmap focus text and reopen incomplete CI hardening.
 - [x] Mark non-loopback daemon binding as unsafe until H01 ships.
-- [ ] Create the three verification records.
+- [x] Create the three verification records.
 - [ ] Draft ADR-013 and H01 together.
 - [ ] Review and accept the Gate A threat model before implementation.
