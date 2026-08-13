@@ -1,5 +1,6 @@
 use axum::extract::{Path, State};
-use axum::http::{HeaderMap, StatusCode, header::AUTHORIZATION};
+use axum::http::StatusCode;
+use axum::routing::{get, post};
 use axum::Json;
 use stasis::application::use_cases::identity_memory_service::IdentityMemoryService;
 
@@ -7,7 +8,9 @@ use crate::capability_catalog::{
     capabilities_manifest_path, load_capability_manifest, CapabilityListResponse,
     CapabilityReindexResponse, CapabilityRegistry, CapabilityResolveResponse,
 };
-use medousa_mcp_gateway::verify_policy_bearer;
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
 use crate::mcp_gateway_api::{
     resolve_mcp_gateway_url, McpGatewayHealthResponse, McpPolicyEvaluateRequest,
     McpPolicyEvaluateResponse, McpServerSummary, McpServersResponse,
@@ -26,6 +29,38 @@ pub struct CapabilityApiState {
 #[derive(Clone)]
 pub struct McpPolicyApiState {
     pub identity_service: std::sync::Arc<IdentityMemoryService>,
+}
+
+pub fn gateway_status_surface() -> DeclaredRouter<CapabilityApiState> {
+    DeclaredRouter::default().route(
+        RoutePolicy {
+            method: axum::http::Method::GET,
+            path: "/v1/mcp/gateway/status",
+            group: RouteGroup::Administration,
+            required_capability: Some(crate::request_principal::Capability::AdminRuntime),
+            bootstrap_public: false,
+            browser_policy: BrowserPolicy::NativeOnly,
+            body_limit: 1024,
+            rate_limit_class: RateLimitClass::Administration,
+        },
+        get(mcp_gateway_status),
+    )
+}
+
+pub fn policy_surface() -> DeclaredRouter<McpPolicyApiState> {
+    DeclaredRouter::default().route(
+        RoutePolicy {
+            method: axum::http::Method::POST,
+            path: "/v1/mcp/policy/evaluate",
+            group: RouteGroup::Administration,
+            required_capability: Some(crate::request_principal::Capability::McpPolicyEvaluate),
+            bootstrap_public: false,
+            browser_policy: BrowserPolicy::NativeOnly,
+            body_limit: 64 * 1024,
+            rate_limit_class: RateLimitClass::Administration,
+        },
+        post(mcp_policy_evaluate),
+    )
 }
 
 pub async fn list_capabilities(
@@ -169,19 +204,8 @@ fn map_server_runtime(server: McpServerSummary) -> McpGatewayServerRuntime {
 
 pub async fn mcp_policy_evaluate(
     State(state): State<McpPolicyApiState>,
-    headers: HeaderMap,
     Json(request): Json<McpPolicyEvaluateRequest>,
 ) -> Result<Json<McpPolicyEvaluateResponse>, (StatusCode, String)> {
-    if !verify_policy_bearer(
-        headers.get(AUTHORIZATION).and_then(|value| value.to_str().ok()),
-        medousa_mcp_gateway::resolve_mcp_policy_token().as_deref(),
-    ) {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            "invalid MCP policy bearer token".to_string(),
-        ));
-    }
-
     Ok(Json(
         evaluate_mcp_policy_with_identity(&request, state.identity_service.as_ref()).await,
     ))
@@ -233,5 +257,18 @@ mod tests {
         assert!(!response.reachable);
         assert!(response.health.is_none());
         assert!(response.servers.is_empty());
+    }
+
+    #[test]
+    fn mcp_inventory_separates_operator_and_service_authority() {
+        let gateway = gateway_status_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let policy = policy_surface().inventory().entries().collect::<Vec<_>>();
+        assert_eq!(gateway.len(), 1);
+        assert_eq!(gateway[0].required_capability, Some("admin.runtime"));
+        assert_eq!(policy.len(), 1);
+        assert_eq!(policy[0].required_capability, Some("mcp.policy.evaluate"));
     }
 }

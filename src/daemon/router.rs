@@ -79,6 +79,12 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::environment_handlers::environment_surface().inventory())
         .expect("duplicate environment route policy");
     inventory
+        .extend(crate::mcp_daemon_handlers::gateway_status_surface().inventory())
+        .expect("duplicate MCP gateway status route policy");
+    inventory
+        .extend(crate::mcp_daemon_handlers::policy_surface().inventory())
+        .expect("duplicate MCP policy route policy");
+    inventory
 }
 
 pub fn build_identity_surface() -> DeclaredRouter<AppState> {
@@ -453,10 +459,6 @@ pub fn build_feature_routers(
             "/v1/capabilities/reindex",
             axum::routing::post(crate::mcp_daemon_handlers::reindex_capabilities),
         )
-        .route(
-            "/v1/mcp/gateway/status",
-            axum::routing::get(crate::mcp_daemon_handlers::mcp_gateway_status),
-        )
         .with_state(crate::mcp_daemon_handlers::CapabilityApiState {
             agent_runtime: state.platform.agent_handle(),
         });
@@ -471,15 +473,6 @@ pub fn build_feature_routers(
     };
     let workflow_router = crate::workflow_handlers::workflow_router(workflow_state.clone());
     let tool_history_router = crate::tool_history_handlers::tool_history_router(workflow_state);
-
-    let policy_router = Router::new()
-        .route(
-            "/v1/mcp/policy/evaluate",
-            axum::routing::post(crate::mcp_daemon_handlers::mcp_policy_evaluate),
-        )
-        .with_state(crate::mcp_daemon_handlers::McpPolicyApiState {
-            identity_service: state.identity_service.clone(),
-        });
 
     let calendar_router = Router::new()
         .route(
@@ -664,7 +657,6 @@ pub fn build_feature_routers(
         .merge(grapheme_router)
         .merge(workflow_router)
         .merge(tool_history_router)
-        .merge(policy_router)
         .merge(calendar_router)
         .merge(vault_router)
         .merge(crate::locus_handlers::locus_router(
@@ -1000,12 +992,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 64);
-        assert_eq!(with_pairing.entries().len(), 76);
+        assert_eq!(without_pairing.entries().len(), 66);
+        assert_eq!(with_pairing.entries().len(), 78);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 76);
+        assert_eq!(rows.len(), 78);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"

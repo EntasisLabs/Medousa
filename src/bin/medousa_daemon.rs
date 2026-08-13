@@ -668,6 +668,18 @@ async fn main() -> Result<()> {
     };
     declared = declared
         .merge(
+            medousa::mcp_daemon_handlers::gateway_status_surface().with_state(
+                medousa::mcp_daemon_handlers::CapabilityApiState {
+                    agent_runtime: state.platform.agent_handle(),
+                },
+            ),
+        )
+        .merge(medousa::mcp_daemon_handlers::policy_surface().with_state(
+            medousa::mcp_daemon_handlers::McpPolicyApiState {
+                identity_service: state.identity_service.clone(),
+            },
+        ))
+        .merge(
             medousa::environment_handlers::environment_surface().with_state(
                 medousa::environment_handlers::EnvironmentApiState {
                     hub: medousa::environment_store::environment_hub(),
