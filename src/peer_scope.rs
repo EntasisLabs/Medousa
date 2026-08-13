@@ -45,14 +45,14 @@ enum AccessSurface {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum AccessDenial {
+pub(crate) enum AccessDenial {
     AuthenticationRequired,
     InvalidCredential,
     Forbidden,
 }
 
 impl AccessDenial {
-    fn into_response(self) -> Response {
+    pub(crate) fn into_response(self) -> Response {
         let (status, body) = match self {
             Self::AuthenticationRequired => (
                 StatusCode::UNAUTHORIZED,

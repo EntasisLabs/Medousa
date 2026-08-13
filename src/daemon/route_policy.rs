@@ -1,11 +1,16 @@
 //! Reviewed policy metadata for daemon route assembly and inventory export.
 
-use axum::http::Method;
+use axum::body::Body;
+use axum::extract::{Extension, State};
+use axum::http::{Method, Request};
+use axum::middleware::Next;
+use axum::response::Response;
 use axum::routing::MethodRouter;
 use axum::{Router, extract::DefaultBodyLimit};
 use serde::Serialize;
 
-use crate::request_principal::Capability;
+use crate::peer_scope::AccessDenial;
+use crate::request_principal::{Capability, RequestPrincipal};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -118,17 +123,23 @@ where
         let (first_policy, first_handler) = routes.next().expect("route set cannot be empty");
         let path = first_policy.path;
         let first_limit = first_policy.body_limit;
+        let first_capability = first_policy.required_capability;
         self.inventory
             .declare(first_policy)
             .expect("invalid daemon route policy");
-        let mut handler = first_handler.layer(DefaultBodyLimit::max(first_limit));
+        let mut handler = declared_method(first_handler, first_limit, first_capability);
         for (policy, method_handler) in routes {
             assert_eq!(policy.path, path, "route set must share one path");
             let body_limit = policy.body_limit;
+            let required_capability = policy.required_capability;
             self.inventory
                 .declare(policy)
                 .expect("invalid daemon route policy");
-            handler = handler.merge(method_handler.layer(DefaultBodyLimit::max(body_limit)));
+            handler = handler.merge(declared_method(
+                method_handler,
+                body_limit,
+                required_capability,
+            ));
         }
         self.router = self.router.route(path, handler);
         self
@@ -140,6 +151,37 @@ where
 
     pub fn into_router(self) -> Router<S> {
         self.router
+    }
+}
+
+fn declared_method<S>(
+    handler: MethodRouter<S>,
+    body_limit: usize,
+    required_capability: Option<Capability>,
+) -> MethodRouter<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    let handler = handler.layer(DefaultBodyLimit::max(body_limit));
+    match required_capability {
+        Some(required) => handler.layer(axum::middleware::from_fn_with_state(
+            required,
+            enforce_declared_capability,
+        )),
+        None => handler,
+    }
+}
+
+async fn enforce_declared_capability(
+    State(required): State<Capability>,
+    Extension(principal): Extension<RequestPrincipal>,
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    if principal.capabilities().contains(required) {
+        next.run(request).await
+    } else {
+        AccessDenial::Forbidden.into_response()
     }
 }
 
@@ -179,6 +221,11 @@ impl RouteInventory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::http::StatusCode;
+    use axum::routing::get;
+    use tower::ServiceExt;
+
+    use crate::request_principal::TransportClass;
 
     fn protected() -> RoutePolicy {
         RoutePolicy {
@@ -233,5 +280,43 @@ mod tests {
         assert_eq!(entry.method, "GET");
         assert_eq!(entry.required_capability, Some("workshop.read"));
         assert_eq!(serde_json::to_value(entry).unwrap()["group"], "portal");
+    }
+
+    #[tokio::test]
+    async fn declared_capability_denies_before_handler() {
+        let router = DeclaredRouter::default()
+            .route(protected(), get(|| async { StatusCode::NO_CONTENT }))
+            .into_router()
+            .layer(Extension(RequestPrincipal::anonymous(
+                TransportClass::Direct,
+            )));
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn declared_capability_allows_matching_principal() {
+        let router = DeclaredRouter::default()
+            .route(protected(), get(|| async { StatusCode::NO_CONTENT }))
+            .into_router()
+            .layer(Extension(RequestPrincipal::legacy_local()));
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
     }
 }
