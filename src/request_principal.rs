@@ -62,6 +62,21 @@ impl Capability {
     const fn bit(self) -> u16 {
         1 << self as u16
     }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::WorkshopRead => "workshop.read",
+            Self::WorkshopInteract => "workshop.interact",
+            Self::ContentRead => "content.read",
+            Self::ContentWrite => "content.write",
+            Self::WorkspaceWrite => "workspace.write",
+            Self::PeerExchange => "peer.exchange",
+            Self::ProfileSelf => "profile.self",
+            Self::AdminIdentity => "admin.identity",
+            Self::AdminRuntime => "admin.runtime",
+            Self::AdminExecute => "admin.execute",
+        }
+    }
 }
 
 /// Compact capability representation copied with the request principal.
