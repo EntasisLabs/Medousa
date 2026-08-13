@@ -216,6 +216,23 @@ impl RouteInventory {
     pub fn entries(&self) -> impl ExactSizeIterator<Item = RouteInventoryEntry> + '_ {
         self.entries.iter().map(RouteInventoryEntry::from)
     }
+
+    pub fn extend(&mut self, other: &Self) -> Result<(), &'static str> {
+        for policy in &other.entries {
+            self.declare(policy.clone())?;
+        }
+        Ok(())
+    }
+
+    pub fn to_pretty_json(&self) -> Result<String, serde_json::Error> {
+        let mut entries = self.entries().collect::<Vec<_>>();
+        entries.sort_by(|left, right| {
+            left.path
+                .cmp(right.path)
+                .then_with(|| left.method.cmp(&right.method))
+        });
+        serde_json::to_string_pretty(&entries)
+    }
 }
 
 #[cfg(test)]
@@ -270,6 +287,15 @@ mod tests {
             inventory.declare(protected()),
             Err("duplicate route method and path")
         );
+    }
+
+    #[test]
+    fn inventory_merge_rejects_cross_surface_duplicates() {
+        let mut left = RouteInventory::default();
+        left.declare(protected()).unwrap();
+        let mut right = RouteInventory::default();
+        right.declare(protected()).unwrap();
+        assert_eq!(left.extend(&right), Err("duplicate route method and path"));
     }
 
     #[test]

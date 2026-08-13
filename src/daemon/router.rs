@@ -9,7 +9,7 @@ use tower_http::cors::CorsLayer;
 
 use crate::daemon::state::AppState;
 use crate::daemon::route_policy::{
-    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RouteInventory, RoutePolicy,
 };
 
 const LIVENESS_BODY: &str = r#"{"status":"ok","apiVersion":"v1"}"#;
@@ -36,6 +36,34 @@ pub fn build_liveness_surface() -> DeclaredRouter {
             ([(CONTENT_TYPE, "application/json")], LIVENESS_BODY).into_response()
         }),
     )
+}
+
+/// Inventory for every route currently migrated to declared policy assembly.
+/// The same surface constructors build the production routers, so policy and
+/// handler registration cannot drift into separate handwritten lists.
+pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
+    let mut inventory = RouteInventory::default();
+    inventory
+        .extend(build_liveness_surface().inventory())
+        .expect("duplicate liveness route policy");
+    if pairing_enabled {
+        inventory
+            .extend(crate::pairing_handlers::bootstrap_surface().inventory())
+            .expect("duplicate pairing bootstrap route policy");
+        inventory
+            .extend(crate::pairing_handlers::protected_surface().inventory())
+            .expect("duplicate protected pairing route policy");
+    }
+    inventory
+        .extend(crate::share_handlers::share_surface().inventory())
+        .expect("duplicate share route policy");
+    inventory
+        .extend(crate::peer_message_handlers::peer_message_surface().inventory())
+        .expect("duplicate peer message route policy");
+    inventory
+        .extend(crate::mesh::handlers::mesh_surface().inventory())
+        .expect("duplicate mesh route policy");
+    inventory
 }
 
 #[derive(Clone, Debug, Default)]
@@ -667,7 +695,10 @@ mod tests {
     use axum::http::{Request, StatusCode, header::CONTENT_TYPE};
     use tower::ServiceExt;
 
-    use super::{LIVENESS_BODY, build_liveness_router, build_liveness_surface};
+    use super::{
+        LIVENESS_BODY, build_declared_route_inventory, build_liveness_router,
+        build_liveness_surface,
+    };
 
     #[tokio::test]
     async fn public_liveness_is_constant_and_contains_no_runtime_detail() {
@@ -723,5 +754,28 @@ mod tests {
         assert_eq!(entries[0].path, "/health");
         assert!(entries[0].bootstrap_public);
         assert_eq!(entries[0].required_capability, None);
+    }
+
+    #[test]
+    fn combined_declared_inventory_matches_optional_pairing_composition() {
+        let without_pairing = build_declared_route_inventory(false);
+        let with_pairing = build_declared_route_inventory(true);
+        assert_eq!(without_pairing.entries().len(), 22);
+        assert_eq!(with_pairing.entries().len(), 34);
+
+        let json = with_pairing.to_pretty_json().expect("serialize inventory");
+        let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
+        assert_eq!(rows.len(), 34);
+        assert_eq!(rows[0]["path"], "/health");
+        assert!(rows.iter().any(|row| {
+            row["method"] == "POST"
+                && row["path"] == "/v1/mesh/outbox"
+                && row["required_capability"] == "peer.exchange"
+        }));
+        assert!(rows.iter().any(|row| {
+            row["method"] == "GET"
+                && row["path"] == "/qr"
+                && row["required_capability"] == "admin.identity"
+        }));
     }
 }
