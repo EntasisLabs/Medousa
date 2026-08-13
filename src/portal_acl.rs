@@ -7,7 +7,8 @@
 use axum::http::Method;
 
 use crate::pairing::path_allowed_for_peer;
-use crate::pairing::store::{PairedDeviceRecord, PairingRole};
+use crate::pairing::store::PairedDeviceRecord;
+use crate::request_principal::{Capability, RequestPrincipal};
 use crate::shared_mode::root_profile_id;
 
 /// Coarse path class for Shared-mode authorization.
@@ -26,7 +27,7 @@ pub enum PortalPathClass {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PortalAclDecision {
     Allow,
-    Deny(&'static str),
+    Deny,
 }
 
 impl PortalAclDecision {
@@ -128,71 +129,34 @@ fn is_admin_path(method: &Method, path: &str) -> bool {
     false
 }
 
-/// Authorize a request under Personal vs Shared rules.
-///
-/// `trusted_local` must use [`crate::remote_trust::is_trusted_local`] (Iroh ≠ local).
-/// `shared_mode` is passed explicitly so callers/tests avoid process-global races.
+/// Authorize a principal on the protected router during the H01.2 migration.
+/// Bootstrap routes never call this function; a public-looking path mounted on
+/// the protected router therefore remains inaccessible.
 pub fn authorize_request(
-    trusted_local: bool,
-    shared_mode: bool,
-    record: Option<&PairedDeviceRecord>,
+    principal: &RequestPrincipal,
     method: &Method,
     path: &str,
 ) -> PortalAclDecision {
-    if trusted_local {
-        return PortalAclDecision::Allow;
-    }
-
-    let class = classify_path(method, path);
-
-    // Personal mode changes tenancy, not network authentication. Portal
-    // credentials retain the existing full Personal-workshop authority during
-    // the H01 capability migration; anonymous remote callers get bootstrap only.
-    if !shared_mode {
-        return match class {
-            PortalPathClass::Public => PortalAclDecision::Allow,
-            PortalPathClass::PeerSurface => match record {
-                Some(r) if r.role.allows_peer_surface() => PortalAclDecision::Allow,
-                Some(_) => PortalAclDecision::Deny("credentials cannot use this surface"),
-                None => PortalAclDecision::Deny("Bearer session token required"),
-            },
-            PortalPathClass::Member | PortalPathClass::Admin => match record {
-                Some(r) if r.role.allows_full_portal() => PortalAclDecision::Allow,
-                Some(_) => PortalAclDecision::Deny(
-                    "Peer credentials can only use inbox and share surfaces",
-                ),
-                None => PortalAclDecision::Deny("Bearer session token required"),
-            },
-        };
-    }
-
-    // Shared mode — remote traffic is seat-scoped.
-    match class {
-        PortalPathClass::Public => PortalAclDecision::Allow,
-        PortalPathClass::PeerSurface => match record {
-            Some(r) if r.role.allows_peer_surface() => PortalAclDecision::Allow,
-            Some(_) => PortalAclDecision::Deny("credentials cannot use this surface"),
-            None => PortalAclDecision::Deny("Bearer session token required"),
-        },
-        PortalPathClass::Member => match record {
-            Some(r) if r.role.allows_full_portal() => PortalAclDecision::Allow,
-            Some(r) if r.role == PairingRole::Peer => {
-                PortalAclDecision::Deny("Peer credentials can only use inbox and share surfaces")
-            }
-            Some(_) => PortalAclDecision::Deny("Portal credentials required"),
-            None => PortalAclDecision::Deny("Bearer session token required"),
-        },
-        PortalPathClass::Admin => match record {
-            Some(r) if is_root_portal(r) => PortalAclDecision::Allow,
-            Some(_) => PortalAclDecision::Deny("Root seat required for portal settings"),
-            None => PortalAclDecision::Deny("Bearer session token required"),
-        },
+    let required = match classify_path(method, path) {
+        PortalPathClass::Public => return PortalAclDecision::Deny,
+        PortalPathClass::PeerSurface => Capability::PeerExchange,
+        // H01.2 replaces these coarse transitional classes with per-route
+        // capability metadata at router assembly.
+        PortalPathClass::Member => Capability::WorkshopRead,
+        PortalPathClass::Admin => Capability::AdminRuntime,
+    };
+    if principal.capabilities().contains(required) {
+        PortalAclDecision::Allow
+    } else {
+        PortalAclDecision::Deny
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pairing::store::PairingRole;
+    use crate::request_principal::TransportClass;
     use chrono::Utc;
 
     fn record(role: PairingRole, profile_id: Option<&str>) -> PairedDeviceRecord {
@@ -214,6 +178,18 @@ mod tests {
             live_activity_push_token: None,
             live_activity_push_updated_at: None,
         }
+    }
+
+    fn principal(
+        role: PairingRole,
+        profile_id: Option<&str>,
+        shared_mode: bool,
+    ) -> RequestPrincipal {
+        RequestPrincipal::from_pairing_record(
+            record(role, profile_id),
+            TransportClass::Direct,
+            shared_mode,
+        )
     }
 
     #[test]
@@ -250,51 +226,32 @@ mod tests {
     }
 
     #[test]
-    fn loopback_always_allowed() {
-        let alice = record(PairingRole::Portal, Some("user:alice"));
-        assert!(
-            authorize_request(true, true, Some(&alice), &Method::PUT, "/v1/shared-mode").is_allow()
-        );
+    fn legacy_local_retains_operator_capabilities() {
+        let local = RequestPrincipal::legacy_local();
+        assert!(authorize_request(&local, &Method::PUT, "/v1/shared-mode").is_allow());
     }
 
     #[test]
-    fn personal_mode_requires_remote_credentials() {
-        let peer = record(PairingRole::Peer, None);
-        assert!(
-            !authorize_request(false, false, Some(&peer), &Method::POST, "/v1/turns").is_allow()
-        );
-        assert!(
-            authorize_request(false, false, Some(&peer), &Method::GET, "/v1/peer/messages")
-                .is_allow()
-        );
-        let portal = record(PairingRole::Portal, None);
-        assert!(
-            authorize_request(false, false, Some(&portal), &Method::PUT, "/v1/shared-mode")
-                .is_allow()
-        );
-        assert!(!authorize_request(false, false, None, &Method::POST, "/v1/turns").is_allow());
-        assert!(authorize_request(false, false, None, &Method::GET, "/health").is_allow());
-        assert!(!authorize_request(false, false, None, &Method::GET, "/pair/code").is_allow());
+    fn issued_capabilities_bound_personal_mode_access() {
+        let peer = principal(PairingRole::Peer, None, false);
+        assert!(!authorize_request(&peer, &Method::POST, "/v1/turns").is_allow());
+        assert!(authorize_request(&peer, &Method::GET, "/v1/peer/messages").is_allow());
+        let portal = principal(PairingRole::Portal, None, false);
+        assert!(authorize_request(&portal, &Method::PUT, "/v1/shared-mode").is_allow());
+        let anonymous = RequestPrincipal::anonymous(TransportClass::Direct);
+        assert!(!authorize_request(&anonymous, &Method::POST, "/v1/turns").is_allow());
+        assert!(!authorize_request(&anonymous, &Method::GET, "/health").is_allow());
+        assert!(!authorize_request(&anonymous, &Method::GET, "/pair/code").is_allow());
+        assert!(!authorize_request(&portal, &Method::GET, "/health").is_allow());
     }
 
     #[test]
-    fn shared_mode_requires_root_for_settings() {
-        let alice = record(PairingRole::Portal, Some("user:alice"));
-        let root = record(PairingRole::Portal, Some("user:root"));
-        assert!(
-            !authorize_request(false, true, Some(&alice), &Method::PUT, "/v1/shared-mode")
-                .is_allow()
-        );
-        assert!(
-            authorize_request(false, true, Some(&root), &Method::PUT, "/v1/shared-mode").is_allow()
-        );
-        assert!(
-            authorize_request(false, true, Some(&alice), &Method::POST, "/v1/turns").is_allow()
-        );
-        assert!(!authorize_request(false, true, None, &Method::POST, "/v1/turns").is_allow());
-        assert!(
-            authorize_request(false, true, Some(&alice), &Method::GET, "/v1/shared-mode")
-                .is_allow()
-        );
+    fn shared_mode_issues_admin_capability_only_to_root() {
+        let alice = principal(PairingRole::Portal, Some("user:alice"), true);
+        let root = principal(PairingRole::Portal, Some("user:root"), true);
+        assert!(!authorize_request(&alice, &Method::PUT, "/v1/shared-mode").is_allow());
+        assert!(authorize_request(&root, &Method::PUT, "/v1/shared-mode").is_allow());
+        assert!(authorize_request(&alice, &Method::POST, "/v1/turns").is_allow());
+        assert!(authorize_request(&alice, &Method::GET, "/v1/shared-mode").is_allow());
     }
 }

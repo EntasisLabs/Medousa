@@ -155,28 +155,21 @@ pub async fn enforce_daemon_access(
     }
 
     let shared_mode = crate::shared_mode::is_shared_mode();
-    match authorize_request(
-        trusted_local,
-        shared_mode,
-        record.as_ref(),
-        request.method(),
-        request.uri().path(),
-    ) {
+    let principal = match record {
+        Some(record) => RequestPrincipal::from_pairing_record(record, transport, shared_mode),
+        None if trusted_local => RequestPrincipal::legacy_local(),
+        None => RequestPrincipal::anonymous(transport),
+    };
+    match authorize_request(&principal, request.method(), request.uri().path()) {
         PortalAclDecision::Allow => {
-            let principal = match record {
-                Some(record) => {
-                    RequestPrincipal::from_pairing_record(record, transport, shared_mode)
-                }
-                None => RequestPrincipal::legacy_local(),
-            };
             request.extensions_mut().insert(principal);
             next.run(request).await
         }
-        PortalAclDecision::Deny(_reason) => {
-            if record.is_some() {
-                AccessDenial::Forbidden.into_response()
-            } else {
+        PortalAclDecision::Deny => {
+            if principal.kind() == crate::request_principal::PrincipalKind::Anonymous {
                 AccessDenial::AuthenticationRequired.into_response()
+            } else {
+                AccessDenial::Forbidden.into_response()
             }
         }
     }

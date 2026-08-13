@@ -89,6 +89,7 @@ impl CapabilitySet {
             .with(Capability::ContentRead)
             .with(Capability::ContentWrite)
             .with(Capability::WorkspaceWrite)
+            .with(Capability::PeerExchange)
             .with(Capability::ProfileSelf)
     }
 
