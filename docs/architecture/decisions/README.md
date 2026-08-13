@@ -20,6 +20,7 @@ Short, durable decisions — not sprint plans. For build history see [../../../a
 | [adr-014-identifier-and-filesystem-authority.md](adr-014-identifier-and-filesystem-authority.md) | Typed identifiers and handle-relative filesystem authority | Proposed |
 | [adr-015-bounded-durable-turn-pipeline.md](adr-015-bounded-durable-turn-pipeline.md) | Bounded single-writer durable turn pipeline | Proposed |
 | [adr-016-transactional-store-ownership.md](adr-016-transactional-store-ownership.md) | Transactional store ownership and crash consistency | Proposed |
+| [adr-017-request-scoped-runtime-context.md](adr-017-request-scoped-runtime-context.md) | Request-scoped runtime context and exact ownership | Proposed |
 
 > **Numbering note:** two accepted decisions were independently assigned
 > ADR-010. Their filenames and identifiers remain unchanged so existing links
