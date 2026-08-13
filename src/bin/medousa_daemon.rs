@@ -660,13 +660,17 @@ async fn main() -> Result<()> {
         pairing: peer_message_state.pairing.clone(),
         local_device_id: peer_message_state.local_device_id.clone(),
     };
-    app = app
-        .merge(medousa::share_handlers::share_router(share_api_state))
+    let declared = medousa::share_handlers::share_router(share_api_state)
         .merge(medousa::peer_message_handlers::peer_message_router(
             peer_message_state,
         ))
         .merge(medousa::mesh::mesh_router(mesh_api_state));
-    app = medousa::peer_scope::assemble_daemon_access_boundary(app, bootstrap, daemon_access_state);
+    app = medousa::peer_scope::assemble_daemon_access_boundary_with_declared(
+        app,
+        declared,
+        bootstrap,
+        daemon_access_state,
+    );
     let _mdns_advertiser = mdns_advertiser;
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);

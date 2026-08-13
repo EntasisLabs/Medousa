@@ -41,6 +41,7 @@ impl DaemonAccessState {
 #[derive(Clone, Copy)]
 enum AccessSurface {
     Bootstrap,
+    Declared,
     Protected,
 }
 
@@ -90,15 +91,31 @@ pub fn assemble_daemon_access_boundary(
     bootstrap: Router,
     state: DaemonAccessState,
 ) -> Router {
+    assemble_daemon_access_boundary_with_declared(protected, Router::new(), bootstrap, state)
+}
+
+/// Assemble legacy protected, declared-policy, and bootstrap authority branches.
+/// Declared routes authenticate here and authorize in their per-method policy
+/// layer; they never consult the transitional string classifier.
+pub fn assemble_daemon_access_boundary_with_declared(
+    protected: Router,
+    declared: Router,
+    bootstrap: Router,
+    state: DaemonAccessState,
+) -> Router {
     let protected = protected.layer(axum::middleware::from_fn_with_state(
         state.for_surface(AccessSurface::Protected),
+        enforce_daemon_access,
+    ));
+    let declared = declared.layer(axum::middleware::from_fn_with_state(
+        state.for_surface(AccessSurface::Declared),
         enforce_daemon_access,
     ));
     let bootstrap = bootstrap.layer(axum::middleware::from_fn_with_state(
         state.for_surface(AccessSurface::Bootstrap),
         enforce_daemon_access,
     ));
-    protected.merge(bootstrap)
+    protected.merge(declared).merge(bootstrap)
 }
 
 /// Refuse a remotely reachable listener when no credential verifier can exist.
@@ -160,6 +177,10 @@ pub async fn enforce_daemon_access(
         None if trusted_local => RequestPrincipal::legacy_local(),
         None => RequestPrincipal::anonymous(transport),
     };
+    if matches!(state.surface, AccessSurface::Declared) {
+        request.extensions_mut().insert(principal);
+        return next.run(request).await;
+    }
     match authorize_request(&principal, request.method(), request.uri().path()) {
         PortalAclDecision::Allow => {
             request.extensions_mut().insert(principal);
@@ -209,6 +230,11 @@ mod tests {
     use axum::http::header::AUTHORIZATION;
     use axum::routing::get;
     use tower::ServiceExt;
+
+    use crate::daemon::route_policy::{
+        BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+    };
+    use crate::request_principal::Capability;
 
     fn protected_test_app() -> Router {
         let protected = Router::new().route("/v1/turns", get(|| async { StatusCode::NO_CONTENT }));
@@ -408,6 +434,42 @@ mod tests {
         assert_eq!(
             app.oneshot(request).await.expect("response").status(),
             StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn declared_branch_uses_method_policy_not_legacy_path_classification() {
+        let declared = DeclaredRouter::default()
+            .route(
+                RoutePolicy {
+                    method: axum::http::Method::GET,
+                    path: "/health",
+                    group: RouteGroup::Portal,
+                    required_capability: Some(Capability::WorkshopRead),
+                    bootstrap_public: false,
+                    browser_policy: BrowserPolicy::NativeOnly,
+                    body_limit: 1024,
+                    rate_limit_class: RateLimitClass::Read,
+                },
+                get(|| async { StatusCode::NO_CONTENT }),
+            )
+            .into_router();
+        let app = assemble_daemon_access_boundary_with_declared(
+            Router::new(),
+            declared,
+            Router::new(),
+            DaemonAccessState::new(None),
+        );
+        let mut request = Request::builder()
+            .uri("/health")
+            .body(Body::empty())
+            .unwrap();
+        request.extensions_mut().insert(ConnectInfo(
+            "127.0.0.1:43100".parse::<SocketAddr>().unwrap(),
+        ));
+        assert_eq!(
+            app.oneshot(request).await.unwrap().status(),
+            StatusCode::NO_CONTENT
         );
     }
 
