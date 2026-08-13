@@ -16,7 +16,7 @@ use crate::pairing::{
     PairHeartbeatRequest, PairInitRequest, PairVerifyRequest, PairingService,
     RevokePairingAuthority, RevokePairingResult,
 };
-use crate::request_principal::{PrincipalKind, RequestPrincipal};
+use crate::request_principal::{Capability, PrincipalKind, RequestPrincipal};
 
 #[derive(Clone)]
 pub struct PairingApiState {
@@ -61,19 +61,95 @@ pub fn bootstrap_surface() -> DeclaredRouter<PairingApiState> {
 
 /// Pairing administration and authenticated peer lifecycle routes.
 pub fn protected_routes() -> Router<PairingApiState> {
-    Router::new()
-        .route("/pair/status", get(pair_status))
-        .route("/pair/iroh-ticket", get(get_iroh_ticket))
-        .route("/qr", get(get_qr))
-        .route("/qr/rotate", post(rotate_qr))
-        .route("/qr/image", get(get_qr_image))
-        .route("/qr.png", get(get_qr_png))
-        .route("/pair/code", get(get_pair_code))
+    protected_surface().into_router()
+}
+
+pub fn protected_surface() -> DeclaredRouter<PairingApiState> {
+    DeclaredRouter::default()
         .route(
-            "/pair/heartbeat",
-            get(pair_heartbeat).post(pair_heartbeat_post),
+            peer_policy(axum::http::Method::GET, "/pair/status", 1024),
+            get(pair_status),
         )
-        .route("/pair/{pairing_id}", delete(revoke_pairing))
+        .route(
+            peer_policy(axum::http::Method::GET, "/pair/iroh-ticket", 1024),
+            get(get_iroh_ticket),
+        )
+        .route(
+            admin_policy(axum::http::Method::GET, "/qr", 1024),
+            get(get_qr),
+        )
+        .route(
+            admin_policy(axum::http::Method::POST, "/qr/rotate", 16 * 1024),
+            post(rotate_qr),
+        )
+        .route(
+            admin_policy(axum::http::Method::GET, "/qr/image", 1024),
+            get(get_qr_image),
+        )
+        .route(
+            admin_policy(axum::http::Method::GET, "/qr.png", 1024),
+            get(get_qr_png),
+        )
+        .route(
+            admin_policy(axum::http::Method::GET, "/pair/code", 1024),
+            get(get_pair_code),
+        )
+        .methods([
+            (
+                peer_policy(axum::http::Method::GET, "/pair/heartbeat", 1024),
+                get(pair_heartbeat),
+            ),
+            (
+                peer_policy(axum::http::Method::POST, "/pair/heartbeat", 64 * 1024),
+                post(pair_heartbeat_post),
+            ),
+        ])
+        .route(
+            peer_policy(axum::http::Method::DELETE, "/pair/{pairing_id}", 1024),
+            delete(revoke_pairing),
+        )
+}
+
+fn peer_policy(method: axum::http::Method, path: &'static str, body_limit: usize) -> RoutePolicy {
+    protected_policy(
+        method,
+        path,
+        RouteGroup::PeerExchange,
+        Capability::PeerExchange,
+        body_limit,
+        RateLimitClass::PeerExchange,
+    )
+}
+
+fn admin_policy(method: axum::http::Method, path: &'static str, body_limit: usize) -> RoutePolicy {
+    protected_policy(
+        method,
+        path,
+        RouteGroup::Administration,
+        Capability::AdminIdentity,
+        body_limit,
+        RateLimitClass::Administration,
+    )
+}
+
+fn protected_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    group: RouteGroup,
+    required_capability: Capability,
+    body_limit: usize,
+    rate_limit_class: RateLimitClass,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group,
+        required_capability: Some(required_capability),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class,
+    }
 }
 
 async fn pair_status(
@@ -304,5 +380,29 @@ mod tests {
         assert_eq!(entries[1].path, "/pair/verify");
         assert_eq!(entries[1].body_limit, 8 * 1024);
         assert!(entries.iter().all(|entry| entry.bootstrap_public));
+    }
+
+    #[test]
+    fn protected_pairing_inventory_separates_peer_and_admin_authority() {
+        let entries = protected_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 10);
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("peer.exchange"))
+                .count(),
+            5
+        );
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("admin.identity"))
+                .count(),
+            5
+        );
+        assert!(entries.iter().all(|entry| !entry.bootstrap_public));
     }
 }
