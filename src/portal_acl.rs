@@ -70,24 +70,6 @@ fn is_admin_path(method: &Method, path: &str) -> bool {
         return true;
     }
 
-    // Shared mode toggle (status GET is member-readable)
-    if path == "/v1/shared-mode" && method != Method::GET {
-        return true;
-    }
-
-    // Profile registry mutations / global switch / import-export
-    if path == "/v1/identity/profiles" && method != Method::GET {
-        return true;
-    }
-    if path == "/v1/identity/profiles/active"
-        || path == "/v1/identity/profiles/export"
-        || path == "/v1/identity/profiles/import"
-        || path == "/v1/identity/rollback"
-        || path == "/v1/identity/update/commit"
-    {
-        return true;
-    }
-
     // Vault host configuration + Versions/Git (content/search stay member).
     if path == "/v1/vault/roots" || path == "/v1/vault/active" || path.starts_with("/v1/vault/git/")
     {
@@ -186,28 +168,12 @@ mod tests {
     }
 
     #[test]
-    fn classifies_admin_settings_paths() {
-        assert_eq!(
-            classify_path(&Method::PUT, "/v1/shared-mode"),
-            PortalPathClass::Admin
-        );
-        assert_eq!(
-            classify_path(&Method::GET, "/v1/shared-mode"),
-            PortalPathClass::Member
-        );
-        assert_eq!(
-            classify_path(&Method::POST, "/v1/identity/profiles"),
-            PortalPathClass::Admin
-        );
-        assert_eq!(
-            classify_path(&Method::GET, "/v1/identity/profiles"),
-            PortalPathClass::Member
-        );
-        assert_eq!(
-            classify_path(&Method::PUT, "/v1/identity/profiles/active"),
-            PortalPathClass::Admin
-        );
+    fn classifies_remaining_legacy_paths() {
         assert_eq!(classify_path(&Method::GET, "/qr"), PortalPathClass::Admin);
+        assert_eq!(
+            classify_path(&Method::POST, "/v1/runtime/config/command"),
+            PortalPathClass::Admin
+        );
         assert_eq!(
             classify_path(&Method::POST, "/v1/turns"),
             PortalPathClass::Member
@@ -221,7 +187,7 @@ mod tests {
     #[test]
     fn legacy_local_retains_operator_capabilities() {
         let local = RequestPrincipal::legacy_local();
-        assert!(authorize_request(&local, &Method::PUT, "/v1/shared-mode").is_allow());
+        assert!(authorize_request(&local, &Method::POST, "/v1/runtime/config/command").is_allow());
     }
 
     #[test]
@@ -230,7 +196,7 @@ mod tests {
         assert!(!authorize_request(&peer, &Method::POST, "/v1/turns").is_allow());
         assert!(!authorize_request(&peer, &Method::GET, "/v1/peer/messages").is_allow());
         let portal = principal(PairingRole::Portal, None, false);
-        assert!(authorize_request(&portal, &Method::PUT, "/v1/shared-mode").is_allow());
+        assert!(authorize_request(&portal, &Method::POST, "/v1/runtime/config/command").is_allow());
         let anonymous = RequestPrincipal::anonymous(TransportClass::Direct);
         assert!(!authorize_request(&anonymous, &Method::POST, "/v1/turns").is_allow());
         assert!(!authorize_request(&anonymous, &Method::GET, "/health").is_allow());
@@ -242,9 +208,9 @@ mod tests {
     fn shared_mode_issues_admin_capability_only_to_root() {
         let alice = principal(PairingRole::Portal, Some("user:alice"), true);
         let root = principal(PairingRole::Portal, Some("user:root"), true);
-        assert!(!authorize_request(&alice, &Method::PUT, "/v1/shared-mode").is_allow());
-        assert!(authorize_request(&root, &Method::PUT, "/v1/shared-mode").is_allow());
+        assert!(!authorize_request(&alice, &Method::POST, "/v1/runtime/config/command").is_allow());
+        assert!(authorize_request(&root, &Method::POST, "/v1/runtime/config/command").is_allow());
         assert!(authorize_request(&alice, &Method::POST, "/v1/turns").is_allow());
-        assert!(authorize_request(&alice, &Method::GET, "/v1/shared-mode").is_allow());
+        assert!(authorize_request(&alice, &Method::GET, "/v1/turns").is_allow());
     }
 }
