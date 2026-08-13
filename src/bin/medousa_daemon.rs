@@ -574,7 +574,6 @@ async fn main() -> Result<()> {
             model.map(|value| value.to_string()),
             iroh_info,
         ));
-        medousa::pairing::init_workshop_pairing(pairing_service.clone());
         if medousa::pairing::mdns_should_advertise(bind) {
             let mut txt = std::collections::HashMap::new();
             txt.insert("dv".to_string(), pairing_service.device_id().to_string());

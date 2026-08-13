@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
@@ -984,31 +983,6 @@ pub fn resolve_advertise_address(bind: &str) -> String {
 
 pub fn pairing_enabled_from_env() -> bool {
     !truthy_env("MEDOUSA_PAIRING_DISABLE")
-}
-
-static WORKSHOP_PAIRING: OnceLock<Arc<PairingService>> = OnceLock::new();
-
-/// Register the process pairing service so turn/session handlers can resolve bearer→profile.
-pub fn init_workshop_pairing(service: Arc<PairingService>) {
-    let _ = WORKSHOP_PAIRING.set(service);
-}
-
-pub fn workshop_pairing() -> Option<Arc<PairingService>> {
-    WORKSHOP_PAIRING.get().cloned()
-}
-
-/// Bound Shared-mode profile for a request bearer, if any.
-pub fn resolve_request_profile_id(headers: &axum::http::HeaderMap) -> Option<String> {
-    let token = headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .map(str::trim)
-        .filter(|value| !value.is_empty())?;
-    workshop_pairing()?
-        .resolve_bearer_profile_id(token)
-        .ok()
-        .flatten()
 }
 
 pub fn pairing_qr_v1_from_env() -> bool {
