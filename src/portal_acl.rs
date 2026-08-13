@@ -76,9 +76,8 @@ fn is_admin_path(method: &Method, path: &str) -> bool {
         return true;
     }
 
-    // Packages / MCP / model host controls
-    if path.starts_with("/v1/mcp/")
-        || path.starts_with("/v1/packages/")
+    // Packages / model host controls
+    if path.starts_with("/v1/packages/")
         || path.starts_with("/v1/model/")
         || path.starts_with("/v1/inference/")
     {
@@ -168,7 +167,7 @@ mod tests {
     fn classifies_remaining_legacy_paths() {
         assert_eq!(classify_path(&Method::GET, "/qr"), PortalPathClass::Admin);
         assert_eq!(
-            classify_path(&Method::POST, "/v1/mcp/policy/evaluate"),
+            classify_path(&Method::POST, "/v1/vault/roots"),
             PortalPathClass::Admin
         );
         assert_eq!(
@@ -184,7 +183,7 @@ mod tests {
     #[test]
     fn legacy_local_retains_operator_capabilities() {
         let local = RequestPrincipal::legacy_local();
-        assert!(authorize_request(&local, &Method::POST, "/v1/mcp/policy/evaluate").is_allow());
+        assert!(authorize_request(&local, &Method::POST, "/v1/vault/roots").is_allow());
     }
 
     #[test]
@@ -193,7 +192,7 @@ mod tests {
         assert!(!authorize_request(&peer, &Method::POST, "/v1/turns").is_allow());
         assert!(!authorize_request(&peer, &Method::GET, "/v1/peer/messages").is_allow());
         let portal = principal(PairingRole::Portal, None, false);
-        assert!(authorize_request(&portal, &Method::POST, "/v1/mcp/policy/evaluate").is_allow());
+        assert!(authorize_request(&portal, &Method::POST, "/v1/vault/roots").is_allow());
         let anonymous = RequestPrincipal::anonymous(TransportClass::Direct);
         assert!(!authorize_request(&anonymous, &Method::POST, "/v1/turns").is_allow());
         assert!(!authorize_request(&anonymous, &Method::GET, "/health").is_allow());
@@ -205,8 +204,8 @@ mod tests {
     fn shared_mode_issues_admin_capability_only_to_root() {
         let alice = principal(PairingRole::Portal, Some("user:alice"), true);
         let root = principal(PairingRole::Portal, Some("user:root"), true);
-        assert!(!authorize_request(&alice, &Method::POST, "/v1/mcp/policy/evaluate").is_allow());
-        assert!(authorize_request(&root, &Method::POST, "/v1/mcp/policy/evaluate").is_allow());
+        assert!(!authorize_request(&alice, &Method::POST, "/v1/vault/roots").is_allow());
+        assert!(authorize_request(&root, &Method::POST, "/v1/vault/roots").is_allow());
         assert!(authorize_request(&alice, &Method::POST, "/v1/turns").is_allow());
         assert!(authorize_request(&alice, &Method::GET, "/v1/turns").is_allow());
     }
