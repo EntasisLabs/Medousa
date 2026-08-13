@@ -78,14 +78,6 @@ fn is_admin_path(method: &Method, path: &str) -> bool {
         return true;
     }
 
-    // Recurring schedule admin mutations
-    if (path == "/v1/recurring/prompt" && method == Method::POST)
-        || (path.starts_with("/v1/recurring/")
-            && (method == Method::PATCH || method == Method::DELETE || method == Method::POST))
-    {
-        return true;
-    }
-
     // Workspace rebuild / retry host ops
     if path.starts_with("/v1/workspace/") && method != Method::GET {
         return true;
@@ -123,7 +115,7 @@ mod tests {
     use crate::request_principal::TransportClass;
     use chrono::Utc;
 
-    const LEGACY_ADMIN_PATH: &str = "/v1/recurring/prompt";
+    const LEGACY_ADMIN_PATH: &str = "/v1/workspace/rebuild";
 
     fn record(role: PairingRole, profile_id: Option<&str>) -> PairedDeviceRecord {
         PairedDeviceRecord {
