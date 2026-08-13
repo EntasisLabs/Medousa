@@ -38,8 +38,11 @@
   import { flows } from "$lib/stores/flows.svelte";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
+  import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
+  import { mobileCodeWorkspaceState } from "$lib/stores/mobileCodeWorkspaceState.svelte";
   import { haptic } from "$lib/haptics";
   import { prepareTalkAboutNote } from "$lib/utils/vaultNoteBridge";
+  import { openMobileCodeThread } from "$lib/utils/mobileCodeOpen";
   import { switchMobileTab } from "$lib/mobileNavigation";
   import {
     mobileChromeLeading,
@@ -77,7 +80,12 @@
 
   const leading = $derived(mobileChromeLeading(surface));
   const trailing = $derived(
-    mobileChromeTrailing(surface, automationsNav.currentSection, automationsMode),
+    mobileChromeTrailing(
+      surface,
+      automationsNav.currentSection,
+      automationsMode,
+      mobileCodeWorkspaceState.chromeMode,
+    ),
   );
   const brandStyle = $derived(workshopBrandCssVars(workshops.activeWorkshop?.brandColor));
   const notesFilterActive = $derived(
@@ -113,6 +121,10 @@
     browserForward: ArrowRight,
     browserReload: RefreshCw,
     activity: Activity,
+    codeSearch: Search,
+    codeSave: Save,
+    codeFind: Search,
+    codeThread: MessageCircle,
   };
 
   function openMenu() {
@@ -132,6 +144,11 @@
       case "back":
         if (surface === "automations" && flows.composerOpen) {
           flows.closeComposer();
+          return;
+        }
+        if (surface === "code") {
+          if (mobileCodeWorkspaceState.handleBack()) return;
+          layout.backToMoreHub();
           return;
         }
         if (
@@ -257,6 +274,18 @@
       case "activity":
         layout.toggleActivitySheet();
         return;
+      case "codeSearch":
+        window.dispatchEvent(new CustomEvent("medousa-mobile-code-search"));
+        return;
+      case "codeSave":
+        window.dispatchEvent(new CustomEvent("medousa-mobile-code-save"));
+        return;
+      case "codeFind":
+        window.dispatchEvent(new CustomEvent("medousa-mobile-code-find"));
+        return;
+      case "codeThread":
+        await openMobileCodeThread();
+        return;
     }
   }
 
@@ -266,10 +295,14 @@
         return "Open menu";
       case "back":
         if (surface === "automations" && flows.composerOpen) return "Back to flows";
+        if (surface === "code" && mobileCodeWorkspaceState.inProject) {
+          return "Back to code projects";
+        }
+        if (surface === "code") return "Back to Home";
         return surface === "more-nested" ||
           surface === "automations" ||
           surface === "agents"
-          ? "Back to More"
+          ? "Back to Home"
           : "Back to notes";
       case "workshop":
         return `Workshop — ${workshops.activeLabel}`;
@@ -327,6 +360,14 @@
         return humanBrowser.loading ? "Stop loading" : "Reload";
       case "activity":
         return "Activity";
+      case "codeSearch":
+        return mobileCodeWorkspaceState.inProject ? "Search files" : "Search projects";
+      case "codeSave":
+        return "Save";
+      case "codeFind":
+        return "Find in file";
+      case "codeThread":
+        return "Open project thread";
     }
   }
 
@@ -341,6 +382,13 @@
         return !humanBrowser.canGoForward;
       case "scriptSave":
         return graphemeScriptEditor.saveBusy || !graphemeScriptEditor.activeTab;
+      case "codeSave": {
+        const workId = mobileCodeWorkspaceState.selectedWorkId;
+        const tab = workId ? codeWorkspace.activeFor(workId) : null;
+        return !tab || !codeWorkspace.isDirty(tab) || Boolean(tab.preview);
+      }
+      case "codeThread":
+        return !mobileCodeWorkspaceState.selectedWorkId;
       case "scriptRun":
         return workshop.runBusy || !graphemeScriptEditor.activeTab?.body.trim();
       case "scriptCompile":

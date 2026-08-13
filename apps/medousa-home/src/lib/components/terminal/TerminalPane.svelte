@@ -55,6 +55,10 @@
     onPopOut?: () => void;
     /** Dock: collapse the terminal panel. */
     onCollapse?: () => void;
+    /** Mobile `gf` — open a path without activating a desktop editor tab. */
+    onOpenPath?: (path: string, line: number | null) => void;
+    /** Full-glass phone PTY: larger type and exported sendInput for the key row. */
+    mobile?: boolean;
   }
 
   let {
@@ -65,6 +69,8 @@
     worktreeRoot = null,
     onPopOut,
     onCollapse,
+    onOpenPath,
+    mobile = false,
   }: Props = $props();
 
   let attachId = $state<number | null>(null);
@@ -146,6 +152,10 @@
       });
   }
 
+  export function sendInput(data: string) {
+    queueInput(data);
+  }
+
   function focusTerminal() {
     terminal?.focus();
   }
@@ -216,6 +226,10 @@
     const id = workId?.trim();
     if (!id) return;
     try {
+      if (onOpenPath) {
+        onOpenPath(path, line);
+        return;
+      }
       await lmeWorkspace.openCodeFile(id, path, {
         line: line && line > 0 ? line : 1,
         groupId: shellTabs.activeGroupId,
@@ -274,7 +288,7 @@
       cursorStyle: "block",
       fontFamily:
         '"SFMono-Regular", "SF Mono", "Cascadia Code", "Roboto Mono", Menlo, monospace',
-      fontSize: compact ? 11 : 12,
+      fontSize: mobile ? 14 : compact ? 11 : 12,
       letterSpacing: 0,
       lineHeight: 1.2,
       minimumContrastRatio: 4.5,
@@ -668,6 +682,7 @@
   role="application"
   aria-label={title}
 >
+  {#if !mobile}
   <div
     class="terminal-chrome flex shrink-0 items-center justify-between gap-2 border-b border-white/10 px-2 py-0.5"
   >
@@ -780,8 +795,9 @@
       {/if}
     </div>
   </div>
+  {/if}
 
-  {#if findOpen}
+  {#if findOpen && !mobile}
     <div class="flex shrink-0 items-center gap-1 border-b border-white/10 px-2 py-1">
       <Search size={11} class="shrink-0 text-white/50" />
       <input
@@ -816,7 +832,9 @@
     ></div>
 
     {#if connecting}
-      <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-[#0c0a09]/80 text-xs text-white">
+      <div
+        class="pointer-events-none absolute inset-0 flex {mobile ? 'items-start justify-start p-4 font-mono text-[13px] text-white/55' : 'items-center justify-center bg-[#0c0a09]/80 text-xs text-white'}"
+      >
         Connecting to workshop session…
       </div>
     {:else if !sessionHostAvailable}

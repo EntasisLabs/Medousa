@@ -7,11 +7,13 @@ First-run UX, Home shell milestones, turn-loop FSM, user profiles (Phases 0–6)
 
 **Next focus:** [Home Code workbench parity](home-code-vscode-parity-plan.md)
 closes the trustworthy-editing, daily-driver, IDE, and contribution gaps while
-preserving the broader Medousa shell. Undertakings flowstate residual polish
+the [Mobile Code workspace](mobile-code-workspace-plan.md) gives those shared
+project contracts a phone-native Files, Editor, Terminal, Changes, and Thread
+experience. Undertakings flowstate residual polish
 (empty states, F3–F5) and the proposed [Medousa Anywhere plan](medousa-anywhere-plan.md)
 continue alongside it.
 
-Full plans: **[home-code-vscode-parity-plan.md](home-code-vscode-parity-plan.md)** · **[v0.7.0-forge-plan.md](v0.7.0-forge-plan.md)** · **[detamu-medousa-fit.md](detamu-medousa-fit.md)** · **[coding-engine-orchestrator.md](coding-engine-orchestrator.md)** · **[coding-session-terminal.md](coding-session-terminal.md)** · **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md)** · **[home-messaging-matrix.md](home-messaging-matrix.md)** · [ADR-011](../docs/architecture/decisions/adr-011-shared-mode-portal-and-mesh.md) · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)** · **[operators-guide-docs-epic.md](operators-guide-docs-epic.md)**
+Full plans: **[home-code-vscode-parity-plan.md](home-code-vscode-parity-plan.md)** · **[mobile-code-workspace-plan.md](mobile-code-workspace-plan.md)** · **[v0.7.0-forge-plan.md](v0.7.0-forge-plan.md)** · **[detamu-medousa-fit.md](detamu-medousa-fit.md)** · **[coding-engine-orchestrator.md](coding-engine-orchestrator.md)** · **[coding-session-terminal.md](coding-session-terminal.md)** · **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md)** · **[home-messaging-matrix.md](home-messaging-matrix.md)** · [ADR-011](../docs/architecture/decisions/adr-011-shared-mode-portal-and-mesh.md) · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)** · **[operators-guide-docs-epic.md](operators-guide-docs-epic.md)**
 **Next focus:** Undertakings flowstate residual polish (empty states, F3–F5) on ForgeLens / World coverage UX, alongside the proposed [Medousa Anywhere plan](medousa-anywhere-plan.md) for VS Code, Neovim, and Obsidian surfaces. Coding / Detamu / shared-shell / ACP transcript / Forge Home contracts landed. Proposed sibling-shell work: [TUI ↔ Home workspace parity](tui-home-workspace-parity-plan.md) (tmux panes + notes/code/review/chat — not Anywhere plugins).
 
 Full plans: **[v0.7.0-forge-plan.md](v0.7.0-forge-plan.md)** · **[detamu-medousa-fit.md](detamu-medousa-fit.md)** · **[coding-engine-orchestrator.md](coding-engine-orchestrator.md)** · **[coding-session-terminal.md](coding-session-terminal.md)** · **[tui-home-workspace-parity-plan.md](tui-home-workspace-parity-plan.md)** · **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md)** · **[home-messaging-matrix.md](home-messaging-matrix.md)** · [ADR-011](../docs/architecture/decisions/adr-011-shared-mode-portal-and-mesh.md) · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)** · **[operators-guide-docs-epic.md](operators-guide-docs-epic.md)**
@@ -39,6 +41,7 @@ workspace parity is tracked separately in
 | Slice | Status |
 |-------|--------|
 | Home CM feel (find/prefs/outline/problems) | 🔄 File editing shipped; cross-file navigation and real workspace Problems are [active](home-code-vscode-parity-plan.md) |
+| Mobile Code workspace (Files/Editor/Terminal/Changes/Thread) | ⬜ Proposed · [plan](mobile-code-workspace-plan.md) |
 | Language highlight packs (python/ts/rust/yaml) | 🔄 Core packs shipped; Svelte/JSX and the registered-language matrix are [active](home-code-vscode-parity-plan.md) |
 | `medousa-code` MVP + Grapheme backend | ✅ |
 | Home → Orchestrator via `/v1/code/lsp` | ✅ |

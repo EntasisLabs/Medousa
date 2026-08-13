@@ -48,6 +48,12 @@
   import { portLmeDock } from "$lib/utils/lmeDockHost";
   import { ensureRailPopoverOpen } from "$lib/utils/railPopoverChrome";
 
+  interface Props {
+    onOpenProject?: (workId: string, title: string) => void | Promise<void>;
+  }
+
+  let { onOpenProject }: Props = $props();
+
   let creating = $state(false);
   let creationRepoPath = $state<string | null>(null);
   let busy = $state(false);
@@ -338,6 +344,10 @@
 
   async function openItem(id: string, label: string) {
     creating = false;
+    if (onOpenProject) {
+      await onOpenProject(id, label);
+      return;
+    }
     await lmeWorkspace.openCodeWorkspace(id, label);
   }
 
@@ -556,6 +566,13 @@
     searchInputEl?.select();
   }
 
+  $effect(() => {
+    if (!onOpenProject) return;
+    const onSearch = () => void openSearch();
+    window.addEventListener("medousa-mobile-code-search", onSearch);
+    return () => window.removeEventListener("medousa-mobile-code-search", onSearch);
+  });
+
   function closeSearch() {
     searchExpanded = false;
     if (fileSearching) {
@@ -766,11 +783,11 @@
       onCreated={async (item) => {
         creating = false;
         await loadRepositoryCatalog();
-        await lmeWorkspace.openCodeWorkspace(item.id, item.title);
+        await openItem(item.id, item.title);
       }}
       onContinue={async (item) => {
         creating = false;
-        await lmeWorkspace.openCodeWorkspace(item.id, item.title);
+        await openItem(item.id, item.title);
       }}
       onCatalogChanged={loadRepositoryCatalog}
     />
@@ -979,7 +996,7 @@
           Start with a repository and the change you want to make. Medousa will keep the work together.
         </p>
       </div>
-    {:else if selectedItem}
+    {:else if selectedItem && !onOpenProject}
       <div class="min-h-0 flex-1 overflow-hidden">
         <CodeRepositoryTree
           bind:this={treeRef}

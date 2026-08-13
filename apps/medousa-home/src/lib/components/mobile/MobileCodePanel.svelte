@@ -1,38 +1,28 @@
 <script lang="ts">
-  import { ChevronLeft, Code2 } from "@lucide/svelte";
   import LmeCodeExplorer from "$lib/components/lme/explorers/LmeCodeExplorer.svelte";
-  import UndertakingsPanel from "$lib/components/work/UndertakingsPanel.svelte";
+  import MobileCodeWorkspace from "$lib/components/mobile/code/MobileCodeWorkspace.svelte";
+  import { Code2 } from "@lucide/svelte";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
+  import { mobileCodeWorkspaceState } from "$lib/stores/mobileCodeWorkspaceState.svelte";
   import { undertakings } from "$lib/stores/undertakings.svelte";
+  import { enterMobileCodeProject } from "$lib/utils/mobileCodeOpen";
 
-  function showWorkspaces() {
-    void undertakings.select("");
-  }
+  const workId = $derived(mobileCodeWorkspaceState.selectedWorkId);
 
   $effect(() => {
-    if (!undertakings.selectedId) return;
-    return registerMobileBackHandler(() => {
-      showWorkspaces();
-      return true;
-    });
+    if (!workId) return;
+    return registerMobileBackHandler(() => mobileCodeWorkspaceState.handleBack());
   });
 </script>
 
-<section class="flex h-full min-h-0 flex-col bg-surface-950" aria-label="Code projects">
-  {#if undertakings.selectedId && undertakings.detail}
-    <header class="flex shrink-0 items-center gap-2 border-b border-surface-500/30 px-3 py-2">
-      <button
-        type="button"
-        class="rounded p-1 text-content-tertiary hover:bg-surface-800 hover:text-surface-100"
-        aria-label="Back to code projects"
-        onclick={showWorkspaces}
-      ><ChevronLeft size={17} /></button>
-      <p class="text-sm font-medium text-content-secondary">Projects</p>
-    </header>
-    <div class="min-h-0 flex-1 overflow-hidden">
-      <UndertakingsPanel showBrowser={false} />
-    </div>
-  {:else}
+{#if workId && undertakings.detail?.id === workId}
+  <MobileCodeWorkspace {workId} />
+{:else if workId}
+  <section class="flex h-full min-h-0 flex-col bg-surface-950">
+    <p class="px-4 py-6 text-sm text-content-quiet">Opening project…</p>
+  </section>
+{:else}
+  <section class="flex h-full min-h-0 flex-col bg-surface-950" aria-label="Code projects">
     <header class="flex shrink-0 items-center gap-2 border-b border-surface-500/30 px-4 py-3">
       <Code2 size={17} class="text-content-link" />
       <div>
@@ -41,7 +31,11 @@
       </div>
     </header>
     <div class="min-h-0 flex-1 overflow-hidden">
-      <LmeCodeExplorer />
+      <LmeCodeExplorer
+        onOpenProject={async (id) => {
+          await enterMobileCodeProject(id);
+        }}
+      />
     </div>
-  {/if}
-</section>
+  </section>
+{/if}

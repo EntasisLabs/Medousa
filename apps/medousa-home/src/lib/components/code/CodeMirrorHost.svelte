@@ -27,7 +27,9 @@
     indentWithTab,
   } from "@codemirror/commands";
   import {
+    closeSearchPanel,
     highlightSelectionMatches,
+    search,
     searchKeymap,
   } from "@codemirror/search";
   import {
@@ -75,12 +77,32 @@
    * Like CodeMirror basicSetup, with fold chevrons to the right of line numbers
    * and transparent gutters (no separate fold “pane”).
    */
+  function foldGutterExtension(visible: boolean): Extension {
+    return visible
+      ? foldGutter({
+          openText: "▾",
+          closedText: "▸",
+        })
+      : [];
+  }
+
+  function findOverrideExtension(owned: boolean): Extension {
+    if (!owned) return [];
+    return Prec.highest(
+      keymap.of([
+        {
+          key: "Mod-f",
+          run: () => {
+            onFindRequestedRef?.();
+            return true;
+          },
+        },
+      ]),
+    );
+  }
+
   const codeEditorCoreSetup: Extension = [
     lineNumbers(),
-    foldGutter({
-      openText: "▾",
-      closedText: "▸",
-    }),
     highlightActiveLineGutter(),
     highlightSpecialChars(),
     history(),
@@ -96,6 +118,7 @@
     crosshairCursor(),
     highlightActiveLine(),
     highlightSelectionMatches(),
+    search(),
     keymap.of([
       ...closeBracketsKeymap,
       ...defaultKeymap,
@@ -201,6 +224,10 @@
     conventionTabSize?: number | null;
     wordWrap?: boolean;
     showLineNumbers?: boolean;
+    /** Fold chevrons to the right of line numbers. Hidden on narrow Code. */
+    showFoldGutter?: boolean;
+    /** Parent owns Find (mobile). Mod-F still fires this instead of the CM panel. */
+    onFindRequested?: () => void;
     /** Override syntax pack; default follows Settings → Preferences. */
     syntaxTheme?: string | null;
   }
@@ -224,6 +251,8 @@
     conventionTabSize = null,
     wordWrap = readCodeEditorWordWrap(),
     showLineNumbers = readCodeEditorLineNumbers(),
+    showFoldGutter = true,
+    onFindRequested,
     syntaxTheme = null,
   }: Props = $props();
 
@@ -238,6 +267,7 @@
   let onProblemsChangedRef: Props["onProblemsChanged"];
   let onContextMenuRef: ((event: MouseEvent) => void) | undefined;
   let onLanguageNavigationRequestedRef: Props["onLanguageNavigationRequested"];
+  let onFindRequestedRef: (() => void) | undefined;
   let changeTimer: ReturnType<typeof setTimeout> | undefined;
   let pendingChangeCallback: ((value: string) => void) | undefined;
   let telemetryFrame: number | undefined;
@@ -248,6 +278,8 @@
   const lspCompartment = new Compartment();
   const wrapCompartment = new Compartment();
   const lineNumbersCompartment = new Compartment();
+  const foldGutterCompartment = new Compartment();
+  const findOverrideCompartment = new Compartment();
   const reviewCompartment = new Compartment();
   const syntaxThemeCompartment = new Compartment();
 
@@ -275,6 +307,7 @@
   $effect(() => {
     onContextMenuRef = onContextMenu;
     onLanguageNavigationRequestedRef = onLanguageNavigationRequested;
+    onFindRequestedRef = onFindRequested;
   });
 
   function requestLanguageNavigation(kind: CodeLanguageNavigationKind): boolean {
@@ -397,6 +430,8 @@
           ? []
           : EditorView.theme({ ".cm-lineNumbers": { display: "none" } }),
       ),
+      foldGutterCompartment.of(foldGutterExtension(showFoldGutter)),
+      findOverrideCompartment.of(findOverrideExtension(Boolean(onFindRequested))),
       reviewCompartment.of(reviewExtensions()),
       EditorView.domEventHandlers({
         contextmenu(event) {
@@ -411,7 +446,8 @@
           scheduleChange();
         }
         if (update.docChanged || update.selectionSet) {
-          codeEditorFind.syncFromView(update.view);
+          if (onFindRequestedRef) closeSearchPanel(update.view);
+          else codeEditorFind.syncFromView(update.view);
           if (telemetryFrame !== undefined) cancelAnimationFrame(telemetryFrame);
           telemetryFrame = requestAnimationFrame(() => {
             telemetryFrame = undefined;
@@ -529,6 +565,10 @@
   }
 
   export function openFind() {
+    if (onFindRequestedRef) {
+      onFindRequestedRef();
+      return;
+    }
     codeEditorFind.show(view);
   }
 
@@ -684,6 +724,22 @@
 
   $effect(() => {
     if (!view) return;
+    view.dispatch({
+      effects: foldGutterCompartment.reconfigure(foldGutterExtension(showFoldGutter)),
+    });
+  });
+
+  $effect(() => {
+    if (!view) return;
+    view.dispatch({
+      effects: findOverrideCompartment.reconfigure(
+        findOverrideExtension(Boolean(onFindRequested)),
+      ),
+    });
+  });
+
+  $effect(() => {
+    if (!view) return;
     void changedLines;
     view.dispatch({ effects: reviewCompartment.reconfigure(reviewExtensions()) });
   });
@@ -692,6 +748,7 @@
 <div
   bind:this={host}
   class="grapheme-codemirror-host code-codemirror-host h-full min-h-0 min-w-0 flex-1 overflow-hidden"
+  class:code-owned-find={Boolean(onFindRequested)}
   style={`--code-editor-font-size: ${readCodeEditorFontSize()}px; --code-syntax-bg: ${activeSyntaxTheme.canvas.background}; --code-syntax-fg: ${activeSyntaxTheme.canvas.foreground}; background-color: ${activeSyntaxTheme.canvas.background}; color: ${activeSyntaxTheme.canvas.foreground}`}
   role="textbox"
   tabindex="0"
@@ -699,7 +756,8 @@
   onkeydown={(e) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
       e.preventDefault();
-      openFind();
+      if (onFindRequested) onFindRequested();
+      else openFind();
     }
   }}
 ></div>
@@ -744,6 +802,10 @@
     min-height: 3px;
     margin-top: 0.55rem;
     background: rgb(251 113 133);
+  }
+
+  :global(.code-codemirror-host.code-owned-find .cm-panel.cm-search) {
+    display: none !important;
   }
 
   /* Medousa-skinned CodeMirror find/replace panel */
