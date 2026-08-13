@@ -83,7 +83,7 @@ and performance budgets must prevent the same classes of defect from returning.
 | ID | Planned document | Scope | Primary findings | Depends on | State |
 | --- | --- | --- | --- | --- | --- |
 | H01 | [01-daemon-trust-and-auth.md](01-daemon-trust-and-auth.md) | Daemon trust zones, authentication, CORS, bootstrap and route exposure | SEC-001 | ADR-013 | Draft |
-| H02 | `02-identifier-and-filesystem-authority.md` | Validated IDs, path derivation, symlinks, deletion inventory | SEC-002, SEC-003, DATA-001 | ADR-014 | Proposed |
+| H02 | [02-identifier-and-filesystem-authority.md](02-identifier-and-filesystem-authority.md) | Validated IDs, path derivation, symlinks, deletion inventory | SEC-002, SEC-003, DATA-001 | ADR-014 | Draft |
 | H03 | `03-turn-stream-v2.md` | Bounded single-writer stream, replay, journal, bridge, UI tail | PERF-001, DUR-001, MEM-002, TYPE-001, PERF-005 | ADR-015, H05 | Proposed |
 | H04 | `04-persistence-and-crash-consistency.md` | Feed/workspace/task storage ownership and commit policy | STORE-001, STORE-002, MEM-001 | ADR-016 | Proposed |
 | H05 | `05-runtime-context-and-concurrency.md` | Request-scoped turn/browser state and cancellation | CONC-001, CONC-002 | ADR-017 | Proposed |
@@ -103,7 +103,7 @@ duplicate ADR-010 history.
 | ADR | Decision | Related existing decision | State |
 | --- | --- | --- | --- |
 | [ADR-013](../../docs/architecture/decisions/adr-013-daemon-trust-zones-and-auth.md) | Daemon trust zones, mandatory authentication, CORS, and public exposure | Narrows ADR-003 and ADR-011 | Proposed |
-| ADR-014 | Validated identifiers and handle-relative filesystem confinement | New | Proposed |
+| [ADR-014](../../docs/architecture/decisions/adr-014-identifier-and-filesystem-authority.md) | Validated identifiers and handle-relative filesystem confinement | New | Proposed |
 | ADR-015 | Bounded single-writer durable turn pipeline | Supersedes ADR-004's per-event write tradeoff; preserves replay contract | Proposed |
 | ADR-016 | Transactional store ownership and crash-consistency policy | Extends durable runtime decisions | Proposed |
 | ADR-017 | Request-scoped runtime context; no process-global turn state | Extends ADR-005/ADR-008 | Proposed |
