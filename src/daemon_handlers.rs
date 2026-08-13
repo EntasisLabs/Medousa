@@ -1,5 +1,5 @@
-use axum::extract::{Path as AxumPath, Query, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::extract::{Extension, Path as AxumPath, Query, State};
+use axum::http::StatusCode;
 use axum::Json;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -27,7 +27,7 @@ pub struct SessionDeleteState {
 
 /// Session history HTTP handlers extracted to library so they can be tested.
 pub async fn list_session_history(
-    headers: HeaderMap,
+    Extension(principal): Extension<crate::request_principal::RequestPrincipal>,
     Query(request): Query<SessionHistoryListRequest>,
 ) -> Result<Json<SessionHistoryListResponse>, (StatusCode, String)> {
     let limit = request.limit.unwrap_or(200).clamp(1, 1000);
@@ -41,9 +41,8 @@ pub async fn list_session_history(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let profile_id = crate::pairing::resolve_request_profile_id(&headers);
     let mut page = crate::session::list_history_sessions_page_for_profile(
-        profile_id.as_deref(),
+        principal.profile_id(),
         limit,
         query,
         cursor,
@@ -62,7 +61,7 @@ pub async fn list_session_history(
 }
 
 pub async fn create_session(
-    headers: HeaderMap,
+    Extension(principal): Extension<crate::request_principal::RequestPrincipal>,
     Json(request): Json<CreateSessionRequest>,
 ) -> Result<Json<CreateSessionResponse>, (StatusCode, String)> {
     let catalog = SessionCatalogKind::parse(request.catalog.as_deref());
@@ -100,8 +99,8 @@ pub async fn create_session(
             }
             let mut members = request.member_profile_ids.unwrap_or_default();
             if members.is_empty() {
-                if let Some(bound) = crate::pairing::resolve_request_profile_id(&headers) {
-                    members.push(bound);
+                if let Some(bound) = principal.profile_id() {
+                    members.push(bound.to_string());
                 } else {
                     members.push(crate::user_profiles::resolve_workshop_identity_user_id());
                 }

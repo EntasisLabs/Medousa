@@ -13,6 +13,7 @@ use axum::response::{IntoResponse, Response};
 use crate::pairing::PairingService;
 use crate::portal_acl::{PortalAclDecision, authorize_request};
 use crate::remote_trust::is_trusted_local;
+use crate::request_principal::{RequestPrincipal, TransportClass};
 
 #[derive(Clone)]
 pub struct DaemonAccessState {
@@ -80,12 +81,13 @@ pub fn validate_listener_security(
 pub async fn enforce_daemon_access(
     State(state): State<DaemonAccessState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    request: Request<Body>,
+    mut request: Request<Body>,
     next: Next,
 ) -> Response {
     let path = request.uri().path().to_string();
     let method = request.method().clone();
     let trusted_local = is_trusted_local(addr.ip(), request.headers());
+    let transport = TransportClass::from_request(addr.ip(), request.headers());
 
     let credential = bearer_credential(request.headers());
     let record = match credential {
@@ -103,6 +105,11 @@ pub async fn enforce_daemon_access(
     }
 
     if matches!(state.surface, AccessSurface::Bootstrap) {
+        let shared_mode = crate::shared_mode::is_shared_mode();
+        let principal = record
+            .map(|record| RequestPrincipal::from_pairing_record(record, transport, shared_mode))
+            .unwrap_or_else(|| RequestPrincipal::anonymous(transport));
+        request.extensions_mut().insert(principal);
         return next.run(request).await;
     }
 
@@ -112,7 +119,16 @@ pub async fn enforce_daemon_access(
 
     let shared_mode = crate::shared_mode::is_shared_mode();
     match authorize_request(trusted_local, shared_mode, record.as_ref(), &method, &path) {
-        PortalAclDecision::Allow => next.run(request).await,
+        PortalAclDecision::Allow => {
+            let principal = match record {
+                Some(record) => {
+                    RequestPrincipal::from_pairing_record(record, transport, shared_mode)
+                }
+                None => RequestPrincipal::legacy_local(),
+            };
+            request.extensions_mut().insert(principal);
+            next.run(request).await
+        }
         PortalAclDecision::Deny(reason) => {
             let status = if record.is_some() {
                 StatusCode::FORBIDDEN
