@@ -7,10 +7,10 @@ use axum::response::IntoResponse;
 use stasis::dashboard::{DashboardState, RuntimeDashboardQueryService, router as dashboard_router};
 use tower_http::cors::CorsLayer;
 
-use crate::daemon::state::AppState;
 use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RouteInventory, RoutePolicy,
 };
+use crate::daemon::state::AppState;
 
 const LIVENESS_BODY: &str = r#"{"status":"ok","apiVersion":"v1"}"#;
 
@@ -64,6 +64,173 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::mesh::handlers::mesh_surface().inventory())
         .expect("duplicate mesh route policy");
     inventory
+        .extend(build_identity_surface().inventory())
+        .expect("duplicate identity route policy");
+    inventory
+}
+
+pub fn build_identity_surface() -> DeclaredRouter<AppState> {
+    use axum::routing::{get, post, put};
+
+    use crate::daemon::identity::{
+        create_user_profile, export_user_profile, identity_commit_update, identity_digest_preview,
+        identity_export_markdown, identity_get_context, identity_list_history,
+        identity_propose_update, identity_remember, identity_rollback_version, import_user_profile,
+        list_user_profiles, set_active_user_profile,
+    };
+
+    DeclaredRouter::default()
+        .route(
+            profile_policy(axum::http::Method::POST, "/v1/identity/context", 64 * 1024),
+            post(identity_get_context),
+        )
+        .route(
+            profile_policy(
+                axum::http::Method::POST,
+                "/v1/identity/remember",
+                256 * 1024,
+            ),
+            post(identity_remember),
+        )
+        .route(
+            profile_policy(
+                axum::http::Method::POST,
+                "/v1/identity/digest-preview",
+                64 * 1024,
+            ),
+            post(identity_digest_preview),
+        )
+        .route(
+            profile_policy(
+                axum::http::Method::POST,
+                "/v1/identity/export-markdown",
+                128 * 1024,
+            ),
+            post(identity_export_markdown),
+        )
+        .methods([
+            (
+                profile_policy(axum::http::Method::GET, "/v1/identity/profiles", 1024),
+                get(list_user_profiles),
+            ),
+            (
+                identity_admin_policy(axum::http::Method::POST, "/v1/identity/profiles", 64 * 1024),
+                post(create_user_profile),
+            ),
+        ])
+        .route(
+            identity_admin_policy(
+                axum::http::Method::PUT,
+                "/v1/identity/profiles/active",
+                16 * 1024,
+            ),
+            put(set_active_user_profile),
+        )
+        .route(
+            identity_admin_policy(
+                axum::http::Method::POST,
+                "/v1/identity/profiles/export",
+                64 * 1024,
+            ),
+            post(export_user_profile),
+        )
+        .route(
+            identity_admin_policy(
+                axum::http::Method::POST,
+                "/v1/identity/profiles/import",
+                8 * 1024 * 1024,
+            ),
+            post(import_user_profile),
+        )
+        .methods([
+            (
+                profile_policy(axum::http::Method::GET, "/v1/shared-mode", 1024),
+                get(crate::daemon::shared_mode::shared_mode_status),
+            ),
+            (
+                identity_admin_policy(axum::http::Method::PUT, "/v1/shared-mode", 16 * 1024),
+                put(crate::daemon::shared_mode::set_shared_mode),
+            ),
+        ])
+        .route(
+            profile_policy(
+                axum::http::Method::POST,
+                "/v1/identity/update/propose",
+                128 * 1024,
+            ),
+            post(identity_propose_update),
+        )
+        .route(
+            identity_admin_policy(
+                axum::http::Method::POST,
+                "/v1/identity/update/commit",
+                128 * 1024,
+            ),
+            post(identity_commit_update),
+        )
+        .route(
+            profile_policy(axum::http::Method::POST, "/v1/identity/history", 64 * 1024),
+            post(identity_list_history),
+        )
+        .route(
+            identity_admin_policy(axum::http::Method::POST, "/v1/identity/rollback", 64 * 1024),
+            post(identity_rollback_version),
+        )
+}
+
+fn profile_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    body_limit: usize,
+) -> RoutePolicy {
+    let rate_limit_class = if method == axum::http::Method::GET {
+        RateLimitClass::Read
+    } else {
+        RateLimitClass::Mutation
+    };
+    protected_policy(
+        method,
+        path,
+        RouteGroup::Portal,
+        crate::request_principal::Capability::ProfileSelf,
+        body_limit,
+        rate_limit_class,
+    )
+}
+
+fn identity_admin_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    body_limit: usize,
+) -> RoutePolicy {
+    protected_policy(
+        method,
+        path,
+        RouteGroup::Administration,
+        crate::request_principal::Capability::AdminIdentity,
+        body_limit,
+        RateLimitClass::Administration,
+    )
+}
+
+fn protected_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    group: RouteGroup,
+    required_capability: crate::request_principal::Capability,
+    body_limit: usize,
+    rate_limit_class: RateLimitClass,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group,
+        required_capability: Some(required_capability),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class,
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -435,12 +602,6 @@ pub fn build_core_router(state: AppState) -> Router {
         health, heartbeat_status, runtime_config_command, runtime_defaults, stage_route_command,
         stats,
     };
-    use crate::daemon::identity::{
-        create_user_profile, export_user_profile, identity_commit_update, identity_digest_preview,
-        identity_export_markdown, identity_get_context, identity_list_history,
-        identity_propose_update, identity_remember, identity_rollback_version, import_user_profile,
-        list_user_profiles, set_active_user_profile,
-    };
     use crate::daemon::ingest::{
         deliver_outbox_webhook, deliver_poll, delivery_status, ingest_handler, ingest_stream,
     };
@@ -623,29 +784,6 @@ pub fn build_core_router(state: AppState) -> Router {
         )
         .route("/v1/runtime/config/command", post(runtime_config_command))
         .route("/v1/runtime/stage-route/command", post(stage_route_command))
-        .route("/v1/identity/context", post(identity_get_context))
-        .route("/v1/identity/remember", post(identity_remember))
-        .route("/v1/identity/digest-preview", post(identity_digest_preview))
-        .route(
-            "/v1/identity/export-markdown",
-            post(identity_export_markdown),
-        )
-        .route(
-            "/v1/identity/profiles",
-            get(list_user_profiles).post(create_user_profile),
-        )
-        .route("/v1/identity/profiles/active", put(set_active_user_profile))
-        .route("/v1/identity/profiles/export", post(export_user_profile))
-        .route("/v1/identity/profiles/import", post(import_user_profile))
-        .route(
-            "/v1/shared-mode",
-            get(crate::daemon::shared_mode::shared_mode_status)
-                .put(crate::daemon::shared_mode::set_shared_mode),
-        )
-        .route("/v1/identity/update/propose", post(identity_propose_update))
-        .route("/v1/identity/update/commit", post(identity_commit_update))
-        .route("/v1/identity/history", post(identity_list_history))
-        .route("/v1/identity/rollback", post(identity_rollback_version))
         .route("/v1/ingest", post(ingest_handler))
         .route("/v1/ingest/{stream_id}/stream", get(ingest_stream))
         .route(
@@ -696,8 +834,8 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{
-        LIVENESS_BODY, build_declared_route_inventory, build_liveness_router,
-        build_liveness_surface,
+        LIVENESS_BODY, build_declared_route_inventory, build_identity_surface,
+        build_liveness_router, build_liveness_surface,
     };
 
     #[tokio::test]
@@ -760,12 +898,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 22);
-        assert_eq!(with_pairing.entries().len(), 34);
+        assert_eq!(without_pairing.entries().len(), 37);
+        assert_eq!(with_pairing.entries().len(), 49);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 34);
+        assert_eq!(rows.len(), 49);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"
@@ -777,5 +915,28 @@ mod tests {
                 && row["path"] == "/qr"
                 && row["required_capability"] == "admin.identity"
         }));
+    }
+
+    #[test]
+    fn identity_inventory_separates_self_service_from_administration() {
+        let entries = build_identity_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 15);
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("profile.self"))
+                .count(),
+            8
+        );
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("admin.identity"))
+                .count(),
+            7
+        );
     }
 }
