@@ -8,6 +8,9 @@ use axum::routing::{get, patch, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
 use crate::mesh::envelope::MeshCapability;
 use crate::mesh::intros::{self, MeshIntroCandidate, MeshIntroRecord, MeshIntroStatus};
 use crate::mesh::outbox::{self, MeshOutboxItem, MeshOutboxStatus};
@@ -118,21 +121,98 @@ struct MeshIntroDecisionBody {
 }
 
 pub fn mesh_router(state: MeshApiState) -> Router {
-    Router::new()
-        .route("/v1/mesh/peers", get(list_mesh_peers))
-        .route("/v1/mesh/peers/{device_id}", patch(patch_mesh_peer))
-        .route("/v1/mesh/outbox", get(list_mesh_outbox).post(enqueue_mesh_outbox))
-        .route("/v1/mesh/outbox/{item_id}/flush", post(flush_mesh_outbox_item))
-        .route("/v1/mesh/inbox", get(list_mesh_inbox))
-        .route("/v1/mesh/receipts", get(list_mesh_receipts).post(post_mesh_receipt))
+    mesh_surface().into_router().with_state(state)
+}
+
+pub fn mesh_surface() -> DeclaredRouter<MeshApiState> {
+    DeclaredRouter::default()
         .route(
-            "/v1/mesh/intros/candidates",
+            peer_policy(axum::http::Method::GET, "/v1/mesh/peers", 1024),
+            get(list_mesh_peers),
+        )
+        .route(
+            peer_policy(
+                axum::http::Method::PATCH,
+                "/v1/mesh/peers/{device_id}",
+                64 * 1024,
+            ),
+            patch(patch_mesh_peer),
+        )
+        .methods([
+            (
+                peer_policy(axum::http::Method::GET, "/v1/mesh/outbox", 1024),
+                get(list_mesh_outbox),
+            ),
+            (
+                peer_policy(axum::http::Method::POST, "/v1/mesh/outbox", 2 * 1024 * 1024),
+                post(enqueue_mesh_outbox),
+            ),
+        ])
+        .route(
+            peer_policy(
+                axum::http::Method::POST,
+                "/v1/mesh/outbox/{item_id}/flush",
+                1024,
+            ),
+            post(flush_mesh_outbox_item),
+        )
+        .route(
+            peer_policy(axum::http::Method::GET, "/v1/mesh/inbox", 1024),
+            get(list_mesh_inbox),
+        )
+        .methods([
+            (
+                peer_policy(axum::http::Method::GET, "/v1/mesh/receipts", 1024),
+                get(list_mesh_receipts),
+            ),
+            (
+                peer_policy(axum::http::Method::POST, "/v1/mesh/receipts", 64 * 1024),
+                post(post_mesh_receipt),
+            ),
+        ])
+        .route(
+            peer_policy(axum::http::Method::GET, "/v1/mesh/intros/candidates", 1024),
             get(list_mesh_intro_candidates),
         )
-        .route("/v1/mesh/intros", get(list_mesh_intros).post(request_mesh_intro))
-        .route("/v1/mesh/intros/{intro_id}/accept", post(accept_mesh_intro))
-        .route("/v1/mesh/intros/{intro_id}/decline", post(decline_mesh_intro))
-        .with_state(state)
+        .methods([
+            (
+                peer_policy(axum::http::Method::GET, "/v1/mesh/intros", 1024),
+                get(list_mesh_intros),
+            ),
+            (
+                peer_policy(axum::http::Method::POST, "/v1/mesh/intros", 64 * 1024),
+                post(request_mesh_intro),
+            ),
+        ])
+        .route(
+            peer_policy(
+                axum::http::Method::POST,
+                "/v1/mesh/intros/{intro_id}/accept",
+                64 * 1024,
+            ),
+            post(accept_mesh_intro),
+        )
+        .route(
+            peer_policy(
+                axum::http::Method::POST,
+                "/v1/mesh/intros/{intro_id}/decline",
+                1024,
+            ),
+            post(decline_mesh_intro),
+        )
+}
+
+fn peer_policy(method: axum::http::Method, path: &'static str, body_limit: usize) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::PeerExchange,
+        required_capability: Some(Capability::PeerExchange),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class: RateLimitClass::PeerExchange,
+    }
 }
 
 async fn list_mesh_peers(
@@ -600,6 +680,27 @@ mod tests {
             TransportClass::Direct,
             false,
         )
+    }
+
+    #[test]
+    fn mesh_inventory_is_complete_and_peer_scoped() {
+        let entries = mesh_surface().inventory().entries().collect::<Vec<_>>();
+        assert_eq!(entries.len(), 13);
+        assert!(entries.iter().all(|entry| {
+            entry.group == RouteGroup::PeerExchange
+                && entry.required_capability == Some("peer.exchange")
+                && !entry.bootstrap_public
+                && entry.body_limit > 0
+        }));
+        let outbox = entries
+            .iter()
+            .filter(|entry| entry.path == "/v1/mesh/outbox")
+            .collect::<Vec<_>>();
+        assert_eq!(outbox.len(), 2);
+        assert_eq!(outbox[0].method, "GET");
+        assert_eq!(outbox[0].body_limit, 1024);
+        assert_eq!(outbox[1].method, "POST");
+        assert_eq!(outbox[1].body_limit, 2 * 1024 * 1024);
     }
 
     #[test]
