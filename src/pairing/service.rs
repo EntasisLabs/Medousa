@@ -167,6 +167,13 @@ pub enum RevokePairingResult {
     Unauthorized,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RevokePairingAuthority<'a> {
+    Unauthenticated,
+    Credential(&'a str),
+    Administrator,
+}
+
 #[derive(Debug, Clone)]
 struct ActiveQrSession {
     token_b64: String,
@@ -658,15 +665,17 @@ impl PairingService {
         Ok(out)
     }
 
-    /// Revoke a pairing. `trusted_local` must be true only for genuine loopback
-    /// that is not Iroh-proxied (see [`crate::remote_trust::is_trusted_local`]).
     pub async fn revoke_pairing(
         &self,
         pairing_id: &str,
-        bearer_token: Option<&str>,
-        trusted_local: bool,
+        authority: RevokePairingAuthority<'_>,
     ) -> Result<RevokePairingResult> {
-        if !authorize_pairing_revoke(self, pairing_id, bearer_token, trusted_local)? {
+        let authorized = match authority {
+            RevokePairingAuthority::Administrator => true,
+            RevokePairingAuthority::Credential(credential_id) => credential_id == pairing_id,
+            RevokePairingAuthority::Unauthenticated => false,
+        };
+        if !authorized {
             return Ok(RevokePairingResult::Unauthorized);
         }
         let paired = self.store.list_paired()?;
@@ -937,28 +946,6 @@ fn format_short_code(raw: &str) -> String {
     format!("{}-{}-{}", &raw[0..3], &raw[3..5], &raw[5..6])
 }
 
-fn authorize_pairing_revoke(
-    service: &PairingService,
-    pairing_id: &str,
-    bearer_token: Option<&str>,
-    trusted_local: bool,
-) -> Result<bool> {
-    if trusted_local {
-        return Ok(true);
-    }
-    let Some(token) = bearer_token else {
-        return Ok(false);
-    };
-    let Some(record) = service.resolve_bearer_record(token)? else {
-        return Ok(false);
-    };
-    // Shared-mode root may revoke any seat; others may only revoke themselves.
-    if crate::portal_acl::is_root_portal(&record) {
-        return Ok(true);
-    }
-    Ok(record.pairing_id == pairing_id)
-}
-
 pub fn resolve_peer_name() -> String {
     std::env::var("MEDOUSA_PEER_NAME")
         .ok()
@@ -1186,13 +1173,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn revoke_requires_loopback_or_matching_session_token() {
+    async fn revoke_requires_matching_credential_authority() {
         let service = test_service();
         let (pairing_id, session_token, _) = pair_test_phone(&service, Some("portal")).await;
 
         assert_eq!(
             service
-                .revoke_pairing(&pairing_id, None, false)
+                .revoke_pairing(&pairing_id, RevokePairingAuthority::Unauthenticated)
                 .await
                 .expect("revoke"),
             RevokePairingResult::Unauthorized
@@ -1200,7 +1187,21 @@ mod tests {
 
         assert_eq!(
             service
-                .revoke_pairing(&pairing_id, Some(&session_token), false)
+                .revoke_pairing(
+                    &pairing_id,
+                    RevokePairingAuthority::Credential(&session_token),
+                )
+                .await
+                .expect("revoke"),
+            RevokePairingResult::Unauthorized
+        );
+
+        assert_eq!(
+            service
+                .revoke_pairing(
+                    &pairing_id,
+                    RevokePairingAuthority::Credential(&pairing_id),
+                )
                 .await
                 .expect("revoke"),
             RevokePairingResult::Removed

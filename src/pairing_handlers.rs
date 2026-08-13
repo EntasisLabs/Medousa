@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use axum::extract::{ConnectInfo, Extension, Path, Query, State};
-use axum::http::{HeaderMap, StatusCode, header::AUTHORIZATION};
+use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::{
     Json, Router,
@@ -10,9 +10,10 @@ use axum::{
 use serde::Deserialize;
 
 use crate::pairing::{
-    PairHeartbeatRequest, PairInitRequest, PairVerifyRequest, PairingService, RevokePairingResult,
+    PairHeartbeatRequest, PairInitRequest, PairVerifyRequest, PairingService,
+    RevokePairingAuthority, RevokePairingResult,
 };
-use crate::request_principal::RequestPrincipal;
+use crate::request_principal::{PrincipalKind, RequestPrincipal};
 
 #[derive(Clone)]
 pub struct PairingApiState {
@@ -236,29 +237,20 @@ async fn run_pair_heartbeat(
 
 async fn revoke_pairing(
     State(state): State<PairingApiState>,
-    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-    headers: HeaderMap,
+    Extension(principal): Extension<RequestPrincipal>,
     Path(pairing_id): Path<String>,
 ) -> Result<StatusCode, StatusCode> {
-    let token = bearer_token(&headers);
-    let trusted_local = crate::remote_trust::is_trusted_local(addr.ip(), &headers);
-    match state
-        .service
-        .revoke_pairing(&pairing_id, token, trusted_local)
-        .await
-    {
+    let authority = match principal.kind() {
+        PrincipalKind::LegacyLocal | PrincipalKind::Root => RevokePairingAuthority::Administrator,
+        _ => principal
+            .credential_id()
+            .map(|id| RevokePairingAuthority::Credential(id.as_str()))
+            .unwrap_or(RevokePairingAuthority::Unauthenticated),
+    };
+    match state.service.revoke_pairing(&pairing_id, authority).await {
         Ok(RevokePairingResult::Removed) => Ok(StatusCode::NO_CONTENT),
         Ok(RevokePairingResult::NotFound) => Err(StatusCode::NOT_FOUND),
         Ok(RevokePairingResult::Unauthorized) => Err(StatusCode::UNAUTHORIZED),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
-}
-
-fn bearer_token(headers: &HeaderMap) -> Option<&str> {
-    headers
-        .get(AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
 }
