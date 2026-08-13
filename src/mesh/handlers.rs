@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use axum::extract::{ConnectInfo, Path, Query, State};
-use axum::http::{HeaderMap, StatusCode, header::AUTHORIZATION};
+use axum::extract::{Extension, Path, Query, State};
+use axum::http::StatusCode;
 use axum::routing::{get, patch, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
@@ -17,7 +17,8 @@ use crate::mesh::{
     inbox, record_has_capability, CAP_CLIENT_RENDEZVOUS, CAP_MESH_BUNDLE_PUSH, CAP_MESH_MESSAGE,
     CAP_TASK_REQUEST,
 };
-use crate::pairing::{PairedDeviceRecord, PairingRole, PairingService};
+use crate::pairing::{PairedDeviceRecord, PairingService};
+use crate::request_principal::{Capability, PrincipalKind, RequestPrincipal, TransportClass};
 
 #[derive(Clone)]
 pub struct MeshApiState {
@@ -135,23 +136,21 @@ pub fn mesh_router(state: MeshApiState) -> Router {
 }
 
 async fn list_mesh_peers(
-    State(state): State<MeshApiState>,
-    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-    headers: HeaderMap,
+    State(_state): State<MeshApiState>,
+    Extension(principal): Extension<RequestPrincipal>,
 ) -> Result<Json<MeshPeersResponse>, (StatusCode, String)> {
-    require_local_or_portal(&state, addr.ip(), &headers)?;
+    require_local_or_portal(&principal)?;
     let peers = registry::list_peers().map_err(internal)?;
     Ok(Json(MeshPeersResponse { peers }))
 }
 
 async fn patch_mesh_peer(
     State(state): State<MeshApiState>,
-    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-    headers: HeaderMap,
+    Extension(principal): Extension<RequestPrincipal>,
     Path(device_id): Path<String>,
     Json(body): Json<MeshPeerPatchRequest>,
 ) -> Result<Json<MeshPeerRecord>, (StatusCode, String)> {
-    require_local_or_portal(&state, addr.ip(), &headers)?;
+    require_local_or_portal(&principal)?;
     if registry::get_peer(&device_id)
         .map_err(internal)?
         .is_none()
@@ -180,10 +179,9 @@ async fn patch_mesh_peer(
 
 async fn list_mesh_intro_candidates(
     State(state): State<MeshApiState>,
-    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-    headers: HeaderMap,
+    Extension(principal): Extension<RequestPrincipal>,
 ) -> Result<Json<MeshIntroCandidatesResponse>, (StatusCode, String)> {
-    let caller = require_rendezvous_caller(&state, addr.ip(), &headers)?;
+    let caller = require_rendezvous_caller(&state, &principal)?;
     let pairing = state.pairing.as_ref().ok_or_else(|| {
         (
             StatusCode::SERVICE_UNAVAILABLE,
@@ -203,11 +201,10 @@ async fn list_mesh_intro_candidates(
 
 async fn list_mesh_intros(
     State(state): State<MeshApiState>,
-    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-    headers: HeaderMap,
+    Extension(principal): Extension<RequestPrincipal>,
     Query(query): Query<MeshIntroListQuery>,
 ) -> Result<Json<MeshIntrosResponse>, (StatusCode, String)> {
-    let caller = require_rendezvous_caller(&state, addr.ip(), &headers)?;
+    let caller = require_rendezvous_caller(&state, &principal)?;
     let status = match query.status.as_deref().map(str::trim) {
         None | Some("") | Some("all") => None,
         Some(raw) => Some(MeshIntroStatus::parse(raw).ok_or_else(|| {
@@ -223,11 +220,10 @@ async fn list_mesh_intros(
 
 async fn request_mesh_intro(
     State(state): State<MeshApiState>,
-    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-    headers: HeaderMap,
+    Extension(principal): Extension<RequestPrincipal>,
     Json(body): Json<MeshIntroRequestBody>,
 ) -> Result<Json<MeshIntroRecord>, (StatusCode, String)> {
-    let caller = require_rendezvous_caller(&state, addr.ip(), &headers)?;
+    let caller = require_rendezvous_caller(&state, &principal)?;
     let pairing = state.pairing.as_ref().ok_or_else(|| {
         (
             StatusCode::SERVICE_UNAVAILABLE,
@@ -273,12 +269,11 @@ async fn request_mesh_intro(
 
 async fn accept_mesh_intro(
     State(state): State<MeshApiState>,
-    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-    headers: HeaderMap,
+    Extension(principal): Extension<RequestPrincipal>,
     Path(intro_id): Path<String>,
     Json(body): Json<MeshIntroDecisionBody>,
 ) -> Result<Json<MeshIntroRecord>, (StatusCode, String)> {
-    let caller = require_rendezvous_caller(&state, addr.ip(), &headers)?;
+    let caller = require_rendezvous_caller(&state, &principal)?;
     if let Some(endpoints) = body.endpoints.as_ref() {
         let _ = registry::set_endpoints(&caller.phone_id, endpoints.clone());
     }
@@ -296,11 +291,10 @@ async fn accept_mesh_intro(
 
 async fn decline_mesh_intro(
     State(state): State<MeshApiState>,
-    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-    headers: HeaderMap,
+    Extension(principal): Extension<RequestPrincipal>,
     Path(intro_id): Path<String>,
 ) -> Result<Json<MeshIntroRecord>, (StatusCode, String)> {
-    let caller = require_rendezvous_caller(&state, addr.ip(), &headers)?;
+    let caller = require_rendezvous_caller(&state, &principal)?;
     let intro = intros::decline_intro(&intro_id, &caller.phone_id).map_err(|err| {
         let msg = err.to_string();
         if msg.contains("not found") {
@@ -314,11 +308,10 @@ async fn decline_mesh_intro(
 
 async fn list_mesh_outbox(
     State(_state): State<MeshApiState>,
-    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-    headers: HeaderMap,
+    Extension(principal): Extension<RequestPrincipal>,
     Query(query): Query<MeshOutboxListQuery>,
 ) -> Result<Json<MeshOutboxListResponse>, (StatusCode, String)> {
-    require_trusted_local(addr.ip(), &headers)?;
+    require_trusted_local(&principal)?;
     let status = match query.status.as_deref().map(str::trim) {
         None | Some("") => None,
         Some("pending") => Some(MeshOutboxStatus::Pending),
@@ -338,11 +331,10 @@ async fn list_mesh_outbox(
 
 async fn enqueue_mesh_outbox(
     State(state): State<MeshApiState>,
-    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-    headers: HeaderMap,
+    Extension(principal): Extension<RequestPrincipal>,
     Json(body): Json<MeshOutboxEnqueueRequest>,
 ) -> Result<Json<MeshOutboxItem>, (StatusCode, String)> {
-    require_trusted_local(addr.ip(), &headers)?;
+    require_trusted_local(&principal)?;
     let pairing = state.pairing.as_ref().ok_or_else(|| {
         (
             StatusCode::SERVICE_UNAVAILABLE,
@@ -378,11 +370,10 @@ async fn enqueue_mesh_outbox(
 
 async fn flush_mesh_outbox_item(
     State(state): State<MeshApiState>,
-    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-    headers: HeaderMap,
+    Extension(principal): Extension<RequestPrincipal>,
     Path(item_id): Path<String>,
 ) -> Result<Json<MeshOutboxItem>, (StatusCode, String)> {
-    require_trusted_local(addr.ip(), &headers)?;
+    require_trusted_local(&principal)?;
     let item = outbox::get_outbox_item(&item_id)
         .map_err(internal)?
         .ok_or_else(|| (StatusCode::NOT_FOUND, format!("outbox item not found: {item_id}")))?;
@@ -464,11 +455,10 @@ async fn flush_mesh_outbox_item(
 
 async fn list_mesh_inbox(
     State(_state): State<MeshApiState>,
-    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-    headers: HeaderMap,
+    Extension(principal): Extension<RequestPrincipal>,
     Query(query): Query<MeshLimitQuery>,
 ) -> Result<Json<MeshInboxListResponse>, (StatusCode, String)> {
-    require_trusted_local(addr.ip(), &headers)?;
+    require_trusted_local(&principal)?;
     let limit = query.limit.unwrap_or(100).clamp(1, 500);
     let items = inbox::list_inbox(limit).map_err(internal)?;
     Ok(Json(MeshInboxListResponse { items }))
@@ -476,11 +466,10 @@ async fn list_mesh_inbox(
 
 async fn list_mesh_receipts(
     State(_state): State<MeshApiState>,
-    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-    headers: HeaderMap,
+    Extension(principal): Extension<RequestPrincipal>,
     Query(query): Query<MeshLimitQuery>,
 ) -> Result<Json<MeshReceiptsListResponse>, (StatusCode, String)> {
-    require_trusted_local(addr.ip(), &headers)?;
+    require_trusted_local(&principal)?;
     let limit = query.limit.unwrap_or(100).clamp(1, 500);
     let receipts = receipts::list_receipts(limit).map_err(internal)?;
     Ok(Json(MeshReceiptsListResponse { receipts }))
@@ -488,12 +477,11 @@ async fn list_mesh_receipts(
 
 async fn post_mesh_receipt(
     State(_state): State<MeshApiState>,
-    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-    headers: HeaderMap,
+    Extension(principal): Extension<RequestPrincipal>,
     Json(receipt): Json<MeshReceipt>,
 ) -> Result<Json<MeshReceipt>, (StatusCode, String)> {
-    if !crate::remote_trust::is_trusted_local(addr.ip(), &headers) {
-        let _record = authorize_remote_peer(&_state, &headers)?;
+    if principal.transport() != TransportClass::Loopback {
+        let _record = authorize_remote_peer(&_state, &principal)?;
     }
     receipts::store_received(&receipt).map_err(internal)?;
     // Receipt.sender = remote host that received our delivery; that host is our outbox peer.
@@ -505,11 +493,8 @@ async fn post_mesh_receipt(
     Ok(Json(receipt))
 }
 
-fn require_trusted_local(
-    ip: std::net::IpAddr,
-    headers: &HeaderMap,
-) -> Result<(), (StatusCode, String)> {
-    if crate::remote_trust::is_trusted_local(ip, headers) {
+fn require_trusted_local(principal: &RequestPrincipal) -> Result<(), (StatusCode, String)> {
+    if principal.transport() == TransportClass::Loopback {
         return Ok(());
     }
     Err((
@@ -518,16 +503,13 @@ fn require_trusted_local(
     ))
 }
 
-fn require_local_or_portal(
-    state: &MeshApiState,
-    ip: std::net::IpAddr,
-    headers: &HeaderMap,
-) -> Result<(), (StatusCode, String)> {
-    if crate::remote_trust::is_trusted_local(ip, headers) {
-        return Ok(());
-    }
-    let record = authorize_remote_peer(state, headers)?;
-    if record.role.allows_full_portal() {
+fn require_local_or_portal(principal: &RequestPrincipal) -> Result<(), (StatusCode, String)> {
+    if principal.transport() == TransportClass::Loopback
+        || matches!(
+            principal.kind(),
+            PrincipalKind::Portal | PrincipalKind::Root
+        )
+    {
         return Ok(());
     }
     Err((
@@ -539,11 +521,9 @@ fn require_local_or_portal(
 /// Bearer (or trusted local acting only via bearer) must have `client.rendezvous`.
 fn require_rendezvous_caller(
     state: &MeshApiState,
-    ip: std::net::IpAddr,
-    headers: &HeaderMap,
+    principal: &RequestPrincipal,
 ) -> Result<PairedDeviceRecord, (StatusCode, String)> {
-    let _ = ip;
-    let record = authorize_remote_peer(state, headers)?;
+    let record = authorize_remote_peer(state, principal)?;
     if !record_has_capability(&record, CAP_CLIENT_RENDEZVOUS) {
         return Err((
             StatusCode::FORBIDDEN,
@@ -555,7 +535,7 @@ fn require_rendezvous_caller(
 
 fn authorize_remote_peer(
     state: &MeshApiState,
-    headers: &HeaderMap,
+    principal: &RequestPrincipal,
 ) -> Result<PairedDeviceRecord, (StatusCode, String)> {
     let Some(pairing) = state.pairing.as_ref() else {
         return Err((
@@ -563,45 +543,76 @@ fn authorize_remote_peer(
             "LAN pairing is not enabled on this workshop".to_string(),
         ));
     };
-    let Some(token) = bearer_token(headers) else {
+    if !principal.capabilities().contains(Capability::PeerExchange) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "This credential cannot use mesh surfaces".to_string(),
+        ));
+    }
+    let Some(credential_id) = principal.credential_id() else {
         return Err((
             StatusCode::UNAUTHORIZED,
-            "Bearer session token required".to_string(),
+            "Authenticated pairing required".to_string(),
         ));
     };
     let record = pairing
-        .find_by_session_token(token)
+        .find_by_pairing_id(credential_id.as_str())
         .map_err(internal)?
         .ok_or_else(|| {
             (
                 StatusCode::UNAUTHORIZED,
-                "Invalid or expired session token".to_string(),
+                "Invalid or expired credential".to_string(),
             )
         })?;
-    if record.session_token_expiry < chrono::Utc::now() {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            "Invalid or expired session token".to_string(),
-        ));
-    }
-    if !record.role.allows_peer_surface() && record.role != PairingRole::Portal {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "This pairing cannot use mesh surfaces".to_string(),
-        ));
-    }
     Ok(record)
-}
-
-fn bearer_token(headers: &HeaderMap) -> Option<&str> {
-    headers
-        .get(AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
 }
 
 fn internal(err: impl ToString) -> (StatusCode, String) {
     (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pairing::PairingRole;
+
+    fn remote_principal(role: PairingRole) -> RequestPrincipal {
+        let now = chrono::Utc::now();
+        RequestPrincipal::from_pairing_record(
+            PairedDeviceRecord {
+                pairing_id: "pairing-1".into(),
+                phone_id: "phone-1".into(),
+                phone_name: "Phone".into(),
+                phone_public_key: "key".into(),
+                paired_at: now,
+                last_seen: now,
+                session_token_hash: "hash".into(),
+                session_token_expiry: now,
+                role,
+                profile_id: None,
+                mesh_grants: Vec::new(),
+                apns_device_token: None,
+                push_platform: None,
+                push_updated_at: None,
+                live_activity_push_token: None,
+                live_activity_push_updated_at: None,
+            },
+            TransportClass::Direct,
+            false,
+        )
+    }
+
+    #[test]
+    fn local_only_checks_use_normalized_principal_transport() {
+        assert!(require_trusted_local(&RequestPrincipal::legacy_local()).is_ok());
+        assert!(
+            require_trusted_local(&RequestPrincipal::anonymous(TransportClass::Direct)).is_err()
+        );
+    }
+
+    #[test]
+    fn registry_access_accepts_portal_but_not_peer_principal() {
+        assert!(require_local_or_portal(&remote_principal(PairingRole::Portal)).is_ok());
+        assert!(require_local_or_portal(&remote_principal(PairingRole::Peer)).is_err());
+    }
 }
