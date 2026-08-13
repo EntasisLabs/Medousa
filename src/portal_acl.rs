@@ -78,9 +78,8 @@ fn is_admin_path(method: &Method, path: &str) -> bool {
         return true;
     }
 
-    // Agent permission approvals + recurring schedule admin mutations
-    if path.starts_with("/v1/agents/permission-requests/")
-        || (path == "/v1/recurring/prompt" && method == Method::POST)
+    // Recurring schedule admin mutations
+    if (path == "/v1/recurring/prompt" && method == Method::POST)
         || (path.starts_with("/v1/recurring/")
             && (method == Method::PATCH || method == Method::DELETE || method == Method::POST))
     {
@@ -124,7 +123,7 @@ mod tests {
     use crate::request_principal::TransportClass;
     use chrono::Utc;
 
-    const LEGACY_ADMIN_PATH: &str = "/v1/agents/permission-requests/request-1/approve";
+    const LEGACY_ADMIN_PATH: &str = "/v1/recurring/prompt";
 
     fn record(role: PairingRole, profile_id: Option<&str>) -> PairedDeviceRecord {
         PairedDeviceRecord {
