@@ -637,7 +637,7 @@ async fn main() -> Result<()> {
         };
         Some((
             medousa::pairing_handlers::bootstrap_routes().with_state(pairing_state.clone()),
-            medousa::pairing_handlers::protected_routes().with_state(pairing_state),
+            medousa::pairing_handlers::protected_surface().with_state(pairing_state),
         ))
     } else {
         None
@@ -645,7 +645,7 @@ async fn main() -> Result<()> {
 
     let mut app = build_daemon_router(state.clone(), &dashboard_action_auth);
     let mut bootstrap = build_liveness_router();
-    let mut declared = axum::Router::new();
+    let mut declared = medousa::daemon::route_policy::DeclaredRouter::default();
     if let Some((pairing_bootstrap, pairing_protected)) = pairing_routers {
         bootstrap = bootstrap.merge(pairing_bootstrap);
         declared = declared.merge(pairing_protected);
@@ -662,11 +662,12 @@ async fn main() -> Result<()> {
         local_device_id: peer_message_state.local_device_id.clone(),
     };
     declared = declared
-        .merge(medousa::share_handlers::share_router(share_api_state))
-        .merge(medousa::peer_message_handlers::peer_message_router(
-            peer_message_state,
-        ))
-        .merge(medousa::mesh::mesh_router(mesh_api_state));
+        .merge(medousa::share_handlers::share_surface().with_state(share_api_state))
+        .merge(
+            medousa::peer_message_handlers::peer_message_surface()
+                .with_state(peer_message_state),
+        )
+        .merge(medousa::mesh::handlers::mesh_surface().with_state(mesh_api_state));
     app = medousa::peer_scope::assemble_daemon_access_boundary_with_declared(
         app,
         declared,

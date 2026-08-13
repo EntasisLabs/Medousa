@@ -149,6 +149,24 @@ where
         &self.inventory
     }
 
+    pub fn merge(mut self, other: Self) -> Self {
+        self.inventory
+            .extend(&other.inventory)
+            .expect("duplicate declared route policy");
+        self.router = self.router.merge(other.router);
+        self
+    }
+
+    pub fn with_state<S2>(self, state: S) -> DeclaredRouter<S2>
+    where
+        S2: Clone + Send + Sync + 'static,
+    {
+        DeclaredRouter {
+            router: self.router.with_state(state),
+            inventory: self.inventory,
+        }
+    }
+
     pub fn into_router(self) -> Router<S> {
         self.router
     }

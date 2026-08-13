@@ -11,6 +11,7 @@ use axum::http::{HeaderValue, Request, StatusCode};
 use axum::middleware::Next;
 use axum::response::Response;
 
+use crate::daemon::route_policy::DeclaredRouter;
 use crate::pairing::PairingService;
 use crate::portal_acl::{PortalAclDecision, authorize_request};
 use crate::remote_trust::is_trusted_local;
@@ -91,7 +92,12 @@ pub fn assemble_daemon_access_boundary(
     bootstrap: Router,
     state: DaemonAccessState,
 ) -> Router {
-    assemble_daemon_access_boundary_with_declared(protected, Router::new(), bootstrap, state)
+    assemble_daemon_access_boundary_with_declared(
+        protected,
+        DeclaredRouter::default(),
+        bootstrap,
+        state,
+    )
 }
 
 /// Assemble legacy protected, declared-policy, and bootstrap authority branches.
@@ -99,7 +105,7 @@ pub fn assemble_daemon_access_boundary(
 /// layer; they never consult the transitional string classifier.
 pub fn assemble_daemon_access_boundary_with_declared(
     protected: Router,
-    declared: Router,
+    declared: DeclaredRouter,
     bootstrap: Router,
     state: DaemonAccessState,
 ) -> Router {
@@ -107,10 +113,12 @@ pub fn assemble_daemon_access_boundary_with_declared(
         state.for_surface(AccessSurface::Protected),
         enforce_daemon_access,
     ));
-    let declared = declared.layer(axum::middleware::from_fn_with_state(
-        state.for_surface(AccessSurface::Declared),
-        enforce_daemon_access,
-    ));
+    let declared = declared
+        .into_router()
+        .layer(axum::middleware::from_fn_with_state(
+            state.for_surface(AccessSurface::Declared),
+            enforce_daemon_access,
+        ));
     let bootstrap = bootstrap.layer(axum::middleware::from_fn_with_state(
         state.for_surface(AccessSurface::Bootstrap),
         enforce_daemon_access,
@@ -439,21 +447,19 @@ mod tests {
 
     #[tokio::test]
     async fn declared_branch_uses_method_policy_not_legacy_path_classification() {
-        let declared = DeclaredRouter::default()
-            .route(
-                RoutePolicy {
-                    method: axum::http::Method::GET,
-                    path: "/health",
-                    group: RouteGroup::Portal,
-                    required_capability: Some(Capability::WorkshopRead),
-                    bootstrap_public: false,
-                    browser_policy: BrowserPolicy::NativeOnly,
-                    body_limit: 1024,
-                    rate_limit_class: RateLimitClass::Read,
-                },
-                get(|| async { StatusCode::NO_CONTENT }),
-            )
-            .into_router();
+        let declared = DeclaredRouter::default().route(
+            RoutePolicy {
+                method: axum::http::Method::GET,
+                path: "/health",
+                group: RouteGroup::Portal,
+                required_capability: Some(Capability::WorkshopRead),
+                bootstrap_public: false,
+                browser_policy: BrowserPolicy::NativeOnly,
+                body_limit: 1024,
+                rate_limit_class: RateLimitClass::Read,
+            },
+            get(|| async { StatusCode::NO_CONTENT }),
+        );
         let app = assemble_daemon_access_boundary_with_declared(
             Router::new(),
             declared,
