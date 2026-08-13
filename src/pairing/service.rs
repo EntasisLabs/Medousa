@@ -1041,6 +1041,49 @@ mod tests {
         ))
     }
 
+    async fn pair_test_phone(
+        service: &PairingService,
+        role: Option<&str>,
+    ) -> (String, String, String) {
+        let qr = service.current_qr().await.expect("qr");
+        let token = extract_query_param(&qr.url, "t").expect("token");
+        let phone = SigningKey::generate(&mut OsRng);
+        let phone_id = format!("phone-test-{}", Uuid::new_v4());
+        let init = service
+            .pair_init(
+                PairInitRequest {
+                    qr_token: Some(token),
+                    short_code: None,
+                    phone_id: phone_id.clone(),
+                    phone_name: "Test Phone".to_string(),
+                    public_key: verifying_key_to_b64(&phone.verifying_key()),
+                    role: role.map(str::to_string),
+                },
+                "127.0.0.1",
+            )
+            .await
+            .expect("init");
+        assert_eq!(init.status, "challenge");
+        let signed_nonce =
+            sign_message(&phone, init.server_nonce.as_deref().expect("server nonce"));
+        let mut phone_nonce = [0u8; 32];
+        OsRng.fill_bytes(&mut phone_nonce);
+        let verify = service
+            .pair_verify(PairVerifyRequest {
+                session_id: init.session_id.expect("session"),
+                signed_nonce,
+                phone_nonce: base64url_encode(&phone_nonce),
+            })
+            .await
+            .expect("verify");
+        assert_eq!(verify.status, "paired");
+        (
+            verify.pairing_id.expect("pairing"),
+            verify.session_token.expect("session token"),
+            phone_id,
+        )
+    }
+
     #[tokio::test]
     async fn qr_url_contains_device_id() {
         let service = test_service();
@@ -1099,76 +1142,40 @@ mod tests {
     #[tokio::test]
     async fn full_pairing_handshake() {
         let service = test_service();
-        let qr = service.current_qr().await.expect("qr");
-        let token = extract_query_param(&qr.url, "t").expect("token");
-        let phone = SigningKey::generate(&mut OsRng);
-        let init = service
-            .pair_init(
-                PairInitRequest {
-                    qr_token: Some(token),
-                    short_code: None,
-                    phone_id: "phone0002".to_string(),
-                    phone_name: "Phone B".to_string(),
-                    public_key: verifying_key_to_b64(&phone.verifying_key()),
-                    role: None,
-                },
-                "127.0.0.1",
-            )
-            .await
-            .expect("init");
-        assert_eq!(init.status, "challenge");
-        let session_id = init.session_id.expect("session");
-        let server_nonce = init.server_nonce.expect("nonce");
-        let signed_nonce = sign_message(&phone, &server_nonce);
-        let mut phone_nonce = [0u8; 32];
-        OsRng.fill_bytes(&mut phone_nonce);
-        let verify = service
-            .pair_verify(PairVerifyRequest {
-                session_id,
-                signed_nonce,
-                phone_nonce: base64url_encode(&phone_nonce),
-            })
-            .await
-            .expect("verify");
-        assert_eq!(verify.status, "paired");
-        assert!(verify.session_token.is_some());
+        let (_, session_token, phone_id) = pair_test_phone(&service, None).await;
+        assert!(
+            service
+                .resolve_bearer_record(&session_token)
+                .unwrap()
+                .is_some()
+        );
+        service.store.delete_record(&phone_id).expect("cleanup");
+    }
+
+    #[tokio::test]
+    async fn expired_session_token_is_rejected() {
+        let service = test_service();
+        let (_, session_token, phone_id) = pair_test_phone(&service, None).await;
+        let mut record = service
+            .find_by_phone_id(&phone_id)
+            .expect("read pairing")
+            .expect("pairing record");
+        record.session_token_expiry = Utc::now() - chrono::Duration::seconds(1);
+        service.store.save_record(&record).expect("expire pairing");
+
+        assert!(
+            service
+                .resolve_bearer_record(&session_token)
+                .unwrap()
+                .is_none()
+        );
+        service.store.delete_record(&phone_id).expect("cleanup");
     }
 
     #[tokio::test]
     async fn revoke_requires_loopback_or_matching_session_token() {
         let service = test_service();
-        let qr = service.current_qr().await.expect("qr");
-        let token = extract_query_param(&qr.url, "t").expect("token");
-        let phone = SigningKey::generate(&mut OsRng);
-        let init = service
-            .pair_init(
-                PairInitRequest {
-                    qr_token: Some(token),
-                    short_code: None,
-                    phone_id: "phone-revoke".to_string(),
-                    phone_name: "Phone R".to_string(),
-                    public_key: verifying_key_to_b64(&phone.verifying_key()),
-                    role: Some("portal".to_string()),
-                },
-                "127.0.0.1",
-            )
-            .await
-            .expect("init");
-        let session_id = init.session_id.expect("session");
-        let server_nonce = init.server_nonce.expect("nonce");
-        let signed_nonce = sign_message(&phone, &server_nonce);
-        let mut phone_nonce = [0u8; 32];
-        OsRng.fill_bytes(&mut phone_nonce);
-        let verify = service
-            .pair_verify(PairVerifyRequest {
-                session_id,
-                signed_nonce,
-                phone_nonce: base64url_encode(&phone_nonce),
-            })
-            .await
-            .expect("verify");
-        let pairing_id = verify.pairing_id.expect("pairing");
-        let session_token = verify.session_token.expect("token");
+        let (pairing_id, session_token, _) = pair_test_phone(&service, Some("portal")).await;
 
         assert_eq!(
             service
@@ -1184,6 +1191,12 @@ mod tests {
                 .await
                 .expect("revoke"),
             RevokePairingResult::Removed
+        );
+        assert!(
+            service
+                .resolve_bearer_record(&session_token)
+                .unwrap()
+                .is_none()
         );
     }
 
