@@ -95,6 +95,22 @@ pub fn recurring_surface() -> DeclaredRouter<AppState> {
         )
 }
 
+pub fn workspace_retry_surface() -> DeclaredRouter<AppState> {
+    DeclaredRouter::default().route(
+        RoutePolicy {
+            method: axum::http::Method::POST,
+            path: "/v1/workspace/cards/{card_id}/retry",
+            group: RouteGroup::Administration,
+            required_capability: Some(crate::request_principal::Capability::AdminRuntime),
+            bootstrap_public: false,
+            browser_policy: BrowserPolicy::NativeOnly,
+            body_limit: 1024,
+            rate_limit_class: RateLimitClass::Administration,
+        },
+        post(retry_workspace_card),
+    )
+}
+
 fn recurring_read_policy(path: &'static str) -> RoutePolicy {
     RoutePolicy {
         method: axum::http::Method::GET,
@@ -1212,5 +1228,16 @@ mod tests {
                 .count(),
             3
         );
+    }
+
+    #[test]
+    fn workspace_retry_inventory_requires_runtime_administration() {
+        let entries = workspace_retry_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].required_capability, Some("admin.runtime"));
+        assert_eq!(entries[0].body_limit, 1024);
     }
 }

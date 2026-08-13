@@ -94,6 +94,12 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::daemon::jobs::recurring_surface().inventory())
         .expect("duplicate recurring route policy");
     inventory
+        .extend(crate::workspace_handlers::workspace_surface().inventory())
+        .expect("duplicate workspace route policy");
+    inventory
+        .extend(crate::daemon::jobs::workspace_retry_surface().inventory())
+        .expect("duplicate workspace retry route policy");
+    inventory
 }
 
 pub fn build_identity_surface() -> DeclaredRouter<AppState> {
@@ -503,48 +509,6 @@ pub fn build_feature_routers(
             axum::routing::get(crate::calendar_handlers::export_calendar),
         );
 
-    let workspace_router = Router::new()
-        .route(
-            "/v1/workspace/cards",
-            axum::routing::get(crate::workspace_handlers::list_workspace_cards),
-        )
-        .route(
-            "/v1/workspace/cards/{card_id}",
-            axum::routing::get(crate::workspace_handlers::get_workspace_card),
-        )
-        .route(
-            "/v1/workspace/cards/{card_id}/cancel",
-            axum::routing::post(crate::workspace_handlers::cancel_workspace_card),
-        )
-        .route(
-            "/v1/workspace/cards/{card_id}/archive",
-            axum::routing::post(crate::workspace_handlers::archive_workspace_card),
-        )
-        .route(
-            "/v1/workspace/cards/{card_id}/link-vault",
-            axum::routing::post(crate::workspace_handlers::link_workspace_card_vault),
-        )
-        .route(
-            "/v1/workspace/feed",
-            axum::routing::get(crate::workspace_handlers::list_workspace_feed),
-        )
-        .route(
-            "/v1/workspace/snapshot",
-            axum::routing::get(crate::workspace_handlers::get_workspace_snapshot),
-        )
-        .route(
-            "/v1/workspace/rebuild",
-            axum::routing::post(crate::workspace_handlers::rebuild_workspace),
-        )
-        .route(
-            "/v1/workspace/stream",
-            axum::routing::get(crate::workspace_handlers::workspace_stream),
-        )
-        .with_state(crate::workspace_handlers::WorkspaceHandlerState {
-            composition: Arc::new(state.composition().clone()),
-            worker_id: state.worker_id.clone(),
-        });
-
     let budget_router = Router::new()
         .route(
             "/v1/turns/budget-requests",
@@ -584,7 +548,6 @@ pub fn build_feature_routers(
             state.platform.agent_handle().semantic_index.clone(),
             state.platform.agent_handle().memory_reader.clone(),
         ))
-        .merge(workspace_router)
         .merge(crate::daemon::forge_api::forge_router(state.clone()))
         .merge(crate::daemon::forge_preview::forge_preview_router(
             state.clone(),
@@ -645,7 +608,7 @@ pub fn build_core_router(state: AppState) -> Router {
     };
     use crate::daemon::jobs::{
         archive_ask_job, complete_ask_job_actions, enqueue_ask, enqueue_prompt, enqueue_report,
-        get_job_report, get_job_result, retry_workspace_card,
+        get_job_report, get_job_result,
     };
     Router::new()
         .route("/v1/health", get(health))
@@ -791,10 +754,6 @@ pub fn build_core_router(state: AppState) -> Router {
             "/v1/jobs/{job_id}/replay-and-resume",
             post(replay_and_resume_job),
         )
-        .route(
-            "/v1/workspace/cards/{card_id}/retry",
-            post(retry_workspace_card),
-        )
         .merge(crate::browser_handlers::browser_router())
         .with_state(state)
 }
@@ -884,12 +843,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 101);
-        assert_eq!(with_pairing.entries().len(), 113);
+        assert_eq!(without_pairing.entries().len(), 111);
+        assert_eq!(with_pairing.entries().len(), 123);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 113);
+        assert_eq!(rows.len(), 123);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"

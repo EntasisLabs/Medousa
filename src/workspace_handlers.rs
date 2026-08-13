@@ -7,23 +7,134 @@ use std::time::Duration;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::sse::{Event, KeepAlive, Sse};
+use axum::routing::{get, post};
 use axum::Json;
 use futures_util::stream::{self, Stream};
 use stasis::application::runtime::runtime_factory::RuntimeComposition;
 
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
 use crate::daemon_api::{
     WorkCardDetail, WorkspaceCardActionResponse, WorkspaceCardsQuery, WorkspaceCardsResponse,
     WorkspaceFeedQuery, WorkspaceFeedResponse, WorkspaceLinkVaultRequest, WorkspaceRebuildResponse,
     WorkspaceSnapshot, WorkspaceSnapshotQuery, WorkspaceStreamQuery,
 };
 use crate::workspace::WorkspaceService;
-use crate::workspace::actions::{archive_card, cancel_card, link_vault_card, retry_card, CardActionError};
+use crate::workspace::actions::{archive_card, cancel_card, link_vault_card, CardActionError};
 use crate::workspace::feed::spawn_workspace_stream;
 
 #[derive(Clone)]
 pub struct WorkspaceHandlerState {
     pub composition: Arc<RuntimeComposition>,
-    pub worker_id: String,
+}
+
+pub fn workspace_surface() -> DeclaredRouter<WorkspaceHandlerState> {
+    DeclaredRouter::default()
+        .route(
+            workspace_read_policy("/v1/workspace/cards"),
+            get(list_workspace_cards),
+        )
+        .route(
+            workspace_read_policy("/v1/workspace/cards/{card_id}"),
+            get(get_workspace_card),
+        )
+        .route(
+            workspace_write_policy(
+                "/v1/workspace/cards/{card_id}/cancel",
+                1024,
+            ),
+            post(cancel_workspace_card),
+        )
+        .route(
+            workspace_write_policy(
+                "/v1/workspace/cards/{card_id}/archive",
+                16 * 1024,
+            ),
+            post(archive_workspace_card),
+        )
+        .route(
+            workspace_write_policy(
+                "/v1/workspace/cards/{card_id}/link-vault",
+                64 * 1024,
+            ),
+            post(link_workspace_card_vault),
+        )
+        .route(
+            workspace_read_policy("/v1/workspace/feed"),
+            get(list_workspace_feed),
+        )
+        .route(
+            workspace_read_policy("/v1/workspace/snapshot"),
+            get(get_workspace_snapshot),
+        )
+        .route(
+            workspace_admin_policy("/v1/workspace/rebuild"),
+            post(rebuild_workspace),
+        )
+        .route(
+            workspace_stream_policy("/v1/workspace/stream"),
+            get(workspace_stream),
+        )
+}
+
+fn workspace_read_policy(path: &'static str) -> RoutePolicy {
+    workspace_policy(
+        axum::http::Method::GET,
+        path,
+        crate::request_principal::Capability::WorkshopRead,
+        1024,
+        RateLimitClass::Read,
+    )
+}
+
+fn workspace_write_policy(path: &'static str, body_limit: usize) -> RoutePolicy {
+    workspace_policy(
+        axum::http::Method::POST,
+        path,
+        crate::request_principal::Capability::WorkspaceWrite,
+        body_limit,
+        RateLimitClass::Mutation,
+    )
+}
+
+fn workspace_admin_policy(path: &'static str) -> RoutePolicy {
+    RoutePolicy {
+        method: axum::http::Method::POST,
+        path,
+        group: RouteGroup::Administration,
+        required_capability: Some(crate::request_principal::Capability::AdminRuntime),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit: 1024,
+        rate_limit_class: RateLimitClass::Administration,
+    }
+}
+
+fn workspace_stream_policy(path: &'static str) -> RoutePolicy {
+    RoutePolicy {
+        rate_limit_class: RateLimitClass::Stream,
+        ..workspace_read_policy(path)
+    }
+}
+
+fn workspace_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    required_capability: crate::request_principal::Capability,
+    body_limit: usize,
+    rate_limit_class: RateLimitClass,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Portal,
+        required_capability: Some(required_capability),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class,
+    }
 }
 
 fn map_card_action_error(err: CardActionError) -> (StatusCode, String) {
@@ -110,16 +221,6 @@ pub async fn archive_workspace_card(
         .map_err(map_card_action_error)
 }
 
-pub async fn retry_workspace_card(
-    State(state): State<WorkspaceHandlerState>,
-    Path(card_id): Path<String>,
-) -> Result<Json<WorkspaceCardActionResponse>, (StatusCode, String)> {
-    retry_card(state.composition, &card_id, &state.worker_id)
-        .await
-        .map(Json)
-        .map_err(map_card_action_error)
-}
-
 pub async fn link_workspace_card_vault(
     State(state): State<WorkspaceHandlerState>,
     Path(card_id): Path<String>,
@@ -168,4 +269,46 @@ pub async fn workspace_stream(
             "keep-alive",
         )),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn workspace_inventory_separates_reads_writes_streams_and_host_ops() {
+        let entries = workspace_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 9);
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("workshop.read"))
+                .count(),
+            5
+        );
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("workspace.write"))
+                .count(),
+            3
+        );
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("admin.runtime"))
+                .count(),
+            1
+        );
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.rate_limit_class == RateLimitClass::Stream)
+                .count(),
+            1
+        );
+    }
 }

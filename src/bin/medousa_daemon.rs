@@ -650,6 +650,7 @@ async fn main() -> Result<()> {
         .merge(medousa::daemon::runtime_tui_defaults::surface())
         .merge(medousa::inference_profiles_handlers::surface())
         .merge(medousa::daemon::jobs::recurring_surface())
+        .merge(medousa::daemon::jobs::workspace_retry_surface())
         .with_state(state.clone());
     if let Some((pairing_bootstrap, pairing_protected)) = pairing_routers {
         bootstrap = bootstrap.merge(pairing_bootstrap);
@@ -668,6 +669,13 @@ async fn main() -> Result<()> {
         local_device_id: peer_message_state.local_device_id.clone(),
     };
     declared = declared
+        .merge(
+            medousa::workspace_handlers::workspace_surface().with_state(
+                medousa::workspace_handlers::WorkspaceHandlerState {
+                    composition: std::sync::Arc::new(state.composition().clone()),
+                },
+            ),
+        )
         .merge(medousa::daemon::agents::permission_surface())
         .merge(medousa::vault_handlers::vault_surface())
         .merge(
