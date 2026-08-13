@@ -100,6 +100,9 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::daemon::jobs::workspace_retry_surface().inventory())
         .expect("duplicate workspace retry route policy");
     inventory
+        .extend(build_workshop_surface().inventory())
+        .expect("duplicate workshop route policy");
+    inventory
 }
 
 pub fn build_identity_surface() -> DeclaredRouter<AppState> {
@@ -590,17 +593,10 @@ fn find_arg_value<'a>(args: &'a [String], key: &str) -> Option<&'a str> {
         .map(String::as_str)
 }
 
-/// Core daemon API routes (health, jobs, sessions, interactive, identity, ingest, continuations).
-pub fn build_core_router(state: AppState) -> Router {
+pub fn build_workshop_surface() -> DeclaredRouter<AppState> {
     use axum::routing::{delete, get, post, put};
 
-    use crate::daemon::continuations::{
-        continuation_lineage, continuation_status, replay_and_resume_job,
-    };
     use crate::daemon::core::{health, heartbeat_status, stats};
-    use crate::daemon::ingest::{
-        deliver_outbox_webhook, deliver_poll, delivery_status, ingest_handler, ingest_stream,
-    };
     use crate::daemon::interactive::{
         cancel_active_session_turn, create_turn_ticket, delete_session_handler,
         get_active_session_turn, get_turn_ticket, interactive_turn_stream, list_session_turns,
@@ -610,83 +606,327 @@ pub fn build_core_router(state: AppState) -> Router {
         archive_ask_job, complete_ask_job_actions, enqueue_ask, enqueue_prompt, enqueue_report,
         get_job_report, get_job_result,
     };
-    Router::new()
-        .route("/v1/health", get(health))
-        .route("/v1/stats", get(stats))
+    use crate::request_principal::Capability;
+
+    DeclaredRouter::default()
+        .route(workshop_read_policy("/v1/health"), get(health))
+        .route(workshop_read_policy("/v1/stats"), get(stats))
         .route(
-            "/v1/agent-modes",
+            workshop_read_policy("/v1/agent-modes"),
             get(crate::daemon_handlers::list_agent_modes),
         )
+        .methods([
+            (
+                workshop_read_policy("/v1/agent-modes/policy"),
+                get(crate::daemon_handlers::get_agent_mode_transition_policy),
+            ),
+            (
+                workshop_admin_policy(axum::http::Method::PUT, "/v1/agent-modes/policy", 64 * 1024),
+                put(crate::daemon_handlers::set_agent_mode_transition_policy),
+            ),
+        ])
+        .methods([
+            (
+                workshop_read_policy("/v1/sessions"),
+                get(crate::daemon_handlers::list_session_history),
+            ),
+            (
+                workshop_mutation_policy(
+                    axum::http::Method::POST,
+                    "/v1/sessions",
+                    Capability::WorkshopInteract,
+                    256 * 1024,
+                ),
+                post(crate::daemon_handlers::create_session),
+            ),
+        ])
         .route(
-            "/v1/agent-modes/policy",
-            get(crate::daemon_handlers::get_agent_mode_transition_policy)
-                .put(crate::daemon_handlers::set_agent_mode_transition_policy),
-        )
-        .route(
-            "/v1/sessions",
-            get(crate::daemon_handlers::list_session_history)
-                .post(crate::daemon_handlers::create_session),
-        )
-        .route(
-            "/v1/sessions/{session_id}/history",
+            workshop_read_policy("/v1/sessions/{session_id}/history"),
             get(crate::daemon_handlers::get_session_history),
         )
+        .methods([
+            (
+                workshop_read_policy("/v1/sessions/{session_id}/turns"),
+                get(list_session_turns),
+            ),
+            (
+                workshop_mutation_policy(
+                    axum::http::Method::POST,
+                    "/v1/sessions/{session_id}/turns",
+                    Capability::WorkshopInteract,
+                    1024 * 1024,
+                ),
+                post(crate::daemon_handlers::append_session_turn),
+            ),
+        ])
         .route(
-            "/v1/sessions/{session_id}/turns",
-            post(crate::daemon_handlers::append_session_turn),
-        )
-        .route(
-            "/v1/sessions/{session_id}/name",
+            workshop_mutation_policy(
+                axum::http::Method::PUT,
+                "/v1/sessions/{session_id}/name",
+                Capability::WorkshopInteract,
+                64 * 1024,
+            ),
             put(crate::daemon_handlers::set_session_display_name),
         )
+        .methods([
+            (
+                workshop_read_policy("/v1/sessions/{session_id}/agent-mode"),
+                get(crate::daemon_handlers::get_session_agent_mode),
+            ),
+            (
+                workshop_mutation_policy(
+                    axum::http::Method::PUT,
+                    "/v1/sessions/{session_id}/agent-mode",
+                    Capability::WorkshopInteract,
+                    64 * 1024,
+                ),
+                put(crate::daemon_handlers::set_session_agent_mode),
+            ),
+            (
+                workshop_mutation_policy(
+                    axum::http::Method::DELETE,
+                    "/v1/sessions/{session_id}/agent-mode",
+                    Capability::WorkshopInteract,
+                    1024,
+                ),
+                delete(crate::daemon_handlers::clear_session_agent_mode),
+            ),
+        ])
         .route(
-            "/v1/sessions/{session_id}/agent-mode",
-            get(crate::daemon_handlers::get_session_agent_mode)
-                .put(crate::daemon_handlers::set_session_agent_mode)
-                .delete(crate::daemon_handlers::clear_session_agent_mode),
-        )
-        .route(
-            "/v1/sessions/{session_id}/agent-mode/proposals",
+            workshop_read_policy("/v1/sessions/{session_id}/agent-mode/proposals"),
             get(crate::daemon_handlers::list_session_agent_mode_proposals),
         )
         .route(
-            "/v1/sessions/{session_id}/agent-mode/proposals/{proposal_id}",
+            workshop_mutation_policy(
+                axum::http::Method::PUT,
+                "/v1/sessions/{session_id}/agent-mode/proposals/{proposal_id}",
+                Capability::WorkshopInteract,
+                64 * 1024,
+            ),
             put(crate::daemon_handlers::decide_session_agent_mode_proposal),
         )
+        .methods([
+            (
+                workshop_read_policy("/v1/sessions/{session_id}/code-binding"),
+                get(crate::daemon_handlers::get_session_code_binding),
+            ),
+            (
+                workshop_mutation_policy(
+                    axum::http::Method::PUT,
+                    "/v1/sessions/{session_id}/code-binding",
+                    Capability::WorkspaceWrite,
+                    64 * 1024,
+                ),
+                put(crate::daemon_handlers::set_session_code_binding),
+            ),
+            (
+                workshop_mutation_policy(
+                    axum::http::Method::DELETE,
+                    "/v1/sessions/{session_id}/code-binding",
+                    Capability::WorkspaceWrite,
+                    1024,
+                ),
+                delete(crate::daemon_handlers::clear_session_code_binding),
+            ),
+        ])
         .route(
-            "/v1/sessions/{session_id}/code-binding",
-            get(crate::daemon_handlers::get_session_code_binding)
-                .put(crate::daemon_handlers::set_session_code_binding)
-                .delete(crate::daemon_handlers::clear_session_code_binding),
+            workshop_mutation_policy(
+                axum::http::Method::DELETE,
+                "/v1/sessions/{session_id}",
+                Capability::WorkshopInteract,
+                1024,
+            ),
+            delete(delete_session_handler),
         )
-        .route("/v1/sessions/{session_id}", delete(delete_session_handler))
+        .methods([
+            (
+                workshop_read_policy("/v1/sessions/{session_id}/active-turn"),
+                get(get_active_session_turn),
+            ),
+            (
+                workshop_mutation_policy(
+                    axum::http::Method::POST,
+                    "/v1/sessions/{session_id}/active-turn",
+                    Capability::WorkshopInteract,
+                    16 * 1024,
+                ),
+                post(cancel_active_session_turn),
+            ),
+        ])
         .route(
-            "/v1/sessions/{session_id}/active-turn",
-            get(get_active_session_turn).post(cancel_active_session_turn),
-        )
-        .route(
-            "/v1/sessions/{session_id}/workshop/steer",
+            workshop_mutation_policy(
+                axum::http::Method::POST,
+                "/v1/sessions/{session_id}/workshop/steer",
+                Capability::WorkshopInteract,
+                256 * 1024,
+            ),
             post(crate::daemon::workshop_steer::steer_bound_workshop_handler),
         )
-        .route("/v1/sessions/{session_id}/turns", get(list_session_turns))
-        .route("/v1/turns", post(create_turn_ticket))
-        .route("/v1/turns/{turn_id}", get(get_turn_ticket))
-        .route("/v1/heartbeat/status", get(heartbeat_status))
-        .route("/v1/jobs/{job_id}/result", get(get_job_result))
-        .route("/v1/jobs/{job_id}/report", get(get_job_report))
         .route(
-            "/v1/jobs/{job_id}/complete-actions",
+            workshop_mutation_policy(
+                axum::http::Method::POST,
+                "/v1/turns",
+                Capability::WorkshopInteract,
+                1024 * 1024,
+            ),
+            post(create_turn_ticket),
+        )
+        .route(
+            workshop_read_policy("/v1/turns/{turn_id}"),
+            get(get_turn_ticket),
+        )
+        .route(
+            workshop_read_policy("/v1/heartbeat/status"),
+            get(heartbeat_status),
+        )
+        .route(
+            workshop_read_policy("/v1/jobs/{job_id}/result"),
+            get(get_job_result),
+        )
+        .route(
+            workshop_read_policy("/v1/jobs/{job_id}/report"),
+            get(get_job_report),
+        )
+        .route(
+            workshop_mutation_policy(
+                axum::http::Method::POST,
+                "/v1/jobs/{job_id}/complete-actions",
+                Capability::WorkshopInteract,
+                256 * 1024,
+            ),
             post(complete_ask_job_actions),
         )
-        .route("/v1/jobs/{job_id}/archive", post(archive_ask_job))
-        .route("/v1/jobs/ask", post(enqueue_ask))
-        .route("/v1/jobs/report", post(enqueue_report))
-        .route("/v1/jobs/prompt", post(enqueue_prompt))
-        .route("/v1/interactive/turn", post(start_interactive_turn))
         .route(
-            "/v1/interactive/turn/{turn_id}/stream",
+            workshop_mutation_policy(
+                axum::http::Method::POST,
+                "/v1/jobs/{job_id}/archive",
+                Capability::WorkshopInteract,
+                16 * 1024,
+            ),
+            post(archive_ask_job),
+        )
+        .route(
+            workshop_mutation_policy(
+                axum::http::Method::POST,
+                "/v1/jobs/ask",
+                Capability::WorkshopInteract,
+                1024 * 1024,
+            ),
+            post(enqueue_ask),
+        )
+        .route(
+            workshop_mutation_policy(
+                axum::http::Method::POST,
+                "/v1/jobs/report",
+                Capability::WorkshopInteract,
+                1024 * 1024,
+            ),
+            post(enqueue_report),
+        )
+        .route(
+            workshop_mutation_policy(
+                axum::http::Method::POST,
+                "/v1/jobs/prompt",
+                Capability::WorkshopInteract,
+                1024 * 1024,
+            ),
+            post(enqueue_prompt),
+        )
+        .route(
+            workshop_mutation_policy(
+                axum::http::Method::POST,
+                "/v1/interactive/turn",
+                Capability::WorkshopInteract,
+                1024 * 1024,
+            ),
+            post(start_interactive_turn),
+        )
+        .route(
+            workshop_stream_policy("/v1/interactive/turn/{turn_id}/stream"),
             get(interactive_turn_stream),
         )
+}
+
+fn workshop_read_policy(path: &'static str) -> RoutePolicy {
+    workshop_policy(
+        axum::http::Method::GET,
+        path,
+        crate::request_principal::Capability::WorkshopRead,
+        1024,
+        RateLimitClass::Read,
+    )
+}
+
+fn workshop_stream_policy(path: &'static str) -> RoutePolicy {
+    RoutePolicy {
+        rate_limit_class: RateLimitClass::Stream,
+        ..workshop_read_policy(path)
+    }
+}
+
+fn workshop_mutation_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    capability: crate::request_principal::Capability,
+    body_limit: usize,
+) -> RoutePolicy {
+    workshop_policy(
+        method,
+        path,
+        capability,
+        body_limit,
+        RateLimitClass::Mutation,
+    )
+}
+
+fn workshop_admin_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    body_limit: usize,
+) -> RoutePolicy {
+    RoutePolicy {
+        group: RouteGroup::Administration,
+        rate_limit_class: RateLimitClass::Administration,
+        ..workshop_policy(
+            method,
+            path,
+            crate::request_principal::Capability::AdminRuntime,
+            body_limit,
+            RateLimitClass::Administration,
+        )
+    }
+}
+
+fn workshop_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    required_capability: crate::request_principal::Capability,
+    body_limit: usize,
+    rate_limit_class: RateLimitClass,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Portal,
+        required_capability: Some(required_capability),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class,
+    }
+}
+
+/// Core daemon API routes (health, jobs, sessions, interactive, identity, ingest, continuations).
+pub fn build_core_router(state: AppState) -> Router {
+    use axum::routing::{get, post};
+
+    use crate::daemon::continuations::{
+        continuation_lineage, continuation_status, replay_and_resume_job,
+    };
+    use crate::daemon::ingest::{
+        deliver_outbox_webhook, deliver_poll, delivery_status, ingest_handler, ingest_stream,
+    };
+    Router::new()
         .route(
             "/v1/agents/runtimes",
             get(crate::daemon::agents::list_agent_runtimes),
@@ -780,7 +1020,7 @@ mod tests {
     use super::{
         LIVENESS_BODY, RateLimitClass, RouteGroup, build_declared_route_inventory,
         build_identity_surface, build_liveness_router, build_liveness_surface,
-        build_runtime_admin_surface,
+        build_runtime_admin_surface, build_workshop_surface,
     };
 
     #[tokio::test]
@@ -843,12 +1083,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 111);
-        assert_eq!(with_pairing.entries().len(), 123);
+        assert_eq!(without_pairing.entries().len(), 146);
+        assert_eq!(with_pairing.entries().len(), 158);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 123);
+        assert_eq!(rows.len(), 158);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"
@@ -902,5 +1142,42 @@ mod tests {
                 && entry.required_capability == Some("admin.runtime")
                 && entry.rate_limit_class == RateLimitClass::Administration
         }));
+    }
+
+    #[test]
+    fn workshop_inventory_separates_read_interaction_workspace_and_admin() {
+        let entries = build_workshop_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 35);
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("workshop.read"))
+                .count(),
+            16
+        );
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("workshop.interact"))
+                .count(),
+            16
+        );
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("workspace.write"))
+                .count(),
+            2
+        );
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("admin.runtime"))
+                .count(),
+            1
+        );
     }
 }
