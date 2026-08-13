@@ -17,8 +17,6 @@ pub enum PortalPathClass {
     Public,
     /// Bound Portal seat work (turns, sessions, vault content, …).
     Member,
-    /// Org settings / host administration — root or loopback only.
-    Admin,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,47 +41,17 @@ pub fn is_root_portal(record: &PairedDeviceRecord) -> bool {
             .is_some_and(|id| id == root_profile_id())
 }
 
-pub fn classify_path(method: &Method, path: &str) -> PortalPathClass {
+pub fn classify_path(_method: &Method, path: &str) -> PortalPathClass {
     let path = path.split('?').next().unwrap_or(path);
 
     if is_public_path(path) {
         return PortalPathClass::Public;
-    }
-    if is_admin_path(method, path) {
-        return PortalPathClass::Admin;
     }
     PortalPathClass::Member
 }
 
 fn is_public_path(path: &str) -> bool {
     matches!(path, "/health" | "/pair/init" | "/pair/verify")
-}
-
-fn is_admin_path(method: &Method, path: &str) -> bool {
-    // Pairing invite / administration
-    if path == "/qr"
-        || path == "/qr.png"
-        || path == "/qr/image"
-        || path == "/qr/rotate"
-        || path.starts_with("/pair/") && method == Method::DELETE
-    {
-        return true;
-    }
-
-    // Packages / model host controls
-    if path.starts_with("/v1/packages/")
-        || path.starts_with("/v1/model/")
-        || path.starts_with("/v1/inference/")
-    {
-        return true;
-    }
-
-    // Workspace rebuild / retry host ops
-    if path.starts_with("/v1/workspace/") && method != Method::GET {
-        return true;
-    }
-
-    false
 }
 
 /// Authorize a principal on the protected router during the H01.2 migration.
@@ -99,7 +67,6 @@ pub fn authorize_request(
         // H01.2 replaces these coarse transitional classes with per-route
         // capability metadata at router assembly.
         PortalPathClass::Member => Capability::WorkshopRead,
-        PortalPathClass::Admin => Capability::AdminRuntime,
     };
     if principal.capabilities().contains(required) {
         PortalAclDecision::Allow
@@ -114,8 +81,6 @@ mod tests {
     use crate::pairing::store::PairingRole;
     use crate::request_principal::TransportClass;
     use chrono::Utc;
-
-    const LEGACY_ADMIN_PATH: &str = "/v1/workspace/rebuild";
 
     fn record(role: PairingRole, profile_id: Option<&str>) -> PairedDeviceRecord {
         PairedDeviceRecord {
@@ -152,11 +117,6 @@ mod tests {
 
     #[test]
     fn classifies_remaining_legacy_paths() {
-        assert_eq!(classify_path(&Method::GET, "/qr"), PortalPathClass::Admin);
-        assert_eq!(
-            classify_path(&Method::POST, LEGACY_ADMIN_PATH),
-            PortalPathClass::Admin
-        );
         assert_eq!(
             classify_path(&Method::POST, "/v1/turns"),
             PortalPathClass::Member
@@ -170,7 +130,7 @@ mod tests {
     #[test]
     fn legacy_local_retains_operator_capabilities() {
         let local = RequestPrincipal::legacy_local();
-        assert!(authorize_request(&local, &Method::POST, LEGACY_ADMIN_PATH).is_allow());
+        assert!(authorize_request(&local, &Method::POST, "/v1/turns").is_allow());
     }
 
     #[test]
@@ -179,7 +139,7 @@ mod tests {
         assert!(!authorize_request(&peer, &Method::POST, "/v1/turns").is_allow());
         assert!(!authorize_request(&peer, &Method::GET, "/v1/peer/messages").is_allow());
         let portal = principal(PairingRole::Portal, None, false);
-        assert!(authorize_request(&portal, &Method::POST, LEGACY_ADMIN_PATH).is_allow());
+        assert!(authorize_request(&portal, &Method::POST, "/v1/turns").is_allow());
         let anonymous = RequestPrincipal::anonymous(TransportClass::Direct);
         assert!(!authorize_request(&anonymous, &Method::POST, "/v1/turns").is_allow());
         assert!(!authorize_request(&anonymous, &Method::GET, "/health").is_allow());
@@ -191,8 +151,8 @@ mod tests {
     fn shared_mode_issues_admin_capability_only_to_root() {
         let alice = principal(PairingRole::Portal, Some("user:alice"), true);
         let root = principal(PairingRole::Portal, Some("user:root"), true);
-        assert!(!authorize_request(&alice, &Method::POST, LEGACY_ADMIN_PATH).is_allow());
-        assert!(authorize_request(&root, &Method::POST, LEGACY_ADMIN_PATH).is_allow());
+        assert!(!alice.capabilities().contains(Capability::AdminRuntime));
+        assert!(root.capabilities().contains(Capability::AdminRuntime));
         assert!(authorize_request(&alice, &Method::POST, "/v1/turns").is_allow());
         assert!(authorize_request(&alice, &Method::GET, "/v1/turns").is_allow());
     }
