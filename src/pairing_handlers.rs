@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use axum::extract::{ConnectInfo, Path, Query, State};
+use axum::extract::{ConnectInfo, Extension, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header::AUTHORIZATION};
 use axum::response::IntoResponse;
 use axum::{
@@ -12,6 +12,7 @@ use serde::Deserialize;
 use crate::pairing::{
     PairHeartbeatRequest, PairInitRequest, PairVerifyRequest, PairingService, RevokePairingResult,
 };
+use crate::request_principal::RequestPrincipal;
 
 #[derive(Clone)]
 pub struct PairingApiState {
@@ -199,28 +200,27 @@ async fn pair_verify(
 
 async fn pair_heartbeat(
     State(state): State<PairingApiState>,
-    headers: HeaderMap,
+    Extension(principal): Extension<RequestPrincipal>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), StatusCode> {
-    run_pair_heartbeat(&state, &headers, None).await
+    run_pair_heartbeat(&state, &principal, None).await
 }
 
 async fn pair_heartbeat_post(
     State(state): State<PairingApiState>,
-    headers: HeaderMap,
+    Extension(principal): Extension<RequestPrincipal>,
     Json(body): Json<PairHeartbeatRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), StatusCode> {
-    run_pair_heartbeat(&state, &headers, Some(body)).await
+    run_pair_heartbeat(&state, &principal, Some(body)).await
 }
 
 async fn run_pair_heartbeat(
     state: &PairingApiState,
-    headers: &HeaderMap,
+    principal: &RequestPrincipal,
     body: Option<PairHeartbeatRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), StatusCode> {
-    let token = bearer_token(headers);
     let response = state
         .service
-        .pair_heartbeat(token, body)
+        .pair_heartbeat(principal.credential_id().map(|id| id.as_str()), body)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let status = if response.status == "ok" {

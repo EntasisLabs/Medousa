@@ -514,17 +514,21 @@ impl PairingService {
 
     pub async fn pair_heartbeat(
         &self,
-        bearer_token: Option<&str>,
+        credential_id: Option<&str>,
         body: Option<PairHeartbeatRequest>,
     ) -> Result<PairHeartbeatResponse> {
-        let Some(token) = bearer_token else {
+        let Some(credential_id) = credential_id else {
             return Ok(PairHeartbeatResponse {
                 status: "unauthorized".to_string(),
                 device_time: Utc::now(),
                 reason: Some("missing_token".to_string()),
             });
         };
-        let record = self.find_by_session_token(token)?;
+        let record = self
+            .store
+            .list_paired()?
+            .into_iter()
+            .find(|record| record.pairing_id == credential_id);
         let Some(record) = record else {
             return Ok(PairHeartbeatResponse {
                 status: "unauthorized".to_string(),
@@ -532,13 +536,6 @@ impl PairingService {
                 reason: Some("invalid_token".to_string()),
             });
         };
-        if self.store.is_revoked(&record.pairing_id)? {
-            return Ok(PairHeartbeatResponse {
-                status: "unauthorized".to_string(),
-                device_time: Utc::now(),
-                reason: Some("revoked".to_string()),
-            });
-        }
         if record.session_token_expiry < Utc::now() {
             return Ok(PairHeartbeatResponse {
                 status: "unauthorized".to_string(),
@@ -1142,12 +1139,28 @@ mod tests {
     #[tokio::test]
     async fn full_pairing_handshake() {
         let service = test_service();
-        let (_, session_token, phone_id) = pair_test_phone(&service, None).await;
+        let (pairing_id, session_token, phone_id) = pair_test_phone(&service, None).await;
         assert!(
             service
                 .resolve_bearer_record(&session_token)
                 .unwrap()
                 .is_some()
+        );
+        assert_eq!(
+            service
+                .pair_heartbeat(Some(&pairing_id), None)
+                .await
+                .expect("heartbeat")
+                .status,
+            "ok"
+        );
+        assert_eq!(
+            service
+                .pair_heartbeat(Some(&session_token), None)
+                .await
+                .expect("raw bearer is not an internal credential id")
+                .status,
+            "unauthorized"
         );
         service.store.delete_record(&phone_id).expect("cleanup");
     }
