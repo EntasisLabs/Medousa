@@ -20,6 +20,7 @@ use crate::request_principal::{RequestPrincipal, TransportClass};
 #[derive(Clone)]
 pub struct DaemonAccessState {
     pairing: Option<Arc<PairingService>>,
+    mcp_policy_token: Option<Arc<str>>,
     surface: AccessSurface,
 }
 
@@ -27,13 +28,23 @@ impl DaemonAccessState {
     pub fn new(pairing: Option<Arc<PairingService>>) -> Self {
         Self {
             pairing,
+            mcp_policy_token: None,
             surface: AccessSurface::Protected,
         }
+    }
+
+    pub fn with_mcp_policy_token(mut self, token: Option<String>) -> Self {
+        self.mcp_policy_token = token
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .map(Arc::from);
+        self
     }
 
     fn for_surface(&self, surface: AccessSurface) -> Self {
         Self {
             pairing: self.pairing.clone(),
+            mcp_policy_token: self.mcp_policy_token.clone(),
             surface,
         }
     }
@@ -159,10 +170,24 @@ pub async fn enforce_daemon_access(
             .as_ref()
             .and_then(|pairing| pairing.resolve_bearer_record(token).ok().flatten()),
     };
+    let mcp_policy_authenticated = trusted_local
+        && record.is_none()
+        && state.mcp_policy_token.is_some()
+        && matches!(credential, BearerCredential::Valid(_))
+        && medousa_mcp_gateway::verify_policy_bearer(
+            request
+                .headers()
+                .get(axum::http::header::AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            state.mcp_policy_token.as_deref(),
+        );
 
     // A malformed, ambiguous, or unknown credential must not fall back to
     // anonymous bootstrap authority.
-    if !matches!(credential, BearerCredential::Missing) && record.is_none() {
+    if !matches!(credential, BearerCredential::Missing)
+        && record.is_none()
+        && !mcp_policy_authenticated
+    {
         return AccessDenial::InvalidCredential.into_response();
     }
 
@@ -170,6 +195,9 @@ pub async fn enforce_daemon_access(
         let shared_mode = crate::shared_mode::is_shared_mode();
         let principal = record
             .map(|record| RequestPrincipal::from_pairing_record(record, transport, shared_mode))
+            .or_else(|| {
+                mcp_policy_authenticated.then(|| RequestPrincipal::mcp_policy_service(transport))
+            })
             .unwrap_or_else(|| RequestPrincipal::anonymous(transport));
         request.extensions_mut().insert(principal);
         return next.run(request).await;
@@ -182,6 +210,10 @@ pub async fn enforce_daemon_access(
     let shared_mode = crate::shared_mode::is_shared_mode();
     let principal = match record {
         Some(record) => RequestPrincipal::from_pairing_record(record, transport, shared_mode),
+        None if mcp_policy_authenticated => RequestPrincipal::mcp_policy_service(transport),
+        None if trusted_local && state.mcp_policy_token.is_none() => {
+            RequestPrincipal::legacy_local_with_mcp_policy()
+        }
         None if trusted_local => RequestPrincipal::legacy_local(),
         None => RequestPrincipal::anonymous(transport),
     };
@@ -236,7 +268,7 @@ mod tests {
     use super::*;
     use axum::body::to_bytes;
     use axum::http::header::AUTHORIZATION;
-    use axum::routing::get;
+    use axum::routing::{get, post};
     use tower::ServiceExt;
 
     use crate::daemon::route_policy::{
@@ -248,6 +280,64 @@ mod tests {
         let protected = Router::new().route("/v1/turns", get(|| async { StatusCode::NO_CONTENT }));
         let bootstrap = Router::new().route("/health", get(|| async { StatusCode::OK }));
         assemble_daemon_access_boundary(protected, bootstrap, DaemonAccessState::new(None))
+    }
+
+    fn mcp_policy_test_app(token: Option<&str>) -> Router {
+        let declared = DeclaredRouter::default()
+            .route(
+                RoutePolicy {
+                    method: axum::http::Method::POST,
+                    path: "/v1/mcp/policy/evaluate",
+                    group: RouteGroup::Administration,
+                    required_capability: Some(Capability::McpPolicyEvaluate),
+                    bootstrap_public: false,
+                    browser_policy: BrowserPolicy::NativeOnly,
+                    body_limit: 1024,
+                    rate_limit_class: RateLimitClass::Administration,
+                },
+                post(|| async { StatusCode::NO_CONTENT }),
+            )
+            .route(
+                RoutePolicy {
+                    method: axum::http::Method::POST,
+                    path: "/v1/runtime/admin",
+                    group: RouteGroup::Administration,
+                    required_capability: Some(Capability::AdminRuntime),
+                    bootstrap_public: false,
+                    browser_policy: BrowserPolicy::NativeOnly,
+                    body_limit: 1024,
+                    rate_limit_class: RateLimitClass::Administration,
+                },
+                post(|| async { StatusCode::NO_CONTENT }),
+            );
+        assemble_daemon_access_boundary_with_declared(
+            Router::new(),
+            declared,
+            Router::new(),
+            DaemonAccessState::new(None).with_mcp_policy_token(token.map(str::to_string)),
+        )
+    }
+
+    async fn mcp_request(path: &str, source: &str, bearer: Option<&str>) -> StatusCode {
+        let mut request = Request::builder()
+            .method(axum::http::Method::POST)
+            .uri(path)
+            .body(Body::empty())
+            .unwrap();
+        request.extensions_mut().insert(ConnectInfo(
+            source.parse::<SocketAddr>().expect("valid source"),
+        ));
+        if let Some(bearer) = bearer {
+            request.headers_mut().insert(
+                AUTHORIZATION,
+                format!("Bearer {bearer}").parse().expect("valid header"),
+            );
+        }
+        mcp_policy_test_app(Some("policy-secret"))
+            .oneshot(request)
+            .await
+            .expect("middleware response")
+            .status()
     }
 
     async fn request_from(path: &str, source: &str, bearer: Option<&str>) -> StatusCode {
@@ -364,6 +454,68 @@ mod tests {
                 StatusCode::UNAUTHORIZED
             );
         }
+    }
+
+    #[tokio::test]
+    async fn mcp_policy_credential_has_single_local_service_capability() {
+        assert_eq!(
+            mcp_request(
+                "/v1/mcp/policy/evaluate",
+                "127.0.0.1:43100",
+                Some("policy-secret")
+            )
+            .await,
+            StatusCode::NO_CONTENT
+        );
+        assert_eq!(
+            mcp_request(
+                "/v1/runtime/admin",
+                "127.0.0.1:43100",
+                Some("policy-secret")
+            )
+            .await,
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            mcp_request(
+                "/v1/mcp/policy/evaluate",
+                "192.0.2.10:43100",
+                Some("policy-secret")
+            )
+            .await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn configured_mcp_policy_token_cannot_be_bypassed_on_loopback() {
+        assert_eq!(
+            mcp_request("/v1/mcp/policy/evaluate", "127.0.0.1:43100", None).await,
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            mcp_request("/v1/mcp/policy/evaluate", "127.0.0.1:43100", Some("wrong")).await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn unset_mcp_policy_token_retains_loopback_compatibility_only() {
+        let mut request = Request::builder()
+            .method(axum::http::Method::POST)
+            .uri("/v1/mcp/policy/evaluate")
+            .body(Body::empty())
+            .unwrap();
+        request.extensions_mut().insert(ConnectInfo(
+            "127.0.0.1:43100"
+                .parse::<SocketAddr>()
+                .expect("valid source"),
+        ));
+        let response = mcp_policy_test_app(None)
+            .oneshot(request)
+            .await
+            .expect("middleware response");
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
     }
 
     #[tokio::test]

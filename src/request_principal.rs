@@ -10,6 +10,7 @@ use crate::pairing::store::{PairedDeviceRecord, PairingRole};
 pub enum PrincipalKind {
     Anonymous,
     LegacyLocal,
+    McpGateway,
     Portal,
     Peer,
     Root,
@@ -56,6 +57,7 @@ pub enum Capability {
     AdminIdentity,
     AdminRuntime,
     AdminExecute,
+    McpPolicyEvaluate,
 }
 
 impl Capability {
@@ -75,6 +77,7 @@ impl Capability {
             Self::AdminIdentity => "admin.identity",
             Self::AdminRuntime => "admin.runtime",
             Self::AdminExecute => "admin.execute",
+            Self::McpPolicyEvaluate => "mcp.policy.evaluate",
         }
     }
 }
@@ -150,6 +153,24 @@ impl RequestPrincipal {
             profile_id: None,
             capabilities: CapabilitySet::operator(),
             transport: TransportClass::Loopback,
+            revocation_generation: 0,
+        }
+    }
+
+    pub fn legacy_local_with_mcp_policy() -> Self {
+        Self {
+            capabilities: CapabilitySet::operator().with(Capability::McpPolicyEvaluate),
+            ..Self::legacy_local()
+        }
+    }
+
+    pub fn mcp_policy_service(transport: TransportClass) -> Self {
+        Self {
+            kind: PrincipalKind::McpGateway,
+            credential_id: Some(CredentialId("mcp-policy".to_string())),
+            profile_id: None,
+            capabilities: CapabilitySet::empty().with(Capability::McpPolicyEvaluate),
+            transport,
             revocation_generation: 0,
         }
     }
@@ -274,5 +295,26 @@ mod tests {
         assert!(principal.credential_id().is_none());
         assert_eq!(principal.transport(), TransportClass::Loopback);
         assert!(principal.capabilities().contains(Capability::AdminExecute));
+        assert!(
+            !principal
+                .capabilities()
+                .contains(Capability::McpPolicyEvaluate)
+        );
+    }
+
+    #[test]
+    fn mcp_policy_service_has_only_callback_authority() {
+        let principal = RequestPrincipal::mcp_policy_service(TransportClass::Loopback);
+        assert_eq!(principal.kind(), PrincipalKind::McpGateway);
+        assert_eq!(
+            principal.credential_id().map(CredentialId::as_str),
+            Some("mcp-policy")
+        );
+        assert!(
+            principal
+                .capabilities()
+                .contains(Capability::McpPolicyEvaluate)
+        );
+        assert!(!principal.capabilities().contains(Capability::AdminRuntime));
     }
 }

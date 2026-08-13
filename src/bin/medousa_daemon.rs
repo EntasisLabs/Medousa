@@ -660,7 +660,8 @@ async fn main() -> Result<()> {
         local_peer_name: share_api_state.local_peer_name.clone(),
     };
     let daemon_access_state =
-        medousa::peer_scope::DaemonAccessState::new(peer_message_state.pairing.clone());
+        medousa::peer_scope::DaemonAccessState::new(peer_message_state.pairing.clone())
+            .with_mcp_policy_token(medousa::mcp_gateway::resolve_mcp_policy_token());
     let mesh_api_state = medousa::mesh::MeshApiState {
         pairing: peer_message_state.pairing.clone(),
         local_device_id: peer_message_state.local_device_id.clone(),
