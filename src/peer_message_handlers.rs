@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use axum::extract::{ConnectInfo, Path, Query, State};
-use axum::http::{HeaderMap, HeaderValue, StatusCode, header::AUTHORIZATION};
+use axum::extract::{Extension, Path, Query, State};
+use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -23,6 +23,7 @@ use crate::peer_messages::{
     unread_count_for_device, PeerMessage, PeerMessageAttachmentSummary, PeerMessagePostRequest,
     PeerMessagesListResponse, PeerUnreadCountResponse,
 };
+use crate::request_principal::{Capability, RequestPrincipal, TransportClass};
 use crate::share::bundle::{ShareConflictStrategy, ShareImportRequest};
 use crate::share::service::import_bundle;
 
@@ -50,8 +51,7 @@ pub fn peer_message_router(state: PeerMessageApiState) -> Router {
 
 async fn list_peer_messages(
     State(state): State<PeerMessageApiState>,
-    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-    headers: HeaderMap,
+    Extension(principal): Extension<RequestPrincipal>,
     Query(query): Query<ListQuery>,
 ) -> Result<Json<PeerMessagesListResponse>, (StatusCode, String)> {
     let unread_only = query.unread_only.unwrap_or(false);
@@ -61,11 +61,11 @@ async fn list_peer_messages(
         .map(str::trim)
         .filter(|value| !value.is_empty());
 
-    let messages = if crate::remote_trust::is_trusted_local(addr.ip(), &headers) {
+    let messages = if principal.transport() == TransportClass::Loopback {
         list_messages_filtered(unread_only, device_filter)
             .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
     } else {
-        let record = authorize_remote_record(&state, &headers)?;
+        let record = authorize_remote_record(&state, &principal)?;
         if record.role.allows_full_portal() {
             list_messages_filtered(unread_only, device_filter)
                 .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
@@ -85,13 +85,12 @@ async fn list_peer_messages(
 
 async fn peer_unread_count(
     State(state): State<PeerMessageApiState>,
-    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-    headers: HeaderMap,
+    Extension(principal): Extension<RequestPrincipal>,
 ) -> Result<Json<PeerUnreadCountResponse>, (StatusCode, String)> {
-    let unread = if crate::remote_trust::is_trusted_local(addr.ip(), &headers) {
+    let unread = if principal.transport() == TransportClass::Loopback {
         unread_count().map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
     } else {
-        let record = authorize_remote_record(&state, &headers)?;
+        let record = authorize_remote_record(&state, &principal)?;
         if record.role.allows_full_portal() {
             unread_count().map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
         } else {
@@ -104,15 +103,14 @@ async fn peer_unread_count(
 
 async fn post_peer_message(
     State(state): State<PeerMessageApiState>,
-    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-    headers: HeaderMap,
+    Extension(principal): Extension<RequestPrincipal>,
     Json(body): Json<MeshInboundBody<serde_json::Value>>,
 ) -> Result<Response, (StatusCode, String)> {
-    let local = crate::remote_trust::is_trusted_local(addr.ip(), &headers);
+    let local = principal.transport() == TransportClass::Loopback;
     let remote_record = if local {
         None
     } else {
-        Some(authorize_remote_record(&state, &headers)?)
+        Some(authorize_remote_record(&state, &principal)?)
     };
 
     let mut mesh_receipt: Option<MeshReceipt> = None;
@@ -344,12 +342,11 @@ fn with_mesh_receipt(message: PeerMessage, receipt: Option<MeshReceipt>) -> Resp
 
 async fn read_peer_message(
     State(state): State<PeerMessageApiState>,
-    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-    headers: HeaderMap,
+    Extension(principal): Extension<RequestPrincipal>,
     Path(message_id): Path<String>,
 ) -> Result<Json<PeerMessage>, (StatusCode, String)> {
-    if !crate::remote_trust::is_trusted_local(addr.ip(), &headers) {
-        let record = authorize_remote_record(&state, &headers)?;
+    if principal.transport() != TransportClass::Loopback {
+        let record = authorize_remote_record(&state, &principal)?;
         if !record.role.allows_full_portal() {
             let message = get_message(&message_id)
                 .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
@@ -373,7 +370,7 @@ async fn read_peer_message(
 
 fn authorize_remote_record(
     state: &PeerMessageApiState,
-    headers: &HeaderMap,
+    principal: &RequestPrincipal,
 ) -> Result<PairedDeviceRecord, (StatusCode, String)> {
     let Some(pairing) = state.pairing.as_ref() else {
         return Err((
@@ -381,43 +378,28 @@ fn authorize_remote_record(
             "LAN pairing is not enabled on this workshop".to_string(),
         ));
     };
-    let Some(token) = bearer_token(headers) else {
+    if !principal.capabilities().contains(Capability::PeerExchange) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "This credential cannot use peer messaging".to_string(),
+        ));
+    }
+    let Some(credential_id) = principal.credential_id() else {
         return Err((
             StatusCode::UNAUTHORIZED,
-            "Bearer session token required for peer messages".to_string(),
+            "Authenticated pairing required for peer messages".to_string(),
         ));
     };
     let record = pairing
-        .find_by_session_token(token)
+        .find_by_pairing_id(credential_id.as_str())
         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
         .ok_or_else(|| {
             (
                 StatusCode::UNAUTHORIZED,
-                "Invalid or expired peer session token".to_string(),
+                "Invalid or expired peer credential".to_string(),
             )
         })?;
-    if record.session_token_expiry < chrono::Utc::now() {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            "Invalid or expired peer session token".to_string(),
-        ));
-    }
-    if !record.role.allows_peer_surface() {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "This pairing cannot use peer messaging".to_string(),
-        ));
-    }
     Ok(record)
-}
-
-fn bearer_token(headers: &HeaderMap) -> Option<&str> {
-    headers
-        .get(AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
 }
 
 fn is_paired_peer_device(
