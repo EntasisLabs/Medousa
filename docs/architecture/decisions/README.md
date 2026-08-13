@@ -18,6 +18,7 @@ Short, durable decisions — not sprint plans. For build history see [../../../a
 | [adr-012-medousa-anywhere-surfaces.md](adr-012-medousa-anywhere-surfaces.md) | Native host surfaces vs external-agent adapters | Accepted |
 | [adr-013-daemon-trust-zones-and-auth.md](adr-013-daemon-trust-zones-and-auth.md) | Daemon trust zones and mandatory authentication | Proposed |
 | [adr-014-identifier-and-filesystem-authority.md](adr-014-identifier-and-filesystem-authority.md) | Typed identifiers and handle-relative filesystem authority | Proposed |
+| [adr-015-bounded-durable-turn-pipeline.md](adr-015-bounded-durable-turn-pipeline.md) | Bounded single-writer durable turn pipeline | Proposed |
 
 > **Numbering note:** two accepted decisions were independently assigned
 > ADR-010. Their filenames and identifiers remain unchanged so existing links
