@@ -103,6 +103,9 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(build_workshop_surface().inventory())
         .expect("duplicate workshop route policy");
     inventory
+        .extend(build_core_service_surface().inventory())
+        .expect("duplicate core service route policy");
+    inventory
 }
 
 pub fn build_identity_surface() -> DeclaredRouter<AppState> {
@@ -916,9 +919,8 @@ fn workshop_policy(
     }
 }
 
-/// Core daemon API routes (health, jobs, sessions, interactive, identity, ingest, continuations).
-pub fn build_core_router(state: AppState) -> Router {
-    use axum::routing::{get, post};
+pub fn build_core_service_surface() -> DeclaredRouter<AppState> {
+    use axum::routing::{delete, get, post};
 
     use crate::daemon::continuations::{
         continuation_lineage, continuation_status, replay_and_resume_job,
@@ -926,76 +928,228 @@ pub fn build_core_router(state: AppState) -> Router {
     use crate::daemon::ingest::{
         deliver_outbox_webhook, deliver_poll, delivery_status, ingest_handler, ingest_stream,
     };
-    Router::new()
+    use crate::request_principal::Capability;
+
+    DeclaredRouter::default()
         .route(
-            "/v1/agents/runtimes",
+            service_read_policy("/v1/agents/runtimes"),
             get(crate::daemon::agents::list_agent_runtimes),
         )
         .route(
-            "/v1/agents/sessions",
+            service_policy(
+                axum::http::Method::POST,
+                "/v1/agents/sessions",
+                Capability::AdminExecute,
+                256 * 1024,
+                RateLimitClass::Administration,
+            ),
             post(crate::daemon::agents::create_agent_session),
         )
         .route(
-            "/v1/agents/sessions/{agent_session_id}/prompt",
+            service_policy(
+                axum::http::Method::POST,
+                "/v1/agents/sessions/{agent_session_id}/prompt",
+                Capability::AdminExecute,
+                1024 * 1024,
+                RateLimitClass::Administration,
+            ),
             post(crate::daemon::agents::prompt_agent_session),
         )
         .route(
-            "/v1/agents/sessions/{agent_session_id}/config",
+            service_policy(
+                axum::http::Method::POST,
+                "/v1/agents/sessions/{agent_session_id}/config",
+                Capability::AdminExecute,
+                64 * 1024,
+                RateLimitClass::Administration,
+            ),
             post(crate::daemon::agents::set_agent_session_config_option),
         )
         .route(
-            "/v1/agents/sessions/{agent_session_id}/stream",
+            service_policy(
+                axum::http::Method::GET,
+                "/v1/agents/sessions/{agent_session_id}/stream",
+                Capability::AdminExecute,
+                1024,
+                RateLimitClass::Stream,
+            ),
             get(crate::daemon::agents::agent_session_stream),
         )
         .route(
-            "/v1/agents/sessions/{agent_session_id}/cancel",
+            service_policy(
+                axum::http::Method::POST,
+                "/v1/agents/sessions/{agent_session_id}/cancel",
+                Capability::AdminExecute,
+                16 * 1024,
+                RateLimitClass::Administration,
+            ),
             post(crate::daemon::agents::cancel_agent_session),
         )
+        .methods([
+            (
+                service_admin_policy(axum::http::Method::GET, "/v1/auth/chatgpt", 1024),
+                get(crate::daemon::chatgpt_oauth::status),
+            ),
+            (
+                service_admin_policy(axum::http::Method::DELETE, "/v1/auth/chatgpt", 1024),
+                delete(crate::daemon::chatgpt_oauth::disconnect),
+            ),
+        ])
         .route(
-            "/v1/auth/chatgpt",
-            get(crate::daemon::chatgpt_oauth::status)
-                .delete(crate::daemon::chatgpt_oauth::disconnect),
-        )
-        .route(
-            "/v1/auth/chatgpt/begin",
+            service_admin_policy(
+                axum::http::Method::POST,
+                "/v1/auth/chatgpt/begin",
+                64 * 1024,
+            ),
             post(crate::daemon::chatgpt_oauth::begin),
         )
         .route(
-            "/v1/auth/chatgpt/complete",
+            service_admin_policy(
+                axum::http::Method::POST,
+                "/v1/auth/chatgpt/complete",
+                64 * 1024,
+            ),
             post(crate::daemon::chatgpt_oauth::complete),
         )
         .route(
-            "/v1/auth/chatgpt/refresh",
+            service_admin_policy(
+                axum::http::Method::POST,
+                "/v1/auth/chatgpt/refresh",
+                16 * 1024,
+            ),
             post(crate::daemon::chatgpt_oauth::refresh),
         )
         .route(
-            "/v1/auth/chatgpt/models",
+            service_admin_policy(axum::http::Method::GET, "/v1/auth/chatgpt/models", 1024),
             get(crate::daemon::chatgpt_oauth::models),
         )
-        .route("/v1/ingest", post(ingest_handler))
-        .route("/v1/ingest/{stream_id}/stream", get(ingest_stream))
         .route(
-            "/v1/media/upload",
+            service_policy(
+                axum::http::Method::POST,
+                "/v1/ingest",
+                Capability::WorkshopInteract,
+                8 * 1024 * 1024,
+                RateLimitClass::Mutation,
+            ),
+            post(ingest_handler),
+        )
+        .route(
+            service_policy(
+                axum::http::Method::GET,
+                "/v1/ingest/{stream_id}/stream",
+                Capability::WorkshopRead,
+                1024,
+                RateLimitClass::Stream,
+            ),
+            get(ingest_stream),
+        )
+        .route(
+            service_policy(
+                axum::http::Method::POST,
+                "/v1/media/upload",
+                Capability::ContentWrite,
+                32 * 1024 * 1024,
+                RateLimitClass::Mutation,
+            ),
             post(crate::media_handlers::upload_media),
         )
         .route(
-            "/v1/media/{media_id}",
+            service_policy(
+                axum::http::Method::GET,
+                "/v1/media/{media_id}",
+                Capability::ContentRead,
+                1024,
+                RateLimitClass::Read,
+            ),
             get(crate::media_handlers::get_media),
         )
-        .route("/v1/deliver/outbox", post(deliver_outbox_webhook))
-        .route("/v1/deliver/poll/{job_id}", get(deliver_poll))
-        .route("/v1/delivery/status", get(delivery_status))
-        .route("/v1/continuations/status", get(continuation_status))
         .route(
-            "/v1/continuations/lineage/{turn_correlation_id}",
+            service_policy(
+                axum::http::Method::POST,
+                "/v1/deliver/outbox",
+                Capability::WorkshopInteract,
+                1024 * 1024,
+                RateLimitClass::Mutation,
+            ),
+            post(deliver_outbox_webhook),
+        )
+        .route(
+            service_read_policy("/v1/deliver/poll/{job_id}"),
+            get(deliver_poll),
+        )
+        .route(
+            service_read_policy("/v1/delivery/status"),
+            get(delivery_status),
+        )
+        .route(
+            service_read_policy("/v1/continuations/status"),
+            get(continuation_status),
+        )
+        .route(
+            service_read_policy("/v1/continuations/lineage/{turn_correlation_id}"),
             get(continuation_lineage),
         )
         .route(
-            "/v1/jobs/{job_id}/replay-and-resume",
+            service_policy(
+                axum::http::Method::POST,
+                "/v1/jobs/{job_id}/replay-and-resume",
+                Capability::WorkshopInteract,
+                64 * 1024,
+                RateLimitClass::Mutation,
+            ),
             post(replay_and_resume_job),
         )
-        .merge(crate::browser_handlers::browser_router())
-        .with_state(state)
+}
+
+fn service_read_policy(path: &'static str) -> RoutePolicy {
+    service_policy(
+        axum::http::Method::GET,
+        path,
+        crate::request_principal::Capability::WorkshopRead,
+        1024,
+        RateLimitClass::Read,
+    )
+}
+
+fn service_admin_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    body_limit: usize,
+) -> RoutePolicy {
+    RoutePolicy {
+        group: RouteGroup::Administration,
+        ..service_policy(
+            method,
+            path,
+            crate::request_principal::Capability::AdminRuntime,
+            body_limit,
+            RateLimitClass::Administration,
+        )
+    }
+}
+
+fn service_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    required_capability: crate::request_principal::Capability,
+    body_limit: usize,
+    rate_limit_class: RateLimitClass,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Portal,
+        required_capability: Some(required_capability),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class,
+    }
+}
+
+/// Core daemon API routes (health, jobs, sessions, interactive, identity, ingest, continuations).
+pub fn build_core_router(state: AppState) -> Router {
+    crate::browser_handlers::browser_router().with_state(state)
 }
 
 /// Full daemon HTTP surface: core routes plus feature routers (catalog, vault, dashboard, …).
@@ -1018,9 +1172,9 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{
-        LIVENESS_BODY, RateLimitClass, RouteGroup, build_declared_route_inventory,
-        build_identity_surface, build_liveness_router, build_liveness_surface,
-        build_runtime_admin_surface, build_workshop_surface,
+        LIVENESS_BODY, RateLimitClass, RouteGroup, build_core_service_surface,
+        build_declared_route_inventory, build_identity_surface, build_liveness_router,
+        build_liveness_surface, build_runtime_admin_surface, build_workshop_surface,
     };
 
     #[tokio::test]
@@ -1083,12 +1237,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 146);
-        assert_eq!(with_pairing.entries().len(), 158);
+        assert_eq!(without_pairing.entries().len(), 168);
+        assert_eq!(with_pairing.entries().len(), 180);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 158);
+        assert_eq!(rows.len(), 180);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"
@@ -1179,5 +1333,31 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn core_service_inventory_separates_execution_credentials_and_content() {
+        let entries = build_core_service_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 22);
+        for (capability, count) in [
+            ("workshop.read", 6),
+            ("workshop.interact", 3),
+            ("admin.execute", 5),
+            ("admin.runtime", 6),
+            ("content.read", 1),
+            ("content.write", 1),
+        ] {
+            assert_eq!(
+                entries
+                    .iter()
+                    .filter(|entry| entry.required_capability == Some(capability))
+                    .count(),
+                count,
+                "unexpected route count for {capability}",
+            );
+        }
     }
 }
