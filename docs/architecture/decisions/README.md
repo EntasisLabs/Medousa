@@ -16,6 +16,7 @@ Short, durable decisions — not sprint plans. For build history see [../../../a
 | [adr-010-virtual-shell-workspaces.md](adr-010-virtual-shell-workspaces.md) | Virtual shell workspaces | Accepted |
 | [adr-011-shared-mode-portal-and-mesh.md](adr-011-shared-mode-portal-and-mesh.md) | Shared mode seats, portal, and peer mesh | Accepted |
 | [adr-012-medousa-anywhere-surfaces.md](adr-012-medousa-anywhere-surfaces.md) | Native host surfaces vs external-agent adapters | Accepted |
+| [adr-013-daemon-trust-zones-and-auth.md](adr-013-daemon-trust-zones-and-auth.md) | Daemon trust zones and mandatory authentication | Proposed |
 
 > **Numbering note:** two accepted decisions were independently assigned
 > ADR-010. Their filenames and identifiers remain unchanged so existing links
