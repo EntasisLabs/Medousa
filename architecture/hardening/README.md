@@ -91,7 +91,7 @@ and performance budgets must prevent the same classes of defect from returning.
 | H07 | [07-vault-scaling-and-consistency.md](07-vault-scaling-and-consistency.md) | Incremental index, atomic mutation, backend/frontend lookups | PERF-003, PERF-006, CONSIST-001 | ADR-014, ADR-016 | Draft |
 | H08 | [08-desktop-browser-isolation.md](08-desktop-browser-isolation.md) | Remote webview capabilities and request-correlated bridge | DESKTOP-001 | ADR-018, H05 | Draft |
 | H09 | [09-home-runtime-boundaries.md](09-home-runtime-boundaries.md) | Feature loading, runtime cycles, store/component/CSS ownership | FRONT-001, ARCH-001, ARCH-002 | ADR-020, H03 | Draft |
-| H10 | `10-api-contract-generation.md` | Authoritative API definition and generated clients/tests | CONTRACT-001 | ADR-019, H01 | Proposed |
+| H10 | [10-api-contract-generation.md](10-api-contract-generation.md) | Authoritative API definition and generated clients/tests | CONTRACT-001 | ADR-019, H01 | Draft |
 | H11 | `11-package-and-dependency-boundaries.md` | Optional workload features and dependency budgets | DEP-001 | ADR-020 | Proposed |
 | H12 | `12-quality-gates.md` | CI matrix, deterministic tests, benchmarks and budgets | CI-001, TEST-001, PERF-007 | All workstreams | Proposed |
 
@@ -108,7 +108,7 @@ duplicate ADR-010 history.
 | [ADR-016](../../docs/architecture/decisions/adr-016-transactional-store-ownership.md) | Transactional store ownership and crash-consistency policy | Extends durable runtime decisions | Proposed |
 | [ADR-017](../../docs/architecture/decisions/adr-017-request-scoped-runtime-context.md) | Request-scoped runtime context; no process-global turn state | Extends ADR-005/ADR-008 | Proposed |
 | [ADR-018](../../docs/architecture/decisions/adr-018-untrusted-webview-isolation.md) | Untrusted webview isolation and minimal browser bridge | Revises browser-host assumptions | Proposed |
-| ADR-019 | Generated API definition and client contract | Replaces handwritten parity convention | Proposed |
+| [ADR-019](../../docs/architecture/decisions/adr-019-generated-api-contract.md) | Route-owned generated API and client contract | Replaces handwritten parity convention | Proposed |
 | [ADR-020](../../docs/architecture/decisions/adr-020-feature-boundaries-and-lazy-runtime.md) | Feature boundaries, lazy loading, and optional workload packaging | Formalizes Home-first optional packages | Proposed |
 
 An ADR must state exactly which earlier consequence it supersedes. New language
