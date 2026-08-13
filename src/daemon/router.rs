@@ -85,6 +85,9 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::mcp_daemon_handlers::policy_surface().inventory())
         .expect("duplicate MCP policy route policy");
     inventory
+        .extend(crate::vault_handlers::vault_surface().inventory())
+        .expect("duplicate vault route policy");
+    inventory
 }
 
 pub fn build_identity_surface() -> DeclaredRouter<AppState> {
@@ -494,94 +497,6 @@ pub fn build_feature_routers(
             axum::routing::get(crate::calendar_handlers::export_calendar),
         );
 
-    let vault_router = Router::new()
-        .route(
-            "/v1/vault/roots",
-            axum::routing::get(crate::vault_handlers::list_vault_roots)
-                .post(crate::vault_handlers::add_vault_root_handler),
-        )
-        .route(
-            "/v1/vault/active",
-            axum::routing::put(crate::vault_handlers::set_vault_active_root),
-        )
-        .route(
-            "/v1/vault/notes",
-            axum::routing::get(crate::vault_handlers::list_vault_notes)
-                .post(crate::vault_handlers::post_vault_note),
-        )
-        .route(
-            "/v1/vault/tags",
-            axum::routing::get(crate::vault_handlers::list_vault_tags),
-        )
-        .route(
-            "/v1/vault/search",
-            axum::routing::get(crate::vault_handlers::search_vault_notes),
-        )
-        .route(
-            "/v1/vault/backlinks",
-            axum::routing::get(crate::vault_handlers::get_vault_backlinks),
-        )
-        .route(
-            "/v1/vault/files/{*file_path}",
-            axum::routing::get(crate::vault_handlers::get_vault_file),
-        )
-        .route(
-            "/v1/vault/notes/{*note_path}",
-            axum::routing::get(crate::vault_handlers::get_vault_note)
-                .put(crate::vault_handlers::put_vault_note)
-                .delete(crate::vault_handlers::delete_vault_note),
-        )
-        .route(
-            "/v1/vault/trash",
-            axum::routing::get(crate::vault_handlers::list_vault_trash),
-        )
-        .route(
-            "/v1/vault/trash/restore",
-            axum::routing::post(crate::vault_handlers::restore_vault_trash),
-        )
-        .route(
-            "/v1/vault/git/detect",
-            axum::routing::get(crate::vault_git_handlers::vault_git_detect),
-        )
-        .route(
-            "/v1/vault/git/status",
-            axum::routing::get(crate::vault_git_handlers::vault_git_status),
-        )
-        .route(
-            "/v1/vault/git/enable",
-            axum::routing::post(crate::vault_git_handlers::vault_git_enable),
-        )
-        .route(
-            "/v1/vault/git/init",
-            axum::routing::post(crate::vault_git_handlers::vault_git_init),
-        )
-        .route(
-            "/v1/vault/git/install",
-            axum::routing::post(crate::vault_git_handlers::vault_git_install),
-        )
-        .route(
-            "/v1/vault/git/log",
-            axum::routing::get(crate::vault_git_handlers::vault_git_log),
-        )
-        .route(
-            "/v1/vault/git/commit",
-            axum::routing::post(crate::vault_git_handlers::vault_git_commit),
-        )
-        .route(
-            "/v1/vault/git/restore",
-            axum::routing::post(crate::vault_git_handlers::vault_git_restore),
-        )
-        .route(
-            "/v1/vault/git/diff",
-            axum::routing::get(crate::vault_git_handlers::vault_git_diff),
-        )
-        .route(
-            "/v1/vault/git/worktrees",
-            axum::routing::get(crate::vault_git_handlers::vault_git_worktrees_list)
-                .post(crate::vault_git_handlers::vault_git_worktrees_add)
-                .delete(crate::vault_git_handlers::vault_git_worktrees_remove),
-        );
-
     let workspace_router = Router::new()
         .route(
             "/v1/workspace/cards",
@@ -658,7 +573,6 @@ pub fn build_feature_routers(
         .merge(workflow_router)
         .merge(tool_history_router)
         .merge(calendar_router)
-        .merge(vault_router)
         .merge(crate::locus_handlers::locus_router(
             state.platform.agent_handle().locus_store.clone(),
             state.platform.agent_handle().semantic_index.clone(),
@@ -992,12 +906,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 66);
-        assert_eq!(with_pairing.entries().len(), 78);
+        assert_eq!(without_pairing.entries().len(), 92);
+        assert_eq!(with_pairing.entries().len(), 104);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 78);
+        assert_eq!(rows.len(), 104);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"
