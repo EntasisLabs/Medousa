@@ -21,7 +21,9 @@ use medousa::daemon::heartbeat::{
 use medousa::daemon::ingest::{
     job_succeeded, maybe_resume_agent_turn_from_child_job, resolve_api_model_routing,
 };
-use medousa::daemon::router::{build_daemon_router, parse_dashboard_action_auth};
+use medousa::daemon::router::{
+    build_daemon_router, build_liveness_router, parse_dashboard_action_auth,
+};
 use medousa::daemon::state::AppState;
 use medousa::daemon::worker_host::{run_materializer_loop, run_worker_host};
 use medousa::daemon_api::DEFAULT_DAEMON_BIND;
@@ -525,7 +527,7 @@ async fn main() -> Result<()> {
         local_device_id: "local".to_string(),
         local_peer_name: "Medousa".to_string(),
     };
-    let pairing_router = if pairing_enabled {
+    let pairing_routers = if pairing_enabled {
         let identity = medousa::pairing::DeviceIdentity::load_or_create()
             .context("failed to load pairing device identity")?;
         #[cfg(feature = "iroh-transport")]
@@ -631,18 +633,22 @@ async fn main() -> Result<()> {
             local_device_id: pairing_service.device_id().to_string(),
             local_peer_name: pairing_service.peer_name().to_string(),
         };
-        Some(medousa::pairing_handlers::routes().with_state(
-            medousa::pairing_handlers::PairingApiState {
-                service: pairing_service,
-            },
+        let pairing_state = medousa::pairing_handlers::PairingApiState {
+            service: pairing_service,
+        };
+        Some((
+            medousa::pairing_handlers::bootstrap_routes().with_state(pairing_state.clone()),
+            medousa::pairing_handlers::protected_routes().with_state(pairing_state),
         ))
     } else {
         None
     };
 
     let mut app = build_daemon_router(state.clone(), &dashboard_action_auth);
-    if let Some(pairing_router) = pairing_router {
-        app = app.merge(pairing_router);
+    let mut bootstrap = build_liveness_router();
+    if let Some((pairing_bootstrap, pairing_protected)) = pairing_routers {
+        bootstrap = bootstrap.merge(pairing_bootstrap);
+        app = app.merge(pairing_protected);
     }
     let peer_message_state = medousa::peer_message_handlers::PeerMessageApiState {
         pairing: share_api_state.pairing.clone(),
@@ -661,10 +667,7 @@ async fn main() -> Result<()> {
             peer_message_state,
         ))
         .merge(medousa::mesh::mesh_router(mesh_api_state));
-    app = app.layer(axum::middleware::from_fn_with_state(
-        daemon_access_state,
-        medousa::peer_scope::enforce_daemon_access,
-    ));
+    app = medousa::peer_scope::assemble_daemon_access_boundary(app, bootstrap, daemon_access_state);
     let _mdns_advertiser = mdns_advertiser;
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);

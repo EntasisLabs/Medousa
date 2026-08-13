@@ -142,7 +142,7 @@ impl Transport for MockTransport {
 async fn mock_transport_routes_health_get() {
     let transport = Arc::new(
         MockTransport::new().on_get(
-            "/health",
+            "/v1/health",
             serde_json::json!({
                 "status": "ok",
                 "backend": "test",

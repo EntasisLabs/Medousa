@@ -2,10 +2,25 @@ use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 use axum::Router;
+use axum::http::header::CONTENT_TYPE;
+use axum::response::IntoResponse;
 use stasis::dashboard::{DashboardState, RuntimeDashboardQueryService, router as dashboard_router};
 use tower_http::cors::CorsLayer;
 
 use crate::daemon::state::AppState;
+
+const LIVENESS_BODY: &str = r#"{"status":"ok","apiVersion":"v1"}"#;
+
+/// Constant-size anonymous liveness surface. Detailed runtime health is
+/// protected at `/v1/health`.
+pub fn build_liveness_router() -> Router {
+    Router::new().route(
+        "/health",
+        axum::routing::get(|| async {
+            ([(CONTENT_TYPE, "application/json")], LIVENESS_BODY).into_response()
+        }),
+    )
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct DashboardActionAuthConfig {
@@ -399,7 +414,7 @@ pub fn build_core_router(state: AppState) -> Router {
     use crate::maintenance_handlers::{get_artifact_retention_status, update_artifact_retention};
 
     Router::new()
-        .route("/health", get(health))
+        .route("/v1/health", get(health))
         .route("/v1/stats", get(stats))
         .route("/v1/runtime/defaults", get(runtime_defaults))
         .route(
@@ -628,4 +643,56 @@ pub fn build_daemon_router(
         // directly from the daemon. Keep the local daemon surface consistent
         // with the standalone code/session hosts.
         .layer(CorsLayer::permissive())
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::body::{Body, to_bytes};
+    use axum::http::{Request, StatusCode, header::CONTENT_TYPE};
+    use tower::ServiceExt;
+
+    use super::{LIVENESS_BODY, build_liveness_router};
+
+    #[tokio::test]
+    async fn public_liveness_is_constant_and_contains_no_runtime_detail() {
+        let response = build_liveness_router()
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("liveness response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok()),
+            Some("application/json")
+        );
+        let body = to_bytes(response.into_body(), 1024)
+            .await
+            .expect("bounded body");
+        assert_eq!(body.as_ref(), LIVENESS_BODY.as_bytes());
+        for private_field in ["backend", "worker", "profile", "tool", "latency"] {
+            assert!(!LIVENESS_BODY.contains(private_field));
+        }
+    }
+
+    #[tokio::test]
+    async fn liveness_router_exposes_no_application_alias() {
+        let response = build_liveness_router()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/health")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("missing response");
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
 }

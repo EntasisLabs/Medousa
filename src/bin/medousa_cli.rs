@@ -171,7 +171,7 @@ async fn main() -> Result<()> {
 async fn run_daemon_health(daemon_url: &str) -> Result<()> {
     let client = Client::new();
     let response = client
-        .get(format!("{daemon_url}/health"))
+        .get(format!("{daemon_url}/v1/health"))
         .send()
         .await?
         .error_for_status()?;

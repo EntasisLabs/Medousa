@@ -3,6 +3,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use axum::Router;
 use axum::body::Body;
 use axum::extract::{ConnectInfo, State};
 use axum::http::{Request, StatusCode};
@@ -13,15 +14,51 @@ use crate::pairing::PairingService;
 use crate::portal_acl::{PortalAclDecision, authorize_request};
 use crate::remote_trust::is_trusted_local;
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct DaemonAccessState {
     pairing: Option<Arc<PairingService>>,
+    surface: AccessSurface,
 }
 
 impl DaemonAccessState {
     pub fn new(pairing: Option<Arc<PairingService>>) -> Self {
-        Self { pairing }
+        Self {
+            pairing,
+            surface: AccessSurface::Protected,
+        }
     }
+
+    fn for_surface(&self, surface: AccessSurface) -> Self {
+        Self {
+            pairing: self.pairing.clone(),
+            surface,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum AccessSurface {
+    Bootstrap,
+    Protected,
+}
+
+/// Assemble the final HTTP authority boundary. Both route groups traverse the
+/// credential parser so malformed credentials cannot fall back to bootstrap;
+/// only routes assembled into the bootstrap branch may proceed anonymously.
+pub fn assemble_daemon_access_boundary(
+    protected: Router,
+    bootstrap: Router,
+    state: DaemonAccessState,
+) -> Router {
+    let protected = protected.layer(axum::middleware::from_fn_with_state(
+        state.for_surface(AccessSurface::Protected),
+        enforce_daemon_access,
+    ));
+    let bootstrap = bootstrap.layer(axum::middleware::from_fn_with_state(
+        state.for_surface(AccessSurface::Bootstrap),
+        enforce_daemon_access,
+    ));
+    protected.merge(bootstrap)
 }
 
 /// Refuse a remotely reachable listener when no credential verifier can exist.
@@ -63,6 +100,14 @@ pub async fn enforce_daemon_access(
     // anonymous bootstrap authority.
     if !matches!(credential, BearerCredential::Missing) && record.is_none() {
         return (StatusCode::UNAUTHORIZED, "invalid bearer credential").into_response();
+    }
+
+    if matches!(state.surface, AccessSurface::Bootstrap) {
+        return next.run(request).await;
+    }
+
+    if !trusted_local && record.is_none() {
+        return (StatusCode::UNAUTHORIZED, "Bearer session token required").into_response();
     }
 
     let shared_mode = crate::shared_mode::is_shared_mode();
@@ -109,19 +154,14 @@ fn bearer_credential(headers: &axum::http::HeaderMap) -> BearerCredential<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::Router;
     use axum::http::header::AUTHORIZATION;
     use axum::routing::get;
     use tower::ServiceExt;
 
     fn protected_test_app() -> Router {
-        Router::new()
-            .route("/health", get(|| async { StatusCode::OK }))
-            .route("/v1/turns", get(|| async { StatusCode::NO_CONTENT }))
-            .layer(axum::middleware::from_fn_with_state(
-                DaemonAccessState::default(),
-                enforce_daemon_access,
-            ))
+        let protected = Router::new().route("/v1/turns", get(|| async { StatusCode::NO_CONTENT }));
+        let bootstrap = Router::new().route("/health", get(|| async { StatusCode::OK }));
+        assemble_daemon_access_boundary(protected, bootstrap, DaemonAccessState::new(None))
     }
 
     async fn request_from(path: &str, source: &str, bearer: Option<&str>) -> StatusCode {
@@ -237,5 +277,74 @@ mod tests {
             request_from("/v1/turns", "127.0.0.1:43100", None).await,
             StatusCode::NO_CONTENT
         );
+    }
+
+    #[tokio::test]
+    async fn route_path_cannot_grant_bootstrap_authority() {
+        let protected = Router::new().route("/health", get(|| async { StatusCode::NO_CONTENT }));
+        let app =
+            assemble_daemon_access_boundary(protected, Router::new(), DaemonAccessState::new(None));
+        let mut request = Request::builder()
+            .uri("/health")
+            .body(Body::empty())
+            .unwrap();
+        request.extensions_mut().insert(ConnectInfo(
+            "192.0.2.10:43100"
+                .parse::<SocketAddr>()
+                .expect("valid source"),
+        ));
+        assert_eq!(
+            app.oneshot(request).await.expect("response").status(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn final_socket_boundary_denies_proxied_remote_application_access() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind test listener");
+        let addr = listener.local_addr().expect("listener address");
+        let server = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                protected_test_app().into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+            .expect("serve access boundary");
+        });
+        let client = reqwest::Client::new();
+
+        let liveness = client
+            .get(format!("http://{addr}/health"))
+            .send()
+            .await
+            .expect("liveness request");
+        assert_eq!(liveness.status(), StatusCode::OK);
+
+        let protected = client
+            .get(format!("http://{addr}/v1/turns"))
+            .header(
+                crate::remote_trust::TRANSPORT_HEADER,
+                crate::remote_trust::TRANSPORT_IROH,
+            )
+            .send()
+            .await
+            .expect("proxied request");
+        assert_eq!(protected.status(), StatusCode::UNAUTHORIZED);
+
+        let invalid_bootstrap = client
+            .get(format!("http://{addr}/health"))
+            .header(
+                crate::remote_trust::TRANSPORT_HEADER,
+                crate::remote_trust::TRANSPORT_IROH,
+            )
+            .bearer_auth("unknown")
+            .send()
+            .await
+            .expect("invalid bootstrap request");
+        assert_eq!(invalid_bootstrap.status(), StatusCode::UNAUTHORIZED);
+
+        server.abort();
     }
 }

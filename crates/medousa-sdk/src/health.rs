@@ -17,7 +17,7 @@ impl HealthApi<'_> {
         let value = self
             .client
             .transport()
-            .get_json(self.client.base_url(), "/health")
+            .get_json(self.client.base_url(), "/v1/health")
             .await?;
         decode(value).await
     }

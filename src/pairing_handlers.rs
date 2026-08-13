@@ -3,12 +3,14 @@ use std::sync::Arc;
 use axum::extract::{ConnectInfo, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header::AUTHORIZATION};
 use axum::response::IntoResponse;
-use axum::{Json, routing::{delete, get, post}, Router};
+use axum::{
+    Json, Router,
+    routing::{delete, get, post},
+};
 use serde::Deserialize;
 
 use crate::pairing::{
-    PairHeartbeatRequest, PairInitRequest, PairVerifyRequest, PairingService,
-    RevokePairingResult,
+    PairHeartbeatRequest, PairInitRequest, PairVerifyRequest, PairingService, RevokePairingResult,
 };
 
 #[derive(Clone)]
@@ -16,7 +18,16 @@ pub struct PairingApiState {
     pub service: Arc<PairingService>,
 }
 
-pub fn routes() -> Router<PairingApiState> {
+/// Anonymous pairing ceremony routes. H01 will add the active-window and
+/// admission limits; no administrative/readback route belongs here.
+pub fn bootstrap_routes() -> Router<PairingApiState> {
+    Router::new()
+        .route("/pair/init", post(pair_init))
+        .route("/pair/verify", post(pair_verify))
+}
+
+/// Pairing administration and authenticated peer lifecycle routes.
+pub fn protected_routes() -> Router<PairingApiState> {
     Router::new()
         .route("/pair/status", get(pair_status))
         .route("/pair/iroh-ticket", get(get_iroh_ticket))
@@ -25,9 +36,10 @@ pub fn routes() -> Router<PairingApiState> {
         .route("/qr/image", get(get_qr_image))
         .route("/qr.png", get(get_qr_png))
         .route("/pair/code", get(get_pair_code))
-        .route("/pair/init", post(pair_init))
-        .route("/pair/verify", post(pair_verify))
-        .route("/pair/heartbeat", get(pair_heartbeat).post(pair_heartbeat_post))
+        .route(
+            "/pair/heartbeat",
+            get(pair_heartbeat).post(pair_heartbeat_post),
+        )
         .route("/pair/{pairing_id}", delete(revoke_pairing))
 }
 
@@ -159,7 +171,10 @@ async fn pair_init(
     } else {
         StatusCode::BAD_REQUEST
     };
-    Ok((status, Json(serde_json::to_value(response).unwrap_or_default())))
+    Ok((
+        status,
+        Json(serde_json::to_value(response).unwrap_or_default()),
+    ))
 }
 
 async fn pair_verify(
@@ -173,7 +188,10 @@ async fn pair_verify(
             } else {
                 StatusCode::BAD_REQUEST
             };
-            Ok((status, Json(serde_json::to_value(response).unwrap_or_default())))
+            Ok((
+                status,
+                Json(serde_json::to_value(response).unwrap_or_default()),
+            ))
         }
         Err(_) => Err(StatusCode::BAD_REQUEST),
     }
@@ -210,7 +228,10 @@ async fn run_pair_heartbeat(
     } else {
         StatusCode::UNAUTHORIZED
     };
-    Ok((status, Json(serde_json::to_value(response).unwrap_or_default())))
+    Ok((
+        status,
+        Json(serde_json::to_value(response).unwrap_or_default()),
+    ))
 }
 
 async fn revoke_pairing(

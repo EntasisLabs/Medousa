@@ -17,7 +17,8 @@ Subsystem guides: [interactive-streaming](interactive-streaming.md) · [artifact
 
 | Method | Path | Types / response | SDK | CLI |
 |--------|------|------------------|-----|-----|
-| GET | `/health` | `HealthResponse` | `health().get()` | `medousa doctor` |
+| GET | `/health` | Constant liveness JSON (`status`, `apiVersion`) | — | readiness probes |
+| GET | `/v1/health` | `HealthResponse` (protected) | `health().get()` | `medousa doctor` |
 | GET | `/v1/stats` | `DaemonStatsResponse` | `http().get` | — |
 | GET | `/v1/heartbeat/status` | `HeartbeatStatusResponse` | `http().get` | — |
 | GET | `/v1/delivery/status` | `DeliveryHealthResponse` | `http().get` | — |
