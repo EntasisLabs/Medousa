@@ -115,6 +115,20 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::calendar_handlers::calendar_surface().inventory())
         .expect("duplicate calendar route policy");
     inventory
+        .extend(crate::manuscript_handlers::manuscript_surface().inventory())
+        .expect("duplicate manuscript route policy");
+    inventory
+        .extend(crate::locus_handlers::locus_surface().inventory())
+        .expect("duplicate locus route policy");
+    inventory
+        .extend(crate::feed_handlers::feed_surface().inventory())
+        .expect("duplicate feed route policy");
+    inventory
+        .extend(
+            crate::component_store_handlers::component_store_surface().inventory(),
+        )
+        .expect("duplicate component store route policy");
+    inventory
 }
 
 pub fn build_identity_surface() -> DeclaredRouter<AppState> {
@@ -470,8 +484,6 @@ pub fn build_feature_routers(
     state: &AppState,
     dashboard_action_auth: &DashboardActionAuthConfig,
 ) -> Router {
-    let catalog_router = crate::manuscript_handlers::manuscript_router();
-
     let grapheme_router =
         crate::grapheme_handlers::grapheme_router(crate::grapheme_handlers::GraphemeApiState {
             composition: Arc::new(state.composition().clone()),
@@ -492,15 +504,9 @@ pub fn build_feature_routers(
     );
     let dashboard = dashboard_router(dashboard_state);
 
-    catalog_router
-        .merge(grapheme_router)
+    grapheme_router
         .merge(workflow_router)
         .merge(tool_history_router)
-        .merge(crate::locus_handlers::locus_router(
-            state.platform.agent_handle().locus_store.clone(),
-            state.platform.agent_handle().semantic_index.clone(),
-            state.platform.agent_handle().memory_reader.clone(),
-        ))
         .merge(crate::daemon::forge_api::forge_router(state.clone()))
         .merge(crate::daemon::forge_preview::forge_preview_router(
             state.clone(),
@@ -512,8 +518,6 @@ pub fn build_feature_routers(
             state.clone(),
         ))
         .merge(crate::daemon::detamu_host::world_router(state.clone()))
-        .merge(crate::feed_handlers::feed_router())
-        .merge(crate::component_store_handlers::component_store_router())
         .merge(crate::component_runtime_handlers::component_runtime_router())
         .merge(crate::local_inference_handlers::routes())
         .merge(crate::model_capability_registry::handlers::routes())
@@ -1183,12 +1187,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 182);
-        assert_eq!(with_pairing.entries().len(), 194);
+        assert_eq!(without_pairing.entries().len(), 201);
+        assert_eq!(with_pairing.entries().len(), 213);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 194);
+        assert_eq!(rows.len(), 213);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"
@@ -1374,6 +1378,56 @@ mod tests {
         assert!(entries.iter().all(|entry| {
             entry.group == RouteGroup::Portal
                 && entry.browser_policy == super::BrowserPolicy::NativeOnly
+        }));
+    }
+
+    #[test]
+    fn content_feature_inventory_is_complete_and_native_only() {
+        let manuscripts = crate::manuscript_handlers::manuscript_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let locus = crate::locus_handlers::locus_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let feeds = crate::feed_handlers::feed_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let component_store = crate::component_store_handlers::component_store_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let entries = manuscripts
+            .iter()
+            .chain(&locus)
+            .chain(&feeds)
+            .chain(&component_store)
+            .collect::<Vec<_>>();
+
+        assert_eq!(entries.len(), 19);
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("content.read"))
+                .count(),
+            12
+        );
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("content.write"))
+                .count(),
+            7
+        );
+        assert!(entries.iter().all(|entry| {
+            entry.group == RouteGroup::Portal
+                && entry.browser_policy == super::BrowserPolicy::NativeOnly
+        }));
+        assert!(entries.iter().any(|entry| {
+            entry.path == "/v1/feeds/stream"
+                && entry.rate_limit_class == RateLimitClass::Stream
         }));
     }
 }

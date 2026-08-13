@@ -5,7 +5,7 @@ use std::sync::Arc;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::get;
-use axum::{Json, Router};
+use axum::Json;
 use locus_core_rs::{ContextQueryService, NodeStore, SemanticIndexStore, SttpNode};
 use serde_json::Value;
 use stasis::ports::outbound::memory::memory_context_reader::MemoryContextReader;
@@ -137,20 +137,30 @@ async fn find_nodes_by_tags(
         .map_err(|err| err.to_string())
 }
 
-pub fn locus_router(
-    locus_store: Arc<dyn NodeStore>,
-    semantic_index: Arc<dyn SemanticIndexStore>,
-    memory_reader: Arc<dyn MemoryContextReader>,
-) -> Router {
-    Router::new()
-        .route("/v1/locus/nodes", get(list_locus_nodes))
-        .route("/v1/locus/nodes/{sync_key}", get(get_locus_node))
-        .route("/v1/locus/tags", get(list_locus_tags))
-        .with_state(LocusApiState {
-            locus_store,
-            semantic_index,
-            memory_reader,
-        })
+pub fn locus_surface() -> crate::daemon::route_policy::DeclaredRouter<LocusApiState> {
+    use crate::daemon::route_policy::{
+        BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+    };
+    use crate::request_principal::Capability;
+
+    let policy = |path| RoutePolicy {
+        method: axum::http::Method::GET,
+        path,
+        group: RouteGroup::Portal,
+        required_capability: Some(Capability::ContentRead),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit: 1024,
+        rate_limit_class: RateLimitClass::Read,
+    };
+
+    DeclaredRouter::default()
+        .route(policy("/v1/locus/nodes"), get(list_locus_nodes))
+        .route(
+            policy("/v1/locus/nodes/{sync_key}"),
+            get(get_locus_node),
+        )
+        .route(policy("/v1/locus/tags"), get(list_locus_tags))
 }
 
 pub async fn list_locus_nodes(

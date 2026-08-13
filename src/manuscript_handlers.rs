@@ -3,7 +3,7 @@
 use axum::extract::Path;
 use axum::http::StatusCode;
 use axum::routing::get;
-use axum::{Json, Router};
+use axum::Json;
 use axum::extract::Query;
 
 use crate::daemon_api::{
@@ -11,6 +11,9 @@ use crate::daemon_api::{
     ManuscriptCatalogResponse, ManuscriptDetailResponse, ManuscriptImportRequest,
     ManuscriptImportResponse, ManuscriptImportResultEntry, ManuscriptOpenshellSummary,
     ManuscriptScriptEntry, UpdateManuscriptRequest,
+};
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
 use crate::identity_manuscript::{
     self, ManuscriptScope, build_manuscript_context, palette_tools_for_editor,
@@ -323,15 +326,87 @@ fn parse_preset(raw: &str) -> Result<SkillImportPreset, (StatusCode, String)> {
     }
 }
 
-pub fn manuscript_router() -> Router {
-    Router::new()
+pub fn manuscript_surface() -> DeclaredRouter {
+    use axum::routing::{patch, post};
+
+    DeclaredRouter::default()
+        .methods([
+            (
+                manuscript_read_policy("/v1/manuscripts"),
+                get(list_manuscripts_catalog),
+            ),
+            (
+                manuscript_write_policy(
+                    axum::http::Method::POST,
+                    "/v1/manuscripts",
+                    8 * 1024 * 1024,
+                ),
+                post(import_manuscripts),
+            ),
+        ])
         .route(
-            "/v1/manuscripts",
-            get(list_manuscripts_catalog).post(import_manuscripts),
+            manuscript_write_policy(
+                axum::http::Method::POST,
+                "/v1/manuscripts/create",
+                256 * 1024,
+            ),
+            post(create_manuscript),
         )
-        .route("/v1/manuscripts/create", axum::routing::post(create_manuscript))
-        .route(
-            "/v1/manuscripts/{manuscript_id}",
-            get(get_manuscript_detail).patch(patch_manuscript_detail),
-        )
+        .methods([
+            (
+                manuscript_read_policy("/v1/manuscripts/{manuscript_id}"),
+                get(get_manuscript_detail),
+            ),
+            (
+                manuscript_write_policy(
+                    axum::http::Method::PATCH,
+                    "/v1/manuscripts/{manuscript_id}",
+                    256 * 1024,
+                ),
+                patch(patch_manuscript_detail),
+            ),
+        ])
+}
+
+fn manuscript_read_policy(path: &'static str) -> RoutePolicy {
+    manuscript_policy(
+        axum::http::Method::GET,
+        path,
+        crate::request_principal::Capability::ContentRead,
+        1024,
+        RateLimitClass::Read,
+    )
+}
+
+fn manuscript_write_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    body_limit: usize,
+) -> RoutePolicy {
+    manuscript_policy(
+        method,
+        path,
+        crate::request_principal::Capability::ContentWrite,
+        body_limit,
+        RateLimitClass::Mutation,
+    )
+}
+
+fn manuscript_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    required_capability: crate::request_principal::Capability,
+    body_limit: usize,
+    rate_limit_class: RateLimitClass,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Portal,
+        required_capability: Some(required_capability),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class,
+    }
 }

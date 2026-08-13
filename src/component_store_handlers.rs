@@ -3,33 +3,108 @@
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::get;
-use axum::{Json, Router};
+use axum::Json;
 use medousa_types::component_store::{
     ComponentStoreDeleteResponse, ComponentStoreGetResponse, ComponentStoreListResponse,
     ComponentStoreQuery, ComponentStoreSetRequest, ComponentStoreSetResponse,
 };
 
 use crate::component_store::{component_exists_in_profile, component_store_service};
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
 use crate::environment_store::resolve_profile_id;
 
 #[derive(Clone)]
 pub struct ComponentStoreApiState;
 
-pub fn component_store_router() -> Router {
-    Router::new()
+pub fn component_store_surface() -> DeclaredRouter<ComponentStoreApiState> {
+    use axum::routing::{delete, put};
+
+    DeclaredRouter::default()
+        .methods([
+            (
+                component_store_read_policy("/v1/components/{component_id}/store"),
+                get(get_store),
+            ),
+            (
+                component_store_write_policy(
+                    axum::http::Method::PUT,
+                    "/v1/components/{component_id}/store",
+                    256 * 1024,
+                ),
+                put(put_store_entry),
+            ),
+        ])
         .route(
-            "/v1/components/{component_id}/store",
-            get(get_store).put(put_store_entry),
-        )
-        .route(
-            "/v1/components/{component_id}/store/keys",
+            component_store_read_policy("/v1/components/{component_id}/store/keys"),
             get(list_store_keys),
         )
-        .route(
-            "/v1/components/{component_id}/store/{key}",
-            get(get_store_key).put(put_store_key).delete(delete_store_key),
-        )
-        .with_state(ComponentStoreApiState)
+        .methods([
+            (
+                component_store_read_policy("/v1/components/{component_id}/store/{key}"),
+                get(get_store_key),
+            ),
+            (
+                component_store_write_policy(
+                    axum::http::Method::PUT,
+                    "/v1/components/{component_id}/store/{key}",
+                    256 * 1024,
+                ),
+                put(put_store_key),
+            ),
+            (
+                component_store_write_policy(
+                    axum::http::Method::DELETE,
+                    "/v1/components/{component_id}/store/{key}",
+                    1024,
+                ),
+                delete(delete_store_key),
+            ),
+        ])
+}
+
+fn component_store_read_policy(path: &'static str) -> RoutePolicy {
+    component_store_policy(
+        axum::http::Method::GET,
+        path,
+        crate::request_principal::Capability::ContentRead,
+        1024,
+        RateLimitClass::Read,
+    )
+}
+
+fn component_store_write_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    body_limit: usize,
+) -> RoutePolicy {
+    component_store_policy(
+        method,
+        path,
+        crate::request_principal::Capability::ContentWrite,
+        body_limit,
+        RateLimitClass::Mutation,
+    )
+}
+
+fn component_store_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    required_capability: crate::request_principal::Capability,
+    body_limit: usize,
+    rate_limit_class: RateLimitClass,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Portal,
+        required_capability: Some(required_capability),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class,
+    }
 }
 
 async fn ensure_component_allowed(

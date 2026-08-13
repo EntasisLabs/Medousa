@@ -665,6 +665,22 @@ async fn main() -> Result<()> {
                 .with_state(medousa::turn_budget_handlers::TurnBudgetHandlerState),
         )
         .merge(medousa::calendar_handlers::calendar_surface().with_state(()))
+        .merge(medousa::manuscript_handlers::manuscript_surface().with_state(()))
+        .merge(medousa::locus_handlers::locus_surface().with_state(
+            medousa::locus_handlers::LocusApiState {
+                locus_store: state.platform.agent_handle().locus_store.clone(),
+                semantic_index: state.platform.agent_handle().semantic_index.clone(),
+                memory_reader: state.platform.agent_handle().memory_reader.clone(),
+            },
+        ))
+        .merge(
+            medousa::feed_handlers::feed_surface()
+                .with_state(medousa::feed_handlers::FeedApiState),
+        )
+        .merge(
+            medousa::component_store_handlers::component_store_surface()
+                .with_state(medousa::component_store_handlers::ComponentStoreApiState),
+        )
         .with_state(state.clone());
     if let Some((pairing_bootstrap, pairing_protected)) = pairing_routers {
         bootstrap = bootstrap.merge(pairing_bootstrap);
