@@ -849,15 +849,6 @@ impl PairingService {
         Ok(record)
     }
 
-    pub fn authorize_bearer_token(&self, token: &str) -> Result<bool> {
-        Ok(self.resolve_bearer_role(token)?.is_some())
-    }
-
-    /// Returns the pairing role when the bearer is valid and unexpired.
-    pub fn resolve_bearer_role(&self, token: &str) -> Result<Option<PairingRole>> {
-        Ok(self.resolve_bearer_record(token)?.map(|record| record.role))
-    }
-
     /// Returns the paired device when the bearer is valid and unexpired.
     pub fn resolve_bearer_record(&self, token: &str) -> Result<Option<PairedDeviceRecord>> {
         let Some(record) = self.find_by_session_token(token)? else {
@@ -881,47 +872,17 @@ impl PairingService {
             .filter(|id| !id.is_empty()))
     }
 
-    /// Peer-scoped tokens may only use inbox/share surfaces (and pairing heartbeat).
-    pub fn bearer_allows_path(&self, token: &str, path: &str) -> Result<bool> {
-        let Some(role) = self.resolve_bearer_role(token)? else {
-            return Ok(false);
-        };
-        if role.allows_full_portal() {
-            return Ok(true);
-        }
-        Ok(path_allowed_for_peer(path))
-    }
-}
-
-pub fn path_allowed_for_peer(path: &str) -> bool {
-    let path = path.split('?').next().unwrap_or(path);
-    path.starts_with("/v1/peer/")
-        || path.starts_with("/v1/share/")
-        || path.starts_with("/v1/mesh/")
-        || path == "/pair/heartbeat"
-        || path == "/pair/status"
-        || path == "/pair/iroh-ticket"
 }
 
 #[cfg(test)]
 mod peer_role_tests {
-    use super::{path_allowed_for_peer, PairingRole};
+    use super::PairingRole;
 
     #[test]
     fn pairing_role_defaults_to_portal() {
         assert_eq!(PairingRole::parse(None), PairingRole::Portal);
         assert_eq!(PairingRole::parse(Some("portal")), PairingRole::Portal);
         assert_eq!(PairingRole::parse(Some("peer")), PairingRole::Peer);
-    }
-
-    #[test]
-    fn peer_paths_are_allowlisted() {
-        assert!(path_allowed_for_peer("/v1/peer/messages"));
-        assert!(path_allowed_for_peer("/v1/share/push"));
-        assert!(path_allowed_for_peer("/v1/mesh/peers"));
-        assert!(path_allowed_for_peer("/pair/heartbeat"));
-        assert!(!path_allowed_for_peer("/v1/vault/notes"));
-        assert!(!path_allowed_for_peer("/v1/interactive/turn"));
     }
 }
 

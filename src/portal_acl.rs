@@ -6,7 +6,6 @@
 
 use axum::http::Method;
 
-use crate::pairing::path_allowed_for_peer;
 use crate::pairing::store::PairedDeviceRecord;
 use crate::request_principal::{Capability, RequestPrincipal};
 use crate::shared_mode::root_profile_id;
@@ -16,8 +15,6 @@ use crate::shared_mode::root_profile_id;
 pub enum PortalPathClass {
     /// Pair bootstrap + health — no bearer required.
     Public,
-    /// Peer-role surfaces (inbox/share/heartbeat).
-    PeerSurface,
     /// Bound Portal seat work (turns, sessions, vault content, …).
     Member,
     /// Org settings / host administration — root or loopback only.
@@ -51,9 +48,6 @@ pub fn classify_path(method: &Method, path: &str) -> PortalPathClass {
 
     if is_public_path(path) {
         return PortalPathClass::Public;
-    }
-    if path_allowed_for_peer(path) {
-        return PortalPathClass::PeerSurface;
     }
     if is_admin_path(method, path) {
         return PortalPathClass::Admin;
@@ -139,7 +133,6 @@ pub fn authorize_request(
 ) -> PortalAclDecision {
     let required = match classify_path(method, path) {
         PortalPathClass::Public => return PortalAclDecision::Deny,
-        PortalPathClass::PeerSurface => Capability::PeerExchange,
         // H01.2 replaces these coarse transitional classes with per-route
         // capability metadata at router assembly.
         PortalPathClass::Member => Capability::WorkshopRead,
@@ -235,7 +228,7 @@ mod tests {
     fn issued_capabilities_bound_personal_mode_access() {
         let peer = principal(PairingRole::Peer, None, false);
         assert!(!authorize_request(&peer, &Method::POST, "/v1/turns").is_allow());
-        assert!(authorize_request(&peer, &Method::GET, "/v1/peer/messages").is_allow());
+        assert!(!authorize_request(&peer, &Method::GET, "/v1/peer/messages").is_allow());
         let portal = principal(PairingRole::Portal, None, false);
         assert!(authorize_request(&portal, &Method::PUT, "/v1/shared-mode").is_allow());
         let anonymous = RequestPrincipal::anonymous(TransportClass::Direct);

@@ -645,9 +645,10 @@ async fn main() -> Result<()> {
 
     let mut app = build_daemon_router(state.clone(), &dashboard_action_auth);
     let mut bootstrap = build_liveness_router();
+    let mut declared = axum::Router::new();
     if let Some((pairing_bootstrap, pairing_protected)) = pairing_routers {
         bootstrap = bootstrap.merge(pairing_bootstrap);
-        app = app.merge(pairing_protected);
+        declared = declared.merge(pairing_protected);
     }
     let peer_message_state = medousa::peer_message_handlers::PeerMessageApiState {
         pairing: share_api_state.pairing.clone(),
@@ -660,7 +661,8 @@ async fn main() -> Result<()> {
         pairing: peer_message_state.pairing.clone(),
         local_device_id: peer_message_state.local_device_id.clone(),
     };
-    let declared = medousa::share_handlers::share_router(share_api_state)
+    declared = declared
+        .merge(medousa::share_handlers::share_router(share_api_state))
         .merge(medousa::peer_message_handlers::peer_message_router(
             peer_message_state,
         ))

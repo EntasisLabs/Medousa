@@ -13,8 +13,8 @@ pub use apns_keychain::{delete_apns_key_pem, load_apns_key_pem, store_apns_key_p
 pub use crypto::PROTOCOL_VERSION;
 pub use identity::DeviceIdentity;
 pub use service::{
-    path_allowed_for_peer, ApnsPushTarget, IrohTicketResponse, IrohWorkshopInfo,
-    LiveActivityPushTarget, PairHeartbeatRequest, PairHeartbeatResponse, PairInitRequest,
+    ApnsPushTarget, IrohTicketResponse, IrohWorkshopInfo, LiveActivityPushTarget,
+    PairHeartbeatRequest, PairHeartbeatResponse, PairInitRequest,
     PairInitResponse, PairStatusResponse, PairVerifyRequest, PairVerifyResponse, PairingService,
     QrResponse, RevokePairingAuthority, RevokePairingResult, mdns_enabled_from_env,
     mdns_should_advertise, pairing_enabled_from_env, pairing_qr_v1_from_env,
