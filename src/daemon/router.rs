@@ -76,6 +76,9 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::inference_profiles_handlers::surface().inventory())
         .expect("duplicate inference profiles route policy");
     inventory
+        .extend(crate::environment_handlers::environment_surface().inventory())
+        .expect("duplicate environment route policy");
+    inventory
 }
 
 pub fn build_identity_surface() -> DeclaredRouter<AppState> {
@@ -656,13 +659,6 @@ pub fn build_feature_routers(
     );
     let dashboard = dashboard_router(dashboard_state);
 
-    let environment_router = crate::environment_handlers::environment_router(
-        crate::environment_handlers::EnvironmentApiState {
-            hub: crate::environment_store::environment_hub(),
-            runtime: Some(Arc::new(state.composition().clone())),
-        },
-    );
-
     catalog_router
         .merge(capability_router)
         .merge(grapheme_router)
@@ -688,7 +684,6 @@ pub fn build_feature_routers(
             state.clone(),
         ))
         .merge(crate::daemon::detamu_host::world_router(state.clone()))
-        .merge(environment_router)
         .merge(crate::feed_handlers::feed_router())
         .merge(crate::component_store_handlers::component_store_router())
         .merge(crate::component_runtime_handlers::component_runtime_router())
@@ -1005,12 +1000,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 55);
-        assert_eq!(with_pairing.entries().len(), 67);
+        assert_eq!(without_pairing.entries().len(), 64);
+        assert_eq!(with_pairing.entries().len(), 76);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 67);
+        assert_eq!(rows.len(), 76);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"

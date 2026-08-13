@@ -666,6 +666,14 @@ async fn main() -> Result<()> {
         local_device_id: peer_message_state.local_device_id.clone(),
     };
     declared = declared
+        .merge(
+            medousa::environment_handlers::environment_surface().with_state(
+                medousa::environment_handlers::EnvironmentApiState {
+                    hub: medousa::environment_store::environment_hub(),
+                    runtime: Some(std::sync::Arc::new(state.composition().clone())),
+                },
+            ),
+        )
         .merge(medousa::share_handlers::share_surface().with_state(share_api_state))
         .merge(
             medousa::peer_message_handlers::peer_message_surface()
