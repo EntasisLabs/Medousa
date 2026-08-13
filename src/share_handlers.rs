@@ -8,6 +8,9 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
 use crate::environment_store::environment_hub;
 use crate::mesh::delivery::{
     accept_inbound_delivery, bind_delivery_local_ref, receipt_header_value,
@@ -32,12 +35,44 @@ pub struct ShareApiState {
 }
 
 pub fn share_router(state: ShareApiState) -> Router {
-    Router::new()
-        .route("/v1/share/capabilities", get(share_capabilities))
-        .route("/v1/share/export", post(share_export))
-        .route("/v1/share/import", post(share_import))
-        .route("/v1/share/push", post(share_push))
-        .with_state(state)
+    share_surface().into_router().with_state(state)
+}
+
+pub fn share_surface() -> DeclaredRouter<ShareApiState> {
+    DeclaredRouter::default()
+        .route(
+            peer_policy(axum::http::Method::GET, "/v1/share/capabilities", 1024),
+            get(share_capabilities),
+        )
+        .route(
+            peer_policy(axum::http::Method::POST, "/v1/share/export", 1024 * 1024),
+            post(share_export),
+        )
+        .route(
+            peer_policy(
+                axum::http::Method::POST,
+                "/v1/share/import",
+                8 * 1024 * 1024,
+            ),
+            post(share_import),
+        )
+        .route(
+            peer_policy(axum::http::Method::POST, "/v1/share/push", 8 * 1024 * 1024),
+            post(share_push),
+        )
+}
+
+fn peer_policy(method: axum::http::Method, path: &'static str, body_limit: usize) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::PeerExchange,
+        required_capability: Some(Capability::PeerExchange),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class: RateLimitClass::PeerExchange,
+    }
 }
 
 async fn share_capabilities() -> Json<ShareCapabilitiesResponse> {
@@ -226,4 +261,23 @@ fn with_mesh_receipt(result: ShareImportResult, receipt: Option<MeshReceipt>) ->
             .insert("x-medousa-mesh-receipt", header);
     }
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn share_inventory_is_peer_scoped_and_bounded() {
+        let entries = share_surface().inventory().entries().collect::<Vec<_>>();
+        assert_eq!(entries.len(), 4);
+        assert!(entries.iter().all(|entry| {
+            entry.group == RouteGroup::PeerExchange
+                && entry.required_capability == Some("peer.exchange")
+                && !entry.bootstrap_public
+                && entry.body_limit > 0
+        }));
+        assert_eq!(entries[2].path, "/v1/share/import");
+        assert_eq!(entries[2].body_limit, 8 * 1024 * 1024);
+    }
 }

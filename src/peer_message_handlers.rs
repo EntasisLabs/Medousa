@@ -8,6 +8,9 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
 use crate::environment_store::environment_hub;
 use crate::mesh::delivery::{
     accept_inbound_delivery, bind_delivery_local_ref, receipt_header_value,
@@ -42,11 +45,54 @@ struct ListQuery {
 }
 
 pub fn peer_message_router(state: PeerMessageApiState) -> Router {
-    Router::new()
-        .route("/v1/peer/messages", get(list_peer_messages).post(post_peer_message))
-        .route("/v1/peer/messages/unread-count", get(peer_unread_count))
-        .route("/v1/peer/messages/{message_id}/read", post(read_peer_message))
-        .with_state(state)
+    peer_message_surface().into_router().with_state(state)
+}
+
+pub fn peer_message_surface() -> DeclaredRouter<PeerMessageApiState> {
+    DeclaredRouter::default()
+        .methods([
+            (
+                peer_policy(axum::http::Method::GET, "/v1/peer/messages", 1024),
+                get(list_peer_messages),
+            ),
+            (
+                peer_policy(
+                    axum::http::Method::POST,
+                    "/v1/peer/messages",
+                    2 * 1024 * 1024,
+                ),
+                post(post_peer_message),
+            ),
+        ])
+        .route(
+            peer_policy(
+                axum::http::Method::GET,
+                "/v1/peer/messages/unread-count",
+                1024,
+            ),
+            get(peer_unread_count),
+        )
+        .route(
+            peer_policy(
+                axum::http::Method::POST,
+                "/v1/peer/messages/{message_id}/read",
+                1024,
+            ),
+            post(read_peer_message),
+        )
+}
+
+fn peer_policy(method: axum::http::Method, path: &'static str, body_limit: usize) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::PeerExchange,
+        required_capability: Some(Capability::PeerExchange),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class: RateLimitClass::PeerExchange,
+    }
 }
 
 async fn list_peer_messages(
@@ -440,6 +486,24 @@ fn mesh_status(err: crate::mesh::MeshEnvelopeError) -> (StatusCode, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn peer_message_inventory_has_method_specific_limits() {
+        let entries = peer_message_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 4);
+        assert_eq!(entries[0].method, "GET");
+        assert_eq!(entries[0].body_limit, 1024);
+        assert_eq!(entries[1].method, "POST");
+        assert_eq!(entries[1].body_limit, 2 * 1024 * 1024);
+        assert!(entries.iter().all(|entry| {
+            entry.group == RouteGroup::PeerExchange
+                && entry.required_capability == Some("peer.exchange")
+                && !entry.bootstrap_public
+        }));
+    }
 
     #[test]
     fn involves_device_id_prefix_match() {

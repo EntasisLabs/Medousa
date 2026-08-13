@@ -109,15 +109,28 @@ impl<S> DeclaredRouter<S>
 where
     S: Clone + Send + Sync + 'static,
 {
-    pub fn route(mut self, policy: RoutePolicy, handler: MethodRouter<S>) -> Self {
-        let path = policy.path;
-        let body_limit = policy.body_limit;
+    pub fn route(self, policy: RoutePolicy, handler: MethodRouter<S>) -> Self {
+        self.methods([(policy, handler)])
+    }
+
+    pub fn methods<const N: usize>(mut self, routes: [(RoutePolicy, MethodRouter<S>); N]) -> Self {
+        let mut routes = routes.into_iter();
+        let (first_policy, first_handler) = routes.next().expect("route set cannot be empty");
+        let path = first_policy.path;
+        let first_limit = first_policy.body_limit;
         self.inventory
-            .declare(policy)
+            .declare(first_policy)
             .expect("invalid daemon route policy");
-        self.router = self
-            .router
-            .route(path, handler.layer(DefaultBodyLimit::max(body_limit)));
+        let mut handler = first_handler.layer(DefaultBodyLimit::max(first_limit));
+        for (policy, method_handler) in routes {
+            assert_eq!(policy.path, path, "route set must share one path");
+            let body_limit = policy.body_limit;
+            self.inventory
+                .declare(policy)
+                .expect("invalid daemon route policy");
+            handler = handler.merge(method_handler.layer(DefaultBodyLimit::max(body_limit)));
+        }
+        self.router = self.router.route(path, handler);
         self
     }
 
