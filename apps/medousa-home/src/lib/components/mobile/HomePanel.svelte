@@ -35,7 +35,7 @@
   import { isTauri } from "$lib/window";
   import { haptic } from "$lib/haptics";
   import { workshops } from "$lib/stores/workshops.svelte";
-  import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
+  import { enterMobileCodeProject } from "$lib/utils/mobileCodeOpen";
   import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
   import { Building2, Home, Radio, Users } from "@lucide/svelte";
   import {
@@ -283,10 +283,7 @@
     haptic("light");
     layout.openMore("code");
     if (row.workId) {
-      await lmeWorkspace.openCodeWorkspace(
-        row.workId,
-        row.workTitle ?? row.title,
-      );
+      await enterMobileCodeProject(row.workId);
     }
   }
 

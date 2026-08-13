@@ -751,6 +751,10 @@ export class ShellTabsStore {
     codeWorkspace.resetForWorkshopSwitch();
     const { undertakings } = await import("$lib/stores/undertakings.svelte");
     undertakings.resetForWorkshopSwitch();
+    const { mobileCodeWorkspaceState } = await import(
+      "$lib/stores/mobileCodeWorkspaceState.svelte"
+    );
+    mobileCodeWorkspaceState.resetForWorkshopSwitch();
 
     const persisted = loadPersisted(nextScope);
     if (persisted) {

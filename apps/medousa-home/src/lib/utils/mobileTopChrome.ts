@@ -4,8 +4,9 @@ import type {
   AutomationsChromeMode,
   AutomationsSection,
 } from "$lib/stores/automationsNav.svelte";
+import type { MobileCodeChromeMode } from "$lib/utils/mobileCodeLanding";
 
-export type { AutomationsChromeMode };
+export type { AutomationsChromeMode, MobileCodeChromeMode };
 
 export type MobileChromeActionId =
   | "menu"
@@ -36,7 +37,11 @@ export type MobileChromeActionId =
   | "browserBack"
   | "browserForward"
   | "browserReload"
-  | "activity";
+  | "activity"
+  | "codeSearch"
+  | "codeSave"
+  | "codeFind"
+  | "codeThread";
 
 export type MobileChromeSurface =
   | "home"
@@ -47,7 +52,8 @@ export type MobileChromeSurface =
   | "more"
   | "more-nested"
   | "automations"
-  | "agents";
+  | "agents"
+  | "code";
 
 export function resolveMobileChromeSurface(
   tab: MobileTab,
@@ -62,6 +68,7 @@ export function resolveMobileChromeSurface(
   if (tab === "more") {
     if (moreDestination === "automations") return "automations";
     if (moreDestination === "workshop") return "agents";
+    if (moreDestination === "code") return "code";
     return moreDestination !== "hub" ? "more-nested" : "more";
   }
   return "more";
@@ -74,7 +81,8 @@ export function mobileChromeLeading(
   return surface === "notes-reader" ||
     surface === "more-nested" ||
     surface === "automations" ||
-    surface === "agents"
+    surface === "agents" ||
+    surface === "code"
     ? "back"
     : "menu";
 }
@@ -83,6 +91,7 @@ export function mobileChromeTrailing(
   surface: MobileChromeSurface,
   automationsSection: AutomationsSection = "scripts",
   automationsMode: AutomationsChromeMode = "browse",
+  codeMode: MobileCodeChromeMode = "projects",
 ): MobileChromeActionId[] {
   switch (surface) {
     case "home":
@@ -120,6 +129,19 @@ export function mobileChromeTrailing(
       return ["search", "automationsFilter"];
     case "agents":
       return ["search", "agentsFilter", "agentsImport"];
+    case "code":
+      switch (codeMode) {
+        case "projects":
+          return ["codeSearch"];
+        case "files":
+          return ["codeSearch", "codeThread"];
+        case "editor":
+          return ["codeSave", "codeFind", "codeThread"];
+        case "terminal":
+        case "changes":
+          return ["codeThread"];
+      }
+      return ["codeThread"];
     case "more":
     case "more-nested":
       return ["activity"];
