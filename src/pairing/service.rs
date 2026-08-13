@@ -818,6 +818,17 @@ impl PairingService {
         self.store.get_by_phone_id(phone_id)
     }
 
+    /// Resolve an already-authenticated opaque credential ID to its current
+    /// pairing record. Revoked and expired records are never returned.
+    pub fn find_by_pairing_id(&self, pairing_id: &str) -> Result<Option<PairedDeviceRecord>> {
+        Ok(self
+            .store
+            .list_paired()?
+            .into_iter()
+            .find(|record| record.pairing_id == pairing_id)
+            .filter(|record| record.session_token_expiry >= Utc::now()))
+    }
+
     /// Persist mesh grants on the pairing record and refresh the mesh registry projection.
     pub fn set_mesh_grants(
         &self,
@@ -1133,6 +1144,7 @@ mod tests {
                 .unwrap()
                 .is_some()
         );
+        assert!(service.find_by_pairing_id(&pairing_id).unwrap().is_some());
         assert_eq!(
             service
                 .pair_heartbeat(Some(&pairing_id), None)
@@ -1155,7 +1167,7 @@ mod tests {
     #[tokio::test]
     async fn expired_session_token_is_rejected() {
         let service = test_service();
-        let (_, session_token, phone_id) = pair_test_phone(&service, None).await;
+        let (pairing_id, session_token, phone_id) = pair_test_phone(&service, None).await;
         let mut record = service
             .find_by_phone_id(&phone_id)
             .expect("read pairing")
@@ -1169,6 +1181,7 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+        assert!(service.find_by_pairing_id(&pairing_id).unwrap().is_none());
         service.store.delete_record(&phone_id).expect("cleanup");
     }
 
@@ -1212,6 +1225,7 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+        assert!(service.find_by_pairing_id(&pairing_id).unwrap().is_none());
     }
 
     fn extract_query_param(url: &str, key: &str) -> Option<String> {

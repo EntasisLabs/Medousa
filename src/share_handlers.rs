@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use axum::extract::{ConnectInfo, State};
-use axum::http::{HeaderMap, HeaderValue, StatusCode, header::AUTHORIZATION};
+use axum::extract::{Extension, State};
+use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -17,6 +17,7 @@ use crate::mesh::{
     require_remote_envelope, CAP_MESH_BUNDLE_PUSH,
 };
 use crate::pairing::{PairedDeviceRecord, PairingService};
+use crate::request_principal::{Capability, RequestPrincipal, TransportClass};
 use crate::share::bundle::{
     ShareBundle, ShareCapabilitiesResponse, ShareExportRequest, ShareImportRequest,
     ShareImportResult,
@@ -61,12 +62,10 @@ async fn share_export(
 
 async fn share_import(
     State(state): State<ShareApiState>,
-    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-    headers: HeaderMap,
+    Extension(principal): Extension<RequestPrincipal>,
     Json(body): Json<MeshInboundBody<serde_json::Value>>,
 ) -> Result<Json<ShareImportResult>, (StatusCode, String)> {
-    let (request, _envelope, _receipt) =
-        authorize_and_unwrap_share(&state, addr.ip(), &headers, body)?;
+    let (request, _envelope, _receipt) = authorize_and_unwrap_share(&state, &principal, body)?;
     let errors = request.bundle.validate();
     if !errors.is_empty() {
         return Err((StatusCode::BAD_REQUEST, errors.join("; ")));
@@ -79,12 +78,10 @@ async fn share_import(
 
 async fn share_push(
     State(state): State<ShareApiState>,
-    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-    headers: HeaderMap,
+    Extension(principal): Extension<RequestPrincipal>,
     Json(body): Json<MeshInboundBody<serde_json::Value>>,
 ) -> Result<Response, (StatusCode, String)> {
-    let (request, envelope, mut receipt) =
-        authorize_and_unwrap_share(&state, addr.ip(), &headers, body)?;
+    let (request, envelope, mut receipt) = authorize_and_unwrap_share(&state, &principal, body)?;
     let errors = request.bundle.validate();
     if !errors.is_empty() {
         return Err((StatusCode::BAD_REQUEST, errors.join("; ")));
@@ -129,17 +126,16 @@ type ShareUnwrapResult = Result<
 
 fn authorize_and_unwrap_share(
     state: &ShareApiState,
-    ip: std::net::IpAddr,
-    headers: &HeaderMap,
+    principal: &RequestPrincipal,
     body: MeshInboundBody<serde_json::Value>,
 ) -> ShareUnwrapResult {
-    if crate::remote_trust::is_trusted_local(ip, headers) {
+    if principal.transport() == TransportClass::Loopback {
         let (_envelope, payload) = body.into_parts();
         let request = serde_json::from_value(payload)
             .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
         return Ok((request, None, None));
     }
-    let record = authorize_remote_share_record(state, headers)?;
+    let record = authorize_remote_share_record(state, principal)?;
     let (payload, envelope) = require_remote_envelope(
         body,
         true,
@@ -176,7 +172,7 @@ fn authorize_and_unwrap_share(
 
 fn authorize_remote_share_record(
     state: &ShareApiState,
-    headers: &HeaderMap,
+    principal: &RequestPrincipal,
 ) -> Result<PairedDeviceRecord, (StatusCode, String)> {
     let Some(pairing) = state.pairing.as_ref() else {
         return Err((
@@ -184,43 +180,28 @@ fn authorize_remote_share_record(
             "LAN pairing is not enabled on this workshop".to_string(),
         ));
     };
-    let Some(token) = bearer_token(headers) else {
+    if !principal.capabilities().contains(Capability::PeerExchange) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "This credential cannot use share import".to_string(),
+        ));
+    }
+    let Some(credential_id) = principal.credential_id() else {
         return Err((
             StatusCode::UNAUTHORIZED,
-            "Bearer session token required for remote share import".to_string(),
+            "Authenticated pairing required for remote share import".to_string(),
         ));
     };
     let record = pairing
-        .find_by_session_token(token)
+        .find_by_pairing_id(credential_id.as_str())
         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
         .ok_or_else(|| {
             (
                 StatusCode::UNAUTHORIZED,
-                "Invalid or expired share session token".to_string(),
+                "Invalid or expired share credential".to_string(),
             )
         })?;
-    if record.session_token_expiry < chrono::Utc::now() {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            "Invalid or expired share session token".to_string(),
-        ));
-    }
-    if !record.role.allows_peer_surface() {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "This pairing cannot use share import".to_string(),
-        ));
-    }
     Ok(record)
-}
-
-fn bearer_token(headers: &HeaderMap) -> Option<&str> {
-    headers
-        .get(AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
 }
 
 fn mesh_status(err: crate::mesh::MeshEnvelopeError) -> (StatusCode, String) {
