@@ -6,6 +6,7 @@ use std::sync::Arc;
 use axum::Json;
 use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::StatusCode;
+use axum::routing::{delete, get, patch, post};
 use chrono::Utc;
 use serde_json::Value;
 use uuid::Uuid;
@@ -23,6 +24,9 @@ use crate::daemon::ingest::{
     get_job_attempts_graceful, resolve_api_model_routing, spawn_daemon_api_agent_turn,
 };
 use crate::daemon::interactive::{build_interactive_request_from_ticket, spawn_turn_ticket};
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
 use crate::daemon_api::{
     CreateTurnTicketRequest, DeleteRecurringResponse, EnqueueAskRequest, EnqueuePromptRequest,
     EnqueueReportRequest, EnqueueResponse, JobCitationResponse, JobEvidenceReportResponse,
@@ -48,6 +52,79 @@ use crate::recurring_schedule::RecurringScheduleSpec;
 
 const DAEMON_REPORT_SESSION_ID: &str = "medousa-daemon-reports";
 const MAX_REPORT_CITATIONS: usize = 24;
+
+pub fn recurring_surface() -> DeclaredRouter<AppState> {
+    DeclaredRouter::default()
+        .route(
+            recurring_read_policy("/v1/recurring"),
+            get(list_recurring_definitions),
+        )
+        .route(
+            recurring_admin_policy(
+                axum::http::Method::POST,
+                "/v1/recurring/prompt",
+                1024 * 1024,
+            ),
+            post(register_recurring_prompt),
+        )
+        .methods([
+            (
+                recurring_admin_policy(
+                    axum::http::Method::PATCH,
+                    "/v1/recurring/{recurring_id}",
+                    256 * 1024,
+                ),
+                patch(update_recurring_definition),
+            ),
+            (
+                recurring_admin_policy(
+                    axum::http::Method::DELETE,
+                    "/v1/recurring/{recurring_id}",
+                    1024,
+                ),
+                delete(delete_recurring_definition),
+            ),
+        ])
+        .route(
+            recurring_read_policy("/v1/recurring/{recurring_id}/runs"),
+            get(list_recurring_runs_handler),
+        )
+        .route(
+            recurring_read_policy("/v1/recurring/{recurring_id}/delivery"),
+            get(get_recurring_delivery_handler),
+        )
+}
+
+fn recurring_read_policy(path: &'static str) -> RoutePolicy {
+    RoutePolicy {
+        method: axum::http::Method::GET,
+        path,
+        group: RouteGroup::Portal,
+        required_capability: Some(crate::request_principal::Capability::WorkshopRead),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit: 1024,
+        rate_limit_class: RateLimitClass::Read,
+    }
+}
+
+fn recurring_admin_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    body_limit: usize,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Administration,
+        required_capability: Some(crate::request_principal::Capability::AdminRuntime),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class: RateLimitClass::Administration,
+    }
+}
+
 pub async fn get_job_result(
     State(state): State<AppState>,
     AxumPath(job_id): AxumPath<String>,
@@ -1108,4 +1185,32 @@ pub fn enforce_lane_safety(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recurring_inventory_separates_reads_from_administration() {
+        let entries = recurring_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 6);
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("workshop.read"))
+                .count(),
+            3
+        );
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("admin.runtime"))
+                .count(),
+            3
+        );
+    }
 }

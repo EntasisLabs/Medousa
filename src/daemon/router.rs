@@ -91,6 +91,9 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::daemon::agents::permission_surface().inventory())
         .expect("duplicate agent permission route policy");
     inventory
+        .extend(crate::daemon::jobs::recurring_surface().inventory())
+        .expect("duplicate recurring route policy");
+    inventory
 }
 
 pub fn build_identity_surface() -> DeclaredRouter<AppState> {
@@ -626,7 +629,7 @@ fn find_arg_value<'a>(args: &'a [String], key: &str) -> Option<&'a str> {
 
 /// Core daemon API routes (health, jobs, sessions, interactive, identity, ingest, continuations).
 pub fn build_core_router(state: AppState) -> Router {
-    use axum::routing::{delete, get, patch, post, put};
+    use axum::routing::{delete, get, post, put};
 
     use crate::daemon::continuations::{
         continuation_lineage, continuation_status, replay_and_resume_job,
@@ -641,10 +644,8 @@ pub fn build_core_router(state: AppState) -> Router {
         start_interactive_turn,
     };
     use crate::daemon::jobs::{
-        archive_ask_job, complete_ask_job_actions, delete_recurring_definition, enqueue_ask,
-        enqueue_prompt, enqueue_report, get_job_report, get_job_result,
-        get_recurring_delivery_handler, list_recurring_definitions, list_recurring_runs_handler,
-        register_recurring_prompt, retry_workspace_card, update_recurring_definition,
+        archive_ask_job, complete_ask_job_actions, enqueue_ask, enqueue_prompt, enqueue_report,
+        get_job_report, get_job_result, retry_workspace_card,
     };
     Router::new()
         .route("/v1/health", get(health))
@@ -718,20 +719,6 @@ pub fn build_core_router(state: AppState) -> Router {
         .route("/v1/jobs/ask", post(enqueue_ask))
         .route("/v1/jobs/report", post(enqueue_report))
         .route("/v1/jobs/prompt", post(enqueue_prompt))
-        .route("/v1/recurring", get(list_recurring_definitions))
-        .route("/v1/recurring/prompt", post(register_recurring_prompt))
-        .route(
-            "/v1/recurring/{recurring_id}",
-            patch(update_recurring_definition).delete(delete_recurring_definition),
-        )
-        .route(
-            "/v1/recurring/{recurring_id}/runs",
-            get(list_recurring_runs_handler),
-        )
-        .route(
-            "/v1/recurring/{recurring_id}/delivery",
-            get(get_recurring_delivery_handler),
-        )
         .route("/v1/interactive/turn", post(start_interactive_turn))
         .route(
             "/v1/interactive/turn/{turn_id}/stream",
@@ -897,12 +884,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 95);
-        assert_eq!(with_pairing.entries().len(), 107);
+        assert_eq!(without_pairing.entries().len(), 101);
+        assert_eq!(with_pairing.entries().len(), 113);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 107);
+        assert_eq!(rows.len(), 113);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"

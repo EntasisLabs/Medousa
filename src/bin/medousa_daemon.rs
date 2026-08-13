@@ -649,6 +649,7 @@ async fn main() -> Result<()> {
         .merge(medousa::daemon::router::build_runtime_admin_surface())
         .merge(medousa::daemon::runtime_tui_defaults::surface())
         .merge(medousa::inference_profiles_handlers::surface())
+        .merge(medousa::daemon::jobs::recurring_surface())
         .with_state(state.clone());
     if let Some((pairing_bootstrap, pairing_protected)) = pairing_routers {
         bootstrap = bootstrap.merge(pairing_bootstrap);
