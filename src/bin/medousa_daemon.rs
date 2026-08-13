@@ -645,7 +645,9 @@ async fn main() -> Result<()> {
 
     let mut app = build_daemon_router(state.clone(), &dashboard_action_auth);
     let mut bootstrap = build_liveness_router();
-    let mut declared = medousa::daemon::router::build_identity_surface().with_state(state.clone());
+    let mut declared = medousa::daemon::router::build_identity_surface()
+        .merge(medousa::daemon::router::build_runtime_admin_surface())
+        .with_state(state.clone());
     if let Some((pairing_bootstrap, pairing_protected)) = pairing_routers {
         bootstrap = bootstrap.merge(pairing_bootstrap);
         declared = declared.merge(pairing_protected);

@@ -67,6 +67,9 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(build_identity_surface().inventory())
         .expect("duplicate identity route policy");
     inventory
+        .extend(build_runtime_admin_surface().inventory())
+        .expect("duplicate runtime administration route policy");
+    inventory
 }
 
 pub fn build_identity_surface() -> DeclaredRouter<AppState> {
@@ -178,6 +181,114 @@ pub fn build_identity_surface() -> DeclaredRouter<AppState> {
         )
 }
 
+pub fn build_runtime_admin_surface() -> DeclaredRouter<AppState> {
+    use axum::routing::{get, post, put};
+
+    use crate::daemon::core::{
+        artifact_command, artifact_delete, artifact_fetch, artifact_list_ui, artifact_write,
+        runtime_config_command, runtime_defaults, stage_route_command,
+    };
+    use crate::maintenance_handlers::{get_artifact_retention_status, update_artifact_retention};
+
+    DeclaredRouter::default()
+        .route(
+            runtime_admin_policy(axum::http::Method::GET, "/v1/runtime/defaults", 1024),
+            get(runtime_defaults),
+        )
+        .route(
+            runtime_admin_policy(
+                axum::http::Method::POST,
+                "/v1/runtime/artifact/command",
+                8 * 1024 * 1024,
+            ),
+            post(artifact_command),
+        )
+        .route(
+            runtime_admin_policy(
+                axum::http::Method::POST,
+                "/v1/runtime/artifact/fetch",
+                64 * 1024,
+            ),
+            post(artifact_fetch),
+        )
+        .route(
+            runtime_admin_policy(
+                axum::http::Method::POST,
+                "/v1/runtime/artifact/write",
+                8 * 1024 * 1024,
+            ),
+            post(artifact_write),
+        )
+        .route(
+            runtime_admin_policy(
+                axum::http::Method::POST,
+                "/v1/runtime/artifact/delete",
+                64 * 1024,
+            ),
+            post(artifact_delete),
+        )
+        .route(
+            runtime_admin_policy(
+                axum::http::Method::POST,
+                "/v1/runtime/artifact/list-ui",
+                64 * 1024,
+            ),
+            post(artifact_list_ui),
+        )
+        .methods([
+            (
+                runtime_admin_policy(axum::http::Method::GET, "/v1/maintenance/artifacts", 1024),
+                get(get_artifact_retention_status),
+            ),
+            (
+                runtime_admin_policy(
+                    axum::http::Method::PUT,
+                    "/v1/maintenance/artifacts",
+                    64 * 1024,
+                ),
+                put(update_artifact_retention),
+            ),
+        ])
+        .methods([
+            (
+                runtime_admin_policy(axum::http::Method::GET, "/v1/maintenance/storage", 1024),
+                get(crate::daemon::storage_governor::get_storage_status),
+            ),
+            (
+                runtime_admin_policy(
+                    axum::http::Method::PUT,
+                    "/v1/maintenance/storage",
+                    64 * 1024,
+                ),
+                put(crate::daemon::storage_governor::put_storage_settings),
+            ),
+            (
+                runtime_admin_policy(
+                    axum::http::Method::POST,
+                    "/v1/maintenance/storage",
+                    16 * 1024,
+                ),
+                post(crate::daemon::storage_governor::post_storage_maintenance),
+            ),
+        ])
+        .route(
+            runtime_admin_policy(
+                axum::http::Method::POST,
+                "/v1/runtime/config/command",
+                256 * 1024,
+            ),
+            post(runtime_config_command),
+        )
+        .route(
+            runtime_admin_policy(
+                axum::http::Method::POST,
+                "/v1/runtime/stage-route/command",
+                256 * 1024,
+            ),
+            post(stage_route_command),
+        )
+}
+
 fn profile_policy(
     method: axum::http::Method,
     path: &'static str,
@@ -208,6 +319,21 @@ fn identity_admin_policy(
         path,
         RouteGroup::Administration,
         crate::request_principal::Capability::AdminIdentity,
+        body_limit,
+        RateLimitClass::Administration,
+    )
+}
+
+fn runtime_admin_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    body_limit: usize,
+) -> RoutePolicy {
+    protected_policy(
+        method,
+        path,
+        RouteGroup::Administration,
+        crate::request_principal::Capability::AdminRuntime,
         body_limit,
         RateLimitClass::Administration,
     )
@@ -597,11 +723,7 @@ pub fn build_core_router(state: AppState) -> Router {
     use crate::daemon::continuations::{
         continuation_lineage, continuation_status, replay_and_resume_job,
     };
-    use crate::daemon::core::{
-        artifact_command, artifact_delete, artifact_fetch, artifact_list_ui, artifact_write,
-        health, heartbeat_status, runtime_config_command, runtime_defaults, stage_route_command,
-        stats,
-    };
+    use crate::daemon::core::{health, heartbeat_status, stats};
     use crate::daemon::ingest::{
         deliver_outbox_webhook, deliver_poll, delivery_status, ingest_handler, ingest_stream,
     };
@@ -616,12 +738,9 @@ pub fn build_core_router(state: AppState) -> Router {
         get_recurring_delivery_handler, list_recurring_definitions, list_recurring_runs_handler,
         register_recurring_prompt, retry_workspace_card, update_recurring_definition,
     };
-    use crate::maintenance_handlers::{get_artifact_retention_status, update_artifact_retention};
-
     Router::new()
         .route("/v1/health", get(health))
         .route("/v1/stats", get(stats))
-        .route("/v1/runtime/defaults", get(runtime_defaults))
         .route(
             "/v1/agent-modes",
             get(crate::daemon_handlers::list_agent_modes),
@@ -767,23 +886,6 @@ pub fn build_core_router(state: AppState) -> Router {
             "/v1/auth/chatgpt/models",
             get(crate::daemon::chatgpt_oauth::models),
         )
-        .route("/v1/runtime/artifact/command", post(artifact_command))
-        .route("/v1/runtime/artifact/fetch", post(artifact_fetch))
-        .route("/v1/runtime/artifact/write", post(artifact_write))
-        .route("/v1/runtime/artifact/delete", post(artifact_delete))
-        .route("/v1/runtime/artifact/list-ui", post(artifact_list_ui))
-        .route(
-            "/v1/maintenance/artifacts",
-            get(get_artifact_retention_status).put(update_artifact_retention),
-        )
-        .route(
-            "/v1/maintenance/storage",
-            get(crate::daemon::storage_governor::get_storage_status)
-                .put(crate::daemon::storage_governor::put_storage_settings)
-                .post(crate::daemon::storage_governor::post_storage_maintenance),
-        )
-        .route("/v1/runtime/config/command", post(runtime_config_command))
-        .route("/v1/runtime/stage-route/command", post(stage_route_command))
         .route("/v1/ingest", post(ingest_handler))
         .route("/v1/ingest/{stream_id}/stream", get(ingest_stream))
         .route(
@@ -834,8 +936,9 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{
-        LIVENESS_BODY, build_declared_route_inventory, build_identity_surface,
-        build_liveness_router, build_liveness_surface,
+        LIVENESS_BODY, RateLimitClass, RouteGroup, build_declared_route_inventory,
+        build_identity_surface, build_liveness_router, build_liveness_surface,
+        build_runtime_admin_surface,
     };
 
     #[tokio::test]
@@ -898,12 +1001,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 37);
-        assert_eq!(with_pairing.entries().len(), 49);
+        assert_eq!(without_pairing.entries().len(), 50);
+        assert_eq!(with_pairing.entries().len(), 62);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 49);
+        assert_eq!(rows.len(), 62);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"
@@ -938,5 +1041,19 @@ mod tests {
                 .count(),
             7
         );
+    }
+
+    #[test]
+    fn runtime_inventory_requires_runtime_administration() {
+        let entries = build_runtime_admin_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 13);
+        assert!(entries.iter().all(|entry| {
+            entry.group == RouteGroup::Administration
+                && entry.required_capability == Some("admin.runtime")
+                && entry.rate_limit_class == RateLimitClass::Administration
+        }));
     }
 }
