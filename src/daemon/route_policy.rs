@@ -1,6 +1,8 @@
 //! Reviewed policy metadata for daemon route assembly and inventory export.
 
 use axum::http::Method;
+use axum::routing::MethodRouter;
+use axum::{Router, extract::DefaultBodyLimit};
 use serde::Serialize;
 
 use crate::request_principal::Capability;
@@ -84,6 +86,48 @@ impl From<&RoutePolicy> for RouteInventoryEntry {
 #[derive(Clone, Debug, Default)]
 pub struct RouteInventory {
     entries: Vec<RoutePolicy>,
+}
+
+pub struct DeclaredRouter<S = ()> {
+    router: Router<S>,
+    inventory: RouteInventory,
+}
+
+impl<S> Default for DeclaredRouter<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    fn default() -> Self {
+        Self {
+            router: Router::new(),
+            inventory: RouteInventory::default(),
+        }
+    }
+}
+
+impl<S> DeclaredRouter<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    pub fn route(mut self, policy: RoutePolicy, handler: MethodRouter<S>) -> Self {
+        let path = policy.path;
+        let body_limit = policy.body_limit;
+        self.inventory
+            .declare(policy)
+            .expect("invalid daemon route policy");
+        self.router = self
+            .router
+            .route(path, handler.layer(DefaultBodyLimit::max(body_limit)));
+        self
+    }
+
+    pub fn inventory(&self) -> &RouteInventory {
+        &self.inventory
+    }
+
+    pub fn into_router(self) -> Router<S> {
+        self.router
+    }
 }
 
 impl RouteInventory {

@@ -9,6 +9,9 @@ use axum::{
 };
 use serde::Deserialize;
 
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
 use crate::pairing::{
     PairHeartbeatRequest, PairInitRequest, PairVerifyRequest, PairingService,
     RevokePairingAuthority, RevokePairingResult,
@@ -23,9 +26,37 @@ pub struct PairingApiState {
 /// Anonymous pairing ceremony routes. H01 will add the active-window and
 /// admission limits; no administrative/readback route belongs here.
 pub fn bootstrap_routes() -> Router<PairingApiState> {
-    Router::new()
-        .route("/pair/init", post(pair_init))
-        .route("/pair/verify", post(pair_verify))
+    bootstrap_surface().into_router()
+}
+
+pub fn bootstrap_surface() -> DeclaredRouter<PairingApiState> {
+    DeclaredRouter::default()
+        .route(
+            RoutePolicy {
+                method: axum::http::Method::POST,
+                path: "/pair/init",
+                group: RouteGroup::PairingCeremony,
+                required_capability: None,
+                bootstrap_public: true,
+                browser_policy: BrowserPolicy::Public,
+                body_limit: 16 * 1024,
+                rate_limit_class: RateLimitClass::PairingCeremony,
+            },
+            post(pair_init),
+        )
+        .route(
+            RoutePolicy {
+                method: axum::http::Method::POST,
+                path: "/pair/verify",
+                group: RouteGroup::PairingCeremony,
+                required_capability: None,
+                bootstrap_public: true,
+                browser_policy: BrowserPolicy::Public,
+                body_limit: 8 * 1024,
+                rate_limit_class: RateLimitClass::PairingCeremony,
+            },
+            post(pair_verify),
+        )
 }
 
 /// Pairing administration and authenticated peer lifecycle routes.
@@ -252,5 +283,26 @@ async fn revoke_pairing(
         Ok(RevokePairingResult::NotFound) => Err(StatusCode::NOT_FOUND),
         Ok(RevokePairingResult::Unauthorized) => Err(StatusCode::UNAUTHORIZED),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pairing_bootstrap_inventory_is_exact() {
+        let entries = bootstrap_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].method, "POST");
+        assert_eq!(entries[0].path, "/pair/init");
+        assert_eq!(entries[0].body_limit, 16 * 1024);
+        assert_eq!(entries[1].method, "POST");
+        assert_eq!(entries[1].path, "/pair/verify");
+        assert_eq!(entries[1].body_limit, 8 * 1024);
+        assert!(entries.iter().all(|entry| entry.bootstrap_public));
     }
 }

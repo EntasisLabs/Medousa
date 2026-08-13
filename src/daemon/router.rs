@@ -8,14 +8,30 @@ use stasis::dashboard::{DashboardState, RuntimeDashboardQueryService, router as 
 use tower_http::cors::CorsLayer;
 
 use crate::daemon::state::AppState;
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
 
 const LIVENESS_BODY: &str = r#"{"status":"ok","apiVersion":"v1"}"#;
 
 /// Constant-size anonymous liveness surface. Detailed runtime health is
 /// protected at `/v1/health`.
 pub fn build_liveness_router() -> Router {
-    Router::new().route(
-        "/health",
+    build_liveness_surface().into_router()
+}
+
+pub fn build_liveness_surface() -> DeclaredRouter {
+    DeclaredRouter::default().route(
+        RoutePolicy {
+            method: axum::http::Method::GET,
+            path: "/health",
+            group: RouteGroup::Liveness,
+            required_capability: None,
+            bootstrap_public: true,
+            browser_policy: BrowserPolicy::Public,
+            body_limit: 1024,
+            rate_limit_class: RateLimitClass::Liveness,
+        },
         axum::routing::get(|| async {
             ([(CONTENT_TYPE, "application/json")], LIVENESS_BODY).into_response()
         }),
@@ -651,7 +667,7 @@ mod tests {
     use axum::http::{Request, StatusCode, header::CONTENT_TYPE};
     use tower::ServiceExt;
 
-    use super::{LIVENESS_BODY, build_liveness_router};
+    use super::{LIVENESS_BODY, build_liveness_router, build_liveness_surface};
 
     #[tokio::test]
     async fn public_liveness_is_constant_and_contains_no_runtime_detail() {
@@ -694,5 +710,18 @@ mod tests {
             .await
             .expect("missing response");
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn liveness_policy_is_exported_from_router_construction() {
+        let entries = build_liveness_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].method, "GET");
+        assert_eq!(entries[0].path, "/health");
+        assert!(entries[0].bootstrap_public);
+        assert_eq!(entries[0].required_capability, None);
     }
 }
