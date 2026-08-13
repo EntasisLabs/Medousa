@@ -123,8 +123,6 @@ pub async fn enforce_daemon_access(
     mut request: Request<Body>,
     next: Next,
 ) -> Response {
-    let path = request.uri().path().to_string();
-    let method = request.method().clone();
     let trusted_local = is_trusted_local(addr.ip(), request.headers());
     let transport = TransportClass::from_request(addr.ip(), request.headers());
 
@@ -157,7 +155,13 @@ pub async fn enforce_daemon_access(
     }
 
     let shared_mode = crate::shared_mode::is_shared_mode();
-    match authorize_request(trusted_local, shared_mode, record.as_ref(), &method, &path) {
+    match authorize_request(
+        trusted_local,
+        shared_mode,
+        record.as_ref(),
+        request.method(),
+        request.uri().path(),
+    ) {
         PortalAclDecision::Allow => {
             let principal = match record {
                 Some(record) => {
