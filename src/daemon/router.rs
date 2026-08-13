@@ -70,6 +70,12 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(build_runtime_admin_surface().inventory())
         .expect("duplicate runtime administration route policy");
     inventory
+        .extend(crate::daemon::runtime_tui_defaults::surface().inventory())
+        .expect("duplicate runtime defaults route policy");
+    inventory
+        .extend(crate::inference_profiles_handlers::surface().inventory())
+        .expect("duplicate inference profiles route policy");
+    inventory
 }
 
 pub fn build_identity_surface() -> DeclaredRouter<AppState> {
@@ -689,8 +695,6 @@ pub fn build_feature_routers(
         .merge(budget_router)
         .merge(crate::local_inference_handlers::routes())
         .merge(crate::model_capability_registry::handlers::routes())
-        .merge(crate::inference_profiles_handlers::routes())
-        .merge(crate::daemon::runtime_tui_defaults::routes())
         .merge(crate::stt_handlers::routes())
         .merge(crate::lan_handlers::lan_router())
         .merge(dashboard)
@@ -1001,12 +1005,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 50);
-        assert_eq!(with_pairing.entries().len(), 62);
+        assert_eq!(without_pairing.entries().len(), 55);
+        assert_eq!(with_pairing.entries().len(), 67);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 62);
+        assert_eq!(rows.len(), 67);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"
@@ -1017,6 +1021,11 @@ mod tests {
             row["method"] == "GET"
                 && row["path"] == "/qr"
                 && row["required_capability"] == "admin.identity"
+        }));
+        assert!(rows.iter().any(|row| {
+            row["method"] == "PUT"
+                && row["path"] == "/v1/runtime/inference-profiles"
+                && row["required_capability"] == "admin.runtime"
         }));
     }
 
