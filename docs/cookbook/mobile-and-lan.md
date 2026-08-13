@@ -9,8 +9,9 @@ Connect the Medousa mobile app to a desktop engine over LAN (or Iroh when enable
 ## Prerequisites
 
 - Desktop: `medousa_daemon` running (app bundle or `medousa start daemon`)
-- Phone and desktop on same LAN, or Iroh pairing configured
-- Firewall allows port **7419** (or your custom bind)
+- Iroh pairing configured (recommended), or a private isolated LAN used only
+  for a short development pairing ceremony
+- No internet/guest-network exposure of port **7419**
 
 ---
 
@@ -38,9 +39,19 @@ npm run tauri ios dev
 
 ---
 
-## Public bind
+## Non-loopback bind (temporary unsafe development escape hatch)
 
-For phone access when not on same interface:
+`--public` currently publishes the complete daemon router, uses permissive
+CORS, and does not require authentication on every personal-mode route.
+Pairing a client does not close the anonymous surface. Until
+[hardening H01](../../architecture/hardening/README.md) ships:
+
+- prefer the full Iroh invite flow in the [phone pairing guide](../guides/phone-pairing.md);
+- never expose port 7419 to the internet, guest Wi-Fi, or an untrusted LAN; and
+- if LAN-only development requires a non-loopback bind, use an isolated network
+  and firewall, keep the window short, and stop/restart on loopback immediately.
+
+Unsafe development command:
 
 ```bash
 medousa start daemon --public

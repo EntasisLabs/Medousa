@@ -13,7 +13,14 @@ Short, durable decisions — not sprint plans. For build history see [../../../a
 | [adr-008-hot-swappable-agent-runtime.md](adr-008-hot-swappable-agent-runtime.md) | Hot-swappable agentic runtime (MCP + ACP bones) | Accepted |
 | [adr-009-vault-workbooks.md](adr-009-vault-workbooks.md) | Vault workbooks + overlay formulas | Accepted |
 | [adr-010-slides-player-and-layers.md](adr-010-slides-player-and-layers.md) | Slides player + declarative CSS layers | Accepted |
+| [adr-010-virtual-shell-workspaces.md](adr-010-virtual-shell-workspaces.md) | Virtual shell workspaces | Accepted |
+| [adr-011-shared-mode-portal-and-mesh.md](adr-011-shared-mode-portal-and-mesh.md) | Shared mode seats, portal, and peer mesh | Accepted |
 | [adr-012-medousa-anywhere-surfaces.md](adr-012-medousa-anywhere-surfaces.md) | Native host surfaces vs external-agent adapters | Accepted |
+
+> **Numbering note:** two accepted decisions were independently assigned
+> ADR-010. Their filenames and identifiers remain unchanged so existing links
+> and history do not lie. New decisions continue at ADR-013; the collision can
+> be resolved only by a separate explicit supersession/alias decision.
 
 ## Template
 

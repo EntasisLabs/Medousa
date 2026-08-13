@@ -1,22 +1,27 @@
 # Roadmap — active work
 
-> **Status:** Living document (updated 2026-07)  
+> **Status:** Living document (updated 2026-08-13)
 > **Historical plans:** [archive/README.md](archive/README.md)
 
 First-run UX, Home shell milestones, turn-loop FSM, user profiles (Phases 0–6), **centralized agent runtime**, **0.5.0 Vault / Versions / Liquid**, **0.6.0 Shared / Peer mesh / Dynamic + Home polish**, and **0.7.0 Accounts / Liquid depth / Browser act + Languages** are **shipped**. See [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md), [ADR-002](../docs/architecture/decisions/adr-002-user-profiles.md), [v0.5.0-vault-versions-plan.md](v0.5.0-vault-versions-plan.md), [v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md), [v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md), [v0.7.0-plan.md](v0.7.0-plan.md).
 
-**Next focus:** [Home Code workbench parity](home-code-vscode-parity-plan.md)
-closes the trustworthy-editing, daily-driver, IDE, and contribution gaps while
-the [Mobile Code workspace](mobile-code-workspace-plan.md) gives those shared
-project contracts a phone-native Files, Editor, Terminal, Changes, and Thread
-experience. Undertakings flowstate residual polish
-(empty states, F3–F5) and the proposed [Medousa Anywhere plan](medousa-anywhere-plan.md)
-continue alongside it.
+**Release-boundary focus:** [Repo-wide hardening](hardening/README.md) closes
+the authority, durability, concurrency, hot-path, contract, and CI findings in
+the [2026-08-12 technical critique](repo-wide-technical-critique-2026-08-12.md).
+Gate A security work precedes expansion of public/LAN daemon and embedded
+browser capabilities.
 
-Full plans: **[home-code-vscode-parity-plan.md](home-code-vscode-parity-plan.md)** · **[mobile-code-workspace-plan.md](mobile-code-workspace-plan.md)** · **[v0.7.0-forge-plan.md](v0.7.0-forge-plan.md)** · **[detamu-medousa-fit.md](detamu-medousa-fit.md)** · **[coding-engine-orchestrator.md](coding-engine-orchestrator.md)** · **[coding-session-terminal.md](coding-session-terminal.md)** · **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md)** · **[home-messaging-matrix.md](home-messaging-matrix.md)** · [ADR-011](../docs/architecture/decisions/adr-011-shared-mode-portal-and-mesh.md) · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)** · **[operators-guide-docs-epic.md](operators-guide-docs-epic.md)**
-**Next focus:** Undertakings flowstate residual polish (empty states, F3–F5) on ForgeLens / World coverage UX, alongside the proposed [Medousa Anywhere plan](medousa-anywhere-plan.md) for VS Code, Neovim, and Obsidian surfaces. Coding / Detamu / shared-shell / ACP transcript / Forge Home contracts landed. Proposed sibling-shell work: [TUI ↔ Home workspace parity](tui-home-workspace-parity-plan.md) (tmux panes + notes/code/review/chat — not Anywhere plugins).
+Product work continues with [Home Code workbench parity](home-code-vscode-parity-plan.md),
+the [Mobile Code workspace](mobile-code-workspace-plan.md), Undertakings
+flowstate residual polish, and [Medousa Anywhere](medousa-anywhere-plan.md), but
+must not weaken or bypass hardening release gates.
 
-Full plans: **[v0.7.0-forge-plan.md](v0.7.0-forge-plan.md)** · **[detamu-medousa-fit.md](detamu-medousa-fit.md)** · **[coding-engine-orchestrator.md](coding-engine-orchestrator.md)** · **[coding-session-terminal.md](coding-session-terminal.md)** · **[tui-home-workspace-parity-plan.md](tui-home-workspace-parity-plan.md)** · **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md)** · **[home-messaging-matrix.md](home-messaging-matrix.md)** · [ADR-011](../docs/architecture/decisions/adr-011-shared-mode-portal-and-mesh.md) · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)** · **[operators-guide-docs-epic.md](operators-guide-docs-epic.md)**
+Full active plans: **[hardening/README.md](hardening/README.md)** ·
+**[home-code-vscode-parity-plan.md](home-code-vscode-parity-plan.md)** ·
+**[mobile-code-workspace-plan.md](mobile-code-workspace-plan.md)** ·
+**[v0.7.0-forge-plan.md](v0.7.0-forge-plan.md)** ·
+**[tui-home-workspace-parity-plan.md](tui-home-workspace-parity-plan.md)** ·
+**[medousa-anywhere-plan.md](medousa-anywhere-plan.md)**
 
 ### External surfaces — proposed
 
@@ -242,7 +247,8 @@ Full plan: [road-to-production-plan.md](road-to-production-plan.md)
 | WS2 Per-engine desktop settings | ✅ |
 | WS3 CLI + headless install/Docker | ✅ |
 | WS4 Multi-workshop hardening | ✅ |
-| WS5 PR CI + version unify | ✅ |
+| WS5 version unification and initial PR CI | ✅ |
+| Repo-wide required tests, packaged-app checks, and performance gates | 🔄 [hardening H12](hardening/README.md) |
 
 ---
 

@@ -19,7 +19,13 @@ Home on **desktop** uses the same transport as mobile: try LAN, then fall back t
 
 ## LAN pairing window
 
-Public bind (`0.0.0.0`) is only for **pairing**, not ongoing access.
+The product intends public bind (`0.0.0.0`) only for **pairing**, not ongoing
+access. The current implementation nevertheless publishes the complete daemon
+router and does not require credentials on every personal-mode route. This is
+an unsafe temporary exposure, not a security boundary. Prefer a full Iroh
+invite. If a LAN ceremony is unavoidable, use only an isolated trusted network
+and close the window immediately. Never use it on guest/café Wi-Fi or forward
+port 7419. See [hardening H01](../../architecture/hardening/README.md).
 
 1. Turn on **LAN pairing window** (Settings → Nearby, or Peers → Add peer)
 2. Engine restarts listening on the LAN (mDNS + `GET /qr`)
@@ -27,7 +33,8 @@ Public bind (`0.0.0.0`) is only for **pairing**, not ongoing access.
 4. Turn the toggle **off** — engine restarts on **loopback only**
 5. Already-paired clients keep working over the **private Iroh tunnel**
 
-Do not leave LAN pairing on at a café.
+Do not use the LAN pairing window at a café or on any network with untrusted
+devices.
 
 ## Peers surface (peer role)
 
@@ -131,7 +138,7 @@ Daemon:
 Host (this engine):
 
 ```bash
-medousa pair lan on          # bind 0.0.0.0 for pairing
+medousa pair lan on          # UNSAFE temporary full API bind; isolated LAN only
 medousa pair qr --term       # show invite
 medousa pair status          # surfaces + roles
 medousa pair lan off         # back to loopback; clients use Iroh

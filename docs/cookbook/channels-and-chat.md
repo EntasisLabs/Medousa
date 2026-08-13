@@ -55,6 +55,10 @@ First pairing shows QR in logs: `~/.local/share/medousa/logs/whatsapp.log`
 
 Phone app talks to **Medousa Engine** on your Mac over Wi‑Fi. Desktop **Medousa** app handles QR pairing.
 
-Dev: `medousa start daemon --public` — see [build-from-source.md](build-from-source.md) (MOBILE-DEV.md).
+For mobile development, prefer a full Iroh invite. `medousa start daemon
+--public` is an unsafe temporary escape hatch that exposes the complete daemon
+API without mandatory authentication on every route; use it only on an
+isolated LAN and stop it immediately after pairing. See
+[Mobile & LAN](mobile-and-lan.md).
 
 Protocol: [first-run-and-lan-pairing-plan.md](../../architecture/archive/first-run-and-lan-pairing-plan.md)

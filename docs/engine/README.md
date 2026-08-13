@@ -80,7 +80,15 @@ SDK: [../sdk/README.md](../sdk/README.md)
 
 ## Trust & operations
 
-- **Loopback by default** — `127.0.0.1:7419`; use `--public` + pairing for LAN phones.
+- **Loopback by default** — keep the daemon on `127.0.0.1:7419` and use an
+  authenticated private transport such as the paired Iroh path for remote
+  clients.
+- **Current non-loopback warning** — `--public` publishes the complete daemon
+  router and does not yet require a credential on every personal-mode route.
+  Permissive CORS also makes the surface browser-reachable. Do not expose it to
+  the internet, an untrusted LAN, guest Wi-Fi, or a shared development network.
+  Pairing a device does not close unauthenticated routes. Remediation is tracked
+  in [the hardening program](../../architecture/hardening/README.md) (H01/SEC-001).
 - **Policy profiles** — interactive vs scheduled lanes; OpenShell sandbox for skill scripts.
 - **Observability** — `/health`, `/v1/stats`, Stasis dashboard mount, `medousa doctor` (add `--local-engine` to probe offline brain on `:7421`).
 

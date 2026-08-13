@@ -86,11 +86,15 @@ cd Medousa
   --file-storage
 ```
 
-Restart the daemon:
+Restart the daemon on loopback:
 
 ```bash
-medousa start daemon --public
+medousa start daemon
 ```
+
+Push delivery does not require publishing port 7419. For paired remote clients,
+use Iroh. The current `--public` mode is unsafe outside an isolated development
+LAN; see [Mobile & LAN](../cookbook/mobile-and-lan.md).
 
 Confirm in logs:
 

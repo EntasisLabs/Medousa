@@ -16,7 +16,7 @@
 | WS2 | Per-engine settings on desktop (engine API) | Shipped |
 | WS3 | Power-user CLI + headless install/Docker | Shipped |
 | WS4 | Multi-workshop hardening + desktop remote UX | Shipped (UX note; Iroh desktop deferred) |
-| WS5 | PR CI + version unify + test fixes | Shipped |
+| WS5 | Initial PR CI + version unify | Shipped; broader quality gates reopened in [hardening H12](hardening/README.md) |
 
 ---
 
@@ -72,6 +72,12 @@
 
 - `.github/workflows/ci.yml` — `cargo test --lib`, `cargo check`, Home `npm run check`
 - Version unified at `0.1.0` (root `Cargo.toml` → Home `package.json`)
+
+This milestone established initial CI; it did not complete repo-wide release
+gating. Home unit tests/builds, Tauri platform checks, hermetic Rust tests, and
+performance budgets are active work in
+[the hardening program](hardening/README.md). Do not read “Shipped” here as a
+claim that all current tests or supported application targets are required CI.
 
 ---
 

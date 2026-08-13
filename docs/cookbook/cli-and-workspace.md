@@ -27,12 +27,17 @@ Desktop Settings now read/write **per-engine** `tui_defaults.json` via `GET/PUT 
 
 ```bash
 medousa start daemon --inference
-medousa start daemon --public          # LAN bind for phone dev
+medousa start daemon --public          # UNSAFE full LAN API bind; isolated development only
 medousa start mcp-gateway
 medousa start discord | telegram | slack | whatsapp
 medousa start all
 medousa start daemon-restart --inference
 ```
+
+`--public` does not currently make pairing credentials mandatory across the
+complete daemon router. Do not use it on the internet, guest Wi-Fi, or an
+untrusted LAN. Prefer Iroh; see [Mobile & LAN](mobile-and-lan.md) and
+[hardening H01](../../architecture/hardening/README.md).
 
 ### Local models (`medousa models`)
 
