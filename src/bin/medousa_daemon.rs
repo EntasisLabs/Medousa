@@ -664,6 +664,7 @@ async fn main() -> Result<()> {
             medousa::turn_budget_handlers::budget_surface()
                 .with_state(medousa::turn_budget_handlers::TurnBudgetHandlerState),
         )
+        .merge(medousa::calendar_handlers::calendar_surface().with_state(()))
         .with_state(state.clone());
     if let Some((pairing_bootstrap, pairing_protected)) = pairing_routers {
         bootstrap = bootstrap.merge(pairing_bootstrap);

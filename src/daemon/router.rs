@@ -112,6 +112,9 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::turn_budget_handlers::budget_surface().inventory())
         .expect("duplicate turn budget route policy");
     inventory
+        .extend(crate::calendar_handlers::calendar_surface().inventory())
+        .expect("duplicate calendar route policy");
+    inventory
 }
 
 pub fn build_identity_surface() -> DeclaredRouter<AppState> {
@@ -480,26 +483,6 @@ pub fn build_feature_routers(
     let workflow_router = crate::workflow_handlers::workflow_router(workflow_state.clone());
     let tool_history_router = crate::tool_history_handlers::tool_history_router(workflow_state);
 
-    let calendar_router = Router::new()
-        .route(
-            "/v1/calendar/events",
-            axum::routing::get(crate::calendar_handlers::list_calendar_events)
-                .post(crate::calendar_handlers::create_calendar_event),
-        )
-        .route(
-            "/v1/calendar/events/{uid}",
-            axum::routing::put(crate::calendar_handlers::update_calendar_event)
-                .delete(crate::calendar_handlers::delete_calendar_event),
-        )
-        .route(
-            "/v1/calendar/import",
-            axum::routing::post(crate::calendar_handlers::import_calendar),
-        )
-        .route(
-            "/v1/calendar/export",
-            axum::routing::get(crate::calendar_handlers::export_calendar),
-        );
-
     let dashboard_service = Arc::new(RuntimeDashboardQueryService::from_runtime_composition(
         state.composition().clone(),
     ));
@@ -513,7 +496,6 @@ pub fn build_feature_routers(
         .merge(grapheme_router)
         .merge(workflow_router)
         .merge(tool_history_router)
-        .merge(calendar_router)
         .merge(crate::locus_handlers::locus_router(
             state.platform.agent_handle().locus_store.clone(),
             state.platform.agent_handle().semantic_index.clone(),
@@ -1201,12 +1183,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 176);
-        assert_eq!(with_pairing.entries().len(), 188);
+        assert_eq!(without_pairing.entries().len(), 182);
+        assert_eq!(with_pairing.entries().len(), 194);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 188);
+        assert_eq!(rows.len(), 194);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"
@@ -1366,5 +1348,32 @@ mod tests {
                 .count(),
             2
         );
+    }
+
+    #[test]
+    fn calendar_inventory_separates_content_reads_and_writes() {
+        let entries = crate::calendar_handlers::calendar_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 6);
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("content.read"))
+                .count(),
+            2
+        );
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("content.write"))
+                .count(),
+            4
+        );
+        assert!(entries.iter().all(|entry| {
+            entry.group == RouteGroup::Portal
+                && entry.browser_policy == super::BrowserPolicy::NativeOnly
+        }));
     }
 }
