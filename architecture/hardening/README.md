@@ -88,7 +88,7 @@ and performance budgets must prevent the same classes of defect from returning.
 | H04 | [04-persistence-and-crash-consistency.md](04-persistence-and-crash-consistency.md) | Feed/workspace/task storage ownership and commit policy | STORE-001, STORE-002, MEM-001 | ADR-016 | Draft |
 | H05 | [05-runtime-context-and-concurrency.md](05-runtime-context-and-concurrency.md) | Request-scoped turn/browser state and cancellation | CONC-001, CONC-002 | ADR-017 | Draft |
 | H06 | [06-forge-coder-scaling.md](06-forge-coder-scaling.md) | Incremental Forge state, checkpoint observation, blocking work | PERF-002, PERF-004, ASYNC-001 | ADR-016, H05 | Draft |
-| H07 | `07-vault-scaling-and-consistency.md` | Incremental index, atomic mutation, backend/frontend lookups | PERF-003, PERF-006, CONSIST-001 | ADR-014, ADR-016 | Proposed |
+| H07 | [07-vault-scaling-and-consistency.md](07-vault-scaling-and-consistency.md) | Incremental index, atomic mutation, backend/frontend lookups | PERF-003, PERF-006, CONSIST-001 | ADR-014, ADR-016 | Draft |
 | H08 | `08-desktop-browser-isolation.md` | Remote webview capabilities and request-correlated bridge | DESKTOP-001 | ADR-018, H05 | Proposed |
 | H09 | `09-home-runtime-boundaries.md` | Feature loading, runtime cycles, store/component/CSS ownership | FRONT-001, ARCH-001, ARCH-002 | ADR-020, H03 | Proposed |
 | H10 | `10-api-contract-generation.md` | Authoritative API definition and generated clients/tests | CONTRACT-001 | ADR-019, H01 | Proposed |
