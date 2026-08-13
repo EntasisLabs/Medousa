@@ -47,6 +47,71 @@ pub fn gateway_status_surface() -> DeclaredRouter<CapabilityApiState> {
     )
 }
 
+pub fn capability_surface() -> DeclaredRouter<CapabilityApiState> {
+    use crate::request_principal::Capability;
+
+    DeclaredRouter::default()
+        .route(
+            capability_policy(
+                axum::http::Method::GET,
+                "/v1/capabilities",
+                Capability::WorkshopRead,
+                1024,
+                RateLimitClass::Read,
+            ),
+            get(list_capabilities),
+        )
+        .route(
+            capability_policy(
+                axum::http::Method::GET,
+                "/v1/capabilities/{capability_id}",
+                Capability::WorkshopRead,
+                1024,
+                RateLimitClass::Read,
+            ),
+            get(get_capability),
+        )
+        .route(
+            capability_policy(
+                axum::http::Method::GET,
+                "/v1/capabilities/intents",
+                Capability::WorkshopRead,
+                1024,
+                RateLimitClass::Read,
+            ),
+            get(list_capability_intents),
+        )
+        .route(
+            capability_policy(
+                axum::http::Method::POST,
+                "/v1/capabilities/reindex",
+                Capability::AdminRuntime,
+                1024,
+                RateLimitClass::Administration,
+            ),
+            post(reindex_capabilities),
+        )
+}
+
+fn capability_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    required_capability: crate::request_principal::Capability,
+    body_limit: usize,
+    rate_limit_class: RateLimitClass,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Portal,
+        required_capability: Some(required_capability),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class,
+    }
+}
+
 pub fn policy_surface() -> DeclaredRouter<McpPolicyApiState> {
     DeclaredRouter::default().route(
         RoutePolicy {

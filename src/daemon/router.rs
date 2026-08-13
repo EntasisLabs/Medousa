@@ -106,6 +106,12 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(build_core_service_surface().inventory())
         .expect("duplicate core service route policy");
     inventory
+        .extend(crate::mcp_daemon_handlers::capability_surface().inventory())
+        .expect("duplicate capability route policy");
+    inventory
+        .extend(crate::turn_budget_handlers::budget_surface().inventory())
+        .expect("duplicate turn budget route policy");
+    inventory
 }
 
 pub fn build_identity_surface() -> DeclaredRouter<AppState> {
@@ -463,27 +469,6 @@ pub fn build_feature_routers(
 ) -> Router {
     let catalog_router = crate::manuscript_handlers::manuscript_router();
 
-    let capability_router = Router::new()
-        .route(
-            "/v1/capabilities",
-            axum::routing::get(crate::mcp_daemon_handlers::list_capabilities),
-        )
-        .route(
-            "/v1/capabilities/{capability_id}",
-            axum::routing::get(crate::mcp_daemon_handlers::get_capability),
-        )
-        .route(
-            "/v1/capabilities/intents",
-            axum::routing::get(crate::mcp_daemon_handlers::list_capability_intents),
-        )
-        .route(
-            "/v1/capabilities/reindex",
-            axum::routing::post(crate::mcp_daemon_handlers::reindex_capabilities),
-        )
-        .with_state(crate::mcp_daemon_handlers::CapabilityApiState {
-            agent_runtime: state.platform.agent_handle(),
-        });
-
     let grapheme_router =
         crate::grapheme_handlers::grapheme_router(crate::grapheme_handlers::GraphemeApiState {
             composition: Arc::new(state.composition().clone()),
@@ -515,25 +500,6 @@ pub fn build_feature_routers(
             axum::routing::get(crate::calendar_handlers::export_calendar),
         );
 
-    let budget_router = Router::new()
-        .route(
-            "/v1/turns/budget-requests",
-            axum::routing::get(crate::turn_budget_handlers::list_turn_budget_requests),
-        )
-        .route(
-            "/v1/turns/budget-requests/{request_id}",
-            axum::routing::get(crate::turn_budget_handlers::get_turn_budget_request),
-        )
-        .route(
-            "/v1/turns/budget-requests/{request_id}/approve",
-            axum::routing::post(crate::turn_budget_handlers::approve_turn_budget_request),
-        )
-        .route(
-            "/v1/turns/budget-requests/{request_id}/deny",
-            axum::routing::post(crate::turn_budget_handlers::deny_turn_budget_request),
-        )
-        .with_state(crate::turn_budget_handlers::TurnBudgetHandlerState);
-
     let dashboard_service = Arc::new(RuntimeDashboardQueryService::from_runtime_composition(
         state.composition().clone(),
     ));
@@ -544,7 +510,6 @@ pub fn build_feature_routers(
     let dashboard = dashboard_router(dashboard_state);
 
     catalog_router
-        .merge(capability_router)
         .merge(grapheme_router)
         .merge(workflow_router)
         .merge(tool_history_router)
@@ -568,7 +533,6 @@ pub fn build_feature_routers(
         .merge(crate::feed_handlers::feed_router())
         .merge(crate::component_store_handlers::component_store_router())
         .merge(crate::component_runtime_handlers::component_runtime_router())
-        .merge(budget_router)
         .merge(crate::local_inference_handlers::routes())
         .merge(crate::model_capability_registry::handlers::routes())
         .merge(crate::stt_handlers::routes())
@@ -1237,12 +1201,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 168);
-        assert_eq!(with_pairing.entries().len(), 180);
+        assert_eq!(without_pairing.entries().len(), 176);
+        assert_eq!(with_pairing.entries().len(), 188);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 180);
+        assert_eq!(rows.len(), 188);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"
@@ -1359,5 +1323,48 @@ mod tests {
                 "unexpected route count for {capability}",
             );
         }
+    }
+
+    #[test]
+    fn feature_control_inventories_separate_reads_from_admin_mutations() {
+        let capabilities = crate::mcp_daemon_handlers::capability_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        assert_eq!(capabilities.len(), 4);
+        assert_eq!(
+            capabilities
+                .iter()
+                .filter(|entry| entry.required_capability == Some("workshop.read"))
+                .count(),
+            3
+        );
+        assert_eq!(
+            capabilities
+                .iter()
+                .filter(|entry| entry.required_capability == Some("admin.runtime"))
+                .count(),
+            1
+        );
+
+        let budgets = crate::turn_budget_handlers::budget_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        assert_eq!(budgets.len(), 4);
+        assert_eq!(
+            budgets
+                .iter()
+                .filter(|entry| entry.required_capability == Some("workshop.read"))
+                .count(),
+            2
+        );
+        assert_eq!(
+            budgets
+                .iter()
+                .filter(|entry| entry.required_capability == Some("admin.execute"))
+                .count(),
+            2
+        );
     }
 }

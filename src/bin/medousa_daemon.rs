@@ -653,6 +653,17 @@ async fn main() -> Result<()> {
         .merge(medousa::daemon::jobs::workspace_retry_surface())
         .merge(medousa::daemon::router::build_workshop_surface())
         .merge(medousa::daemon::router::build_core_service_surface())
+        .merge(
+            medousa::mcp_daemon_handlers::capability_surface().with_state(
+                medousa::mcp_daemon_handlers::CapabilityApiState {
+                    agent_runtime: state.platform.agent_handle(),
+                },
+            ),
+        )
+        .merge(
+            medousa::turn_budget_handlers::budget_surface()
+                .with_state(medousa::turn_budget_handlers::TurnBudgetHandlerState),
+        )
         .with_state(state.clone());
     if let Some((pairing_bootstrap, pairing_protected)) = pairing_routers {
         bootstrap = bootstrap.merge(pairing_bootstrap);
