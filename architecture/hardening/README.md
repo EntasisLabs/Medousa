@@ -89,7 +89,7 @@ and performance budgets must prevent the same classes of defect from returning.
 | H05 | [05-runtime-context-and-concurrency.md](05-runtime-context-and-concurrency.md) | Request-scoped turn/browser state and cancellation | CONC-001, CONC-002 | ADR-017 | Draft |
 | H06 | [06-forge-coder-scaling.md](06-forge-coder-scaling.md) | Incremental Forge state, checkpoint observation, blocking work | PERF-002, PERF-004, ASYNC-001 | ADR-016, H05 | Draft |
 | H07 | [07-vault-scaling-and-consistency.md](07-vault-scaling-and-consistency.md) | Incremental index, atomic mutation, backend/frontend lookups | PERF-003, PERF-006, CONSIST-001 | ADR-014, ADR-016 | Draft |
-| H08 | `08-desktop-browser-isolation.md` | Remote webview capabilities and request-correlated bridge | DESKTOP-001 | ADR-018, H05 | Proposed |
+| H08 | [08-desktop-browser-isolation.md](08-desktop-browser-isolation.md) | Remote webview capabilities and request-correlated bridge | DESKTOP-001 | ADR-018, H05 | Draft |
 | H09 | `09-home-runtime-boundaries.md` | Feature loading, runtime cycles, store/component/CSS ownership | FRONT-001, ARCH-001, ARCH-002 | ADR-020, H03 | Proposed |
 | H10 | `10-api-contract-generation.md` | Authoritative API definition and generated clients/tests | CONTRACT-001 | ADR-019, H01 | Proposed |
 | H11 | `11-package-and-dependency-boundaries.md` | Optional workload features and dependency budgets | DEP-001 | ADR-020 | Proposed |
@@ -107,7 +107,7 @@ duplicate ADR-010 history.
 | [ADR-015](../../docs/architecture/decisions/adr-015-bounded-durable-turn-pipeline.md) | Bounded single-writer durable turn pipeline | Supersedes ADR-004's per-event write tradeoff; preserves replay contract | Proposed |
 | [ADR-016](../../docs/architecture/decisions/adr-016-transactional-store-ownership.md) | Transactional store ownership and crash-consistency policy | Extends durable runtime decisions | Proposed |
 | [ADR-017](../../docs/architecture/decisions/adr-017-request-scoped-runtime-context.md) | Request-scoped runtime context; no process-global turn state | Extends ADR-005/ADR-008 | Proposed |
-| ADR-018 | Untrusted webview isolation and minimal browser bridge | Revises browser-host assumptions | Proposed |
+| [ADR-018](../../docs/architecture/decisions/adr-018-untrusted-webview-isolation.md) | Untrusted webview isolation and minimal browser bridge | Revises browser-host assumptions | Proposed |
 | ADR-019 | Generated API definition and client contract | Replaces handwritten parity convention | Proposed |
 | ADR-020 | Feature boundaries, lazy loading, and optional workload packaging | Formalizes Home-first optional packages | Proposed |
 
