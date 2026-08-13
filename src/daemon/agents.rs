@@ -8,6 +8,7 @@ use axum::Json;
 use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::StatusCode;
 use axum::response::sse::Sse;
+use axum::routing::{get, post};
 use chrono::Utc;
 use futures_util::Stream;
 use medousa_acp_client::{
@@ -31,6 +32,9 @@ use crate::agent_permission_request::{
 };
 use crate::daemon::acp_forge_adapter;
 use crate::daemon::ingest::{publish_interactive_turn_event, stream_events_from_registry};
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
 use crate::daemon::state::AppState;
 use crate::daemon::turn_stream_registry::{TurnStreamEntry, TurnStreamRegistryPortAdapter};
 use crate::runtime::agent_platform::{AcpTerminalKind, publish_acp_terminal};
@@ -65,6 +69,51 @@ static AGENT_SESSIONS: once_cell::sync::Lazy<RwLock<AgentSessionRegistry>> =
 
 static ACP_CLIENT: once_cell::sync::Lazy<ExternalAcpClient> =
     once_cell::sync::Lazy::new(ExternalAcpClient::new);
+
+pub fn permission_surface() -> DeclaredRouter {
+    DeclaredRouter::default()
+        .route(
+            permission_policy(
+                axum::http::Method::GET,
+                "/v1/agents/permission-requests",
+                1024,
+            ),
+            get(list_agent_permission_requests),
+        )
+        .route(
+            permission_policy(
+                axum::http::Method::POST,
+                "/v1/agents/permission-requests/{request_id}/approve",
+                16 * 1024,
+            ),
+            post(approve_agent_permission_request),
+        )
+        .route(
+            permission_policy(
+                axum::http::Method::POST,
+                "/v1/agents/permission-requests/{request_id}/deny",
+                16 * 1024,
+            ),
+            post(deny_agent_permission_request),
+        )
+}
+
+fn permission_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    body_limit: usize,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Administration,
+        required_capability: Some(crate::request_principal::Capability::AdminExecute),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class: RateLimitClass::Administration,
+    }
+}
 
 #[derive(Debug)]
 struct CreateAgentSessionCommand {
@@ -1269,6 +1318,20 @@ fn publish_agent_reasoning_event(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn permission_inventory_requires_execution_administration() {
+        let entries = permission_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 3);
+        assert!(entries.iter().all(|entry| {
+            entry.group == RouteGroup::Administration
+                && entry.required_capability == Some("admin.execute")
+                && entry.rate_limit_class == RateLimitClass::Administration
+        }));
+    }
 
     #[test]
     fn code_context_is_structured_and_bounded() {

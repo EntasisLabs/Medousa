@@ -88,6 +88,9 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::vault_handlers::vault_surface().inventory())
         .expect("duplicate vault route policy");
     inventory
+        .extend(crate::daemon::agents::permission_surface().inventory())
+        .expect("duplicate agent permission route policy");
+    inventory
 }
 
 pub fn build_identity_surface() -> DeclaredRouter<AppState> {
@@ -759,18 +762,6 @@ pub fn build_core_router(state: AppState) -> Router {
             post(crate::daemon::agents::cancel_agent_session),
         )
         .route(
-            "/v1/agents/permission-requests",
-            get(crate::daemon::agents::list_agent_permission_requests),
-        )
-        .route(
-            "/v1/agents/permission-requests/{request_id}/approve",
-            post(crate::daemon::agents::approve_agent_permission_request),
-        )
-        .route(
-            "/v1/agents/permission-requests/{request_id}/deny",
-            post(crate::daemon::agents::deny_agent_permission_request),
-        )
-        .route(
             "/v1/auth/chatgpt",
             get(crate::daemon::chatgpt_oauth::status)
                 .delete(crate::daemon::chatgpt_oauth::disconnect),
@@ -906,12 +897,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 92);
-        assert_eq!(with_pairing.entries().len(), 104);
+        assert_eq!(without_pairing.entries().len(), 95);
+        assert_eq!(with_pairing.entries().len(), 107);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 104);
+        assert_eq!(rows.len(), 107);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"

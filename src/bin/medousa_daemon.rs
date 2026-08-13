@@ -667,6 +667,7 @@ async fn main() -> Result<()> {
         local_device_id: peer_message_state.local_device_id.clone(),
     };
     declared = declared
+        .merge(medousa::daemon::agents::permission_surface())
         .merge(medousa::vault_handlers::vault_surface())
         .merge(
             medousa::mcp_daemon_handlers::gateway_status_surface().with_state(
