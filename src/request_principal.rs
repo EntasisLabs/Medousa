@@ -5,6 +5,7 @@ use std::net::IpAddr;
 use axum::http::HeaderMap;
 
 use crate::pairing::store::{PairedDeviceRecord, PairingRole};
+use crate::shared_mode::root_profile_id;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PrincipalKind {
@@ -180,7 +181,7 @@ impl RequestPrincipal {
         transport: TransportClass,
         shared_mode: bool,
     ) -> Self {
-        let root = shared_mode && crate::portal_acl::is_root_portal(&record);
+        let root = shared_mode && is_root_portal(&record);
         let (kind, capabilities) = match record.role {
             PairingRole::Peer => (PrincipalKind::Peer, CapabilitySet::peer()),
             PairingRole::Portal if root => (PrincipalKind::Root, CapabilitySet::operator()),
@@ -225,6 +226,15 @@ impl RequestPrincipal {
     pub fn revocation_generation(&self) -> u64 {
         self.revocation_generation
     }
+}
+
+fn is_root_portal(record: &PairedDeviceRecord) -> bool {
+    record.role.allows_full_portal()
+        && record
+            .profile_id
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|id| id == root_profile_id())
 }
 
 #[cfg(test)]
@@ -274,6 +284,24 @@ mod tests {
                 .contains(Capability::WorkshopInteract)
         );
         assert!(!principal.capabilities().contains(Capability::AdminRuntime));
+    }
+
+    #[test]
+    fn shared_mode_root_seat_receives_operator_capabilities() {
+        let root = RequestPrincipal::from_pairing_record(
+            record(PairingRole::Portal, Some("user:root")),
+            TransportClass::Direct,
+            true,
+        );
+        assert_eq!(root.kind(), PrincipalKind::Root);
+        assert!(root.capabilities().contains(Capability::AdminRuntime));
+
+        let personal = RequestPrincipal::from_pairing_record(
+            record(PairingRole::Portal, Some("user:root")),
+            TransportClass::Direct,
+            false,
+        );
+        assert_eq!(personal.kind(), PrincipalKind::Portal);
     }
 
     #[test]

@@ -13,9 +13,8 @@ use axum::response::Response;
 
 use crate::daemon::route_policy::DeclaredRouter;
 use crate::pairing::PairingService;
-use crate::portal_acl::{PortalAclDecision, authorize_request};
 use crate::remote_trust::is_trusted_local;
-use crate::request_principal::{RequestPrincipal, TransportClass};
+use crate::request_principal::{Capability, RequestPrincipal, TransportClass};
 
 #[derive(Clone)]
 pub struct DaemonAccessState {
@@ -221,18 +220,13 @@ pub async fn enforce_daemon_access(
         request.extensions_mut().insert(principal);
         return next.run(request).await;
     }
-    match authorize_request(&principal, request.method(), request.uri().path()) {
-        PortalAclDecision::Allow => {
-            request.extensions_mut().insert(principal);
-            next.run(request).await
-        }
-        PortalAclDecision::Deny => {
-            if principal.kind() == crate::request_principal::PrincipalKind::Anonymous {
-                AccessDenial::AuthenticationRequired.into_response()
-            } else {
-                AccessDenial::Forbidden.into_response()
-            }
-        }
+    if principal.capabilities().contains(Capability::WorkshopRead) {
+        request.extensions_mut().insert(principal);
+        next.run(request).await
+    } else if principal.kind() == crate::request_principal::PrincipalKind::Anonymous {
+        AccessDenial::AuthenticationRequired.into_response()
+    } else {
+        AccessDenial::Forbidden.into_response()
     }
 }
 
