@@ -49,6 +49,12 @@ The store-root capability layer, complete ingress/type conversion, deletion
 registry, migration inventory, vault confinement, and cross-platform abuse matrix
 remain open in H02.1 through H02.5.
 
+H02.1 is in progress: `medousa-types` now owns the validated, non-public
+`SessionId` representation and validated serde boundary; the daemon mints
+`ses_` IDs with 128 bits of randomness; caller-selected creation IDs are denied;
+and Home obtains ordinary and shared-room IDs from `POST /v1/sessions` instead
+of minting filesystem-authoritative UUID strings locally.
+
 ## Current evidence and blast radius
 
 ### Session identifiers

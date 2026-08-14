@@ -5,69 +5,19 @@
 //! components. The legacy helpers exist only to migrate strictly safe names;
 //! malformed legacy entries are left untouched for the H02 quarantine flow.
 
-use std::fmt;
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest as _, Sha256};
 
+pub use medousa_types::session::{
+    InvalidSessionId, MAX_SESSION_ID_BYTES, SessionId, validate_session_id,
+};
+
 const STORAGE_KEY_DOMAIN: &[u8] = b"medousa/session-storage/v1\0";
-pub const MAX_SESSION_ID_BYTES: usize = 128;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InvalidSessionId {
-    reason: &'static str,
-}
-
-impl InvalidSessionId {
-    pub fn reason(&self) -> &'static str {
-        self.reason
-    }
-}
-
-impl fmt::Display for InvalidSessionId {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "invalid session id: {}", self.reason)
-    }
-}
-
-impl std::error::Error for InvalidSessionId {}
-
-/// Validate the compatibility session-ID grammar without normalization.
-pub fn validate_session_id(session_id: &str) -> Result<&str, InvalidSessionId> {
-    if session_id.is_empty() {
-        return Err(InvalidSessionId { reason: "empty" });
-    }
-    if session_id.len() > MAX_SESSION_ID_BYTES {
-        return Err(InvalidSessionId { reason: "too_long" });
-    }
-    if !session_id.is_ascii() {
-        return Err(InvalidSessionId {
-            reason: "non_ascii",
-        });
-    }
-    if !session_id
-        .bytes()
-        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-    {
-        return Err(InvalidSessionId {
-            reason: "invalid_character",
-        });
-    }
-    if is_windows_device_name(session_id) {
-        return Err(InvalidSessionId {
-            reason: "platform_alias",
-        });
-    }
-    Ok(session_id)
-}
-
-fn is_windows_device_name(session_id: &str) -> bool {
-    let upper = session_id.to_ascii_uppercase();
-    matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-        || upper
-            .strip_prefix("COM")
-            .or_else(|| upper.strip_prefix("LPT"))
-            .is_some_and(|suffix| suffix.len() == 1 && matches!(suffix.as_bytes()[0], b'1'..=b'9'))
+pub fn new_session_id() -> SessionId {
+    SessionId::parse(format!("ses_{}", uuid::Uuid::new_v4().simple()))
+        .expect("daemon-generated session id must be valid")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -249,6 +199,15 @@ mod tests {
     }
 
     #[test]
+    fn daemon_generated_ids_use_the_canonical_128_bit_format() {
+        let first = new_session_id();
+        let second = new_session_id();
+        assert!(first.as_str().starts_with("ses_"));
+        assert_eq!(first.as_str().len(), 36);
+        assert_ne!(first, second);
+    }
+
+    #[test]
     fn hostile_identifiers_cannot_select_a_parent_path() {
         let root = Path::new("/trusted/history");
         for value in ["../outside", "/outside", "a/b", "a\\b"] {
@@ -330,10 +289,7 @@ mod tests {
 
         remove_session_dir(&directory_root, "../outside-dir").unwrap();
 
-        assert_eq!(
-            std::fs::read(outside_dir.join("canary")).unwrap(),
-            b"safe"
-        );
+        assert_eq!(std::fs::read(outside_dir.join("canary")).unwrap(), b"safe");
     }
 
     #[test]

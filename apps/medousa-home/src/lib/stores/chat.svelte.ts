@@ -192,6 +192,7 @@ export class ChatStore {
   private sessionsFetchedAt = 0;
   private sessionsRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   private sessionsRefreshInFlight: Promise<void> | null = null;
+  private sessionBootstrapInFlight: Promise<void> | null = null;
   /** Latest query requested while a refresh is in flight (coalesce to this). */
   private sessionsRefreshDesiredQuery: string | null = null;
   /** Turn ids with an active local SSE listener (subset of `turns`). */
@@ -910,9 +911,11 @@ export class ChatStore {
   }
 
   async newSession(options?: { shellContext?: { desktopId: string; groupId: string } }) {
+    const { createSession } = await import("$lib/daemon");
+    const created = await createSession();
     this.flushDraftPersist();
     this.stashFocusedRuntime();
-    const id = `medousa-home-${crypto.randomUUID()}`;
+    const id = created.session_id;
     localStorage.setItem(SESSION_KEY, id);
     this.loadRuntimeIntoFocused(emptySessionRuntime(id, loadDraftForSession(id)));
     this.sessionPristine = true;
@@ -938,8 +941,6 @@ export class ChatStore {
         groupId: shellContext?.groupId,
       });
     }
-    // A pristine local session is absent from daemon history until its first
-    // turn. Do not make tab creation wait behind a session-list search/refresh.
     void this.refreshSessions({ force: true, q: "" });
     const { workshops } = await import("$lib/stores/workshops.svelte");
     void workshops.saveActiveSession(id);
@@ -993,6 +994,13 @@ export class ChatStore {
 
   /** Pull transcript from the daemon when the UI remounted empty (startup / reconnect). */
   async ensureSessionHydrated(options?: { notice?: boolean }) {
+    if (!this.sessionId.trim()) {
+      this.sessionBootstrapInFlight ??= this.newSession().finally(() => {
+        this.sessionBootstrapInFlight = null;
+      });
+      await this.sessionBootstrapInFlight;
+      return;
+    }
     if (this.historyLoading) return;
     if (this.sessionPristine) return;
     if (this.messages.length === 0) {
@@ -3636,12 +3644,10 @@ function loadPinnedIds(): string[] {
 }
 
 function loadSessionId(): string {
-  if (typeof localStorage === "undefined") return "medousa-home";
+  if (typeof localStorage === "undefined") return "";
   const existing = localStorage.getItem(SESSION_KEY);
   if (existing) return existing;
-  const id = "medousa-home";
-  localStorage.setItem(SESSION_KEY, id);
-  return id;
+  return "";
 }
 
 interface StoredDraft {

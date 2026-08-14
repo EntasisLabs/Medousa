@@ -2,7 +2,6 @@ use axum::extract::{Extension, Path as AxumPath, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
 use std::sync::Arc;
-use uuid::Uuid;
 
 fn validated_session_id(session_id: String) -> Result<String, (StatusCode, String)> {
     crate::session_storage::validate_session_id(&session_id)
@@ -71,12 +70,13 @@ pub async fn create_session(
     Json(request): Json<CreateSessionRequest>,
 ) -> Result<Json<CreateSessionResponse>, (StatusCode, String)> {
     let catalog = SessionCatalogKind::parse(request.catalog.as_deref());
-    let session_id = match request.session_id.as_deref() {
-        Some(value) => crate::session_storage::validate_session_id(value)
-            .map(str::to_string)
-            .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?,
-        None => format!("session-{}", Uuid::new_v4().simple()),
-    };
+    if request.session_id.is_some() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "caller-supplied session_id is no longer supported".to_string(),
+        ));
+    }
+    let session_id = crate::session_storage::new_session_id().to_string();
     let display_name = request
         .display_name
         .as_deref()

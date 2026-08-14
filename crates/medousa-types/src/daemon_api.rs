@@ -334,7 +334,7 @@ pub struct SessionHistoryListRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct CreateSessionRequest {
-    /// Optional client-supplied id; daemon mints a uuid when omitted.
+    /// Deprecated compatibility field. New sessions are always daemon-generated.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
     /// `single` (default) or `shared`.

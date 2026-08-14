@@ -188,7 +188,6 @@ export interface CreateSessionOptions {
   memberProfileIds?: string[];
   agentProfileId?: string;
   displayName?: string;
-  sessionId?: string;
 }
 
 export interface CreateSessionResponse {
@@ -207,7 +206,6 @@ export async function createSession(
     memberProfileIds: options?.memberProfileIds,
     agentProfileId: options?.agentProfileId,
     displayName: options?.displayName,
-    sessionId: options?.sessionId,
   });
 }
 

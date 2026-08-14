@@ -1,10 +1,135 @@
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::fmt;
+use std::str::FromStr;
 
 use crate::inference::InferenceProfilesConfig;
 use crate::stage_routing::StageRoutingMatrix;
 use crate::turn::TurnPart;
 use crate::turn::TurnSliceSummary;
+
+pub const MAX_SESSION_ID_BYTES: usize = 128;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InvalidSessionId {
+    reason: &'static str,
+}
+
+impl InvalidSessionId {
+    pub fn reason(&self) -> &'static str {
+        self.reason
+    }
+}
+
+impl fmt::Display for InvalidSessionId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "invalid session id: {}", self.reason)
+    }
+}
+
+impl std::error::Error for InvalidSessionId {}
+
+/// Canonical chat session identifier. Construction never normalizes input.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct SessionId(String);
+
+impl SessionId {
+    pub fn parse(value: impl AsRef<str>) -> Result<Self, InvalidSessionId> {
+        let value = value.as_ref();
+        validate_session_id(value)?;
+        Ok(Self(value.to_string()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for SessionId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+impl AsRef<str> for SessionId {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl FromStr for SessionId {
+    type Err = InvalidSessionId;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::parse(value)
+    }
+}
+
+impl TryFrom<String> for SessionId {
+    type Error = InvalidSessionId;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        validate_session_id(&value)?;
+        Ok(Self(value))
+    }
+}
+
+impl Serialize for SessionId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for SessionId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::try_from(value).map_err(serde::de::Error::custom)
+    }
+}
+
+pub fn validate_session_id(session_id: &str) -> Result<&str, InvalidSessionId> {
+    if session_id.is_empty() {
+        return Err(InvalidSessionId { reason: "empty" });
+    }
+    if session_id.len() > MAX_SESSION_ID_BYTES {
+        return Err(InvalidSessionId { reason: "too_long" });
+    }
+    if !session_id.is_ascii() {
+        return Err(InvalidSessionId {
+            reason: "non_ascii",
+        });
+    }
+    if !session_id
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        return Err(InvalidSessionId {
+            reason: "invalid_character",
+        });
+    }
+    if is_windows_device_name(session_id) {
+        return Err(InvalidSessionId {
+            reason: "platform_alias",
+        });
+    }
+    Ok(session_id)
+}
+
+fn is_windows_device_name(session_id: &str) -> bool {
+    let upper = session_id.to_ascii_uppercase();
+    matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || upper
+            .strip_prefix("COM")
+            .or_else(|| upper.strip_prefix("LPT"))
+            .is_some_and(|suffix| suffix.len() == 1 && matches!(suffix.as_bytes()[0], b'1'..=b'9'))
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -161,5 +286,28 @@ impl ConversationTurn {
         let trimmed = trimmed.trim();
         self.speaker_profile_id = (!trimmed.is_empty()).then(|| trimmed.to_string());
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_id_serde_round_trips_as_a_string() {
+        let session_id = SessionId::parse("ses_0123456789abcdef").unwrap();
+        let encoded = serde_json::to_string(&session_id).unwrap();
+        assert_eq!(encoded, "\"ses_0123456789abcdef\"");
+        assert_eq!(
+            serde_json::from_str::<SessionId>(&encoded).unwrap(),
+            session_id
+        );
+    }
+
+    #[test]
+    fn session_id_deserialization_cannot_bypass_validation() {
+        for encoded in ["\"../outside\"", "\" session\"", "\"nul\""] {
+            assert!(serde_json::from_str::<SessionId>(encoded).is_err());
+        }
     }
 }

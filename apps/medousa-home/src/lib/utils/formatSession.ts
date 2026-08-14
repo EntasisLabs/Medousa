@@ -101,7 +101,7 @@ export function formatSessionWhen(iso?: string | null): string {
 }
 
 function looksLikeId(value: string): boolean {
-  if (UUID_LIKE.test(value) || /^sess[_-]/i.test(value)) return true;
+  if (UUID_LIKE.test(value) || /^(?:ses_|sess[_-])/i.test(value)) return true;
   // Daemon ids like `medousa-home-<uuid>` should never surface as titles.
   if (/^medousa-home-/i.test(value)) return true;
   if (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {

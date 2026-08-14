@@ -17,8 +17,6 @@ use super::workshop_http;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateSessionRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub session_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub catalog: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub member_profile_ids: Option<Vec<String>>,
@@ -47,13 +45,11 @@ pub async fn session_create(
     member_profile_ids: Option<Vec<String>>,
     agent_profile_id: Option<String>,
     display_name: Option<String>,
-    session_id: Option<String>,
 ) -> Result<CreateSessionResponse, String> {
     workshop_http::post_json(
         &state,
         "/v1/sessions",
         &CreateSessionRequest {
-            session_id,
             catalog,
             member_profile_ids,
             agent_profile_id,
