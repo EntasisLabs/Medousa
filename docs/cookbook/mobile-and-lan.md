@@ -17,7 +17,7 @@ Connect the Medousa mobile app to a desktop engine over LAN (or Iroh when enable
 
 ## Pairing flow
 
-1. Desktop exposes `GET /qr` (and `/qr/image` for PNG).
+1. Authenticated desktop Home or `medousa pair qr` creates an expiring invite.
 2. Mobile scans QR or enters pair code (`GET /pair/code`).
 3. `POST /pair/init` + `POST /pair/verify` exchange credentials.
 4. Mobile stores workshop URL + bearer token; uses [`medousa-sdk-iroh`](../../crates/medousa-sdk-iroh/) `WorkshopTransport` via Tauri `daemon/sdk.rs`.
@@ -39,19 +39,19 @@ npm run tauri ios dev
 
 ---
 
-## Non-loopback bind (temporary unsafe development escape hatch)
+## Non-loopback bind
 
-`--public` currently publishes the complete daemon router, uses permissive
-CORS, and does not require authentication on every personal-mode route.
-Pairing a client does not close the anonymous surface. Until
-[hardening H01](../../architecture/hardening/README.md) ships:
+`--public` publishes the complete daemon router, but application routes require
+local-app or paired credentials. QR/status/code/ticket operations are protected;
+only the bounded pairing ceremony is anonymous. Browser origins and request
+hosts are exact allowlists rather than wildcard CORS.
 
-- prefer the full Iroh invite flow in the [phone pairing guide](../guides/phone-pairing.md);
-- never expose port 7419 to the internet, guest Wi-Fi, or an untrusted LAN; and
-- if LAN-only development requires a non-loopback bind, use an isolated network
-  and firewall, keep the window short, and stop/restart on loopback immediately.
+Prefer the full Iroh invite flow in the [phone pairing
+guide](../guides/phone-pairing.md). Do not expose port 7419 directly to the
+internet. Use a trusted LAN and firewall for compact invites, keep the pairing
+window short, and stop/restart on loopback when finished.
 
-Unsafe development command:
+LAN development command:
 
 ```bash
 medousa start daemon --public

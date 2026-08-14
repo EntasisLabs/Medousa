@@ -223,7 +223,8 @@ non-loopback socket, plus browser-driven origin tests.
 ## Code anchors
 
 - `src/bin/medousa_daemon.rs` — listener and final router assembly
-- `src/daemon/router.rs` — application router and current permissive CORS
+- `src/daemon/router.rs`, `src/daemon/request_boundary.rs` — application router,
+  exact browser-origin policy, and socket-edge Host validation
 - `src/peer_scope.rs`, `src/portal_acl.rs` — current conditional middleware and
   handwritten route classification
 - `src/remote_trust.rs`, `src/iroh_transport/gateway.rs` — transport metadata

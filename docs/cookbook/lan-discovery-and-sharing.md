@@ -19,16 +19,15 @@ Home on **desktop** uses the same transport as mobile: try LAN, then fall back t
 
 ## LAN pairing window
 
-The product intends public bind (`0.0.0.0`) only for **pairing**, not ongoing
-access. The current implementation nevertheless publishes the complete daemon
-router and does not require credentials on every personal-mode route. This is
-an unsafe temporary exposure, not a security boundary. Prefer a full Iroh
-invite. If a LAN ceremony is unavoidable, use only an isolated trusted network
-and close the window immediately. Never use it on guest/café Wi-Fi or forward
-port 7419. See [hardening H01](../../architecture/hardening/README.md).
+Public bind (`0.0.0.0`) is intended for **pairing**, not ongoing access. The
+complete router is reachable, but application and invite-management routes
+require local-app or paired credentials. Only the bounded init/verify ceremony
+is anonymous. Prefer a full Iroh invite off-LAN; for compact invites, use a
+trusted network and close the window immediately. Never forward port 7419 to
+the internet.
 
 1. Turn on **LAN pairing window** (Settings → Nearby, or Peers → Add peer)
-2. Engine restarts listening on the LAN (mDNS + `GET /qr`)
+2. Engine restarts listening on the LAN and advertises discovery metadata
 3. Pair phones / peers / laptop on trusted Wi‑Fi
 4. Turn the toggle **off** — engine restarts on **loopback only**
 5. Already-paired clients keep working over the **private Iroh tunnel**
@@ -42,7 +41,7 @@ Open **Peers** in the Life rail (Users icon, under Chat).
 
 ### My invite
 
-Large **compact** QR (`medousa://pair/1.0?…`, camera-friendly), short code, **Copy link**. The Iroh ticket is fetched after LAN pair so the QR stays scannable. Use **Full link** only when pasting an off-LAN invite (`GET /qr?full=true` / v2).
+Large **compact** QR (`medousa://pair/1.0?…`, camera-friendly), short code, **Copy link**. The Iroh ticket is fetched with the new pairing credential after LAN pairing so the QR stays scannable. Use **Full link** only when pasting an off-LAN v2 invite. Invite creation and display are authenticated owner operations.
 
 ### Mobile
 
@@ -56,13 +55,15 @@ Portal phone pairing (QR / Iroh) is for chat, vault, canvas **and** the workshop
 
 ### One-tap Connect
 
-Nearby workshops appear via mDNS. Tap **Connect**:
+Nearby workshops appear via mDNS. Discovery intentionally does not publish or
+allow anonymous download of their pairing secret. Tap **Connect**, then:
 
-1. Fetch their `GET /qr` over LAN
-2. Complete the trust ceremony with **`role: peer`**
+1. Ask the workshop owner for a `medousa://pair/…` invite
+2. Paste the invite and complete the trust ceremony with **`role: peer`**
 3. Store credentials as a **peer** entry (`peer-{deviceId}`) — **not** a workshop switcher membership
 
-If mDNS misses them, use **Connect by address** and enter their workshop URL (`http://10.12.0.13:7419`) — same as `medousa peer connect`. Invite link is optional (only if `/qr` is unreachable).
+If mDNS misses them, paste the invite directly; its advertised address is used
+automatically. `medousa peer connect 'medousa://pair/…'` follows the same rule.
 
 Peer tokens on the host are scoped: they may only call `/v1/peer/*`, `/v1/share/*`, and pairing heartbeat/status. Escalation to vault/chat is rejected with 403.
 
@@ -138,7 +139,7 @@ Daemon:
 Host (this engine):
 
 ```bash
-medousa pair lan on          # UNSAFE temporary full API bind; isolated LAN only
+medousa pair lan on          # temporary LAN bind; trusted LAN only
 medousa pair qr --term       # show invite
 medousa pair status          # surfaces + roles
 medousa pair lan off         # back to loopback; clients use Iroh
@@ -148,8 +149,8 @@ Client (another machine or the same host connecting out):
 
 ```bash
 medousa peer nearby                              # mDNS browse via local engine
-medousa peer connect http://192.168.1.20:7419    # role=peer (inbox only)
-medousa peer connect http://192.168.1.20:7419 --portal --name mini
+medousa peer connect 'medousa://pair/1.0?...'    # role=peer (inbox only)
+medousa peer connect 'medousa://pair/1.0?...' --portal --name mini
 medousa peer list
 medousa peer send mini "hello from headless"
 medousa peer inbox --unread                      # this engine's inbox

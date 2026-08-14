@@ -109,16 +109,17 @@ Embed **Locus memory** in your app: same user_id across your UI and Medousa Engi
 
 ## Pattern 8 — Pairing & edge devices
 
-QR protocol (`GET /qr`, `/pair/*`) for phones or kiosks talking to an
-edge-hosted engine. Prefer the authenticated Iroh transport for off-host
-clients.
+The QR protocol supports phones or kiosks talking to an edge-hosted engine.
+Invite generation (`GET /qr`, images, rotation, status, code, and ticket) is an
+authenticated owner operation. A joining client receives the complete signed
+`medousa://pair/…` invite out of band, then uses the bounded anonymous
+`POST /pair/init` and `POST /pair/verify` ceremony. Prefer authenticated Iroh
+transport for off-host clients.
 
-Do not run the current engine with `--public` on a factory-floor or other shared
-network. It exposes the complete daemon router without mandatory credentials on
-every personal-mode route. Until [hardening H01](../../architecture/hardening/README.md)
-ships, keep the engine on loopback and use Iroh, or place experimental LAN
-access behind a separately authenticated, tightly firewalled proxy on an
-isolated network.
+Do not expose port 7419 directly to the internet. A non-loopback bind enforces
+credentials, exact request hosts, and exact browser origins, but compact invites
+should still use a trusted, firewalled LAN. Use full Iroh invites for clients
+outside that network.
 
 ---
 

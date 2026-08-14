@@ -22,6 +22,7 @@ pub mod interactive;
 pub mod jobs;
 pub mod router;
 pub mod route_policy;
+pub mod request_boundary;
 pub mod runtime_tui_defaults;
 pub mod shared_mode;
 pub mod state;

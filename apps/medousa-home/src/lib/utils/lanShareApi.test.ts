@@ -18,10 +18,14 @@ describe("lanShareApi", () => {
     expect(capabilityBadges("0018")).toEqual(["Share", "Layouts"]);
   });
 
-  it("documents connectToNearbyWorkshop as Tauri-only", async () => {
-    const { connectToNearbyWorkshop } = await import("$lib/utils/lanShareApi");
+  it("documents invite-based workshop trust as Tauri-only", async () => {
+    const { trustWorkshopFromQr } = await import("$lib/utils/lanShareApi");
     await expect(
-      connectToNearbyWorkshop({ daemonUrl: "http://192.168.1.2:7419", peerName: "Studio" }),
+      trustWorkshopFromQr({
+        qrUrl: "medousa://pair/1.0?a=192.168.1.2%3A7419&d=device&t=token&s=signature&u=key",
+        daemonUrl: "http://192.168.1.2:7419",
+        workshopName: "Studio",
+      }),
     ).rejects.toThrow(/desktop app/i);
   });
 });

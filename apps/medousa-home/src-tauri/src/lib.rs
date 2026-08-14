@@ -328,7 +328,6 @@ pub fn run() {
             lan_share::lan_pairing_status,
             lan_share::set_lan_pairing_enabled,
             lan_share::lan_discover_workshops,
-            lan_share::lan_connect_workshop,
             lan_share::share_export_bundle,
             lan_share::share_import_bundle,
             lan_share::share_push_to_workshop,

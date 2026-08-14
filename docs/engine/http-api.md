@@ -557,6 +557,10 @@ See [extensions.md](extensions.md).
 
 ## Pairing (LAN / phone)
 
+Invite generation and inspection routes require a local-app or paired bearer.
+Only `POST /pair/init` and `POST /pair/verify` are anonymous, and only an
+operator-issued, unexpired, single-use invite can enter the ceremony.
+
 | Method | Path |
 |--------|------|
 | GET | `/qr` |

@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use medousa::daemon_api::{
-    detect_lan_ipv4, resolve_daemon_url, DEFAULT_DAEMON_PORT, DEFAULT_DAEMON_URL,
+    DEFAULT_DAEMON_PORT, DEFAULT_DAEMON_URL, detect_lan_ipv4, resolve_daemon_url,
 };
 use serde_json::Value;
 
@@ -20,9 +20,9 @@ pub fn run_pair(args: &[String]) -> Result<()> {
         Some("qr") => run_pair_qr(&daemon_url, args),
         Some("remove") => run_pair_remove(&resolve_pair_remove_daemon_url(args), args),
         Some("lan") => run_pair_lan(args),
-        Some(other) => bail!(
-            "unknown pair subcommand '{other}'. run 'medousa pair --help' for usage"
-        ),
+        Some(other) => {
+            bail!("unknown pair subcommand '{other}'. run 'medousa pair --help' for usage")
+        }
     }
 }
 
@@ -36,14 +36,8 @@ fn run_pair_status(daemon_url: &str) -> Result<()> {
         bail!("GET /pair/status returned {}", response.status());
     }
     let body: Value = response.json().context("parse /pair/status json")?;
-    let peer_name = body
-        .get("peerName")
-        .and_then(Value::as_str)
-        .unwrap_or("-");
-    let device_id = body
-        .get("deviceId")
-        .and_then(Value::as_str)
-        .unwrap_or("-");
+    let peer_name = body.get("peerName").and_then(Value::as_str).unwrap_or("-");
+    let device_id = body.get("deviceId").and_then(Value::as_str).unwrap_or("-");
     println!("Workshop: {peer_name} ({device_id})");
     println!("LAN pairing window: {}", lan_window_label());
 
@@ -95,14 +89,8 @@ fn run_pair_qr(daemon_url: &str, args: &[String]) -> Result<()> {
         .get("url")
         .and_then(Value::as_str)
         .context("missing url in /qr response")?;
-    let short_code = body
-        .get("shortCode")
-        .and_then(Value::as_str)
-        .unwrap_or("-");
-    let expires_at = body
-        .get("expiresAt")
-        .and_then(Value::as_str)
-        .unwrap_or("-");
+    let short_code = body.get("shortCode").and_then(Value::as_str).unwrap_or("-");
+    let expires_at = body.get("expiresAt").and_then(Value::as_str).unwrap_or("-");
 
     println!("Pairing URL:\n{url}");
     if url.contains("medousa://pair/2.0") {
@@ -159,9 +147,9 @@ fn run_pair_lan(args: &[String]) -> Result<()> {
         }
         Some("on") => restart_daemon_public(true),
         Some("off") => restart_daemon_public(false),
-        Some(other) => bail!(
-            "unknown lan subcommand '{other}'. try: medousa pair lan status|on|off"
-        ),
+        Some(other) => {
+            bail!("unknown lan subcommand '{other}'. try: medousa pair lan status|on|off")
+        }
     }
 }
 
@@ -275,8 +263,10 @@ fn print_pair_help() {
     println!("  medousa pair remove <pairing_id> [--daemon-url <url>]");
     println!("  medousa pair lan status|on|off");
     println!();
-    println!("LAN pairing window binds the engine to 0.0.0.0 so peers can GET /qr.");
-    println!("Turn it off after pairing — clients keep working over Iroh.");
+    println!(
+        "LAN pairing window binds the engine to 0.0.0.0; invite details remain local-admin only."
+    );
+    println!("Generate an invite with `medousa pair qr`, then turn LAN pairing off after use.");
     println!();
     println!("Remove defaults to {DEFAULT_DAEMON_URL} (loopback admin).");
     println!("Connect as a client: medousa peer --help");

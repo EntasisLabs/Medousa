@@ -5,7 +5,7 @@ use axum::Router;
 use axum::http::header::CONTENT_TYPE;
 use axum::response::IntoResponse;
 use stasis::dashboard::{DashboardState, RuntimeDashboardQueryService, router as dashboard_router};
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
 use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RouteInventory, RoutePolicy,
@@ -1117,16 +1117,31 @@ pub fn build_browser_compatibility_router(state: AppState) -> Router {
 pub fn build_daemon_router(
     state: AppState,
     dashboard_action_auth: &DashboardActionAuthConfig,
+    request_boundary: Arc<crate::daemon::request_boundary::RequestBoundary>,
 ) -> Router {
+    let allowed_origins = request_boundary.allowed_origin_values();
     build_browser_compatibility_router(state.clone())
         .merge(build_dashboard_compatibility_router(
             &state,
             dashboard_action_auth,
         ))
-        // Home runs at localhost:1420 in development and consumes Forge/SSE
-        // directly from the daemon. Keep the local daemon surface consistent
-        // with the standalone code/session hosts.
-        .layer(CorsLayer::permissive())
+        .layer(axum::middleware::from_fn_with_state(
+            request_boundary,
+            crate::daemon::request_boundary::enforce_compatibility_origin,
+        ))
+        .layer(
+            CorsLayer::new()
+                .allow_origin(AllowOrigin::list(allowed_origins))
+                .allow_methods([
+                    axum::http::Method::GET,
+                    axum::http::Method::POST,
+                    axum::http::Method::OPTIONS,
+                ])
+                .allow_headers([
+                    axum::http::header::AUTHORIZATION,
+                    axum::http::header::CONTENT_TYPE,
+                ]),
+        )
 }
 
 #[cfg(test)]

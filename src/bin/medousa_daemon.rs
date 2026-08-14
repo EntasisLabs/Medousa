@@ -327,6 +327,11 @@ async fn main() -> Result<()> {
     let bound_addr = listener
         .local_addr()
         .context("failed to read medousa daemon listener address")?;
+    let request_boundary = medousa::daemon::request_boundary::RequestBoundary::for_listener(
+        bound_addr,
+    )
+    .context("failed to configure daemon Host/Origin boundary")?
+    .install();
     tracing::info!(requested = %addr, bound = %bound_addr, "acquired bind address, initializing runtime");
     // In-process tool proxies dial the API over loopback; point them at the
     // port we actually bound rather than the compiled-in default.
@@ -616,7 +621,6 @@ async fn main() -> Result<()> {
             device_id = %pairing_service.device_id(),
             "LAN pairing ready (GET /qr)"
         );
-        let warm_service = pairing_service.clone();
         medousa::home_push::register_home_push(Arc::new(medousa::home_push::HomePushService::new(
             pairing_service.clone(),
         )));
@@ -626,11 +630,6 @@ async fn main() -> Result<()> {
         medousa::home_widget_push::register_home_widget_push(Arc::new(
             medousa::home_widget_push::HomeWidgetPushService::new(pairing_service.clone()),
         ));
-        tokio::spawn(async move {
-            if let Err(err) = warm_service.current_qr().await {
-                tracing::warn!(error = %err, "pairing QR warm-up failed");
-            }
-        });
         share_api_state = medousa::share_handlers::ShareApiState {
             pairing: Some(pairing_service.clone()),
             local_device_id: pairing_service.device_id().to_string(),
@@ -647,7 +646,11 @@ async fn main() -> Result<()> {
         None
     };
 
-    let mut app = build_daemon_router(state.clone(), &dashboard_action_auth);
+    let mut app = build_daemon_router(
+        state.clone(),
+        &dashboard_action_auth,
+        request_boundary.clone(),
+    );
     let mut bootstrap = build_liveness_router();
     let mut declared = medousa::daemon::router::build_identity_surface()
         .merge(medousa::daemon::router::build_runtime_admin_surface())
@@ -898,9 +901,14 @@ async fn main() -> Result<()> {
     // daemon sheds load instead of being FD-exhausted under a request/reconnect
     // storm. The semaphore is shared across all cloned per-connection services.
     let max_concurrency = resolve_max_concurrency();
-    let app = app.layer(tower::limit::GlobalConcurrencyLimitLayer::new(
-        max_concurrency,
-    ));
+    let app = app
+        .layer(tower::limit::GlobalConcurrencyLimitLayer::new(
+            max_concurrency,
+        ))
+        .layer(axum::middleware::from_fn_with_state(
+            request_boundary,
+            medousa::daemon::request_boundary::enforce_host,
+        ));
     tracing::info!(max_concurrency, "max in-flight request concurrency");
 
     axum::serve(
