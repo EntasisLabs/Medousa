@@ -58,6 +58,7 @@ mod tests {
             last_seen: Utc::now(),
             session_token_hash: "h".into(),
             session_token_expiry: Utc::now(),
+            credential_generation: 1,
             role,
             profile_id: None,
             mesh_grants: grants.into_iter().map(str::to_string).collect(),

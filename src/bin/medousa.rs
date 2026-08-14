@@ -31,6 +31,8 @@ const DEFAULT_OLLAMA_BASE_URL: &str = "http://127.0.0.1:11434/v1/";
 
 #[path = "medousa/cli.rs"]
 mod cli;
+#[path = "medousa/credentials_cli.rs"]
+mod credentials_cli;
 
 #[path = "medousa/onboard_wizard/mod.rs"]
 mod onboard_wizard;
@@ -98,6 +100,7 @@ fn main() -> Result<()> {
         Some(cli::Commands::Workspace(args)) => run_workspace(&args.rest),
         Some(cli::Commands::Vault(args)) => run_vault(&args.rest),
         Some(cli::Commands::Pair(args)) => pair_cli::run_pair(&args.to_legacy()),
+        Some(cli::Commands::Credentials(args)) => credentials_cli::run_credentials(&args.rest),
         Some(cli::Commands::Peer(args)) => peer_cli::run_peer(&args.to_legacy()),
         #[cfg(feature = "iroh-transport")]
         Some(cli::Commands::Iroh(args)) => iroh_cli::run_iroh(&args.rest),

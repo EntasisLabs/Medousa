@@ -21,6 +21,7 @@ use super::crypto::{
 };
 use super::identity::DeviceIdentity;
 use super::store::{PairedDeviceRecord, PairingRole, PairingStore};
+use crate::credential_lifecycle::{CredentialKind, CredentialLifecycle};
 
 const QR_TTL: Duration = Duration::from_secs(300);
 const VERIFY_TTL: Duration = Duration::from_secs(10);
@@ -261,6 +262,7 @@ pub struct PairingService {
     pending_sessions: RwLock<HashMap<Uuid, PendingPairSession>>,
     admission: Mutex<PairingAdmission>,
     ceremony_slots: Arc<Semaphore>,
+    credential_lifecycle: CredentialLifecycle,
 }
 
 impl PairingService {
@@ -270,6 +272,24 @@ impl PairingService {
         peer_name: String,
         model_descriptor: Option<String>,
         iroh: Option<IrohWorkshopInfo>,
+    ) -> Self {
+        Self::new_with_lifecycle(
+            identity,
+            advertise_address,
+            peer_name,
+            model_descriptor,
+            iroh,
+            CredentialLifecycle::default(),
+        )
+    }
+
+    pub fn new_with_lifecycle(
+        identity: DeviceIdentity,
+        advertise_address: String,
+        peer_name: String,
+        model_descriptor: Option<String>,
+        iroh: Option<IrohWorkshopInfo>,
+        credential_lifecycle: CredentialLifecycle,
     ) -> Self {
         let store = PairingStore::new(identity.signing_key());
         Self {
@@ -284,7 +304,12 @@ impl PairingService {
             pending_sessions: RwLock::new(HashMap::new()),
             admission: Mutex::new(PairingAdmission::default()),
             ceremony_slots: Arc::new(Semaphore::new(CEREMONY_CONCURRENCY)),
+            credential_lifecycle,
         }
+    }
+
+    pub fn credential_lifecycle(&self) -> CredentialLifecycle {
+        self.credential_lifecycle.clone()
     }
 
     pub fn iroh_ticket(&self) -> Option<IrohTicketResponse> {
@@ -562,6 +587,7 @@ impl PairingService {
             last_seen: now,
             session_token_hash: hash_session_token(&session_token),
             session_token_expiry: now + SESSION_TOKEN_TTL,
+            credential_generation: 1,
             role: pending.role,
             profile_id: pending.bound_profile_id,
             mesh_grants: crate::mesh::default_mesh_grants_for_role(pending.role),
@@ -751,6 +777,12 @@ impl PairingService {
         };
         self.store.revoke_pairing(pairing_id)?;
         self.store.delete_record(&record.phone_id)?;
+        self.credential_lifecycle.revoke(
+            record.pairing_id,
+            record.credential_generation,
+            CredentialKind::Pairing,
+            "pairing_revoked",
+        );
         Ok(RevokePairingResult::Removed)
     }
 
@@ -1375,6 +1407,9 @@ mod tests {
                 .is_none()
         );
         assert!(service.find_by_pairing_id(&pairing_id).unwrap().is_none());
+        let snapshot = service.credential_lifecycle().snapshot();
+        assert_eq!(snapshot.revocation_epoch, 1);
+        assert_eq!(snapshot.audit_events[0].credential_id, pairing_id);
     }
 
     fn extract_query_param(url: &str, key: &str) -> Option<String> {

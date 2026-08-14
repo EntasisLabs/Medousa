@@ -332,6 +332,7 @@ async fn main() -> Result<()> {
     )
     .context("failed to configure daemon Host/Origin boundary")?
     .install();
+    let credential_lifecycle = medousa::credential_lifecycle::CredentialLifecycle::default();
     tracing::info!(requested = %addr, bound = %bound_addr, "acquired bind address, initializing runtime");
     // In-process tool proxies dial the API over loopback; point them at the
     // port we actually bound rather than the compiled-in default.
@@ -576,12 +577,13 @@ async fn main() -> Result<()> {
             } else {
                 None
             };
-        let pairing_service = Arc::new(medousa::pairing::PairingService::new(
+        let pairing_service = Arc::new(medousa::pairing::PairingService::new_with_lifecycle(
             identity,
             medousa::pairing::resolve_advertise_address(bind),
             medousa::pairing::resolve_peer_name(),
             model.map(|value| value.to_string()),
             iroh_info,
+            credential_lifecycle.clone(),
         ));
         if medousa::pairing::mdns_should_advertise(bind) {
             let mut txt = std::collections::HashMap::new();
@@ -717,6 +719,16 @@ async fn main() -> Result<()> {
         .merge(medousa::daemon::detamu_host::world_surface())
         .merge(medousa::daemon::forge_api::forge_surface())
         .with_state(state.clone());
+    declared = declared.merge(
+        medousa::local_credential_handlers::surface().with_state(
+            medousa::local_credential_handlers::LocalCredentialApiState {
+                data_dir: medousa::paths::medousa_data_dir(),
+                credentials: local_credentials.clone(),
+                lifecycle: credential_lifecycle.clone(),
+                operation_lock: Arc::new(tokio::sync::Mutex::new(())),
+            },
+        ),
+    );
     let preview = medousa::daemon::forge_preview::forge_preview_surface()
         .with_state(state.clone());
     if let Some((pairing_bootstrap, pairing_protected)) = pairing_routers {
@@ -731,6 +743,7 @@ async fn main() -> Result<()> {
     let daemon_access_state =
         medousa::peer_scope::DaemonAccessState::new(peer_message_state.pairing.clone())
             .with_local_credentials(local_credentials)
+            .with_credential_lifecycle(credential_lifecycle)
             .with_legacy_loopback_compatibility(
                 medousa::peer_scope::legacy_loopback_compatibility_enabled(addr),
             )

@@ -7,6 +7,7 @@ description = "Native local-client credential storage and verification for Medou
 
 [dependencies]
 anyhow = "1"
+arc-swap = "1"
 base64 = "0.22"
 keyring = "2.3"
 rand = "0.8"

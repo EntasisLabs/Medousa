@@ -229,6 +229,8 @@ non-loopback socket, plus browser-driven origin tests.
   handwritten route classification
 - `src/remote_trust.rs`, `src/iroh_transport/gateway.rs` — transport metadata
 - `src/pairing/service.rs`, `src/pairing_handlers.rs` — credential and ceremony
+- `src/credential_lifecycle.rs`, `src/local_credential_handlers.rs` —
+  generation revocation, stream leases, audit evidence, and local operations
 - `apps/medousa-home/src-tauri/src/daemon/` — Home daemon client
 - `apps/medousa-home/src-tauri/src/workshop_transport.rs` — LAN/Iroh auth
 - `crates/medousa-sdk/`, `crates/medousa-sdk-iroh/` — shared transports

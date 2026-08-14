@@ -7700,6 +7700,7 @@ name = "medousa-local-credential"
 version = "0.9.1"
 dependencies = [
  "anyhow",
+ "arc-swap",
  "base64 0.22.1",
  "keyring",
  "rand 0.8.6",

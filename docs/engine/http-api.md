@@ -578,6 +578,21 @@ operator-issued, unexpired, single-use invite can enter the ceremony.
 
 Cookbook: [mobile-and-lan.md](../cookbook/mobile-and-lan.md)
 
+## Local credential operations
+
+These native-only administration routes require `admin.identity`. They never
+return bearer secrets.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/v1/admin/local-credentials` | Credential ids/generations/status plus bounded lifecycle diagnostics |
+| POST | `/v1/admin/local-credentials/{name}/rotate` | Install the next generation and revoke the old one |
+| DELETE | `/v1/admin/local-credentials/{name}` | Revoke one first-party client credential |
+
+Supported names are `home-local`, `medousa-cli`, and `medousa-tui`. Successful
+rotation/revocation affects new requests immediately and closes matching
+long-lived daemon streams.
+
 ---
 
 ## Integration patterns

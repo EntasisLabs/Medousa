@@ -73,6 +73,9 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::daemon::runtime_tui_defaults::surface().inventory())
         .expect("duplicate runtime defaults route policy");
     inventory
+        .extend(crate::local_credential_handlers::surface().inventory())
+        .expect("duplicate local credential route policy");
+    inventory
         .extend(crate::inference_profiles_handlers::surface().inventory())
         .expect("duplicate inference profiles route policy");
     inventory
@@ -124,9 +127,7 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::feed_handlers::feed_surface().inventory())
         .expect("duplicate feed route policy");
     inventory
-        .extend(
-            crate::component_store_handlers::component_store_surface().inventory(),
-        )
+        .extend(crate::component_store_handlers::component_store_surface().inventory())
         .expect("duplicate component store route policy");
     inventory
         .extend(crate::workflow_handlers::workflow_surface().inventory())
@@ -1217,17 +1218,22 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 358);
-        assert_eq!(with_pairing.entries().len(), 370);
+        assert_eq!(without_pairing.entries().len(), 361);
+        assert_eq!(with_pairing.entries().len(), 373);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 370);
+        assert_eq!(rows.len(), 373);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"
                 && row["path"] == "/v1/mesh/outbox"
                 && row["required_capability"] == "peer.exchange"
+        }));
+        assert!(rows.iter().any(|row| {
+            row["method"] == "POST"
+                && row["path"] == "/v1/admin/local-credentials/{name}/rotate"
+                && row["required_capability"] == "admin.identity"
         }));
         assert!(rows.iter().any(|row| {
             row["method"] == "GET"
@@ -1456,8 +1462,7 @@ mod tests {
                 && entry.browser_policy == super::BrowserPolicy::NativeOnly
         }));
         assert!(entries.iter().any(|entry| {
-            entry.path == "/v1/feeds/stream"
-                && entry.rate_limit_class == RateLimitClass::Stream
+            entry.path == "/v1/feeds/stream" && entry.rate_limit_class == RateLimitClass::Stream
         }));
     }
 
@@ -1500,8 +1505,7 @@ mod tests {
             );
         }
         assert!(entries.iter().any(|entry| {
-            entry.path == "/v1/grapheme/lsp"
-                && entry.rate_limit_class == RateLimitClass::Stream
+            entry.path == "/v1/grapheme/lsp" && entry.rate_limit_class == RateLimitClass::Stream
         }));
     }
 
@@ -1569,7 +1573,11 @@ mod tests {
             .inventory()
             .entries()
             .collect::<Vec<_>>();
-        let entries = coding.iter().chain(&shell).chain(&world).collect::<Vec<_>>();
+        let entries = coding
+            .iter()
+            .chain(&shell)
+            .chain(&world)
+            .collect::<Vec<_>>();
 
         assert_eq!(entries.len(), 28);
         assert_eq!(
@@ -1635,8 +1643,10 @@ mod tests {
                 && entry.browser_policy == super::BrowserPolicy::ExactOrigin
                 && entry.body_limit == 2 * 1024 * 1024
         }));
-        assert!(!entries
-            .iter()
-            .any(|entry| matches!(entry.method.as_str(), "CONNECT" | "TRACE")));
+        assert!(
+            !entries
+                .iter()
+                .any(|entry| matches!(entry.method.as_str(), "CONNECT" | "TRACE"))
+        );
     }
 }

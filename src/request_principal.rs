@@ -168,13 +168,21 @@ impl RequestPrincipal {
     }
 
     pub fn local_app(credential_id: Arc<str>, transport: TransportClass) -> Self {
+        Self::local_app_with_generation(credential_id, transport, 1)
+    }
+
+    pub fn local_app_with_generation(
+        credential_id: Arc<str>,
+        transport: TransportClass,
+        revocation_generation: u64,
+    ) -> Self {
         Self {
             kind: PrincipalKind::LocalApp,
             credential_id: Some(CredentialId(credential_id)),
             profile_id: None,
             capabilities: CapabilitySet::operator(),
             transport,
-            revocation_generation: 0,
+            revocation_generation,
         }
     }
 
@@ -210,9 +218,7 @@ impl RequestPrincipal {
                 .filter(|value| !value.is_empty()),
             capabilities,
             transport,
-            // The current pairing store has boolean revocation. H01.5 replaces
-            // this sentinel with the store's monotonic revocation generation.
-            revocation_generation: 0,
+            revocation_generation: record.credential_generation,
         }
     }
 
@@ -266,6 +272,7 @@ mod tests {
             last_seen: Utc::now(),
             session_token_hash: "hash".into(),
             session_token_expiry: Utc::now(),
+            credential_generation: 1,
             role,
             profile_id: profile_id.map(str::to_string),
             mesh_grants: Vec::new(),

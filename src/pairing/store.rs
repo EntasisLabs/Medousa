@@ -59,6 +59,9 @@ pub struct PairedDeviceRecord {
     pub last_seen: DateTime<Utc>,
     pub session_token_hash: String,
     pub session_token_expiry: DateTime<Utc>,
+    /// Monotonic generation captured by live connections and revocation events.
+    #[serde(default = "initial_credential_generation")]
+    pub credential_generation: u64,
     /// Defaults to portal for records written before role split.
     #[serde(default)]
     pub role: PairingRole,
@@ -78,6 +81,10 @@ pub struct PairedDeviceRecord {
     pub live_activity_push_token: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub live_activity_push_updated_at: Option<DateTime<Utc>>,
+}
+
+const fn initial_credential_generation() -> u64 {
+    1
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -184,16 +191,18 @@ impl PairingStore {
         let raw = fs::read(path).with_context(|| format!("read {}", path.display()))?;
         if let Ok(envelope) = serde_json::from_slice::<EncryptedEnvelope>(&raw)
             && let Ok(plaintext) = self.decrypt(&envelope)
-                && let Ok(record) = serde_json::from_slice::<PairedDeviceRecord>(&plaintext) {
-                    return Ok(record);
-                }
+            && let Ok(record) = serde_json::from_slice::<PairedDeviceRecord>(&plaintext)
+        {
+            return Ok(record);
+        }
         serde_json::from_slice(&raw).context("parse plaintext pairing record")
     }
 
     fn write_record(&self, path: &Path, record: &PairedDeviceRecord) -> Result<()> {
         let plaintext = serde_json::to_vec(record).context("serialize pairing record")?;
         let envelope = self.encrypt(&plaintext)?;
-        let encoded = serde_json::to_vec_pretty(&envelope).context("serialize encrypted envelope")?;
+        let encoded =
+            serde_json::to_vec_pretty(&envelope).context("serialize encrypted envelope")?;
         fs::write(path, encoded).with_context(|| format!("write {}", path.display()))
     }
 
@@ -283,6 +292,7 @@ mod tests {
             last_seen: Utc::now(),
             session_token_hash: "deadbeef".to_string(),
             session_token_expiry: Utc::now(),
+            credential_generation: 1,
             role: PairingRole::Portal,
             profile_id: None,
             mesh_grants: Vec::new(),
@@ -300,19 +310,35 @@ mod tests {
     }
 
     #[test]
+    fn legacy_record_defaults_to_first_credential_generation() {
+        let value = serde_json::json!({
+            "pairingId": "pairing",
+            "phoneId": "phone",
+            "phoneName": "Phone",
+            "phonePublicKey": "key",
+            "pairedAt": Utc::now(),
+            "lastSeen": Utc::now(),
+            "sessionTokenHash": "hash",
+            "sessionTokenExpiry": Utc::now(),
+            "role": "portal"
+        });
+        let record: PairedDeviceRecord = serde_json::from_value(value).unwrap();
+        assert_eq!(record.credential_generation, 1);
+    }
+
+    #[test]
     fn list_paired_skips_unreadable_records() {
         let identity = DeviceIdentity::generate_ephemeral();
         let store = PairingStore::new(identity.signing_key());
         fs::create_dir_all(pairings_dir()).expect("pairings dir");
         let corrupt_path = pairings_dir().join("corrupt-test-phone.json");
-        fs::write(
-            &corrupt_path,
-            br#"{"nonce":"bad","ciphertext":"bad"}"#,
-        )
-        .expect("write corrupt record");
+        fs::write(&corrupt_path, br#"{"nonce":"bad","ciphertext":"bad"}"#)
+            .expect("write corrupt record");
         let listed = store.list_paired().expect("list should not fail");
         assert!(
-            listed.iter().all(|record| record.phone_id != "corrupt-test-phone"),
+            listed
+                .iter()
+                .all(|record| record.phone_id != "corrupt-test-phone"),
             "corrupt record should be skipped"
         );
         let _ = fs::remove_file(corrupt_path);

@@ -83,6 +83,8 @@ pub mod daemon;
 pub mod daemon_api;
 pub mod daemon_self_url;
 pub mod local_daemon_auth;
+pub mod local_credential_handlers;
+pub mod credential_lifecycle;
 pub mod daemon_handlers;
 pub mod vault;
 pub mod vault_handlers;

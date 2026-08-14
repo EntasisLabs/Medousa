@@ -9,21 +9,22 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
 
+use axum::Json;
 use axum::extract::ws::{Message as AxumMessage, WebSocket, WebSocketUpgrade};
-use axum::extract::{Path, Query, State};
+use axum::extract::{Extension, Path, Query, State};
 use axum::response::IntoResponse;
 use axum::routing::get;
-use axum::Json;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 use tokio_tungstenite::{connect_async, tungstenite::Message as TungsteniteMessage};
 
-use crate::daemon::state::AppState;
+use crate::credential_lifecycle::CredentialLease;
 use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
+use crate::daemon::state::AppState;
 use crate::grapheme_script::store::GraphemeScriptStore;
 use crate::paths::medousa_data_dir;
 
@@ -273,7 +274,9 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
         let mut guard = host.child.lock().await;
         if let Some(mut child) = guard.take() {
             let _ = child.start_kill();
-            tracing::warn!("killed medousa-session after health timeout so the next request can respawn");
+            tracing::warn!(
+                "killed medousa-session after health timeout so the next request can respawn"
+            );
         }
     }
 
@@ -533,8 +536,17 @@ async fn session_ws(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Query(query): Query<SessionAttachQuery>,
+    lease: Option<Extension<CredentialLease>>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| proxy_ws(socket, state, id, query))
+    ws.on_upgrade(move |socket| {
+        proxy_ws(
+            socket,
+            state,
+            id,
+            query,
+            lease.map(|Extension(lease)| lease),
+        )
+    })
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -555,7 +567,13 @@ fn session_attach_query_suffix(query: &SessionAttachQuery) -> String {
     String::new()
 }
 
-async fn proxy_ws(client: WebSocket, state: AppState, id: String, query: SessionAttachQuery) {
+async fn proxy_ws(
+    client: WebSocket,
+    state: AppState,
+    id: String,
+    query: SessionAttachQuery,
+    lease: Option<CredentialLease>,
+) {
     let host = state.shell_sessions.clone().unwrap_or_default();
     let info = ensure_shell_session_host(&host).await;
     if !info.available {
@@ -593,7 +611,16 @@ async fn proxy_ws(client: WebSocket, state: AppState, id: String, query: Session
         }
     });
 
-    while let Some(Ok(msg)) = up_rx.next().await {
+    let mut watcher = lease.map(|lease| lease.watcher());
+    loop {
+        let msg = tokio::select! {
+            _ = wait_for_revocation(&mut watcher) => {
+                let _ = client_tx.send(AxumMessage::Close(None)).await;
+                break;
+            }
+            msg = up_rx.next() => msg,
+        };
+        let Some(Ok(msg)) = msg else { break };
         let out = match msg {
             TungsteniteMessage::Text(t) => AxumMessage::Text(t.to_string().into()),
             TungsteniteMessage::Binary(b) => AxumMessage::Binary(b),
@@ -607,6 +634,15 @@ async fn proxy_ws(client: WebSocket, state: AppState, id: String, query: Session
         }
     }
     client_to_up.abort();
+}
+
+async fn wait_for_revocation(
+    watcher: &mut Option<crate::credential_lifecycle::CredentialRevocationWatcher>,
+) {
+    match watcher {
+        Some(watcher) => watcher.revoked().await,
+        None => futures_util::future::pending().await,
+    }
 }
 
 #[allow(dead_code)]
