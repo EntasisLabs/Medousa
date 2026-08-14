@@ -157,14 +157,6 @@ impl SessionFileStore {
     }
 }
 
-pub fn session_file(root: &Path, session_id: &SessionId, extension: &str) -> PathBuf {
-    root.join(format!(
-        "{}.{}",
-        StorageKey::for_session(session_id).as_str(),
-        extension
-    ))
-}
-
 pub fn session_dir(root: &Path, session_id: &SessionId) -> PathBuf {
     root.join(StorageKey::for_session(session_id).as_str())
 }
@@ -204,54 +196,6 @@ pub fn remove_session_dir(root: &Path, session_id: &SessionId) -> std::io::Resul
 
 fn remove_dir_if_present(path: &Path) -> std::io::Result<()> {
     match std::fs::remove_dir_all(path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error),
-    }
-}
-
-fn legacy_session_file(root: &Path, session_id: &SessionId, extension: &str) -> PathBuf {
-    root.join(format!("{}.{extension}", session_id.as_str()))
-}
-
-/// Resolve an opaque file, with a read-only fallback for a strictly safe legacy file.
-pub fn session_file_for_read(root: &Path, session_id: &SessionId, extension: &str) -> PathBuf {
-    let current = session_file(root, session_id, extension);
-    if current.exists() {
-        return current;
-    }
-    let legacy = legacy_session_file(root, session_id, extension);
-    if legacy.is_file() { legacy } else { current }
-}
-
-/// Return the opaque write path, migrating a strictly safe legacy file first.
-pub fn session_file_for_write(
-    root: &Path,
-    session_id: &SessionId,
-    extension: &str,
-) -> std::io::Result<PathBuf> {
-    std::fs::create_dir_all(root)?;
-    let current = session_file(root, session_id, extension);
-    let legacy = legacy_session_file(root, session_id, extension);
-    if !current.exists() && legacy.is_file() {
-        std::fs::rename(legacy, &current)?;
-    }
-    Ok(current)
-}
-
-/// Idempotently unlink both the opaque file and a strictly safe legacy file.
-pub fn remove_session_file(
-    root: &Path,
-    session_id: &SessionId,
-    extension: &str,
-) -> std::io::Result<()> {
-    remove_file_if_present(&session_file(root, session_id, extension))?;
-    remove_file_if_present(&legacy_session_file(root, session_id, extension))?;
-    Ok(())
-}
-
-fn remove_file_if_present(path: &Path) -> std::io::Result<()> {
-    match std::fs::remove_file(path) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error),
@@ -321,15 +265,10 @@ mod tests {
 
     #[test]
     fn session_files_are_flat_opaque_paths() {
-        let root = Path::new("/trusted/history");
-        let path = session_file(root, &id("session-a"), "jsonl");
-        assert_eq!(path.parent(), Some(root));
-        assert!(
-            path.file_name()
-                .unwrap()
-                .to_string_lossy()
-                .starts_with("s1-")
-        );
+        let files = SessionFileStore::new(PathBuf::from("/trusted/history"), "jsonl");
+        let path = files.current_path(&id("session-a"));
+        assert!(path.file_name().starts_with("s1-"));
+        assert!(path.file_name().ends_with(".jsonl"));
     }
 
     #[test]
@@ -343,22 +282,6 @@ mod tests {
                 .to_string_lossy()
                 .starts_with("s1-")
         );
-    }
-
-    #[test]
-    fn first_write_migrates_a_safe_legacy_file_without_copying() {
-        let temp = tempfile::tempdir().unwrap();
-        let root = temp.path().join("history");
-        std::fs::create_dir_all(&root).unwrap();
-        let legacy = root.join("session-a.jsonl");
-        std::fs::write(&legacy, b"turn\n").unwrap();
-
-        let session_id = id("session-a");
-        let current = session_file_for_write(&root, &session_id, "jsonl").unwrap();
-
-        assert_eq!(std::fs::read(&current).unwrap(), b"turn\n");
-        assert!(!legacy.exists());
-        assert_eq!(current, session_file(&root, &session_id, "jsonl"));
     }
 
     #[test]
@@ -451,8 +374,9 @@ mod tests {
             "turn_ledger",
         ] {
             let root = trusted.join(root_name);
-            let path = session_file(&root, &session_id, "json");
-            assert_eq!(path.parent(), Some(root.as_path()), "{root_name}");
+            let files = SessionFileStore::new(root, "json");
+            let path = files.current_path(&session_id);
+            assert!(!path.file_name().contains('/'), "{root_name}");
         }
         for root_name in [
             "artifacts",

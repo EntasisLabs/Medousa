@@ -1,6 +1,5 @@
 //! Session delete orchestration — transcript, catalog, Locus purge, satellites.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use stasis::ports::outbound::memory::memory_models::{
@@ -11,7 +10,6 @@ use stasis::ports::outbound::memory::memory_operations::MemoryOperations;
 use crate::locus_memory::{
     LOCUS_DEFAULT_TENANT, derive_locus_tenant_id, resolve_workshop_locus_session,
 };
-use crate::session::medousa_data_dir;
 use crate::turn_ticket::TurnTicketRegistry;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -112,7 +110,7 @@ pub async fn delete_session(
     record_surface_result(
         &mut failed_surfaces,
         "turn_ledger",
-        remove_turn_ledger_file(&session_id),
+        crate::agent_runtime::turn_ledger::delete_turn_ledger(&session_id),
     );
     record_surface_result(
         &mut failed_surfaces,
@@ -146,21 +144,4 @@ fn record_surface_result(
     if result.is_err() {
         failed_surfaces.push(surface);
     }
-}
-
-fn remove_turn_ledger_file(session_id: &crate::session_storage::SessionId) -> Result<(), String> {
-    crate::session_storage::remove_session_file(
-        &medousa_data_dir().join("turn_ledger"),
-        session_id,
-        "jsonl",
-    )
-    .map_err(|error| format!("turn ledger delete failed: {error}"))
-}
-
-pub fn session_surfaces_path(session_id: &crate::session_storage::SessionId) -> PathBuf {
-    crate::session_storage::session_file_for_read(
-        &medousa_data_dir().join("session_surfaces"),
-        session_id,
-        "json",
-    )
 }

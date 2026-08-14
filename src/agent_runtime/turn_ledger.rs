@@ -3,11 +3,9 @@
 //! Persists per-session JSONL for debugging and Phase 1 worker bus; injects
 //! `[MEDOUSA_TURN_CONTROL]` system lines into the tool-loop transcript.
 
-use std::io::Write;
-use std::path::PathBuf;
-
 use chrono::{DateTime, Utc};
 use genai::chat::ChatMessage;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
 
@@ -15,6 +13,13 @@ use super::turn_context::TurnScratchpad;
 use crate::agent_runtime::turn_completion_fsm::ContinueReason;
 
 pub const TURN_CONTROL_PREFIX: &str = "[MEDOUSA_TURN_CONTROL]";
+
+static TURN_LEDGER_FILES: Lazy<crate::session_storage::SessionFileStore> = Lazy::new(|| {
+    crate::session_storage::SessionFileStore::new(
+        crate::paths::medousa_data_dir().join("turn_ledger"),
+        "jsonl",
+    )
+});
 
 /// Principal content-pack hold — one resolution round before commit or more tools.
 pub const PACK_HOLD_PREFIX: &str = "[MEDOUSA_PACK_HOLD]";
@@ -229,12 +234,10 @@ impl TurnLoopDiscipline {
     }
 }
 
-pub fn turn_ledger_path(session_id: &crate::session_storage::SessionId) -> PathBuf {
-    crate::session_storage::session_file_for_read(
-        &crate::paths::medousa_data_dir().join("turn_ledger"),
-        session_id,
-        "jsonl",
-    )
+pub fn delete_turn_ledger(session_id: &crate::session_storage::SessionId) -> Result<(), String> {
+    TURN_LEDGER_FILES
+        .remove(session_id)
+        .map_err(|error| format!("turn ledger delete failed: {error}"))
 }
 
 pub fn append_turn_ledger_record(
@@ -245,23 +248,11 @@ pub fn append_turn_ledger_record(
     if record.active_profile_id.is_none() {
         record.active_profile_id = Some(crate::user_profiles::resolve_workshop_active_profile_id());
     }
-    let Ok(path) = crate::session_storage::session_file_for_write(
-        &crate::paths::medousa_data_dir().join("turn_ledger"),
-        session_id,
-        "jsonl",
-    ) else {
+    let Ok(mut line) = serde_json::to_vec(&record) else {
         return;
     };
-    let Ok(line) = serde_json::to_string(&record) else {
-        return;
-    };
-    if let Ok(mut file) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-    {
-        let _ = writeln!(file, "{line}");
-    }
+    line.push(b'\n');
+    let _ = TURN_LEDGER_FILES.append(session_id, &line);
 }
 
 pub fn push_turn_control_message(messages: &mut Vec<ChatMessage>, body: &str) {
@@ -416,12 +407,11 @@ mod tests {
         let session = "test-ledger-profile-stamp";
         let session = crate::session_storage::SessionId::parse(session).unwrap();
         append_turn_ledger_record(&session, &record);
-        let path = turn_ledger_path(&session);
-        let raw = std::fs::read_to_string(&path).expect("ledger file");
+        let raw = TURN_LEDGER_FILES.read(&session).expect("ledger file");
         let parsed: TurnLedgerRecord =
-            serde_json::from_str(raw.lines().next().unwrap()).expect("json");
+            serde_json::from_slice(raw.split(|byte| *byte == b'\n').next().unwrap()).expect("json");
         assert!(parsed.active_profile_id.is_some());
-        let _ = std::fs::remove_file(path);
+        let _ = delete_turn_ledger(&session);
     }
 
     #[test]

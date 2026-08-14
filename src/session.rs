@@ -28,14 +28,6 @@ pub(crate) fn medousa_data_dir() -> PathBuf {
     crate::paths::medousa_data_dir()
 }
 
-pub fn history_path(session_id: &crate::session_storage::SessionId) -> PathBuf {
-    crate::session_storage::session_file_for_read(
-        &medousa_data_dir().join("history"),
-        session_id,
-        "jsonl",
-    )
-}
-
 fn last_session_path() -> PathBuf {
     medousa_data_dir().join("last_session")
 }

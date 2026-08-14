@@ -79,15 +79,18 @@ prove rejection of link leaves and ancestors, outside-root canary preservation,
 and continued authority over the originally opened root after its ambient path
 is renamed and replaced.
 
-The file-backed transcript/history and single-session catalog stores now own a
-lazy `SessionFileStore` capability for their complete lifetime. Keyed reads,
-appends, atomic replacements, legacy first-write renames, exact deletion, and
-root enumeration no longer reconstruct ambient paths. Transcript parsing reads
-JSONL directly from capability-returned bytes, and catalog scans read only
-validated regular-file entries through the held root. Replacement-path fixtures
-prove that the production wrapper continues writing to the originally opened
-directory after its ambient name is moved and replaced. Shared catalog and the
-remaining session satellites still require migration, and native Windows
+The file-backed transcript/history, single-session catalog, shared-session
+catalog, tool-surface, and turn-ledger stores now own lazy `SessionFileStore`
+capabilities for their complete lifetime. Keyed reads, appends, atomic
+replacements, legacy first-write renames, exact deletion, and root enumeration
+no longer reconstruct ambient paths. Transcript and ledger JSONL encoding avoids
+the former per-line `String` allocation; catalog scans read only validated
+regular-file entries through the held root; tool-surface and catalog rewrites use
+the same atomic replacement primitive. Obsolete public flat-file path helpers
+have been removed, so new callers cannot bypass the capability owner.
+Replacement-path fixtures prove that the production wrapper continues writing
+to the originally opened directory after its ambient name is moved and replaced.
+Directory-shaped session satellites still require migration, and native Windows
 reparse/junction evidence remains open before H02.2 is complete.
 
 ## Current evidence and blast radius

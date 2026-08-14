@@ -1,11 +1,10 @@
 //! Phase 9 — progressive tool surface: bootstrap ring, session unlocks, turn hints.
 
 use std::collections::{HashMap, HashSet};
-use std::fs;
-use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use chrono::{DateTime, Utc};
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
 use crate::agent_runtime::prompt_prep::truncate_text_for_budget;
@@ -16,6 +15,13 @@ use crate::turn_slice::{DEFAULT_TOOL_HISTORY_SUMMARY_TURNS, tool_history_summary
 pub const COGNITION_TOOLS_DISCOVER: &str = "cognition_tools_discover";
 
 pub const DEFAULT_TOOL_HINTS_BLOCK_CHARS: usize = 700;
+
+static SESSION_SURFACE_FILES: Lazy<crate::session_storage::SessionFileStore> = Lazy::new(|| {
+    crate::session_storage::SessionFileStore::new(
+        session::medousa_data_dir().join("session_surfaces"),
+        "json",
+    )
+});
 
 /// Host console domains unlocked at session start (no `cognition_tools_discover` step).
 pub const DEFAULT_HOST_AUTO_UNLOCK_DOMAINS: &[&str] = &["memory", "vault", "calendar"];
@@ -530,10 +536,9 @@ pub fn ensure_detamu_domain_for_session(session_id: &str) {
 
 pub fn load_session_tool_surface(session_id: &str) -> SessionToolSurface {
     let parsed_session_id = crate::session_storage::SessionId::parse(session_id).ok();
-    let path = parsed_session_id.as_ref().map(session_surface_path);
-    if let Some(path) = path
-        && let Ok(raw) = fs::read_to_string(path)
-        && let Ok(mut surface) = serde_json::from_str::<SessionToolSurface>(&raw)
+    if let Some(session_id) = parsed_session_id
+        && let Ok(raw) = SESSION_SURFACE_FILES.read(&session_id)
+        && let Ok(mut surface) = serde_json::from_slice::<SessionToolSurface>(&raw)
     {
         surface.session_id = session_id.to_string();
         return surface;
@@ -550,27 +555,20 @@ pub fn load_session_tool_surface(session_id: &str) -> SessionToolSurface {
 pub fn delete_session_tool_surface(session_id: &str) -> Result<(), String> {
     let session_id =
         crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
-    crate::session_storage::remove_session_file(
-        &session::medousa_data_dir().join("session_surfaces"),
-        &session_id,
-        "json",
-    )
-    .map_err(|error| error.to_string())
+    SESSION_SURFACE_FILES
+        .remove(&session_id)
+        .map_err(|error| error.to_string())
 }
 
 pub fn save_session_tool_surface(surface: &SessionToolSurface) -> Result<(), String> {
     let session_id = crate::session_storage::SessionId::parse(&surface.session_id)
         .map_err(|error| error.to_string())?;
-    let path = crate::session_storage::session_file_for_write(
-        &session::medousa_data_dir().join("session_surfaces"),
-        &session_id,
-        "json",
-    )
-    .map_err(|err| err.to_string())?;
     let mut surface = surface.clone();
     surface.updated_at_utc = Utc::now();
-    let raw = serde_json::to_string_pretty(&surface).map_err(|err| err.to_string())?;
-    fs::write(path, raw).map_err(|err| err.to_string())
+    let raw = serde_json::to_vec_pretty(&surface).map_err(|err| err.to_string())?;
+    SESSION_SURFACE_FILES
+        .atomic_write(&session_id, &raw)
+        .map_err(|err| err.to_string())
 }
 
 pub fn unlock_session_domains(
@@ -873,23 +871,11 @@ pub fn worker_should_unlock_vault(
     )
 }
 
-fn session_surface_path(session_id: &crate::session_storage::SessionId) -> PathBuf {
-    crate::session_storage::session_file_for_read(
-        &session::medousa_data_dir().join("session_surfaces"),
-        session_id,
-        "json",
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashSet;
     use std::sync::{Mutex, OnceLock};
-
-    fn parsed_session_id(value: &str) -> crate::session_storage::SessionId {
-        crate::session_storage::SessionId::parse(value).unwrap()
-    }
 
     fn surface_test_lock() -> std::sync::MutexGuard<'static, ()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -944,7 +930,7 @@ mod tests {
         assert!(!after.contains("cognition_environment_wiki"));
         assert!(!after.contains("cognition_component_create"));
 
-        let _ = fs::remove_file(session_surface_path(&parsed_session_id(&session_id)));
+        let _ = delete_session_tool_surface(&session_id);
     }
 
     #[test]
@@ -978,7 +964,7 @@ mod tests {
         assert!(after.contains("cognition_environment_propose"));
         assert!(after.contains("cognition_mcp_discover"));
 
-        let _ = fs::remove_file(session_surface_path(&parsed_session_id(&session_id)));
+        let _ = delete_session_tool_surface(&session_id);
     }
 
     #[test]
@@ -996,7 +982,7 @@ mod tests {
         assert!(!after.contains("cognition_vault_write"));
         assert!(after.contains("cognition_memory_calibrate"));
 
-        let _ = fs::remove_file(session_surface_path(&parsed_session_id(&session_id)));
+        let _ = delete_session_tool_surface(&session_id);
     }
 
     #[test]
@@ -1013,7 +999,7 @@ mod tests {
         let after = effective_tool_names(&session_id, ToolSurfaceLane::Host, &allow);
         assert!(after.contains("cognition_memory_schema"));
 
-        let _ = fs::remove_file(session_surface_path(&parsed_session_id(&session_id)));
+        let _ = delete_session_tool_surface(&session_id);
     }
 
     #[test]
