@@ -11,9 +11,7 @@ use std::time::SystemTime;
 use once_cell::sync::OnceCell;
 use sha2::{Digest as _, Sha256};
 
-#[cfg(test)]
-use crate::store_root::StoreEntry;
-use crate::store_root::{StoreEntryKind, StorePath, StoreRoot, StoreRootError};
+use crate::store_root::{StoreEntry, StoreEntryKind, StorePath, StoreRoot, StoreRootError};
 
 pub use medousa_types::session::{
     InvalidSessionId, MAX_SESSION_ID_BYTES, SessionId, validate_session_id,
@@ -181,13 +179,32 @@ impl SessionFileStore {
 /// Capability-owned session-directory store with confined root-level indexes.
 pub(crate) struct SessionDirectoryStore {
     root_path: PathBuf,
+    legacy_dir: fn(&SessionId) -> StorePath,
     root: OnceCell<StoreRoot>,
+}
+
+impl std::fmt::Debug for SessionDirectoryStore {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("SessionDirectoryStore")
+            .field("root_path", &self.root_path)
+            .field("initialized", &self.root.get().is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 impl SessionDirectoryStore {
     pub fn new(root_path: PathBuf) -> Self {
+        Self::new_with_legacy_directory(root_path, legacy_session_directory)
+    }
+
+    pub fn new_with_legacy_directory(
+        root_path: PathBuf,
+        legacy_dir: fn(&SessionId) -> StorePath,
+    ) -> Self {
         Self {
             root_path,
+            legacy_dir,
             root: OnceCell::new(),
         }
     }
@@ -203,7 +220,7 @@ impl SessionDirectoryStore {
     }
 
     fn legacy_dir(&self, session_id: &SessionId) -> StorePath {
-        StorePath::parse(session_id.as_str()).expect("session id must be a valid store path")
+        (self.legacy_dir)(session_id)
     }
 
     fn session_dir_for_read(&self, session_id: &SessionId) -> Result<StorePath, StoreRootError> {
@@ -244,6 +261,17 @@ impl SessionDirectoryStore {
         self.root()?.read(&directory.join(relative)?)
     }
 
+    pub fn read_limited(
+        &self,
+        session_id: &SessionId,
+        relative: &StorePath,
+        max_bytes: u64,
+    ) -> Result<Vec<u8>, StoreRootError> {
+        let directory = self.session_dir_for_read(session_id)?;
+        self.root()?
+            .read_limited(&directory.join(relative)?, max_bytes)
+    }
+
     pub fn atomic_write(
         &self,
         session_id: &SessionId,
@@ -254,7 +282,6 @@ impl SessionDirectoryStore {
         self.root()?.atomic_write(&directory.join(relative)?, bytes)
     }
 
-    #[cfg(test)]
     pub fn list(&self, session_id: &SessionId) -> Result<Vec<StoreEntry>, StoreRootError> {
         let directory = self.session_dir_for_read(session_id)?;
         self.root()?.list_directory(&directory)
@@ -277,6 +304,10 @@ impl SessionDirectoryStore {
     pub fn atomic_write_root(&self, path: &StorePath, bytes: &[u8]) -> Result<(), StoreRootError> {
         self.root()?.atomic_write(path, bytes)
     }
+}
+
+fn legacy_session_directory(session_id: &SessionId) -> StorePath {
+    StorePath::parse(session_id.as_str()).expect("session id must be a valid store path")
 }
 
 pub fn session_dir(root: &Path, session_id: &SessionId) -> PathBuf {

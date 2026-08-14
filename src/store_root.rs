@@ -126,6 +126,10 @@ pub enum ConfinementReason {
 #[derive(Debug)]
 pub enum StoreRootError {
     InvalidPath(&'static str),
+    Limit {
+        operation: &'static str,
+        max_bytes: u64,
+    },
     Confinement {
         operation: &'static str,
         reason: ConfinementReason,
@@ -153,6 +157,13 @@ impl fmt::Display for StoreRootError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidPath(reason) => write!(formatter, "invalid store path: {reason}"),
+            Self::Limit {
+                operation,
+                max_bytes,
+            } => write!(
+                formatter,
+                "store {operation} exceeded the {max_bytes}-byte limit"
+            ),
             Self::Confinement { operation, reason } => {
                 write!(
                     formatter,
@@ -170,7 +181,7 @@ impl std::error::Error for StoreRootError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Io { source, .. } => Some(source),
-            Self::InvalidPath(_) | Self::Confinement { .. } => None,
+            Self::InvalidPath(_) | Self::Limit { .. } | Self::Confinement { .. } => None,
         }
     }
 }
@@ -191,6 +202,7 @@ pub enum StoreEntryKind {
 pub struct StoreEntry {
     pub path: StorePath,
     pub kind: StoreEntryKind,
+    pub size: u64,
     pub modified: Option<SystemTime>,
 }
 
@@ -213,6 +225,25 @@ impl StoreRoot {
         let mut bytes = Vec::new();
         file.read_to_end(&mut bytes)
             .map_err(|error| StoreRootError::io("read", error))?;
+        Ok(bytes)
+    }
+
+    pub fn read_limited(
+        &self,
+        path: &StorePath,
+        max_bytes: u64,
+    ) -> Result<Vec<u8>, StoreRootError> {
+        let file = self.open_file(path, false, false)?;
+        let mut bytes = Vec::with_capacity(max_bytes.min(8 * 1024) as usize);
+        file.take(max_bytes.saturating_add(1))
+            .read_to_end(&mut bytes)
+            .map_err(|error| StoreRootError::io("read_limited", error))?;
+        if bytes.len() as u64 > max_bytes {
+            return Err(StoreRootError::Limit {
+                operation: "read_limited",
+                max_bytes,
+            });
+        }
         Ok(bytes)
     }
 
@@ -423,14 +454,15 @@ fn list_directory(dir: &Dir) -> Result<Vec<StoreEntry>, StoreRootError> {
         } else {
             StoreEntryKind::Other
         };
-        let modified = dir
-            .symlink_metadata(&name)
-            .ok()
+        let metadata = dir.symlink_metadata(&name).ok();
+        let size = metadata.as_ref().map_or(0, |metadata| metadata.len());
+        let modified = metadata
             .and_then(|metadata| metadata.modified().ok())
             .map(|modified| modified.into_std());
         listed.push(StoreEntry {
             path,
             kind,
+            size,
             modified,
         });
     }
@@ -488,6 +520,21 @@ mod tests {
         assert!(matches!(
             left.join(&right),
             Err(StoreRootError::InvalidPath("too_deep"))
+        ));
+    }
+
+    #[test]
+    fn bounded_read_never_allocates_the_untrusted_tail() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::write(temp.path().join("large.bin"), vec![b'x'; 32 * 1024]).unwrap();
+        let root = StoreRoot::open(temp.path()).unwrap();
+
+        assert!(matches!(
+            root.read_limited(&path("large.bin"), 1024),
+            Err(StoreRootError::Limit {
+                operation: "read_limited",
+                max_bytes: 1024
+            })
         ));
     }
 

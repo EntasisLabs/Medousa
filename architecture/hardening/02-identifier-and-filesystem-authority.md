@@ -100,8 +100,19 @@ opaque relative object name, and JSONL scans avoid per-line `String`
 allocations. Safe legacy session directories migrate by handle-relative rename
 on first write. Existing platform-invalid object names and absolute index
 metadata are neither followed nor reinterpreted as authority; recovering those
-payloads waits for H02.4 inventory/quarantine. Artifact/media payload leasing
-and coder-checkpoint migration remain separate directory-store trains, and
+payloads waits for H02.4 inventory/quarantine.
+
+Coder turn checkpoints now use the same held-root directory capability for
+bounded scans, atomic writes, legacy-directory migration, and recursive session
+deletion. New turn snapshots use full domain-separated `o1-` keys instead of the
+legacy truncated turn digest. Scans admit only validated regular-file entries,
+cap each read before allocation, validate the embedded session/work scope, and
+deduplicate current and legacy copies by logical turn ID before deciding whether
+a checkpoint is resumable. This prevents an older active legacy copy from
+resurrecting after a newer terminal/superseded write. Hostile link-backed session
+directories fail closed with an outside-root canary intact.
+
+Artifact/media payload leasing remains a separate directory-store train, and
 native Windows reparse/junction evidence remains open before H02.2 is complete.
 
 ## Current evidence and blast radius
