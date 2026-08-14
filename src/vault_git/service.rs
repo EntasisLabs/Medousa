@@ -1,7 +1,7 @@
 //! Git subprocess helpers for vault Versions.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -60,9 +60,22 @@ pub fn resolve_git_binary() -> Option<PathBuf> {
     find_command_in_path(platform_git_name())
 }
 
-fn run_command(git: &Path, cwd: &Path, args: &[&str]) -> Result<Vec<u8>> {
+fn git_command(git: &Path) -> Command {
     let mut command = Command::new(git);
+    // `CREATE_NO_WINDOW` on Windows is applied here for every Git invocation,
+    // including detection. Null stdin and non-interactive Git/GCM settings also
+    // prevent hidden children from waiting on a prompt the user cannot see.
     hide_subprocess_window(&mut command);
+    command
+        .stdin(Stdio::null())
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GCM_INTERACTIVE", "Never")
+        .env("GIT_PAGER", "cat");
+    command
+}
+
+fn run_command(git: &Path, cwd: &Path, args: &[&str]) -> Result<Vec<u8>> {
+    let mut command = git_command(git);
     let output = command
         .args(args)
         .current_dir(cwd)
@@ -98,16 +111,12 @@ pub(crate) fn run_git(
 fn run_git_bytes(
     git: &Path,
     vault: &StoreRoot,
-    _ambient_root: &Path,
+    ambient_root: &Path,
     args: &[&str],
 ) -> Result<Vec<u8>> {
-    let mut command = Command::new(git);
-    hide_subprocess_window(&mut command);
+    let mut command = git_command(git);
     command.args(args);
-    #[cfg(unix)]
-    vault.configure_command_current_dir(&mut command);
-    #[cfg(not(unix))]
-    command.current_dir(_ambient_root);
+    vault.configure_command_current_dir(&mut command, ambient_root)?;
 
     let output = command
         .output()

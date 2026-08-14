@@ -7,7 +7,8 @@ Medousa can keep optional **Versions** of your vault — everyday language for l
 1. Open **Settings → Versions**.
 2. Turn **On**.
 3. If Git is missing:
-   - **Windows:** Medousa can download portable MinGit into your data folder.
+   - **Windows:** Medousa can download and extract portable MinGit directly
+     into your data folder without opening PowerShell or a console window.
    - **macOS:** install Xcode Command Line Tools (`xcode-select --install`) or Git from git-scm.com.
    - **Linux:** install via your package manager (e.g. `apt install git`).
 4. Choose **Start versioning** once to initialize history at the active vault root (adds a sensible `.gitignore` for `.trash/` / `.obsidian/`).

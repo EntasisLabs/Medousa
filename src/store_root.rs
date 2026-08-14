@@ -11,6 +11,8 @@ use std::process::Command;
 use std::time::SystemTime;
 
 use cap_fs_ext::{DirExt as _, FollowSymlinks, OpenOptionsFollowExt as _};
+#[cfg(windows)]
+use cap_fs_ext::MetadataExt as _;
 use cap_std::ambient_authority;
 use cap_std::fs::{Dir, File, OpenOptions};
 
@@ -137,6 +139,7 @@ fn validate_segment(segment: &str) -> Result<(), StoreRootError> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfinementReason {
     SymbolicLink,
+    RootIdentity,
 }
 
 #[derive(Debug)]
@@ -204,6 +207,13 @@ impl std::error::Error for StoreRootError {
 
 pub struct StoreRoot {
     dir: Dir,
+    /// Windows capability operations are implemented with path-relative APIs.
+    /// Keeping every opened ancestor alive without `FILE_SHARE_DELETE` pins
+    /// the complete root spelling against rename/delete replacement.
+    #[cfg(windows)]
+    _ancestor_guards: Vec<Dir>,
+    #[cfg(windows)]
+    process_path_pinned: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -244,7 +254,13 @@ impl StoreRoot {
     pub fn open(path: &Path) -> Result<Self, StoreRootError> {
         let dir = Dir::open_ambient_dir(path, ambient_authority())
             .map_err(|error| StoreRootError::io("open_root", error))?;
-        Ok(Self { dir })
+        Ok(Self {
+            dir,
+            #[cfg(windows)]
+            _ancestor_guards: Vec::new(),
+            #[cfg(windows)]
+            process_path_pinned: false,
+        })
     }
 
     /// Create a trusted root if needed, then open and retain its authority.
@@ -269,6 +285,8 @@ impl StoreRoot {
         let (anchor, segments) = absolute_path_parts(path)?;
         let mut current = Dir::open_ambient_dir(anchor, ambient_authority())
             .map_err(|error| StoreRootError::io("open_root_anchor", error))?;
+        #[cfg(windows)]
+        let mut ancestor_guards = Vec::with_capacity(segments.len());
         for segment in segments {
             if create {
                 match current.create_dir(&segment) {
@@ -280,18 +298,31 @@ impl StoreRoot {
                 }
             }
             reject_symlink(&current, &segment, "open_root_component")?;
-            current = current
+            let next = current
                 .open_dir_nofollow(&segment)
                 .map_err(|error| StoreRootError::io("open_root_component", error))?;
+            #[cfg(windows)]
+            ancestor_guards.push(current);
+            current = next;
         }
-        Ok(Self { dir: current })
+        Ok(Self {
+            dir: current,
+            #[cfg(windows)]
+            _ancestor_guards: ancestor_guards,
+            #[cfg(windows)]
+            process_path_pinned: true,
+        })
     }
 
     /// Make a Unix child start in this exact opened directory rather than
     /// reopening its ambient pathname. The descriptor is still live between
     /// `fork` and `exec`, even though it is close-on-exec.
     #[cfg(unix)]
-    pub fn configure_command_current_dir(&self, command: &mut Command) {
+    pub fn configure_command_current_dir(
+        &self,
+        command: &mut Command,
+        _ambient_root: &Path,
+    ) -> Result<(), StoreRootError> {
         use std::os::fd::AsRawFd as _;
         use std::os::unix::process::CommandExt as _;
 
@@ -307,6 +338,52 @@ impl StoreRoot {
                 Ok(())
             });
         }
+        Ok(())
+    }
+
+    /// Windows has no `fchdir`. The no-follow root retains non-delete-sharing
+    /// handles for every component, preventing the ambient spelling from being
+    /// renamed or replaced. Reopen it once more and compare filesystem identity
+    /// before giving the string path to `CreateProcessW`.
+    #[cfg(windows)]
+    pub fn configure_command_current_dir(
+        &self,
+        command: &mut Command,
+        ambient_root: &Path,
+    ) -> Result<(), StoreRootError> {
+        if !self.process_path_pinned {
+            return Err(StoreRootError::Confinement {
+                operation: "process_root_identity",
+                reason: ConfinementReason::RootIdentity,
+            });
+        }
+        let reopened = Self::open_nofollow(ambient_root)?;
+        let held = self
+            .dir
+            .dir_metadata()
+            .map_err(|error| StoreRootError::io("process_root_identity", error))?;
+        let current = reopened
+            .dir
+            .dir_metadata()
+            .map_err(|error| StoreRootError::io("process_root_identity", error))?;
+        if held.dev() != current.dev() || held.ino() != current.ino() {
+            return Err(StoreRootError::Confinement {
+                operation: "process_root_identity",
+                reason: ConfinementReason::RootIdentity,
+            });
+        }
+        command.current_dir(ambient_root);
+        Ok(())
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    pub fn configure_command_current_dir(
+        &self,
+        command: &mut Command,
+        ambient_root: &Path,
+    ) -> Result<(), StoreRootError> {
+        command.current_dir(ambient_root);
+        Ok(())
     }
 
     pub fn read(&self, path: &impl StoreRootPath) -> Result<Vec<u8>, StoreRootError> {
@@ -766,7 +843,8 @@ mod tests {
         std::fs::create_dir(&root_path).unwrap();
         let mut command = Command::new("sh");
         command.args(["-c", "printf held > process-proof.txt"]);
-        root.configure_command_current_dir(&mut command);
+        root.configure_command_current_dir(&mut command, &root_path)
+            .unwrap();
         assert!(command.status().unwrap().success());
 
         assert_eq!(
@@ -774,6 +852,71 @@ mod tests {
             b"held"
         );
         assert!(!root_path.join("process-proof.txt").exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_root_guards_block_ambient_rename_replacement() {
+        let temp = tempfile::tempdir().unwrap();
+        let root_path = temp.path().join("root");
+        let moved_path = temp.path().join("moved-root");
+        let root = StoreRoot::open_or_create_nofollow(&root_path).unwrap();
+
+        assert!(std::fs::rename(&root_path, &moved_path).is_err());
+        root.atomic_write(&path("proof.txt"), b"held").unwrap();
+        assert_eq!(std::fs::read(root_path.join("proof.txt")).unwrap(), b"held");
+        assert!(!moved_path.exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_process_cwd_rejects_a_different_root_identity() {
+        let temp = tempfile::tempdir().unwrap();
+        let held_path = temp.path().join("held");
+        let other_path = temp.path().join("other");
+        let held = StoreRoot::open_or_create_nofollow(&held_path).unwrap();
+        StoreRoot::open_or_create_nofollow(&other_path).unwrap();
+        let mut command = Command::new("cmd.exe");
+
+        let error = held
+            .configure_command_current_dir(&mut command, &other_path)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            StoreRootError::Confinement {
+                operation: "process_root_identity",
+                reason: ConfinementReason::RootIdentity,
+            }
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_reparse_ancestor_cannot_acquire_root_authority() {
+        use std::os::windows::fs::symlink_dir;
+
+        let temp = tempfile::tempdir().unwrap();
+        let outside = temp.path().join("outside");
+        let linked = temp.path().join("linked");
+        std::fs::create_dir(&outside).unwrap();
+        if let Err(error) = symlink_dir(&outside, &linked) {
+            if error.kind() == std::io::ErrorKind::PermissionDenied {
+                return;
+            }
+            panic!("create Windows directory link: {error}");
+        }
+
+        let error = match StoreRoot::open_or_create_nofollow(&linked.join("vault")) {
+            Ok(_) => panic!("reparse ancestor must fail"),
+            Err(error) => error,
+        };
+        assert!(matches!(
+            error,
+            StoreRootError::Confinement {
+                reason: ConfinementReason::SymbolicLink,
+                ..
+            }
+        ));
     }
 
     #[test]

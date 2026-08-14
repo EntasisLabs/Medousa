@@ -145,6 +145,7 @@ notify = "6"
 unicode-normalization = "0.1"
 
 [target.'cfg(windows)'.dependencies]
+zip = { version = "7.2", default-features = false, features = ["deflate-flate2"] }
 windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Security",
@@ -168,6 +169,7 @@ medousa-mcp-server = { path = "crates/medousa-mcp-server" }
 surrealdb-types = { version = "3.1.5" }
 surrealdb = { version = "3.1.5", default-features = false, features = ["kv-mem"] }
 tempfile = "3"
+zip = { version = "7.2", default-features = false, features = ["deflate-flate2"] }
 
 # --- Local iteration speed -------------------------------------------------
 # Debug info generation + dsymutil + linking dominate build time on a workspace

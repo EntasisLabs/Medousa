@@ -163,9 +163,22 @@ restore reads an exact commit blob before an atomic capability-relative write
 instead of letting `git checkout` mutate the worktree by ambient traversal.
 The unused POST/DELETE worktree endpoints were removed because their arbitrary
 caller-supplied paths gave Git recursive create/delete authority outside every
-Medousa-owned root. Worktree inspection remains read-only. Windows still uses
-the ambient root for Git process launch, so native handle-anchored Windows
-launch plus reparse/mount evidence remain before H02.3 closure.
+Medousa-owned root. Worktree inspection remains read-only.
+
+On Windows, the no-follow capability retains handles opened without
+`FILE_SHARE_DELETE` for the entire configured-root component chain. That pins
+the ambient spelling against rename/delete replacement; immediately before
+`CreateProcessW`, Medousa reopens the chain without following reparse points and
+compares the volume/file identity of the final directory. Git only receives the
+string CWD after that check. Every Git subprocess uses the shared
+`CREATE_NO_WINDOW` policy, null stdin, and non-interactive Git/GCM settings.
+Portable MinGit extraction is now in-process with enclosed zip paths, removing
+the PowerShell subprocess entirely. Windows-only fixtures cover root rename
+locking, mismatched process-root identity, and directory-link rejection when
+the runner permits symlink creation. A real Windows CI/runtime pass and native
+junction/mount fixtures remain before H02.3 closure. The dedicated
+`windows-authority` CI job now compiles and runs the Windows root-lock/reparse
+fixtures and the in-process MinGit extraction tests on every change.
 
 ## Current evidence and blast radius
 
