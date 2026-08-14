@@ -8,7 +8,9 @@ use stasis::ports::outbound::memory::memory_models::{
 };
 use stasis::ports::outbound::memory::memory_operations::MemoryOperations;
 
-use crate::locus_memory::{derive_locus_tenant_id, resolve_workshop_locus_session, LOCUS_DEFAULT_TENANT};
+use crate::locus_memory::{
+    LOCUS_DEFAULT_TENANT, derive_locus_tenant_id, resolve_workshop_locus_session,
+};
 use crate::session::medousa_data_dir;
 use crate::turn_ticket::TurnTicketRegistry;
 
@@ -27,8 +29,8 @@ pub async fn delete_session(
     turn_tickets: &TurnTicketRegistry,
     purge_locus: bool,
 ) -> Result<SessionDeleteSummary, String> {
-    let session_id = crate::session_storage::SessionId::parse(session_id)
-        .map_err(|error| error.to_string())?;
+    let session_id =
+        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
     let session_id_text = session_id.as_str();
 
     let mut cancelled_active_turn = false;
@@ -42,34 +44,33 @@ pub async fn delete_session(
 
     let mut locus_nodes_deleted = 0;
     let mut locus_purged = false;
-    if purge_locus
-        && let Some(ops) = memory_operations {
-            let locus_session = resolve_workshop_locus_session(session_id_text);
-            let tenant = derive_locus_tenant_id(&locus_session);
-            let mut scope = MemoryScope {
-                session_ids: Some(vec![locus_session]),
-                ..Default::default()
-            };
-            if tenant != LOCUS_DEFAULT_TENANT {
-                scope.tenant_id = Some(tenant);
-            }
-            let response = ops
-                .evict(&MemoryEvictRequest {
-                    mode: MemoryEvictMode::PurgeSession,
-                    scope,
-                    filter: MemoryFilter::default(),
-                    dry_run: false,
-                    force: true,
-                    max_nodes: 50_000,
-                    include_calibration: true,
-                    include_checkpoints: true,
-                    ..Default::default()
-                })
-                .await
-                .map_err(|err| format!("locus purge failed: {err}"))?;
-            locus_nodes_deleted = response.deleted;
-            locus_purged = true;
+    if purge_locus && let Some(ops) = memory_operations {
+        let locus_session = resolve_workshop_locus_session(session_id_text);
+        let tenant = derive_locus_tenant_id(&locus_session);
+        let mut scope = MemoryScope {
+            session_ids: Some(vec![locus_session]),
+            ..Default::default()
+        };
+        if tenant != LOCUS_DEFAULT_TENANT {
+            scope.tenant_id = Some(tenant);
         }
+        let response = ops
+            .evict(&MemoryEvictRequest {
+                mode: MemoryEvictMode::PurgeSession,
+                scope,
+                filter: MemoryFilter::default(),
+                dry_run: false,
+                force: true,
+                max_nodes: 50_000,
+                include_calibration: true,
+                include_checkpoints: true,
+                ..Default::default()
+            })
+            .await
+            .map_err(|err| format!("locus purge failed: {err}"))?;
+        locus_nodes_deleted = response.deleted;
+        locus_purged = true;
+    }
 
     crate::session_store::delete_session_transcript(&session_id);
     crate::session_catalog::delete_catalog_row(&session_id);
@@ -111,7 +112,7 @@ pub async fn delete_session(
     record_surface_result(
         &mut failed_surfaces,
         "turn_ledger",
-        remove_turn_ledger_file(session_id_text),
+        remove_turn_ledger_file(&session_id),
     );
     crate::channel_session_store::purge_session_references(session_id_text);
 
@@ -141,7 +142,7 @@ fn record_surface_result(
     }
 }
 
-fn remove_turn_ledger_file(session_id: &str) -> Result<(), String> {
+fn remove_turn_ledger_file(session_id: &crate::session_storage::SessionId) -> Result<(), String> {
     crate::session_storage::remove_session_file(
         &medousa_data_dir().join("turn_ledger"),
         session_id,
@@ -150,7 +151,7 @@ fn remove_turn_ledger_file(session_id: &str) -> Result<(), String> {
     .map_err(|error| format!("turn ledger delete failed: {error}"))
 }
 
-pub fn session_surfaces_path(session_id: &str) -> PathBuf {
+pub fn session_surfaces_path(session_id: &crate::session_storage::SessionId) -> PathBuf {
     crate::session_storage::session_file_for_read(
         &medousa_data_dir().join("session_surfaces"),
         session_id,

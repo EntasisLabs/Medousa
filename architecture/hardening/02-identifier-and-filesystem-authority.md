@@ -57,7 +57,16 @@ of minting filesystem-authoritative UUID strings locally. Transcript and catalog
 store traits now require `SessionId` for lookup, append, upsert, and deletion;
 compatibility string parsing is confined to their public adapters, and repair /
 backfill paths skip malformed legacy identifiers instead of treating them as
-store authority.
+store authority. Central storage-key and session file/directory constructors now
+accept only `SessionId`; satellite adapters must parse before they can acquire a
+path. The report-job user hash also has its own domain instead of masquerading as
+a session storage key.
+
+Opaque transcript filenames are intentionally not reinterpreted as logical IDs
+during file-only catalog repair: the digest is irreversible, and hashing the
+`s1-…` filename again silently points at the wrong transcript. H02.4 must add the
+durable storage-key-to-session inventory before opaque transcripts can be
+recovered without their catalog rows.
 
 ## Current evidence and blast radius
 

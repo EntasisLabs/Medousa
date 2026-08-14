@@ -9,6 +9,7 @@ use axum::http::StatusCode;
 use axum::routing::{delete, get, patch, post};
 use chrono::Utc;
 use serde_json::Value;
+use sha2::{Digest as _, Sha256};
 use uuid::Uuid;
 
 use anyhow::Result as AnyhowResult;
@@ -531,8 +532,11 @@ pub async fn enqueue_report(
 
     let now = Utc::now();
     let job_id = format!("medousa-daemon-report-{}", now.timestamp_millis());
-    let user_key = crate::session_storage::StorageKey::for_session(&identity_context.user_id);
-    let session_id = format!("daemon-report-{}", &user_key.as_str()[3..19]);
+    let mut user_hasher = Sha256::new();
+    user_hasher.update(b"medousa/daemon-report-user/v1\0");
+    user_hasher.update(identity_context.user_id.as_bytes());
+    let user_digest = format!("{:x}", user_hasher.finalize());
+    let session_id = format!("daemon-report-{}", &user_digest[..16]);
     let (provider, model) =
         resolve_api_model_routing(request.model_hint.as_deref(), &state.default_runtime_config);
     let prompt = build_report_prompt(&request.query);

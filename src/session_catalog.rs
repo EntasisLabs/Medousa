@@ -349,7 +349,7 @@ fn catalog_dir() -> PathBuf {
 }
 
 fn catalog_path(session_id: &SessionId) -> PathBuf {
-    crate::session_storage::session_file_for_read(&catalog_dir(), session_id.as_str(), "json")
+    crate::session_storage::session_file_for_read(&catalog_dir(), session_id, "json")
 }
 
 fn set_catalog_store(store: Arc<dyn SessionCatalogStore>) {
@@ -443,11 +443,9 @@ struct FileSessionCatalogStore;
 impl SessionCatalogStore for FileSessionCatalogStore {
     fn upsert_row(&self, session_id: &SessionId, row: &SessionCatalogRow) {
         assert_eq!(session_id.as_str(), row.session_id);
-        let Ok(path) = crate::session_storage::session_file_for_write(
-            &catalog_dir(),
-            session_id.as_str(),
-            "json",
-        ) else {
+        let Ok(path) =
+            crate::session_storage::session_file_for_write(&catalog_dir(), session_id, "json")
+        else {
             return;
         };
         let Ok(bytes) = serde_json::to_vec_pretty(row) else {
@@ -457,11 +455,7 @@ impl SessionCatalogStore for FileSessionCatalogStore {
     }
 
     fn delete_row(&self, session_id: &SessionId) {
-        let _ = crate::session_storage::remove_session_file(
-            &catalog_dir(),
-            session_id.as_str(),
-            "json",
-        );
+        let _ = crate::session_storage::remove_session_file(&catalog_dir(), session_id, "json");
     }
 
     fn get_row(&self, session_id: &SessionId) -> Option<SessionCatalogRow> {
@@ -1240,10 +1234,7 @@ fn backfill_from_legacy_stores(limit: usize) -> Result<usize, String> {
         if catalog_store().get_row(&parsed_session_id).is_some() {
             continue;
         }
-        let row = SessionCatalogRow::named_session(
-            session_id,
-            Some(display_name),
-        );
+        let row = SessionCatalogRow::named_session(session_id, Some(display_name));
         catalog_store().upsert_row(&parsed_session_id, &row);
         count += 1;
     }

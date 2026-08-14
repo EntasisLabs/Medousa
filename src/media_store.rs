@@ -47,8 +47,8 @@ pub fn persist_user_media(
     mime: &str,
     label: Option<&str>,
 ) -> Result<MediaUploadResponse, String> {
-    let session_id = crate::session_storage::validate_session_id(session_id)
-        .map_err(|error| error.to_string())?;
+    let session_id =
+        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
 
     let byte_size = bytes.len() as u64;
     if byte_size == 0 {
@@ -66,9 +66,13 @@ pub fn persist_user_media(
         return Err(format!("mime type not allowed: {mime}"));
     }
 
-    let media_id = format!("usr:{}:{}", short_session(session_id), Uuid::new_v4().simple());
+    let media_id = format!(
+        "usr:{}:{}",
+        short_session(session_id.as_str()),
+        Uuid::new_v4().simple()
+    );
     let ext = extension_for_mime(&mime);
-    let dir = crate::session_storage::session_dir_for_write(&media_root(), session_id)
+    let dir = crate::session_storage::session_dir_for_write(&media_root(), &session_id)
         .map_err(|err| err.to_string())?;
 
     let filename = if ext.is_empty() {
@@ -152,12 +156,14 @@ pub fn media_ref_from_record(record: &MediaRecord) -> MediaRef {
 }
 
 pub fn delete_media_for_session(session_id: &str) -> Result<(), String> {
+    let session_id =
+        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
     let remaining = read_index_records()
         .into_iter()
-        .filter(|record| record.session_id != session_id)
+        .filter(|record| record.session_id != session_id.as_str())
         .collect::<Vec<_>>();
     overwrite_index_records(&remaining)?;
-    crate::session_storage::remove_session_dir(&media_root(), session_id)
+    crate::session_storage::remove_session_dir(&media_root(), &session_id)
         .map_err(|error| error.to_string())
 }
 
@@ -200,11 +206,8 @@ pub fn resolve_media_extract(record: &MediaRecord) -> Option<(String, bool)> {
     }
     let bytes = open_media_payload(record).ok()?;
     let mime = infer_mime_for_record(record);
-    let extract = crate::media_text_extract::extract_media_text(
-        &bytes,
-        &mime,
-        record.label.as_deref(),
-    )?;
+    let extract =
+        crate::media_text_extract::extract_media_text(&bytes, &mime, record.label.as_deref())?;
     if extract.text.trim().is_empty() {
         return None;
     }
@@ -247,7 +250,11 @@ pub fn merge_media_refs_into_prompt(
         ));
 
         let is_image = media_ref.kind == "image"
-            || media_ref.mime.trim().to_ascii_lowercase().starts_with("image/");
+            || media_ref
+                .mime
+                .trim()
+                .to_ascii_lowercase()
+                .starts_with("image/");
 
         if is_image {
             if options.vision_active && options.vision_image_ids.contains(&media_ref.media_id) {
@@ -309,9 +316,10 @@ fn infer_mime(bytes: &[u8], mime: &str, label: Option<&str>) -> String {
         return "application/pdf".to_string();
     }
     if let Some(label) = label
-        && let Some(from_name) = mime_from_filename(label) {
-            return from_name;
-        }
+        && let Some(from_name) = mime_from_filename(label)
+    {
+        return from_name;
+    }
     mime
 }
 
@@ -347,7 +355,10 @@ fn is_pdf_attachment(media_ref: &MediaRef, record: &MediaRecord) -> bool {
     if infer_mime_for_record(record) == "application/pdf" {
         return true;
     }
-    media_ref.mime.trim().eq_ignore_ascii_case("application/pdf")
+    media_ref
+        .mime
+        .trim()
+        .eq_ignore_ascii_case("application/pdf")
 }
 
 fn infer_mime_for_record(record: &MediaRecord) -> String {
@@ -356,13 +367,15 @@ fn infer_mime_for_record(record: &MediaRecord) -> String {
         return mime;
     }
     if let Ok(bytes) = open_media_payload(record)
-        && bytes.starts_with(b"%PDF") {
-            return "application/pdf".to_string();
-        }
+        && bytes.starts_with(b"%PDF")
+    {
+        return "application/pdf".to_string();
+    }
     if let Some(label) = record.label.as_deref()
-        && let Some(from_name) = mime_from_filename(label) {
-            return from_name;
-        }
+        && let Some(from_name) = mime_from_filename(label)
+    {
+        return from_name;
+    }
     mime
 }
 

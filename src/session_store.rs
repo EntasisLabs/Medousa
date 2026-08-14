@@ -5,8 +5,8 @@ use medousa_types::SessionId;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use stasis::prelude::RuntimeComposition;
-use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
 use surrealdb_types::SurrealValue;
 use tokio::runtime::Handle;
 
@@ -47,7 +47,9 @@ pub async fn init_session_store_with_runtime(runtime: &RuntimeComposition) {
             let db = rt.job_store.db();
             let store = SurrealSessionStore::new(db);
             if let Err(err) = store.ensure_schema().await {
-                eprintln!("Surreal session store schema init error: {err}; falling back to file-backed store");
+                eprintln!(
+                    "Surreal session store schema init error: {err}; falling back to file-backed store"
+                );
                 return;
             }
             set_session_store(Arc::new(store));
@@ -162,18 +164,18 @@ impl FileSessionStore {
 
 impl SessionStore for FileSessionStore {
     fn load_history(&self, session_id: &SessionId) -> Vec<ConversationTurn> {
-        crate::session::file_load_history(session_id.as_str())
+        crate::session::file_load_history(session_id)
     }
 
     fn append_turn(&self, session_id: &SessionId, turn: &ConversationTurn) {
-        crate::session::file_append_turn(session_id.as_str(), turn);
+        crate::session::file_append_turn(session_id, turn);
         crate::session_catalog::record_turn_appended_for_id(session_id, turn);
     }
 
     fn delete_session(&self, session_id: &SessionId) {
         let _ = crate::session_storage::remove_session_file(
             &crate::session::medousa_data_dir().join("history"),
-            session_id.as_str(),
+            session_id,
             "jsonl",
         );
     }
@@ -188,16 +190,15 @@ impl SessionStore for FileSessionStore {
 
     fn has_persisted_sessions(&self) -> bool {
         let history_dir = crate::session::medousa_data_dir().join("history");
-        std::fs::read_dir(history_dir).ok().is_some_and(|mut entries| {
-            entries.any(|entry| {
-                entry.ok().is_some_and(|item| {
-                    item.path()
-                        .extension()
-                        .and_then(|ext| ext.to_str())
-                        == Some("jsonl")
+        std::fs::read_dir(history_dir)
+            .ok()
+            .is_some_and(|mut entries| {
+                entries.any(|entry| {
+                    entry.ok().is_some_and(|item| {
+                        item.path().extension().and_then(|ext| ext.to_str()) == Some("jsonl")
+                    })
                 })
             })
-        })
     }
 }
 
@@ -338,9 +339,7 @@ impl SessionStore for SurrealSessionStore {
         let aggregates: Vec<SessionAggregate> = match response.take(0) {
             Ok(rows) => rows,
             Err(err) => {
-                eprintln!(
-                    "SurrealSessionStore::build_backfill_summaries deserialize error: {err}"
-                );
+                eprintln!("SurrealSessionStore::build_backfill_summaries deserialize error: {err}");
                 return Vec::new();
             }
         };
@@ -372,11 +371,7 @@ impl SessionStore for SurrealSessionStore {
 
     fn has_persisted_sessions(&self) -> bool {
         let sql = "SELECT count() AS total FROM type::table($table) GROUP ALL";
-        let mut response = match block_on(
-            self.db
-                .query(sql)
-                .bind(("table", SESSION_TURN_TABLE)),
-        ) {
+        let mut response = match block_on(self.db.query(sql).bind(("table", SESSION_TURN_TABLE))) {
             Ok(response) => response,
             Err(_) => return false,
         };
@@ -425,8 +420,8 @@ impl SurrealSessionStore {
                 answer_state: None,
                 parts: parts_from_json(row.parts),
                 slice_summary: None,
-            speaker_profile_id: None,
-        };
+                speaker_profile_id: None,
+            };
             if let Some(preview) = crate::session_catalog::preview_from_turn(&turn) {
                 return Some(preview);
             }
@@ -439,9 +434,8 @@ impl SurrealSessionStore {
 // Global singleton & public helpers
 // ---------------------------------------------------------------------------
 
-static SESSION_STORE: Lazy<RwLock<Arc<dyn SessionStore>>> = Lazy::new(|| {
-    RwLock::new(Arc::new(FileSessionStore::new()))
-});
+static SESSION_STORE: Lazy<RwLock<Arc<dyn SessionStore>>> =
+    Lazy::new(|| RwLock::new(Arc::new(FileSessionStore::new())));
 
 pub fn set_session_store(store: Arc<dyn SessionStore>) {
     let mut guard = SESSION_STORE.write().unwrap();

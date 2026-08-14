@@ -89,20 +89,18 @@ pub fn persist_extraction_run(
     artifact_id: &str,
     claims: &[EvidenceClaim],
 ) -> std::result::Result<ExtractionRunRecord, String> {
-    crate::session_storage::validate_session_id(session_id)
-        .map_err(|error| error.to_string())?;
+    let session_id =
+        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
     let now = Utc::now();
     let extraction_id = format!(
         "ext:{}:{}",
-        short_session(session_id),
+        short_session(session_id.as_str()),
         now.timestamp_millis()
     );
 
-    let output_dir = crate::session_storage::session_dir_for_write(
-        &extractions_root(),
-        session_id,
-    )
-    .map_err(|err| err.to_string())?;
+    let output_dir =
+        crate::session_storage::session_dir_for_write(&extractions_root(), &session_id)
+            .map_err(|err| err.to_string())?;
     let output_path = output_dir.join(format!("{}.json", extraction_id));
     let raw = serde_json::to_vec_pretty(claims).map_err(|err| err.to_string())?;
     std::fs::write(&output_path, raw).map_err(|err| err.to_string())?;
@@ -156,12 +154,14 @@ pub fn list_extraction_runs(session_id: &str, limit: usize) -> Vec<ExtractionRun
 }
 
 pub fn delete_extractions_for_session(session_id: &str) -> Result<(), String> {
+    let session_id =
+        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
     let remaining = read_index_records()
         .into_iter()
-        .filter(|record| record.session_id != session_id)
+        .filter(|record| record.session_id != session_id.as_str())
         .collect::<Vec<_>>();
     overwrite_index_records(&remaining)?;
-    crate::session_storage::remove_session_dir(&extractions_root(), session_id)
+    crate::session_storage::remove_session_dir(&extractions_root(), &session_id)
         .map_err(|error| error.to_string())
 }
 

@@ -4,7 +4,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub use medousa_types::session::{ConversationTurn, SessionHistorySummary, TuiDefaults};
 
-
 const API_KEY_SERVICE: &str = "medousa.tui";
 const API_KEY_ACCOUNT: &str = "api_key";
 const DISCORD_BOT_TOKEN_SERVICE: &str = "medousa.discord";
@@ -30,7 +29,7 @@ pub(crate) fn medousa_data_dir() -> PathBuf {
     crate::paths::medousa_data_dir()
 }
 
-pub fn history_path(session_id: &str) -> PathBuf {
+pub fn history_path(session_id: &crate::session_storage::SessionId) -> PathBuf {
     crate::session_storage::session_file_for_read(
         &medousa_data_dir().join("history"),
         session_id,
@@ -55,7 +54,9 @@ fn discord_bot_token_secret_path() -> PathBuf {
 }
 
 fn telegram_bot_token_secret_path() -> PathBuf {
-    medousa_data_dir().join("secrets").join("telegram_bot_token")
+    medousa_data_dir()
+        .join("secrets")
+        .join("telegram_bot_token")
 }
 
 fn slack_bot_token_secret_path() -> PathBuf {
@@ -176,7 +177,9 @@ pub(crate) fn atomic_write(path: &PathBuf, bytes: &[u8]) -> std::io::Result<()> 
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if path.parent().is_some_and(|parent| parent.ends_with("secrets"))
+        if path
+            .parent()
+            .is_some_and(|parent| parent.ends_with("secrets"))
             || path.ends_with("api_key")
             || path.ends_with("discord_bot_token")
             || path.ends_with("telegram_bot_token")
@@ -234,12 +237,13 @@ fn file_surreal_password() -> Option<String> {
 
 pub fn load_surreal_password() -> Option<String> {
     if let Ok(entry) = surreal_password_keyring_entry()
-        && let Ok(value) = entry.get_password() {
-            let trimmed = value.trim();
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
-            }
+        && let Ok(value) = entry.get_password()
+    {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
         }
+    }
     file_surreal_password()
 }
 
@@ -287,8 +291,7 @@ pub fn load_tui_defaults_value() -> serde_json::Value {
 
 /// Merge incoming JSON (may include client-only keys) with normalized `TuiDefaults` fields.
 pub fn save_tui_defaults_merged(incoming: serde_json::Value) -> Result<TuiDefaults, String> {
-    let mut typed: TuiDefaults =
-        serde_json::from_value(incoming.clone()).unwrap_or_default();
+    let mut typed: TuiDefaults = serde_json::from_value(incoming.clone()).unwrap_or_default();
     crate::inference_profiles::normalize_tui_defaults(&mut typed);
     crate::inference_profiles::sync_top_level_from_main(&mut typed);
 
@@ -304,20 +307,21 @@ pub fn save_tui_defaults_merged(incoming: serde_json::Value) -> Result<TuiDefaul
     }
 
     let path = tui_defaults_path();
-    let json =
-        serde_json::to_string_pretty(&merged).map_err(|err| format!("serialize defaults: {err}"))?;
+    let json = serde_json::to_string_pretty(&merged)
+        .map_err(|err| format!("serialize defaults: {err}"))?;
     atomic_write(&path, json.as_bytes()).map_err(|err| err.to_string())?;
     Ok(typed)
 }
 
 pub fn load_tui_api_key() -> Option<String> {
     if let Ok(entry) = api_key_keyring_entry()
-        && let Ok(value) = entry.get_password() {
-            let trimmed = value.trim();
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
-            }
+        && let Ok(value) = entry.get_password()
+    {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
         }
+    }
 
     file_api_key()
 }
@@ -328,17 +332,22 @@ pub fn load_provider_api_key(provider: &str) -> Option<String> {
     if provider.is_empty() {
         return None;
     }
-    if provider == "ollama" || provider == "local" || provider == "lmstudio" || provider == "lm-studio" {
+    if provider == "ollama"
+        || provider == "local"
+        || provider == "lmstudio"
+        || provider == "lm-studio"
+    {
         return None;
     }
 
     if let Ok(entry) = provider_api_key_keyring_entry(&provider)
-        && let Ok(value) = entry.get_password() {
-            let trimmed = value.trim();
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
-            }
+        && let Ok(value) = entry.get_password()
+    {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
         }
+    }
     if let Some(value) = file_provider_api_key(&provider) {
         return Some(value);
     }
@@ -450,12 +459,13 @@ pub fn save_tui_api_key(api_key: Option<&str>) {
 
 pub fn load_discord_bot_token() -> Option<String> {
     if let Ok(entry) = discord_bot_token_keyring_entry()
-        && let Ok(value) = entry.get_password() {
-            let trimmed = value.trim();
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
-            }
+        && let Ok(value) = entry.get_password()
+    {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
         }
+    }
 
     file_discord_bot_token()
 }
@@ -500,12 +510,13 @@ pub fn load_telegram_bot_token() -> Option<String> {
     }
 
     if let Ok(entry) = telegram_bot_token_keyring_entry()
-        && let Ok(value) = entry.get_password() {
-            let trimmed = value.trim();
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
-            }
+        && let Ok(value) = entry.get_password()
+    {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
         }
+    }
 
     file_telegram_bot_token()
 }
@@ -537,12 +548,13 @@ pub fn save_telegram_bot_token(token: Option<&str>) {
 
 pub fn load_slack_bot_token() -> Option<String> {
     if let Ok(entry) = slack_bot_token_keyring_entry()
-        && let Ok(value) = entry.get_password() {
-            let trimmed = value.trim();
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
-            }
+        && let Ok(value) = entry.get_password()
+    {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
         }
+    }
 
     file_slack_bot_token()
 }
@@ -574,12 +586,13 @@ pub fn save_slack_bot_token(token: Option<&str>) {
 
 pub fn load_slack_app_token() -> Option<String> {
     if let Ok(entry) = slack_app_token_keyring_entry()
-        && let Ok(value) = entry.get_password() {
-            let trimmed = value.trim();
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
-            }
+        && let Ok(value) = entry.get_password()
+    {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
         }
+    }
 
     file_slack_app_token()
 }
@@ -609,7 +622,9 @@ pub fn save_slack_app_token(token: Option<&str>) {
     }
 }
 
-pub(crate) fn file_load_history(session_id: &str) -> Vec<ConversationTurn> {
+pub(crate) fn file_load_history(
+    session_id: &crate::session_storage::SessionId,
+) -> Vec<ConversationTurn> {
     let path = history_path(session_id);
     let Ok(file) = std::fs::File::open(&path) else {
         return Vec::new();
@@ -622,7 +637,10 @@ pub(crate) fn file_load_history(session_id: &str) -> Vec<ConversationTurn> {
         .collect()
 }
 
-pub(crate) fn file_append_turn(session_id: &str, turn: &ConversationTurn) {
+pub(crate) fn file_append_turn(
+    session_id: &crate::session_storage::SessionId,
+    turn: &ConversationTurn,
+) {
     let Ok(path) = crate::session_storage::session_file_for_write(
         &medousa_data_dir().join("history"),
         session_id,
@@ -658,7 +676,11 @@ pub(crate) fn file_build_history_summaries_from_files(limit: usize) -> Vec<Sessi
                 return None;
             }
 
-            let session_id = path.file_stem()?.to_string_lossy().to_string();
+            let session_id = path.file_stem()?.to_str()?;
+            if crate::session_storage::StorageKey::is_encoded(session_id) {
+                return None;
+            }
+            let session_id = crate::session_storage::SessionId::parse(session_id).ok()?;
             let metadata = entry.metadata().ok();
             let modified = metadata.and_then(|m| m.modified().ok());
             Some((session_id, modified))
@@ -673,11 +695,11 @@ pub(crate) fn file_build_history_summaries_from_files(limit: usize) -> Vec<Sessi
         .map(|(session_id, _)| {
             let turns = file_load_history(&session_id);
             let verifications =
-                crate::verification_store::list_verifications(&session_id, usize::MAX);
+                crate::verification_store::list_verifications(session_id.as_str(), usize::MAX);
             let last_timestamp = turns.last().map(|t| t.timestamp);
             let last_verification_timestamp = verifications.first().map(|v| v.created_at_utc);
             let latest_verification =
-                crate::verification_store::find_verification(&session_id, None);
+                crate::verification_store::find_verification(session_id.as_str(), None);
             let last_verification_confidence = latest_verification
                 .as_ref()
                 .map(|run| run.record.confidence_score);
@@ -698,7 +720,7 @@ pub(crate) fn file_build_history_summaries_from_files(limit: usize) -> Vec<Sessi
                 .collect::<String>();
 
             SessionHistorySummary {
-                session_id,
+                session_id: session_id.to_string(),
                 display_name: None,
                 turns: turns.len(),
                 verification_runs: verifications.len(),
@@ -833,7 +855,8 @@ pub fn list_history_sessions_page_for_profile(
     }
 
     enrich_session_summaries(&mut page.sessions);
-    page.sessions.sort_by_key(|b| std::cmp::Reverse(b.last_timestamp));
+    page.sessions
+        .sort_by_key(|b| std::cmp::Reverse(b.last_timestamp));
     page.sessions.truncate(limit);
     page
 }
@@ -842,7 +865,8 @@ pub fn set_session_display_name(session_id: &str, display_name: &str) -> Result<
     let result = crate::session_meta_store::set_session_display_name(session_id, display_name);
     if result.is_ok() {
         if crate::shared_session_catalog::get_shared_row(session_id).is_some() {
-            let _ = crate::shared_session_catalog::set_shared_display_name(session_id, display_name);
+            let _ =
+                crate::shared_session_catalog::set_shared_display_name(session_id, display_name);
         } else {
             crate::session_catalog::set_display_name(session_id, display_name);
         }
@@ -865,8 +889,7 @@ pub fn enrich_session_summaries(sessions: &mut [SessionHistorySummary]) {
 }
 
 pub fn session_turn_count(session_id: &str) -> usize {
-    crate::session_catalog::turn_count(session_id)
-        .unwrap_or_else(|| load_history(session_id).len())
+    crate::session_catalog::turn_count(session_id).unwrap_or_else(|| load_history(session_id).len())
 }
 
 /// Resolve `/history <target>`: full id, id prefix, or global display name (unique).

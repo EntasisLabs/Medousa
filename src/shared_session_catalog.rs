@@ -11,7 +11,7 @@ use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::session::{atomic_write, medousa_data_dir, SessionHistorySummary};
+use crate::session::{SessionHistorySummary, atomic_write, medousa_data_dir};
 use crate::session_catalog::{
     AUTO_TITLE_MAX_CHARS, PREVIEW_MAX_CHARS, SessionCatalogRow, SessionListPage,
     decode_list_cursor, encode_list_cursor, get_summary,
@@ -117,26 +117,25 @@ fn catalog_dir() -> PathBuf {
     medousa_data_dir().join(SHARED_CATALOG_DIR)
 }
 
-fn catalog_path(session_id: &str) -> PathBuf {
+fn catalog_path(session_id: &crate::session_storage::SessionId) -> PathBuf {
     crate::session_storage::session_file_for_read(&catalog_dir(), session_id, "json")
 }
 
 pub fn upsert_shared_row(row: &SharedSessionCatalogRow) -> Result<()> {
+    let session_id = crate::session_storage::SessionId::parse(&row.session_id)
+        .map_err(|error| anyhow::anyhow!(error))?;
     let dir = catalog_dir();
     fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
-    let path = crate::session_storage::session_file_for_write(
-        &catalog_dir(),
-        &row.session_id,
-        "json",
-    )
-    .with_context(|| "prepare shared catalog storage")?;
+    let path = crate::session_storage::session_file_for_write(&catalog_dir(), &session_id, "json")
+        .with_context(|| "prepare shared catalog storage")?;
     let raw = serde_json::to_string_pretty(row).context("encode shared catalog row")?;
     atomic_write(&path, raw.as_bytes()).with_context(|| format!("write {}", path.display()))?;
     Ok(())
 }
 
 pub fn get_shared_row(session_id: &str) -> Option<SharedSessionCatalogRow> {
-    let path = catalog_path(session_id.trim());
+    let session_id = crate::session_storage::SessionId::parse(session_id).ok()?;
+    let path = catalog_path(&session_id);
     if !path.is_file() {
         return None;
     }
@@ -146,11 +145,10 @@ pub fn get_shared_row(session_id: &str) -> Option<SharedSessionCatalogRow> {
 }
 
 pub fn delete_shared_row(session_id: &str) {
-    let _ = crate::session_storage::remove_session_file(
-        &catalog_dir(),
-        session_id,
-        "json",
-    );
+    let Ok(session_id) = crate::session_storage::SessionId::parse(session_id) else {
+        return;
+    };
+    let _ = crate::session_storage::remove_session_file(&catalog_dir(), &session_id, "json");
 }
 
 pub fn create_shared_session(
@@ -159,15 +157,16 @@ pub fn create_shared_session(
     agent_profile_id: Option<String>,
     display_name: Option<String>,
 ) -> Result<SharedSessionCatalogRow> {
-    let session_id = crate::session_storage::validate_session_id(session_id)
+    let session_id = crate::session_storage::SessionId::parse(session_id)
         .map_err(|error| anyhow::anyhow!(error))?;
-    if get_shared_row(session_id).is_some() {
+    if get_shared_row(session_id.as_str()).is_some() {
         bail!("shared session already exists: {session_id}");
     }
-    if get_summary(session_id).is_some() {
+    if get_summary(session_id.as_str()).is_some() {
         bail!("session_id already used in single catalog: {session_id}");
     }
-    let mut row = SharedSessionCatalogRow::new(session_id, member_profile_ids, agent_profile_id);
+    let mut row =
+        SharedSessionCatalogRow::new(session_id.as_str(), member_profile_ids, agent_profile_id);
     if row.member_profile_ids.is_empty() {
         bail!("shared session requires at least one member profile");
     }
@@ -275,7 +274,8 @@ pub fn list_merged_sessions_for_profile(
     if let Some(cursor_row) = cursor.and_then(decode_list_cursor) {
         merged.retain(|(at, id, _)| {
             *at < cursor_row.last_activity_at
-                || (*at == cursor_row.last_activity_at && id.as_str() < cursor_row.session_id.as_str())
+                || (*at == cursor_row.last_activity_at
+                    && id.as_str() < cursor_row.session_id.as_str())
         });
     }
 
@@ -326,7 +326,10 @@ pub fn touch_shared_session(
     if let Some(preview) = preview.map(str::trim).filter(|value| !value.is_empty()) {
         row.preview = preview.chars().take(PREVIEW_MAX_CHARS).collect();
     }
-    if let Some(name) = display_name.map(str::trim).filter(|value| !value.is_empty()) {
+    if let Some(name) = display_name
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         row.display_name = Some(name.chars().take(AUTO_TITLE_MAX_CHARS).collect());
     }
     upsert_shared_row(&row)
@@ -350,7 +353,10 @@ mod tests {
 
     #[test]
     fn catalog_kind_parse() {
-        assert_eq!(SessionCatalogKind::parse(Some("shared")), SessionCatalogKind::Shared);
+        assert_eq!(
+            SessionCatalogKind::parse(Some("shared")),
+            SessionCatalogKind::Shared
+        );
         assert_eq!(SessionCatalogKind::parse(None), SessionCatalogKind::Single);
     }
 

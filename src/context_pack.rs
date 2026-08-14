@@ -76,13 +76,10 @@ pub fn build_context_pack(input: BuildContextPackInput) -> ContextPack {
 }
 
 pub fn persist_context_pack(pack: &ContextPack) -> std::result::Result<(), String> {
-    crate::session_storage::validate_session_id(&pack.session_id)
+    let session_id = crate::session_storage::SessionId::parse(&pack.session_id)
         .map_err(|error| error.to_string())?;
-    let session_dir = crate::session_storage::session_dir_for_write(
-        &packs_root(),
-        &pack.session_id,
-    )
-    .map_err(|err| err.to_string())?;
+    let session_dir = crate::session_storage::session_dir_for_write(&packs_root(), &session_id)
+        .map_err(|err| err.to_string())?;
     let output_path = session_dir.join(format!("{}.json", pack.pack_id));
     let raw = serde_json::to_vec_pretty(pack).map_err(|err| err.to_string())?;
     std::fs::write(&output_path, raw).map_err(|err| err.to_string())?;
@@ -133,12 +130,14 @@ pub fn find_context_pack(session_id: &str, query: Option<&str>) -> Option<Contex
 }
 
 pub fn delete_context_packs_for_session(session_id: &str) -> Result<(), String> {
+    let session_id =
+        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
     let remaining = read_index_records()
         .into_iter()
-        .filter(|record| record.session_id != session_id)
+        .filter(|record| record.session_id != session_id.as_str())
         .collect::<Vec<_>>();
     overwrite_index_records(&remaining)?;
-    crate::session_storage::remove_session_dir(&packs_root(), session_id)
+    crate::session_storage::remove_session_dir(&packs_root(), &session_id)
         .map_err(|error| error.to_string())
 }
 

@@ -229,7 +229,7 @@ impl TurnLoopDiscipline {
     }
 }
 
-pub fn turn_ledger_path(session_id: &str) -> PathBuf {
+pub fn turn_ledger_path(session_id: &crate::session_storage::SessionId) -> PathBuf {
     crate::session_storage::session_file_for_read(
         &crate::paths::medousa_data_dir().join("turn_ledger"),
         session_id,
@@ -237,7 +237,10 @@ pub fn turn_ledger_path(session_id: &str) -> PathBuf {
     )
 }
 
-pub fn append_turn_ledger_record(session_id: &str, record: &TurnLedgerRecord) {
+pub fn append_turn_ledger_record(
+    session_id: &crate::session_storage::SessionId,
+    record: &TurnLedgerRecord,
+) {
     let mut record = record.clone();
     if record.active_profile_id.is_none() {
         record.active_profile_id = Some(crate::user_profiles::resolve_workshop_active_profile_id());
@@ -369,8 +372,10 @@ pub fn record_stuck(
 }
 
 pub fn persist_ledger_record(session_id: Option<&str>, record: &TurnLedgerRecord) {
-    if let Some(session_id) = session_id.filter(|id| !id.trim().is_empty()) {
-        append_turn_ledger_record(session_id, record);
+    if let Some(session_id) =
+        session_id.and_then(|id| crate::session_storage::SessionId::parse(id).ok())
+    {
+        append_turn_ledger_record(&session_id, record);
     }
 }
 
@@ -409,8 +414,9 @@ mod tests {
         );
         assert!(record.active_profile_id.is_none());
         let session = "test-ledger-profile-stamp";
-        append_turn_ledger_record(session, &record);
-        let path = turn_ledger_path(session);
+        let session = crate::session_storage::SessionId::parse(session).unwrap();
+        append_turn_ledger_record(&session, &record);
+        let path = turn_ledger_path(&session);
         let raw = std::fs::read_to_string(&path).expect("ledger file");
         let parsed: TurnLedgerRecord =
             serde_json::from_str(raw.lines().next().unwrap()).expect("json");

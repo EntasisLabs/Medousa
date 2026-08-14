@@ -1,13 +1,13 @@
 use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use stasis::prelude::RuntimeComposition;
 use std::future::IntoFuture;
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
-use stasis::prelude::RuntimeComposition;
-use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
 use surrealdb_types::SurrealValue;
 use tokio::runtime::Handle;
 
@@ -44,9 +44,7 @@ pub async fn init_verification_store_with_runtime(runtime: &RuntimeComposition) 
             return;
         }
         set_verification_index_store(Arc::new(store));
-        eprintln!(
-            "Surreal runtime detected; verification index switched to SurrealDB backend"
-        );
+        eprintln!("Surreal runtime detected; verification index switched to SurrealDB backend");
     }
 }
 
@@ -89,20 +87,18 @@ pub fn persist_verification(
     policy: &VerificationPolicy,
     report: &VerificationReport,
 ) -> std::result::Result<VerificationRunRecord, String> {
-    crate::session_storage::validate_session_id(session_id)
-        .map_err(|error| error.to_string())?;
+    let session_id =
+        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
     let now = Utc::now();
     let verification_id = format!(
         "verify:{}:{}",
-        short_session(session_id),
+        short_session(session_id.as_str()),
         now.timestamp_millis()
     );
 
-    let output_dir = crate::session_storage::session_dir_for_write(
-        &verifications_root(),
-        session_id,
-    )
-    .map_err(|err| err.to_string())?;
+    let output_dir =
+        crate::session_storage::session_dir_for_write(&verifications_root(), &session_id)
+            .map_err(|err| err.to_string())?;
     let output_path = output_dir.join(format!("{}.json", verification_id));
 
     let run = VerificationRun {
@@ -126,7 +122,7 @@ pub fn persist_verification(
     std::fs::write(&output_path, raw).map_err(|err| err.to_string())?;
     append_index_record(&run.record)?;
     crate::session_catalog::record_verification(
-        session_id,
+        session_id.as_str(),
         &run.record,
         run.report.citation_coverage,
     );
@@ -155,8 +151,10 @@ pub fn list_verifications(session_id: &str, limit: usize) -> Vec<VerificationRun
 }
 
 pub fn delete_verifications_for_session(session_id: &str) -> Result<(), String> {
-    verification_index_store().delete_for_session(session_id)?;
-    crate::session_storage::remove_session_dir(&verifications_root(), session_id)
+    let session_id =
+        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
+    verification_index_store().delete_for_session(session_id.as_str())?;
+    crate::session_storage::remove_session_dir(&verifications_root(), &session_id)
         .map_err(|error| error.to_string())
 }
 
@@ -254,19 +252,18 @@ impl SurrealVerificationIndexStore {
 impl VerificationIndexStore for SurrealVerificationIndexStore {
     fn read_all(&self) -> Vec<VerificationRunRecord> {
         let sql = "SELECT * FROM type::table($table) ORDER BY created_at_utc ASC";
-        let mut response = match block_on(
-            self.db
-                .query(sql)
-                .bind(("table", VERIFICATION_INDEX_TABLE)),
-        ) {
-            Ok(response) => response,
-            Err(err) => {
-                eprintln!("SurrealVerificationIndexStore::read_all query error: {err}");
-                return Vec::new();
-            }
-        };
+        let mut response =
+            match block_on(self.db.query(sql).bind(("table", VERIFICATION_INDEX_TABLE))) {
+                Ok(response) => response,
+                Err(err) => {
+                    eprintln!("SurrealVerificationIndexStore::read_all query error: {err}");
+                    return Vec::new();
+                }
+            };
 
-        response.take::<Vec<VerificationRunRecord>>(0).unwrap_or_default()
+        response
+            .take::<Vec<VerificationRunRecord>>(0)
+            .unwrap_or_default()
     }
 
     fn append(&self, record: &VerificationRunRecord) -> std::result::Result<(), String> {
