@@ -121,6 +121,10 @@ static SHARED_CATALOG_FILES: Lazy<crate::session_storage::SessionFileStore> =
     Lazy::new(|| crate::session_storage::SessionFileStore::new(catalog_dir(), "json"));
 
 pub fn upsert_shared_row(row: &SharedSessionCatalogRow) -> Result<()> {
+    let session_id = crate::session_storage::SessionId::parse(&row.session_id)
+        .map_err(|error| anyhow::anyhow!(error))?;
+    let _mutation = crate::session_deletion::acquire_mutation(&session_id)
+        .map_err(anyhow::Error::msg)?;
     upsert_shared_row_in(&SHARED_CATALOG_FILES, row)
 }
 
@@ -152,8 +156,17 @@ fn get_shared_row_in(
         .and_then(|raw| serde_json::from_slice(&raw).ok())
 }
 
-pub fn delete_shared_row(session_id: &str) {
-    let _ = delete_shared_row_in(&SHARED_CATALOG_FILES, session_id);
+pub fn delete_shared_row(session_id: &str) -> Result<(), String> {
+    delete_shared_row_in(&SHARED_CATALOG_FILES, session_id).map_err(|error| error.to_string())?;
+    let session_id = crate::session_storage::SessionId::parse(session_id)
+        .map_err(|error| error.to_string())?;
+    if SHARED_CATALOG_FILES
+        .contains(&session_id)
+        .map_err(|error| error.to_string())?
+    {
+        return Err("shared catalog row remains after deletion".to_string());
+    }
+    Ok(())
 }
 
 fn delete_shared_row_in(

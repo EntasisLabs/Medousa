@@ -237,13 +237,24 @@ impl TurnLoopDiscipline {
 pub fn delete_turn_ledger(session_id: &crate::session_storage::SessionId) -> Result<(), String> {
     TURN_LEDGER_FILES
         .remove(session_id)
-        .map_err(|error| format!("turn ledger delete failed: {error}"))
+        .map_err(|error| format!("turn ledger delete failed: {error}"))?;
+    if TURN_LEDGER_FILES
+        .contains(session_id)
+        .map_err(|error| format!("turn ledger verification failed: {error}"))?
+    {
+        return Err("turn ledger remains after deletion".to_string());
+    }
+    Ok(())
 }
 
 pub fn append_turn_ledger_record(
     session_id: &crate::session_storage::SessionId,
     record: &TurnLedgerRecord,
 ) {
+    let Ok(_mutation) = crate::session_deletion::acquire_mutation(session_id) else {
+        tracing::warn!(session_id = %session_id, "rejected ledger write for deleting session");
+        return;
+    };
     let mut record = record.clone();
     if record.active_profile_id.is_none() {
         record.active_profile_id = Some(crate::user_profiles::resolve_workshop_active_profile_id());

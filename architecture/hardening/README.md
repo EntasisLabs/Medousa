@@ -83,7 +83,7 @@ and performance budgets must prevent the same classes of defect from returning.
 | ID | Planned document | Scope | Primary findings | Depends on | State |
 | --- | --- | --- | --- | --- | --- |
 | H01 | [01-daemon-trust-and-auth.md](01-daemon-trust-and-auth.md) | Daemon trust zones, authentication, CORS, bootstrap and route exposure | SEC-001 | ADR-013 | Implemented; release validation pending |
-| H02 | [02-identifier-and-filesystem-authority.md](02-identifier-and-filesystem-authority.md) | Validated IDs, path derivation, symlinks, deletion inventory | SEC-002, SEC-003, DATA-001 | ADR-014 | Draft |
+| H02 | [02-identifier-and-filesystem-authority.md](02-identifier-and-filesystem-authority.md) | Validated IDs, path derivation, symlinks, deletion inventory | SEC-002, SEC-003, DATA-001 | ADR-014 | Implementing; H02.1–H02.4 landed |
 | H03 | [03-turn-stream-v2.md](03-turn-stream-v2.md) | Bounded single-writer stream, replay, journal, bridge, UI tail | PERF-001, DUR-001, MEM-002, TYPE-001, PERF-005 | ADR-015, H05 | Draft |
 | H04 | [04-persistence-and-crash-consistency.md](04-persistence-and-crash-consistency.md) | Feed/workspace/task storage ownership and commit policy | STORE-001, STORE-002, MEM-001 | ADR-016 | Draft |
 | H05 | [05-runtime-context-and-concurrency.md](05-runtime-context-and-concurrency.md) | Request-scoped turn/browser state and cancellation | CONC-001, CONC-002 | ADR-017 | Draft |
@@ -160,7 +160,7 @@ one without retaining the history.
 | CI-001 | High | H12 | D | Proposed | Required green supported-platform matrix |
 | TEST-001 | High | H12 | D | Proposed | Hermetic repeated parallel suite |
 | PERF-007 | High | H12 | D | Proposed | Checked-in benchmark suite and retained baselines |
-| DATA-001 | Medium | H02 | B | Proposed | Fresh-process deletion inventory |
+| DATA-001 | Medium | H02 | B | Validated in H02.4; ship pending | Fresh-process deletion inventory |
 
 ## Required plan template
 

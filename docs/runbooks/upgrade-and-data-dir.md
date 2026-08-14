@@ -47,6 +47,34 @@ Tauri: `workshops_load`, `workshops_set_active`, …
 4. `medousa doctor` — verify health and paths
 5. `medousa doctor --local-engine` if using offline brain
 
+### Session storage migration
+
+After backing up and while the daemon/app is stopped, inventory legacy session
+storage without changing it:
+
+```bash
+medousa session-storage
+medousa session-storage --json
+```
+
+The command is dry-run by default. It writes a versioned report under
+`session_migrations/h02-v1.json` in the resolved data directory. Names that are
+malformed, ambiguous, link-backed, wrong-type, or collide with different
+destination content are quarantined in the report and are never followed or
+changed.
+
+Apply only the unambiguous plan with:
+
+```bash
+medousa session-storage --apply
+```
+
+Migration copies through no-follow directory capabilities, verifies the
+published content, journals each boundary, and retains the legacy source for
+rollback. Re-running `--apply` resumes an interrupted planned copy. Inspect and
+back up quarantined data; do not rename it into place while the daemon is
+running.
+
 ---
 
 ## Vault roots

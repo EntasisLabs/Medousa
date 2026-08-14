@@ -294,6 +294,12 @@ impl TurnWorkerStore {
     }
 
     pub fn insert(&self, record: TurnWorkRecord) {
+        let Ok((_session, _mutation)) =
+            crate::session_deletion::acquire_mutation_for_str(&record.session_id)
+        else {
+            tracing::warn!(session_id = %record.session_id, "rejected turn-worker insert for deleting session");
+            return;
+        };
         let work_id = record.work_id.clone();
         let stasis_job_id = record.stasis_job_id.clone();
         let mut guard = self.records.lock().expect("turn worker records");
@@ -365,6 +371,15 @@ impl TurnWorkerStore {
     where
         F: FnOnce(&mut TurnWorkRecord),
     {
+        let session_id = self
+            .records
+            .lock()
+            .expect("turn worker records")
+            .get(work_id)?
+            .session_id
+            .clone();
+        let (_session, _mutation) =
+            crate::session_deletion::acquire_mutation_for_str(&session_id).ok()?;
         let mut guard = self.records.lock().expect("turn worker records");
         let record = guard.get_mut(work_id)?;
         update(record);
@@ -376,6 +391,15 @@ impl TurnWorkerStore {
     }
 
     pub fn archive(&self, work_id: &str, purge_body: bool) -> Option<TurnWorkRecord> {
+        let session_id = self
+            .records
+            .lock()
+            .expect("turn worker records")
+            .get(work_id)?
+            .session_id
+            .clone();
+        let (_session, _mutation) =
+            crate::session_deletion::acquire_mutation_for_str(&session_id).ok()?;
         let now = Utc::now();
         let mut guard = self.records.lock().expect("turn worker records");
         let record = guard.get_mut(work_id)?;
@@ -389,6 +413,31 @@ impl TurnWorkerStore {
         drop(guard);
         self.persist(&snapshot.work_id, snapshot.stasis_job_id.as_deref());
         Some(snapshot)
+    }
+
+    pub fn delete_session(&self, session_id: &str) -> Result<(), String> {
+        let mut guard = self.records.lock().map_err(|error| error.to_string())?;
+        guard.retain(|_, record| record.session_id != session_id);
+        let body = serde_json::to_string_pretty(&*guard).map_err(|error| error.to_string())?;
+        drop(guard);
+        crate::workspace::persist::queue_snapshot_turn_workers(body);
+        Ok(())
+    }
+
+    pub fn session_absent_on_disk(session_id: &str) -> Result<bool, String> {
+        for path in [Self::path(), Self::legacy_path()] {
+            let raw = match fs::read_to_string(path) {
+                Ok(raw) => raw,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error.to_string()),
+            };
+            let records = serde_json::from_str::<HashMap<String, TurnWorkRecord>>(&raw)
+                .map_err(|_| "turn-worker snapshot is corrupt".to_string())?;
+            if records.values().any(|record| record.session_id == session_id) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     pub fn active_bound_workshop(&self, session_id: &str) -> Option<TurnWorkRecord> {

@@ -5,10 +5,15 @@ export interface SessionSetDisplayNameResponse {
 
 export interface SessionDeleteResponse {
   session_id: string;
+  /** Absent on pre-H02.4 remote workshops. */
+  deletion_id?: string;
+  /** Absent on pre-H02.4 remote workshops; derive from `deleted`. */
+  status?: "deleting" | "complete" | "retryable_partial" | "blocked";
   deleted: boolean;
   locus_purged: boolean;
   locus_nodes_deleted: number;
   cancelled_active_turn: boolean;
+  surfaces?: Array<{ surface: string; deleted: boolean; reason_class?: string | null }>;
 }
 
 export interface SessionSummary {

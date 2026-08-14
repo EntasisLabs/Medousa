@@ -51,8 +51,7 @@ pub fn persist_user_media(
     mime: &str,
     label: Option<&str>,
 ) -> Result<MediaUploadResponse, String> {
-    let session_id =
-        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
+    let (session_id, _mutation) = crate::session_deletion::acquire_mutation_for_str(session_id)?;
 
     let byte_size = bytes.len() as u64;
     if byte_size == 0 {
@@ -175,7 +174,17 @@ pub fn delete_media_for_session(session_id: &str) -> Result<(), String> {
     overwrite_index_records(&remaining)?;
     MEDIA_STORE
         .remove_session(&session_id)
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    if read_index_records()
+        .iter()
+        .any(|record| record.session_id == session_id.as_str())
+        || MEDIA_STORE
+            .contains_session(&session_id)
+            .map_err(|error| error.to_string())?
+    {
+        return Err("media session data remains after deletion".to_string());
+    }
+    Ok(())
 }
 
 pub fn validate_media_refs(session_id: &str, refs: &[MediaRef]) -> Result<(), String> {

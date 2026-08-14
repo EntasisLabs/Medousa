@@ -120,7 +120,8 @@ for the protocol and surface-scoping rules.
 | PUT | `/v1/sessions/{session_id}/code-binding` | `SetSessionCodeBindingRequest` | `sessions().set_code_binding` |
 | DELETE | `/v1/sessions/{session_id}/code-binding` | Clear shared undertaking binding | `sessions().clear_code_binding` |
 | POST | `/v1/sessions/{session_id}/code-project` | `StartSessionCodeProjectRequest` → create, provision, and bind | `sessions().start_code_project` |
-| DELETE | `/v1/sessions/{session_id}` | — | `http().delete` |
+| DELETE | `/v1/sessions/{session_id}` | `SessionDeleteResponse` | `sessions().delete` |
+| GET | `/v1/session-deletions/{deletion_id}` | `SessionDeleteResponse` | `http().get` |
 | POST | `/v1/sessions/{session_id}/turns` | `SessionAppendTurnRequest` | `sessions().append_turn` |
 | GET | `/v1/sessions/{session_id}/turns` | turn list | `http().get` |
 | GET | `/v1/sessions/{session_id}/active-turn` | active turn ticket | `http().get` |
@@ -132,6 +133,15 @@ for the protocol and surface-scoping rules.
 `session_id`; current daemons return a `ses_` identifier with 128 bits of
 randomness and reject caller-selected identifiers. Existing valid legacy IDs
 remain usable on read, turn, and deletion routes during migration.
+
+Deletion first persists a durable tombstone, then cancels active work and runs
+the registered storage-surface inventory. `SessionDeleteResponse.status` is
+`complete`, `retryable_partial`, `blocked`, or `deleting`; the compatibility
+`deleted` field is true only for `complete`. Each surface reports only a bounded
+reason class—never a raw path. Retry the same session DELETE after a partial
+result; it reuses the returned `deletion_id`. The status can also be read from
+`GET /v1/session-deletions/{deletion_id}`. Tombstoned sessions reject new
+turns and other session-owned mutations.
 
 ---
 

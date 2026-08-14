@@ -141,8 +141,7 @@ pub fn persist_tool_artifact(
     byte_size: usize,
     payload: &Value,
 ) -> std::result::Result<ArtifactRecord, String> {
-    let session_id =
-        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
+    let (session_id, _mutation) = crate::session_deletion::acquire_mutation_for_str(session_id)?;
     let now = Utc::now();
     let tool_slug = slugify_tool_name(tool_name);
     let hash_short = hash64.chars().take(12).collect::<String>();
@@ -204,8 +203,7 @@ pub fn persist_ui_artifact_revision(
     height_px: Option<u32>,
     supersedes_artifact_id: Option<&str>,
 ) -> std::result::Result<ArtifactRecord, String> {
-    let session_id =
-        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
+    let (session_id, _mutation) = crate::session_deletion::acquire_mutation_for_str(session_id)?;
     let wrapped = wrap_html_document(html);
     let byte_size = wrapped.len();
     if byte_size > UI_ARTIFACT_MAX_BYTES {
@@ -324,8 +322,7 @@ fn save_artifact_aliases(
     session_id: &str,
     aliases: &HashMap<String, String>,
 ) -> Result<(), String> {
-    let session_id =
-        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
+    let (session_id, _mutation) = crate::session_deletion::acquire_mutation_for_str(session_id)?;
     let raw = serde_json::to_vec_pretty(aliases).map_err(|err| err.to_string())?;
     ARTIFACT_FILES
         .atomic_write(&session_id, &artifact_alias_path(), &raw)
@@ -518,8 +515,8 @@ pub fn delete_ui_artifact(
     if session_id.is_empty() {
         return Err("session_id is required".to_string());
     }
-    let parsed_session_id =
-        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
+    let (parsed_session_id, _mutation) =
+        crate::session_deletion::acquire_mutation_for_str(session_id)?;
     let resolved = resolve_artifact_reference(session_id, artifact_ref);
     if resolved.is_empty() {
         return Err("artifact_id is required".to_string());
@@ -602,7 +599,18 @@ pub fn delete_artifacts_for_session(session_id: &str) -> Result<(), String> {
     overwrite_index_records(&remaining)?;
     ARTIFACT_FILES
         .remove_session(&session_id)
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    if artifact_index_store()
+        .read_all()
+        .iter()
+        .any(|record| record.session_id == session_id.as_str())
+        || ARTIFACT_FILES
+            .contains_session(&session_id)
+            .map_err(|error| error.to_string())?
+    {
+        return Err("artifact session data remains after deletion".to_string());
+    }
+    Ok(())
 }
 
 pub fn grep_ui_artifact(

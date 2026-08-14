@@ -97,8 +97,7 @@ pub fn persist_extraction_run(
     artifact_id: &str,
     claims: &[EvidenceClaim],
 ) -> std::result::Result<ExtractionRunRecord, String> {
-    let session_id =
-        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
+    let (session_id, _mutation) = crate::session_deletion::acquire_mutation_for_str(session_id)?;
     let now = Utc::now();
     let extraction_id = format!(
         "ext:{}:{}",
@@ -172,7 +171,17 @@ pub fn delete_extractions_for_session(session_id: &str) -> Result<(), String> {
     overwrite_index_records(&remaining)?;
     EXTRACTION_STORE
         .remove_session(&session_id)
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    if read_index_records()
+        .iter()
+        .any(|record| record.session_id == session_id.as_str())
+        || EXTRACTION_STORE
+            .contains_session(&session_id)
+            .map_err(|error| error.to_string())?
+    {
+        return Err("extraction session data remains after deletion".to_string());
+    }
+    Ok(())
 }
 
 fn append_index_record(record: &ExtractionRunRecord) -> std::result::Result<(), String> {

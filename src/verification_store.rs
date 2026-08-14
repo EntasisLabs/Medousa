@@ -94,8 +94,7 @@ pub fn persist_verification(
     policy: &VerificationPolicy,
     report: &VerificationReport,
 ) -> std::result::Result<VerificationRunRecord, String> {
-    let session_id =
-        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
+    let (session_id, _mutation) = crate::session_deletion::acquire_mutation_for_str(session_id)?;
     let now = Utc::now();
     let verification_id = format!(
         "verify:{}:{}",
@@ -166,7 +165,18 @@ pub fn delete_verifications_for_session(session_id: &str) -> Result<(), String> 
     verification_index_store().delete_for_session(session_id.as_str())?;
     VERIFICATION_FILES
         .remove_session(&session_id)
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    if verification_index_store()
+        .read_all()
+        .iter()
+        .any(|record| record.session_id == session_id.as_str())
+        || VERIFICATION_FILES
+            .contains_session(&session_id)
+            .map_err(|error| error.to_string())?
+    {
+        return Err("verification session data remains after deletion".to_string());
+    }
+    Ok(())
 }
 
 pub fn find_verification(session_id: &str, query: Option<&str>) -> Option<VerificationRun> {

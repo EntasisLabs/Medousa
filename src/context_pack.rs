@@ -84,8 +84,8 @@ pub fn build_context_pack(input: BuildContextPackInput) -> ContextPack {
 }
 
 pub fn persist_context_pack(pack: &ContextPack) -> std::result::Result<(), String> {
-    let session_id = crate::session_storage::SessionId::parse(&pack.session_id)
-        .map_err(|error| error.to_string())?;
+    let (session_id, _mutation) =
+        crate::session_deletion::acquire_mutation_for_str(&pack.session_id)?;
     let output_path = context_pack_path(&pack.pack_id);
     let raw = serde_json::to_vec_pretty(pack).map_err(|err| err.to_string())?;
     CONTEXT_PACK_STORE
@@ -149,7 +149,17 @@ pub fn delete_context_packs_for_session(session_id: &str) -> Result<(), String> 
     overwrite_index_records(&remaining)?;
     CONTEXT_PACK_STORE
         .remove_session(&session_id)
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    if read_index_records()
+        .iter()
+        .any(|record| record.session_id == session_id.as_str())
+        || CONTEXT_PACK_STORE
+            .contains_session(&session_id)
+            .map_err(|error| error.to_string())?
+    {
+        return Err("context-pack session data remains after deletion".to_string());
+    }
+    Ok(())
 }
 
 fn append_index_record(

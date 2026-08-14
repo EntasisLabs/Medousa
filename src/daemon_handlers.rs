@@ -28,6 +28,7 @@ use crate::turn_ticket::TurnTicketRegistry;
 pub struct SessionDeleteState {
     pub memory_operations: Option<Arc<dyn MemoryOperations>>,
     pub turn_tickets: TurnTicketRegistry,
+    pub turn_streams: Option<crate::daemon::turn_stream_registry::TurnStreamRegistry>,
 }
 
 /// Session history HTTP handlers extracted to library so they can be tested.
@@ -146,7 +147,8 @@ pub async fn append_session_turn(
 ) -> Result<Json<SessionAppendTurnResponse>, (StatusCode, String)> {
     let session_id = validated_session_id(session_id)?;
 
-    crate::session::append_turn(&session_id, &request.turn);
+    crate::session::try_append_turn_with_scratch(&session_id, &request.turn, None)
+        .map_err(|error| (StatusCode::CONFLICT, error))?;
     Ok(Json(SessionAppendTurnResponse {
         session_id,
         stored: true,
@@ -288,6 +290,7 @@ pub async fn delete_session(
         &session_id,
         state.memory_operations,
         &state.turn_tickets,
+        state.turn_streams.as_ref(),
         query.purge_memory,
     )
     .await
@@ -295,9 +298,32 @@ pub async fn delete_session(
 
     Ok(Json(SessionDeleteResponse {
         session_id: summary.session_id,
+        deletion_id: summary.deletion_id,
+        status: summary.status,
         deleted: summary.deleted,
         locus_purged: summary.locus_purged,
         locus_nodes_deleted: summary.locus_nodes_deleted,
         cancelled_active_turn: summary.cancelled_active_turn,
+        surfaces: summary.surfaces,
+    }))
+}
+
+pub async fn get_session_deletion(
+    AxumPath(deletion_id): AxumPath<String>,
+) -> Result<Json<SessionDeleteResponse>, (StatusCode, String)> {
+    let record = crate::session_deletion::coordinator()
+        .find_record(&deletion_id)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "session deletion not found".to_string()))?;
+    let summary = crate::session_lifecycle::SessionDeleteSummary::from_record(record);
+    Ok(Json(SessionDeleteResponse {
+        session_id: summary.session_id,
+        deletion_id: summary.deletion_id,
+        status: summary.status,
+        deleted: summary.deleted,
+        locus_purged: summary.locus_purged,
+        locus_nodes_deleted: summary.locus_nodes_deleted,
+        cancelled_active_turn: summary.cancelled_active_turn,
+        surfaces: summary.surfaces,
     }))
 }

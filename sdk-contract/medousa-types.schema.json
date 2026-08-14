@@ -1428,12 +1428,6 @@
       "mime": {
         "type": "string"
       },
-      "payload_path": {
-        "type": [
-          "string",
-          "null"
-        ]
-      },
       "presentation": {
         "type": [
           "string",
@@ -14389,6 +14383,10 @@
       "deleted": {
         "type": "boolean"
       },
+      "deletion_id": {
+        "default": "",
+        "type": "string"
+      },
       "locus_nodes_deleted": {
         "type": "integer",
         "format": "uint",
@@ -14399,6 +14397,53 @@
       },
       "session_id": {
         "type": "string"
+      },
+      "status": {
+        "default": "complete",
+        "allOf": [
+          {
+            "$ref": "#/definitions/SessionDeletionStatus"
+          }
+        ]
+      },
+      "surfaces": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/SessionDeletionSurfaceResult"
+        }
+      }
+    },
+    "definitions": {
+      "SessionDeletionStatus": {
+        "type": "string",
+        "enum": [
+          "deleting",
+          "complete",
+          "retryable_partial",
+          "blocked"
+        ]
+      },
+      "SessionDeletionSurfaceResult": {
+        "type": "object",
+        "required": [
+          "deleted",
+          "surface"
+        ],
+        "properties": {
+          "deleted": {
+            "type": "boolean"
+          },
+          "reason_class": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "surface": {
+            "type": "string"
+          }
+        }
       }
     }
   },

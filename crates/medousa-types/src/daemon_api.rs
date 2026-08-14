@@ -429,6 +429,26 @@ pub struct SessionDeleteQuery {
     pub purge_memory: bool,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum SessionDeletionStatus {
+    Deleting,
+    #[default]
+    Complete,
+    RetryablePartial,
+    Blocked,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct SessionDeletionSurfaceResult {
+    pub surface: String,
+    pub deleted: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason_class: Option<String>,
+}
+
 fn default_purge_memory() -> bool {
     true
 }
@@ -437,10 +457,16 @@ fn default_purge_memory() -> bool {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct SessionDeleteResponse {
     pub session_id: String,
+    #[serde(default)]
+    pub deletion_id: String,
+    #[serde(default)]
+    pub status: SessionDeletionStatus,
     pub deleted: bool,
     pub locus_purged: bool,
     pub locus_nodes_deleted: usize,
     pub cancelled_active_turn: bool,
+    #[serde(default)]
+    pub surfaces: Vec<SessionDeletionSurfaceResult>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

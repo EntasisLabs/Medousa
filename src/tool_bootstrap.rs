@@ -557,12 +557,19 @@ pub fn delete_session_tool_surface(session_id: &str) -> Result<(), String> {
         crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
     SESSION_SURFACE_FILES
         .remove(&session_id)
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    if SESSION_SURFACE_FILES
+        .contains(&session_id)
+        .map_err(|error| error.to_string())?
+    {
+        return Err("tool surface remains after deletion".to_string());
+    }
+    Ok(())
 }
 
 pub fn save_session_tool_surface(surface: &SessionToolSurface) -> Result<(), String> {
-    let session_id = crate::session_storage::SessionId::parse(&surface.session_id)
-        .map_err(|error| error.to_string())?;
+    let (session_id, _mutation) =
+        crate::session_deletion::acquire_mutation_for_str(&surface.session_id)?;
     let mut surface = surface.clone();
     surface.updated_at_utc = Utc::now();
     let raw = serde_json::to_vec_pretty(&surface).map_err(|err| err.to_string())?;

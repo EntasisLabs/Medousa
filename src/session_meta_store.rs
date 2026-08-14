@@ -73,7 +73,7 @@ pub fn normalize_session_display_name(raw: &str) -> Option<String> {
 
 trait SessionMetaStore: Send + Sync {
     fn set_display_name(&self, session_id: &str, display_name: &str) -> Result<(), String>;
-    fn delete_session(&self, session_id: &str);
+    fn delete_session(&self, session_id: &str) -> Result<(), String>;
     fn get_display_name(&self, session_id: &str) -> Option<String>;
     fn load_display_names(&self, session_ids: &[String]) -> HashMap<String, String>;
     fn find_session_id_by_display_name(&self, display_name: &str) -> Option<String>;
@@ -154,14 +154,17 @@ impl SessionMetaStore for SurrealSessionMetaStore {
         Ok(())
     }
 
-    fn delete_session(&self, session_id: &str) {
+    fn delete_session(&self, session_id: &str) -> Result<(), String> {
         let sql = "DELETE type::table($table) WHERE session_id = $session_id";
-        let _ = block_on(
+        let response = block_on(
             self.db
                 .query(sql)
                 .bind(("table", SESSION_META_TABLE))
                 .bind(("session_id", session_id.trim().to_string())),
-        );
+        )
+        .map_err(|error| error.to_string())?;
+        response.check().map_err(|error| error.to_string())?;
+        Ok(())
     }
 
     fn get_display_name(&self, session_id: &str) -> Option<String> {
@@ -322,10 +325,10 @@ impl SessionMetaStore for FileSessionMetaStore {
         self.write_index(&index)
     }
 
-    fn delete_session(&self, session_id: &str) {
+    fn delete_session(&self, session_id: &str) -> Result<(), String> {
         let mut index = self.read_index();
         index.entries.remove(session_id.trim());
-        let _ = self.write_index(&index);
+        self.write_index(&index)
     }
 
     fn get_display_name(&self, session_id: &str) -> Option<String> {
@@ -382,6 +385,8 @@ impl SessionMetaStore for FileSessionMetaStore {
 }
 
 pub fn set_session_display_name(session_id: &str, display_name: &str) -> Result<(), String> {
+    let (_session_id, _mutation) =
+        crate::session_deletion::acquire_mutation_for_str(session_id)?;
     let Some(normalized) = normalize_session_display_name(display_name) else {
         return Err("display name must not be empty".to_string());
     };
@@ -392,8 +397,13 @@ pub fn get_session_display_name(session_id: &str) -> Option<String> {
     session_meta_store().get_display_name(session_id.trim())
 }
 
-pub fn delete_session_meta(session_id: &str) {
-    session_meta_store().delete_session(session_id.trim());
+pub fn delete_session_meta(session_id: &str) -> Result<(), String> {
+    let store = session_meta_store();
+    store.delete_session(session_id.trim())?;
+    if store.get_display_name(session_id.trim()).is_some() {
+        return Err("session metadata remains after deletion".to_string());
+    }
+    Ok(())
 }
 
 pub fn load_session_display_names(session_ids: &[String]) -> HashMap<String, String> {
