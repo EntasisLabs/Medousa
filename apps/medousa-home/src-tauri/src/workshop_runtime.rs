@@ -3,12 +3,15 @@
 use crate::medousa_paths::{load_tui_defaults_summary, tui_defaults_path};
 use crate::workshop_registry::{PERSONAL_WORKSHOP_ID, WorkshopRegistry, WorkshopServer};
 use reqwest::Client;
+use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
+
+use medousa_types::authority_id::WorkshopScopeId;
 
 pub const DEFAULT_LOCAL_BIND: &str = "127.0.0.1:7419";
 const PUBLIC_LOCAL_BIND: &str = "0.0.0.0:7419";
@@ -326,9 +329,18 @@ fn detach_new_session(command: &mut Command) {
 }
 
 pub fn engine_runtime_dir(workshop_id: &str) -> PathBuf {
+    let storage_key = WorkshopScopeId::parse(workshop_id)
+        .map(|id| id.storage_key().as_str().to_string())
+        .unwrap_or_else(|_| {
+            let mut digest = Sha256::new();
+            digest.update(b"medousa-storage-authority\0workshop-runtime\0");
+            digest.update(workshop_id.as_bytes());
+            let digest = digest.finalize();
+            format!("wr1-{digest:x}")
+        });
     crate::paths::medousa_data_dir()
         .join("engines")
-        .join(workshop_id)
+        .join(storage_key)
 }
 
 pub fn daemon_pid_path(workshop_id: &str) -> PathBuf {

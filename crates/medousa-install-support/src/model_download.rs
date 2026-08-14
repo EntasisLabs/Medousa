@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
+use medousa_types::authority_id::ModelId;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -128,8 +129,21 @@ impl ModelStore {
         medousa_data_dir().join("models")
     }
 
-    pub fn model_dir(model_id: &str) -> PathBuf {
-        Self::models_dir().join(model_id)
+    pub fn model_dir(model_id: &str) -> Result<PathBuf, String> {
+        let model_id = ModelId::parse(model_id).map_err(|error| error.to_string())?;
+        let models = Self::models_dir();
+        let opaque = models.join(model_id.storage_key().as_str());
+        if opaque.exists() {
+            return Ok(opaque);
+        }
+        let legacy = models.join(model_id.as_str());
+        if legacy
+            .symlink_metadata()
+            .is_ok_and(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
+        {
+            return Ok(legacy);
+        }
+        Ok(opaque)
     }
 
     pub async fn list_installed(&self) -> Vec<InstalledModelRecord> {
@@ -151,9 +165,10 @@ impl ModelStore {
     }
 
     pub async fn local_repo_path(&self, model_id: &str) -> Option<String> {
-        self.get_installed(model_id)
-            .await
-            .map(|record| record.local_path)
+        self.get_installed(model_id).await?;
+        Self::model_dir(model_id)
+            .ok()
+            .map(|path| path.to_string_lossy().to_string())
     }
 
     pub async fn get_job_progress(&self, job_id: &str) -> Option<ModelDownloadProgress> {
@@ -189,6 +204,7 @@ impl ModelStore {
         &self,
         entry: CatalogModelEntry,
     ) -> Result<ModelDownloadProgress, String> {
+        ModelId::parse(&entry.id).map_err(|error| error.to_string())?;
         if self.is_installed(&entry.id).await {
             return Err(format!("model {} is already installed", entry.id));
         }
@@ -225,7 +241,7 @@ impl ModelStore {
     }
 
     pub async fn remove_model(&self, model_id: &str) -> Result<(), String> {
-        let dir = Self::model_dir(model_id);
+        let dir = Self::model_dir(model_id)?;
         if dir.exists() {
             fs::remove_dir_all(&dir)
                 .await
@@ -277,12 +293,9 @@ pub static MODEL_STORE: Lazy<Arc<ModelStore>> = Lazy::new(|| Arc::new(ModelStore
 pub fn local_repo_if_installed(model_id: &str) -> Option<String> {
     read_models_index()
         .ok()
-        .and_then(|index| {
-            index
-                .models
-                .get(model_id)
-                .map(|record| record.local_path.clone())
-        })
+        .and_then(|index| index.models.contains_key(model_id).then_some(index))
+        .and_then(|_| ModelStore::model_dir(model_id).ok())
+        .map(|path| path.to_string_lossy().to_string())
 }
 
 fn read_models_index() -> Result<ModelsIndex, String> {
@@ -313,6 +326,9 @@ struct HfTreeEntry {
 }
 
 pub fn include_hf_file(path: &str) -> bool {
+    if validated_model_relative_path(path).is_err() {
+        return false;
+    }
     let lower = path.to_ascii_lowercase();
     if lower.ends_with(".md") || lower.contains("readme") {
         return false;
@@ -326,6 +342,41 @@ pub fn include_hf_file(path: &str) -> bool {
         || lower.ends_with(".model")
         || lower.ends_with(".tiktoken")
         || (lower.ends_with(".txt") && lower.contains("merges"))
+}
+
+fn validated_model_relative_path(path: &str) -> Result<PathBuf, String> {
+    if path.is_empty() || path.len() > 1024 || !path.is_ascii() {
+        return Err("invalid model file path".to_string());
+    }
+    if path.starts_with(['/', '\\']) || path.contains('\\') {
+        return Err("invalid model file path".to_string());
+    }
+    let segments = path.split('/').collect::<Vec<_>>();
+    if segments.len() > 32 {
+        return Err("invalid model file path".to_string());
+    }
+    for segment in &segments {
+        if segment.is_empty()
+            || matches!(*segment, "." | "..")
+            || segment.ends_with(['.', ' '])
+            || !segment
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+        {
+            return Err("invalid model file path".to_string());
+        }
+        let base = segment.split_once('.').map_or(*segment, |(base, _)| base);
+        let upper = base.to_ascii_uppercase();
+        if matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+            || upper
+                .strip_prefix("COM")
+                .or_else(|| upper.strip_prefix("LPT"))
+                .is_some_and(|suffix| suffix.len() == 1 && matches!(suffix.as_bytes()[0], b'1'..=b'9'))
+        {
+            return Err("invalid model file path".to_string());
+        }
+    }
+    Ok(segments.iter().collect())
 }
 
 fn hf_auth_header() -> Option<String> {
@@ -468,7 +519,7 @@ async fn run_download_job(
         })
         .await;
 
-    let model_dir = ModelStore::model_dir(&entry.id);
+    let model_dir = ModelStore::model_dir(&entry.id)?;
     fs::create_dir_all(&model_dir)
         .await
         .map_err(|err| err.to_string())?;
@@ -476,7 +527,7 @@ async fn run_download_job(
     let mut file_records = Vec::new();
     let mut bytes_done = 0u64;
     for (relative_path, _expected_size) in files {
-        let destination = model_dir.join(&relative_path);
+        let destination = model_dir.join(validated_model_relative_path(&relative_path)?);
         store
             .update_job(&job_id, |progress| {
                 progress.current_file = Some(relative_path.clone());
@@ -554,5 +605,15 @@ mod tests {
         assert!(include_hf_file("config.json"));
         assert!(include_hf_file("model-00001-of-00002.safetensors"));
         assert!(!include_hf_file("README.md"));
+        assert!(!include_hf_file("../../outside.json"));
+        assert!(!include_hf_file("C:\\outside.json"));
+        assert!(!include_hf_file("nested/CON.json"));
+    }
+
+    #[test]
+    fn model_ids_map_to_opaque_directories() {
+        let path = ModelStore::model_dir("gemma-4-12b-it").unwrap();
+        assert!(!path.file_name().unwrap().to_string_lossy().contains("gemma"));
+        assert!(ModelStore::model_dir("../../outside").is_err());
     }
 }

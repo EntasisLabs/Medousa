@@ -1,6 +1,6 @@
 # H02 — Identifier and filesystem authority
 
-> **Status:** In progress — H02.1–H02.4 implemented; H02.3 platform evidence and H02.5 closure remain
+> **Status:** In progress — H02.1–H02.4 implemented; H02.5 identifier migration underway and platform evidence remains
 >
 > **Accountable owner:** daemon storage maintainers
 >
@@ -59,8 +59,30 @@ after restart. Fresh-process fixtures populate every declared filesystem
 surface, delete in a second process, and verify absence/tombstone enforcement in
 a third.
 
-Broader externally influenced identifiers, compatibility removal, supported-
-platform evidence, and the cross-platform abuse matrix remain H02.5 work.
+H02.5 now has a shared typed authority-ID module. Environment profiles,
+component state/runtime events, packages, model installs, pairing devices,
+feeds, manuscripts and skill assets, provider caches/secrets, workshop scopes,
+Grapheme refs/scripts, and turn-event journals derive full domain-separated
+SHA-256 storage keys. Forge work items, attempts, reviews, repository locks, and
+Detamu bindings use the same mapping inside the Forge domain. Home pairing
+credentials, pairing token files/keyring accounts, and per-workshop process
+state no longer embed remotely supplied workshop or device IDs.
+
+The migrated daemon-owned stores use `StoreRoot` for bounded no-follow reads,
+atomic writes, exact removal, and enumeration. Persisted `output_path`,
+`body_path`, pairing credential relative paths, and model `local_path` fields
+are metadata only; consumers rederive authority from the typed logical ID.
+Hugging Face tree entries additionally pass a bounded cross-platform relative
+path grammar before any model payload is created.
+
+Safe legacy layouts remain read-only compatibility inputs during the rollback
+window. A compatibility candidate must be a valid single-segment platform name
+and, where the record carries its logical ID, the embedded owner must exactly
+match the requested ID. Ambiguous lossy component/runtime names and TUI scope
+directories cannot be reassigned safely and remain untouched. Compatibility
+removal, model-download, manuscript/skill, and turn-journal replacement-race
+closure, native
+Windows evidence, and the full cross-platform abuse matrix remain H02.5 work.
 
 H02.1 is in progress: `medousa-types` now owns the validated, non-public
 `SessionId` representation and validated serde boundary; the daemon mints
@@ -501,10 +523,31 @@ propagates failure, but closure requires the complete inventory test.
 
 ### H02.5 — Broader identifier inventory and closure
 
-- Audit every externally influenced path-bearing ID.
-- Migrate critical profile/feed/component/environment/pairing/package/Forge IDs.
-- Delete compatibility parsers and legacy layouts after the rollback window.
-- Ship canonical docs and supported-platform evidence.
+- [x] Audit externally influenced path-bearing IDs across daemon, crates, Home,
+  installer, CLI, and TUI.
+- [x] Add shared typed IDs and domain-separated opaque storage mappings.
+- [x] Migrate critical profile/feed/component/environment/pairing/package/model,
+  provider, manuscript/skill, Grapheme, turn-journal, workshop, and Forge IDs.
+- [x] Stop treating persisted path strings as read/delete authority on migrated
+  surfaces.
+- [ ] Move model payload streaming, manuscript/skill file operations, and the
+  engine turn journal onto held capabilities through the final read/write to
+  close replacement races.
+- [ ] Delete compatibility parsers and legacy layouts after the rollback window.
+- [ ] Complete native Windows junction/reparse and supported-platform evidence.
+- [x] Update the canonical data-directory/upgrade guidance.
+
+#### H02.5 compatibility ledger
+
+| Surface | New authority | Legacy policy |
+| --- | --- | --- |
+| Environment/component/runtime/feed/provider cache | typed ID + opaque key + `StoreRoot` | safe exact-owner read; ambiguous lossy entries untouched |
+| Packages/models | catalog-validated typed ID + opaque directory | known-catalog safe directory read during rollback |
+| Pairing and Home workshop credentials/tokens | device/workshop key + no-follow daemon store | safe name plus embedded-owner verification; Home migrates bounded token spellings |
+| Forge/Detamu | typed Forge ID + domain key | strict safe item directory only; snapshot/event owner verification |
+| Manuscripts, skill assets, Grapheme refs/scripts | typed ID + opaque file/directory | safe direct name only; persisted path metadata ignored |
+| Turn-event journals | typed turn ID + opaque journal/marker | old lossy journals are not guessed because ownership can be ambiguous |
+| TUI workspace scope | opaque scope directory | old sanitized scopes remain untouched because the file does not prove ownership |
 
 ## Verification
 

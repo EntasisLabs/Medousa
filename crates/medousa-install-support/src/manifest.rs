@@ -4,6 +4,10 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use medousa_types::authority_id::PackageId;
+
+use crate::packages::catalog_entry;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InstallManifest {
@@ -103,19 +107,42 @@ pub fn user_packages_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("packages")
 }
 
+pub fn package_dir(data_dir: &Path, package_id: &str) -> Result<PathBuf, String> {
+    if catalog_entry(package_id).is_none() {
+        return Err("unknown package id".to_string());
+    }
+    let package_id = PackageId::parse(package_id).map_err(|error| error.to_string())?;
+    Ok(user_packages_dir(data_dir).join(package_id.storage_key().as_str()))
+}
+
+fn legacy_package_dir(data_dir: &Path, package_id: &str) -> Result<PathBuf, String> {
+    if catalog_entry(package_id).is_none() {
+        return Err("unknown package id".to_string());
+    }
+    PackageId::parse(package_id).map_err(|error| error.to_string())?;
+    Ok(user_packages_dir(data_dir).join(package_id))
+}
+
+pub fn installed_package_dir(data_dir: &Path, package_id: &str) -> Option<PathBuf> {
+    [
+        package_dir(data_dir, package_id).ok(),
+        legacy_package_dir(data_dir, package_id).ok(),
+    ]
+    .into_iter()
+    .flatten()
+    .find(|path| path.join(".installed").is_file())
+}
+
 pub fn shared_bin_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("bin")
 }
 
 pub fn package_installed(data_dir: &Path, package_id: &str) -> bool {
-    user_packages_dir(data_dir)
-        .join(package_id)
-        .join(".installed")
-        .is_file()
+    installed_package_dir(data_dir, package_id).is_some()
 }
 
 pub fn mark_package_installed(data_dir: &Path, package_id: &str) -> Result<(), String> {
-    let marker = user_packages_dir(data_dir).join(package_id).join(".installed");
+    let marker = package_dir(data_dir, package_id)?.join(".installed");
     if let Some(parent) = marker.parent() {
         fs::create_dir_all(parent).map_err(|err| err.to_string())?;
     }
@@ -123,9 +150,14 @@ pub fn mark_package_installed(data_dir: &Path, package_id: &str) -> Result<(), S
 }
 
 pub fn unmark_package_installed(data_dir: &Path, package_id: &str) -> Result<(), String> {
-    let marker = user_packages_dir(data_dir).join(package_id).join(".installed");
-    if marker.exists() {
-        fs::remove_file(marker).map_err(|err| err.to_string())?;
+    for directory in [
+        package_dir(data_dir, package_id)?,
+        legacy_package_dir(data_dir, package_id)?,
+    ] {
+        let marker = directory.join(".installed");
+        if marker.exists() {
+            fs::remove_file(marker).map_err(|err| err.to_string())?;
+        }
     }
     Ok(())
 }
@@ -229,7 +261,7 @@ mod tests {
             "desktop-windows-x64".to_string(),
             pkg(
                 "desktop",
-                "windows-x64",
+                &crate::release_config::host_target(),
                 "https://example.com/Medousa_0.1.0_aarch64.dmg",
             ),
         );
@@ -249,9 +281,17 @@ mod tests {
         #[cfg(target_os = "macos")]
         assert!(resolve_release_package(&manifest, "desktop").is_ok());
 
-        // On Linux the windows-x64 target key does not match the host, so resolve
-        // fails before artifact-extension guards run.
+        // Linux rejects the macOS artifact extension for its matching target.
         #[cfg(target_os = "linux")]
         assert!(resolve_release_package(&manifest, "desktop").is_err());
+    }
+
+    #[test]
+    fn package_directories_require_catalog_ids_and_are_opaque() {
+        let root = Path::new("/tmp/medousa-package-authority-test");
+        let directory = package_dir(root, "local-brain").unwrap();
+        assert!(!directory.file_name().unwrap().to_string_lossy().contains("brain"));
+        assert!(package_dir(root, "../../outside").is_err());
+        assert!(package_dir(root, "not-in-catalog").is_err());
     }
 }

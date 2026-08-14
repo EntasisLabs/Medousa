@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
 use chrono::Utc;
+use medousa_types::authority_id::TurnEventId;
 use medousa_types::session::ConversationTurn;
 use medousa_types::turn::TurnPart;
 
@@ -57,7 +58,8 @@ impl TurnEventLog {
     pub fn open_in(root: impl AsRef<Path>, envelope: TurnEnvelope) -> std::io::Result<Self> {
         let root = root.as_ref().to_path_buf();
         fs::create_dir_all(&root)?;
-        let journal_path = journal_path(&root, &envelope.turn_id);
+        let turn_id = TurnEventId::parse(&envelope.turn_id).map_err(std::io::Error::other)?;
+        let journal_path = journal_path(&root, &turn_id);
         let journal = OpenOptions::new()
             .create(true)
             .append(true)
@@ -125,7 +127,11 @@ impl TurnEventLog {
                 let _ = journal.flush();
             }
         }
-        let marker = commit_marker_path(&self.root, &self.envelope.turn_id);
+        let Ok(turn_id) = TurnEventId::parse(&self.envelope.turn_id) else {
+            tracing::error!(turn_id = %self.envelope.turn_id, "invalid turn id reached commit");
+            return;
+        };
+        let marker = commit_marker_path(&self.root, &turn_id);
         if let Err(err) = fs::write(&marker, Utc::now().to_rfc3339()) {
             tracing::warn!(
                 turn_id = %self.envelope.turn_id,
@@ -147,25 +153,16 @@ impl TurnEventLog {
     }
 }
 
-fn journal_path(root: &Path, turn_id: &str) -> PathBuf {
-    root.join(format!("{}.{JOURNAL_EXT}", sanitize_turn_id(turn_id)))
+fn journal_path(root: &Path, turn_id: &TurnEventId) -> PathBuf {
+    root.join(format!("{}.{JOURNAL_EXT}", turn_id.storage_key().as_str()))
 }
 
-fn commit_marker_path(root: &Path, turn_id: &str) -> PathBuf {
-    root.join(format!("{}.{COMMIT_EXT}", sanitize_turn_id(turn_id)))
+fn commit_marker_path(root: &Path, turn_id: &TurnEventId) -> PathBuf {
+    marker_path_for_storage_key(root, turn_id.storage_key().as_str())
 }
 
-fn sanitize_turn_id(turn_id: &str) -> String {
-    turn_id
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect()
+fn marker_path_for_storage_key(root: &Path, storage_key: &str) -> PathBuf {
+    root.join(format!("{storage_key}.{COMMIT_EXT}"))
 }
 
 pub fn fold_history_from_events(events: &[SequencedTurnEvent]) -> Vec<ConversationTurn> {
@@ -267,13 +264,24 @@ pub fn recover_uncommitted(root: impl AsRef<Path>) -> Vec<RecoveredTurn> {
         let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
             continue;
         };
-        if commit_marker_path(root, stem).exists() {
+        if marker_path_for_storage_key(root, stem).exists() {
             continue;
         }
         let Some(events) = read_journal(&path) else {
             continue;
         };
         if events.is_empty() {
+            continue;
+        }
+        let Some(turn_id) = events
+            .first()
+            .and_then(|event| TurnEventId::parse(&event.envelope.turn_id).ok())
+        else {
+            continue;
+        };
+        if turn_id.storage_key().as_str() != stem
+            || events.iter().any(|event| event.envelope.turn_id != turn_id.as_str())
+        {
             continue;
         }
         let history = fold_history_from_events(&events);
@@ -414,13 +422,33 @@ mod tests {
             log.append(final_ev("committed body", vec![]));
         }
         {
-            let path = journal_path(&root, "turn-reopen");
+            let path = journal_path(&root, &TurnEventId::parse("turn-reopen").unwrap());
             let mut f = OpenOptions::new().append(true).open(&path).unwrap();
             writeln!(f, "{{\"envelope\":{{\"turn_id\":\"turn-reopen\"").unwrap();
         }
         let recovered = recover_uncommitted(&root);
         assert_eq!(recovered.len(), 1);
         assert_eq!(recovered[0].history[0].content, "committed body");
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn hostile_turn_ids_cannot_select_or_alias_paths() {
+        let root = tmp_root("authority");
+        let colon = TurnEventLog::open_in(&root, env("turn:a")).unwrap();
+        let underscore = TurnEventLog::open_in(&root, env("turn_a")).unwrap();
+        colon.append(final_ev("colon", vec![]));
+        underscore.append(final_ev("underscore", vec![]));
+
+        let journals = fs::read_dir(&root)
+            .unwrap()
+            .flatten()
+            .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some(JOURNAL_EXT))
+            .count();
+        assert_eq!(journals, 2);
+        assert!(!root.parent().unwrap().join("escape.jsonl").exists());
+        assert!(TurnEventLog::open_in(&root, env("../escape")).is_ok());
+        assert!(!root.parent().unwrap().join("escape.jsonl").exists());
         fs::remove_dir_all(&root).ok();
     }
 }

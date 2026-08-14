@@ -1318,7 +1318,7 @@ impl Forge {
         )?;
         let dir = self.store.item_dir(&item.id).join("dispositions");
         std::fs::create_dir_all(&dir)?;
-        let path = dir.join(format!("patch-{}.diff", decision.id.as_str()));
+        let path = dir.join(format!("patch-{}.diff", decision.id.storage_key()));
         std::fs::write(&path, &patch)?;
         let digest = Digest::sha256_hex(&patch);
         self.store.append(

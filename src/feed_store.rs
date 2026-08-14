@@ -4,12 +4,16 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
+use medousa_types::authority_id::{EnvironmentProfileId, FeedId};
 use medousa_types::feed::{FeedEvent, FeedLatestGoodResponse};
 use tokio::sync::RwLock as AsyncRwLock;
 
+use crate::store_root::{StoreEntryKind, StorePath, StoreRoot};
+
 const STORE_DIR: &str = "feeds";
 const MAX_EVENTS_PER_FEED: usize = 200;
+const MAX_FEED_LOG_BYTES: u64 = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone, Default)]
 struct FeedChannelState {
@@ -40,23 +44,60 @@ impl FeedStore {
         crate::paths::medousa_data_dir().join(STORE_DIR)
     }
 
-    fn feed_path(profile_id: &str, feed_id: &str) -> PathBuf {
-        Self::store_root()
-            .join(profile_id)
-            .join(format!("{feed_id}.jsonl"))
+    fn store() -> Result<StoreRoot> {
+        Ok(StoreRoot::open_or_create_nofollow(&Self::store_root())?)
+    }
+
+    fn profile_path(profile_id: &EnvironmentProfileId) -> StorePath {
+        StorePath::parse(profile_id.storage_key().as_str())
+            .expect("opaque feed profile key is a valid store path")
+    }
+
+    fn feed_path(profile_id: &str, feed_id: &str) -> Result<StorePath> {
+        let profile = EnvironmentProfileId::parse(profile_id)?;
+        let feed = FeedId::parse(feed_id)?;
+        Ok(StorePath::parse(&format!(
+            "{}/{}.jsonl",
+            profile.storage_key().as_str(),
+            feed.storage_key().as_str()
+        ))?)
+    }
+
+    fn legacy_feed_path(profile_id: &str, feed_id: &str) -> Result<StorePath> {
+        let profile = EnvironmentProfileId::parse(profile_id)?;
+        let feed = FeedId::parse(feed_id)?;
+        Ok(StorePath::parse(&format!(
+            "{}/{}.jsonl",
+            profile.as_str(),
+            feed.as_str()
+        ))?)
     }
 
     async fn load_feed_channel(profile_id: &str, feed_id: &str) -> FeedChannelState {
-        let path = Self::feed_path(profile_id, feed_id);
-        if !path.exists() {
+        let Ok(store) = Self::store() else {
             return FeedChannelState::default();
-        }
-        let raw = match tokio::fs::read_to_string(&path).await {
-            Ok(content) => content,
+        };
+        let Ok(path) = Self::feed_path(profile_id, feed_id) else {
+            return FeedChannelState::default();
+        };
+        let raw = match store.read_limited(&path, MAX_FEED_LOG_BYTES) {
+            Ok(raw) => raw,
+            Err(error) if error.is_not_found() => {
+                let Ok(legacy) = Self::legacy_feed_path(profile_id, feed_id) else {
+                    return FeedChannelState::default();
+                };
+                match store.read_limited(&legacy, MAX_FEED_LOG_BYTES) {
+                    Ok(raw) => raw,
+                    Err(_) => return FeedChannelState::default(),
+                }
+            }
             Err(_) => return FeedChannelState::default(),
         };
         let mut state = FeedChannelState::default();
-        for line in raw.lines() {
+        for line in raw.split(|byte| *byte == b'\n') {
+            let Ok(line) = std::str::from_utf8(line) else {
+                continue;
+            };
             let trimmed = line.trim();
             if trimmed.is_empty() {
                 continue;
@@ -78,22 +119,20 @@ impl FeedStore {
         feed_id: &str,
         state: &FeedChannelState,
     ) -> Result<()> {
-        let path = Self::feed_path(profile_id, feed_id);
-        if let Some(parent) = path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
-        }
+        let store = Self::store()?;
+        let path = Self::feed_path(profile_id, feed_id)?;
         let mut body = String::new();
         for event in &state.events {
             body.push_str(&serde_json::to_string(event)?);
             body.push('\n');
         }
-        tokio::fs::write(&path, body)
-            .await
-            .with_context(|| format!("write feed log {}", path.display()))?;
+        store.atomic_write(&path, body.as_bytes())?;
         Ok(())
     }
 
     pub async fn append(&self, profile_id: &str, feed_id: &str, mut event: FeedEvent) -> Result<u64> {
+        EnvironmentProfileId::parse(profile_id)?;
+        FeedId::parse(feed_id)?;
         let mut guard = self.inner.write().await;
         let profile = guard.entry(profile_id.to_string()).or_default();
         if !profile.contains_key(feed_id) {
@@ -132,16 +171,42 @@ impl FeedStore {
 
     pub async fn list_feed_ids(&self, profile_id: &str) -> Vec<String> {
         let mut ids = Vec::new();
-        let root = Self::store_root().join(profile_id);
-        if root.exists()
-            && let Ok(mut entries) = tokio::fs::read_dir(&root).await {
-                while let Ok(Some(entry)) = entries.next_entry().await {
-                    let name = entry.file_name().to_string_lossy().to_string();
-                    if let Some(feed_id) = name.strip_suffix(".jsonl") {
+        if let (Ok(store), Ok(profile)) = (
+            Self::store(),
+            EnvironmentProfileId::parse(profile_id),
+        ) {
+            let opaque_profile = Self::profile_path(&profile);
+            if let Ok(entries) = store.list_directory(&opaque_profile) {
+                for entry in entries {
+                    if entry.kind != StoreEntryKind::File || !entry.path.file_name().ends_with(".jsonl") {
+                        continue;
+                    }
+                    let Ok(path) = opaque_profile.join(&entry.path) else {
+                        continue;
+                    };
+                    if let Ok(raw) = store.read_limited(&path, MAX_FEED_LOG_BYTES)
+                        && let Some(event) = first_feed_event(&raw)
+                        && FeedId::parse(&event.feed_id).is_ok_and(|feed| {
+                            format!("{}.jsonl", feed.storage_key().as_str()) == entry.path.file_name()
+                        })
+                    {
+                        ids.push(event.feed_id);
+                    }
+                }
+            }
+            if let Ok(legacy_profile) = StorePath::parse(profile.as_str())
+                && let Ok(entries) = store.list_directory(&legacy_profile)
+            {
+                for entry in entries {
+                    if entry.kind == StoreEntryKind::File
+                        && let Some(feed_id) = entry.path.file_name().strip_suffix(".jsonl")
+                        && FeedId::parse(feed_id).is_ok()
+                    {
                         ids.push(feed_id.to_string());
                     }
                 }
             }
+        }
         let guard = self.inner.read().await;
         if let Some(profile) = guard.get(profile_id) {
             for feed_id in profile.keys() {
@@ -207,8 +272,14 @@ pub fn new_feed_event_id(seq: u64) -> String {
 }
 
 pub fn ensure_store_dir() -> Result<()> {
-    std::fs::create_dir_all(FeedStore::store_root())?;
+    FeedStore::store()?;
     Ok(())
+}
+
+fn first_feed_event(raw: &[u8]) -> Option<FeedEvent> {
+    raw.split(|byte| *byte == b'\n')
+        .filter(|line| !line.iter().all(u8::is_ascii_whitespace))
+        .find_map(|line| serde_json::from_slice(line).ok())
 }
 
 #[derive(Debug, Clone)]
@@ -362,6 +433,16 @@ mod latest_good_tests {
             }],
             payload: Some(payload),
         }
+    }
+
+    #[test]
+    fn feed_paths_are_opaque_and_reject_authority_syntax() {
+        let dotted = FeedStore::feed_path("personal", "workshop.pulse").unwrap();
+        let underscored = FeedStore::feed_path("personal", "workshop_pulse").unwrap();
+        assert_ne!(dotted, underscored);
+        assert!(!dotted.file_name().contains("workshop"));
+        assert!(FeedStore::feed_path("../../outside", "workshop.pulse").is_err());
+        assert!(FeedStore::feed_path("personal", "../../outside").is_err());
     }
 
     #[test]

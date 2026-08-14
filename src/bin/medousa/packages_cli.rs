@@ -2,8 +2,8 @@
 
 use anyhow::{Context, Result, anyhow};
 use medousa_install_support::{
-    fetch_release_manifest, install_tarball_package, is_tarball_package, package_installed,
-    resolve_package_alias, resolve_release_package, PackageCatalogEntry,
+    fetch_release_manifest, install_tarball_package, installed_package_dir, is_tarball_package,
+    package_installed, resolve_package_alias, resolve_release_package, PackageCatalogEntry,
 };
 use serde::Serialize;
 use std::path::Path;
@@ -317,13 +317,8 @@ fn binaries_present(data_dir: &Path, entry: &PackageCatalogEntry) -> bool {
 }
 
 fn local_package_version(data_dir: &Path, package_id: &str) -> Option<String> {
-    let marker = data_dir
-        .join("packages")
-        .join(package_id)
-        .join(".installed");
-    if marker.is_file() {
+    if let Some(packages_dir) = installed_package_dir(data_dir, package_id) {
         // Prefer version from nested install-manifest if present.
-        let packages_dir = data_dir.join("packages").join(package_id);
         if let Some(version) = read_nested_package_version(&packages_dir) {
             return Some(version);
         }

@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use medousa_install_support::manifest::{
-    InstallManifest, PackageInstallRecord, package_installed, read_install_manifest,
-    resolve_release_package, write_install_manifest,
+    InstallManifest, PackageInstallRecord, package_dir, package_installed,
+    read_install_manifest, resolve_release_package, write_install_manifest,
 };
 use medousa_install_support::packages::{
     PackageCatalogEntry, catalog_entry, expand_home_package_dependencies, home_packages_catalog,
@@ -316,7 +316,7 @@ fn upsert_manifest_record(
     let record = PackageInstallRecord {
         id: package_id.to_string(),
         version: version.to_string(),
-        install_path: Some(data.join("packages").join(package_id).display().to_string()),
+        install_path: Some(package_dir(&data, package_id)?.display().to_string()),
         sha256,
         binaries: catalog_entry(package_id)
             .map(|e| e.binaries.iter().map(|b| b.to_string()).collect())

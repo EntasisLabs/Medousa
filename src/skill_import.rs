@@ -10,7 +10,7 @@ use crate::identity_manuscript::{
     IdentityManuscriptFile, ManuscriptMetadata, ManuscriptOpenshellSpec, ManuscriptPersonaSpec,
     ManuscriptPromptsSpec, ManuscriptScope, ManuscriptSpec, ManuscriptToolsSpec,
     MANUSCRIPT_API_VERSION, MANUSCRIPT_KIND, build_manuscript_context, project_manuscripts_dir,
-    user_manuscripts_dir, validate_manuscript,
+    manuscript_storage_name, user_manuscripts_dir, validate_manuscript,
 };
 use crate::skill_execution::skill_has_runnable_scripts;
 
@@ -304,6 +304,7 @@ pub fn import_skill(
         frontmatter.name.as_deref().unwrap_or(""),
         &skill_dir,
     );
+    let storage_name = manuscript_storage_name(&id)?;
     let target_root = match scope {
         ManuscriptScope::Project => project_manuscripts_dir(),
         ManuscriptScope::User => user_manuscripts_dir(),
@@ -311,8 +312,8 @@ pub fn import_skill(
     std::fs::create_dir_all(&target_root)
         .with_context(|| format!("create manuscript dir {}", target_root.display()))?;
 
-    let yaml_path = target_root.join(format!("{id}.yaml"));
-    let assets_dir = target_root.join(&id);
+    let yaml_path = target_root.join(format!("{storage_name}.yaml"));
+    let assets_dir = target_root.join(&storage_name);
     if yaml_path.exists() || assets_dir.exists() {
         if !force {
             bail!(
@@ -329,7 +330,7 @@ pub fn import_skill(
 
     copy_dir_recursive(&skill_dir, &assets_dir)?;
 
-    let mut manuscript = build_manuscript_from_skill(&id, &frontmatter, &id, extends);
+    let mut manuscript = build_manuscript_from_skill(&id, &frontmatter, &storage_name, extends);
     apply_skill_sandbox_defaults(&mut manuscript, &skill_dir);
     validate_manuscript(&manuscript, &yaml_path)?;
 
@@ -489,9 +490,15 @@ When tests run.
         let skill_dir = resolve_skill_source(&source).expect("resolve");
         let (frontmatter, _) = parse_skill_md(&skill_dir.join("SKILL.md")).expect("parse");
         let id = sanitize_skill_id("invoice-helper", &skill_dir);
-        let manuscript = build_manuscript_from_skill(&id, &frontmatter, &id, Some("base-researcher"));
-        let yaml_path = manuscripts.join(format!("{id}.yaml"));
-        let assets_dir = manuscripts.join(&id);
+        let storage_name = manuscript_storage_name(&id).unwrap();
+        let manuscript = build_manuscript_from_skill(
+            &id,
+            &frontmatter,
+            &storage_name,
+            Some("base-researcher"),
+        );
+        let yaml_path = manuscripts.join(format!("{storage_name}.yaml"));
+        let assets_dir = manuscripts.join(&storage_name);
         copy_dir_recursive(&skill_dir, &assets_dir).expect("copy");
         let yaml = serde_yaml::to_string(&manuscript).expect("yaml");
         fs::write(&yaml_path, yaml).expect("write yaml");
@@ -500,7 +507,7 @@ When tests run.
         assert!(assets_dir.join("SKILL.md").is_file());
         assert!(assets_dir.join("references/api.md").is_file());
         let loaded = fs::read_to_string(&yaml_path).expect("read yaml");
-        assert!(loaded.contains("soul_md: ./invoice-helper/SKILL.md"));
+        assert!(loaded.contains(&format!("soul_md: ./{storage_name}/SKILL.md")));
         assert!(loaded.contains("extends: base-researcher"));
         let _ = fs::remove_dir_all(&base);
         let _ = original_user;

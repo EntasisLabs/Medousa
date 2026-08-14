@@ -331,22 +331,33 @@ pub fn manuscript_search_dirs() -> Vec<PathBuf> {
     vec![project_manuscripts_dir(), user_manuscripts_dir()]
 }
 
+pub fn manuscript_storage_name(id: &str) -> Result<String> {
+    let id = medousa_types::authority_id::ManuscriptId::parse(id)?;
+    Ok(id.storage_key().as_str().to_string())
+}
+
 pub fn resolve_manuscript_path(id: &str) -> Result<PathBuf> {
-    let stem = id.trim();
-    if stem.is_empty() {
-        bail!("manuscript id is required");
-    }
+    let id = medousa_types::authority_id::ManuscriptId::parse(id)?;
 
     for dir in manuscript_search_dirs() {
+        let Ok(root) = crate::store_root::StoreRoot::open_nofollow(&dir) else {
+            continue;
+        };
         for ext in ["yaml", "yml"] {
-            let candidate = dir.join(format!("{stem}.{ext}"));
-            if candidate.is_file() {
-                return Ok(candidate);
+            let current = format!("{}.{ext}", id.storage_key().as_str());
+            let legacy = format!("{}.{ext}", id.as_str());
+            for file_name in [current, legacy] {
+                let Ok(relative) = crate::store_root::StorePath::parse(&file_name) else {
+                    continue;
+                };
+                if root.is_file(&relative).unwrap_or(false) {
+                    return Ok(dir.join(file_name));
+                }
             }
         }
     }
 
-    bail!("manuscript '{stem}' not found in project or user manuscript dirs")
+    bail!("manuscript '{}' not found in project or user manuscript dirs", id)
 }
 
 pub fn load_manuscript_file(path: &Path) -> Result<IdentityManuscriptFile> {
@@ -846,7 +857,7 @@ pub fn create_manuscript(
         }
     }
 
-    let target = target_dir.join(format!("{id}.yaml"));
+    let target = target_dir.join(format!("{}.yaml", manuscript_storage_name(&id)?));
     let file = IdentityManuscriptFile {
         api_version: MANUSCRIPT_API_VERSION.to_string(),
         kind: MANUSCRIPT_KIND.to_string(),

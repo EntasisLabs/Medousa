@@ -129,13 +129,9 @@ impl FeedHub {
 
 pub async fn publish(request: FeedPublishRequest) -> Result<FeedEvent> {
     let profile_id = resolve_profile_id(request.profile_id.as_deref());
-    let feed_id = request.feed_id.trim().to_string();
-    if feed_id.is_empty() {
-        return Err(anyhow!("feed_id is required"));
-    }
-    if !medousa_types::feed::is_valid_feed_id(&feed_id) {
-        return Err(anyhow!("invalid feed_id '{feed_id}'"));
-    }
+    medousa_types::authority_id::EnvironmentProfileId::parse(&profile_id)?;
+    let feed_id = medousa_types::authority_id::FeedId::parse(&request.feed_id)?;
+    let feed_id = feed_id.as_str().to_string();
 
     let max_bytes = request
         .payload_max_bytes

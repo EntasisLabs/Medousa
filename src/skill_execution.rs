@@ -69,18 +69,30 @@ pub struct SkillAdoptionProposal {
 }
 
 pub fn resolve_skill_assets_dir(manuscript_id: &str) -> Result<PathBuf> {
-    let manuscript_path = resolve_manuscript_path(manuscript_id)?;
+    let manuscript_id = medousa_types::authority_id::ManuscriptId::parse(manuscript_id)?;
+    let manuscript_path = resolve_manuscript_path(manuscript_id.as_str())?;
     let base = manuscript_path
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(user_manuscripts_dir);
-    let assets = base.join(manuscript_id);
-    if assets.is_dir() && assets.join("SKILL.md").is_file() {
-        return Ok(assets);
+    for assets in [
+        base.join(manuscript_id.storage_key().as_str()),
+        base.join(manuscript_id.as_str()),
+    ] {
+        if assets
+            .symlink_metadata()
+            .is_ok_and(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
+            && assets
+                .join("SKILL.md")
+                .symlink_metadata()
+                .is_ok_and(|metadata| metadata.is_file() && !metadata.file_type().is_symlink())
+        {
+            return Ok(assets);
+        }
     }
     bail!(
-        "skill assets not found for manuscript '{manuscript_id}' at {}",
-        assets.display()
+        "skill assets not found for manuscript '{manuscript_id}' under {}",
+        base.display()
     )
 }
 
@@ -107,7 +119,11 @@ fn collect_scripts_recursive(
     {
         let entry = entry?;
         let path = entry.path();
-        if path.is_dir() {
+        let metadata = path.symlink_metadata()?;
+        if metadata.file_type().is_symlink() {
+            continue;
+        }
+        if metadata.is_dir() {
             collect_scripts_recursive(&path, assets_root, scripts)?;
             continue;
         }

@@ -8,6 +8,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::State;
 
+use medousa_types::authority_id::WorkshopScopeId;
+
 pub const REGISTRY_VERSION: u32 = 1;
 pub const PERSONAL_WORKSHOP_ID: &str = "personal";
 pub const MAX_WORKSHOPS: usize = 10;
@@ -118,12 +120,30 @@ pub fn workshops_registry_path() -> PathBuf {
     medousa_data_dir().join("workshops.json")
 }
 
-pub fn pairing_credentials_rel_path(workshop_id: &str) -> String {
-    format!("workshops/{workshop_id}/pairing.json")
+pub fn pairing_credentials_rel_path(workshop_id: &str) -> Result<String, String> {
+    let workshop_id = WorkshopScopeId::parse(workshop_id).map_err(|err| err.to_string())?;
+    Ok(format!(
+        "workshops/{}/pairing.json",
+        workshop_id.storage_key().as_str()
+    ))
 }
 
-pub fn pairing_credentials_abs_path(workshop_id: &str) -> PathBuf {
-    medousa_data_dir().join(pairing_credentials_rel_path(workshop_id))
+pub fn pairing_credentials_abs_path(workshop_id: &str) -> Result<PathBuf, String> {
+    Ok(medousa_data_dir().join(pairing_credentials_rel_path(workshop_id)?))
+}
+
+pub fn legacy_pairing_credentials_abs_path(workshop_id: &str) -> Option<PathBuf> {
+    let valid = !workshop_id.is_empty()
+        && workshop_id.len() <= 128
+        && workshop_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'));
+    valid.then(|| {
+        medousa_data_dir()
+            .join("workshops")
+            .join(workshop_id)
+            .join("pairing.json")
+    })
 }
 
 pub fn paired_workshop_id(workshop_device_id: &str) -> String {
@@ -311,7 +331,7 @@ pub fn ensure_migrated() -> Result<WorkshopRegistry, String> {
 
     if let Some(legacy) = read_legacy_pairing() {
         let workshop_id = paired_workshop_id(&legacy.workshop_device_id);
-        let credentials_path = pairing_credentials_abs_path(&workshop_id);
+        let credentials_path = pairing_credentials_abs_path(&workshop_id)?;
         move_legacy_pairing_file(&credentials_path)?;
         crate::pairing_client::migrate_legacy_session_token(&legacy.workshop_device_id);
 
@@ -347,7 +367,7 @@ pub fn ensure_migrated() -> Result<WorkshopRegistry, String> {
                 phone_id: legacy.phone_id,
                 workshop_device_id: legacy.workshop_device_id,
                 paired_at: legacy.paired_at,
-                credentials_rel_path: Some(pairing_credentials_rel_path(&workshop_id)),
+                credentials_rel_path: Some(pairing_credentials_rel_path(&workshop_id)?),
                 has_iroh_ticket: Some(has_iroh),
                 workshop_peer_name: None,
             }),
@@ -411,7 +431,7 @@ pub fn register_paired_workshop(input: RegisterPairedInput) -> Result<String, St
     } else {
         paired_workshop_id(&input.workshop_device_id)
     };
-    let credentials_rel = pairing_credentials_rel_path(&workshop_id);
+    let credentials_rel = pairing_credentials_rel_path(&workshop_id)?;
     let label = if input.workshop_peer_name.trim().is_empty() {
         format!("Workshop {}", input.workshop_device_id)
     } else {
@@ -778,6 +798,17 @@ mod tests {
     #[test]
     fn paired_workshop_id_is_stable() {
         assert_eq!(paired_workshop_id("abcd1234"), "paired-abcd1234");
+    }
+
+    #[test]
+    fn pairing_credentials_use_opaque_non_aliasing_directories() {
+        let colon = pairing_credentials_rel_path("paired-a:b").unwrap();
+        let underscore = pairing_credentials_rel_path("paired-a_b").unwrap();
+        assert_ne!(colon, underscore);
+        assert!(!colon.contains("a:b"));
+        let traversal = pairing_credentials_rel_path("../../outside").unwrap();
+        assert!(!traversal.contains(".."));
+        assert_eq!(traversal.split('/').count(), 3);
     }
 
     #[test]

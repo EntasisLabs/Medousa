@@ -4,6 +4,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use chrono::{Duration, Utc};
+use medousa_types::authority_id::{
+    component_runtime_event_record_key, ComponentId, EnvironmentProfileId,
+};
 use medousa_types::component_runtime::{
     ComponentRuntimeEvent, ComponentRuntimeEventInput, ComponentRuntimeProbeResult,
     ComponentRuntimeProbeStatus, DEFAULT_RUNTIME_EVENT_TAIL_LIMIT, MAX_RUNTIME_EVENTS_PER_COMPONENT,
@@ -16,9 +19,13 @@ use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
 use surrealdb_types::SurrealValue;
 use tokio::sync::{broadcast, RwLock};
+use uuid::Uuid;
+
+use crate::store_root::{StorePath, StoreRoot};
 
 const RUNTIME_EVENT_TABLE: &str = "component_runtime_event";
 const FILE_STORE_DIR: &str = "component_runtime";
+const MAX_RUNTIME_LOG_BYTES: u64 = 16 * 1024 * 1024;
 
 const RUNTIME_EVENT_SCHEMA: &[&str] = &[
     "DEFINE TABLE component_runtime_event SCHEMAFULL",
@@ -145,6 +152,7 @@ impl ComponentRuntimeHub {
         session_id: Option<&str>,
         inputs: &[ComponentRuntimeEventInput],
     ) -> Result<usize, String> {
+        validate_authority_ids(profile_id, component_id)?;
         if inputs.is_empty() {
             return Ok(0);
         }
@@ -165,6 +173,7 @@ impl ComponentRuntimeHub {
         component_id: &str,
         limit: usize,
     ) -> Result<Vec<ComponentRuntimeEvent>, String> {
+        validate_authority_ids(profile_id, component_id)?;
         let limit = limit.clamp(1, MAX_RUNTIME_EVENTS_PER_COMPONENT);
         if let Some(db) = &self.db {
             self.surreal_tail(db, profile_id, component_id, limit).await
@@ -251,6 +260,8 @@ impl ComponentRuntimeHub {
         session_id: Option<&str>,
         inputs: &[ComponentRuntimeEventInput],
     ) -> Result<usize, String> {
+        let profile = EnvironmentProfileId::parse(profile_id).map_err(|error| error.to_string())?;
+        let component = ComponentId::parse(component_id).map_err(|error| error.to_string())?;
         let mut accepted = 0usize;
         for input in inputs {
             let emitted_at = input.emitted_at_utc.unwrap_or_else(Utc::now);
@@ -267,12 +278,10 @@ impl ComponentRuntimeHub {
                 source: input.source.clone(),
                 emitted_at,
             };
-            let id = format!(
-                "{}__{}__{}",
-                sanitize_segment(profile_id),
-                sanitize_segment(component_id),
-                emitted_at.timestamp_millis()
-            );
+            let nonce = format!("{}-{}", emitted_at.timestamp_millis(), Uuid::new_v4().simple());
+            let id = component_runtime_event_record_key(&profile, &component, &nonce)
+                .as_str()
+                .to_string();
             db.query("CREATE type::record($table, $id) CONTENT $data")
                 .bind(("table", RUNTIME_EVENT_TABLE))
                 .bind(("id", id))
@@ -414,14 +423,14 @@ impl ComponentRuntimeHub {
         profile_id: &str,
         component_id: &str,
     ) -> Result<FileRuntimeLogDocument, String> {
-        let path = file_doc_path(profile_id, component_id);
-        if !path.exists() {
-            return Ok(FileRuntimeLogDocument::default());
+        let store = file_store()?;
+        let path = file_doc_path(profile_id, component_id)?;
+        match store.read_limited(&path, MAX_RUNTIME_LOG_BYTES) {
+            Ok(raw) => serde_json::from_slice(&raw)
+                .map_err(|_| "component runtime log is corrupt".to_string()),
+            Err(error) if error.is_not_found() => Ok(FileRuntimeLogDocument::default()),
+            Err(error) => Err(error.to_string()),
         }
-        let raw = tokio::fs::read_to_string(&path)
-            .await
-            .map_err(|err| err.to_string())?;
-        Ok(serde_json::from_str(&raw).unwrap_or_default())
     }
 
     async fn write_file_doc(
@@ -430,16 +439,10 @@ impl ComponentRuntimeHub {
         component_id: &str,
         doc: &FileRuntimeLogDocument,
     ) -> Result<(), String> {
-        let path = file_doc_path(profile_id, component_id);
-        if let Some(parent) = path.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|err| err.to_string())?;
-        }
+        let store = file_store()?;
+        let path = file_doc_path(profile_id, component_id)?;
         let raw = serde_json::to_string_pretty(doc).map_err(|err| err.to_string())?;
-        tokio::fs::write(path, raw)
-            .await
-            .map_err(|err| err.to_string())
+        store.atomic_write(&path, raw.as_bytes()).map_err(|err| err.to_string())
     }
 }
 
@@ -451,17 +454,10 @@ fn truncate_message(message: &str) -> String {
     message.chars().take(MAX).collect()
 }
 
-fn sanitize_segment(value: &str) -> String {
-    value
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
-                ch
-            } else {
-                '_'
-            }
-        })
-        .collect()
+fn validate_authority_ids(profile_id: &str, component_id: &str) -> Result<(), String> {
+    EnvironmentProfileId::parse(profile_id).map_err(|error| error.to_string())?;
+    ComponentId::parse(component_id).map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 fn file_store_root() -> PathBuf {
@@ -474,10 +470,19 @@ fn file_store_root() -> PathBuf {
     crate::paths::medousa_data_dir().join(FILE_STORE_DIR)
 }
 
-fn file_doc_path(profile_id: &str, component_id: &str) -> PathBuf {
-    file_store_root()
-        .join(sanitize_segment(profile_id))
-        .join(format!("{}.json", sanitize_segment(component_id)))
+fn file_store() -> Result<StoreRoot, String> {
+    StoreRoot::open_or_create_nofollow(&file_store_root()).map_err(|error| error.to_string())
+}
+
+fn file_doc_path(profile_id: &str, component_id: &str) -> Result<StorePath, String> {
+    let profile = EnvironmentProfileId::parse(profile_id).map_err(|error| error.to_string())?;
+    let component = ComponentId::parse(component_id).map_err(|error| error.to_string())?;
+    StorePath::parse(&format!(
+        "{}/{}.json",
+        profile.storage_key().as_str(),
+        component.storage_key().as_str()
+    ))
+    .map_err(|error| error.to_string())
 }
 
 pub fn default_tail_limit(limit: Option<usize>) -> usize {

@@ -9,7 +9,8 @@ pub mod release_config;
 pub mod tarball_install;
 
 pub use manifest::{
-    desktop_artifact_url_matches_host, mark_package_installed, package_installed,
+    desktop_artifact_url_matches_host, installed_package_dir, mark_package_installed, package_dir,
+    package_installed,
     read_install_manifest, read_release_manifest, release_package_matches_host,
     resolve_release_package, shared_bin_dir, unmark_package_installed, user_packages_dir,
     write_install_manifest, InstallManifest, PackageInstallRecord, ReleaseManifest, ReleasePackage,

@@ -6,7 +6,6 @@
 //! - `medousa.deliver` — terminal effect (work, channel, locus, quiet)
 
 use std::future::IntoFuture;
-use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
@@ -29,6 +28,8 @@ use stasis::ports::outbound::runtime::workflow_engine::{WorkflowEngine, Workflow
 use tokio::runtime::Handle;
 use uuid::Uuid;
 
+use medousa_types::authority_id::GraphemeRefId;
+
 use crate::channel_delivery::{self, ChannelDeliveryTarget, normalize_channel_surface};
 use crate::cognitive_identity::{
     DEFAULT_RELATIONAL_DIGEST_BUDGET, DigestCompileOptions, compile_relational_memory_digest_with_options,
@@ -41,6 +42,7 @@ use crate::identity_manuscript::{
 };
 use crate::identity_memory::resolve_identity_user_id;
 use crate::locus_memory::resolve_workshop_locus_session;
+use crate::store_root::{StorePath, StoreRoot};
 use crate::workspace::event::new_event_id;
 use crate::workspace::store::workspace_store;
 
@@ -789,44 +791,28 @@ fn syntheses_root() -> PathBuf {
 }
 
 fn persist_digest(digest: &StoredDigest) -> Result<(), HostCallError> {
-    let dir = digests_root();
-    std::fs::create_dir_all(&dir).map_err(|err| HostCallError::Fatal(err.to_string()))?;
-    let path = dir.join(format!("{}.json", digest.digest_ref.replace(':', "_")));
+    let root = StoreRoot::open_or_create_nofollow(&digests_root())
+        .map_err(|err| HostCallError::Fatal(err.to_string()))?;
+    let path = grapheme_ref_path(&digest.digest_ref)?;
     let raw = serde_json::to_vec_pretty(digest).map_err(|err| HostCallError::Fatal(err.to_string()))?;
-    std::fs::write(&path, raw).map_err(|err| HostCallError::Fatal(err.to_string()))?;
-    append_index_line(&digests_root().join("index.jsonl"), digest.digest_ref.as_str(), &path)
+    root.atomic_write(&path, &raw)
+        .map_err(|err| HostCallError::Fatal(err.to_string()))
 }
 
 fn persist_synthesis(synthesis: &StoredSynthesis) -> Result<(), HostCallError> {
-    let dir = syntheses_root();
-    std::fs::create_dir_all(&dir).map_err(|err| HostCallError::Fatal(err.to_string()))?;
-    let path = dir.join(format!("{}.json", synthesis.synthesis_ref.replace(':', "_")));
+    let root = StoreRoot::open_or_create_nofollow(&syntheses_root())
+        .map_err(|err| HostCallError::Fatal(err.to_string()))?;
+    let path = grapheme_ref_path(&synthesis.synthesis_ref)?;
     let raw = serde_json::to_vec_pretty(synthesis).map_err(|err| HostCallError::Fatal(err.to_string()))?;
-    std::fs::write(&path, raw).map_err(|err| HostCallError::Fatal(err.to_string()))?;
-    append_index_line(
-        &syntheses_root().join("index.jsonl"),
-        synthesis.synthesis_ref.as_str(),
-        &path,
-    )
+    root.atomic_write(&path, &raw)
+        .map_err(|err| HostCallError::Fatal(err.to_string()))
 }
 
-fn append_index_line(index_path: &Path, ref_id: &str, output_path: &Path) -> Result<(), HostCallError> {
-    if let Some(parent) = index_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|err| HostCallError::Fatal(err.to_string()))?;
-    }
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(index_path)
+fn grapheme_ref_path(ref_id: &str) -> Result<StorePath, HostCallError> {
+    let ref_id = GraphemeRefId::parse(ref_id)
         .map_err(|err| HostCallError::Fatal(err.to_string()))?;
-    let line = json!({ "ref_id": ref_id, "output_path": output_path.to_string_lossy() });
-    writeln!(
-        file,
-        "{}",
-        serde_json::to_string(&line).map_err(|err| HostCallError::Fatal(err.to_string()))?
-    )
-    .map_err(|err| HostCallError::Fatal(err.to_string()))?;
-    Ok(())
+    StorePath::parse(&format!("{}.json", ref_id.storage_key().as_str()))
+        .map_err(|err| HostCallError::Fatal(err.to_string()))
 }
 
 fn load_digest_text(digest_ref: &str) -> Option<String> {
@@ -848,32 +834,23 @@ fn load_synthesis_outcome(synthesis_ref: &str) -> Option<String> {
 }
 
 fn load_ref_payload(root: &Path, ref_id: &str) -> Option<Value> {
-    let direct = root.join(format!("{}.json", ref_id.replace(':', "_")));
-    if let Ok(raw) = std::fs::read_to_string(&direct) {
-        return serde_json::from_str(&raw).ok();
+    let root = StoreRoot::open_nofollow(root).ok()?;
+    let direct = grapheme_ref_path(ref_id).ok()?;
+    if let Ok(raw) = root.read_limited(&direct, 4 * 1024 * 1024) {
+        return serde_json::from_slice(&raw).ok();
     }
-    let index_path = root.join("index.jsonl");
-    let Ok(file) = std::fs::File::open(index_path) else {
-        return None;
-    };
-    for line in std::io::BufReader::new(file).lines() {
-        let Ok(line) = line else {
-            continue;
-        };
-        let Ok(record) = serde_json::from_str::<Value>(&line) else {
-            continue;
-        };
-        if record.get("ref_id").and_then(Value::as_str) != Some(ref_id) {
-            continue;
-        }
-        let Some(path) = record.get("output_path").and_then(Value::as_str) else {
-            continue;
-        };
-        if let Ok(raw) = std::fs::read_to_string(path) {
-            return serde_json::from_str(&raw).ok();
-        }
-    }
-    None
+
+    // Compatibility is deliberately confined to a direct, valid filename.
+    // Historical index `output_path` values are metadata, never authority.
+    let legacy = StorePath::parse(&format!("{}.json", ref_id.replace(':', "_"))).ok()?;
+    let raw = root.read_limited(&legacy, 4 * 1024 * 1024).ok()?;
+    let value = serde_json::from_slice::<Value>(&raw).ok()?;
+    let owns_ref = value
+        .get("digest_ref")
+        .or_else(|| value.get("synthesis_ref"))
+        .and_then(Value::as_str)
+        == Some(ref_id);
+    owns_ref.then_some(value)
 }
 
 fn block_on<F: IntoFuture>(future: F) -> F::Output {

@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
-use std::path::{Component, Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::RwLock;
 
 use anyhow::{Context, Result, bail};
@@ -11,7 +11,10 @@ use chrono::Utc;
 use once_cell::sync::Lazy;
 use sha2::{Digest, Sha256};
 
+use medousa_types::authority_id::GraphemeScriptId;
+
 use crate::session;
+use crate::store_root::{StorePath, StoreRoot};
 
 use super::entry::{GraphemeScriptEntry, slugify_script_id};
 
@@ -61,6 +64,7 @@ pub fn with_temp_grapheme_scripts<T>(f: impl FnOnce() -> T) -> T {
         uuid::Uuid::new_v4().simple()
     ));
     fs::create_dir_all(base.join(SCRIPTS_DIR)).expect("temp grapheme scripts root");
+    let base = fs::canonicalize(base).expect("canonical temp grapheme scripts root");
     set_test_grapheme_script_root_override(Some(base.clone()));
     grapheme_script_store().reload_from_disk();
     let result = catch_unwind(AssertUnwindSafe(f));
@@ -106,8 +110,18 @@ impl GraphemeScriptStore {
         Self::root_dir().join(SCRIPTS_DIR)
     }
 
-    fn body_path_for(id: &str) -> PathBuf {
-        Self::scripts_dir().join(format!("{id}.grapheme"))
+    fn body_path_for(id: &GraphemeScriptId) -> Result<StorePath> {
+        Ok(StorePath::parse(&format!(
+            "{SCRIPTS_DIR}/{}.grapheme",
+            id.storage_key().as_str()
+        ))?)
+    }
+
+    fn legacy_body_path_for(id: &GraphemeScriptId) -> Result<StorePath> {
+        Ok(StorePath::parse(&format!(
+            "{SCRIPTS_DIR}/{}.grapheme",
+            id.as_str()
+        ))?)
     }
 
     pub fn reload_from_disk(&self) {
@@ -119,7 +133,9 @@ impl GraphemeScriptStore {
                 if trimmed.is_empty() {
                     continue;
                 }
-                if let Ok(entry) = serde_json::from_str::<GraphemeScriptEntry>(trimmed) {
+                if let Ok(entry) = serde_json::from_str::<GraphemeScriptEntry>(trimmed)
+                    && GraphemeScriptId::parse(&entry.id).is_ok()
+                {
                     map.insert(entry.id.clone(), entry);
                 }
             }
@@ -158,9 +174,17 @@ impl GraphemeScriptStore {
     }
 
     pub fn read_body(&self, entry: &GraphemeScriptEntry) -> Result<String> {
-        let path = Self::root_dir().join(&entry.body_path);
-        ensure_within_root(&Self::root_dir(), &path)?;
-        fs::read_to_string(&path).with_context(|| format!("read script body {}", path.display()))
+        let id = GraphemeScriptId::parse(&entry.id)?;
+        let root = StoreRoot::open_nofollow(&Self::root_dir())?;
+        let path = Self::body_path_for(&id)?;
+        let raw = match root.read_limited(&path, 4 * 1024 * 1024) {
+            Ok(raw) => raw,
+            Err(error) if error.is_not_found() => {
+                root.read_limited(&Self::legacy_body_path_for(&id)?, 4 * 1024 * 1024)?
+            }
+            Err(error) => return Err(error.into()),
+        };
+        String::from_utf8(raw).context("script body is not UTF-8")
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -192,11 +216,14 @@ impl GraphemeScriptStore {
             bail!("could not derive script id");
         }
 
-        fs::create_dir_all(Self::scripts_dir())?;
-        let absolute = Self::body_path_for(&id);
-        let body_path = format!("{SCRIPTS_DIR}/{id}.grapheme");
-        ensure_within_root(&Self::root_dir(), &absolute)?;
-        fs::write(&absolute, body)?;
+        let typed_id = GraphemeScriptId::parse(&id)?;
+        let root = StoreRoot::open_or_create_nofollow(&Self::root_dir())?;
+        let relative = Self::body_path_for(&typed_id)?;
+        root.atomic_write(&relative, body.as_bytes())?;
+        let body_path = format!(
+            "{SCRIPTS_DIR}/{}.grapheme",
+            typed_id.storage_key().as_str()
+        );
 
         let body_hash = content_hash(body);
         let now = Utc::now();
@@ -242,12 +269,10 @@ impl GraphemeScriptStore {
             .get(id)
             .ok_or_else(|| anyhow::anyhow!("grapheme script not found: {id}"))?;
 
-        let absolute = Self::root_dir().join(&entry.body_path);
-        if absolute.exists() {
-            ensure_within_root(&Self::root_dir(), &absolute)?;
-            fs::remove_file(&absolute)
-                .with_context(|| format!("delete script body {}", absolute.display()))?;
-        }
+        let typed_id = GraphemeScriptId::parse(&entry.id)?;
+        let root = StoreRoot::open_or_create_nofollow(&Self::root_dir())?;
+        root.remove_file(&Self::body_path_for(&typed_id)?)?;
+        root.remove_file(&Self::legacy_body_path_for(&typed_id)?)?;
 
         self.index
             .write()
@@ -293,109 +318,15 @@ pub fn content_hash(body: &str) -> String {
     format!("sha256:{digest:x}")
 }
 
-/// Containment check that works when the leaf file does not exist yet.
-/// Matches vault path handling so Windows `\\?\` / case / separator mismatches
-/// do not block first save.
-fn ensure_within_root(root: &Path, candidate: &Path) -> Result<()> {
-    for component in candidate.components() {
-        if matches!(component, Component::ParentDir) {
-            bail!("script path escapes library root");
-        }
-    }
-
-    let root_abs = absolutize_path_for_check(root);
-    let enclosed = candidate
-        .parent()
-        .map(absolutize_path_for_check)
-        .unwrap_or_else(|| absolutize_path_for_check(candidate));
-
-    if !path_starts_with(&enclosed, &root_abs) {
-        bail!("script path escapes library root");
-    }
-    Ok(())
-}
-
-fn absolutize_path_for_check(path: &Path) -> PathBuf {
-    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
-    strip_verbatim_prefix(absolute)
-}
-
-#[cfg(windows)]
-fn strip_verbatim_prefix(path: PathBuf) -> PathBuf {
-    let display = path.display().to_string();
-    if let Some(rest) = display.strip_prefix(r"\\?\") {
-        PathBuf::from(rest)
-    } else {
-        path
-    }
-}
-
-#[cfg(not(windows))]
-fn strip_verbatim_prefix(path: PathBuf) -> PathBuf {
-    path
-}
-
-fn path_starts_with(path: &Path, prefix: &Path) -> bool {
-    let mut path_components = path.components();
-    let mut prefix_components = prefix.components();
-
-    loop {
-        match (prefix_components.next(), path_components.next()) {
-            (None, _) => return true,
-            (Some(prefix_component), Some(path_component)) => {
-                if !path_component_eq(path_component, prefix_component) {
-                    return false;
-                }
-            }
-            (Some(_), None) => return false,
-        }
-    }
-}
-
-fn path_component_eq(left: Component<'_>, right: Component<'_>) -> bool {
-    match (left, right) {
-        (Component::Prefix(left), Component::Prefix(right)) => {
-            left.as_os_str().eq_ignore_ascii_case(right.as_os_str())
-        }
-        (Component::RootDir, Component::RootDir) => true,
-        (Component::CurDir, Component::CurDir) => true,
-        (Component::Normal(left), Component::Normal(right)) => left.eq_ignore_ascii_case(right),
-        (left, right) => left.as_os_str() == right.as_os_str(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn ensure_within_root_allows_new_script_body_before_file_exists() {
-        let base = std::env::temp_dir().join(format!(
-            "medousa-grapheme-path-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
-        let root = base.join("grapheme-scripts");
-        let scripts = root.join("scripts");
-        fs::create_dir_all(&scripts).expect("scripts dir");
-        let body = scripts.join("hello-world.grapheme");
-
-        ensure_within_root(&root, &body).expect("new script body should stay inside root");
-
-        let _ = fs::remove_dir_all(base);
-    }
-
-    #[test]
-    fn ensure_within_root_rejects_paths_outside_root() {
-        let base = std::env::temp_dir().join(format!(
-            "medousa-grapheme-path-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
-        let root = base.join("grapheme-scripts");
-        fs::create_dir_all(&root).expect("root");
-        let outside = base.join("outside.grapheme");
-
-        assert!(ensure_within_root(&root, &outside).is_err());
-
-        let _ = fs::remove_dir_all(base);
+    fn script_body_path_is_opaque() {
+        let id = GraphemeScriptId::parse("hello-world").unwrap();
+        let path = GraphemeScriptStore::body_path_for(&id).unwrap();
+        assert!(path.file_name().starts_with("gs1-"));
+        assert!(!path.file_name().contains("hello-world"));
     }
 }

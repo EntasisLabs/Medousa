@@ -28,6 +28,9 @@ use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
 use crate::paths::medousa_data_dir;
+use crate::store_root::{StorePath, StoreRoot};
+
+const MAX_DETAMU_BINDING_BYTES: u64 = 4 * 1024 * 1024;
 
 /// Pointers from a Forge work item to Detamu snapshots (sidecar — not on
 /// EvidenceManifest, which is digest-sensitive).
@@ -260,17 +263,29 @@ impl DetamuHost {
     }
 
     pub fn load_binding(&self, work_id: &str) -> Option<WorkDetamuBinding> {
-        let path = self.bindings_dir().join(format!("{work_id}.json"));
-        let raw = std::fs::read_to_string(path).ok()?;
-        serde_json::from_str(&raw).ok()
+        let work_id = medousa_forge::model::WorkId::parse_storage(work_id).ok()?;
+        let root = StoreRoot::open_or_create_nofollow(&self.bindings_dir()).ok()?;
+        let path = detamu_binding_path(&work_id);
+        let raw = match root.read_limited(&path, MAX_DETAMU_BINDING_BYTES) {
+            Ok(raw) => raw,
+            Err(error) if error.is_not_found() => {
+                let legacy = StorePath::parse(&format!("{}.json", work_id.as_str())).ok()?;
+                root.read_limited(&legacy, MAX_DETAMU_BINDING_BYTES).ok()?
+            }
+            Err(_) => return None,
+        };
+        let binding: WorkDetamuBinding = serde_json::from_slice(&raw).ok()?;
+        (binding.work_id == work_id.as_str()).then_some(binding)
     }
 
     fn save_binding(&self, binding: &WorkDetamuBinding) -> Result<(), String> {
-        let dir = self.bindings_dir();
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let path = dir.join(format!("{}.json", binding.work_id));
-        let raw = serde_json::to_string_pretty(binding).map_err(|e| e.to_string())?;
-        std::fs::write(path, raw).map_err(|e| e.to_string())
+        let work_id = medousa_forge::model::WorkId::parse_storage(&binding.work_id)
+            .map_err(|_| "invalid work_id".to_string())?;
+        let root = StoreRoot::open_or_create_nofollow(&self.bindings_dir())
+            .map_err(|error| error.to_string())?;
+        let raw = serde_json::to_vec_pretty(binding).map_err(|e| e.to_string())?;
+        root.atomic_write(&detamu_binding_path(&work_id), &raw)
+            .map_err(|error| error.to_string())
     }
 
     pub async fn find_files(
@@ -437,6 +452,11 @@ impl DetamuHost {
             "entity": entity.as_ref().map(entity_summary_json),
         }))
     }
+}
+
+fn detamu_binding_path(work_id: &medousa_forge::model::WorkId) -> StorePath {
+    StorePath::parse(&format!("{}.json", work_id.storage_key()))
+        .expect("opaque Forge work key is a valid Detamu binding path")
 }
 
 fn snapshot_json(snapshot: &SnapshotId) -> Value {

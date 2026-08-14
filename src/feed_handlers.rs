@@ -11,6 +11,7 @@ use medousa_types::feed::{
     FeedLatestGoodQuery, FeedLatestGoodResponse, FeedListResponse, FeedReadRequest,
     FeedStreamEvent, FeedStreamQuery, FeedTailQuery, FeedTailResponse,
 };
+use medousa_types::authority_id::{EnvironmentProfileId, FeedId};
 use std::convert::Infallible;
 use std::time::Duration;
 use tokio::sync::broadcast;
@@ -100,10 +101,14 @@ async fn tail_feed(
     Query(query): Query<FeedTailQuery>,
 ) -> Result<Json<FeedTailResponse>, (StatusCode, String)> {
     let profile_id = resolve_profile_id(query.profile_id.as_deref());
+    EnvironmentProfileId::parse(&profile_id)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    let feed_id = FeedId::parse(&feed_id)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
     let limit = query.limit.unwrap_or(20).clamp(1, 100);
-    let events = feed_store().tail(&profile_id, feed_id.trim(), limit).await;
+    let events = feed_store().tail(&profile_id, feed_id.as_str(), limit).await;
     Ok(Json(FeedTailResponse {
-        feed_id: feed_id.trim().to_string(),
+        feed_id: feed_id.to_string(),
         events,
     }))
 }
@@ -113,8 +118,11 @@ async fn latest_good_feed(
     Query(query): Query<FeedLatestGoodQuery>,
 ) -> Result<Json<FeedLatestGoodResponse>, (StatusCode, String)> {
     let profile_id = resolve_profile_id(query.profile_id.as_deref());
-    let feed_id = feed_id.trim();
-    let result = feed_store().latest_good(&profile_id, feed_id).await;
+    EnvironmentProfileId::parse(&profile_id)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    let feed_id = FeedId::parse(&feed_id)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    let result = feed_store().latest_good(&profile_id, feed_id.as_str()).await;
     match result {
         Some(response) => Ok(Json(response)),
         None => Err((StatusCode::NOT_FOUND, format!("no latest good result for feed '{feed_id}'"))),
@@ -126,9 +134,13 @@ async fn mark_feed_read(
     Json(body): Json<FeedReadRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     let profile_id = resolve_profile_id(body.profile_id.as_deref());
+    EnvironmentProfileId::parse(&profile_id)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    let feed_id = FeedId::parse(&feed_id)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
     let seq = body.seq.unwrap_or(0);
     feed_store()
-        .set_read_cursor(&profile_id, feed_id.trim(), seq)
+        .set_read_cursor(&profile_id, feed_id.as_str(), seq)
         .await;
     Ok(StatusCode::NO_CONTENT)
 }

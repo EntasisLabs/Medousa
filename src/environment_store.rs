@@ -6,12 +6,16 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use chrono::Utc;
+use medousa_types::authority_id::EnvironmentProfileId;
 use medousa_types::environment::{EnvironmentSpec, EnvironmentStreamEvent, EnvironmentPendingProposal};
 use medousa_types::environment_default::{default_environment_spec, DEFAULT_PROFILE_ID};
 use medousa_types::environment_validate::is_valid_environment_spec;
 use tokio::sync::{broadcast, RwLock as AsyncRwLock};
 
+use crate::store_root::{StorePath, StoreRoot};
+
 const STORE_DIR: &str = "environment";
+const MAX_ENVIRONMENT_SPEC_BYTES: u64 = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct EnvironmentRecord {
@@ -52,18 +56,40 @@ impl EnvironmentHub {
         crate::paths::medousa_data_dir().join(STORE_DIR)
     }
 
-    fn spec_path(profile_id: &str) -> PathBuf {
-        Self::store_root().join(format!("{profile_id}.json"))
+    fn store() -> Result<StoreRoot> {
+        StoreRoot::open_or_create_nofollow(&Self::store_root()).map_err(anyhow::Error::from)
+    }
+
+    fn spec_path(profile_id: &EnvironmentProfileId) -> StorePath {
+        StorePath::parse(&format!("{}.json", profile_id.storage_key().as_str()))
+            .expect("opaque environment profile key is a valid store path")
+    }
+
+    fn legacy_spec_path(profile_id: &EnvironmentProfileId) -> Option<StorePath> {
+        StorePath::parse(&format!("{}.json", profile_id.as_str())).ok()
     }
 
     pub async fn load_or_default(profile_id: &str) -> Result<EnvironmentRecord> {
-        let path = Self::spec_path(profile_id);
-        if path.exists() {
-            let raw = tokio::fs::read_to_string(&path)
-                .await
-                .with_context(|| format!("read environment spec {}", path.display()))?;
-            let spec: EnvironmentSpec = serde_json::from_str(&raw)
-                .with_context(|| format!("parse environment spec {}", path.display()))?;
+        let typed_profile = EnvironmentProfileId::parse(profile_id)?;
+        let store = Self::store()?;
+        let path = Self::spec_path(&typed_profile);
+        let raw = match store.read_limited(&path, MAX_ENVIRONMENT_SPEC_BYTES) {
+            Ok(raw) => Some(raw),
+            Err(error) if error.is_not_found() => {
+                let Some(legacy_path) = Self::legacy_spec_path(&typed_profile) else {
+                    return Self::persist_default(profile_id).await;
+                };
+                match store.read_limited(&legacy_path, MAX_ENVIRONMENT_SPEC_BYTES) {
+                    Ok(raw) => Some(raw),
+                    Err(error) if error.is_not_found() => None,
+                    Err(error) => return Err(error.into()),
+                }
+            }
+            Err(error) => return Err(error.into()),
+        };
+        if let Some(raw) = raw {
+            let spec: EnvironmentSpec = serde_json::from_slice(&raw)
+                .context("parse environment spec")?;
             if is_valid_environment_spec(&spec) {
                 return Ok(EnvironmentRecord {
                     revision: spec.updated_at.timestamp() as u64,
@@ -75,6 +101,10 @@ impl EnvironmentHub {
                 "invalid environment spec on disk; falling back to default"
             );
         }
+        Self::persist_default(profile_id).await
+    }
+
+    async fn persist_default(profile_id: &str) -> Result<EnvironmentRecord> {
         let spec = default_environment_spec(profile_id);
         let record = EnvironmentRecord {
             revision: 1,
@@ -85,13 +115,11 @@ impl EnvironmentHub {
     }
 
     async fn persist_record(profile_id: &str, record: &EnvironmentRecord) -> Result<()> {
-        let root = Self::store_root();
-        tokio::fs::create_dir_all(&root).await?;
-        let path = Self::spec_path(profile_id);
+        let profile_id = EnvironmentProfileId::parse(profile_id)?;
+        let store = Self::store()?;
+        let path = Self::spec_path(&profile_id);
         let json = serde_json::to_string_pretty(&record.spec)?;
-        tokio::fs::write(&path, json)
-            .await
-            .with_context(|| format!("write environment spec {}", path.display()))?;
+        store.atomic_write(&path, json.as_bytes())?;
         Ok(())
     }
 
@@ -187,8 +215,7 @@ pub fn resolve_profile_id(profile_id: Option<&str>) -> String {
 }
 
 pub fn ensure_store_dir() -> Result<()> {
-    let root = EnvironmentHub::store_root();
-    std::fs::create_dir_all(&root)?;
+    EnvironmentHub::store()?;
     Ok(())
 }
 
@@ -201,5 +228,15 @@ mod tests {
         assert_eq!(resolve_profile_id(None), DEFAULT_PROFILE_ID);
         assert_eq!(resolve_profile_id(Some("  ")), DEFAULT_PROFILE_ID);
         assert_eq!(resolve_profile_id(Some("work")), "work");
+    }
+
+    #[test]
+    fn environment_profile_paths_are_opaque_and_collision_free() {
+        let work = EnvironmentProfileId::parse("work").unwrap();
+        let worker = EnvironmentProfileId::parse("worker").unwrap();
+        let work_path = EnvironmentHub::spec_path(&work);
+        let worker_path = EnvironmentHub::spec_path(&worker);
+        assert_ne!(work_path, worker_path);
+        assert!(!work_path.file_name().contains("work"));
     }
 }
