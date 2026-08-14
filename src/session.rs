@@ -721,7 +721,10 @@ pub(crate) fn file_build_history_summaries_from_files(limit: usize) -> Vec<Sessi
 
 // Public API delegating to the configured session store.
 pub fn load_history(session_id: &str) -> Vec<ConversationTurn> {
-    crate::session_store::get_session_store().load_history(session_id)
+    let Ok(session_id) = crate::session_storage::SessionId::parse(session_id) else {
+        return Vec::new();
+    };
+    crate::session_store::get_session_store().load_history(&session_id)
 }
 
 pub fn append_turn(session_id: &str, turn: &ConversationTurn) {
@@ -733,8 +736,11 @@ pub fn append_turn_with_scratch(
     turn: &ConversationTurn,
     scratch: Option<&crate::agent_runtime::turn_context::TurnScratchpad>,
 ) {
+    let Ok(session_id) = crate::session_storage::SessionId::parse(session_id) else {
+        return;
+    };
     let enriched = crate::turn_slice::ensure_turn_slice_summary(turn, scratch);
-    crate::session_store::get_session_store().append_turn(session_id, &enriched);
+    crate::session_store::get_session_store().append_turn(&session_id, &enriched);
 }
 
 pub fn list_history_sessions(limit: usize) -> Vec<SessionHistorySummary> {

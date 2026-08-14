@@ -1,8 +1,10 @@
 use std::future::IntoFuture;
 use std::sync::{Arc, RwLock};
 
+use medousa_types::SessionId;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use stasis::prelude::RuntimeComposition;
 use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
 use surrealdb_types::SurrealValue;
@@ -11,7 +13,6 @@ use tokio::runtime::Handle;
 use crate::session::{ConversationTurn, SessionHistorySummary};
 use crate::turn_parts::TurnPart;
 use crate::turn_slice::TurnSliceSummary;
-use stasis::prelude::RuntimeComposition;
 
 const SESSION_TURN_TABLE: &str = "session_turn";
 
@@ -133,9 +134,9 @@ impl From<&ConversationTurn> for SessionTurnRecord {
 }
 
 pub trait SessionStore: Send + Sync + 'static {
-    fn load_history(&self, session_id: &str) -> Vec<ConversationTurn>;
-    fn append_turn(&self, session_id: &str, turn: &ConversationTurn);
-    fn delete_session(&self, session_id: &str);
+    fn load_history(&self, session_id: &SessionId) -> Vec<ConversationTurn>;
+    fn append_turn(&self, session_id: &SessionId, turn: &ConversationTurn);
+    fn delete_session(&self, session_id: &SessionId);
     fn list_history_sessions(&self, limit: usize) -> Vec<SessionHistorySummary>;
     fn build_backfill_summaries(&self, limit: usize) -> Vec<SessionHistorySummary>;
     fn has_persisted_sessions(&self) -> bool;
@@ -160,19 +161,19 @@ impl FileSessionStore {
 }
 
 impl SessionStore for FileSessionStore {
-    fn load_history(&self, session_id: &str) -> Vec<ConversationTurn> {
-        crate::session::file_load_history(session_id)
+    fn load_history(&self, session_id: &SessionId) -> Vec<ConversationTurn> {
+        crate::session::file_load_history(session_id.as_str())
     }
 
-    fn append_turn(&self, session_id: &str, turn: &ConversationTurn) {
-        crate::session::file_append_turn(session_id, turn);
-        crate::session_catalog::record_turn_appended(session_id, turn);
+    fn append_turn(&self, session_id: &SessionId, turn: &ConversationTurn) {
+        crate::session::file_append_turn(session_id.as_str(), turn);
+        crate::session_catalog::record_turn_appended_for_id(session_id, turn);
     }
 
-    fn delete_session(&self, session_id: &str) {
+    fn delete_session(&self, session_id: &SessionId) {
         let _ = crate::session_storage::remove_session_file(
             &crate::session::medousa_data_dir().join("history"),
-            session_id,
+            session_id.as_str(),
             "jsonl",
         );
     }
@@ -237,7 +238,7 @@ impl SurrealSessionStore {
 }
 
 impl SessionStore for SurrealSessionStore {
-    fn load_history(&self, session_id: &str) -> Vec<ConversationTurn> {
+    fn load_history(&self, session_id: &SessionId) -> Vec<ConversationTurn> {
         let sql = "SELECT session_id, role, content, timestamp, tool_names, answer_state, parts, \
                     slice_summary, speaker_profile_id \
                     FROM type::table($table) \
@@ -266,7 +267,7 @@ impl SessionStore for SurrealSessionStore {
         }
     }
 
-    fn append_turn(&self, session_id: &str, turn: &ConversationTurn) {
+    fn append_turn(&self, session_id: &SessionId, turn: &ConversationTurn) {
         let mut record = SessionTurnRecord::from(turn);
         record.session_id = session_id.to_string();
 
@@ -289,16 +290,16 @@ impl SessionStore for SurrealSessionStore {
             return;
         }
 
-        crate::session_catalog::record_turn_appended(session_id, turn);
+        crate::session_catalog::record_turn_appended_for_id(session_id, turn);
     }
 
-    fn delete_session(&self, session_id: &str) {
+    fn delete_session(&self, session_id: &SessionId) {
         let sql = "DELETE type::table($table) WHERE session_id = $session_id";
         let _ = block_on(
             self.db
                 .query(sql)
                 .bind(("table", SESSION_TURN_TABLE))
-                .bind(("session_id", session_id.trim().to_string())),
+                .bind(("session_id", session_id.to_string())),
         );
     }
 
@@ -459,6 +460,6 @@ pub fn has_persisted_sessions() -> bool {
     get_session_store().has_persisted_sessions()
 }
 
-pub fn delete_session_transcript(session_id: &str) {
-    get_session_store().delete_session(session_id.trim());
+pub fn delete_session_transcript(session_id: &SessionId) {
+    get_session_store().delete_session(session_id);
 }

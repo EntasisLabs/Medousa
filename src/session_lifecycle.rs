@@ -27,15 +27,16 @@ pub async fn delete_session(
     turn_tickets: &TurnTicketRegistry,
     purge_locus: bool,
 ) -> Result<SessionDeleteSummary, String> {
-    let session_id = crate::session_storage::validate_session_id(session_id)
+    let session_id = crate::session_storage::SessionId::parse(session_id)
         .map_err(|error| error.to_string())?;
+    let session_id_text = session_id.as_str();
 
     let mut cancelled_active_turn = false;
-    if crate::turn_ticket::get_active_interactive_turn(turn_tickets, session_id)
+    if crate::turn_ticket::get_active_interactive_turn(turn_tickets, session_id_text)
         .await
         .active
     {
-        crate::turn_ticket::cancel_interactive_for_session(turn_tickets, session_id).await;
+        crate::turn_ticket::cancel_interactive_for_session(turn_tickets, session_id_text).await;
         cancelled_active_turn = true;
     }
 
@@ -43,7 +44,7 @@ pub async fn delete_session(
     let mut locus_purged = false;
     if purge_locus
         && let Some(ops) = memory_operations {
-            let locus_session = resolve_workshop_locus_session(session_id);
+            let locus_session = resolve_workshop_locus_session(session_id_text);
             let tenant = derive_locus_tenant_id(&locus_session);
             let mut scope = MemoryScope {
                 session_ids: Some(vec![locus_session]),
@@ -70,49 +71,49 @@ pub async fn delete_session(
             locus_purged = true;
         }
 
-    crate::session_store::delete_session_transcript(session_id);
-    crate::session_catalog::delete_catalog_row(session_id);
-    crate::shared_session_catalog::delete_shared_row(session_id);
-    crate::session_meta_store::delete_session_meta(session_id);
-    crate::agent_mode_state::delete_session_mode_state(session_id);
+    crate::session_store::delete_session_transcript(&session_id);
+    crate::session_catalog::delete_catalog_row(&session_id);
+    crate::shared_session_catalog::delete_shared_row(session_id_text);
+    crate::session_meta_store::delete_session_meta(session_id_text);
+    crate::agent_mode_state::delete_session_mode_state(session_id_text);
 
     let mut failed_surfaces = Vec::new();
     record_surface_result(
         &mut failed_surfaces,
         "artifacts",
-        crate::artifact_store::delete_artifacts_for_session(session_id),
+        crate::artifact_store::delete_artifacts_for_session(session_id_text),
     );
     record_surface_result(
         &mut failed_surfaces,
         "media",
-        crate::media_store::delete_media_for_session(session_id),
+        crate::media_store::delete_media_for_session(session_id_text),
     );
     record_surface_result(
         &mut failed_surfaces,
         "extractions",
-        crate::artifact_extraction::delete_extractions_for_session(session_id),
+        crate::artifact_extraction::delete_extractions_for_session(session_id_text),
     );
     record_surface_result(
         &mut failed_surfaces,
         "verifications",
-        crate::verification_store::delete_verifications_for_session(session_id),
+        crate::verification_store::delete_verifications_for_session(session_id_text),
     );
     record_surface_result(
         &mut failed_surfaces,
         "context_packs",
-        crate::context_pack::delete_context_packs_for_session(session_id),
+        crate::context_pack::delete_context_packs_for_session(session_id_text),
     );
     record_surface_result(
         &mut failed_surfaces,
         "tool_surface",
-        crate::tool_bootstrap::delete_session_tool_surface(session_id),
+        crate::tool_bootstrap::delete_session_tool_surface(session_id_text),
     );
     record_surface_result(
         &mut failed_surfaces,
         "turn_ledger",
-        remove_turn_ledger_file(session_id),
+        remove_turn_ledger_file(session_id_text),
     );
-    crate::channel_session_store::purge_session_references(session_id);
+    crate::channel_session_store::purge_session_references(session_id_text);
 
     if !failed_surfaces.is_empty() {
         return Err(format!(

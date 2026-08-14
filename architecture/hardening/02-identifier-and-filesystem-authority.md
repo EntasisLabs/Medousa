@@ -53,7 +53,11 @@ H02.1 is in progress: `medousa-types` now owns the validated, non-public
 `SessionId` representation and validated serde boundary; the daemon mints
 `ses_` IDs with 128 bits of randomness; caller-selected creation IDs are denied;
 and Home obtains ordinary and shared-room IDs from `POST /v1/sessions` instead
-of minting filesystem-authoritative UUID strings locally.
+of minting filesystem-authoritative UUID strings locally. Transcript and catalog
+store traits now require `SessionId` for lookup, append, upsert, and deletion;
+compatibility string parsing is confined to their public adapters, and repair /
+backfill paths skip malformed legacy identifiers instead of treating them as
+store authority.
 
 ## Current evidence and blast radius
 
