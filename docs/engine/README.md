@@ -83,13 +83,11 @@ SDK: [../sdk/README.md](../sdk/README.md)
 - **Loopback by default** — keep the daemon on `127.0.0.1:7419` and use an
   authenticated private transport such as the paired Iroh path for remote
   clients.
-- **Current non-loopback warning** — non-loopback startup requires pairing and
-  remote application routes require a valid bearer in Personal and Shared mode.
-  The broader H01 capability, origin/host, bootstrap-window, local-credential,
-  and revocation work is not complete. Do not expose the daemon to the internet,
-  an untrusted LAN, guest Wi-Fi, or a shared development network. Remediation is
-  tracked in [the hardening program](../../architecture/hardening/README.md)
-  (H01/SEC-001).
+- **Authentication is mandatory** — protected routes require a named local-app
+  or paired bearer even on loopback. Loopback identifies the transport; it does
+  not identify the caller. Non-loopback startup additionally requires pairing.
+  Do not expose the daemon to the internet, an untrusted LAN, guest Wi-Fi, or a
+  shared development network.
 - **Policy profiles** — interactive vs scheduled lanes; OpenShell sandbox for skill scripts.
 - **Observability** — public constant `/health` liveness, protected `/v1/health`
   details, `/v1/stats`, Stasis dashboard mount, and `medousa doctor` (add

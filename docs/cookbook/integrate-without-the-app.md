@@ -24,6 +24,10 @@ medousa-cli daemon-ask "What changed in ops this week?" \
 
 Or `POST /v1/jobs/ask` + poll `/v1/jobs/{id}/result` from your service.
 
+Direct HTTP integrations must pair and send the issued bearer on every
+protected request, including requests to `127.0.0.1`. Do not copy one of
+Medousa's first-party local credentials into another process.
+
 **Corp angle:** Internal dashboard → your backend → Medousa Engine on VPC. Employees never see Medousa UI; they see *your* product powered by the same brain.
 
 ---
@@ -34,6 +38,7 @@ Build a custom chat UI:
 
 - `POST /v1/interactive/turn` with SSE
 - Same route the TUI and app use
+- `Authorization: Bearer <paired credential>` on start, stream, and reconnect
 - Session + identity headers per your policy
 
 Reference client: `medousa_tui`, `apps/medousa-home` frontend.
@@ -109,16 +114,17 @@ Embed **Locus memory** in your app: same user_id across your UI and Medousa Engi
 
 ## Pattern 8 — Pairing & edge devices
 
-QR protocol (`GET /qr`, `/pair/*`) for phones or kiosks talking to an
-edge-hosted engine. Prefer the authenticated Iroh transport for off-host
-clients.
+The QR protocol supports phones or kiosks talking to an edge-hosted engine.
+Invite generation (`GET /qr`, images, rotation, status, code, and ticket) is an
+authenticated owner operation. A joining client receives the complete signed
+`medousa://pair/…` invite out of band, then uses the bounded anonymous
+`POST /pair/init` and `POST /pair/verify` ceremony. Prefer authenticated Iroh
+transport for off-host clients.
 
-Do not run the current engine with `--public` on a factory-floor or other shared
-network. It exposes the complete daemon router without mandatory credentials on
-every personal-mode route. Until [hardening H01](../../architecture/hardening/README.md)
-ships, keep the engine on loopback and use Iroh, or place experimental LAN
-access behind a separately authenticated, tightly firewalled proxy on an
-isolated network.
+Do not expose port 7419 directly to the internet. A non-loopback bind enforces
+credentials, exact request hosts, and exact browser origins, but compact invites
+should still use a trusted, firewalled LAN. Use full Iroh invites for clients
+outside that network.
 
 ---
 

@@ -82,7 +82,7 @@ and performance budgets must prevent the same classes of defect from returning.
 
 | ID | Planned document | Scope | Primary findings | Depends on | State |
 | --- | --- | --- | --- | --- | --- |
-| H01 | [01-daemon-trust-and-auth.md](01-daemon-trust-and-auth.md) | Daemon trust zones, authentication, CORS, bootstrap and route exposure | SEC-001 | ADR-013 | Draft |
+| H01 | [01-daemon-trust-and-auth.md](01-daemon-trust-and-auth.md) | Daemon trust zones, authentication, CORS, bootstrap and route exposure | SEC-001 | ADR-013 | Implemented; release validation pending |
 | H02 | [02-identifier-and-filesystem-authority.md](02-identifier-and-filesystem-authority.md) | Validated IDs, path derivation, symlinks, deletion inventory | SEC-002, SEC-003, DATA-001 | ADR-014 | Draft |
 | H03 | [03-turn-stream-v2.md](03-turn-stream-v2.md) | Bounded single-writer stream, replay, journal, bridge, UI tail | PERF-001, DUR-001, MEM-002, TYPE-001, PERF-005 | ADR-015, H05 | Draft |
 | H04 | [04-persistence-and-crash-consistency.md](04-persistence-and-crash-consistency.md) | Feed/workspace/task storage ownership and commit policy | STORE-001, STORE-002, MEM-001 | ADR-016 | Draft |
@@ -102,7 +102,7 @@ duplicate ADR-010 history.
 
 | ADR | Decision | Related existing decision | State |
 | --- | --- | --- | --- |
-| [ADR-013](../../docs/architecture/decisions/adr-013-daemon-trust-zones-and-auth.md) | Daemon trust zones, mandatory authentication, CORS, and public exposure | Narrows ADR-003 and ADR-011 | Proposed |
+| [ADR-013](../../docs/architecture/decisions/adr-013-daemon-trust-zones-and-auth.md) | Daemon trust zones, mandatory authentication, CORS, and public exposure | Narrows ADR-003 and ADR-011 | Accepted |
 | [ADR-014](../../docs/architecture/decisions/adr-014-identifier-and-filesystem-authority.md) | Validated identifiers and handle-relative filesystem confinement | New | Proposed |
 | [ADR-015](../../docs/architecture/decisions/adr-015-bounded-durable-turn-pipeline.md) | Bounded single-writer durable turn pipeline | Supersedes ADR-004's per-event write tradeoff; preserves replay contract | Proposed |
 | [ADR-016](../../docs/architecture/decisions/adr-016-transactional-store-ownership.md) | Transactional store ownership and crash-consistency policy | Extends durable runtime decisions | Proposed |
@@ -119,7 +119,7 @@ current.
 
 | Record | Purpose | State |
 | --- | --- | --- |
-| [Security abuse matrix](verification/security-abuse-matrix.md) | Credentials, route exposure, CORS/CSRF, traversal, symlinks, and webview IPC abuse | Draft baseline contract |
+| [Security abuse matrix](verification/security-abuse-matrix.md) | Credentials, route exposure, CORS/CSRF, traversal, symlinks, and webview IPC abuse | Active; H01 automated coverage implemented |
 | [Crash/concurrency matrix](verification/crash-concurrency-matrix.md) | Kill points, concurrent mutations/turns, cancellation, replay, and deletion | Draft baseline contract |
 | [Performance budgets](verification/performance-budgets.md) | Reproducible datasets, machines, metrics, baselines, and regression budgets | Draft baseline contract |
 
@@ -132,7 +132,7 @@ one without retaining the history.
 
 | Finding | Severity | Primary owner | Gate | State | Closure evidence |
 | --- | --- | --- | --- | --- | --- |
-| SEC-001 | Critical | H01 | A | Proposed | Authentication/route abuse matrix |
+| SEC-001 | Critical | H01 | A | Mitigated; release validation pending | Authentication/route abuse matrix |
 | SEC-002 | Critical | H02 | A | Proposed | Cross-platform traversal/destructive-operation tests |
 | SEC-003 | High | H02 | A | Proposed | Symlink/junction race tests |
 | DESKTOP-001 | Critical | H08 | A | Proposed | Packaged remote-origin IPC denial/bridge tests |

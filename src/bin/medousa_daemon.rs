@@ -317,12 +317,22 @@ async fn main() -> Result<()> {
     let pairing_enabled = medousa::pairing::pairing_enabled_from_env();
     medousa::peer_scope::validate_listener_security(addr, pairing_enabled)
         .map_err(anyhow::Error::msg)?;
+    let local_credentials = Arc::new(
+        medousa_local_credential::provision_first_party(&medousa::paths::medousa_data_dir())
+            .context("failed to provision first-party local daemon credentials")?,
+    );
     let listener = tokio::net::TcpListener::bind(addr).await.with_context(|| {
         format!("failed to bind medousa daemon on {addr} — another daemon may already be running")
     })?;
     let bound_addr = listener
         .local_addr()
         .context("failed to read medousa daemon listener address")?;
+    let request_boundary = medousa::daemon::request_boundary::RequestBoundary::for_listener(
+        bound_addr,
+    )
+    .context("failed to configure daemon Host/Origin boundary")?
+    .install();
+    let credential_lifecycle = medousa::credential_lifecycle::CredentialLifecycle::default();
     tracing::info!(requested = %addr, bound = %bound_addr, "acquired bind address, initializing runtime");
     // In-process tool proxies dial the API over loopback; point them at the
     // port we actually bound rather than the compiled-in default.
@@ -567,12 +577,13 @@ async fn main() -> Result<()> {
             } else {
                 None
             };
-        let pairing_service = Arc::new(medousa::pairing::PairingService::new(
+        let pairing_service = Arc::new(medousa::pairing::PairingService::new_with_lifecycle(
             identity,
             medousa::pairing::resolve_advertise_address(bind),
             medousa::pairing::resolve_peer_name(),
             model.map(|value| value.to_string()),
             iroh_info,
+            credential_lifecycle.clone(),
         ));
         if medousa::pairing::mdns_should_advertise(bind) {
             let mut txt = std::collections::HashMap::new();
@@ -612,7 +623,6 @@ async fn main() -> Result<()> {
             device_id = %pairing_service.device_id(),
             "LAN pairing ready (GET /qr)"
         );
-        let warm_service = pairing_service.clone();
         medousa::home_push::register_home_push(Arc::new(medousa::home_push::HomePushService::new(
             pairing_service.clone(),
         )));
@@ -622,11 +632,6 @@ async fn main() -> Result<()> {
         medousa::home_widget_push::register_home_widget_push(Arc::new(
             medousa::home_widget_push::HomeWidgetPushService::new(pairing_service.clone()),
         ));
-        tokio::spawn(async move {
-            if let Err(err) = warm_service.current_qr().await {
-                tracing::warn!(error = %err, "pairing QR warm-up failed");
-            }
-        });
         share_api_state = medousa::share_handlers::ShareApiState {
             pairing: Some(pairing_service.clone()),
             local_device_id: pairing_service.device_id().to_string(),
@@ -643,7 +648,11 @@ async fn main() -> Result<()> {
         None
     };
 
-    let mut app = build_daemon_router(state.clone(), &dashboard_action_auth);
+    let mut app = build_daemon_router(
+        state.clone(),
+        &dashboard_action_auth,
+        request_boundary.clone(),
+    );
     let mut bootstrap = build_liveness_router();
     let mut declared = medousa::daemon::router::build_identity_surface()
         .merge(medousa::daemon::router::build_runtime_admin_surface())
@@ -664,6 +673,63 @@ async fn main() -> Result<()> {
             medousa::turn_budget_handlers::budget_surface()
                 .with_state(medousa::turn_budget_handlers::TurnBudgetHandlerState),
         )
+        .merge(medousa::calendar_handlers::calendar_surface().with_state(()))
+        .merge(medousa::manuscript_handlers::manuscript_surface().with_state(()))
+        .merge(medousa::locus_handlers::locus_surface().with_state(
+            medousa::locus_handlers::LocusApiState {
+                locus_store: state.platform.agent_handle().locus_store.clone(),
+                semantic_index: state.platform.agent_handle().semantic_index.clone(),
+                memory_reader: state.platform.agent_handle().memory_reader.clone(),
+            },
+        ))
+        .merge(
+            medousa::feed_handlers::feed_surface()
+                .with_state(medousa::feed_handlers::FeedApiState),
+        )
+        .merge(
+            medousa::component_store_handlers::component_store_surface()
+                .with_state(medousa::component_store_handlers::ComponentStoreApiState),
+        )
+        .merge(medousa::workflow_handlers::workflow_surface().with_state(
+            medousa::workflow_handlers::WorkflowApiState {
+                composition: std::sync::Arc::new(state.composition().clone()),
+            },
+        ))
+        .merge(medousa::tool_history_handlers::tool_history_surface().with_state(
+            medousa::workflow_handlers::WorkflowApiState {
+                composition: std::sync::Arc::new(state.composition().clone()),
+            },
+        ))
+        .merge(medousa::grapheme_handlers::grapheme_surface().with_state(
+            medousa::grapheme_handlers::GraphemeApiState {
+                composition: std::sync::Arc::new(state.composition().clone()),
+            },
+        ))
+        .merge(medousa::local_inference_handlers::surface().with_state(()))
+        .merge(medousa::model_capability_registry::handlers::surface().with_state(()))
+        .merge(medousa::stt_handlers::surface().with_state(()))
+        .merge(medousa::lan_handlers::lan_surface().with_state(()))
+        .merge(
+            medousa::component_runtime_handlers::component_runtime_surface().with_state(
+                medousa::component_runtime_handlers::ComponentRuntimeApiState,
+            ),
+        )
+        .merge(medousa::daemon::coding_engine_host::coding_engine_surface())
+        .merge(medousa::daemon::shell_session_host::shell_session_surface())
+        .merge(medousa::daemon::detamu_host::world_surface())
+        .merge(medousa::daemon::forge_api::forge_surface())
+        .with_state(state.clone());
+    declared = declared.merge(
+        medousa::local_credential_handlers::surface().with_state(
+            medousa::local_credential_handlers::LocalCredentialApiState {
+                data_dir: medousa::paths::medousa_data_dir(),
+                credentials: local_credentials.clone(),
+                lifecycle: credential_lifecycle.clone(),
+                operation_lock: Arc::new(tokio::sync::Mutex::new(())),
+            },
+        ),
+    );
+    let preview = medousa::daemon::forge_preview::forge_preview_surface()
         .with_state(state.clone());
     if let Some((pairing_bootstrap, pairing_protected)) = pairing_routers {
         bootstrap = bootstrap.merge(pairing_bootstrap);
@@ -676,6 +742,8 @@ async fn main() -> Result<()> {
     };
     let daemon_access_state =
         medousa::peer_scope::DaemonAccessState::new(peer_message_state.pairing.clone())
+            .with_local_credentials(local_credentials)
+            .with_credential_lifecycle(credential_lifecycle)
             .with_mcp_policy_token(medousa::mcp_gateway::resolve_mcp_policy_token());
     let mesh_api_state = medousa::mesh::MeshApiState {
         pairing: peer_message_state.pairing.clone(),
@@ -720,6 +788,7 @@ async fn main() -> Result<()> {
     app = medousa::peer_scope::assemble_daemon_access_boundary_with_declared(
         app,
         declared,
+        preview,
         bootstrap,
         daemon_access_state,
     );
@@ -842,9 +911,14 @@ async fn main() -> Result<()> {
     // daemon sheds load instead of being FD-exhausted under a request/reconnect
     // storm. The semaphore is shared across all cloned per-connection services.
     let max_concurrency = resolve_max_concurrency();
-    let app = app.layer(tower::limit::GlobalConcurrencyLimitLayer::new(
-        max_concurrency,
-    ));
+    let app = app
+        .layer(tower::limit::GlobalConcurrencyLimitLayer::new(
+            max_concurrency,
+        ))
+        .layer(axum::middleware::from_fn_with_state(
+            request_boundary,
+            medousa::daemon::request_boundary::enforce_host,
+        ));
     tracing::info!(max_concurrency, "max in-flight request concurrency");
 
     axum::serve(

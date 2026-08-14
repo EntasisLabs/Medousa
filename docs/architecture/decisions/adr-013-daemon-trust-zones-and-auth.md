@@ -1,6 +1,6 @@
 # ADR-013: Daemon trust zones and mandatory authentication
 
-> **Status:** Proposed
+> **Status:** Accepted
 >
 > **Date:** 2026-08-13
 >
@@ -15,7 +15,7 @@ assembled Axum router can start turns, read and mutate vault data, manage
 packages and models, approve operations, control runtime state, and reach
 process- and filesystem-adjacent features.
 
-The current boundary does not match that authority:
+Before this decision was implemented, the boundary did not match that authority:
 
 - Personal mode permits unauthenticated non-loopback requests to almost the
   entire router.
@@ -90,10 +90,10 @@ Credentials are individually revocable and rotatable. File permissions are a
 defense in depth and enrollment mechanism, not the request authentication
 decision itself.
 
-Raw loopback trust is a migration-only compatibility state. It is permitted
-only on a loopback-bound daemon, emits a bounded warning/metric, grants no
-remote or Iroh authority, and is removed after first-party native clients have
-migrated. No permanent `--no-auth` production mode is introduced.
+Raw loopback trust was permitted only as a bounded migration state while
+first-party clients adopted named credentials. That compatibility path is now
+deleted: protected loopback requests without a credential receive `401`, and no
+permanent `--no-auth` production mode exists.
 
 ### 4. Routes declare policy where they are assembled
 
@@ -193,8 +193,8 @@ confirming whether a specific secret or identity exists.
 
 - Home, CLI, TUI, SDK transports, SSE, multipart, and raw-upload paths must all
   learn the local or paired credential contract.
-- Existing loopback clients need a bounded compatibility release before raw
-  loopback trust is removed.
+- Legacy loopback clients must migrate to a named local-app or paired credential;
+  credentialless protected requests now fail with `401`.
 - Route composition changes are broad and require an assembled-router inventory
   test, not only policy-helper unit tests.
 - Credential rotation and live-stream revocation add state and operational work.
@@ -223,11 +223,14 @@ non-loopback socket, plus browser-driven origin tests.
 ## Code anchors
 
 - `src/bin/medousa_daemon.rs` — listener and final router assembly
-- `src/daemon/router.rs` — application router and current permissive CORS
+- `src/daemon/router.rs`, `src/daemon/request_boundary.rs` — application router,
+  exact browser-origin policy, and socket-edge Host validation
 - `src/peer_scope.rs`, `src/portal_acl.rs` — current conditional middleware and
   handwritten route classification
 - `src/remote_trust.rs`, `src/iroh_transport/gateway.rs` — transport metadata
 - `src/pairing/service.rs`, `src/pairing_handlers.rs` — credential and ceremony
+- `src/credential_lifecycle.rs`, `src/local_credential_handlers.rs` —
+  generation revocation, stream leases, audit evidence, and local operations
 - `apps/medousa-home/src-tauri/src/daemon/` — Home daemon client
 - `apps/medousa-home/src-tauri/src/workshop_transport.rs` — LAN/Iroh auth
 - `crates/medousa-sdk/`, `crates/medousa-sdk-iroh/` — shared transports

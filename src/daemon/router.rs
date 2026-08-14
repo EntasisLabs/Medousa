@@ -5,7 +5,7 @@ use axum::Router;
 use axum::http::header::CONTENT_TYPE;
 use axum::response::IntoResponse;
 use stasis::dashboard::{DashboardState, RuntimeDashboardQueryService, router as dashboard_router};
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
 use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RouteInventory, RoutePolicy,
@@ -73,6 +73,9 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::daemon::runtime_tui_defaults::surface().inventory())
         .expect("duplicate runtime defaults route policy");
     inventory
+        .extend(crate::local_credential_handlers::surface().inventory())
+        .expect("duplicate local credential route policy");
+    inventory
         .extend(crate::inference_profiles_handlers::surface().inventory())
         .expect("duplicate inference profiles route policy");
     inventory
@@ -111,6 +114,60 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
     inventory
         .extend(crate::turn_budget_handlers::budget_surface().inventory())
         .expect("duplicate turn budget route policy");
+    inventory
+        .extend(crate::calendar_handlers::calendar_surface().inventory())
+        .expect("duplicate calendar route policy");
+    inventory
+        .extend(crate::manuscript_handlers::manuscript_surface().inventory())
+        .expect("duplicate manuscript route policy");
+    inventory
+        .extend(crate::locus_handlers::locus_surface().inventory())
+        .expect("duplicate locus route policy");
+    inventory
+        .extend(crate::feed_handlers::feed_surface().inventory())
+        .expect("duplicate feed route policy");
+    inventory
+        .extend(crate::component_store_handlers::component_store_surface().inventory())
+        .expect("duplicate component store route policy");
+    inventory
+        .extend(crate::workflow_handlers::workflow_surface().inventory())
+        .expect("duplicate workflow route policy");
+    inventory
+        .extend(crate::tool_history_handlers::tool_history_surface().inventory())
+        .expect("duplicate tool history route policy");
+    inventory
+        .extend(crate::grapheme_handlers::grapheme_surface().inventory())
+        .expect("duplicate Grapheme route policy");
+    inventory
+        .extend(crate::local_inference_handlers::surface().inventory())
+        .expect("duplicate local inference route policy");
+    inventory
+        .extend(crate::model_capability_registry::handlers::surface().inventory())
+        .expect("duplicate model catalog route policy");
+    inventory
+        .extend(crate::stt_handlers::surface().inventory())
+        .expect("duplicate STT route policy");
+    inventory
+        .extend(crate::lan_handlers::lan_surface().inventory())
+        .expect("duplicate LAN discovery route policy");
+    inventory
+        .extend(crate::component_runtime_handlers::component_runtime_surface().inventory())
+        .expect("duplicate component runtime route policy");
+    inventory
+        .extend(crate::daemon::coding_engine_host::coding_engine_surface().inventory())
+        .expect("duplicate coding engine route policy");
+    inventory
+        .extend(crate::daemon::shell_session_host::shell_session_surface().inventory())
+        .expect("duplicate shell session route policy");
+    inventory
+        .extend(crate::daemon::detamu_host::world_surface().inventory())
+        .expect("duplicate world model route policy");
+    inventory
+        .extend(crate::daemon::forge_api::forge_surface().inventory())
+        .expect("duplicate Forge route policy");
+    inventory
+        .extend(crate::daemon::forge_preview::forge_preview_surface().inventory())
+        .expect("duplicate Forge preview route policy");
     inventory
 }
 
@@ -462,44 +519,13 @@ pub fn apply_dashboard_action_auth(
     state
 }
 
-/// Catalog, capability, grapheme, workflow, vault, workspace, budget, and dashboard routers.
-pub fn build_feature_routers(
+/// Transitional compatibility boundary for the dependency-owned Stasis
+/// dashboard. New Medousa routes must use `DeclaredRouter`; this remains raw
+/// only until Stasis exports method/path descriptors with its router.
+pub fn build_dashboard_compatibility_router(
     state: &AppState,
     dashboard_action_auth: &DashboardActionAuthConfig,
 ) -> Router {
-    let catalog_router = crate::manuscript_handlers::manuscript_router();
-
-    let grapheme_router =
-        crate::grapheme_handlers::grapheme_router(crate::grapheme_handlers::GraphemeApiState {
-            composition: Arc::new(state.composition().clone()),
-        });
-
-    let workflow_state = crate::workflow_handlers::WorkflowApiState {
-        composition: Arc::new(state.composition().clone()),
-    };
-    let workflow_router = crate::workflow_handlers::workflow_router(workflow_state.clone());
-    let tool_history_router = crate::tool_history_handlers::tool_history_router(workflow_state);
-
-    let calendar_router = Router::new()
-        .route(
-            "/v1/calendar/events",
-            axum::routing::get(crate::calendar_handlers::list_calendar_events)
-                .post(crate::calendar_handlers::create_calendar_event),
-        )
-        .route(
-            "/v1/calendar/events/{uid}",
-            axum::routing::put(crate::calendar_handlers::update_calendar_event)
-                .delete(crate::calendar_handlers::delete_calendar_event),
-        )
-        .route(
-            "/v1/calendar/import",
-            axum::routing::post(crate::calendar_handlers::import_calendar),
-        )
-        .route(
-            "/v1/calendar/export",
-            axum::routing::get(crate::calendar_handlers::export_calendar),
-        );
-
     let dashboard_service = Arc::new(RuntimeDashboardQueryService::from_runtime_composition(
         state.composition().clone(),
     ));
@@ -507,37 +533,7 @@ pub fn build_feature_routers(
         DashboardState::new(dashboard_service),
         dashboard_action_auth,
     );
-    let dashboard = dashboard_router(dashboard_state);
-
-    catalog_router
-        .merge(grapheme_router)
-        .merge(workflow_router)
-        .merge(tool_history_router)
-        .merge(calendar_router)
-        .merge(crate::locus_handlers::locus_router(
-            state.platform.agent_handle().locus_store.clone(),
-            state.platform.agent_handle().semantic_index.clone(),
-            state.platform.agent_handle().memory_reader.clone(),
-        ))
-        .merge(crate::daemon::forge_api::forge_router(state.clone()))
-        .merge(crate::daemon::forge_preview::forge_preview_router(
-            state.clone(),
-        ))
-        .merge(crate::daemon::coding_engine_host::coding_engine_router(
-            state.clone(),
-        ))
-        .merge(crate::daemon::shell_session_host::shell_session_router(
-            state.clone(),
-        ))
-        .merge(crate::daemon::detamu_host::world_router(state.clone()))
-        .merge(crate::feed_handlers::feed_router())
-        .merge(crate::component_store_handlers::component_store_router())
-        .merge(crate::component_runtime_handlers::component_runtime_router())
-        .merge(crate::local_inference_handlers::routes())
-        .merge(crate::model_capability_registry::handlers::routes())
-        .merge(crate::stt_handlers::routes())
-        .merge(crate::lan_handlers::lan_router())
-        .merge(dashboard)
+    dashboard_router(dashboard_state)
 }
 
 fn parse_arg_or_env(args: &[String], arg_key: &str, env_key: &str) -> Option<String> {
@@ -1111,22 +1107,42 @@ fn service_policy(
     }
 }
 
-/// Core daemon API routes (health, jobs, sessions, interactive, identity, ingest, continuations).
-pub fn build_core_router(state: AppState) -> Router {
+/// Transitional H08 boundary for the browser bridge and its legacy aliases.
+/// New daemon routes must not be added here.
+pub fn build_browser_compatibility_router(state: AppState) -> Router {
     crate::browser_handlers::browser_router().with_state(state)
 }
 
-/// Full daemon HTTP surface: core routes plus feature routers (catalog, vault, dashboard, …).
+/// Remaining compatibility surface. Policy-owned application and preview
+/// routes are assembled separately at the final socket boundary.
 pub fn build_daemon_router(
     state: AppState,
     dashboard_action_auth: &DashboardActionAuthConfig,
+    request_boundary: Arc<crate::daemon::request_boundary::RequestBoundary>,
 ) -> Router {
-    build_core_router(state.clone())
-        .merge(build_feature_routers(&state, dashboard_action_auth))
-        // Home runs at localhost:1420 in development and consumes Forge/SSE
-        // directly from the daemon. Keep the local daemon surface consistent
-        // with the standalone code/session hosts.
-        .layer(CorsLayer::permissive())
+    let allowed_origins = request_boundary.allowed_origin_values();
+    build_browser_compatibility_router(state.clone())
+        .merge(build_dashboard_compatibility_router(
+            &state,
+            dashboard_action_auth,
+        ))
+        .layer(axum::middleware::from_fn_with_state(
+            request_boundary,
+            crate::daemon::request_boundary::enforce_compatibility_origin,
+        ))
+        .layer(
+            CorsLayer::new()
+                .allow_origin(AllowOrigin::list(allowed_origins))
+                .allow_methods([
+                    axum::http::Method::GET,
+                    axum::http::Method::POST,
+                    axum::http::Method::OPTIONS,
+                ])
+                .allow_headers([
+                    axum::http::header::AUTHORIZATION,
+                    axum::http::header::CONTENT_TYPE,
+                ]),
+        )
 }
 
 #[cfg(test)]
@@ -1140,6 +1156,7 @@ mod tests {
         build_declared_route_inventory, build_identity_surface, build_liveness_router,
         build_liveness_surface, build_runtime_admin_surface, build_workshop_surface,
     };
+    use crate::daemon::route_policy::AuthorizationClass;
 
     #[tokio::test]
     async fn public_liveness_is_constant_and_contains_no_runtime_detail() {
@@ -1201,17 +1218,22 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 176);
-        assert_eq!(with_pairing.entries().len(), 188);
+        assert_eq!(without_pairing.entries().len(), 361);
+        assert_eq!(with_pairing.entries().len(), 373);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 188);
+        assert_eq!(rows.len(), 373);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"
                 && row["path"] == "/v1/mesh/outbox"
                 && row["required_capability"] == "peer.exchange"
+        }));
+        assert!(rows.iter().any(|row| {
+            row["method"] == "POST"
+                && row["path"] == "/v1/admin/local-credentials/{name}/rotate"
+                && row["required_capability"] == "admin.identity"
         }));
         assert!(rows.iter().any(|row| {
             row["method"] == "GET"
@@ -1365,6 +1387,266 @@ mod tests {
                 .filter(|entry| entry.required_capability == Some("admin.execute"))
                 .count(),
             2
+        );
+    }
+
+    #[test]
+    fn calendar_inventory_separates_content_reads_and_writes() {
+        let entries = crate::calendar_handlers::calendar_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 6);
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("content.read"))
+                .count(),
+            2
+        );
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("content.write"))
+                .count(),
+            4
+        );
+        assert!(entries.iter().all(|entry| {
+            entry.group == RouteGroup::Portal
+                && entry.browser_policy == super::BrowserPolicy::NativeOnly
+        }));
+    }
+
+    #[test]
+    fn content_feature_inventory_is_complete_and_native_only() {
+        let manuscripts = crate::manuscript_handlers::manuscript_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let locus = crate::locus_handlers::locus_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let feeds = crate::feed_handlers::feed_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let component_store = crate::component_store_handlers::component_store_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let entries = manuscripts
+            .iter()
+            .chain(&locus)
+            .chain(&feeds)
+            .chain(&component_store)
+            .collect::<Vec<_>>();
+
+        assert_eq!(entries.len(), 19);
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("content.read"))
+                .count(),
+            12
+        );
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("content.write"))
+                .count(),
+            7
+        );
+        assert!(entries.iter().all(|entry| {
+            entry.group == RouteGroup::Portal
+                && entry.browser_policy == super::BrowserPolicy::NativeOnly
+        }));
+        assert!(entries.iter().any(|entry| {
+            entry.path == "/v1/feeds/stream" && entry.rate_limit_class == RateLimitClass::Stream
+        }));
+    }
+
+    #[test]
+    fn workflow_and_grapheme_inventory_separates_execution_from_authoring() {
+        let workflows = crate::workflow_handlers::workflow_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let history = crate::tool_history_handlers::tool_history_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let grapheme = crate::grapheme_handlers::grapheme_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let entries = workflows
+            .iter()
+            .chain(&history)
+            .chain(&grapheme)
+            .collect::<Vec<_>>();
+
+        assert_eq!(entries.len(), 24);
+        for (capability, count) in [
+            ("workshop.read", 9),
+            ("workshop.interact", 1),
+            ("content.read", 2),
+            ("content.write", 3),
+            ("admin.runtime", 3),
+            ("admin.execute", 6),
+        ] {
+            assert_eq!(
+                entries
+                    .iter()
+                    .filter(|entry| entry.required_capability == Some(capability))
+                    .count(),
+                count,
+                "unexpected route count for {capability}",
+            );
+        }
+        assert!(entries.iter().any(|entry| {
+            entry.path == "/v1/grapheme/lsp" && entry.rate_limit_class == RateLimitClass::Stream
+        }));
+    }
+
+    #[test]
+    fn runtime_support_inventory_uses_narrow_authority_classes() {
+        let local = crate::local_inference_handlers::surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let models = crate::model_capability_registry::handlers::surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let stt = crate::stt_handlers::surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let lan = crate::lan_handlers::lan_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let components = crate::component_runtime_handlers::component_runtime_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let entries = local
+            .iter()
+            .chain(&models)
+            .chain(&stt)
+            .chain(&lan)
+            .chain(&components)
+            .collect::<Vec<_>>();
+
+        assert_eq!(entries.len(), 17);
+        for (capability, count) in [
+            ("admin.runtime", 11),
+            ("admin.identity", 1),
+            ("workshop.read", 1),
+            ("workshop.interact", 1),
+            ("content.read", 1),
+            ("content.write", 2),
+        ] {
+            assert_eq!(
+                entries
+                    .iter()
+                    .filter(|entry| entry.required_capability == Some(capability))
+                    .count(),
+                count,
+                "unexpected route count for {capability}",
+            );
+        }
+    }
+
+    #[test]
+    fn native_execution_hosts_require_execute_authority() {
+        let coding = crate::daemon::coding_engine_host::coding_engine_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let shell = crate::daemon::shell_session_host::shell_session_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let world = crate::daemon::detamu_host::world_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let entries = coding
+            .iter()
+            .chain(&shell)
+            .chain(&world)
+            .collect::<Vec<_>>();
+
+        assert_eq!(entries.len(), 28);
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("admin.execute"))
+                .count(),
+            20
+        );
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("workshop.read"))
+                .count(),
+            8
+        );
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.rate_limit_class == RateLimitClass::Stream)
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn forge_inventory_is_execute_only_and_preserves_large_edit_bound() {
+        let entries = crate::daemon::forge_api::forge_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 74);
+        assert!(entries.iter().all(|entry| {
+            entry.group == RouteGroup::Administration
+                && entry.required_capability == Some("admin.execute")
+                && entry.browser_policy == super::BrowserPolicy::NativeOnly
+        }));
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.rate_limit_class == RateLimitClass::Stream)
+                .count(),
+            3
+        );
+        let workspace_edit = entries
+            .iter()
+            .find(|entry| entry.path.ends_with("/source/workspace-edit"))
+            .expect("workspace edit policy");
+        assert_eq!(workspace_edit.body_limit, 64 * 1024 * 1024);
+    }
+
+    #[test]
+    fn preview_inventory_is_token_owned_and_excludes_tunnel_methods() {
+        let entries = crate::daemon::forge_preview::forge_preview_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 14);
+        assert!(entries.iter().all(|entry| {
+            entry.group == RouteGroup::Preview
+                && entry.required_capability.is_none()
+                && entry.authorization == AuthorizationClass::PreviewToken
+                && entry.browser_policy == super::BrowserPolicy::ExactOrigin
+                && entry.body_limit == 2 * 1024 * 1024
+        }));
+        assert!(
+            !entries
+                .iter()
+                .any(|entry| matches!(entry.method.as_str(), "CONNECT" | "TRACE"))
         );
     }
 }

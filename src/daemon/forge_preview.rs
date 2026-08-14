@@ -10,12 +10,15 @@ use std::time::{Duration, Instant};
 use axum::body::Body;
 use axum::extract::{Path, Request, State};
 use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
+use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use axum::routing::any;
-use axum::Router;
+use axum::routing::{delete, get, head, options, patch, post, put};
 use futures_util::StreamExt;
 use tokio::sync::RwLock;
 
+use super::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
 use super::state::AppState;
 
 const PREVIEW_TTL: Duration = Duration::from_secs(2 * 60 * 60);
@@ -121,11 +124,67 @@ pub fn preview_path_for_token(token: &str) -> String {
     format!("/v1/forge/preview/{token}/")
 }
 
-pub fn forge_preview_router(state: AppState) -> Router {
-    Router::new()
-        .route("/v1/forge/preview/{token}", any(preview_proxy_root))
-        .route("/v1/forge/preview/{token}/{*rest}", any(preview_proxy))
-        .with_state(state)
+pub fn forge_preview_surface() -> DeclaredRouter<AppState> {
+    preview_methods("/v1/forge/preview/{token}", true).merge(preview_methods(
+        "/v1/forge/preview/{token}/{*rest}",
+        false,
+    ))
+}
+
+fn preview_methods(path: &'static str, root: bool) -> DeclaredRouter<AppState> {
+    if root {
+        DeclaredRouter::default().methods([
+            (preview_policy(axum::http::Method::GET, path), get(preview_proxy_root)),
+            (preview_policy(axum::http::Method::HEAD, path), head(preview_proxy_root)),
+            (preview_policy(axum::http::Method::OPTIONS, path), options(preview_proxy_root)),
+            (preview_policy(axum::http::Method::POST, path), post(preview_proxy_root)),
+            (preview_policy(axum::http::Method::PUT, path), put(preview_proxy_root)),
+            (preview_policy(axum::http::Method::PATCH, path), patch(preview_proxy_root)),
+            (preview_policy(axum::http::Method::DELETE, path), delete(preview_proxy_root)),
+        ])
+    } else {
+        DeclaredRouter::default().methods([
+            (preview_policy(axum::http::Method::GET, path), get(preview_proxy)),
+            (preview_policy(axum::http::Method::HEAD, path), head(preview_proxy)),
+            (preview_policy(axum::http::Method::OPTIONS, path), options(preview_proxy)),
+            (preview_policy(axum::http::Method::POST, path), post(preview_proxy)),
+            (preview_policy(axum::http::Method::PUT, path), put(preview_proxy)),
+            (preview_policy(axum::http::Method::PATCH, path), patch(preview_proxy)),
+            (preview_policy(axum::http::Method::DELETE, path), delete(preview_proxy)),
+        ])
+    }
+}
+
+fn preview_policy(method: axum::http::Method, path: &'static str) -> RoutePolicy {
+    let rate_limit_class = if matches!(method, axum::http::Method::GET | axum::http::Method::HEAD) {
+        RateLimitClass::Read
+    } else {
+        RateLimitClass::Mutation
+    };
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Preview,
+        required_capability: None,
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::ExactOrigin,
+        body_limit: 2 * 1024 * 1024,
+        rate_limit_class,
+    }
+}
+
+pub(crate) async fn enforce_preview_grant(
+    request: axum::http::Request<Body>,
+    next: Next,
+) -> Response {
+    let Some(token) = preview_token_from_path(request.uri().path()) else {
+        return preview_not_found();
+    };
+    match resolve_preview_grant(token).await {
+        Ok(_) => next.run(request).await,
+        Err(PreviewGrantError::Missing) => preview_not_found(),
+        Err(PreviewGrantError::Expired) => preview_expired(),
+    }
 }
 
 async fn preview_proxy_root(
@@ -145,17 +204,11 @@ async fn preview_proxy(
 }
 
 async fn proxy_preview(_state: AppState, token: String, rest: String, req: Request) -> Response {
-    let grant = {
-        let grants = PREVIEW_GRANTS.read().await;
-        grants.get(&token).cloned()
+    let grant = match resolve_preview_grant(&token).await {
+        Ok(grant) => grant,
+        Err(PreviewGrantError::Missing) => return preview_not_found(),
+        Err(PreviewGrantError::Expired) => return preview_expired(),
     };
-    let Some(grant) = grant else {
-        return (StatusCode::NOT_FOUND, "Preview link expired or was not found").into_response();
-    };
-    if grant.expires <= Instant::now() {
-        PREVIEW_GRANTS.write().await.remove(&token);
-        return (StatusCode::GONE, "Preview link expired").into_response();
-    }
 
     let path = if rest.is_empty() {
         "/".to_owned()
@@ -239,6 +292,39 @@ async fn proxy_preview(_state: AppState, token: String, rest: String, req: Reque
         .unwrap_or_else(|_| StatusCode::BAD_GATEWAY.into_response())
 }
 
+#[derive(Clone, Copy)]
+enum PreviewGrantError {
+    Missing,
+    Expired,
+}
+
+async fn resolve_preview_grant(token: &str) -> Result<PreviewGrant, PreviewGrantError> {
+    let grant = PREVIEW_GRANTS.read().await.get(token).cloned();
+    let Some(grant) = grant else {
+        return Err(PreviewGrantError::Missing);
+    };
+    if grant.expires <= Instant::now() {
+        PREVIEW_GRANTS.write().await.remove(token);
+        return Err(PreviewGrantError::Expired);
+    }
+    Ok(grant)
+}
+
+fn preview_token_from_path(path: &str) -> Option<&str> {
+    path.strip_prefix("/v1/forge/preview/")?
+        .split('/')
+        .next()
+        .filter(|token| !token.is_empty())
+}
+
+fn preview_not_found() -> Response {
+    (StatusCode::NOT_FOUND, "Preview link expired or was not found").into_response()
+}
+
+fn preview_expired() -> Response {
+    (StatusCode::GONE, "Preview link expired").into_response()
+}
+
 fn filter_request_headers(headers: &HeaderMap, port: u16) -> HeaderMap {
     let mut out = HeaderMap::new();
     for (name, value) in headers.iter() {
@@ -246,6 +332,7 @@ fn filter_request_headers(headers: &HeaderMap, port: u16) -> HeaderMap {
         if matches!(
             key,
             "host"
+                | "authorization"
                 | "connection"
                 | "keep-alive"
                 | "proxy-authenticate"
@@ -297,5 +384,24 @@ mod tests {
     #[test]
     fn port_from_ready_url_reads_authority() {
         assert_eq!(port_from_ready_url("http://127.0.0.1:5173/app"), Some(5173));
+    }
+
+    #[test]
+    fn proxy_does_not_forward_daemon_authorization() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            HeaderValue::from_static("Bearer daemon-secret"),
+        );
+        headers.insert(
+            axum::http::header::ACCEPT,
+            HeaderValue::from_static("text/html"),
+        );
+        let filtered = filter_request_headers(&headers, 5173);
+        assert!(!filtered.contains_key(axum::http::header::AUTHORIZATION));
+        assert_eq!(
+            filtered.get(axum::http::header::ACCEPT),
+            Some(&HeaderValue::from_static("text/html"))
+        );
     }
 }

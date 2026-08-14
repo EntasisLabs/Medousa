@@ -42,7 +42,7 @@ fn resolve_steer_speaker(principal: &RequestPrincipal) -> Option<String> {
     if let Some(bound) = principal.profile_id() {
         return Some(bound.to_string());
     }
-    if principal.kind() == PrincipalKind::LegacyLocal {
+    if principal.kind() == PrincipalKind::LocalApp {
         return Some(crate::user_profiles::resolve_workshop_identity_user_id());
     }
     None
@@ -62,9 +62,12 @@ mod tests {
     }
 
     #[test]
-    fn legacy_local_uses_the_workshop_identity() {
+    fn local_app_uses_the_workshop_identity() {
         assert_eq!(
-            resolve_steer_speaker(&RequestPrincipal::legacy_local()),
+            resolve_steer_speaker(&RequestPrincipal::local_app(
+                std::sync::Arc::from("home-local"),
+                TransportClass::Loopback,
+            )),
             Some(crate::user_profiles::resolve_workshop_identity_user_id())
         );
     }

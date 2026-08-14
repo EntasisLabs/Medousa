@@ -65,12 +65,12 @@ pub fn daemon_base(state: &State<'_, DaemonState>) -> Result<String, String> {
         .to_string())
 }
 
-pub fn daemon_http_client() -> Result<Client, String> {
-    Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(5))
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|err| err.to_string())
+fn daemon_http_client(base_url: &str) -> Result<Client, String> {
+    crate::workshop_transport::protected_http_client(
+        base_url,
+        std::time::Duration::from_secs(5),
+        std::time::Duration::from_secs(30),
+    )
 }
 
 struct ActivePortalSink {
@@ -190,7 +190,7 @@ pub async fn list_messages(
             if unread_only {
                 url.push_str("?unreadOnly=true");
             }
-            let client = daemon_http_client()?;
+            let client = daemon_http_client(base)?;
             if let Ok(response) = client.get(&url).send().await {
                 if response.status().is_success() {
                     if let Ok(payload) = response.json::<serde_json::Value>().await {
@@ -374,7 +374,7 @@ pub async fn mark_read(
 
     if sink == SINK_HOST || (sink.is_empty() && ctx.is_host) {
         if let Some(base) = &ctx.host_base {
-            let client = daemon_http_client()?;
+            let client = daemon_http_client(base)?;
             if let Ok(response) = client
                 .post(format!("{base}/v1/peer/messages/{message_id}/read"))
                 .send()
@@ -473,7 +473,7 @@ async fn fetch_pair_status_local(
     state: &State<'_, DaemonState>,
 ) -> Result<serde_json::Value, String> {
     let base = daemon_base(state)?;
-    let client = daemon_http_client()?;
+    let client = daemon_http_client(&base)?;
     let response = client
         .get(format!("{base}/pair/status"))
         .send()
@@ -581,7 +581,7 @@ pub async fn send_message(
         });
         if ctx.is_host {
             if let Some(base) = &ctx.host_base {
-                let client = daemon_http_client()?;
+                let client = daemon_http_client(base)?;
                 let response = client
                     .post(format!("{base}/v1/peer/messages"))
                     .json(&payload)
@@ -649,7 +649,7 @@ pub async fn send_message(
             "kind": request.kind,
         });
         if let Some(base) = &ctx.host_base {
-            let client = daemon_http_client()?;
+            let client = daemon_http_client(base)?;
             let response = client
                 .post(format!("{base}/v1/peer/messages"))
                 .json(&local_body)

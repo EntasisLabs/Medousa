@@ -27,9 +27,13 @@ PyPI package name: `medousa-sdk` — import as `medousa`.
 ```python
 import asyncio
 from medousa import MedousaClient
+from medousa.transport import WorkshopTransport
 
 async def main():
-    client = MedousaClient("http://127.0.0.1:7419")
+    client = MedousaClient(
+        "http://127.0.0.1:7419",
+        transport=WorkshopTransport(bearer_token="paired-token-from-secret-store"),
+    )
     health = await client.health().get()
     print(health.status, health.backend)
     sessions = await client.sessions().list(20)
@@ -99,6 +103,9 @@ See [interactive-streaming.md](interactive-streaming.md).
 
 ## Workshop / LAN auth
 
+Authentication is mandatory for protected routes on loopback, LAN, and Iroh.
+External clients should pair and load the issued bearer from a secret store.
+
 ```python
 from medousa import MedousaClient
 from medousa.transport import WorkshopTransport
@@ -118,7 +125,10 @@ Accessor-based blocking client (mirrors Rust `BlockingMedousaClient`):
 ```python
 from medousa import MedousaClientSync
 
-with MedousaClientSync("http://127.0.0.1:7419") as client:
+with MedousaClientSync(
+    "http://127.0.0.1:7419",
+    bearer_token="paired-token-from-secret-store",
+) as client:
     health = client.health().get()
     roots = client.vault().list_roots()
 ```

@@ -1,12 +1,14 @@
 //! WebSocket bridge between Home CodeMirror LSP client and in-process `grapheme-lsp`.
 
+use axum::Json;
+use axum::extract::Extension;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::response::IntoResponse;
-use axum::Json;
 use futures_util::{SinkExt, StreamExt};
 use serde::Serialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+use crate::credential_lifecycle::CredentialLease;
 use crate::grapheme_script::store::GraphemeScriptStore;
 
 #[derive(Debug, Clone, Serialize)]
@@ -31,11 +33,14 @@ pub async fn get_lsp_workspace() -> Json<GraphemeLspWorkspaceResponse> {
     Json(lsp_workspace_response())
 }
 
-pub async fn grapheme_lsp_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
-    ws.on_upgrade(handle_lsp_socket)
+pub async fn grapheme_lsp_ws(
+    ws: WebSocketUpgrade,
+    lease: Option<Extension<CredentialLease>>,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_lsp_socket(socket, lease.map(|Extension(lease)| lease)))
 }
 
-async fn handle_lsp_socket(socket: WebSocket) {
+async fn handle_lsp_socket(socket: WebSocket, lease: Option<CredentialLease>) {
     let (client_to_lsp, lsp_stdin) = tokio::io::duplex(1024 * 1024);
     let (lsp_stdout, lsp_to_client) = tokio::io::duplex(1024 * 1024);
     tokio::spawn(grapheme_lsp::run_server(lsp_stdin, lsp_stdout));
@@ -59,19 +64,31 @@ async fn handle_lsp_socket(socket: WebSocket) {
         }
     });
 
-    while let Some(msg) = ws_rx.next().await {
+    let mut watcher = lease.map(|lease| lease.watcher());
+    loop {
+        let msg = tokio::select! {
+            _ = wait_for_revocation(&mut watcher) => break,
+            msg = ws_rx.next() => msg,
+        };
+        let Some(msg) = msg else { break };
         let Ok(msg) = msg else { break };
         match msg {
             Message::Text(text) => {
-                if write_lsp_message(&mut lsp_stdin_writer, &text).await.is_err() {
+                if write_lsp_message(&mut lsp_stdin_writer, &text)
+                    .await
+                    .is_err()
+                {
                     break;
                 }
             }
             Message::Binary(bytes) => {
                 if let Ok(text) = std::str::from_utf8(&bytes)
-                    && write_lsp_message(&mut lsp_stdin_writer, text).await.is_err() {
-                        break;
-                    }
+                    && write_lsp_message(&mut lsp_stdin_writer, text)
+                        .await
+                        .is_err()
+                {
+                    break;
+                }
             }
             Message::Close(_) => break,
             _ => {}
@@ -79,6 +96,15 @@ async fn handle_lsp_socket(socket: WebSocket) {
     }
 
     read_lsp.abort();
+}
+
+async fn wait_for_revocation(
+    watcher: &mut Option<crate::credential_lifecycle::CredentialRevocationWatcher>,
+) {
+    match watcher {
+        Some(watcher) => watcher.revoked().await,
+        None => futures_util::future::pending().await,
+    }
 }
 
 async fn read_lsp_message(

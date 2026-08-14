@@ -17,8 +17,8 @@ use crate::mesh::outbox::{self, MeshOutboxItem, MeshOutboxStatus};
 use crate::mesh::receipts::{self, MeshReceipt};
 use crate::mesh::registry::{self, MeshPeerEndpoints, MeshPeerRecord};
 use crate::mesh::{
-    inbox, record_has_capability, CAP_CLIENT_RENDEZVOUS, CAP_MESH_BUNDLE_PUSH, CAP_MESH_MESSAGE,
-    CAP_TASK_REQUEST,
+    CAP_CLIENT_RENDEZVOUS, CAP_MESH_BUNDLE_PUSH, CAP_MESH_MESSAGE, CAP_TASK_REQUEST, inbox,
+    record_has_capability,
 };
 use crate::pairing::{PairedDeviceRecord, PairingService};
 use crate::request_principal::{Capability, PrincipalKind, RequestPrincipal, TransportClass};
@@ -231,11 +231,11 @@ async fn patch_mesh_peer(
     Json(body): Json<MeshPeerPatchRequest>,
 ) -> Result<Json<MeshPeerRecord>, (StatusCode, String)> {
     require_local_or_portal(&principal)?;
-    if registry::get_peer(&device_id)
-        .map_err(internal)?
-        .is_none()
-    {
-        return Err((StatusCode::NOT_FOUND, format!("mesh peer not found: {device_id}")));
+    if registry::get_peer(&device_id).map_err(internal)?.is_none() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            format!("mesh peer not found: {device_id}"),
+        ));
     }
     let mut peer = registry::get_peer(&device_id)
         .map_err(internal)?
@@ -357,8 +357,8 @@ async fn accept_mesh_intro(
     if let Some(endpoints) = body.endpoints.as_ref() {
         let _ = registry::set_endpoints(&caller.phone_id, endpoints.clone());
     }
-    let intro = intros::accept_intro(&intro_id, &caller.phone_id, body.endpoints)
-        .map_err(|err| {
+    let intro =
+        intros::accept_intro(&intro_id, &caller.phone_id, body.endpoints).map_err(|err| {
             let msg = err.to_string();
             if msg.contains("not found") {
                 (StatusCode::NOT_FOUND, msg)
@@ -456,7 +456,12 @@ async fn flush_mesh_outbox_item(
     require_trusted_local(&principal)?;
     let item = outbox::get_outbox_item(&item_id)
         .map_err(internal)?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("outbox item not found: {item_id}")))?;
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                format!("outbox item not found: {item_id}"),
+            )
+        })?;
     if item.status == MeshOutboxStatus::Acked {
         return Ok(Json(item));
     }
@@ -475,8 +480,8 @@ async fn flush_mesh_outbox_item(
         .map(str::trim)
         .filter(|value| !value.is_empty())
     else {
-        let failed = outbox::mark_failed(&item.id, "peer has no lanBaseUrl endpoint")
-            .map_err(internal)?;
+        let failed =
+            outbox::mark_failed(&item.id, "peer has no lanBaseUrl endpoint").map_err(internal)?;
         return Err((
             StatusCode::CONFLICT,
             failed
@@ -668,6 +673,7 @@ mod tests {
                 last_seen: now,
                 session_token_hash: "hash".into(),
                 session_token_expiry: now,
+                credential_generation: 1,
                 role,
                 profile_id: None,
                 mesh_grants: Vec::new(),
@@ -705,7 +711,13 @@ mod tests {
 
     #[test]
     fn local_only_checks_use_normalized_principal_transport() {
-        assert!(require_trusted_local(&RequestPrincipal::legacy_local()).is_ok());
+        assert!(
+            require_trusted_local(&RequestPrincipal::local_app(
+                Arc::from("test-local"),
+                TransportClass::Loopback,
+            ))
+            .is_ok()
+        );
         assert!(
             require_trusted_local(&RequestPrincipal::anonymous(TransportClass::Direct)).is_err()
         );

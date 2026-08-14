@@ -802,7 +802,11 @@ async fn consume_daemon_interactive_stream(
     turn_id: u64,
     event_tx: &mpsc::Sender<TuiEvent>,
 ) -> std::result::Result<(), String> {
-    let client = reqwest::Client::new();
+    let client = medousa::local_daemon_auth::async_client(
+        stream_url,
+        medousa_local_credential::TUI_LOCAL_NAME,
+    )
+    .map_err(|err| err.to_string())?;
     let response = client
         .get(stream_url)
         .send()

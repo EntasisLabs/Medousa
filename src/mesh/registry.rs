@@ -224,6 +224,7 @@ mod tests {
             last_seen: Utc::now(),
             session_token_hash: "h".into(),
             session_token_expiry: Utc::now(),
+            credential_generation: 1,
             role: PairingRole::Peer,
             profile_id: None,
             mesh_grants: vec!["mesh.message".into()],

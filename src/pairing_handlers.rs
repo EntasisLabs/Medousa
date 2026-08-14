@@ -267,16 +267,21 @@ async fn pair_init(
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Json(body): Json<PairInitRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), StatusCode> {
-    let source_ip = addr.ip().to_string();
+    let _permit = state
+        .service
+        .try_acquire_ceremony()
+        .ok_or(StatusCode::TOO_MANY_REQUESTS)?;
     let response = state
         .service
-        .pair_init(body, &source_ip)
+        .pair_init(body, addr.ip())
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
     let status = if response.status == "challenge" {
         StatusCode::OK
-    } else if response.reason.as_deref() == Some("token_already_used") {
-        StatusCode::CONFLICT
+    } else if response.reason.as_deref() == Some("rate_limited") {
+        StatusCode::TOO_MANY_REQUESTS
+    } else if response.reason.as_deref() == Some("busy") {
+        StatusCode::SERVICE_UNAVAILABLE
     } else {
         StatusCode::BAD_REQUEST
     };
@@ -288,12 +293,19 @@ async fn pair_init(
 
 async fn pair_verify(
     State(state): State<PairingApiState>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Json(body): Json<PairVerifyRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), StatusCode> {
-    match state.service.pair_verify(body).await {
+    let _permit = state
+        .service
+        .try_acquire_ceremony()
+        .ok_or(StatusCode::TOO_MANY_REQUESTS)?;
+    match state.service.pair_verify(body, addr.ip()).await {
         Ok(response) => {
             let status = if response.status == "paired" {
                 StatusCode::OK
+            } else if response.reason.as_deref() == Some("rate_limited") {
+                StatusCode::TOO_MANY_REQUESTS
             } else {
                 StatusCode::BAD_REQUEST
             };
@@ -348,7 +360,7 @@ async fn revoke_pairing(
     Path(pairing_id): Path<String>,
 ) -> Result<StatusCode, StatusCode> {
     let authority = match principal.kind() {
-        PrincipalKind::LegacyLocal | PrincipalKind::Root => RevokePairingAuthority::Administrator,
+        PrincipalKind::LocalApp | PrincipalKind::Root => RevokePairingAuthority::Administrator,
         _ => principal
             .credential_id()
             .map(|id| RevokePairingAuthority::Credential(id.as_str()))

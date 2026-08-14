@@ -46,6 +46,13 @@ fn with_cmd(cmd: &str, rest: Vec<String>) -> Vec<String> {
     out
 }
 
+fn cli_daemon_client(daemon_url: &str) -> Result<Client> {
+    medousa::local_daemon_auth::async_client(
+        daemon_url,
+        medousa_local_credential::CLI_LOCAL_NAME,
+    )
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let parsed = cli::Cli::parse();
@@ -169,7 +176,7 @@ async fn main() -> Result<()> {
 }
 
 async fn run_daemon_health(daemon_url: &str) -> Result<()> {
-    let client = Client::new();
+    let client = cli_daemon_client(daemon_url)?;
     let response = client
         .get(format!("{daemon_url}/v1/health"))
         .send()
@@ -191,7 +198,7 @@ async fn run_daemon_health(daemon_url: &str) -> Result<()> {
 }
 
 async fn run_daemon_stats(daemon_url: &str) -> Result<()> {
-    let client = Client::new();
+    let client = cli_daemon_client(daemon_url)?;
     let response = client
         .get(format!("{daemon_url}/v1/stats"))
         .send()
@@ -214,7 +221,7 @@ async fn run_daemon_stats(daemon_url: &str) -> Result<()> {
 }
 
 async fn run_daemon_heartbeat_status(daemon_url: &str) -> Result<()> {
-    let client = Client::new();
+    let client = cli_daemon_client(daemon_url)?;
     let response = client
         .get(format!("{daemon_url}/v1/heartbeat/status"))
         .send()
@@ -297,7 +304,7 @@ async fn run_daemon_ask(daemon_url: &str, args: &[String]) -> Result<()> {
         .get(1)
         .ok_or_else(|| anyhow!("missing prompt: medousa-cli daemon-ask <prompt>"))?;
     let wait = !args.iter().any(|arg| arg == "--no-wait");
-    let client = Client::new();
+    let client = cli_daemon_client(daemon_url)?;
     let user_id = find_arg_value(args, "--identity-user-id")
         .map(ToString::to_string)
         .unwrap_or_else(|| "cli:user:local".to_string());
@@ -374,7 +381,7 @@ async fn run_daemon_report(daemon_url: &str, args: &[String]) -> Result<()> {
     let query = args
         .get(1)
         .ok_or_else(|| anyhow!("missing query: medousa-cli daemon-report <query>"))?;
-    let client = Client::new();
+    let client = cli_daemon_client(daemon_url)?;
 
     let poll_timeout_ms = find_arg_value(args, "--poll-timeout-ms")
         .map(|raw| {
@@ -449,7 +456,7 @@ async fn run_daemon_report(daemon_url: &str, args: &[String]) -> Result<()> {
 }
 
 async fn run_daemon_job_report(daemon_url: &str, job_id: &str) -> Result<()> {
-    let client = Client::new();
+    let client = cli_daemon_client(daemon_url)?;
     let report = query_daemon_job_report(&client, daemon_url, job_id).await?;
     print_daemon_report(&report);
     Ok(())
@@ -559,7 +566,7 @@ async fn run_daemon_watch_add(
     timezone: &str,
     prompt: &str,
 ) -> Result<()> {
-    let client = Client::new();
+    let client = cli_daemon_client(daemon_url)?;
     let request = RegisterRecurringPromptRequest {
         id: None,
         queue: Some("default".to_string()),
@@ -606,7 +613,7 @@ async fn fetch_identity_context(
     daemon_url: &str,
     args: &[String],
 ) -> Result<GetIdentityContextResponse> {
-    let client = Client::new();
+    let client = cli_daemon_client(daemon_url)?;
     let request = IdentityContextRequest {
         user_id: find_arg_value(args, "--user-id").map(ToString::to_string),
         persona_id: find_arg_value(args, "--persona-id").map(ToString::to_string),
@@ -691,7 +698,7 @@ async fn run_daemon_identity_propose(daemon_url: &str, args: &[String]) -> Resul
         expires_at,
     };
 
-    let client = Client::new();
+    let client = cli_daemon_client(daemon_url)?;
     let response = client
         .post(format!("{daemon_url}/v1/identity/update/propose"))
         .json(&request)
@@ -749,7 +756,7 @@ async fn run_daemon_identity_update(daemon_url: &str, args: &[String]) -> Result
         expires_at,
     };
 
-    let client = Client::new();
+    let client = cli_daemon_client(daemon_url)?;
     let response = client
         .post(format!("{daemon_url}/v1/identity/update/propose"))
         .json(&request)
@@ -843,7 +850,7 @@ async fn run_daemon_identity_commit(daemon_url: &str, args: &[String]) -> Result
         approver: find_arg_value(args, "--approver").map(ToString::to_string),
     };
 
-    let client = Client::new();
+    let client = cli_daemon_client(daemon_url)?;
     let response = client
         .post(format!("{daemon_url}/v1/identity/update/commit"))
         .json(&request)
@@ -871,7 +878,7 @@ async fn fetch_identity_history(
         limit,
     };
 
-    let client = Client::new();
+    let client = cli_daemon_client(daemon_url)?;
     let response = client
         .post(format!("{daemon_url}/v1/identity/history"))
         .json(&request)
@@ -1010,7 +1017,7 @@ async fn run_daemon_identity_rollback(daemon_url: &str, args: &[String]) -> Resu
             .to_string(),
     };
 
-    let client = Client::new();
+    let client = cli_daemon_client(daemon_url)?;
     let response = client
         .post(format!("{daemon_url}/v1/identity/rollback"))
         .json(&request)

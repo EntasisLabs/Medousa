@@ -39,7 +39,9 @@ pub enum Commands {
     #[command(name = "manuscript-list")]
     ManuscriptList,
     #[command(name = "manuscript-validate")]
-    ManuscriptValidate { id: String },
+    ManuscriptValidate {
+        id: String,
+    },
     #[command(name = "manuscript-install")]
     ManuscriptInstall {
         path: String,
@@ -53,6 +55,7 @@ pub enum Commands {
     Workspace(WorkspaceArgs),
     Vault(VaultArgs),
     Pair(PairArgs),
+    Credentials(CredentialsArgs),
     Peer(PeerArgs),
     #[cfg(feature = "iroh-transport")]
     Iroh(IrohArgs),
@@ -274,6 +277,12 @@ pub struct VaultArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct CredentialsArgs {
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    pub rest: Vec<String>,
+}
+
+#[derive(Debug, Args)]
 pub struct PairArgs {
     #[arg(long = "daemon-url")]
     pub daemon_url: Option<String>,
@@ -331,7 +340,9 @@ pub enum PeerCommand {
         name: Option<String>,
     },
     List,
-    Remove { id_or_label: String },
+    Remove {
+        id_or_label: String,
+    },
     Send {
         id_or_label: String,
         message: Vec<String>,
@@ -340,7 +351,9 @@ pub enum PeerCommand {
         #[arg(long)]
         unread: bool,
     },
-    Read { message_id: String },
+    Read {
+        message_id: String,
+    },
 }
 
 #[cfg(feature = "iroh-transport")]
@@ -715,13 +728,8 @@ mod tests {
 
     #[test]
     fn pair_daemon_url_without_subcommand_defaults_to_status() {
-        let cli = Cli::try_parse_from([
-            "medousa",
-            "pair",
-            "--daemon-url",
-            "http://127.0.0.1:7419",
-        ])
-        .expect("parse");
+        let cli = Cli::try_parse_from(["medousa", "pair", "--daemon-url", "http://127.0.0.1:7419"])
+            .expect("parse");
         match cli.command {
             Some(Commands::Pair(args)) => {
                 assert!(args.command.is_none());
@@ -737,6 +745,33 @@ mod tests {
     fn packages_help_is_help_not_list() {
         let err = Cli::try_parse_from(["medousa", "packages", "--help"]).unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
+    }
+
+    #[test]
+    fn credentials_subcommand_preserves_operator_arguments() {
+        let cli = Cli::try_parse_from([
+            "medousa",
+            "credentials",
+            "rotate",
+            "medousa-cli",
+            "--daemon-url",
+            "http://127.0.0.1:7419",
+        ])
+        .expect("parse");
+        match cli.command {
+            Some(Commands::Credentials(args)) => {
+                assert_eq!(
+                    args.rest,
+                    [
+                        "rotate",
+                        "medousa-cli",
+                        "--daemon-url",
+                        "http://127.0.0.1:7419"
+                    ]
+                );
+            }
+            other => panic!("expected Credentials, got {other:?}"),
+        }
     }
 
     #[cfg(not(feature = "iroh-transport"))]

@@ -66,9 +66,16 @@ Medousa resolves LLM settings in order: **saved defaults → env → built-in de
 | `MEDOUSA_DAEMON_URL` | Engine base URL for clients | `http://127.0.0.1:7419` |
 | `STASIS_DAEMON_URL` | Legacy alias | |
 | `MEDOUSA_DAEMON_PUBLIC_URL` | Advertised URL for SSE/stream during non-loopback development; does not secure the daemon | Auto with `--public` |
+| `MEDOUSA_ALLOWED_HOSTS` | Additional exact daemon `Host` names/IP literals, comma-separated; ports and URLs are rejected | Listener address, loopback names, and detected LAN IPv4 |
+| `MEDOUSA_BROWSER_ORIGINS` | Additional exact browser origins, comma-separated; wildcards, `null`, paths, query strings, and fragments are rejected | Medousa Tauri/dev origins only |
 | `MEDOUSA_DEV_HOST` | Dev Vite host → daemon URL hint | unset |
 | `MEDOUSA_MEDOUSA_DAEMON_BIN` | Explicit path to `medousa_daemon` | Tauri sidecar or PATH |
 | `MEDOUSA_PROJECT_ROOT` | Vault / project root override | unset |
+
+There is no `no_auth` or loopback bypass setting. Except for constant liveness,
+an active pairing ceremony, and scoped preview URLs, daemon routes require a
+named local-app or paired bearer. First-party native clients load their own
+credential from the platform keyring or owner-only data-directory file.
 
 **Tauri app (desktop dev):**
 
@@ -188,12 +195,14 @@ in **Settings → Runtime Controls → Worker capacity**; restart the engine aft
 | `MEDOUSA_PAIRING_ADVERTISE` | Force mDNS when not `--public` |
 | `MEDOUSA_PAIRING_DISABLE_TLS` | Dev only — plaintext pairing |
 
-> **Security warning:** `--public` currently exposes the complete daemon router
-> without mandatory credentials on every personal-mode route. These variables
-> change discovery and addressing; they do not create an authentication
-> boundary. Prefer Iroh and never expose port 7419 to the internet or an
-> untrusted LAN. See [Mobile & LAN](cookbook/mobile-and-lan.md) and
-> [hardening H01](../architecture/hardening/README.md).
+`--public` binds the complete daemon router, but protected routes require
+local-app or paired credentials exactly as they do on loopback. Pair initiation
+and verification are the only
+anonymous ceremony routes; invite generation, status, codes, and Iroh tickets
+remain authenticated. Host and browser-origin checks are exact. Prefer Iroh and
+do not expose port 7419 directly to the internet; use a trusted LAN for compact
+invites. See [Mobile & LAN](cookbook/mobile-and-lan.md) and [hardening
+H01](../architecture/hardening/README.md).
 
 Historical design context:
 [first-run-and-lan-pairing-plan.md](../architecture/archive/first-run-and-lan-pairing-plan.md).

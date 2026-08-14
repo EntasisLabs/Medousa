@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result, bail};
 use base64::Engine;
 use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey};
-use medousa::daemon_api::{resolve_daemon_url, DEFAULT_DAEMON_URL};
+use medousa::daemon_api::{DEFAULT_DAEMON_URL, resolve_daemon_url};
 use medousa::paths::medousa_data_dir;
 use rand::RngCore;
 use rand::rngs::OsRng;
@@ -56,15 +56,15 @@ pub fn run_peer(args: &[String]) -> Result<()> {
         Some("send") => run_send(args),
         Some("inbox") => run_inbox(args),
         Some("read") => run_read(args),
-        Some(other) => bail!(
-            "unknown peer subcommand '{other}'. run 'medousa peer --help' for usage"
-        ),
+        Some(other) => {
+            bail!("unknown peer subcommand '{other}'. run 'medousa peer --help' for usage")
+        }
     }
 }
 
 fn run_nearby(args: &[String]) -> Result<()> {
     let daemon_url = resolve_daemon_url_arg(args);
-    let client = http_client()?;
+    let client = http_client(&daemon_url)?;
     let response = client
         .get(format!("{daemon_url}/v1/lan/workshops"))
         .send()
@@ -104,12 +104,35 @@ fn run_nearby(args: &[String]) -> Result<()> {
 }
 
 fn run_connect(args: &[String]) -> Result<()> {
-    let daemon_url = args
+    let target = args
         .get(1)
         .map(String::as_str)
         .filter(|value| !value.starts_with("--"))
-        .context("usage: medousa peer connect <daemon-url> [--portal] [--name <label>]")?;
-    let daemon_url = normalize_url(daemon_url);
+        .context("usage: medousa peer connect <pairing-url> [--portal] [--name <label>]")?;
+    let (daemon_url, qr_url) = if target.starts_with("medousa://pair/") {
+        let parsed = parse_pair_qr_url(target)?;
+        let daemon_url = find_arg_value(args, "--daemon-url")
+            .map(|value| normalize_url(&value))
+            .unwrap_or_else(|| daemon_url_from_advertise_address(&parsed.address));
+        (daemon_url, target.to_string())
+    } else {
+        let daemon_url = normalize_url(target);
+        let client = http_client(&daemon_url)?;
+        let qr = client
+            .get(format!("{daemon_url}/qr"))
+            .send()
+            .context("GET /qr")?
+            .error_for_status()
+            .context("remote QR retrieval is protected; generate an invite on the host with `medousa pair qr` and pass its medousa:// URL")?
+            .json::<Value>()
+            .context("parse /qr")?;
+        let qr_url = qr
+            .get("url")
+            .and_then(Value::as_str)
+            .context("missing url in /qr response")?
+            .to_string();
+        (daemon_url, qr_url)
+    };
     let role = if has_flag(args, "--portal") {
         "portal"
     } else {
@@ -117,21 +140,8 @@ fn run_connect(args: &[String]) -> Result<()> {
     };
     let label = find_arg_value(args, "--name");
 
-    let client = http_client()?;
-    let qr = client
-        .get(format!("{daemon_url}/qr"))
-        .send()
-        .context("GET /qr")?
-        .error_for_status()
-        .context("GET /qr failed")?
-        .json::<Value>()
-        .context("parse /qr")?;
-    let qr_url = qr
-        .get("url")
-        .and_then(Value::as_str)
-        .context("missing url in /qr response")?;
-
-    let connection = complete_pair_ceremony(&client, qr_url, &daemon_url, role, label.as_deref())?;
+    let client = http_client(&daemon_url)?;
+    let connection = complete_pair_ceremony(&client, &qr_url, &daemon_url, role, label.as_deref())?;
     let mut store = load_store()?;
     store.connections.retain(|entry| entry.id != connection.id);
     println!(
@@ -171,7 +181,9 @@ fn run_remove(args: &[String]) -> Result<()> {
         .context("usage: medousa peer remove <id>")?;
     let mut store = load_store()?;
     let before = store.connections.len();
-    store.connections.retain(|entry| entry.id != id && !entry.label.eq_ignore_ascii_case(id));
+    store
+        .connections
+        .retain(|entry| entry.id != id && !entry.label.eq_ignore_ascii_case(id));
     if store.connections.len() == before {
         bail!("connection not found: {id}");
     }
@@ -210,8 +222,8 @@ fn run_send(args: &[String]) -> Result<()> {
         attachment: None,
         kind: None,
     };
-    let payload_hash = medousa::mesh::payload_hash_hex(&payload)
-        .map_err(|err| anyhow::anyhow!(err))?;
+    let payload_hash =
+        medousa::mesh::payload_hash_hex(&payload).map_err(|err| anyhow::anyhow!(err))?;
     let seq = chrono::Utc::now().timestamp_millis().max(0) as u64;
     let envelope = medousa::mesh::sign_envelope(
         &identity.signing_key,
@@ -224,7 +236,7 @@ fn run_send(args: &[String]) -> Result<()> {
     );
     let wrapped = medousa::mesh::MeshEnvelopedRequest { envelope, payload };
 
-    let client = http_client()?;
+    let client = http_client(&connection.daemon_url)?;
     let response = client
         .post(format!("{}/v1/peer/messages", connection.daemon_url))
         .bearer_auth(&connection.session_token)
@@ -239,17 +251,19 @@ fn run_send(args: &[String]) -> Result<()> {
 
     // Keep a local outbound copy when this machine also runs an engine (Home threads / local inbox).
     let local_url = resolve_daemon_url(None);
-    let _ = client
-        .post(format!("{local_url}/v1/peer/messages"))
-        .json(&serde_json::json!({
-            "body": message,
-            "fromDeviceId": identity.phone_id,
-            "fromName": display_name,
-            "toDeviceId": connection.workshop_device_id,
-            "toName": connection.label,
-            "direction": "out",
-        }))
-        .send();
+    if let Ok(local_client) = http_client(&local_url) {
+        let _ = local_client
+            .post(format!("{local_url}/v1/peer/messages"))
+            .json(&serde_json::json!({
+                "body": message,
+                "fromDeviceId": identity.phone_id,
+                "fromName": display_name,
+                "toDeviceId": connection.workshop_device_id,
+                "toName": connection.label,
+                "direction": "out",
+            }))
+            .send();
+    }
 
     println!("Sent to {}", connection.label);
     Ok(())
@@ -257,12 +271,11 @@ fn run_send(args: &[String]) -> Result<()> {
 
 fn run_inbox(args: &[String]) -> Result<()> {
     let unread_only = has_flag(args, "--unread");
-    let client = http_client()?;
     let mut rows: Vec<(String, Value)> = Vec::new();
 
     // Local workshop inbox (when this machine is also a host).
     let local_url = resolve_daemon_url_arg(args);
-    if let Ok(messages) = fetch_messages(&client, &local_url, None, unread_only) {
+    if let Ok(messages) = fetch_messages(&local_url, None, unread_only) {
         for message in messages {
             rows.push(("local".to_string(), message));
         }
@@ -272,7 +285,6 @@ fn run_inbox(args: &[String]) -> Result<()> {
     let store = load_store()?;
     for connection in &store.connections {
         match fetch_messages(
-            &client,
             &connection.daemon_url,
             Some(&connection.session_token),
             unread_only,
@@ -283,10 +295,7 @@ fn run_inbox(args: &[String]) -> Result<()> {
                 }
             }
             Err(err) => {
-                eprintln!(
-                    "[warn] could not read inbox on {}: {err}",
-                    connection.label
-                );
+                eprintln!("[warn] could not read inbox on {}: {err}", connection.label);
             }
         }
     }
@@ -352,12 +361,8 @@ fn run_inbox(args: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn fetch_messages(
-    client: &reqwest::blocking::Client,
-    daemon_url: &str,
-    bearer: Option<&str>,
-    unread_only: bool,
-) -> Result<Vec<Value>> {
+fn fetch_messages(daemon_url: &str, bearer: Option<&str>, unread_only: bool) -> Result<Vec<Value>> {
+    let client = http_client(daemon_url)?;
     let mut url = format!("{daemon_url}/v1/peer/messages");
     if unread_only {
         url.push_str("?unreadOnly=true");
@@ -384,7 +389,6 @@ fn run_read(args: &[String]) -> Result<()> {
         .map(String::as_str)
         .filter(|value| !value.starts_with("--"))
         .context("usage: medousa peer read <message-id>")?;
-    let client = http_client()?;
     let store = load_store()?;
 
     // Prefer marking read on the host that owns the conversation.
@@ -397,6 +401,7 @@ fn run_read(args: &[String]) -> Result<()> {
     }
 
     for (daemon_url, token) in targets {
+        let client = http_client(&daemon_url)?;
         let mut request = client.post(format!("{daemon_url}/v1/peer/messages/{id}/read"));
         if let Some(token) = token.as_deref() {
             request = request.bearer_auth(token);
@@ -413,7 +418,9 @@ fn run_read(args: &[String]) -> Result<()> {
             .and_then(Value::as_str)
             .unwrap_or("in");
         let from = if direction == "out" {
-            body.get("fromName").and_then(Value::as_str).unwrap_or("host")
+            body.get("fromName")
+                .and_then(Value::as_str)
+                .unwrap_or("host")
         } else {
             "you"
         };
@@ -421,9 +428,10 @@ fn run_read(args: &[String]) -> Result<()> {
         println!("From: {from}");
         println!("{text}");
         if let Some(result) = body.get("attachmentResult")
-            && let Some(summary) = result.get("summary").and_then(Value::as_str) {
-                println!("Attachment: {summary}");
-            }
+            && let Some(summary) = result.get("summary").and_then(Value::as_str)
+        {
+            println!("Attachment: {summary}");
+        }
         return Ok(());
     }
     bail!("message not found: {id}");
@@ -436,34 +444,45 @@ fn complete_pair_ceremony(
     role: &str,
     label: Option<&str>,
 ) -> Result<CliConnection> {
-    let status = client
-        .get(format!("{daemon_url}/pair/status"))
-        .send()
-        .context("GET /pair/status")?
-        .error_for_status()
-        .context("pair status")?
-        .json::<Value>()
-        .context("parse pair status")?;
-    let device_id = status
-        .get("deviceId")
-        .and_then(Value::as_str)
-        .context("missing deviceId")?
-        .to_string();
-    let peer_name = status
-        .get("peerName")
-        .and_then(Value::as_str)
-        .unwrap_or("Workshop")
-        .to_string();
-    let daemon_public_key = status
-        .get("daemonPublicKey")
-        .and_then(Value::as_str)
-        .context("missing daemonPublicKey")?;
-
     let parsed = parse_pair_qr_url(qr_url)?;
+    let (device_id, peer_name, daemon_public_key) =
+        if let Some(daemon_public_key) = parsed.daemon_public_key.clone() {
+            (
+                parsed.device_id.clone(),
+                parsed.peer_name.clone(),
+                daemon_public_key,
+            )
+        } else {
+            let status = client
+                .get(format!("{daemon_url}/pair/status"))
+                .send()
+                .context("GET /pair/status")?
+                .error_for_status()
+                .context("pair status")?
+                .json::<Value>()
+                .context("parse pair status")?;
+            (
+                status
+                    .get("deviceId")
+                    .and_then(Value::as_str)
+                    .context("missing deviceId")?
+                    .to_string(),
+                status
+                    .get("peerName")
+                    .and_then(Value::as_str)
+                    .unwrap_or("Workshop")
+                    .to_string(),
+                status
+                    .get("daemonPublicKey")
+                    .and_then(Value::as_str)
+                    .context("missing daemonPublicKey")?
+                    .to_string(),
+            )
+        };
     if parsed.device_id != device_id {
         bail!("pairing link does not match workshop device id — refresh QR and retry");
     }
-    verify_qr_signature(&parsed, daemon_public_key)?;
+    verify_qr_signature(&parsed, &daemon_public_key)?;
 
     let identity = load_or_create_identity()?;
     let public_key = base64url_encode(identity.verifying_key.as_bytes());
@@ -536,7 +555,7 @@ fn complete_pair_ceremony(
         .get("serverSignedNonce")
         .and_then(Value::as_str)
         .context("missing serverSignedNonce")?;
-    let daemon_vk = parse_verifying_key(daemon_public_key)?;
+    let daemon_vk = parse_verifying_key(&daemon_public_key)?;
     verify_message(&daemon_vk, &phone_nonce_b64, server_signed)
         .context("workshop signature check failed")?;
 
@@ -553,6 +572,7 @@ fn complete_pair_ceremony(
 
     let iroh_ticket = client
         .get(format!("{daemon_url}/pair/iroh-ticket"))
+        .bearer_auth(&session_token)
         .send()
         .ok()
         .and_then(|response| {
@@ -596,6 +616,8 @@ struct ParsedQr {
     device_id: String,
     qr_token: String,
     signature: String,
+    peer_name: String,
+    daemon_public_key: Option<String>,
     iroh_ticket: Option<String>,
 }
 
@@ -621,22 +643,15 @@ fn parse_pair_qr_url(raw: &str) -> Result<ParsedQr> {
         }
     }
     Ok(ParsedQr {
-        address: params
-            .get("a")
+        address: params.get("a").cloned().context("pairing url missing a=")?,
+        device_id: params.get("d").cloned().context("pairing url missing d=")?,
+        qr_token: params.get("t").cloned().context("pairing url missing t=")?,
+        signature: params.get("s").cloned().context("pairing url missing s=")?,
+        peer_name: params
+            .get("n")
             .cloned()
-            .context("pairing url missing a=")?,
-        device_id: params
-            .get("d")
-            .cloned()
-            .context("pairing url missing d=")?,
-        qr_token: params
-            .get("t")
-            .cloned()
-            .context("pairing url missing t=")?,
-        signature: params
-            .get("s")
-            .cloned()
-            .context("pairing url missing s=")?,
+            .unwrap_or_else(|| "Workshop".to_string()),
+        daemon_public_key: params.get("u").cloned().filter(|value| !value.is_empty()),
         iroh_ticket: params.get("k").cloned().filter(|value| !value.is_empty()),
     })
 }
@@ -648,7 +663,10 @@ fn verify_qr_signature(parsed: &ParsedQr, daemon_public_key: &str) -> Result<()>
             parsed.address, parsed.device_id, parsed.qr_token, ticket
         )
     } else {
-        format!("{}|{}|{}", parsed.address, parsed.device_id, parsed.qr_token)
+        format!(
+            "{}|{}|{}",
+            parsed.address, parsed.device_id, parsed.qr_token
+        )
     };
     let key = parse_verifying_key(daemon_public_key)?;
     verify_message(&key, &message, &parsed.signature)
@@ -683,7 +701,10 @@ fn load_or_create_identity() -> Result<CliIdentity> {
     let signing_key = SigningKey::from_bytes(&bytes);
     let verifying_key = signing_key.verifying_key();
     fs::create_dir_all(cli_dir()).context("create cli dir")?;
-    let encoded = bytes.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let encoded = bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
     fs::write(&path, format!("{encoded}\n")).context("write cli identity")?;
     #[cfg(unix)]
     {
@@ -789,11 +810,12 @@ fn connections_path() -> PathBuf {
     cli_dir().join("connections.json")
 }
 
-fn http_client() -> Result<reqwest::blocking::Client> {
-    reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(20))
-        .build()
-        .context("build HTTP client")
+fn http_client(daemon_url: &str) -> Result<reqwest::blocking::Client> {
+    medousa::local_daemon_auth::blocking_client_with_timeout(
+        daemon_url,
+        medousa_local_credential::CLI_LOCAL_NAME,
+        std::time::Duration::from_secs(20),
+    )
 }
 
 fn resolve_daemon_url_arg(args: &[String]) -> String {
@@ -807,6 +829,15 @@ fn normalize_url(raw: &str) -> String {
     raw.trim().trim_end_matches('/').to_string()
 }
 
+fn daemon_url_from_advertise_address(address: &str) -> String {
+    let address = address.trim().trim_end_matches('/');
+    if address.starts_with("http://") || address.starts_with("https://") {
+        address.to_string()
+    } else {
+        format!("http://{address}")
+    }
+}
+
 fn print_peer_help() {
     println!("Medousa peer/portal client (headless)");
     println!();
@@ -816,7 +847,7 @@ fn print_peer_help() {
     println!();
     println!("USAGE:");
     println!("  medousa peer nearby [--daemon-url <url>]");
-    println!("  medousa peer connect <daemon-url> [--portal] [--name <label>]");
+    println!("  medousa peer connect <pairing-url> [--portal] [--name <label>]");
     println!("  medousa peer list");
     println!("  medousa peer remove <id|label>");
     println!("  medousa peer send <id|label> <message>");
@@ -828,8 +859,8 @@ fn print_peer_help() {
     println!();
     println!("EXAMPLES:");
     println!("  medousa peer nearby");
-    println!("  medousa peer connect http://192.168.1.20:7419");
-    println!("  medousa peer connect http://192.168.1.20:7419 --portal --name mini");
+    println!("  medousa peer connect 'medousa://pair/1.0?...'");
+    println!("  medousa peer connect 'medousa://pair/1.0?...' --portal --name mini");
     println!("  medousa peer send mini \"hello from headless\"");
     println!("  medousa peer inbox --unread");
 }
@@ -843,4 +874,24 @@ fn find_arg_value(args: &[String], flag: &str) -> Option<String> {
         .position(|arg| arg == flag)
         .and_then(|index| args.get(index + 1))
         .cloned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pairing_url_carries_the_verification_key_and_address() {
+        let parsed = parse_pair_qr_url(
+            "medousa://pair/1.0?a=192.168.1.2:7419&d=abcd1234&t=token&s=sig&n=Desk&u=key",
+        )
+        .expect("pairing URL");
+
+        assert_eq!(parsed.peer_name, "Desk");
+        assert_eq!(parsed.daemon_public_key.as_deref(), Some("key"));
+        assert_eq!(
+            daemon_url_from_advertise_address(&parsed.address),
+            "http://192.168.1.2:7419"
+        );
+    }
 }

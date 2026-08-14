@@ -108,6 +108,7 @@ struct ParsedQr {
     qr_token: String,
     signature: String,
     peer_name: String,
+    daemon_public_key: Option<String>,
     iroh_ticket: Option<String>,
 }
 
@@ -139,7 +140,14 @@ pub async fn pair_complete_from_qr(
 
     let client = http_client()?;
     let bootstrap_ticket = parsed_qr.iroh_ticket.as_deref();
-    let status = fetch_pair_status(&client, &daemon_url, bootstrap_ticket).await?;
+    let status = match parsed_qr.daemon_public_key.clone() {
+        Some(daemon_public_key) => PairStatusPayload {
+            device_id: parsed_qr.device_id.clone(),
+            peer_name: parsed_qr.peer_name.clone(),
+            daemon_public_key,
+        },
+        None => fetch_pair_status(&client, &daemon_url, bootstrap_ticket).await?,
+    };
     verify_qr_trust(&parsed_qr, &status)?;
 
     let identity = PhoneIdentity::load_or_create()?;
@@ -200,7 +208,9 @@ pub async fn pair_complete_from_qr(
     let iroh_ticket = if let Some(ticket) = parsed_qr.iroh_ticket.clone() {
         Some(ticket)
     } else {
-        fetch_iroh_ticket(&client, &daemon_url).await.ok()
+        fetch_iroh_ticket(&client, &daemon_url, &session_token)
+            .await
+            .ok()
     };
 
     let workshop_id = crate::workshop_registry::register_paired_workshop(
@@ -440,7 +450,11 @@ fn verify_qr_trust(parsed: &ParsedQr, status: &PairStatusPayload) -> Result<(), 
     }
 }
 
-async fn fetch_iroh_ticket(client: &Client, daemon_url: &str) -> Result<String, String> {
+async fn fetch_iroh_ticket(
+    client: &Client,
+    daemon_url: &str,
+    session_token: &str,
+) -> Result<String, String> {
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct TicketPayload {
@@ -449,6 +463,7 @@ async fn fetch_iroh_ticket(client: &Client, daemon_url: &str) -> Result<String, 
     }
     let response = client
         .get(format!("{daemon_url}/pair/iroh-ticket"))
+        .bearer_auth(session_token)
         .send()
         .await
         .map_err(|err| err.to_string())?;
@@ -625,6 +640,7 @@ fn parse_pair_qr_url(raw: &str) -> Result<ParsedQr, String> {
         })
         .unwrap_or_else(|| "Medousa".to_string());
     let iroh_ticket = query_param(&url, "k");
+    let daemon_public_key = query_param(&url, "u");
 
     Ok(ParsedQr {
         advertise_address,
@@ -632,6 +648,7 @@ fn parse_pair_qr_url(raw: &str) -> Result<ParsedQr, String> {
         qr_token,
         signature,
         peer_name,
+        daemon_public_key,
         iroh_ticket,
     })
 }
@@ -881,6 +898,13 @@ fn http_client() -> Result<Client, String> {
 fn init_failure_message(reason: Option<&str>) -> String {
     match reason.unwrap_or("unknown") {
         "rate_limited" => "Too many pairing attempts — wait a minute and try again.".to_string(),
+        "busy" => {
+            "The workshop is handling other pairing attempts — try again shortly.".to_string()
+        }
+        "invalid_invite" => {
+            "This pairing invite is invalid, expired, or already used — scan a fresh QR."
+                .to_string()
+        }
         "missing_token" => "Pairing link is missing a token — scan a fresh QR.".to_string(),
         "no_active_qr" => {
             "No active QR on your computer — open Pair phone and scan again.".to_string()
@@ -898,6 +922,10 @@ fn verify_failure_message(reason: Option<&str>) -> String {
     match reason.unwrap_or("unknown") {
         "unknown_session" => "Pairing session expired — scan a fresh QR and try again.".to_string(),
         "verify_timeout" => "Pairing timed out — scan a fresh QR and try again.".to_string(),
+        "invalid_session" => {
+            "Pairing session expired or is invalid — scan a fresh QR and try again.".to_string()
+        }
+        "rate_limited" => "Too many pairing attempts — wait a minute and try again.".to_string(),
         other => format!("Pairing verify failed ({other})"),
     }
 }
@@ -1001,7 +1029,7 @@ mod tests {
     #[test]
     fn parses_pair_qr_url() {
         let parsed = parse_pair_qr_url(
-            "medousa://pair/1.0?a=192.168.1.2:7419&d=abcd1234&t=token&s=sig&n=Desk",
+            "medousa://pair/1.0?a=192.168.1.2:7419&d=abcd1234&t=token&s=sig&n=Desk&u=key",
         )
         .expect("parse");
         assert_eq!(parsed.advertise_address, "192.168.1.2:7419");
@@ -1009,6 +1037,7 @@ mod tests {
         assert_eq!(parsed.qr_token, "token");
         assert_eq!(parsed.signature, "sig");
         assert_eq!(parsed.peer_name, "Desk");
+        assert_eq!(parsed.daemon_public_key.as_deref(), Some("key"));
     }
 
     #[test]

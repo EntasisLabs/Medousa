@@ -1,6 +1,6 @@
 # H01 — Daemon trust zones and authentication
 
-> **Status:** Draft for threat-model review
+> **Status:** Implemented; supported-platform release validation pending
 >
 > **Accountable owner:** daemon maintainers
 >
@@ -25,9 +25,9 @@ self-pairing ceremony.
 This plan owns SEC-001 only. Identifier/path confinement is H02 and remote
 webview capability isolation is H08; H01 must not claim their evidence.
 
-## Current evidence
+## Baseline evidence
 
-The production composition currently has four interacting failure modes:
+Before H01, the production composition had four interacting failure modes:
 
 1. `src/portal_acl.rs` permits Personal-mode requests without a bearer after
    excluding only peer-token misuse.
@@ -40,7 +40,7 @@ The production composition currently has four interacting failure modes:
    marker as trusted local. This distinguishes Iroh from a direct socket, but
    does not authenticate the calling process or browser origin.
 
-The current client picture matters to migration:
+The baseline client picture drove the migration:
 
 - Paired Home connections already load a session token and attach it to both
   LAN and Iroh requests in `workshop_transport.rs` and
@@ -229,19 +229,10 @@ useful and avoid turning one copied Home secret into a permanent master key.
 
 ### Local compatibility window
 
-One release may accept credentialless loopback calls only when all of these are
-true:
-
-- the listener is exclusively loopback;
-- the request did not traverse Iroh or a proxy;
-- legacy-local compatibility was selected by migration state, not by a remote
-  request header;
-- the route is not pairing/admin credential management; and
-- a bounded diagnostic records the client surface without request data.
-
-Non-loopback listeners never enter compatibility mode. The compatibility path
-has a removal version and test that begins failing when the deadline is reached.
-There is no permanent production `no_auth` flag.
+The one-release compatibility window is closed. The version gate, compatibility
+telemetry, and synthetic legacy-local principal have been deleted. Protected
+requests without a credential receive `401` on loopback and non-loopback
+transports alike. There is no production `no_auth` flag.
 
 ## Pairing and remote credentials
 
@@ -407,7 +398,7 @@ path without waiting for the local credential migration.
 | --- | --- | --- | --- |
 | Safety patch | legacy local allowed with warning | bearer required | startup refusal/full API unavailable |
 | Client migration | local capability preferred; legacy measured | bearer required | refused |
-| Enforcement | local capability required | bearer required | refused |
+| **Enforcement (current)** | **local capability required** | **bearer required** | **refused** |
 
 Rollout state is persisted locally and observable; it is not chosen by an
 untrusted request. A failed upgrade may roll back to the previous binary and
@@ -423,7 +414,7 @@ Emit bounded structured events and counters for:
 - authentication result class, principal kind, route group, and transport;
 - authorization denial capability/reason class;
 - pairing-window open/close, saturation, issuance, rotation, and revocation;
-- legacy loopback compatibility use by declared client surface;
+- credentialless denial class by declared route group;
 - active streams closed by expiry/revocation; and
 - route inventory hash/version.
 
@@ -466,12 +457,13 @@ release packaging, rollback verification, and canonical documentation land.
 - `scripts/verify-docs.sh` contract/link checks where generated auth metadata is
   exposed.
 
-Until those behaviors ship, existing canonical warnings remain truthful: a
-non-loopback bind is an unsafe trusted-network development escape hatch.
+The implementation and canonical documentation are current. H01 remains short
+of **Shipped** until supported-platform packaging, rollback, and full external
+security-matrix evidence are recorded.
 
 ## Removal ledger
 
-Delete after migration and verification:
+Removed during H01 implementation:
 
 - Personal-mode anonymous allowance in `src/portal_acl.rs`;
 - `is_public_path`, `is_admin_path`, and `path_allowed_for_peer` as production

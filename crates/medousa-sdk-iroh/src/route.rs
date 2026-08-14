@@ -52,13 +52,21 @@ fn write_cache(lan_base: &str, route: WorkshopRoute) {
 }
 
 pub async fn pick_route(lan_base: &str, iroh_available: bool) -> WorkshopRoute {
+    pick_route_with_bearer(lan_base, iroh_available, None).await
+}
+
+pub async fn pick_route_with_bearer(
+    lan_base: &str,
+    iroh_available: bool,
+    bearer_token: Option<&str>,
+) -> WorkshopRoute {
     if !iroh_available {
         return WorkshopRoute::Lan;
     }
     if let Some(route) = read_cache(lan_base) {
         return route;
     }
-    let route = if lan_reachable(lan_base).await {
+    let route = if lan_reachable(lan_base, bearer_token).await {
         WorkshopRoute::Lan
     } else {
         WorkshopRoute::Iroh
@@ -67,10 +75,13 @@ pub async fn pick_route(lan_base: &str, iroh_available: bool) -> WorkshopRoute {
     route
 }
 
-async fn lan_reachable(lan_base: &str) -> bool {
+async fn lan_reachable(lan_base: &str, bearer_token: Option<&str>) -> bool {
     let client = super::pool::standard_client();
-    client
-        .get(format!("{lan_base}/health"))
+    let mut request = client.get(format!("{lan_base}/health"));
+    if let Some(token) = bearer_token {
+        request = request.bearer_auth(token);
+    }
+    request
         .timeout(LAN_PROBE_TIMEOUT)
         .send()
         .await
@@ -93,10 +104,31 @@ pub fn is_connect_error(message: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
 
     #[test]
     fn connect_error_heuristic() {
         assert!(is_connect_error("connection refused"));
         assert!(!is_connect_error("HTTP 404"));
+    }
+
+    #[tokio::test]
+    async fn lan_probe_attaches_the_transport_bearer() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind probe server");
+        let address = listener.local_addr().expect("probe address");
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept probe");
+            let mut request = [0u8; 4096];
+            let read = stream.read(&mut request).expect("read probe");
+            let request = String::from_utf8_lossy(&request[..read]);
+            assert!(request.contains("authorization: Bearer probe-secret\r\n"));
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                .expect("write probe response");
+        });
+
+        assert!(lan_reachable(&format!("http://{address}"), Some("probe-secret")).await);
+        server.join().expect("probe server completes");
     }
 }

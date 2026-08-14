@@ -11,25 +11,45 @@ use axum::http::{HeaderValue, Request, StatusCode};
 use axum::middleware::Next;
 use axum::response::Response;
 
+use crate::credential_lifecycle::CredentialLifecycle;
 use crate::daemon::route_policy::DeclaredRouter;
 use crate::pairing::PairingService;
 use crate::remote_trust::is_trusted_local;
 use crate::request_principal::{Capability, RequestPrincipal, TransportClass};
+use medousa_local_credential::LocalCredentialSet;
 
 #[derive(Clone)]
 pub struct DaemonAccessState {
     pairing: Option<Arc<PairingService>>,
+    local_credentials: Option<Arc<LocalCredentialSet>>,
     mcp_policy_token: Option<Arc<str>>,
     surface: AccessSurface,
+    credential_lifecycle: CredentialLifecycle,
 }
 
 impl DaemonAccessState {
     pub fn new(pairing: Option<Arc<PairingService>>) -> Self {
+        let credential_lifecycle = pairing
+            .as_ref()
+            .map(|pairing| pairing.credential_lifecycle())
+            .unwrap_or_default();
         Self {
             pairing,
+            local_credentials: None,
             mcp_policy_token: None,
             surface: AccessSurface::Protected,
+            credential_lifecycle,
         }
+    }
+
+    pub fn with_local_credentials(mut self, credentials: Arc<LocalCredentialSet>) -> Self {
+        self.local_credentials = Some(credentials);
+        self
+    }
+
+    pub fn with_credential_lifecycle(mut self, lifecycle: CredentialLifecycle) -> Self {
+        self.credential_lifecycle = lifecycle;
+        self
     }
 
     pub fn with_mcp_policy_token(mut self, token: Option<String>) -> Self {
@@ -43,8 +63,10 @@ impl DaemonAccessState {
     fn for_surface(&self, surface: AccessSurface) -> Self {
         Self {
             pairing: self.pairing.clone(),
+            local_credentials: self.local_credentials.clone(),
             mcp_policy_token: self.mcp_policy_token.clone(),
             surface,
+            credential_lifecycle: self.credential_lifecycle.clone(),
         }
     }
 }
@@ -53,6 +75,7 @@ impl DaemonAccessState {
 enum AccessSurface {
     Bootstrap,
     Declared,
+    Preview,
     Protected,
 }
 
@@ -64,6 +87,14 @@ pub(crate) enum AccessDenial {
 }
 
 impl AccessDenial {
+    const fn code(self) -> &'static str {
+        match self {
+            Self::AuthenticationRequired => "authentication_required",
+            Self::InvalidCredential => "invalid_credential",
+            Self::Forbidden => "forbidden",
+        }
+    }
+
     pub(crate) fn into_response(self) -> Response {
         let (status, body) = match self {
             Self::AuthenticationRequired => (
@@ -105,17 +136,21 @@ pub fn assemble_daemon_access_boundary(
     assemble_daemon_access_boundary_with_declared(
         protected,
         DeclaredRouter::default(),
+        DeclaredRouter::default(),
         bootstrap,
         state,
     )
 }
 
-/// Assemble legacy protected, declared-policy, and bootstrap authority branches.
-/// Declared routes authenticate here and authorize in their per-method policy
-/// layer; they never consult the transitional string classifier.
+/// Assemble protected, capability-declared, preview-token, and bootstrap
+/// authority branches. Capability routes authenticate here and authorize in
+/// their per-method policy layer. Preview routes intentionally bypass daemon
+/// bearer authentication and authorize the short-lived resource token in their
+/// declared method layer.
 pub fn assemble_daemon_access_boundary_with_declared(
     protected: Router,
     declared: DeclaredRouter,
+    preview: DeclaredRouter,
     bootstrap: Router,
     state: DaemonAccessState,
 ) -> Router {
@@ -129,16 +164,21 @@ pub fn assemble_daemon_access_boundary_with_declared(
             state.for_surface(AccessSurface::Declared),
             enforce_daemon_access,
         ));
+    let preview = preview
+        .into_router()
+        .layer(axum::middleware::from_fn_with_state(
+            state.for_surface(AccessSurface::Preview),
+            enforce_daemon_access,
+        ));
     let bootstrap = bootstrap.layer(axum::middleware::from_fn_with_state(
         state.for_surface(AccessSurface::Bootstrap),
         enforce_daemon_access,
     ));
-    protected.merge(declared).merge(bootstrap)
+    protected.merge(declared).merge(preview).merge(bootstrap)
 }
 
 /// Refuse a remotely reachable listener when no credential verifier can exist.
 ///
-/// Loopback retains the bounded legacy-local compatibility path during H01.
 /// This check is deliberately performed before binding or runtime startup.
 pub fn validate_listener_security(
     addr: SocketAddr,
@@ -155,15 +195,30 @@ pub fn validate_listener_security(
 pub async fn enforce_daemon_access(
     State(state): State<DaemonAccessState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    mut request: Request<Body>,
+    request: Request<Body>,
     next: Next,
 ) -> Response {
     let trusted_local = is_trusted_local(addr.ip(), request.headers());
     let transport = TransportClass::from_request(addr.ip(), request.headers());
 
+    // Preview URLs carry their own short-lived resource token. The declared
+    // preview middleware validates it before the proxy handler runs, so this
+    // branch must not require or forward a daemon bearer credential.
+    if matches!(state.surface, AccessSurface::Preview) {
+        return next.run(request).await;
+    }
+
     let credential = bearer_credential(request.headers());
+    let local_credential = match credential {
+        BearerCredential::Valid(token) if trusted_local => state
+            .local_credentials
+            .as_ref()
+            .and_then(|credentials| credentials.resolve(token)),
+        _ => None,
+    };
     let record = match credential {
         BearerCredential::Missing | BearerCredential::Invalid => None,
+        BearerCredential::Valid(_) if local_credential.is_some() => None,
         BearerCredential::Valid(token) => state
             .pairing
             .as_ref()
@@ -171,6 +226,7 @@ pub async fn enforce_daemon_access(
     };
     let mcp_policy_authenticated = trusted_local
         && record.is_none()
+        && local_credential.is_none()
         && state.mcp_policy_token.is_some()
         && matches!(credential, BearerCredential::Valid(_))
         && medousa_mcp_gateway::verify_policy_bearer(
@@ -185,48 +241,81 @@ pub async fn enforce_daemon_access(
     // anonymous bootstrap authority.
     if !matches!(credential, BearerCredential::Missing)
         && record.is_none()
+        && local_credential.is_none()
         && !mcp_policy_authenticated
     {
-        return AccessDenial::InvalidCredential.into_response();
+        return deny(&state.credential_lifecycle, AccessDenial::InvalidCredential);
     }
 
     if matches!(state.surface, AccessSurface::Bootstrap) {
         let shared_mode = crate::shared_mode::is_shared_mode();
-        let principal = record
-            .map(|record| RequestPrincipal::from_pairing_record(record, transport, shared_mode))
+        let principal = local_credential
+            .map(|(credential_id, generation)| {
+                RequestPrincipal::local_app_with_generation(credential_id, transport, generation)
+            })
+            .or_else(|| {
+                record.map(|record| {
+                    RequestPrincipal::from_pairing_record(record, transport, shared_mode)
+                })
+            })
             .or_else(|| {
                 mcp_policy_authenticated.then(|| RequestPrincipal::mcp_policy_service(transport))
             })
             .unwrap_or_else(|| RequestPrincipal::anonymous(transport));
-        request.extensions_mut().insert(principal);
-        return next.run(request).await;
+        return run_with_principal(&state.credential_lifecycle, principal, request, next).await;
     }
 
-    if !trusted_local && record.is_none() {
-        return AccessDenial::AuthenticationRequired.into_response();
+    if record.is_none() && local_credential.is_none() && !mcp_policy_authenticated {
+        return deny(
+            &state.credential_lifecycle,
+            AccessDenial::AuthenticationRequired,
+        );
     }
 
     let shared_mode = crate::shared_mode::is_shared_mode();
-    let principal = match record {
-        Some(record) => RequestPrincipal::from_pairing_record(record, transport, shared_mode),
-        None if mcp_policy_authenticated => RequestPrincipal::mcp_policy_service(transport),
-        None if trusted_local && state.mcp_policy_token.is_none() => {
-            RequestPrincipal::legacy_local_with_mcp_policy()
+    let principal = match (local_credential, record) {
+        (Some((credential_id, generation)), _) => {
+            RequestPrincipal::local_app_with_generation(credential_id, transport, generation)
         }
-        None if trusted_local => RequestPrincipal::legacy_local(),
-        None => RequestPrincipal::anonymous(transport),
+        (None, Some(record)) => {
+            RequestPrincipal::from_pairing_record(record, transport, shared_mode)
+        }
+        (None, None) if mcp_policy_authenticated => RequestPrincipal::mcp_policy_service(transport),
+        (None, None) => RequestPrincipal::anonymous(transport),
     };
     if matches!(state.surface, AccessSurface::Declared) {
-        request.extensions_mut().insert(principal);
-        return next.run(request).await;
+        return run_with_principal(&state.credential_lifecycle, principal, request, next).await;
     }
     if principal.capabilities().contains(Capability::WorkshopRead) {
-        request.extensions_mut().insert(principal);
-        next.run(request).await
+        run_with_principal(&state.credential_lifecycle, principal, request, next).await
     } else if principal.kind() == crate::request_principal::PrincipalKind::Anonymous {
-        AccessDenial::AuthenticationRequired.into_response()
+        deny(
+            &state.credential_lifecycle,
+            AccessDenial::AuthenticationRequired,
+        )
     } else {
-        AccessDenial::Forbidden.into_response()
+        deny(&state.credential_lifecycle, AccessDenial::Forbidden)
+    }
+}
+
+fn deny(lifecycle: &CredentialLifecycle, denial: AccessDenial) -> Response {
+    lifecycle.record_denial(denial.code());
+    denial.into_response()
+}
+
+async fn run_with_principal(
+    lifecycle: &CredentialLifecycle,
+    principal: RequestPrincipal,
+    mut request: Request<Body>,
+    next: Next,
+) -> Response {
+    let lease = lifecycle.lease(&principal);
+    request.extensions_mut().insert(principal);
+    if let Some(lease) = lease {
+        request.extensions_mut().insert(lease.clone());
+        lease.wrap_response(next.run(request).await)
+    } else {
+        next.run(request).await
     }
 }
 
@@ -260,6 +349,7 @@ fn bearer_credential(headers: &axum::http::HeaderMap) -> BearerCredential<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::Extension;
     use axum::body::to_bytes;
     use axum::http::header::AUTHORIZATION;
     use axum::routing::{get, post};
@@ -274,6 +364,107 @@ mod tests {
         let protected = Router::new().route("/v1/turns", get(|| async { StatusCode::NO_CONTENT }));
         let bootstrap = Router::new().route("/health", get(|| async { StatusCode::OK }));
         assemble_daemon_access_boundary(protected, bootstrap, DaemonAccessState::new(None))
+    }
+
+    fn authenticated_local_test_app() -> Router {
+        let protected = Router::new().route(
+            "/v1/turns",
+            get(
+                |Extension(principal): Extension<RequestPrincipal>| async move {
+                    if principal.kind() == crate::request_principal::PrincipalKind::LocalApp
+                        && principal.credential_id().map(|id| id.as_str()) == Some("home-id")
+                    {
+                        StatusCode::NO_CONTENT
+                    } else {
+                        StatusCode::IM_A_TEAPOT
+                    }
+                },
+            ),
+        );
+        assemble_daemon_access_boundary(
+            protected,
+            Router::new(),
+            DaemonAccessState::new(None).with_local_credentials(Arc::new(LocalCredentialSet::new(
+                [
+                    medousa_local_credential::LocalCredentialVerifier::from_token(
+                        "home-id",
+                        "home-secret",
+                    ),
+                ],
+            ))),
+        )
+    }
+
+    async fn authenticated_local_request(source: &str, bearer: Option<&str>) -> StatusCode {
+        let mut request = Request::builder()
+            .uri("/v1/turns")
+            .body(Body::empty())
+            .unwrap();
+        request.extensions_mut().insert(ConnectInfo(
+            source.parse::<SocketAddr>().expect("valid source"),
+        ));
+        if let Some(bearer) = bearer {
+            request.headers_mut().insert(
+                AUTHORIZATION,
+                format!("Bearer {bearer}").parse().expect("valid header"),
+            );
+        }
+        authenticated_local_test_app()
+            .oneshot(request)
+            .await
+            .expect("middleware response")
+            .status()
+    }
+
+    #[tokio::test]
+    async fn verifier_swap_invalidates_reused_service_without_restart() {
+        let credentials = Arc::new(LocalCredentialSet::new([
+            medousa_local_credential::LocalCredentialVerifier::from_token("local-id", "old"),
+        ]));
+        let lifecycle = CredentialLifecycle::default();
+        let app = assemble_daemon_access_boundary(
+            Router::new().route("/v1/turns", get(|| async { StatusCode::NO_CONTENT })),
+            Router::new(),
+            DaemonAccessState::new(None)
+                .with_local_credentials(credentials.clone())
+                .with_credential_lifecycle(lifecycle.clone()),
+        );
+        let request = |token: &'static str| {
+            let mut request = Request::builder()
+                .uri("/v1/turns")
+                .header(AUTHORIZATION, format!("Bearer {token}"))
+                .body(Body::empty())
+                .unwrap();
+            request.extensions_mut().insert(ConnectInfo(
+                "127.0.0.1:40000".parse::<SocketAddr>().unwrap(),
+            ));
+            request
+        };
+        assert_eq!(
+            app.clone().oneshot(request("old")).await.unwrap().status(),
+            StatusCode::NO_CONTENT
+        );
+
+        credentials.replace(
+            medousa_local_credential::LocalCredentialVerifier::from_token_with_generation(
+                "local-id", "new", 2,
+            ),
+        );
+        lifecycle.revoke(
+            "local-id",
+            1,
+            crate::credential_lifecycle::CredentialKind::LocalApp,
+            "rotation",
+        );
+        assert_eq!(
+            app.clone().oneshot(request("old")).await.unwrap().status(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            app.oneshot(request("new")).await.unwrap().status(),
+            StatusCode::NO_CONTENT
+        );
+        assert_eq!(lifecycle.snapshot().denials.invalid_credential, 1);
     }
 
     fn mcp_policy_test_app(token: Option<&str>) -> Router {
@@ -307,6 +498,7 @@ mod tests {
         assemble_daemon_access_boundary_with_declared(
             Router::new(),
             declared,
+            DeclaredRouter::default(),
             Router::new(),
             DaemonAccessState::new(None).with_mcp_policy_token(token.map(str::to_string)),
         )
@@ -485,7 +677,7 @@ mod tests {
     async fn configured_mcp_policy_token_cannot_be_bypassed_on_loopback() {
         assert_eq!(
             mcp_request("/v1/mcp/policy/evaluate", "127.0.0.1:43100", None).await,
-            StatusCode::FORBIDDEN
+            StatusCode::UNAUTHORIZED
         );
         assert_eq!(
             mcp_request("/v1/mcp/policy/evaluate", "127.0.0.1:43100", Some("wrong")).await,
@@ -494,7 +686,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unset_mcp_policy_token_retains_loopback_compatibility_only() {
+    async fn unset_mcp_policy_token_denies_credentialless_loopback() {
         let mut request = Request::builder()
             .method(axum::http::Method::POST)
             .uri("/v1/mcp/policy/evaluate")
@@ -509,7 +701,7 @@ mod tests {
             .oneshot(request)
             .await
             .expect("middleware response");
-        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
@@ -564,10 +756,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn loopback_retains_temporary_local_compatibility() {
+    async fn loopback_requires_a_named_local_credential() {
         assert_eq!(
             request_from("/v1/turns", "127.0.0.1:43100", None).await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn named_local_credential_grants_loopback_authority() {
+        assert_eq!(
+            authenticated_local_request("127.0.0.1:43100", Some("home-secret")).await,
             StatusCode::NO_CONTENT
+        );
+        assert_eq!(
+            authenticated_local_request("127.0.0.1:43100", None).await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn named_local_credential_cannot_be_replayed_remotely() {
+        assert_eq!(
+            authenticated_local_request("192.0.2.10:43100", Some("home-secret")).await,
+            StatusCode::UNAUTHORIZED
         );
     }
 
@@ -592,7 +804,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn declared_branch_uses_method_policy_not_legacy_path_classification() {
+    async fn declared_branch_uses_method_policy_not_path_classification() {
         let declared = DeclaredRouter::default().route(
             RoutePolicy {
                 method: axum::http::Method::GET,
@@ -609,11 +821,20 @@ mod tests {
         let app = assemble_daemon_access_boundary_with_declared(
             Router::new(),
             declared,
+            DeclaredRouter::default(),
             Router::new(),
-            DaemonAccessState::new(None),
+            DaemonAccessState::new(None).with_local_credentials(Arc::new(LocalCredentialSet::new(
+                [
+                    medousa_local_credential::LocalCredentialVerifier::from_token(
+                        "home-id",
+                        "home-secret",
+                    ),
+                ],
+            ))),
         );
         let mut request = Request::builder()
             .uri("/health")
+            .header(AUTHORIZATION, "Bearer home-secret")
             .body(Body::empty())
             .unwrap();
         request.extensions_mut().insert(ConnectInfo(
@@ -623,6 +844,54 @@ mod tests {
             app.oneshot(request).await.unwrap().status(),
             StatusCode::NO_CONTENT
         );
+    }
+
+    #[tokio::test]
+    async fn preview_branch_accepts_only_a_live_resource_token() {
+        let token = crate::daemon::forge_preview::mint_preview_grant(
+            "work-preview-test",
+            "run-preview-test",
+            "http://127.0.0.1:3000/",
+        )
+        .await
+        .expect("preview token");
+        let preview = DeclaredRouter::default().route(
+            RoutePolicy {
+                method: axum::http::Method::GET,
+                path: "/v1/forge/preview/{token}",
+                group: RouteGroup::Preview,
+                required_capability: None,
+                bootstrap_public: false,
+                browser_policy: BrowserPolicy::ExactOrigin,
+                body_limit: 2 * 1024 * 1024,
+                rate_limit_class: RateLimitClass::Read,
+            },
+            get(|| async { StatusCode::NO_CONTENT }),
+        );
+        let app = assemble_daemon_access_boundary_with_declared(
+            Router::new(),
+            DeclaredRouter::default(),
+            preview,
+            Router::new(),
+            DaemonAccessState::new(None),
+        );
+
+        for (candidate, expected) in [
+            (token.as_str(), StatusCode::NO_CONTENT),
+            ("missing-preview-token", StatusCode::NOT_FOUND),
+        ] {
+            let mut request = Request::builder()
+                .uri(format!("/v1/forge/preview/{candidate}"))
+                .body(Body::empty())
+                .unwrap();
+            request.extensions_mut().insert(ConnectInfo(
+                "192.0.2.10:43100".parse::<SocketAddr>().unwrap(),
+            ));
+            assert_eq!(
+                app.clone().oneshot(request).await.unwrap().status(),
+                expected
+            );
+        }
     }
 
     #[tokio::test]

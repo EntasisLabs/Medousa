@@ -49,6 +49,14 @@ pub enum RateLimitClass {
     Stream,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthorizationClass {
+    Public,
+    Capability,
+    PreviewToken,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RoutePolicy {
     pub method: Method,
@@ -67,6 +75,7 @@ pub struct RouteInventoryEntry {
     pub path: &'static str,
     pub group: RouteGroup,
     pub required_capability: Option<&'static str>,
+    pub authorization: AuthorizationClass,
     pub bootstrap_public: bool,
     pub browser_policy: BrowserPolicy,
     pub body_limit: usize,
@@ -80,10 +89,23 @@ impl From<&RoutePolicy> for RouteInventoryEntry {
             path: policy.path,
             group: policy.group,
             required_capability: policy.required_capability.map(Capability::as_str),
+            authorization: policy.authorization(),
             bootstrap_public: policy.bootstrap_public,
             browser_policy: policy.browser_policy,
             body_limit: policy.body_limit,
             rate_limit_class: policy.rate_limit_class,
+        }
+    }
+}
+
+impl RoutePolicy {
+    const fn authorization(&self) -> AuthorizationClass {
+        if self.bootstrap_public {
+            AuthorizationClass::Public
+        } else if matches!(self.group, RouteGroup::Preview) {
+            AuthorizationClass::PreviewToken
+        } else {
+            AuthorizationClass::Capability
         }
     }
 }
@@ -123,22 +145,34 @@ where
         let (first_policy, first_handler) = routes.next().expect("route set cannot be empty");
         let path = first_policy.path;
         let first_limit = first_policy.body_limit;
+        let first_group = first_policy.group;
         let first_capability = first_policy.required_capability;
+        let first_browser_policy = first_policy.browser_policy;
         self.inventory
             .declare(first_policy)
             .expect("invalid daemon route policy");
-        let mut handler = declared_method(first_handler, first_limit, first_capability);
+        let mut handler = declared_method(
+            first_handler,
+            first_limit,
+            first_group,
+            first_capability,
+            first_browser_policy,
+        );
         for (policy, method_handler) in routes {
             assert_eq!(policy.path, path, "route set must share one path");
             let body_limit = policy.body_limit;
+            let group = policy.group;
             let required_capability = policy.required_capability;
+            let browser_policy = policy.browser_policy;
             self.inventory
                 .declare(policy)
                 .expect("invalid daemon route policy");
             handler = handler.merge(declared_method(
                 method_handler,
                 body_limit,
+                group,
                 required_capability,
+                browser_policy,
             ));
         }
         self.router = self.router.route(path, handler);
@@ -175,12 +209,24 @@ where
 fn declared_method<S>(
     handler: MethodRouter<S>,
     body_limit: usize,
+    group: RouteGroup,
     required_capability: Option<Capability>,
+    browser_policy: BrowserPolicy,
 ) -> MethodRouter<S>
 where
     S: Clone + Send + Sync + 'static,
 {
-    let handler = handler.layer(DefaultBodyLimit::max(body_limit));
+    let handler = handler.layer(DefaultBodyLimit::max(body_limit)).layer(
+        axum::middleware::from_fn_with_state(
+            browser_policy,
+            crate::daemon::request_boundary::enforce_declared_browser_policy,
+        ),
+    );
+    if matches!(group, RouteGroup::Preview) {
+        return handler.layer(axum::middleware::from_fn(
+            crate::daemon::forge_preview::enforce_preview_grant,
+        ));
+    }
     match required_capability {
         Some(required) => handler.layer(axum::middleware::from_fn_with_state(
             required,
@@ -214,8 +260,14 @@ impl RouteInventory {
         if policy.bootstrap_public != policy.group.permits_bootstrap() {
             return Err("bootstrap visibility does not match route group");
         }
-        if !policy.bootstrap_public && policy.required_capability.is_none() {
+        if !policy.bootstrap_public
+            && !matches!(policy.group, RouteGroup::Preview)
+            && policy.required_capability.is_none()
+        {
             return Err("protected route requires a capability");
+        }
+        if matches!(policy.group, RouteGroup::Preview) && policy.required_capability.is_some() {
+            return Err("preview route authorization is token-owned");
         }
         if policy.bootstrap_public && policy.required_capability.is_some() {
             return Err("bootstrap route cannot require an application capability");
@@ -255,8 +307,12 @@ impl RouteInventory {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use super::*;
-    use axum::http::StatusCode;
+    use axum::http::header::ORIGIN;
+    use axum::http::{HeaderValue, StatusCode};
     use axum::routing::get;
     use tower::ServiceExt;
 
@@ -275,6 +331,19 @@ mod tests {
         }
     }
 
+    fn preview() -> RoutePolicy {
+        RoutePolicy {
+            method: Method::GET,
+            path: "/v1/forge/preview/{token}",
+            group: RouteGroup::Preview,
+            required_capability: None,
+            bootstrap_public: false,
+            browser_policy: BrowserPolicy::ExactOrigin,
+            body_limit: 2 * 1024 * 1024,
+            rate_limit_class: RateLimitClass::Read,
+        }
+    }
+
     #[test]
     fn protected_routes_require_capabilities() {
         let mut inventory = RouteInventory::default();
@@ -283,6 +352,22 @@ mod tests {
         assert_eq!(
             inventory.declare(policy),
             Err("protected route requires a capability")
+        );
+    }
+
+    #[test]
+    fn preview_routes_are_token_owned_not_capability_owned() {
+        let mut inventory = RouteInventory::default();
+        inventory.declare(preview()).unwrap();
+        let entry = inventory.entries().next().unwrap();
+        assert_eq!(entry.authorization, AuthorizationClass::PreviewToken);
+        assert_eq!(entry.required_capability, None);
+
+        let mut invalid = preview();
+        invalid.required_capability = Some(Capability::AdminExecute);
+        assert_eq!(
+            inventory.declare(invalid),
+            Err("preview route authorization is token-owned")
         );
     }
 
@@ -323,6 +408,7 @@ mod tests {
         let entry = inventory.entries().next().unwrap();
         assert_eq!(entry.method, "GET");
         assert_eq!(entry.required_capability, Some("workshop.read"));
+        assert_eq!(entry.authorization, AuthorizationClass::Capability);
         assert_eq!(serde_json::to_value(entry).unwrap()["group"], "portal");
     }
 
@@ -351,7 +437,10 @@ mod tests {
         let router = DeclaredRouter::default()
             .route(protected(), get(|| async { StatusCode::NO_CONTENT }))
             .into_router()
-            .layer(Extension(RequestPrincipal::legacy_local()));
+            .layer(Extension(RequestPrincipal::local_app(
+                Arc::from("test-local"),
+                TransportClass::Loopback,
+            )));
         let response = router
             .oneshot(
                 Request::builder()
@@ -361,6 +450,63 @@ mod tests {
             )
             .await
             .unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
+
+    #[tokio::test]
+    async fn native_only_route_rejects_browser_origin_before_handler() {
+        let hits = Arc::new(AtomicUsize::new(0));
+        let handler_hits = hits.clone();
+        let router = DeclaredRouter::default()
+            .route(
+                protected(),
+                get(move || {
+                    let handler_hits = handler_hits.clone();
+                    async move {
+                        handler_hits.fetch_add(1, Ordering::Relaxed);
+                        StatusCode::NO_CONTENT
+                    }
+                }),
+            )
+            .into_router()
+            .layer(Extension(RequestPrincipal::local_app(
+                Arc::from("test-local"),
+                TransportClass::Loopback,
+            )));
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/health")
+                    .header(ORIGIN, HeaderValue::from_static("https://attacker.example"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(hits.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn native_only_route_allows_originless_native_client() {
+        let router = DeclaredRouter::default()
+            .route(protected(), get(|| async { StatusCode::NO_CONTENT }))
+            .into_router()
+            .layer(Extension(RequestPrincipal::local_app(
+                Arc::from("test-local"),
+                TransportClass::Loopback,
+            )));
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
         assert_eq!(response.status(), StatusCode::NO_CONTENT);
     }
 }

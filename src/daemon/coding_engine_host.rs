@@ -9,17 +9,21 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 
+use axum::Json;
 use axum::extract::ws::{Message as AxumMessage, WebSocket, WebSocketUpgrade};
-use axum::extract::{Query, State};
+use axum::extract::{Extension, Query, State};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
-use axum::{Json, Router};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 use tokio_tungstenite::{connect_async, tungstenite::Message as TungsteniteMessage};
 
+use crate::credential_lifecycle::CredentialLease;
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
 use crate::daemon::state::AppState;
 use crate::grapheme_script::store::GraphemeScriptStore;
 use crate::paths::medousa_data_dir;
@@ -130,10 +134,7 @@ fn forge_worktree_roots() -> Vec<PathBuf> {
 /// Must match forge projections (`workspace_environment`), not the durable
 /// staging `item.environment` alone — after an isolated attempt the client
 /// document URIs live under the attempt worktree, which is a sibling of staging.
-fn worktree_for_work(
-    forge: &medousa_forge::forge::Forge,
-    work_id: &str,
-) -> Option<PathBuf> {
+fn worktree_for_work(forge: &medousa_forge::forge::Forge, work_id: &str) -> Option<PathBuf> {
     let id = medousa_forge::model::WorkId::from(work_id.trim().to_owned());
     forge
         .load(&id)
@@ -319,7 +320,9 @@ pub async fn ensure_coding_engine(host: &CodingEngineHost) -> CodingEngineInfo {
         let mut guard = host.child.lock().await;
         if let Some(mut child) = guard.take() {
             let _ = child.start_kill();
-            tracing::warn!("killed medousa-code after health timeout so the next request can respawn");
+            tracing::warn!(
+                "killed medousa-code after health timeout so the next request can respawn"
+            );
         }
     }
 
@@ -329,26 +332,98 @@ pub async fn ensure_coding_engine(host: &CodingEngineHost) -> CodingEngineInfo {
     )
 }
 
-pub fn coding_engine_router(state: AppState) -> Router {
-    Router::new()
-        .route("/v1/coding-engine", get(coding_engine_info))
-        .route("/v1/code/lsp", get(code_lsp_ws))
-        .route("/v1/code/hover", get(code_hover))
-        .route("/v1/code/definition", get(code_definition))
-        .route("/v1/code/diagnostics", get(code_diagnostics))
+pub fn coding_engine_surface() -> DeclaredRouter<AppState> {
+    DeclaredRouter::default()
         .route(
-            "/v1/code/workspace-diagnostics",
+            coding_engine_read_policy("/v1/coding-engine"),
+            get(coding_engine_info),
+        )
+        .route(
+            coding_engine_policy(
+                axum::http::Method::GET,
+                "/v1/code/lsp",
+                1024,
+                RateLimitClass::Stream,
+            ),
+            get(code_lsp_ws),
+        )
+        .route(coding_engine_read_policy("/v1/code/hover"), get(code_hover))
+        .route(
+            coding_engine_read_policy("/v1/code/definition"),
+            get(code_definition),
+        )
+        .route(
+            coding_engine_read_policy("/v1/code/diagnostics"),
+            get(code_diagnostics),
+        )
+        .route(
+            coding_engine_read_policy("/v1/code/workspace-diagnostics"),
             get(code_workspace_diagnostics),
         )
-        .route("/v1/code/symbols", get(code_symbols))
-        .route("/v1/code/workspace-symbols", get(code_workspace_symbols))
-        .route("/v1/code/capabilities", get(code_capabilities))
-        .route("/v1/code/conventions", get(code_conventions))
-        .route("/v1/code/language-root", get(code_language_root))
-        .route("/v1/code/language-sessions", get(code_language_sessions))
-        .route("/v1/code/language-matrix", get(code_language_matrix))
-        .route("/v1/code/request", post(code_request))
-        .with_state(state)
+        .route(
+            coding_engine_read_policy("/v1/code/symbols"),
+            get(code_symbols),
+        )
+        .route(
+            coding_engine_read_policy("/v1/code/workspace-symbols"),
+            get(code_workspace_symbols),
+        )
+        .route(
+            coding_engine_read_policy("/v1/code/capabilities"),
+            get(code_capabilities),
+        )
+        .route(
+            coding_engine_read_policy("/v1/code/conventions"),
+            get(code_conventions),
+        )
+        .route(
+            coding_engine_read_policy("/v1/code/language-root"),
+            get(code_language_root),
+        )
+        .route(
+            coding_engine_read_policy("/v1/code/language-sessions"),
+            get(code_language_sessions),
+        )
+        .route(
+            coding_engine_read_policy("/v1/code/language-matrix"),
+            get(code_language_matrix),
+        )
+        .route(
+            coding_engine_policy(
+                axum::http::Method::POST,
+                "/v1/code/request",
+                1024 * 1024,
+                RateLimitClass::Administration,
+            ),
+            post(code_request),
+        )
+}
+
+fn coding_engine_read_policy(path: &'static str) -> RoutePolicy {
+    coding_engine_policy(
+        axum::http::Method::GET,
+        path,
+        1024,
+        RateLimitClass::Administration,
+    )
+}
+
+fn coding_engine_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    body_limit: usize,
+    rate_limit_class: RateLimitClass,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Administration,
+        required_capability: Some(crate::request_principal::Capability::AdminExecute),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class,
+    }
 }
 
 pub async fn coding_engine_info(State(state): State<AppState>) -> Json<CodingEngineInfo> {
@@ -374,6 +449,7 @@ pub async fn code_lsp_ws(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
     Query(q): Query<CodeLspQuery>,
+    lease: Option<Extension<CredentialLease>>,
 ) -> axum::response::Response {
     let host = state.coding_engine.clone().unwrap_or_default();
     let info = ensure_coding_engine(&host).await;
@@ -381,7 +457,14 @@ pub async fn code_lsp_ws(
         return (axum::http::StatusCode::SERVICE_UNAVAILABLE, info.message).into_response();
     }
     ws.on_upgrade(move |socket| {
-        proxy_lsp_socket(socket, state, q.language, q.work_id, q.document_uri)
+        proxy_lsp_socket(
+            socket,
+            state,
+            q.language,
+            q.work_id,
+            q.document_uri,
+            lease.map(|Extension(lease)| lease),
+        )
     })
     .into_response()
 }
@@ -392,6 +475,7 @@ async fn proxy_lsp_socket(
     language: String,
     work_id: Option<String>,
     document_uri: Option<String>,
+    lease: Option<CredentialLease>,
 ) {
     let host = state.coding_engine.clone().unwrap_or_default();
     let info = ensure_coding_engine(&host).await;
@@ -442,7 +526,16 @@ async fn proxy_lsp_socket(
         }
     });
 
-    while let Some(Ok(msg)) = up_rx.next().await {
+    let mut watcher = lease.map(|lease| lease.watcher());
+    loop {
+        let msg = tokio::select! {
+            _ = wait_for_revocation(&mut watcher) => {
+                let _ = client_tx.send(AxumMessage::Close(None)).await;
+                break;
+            }
+            msg = up_rx.next() => msg,
+        };
+        let Some(Ok(msg)) = msg else { break };
         let out = match msg {
             TungsteniteMessage::Text(t) => AxumMessage::Text(t.to_string().into()),
             TungsteniteMessage::Binary(b) => AxumMessage::Binary(b),
@@ -456,6 +549,15 @@ async fn proxy_lsp_socket(
         }
     }
     client_to_up.abort();
+}
+
+async fn wait_for_revocation(
+    watcher: &mut Option<crate::credential_lifecycle::CredentialRevocationWatcher>,
+) {
+    match watcher {
+        Some(watcher) => watcher.revoked().await,
+        None => futures_util::future::pending().await,
+    }
 }
 
 fn lsp_upstream_url(
@@ -579,7 +681,10 @@ async fn proxy_agent_get(
     // Workshop paths are daemon authority, never caller authority.
     forwarded.remove("workspace_root");
     let attempt_id = forwarded.remove("attempt_id");
-    if attempt_id.as_deref().is_some_and(|value| value.trim().is_empty()) {
+    if attempt_id
+        .as_deref()
+        .is_some_and(|value| value.trim().is_empty())
+    {
         return Err((
             axum::http::StatusCode::BAD_REQUEST,
             "attempt_id must be non-empty".to_string(),
@@ -672,10 +777,11 @@ async fn proxy_agent_post(
         None => None,
     };
     if let Some(work_id) = work_id {
-        let root = worktree_for_request(state.forge.as_ref(), &work_id, attempt_id.as_deref()).ok_or((
-            axum::http::StatusCode::CONFLICT,
-            "unknown undertaking, attempt, or governed worktree".to_string(),
-        ))?;
+        let root = worktree_for_request(state.forge.as_ref(), &work_id, attempt_id.as_deref())
+            .ok_or((
+                axum::http::StatusCode::CONFLICT,
+                "unknown undertaking, attempt, or governed worktree".to_string(),
+            ))?;
         if let Some(object) = body.as_object_mut() {
             object.insert(
                 "workspace_root".into(),
@@ -842,18 +948,12 @@ mod tests {
         let (item, second) = forge
             .begin_isolated_attempt(&item.id, executor(), None, &Forge::system_actor())
             .expect("second attempt");
-        let first_root = worktree_for_request(
-            &forge,
-            item.id.as_str(),
-            Some(first.attempt_id.as_str()),
-        )
-        .expect("first root");
-        let second_root = worktree_for_request(
-            &forge,
-            item.id.as_str(),
-            Some(second.attempt_id.as_str()),
-        )
-        .expect("second root");
+        let first_root =
+            worktree_for_request(&forge, item.id.as_str(), Some(first.attempt_id.as_str()))
+                .expect("first root");
+        let second_root =
+            worktree_for_request(&forge, item.id.as_str(), Some(second.attempt_id.as_str()))
+                .expect("second root");
         assert_ne!(first_root, second_root);
         assert_eq!(
             first_root,

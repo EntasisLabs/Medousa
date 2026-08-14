@@ -28,12 +28,11 @@ Your phone is a window. The Mac/PC (or a workshop host) runs Medousa Engine.
 After pairing, you can leave the LAN pairing window off. Already-paired clients
 keep working over the private tunnel (Iroh) when you’re off the LAN.
 
-> **Current security limitation:** opening the LAN pairing window binds the
-> complete daemon API to the LAN; pairing does not yet make credentials
-> mandatory on every personal-mode route. Use only a private, isolated network,
-> close the window immediately, and prefer the full Iroh invite below. Never use
-> the LAN window on guest/café Wi-Fi or expose port 7419 to the internet. See
-> [hardening H01](../../architecture/hardening/README.md).
+Opening the LAN pairing window binds the daemon to the LAN, but application and
+invite-management routes still require credentials. Only the bounded
+`/pair/init` and `/pair/verify` ceremony is anonymous. Use a trusted network for
+compact LAN invites, close the window when finished, and never expose port 7419
+directly to the internet. Prefer the full Iroh invite below when off-LAN.
 
 ## Pair with a VPS or other off-LAN host
 

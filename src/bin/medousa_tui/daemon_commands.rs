@@ -21,8 +21,15 @@ use super::{
     EventOutcome, TuiState, WorkerCommand, next_worker_request_id, push_obs_alert, queue_worker_command,
 };
 
-pub(crate) fn daemon_client(daemon_url: &str) -> MedousaClient {
-    MedousaClient::with_transport(Arc::new(HttpTransport::new()), daemon_url)
+pub(crate) fn daemon_client(daemon_url: &str) -> Result<MedousaClient> {
+    let client = medousa::local_daemon_auth::async_client(
+        daemon_url,
+        medousa_local_credential::TUI_LOCAL_NAME,
+    )?;
+    Ok(MedousaClient::with_transport(
+        Arc::new(HttpTransport::with_client(client)),
+        daemon_url,
+    ))
 }
 
 fn sdk_err(err: medousa_sdk::SdkError) -> anyhow::Error {
@@ -175,7 +182,7 @@ pub(crate) fn handle_watch_command(
 }
 
 pub(crate) async fn daemon_health(daemon_url: &str) -> Result<HealthResponse> {
-    daemon_client(daemon_url)
+    daemon_client(daemon_url)?
         .health()
         .get()
         .await
@@ -195,7 +202,7 @@ pub(crate) async fn daemon_enqueue_ask(daemon_url: &str, prompt: &str) -> Result
         additional_manuscript_ids: None,
         suggested_capability_ids: None,
     };
-    daemon_client(daemon_url)
+    daemon_client(daemon_url)?
         .jobs()
         .enqueue_ask(&request)
         .await
@@ -228,7 +235,7 @@ pub(crate) async fn daemon_register_recurring_prompt(
         manuscript_id: None,
         display_name: None,
     };
-    daemon_client(daemon_url)
+    daemon_client(daemon_url)?
         .recurring()
         .register_prompt(&request)
         .await
@@ -239,7 +246,7 @@ pub(crate) async fn daemon_artifact_command(
     daemon_url: &str,
     request: &ArtifactCommandRequest,
 ) -> Result<ArtifactCommandResponse> {
-    daemon_client(daemon_url)
+    daemon_client(daemon_url)?
         .runtime()
         .artifact_command(request)
         .await
@@ -250,7 +257,7 @@ pub(crate) async fn daemon_stage_route_command(
     daemon_url: &str,
     request: &StageRouteCommandRequest,
 ) -> Result<StageRouteCommandResponse> {
-    daemon_client(daemon_url)
+    daemon_client(daemon_url)?
         .runtime()
         .stage_route_command(request)
         .await
@@ -261,7 +268,7 @@ pub(crate) async fn daemon_runtime_config_command(
     daemon_url: &str,
     request: &RuntimeConfigCommandRequest,
 ) -> Result<RuntimeConfigCommandResponse> {
-    daemon_client(daemon_url)
+    daemon_client(daemon_url)?
         .runtime()
         .config_command(request)
         .await
@@ -272,7 +279,7 @@ pub(crate) async fn daemon_start_interactive_turn(
     daemon_url: &str,
     request: &InteractiveTurnRequest,
 ) -> Result<InteractiveTurnResponse> {
-    daemon_client(daemon_url)
+    daemon_client(daemon_url)?
         .interactive()
         .start_turn(request)
         .await
@@ -283,7 +290,7 @@ pub(crate) async fn daemon_list_history_sessions(
     daemon_url: &str,
     limit: usize,
 ) -> Result<SessionHistoryListResponse> {
-    daemon_client(daemon_url)
+    daemon_client(daemon_url)?
         .sessions()
         .list(limit)
         .await
@@ -294,7 +301,7 @@ pub(crate) async fn daemon_load_session_history(
     daemon_url: &str,
     session_id: &str,
 ) -> Result<SessionHistoryResponse> {
-    daemon_client(daemon_url)
+    daemon_client(daemon_url)?
         .sessions()
         .history(session_id)
         .await
@@ -306,7 +313,7 @@ pub(crate) async fn daemon_set_session_display_name(
     session_id: &str,
     display_name: &str,
 ) -> Result<SessionSetDisplayNameResponse> {
-    daemon_client(daemon_url)
+    daemon_client(daemon_url)?
         .sessions()
         .set_display_name(session_id, display_name)
         .await
@@ -317,7 +324,7 @@ pub(crate) async fn daemon_list_budget_requests(
     daemon_url: &str,
     pending_only: bool,
 ) -> Result<TurnBudgetRequestListResponse> {
-    daemon_client(daemon_url)
+    daemon_client(daemon_url)?
         .budget()
         .list(pending_only)
         .await
@@ -329,7 +336,7 @@ pub(crate) async fn daemon_approve_budget_request(
     request_id: &str,
     body: &TurnBudgetApproveRequest,
 ) -> Result<TurnBudgetRequestResponse> {
-    daemon_client(daemon_url)
+    daemon_client(daemon_url)?
         .budget()
         .approve(request_id, body)
         .await
@@ -341,7 +348,7 @@ pub(crate) async fn daemon_deny_budget_request(
     request_id: &str,
     body: &TurnBudgetDenyRequest,
 ) -> Result<TurnBudgetRequestResponse> {
-    daemon_client(daemon_url)
+    daemon_client(daemon_url)?
         .budget()
         .deny(request_id, body)
         .await
@@ -353,7 +360,7 @@ pub(crate) async fn daemon_append_session_turn(
     session_id: &str,
     request: &SessionAppendTurnRequest,
 ) -> Result<SessionAppendTurnResponse> {
-    daemon_client(daemon_url)
+    daemon_client(daemon_url)?
         .sessions()
         .append_turn(session_id, request)
         .await

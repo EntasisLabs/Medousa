@@ -10,6 +10,102 @@ use medousa_types::{
 };
 
 use crate::calendar::CalendarService;
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
+
+pub fn calendar_surface() -> DeclaredRouter {
+    use axum::routing::{delete, get, post, put};
+
+    DeclaredRouter::default()
+        .methods([
+            (
+                calendar_read_policy("/v1/calendar/events"),
+                get(list_calendar_events),
+            ),
+            (
+                calendar_write_policy(
+                    axum::http::Method::POST,
+                    "/v1/calendar/events",
+                    256 * 1024,
+                ),
+                post(create_calendar_event),
+            ),
+        ])
+        .methods([
+            (
+                calendar_write_policy(
+                    axum::http::Method::PUT,
+                    "/v1/calendar/events/{uid}",
+                    256 * 1024,
+                ),
+                put(update_calendar_event),
+            ),
+            (
+                calendar_write_policy(
+                    axum::http::Method::DELETE,
+                    "/v1/calendar/events/{uid}",
+                    1024,
+                ),
+                delete(delete_calendar_event),
+            ),
+        ])
+        .route(
+            calendar_write_policy(
+                axum::http::Method::POST,
+                "/v1/calendar/import",
+                8 * 1024 * 1024,
+            ),
+            post(import_calendar),
+        )
+        .route(
+            calendar_read_policy("/v1/calendar/export"),
+            get(export_calendar),
+        )
+}
+
+fn calendar_read_policy(path: &'static str) -> RoutePolicy {
+    calendar_policy(
+        axum::http::Method::GET,
+        path,
+        crate::request_principal::Capability::ContentRead,
+        1024,
+        RateLimitClass::Read,
+    )
+}
+
+fn calendar_write_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    body_limit: usize,
+) -> RoutePolicy {
+    calendar_policy(
+        method,
+        path,
+        crate::request_principal::Capability::ContentWrite,
+        body_limit,
+        RateLimitClass::Mutation,
+    )
+}
+
+fn calendar_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    required_capability: crate::request_principal::Capability,
+    body_limit: usize,
+    rate_limit_class: RateLimitClass,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Portal,
+        required_capability: Some(required_capability),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class,
+    }
+}
 
 fn map_calendar_error(err: anyhow::Error) -> (StatusCode, String) {
     let message = err.to_string();

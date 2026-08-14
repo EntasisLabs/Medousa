@@ -1,6 +1,7 @@
 //! Authenticated request identity produced once at the daemon boundary.
 
 use std::net::IpAddr;
+use std::sync::Arc;
 
 use axum::http::HeaderMap;
 
@@ -10,7 +11,7 @@ use crate::shared_mode::root_profile_id;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PrincipalKind {
     Anonymous,
-    LegacyLocal,
+    LocalApp,
     McpGateway,
     Portal,
     Peer,
@@ -37,7 +38,7 @@ impl TransportClass {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CredentialId(String);
+pub struct CredentialId(Arc<str>);
 
 impl CredentialId {
     pub fn as_str(&self) -> &str {
@@ -147,28 +148,29 @@ impl RequestPrincipal {
         }
     }
 
-    pub fn legacy_local() -> Self {
-        Self {
-            kind: PrincipalKind::LegacyLocal,
-            credential_id: None,
-            profile_id: None,
-            capabilities: CapabilitySet::operator(),
-            transport: TransportClass::Loopback,
-            revocation_generation: 0,
-        }
+    pub fn local_app(credential_id: Arc<str>, transport: TransportClass) -> Self {
+        Self::local_app_with_generation(credential_id, transport, 1)
     }
 
-    pub fn legacy_local_with_mcp_policy() -> Self {
+    pub fn local_app_with_generation(
+        credential_id: Arc<str>,
+        transport: TransportClass,
+        revocation_generation: u64,
+    ) -> Self {
         Self {
-            capabilities: CapabilitySet::operator().with(Capability::McpPolicyEvaluate),
-            ..Self::legacy_local()
+            kind: PrincipalKind::LocalApp,
+            credential_id: Some(CredentialId(credential_id)),
+            profile_id: None,
+            capabilities: CapabilitySet::operator(),
+            transport,
+            revocation_generation,
         }
     }
 
     pub fn mcp_policy_service(transport: TransportClass) -> Self {
         Self {
             kind: PrincipalKind::McpGateway,
-            credential_id: Some(CredentialId("mcp-policy".to_string())),
+            credential_id: Some(CredentialId(Arc::from("mcp-policy"))),
             profile_id: None,
             capabilities: CapabilitySet::empty().with(Capability::McpPolicyEvaluate),
             transport,
@@ -190,16 +192,14 @@ impl RequestPrincipal {
         };
         Self {
             kind,
-            credential_id: Some(CredentialId(record.pairing_id)),
+            credential_id: Some(CredentialId(Arc::from(record.pairing_id))),
             profile_id: record
                 .profile_id
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty()),
             capabilities,
             transport,
-            // The current pairing store has boolean revocation. H01.5 replaces
-            // this sentinel with the store's monotonic revocation generation.
-            revocation_generation: 0,
+            revocation_generation: record.credential_generation,
         }
     }
 
@@ -253,6 +253,7 @@ mod tests {
             last_seen: Utc::now(),
             session_token_hash: "hash".into(),
             session_token_expiry: Utc::now(),
+            credential_generation: 1,
             role,
             profile_id: profile_id.map(str::to_string),
             mesh_grants: Vec::new(),
@@ -314,20 +315,6 @@ mod tests {
         assert_eq!(principal.kind(), PrincipalKind::Peer);
         assert!(principal.capabilities().contains(Capability::PeerExchange));
         assert!(!principal.capabilities().contains(Capability::ContentRead));
-    }
-
-    #[test]
-    fn legacy_local_is_explicit_and_temporary() {
-        let principal = RequestPrincipal::legacy_local();
-        assert_eq!(principal.kind(), PrincipalKind::LegacyLocal);
-        assert!(principal.credential_id().is_none());
-        assert_eq!(principal.transport(), TransportClass::Loopback);
-        assert!(principal.capabilities().contains(Capability::AdminExecute));
-        assert!(
-            !principal
-                .capabilities()
-                .contains(Capability::McpPolicyEvaluate)
-        );
     }
 
     #[test]

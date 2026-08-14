@@ -19,6 +19,7 @@ medousa pull <name>        Install CDN package into data dir (engine, mcp-gatewa
 medousa update [<name>]    Update installed packages when newer
 medousa packages status    Local vs remote package versions
 medousa pair …             LAN / QR pairing
+medousa credentials …      Local client credential diagnostics / rotation
 medousa iroh …             Relay smoke / tickets
 ```
 Desktop Settings now read/write **per-engine** `tui_defaults.json` via `GET/PUT /v1/runtime/tui-defaults` (not host-global file).
@@ -27,17 +28,42 @@ Desktop Settings now read/write **per-engine** `tui_defaults.json` via `GET/PUT 
 
 ```bash
 medousa start daemon --inference
-medousa start daemon --public          # UNSAFE full LAN API bind; isolated development only
+medousa start daemon --public          # temporary LAN bind; trusted networks only
 medousa start mcp-gateway
 medousa start discord | telegram | slack | whatsapp
 medousa start all
 medousa start daemon-restart --inference
 ```
 
-`--public` does not currently make pairing credentials mandatory across the
-complete daemon router. Do not use it on the internet, guest Wi-Fi, or an
-untrusted LAN. Prefer Iroh; see [Mobile & LAN](mobile-and-lan.md) and
-[hardening H01](../../architecture/hardening/README.md).
+`--public` still exposes the complete router at the socket, but application
+routes require local-app or paired credentials and exact Host/Origin checks.
+Do not expose port 7419 directly to the internet. Prefer Iroh; see [Mobile &
+LAN](mobile-and-lan.md).
+
+### Local client credentials
+
+```bash
+medousa credentials list
+medousa credentials rotate medousa-cli
+medousa credentials rotate home-local
+medousa credentials revoke medousa-tui
+```
+
+The three first-party credentials (`home-local`, `medousa-cli`, and
+`medousa-tui`) are independently revocable. Rotation atomically installs a new
+verifier generation in the running daemon and invalidates the old generation;
+restart the rotated client so it reloads its platform-keyring or owner-only-file
+secret. The CLI refuses to revoke its own credential—rotate it instead.
+
+`list` also reports the bounded revocation audit, denial counters, current
+revocation epoch, and active authenticated stream leases. Revocation closes
+matching SSE and daemon-owned WebSocket sessions; reconnects with the old token
+receive `401`.
+
+All protected CLI and TUI calls require these credentials even when the daemon
+is on `127.0.0.1`. If a credential is missing or revoked, start Medousa once to
+provision the first-party records, or use another active administrator to rotate
+the affected credential. There is no anonymous loopback fallback.
 
 ### Local models (`medousa models`)
 

@@ -222,10 +222,11 @@ fn daemon_base_from_state(state: &State<'_, DaemonState>) -> String {
 }
 
 async fn fetch_local_mesh_peers(base: &str) -> Result<Vec<MeshPeerGrantRow>, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .map_err(|err| err.to_string())?;
+    let client = crate::workshop_transport::protected_http_client(
+        base,
+        std::time::Duration::from_secs(5),
+        std::time::Duration::from_secs(10),
+    )?;
     let response = client
         .get(format!("{base}/v1/mesh/peers"))
         .send()
@@ -314,10 +315,11 @@ pub async fn mesh_set_peer_rendezvous(
         grants = vec!["mesh.message".to_string(), "mesh.bundle.push".to_string()];
     }
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .map_err(|err| err.to_string())?;
+    let client = crate::workshop_transport::protected_http_client(
+        &base,
+        std::time::Duration::from_secs(5),
+        std::time::Duration::from_secs(10),
+    )?;
     let response = client
         .patch(format!("{base}/v1/mesh/peers/{}", device_id.trim()))
         .json(&serde_json::json!({ "meshGrants": grants }))

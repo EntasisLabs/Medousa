@@ -2,6 +2,8 @@ pub mod agents;
 pub mod artifact;
 pub mod calendar;
 pub mod catalog;
+pub mod chatgpt;
+pub mod code;
 pub mod component_runtime;
 pub mod component_store;
 pub mod environment;
@@ -39,11 +41,9 @@ use crate::daemon::types::{
     WorkspaceStreamEvent,
 };
 use crate::workshop_transport;
-use reqwest::Client;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use std::time::Duration;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::watch;
 
@@ -97,14 +97,6 @@ fn persist_daemon_url(url: &str) -> Result<(), String> {
         std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
     }
     std::fs::write(path, url).map_err(|err| err.to_string())
-}
-
-pub(crate) fn daemon_http_client() -> Result<Client, String> {
-    Client::builder()
-        .connect_timeout(Duration::from_secs(5))
-        .timeout(Duration::from_secs(10))
-        .build()
-        .map_err(|err| err.to_string())
 }
 
 /// Replace bind-only hosts (0.0.0.0, loopback) with the client-configured daemon URL.

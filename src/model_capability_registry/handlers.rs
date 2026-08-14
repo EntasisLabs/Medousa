@@ -1,7 +1,11 @@
 use axum::{
     extract::Query,
     routing::{get, post},
-    Json, Router,
+    Json,
+};
+
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
 
 use super::registry;
@@ -10,11 +14,45 @@ use super::types::{
     ModelCatalogListResponse, ModelCatalogRefreshRequest, ModelCatalogRefreshResponse,
 };
 
-pub fn routes() -> Router {
-    Router::new()
-        .route("/v1/models/catalog", get(list_catalog))
-        .route("/v1/models/capabilities", get(lookup_capabilities))
-        .route("/v1/models/catalog/refresh", post(refresh_catalog))
+pub fn surface() -> DeclaredRouter {
+    DeclaredRouter::default()
+        .route(
+            model_catalog_policy(axum::http::Method::GET, "/v1/models/catalog", 1024),
+            get(list_catalog),
+        )
+        .route(
+            model_catalog_policy(
+                axum::http::Method::GET,
+                "/v1/models/capabilities",
+                1024,
+            ),
+            get(lookup_capabilities),
+        )
+        .route(
+            model_catalog_policy(
+                axum::http::Method::POST,
+                "/v1/models/catalog/refresh",
+                256 * 1024,
+            ),
+            post(refresh_catalog),
+        )
+}
+
+fn model_catalog_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    body_limit: usize,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Administration,
+        required_capability: Some(crate::request_principal::Capability::AdminRuntime),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class: RateLimitClass::Administration,
+    }
 }
 
 async fn list_catalog(

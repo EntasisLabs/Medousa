@@ -8,10 +8,10 @@ use std::path::{Component, Path as FsPath, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, LazyLock, Mutex};
 
-use axum::extract::{DefaultBodyLimit, Path, Query, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use axum::routing::{get, patch, post, put};
-use axum::{Json, Router};
+use axum::routing::{delete, get, patch, post, put};
+use axum::Json;
 use medousa_forge::adapter::{ScriptAdapter, export_bundle};
 use medousa_forge::error::ForgeError;
 use medousa_forge::forge::{Forge, SealOptions};
@@ -33,6 +33,9 @@ use crate::daemon::forge_projections::{
     evidence_dir, project_item, project_items, read_lines_page,
 };
 use crate::daemon::forge_events::ForgeProjectEventKind;
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
 use crate::daemon::state::AppState;
 use crate::semantic_values::TrimmedText;
 
@@ -79,184 +82,161 @@ fn ok_item(state: &AppState, item: WorkItem, kind: &str) -> Json<ItemProjection>
     Json(project_item(item))
 }
 
-pub fn forge_router(state: AppState) -> Router {
-    Router::new()
-        .route("/v1/forge/items", get(list_items).post(register_item))
-        .route("/v1/forge/items/start", post(start_item))
+pub fn forge_surface() -> DeclaredRouter<AppState> {
+    DeclaredRouter::default()
+        .methods([
+            (forge_read_policy("/v1/forge/items"), get(list_items)),
+            (
+                forge_mutation_policy(axum::http::Method::POST, "/v1/forge/items", 1024 * 1024),
+                post(register_item),
+            ),
+        ])
         .route(
-            "/v1/sessions/{session_id}/code-project",
+            forge_mutation_policy(
+                axum::http::Method::POST,
+                "/v1/forge/items/start",
+                1024 * 1024,
+            ),
+            post(start_item),
+        )
+        .route(
+            forge_mutation_policy(
+                axum::http::Method::POST,
+                "/v1/sessions/{session_id}/code-project",
+                1024 * 1024,
+            ),
             post(start_session_code_project),
         )
-        .route("/v1/forge/repositories/inspect", post(inspect_repository))
-        .route(
-            "/v1/forge/repositories/provider",
-            get(provider_repository_capabilities).post(clone_provider_repository),
-        )
-        .route(
-            "/v1/forge/repositories",
-            get(list_repositories).put(update_repository_pin),
-        )
-        .route("/v1/forge/repositories/browse", get(browse_repositories))
-        .route("/v1/forge/items/{work_id}", get(get_item))
-        .route(
-            "/v1/forge/items/{work_id}/source",
-            get(read_source)
-                .post(create_source)
-                .put(save_source)
-                .patch(rename_source)
-                .delete(delete_source),
-        )
-        .route("/v1/forge/items/{work_id}/tree", get(source_tree))
-        .route("/v1/forge/items/{work_id}/changes", get(get_changes))
-        .route(
-            "/v1/forge/items/{work_id}/changes/file",
-            get(get_changes_file).post(restore_changes_file),
-        )
-        .route(
-            "/v1/forge/items/{work_id}/changes/fetch",
-            post(changes_fetch),
-        )
-        .route(
-            "/v1/forge/items/{work_id}/changes/pull",
-            post(changes_pull),
-        )
-        .route(
-            "/v1/forge/items/{work_id}/changes/push",
-            post(changes_push),
-        )
-        .route(
-            "/v1/forge/items/{work_id}/changes/sync",
-            post(changes_sync),
-        )
-        .route(
-            "/v1/forge/items/{work_id}/changes/checkpoint",
-            post(changes_checkpoint),
-        )
-        .route(
-            "/v1/forge/items/{work_id}/changes/history",
-            get(changes_history),
-        )
-        .route(
-            "/v1/forge/items/{work_id}/changes/blame",
-            get(changes_blame),
-        )
-        .route(
-            "/v1/forge/items/{work_id}/changes/conflict",
-            post(resolve_changes_conflict),
-        )
-        .route(
-            "/v1/forge/items/{work_id}/changes/file/hunk",
-            post(revert_changes_hunk),
-        )
-        .route(
-            "/v1/forge/items/{work_id}/source/batch",
-            put(save_source_batch),
-        )
-        .route(
-            "/v1/forge/items/{work_id}/source/workspace-edit",
-            put(apply_source_workspace_edit)
-                .layer(DefaultBodyLimit::max(MAX_SOURCE_WORKSPACE_EDIT_BODY_BYTES)),
-        )
-        .route(
-            "/v1/forge/items/{work_id}/project-events",
-            get(forge_project_event_stream),
-        )
-        .route("/v1/forge/items/{work_id}/search", get(search_source))
-        .route(
-            "/v1/forge/items/{work_id}/search/replace",
-            post(replace_source),
-        )
-        .route(
-            "/v1/forge/items/{work_id}/workspace-state",
-            get(read_workspace_state).put(save_workspace_state),
-        )
-        .route("/v1/forge/items/{work_id}/review", get(get_review))
-        .route(
-            "/v1/forge/items/{work_id}/review/comments",
-            get(list_review_comments).post(add_review_comment),
-        )
-        .route(
-            "/v1/forge/items/{work_id}/review/comments/{comment_id}",
-            patch(patch_review_comment).delete(delete_review_comment),
-        )
-        .route(
-            "/v1/forge/items/{work_id}/review/request-changes",
-            post(request_review_changes),
-        )
-        .route(
-            "/v1/forge/items/{work_id}/review/continue-editing",
-            post(continue_editing),
-        )
-        .route(
-            "/v1/forge/items/{work_id}/review/file",
-            get(get_review_file).post(restore_review_file),
-        )
-        .route("/v1/forge/items/{work_id}/tasks", get(list_project_tasks))
-        .route(
-            "/v1/forge/items/{work_id}/tasks/{task_id}/run",
-            post(run_project_task),
-        )
-        .route(
-            "/v1/forge/items/{work_id}/tasks/{task_id}/runs",
-            post(start_project_task_run),
-        )
-        .route(
-            "/v1/forge/items/{work_id}/task-runs/{run_id}",
-            get(get_project_task_run).delete(cancel_project_task_run),
-        )
-        .route(
-            "/v1/forge/items/{work_id}/task-runs/{run_id}/events",
-            get(project_task_run_events),
-        )
-        .route(
-            "/v1/forge/items/{work_id}/task-runs/{run_id}/preview",
-            post(create_task_run_preview),
-        )
-        .route("/v1/forge/items/{work_id}/tests", get(list_project_tests))
-        .route("/v1/forge/items/{work_id}/provision", post(provision_item))
-        .route("/v1/forge/items/{work_id}/attempts", post(begin_attempt))
-        .route("/v1/forge/items/{work_id}/handoff", post(prepare_handoff))
-        .route(
-            "/v1/forge/items/{work_id}/provider",
-            get(get_provider_handoff).post(share_provider_handoff),
-        )
-        .route(
-            "/v1/forge/items/{work_id}/provider/context",
-            put(save_provider_context),
-        )
-        .route(
-            "/v1/forge/items/{work_id}/provider/comments",
-            get(list_provider_comments).post(import_provider_comment),
-        )
-        .route("/v1/forge/items/{work_id}/decisions", post(record_decision))
-        .route("/v1/forge/items/{work_id}/apply", post(apply_decision))
-        .route("/v1/forge/items/{work_id}/discard", post(discard_item))
-        .route("/v1/forge/items/{work_id}/run-script", post(run_script))
-        .route("/v1/forge/items/{work_id}/export", post(export_item))
-        .route(
-            "/v1/forge/evidence/{evidence_id}/patch",
-            get(evidence_patch),
-        )
-        .route(
-            "/v1/forge/evidence/{evidence_id}/commands",
-            get(evidence_commands),
-        )
-        .route(
-            "/v1/forge/evidence/{evidence_id}/receipts",
-            get(evidence_receipts),
-        )
-        .route("/v1/forge/stream", get(forge_stream))
-        .route(
-            "/v1/forge/leases/{lease_id}/heartbeat",
-            post(heartbeat_lease),
-        )
-        .route("/v1/forge/leases/{lease_id}/complete", post(complete_lease))
-        .route(
-            "/v1/forge/leases/{lease_id}/interrupt",
-            post(interrupt_lease),
-        )
-        .route("/v1/forge/leases/{lease_id}/fail", post(fail_lease))
-        .with_state(state)
+        .route(forge_post_policy("/v1/forge/repositories/inspect"), post(inspect_repository))
+        .methods([
+            (forge_read_policy("/v1/forge/repositories/provider"), get(provider_repository_capabilities)),
+            (forge_post_policy("/v1/forge/repositories/provider"), post(clone_provider_repository)),
+        ])
+        .methods([
+            (forge_read_policy("/v1/forge/repositories"), get(list_repositories)),
+            (forge_mutation_policy(axum::http::Method::PUT, "/v1/forge/repositories", 256 * 1024), put(update_repository_pin)),
+        ])
+        .route(forge_read_policy("/v1/forge/repositories/browse"), get(browse_repositories))
+        .route(forge_read_policy("/v1/forge/items/{work_id}"), get(get_item))
+        .methods([
+            (forge_read_policy("/v1/forge/items/{work_id}/source"), get(read_source)),
+            (forge_mutation_policy(axum::http::Method::POST, "/v1/forge/items/{work_id}/source", 8 * 1024 * 1024), post(create_source)),
+            (forge_mutation_policy(axum::http::Method::PUT, "/v1/forge/items/{work_id}/source", 8 * 1024 * 1024), put(save_source)),
+            (forge_mutation_policy(axum::http::Method::PATCH, "/v1/forge/items/{work_id}/source", 256 * 1024), patch(rename_source)),
+            (forge_mutation_policy(axum::http::Method::DELETE, "/v1/forge/items/{work_id}/source", 1024), delete(delete_source)),
+        ])
+        .route(forge_read_policy("/v1/forge/items/{work_id}/tree"), get(source_tree))
+        .route(forge_read_policy("/v1/forge/items/{work_id}/changes"), get(get_changes))
+        .methods([
+            (forge_read_policy("/v1/forge/items/{work_id}/changes/file"), get(get_changes_file)),
+            (forge_post_policy("/v1/forge/items/{work_id}/changes/file"), post(restore_changes_file)),
+        ])
+        .route(forge_post_policy("/v1/forge/items/{work_id}/changes/fetch"), post(changes_fetch))
+        .route(forge_post_policy("/v1/forge/items/{work_id}/changes/pull"), post(changes_pull))
+        .route(forge_post_policy("/v1/forge/items/{work_id}/changes/push"), post(changes_push))
+        .route(forge_post_policy("/v1/forge/items/{work_id}/changes/sync"), post(changes_sync))
+        .route(forge_post_policy("/v1/forge/items/{work_id}/changes/checkpoint"), post(changes_checkpoint))
+        .route(forge_read_policy("/v1/forge/items/{work_id}/changes/history"), get(changes_history))
+        .route(forge_read_policy("/v1/forge/items/{work_id}/changes/blame"), get(changes_blame))
+        .route(forge_post_policy("/v1/forge/items/{work_id}/changes/conflict"), post(resolve_changes_conflict))
+        .route(forge_post_policy("/v1/forge/items/{work_id}/changes/file/hunk"), post(revert_changes_hunk))
+        .route(forge_mutation_policy(axum::http::Method::PUT, "/v1/forge/items/{work_id}/source/batch", 32 * 1024 * 1024), put(save_source_batch))
+        .route(forge_mutation_policy(axum::http::Method::PUT, "/v1/forge/items/{work_id}/source/workspace-edit", MAX_SOURCE_WORKSPACE_EDIT_BODY_BYTES), put(apply_source_workspace_edit))
+        .route(forge_stream_policy("/v1/forge/items/{work_id}/project-events"), get(forge_project_event_stream))
+        .route(forge_read_policy("/v1/forge/items/{work_id}/search"), get(search_source))
+        .route(forge_mutation_policy(axum::http::Method::POST, "/v1/forge/items/{work_id}/search/replace", 8 * 1024 * 1024), post(replace_source))
+        .methods([
+            (forge_read_policy("/v1/forge/items/{work_id}/workspace-state"), get(read_workspace_state)),
+            (forge_mutation_policy(axum::http::Method::PUT, "/v1/forge/items/{work_id}/workspace-state", 8 * 1024 * 1024), put(save_workspace_state)),
+        ])
+        .route(forge_read_policy("/v1/forge/items/{work_id}/review"), get(get_review))
+        .methods([
+            (forge_read_policy("/v1/forge/items/{work_id}/review/comments"), get(list_review_comments)),
+            (forge_post_policy("/v1/forge/items/{work_id}/review/comments"), post(add_review_comment)),
+        ])
+        .methods([
+            (forge_mutation_policy(axum::http::Method::PATCH, "/v1/forge/items/{work_id}/review/comments/{comment_id}", 1024 * 1024), patch(patch_review_comment)),
+            (forge_mutation_policy(axum::http::Method::DELETE, "/v1/forge/items/{work_id}/review/comments/{comment_id}", 1024), delete(delete_review_comment)),
+        ])
+        .route(forge_post_policy("/v1/forge/items/{work_id}/review/request-changes"), post(request_review_changes))
+        .route(forge_post_policy("/v1/forge/items/{work_id}/review/continue-editing"), post(continue_editing))
+        .methods([
+            (forge_read_policy("/v1/forge/items/{work_id}/review/file"), get(get_review_file)),
+            (forge_post_policy("/v1/forge/items/{work_id}/review/file"), post(restore_review_file)),
+        ])
+        .route(forge_read_policy("/v1/forge/items/{work_id}/tasks"), get(list_project_tasks))
+        .route(forge_post_policy("/v1/forge/items/{work_id}/tasks/{task_id}/run"), post(run_project_task))
+        .route(forge_post_policy("/v1/forge/items/{work_id}/tasks/{task_id}/runs"), post(start_project_task_run))
+        .methods([
+            (forge_read_policy("/v1/forge/items/{work_id}/task-runs/{run_id}"), get(get_project_task_run)),
+            (forge_mutation_policy(axum::http::Method::DELETE, "/v1/forge/items/{work_id}/task-runs/{run_id}", 1024), delete(cancel_project_task_run)),
+        ])
+        .route(forge_stream_policy("/v1/forge/items/{work_id}/task-runs/{run_id}/events"), get(project_task_run_events))
+        .route(forge_post_policy("/v1/forge/items/{work_id}/task-runs/{run_id}/preview"), post(create_task_run_preview))
+        .route(forge_read_policy("/v1/forge/items/{work_id}/tests"), get(list_project_tests))
+        .route(forge_post_policy("/v1/forge/items/{work_id}/provision"), post(provision_item))
+        .route(forge_post_policy("/v1/forge/items/{work_id}/attempts"), post(begin_attempt))
+        .route(forge_post_policy("/v1/forge/items/{work_id}/handoff"), post(prepare_handoff))
+        .methods([
+            (forge_read_policy("/v1/forge/items/{work_id}/provider"), get(get_provider_handoff)),
+            (forge_post_policy("/v1/forge/items/{work_id}/provider"), post(share_provider_handoff)),
+        ])
+        .route(forge_mutation_policy(axum::http::Method::PUT, "/v1/forge/items/{work_id}/provider/context", 8 * 1024 * 1024), put(save_provider_context))
+        .methods([
+            (forge_read_policy("/v1/forge/items/{work_id}/provider/comments"), get(list_provider_comments)),
+            (forge_post_policy("/v1/forge/items/{work_id}/provider/comments"), post(import_provider_comment)),
+        ])
+        .route(forge_post_policy("/v1/forge/items/{work_id}/decisions"), post(record_decision))
+        .route(forge_post_policy("/v1/forge/items/{work_id}/apply"), post(apply_decision))
+        .route(forge_post_policy("/v1/forge/items/{work_id}/discard"), post(discard_item))
+        .route(forge_post_policy("/v1/forge/items/{work_id}/run-script"), post(run_script))
+        .route(forge_post_policy("/v1/forge/items/{work_id}/export"), post(export_item))
+        .route(forge_read_policy("/v1/forge/evidence/{evidence_id}/patch"), get(evidence_patch))
+        .route(forge_read_policy("/v1/forge/evidence/{evidence_id}/commands"), get(evidence_commands))
+        .route(forge_read_policy("/v1/forge/evidence/{evidence_id}/receipts"), get(evidence_receipts))
+        .route(forge_stream_policy("/v1/forge/stream"), get(forge_stream))
+        .route(forge_post_policy("/v1/forge/leases/{lease_id}/heartbeat"), post(heartbeat_lease))
+        .route(forge_post_policy("/v1/forge/leases/{lease_id}/complete"), post(complete_lease))
+        .route(forge_post_policy("/v1/forge/leases/{lease_id}/interrupt"), post(interrupt_lease))
+        .route(forge_post_policy("/v1/forge/leases/{lease_id}/fail"), post(fail_lease))
+}
+
+fn forge_read_policy(path: &'static str) -> RoutePolicy {
+    forge_policy(axum::http::Method::GET, path, 1024, RateLimitClass::Administration)
+}
+
+fn forge_stream_policy(path: &'static str) -> RoutePolicy {
+    forge_policy(axum::http::Method::GET, path, 1024, RateLimitClass::Stream)
+}
+
+fn forge_post_policy(path: &'static str) -> RoutePolicy {
+    forge_mutation_policy(axum::http::Method::POST, path, 1024 * 1024)
+}
+
+fn forge_mutation_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    body_limit: usize,
+) -> RoutePolicy {
+    forge_policy(method, path, body_limit, RateLimitClass::Administration)
+}
+
+fn forge_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    body_limit: usize,
+    rate_limit_class: RateLimitClass,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Administration,
+        required_capability: Some(crate::request_principal::Capability::AdminExecute),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class,
+    }
 }
 
 type ApiError = (StatusCode, Json<ErrorBody>);

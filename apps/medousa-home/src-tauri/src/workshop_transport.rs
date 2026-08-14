@@ -1,7 +1,7 @@
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use medousa_sdk_iroh::{WorkshopRoute, is_connect_error};
+use medousa_sdk_iroh::{is_connect_error, WorkshopRoute};
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use uuid::Uuid;
@@ -228,15 +228,36 @@ impl WorkshopByteStream {
 }
 
 pub fn config_from_lan_base(lan_base: &str) -> WorkshopTransportConfig {
-    crate::pairing_client::load_workshop_transport_config(lan_base).unwrap_or_else(|| {
-        WorkshopTransportConfig {
+    let local_credential = local_credential_for_lan_base(lan_base);
+    let mut config = crate::pairing_client::load_workshop_transport_config(lan_base)
+        .unwrap_or_else(|| WorkshopTransportConfig {
             lan_base: lan_base.trim().trim_end_matches('/').to_string(),
             iroh_ticket: None,
             session_token: None,
             phone_id: String::new(),
             workshop_device_id: String::new(),
-        }
-    })
+        });
+    if local_credential.is_some() {
+        config.session_token = local_credential;
+    }
+    config
+}
+
+fn local_credential_for_lan_base(lan_base: &str) -> Option<String> {
+    let url = url::Url::parse(lan_base).ok()?;
+    let loopback = url.host_str().is_some_and(|host| {
+        host.eq_ignore_ascii_case("localhost")
+            || host
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|address| address.is_loopback())
+    });
+    if !loopback || !matches!(url.scheme(), "http" | "https") {
+        return None;
+    }
+    let data_dir = crate::workshop_registry::active_local_data_dir_for_url(lan_base)?;
+    medousa_local_credential::load_home_local_secret(&data_dir)
+        .ok()
+        .map(|secret| secret.token().to_string())
 }
 
 enum RequestPayload {
@@ -284,7 +305,12 @@ async fn workshop_request(
 /// Select LAN vs Iroh via the shared `medousa-sdk-iroh` route cache so this
 /// legacy byte transport and the SDK JSON transport can never diverge.
 async fn pick_route(config: &WorkshopTransportConfig) -> WorkshopRoute {
-    medousa_sdk_iroh::pick_route(&config.lan_base, config.iroh_ticket.is_some()).await
+    medousa_sdk_iroh::pick_route_with_bearer(
+        &config.lan_base,
+        config.iroh_ticket.is_some(),
+        config.session_token.as_deref(),
+    )
+    .await
 }
 
 fn lan_client() -> Result<&'static Client, String> {
@@ -441,7 +467,11 @@ async fn lan_request(
 }
 
 fn lan_body_attempts(method: &str) -> usize {
-    if method == "GET" { 2 } else { 1 }
+    if method == "GET" {
+        2
+    } else {
+        1
+    }
 }
 
 fn format_response_body_error(
@@ -460,14 +490,34 @@ fn format_response_body_error(
     )
 }
 
-fn auth_headers(config: &WorkshopTransportConfig) -> reqwest::header::HeaderMap {
+pub(crate) fn auth_headers(config: &WorkshopTransportConfig) -> reqwest::header::HeaderMap {
     let mut headers = reqwest::header::HeaderMap::new();
     if let Some(token) = config.session_token.as_deref() {
-        if let Ok(value) = reqwest::header::HeaderValue::from_str(&format!("Bearer {token}")) {
+        if let Ok(mut value) = reqwest::header::HeaderValue::from_str(&format!("Bearer {token}")) {
+            value.set_sensitive(true);
             headers.insert(reqwest::header::AUTHORIZATION, value);
         }
     }
     headers
+}
+
+pub(crate) fn protected_http_client(
+    base_url: &str,
+    connect_timeout: Duration,
+    timeout: Duration,
+) -> Result<Client, String> {
+    let config = config_from_lan_base(base_url);
+    if config.session_token.is_none() {
+        return Err(format!(
+            "no credential is available for protected Medousa Engine requests at {base_url}; start the local Engine once or pair this workshop"
+        ));
+    }
+    Client::builder()
+        .default_headers(auth_headers(&config))
+        .connect_timeout(connect_timeout)
+        .timeout(timeout)
+        .build()
+        .map_err(|error| error.to_string())
 }
 
 fn normalize_path(path: &str) -> String {
@@ -611,7 +661,7 @@ mod tests {
     use std::io::{Read, Write};
     use std::net::TcpListener;
 
-    use super::{RequestPayload, lan_body_attempts, lan_request};
+    use super::{auth_headers, lan_body_attempts, lan_request, RequestPayload};
     use crate::pairing_client::WorkshopTransportConfig;
 
     #[test]
@@ -621,6 +671,27 @@ mod tests {
         assert_eq!(lan_body_attempts("PUT"), 1);
         assert_eq!(lan_body_attempts("PATCH"), 1);
         assert_eq!(lan_body_attempts("DELETE"), 1);
+    }
+
+    #[test]
+    fn native_transport_attaches_configured_bearer() {
+        let config = WorkshopTransportConfig {
+            lan_base: "http://127.0.0.1:7419".to_string(),
+            iroh_ticket: None,
+            session_token: Some("home-secret".to_string()),
+            phone_id: String::new(),
+            workshop_device_id: String::new(),
+        };
+        let headers = auth_headers(&config);
+        assert_eq!(
+            headers
+                .get(reqwest::header::AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer home-secret")
+        );
+        assert!(headers
+            .get(reqwest::header::AUTHORIZATION)
+            .is_some_and(reqwest::header::HeaderValue::is_sensitive));
     }
 
     #[tokio::test]

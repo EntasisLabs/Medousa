@@ -1,4 +1,4 @@
-import { getDaemonUrl } from "$lib/daemon";
+import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "$lib/window";
 
 export type ChatGptOAuthStatus =
@@ -42,51 +42,38 @@ const SIGNED_OUT: ChatGptOAuthConnection = {
   connected: false,
 };
 
-async function chatGptOAuthRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const base = (await getDaemonUrl()).replace(/\/$/, "");
-  const response = await fetch(`${base}${path}`, init);
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    throw new Error(detail || `ChatGPT account request failed (${response.status})`);
-  }
-  return response.json() as Promise<T>;
+async function chatGptOAuthRequest<T>(
+  operation: "status" | "begin" | "complete" | "refresh" | "disconnect" | "models",
+  loginId?: string,
+): Promise<T> {
+  return invoke<T>("chatgpt_oauth_request", { operation, loginId: loginId ?? null });
 }
 
 export async function getChatGptOAuthConnection(): Promise<ChatGptOAuthConnection> {
   if (!isTauri()) return SIGNED_OUT;
-  return chatGptOAuthRequest<ChatGptOAuthConnection>("/v1/auth/chatgpt");
+  return chatGptOAuthRequest<ChatGptOAuthConnection>("status");
 }
 
 export async function beginChatGptOAuth(): Promise<BeginChatGptOAuthResponse> {
-  return chatGptOAuthRequest<BeginChatGptOAuthResponse>("/v1/auth/chatgpt/begin", {
-    method: "POST",
-  });
+  return chatGptOAuthRequest<BeginChatGptOAuthResponse>("begin");
 }
 
 export async function completeChatGptOAuth(
   loginId: string,
 ): Promise<CompleteChatGptOAuthResponse> {
-  return chatGptOAuthRequest<CompleteChatGptOAuthResponse>("/v1/auth/chatgpt/complete", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ login_id: loginId }),
-  });
+  return chatGptOAuthRequest<CompleteChatGptOAuthResponse>("complete", loginId);
 }
 
 export async function refreshChatGptOAuth(): Promise<ChatGptOAuthConnection> {
-  return chatGptOAuthRequest<ChatGptOAuthConnection>("/v1/auth/chatgpt/refresh", {
-    method: "POST",
-  });
+  return chatGptOAuthRequest<ChatGptOAuthConnection>("refresh");
 }
 
 export async function disconnectChatGptOAuth(): Promise<DisconnectChatGptOAuthResponse> {
-  return chatGptOAuthRequest<DisconnectChatGptOAuthResponse>("/v1/auth/chatgpt", {
-    method: "DELETE",
-  });
+  return chatGptOAuthRequest<DisconnectChatGptOAuthResponse>("disconnect");
 }
 
 export async function listChatGptOAuthModels(): Promise<ChatGptModelListResponse> {
-  return chatGptOAuthRequest<ChatGptModelListResponse>("/v1/auth/chatgpt/models");
+  return chatGptOAuthRequest<ChatGptModelListResponse>("models");
 }
 
 export function chatGptOAuthReady(connection: ChatGptOAuthConnection | null): boolean {

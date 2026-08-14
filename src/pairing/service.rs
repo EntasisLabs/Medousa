@@ -1,4 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::net::IpAddr;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
@@ -9,22 +11,28 @@ use rand::RngCore;
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, OwnedSemaphorePermit, RwLock, Semaphore};
 use uuid::Uuid;
 
 use super::crypto::{
-    PROTOCOL_VERSION, QR_SCHEME, QR_SCHEME_V2, base64url_decode, base64url_encode, hash_session_token,
-    parse_verifying_key, qr_signing_message, qr_signing_message_v2, sign_message, verify_message,
-    verifying_key_to_b64,
+    PROTOCOL_VERSION, QR_SCHEME, QR_SCHEME_V2, base64url_decode, base64url_encode,
+    hash_session_token, parse_verifying_key, qr_signing_message, qr_signing_message_v2,
+    sign_message, verify_message, verifying_key_to_b64,
 };
 use super::identity::DeviceIdentity;
 use super::store::{PairedDeviceRecord, PairingRole, PairingStore};
+use crate::credential_lifecycle::{CredentialKind, CredentialLifecycle};
 
 const QR_TTL: Duration = Duration::from_secs(300);
 const VERIFY_TTL: Duration = Duration::from_secs(10);
 const SESSION_TOKEN_TTL: Duration = Duration::from_secs(86_400);
 const INIT_RATE_LIMIT: usize = 3;
 const INIT_RATE_WINDOW: Duration = Duration::from_secs(60);
+const GLOBAL_INIT_RATE_LIMIT: usize = 24;
+const VERIFY_RATE_LIMIT: usize = 6;
+const GLOBAL_VERIFY_RATE_LIMIT: usize = 48;
+const MAX_PENDING_SESSIONS: usize = 32;
+const CEREMONY_CONCURRENCY: usize = 4;
 
 const SHORT_CODE_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
@@ -196,6 +204,40 @@ struct PendingPairSession {
     created_at: Instant,
 }
 
+#[derive(Default)]
+struct PairingAdmission {
+    init_global: VecDeque<Instant>,
+    init_by_source: HashMap<IpAddr, VecDeque<Instant>>,
+    verify_global: VecDeque<Instant>,
+    verify_by_source: HashMap<IpAddr, VecDeque<Instant>>,
+}
+
+impl PairingAdmission {
+    fn allow_init(&mut self, source: IpAddr, now: Instant) -> bool {
+        allow_attempt(
+            &mut self.init_global,
+            &mut self.init_by_source,
+            source,
+            now,
+            INIT_RATE_WINDOW,
+            GLOBAL_INIT_RATE_LIMIT,
+            INIT_RATE_LIMIT,
+        )
+    }
+
+    fn allow_verify(&mut self, source: IpAddr, now: Instant) -> bool {
+        allow_attempt(
+            &mut self.verify_global,
+            &mut self.verify_by_source,
+            source,
+            now,
+            INIT_RATE_WINDOW,
+            GLOBAL_VERIFY_RATE_LIMIT,
+            VERIFY_RATE_LIMIT,
+        )
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ApnsPushTarget {
     pub phone_id: String,
@@ -218,7 +260,9 @@ pub struct PairingService {
     iroh: Option<IrohWorkshopInfo>,
     active_qr: RwLock<Option<ActiveQrSession>>,
     pending_sessions: RwLock<HashMap<Uuid, PendingPairSession>>,
-    init_attempts: RwLock<HashMap<String, Vec<Instant>>>,
+    admission: Mutex<PairingAdmission>,
+    ceremony_slots: Arc<Semaphore>,
+    credential_lifecycle: CredentialLifecycle,
 }
 
 impl PairingService {
@@ -228,6 +272,24 @@ impl PairingService {
         peer_name: String,
         model_descriptor: Option<String>,
         iroh: Option<IrohWorkshopInfo>,
+    ) -> Self {
+        Self::new_with_lifecycle(
+            identity,
+            advertise_address,
+            peer_name,
+            model_descriptor,
+            iroh,
+            CredentialLifecycle::default(),
+        )
+    }
+
+    pub fn new_with_lifecycle(
+        identity: DeviceIdentity,
+        advertise_address: String,
+        peer_name: String,
+        model_descriptor: Option<String>,
+        iroh: Option<IrohWorkshopInfo>,
+        credential_lifecycle: CredentialLifecycle,
     ) -> Self {
         let store = PairingStore::new(identity.signing_key());
         Self {
@@ -240,8 +302,14 @@ impl PairingService {
             iroh,
             active_qr: RwLock::new(None),
             pending_sessions: RwLock::new(HashMap::new()),
-            init_attempts: RwLock::new(HashMap::new()),
+            admission: Mutex::new(PairingAdmission::default()),
+            ceremony_slots: Arc::new(Semaphore::new(CEREMONY_CONCURRENCY)),
+            credential_lifecycle,
         }
+    }
+
+    pub fn credential_lifecycle(&self) -> CredentialLifecycle {
+        self.credential_lifecycle.clone()
     }
 
     pub fn iroh_ticket(&self) -> Option<IrohTicketResponse> {
@@ -250,6 +318,10 @@ impl PairingService {
             endpoint_id: info.endpoint_id.clone(),
             available: true,
         })
+    }
+
+    pub fn try_acquire_ceremony(&self) -> Option<OwnedSemaphorePermit> {
+        self.ceremony_slots.clone().try_acquire_owned().ok()
     }
 
     pub fn iroh_available(&self) -> bool {
@@ -343,9 +415,9 @@ impl PairingService {
 
     pub async fn current_qr_with_options(&self, full: bool) -> Result<QrResponse> {
         let mut guard = self.active_qr.write().await;
-        let needs_refresh = guard.as_ref().is_none_or(|session| {
-            session.used || session.expires_at <= Utc::now()
-        });
+        let needs_refresh = guard
+            .as_ref()
+            .is_none_or(|session| session.used || session.expires_at <= Utc::now());
         if needs_refresh {
             *guard = Some(self.build_qr_session(None)?);
         }
@@ -400,9 +472,14 @@ impl PairingService {
     pub async fn pair_init(
         &self,
         request: PairInitRequest,
-        source_ip: &str,
+        source_ip: IpAddr,
     ) -> Result<PairInitResponse> {
-        if !self.allow_init_attempt(source_ip).await {
+        if !self
+            .admission
+            .lock()
+            .await
+            .allow_init(source_ip, Instant::now())
+        {
             return Ok(rejected_init("rate_limited"));
         }
 
@@ -412,21 +489,27 @@ impl PairingService {
         } else if let Some(token) = request.qr_token.as_deref() {
             token.to_string()
         } else {
-            return Ok(rejected_init("missing_token"));
+            return Ok(rejected_init("invalid_invite"));
         };
+
+        let mut pending_sessions = self.pending_sessions.write().await;
+        pending_sessions.retain(|_, pending| pending.created_at.elapsed() <= VERIFY_TTL);
+        if pending_sessions.len() >= MAX_PENDING_SESSIONS {
+            return Ok(rejected_init("busy"));
+        }
 
         let mut qr_guard = self.active_qr.write().await;
         let Some(session) = qr_guard.as_mut() else {
-            return Ok(rejected_init("no_active_qr"));
+            return Ok(rejected_init("invalid_invite"));
         };
         if session.used {
-            return Ok(rejected_init("token_already_used"));
+            return Ok(rejected_init("invalid_invite"));
         }
         if session.expires_at <= Utc::now() {
-            return Ok(rejected_init("token_expired"));
+            return Ok(rejected_init("invalid_invite"));
         }
         if session.token_b64 != token {
-            return Ok(rejected_init("invalid_token"));
+            return Ok(rejected_init("invalid_invite"));
         }
         session.used = true;
         let bound_profile_id = session.bound_profile_id.clone();
@@ -434,7 +517,7 @@ impl PairingService {
         let mut server_nonce = [0u8; 32];
         OsRng.fill_bytes(&mut server_nonce);
         let session_id = Uuid::new_v4();
-        self.pending_sessions.write().await.insert(
+        pending_sessions.insert(
             session_id,
             PendingPairSession {
                 phone_id: request.phone_id.clone(),
@@ -455,19 +538,26 @@ impl PairingService {
         })
     }
 
-    pub async fn pair_verify(&self, request: PairVerifyRequest) -> Result<PairVerifyResponse> {
-        let session_id = Uuid::parse_str(&request.session_id)
-            .context("invalid session_id")?;
-        let pending = self
-            .pending_sessions
-            .write()
+    pub async fn pair_verify(
+        &self,
+        request: PairVerifyRequest,
+        source_ip: IpAddr,
+    ) -> Result<PairVerifyResponse> {
+        if !self
+            .admission
+            .lock()
             .await
-            .remove(&session_id);
+            .allow_verify(source_ip, Instant::now())
+        {
+            return Ok(rejected_verify("rate_limited"));
+        }
+        let session_id = Uuid::parse_str(&request.session_id).context("invalid session_id")?;
+        let pending = self.pending_sessions.write().await.remove(&session_id);
         let Some(pending) = pending else {
-            return Ok(rejected_verify("unknown_session"));
+            return Ok(rejected_verify("invalid_session"));
         };
         if pending.created_at.elapsed() > VERIFY_TTL {
-            return Ok(rejected_verify("verify_timeout"));
+            return Ok(rejected_verify("invalid_session"));
         }
 
         let server_nonce_b64 = base64url_encode(&pending.server_nonce);
@@ -483,8 +573,7 @@ impl PairingService {
             bail!("phone_nonce must be 32 bytes");
         }
         let phone_nonce_b64 = base64url_encode(&phone_nonce);
-        let server_signed_nonce =
-            sign_message(self.identity.signing_key(), &phone_nonce_b64);
+        let server_signed_nonce = sign_message(self.identity.signing_key(), &phone_nonce_b64);
 
         let session_token = Uuid::new_v4().to_string();
         let pairing_id = Uuid::new_v4().to_string();
@@ -498,6 +587,7 @@ impl PairingService {
             last_seen: now,
             session_token_hash: hash_session_token(&session_token),
             session_token_expiry: now + SESSION_TOKEN_TTL,
+            credential_generation: 1,
             role: pending.role,
             profile_id: pending.bound_profile_id,
             mesh_grants: crate::mesh::default_mesh_grants_for_role(pending.role),
@@ -679,11 +769,20 @@ impl PairingService {
             return Ok(RevokePairingResult::Unauthorized);
         }
         let paired = self.store.list_paired()?;
-        let Some(record) = paired.into_iter().find(|entry| entry.pairing_id == pairing_id) else {
+        let Some(record) = paired
+            .into_iter()
+            .find(|entry| entry.pairing_id == pairing_id)
+        else {
             return Ok(RevokePairingResult::NotFound);
         };
         self.store.revoke_pairing(pairing_id)?;
         self.store.delete_record(&record.phone_id)?;
+        self.credential_lifecycle.revoke(
+            record.pairing_id,
+            record.credential_generation,
+            CredentialKind::Pairing,
+            "pairing_revoked",
+        );
         Ok(RevokePairingResult::Removed)
     }
 
@@ -727,6 +826,8 @@ impl PairingService {
     fn build_qr_url(&self, session: &ActiveQrSession, full: bool) -> Result<String> {
         let name = urlencoding::encode(&self.peer_name);
         let address = urlencoding::encode(&self.advertise_address);
+        let daemon_public_key = verifying_key_to_b64(self.identity.verifying_key());
+        let daemon_public_key = urlencoding::encode(&daemon_public_key);
         let profile_param = session
             .bound_profile_id
             .as_deref()
@@ -752,7 +853,7 @@ impl PairingService {
             let ticket = urlencoding::encode(&iroh.ticket);
             let endpoint_id = urlencoding::encode(&iroh.endpoint_id);
             return Ok(format!(
-                "{QR_SCHEME_V2}?a={address}&d={}&t={}&s={signature}&n={name}&k={ticket}&e={endpoint_id}{profile_param}",
+                "{QR_SCHEME_V2}?a={address}&d={}&t={}&s={signature}&n={name}&u={daemon_public_key}&k={ticket}&e={endpoint_id}{profile_param}",
                 self.identity.device_id, session.token_b64,
             ));
         }
@@ -765,7 +866,7 @@ impl PairingService {
         );
         let signature = sign_message(self.identity.signing_key(), &message);
         Ok(format!(
-            "{QR_SCHEME}?a={address}&d={}&t={}&s={signature}&n={name}{profile_param}",
+            "{QR_SCHEME}?a={address}&d={}&t={}&s={signature}&n={name}&u={daemon_public_key}{profile_param}",
             self.identity.device_id, session.token_b64,
         ))
     }
@@ -790,18 +891,6 @@ impl PairingService {
             bail!("invalid short code");
         }
         Ok(session.token_b64.clone())
-    }
-
-    async fn allow_init_attempt(&self, source_ip: &str) -> bool {
-        let now = Instant::now();
-        let mut attempts = self.init_attempts.write().await;
-        let entry = attempts.entry(source_ip.to_string()).or_default();
-        entry.retain(|instant| now.duration_since(*instant) < INIT_RATE_WINDOW);
-        if entry.len() >= INIT_RATE_LIMIT {
-            return false;
-        }
-        entry.push(now);
-        true
     }
 
     pub fn find_by_session_token(&self, token: &str) -> Result<Option<PairedDeviceRecord>> {
@@ -871,7 +960,6 @@ impl PairingService {
             .map(|id| id.trim().to_string())
             .filter(|id| !id.is_empty()))
     }
-
 }
 
 #[cfg(test)]
@@ -893,6 +981,29 @@ fn rejected_init(reason: &str) -> PairInitResponse {
         session_id: None,
         reason: Some(reason.to_string()),
     }
+}
+
+fn allow_attempt(
+    global: &mut VecDeque<Instant>,
+    by_source: &mut HashMap<IpAddr, VecDeque<Instant>>,
+    source: IpAddr,
+    now: Instant,
+    window: Duration,
+    global_limit: usize,
+    source_limit: usize,
+) -> bool {
+    global.retain(|attempt| now.duration_since(*attempt) < window);
+    by_source.retain(|_, attempts| {
+        attempts.retain(|attempt| now.duration_since(*attempt) < window);
+        !attempts.is_empty()
+    });
+    let source_attempts = by_source.entry(source).or_default();
+    if global.len() >= global_limit || source_attempts.len() >= source_limit {
+        return false;
+    }
+    global.push_back(now);
+    source_attempts.push_back(now);
+    true
 }
 
 fn rejected_verify(reason: &str) -> PairVerifyResponse {
@@ -951,7 +1062,9 @@ pub fn mdns_enabled_from_env() -> bool {
 
 pub fn mdns_should_advertise(bind: &str) -> bool {
     mdns_enabled_from_env()
-        && (bind.starts_with("0.0.0.0:") || bind.starts_with("[::]:") || truthy_env("MEDOUSA_PAIRING_ADVERTISE"))
+        && (bind.starts_with("0.0.0.0:")
+            || bind.starts_with("[::]:")
+            || truthy_env("MEDOUSA_PAIRING_ADVERTISE"))
 }
 
 fn truthy_env(name: &str) -> bool {
@@ -1015,7 +1128,7 @@ mod tests {
                     public_key: verifying_key_to_b64(&phone.verifying_key()),
                     role: role.map(str::to_string),
                 },
-                "127.0.0.1",
+                "127.0.0.1".parse().expect("source ip"),
             )
             .await
             .expect("init");
@@ -1025,11 +1138,14 @@ mod tests {
         let mut phone_nonce = [0u8; 32];
         OsRng.fill_bytes(&mut phone_nonce);
         let verify = service
-            .pair_verify(PairVerifyRequest {
-                session_id: init.session_id.expect("session"),
-                signed_nonce,
-                phone_nonce: base64url_encode(&phone_nonce),
-            })
+            .pair_verify(
+                PairVerifyRequest {
+                    session_id: init.session_id.expect("session"),
+                    signed_nonce,
+                    phone_nonce: base64url_encode(&phone_nonce),
+                },
+                "127.0.0.1".parse().expect("source ip"),
+            )
             .await
             .expect("verify");
         assert_eq!(verify.status, "paired");
@@ -1046,6 +1162,112 @@ mod tests {
         let qr = service.current_qr().await.expect("qr");
         assert!(qr.url.contains("medousa://pair/1.0"));
         assert!(qr.url.contains(&service.device_id().to_string()));
+        let public_key = extract_query_param(&qr.url, "u").expect("public key");
+        let address = extract_query_param(&qr.url, "a").expect("address");
+        let device_id = extract_query_param(&qr.url, "d").expect("device id");
+        let token = extract_query_param(&qr.url, "t").expect("token");
+        let signature = extract_query_param(&qr.url, "s").expect("signature");
+        let verifying_key = parse_verifying_key(&public_key).expect("verifying key");
+        crate::pairing::crypto::verify_qr_url_signature(
+            &verifying_key,
+            &address,
+            &device_id,
+            &token,
+            &signature,
+        )
+        .expect("QR signature verifies with embedded key");
+    }
+
+    #[tokio::test]
+    async fn daemon_startup_has_no_active_pairing_window() {
+        let service = test_service();
+        assert!(!service.pair_status().await.expect("status").qr_active);
+
+        let phone = SigningKey::generate(&mut OsRng);
+        let response = service
+            .pair_init(
+                PairInitRequest {
+                    qr_token: Some("unissued".to_string()),
+                    short_code: None,
+                    phone_id: "phone-window-test".to_string(),
+                    phone_name: "Phone".to_string(),
+                    public_key: verifying_key_to_b64(&phone.verifying_key()),
+                    role: None,
+                },
+                "127.0.0.1".parse().expect("source ip"),
+            )
+            .await
+            .expect("init response");
+        assert_eq!(response.reason.as_deref(), Some("invalid_invite"));
+    }
+
+    #[tokio::test]
+    async fn pairing_admission_is_bounded_per_source_and_globally() {
+        let service = test_service();
+        let phone = SigningKey::generate(&mut OsRng);
+        let request = PairInitRequest {
+            qr_token: Some("invalid".to_string()),
+            short_code: None,
+            phone_id: "phone-rate-test".to_string(),
+            phone_name: "Phone".to_string(),
+            public_key: verifying_key_to_b64(&phone.verifying_key()),
+            role: None,
+        };
+        let source = "127.0.0.1".parse().expect("source ip");
+        for _ in 0..INIT_RATE_LIMIT {
+            assert_ne!(
+                service
+                    .pair_init(request.clone(), source)
+                    .await
+                    .expect("init")
+                    .reason
+                    .as_deref(),
+                Some("rate_limited")
+            );
+        }
+        assert_eq!(
+            service
+                .pair_init(request.clone(), source)
+                .await
+                .expect("init")
+                .reason
+                .as_deref(),
+            Some("rate_limited")
+        );
+
+        let service = test_service();
+        for index in 1..=GLOBAL_INIT_RATE_LIMIT {
+            let source = IpAddr::from([10, 0, 0, index as u8]);
+            assert_ne!(
+                service
+                    .pair_init(request.clone(), source)
+                    .await
+                    .expect("init")
+                    .reason
+                    .as_deref(),
+                Some("rate_limited")
+            );
+        }
+        assert_eq!(
+            service
+                .pair_init(request, IpAddr::from([10, 0, 1, 1]))
+                .await
+                .expect("init")
+                .reason
+                .as_deref(),
+            Some("rate_limited")
+        );
+    }
+
+    #[test]
+    fn pairing_concurrency_is_bounded() {
+        let service = test_service();
+        let permits = (0..CEREMONY_CONCURRENCY)
+            .map(|_| service.try_acquire_ceremony().expect("permit"))
+            .collect::<Vec<_>>();
+        assert!(service.try_acquire_ceremony().is_none());
+        drop(permits);
+        assert!(service.try_acquire_ceremony().is_some());
     }
 
     #[tokio::test]
@@ -1088,11 +1310,12 @@ mod tests {
             public_key: verifying_key_to_b64(&phone.verifying_key()),
             role: None,
         };
-        let first = service.pair_init(init.clone(), "127.0.0.1").await.expect("init");
+        let source = "127.0.0.1".parse().expect("source ip");
+        let first = service.pair_init(init.clone(), source).await.expect("init");
         assert_eq!(first.status, "challenge");
-        let second = service.pair_init(init, "127.0.0.1").await.expect("init");
+        let second = service.pair_init(init, source).await.expect("init");
         assert_eq!(second.status, "rejected");
-        assert_eq!(second.reason.as_deref(), Some("token_already_used"));
+        assert_eq!(second.reason.as_deref(), Some("invalid_invite"));
     }
 
     #[tokio::test]
@@ -1172,10 +1395,7 @@ mod tests {
 
         assert_eq!(
             service
-                .revoke_pairing(
-                    &pairing_id,
-                    RevokePairingAuthority::Credential(&pairing_id),
-                )
+                .revoke_pairing(&pairing_id, RevokePairingAuthority::Credential(&pairing_id),)
                 .await
                 .expect("revoke"),
             RevokePairingResult::Removed
@@ -1187,6 +1407,9 @@ mod tests {
                 .is_none()
         );
         assert!(service.find_by_pairing_id(&pairing_id).unwrap().is_none());
+        let snapshot = service.credential_lifecycle().snapshot();
+        assert_eq!(snapshot.revocation_epoch, 1);
+        assert_eq!(snapshot.audit_events[0].credential_id, pairing_id);
     }
 
     fn extract_query_param(url: &str, key: &str) -> Option<String> {
@@ -1194,7 +1417,9 @@ mod tests {
         for pair in query.split('&') {
             let (name, value) = pair.split_once('=')?;
             if name == key {
-                return Some(value.to_string());
+                return urlencoding::decode(value)
+                    .ok()
+                    .map(|value| value.into_owned());
             }
         }
         None

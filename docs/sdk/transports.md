@@ -12,11 +12,18 @@
 use std::sync::Arc;
 use medousa_sdk::{HttpTransport, MedousaClient};
 
-let client = MedousaClient::new("http://127.0.0.1:7419");
-// equivalent to with_transport(Arc::new(HttpTransport::new()), url)
+let http = reqwest::Client::builder()
+    .default_headers(authenticated_headers_from_your_secret_store()?)
+    .build()?;
+let client = MedousaClient::with_transport(
+    Arc::new(HttpTransport::with_client(http)),
+    "http://127.0.0.1:7419",
+);
 ```
 
-Uses `reqwest` against `base_url` + path.
+Uses `reqwest` against `base_url` + path. `HttpTransport::new()` is suitable
+only for public `/health` or tests; protected routes require a paired bearer
+even when `base_url` is loopback. Mark authorization header values sensitive.
 
 ---
 

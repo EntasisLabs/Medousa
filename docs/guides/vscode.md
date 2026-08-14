@@ -25,6 +25,11 @@ Use **Medousa: Configure Connection** from the Command Palette for another
 workshop URL. Paired workshop tokens are stored in VS Code SecretStorage and
 never written to settings or logs.
 
+Protected routes require a paired token even for `127.0.0.1`; loopback is not
+an authentication bypass. If the header shows **authorization required**, use
+the connection command to pair/configure the workshop rather than placing a
+token in settings.
+
 The chat header shows checking, connected, reconnecting, unavailable, and
 authorization-required states.
 

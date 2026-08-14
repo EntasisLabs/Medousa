@@ -4,7 +4,7 @@ use axum::extract::{Path, Query};
 use axum::http::StatusCode;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::Json;
 use chrono::Utc;
 use futures_util::stream::{self, Stream};
 use medousa_types::feed::{
@@ -16,20 +16,77 @@ use std::time::Duration;
 use tokio::sync::broadcast;
 
 use crate::environment_store::resolve_profile_id;
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
 use crate::feed_bus::{feed_hub, list_feeds};
 use crate::feed_store::feed_store;
 
 #[derive(Clone)]
 pub struct FeedApiState;
 
-pub fn feed_router() -> Router {
-    Router::new()
-        .route("/v1/feeds", get(list_feeds_handler))
-        .route("/v1/feeds/stream", get(stream_feeds))
-        .route("/v1/feeds/{feed_id}/tail", get(tail_feed))
-        .route("/v1/feeds/{feed_id}/latest-good", get(latest_good_feed))
-        .route("/v1/feeds/{feed_id}/read", post(mark_feed_read))
-        .with_state(FeedApiState)
+pub fn feed_surface() -> DeclaredRouter<FeedApiState> {
+    use crate::request_principal::Capability;
+
+    DeclaredRouter::default()
+        .route(feed_read_policy("/v1/feeds"), get(list_feeds_handler))
+        .route(
+            feed_policy(
+                axum::http::Method::GET,
+                "/v1/feeds/stream",
+                Capability::ContentRead,
+                1024,
+                RateLimitClass::Stream,
+            ),
+            get(stream_feeds),
+        )
+        .route(
+            feed_read_policy("/v1/feeds/{feed_id}/tail"),
+            get(tail_feed),
+        )
+        .route(
+            feed_read_policy("/v1/feeds/{feed_id}/latest-good"),
+            get(latest_good_feed),
+        )
+        .route(
+            feed_policy(
+                axum::http::Method::POST,
+                "/v1/feeds/{feed_id}/read",
+                Capability::ContentWrite,
+                64 * 1024,
+                RateLimitClass::Mutation,
+            ),
+            post(mark_feed_read),
+        )
+}
+
+fn feed_read_policy(path: &'static str) -> RoutePolicy {
+    feed_policy(
+        axum::http::Method::GET,
+        path,
+        crate::request_principal::Capability::ContentRead,
+        1024,
+        RateLimitClass::Read,
+    )
+}
+
+fn feed_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    required_capability: crate::request_principal::Capability,
+    body_limit: usize,
+    rate_limit_class: RateLimitClass,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Portal,
+        required_capability: Some(required_capability),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class,
+    }
 }
 
 async fn list_feeds_handler(

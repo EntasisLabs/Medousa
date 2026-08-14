@@ -87,7 +87,7 @@ async fn forge_get<T: serde::de::DeserializeOwned>(
     daemon_url: &str,
     path: &str,
 ) -> Result<T, String> {
-    let client = daemon_client(daemon_url);
+    let client = daemon_client(daemon_url).map_err(|error| error.to_string())?;
     let value = client
         .transport()
         .get_json(client.base_url(), path)
@@ -101,7 +101,7 @@ async fn forge_post<T: serde::de::DeserializeOwned>(
     path: &str,
     body: serde_json::Value,
 ) -> Result<T, String> {
-    let client = daemon_client(daemon_url);
+    let client = daemon_client(daemon_url).map_err(|error| error.to_string())?;
     let value = client
         .transport()
         .post_json(client.base_url(), path, body)
@@ -115,7 +115,7 @@ async fn forge_put<T: serde::de::DeserializeOwned>(
     path: &str,
     body: serde_json::Value,
 ) -> Result<T, String> {
-    let client = daemon_client(daemon_url);
+    let client = daemon_client(daemon_url).map_err(|error| error.to_string())?;
     let value = client
         .transport()
         .put_json(client.base_url(), path, body)

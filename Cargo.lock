@@ -7488,6 +7488,7 @@ dependencies = [
  "medousa-host",
  "medousa-install-support",
  "medousa-iroh-http",
+ "medousa-local-credential",
  "medousa-local-inference",
  "medousa-mcp-gateway",
  "medousa-mcp-server",
@@ -7533,6 +7534,7 @@ dependencies = [
  "uuid 1.23.1",
  "vte 0.15.0",
  "windows 0.61.3",
+ "zeroize",
 ]
 
 [[package]]
@@ -7691,6 +7693,22 @@ dependencies = [
  "iroh",
  "iroh-tickets",
  "tokio",
+]
+
+[[package]]
+name = "medousa-local-credential"
+version = "0.9.1"
+dependencies = [
+ "anyhow",
+ "arc-swap",
+ "base64 0.22.1",
+ "keyring",
+ "rand 0.8.6",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "uuid 1.23.1",
+ "zeroize",
 ]
 
 [[package]]

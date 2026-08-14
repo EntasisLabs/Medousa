@@ -9,17 +9,21 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
 
+use axum::Json;
 use axum::extract::ws::{Message as AxumMessage, WebSocket, WebSocketUpgrade};
-use axum::extract::{Path, Query, State};
+use axum::extract::{Extension, Path, Query, State};
 use axum::response::IntoResponse;
 use axum::routing::get;
-use axum::{Json, Router};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 use tokio_tungstenite::{connect_async, tungstenite::Message as TungsteniteMessage};
 
+use crate::credential_lifecycle::CredentialLease;
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
 use crate::daemon::state::AppState;
 use crate::grapheme_script::store::GraphemeScriptStore;
 use crate::paths::medousa_data_dir;
@@ -270,26 +274,84 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
         let mut guard = host.child.lock().await;
         if let Some(mut child) = guard.take() {
             let _ = child.start_kill();
-            tracing::warn!("killed medousa-session after health timeout so the next request can respawn");
+            tracing::warn!(
+                "killed medousa-session after health timeout so the next request can respawn"
+            );
         }
     }
 
     info(false, "medousa-session spawned but health timed out".into())
 }
 
-pub fn shell_session_router(state: AppState) -> Router {
-    Router::new()
-        .route("/v1/shell-sessions", get(shell_sessions_info))
+pub fn shell_session_surface() -> DeclaredRouter<AppState> {
+    use axum::routing::post;
+
+    DeclaredRouter::default()
         .route(
-            "/v1/sessions/shell",
-            get(list_sessions).post(create_session),
+            shell_policy(
+                axum::http::Method::GET,
+                "/v1/shell-sessions",
+                1024,
+                RateLimitClass::Administration,
+            ),
+            get(shell_sessions_info),
         )
-        .route("/v1/sessions/shell/{id}", get(session_ws))
+        .methods([
+            (
+                shell_policy(
+                    axum::http::Method::GET,
+                    "/v1/sessions/shell",
+                    1024,
+                    RateLimitClass::Administration,
+                ),
+                get(list_sessions),
+            ),
+            (
+                shell_policy(
+                    axum::http::Method::POST,
+                    "/v1/sessions/shell",
+                    256 * 1024,
+                    RateLimitClass::Administration,
+                ),
+                post(create_session),
+            ),
+        ])
         .route(
-            "/v1/sessions/shell/{id}/signal",
-            axum::routing::post(signal_session),
+            shell_policy(
+                axum::http::Method::GET,
+                "/v1/sessions/shell/{id}",
+                1024,
+                RateLimitClass::Stream,
+            ),
+            get(session_ws),
         )
-        .with_state(state)
+        .route(
+            shell_policy(
+                axum::http::Method::POST,
+                "/v1/sessions/shell/{id}/signal",
+                64 * 1024,
+                RateLimitClass::Administration,
+            ),
+            post(signal_session),
+        )
+}
+
+fn shell_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    body_limit: usize,
+    rate_limit_class: RateLimitClass,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Administration,
+        required_capability: Some(crate::request_principal::Capability::AdminExecute),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class,
+    }
 }
 
 pub async fn shell_sessions_info(State(state): State<AppState>) -> Json<ShellSessionInfo> {
@@ -474,8 +536,17 @@ async fn session_ws(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Query(query): Query<SessionAttachQuery>,
+    lease: Option<Extension<CredentialLease>>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| proxy_ws(socket, state, id, query))
+    ws.on_upgrade(move |socket| {
+        proxy_ws(
+            socket,
+            state,
+            id,
+            query,
+            lease.map(|Extension(lease)| lease),
+        )
+    })
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -496,7 +567,13 @@ fn session_attach_query_suffix(query: &SessionAttachQuery) -> String {
     String::new()
 }
 
-async fn proxy_ws(client: WebSocket, state: AppState, id: String, query: SessionAttachQuery) {
+async fn proxy_ws(
+    client: WebSocket,
+    state: AppState,
+    id: String,
+    query: SessionAttachQuery,
+    lease: Option<CredentialLease>,
+) {
     let host = state.shell_sessions.clone().unwrap_or_default();
     let info = ensure_shell_session_host(&host).await;
     if !info.available {
@@ -534,7 +611,16 @@ async fn proxy_ws(client: WebSocket, state: AppState, id: String, query: Session
         }
     });
 
-    while let Some(Ok(msg)) = up_rx.next().await {
+    let mut watcher = lease.map(|lease| lease.watcher());
+    loop {
+        let msg = tokio::select! {
+            _ = wait_for_revocation(&mut watcher) => {
+                let _ = client_tx.send(AxumMessage::Close(None)).await;
+                break;
+            }
+            msg = up_rx.next() => msg,
+        };
+        let Some(Ok(msg)) = msg else { break };
         let out = match msg {
             TungsteniteMessage::Text(t) => AxumMessage::Text(t.to_string().into()),
             TungsteniteMessage::Binary(b) => AxumMessage::Binary(b),
@@ -548,6 +634,15 @@ async fn proxy_ws(client: WebSocket, state: AppState, id: String, query: Session
         }
     }
     client_to_up.abort();
+}
+
+async fn wait_for_revocation(
+    watcher: &mut Option<crate::credential_lifecycle::CredentialRevocationWatcher>,
+) {
+    match watcher {
+        Some(watcher) => watcher.revoked().await,
+        None => futures_util::future::pending().await,
+    }
 }
 
 #[allow(dead_code)]
