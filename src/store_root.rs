@@ -6,7 +6,7 @@
 
 use std::fmt;
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 use std::time::SystemTime;
 
 use cap_fs_ext::{DirExt as _, FollowSymlinks, OpenOptionsFollowExt as _};
@@ -52,14 +52,6 @@ impl StorePath {
         })
     }
 
-    fn split_parent(&self) -> (&[String], &str) {
-        let (leaf, parents) = self
-            .segments
-            .split_last()
-            .expect("validated non-empty path");
-        (parents, leaf)
-    }
-
     pub fn file_name(&self) -> &str {
         self.segments
             .last()
@@ -85,6 +77,29 @@ impl StorePath {
         segments.extend(self.segments.iter().cloned());
         segments.extend(child.segments.iter().cloned());
         Ok(Self { segments })
+    }
+}
+
+/// A validated relative path accepted by [`StoreRoot`].
+///
+/// Daemon-owned stores use [`StorePath`]. User-facing stores can provide a
+/// domain type with a broader character grammar while retaining the same
+/// handle-relative, no-follow filesystem operations.
+pub trait StoreRootPath {
+    fn segments(&self) -> &[String];
+
+    fn split_parent(&self) -> (&[String], &str) {
+        let (leaf, parents) = self
+            .segments()
+            .split_last()
+            .expect("validated non-empty path");
+        (parents, leaf)
+    }
+}
+
+impl StoreRootPath for StorePath {
+    fn segments(&self) -> &[String] {
+        &self.segments
     }
 }
 
@@ -206,6 +221,23 @@ pub struct StoreEntry {
     pub modified: Option<SystemTime>,
 }
 
+#[derive(Debug)]
+pub struct StoreDirectoryEntry {
+    pub name: String,
+    pub kind: StoreEntryKind,
+    pub size: u64,
+    pub created: Option<SystemTime>,
+    pub modified: Option<SystemTime>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct StoreMetadata {
+    pub kind: StoreEntryKind,
+    pub size: u64,
+    pub created: Option<SystemTime>,
+    pub modified: Option<SystemTime>,
+}
+
 impl StoreRoot {
     /// Open an existing trusted root using ambient authority exactly once.
     pub fn open(path: &Path) -> Result<Self, StoreRootError> {
@@ -220,7 +252,41 @@ impl StoreRoot {
         Self::open(path)
     }
 
-    pub fn read(&self, path: &StorePath) -> Result<Vec<u8>, StoreRootError> {
+    /// Open or create an absolute trusted root without following links in any
+    /// existing path component.
+    pub fn open_or_create_nofollow(path: &Path) -> Result<Self, StoreRootError> {
+        Self::open_absolute_nofollow(path, true)
+    }
+
+    /// Open an existing absolute trusted root without following links in any
+    /// path component.
+    pub fn open_nofollow(path: &Path) -> Result<Self, StoreRootError> {
+        Self::open_absolute_nofollow(path, false)
+    }
+
+    fn open_absolute_nofollow(path: &Path, create: bool) -> Result<Self, StoreRootError> {
+        let (anchor, segments) = absolute_path_parts(path)?;
+        let mut current = Dir::open_ambient_dir(anchor, ambient_authority())
+            .map_err(|error| StoreRootError::io("open_root_anchor", error))?;
+        for segment in segments {
+            if create {
+                match current.create_dir(&segment) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+                    Err(error) => {
+                        return Err(StoreRootError::io("create_root_component", error));
+                    }
+                }
+            }
+            reject_symlink(&current, &segment, "open_root_component")?;
+            current = current
+                .open_dir_nofollow(&segment)
+                .map_err(|error| StoreRootError::io("open_root_component", error))?;
+        }
+        Ok(Self { dir: current })
+    }
+
+    pub fn read(&self, path: &impl StoreRootPath) -> Result<Vec<u8>, StoreRootError> {
         let mut file = self.open_file(path, false, false)?;
         let mut bytes = Vec::new();
         file.read_to_end(&mut bytes)
@@ -230,7 +296,7 @@ impl StoreRoot {
 
     pub fn read_limited(
         &self,
-        path: &StorePath,
+        path: &impl StoreRootPath,
         max_bytes: u64,
     ) -> Result<Vec<u8>, StoreRootError> {
         let file = self.open_file(path, false, false)?;
@@ -247,8 +313,12 @@ impl StoreRoot {
         Ok(bytes)
     }
 
-    pub fn is_file(&self, path: &StorePath) -> Result<bool, StoreRootError> {
-        let (parent, leaf) = self.open_parent(path, false, "metadata")?;
+    pub fn is_file(&self, path: &impl StoreRootPath) -> Result<bool, StoreRootError> {
+        let (parent, leaf) = match self.open_parent(path, false, "metadata") {
+            Ok(value) => value,
+            Err(error) if error.is_not_found() => return Ok(false),
+            Err(error) => return Err(error),
+        };
         match parent.symlink_metadata(leaf) {
             Ok(metadata) if metadata.file_type().is_symlink() => Err(StoreRootError::Confinement {
                 operation: "metadata",
@@ -260,8 +330,12 @@ impl StoreRoot {
         }
     }
 
-    pub fn is_dir(&self, path: &StorePath) -> Result<bool, StoreRootError> {
-        let (parent, leaf) = self.open_parent(path, false, "metadata")?;
+    pub fn is_dir(&self, path: &impl StoreRootPath) -> Result<bool, StoreRootError> {
+        let (parent, leaf) = match self.open_parent(path, false, "metadata") {
+            Ok(value) => value,
+            Err(error) if error.is_not_found() => return Ok(false),
+            Err(error) => return Err(error),
+        };
         match parent.symlink_metadata(leaf) {
             Ok(metadata) if metadata.file_type().is_symlink() => Err(StoreRootError::Confinement {
                 operation: "metadata",
@@ -273,6 +347,20 @@ impl StoreRoot {
         }
     }
 
+    pub fn metadata(&self, path: &impl StoreRootPath) -> Result<StoreMetadata, StoreRootError> {
+        let (parent, leaf) = self.open_parent(path, false, "metadata")?;
+        let metadata = parent
+            .symlink_metadata(leaf)
+            .map_err(|error| StoreRootError::io("metadata", error))?;
+        if metadata.file_type().is_symlink() {
+            return Err(StoreRootError::Confinement {
+                operation: "metadata",
+                reason: ConfinementReason::SymbolicLink,
+            });
+        }
+        Ok(store_metadata(&metadata))
+    }
+
     /// Enumerate validated direct children from the held root handle.
     ///
     /// Non-UTF-8 and policy-invalid names are ignored; callers never receive a
@@ -281,18 +369,37 @@ impl StoreRoot {
         list_directory(&self.dir)
     }
 
-    pub fn list_directory(&self, path: &StorePath) -> Result<Vec<StoreEntry>, StoreRootError> {
-        let directory = self.open_directory_chain(&path.segments, false, "list_directory")?;
+    pub fn list_directory(
+        &self,
+        path: &impl StoreRootPath,
+    ) -> Result<Vec<StoreEntry>, StoreRootError> {
+        let directory = self.open_directory_chain(path.segments(), false, "list_directory")?;
         list_directory(&directory)
     }
 
-    pub fn append(&self, path: &StorePath, bytes: &[u8]) -> Result<(), StoreRootError> {
+    pub fn list_root_utf8(&self) -> Result<Vec<StoreDirectoryEntry>, StoreRootError> {
+        list_directory_utf8(&self.dir)
+    }
+
+    pub fn list_directory_utf8(
+        &self,
+        path: &impl StoreRootPath,
+    ) -> Result<Vec<StoreDirectoryEntry>, StoreRootError> {
+        let directory = self.open_directory_chain(path.segments(), false, "list_directory")?;
+        list_directory_utf8(&directory)
+    }
+
+    pub fn append(&self, path: &impl StoreRootPath, bytes: &[u8]) -> Result<(), StoreRootError> {
         let mut file = self.open_file(path, true, true)?;
         file.write_all(bytes)
             .map_err(|error| StoreRootError::io("append", error))
     }
 
-    pub fn atomic_write(&self, path: &StorePath, bytes: &[u8]) -> Result<(), StoreRootError> {
+    pub fn atomic_write(
+        &self,
+        path: &impl StoreRootPath,
+        bytes: &[u8],
+    ) -> Result<(), StoreRootError> {
         let (parent, leaf) = self.open_parent(path, true, "atomic_write")?;
         reject_symlink(&parent, leaf, "atomic_write")?;
 
@@ -317,12 +424,12 @@ impl StoreRoot {
         Ok(())
     }
 
-    pub fn create_dir_all(&self, path: &StorePath) -> Result<(), StoreRootError> {
-        let _ = self.open_directory_chain(&path.segments, true, "create_dir_all")?;
+    pub fn create_dir_all(&self, path: &impl StoreRootPath) -> Result<(), StoreRootError> {
+        let _ = self.open_directory_chain(path.segments(), true, "create_dir_all")?;
         Ok(())
     }
 
-    pub fn remove_file(&self, path: &StorePath) -> Result<(), StoreRootError> {
+    pub fn remove_file(&self, path: &impl StoreRootPath) -> Result<(), StoreRootError> {
         let (parent, leaf) = self.open_parent(path, false, "remove_file")?;
         match parent.symlink_metadata(leaf) {
             Ok(metadata) if metadata.file_type().is_symlink() => {
@@ -340,7 +447,7 @@ impl StoreRoot {
             .map_err(|error| StoreRootError::io("remove_file", error))
     }
 
-    pub fn remove_dir_all(&self, path: &StorePath) -> Result<(), StoreRootError> {
+    pub fn remove_dir_all(&self, path: &impl StoreRootPath) -> Result<(), StoreRootError> {
         let (parent, leaf) = self.open_parent(path, false, "remove_dir_all")?;
         match parent.symlink_metadata(leaf) {
             Ok(metadata) if metadata.file_type().is_symlink() => {
@@ -361,7 +468,11 @@ impl StoreRoot {
             .map_err(|error| StoreRootError::io("remove_dir_all", error))
     }
 
-    pub fn rename(&self, from: &StorePath, to: &StorePath) -> Result<(), StoreRootError> {
+    pub fn rename(
+        &self,
+        from: &impl StoreRootPath,
+        to: &impl StoreRootPath,
+    ) -> Result<(), StoreRootError> {
         let (from_parent, from_leaf) = self.open_parent(from, false, "rename_source")?;
         reject_symlink(&from_parent, from_leaf, "rename_source")?;
         let (to_parent, to_leaf) = self.open_parent(to, true, "rename_destination")?;
@@ -373,7 +484,7 @@ impl StoreRoot {
 
     fn open_file(
         &self,
-        path: &StorePath,
+        path: &impl StoreRootPath,
         append: bool,
         create: bool,
     ) -> Result<File, StoreRootError> {
@@ -391,9 +502,9 @@ impl StoreRoot {
             .map_err(|error| StoreRootError::io("open_file", error))
     }
 
-    fn open_parent<'path>(
+    fn open_parent<'path, P: StoreRootPath + ?Sized>(
         &self,
-        path: &'path StorePath,
+        path: &'path P,
         create: bool,
         operation: &'static str,
     ) -> Result<(Dir, &'path str), StoreRootError> {
@@ -429,7 +540,51 @@ impl StoreRoot {
     }
 }
 
+fn absolute_path_parts(path: &Path) -> Result<(PathBuf, Vec<String>), StoreRootError> {
+    if !path.is_absolute() {
+        return Err(StoreRootError::InvalidPath("root_not_absolute"));
+    }
+
+    let mut anchor = PathBuf::new();
+    let mut segments = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => anchor.push(prefix.as_os_str()),
+            Component::RootDir => anchor.push(component.as_os_str()),
+            Component::Normal(segment) => {
+                let segment = segment
+                    .to_str()
+                    .ok_or(StoreRootError::InvalidPath("root_non_utf8"))?;
+                segments.push(segment.to_string());
+            }
+            Component::CurDir => {}
+            Component::ParentDir => {
+                return Err(StoreRootError::InvalidPath("root_parent_segment"));
+            }
+        }
+    }
+    if anchor.as_os_str().is_empty() {
+        return Err(StoreRootError::InvalidPath("root_missing_anchor"));
+    }
+    Ok((anchor, segments))
+}
+
 fn list_directory(dir: &Dir) -> Result<Vec<StoreEntry>, StoreRootError> {
+    Ok(list_directory_utf8(dir)?
+        .into_iter()
+        .filter_map(|entry| {
+            let path = StorePath::parse(&entry.name).ok()?;
+            Some(StoreEntry {
+                path,
+                kind: entry.kind,
+                size: entry.size,
+                modified: entry.modified,
+            })
+        })
+        .collect())
+}
+
+fn list_directory_utf8(dir: &Dir) -> Result<Vec<StoreDirectoryEntry>, StoreRootError> {
     let entries = dir
         .entries()
         .map_err(|error| StoreRootError::io("list_directory", error))?;
@@ -437,9 +592,6 @@ fn list_directory(dir: &Dir) -> Result<Vec<StoreEntry>, StoreRootError> {
     for entry in entries {
         let entry = entry.map_err(|error| StoreRootError::io("list_entry", error))?;
         let Ok(name) = entry.file_name().into_string() else {
-            continue;
-        };
-        let Ok(path) = StorePath::parse(&name) else {
             continue;
         };
         let file_type = entry
@@ -456,17 +608,41 @@ fn list_directory(dir: &Dir) -> Result<Vec<StoreEntry>, StoreRootError> {
         };
         let metadata = dir.symlink_metadata(&name).ok();
         let size = metadata.as_ref().map_or(0, |metadata| metadata.len());
+        let created = metadata
+            .as_ref()
+            .and_then(|metadata| metadata.created().ok())
+            .map(|created| created.into_std());
         let modified = metadata
             .and_then(|metadata| metadata.modified().ok())
             .map(|modified| modified.into_std());
-        listed.push(StoreEntry {
-            path,
+        listed.push(StoreDirectoryEntry {
+            name,
             kind,
             size,
+            created,
             modified,
         });
     }
     Ok(listed)
+}
+
+fn store_metadata(metadata: &cap_std::fs::Metadata) -> StoreMetadata {
+    let file_type = metadata.file_type();
+    let kind = if file_type.is_symlink() {
+        StoreEntryKind::Link
+    } else if file_type.is_file() {
+        StoreEntryKind::File
+    } else if file_type.is_dir() {
+        StoreEntryKind::Directory
+    } else {
+        StoreEntryKind::Other
+    };
+    StoreMetadata {
+        kind,
+        size: metadata.len(),
+        created: metadata.created().ok().map(|created| created.into_std()),
+        modified: metadata.modified().ok().map(|modified| modified.into_std()),
+    }
 }
 
 fn reject_symlink(parent: &Dir, name: &str, operation: &'static str) -> Result<(), StoreRootError> {

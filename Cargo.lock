@@ -7619,6 +7619,7 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "unicode-normalization",
  "urlencoding",
  "uuid 1.23.1",
  "vte 0.15.0",

@@ -1,6 +1,5 @@
 //! CalendarService — vault `.ics` as source of truth.
 
-use std::fs;
 use std::str::FromStr;
 
 use anyhow::{Context, Result, bail};
@@ -16,7 +15,7 @@ use medousa_types::{
 };
 use uuid::Uuid;
 
-use crate::vault::path::{normalize_vault_path, resolve_user_note_path};
+use crate::vault::path::{VaultPath, normalize_vault_path, user_vault_capability};
 
 pub const DEFAULT_CALENDAR_PATH: &str = "calendar/personal.ics";
 
@@ -203,9 +202,9 @@ impl CalendarService {
     pub fn export(path: Option<&str>) -> Result<CalendarExportResponse> {
         let calendar_path = Self::resolve_path(path)?;
         let _ = Self::load_or_create(&calendar_path)?;
-        let absolute = resolve_user_note_path(&calendar_path)?;
-        let ics = fs::read_to_string(&absolute)
-            .with_context(|| format!("read calendar {}", absolute.display()))?;
+        let path = VaultPath::parse(&calendar_path)?;
+        let ics = String::from_utf8(user_vault_capability()?.read(&path)?)
+            .with_context(|| format!("read calendar {calendar_path}"))?;
         Ok(CalendarExportResponse {
             calendar_path,
             content_type: "text/calendar".to_string(),
@@ -214,30 +213,25 @@ impl CalendarService {
     }
 
     fn load_or_create(calendar_path: &str) -> Result<Calendar> {
-        let absolute = resolve_user_note_path(calendar_path)?;
-        if !absolute.exists() {
-            if let Some(parent) = absolute.parent() {
-                fs::create_dir_all(parent)
-                    .with_context(|| format!("create calendar dir {}", parent.display()))?;
-            }
-            fs::write(&absolute, EMPTY_CALENDAR)
-                .with_context(|| format!("create calendar {}", absolute.display()))?;
+        let path = VaultPath::parse(calendar_path)?;
+        let files = user_vault_capability()?;
+        if !files.is_file(&path)? {
+            files
+                .atomic_write(&path, EMPTY_CALENDAR.as_bytes())
+                .with_context(|| format!("create calendar {calendar_path}"))?;
         }
-        let text = fs::read_to_string(&absolute)
-            .with_context(|| format!("read calendar {}", absolute.display()))?;
+        let text = String::from_utf8(files.read(&path)?)
+            .with_context(|| format!("read calendar {calendar_path}"))?;
         text.parse()
-            .map_err(|err| anyhow::anyhow!("parse calendar {}: {err}", absolute.display()))
+            .map_err(|err| anyhow::anyhow!("parse calendar {calendar_path}: {err}"))
     }
 
     fn save(calendar_path: &str, cal: &Calendar) -> Result<()> {
-        let absolute = resolve_user_note_path(calendar_path)?;
-        if let Some(parent) = absolute.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("create calendar dir {}", parent.display()))?;
-        }
+        let path = VaultPath::parse(calendar_path)?;
         let serialized = cal.to_string();
-        fs::write(&absolute, serialized)
-            .with_context(|| format!("write calendar {}", absolute.display()))?;
+        user_vault_capability()?
+            .atomic_write(&path, serialized.as_bytes())
+            .with_context(|| format!("write calendar {calendar_path}"))?;
         Ok(())
     }
 }
@@ -663,28 +657,19 @@ fn days_in_month(year: i32, month: u32) -> u32 {
 mod tests {
     use super::*;
     use crate::vault::service::vault_integration_test_lock;
+    use std::fs;
     use std::sync::MutexGuard;
 
     fn with_temp_vault<T>(f: impl FnOnce() -> T) -> T {
         let _lock: MutexGuard<'_, ()> = vault_integration_test_lock();
         let base = std::env::temp_dir().join(format!("medousa-cal-{}", Uuid::new_v4().simple()));
+        fs::create_dir_all(&base).expect("temp root");
+        let base = base.canonicalize().expect("canonical temp root");
         let vault = base.join("vault");
         fs::create_dir_all(&vault).expect("vault");
-        // Safety: test-only env override for vault root path resolution via MEDOUSA_DATA_DIR.
-        let data = base.join("data");
-        fs::create_dir_all(data.join("vault")).ok();
-        // Use vault roots via env if available; otherwise write under resolved path.
-        let previous = std::env::var("MEDOUSA_DATA_DIR").ok();
-        unsafe {
-            std::env::set_var("MEDOUSA_DATA_DIR", &data);
-        }
-        // Ensure active vault points at our temp vault by writing into user_vault_root.
-        // paths::user_vault_root uses MEDOUSA_DATA_DIR/vault
+        crate::vault::roots::set_test_vault_root_override(Some(vault));
         let result = f();
-        match previous {
-            Some(value) => unsafe { std::env::set_var("MEDOUSA_DATA_DIR", value) },
-            None => unsafe { std::env::remove_var("MEDOUSA_DATA_DIR") },
-        }
+        crate::vault::roots::set_test_vault_root_override(None);
         let _ = fs::remove_dir_all(base);
         result
     }

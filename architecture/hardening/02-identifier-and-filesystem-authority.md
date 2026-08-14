@@ -1,6 +1,6 @@
 # H02 — Identifier and filesystem authority
 
-> **Status:** In progress — H02.2 capability kernel and session-store migration implemented; platform evidence remains
+> **Status:** In progress — H02.2 implemented; H02.3 vault confinement underway
 >
 > **Accountable owner:** daemon storage maintainers
 >
@@ -138,6 +138,24 @@ and share actions emit `medousa:artifact/{session_id}/{artifact_id}` references,
 so remote workshops do not leak unusable daemon-local paths and clients cannot
 mistake metadata for filesystem authority.
 
+H02.3 now has a typed `VaultPath` grammar with bounded depth/bytes, canonical
+Unicode, hidden/system-segment isolation, and cross-platform device, alias, ADS,
+separator, and control rejection. Explicit user and project-overlay roots are
+cached as held capabilities; existing root components and every later path walk
+use no-follow directory opens. A cached-root replacement fixture proves writes
+continue through the originally authorized handle rather than a replacement at
+the ambient spelling.
+
+Core note and calendar reads/writes, remote file preview, index/backlink
+persistence, metadata scans, overlay reads, trash, restore, and registered-root
+inspection now use those capabilities. Writes and generated indexes use atomic
+replacement, previews are bounded, JSONL index reads avoid per-line `String`
+allocation, and scanners admit only typed regular-file entries. Link-backed
+leaves and ancestors fail closed with an outside-root canary intact. The old
+`resolve_*_note_path`, `trash_path_for`, and lexical `ensure_within_root`
+authority helpers have been removed. Native Windows reparse/mount evidence and
+the vault-Git/process boundary audit remain before H02.3 closure.
+
 ## Current evidence and blast radius
 
 ### Session identifiers
@@ -167,12 +185,10 @@ paths, before compatibility removal.
 
 ### Vault
 
-`normalize_vault_path` rejects obvious lexical traversal, but
-`ensure_within_root` compares absolute spellings without resolving filesystem
-objects. Store reads/writes, trash, restore, overlay lookup, index walks, and
-renames then use ordinary `std::fs` paths and follow existing links. A link
-inside the vault can therefore redirect an allowed spelling outside it; a
-preflight-only repair would retain a replacement race.
+The original lexical containment and ordinary-path implementation has been
+removed from the core vault store. Remaining evidence work covers Windows
+junction/reparse behavior, mount/bind boundaries, configured-root lifecycle,
+and vault-Git subprocess authority; see the implementation progress above.
 
 ### Deletion
 
