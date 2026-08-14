@@ -162,6 +162,9 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::daemon::detamu_host::world_surface().inventory())
         .expect("duplicate world model route policy");
     inventory
+        .extend(crate::daemon::forge_api::forge_surface().inventory())
+        .expect("duplicate Forge route policy");
+    inventory
 }
 
 pub fn build_identity_surface() -> DeclaredRouter<AppState> {
@@ -526,10 +529,7 @@ pub fn build_feature_routers(
     );
     let dashboard = dashboard_router(dashboard_state);
 
-    crate::daemon::forge_api::forge_router(state.clone())
-        .merge(crate::daemon::forge_preview::forge_preview_router(
-            state.clone(),
-        ))
+    crate::daemon::forge_preview::forge_preview_router(state.clone())
         .merge(dashboard)
 }
 
@@ -1194,12 +1194,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 270);
-        assert_eq!(with_pairing.entries().len(), 282);
+        assert_eq!(without_pairing.entries().len(), 344);
+        assert_eq!(with_pairing.entries().len(), 356);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 282);
+        assert_eq!(rows.len(), 356);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"
@@ -1570,5 +1570,31 @@ mod tests {
                 .count(),
             2
         );
+    }
+
+    #[test]
+    fn forge_inventory_is_execute_only_and_preserves_large_edit_bound() {
+        let entries = crate::daemon::forge_api::forge_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 74);
+        assert!(entries.iter().all(|entry| {
+            entry.group == RouteGroup::Administration
+                && entry.required_capability == Some("admin.execute")
+                && entry.browser_policy == super::BrowserPolicy::NativeOnly
+        }));
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.rate_limit_class == RateLimitClass::Stream)
+                .count(),
+            3
+        );
+        let workspace_edit = entries
+            .iter()
+            .find(|entry| entry.path.ends_with("/source/workspace-edit"))
+            .expect("workspace edit policy");
+        assert_eq!(workspace_edit.body_limit, 64 * 1024 * 1024);
     }
 }

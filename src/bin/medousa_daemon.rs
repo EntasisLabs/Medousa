@@ -708,6 +708,7 @@ async fn main() -> Result<()> {
         .merge(medousa::daemon::coding_engine_host::coding_engine_surface())
         .merge(medousa::daemon::shell_session_host::shell_session_surface())
         .merge(medousa::daemon::detamu_host::world_surface())
+        .merge(medousa::daemon::forge_api::forge_surface())
         .with_state(state.clone());
     if let Some((pairing_bootstrap, pairing_protected)) = pairing_routers {
         bootstrap = bootstrap.merge(pairing_bootstrap);
