@@ -1,6 +1,6 @@
 # H02 — Identifier and filesystem authority
 
-> **Status:** In progress — H02.2 capability kernel implemented; production store migration underway
+> **Status:** In progress — H02.2 capability kernel and session-store migration implemented; platform evidence remains
 >
 > **Accountable owner:** daemon storage maintainers
 >
@@ -120,8 +120,18 @@ never followed. New rows store opaque relative names, payload/extract reads are
 bounded, and index JSONL avoids per-line `String` allocation. Platform-invalid
 legacy media filenames require H02.4 inventory/recovery.
 
-Artifact payload authority remains the final session-directory train. Native
-Windows reparse/junction evidence also remains open before H02.2 is complete.
+Artifact payloads, aliases, the file index, fetch, search, maintenance, and
+deletion now use the held `SessionDirectoryStore` capability. Payload lookup is
+derived from `(SessionId, tool, direction, hash)` through a domain-separated
+`o1-` key; persisted `payload_path` strings are compatibility metadata only.
+Reads are bounded, content-addressed payloads avoid redundant rewrites, and
+index JSONL avoids per-line `String` allocation. Hostile absolute metadata is
+covered by an outside-root canary fixture. Indexless and platform-invalid
+legacy nested layouts are not scanned or followed; H02.4 inventory/quarantine
+must recover them explicitly.
+
+All known internal session-directory trains now use capability-owned I/O.
+Native Windows reparse/junction evidence remains open before H02.2 is complete.
 
 The public artifact fetch contract no longer returns `payload_path`. Home copy
 and share actions emit `medousa:artifact/{session_id}/{artifact_id}` references,

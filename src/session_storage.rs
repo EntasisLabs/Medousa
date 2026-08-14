@@ -283,6 +283,28 @@ impl SessionDirectoryStore {
         self.root()?.list_directory(&directory)
     }
 
+    pub fn is_file(
+        &self,
+        session_id: &SessionId,
+        relative: &StorePath,
+    ) -> Result<bool, StoreRootError> {
+        let directory = self.session_dir_for_read(session_id)?;
+        let root = self.root()?;
+        if !root.is_dir(&directory)? {
+            return Ok(false);
+        }
+        root.is_file(&directory.join(relative)?)
+    }
+
+    pub fn remove_file(
+        &self,
+        session_id: &SessionId,
+        relative: &StorePath,
+    ) -> Result<(), StoreRootError> {
+        let directory = self.session_dir_for_read(session_id)?;
+        self.root()?.remove_file(&directory.join(relative)?)
+    }
+
     pub fn remove_session(&self, session_id: &SessionId) -> Result<(), StoreRootError> {
         let root = self.root()?;
         root.remove_dir_all(&self.current_dir(session_id))?;
@@ -501,7 +523,9 @@ mod tests {
         let nested = StorePath::parse("nested/new.json").unwrap();
         let index = StorePath::parse("index.jsonl").unwrap();
 
+        assert!(!store.is_file(&id("missing-session"), &old).unwrap());
         assert_eq!(store.read(&session_id, &old).unwrap(), b"legacy");
+        assert!(store.is_file(&session_id, &old).unwrap());
         store
             .atomic_write(&session_id, &nested, b"replacement")
             .unwrap();
@@ -512,6 +536,8 @@ mod tests {
         assert_eq!(store.read(&session_id, &nested).unwrap(), b"replacement");
         assert_eq!(store.read_root(&index).unwrap(), b"two\n");
         assert_eq!(store.list(&session_id).unwrap().len(), 2);
+        store.remove_file(&session_id, &old).unwrap();
+        assert!(!store.is_file(&session_id, &old).unwrap());
         store.remove_session(&session_id).unwrap();
         assert!(store.list(&session_id).is_err());
     }
