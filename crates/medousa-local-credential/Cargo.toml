@@ -1,0 +1,17 @@
+[package]
+name = "medousa-local-credential"
+version = "0.9.1"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Native local-client credential storage and verification for Medousa"
+
+[dependencies]
+anyhow = "1"
+base64 = "0.22"
+keyring = "2.3"
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+uuid = { version = "1", features = ["v4"] }
+zeroize = "1"

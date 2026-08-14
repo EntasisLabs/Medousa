@@ -1,6 +1,7 @@
 //! Authenticated request identity produced once at the daemon boundary.
 
 use std::net::IpAddr;
+use std::sync::Arc;
 
 use axum::http::HeaderMap;
 
@@ -11,6 +12,7 @@ use crate::shared_mode::root_profile_id;
 pub enum PrincipalKind {
     Anonymous,
     LegacyLocal,
+    LocalApp,
     McpGateway,
     Portal,
     Peer,
@@ -37,7 +39,7 @@ impl TransportClass {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CredentialId(String);
+pub struct CredentialId(Arc<str>);
 
 impl CredentialId {
     pub fn as_str(&self) -> &str {
@@ -165,10 +167,21 @@ impl RequestPrincipal {
         }
     }
 
+    pub fn local_app(credential_id: Arc<str>, transport: TransportClass) -> Self {
+        Self {
+            kind: PrincipalKind::LocalApp,
+            credential_id: Some(CredentialId(credential_id)),
+            profile_id: None,
+            capabilities: CapabilitySet::operator(),
+            transport,
+            revocation_generation: 0,
+        }
+    }
+
     pub fn mcp_policy_service(transport: TransportClass) -> Self {
         Self {
             kind: PrincipalKind::McpGateway,
-            credential_id: Some(CredentialId("mcp-policy".to_string())),
+            credential_id: Some(CredentialId(Arc::from("mcp-policy"))),
             profile_id: None,
             capabilities: CapabilitySet::empty().with(Capability::McpPolicyEvaluate),
             transport,
@@ -190,7 +203,7 @@ impl RequestPrincipal {
         };
         Self {
             kind,
-            credential_id: Some(CredentialId(record.pairing_id)),
+            credential_id: Some(CredentialId(Arc::from(record.pairing_id))),
             profile_id: record
                 .profile_id
                 .map(|value| value.trim().to_string())

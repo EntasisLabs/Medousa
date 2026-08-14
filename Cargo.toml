@@ -23,6 +23,7 @@ members = [
     "crates/medousa-browser-lite",
     "crates/medousa-browser-bridge",
     "crates/medousa-install-support",
+    "crates/medousa-local-credential",
     "crates/medousa-mcp-server",
     "crates/medousa-acp-client",
     "crates/medousa-adapter-common",
@@ -58,6 +59,7 @@ medousa-tool-macros = { path = "crates/medousa-tool-macros" }
 medousa-adapter-common = { path = "crates/medousa-adapter-common" }
 medousa-mcp-gateway = { path = "adapters/medousa-mcp-gateway" }
 medousa-install-support = { path = "crates/medousa-install-support" }
+medousa-local-credential = { path = "crates/medousa-local-credential" }
 medousa-engine = { path = "crates/medousa-engine" }
 medousa-host = { path = "crates/medousa-host" }
 medousa-sdk = { path = "crates/medousa-sdk" }

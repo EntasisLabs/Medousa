@@ -42,7 +42,10 @@ fn resolve_steer_speaker(principal: &RequestPrincipal) -> Option<String> {
     if let Some(bound) = principal.profile_id() {
         return Some(bound.to_string());
     }
-    if principal.kind() == PrincipalKind::LegacyLocal {
+    if matches!(
+        principal.kind(),
+        PrincipalKind::LegacyLocal | PrincipalKind::LocalApp
+    ) {
         return Some(crate::user_profiles::resolve_workshop_identity_user_id());
     }
     None
