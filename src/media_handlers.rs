@@ -15,10 +15,8 @@ pub async fn upload_media(
     Query(query): Query<MediaSessionQuery>,
     mut multipart: Multipart,
 ) -> Result<Json<MediaUploadResponse>, (StatusCode, String)> {
-    let session_id = query.session_id.trim();
-    if session_id.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "session_id is required".to_string()));
-    }
+    let session_id = crate::session_storage::validate_session_id(&query.session_id)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
 
     let mut file_bytes: Option<Vec<u8>> = None;
     let mut mime: Option<String> = None;
@@ -72,10 +70,11 @@ pub async fn get_media(
     Path(media_id): Path<String>,
     Query(query): Query<MediaSessionQuery>,
 ) -> Result<Response, (StatusCode, String)> {
-    let session_id = query.session_id.trim();
+    let session_id = crate::session_storage::validate_session_id(&query.session_id)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
     let media_id = media_id.trim();
-    if session_id.is_empty() || media_id.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "session_id and media_id are required".to_string()));
+    if media_id.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "media_id is required".to_string()));
     }
 
     let record = crate::media_store::get_media_record(session_id, media_id).ok_or((

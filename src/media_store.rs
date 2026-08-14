@@ -1,13 +1,12 @@
 //! Local user media under `medousa/media/` (P5a — no cloud).
 
 use chrono::{DateTime, Utc};
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use std::fs::{self, OpenOptions};
-use std::io::Write;
-use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 use crate::daemon_api::{MediaRef, MediaUploadResponse};
+use crate::store_root::StorePath;
 
 #[derive(Debug, Clone, Default)]
 pub struct MediaPromptMergeOptions {
@@ -17,6 +16,15 @@ pub struct MediaPromptMergeOptions {
 
 const MEDIA_INDEX_FILE: &str = "index.jsonl";
 const MAX_UPLOAD_BYTES: u64 = 25 * 1024 * 1024;
+const MAX_EXTRACT_BYTES: u64 = (crate::media_text_extract::MAX_MEDIA_EXTRACT_CHARS as u64) * 4;
+const MEDIA_PAYLOAD_DOMAIN: &[u8] = b"media-payload";
+const MEDIA_EXTRACT_DOMAIN: &[u8] = b"media-extract";
+
+static MEDIA_STORE: Lazy<crate::session_storage::SessionDirectoryStore> = Lazy::new(|| {
+    crate::session_storage::SessionDirectoryStore::new(
+        crate::paths::medousa_data_dir().join("media"),
+    )
+});
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MediaRecord {
@@ -37,20 +45,14 @@ pub struct MediaRecord {
     pub extract_truncated: bool,
 }
 
-pub fn media_root() -> PathBuf {
-    data_local_medousa_dir().join("media")
-}
-
 pub fn persist_user_media(
     session_id: &str,
     bytes: &[u8],
     mime: &str,
     label: Option<&str>,
 ) -> Result<MediaUploadResponse, String> {
-    let session_id = session_id.trim();
-    if session_id.is_empty() {
-        return Err("session_id is required".to_string());
-    }
+    let session_id =
+        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
 
     let byte_size = bytes.len() as u64;
     if byte_size == 0 {
@@ -68,18 +70,16 @@ pub fn persist_user_media(
         return Err(format!("mime type not allowed: {mime}"));
     }
 
-    let media_id = format!("usr:{}:{}", short_session(session_id), Uuid::new_v4().simple());
+    let media_id = format!(
+        "usr:{}:{}",
+        short_session(session_id.as_str()),
+        Uuid::new_v4().simple()
+    );
     let ext = extension_for_mime(&mime);
-    let dir = media_root().join(session_id);
-    fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
-
-    let filename = if ext.is_empty() {
-        media_id.clone()
-    } else {
-        format!("{media_id}.{ext}")
-    };
-    let payload_path = dir.join(&filename);
-    fs::write(&payload_path, bytes).map_err(|err| err.to_string())?;
+    let payload_path = media_payload_path(&media_id, ext);
+    MEDIA_STORE
+        .atomic_write(&session_id, &payload_path, bytes)
+        .map_err(|err| err.to_string())?;
 
     let label = label
         .map(str::trim)
@@ -92,13 +92,13 @@ pub fn persist_user_media(
     if let Some(extract) =
         crate::media_text_extract::extract_media_text(bytes, &mime, label.as_deref())
     {
-        let path = crate::media_text_extract::extract_path_for_media(
-            payload_path.to_string_lossy().as_ref(),
-        );
-        fs::write(&path, &extract.text).map_err(|err| err.to_string())?;
+        let path = media_extract_path(&media_id);
+        MEDIA_STORE
+            .atomic_write(&session_id, &path, extract.text.as_bytes())
+            .map_err(|err| err.to_string())?;
         extract_chars = Some(extract.text.chars().count());
         extract_truncated = extract.truncated;
-        extract_path = Some(path.to_string_lossy().to_string());
+        extract_path = Some(path.file_name().to_string());
     }
 
     let record = MediaRecord {
@@ -108,7 +108,7 @@ pub fn persist_user_media(
         kind: media_kind_from_mime(&mime).to_string(),
         byte_size,
         stored_at_utc: Utc::now(),
-        payload_path: payload_path.to_string_lossy().to_string(),
+        payload_path: payload_path.file_name().to_string(),
         label: label.clone(),
         extract_path: extract_path.clone(),
         extract_chars,
@@ -138,10 +138,22 @@ pub fn get_media_record(session_id: &str, media_id: &str) -> Option<MediaRecord>
 }
 
 pub fn open_media_payload(record: &MediaRecord) -> Result<Vec<u8>, String> {
-    if !Path::new(&record.payload_path).exists() {
-        return Err("media file missing on disk".to_string());
-    }
-    fs::read(&record.payload_path).map_err(|err| err.to_string())
+    open_media_payload_from(&MEDIA_STORE, record)
+}
+
+fn open_media_payload_from(
+    store: &crate::session_storage::SessionDirectoryStore,
+    record: &MediaRecord,
+) -> Result<Vec<u8>, String> {
+    let session_id = crate::session_storage::SessionId::parse(&record.session_id)
+        .map_err(|error| error.to_string())?;
+    store
+        .read_limited(
+            &session_id,
+            &media_payload_path(&record.media_id, extension_for_mime(&record.mime)),
+            MAX_UPLOAD_BYTES,
+        )
+        .map_err(|err| err.to_string())
 }
 
 pub fn media_ref_from_record(record: &MediaRecord) -> MediaRef {
@@ -151,6 +163,19 @@ pub fn media_ref_from_record(record: &MediaRecord) -> MediaRef {
         mime: record.mime.clone(),
         label: record.label.clone(),
     }
+}
+
+pub fn delete_media_for_session(session_id: &str) -> Result<(), String> {
+    let session_id =
+        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
+    let remaining = read_index_records()
+        .into_iter()
+        .filter(|record| record.session_id != session_id.as_str())
+        .collect::<Vec<_>>();
+    overwrite_index_records(&remaining)?;
+    MEDIA_STORE
+        .remove_session(&session_id)
+        .map_err(|error| error.to_string())
 }
 
 pub fn validate_media_refs(session_id: &str, refs: &[MediaRef]) -> Result<(), String> {
@@ -173,15 +198,26 @@ pub fn validate_media_refs(session_id: &str, refs: &[MediaRef]) -> Result<(), St
 }
 
 pub fn read_media_extract(record: &MediaRecord) -> Option<String> {
-    let path = record
+    read_media_extract_from(&MEDIA_STORE, record)
+}
+
+fn read_media_extract_from(
+    store: &crate::session_storage::SessionDirectoryStore,
+    record: &MediaRecord,
+) -> Option<String> {
+    record
         .extract_path
         .as_deref()
         .filter(|value| !value.is_empty())?;
-    if !Path::new(path).exists() {
-        return None;
-    }
-    std::fs::read_to_string(path)
+    let session_id = crate::session_storage::SessionId::parse(&record.session_id).ok()?;
+    store
+        .read_limited(
+            &session_id,
+            &media_extract_path(&record.media_id),
+            MAX_EXTRACT_BYTES,
+        )
         .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
         .filter(|text| !text.trim().is_empty())
 }
 
@@ -192,11 +228,8 @@ pub fn resolve_media_extract(record: &MediaRecord) -> Option<(String, bool)> {
     }
     let bytes = open_media_payload(record).ok()?;
     let mime = infer_mime_for_record(record);
-    let extract = crate::media_text_extract::extract_media_text(
-        &bytes,
-        &mime,
-        record.label.as_deref(),
-    )?;
+    let extract =
+        crate::media_text_extract::extract_media_text(&bytes, &mime, record.label.as_deref())?;
     if extract.text.trim().is_empty() {
         return None;
     }
@@ -239,7 +272,11 @@ pub fn merge_media_refs_into_prompt(
         ));
 
         let is_image = media_ref.kind == "image"
-            || media_ref.mime.trim().to_ascii_lowercase().starts_with("image/");
+            || media_ref
+                .mime
+                .trim()
+                .to_ascii_lowercase()
+                .starts_with("image/");
 
         if is_image {
             if options.vision_active && options.vision_image_ids.contains(&media_ref.media_id) {
@@ -301,9 +338,10 @@ fn infer_mime(bytes: &[u8], mime: &str, label: Option<&str>) -> String {
         return "application/pdf".to_string();
     }
     if let Some(label) = label
-        && let Some(from_name) = mime_from_filename(label) {
-            return from_name;
-        }
+        && let Some(from_name) = mime_from_filename(label)
+    {
+        return from_name;
+    }
     mime
 }
 
@@ -339,7 +377,10 @@ fn is_pdf_attachment(media_ref: &MediaRef, record: &MediaRecord) -> bool {
     if infer_mime_for_record(record) == "application/pdf" {
         return true;
     }
-    media_ref.mime.trim().eq_ignore_ascii_case("application/pdf")
+    media_ref
+        .mime
+        .trim()
+        .eq_ignore_ascii_case("application/pdf")
 }
 
 fn infer_mime_for_record(record: &MediaRecord) -> String {
@@ -348,13 +389,15 @@ fn infer_mime_for_record(record: &MediaRecord) -> String {
         return mime;
     }
     if let Ok(bytes) = open_media_payload(record)
-        && bytes.starts_with(b"%PDF") {
-            return "application/pdf".to_string();
-        }
+        && bytes.starts_with(b"%PDF")
+    {
+        return "application/pdf".to_string();
+    }
     if let Some(label) = record.label.as_deref()
-        && let Some(from_name) = mime_from_filename(label) {
-            return from_name;
-        }
+        && let Some(from_name) = mime_from_filename(label)
+    {
+        return from_name;
+    }
     mime
 }
 
@@ -395,38 +438,50 @@ fn extension_for_mime(mime: &str) -> &'static str {
 }
 
 fn append_index_record(record: &MediaRecord) -> Result<(), String> {
-    fs::create_dir_all(media_root()).map_err(|err| err.to_string())?;
-    let index_path = media_root().join(MEDIA_INDEX_FILE);
-    let line = serde_json::to_string(record).map_err(|err| err.to_string())?;
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&index_path)
-        .map_err(|err| err.to_string())?;
-    writeln!(file, "{line}").map_err(|err| err.to_string())
+    let mut line = serde_json::to_vec(record).map_err(|err| err.to_string())?;
+    line.push(b'\n');
+    MEDIA_STORE
+        .append_root(&index_path(), &line)
+        .map_err(|err| err.to_string())
 }
 
 fn read_index_records() -> Vec<MediaRecord> {
-    let index_path = media_root().join(MEDIA_INDEX_FILE);
-    if !index_path.exists() {
+    let Ok(bytes) = MEDIA_STORE.read_root(&index_path()) else {
         return Vec::new();
-    }
-    fs::read_to_string(&index_path)
-        .unwrap_or_default()
-        .lines()
-        .filter_map(|line| {
-            let line = line.trim();
-            if line.is_empty() {
-                None
-            } else {
-                serde_json::from_str::<MediaRecord>(line).ok()
-            }
-        })
+    };
+    bytes
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.iter().all(u8::is_ascii_whitespace))
+        .filter_map(|line| serde_json::from_slice::<MediaRecord>(line).ok())
         .collect()
 }
 
-fn data_local_medousa_dir() -> PathBuf {
-    crate::paths::medousa_data_dir()
+fn overwrite_index_records(records: &[MediaRecord]) -> Result<(), String> {
+    let mut bytes = Vec::new();
+    for record in records {
+        serde_json::to_writer(&mut bytes, record).map_err(|error| error.to_string())?;
+        bytes.push(b'\n');
+    }
+    MEDIA_STORE
+        .atomic_write_root(&index_path(), &bytes)
+        .map_err(|error| error.to_string())
+}
+
+fn media_payload_path(media_id: &str, extension: &str) -> StorePath {
+    let extension = if extension.is_empty() {
+        "bin"
+    } else {
+        extension
+    };
+    crate::session_storage::session_object_path(MEDIA_PAYLOAD_DOMAIN, media_id, extension)
+}
+
+fn media_extract_path(media_id: &str) -> StorePath {
+    crate::session_storage::session_object_path(MEDIA_EXTRACT_DOMAIN, media_id, "txt")
+}
+
+fn index_path() -> StorePath {
+    StorePath::parse(MEDIA_INDEX_FILE).expect("static media index path must be valid")
 }
 
 fn short_session(session_id: &str) -> String {
@@ -436,6 +491,62 @@ fn short_session(session_id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn record(session_id: &str, media_id: &str) -> MediaRecord {
+        MediaRecord {
+            media_id: media_id.to_string(),
+            session_id: session_id.to_string(),
+            mime: "text/plain".to_string(),
+            kind: "document".to_string(),
+            byte_size: 7,
+            stored_at_utc: Utc::now(),
+            payload_path: "/outside/attacker-selected.txt".to_string(),
+            label: None,
+            extract_path: Some("/outside/attacker-selected.extract.txt".to_string()),
+            extract_chars: Some(7),
+            extract_truncated: false,
+        }
+    }
+
+    #[test]
+    fn media_reads_derive_capability_paths_instead_of_trusting_record_strings() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = crate::session_storage::SessionDirectoryStore::new(temp.path().join("media"));
+        let session_id = crate::session_storage::SessionId::parse("session-media").unwrap();
+        let record = record(session_id.as_str(), "usr:session:secret");
+        store
+            .atomic_write(
+                &session_id,
+                &media_payload_path(&record.media_id, "txt"),
+                b"payload",
+            )
+            .unwrap();
+        store
+            .atomic_write(
+                &session_id,
+                &media_extract_path(&record.media_id),
+                b"extract",
+            )
+            .unwrap();
+
+        assert_eq!(
+            open_media_payload_from(&store, &record).unwrap(),
+            b"payload"
+        );
+        assert_eq!(
+            read_media_extract_from(&store, &record).as_deref(),
+            Some("extract")
+        );
+    }
+
+    #[test]
+    fn media_object_paths_are_safe_and_domain_separated() {
+        let payload = media_payload_path("usr:session:secret", "png");
+        let extract = media_extract_path("usr:session:secret");
+        assert_ne!(payload, extract);
+        assert!(payload.file_name().starts_with("o1-"));
+        assert!(!payload.file_name().contains(':'));
+    }
 
     #[test]
     fn merge_media_refs_appends_block() {

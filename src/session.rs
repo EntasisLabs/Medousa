@@ -1,9 +1,7 @@
-use std::io::{BufRead, Write};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub use medousa_types::session::{ConversationTurn, SessionHistorySummary, TuiDefaults};
-
 
 const API_KEY_SERVICE: &str = "medousa.tui";
 const API_KEY_ACCOUNT: &str = "api_key";
@@ -30,12 +28,6 @@ pub(crate) fn medousa_data_dir() -> PathBuf {
     crate::paths::medousa_data_dir()
 }
 
-pub fn history_path(session_id: &str) -> PathBuf {
-    medousa_data_dir()
-        .join("history")
-        .join(format!("{session_id}.jsonl"))
-}
-
 fn last_session_path() -> PathBuf {
     medousa_data_dir().join("last_session")
 }
@@ -53,7 +45,9 @@ fn discord_bot_token_secret_path() -> PathBuf {
 }
 
 fn telegram_bot_token_secret_path() -> PathBuf {
-    medousa_data_dir().join("secrets").join("telegram_bot_token")
+    medousa_data_dir()
+        .join("secrets")
+        .join("telegram_bot_token")
 }
 
 fn slack_bot_token_secret_path() -> PathBuf {
@@ -174,7 +168,9 @@ pub(crate) fn atomic_write(path: &PathBuf, bytes: &[u8]) -> std::io::Result<()> 
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if path.parent().is_some_and(|parent| parent.ends_with("secrets"))
+        if path
+            .parent()
+            .is_some_and(|parent| parent.ends_with("secrets"))
             || path.ends_with("api_key")
             || path.ends_with("discord_bot_token")
             || path.ends_with("telegram_bot_token")
@@ -232,12 +228,13 @@ fn file_surreal_password() -> Option<String> {
 
 pub fn load_surreal_password() -> Option<String> {
     if let Ok(entry) = surreal_password_keyring_entry()
-        && let Ok(value) = entry.get_password() {
-            let trimmed = value.trim();
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
-            }
+        && let Ok(value) = entry.get_password()
+    {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
         }
+    }
     file_surreal_password()
 }
 
@@ -285,8 +282,7 @@ pub fn load_tui_defaults_value() -> serde_json::Value {
 
 /// Merge incoming JSON (may include client-only keys) with normalized `TuiDefaults` fields.
 pub fn save_tui_defaults_merged(incoming: serde_json::Value) -> Result<TuiDefaults, String> {
-    let mut typed: TuiDefaults =
-        serde_json::from_value(incoming.clone()).unwrap_or_default();
+    let mut typed: TuiDefaults = serde_json::from_value(incoming.clone()).unwrap_or_default();
     crate::inference_profiles::normalize_tui_defaults(&mut typed);
     crate::inference_profiles::sync_top_level_from_main(&mut typed);
 
@@ -302,20 +298,21 @@ pub fn save_tui_defaults_merged(incoming: serde_json::Value) -> Result<TuiDefaul
     }
 
     let path = tui_defaults_path();
-    let json =
-        serde_json::to_string_pretty(&merged).map_err(|err| format!("serialize defaults: {err}"))?;
+    let json = serde_json::to_string_pretty(&merged)
+        .map_err(|err| format!("serialize defaults: {err}"))?;
     atomic_write(&path, json.as_bytes()).map_err(|err| err.to_string())?;
     Ok(typed)
 }
 
 pub fn load_tui_api_key() -> Option<String> {
     if let Ok(entry) = api_key_keyring_entry()
-        && let Ok(value) = entry.get_password() {
-            let trimmed = value.trim();
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
-            }
+        && let Ok(value) = entry.get_password()
+    {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
         }
+    }
 
     file_api_key()
 }
@@ -326,17 +323,22 @@ pub fn load_provider_api_key(provider: &str) -> Option<String> {
     if provider.is_empty() {
         return None;
     }
-    if provider == "ollama" || provider == "local" || provider == "lmstudio" || provider == "lm-studio" {
+    if provider == "ollama"
+        || provider == "local"
+        || provider == "lmstudio"
+        || provider == "lm-studio"
+    {
         return None;
     }
 
     if let Ok(entry) = provider_api_key_keyring_entry(&provider)
-        && let Ok(value) = entry.get_password() {
-            let trimmed = value.trim();
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
-            }
+        && let Ok(value) = entry.get_password()
+    {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
         }
+    }
     if let Some(value) = file_provider_api_key(&provider) {
         return Some(value);
     }
@@ -448,12 +450,13 @@ pub fn save_tui_api_key(api_key: Option<&str>) {
 
 pub fn load_discord_bot_token() -> Option<String> {
     if let Ok(entry) = discord_bot_token_keyring_entry()
-        && let Ok(value) = entry.get_password() {
-            let trimmed = value.trim();
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
-            }
+        && let Ok(value) = entry.get_password()
+    {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
         }
+    }
 
     file_discord_bot_token()
 }
@@ -498,12 +501,13 @@ pub fn load_telegram_bot_token() -> Option<String> {
     }
 
     if let Ok(entry) = telegram_bot_token_keyring_entry()
-        && let Ok(value) = entry.get_password() {
-            let trimmed = value.trim();
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
-            }
+        && let Ok(value) = entry.get_password()
+    {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
         }
+    }
 
     file_telegram_bot_token()
 }
@@ -535,12 +539,13 @@ pub fn save_telegram_bot_token(token: Option<&str>) {
 
 pub fn load_slack_bot_token() -> Option<String> {
     if let Ok(entry) = slack_bot_token_keyring_entry()
-        && let Ok(value) = entry.get_password() {
-            let trimmed = value.trim();
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
-            }
+        && let Ok(value) = entry.get_password()
+    {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
         }
+    }
 
     file_slack_bot_token()
 }
@@ -572,12 +577,13 @@ pub fn save_slack_bot_token(token: Option<&str>) {
 
 pub fn load_slack_app_token() -> Option<String> {
     if let Ok(entry) = slack_app_token_keyring_entry()
-        && let Ok(value) = entry.get_password() {
-            let trimmed = value.trim();
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
-            }
+        && let Ok(value) = entry.get_password()
+    {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
         }
+    }
 
     file_slack_app_token()
 }
@@ -607,56 +613,50 @@ pub fn save_slack_app_token(token: Option<&str>) {
     }
 }
 
-pub(crate) fn file_load_history(session_id: &str) -> Vec<ConversationTurn> {
-    let path = history_path(session_id);
-    let Ok(file) = std::fs::File::open(&path) else {
+pub(crate) fn file_load_history(
+    files: &crate::session_storage::SessionFileStore,
+    session_id: &crate::session_storage::SessionId,
+) -> Vec<ConversationTurn> {
+    let Ok(bytes) = files.read(session_id) else {
         return Vec::new();
     };
-    std::io::BufReader::new(file)
-        .lines()
-        .map_while(Result::ok)
-        .filter(|line| !line.trim().is_empty())
-        .filter_map(|line| serde_json::from_str(&line).ok())
+    bytes
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.iter().all(u8::is_ascii_whitespace))
+        .filter_map(|line| serde_json::from_slice(line).ok())
         .collect()
 }
 
-pub(crate) fn file_append_turn(session_id: &str, turn: &ConversationTurn) {
-    let path = history_path(session_id);
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let Ok(mut file) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-    else {
+pub(crate) fn file_append_turn(
+    files: &crate::session_storage::SessionFileStore,
+    session_id: &crate::session_storage::SessionId,
+    turn: &ConversationTurn,
+) {
+    let Ok(mut line) = serde_json::to_vec(turn) else {
         return;
     };
-    if let Ok(line) = serde_json::to_string(turn) {
-        let _ = writeln!(file, "{line}");
-    }
+    line.push(b'\n');
+    let _ = files.append(session_id, &line);
 }
 
 /// One-time backfill helper — loads full history per session. Not for list API hot path.
-pub(crate) fn file_build_history_summaries_from_files(limit: usize) -> Vec<SessionHistorySummary> {
-    let history_dir = medousa_data_dir().join("history");
-    let Ok(entries) = std::fs::read_dir(history_dir) else {
+pub(crate) fn file_build_history_summaries_from_files(
+    files: &crate::session_storage::SessionFileStore,
+    limit: usize,
+) -> Vec<SessionHistorySummary> {
+    let Ok(entries) = files.list() else {
         return Vec::new();
     };
 
     let mut sessions = entries
-        .filter_map(|entry| entry.ok())
+        .into_iter()
         .filter_map(|entry| {
-            let path = entry.path();
-            let ext = path.extension().and_then(|e| e.to_str());
-            if ext != Some("jsonl") {
+            let session_id = entry.file_stem();
+            if crate::session_storage::StorageKey::is_encoded(session_id) {
                 return None;
             }
-
-            let session_id = path.file_stem()?.to_string_lossy().to_string();
-            let metadata = entry.metadata().ok();
-            let modified = metadata.and_then(|m| m.modified().ok());
-            Some((session_id, modified))
+            let session_id = crate::session_storage::SessionId::parse(session_id).ok()?;
+            Some((session_id, entry.modified))
         })
         .collect::<Vec<_>>();
 
@@ -666,13 +666,13 @@ pub(crate) fn file_build_history_summaries_from_files(limit: usize) -> Vec<Sessi
         .into_iter()
         .take(limit)
         .map(|(session_id, _)| {
-            let turns = file_load_history(&session_id);
+            let turns = file_load_history(files, &session_id);
             let verifications =
-                crate::verification_store::list_verifications(&session_id, usize::MAX);
+                crate::verification_store::list_verifications(session_id.as_str(), usize::MAX);
             let last_timestamp = turns.last().map(|t| t.timestamp);
             let last_verification_timestamp = verifications.first().map(|v| v.created_at_utc);
             let latest_verification =
-                crate::verification_store::find_verification(&session_id, None);
+                crate::verification_store::find_verification(session_id.as_str(), None);
             let last_verification_confidence = latest_verification
                 .as_ref()
                 .map(|run| run.record.confidence_score);
@@ -693,7 +693,7 @@ pub(crate) fn file_build_history_summaries_from_files(limit: usize) -> Vec<Sessi
                 .collect::<String>();
 
             SessionHistorySummary {
-                session_id,
+                session_id: session_id.to_string(),
                 display_name: None,
                 turns: turns.len(),
                 verification_runs: verifications.len(),
@@ -716,7 +716,10 @@ pub(crate) fn file_build_history_summaries_from_files(limit: usize) -> Vec<Sessi
 
 // Public API delegating to the configured session store.
 pub fn load_history(session_id: &str) -> Vec<ConversationTurn> {
-    crate::session_store::get_session_store().load_history(session_id)
+    let Ok(session_id) = crate::session_storage::SessionId::parse(session_id) else {
+        return Vec::new();
+    };
+    crate::session_store::get_session_store().load_history(&session_id)
 }
 
 pub fn append_turn(session_id: &str, turn: &ConversationTurn) {
@@ -728,8 +731,11 @@ pub fn append_turn_with_scratch(
     turn: &ConversationTurn,
     scratch: Option<&crate::agent_runtime::turn_context::TurnScratchpad>,
 ) {
+    let Ok(session_id) = crate::session_storage::SessionId::parse(session_id) else {
+        return;
+    };
     let enriched = crate::turn_slice::ensure_turn_slice_summary(turn, scratch);
-    crate::session_store::get_session_store().append_turn(session_id, &enriched);
+    crate::session_store::get_session_store().append_turn(&session_id, &enriched);
 }
 
 pub fn list_history_sessions(limit: usize) -> Vec<SessionHistorySummary> {
@@ -822,7 +828,8 @@ pub fn list_history_sessions_page_for_profile(
     }
 
     enrich_session_summaries(&mut page.sessions);
-    page.sessions.sort_by_key(|b| std::cmp::Reverse(b.last_timestamp));
+    page.sessions
+        .sort_by_key(|b| std::cmp::Reverse(b.last_timestamp));
     page.sessions.truncate(limit);
     page
 }
@@ -831,7 +838,8 @@ pub fn set_session_display_name(session_id: &str, display_name: &str) -> Result<
     let result = crate::session_meta_store::set_session_display_name(session_id, display_name);
     if result.is_ok() {
         if crate::shared_session_catalog::get_shared_row(session_id).is_some() {
-            let _ = crate::shared_session_catalog::set_shared_display_name(session_id, display_name);
+            let _ =
+                crate::shared_session_catalog::set_shared_display_name(session_id, display_name);
         } else {
             crate::session_catalog::set_display_name(session_id, display_name);
         }
@@ -854,8 +862,7 @@ pub fn enrich_session_summaries(sessions: &mut [SessionHistorySummary]) {
 }
 
 pub fn session_turn_count(session_id: &str) -> usize {
-    crate::session_catalog::turn_count(session_id)
-        .unwrap_or_else(|| load_history(session_id).len())
+    crate::session_catalog::turn_count(session_id).unwrap_or_else(|| load_history(session_id).len())
 }
 
 /// Resolve `/history <target>`: full id, id prefix, or global display name (unique).

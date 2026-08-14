@@ -1,21 +1,27 @@
 //! Phase 9 — progressive tool surface: bootstrap ring, session unlocks, turn hints.
 
 use std::collections::{HashMap, HashSet};
-use std::fs;
-use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use chrono::{DateTime, Utc};
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
 use crate::agent_runtime::prompt_prep::truncate_text_for_budget;
 use crate::agent_runtime::turn_worker::{host_bus_tool_names, tool_allowed};
 use crate::session::{self, ConversationTurn};
-use crate::turn_slice::{tool_history_summary_rows, DEFAULT_TOOL_HISTORY_SUMMARY_TURNS};
+use crate::turn_slice::{DEFAULT_TOOL_HISTORY_SUMMARY_TURNS, tool_history_summary_rows};
 
 pub const COGNITION_TOOLS_DISCOVER: &str = "cognition_tools_discover";
 
 pub const DEFAULT_TOOL_HINTS_BLOCK_CHARS: usize = 700;
+
+static SESSION_SURFACE_FILES: Lazy<crate::session_storage::SessionFileStore> = Lazy::new(|| {
+    crate::session_storage::SessionFileStore::new(
+        session::medousa_data_dir().join("session_surfaces"),
+        "json",
+    )
+});
 
 /// Host console domains unlocked at session start (no `cognition_tools_discover` step).
 pub const DEFAULT_HOST_AUTO_UNLOCK_DOMAINS: &[&str] = &["memory", "vault", "calendar"];
@@ -450,14 +456,15 @@ pub fn bootstrap_tools(lane: ToolSurfaceLane) -> &'static [&'static str] {
 
 /// Unlock memory + vault + calendar on host console turns so ritual/write tools are callable without discover.
 pub fn ensure_host_session_tool_defaults(session_id: &str) {
-    let _ = unlock_session_domains(session_id, ToolSurfaceLane::Host, DEFAULT_HOST_AUTO_UNLOCK_DOMAINS);
+    let _ = unlock_session_domains(
+        session_id,
+        ToolSurfaceLane::Host,
+        DEFAULT_HOST_AUTO_UNLOCK_DOMAINS,
+    );
 }
 
 /// Unlock environment/canvas domain when the connected client can render UI artifacts (Home).
-pub fn ensure_environment_domain_for_ui_clients(
-    session_id: &str,
-    supports_ui_artifacts: bool,
-) {
+pub fn ensure_environment_domain_for_ui_clients(session_id: &str, supports_ui_artifacts: bool) {
     if supports_ui_artifacts {
         let _ = unlock_session_domains(
             session_id,
@@ -528,12 +535,14 @@ pub fn ensure_detamu_domain_for_session(session_id: &str) {
 }
 
 pub fn load_session_tool_surface(session_id: &str) -> SessionToolSurface {
-    let path = session_surface_path(session_id);
-    if let Ok(raw) = fs::read_to_string(&path)
-        && let Ok(mut surface) = serde_json::from_str::<SessionToolSurface>(&raw) {
-            surface.session_id = session_id.to_string();
-            return surface;
-        }
+    let parsed_session_id = crate::session_storage::SessionId::parse(session_id).ok();
+    if let Some(session_id) = parsed_session_id
+        && let Ok(raw) = SESSION_SURFACE_FILES.read(&session_id)
+        && let Ok(mut surface) = serde_json::from_slice::<SessionToolSurface>(&raw)
+    {
+        surface.session_id = session_id.to_string();
+        return surface;
+    }
     SessionToolSurface {
         session_id: session_id.to_string(),
         unlocked_domains: Vec::new(),
@@ -543,22 +552,23 @@ pub fn load_session_tool_surface(session_id: &str) -> SessionToolSurface {
 }
 
 /// Remove persisted per-session tool surface (MCP servers, allowlists, etc.).
-pub fn delete_session_tool_surface(session_id: &str) {
-    let path = session_surface_path(session_id);
-    if path.exists() {
-        let _ = fs::remove_file(path);
-    }
+pub fn delete_session_tool_surface(session_id: &str) -> Result<(), String> {
+    let session_id =
+        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
+    SESSION_SURFACE_FILES
+        .remove(&session_id)
+        .map_err(|error| error.to_string())
 }
 
 pub fn save_session_tool_surface(surface: &SessionToolSurface) -> Result<(), String> {
-    let path = session_surface_path(&surface.session_id);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
+    let session_id = crate::session_storage::SessionId::parse(&surface.session_id)
+        .map_err(|error| error.to_string())?;
     let mut surface = surface.clone();
     surface.updated_at_utc = Utc::now();
-    let raw = serde_json::to_string_pretty(&surface).map_err(|err| err.to_string())?;
-    fs::write(path, raw).map_err(|err| err.to_string())
+    let raw = serde_json::to_vec_pretty(&surface).map_err(|err| err.to_string())?;
+    SESSION_SURFACE_FILES
+        .atomic_write(&session_id, &raw)
+        .map_err(|err| err.to_string())
 }
 
 pub fn unlock_session_domains(
@@ -707,11 +717,7 @@ pub fn build_tool_hints_block(
                     .map(|name| name.to_string())
                     .collect();
                 if !preview.is_empty() {
-                    unlocked_lines.push(format!(
-                        "- {} → {}",
-                        domain.domain,
-                        preview.join(", ")
-                    ));
+                    unlocked_lines.push(format!("- {} → {}", domain.domain, preview.join(", ")));
                 }
             }
         }
@@ -736,18 +742,35 @@ fn rank_hint_domains(prompt: &str, turns: &[ConversationTurn]) -> Vec<String> {
         *scores.entry(domain).or_default() += amount;
     };
 
-    if contains_any(&prompt_lower, &["memory", "calibrate", "avec", "mood", "locus"]) {
+    if contains_any(
+        &prompt_lower,
+        &["memory", "calibrate", "avec", "mood", "locus"],
+    ) {
         bump(&mut scores, "memory", 3);
     }
     if contains_any(
         &prompt_lower,
-        &["capability", "manuscript", "module", "grapheme", "script", "research"],
+        &[
+            "capability",
+            "manuscript",
+            "module",
+            "grapheme",
+            "script",
+            "research",
+        ],
     ) {
         bump(&mut scores, "catalog", 3);
     }
     if contains_any(
         &prompt_lower,
-        &["workflow", "job", "cron", "schedule", "recurring", "enqueue"],
+        &[
+            "workflow",
+            "job",
+            "cron",
+            "schedule",
+            "recurring",
+            "enqueue",
+        ],
     ) {
         bump(&mut scores, "runtime", 3);
     }
@@ -756,11 +779,21 @@ fn rank_hint_domains(prompt: &str, turns: &[ConversationTurn]) -> Vec<String> {
     }
     if contains_any(
         &prompt_lower,
-        &["calendar", "meeting", "event", "appointment", "ics", "schedule"],
+        &[
+            "calendar",
+            "meeting",
+            "event",
+            "appointment",
+            "ics",
+            "schedule",
+        ],
     ) {
         bump(&mut scores, "calendar", 3);
     }
-    if contains_any(&prompt_lower, &["identity", "contact", "preference", "remember"]) {
+    if contains_any(
+        &prompt_lower,
+        &["identity", "contact", "preference", "remember"],
+    ) {
         bump(&mut scores, "identity", 2);
     }
     if contains_any(&prompt_lower, &["skill", "openshell", "sandbox"]) {
@@ -793,7 +826,10 @@ fn rank_hint_domains(prompt: &str, turns: &[ConversationTurn]) -> Vec<String> {
 
     let mut ordered: Vec<_> = scores.into_iter().collect();
     ordered.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
-    ordered.into_iter().map(|(domain, _)| domain.to_string()).collect()
+    ordered
+        .into_iter()
+        .map(|(domain, _)| domain.to_string())
+        .collect()
 }
 
 fn contains_any(haystack: &str, needles: &[&str]) -> bool {
@@ -814,7 +850,10 @@ pub fn worker_should_unlock_vault(
     intent: crate::agent_runtime::turn_worker::TurnWorkerIntent,
 ) -> bool {
     use crate::agent_runtime::turn_worker::TurnWorkerIntent;
-    if matches!(intent, TurnWorkerIntent::Research | TurnWorkerIntent::General) {
+    if matches!(
+        intent,
+        TurnWorkerIntent::Research | TurnWorkerIntent::General
+    ) {
         return true;
     }
     let prompt_lower = task_prompt.to_ascii_lowercase();
@@ -830,25 +869,6 @@ pub fn worker_should_unlock_vault(
             "runtime-learning",
         ],
     )
-}
-
-fn session_surface_path(session_id: &str) -> PathBuf {
-    session::medousa_data_dir()
-        .join("session_surfaces")
-        .join(format!("{}.json", sanitize_session_filename(session_id)))
-}
-
-fn sanitize_session_filename(session_id: &str) -> String {
-    session_id
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect()
 }
 
 #[cfg(test)]
@@ -910,7 +930,7 @@ mod tests {
         assert!(!after.contains("cognition_environment_wiki"));
         assert!(!after.contains("cognition_component_create"));
 
-        let _ = fs::remove_file(session_surface_path(&session_id));
+        let _ = delete_session_tool_surface(&session_id);
     }
 
     #[test]
@@ -922,7 +942,8 @@ mod tests {
         let worker_allow = crate::agent_runtime::turn_worker::allowed_tool_names_for_intent(
             crate::agent_runtime::turn_worker::TurnWorkerIntent::General,
         );
-        let worker = effective_tool_names("sess-ui-present", ToolSurfaceLane::Worker, &worker_allow);
+        let worker =
+            effective_tool_names("sess-ui-present", ToolSurfaceLane::Worker, &worker_allow);
         assert!(worker.contains("cognition_ui_present"));
     }
 
@@ -943,7 +964,7 @@ mod tests {
         assert!(after.contains("cognition_environment_propose"));
         assert!(after.contains("cognition_mcp_discover"));
 
-        let _ = fs::remove_file(session_surface_path(&session_id));
+        let _ = delete_session_tool_surface(&session_id);
     }
 
     #[test]
@@ -961,7 +982,7 @@ mod tests {
         assert!(!after.contains("cognition_vault_write"));
         assert!(after.contains("cognition_memory_calibrate"));
 
-        let _ = fs::remove_file(session_surface_path(&session_id));
+        let _ = delete_session_tool_surface(&session_id);
     }
 
     #[test]
@@ -978,7 +999,7 @@ mod tests {
         let after = effective_tool_names(&session_id, ToolSurfaceLane::Host, &allow);
         assert!(after.contains("cognition_memory_schema"));
 
-        let _ = fs::remove_file(session_surface_path(&session_id));
+        let _ = delete_session_tool_surface(&session_id);
     }
 
     #[test]

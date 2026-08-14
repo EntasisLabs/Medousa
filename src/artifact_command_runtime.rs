@@ -437,7 +437,6 @@ pub fn execute_artifact_fetch(
         byte_size: fetched.record.byte_size,
         presentation: fetched.record.presentation,
         height_px: fetched.record.height_px,
-        payload_path: Some(fetched.record.payload_path),
     })
 }
 

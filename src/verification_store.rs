@@ -1,17 +1,24 @@
 use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use std::future::IntoFuture;
-use std::io::{BufRead, Write};
-use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
 use stasis::prelude::RuntimeComposition;
-use surrealdb::engine::any::Any;
+use std::future::IntoFuture;
+use std::sync::{Arc, RwLock};
 use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
 use surrealdb_types::SurrealValue;
 use tokio::runtime::Handle;
 
+use crate::store_root::StorePath;
 use crate::verifier::{VerificationPolicy, VerificationReport};
+
+const VERIFICATION_OBJECT_DOMAIN: &[u8] = b"verification";
+
+static VERIFICATION_FILES: Lazy<crate::session_storage::SessionDirectoryStore> = Lazy::new(|| {
+    crate::session_storage::SessionDirectoryStore::new(
+        crate::paths::medousa_data_dir().join("verifications"),
+    )
+});
 
 const VERIFICATION_INDEX_TABLE: &str = "verification_record";
 
@@ -44,9 +51,7 @@ pub async fn init_verification_store_with_runtime(runtime: &RuntimeComposition) 
             return;
         }
         set_verification_index_store(Arc::new(store));
-        eprintln!(
-            "Surreal runtime detected; verification index switched to SurrealDB backend"
-        );
+        eprintln!("Surreal runtime detected; verification index switched to SurrealDB backend");
     }
 }
 
@@ -58,7 +63,7 @@ fn set_verification_index_store(store: Arc<dyn VerificationIndexStore>) {
 trait VerificationIndexStore: Send + Sync {
     fn read_all(&self) -> Vec<VerificationRunRecord>;
     fn append(&self, record: &VerificationRunRecord) -> std::result::Result<(), String>;
-    fn delete_for_session(&self, session_id: &str);
+    fn delete_for_session(&self, session_id: &str) -> Result<(), String>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, SurrealValue)]
@@ -89,16 +94,16 @@ pub fn persist_verification(
     policy: &VerificationPolicy,
     report: &VerificationReport,
 ) -> std::result::Result<VerificationRunRecord, String> {
+    let session_id =
+        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
     let now = Utc::now();
     let verification_id = format!(
         "verify:{}:{}",
-        short_session(session_id),
+        short_session(session_id.as_str()),
         now.timestamp_millis()
     );
 
-    let output_dir = verifications_root().join(session_id);
-    std::fs::create_dir_all(&output_dir).map_err(|err| err.to_string())?;
-    let output_path = output_dir.join(format!("{}.json", verification_id));
+    let output_path = verification_path(&verification_id);
 
     let run = VerificationRun {
         record: VerificationRunRecord {
@@ -111,17 +116,19 @@ pub fn persist_verification(
             is_verified: report.is_verified,
             confidence_score: report.confidence_score,
             created_at_utc: now,
-            output_path: output_path.to_string_lossy().to_string(),
+            output_path: output_path.file_name().to_string(),
         },
         policy: policy.clone(),
         report: report.clone(),
     };
 
     let raw = serde_json::to_vec_pretty(&run).map_err(|err| err.to_string())?;
-    std::fs::write(&output_path, raw).map_err(|err| err.to_string())?;
+    VERIFICATION_FILES
+        .atomic_write(&session_id, &output_path, &raw)
+        .map_err(|err| err.to_string())?;
     append_index_record(&run.record)?;
     crate::session_catalog::record_verification(
-        session_id,
+        session_id.as_str(),
         &run.record,
         run.report.citation_coverage,
     );
@@ -133,9 +140,13 @@ pub fn read_all_index_records_for_backfill() -> Vec<VerificationRunRecord> {
 }
 
 pub fn read_verification_coverage(record: &VerificationRunRecord) -> f32 {
-    std::fs::read_to_string(&record.output_path)
+    let Ok(session_id) = crate::session_storage::SessionId::parse(&record.session_id) else {
+        return 0.0;
+    };
+    VERIFICATION_FILES
+        .read(&session_id, &verification_path(&record.verification_id))
         .ok()
-        .and_then(|raw| serde_json::from_str::<VerificationRun>(&raw).ok())
+        .and_then(|raw| serde_json::from_slice::<VerificationRun>(&raw).ok())
         .map(|run| run.report.citation_coverage)
         .unwrap_or(0.0)
 }
@@ -149,9 +160,13 @@ pub fn list_verifications(session_id: &str, limit: usize) -> Vec<VerificationRun
     records.into_iter().take(limit.max(1)).collect()
 }
 
-pub fn delete_verifications_for_session(session_id: &str) {
-    verification_index_store().delete_for_session(session_id.trim());
-    let _ = std::fs::remove_dir_all(verifications_root().join(session_id.trim()));
+pub fn delete_verifications_for_session(session_id: &str) -> Result<(), String> {
+    let session_id =
+        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
+    verification_index_store().delete_for_session(session_id.as_str())?;
+    VERIFICATION_FILES
+        .remove_session(&session_id)
+        .map_err(|error| error.to_string())
 }
 
 pub fn find_verification(session_id: &str, query: Option<&str>) -> Option<VerificationRun> {
@@ -175,9 +190,11 @@ pub fn find_verification(session_id: &str, query: Option<&str>) -> Option<Verifi
         })
     }?;
 
-    std::fs::read_to_string(&record.output_path)
+    let session_id = crate::session_storage::SessionId::parse(&record.session_id).ok()?;
+    VERIFICATION_FILES
+        .read(&session_id, &verification_path(&record.verification_id))
         .ok()
-        .and_then(|raw| serde_json::from_str::<VerificationRun>(&raw).ok())
+        .and_then(|raw| serde_json::from_slice::<VerificationRun>(&raw).ok())
 }
 
 fn append_index_record(record: &VerificationRunRecord) -> std::result::Result<(), String> {
@@ -203,19 +220,19 @@ impl VerificationIndexStore for FileVerificationIndexStore {
         file_append_index_record(record)
     }
 
-    fn delete_for_session(&self, session_id: &str) {
+    fn delete_for_session(&self, session_id: &str) -> Result<(), String> {
         let remaining: Vec<_> = file_read_index_records()
             .into_iter()
             .filter(|record| record.session_id != session_id)
             .collect();
-        let path = verifications_root().join("index.jsonl");
-        if let Ok(mut file) = std::fs::File::create(path) {
-            for record in remaining {
-                if let Ok(line) = serde_json::to_string(&record) {
-                    let _ = writeln!(file, "{line}");
-                }
-            }
+        let mut bytes = Vec::new();
+        for record in remaining {
+            serde_json::to_writer(&mut bytes, &record).map_err(|error| error.to_string())?;
+            bytes.push(b'\n');
         }
+        VERIFICATION_FILES
+            .atomic_write_root(&index_path(), &bytes)
+            .map_err(|error| error.to_string())
     }
 }
 
@@ -247,19 +264,18 @@ impl SurrealVerificationIndexStore {
 impl VerificationIndexStore for SurrealVerificationIndexStore {
     fn read_all(&self) -> Vec<VerificationRunRecord> {
         let sql = "SELECT * FROM type::table($table) ORDER BY created_at_utc ASC";
-        let mut response = match block_on(
-            self.db
-                .query(sql)
-                .bind(("table", VERIFICATION_INDEX_TABLE)),
-        ) {
-            Ok(response) => response,
-            Err(err) => {
-                eprintln!("SurrealVerificationIndexStore::read_all query error: {err}");
-                return Vec::new();
-            }
-        };
+        let mut response =
+            match block_on(self.db.query(sql).bind(("table", VERIFICATION_INDEX_TABLE))) {
+                Ok(response) => response,
+                Err(err) => {
+                    eprintln!("SurrealVerificationIndexStore::read_all query error: {err}");
+                    return Vec::new();
+                }
+            };
 
-        response.take::<Vec<VerificationRunRecord>>(0).unwrap_or_default()
+        response
+            .take::<Vec<VerificationRunRecord>>(0)
+            .unwrap_or_default()
     }
 
     fn append(&self, record: &VerificationRunRecord) -> std::result::Result<(), String> {
@@ -275,14 +291,16 @@ impl VerificationIndexStore for SurrealVerificationIndexStore {
         Ok(())
     }
 
-    fn delete_for_session(&self, session_id: &str) {
+    fn delete_for_session(&self, session_id: &str) -> Result<(), String> {
         let sql = "DELETE type::table($table) WHERE session_id = $session_id";
-        let _ = block_on(
+        block_on(
             self.db
                 .query(sql)
                 .bind(("table", VERIFICATION_INDEX_TABLE))
-                .bind(("session_id", session_id.trim().to_string())),
-        );
+                .bind(("session_id", session_id.to_string())),
+        )
+        .map_err(|error| error.to_string())?;
+        Ok(())
     }
 }
 
@@ -291,37 +309,30 @@ fn block_on<F: IntoFuture>(f: F) -> F::Output {
 }
 
 fn file_append_index_record(record: &VerificationRunRecord) -> std::result::Result<(), String> {
-    let index_path = verifications_root().join("index.jsonl");
-    if let Some(parent) = index_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
-
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&index_path)
-        .map_err(|err| err.to_string())?;
-    let line = serde_json::to_string(record).map_err(|err| err.to_string())?;
-    writeln!(file, "{line}").map_err(|err| err.to_string())?;
-    Ok(())
+    let mut line = serde_json::to_vec(record).map_err(|err| err.to_string())?;
+    line.push(b'\n');
+    VERIFICATION_FILES
+        .append_root(&index_path(), &line)
+        .map_err(|err| err.to_string())
 }
 
 fn file_read_index_records() -> Vec<VerificationRunRecord> {
-    let index_path = verifications_root().join("index.jsonl");
-    let Ok(file) = std::fs::File::open(index_path) else {
+    let Ok(bytes) = VERIFICATION_FILES.read_root(&index_path()) else {
         return Vec::new();
     };
-
-    std::io::BufReader::new(file)
-        .lines()
-        .map_while(Result::ok)
-        .filter(|line| !line.trim().is_empty())
-        .filter_map(|line| serde_json::from_str::<VerificationRunRecord>(&line).ok())
+    bytes
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.iter().all(u8::is_ascii_whitespace))
+        .filter_map(|line| serde_json::from_slice::<VerificationRunRecord>(line).ok())
         .collect()
 }
 
-fn verifications_root() -> PathBuf {
-    crate::paths::medousa_data_dir().join("verifications")
+fn verification_path(verification_id: &str) -> StorePath {
+    crate::session_storage::session_object_path(VERIFICATION_OBJECT_DOMAIN, verification_id, "json")
+}
+
+fn index_path() -> StorePath {
+    StorePath::parse("index.jsonl").expect("static verification index path must be valid")
 }
 
 fn short_session(session_id: &str) -> String {

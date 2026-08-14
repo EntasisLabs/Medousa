@@ -1,14 +1,11 @@
 //! Wikilink resolution and persisted backlink index (Phase V1).
 
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
-use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
 use crate::vault::note::VaultIndexEntry;
-use crate::vault::path::{normalize_vault_path, user_vault_root};
+use crate::vault::path::{VaultPath, normalize_vault_path, user_vault_capability};
 
 const LINKS_FILE: &str = "links.jsonl";
 
@@ -97,11 +94,11 @@ pub fn resolve_wikilink_target(
         }
     } else {
         let stem = token.trim_end_matches(".md");
-        if let Ok(same_dir) = normalize_vault_path(&format!(
-            "{}/{}.md",
-            source_path.rsplit_once('/').map(|(dir, _)| dir).unwrap_or(""),
-            stem
-        )) {
+        let same_dir_candidate = source_path
+            .rsplit_once('/')
+            .map(|(dir, _)| format!("{dir}/{stem}.md"))
+            .unwrap_or_else(|| format!("{stem}.md"));
+        if let Ok(same_dir) = normalize_vault_path(&same_dir_candidate) {
             candidates.push(same_dir);
         }
         if let Ok(root) = normalize_vault_path(&format!("{stem}.md")) {
@@ -126,7 +123,9 @@ pub fn resolve_wikilink_target(
 
     candidates.sort();
     candidates.dedup();
-    candidates.into_iter().find(|path| known_paths.contains(path))
+    candidates
+        .into_iter()
+        .find(|path| known_paths.contains(path))
 }
 
 pub fn parse_raw_wikilinks(body: &str) -> Vec<String> {
@@ -162,8 +161,8 @@ pub fn parse_inline_tags(body: &str) -> Vec<String> {
     let mut tags = Vec::new();
     for token in content.split_whitespace() {
         if let Some(tag) = token.strip_prefix('#') {
-            let cleaned = tag
-                .trim_matches(|ch: char| !ch.is_alphanumeric() && ch != '-' && ch != '_');
+            let cleaned =
+                tag.trim_matches(|ch: char| !ch.is_alphanumeric() && ch != '-' && ch != '_');
             if !cleaned.is_empty() && !tags.iter().any(|existing| existing == cleaned) {
                 tags.push(cleaned.to_string());
             }
@@ -193,22 +192,24 @@ fn slugify(raw: &str) -> String {
         .join("-")
 }
 
-pub fn links_path() -> PathBuf {
-    user_vault_root().join(LINKS_FILE)
+fn links_path() -> VaultPath {
+    VaultPath::parse(LINKS_FILE).expect("static vault links path must be valid")
 }
 
 pub fn load_link_index_from_disk() -> VaultLinkIndex {
     let mut forward: HashMap<String, Vec<String>> = HashMap::new();
     let mut backlinks: HashMap<String, Vec<String>> = HashMap::new();
-    let Ok(file) = File::open(links_path()) else {
+    let Ok(files) = user_vault_capability() else {
         return VaultLinkIndex::default();
     };
-    for line in BufReader::new(file).lines().map_while(Result::ok) {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
+    let Ok(bytes) = files.read(&links_path()) else {
+        return VaultLinkIndex::default();
+    };
+    for line in bytes.split(|byte| *byte == b'\n') {
+        if line.iter().all(u8::is_ascii_whitespace) {
             continue;
         }
-        let Ok(row) = serde_json::from_str::<VaultNoteLink>(trimmed) else {
+        let Ok(row) = serde_json::from_slice::<VaultNoteLink>(line) else {
             continue;
         };
         forward
@@ -231,15 +232,16 @@ pub fn load_link_index_from_disk() -> VaultLinkIndex {
     VaultLinkIndex { forward, backlinks }
 }
 
-pub fn persist_link_index(index: &VaultLinkIndex) -> std::io::Result<()> {
-    let _ = std::fs::create_dir_all(user_vault_root());
+pub fn persist_link_index(index: &VaultLinkIndex) -> anyhow::Result<()> {
     let rows = index.to_link_rows();
-    let mut file = File::create(links_path())?;
+    let mut bytes = Vec::new();
     for row in rows {
-        let line = serde_json::to_string(&row).unwrap_or_default();
-        writeln!(file, "{line}")?;
+        serde_json::to_writer(&mut bytes, &row)?;
+        bytes.push(b'\n');
     }
-    Ok(())
+    user_vault_capability()?
+        .atomic_write(&links_path(), &bytes)
+        .map_err(Into::into)
 }
 
 #[cfg(test)]
@@ -277,7 +279,11 @@ mod tests {
     #[test]
     fn weekly_review_resolves_by_filename() {
         let entries = vec![
-            entry("journal/weekly-review.md", "Weekly Review", "# Weekly Review"),
+            entry(
+                "journal/weekly-review.md",
+                "Weekly Review",
+                "# Weekly Review",
+            ),
             entry(
                 "journal/daily.md",
                 "Daily",
@@ -285,13 +291,8 @@ mod tests {
             ),
         ];
         let known: HashSet<_> = entries.iter().map(|e| e.path.clone()).collect();
-        let target = resolve_wikilink_target(
-            "weekly-review",
-            "journal/daily.md",
-            &known,
-            &entries,
-        )
-        .expect("resolved");
+        let target = resolve_wikilink_target("weekly-review", "journal/daily.md", &known, &entries)
+            .expect("resolved");
         assert_eq!(target, "journal/weekly-review.md");
     }
 

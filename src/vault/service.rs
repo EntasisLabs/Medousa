@@ -3,17 +3,18 @@
 use anyhow::Result;
 
 use crate::daemon_api::{
-    VaultBacklinksResponse, VaultDeleteResponse, VaultFileContentResponse, VaultNoteContentResponse,
-    VaultNotesListResponse, VaultTagsListResponse, VaultWriteRequest, VaultWriteResponse,
-    WorkspaceEventActor,
+    VaultBacklinksResponse, VaultDeleteResponse, VaultFileContentResponse,
+    VaultNoteContentResponse, VaultNotesListResponse, VaultTagsListResponse, VaultWriteRequest,
+    VaultWriteResponse, WorkspaceEventActor,
 };
-use crate::vault::path::resolve_user_note_path;
+use crate::vault::path::{VaultPath, user_vault_capability};
 use crate::vault::search::search_vault;
-use crate::vault::semantic_tags::{apply_semantic_tags_on_write, collect_distinct_tags, entry_has_all_tags, parse_tags_query};
+use crate::vault::semantic_tags::{
+    apply_semantic_tags_on_write, collect_distinct_tags, entry_has_all_tags, parse_tags_query,
+};
 use crate::vault::store::vault_store;
 use crate::workspace::store::workspace_store;
 use base64::Engine;
-use std::fs;
 
 pub struct VaultService;
 
@@ -36,7 +37,10 @@ impl VaultService {
             .filter(|entry| entry_has_all_tags(&entry.tags, &required))
             .filter(|entry| {
                 prefix_filter.as_ref().is_none_or(|prefix| {
-                    entry.tags.iter().any(|tag| tag.to_ascii_lowercase().starts_with(prefix))
+                    entry
+                        .tags
+                        .iter()
+                        .any(|tag| tag.to_ascii_lowercase().starts_with(prefix))
                 })
             })
             .take(limit)
@@ -69,19 +73,19 @@ impl VaultService {
     /// Read a vault-relative file (images, attachments) for remote Home preview.
     pub fn read_file(path: &str) -> Result<VaultFileContentResponse> {
         const MAX_PREVIEW_BYTES: u64 = 8 * 1024 * 1024;
-        let absolute = resolve_user_note_path(path)?;
-        if !absolute.is_file() {
+        let path = VaultPath::parse(path)?;
+        let files = user_vault_capability()?;
+        if !files.is_file(&path)? {
             anyhow::bail!("vault file not found: {path}");
         }
-        let meta = fs::metadata(&absolute)?;
-        let size = meta.len();
+        let size = files.metadata(&path)?.size;
         if size > MAX_PREVIEW_BYTES {
             anyhow::bail!("vault file too large for preview (max 8MB)");
         }
-        let bytes = fs::read(&absolute)?;
-        let content_type = mime_guess_from_path(&absolute);
+        let bytes = files.read_limited(&path, MAX_PREVIEW_BYTES)?;
+        let content_type = mime_guess_from_path(std::path::Path::new(path.as_str()));
         Ok(VaultFileContentResponse {
-            path: path.trim().trim_start_matches('/').to_string(),
+            path: path.to_string(),
             content_type,
             base64: base64::engine::general_purpose::STANDARD.encode(bytes),
             size,
@@ -125,8 +129,7 @@ impl VaultService {
             .filter(|value| !value.is_empty())
             .ok_or_else(|| anyhow::anyhow!("path is required"))?;
         let existed = vault_store().get_entry(target_path).is_some();
-        let auto_workshop_tags = if crate::vault::roots::active_root_skips_auto_workshop_tags()
-        {
+        let auto_workshop_tags = if crate::vault::roots::active_root_skips_auto_workshop_tags() {
             false
         } else {
             request.auto_workshop_tags
@@ -166,9 +169,7 @@ impl VaultService {
         Ok(crate::daemon_api::VaultTrashListResponse { entries })
     }
 
-    pub fn restore_from_trash(
-        path: &str,
-    ) -> Result<crate::daemon_api::VaultTrashRestoreResponse> {
+    pub fn restore_from_trash(path: &str) -> Result<crate::daemon_api::VaultTrashRestoreResponse> {
         let restored_path = vault_store().restore_from_trash(path)?;
         Ok(crate::daemon_api::VaultTrashRestoreResponse {
             path: restored_path,
@@ -215,7 +216,11 @@ impl VaultService {
         tags: Option<&str>,
     ) -> Result<crate::daemon_api::VaultSearchResponse> {
         let required = parse_tags_query(tags);
-        if query.map(str::trim).filter(|value| !value.is_empty()).is_none() {
+        if query
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .is_none()
+        {
             if required.is_empty() {
                 return Ok(crate::daemon_api::VaultSearchResponse {
                     query: String::new(),
@@ -285,13 +290,14 @@ pub(crate) fn with_temp_vault<T>(f: impl FnOnce() -> T) -> T {
         "medousa-vault-test-{}",
         uuid::Uuid::new_v4().simple()
     ));
-    fs::create_dir_all(&base).expect("temp vault root");
+    std::fs::create_dir_all(&base).expect("temp vault root");
+    let base = base.canonicalize().expect("canonical temp vault root");
     crate::vault::roots::set_test_vault_root_override(Some(base.clone()));
     let _ = vault_store().refresh_from_disk();
     let result = catch_unwind(AssertUnwindSafe(f));
     crate::vault::roots::set_test_vault_root_override(None);
     let _ = vault_store().refresh_from_disk();
-    let _ = fs::remove_dir_all(&base);
+    let _ = std::fs::remove_dir_all(&base);
     match result {
         Ok(value) => value,
         Err(payload) => resume_unwind(payload),
@@ -345,7 +351,9 @@ fn append_vault_feed_event(
         WorkspaceEventActor::Agent => format!("Agent updated vault — {detail_line}"),
         _ => format!("Vault updated — {detail_line}"),
     };
-    let tool_names = tool_name.map(|name| vec![name.to_string()]).unwrap_or_default();
+    let tool_names = tool_name
+        .map(|name| vec![name.to_string()])
+        .unwrap_or_default();
     let event = crate::daemon_api::WorkspaceEvent {
         id: crate::workspace::event::new_event_id(),
         timestamp_utc: chrono::Utc::now(),
@@ -403,10 +411,7 @@ mod tests {
     #[test]
     fn create_note_refuses_existing_path() {
         with_temp_vault(|| {
-            let path = format!(
-                "journal/create-once-{}.md",
-                uuid::Uuid::new_v4().simple()
-            );
+            let path = format!("journal/create-once-{}.md", uuid::Uuid::new_v4().simple());
             let request = VaultWriteRequest {
                 path: Some(path.clone()),
                 content: "# Keep me\n\nimportant body\n".to_string(),
@@ -433,10 +438,7 @@ mod tests {
     #[test]
     fn round_trip_write_read_search_delete() {
         with_temp_vault(|| {
-            let path = format!(
-                "journal/test-{}.md",
-                uuid::Uuid::new_v4().simple()
-            );
+            let path = format!("journal/test-{}.md", uuid::Uuid::new_v4().simple());
             let token = uuid::Uuid::new_v4().simple().to_string();
             let content = format!("# Vault Smoke\n\nmedousa vault token {token}\n");
             let request = VaultWriteRequest {
@@ -463,6 +465,35 @@ mod tests {
             assert!(by_tag.notes.iter().any(|note| note.path == path));
             let deleted = VaultService::delete_note(&path).expect("delete");
             assert!(deleted.deleted);
+        });
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn link_backed_vault_entries_cannot_reach_outside_root() {
+        use std::os::unix::fs::symlink;
+
+        with_temp_vault(|| {
+            let outside = tempfile::tempdir().expect("outside tempdir");
+            let canary = outside.path().join("canary.md");
+            std::fs::write(&canary, b"outside-safe").expect("canary");
+            let vault = crate::vault::path::user_vault_root();
+            symlink(&canary, vault.join("linked.md")).expect("link leaf");
+            symlink(outside.path(), vault.join("linked-dir")).expect("link directory");
+
+            assert!(VaultService::read_file("linked.md").is_err());
+            assert!(VaultService::get_note("linked-dir/canary.md").is_err());
+            let request = VaultWriteRequest {
+                path: Some("linked-dir/new.md".to_string()),
+                content: "must not escape".to_string(),
+                ..Default::default()
+            };
+            assert!(VaultService::write_note(None, &request, None).is_err());
+            assert_eq!(
+                std::fs::read(&canary).expect("read canary"),
+                b"outside-safe"
+            );
+            assert!(!outside.path().join("new.md").exists());
         });
     }
 }

@@ -1,17 +1,18 @@
 use std::future::IntoFuture;
 use std::sync::{Arc, RwLock};
 
+use medousa_types::SessionId;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use surrealdb::engine::any::Any;
+use stasis::prelude::RuntimeComposition;
 use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
 use surrealdb_types::SurrealValue;
 use tokio::runtime::Handle;
 
 use crate::session::{ConversationTurn, SessionHistorySummary};
 use crate::turn_parts::TurnPart;
 use crate::turn_slice::TurnSliceSummary;
-use stasis::prelude::RuntimeComposition;
 
 const SESSION_TURN_TABLE: &str = "session_turn";
 
@@ -46,7 +47,9 @@ pub async fn init_session_store_with_runtime(runtime: &RuntimeComposition) {
             let db = rt.job_store.db();
             let store = SurrealSessionStore::new(db);
             if let Err(err) = store.ensure_schema().await {
-                eprintln!("Surreal session store schema init error: {err}; falling back to file-backed store");
+                eprintln!(
+                    "Surreal session store schema init error: {err}; falling back to file-backed store"
+                );
                 return;
             }
             set_session_store(Arc::new(store));
@@ -133,9 +136,9 @@ impl From<&ConversationTurn> for SessionTurnRecord {
 }
 
 pub trait SessionStore: Send + Sync + 'static {
-    fn load_history(&self, session_id: &str) -> Vec<ConversationTurn>;
-    fn append_turn(&self, session_id: &str, turn: &ConversationTurn);
-    fn delete_session(&self, session_id: &str);
+    fn load_history(&self, session_id: &SessionId) -> Vec<ConversationTurn>;
+    fn append_turn(&self, session_id: &SessionId, turn: &ConversationTurn);
+    fn delete_session(&self, session_id: &SessionId);
     fn list_history_sessions(&self, limit: usize) -> Vec<SessionHistorySummary>;
     fn build_backfill_summaries(&self, limit: usize) -> Vec<SessionHistorySummary>;
     fn has_persisted_sessions(&self) -> bool;
@@ -151,29 +154,34 @@ fn block_on<F: IntoFuture>(f: F) -> F::Output {
 // File-backed store (original)
 // ---------------------------------------------------------------------------
 
-struct FileSessionStore;
+struct FileSessionStore {
+    files: crate::session_storage::SessionFileStore,
+}
 
 impl FileSessionStore {
     fn new() -> Self {
-        FileSessionStore {}
+        Self::at(crate::session::medousa_data_dir().join("history"))
+    }
+
+    fn at(root: std::path::PathBuf) -> Self {
+        Self {
+            files: crate::session_storage::SessionFileStore::new(root, "jsonl"),
+        }
     }
 }
 
 impl SessionStore for FileSessionStore {
-    fn load_history(&self, session_id: &str) -> Vec<ConversationTurn> {
-        crate::session::file_load_history(session_id)
+    fn load_history(&self, session_id: &SessionId) -> Vec<ConversationTurn> {
+        crate::session::file_load_history(&self.files, session_id)
     }
 
-    fn append_turn(&self, session_id: &str, turn: &ConversationTurn) {
-        crate::session::file_append_turn(session_id, turn);
-        crate::session_catalog::record_turn_appended(session_id, turn);
+    fn append_turn(&self, session_id: &SessionId, turn: &ConversationTurn) {
+        crate::session::file_append_turn(&self.files, session_id, turn);
+        crate::session_catalog::record_turn_appended_for_id(session_id, turn);
     }
 
-    fn delete_session(&self, session_id: &str) {
-        let path = crate::session::medousa_data_dir()
-            .join("history")
-            .join(format!("{session_id}.jsonl"));
-        let _ = std::fs::remove_file(path);
+    fn delete_session(&self, session_id: &SessionId) {
+        let _ = self.files.remove(session_id);
     }
 
     fn list_history_sessions(&self, limit: usize) -> Vec<SessionHistorySummary> {
@@ -181,21 +189,11 @@ impl SessionStore for FileSessionStore {
     }
 
     fn build_backfill_summaries(&self, limit: usize) -> Vec<SessionHistorySummary> {
-        crate::session::file_build_history_summaries_from_files(limit)
+        crate::session::file_build_history_summaries_from_files(&self.files, limit)
     }
 
     fn has_persisted_sessions(&self) -> bool {
-        let history_dir = crate::session::medousa_data_dir().join("history");
-        std::fs::read_dir(history_dir).ok().is_some_and(|mut entries| {
-            entries.any(|entry| {
-                entry.ok().is_some_and(|item| {
-                    item.path()
-                        .extension()
-                        .and_then(|ext| ext.to_str())
-                        == Some("jsonl")
-                })
-            })
-        })
+        self.files.list().is_ok_and(|entries| !entries.is_empty())
     }
 }
 
@@ -236,7 +234,7 @@ impl SurrealSessionStore {
 }
 
 impl SessionStore for SurrealSessionStore {
-    fn load_history(&self, session_id: &str) -> Vec<ConversationTurn> {
+    fn load_history(&self, session_id: &SessionId) -> Vec<ConversationTurn> {
         let sql = "SELECT session_id, role, content, timestamp, tool_names, answer_state, parts, \
                     slice_summary, speaker_profile_id \
                     FROM type::table($table) \
@@ -265,7 +263,7 @@ impl SessionStore for SurrealSessionStore {
         }
     }
 
-    fn append_turn(&self, session_id: &str, turn: &ConversationTurn) {
+    fn append_turn(&self, session_id: &SessionId, turn: &ConversationTurn) {
         let mut record = SessionTurnRecord::from(turn);
         record.session_id = session_id.to_string();
 
@@ -288,16 +286,16 @@ impl SessionStore for SurrealSessionStore {
             return;
         }
 
-        crate::session_catalog::record_turn_appended(session_id, turn);
+        crate::session_catalog::record_turn_appended_for_id(session_id, turn);
     }
 
-    fn delete_session(&self, session_id: &str) {
+    fn delete_session(&self, session_id: &SessionId) {
         let sql = "DELETE type::table($table) WHERE session_id = $session_id";
         let _ = block_on(
             self.db
                 .query(sql)
                 .bind(("table", SESSION_TURN_TABLE))
-                .bind(("session_id", session_id.trim().to_string())),
+                .bind(("session_id", session_id.to_string())),
         );
     }
 
@@ -336,9 +334,7 @@ impl SessionStore for SurrealSessionStore {
         let aggregates: Vec<SessionAggregate> = match response.take(0) {
             Ok(rows) => rows,
             Err(err) => {
-                eprintln!(
-                    "SurrealSessionStore::build_backfill_summaries deserialize error: {err}"
-                );
+                eprintln!("SurrealSessionStore::build_backfill_summaries deserialize error: {err}");
                 return Vec::new();
             }
         };
@@ -370,11 +366,7 @@ impl SessionStore for SurrealSessionStore {
 
     fn has_persisted_sessions(&self) -> bool {
         let sql = "SELECT count() AS total FROM type::table($table) GROUP ALL";
-        let mut response = match block_on(
-            self.db
-                .query(sql)
-                .bind(("table", SESSION_TURN_TABLE)),
-        ) {
+        let mut response = match block_on(self.db.query(sql).bind(("table", SESSION_TURN_TABLE))) {
             Ok(response) => response,
             Err(_) => return false,
         };
@@ -423,8 +415,8 @@ impl SurrealSessionStore {
                 answer_state: None,
                 parts: parts_from_json(row.parts),
                 slice_summary: None,
-            speaker_profile_id: None,
-        };
+                speaker_profile_id: None,
+            };
             if let Some(preview) = crate::session_catalog::preview_from_turn(&turn) {
                 return Some(preview);
             }
@@ -437,9 +429,8 @@ impl SurrealSessionStore {
 // Global singleton & public helpers
 // ---------------------------------------------------------------------------
 
-static SESSION_STORE: Lazy<RwLock<Arc<dyn SessionStore>>> = Lazy::new(|| {
-    RwLock::new(Arc::new(FileSessionStore::new()))
-});
+static SESSION_STORE: Lazy<RwLock<Arc<dyn SessionStore>>> =
+    Lazy::new(|| RwLock::new(Arc::new(FileSessionStore::new())));
 
 pub fn set_session_store(store: Arc<dyn SessionStore>) {
     let mut guard = SESSION_STORE.write().unwrap();
@@ -458,6 +449,6 @@ pub fn has_persisted_sessions() -> bool {
     get_session_store().has_persisted_sessions()
 }
 
-pub fn delete_session_transcript(session_id: &str) {
-    get_session_store().delete_session(session_id.trim());
+pub fn delete_session_transcript(session_id: &SessionId) {
+    get_session_store().delete_session(session_id);
 }

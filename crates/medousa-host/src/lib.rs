@@ -229,8 +229,7 @@ pub fn detach_new_session(command: &mut Command) {
 #[cfg(windows)]
 pub fn detach_new_session(command: &mut Command) {
     use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    command.creation_flags(CREATE_NO_WINDOW);
+    command.creation_flags(WINDOWS_CREATE_NO_WINDOW);
 }
 
 #[cfg(not(any(unix, windows)))]
@@ -239,11 +238,12 @@ pub fn detach_new_session(_command: &mut Command) {}
 /// Prevent a captured/background subprocess from creating a visible console
 /// window on Windows. Synchronous helpers such as Git should remain children
 /// of the daemon, so this intentionally does not create a new Unix session.
+pub const WINDOWS_CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 #[cfg(windows)]
 pub fn hide_subprocess_window(command: &mut Command) {
     use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    command.creation_flags(CREATE_NO_WINDOW);
+    command.creation_flags(WINDOWS_CREATE_NO_WINDOW);
 }
 
 #[cfg(not(windows))]
@@ -255,8 +255,7 @@ pub fn hide_subprocess_window(_command: &mut Command) {}
 /// the child before health probes succeed.
 #[cfg(windows)]
 pub fn hide_tokio_subprocess_window(command: &mut tokio::process::Command) {
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    command.creation_flags(CREATE_NO_WINDOW);
+    command.creation_flags(WINDOWS_CREATE_NO_WINDOW);
 }
 
 #[cfg(not(windows))]

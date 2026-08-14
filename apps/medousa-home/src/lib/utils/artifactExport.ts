@@ -45,10 +45,7 @@ function artifactReference(sessionId: string, artifactId: string): string {
 export function artifactPathForCopy(
   sessionId: string,
   artifactId: string,
-  payloadPath?: string | null,
 ): string {
-  const trimmed = payloadPath?.trim();
-  if (trimmed) return trimmed;
   return artifactReference(sessionId, artifactId);
 }
 
@@ -56,10 +53,8 @@ export async function copyArtifactPath(
   sessionId: string,
   artifactId: string,
 ): Promise<boolean> {
-  const response = await loadArtifact(sessionId, artifactId);
-  return copyTextToClipboard(
-    artifactPathForCopy(sessionId, artifactId, response.payload_path),
-  );
+  await loadArtifact(sessionId, artifactId);
+  return copyTextToClipboard(artifactPathForCopy(sessionId, artifactId));
 }
 
 export async function copyArtifactId(artifactId: string): Promise<boolean> {
@@ -71,8 +66,8 @@ export async function shareArtifact(
   artifactId: string,
   label: string,
 ): Promise<"shared" | "copied" | "failed"> {
-  const response = await loadArtifact(sessionId, artifactId);
-  const path = artifactPathForCopy(sessionId, artifactId, response.payload_path);
+  await loadArtifact(sessionId, artifactId);
+  const path = artifactPathForCopy(sessionId, artifactId);
   const text = [
     label.trim(),
     "",

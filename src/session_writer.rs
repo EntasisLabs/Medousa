@@ -243,6 +243,7 @@ mod tests {
                 + before.written_inline_no_actor);
         assert_eq!(committed, 8, "all enqueued turns must be committed, none dropped");
         // Clean up the file-backed history this test produced.
-        crate::session_store::delete_session_transcript(&session);
+        let session_id = crate::session_storage::SessionId::parse(&session).unwrap();
+        crate::session_store::delete_session_transcript(&session_id);
     }
 }

@@ -127,22 +127,6 @@ pub fn vault_surface() -> DeclaredRouter {
                 vault_admin_policy(axum::http::Method::GET, "/v1/vault/git/worktrees", 1024),
                 get(crate::vault_git_handlers::vault_git_worktrees_list),
             ),
-            (
-                vault_admin_policy(
-                    axum::http::Method::POST,
-                    "/v1/vault/git/worktrees",
-                    64 * 1024,
-                ),
-                post(crate::vault_git_handlers::vault_git_worktrees_add),
-            ),
-            (
-                vault_admin_policy(
-                    axum::http::Method::DELETE,
-                    "/v1/vault/git/worktrees",
-                    64 * 1024,
-                ),
-                delete(crate::vault_git_handlers::vault_git_worktrees_remove),
-            ),
         ])
 }
 
@@ -378,7 +362,7 @@ mod tests {
     #[test]
     fn vault_inventory_separates_content_and_host_authority() {
         let entries = vault_surface().inventory().entries().collect::<Vec<_>>();
-        assert_eq!(entries.len(), 26);
+        assert_eq!(entries.len(), 24);
         assert_eq!(
             entries
                 .iter()
@@ -398,7 +382,13 @@ mod tests {
                 .iter()
                 .filter(|entry| entry.required_capability == Some("admin.runtime"))
                 .count(),
-            15
+            13
         );
+        assert!(entries.iter().any(|entry| {
+            entry.path == "/v1/vault/git/worktrees" && entry.method == "GET"
+        }));
+        assert!(!entries.iter().any(|entry| {
+            entry.path == "/v1/vault/git/worktrees" && entry.method != "GET"
+        }));
     }
 }

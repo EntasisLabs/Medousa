@@ -1,7 +1,6 @@
 //! Local text extraction for user media at import time (P5a-text).
 
 use std::io::Cursor;
-use std::path::Path;
 use std::process::{Command, Stdio};
 
 use calamine::{open_workbook_auto_from_rs, Data, Reader};
@@ -79,10 +78,6 @@ fn resolve_extract_mime(mime: &str, bytes: &[u8], label: Option<&str>) -> String
     } else {
         mime
     }
-}
-
-pub fn extract_path_for_media(payload_path: &str) -> std::path::PathBuf {
-    Path::new(payload_path).with_extension("extract.txt")
 }
 
 fn extract_plain_text(bytes: &[u8]) -> Option<MediaTextExtract> {

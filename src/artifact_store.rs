@@ -2,17 +2,28 @@ use chrono::{DateTime, Duration, Utc};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use stasis::prelude::RuntimeComposition;
 use std::collections::{HashMap, HashSet};
 use std::future::IntoFuture;
-use std::io::{BufRead, Write};
-use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
-use stasis::prelude::RuntimeComposition;
-use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
 use surrealdb_types::SurrealValue;
 use tokio::runtime::Handle;
+
+use crate::store_root::StorePath;
+
+const ARTIFACT_PAYLOAD_DOMAIN: &[u8] = b"artifact-payload";
+const ARTIFACT_INDEX_FILE: &str = "index.jsonl";
+const ARTIFACT_ALIASES_FILE: &str = "artifact_aliases.json";
+const MAX_ARTIFACT_PAYLOAD_BYTES: u64 = 64 * 1024 * 1024;
+
+static ARTIFACT_FILES: Lazy<crate::session_storage::SessionDirectoryStore> = Lazy::new(|| {
+    crate::session_storage::SessionDirectoryStore::new(
+        crate::paths::medousa_data_dir().join("artifacts"),
+    )
+});
 
 const ARTIFACT_INDEX_TABLE: &str = "artifact_record";
 
@@ -46,15 +57,12 @@ pub async fn init_artifact_store_with_runtime(runtime: &RuntimeComposition) {
     if let RuntimeComposition::Surreal(rt) = runtime {
         let store = SurrealArtifactIndexStore::new(rt.job_store.db());
         if let Err(err) = store.ensure_schema().await {
-            eprintln!(
-                "Surreal artifact index schema init error: {err}; keeping file-backed index"
-            );
+            eprintln!("Surreal artifact index schema init error: {err}; keeping file-backed index");
             return;
         }
         ARTIFACT_INDEX_USES_SURREAL.store(true, Ordering::Release);
         set_artifact_index_store(Arc::new(store));
         eprintln!("Surreal runtime detected; artifact index switched to SurrealDB backend");
-        repair_ui_artifact_index_from_disk();
     }
 }
 
@@ -133,27 +141,28 @@ pub fn persist_tool_artifact(
     byte_size: usize,
     payload: &Value,
 ) -> std::result::Result<ArtifactRecord, String> {
+    let session_id =
+        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
     let now = Utc::now();
     let tool_slug = slugify_tool_name(tool_name);
     let hash_short = hash64.chars().take(12).collect::<String>();
     let artifact_id = format!(
         "art:{}:{}:{}:{}",
-        short_session(session_id),
+        short_session(session_id.as_str()),
         tool_slug,
         direction,
         hash_short
     );
 
-    let payload_dir = artifacts_root()
-        .join(session_id)
-        .join(&tool_slug)
-        .join(direction);
-    std::fs::create_dir_all(&payload_dir).map_err(|err| err.to_string())?;
-
-    let payload_path = payload_dir.join(format!("{}.json", hash64));
-    if !payload_path.exists() {
+    let payload_path = artifact_payload_path(tool_name, direction, hash64, "json");
+    if !ARTIFACT_FILES
+        .is_file(&session_id, &payload_path)
+        .map_err(|err| err.to_string())?
+    {
         let raw = serde_json::to_vec_pretty(payload).map_err(|err| err.to_string())?;
-        std::fs::write(&payload_path, raw).map_err(|err| err.to_string())?;
+        ARTIFACT_FILES
+            .atomic_write(&session_id, &payload_path, &raw)
+            .map_err(|err| err.to_string())?;
     }
 
     let record = ArtifactRecord {
@@ -164,7 +173,7 @@ pub fn persist_tool_artifact(
         hash64: hash64.to_string(),
         byte_size,
         stored_at_utc: now,
-        payload_path: payload_path.to_string_lossy().to_string(),
+        payload_path: payload_path.file_name().to_string(),
         content_type: "application/json".to_string(),
         label: None,
         presentation: None,
@@ -195,6 +204,8 @@ pub fn persist_ui_artifact_revision(
     height_px: Option<u32>,
     supersedes_artifact_id: Option<&str>,
 ) -> std::result::Result<ArtifactRecord, String> {
+    let session_id =
+        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
     let wrapped = wrap_html_document(html);
     let byte_size = wrapped.len();
     if byte_size > UI_ARTIFACT_MAX_BYTES {
@@ -215,27 +226,26 @@ pub fn persist_ui_artifact_revision(
     let hash_short = hash64.chars().take(12).collect::<String>();
     let artifact_id = format!(
         "art:{}:{}:ui:{}",
-        short_session(session_id),
+        short_session(session_id.as_str()),
         tool_slug,
         hash_short
     );
 
-    let payload_dir = artifacts_root()
-        .join(session_id)
-        .join(&tool_slug)
-        .join("ui");
-    std::fs::create_dir_all(&payload_dir).map_err(|err| err.to_string())?;
-
-    let payload_path = payload_dir.join(format!("{}.html", hash64));
-    if !payload_path.exists() {
-        std::fs::write(&payload_path, wrapped.as_bytes()).map_err(|err| err.to_string())?;
+    let payload_path = artifact_payload_path(tool_name, "ui", &hash64, "html");
+    if !ARTIFACT_FILES
+        .is_file(&session_id, &payload_path)
+        .map_err(|err| err.to_string())?
+    {
+        ARTIFACT_FILES
+            .atomic_write(&session_id, &payload_path, wrapped.as_bytes())
+            .map_err(|err| err.to_string())?;
     }
 
     let (supersedes, root_artifact_id) = if let Some(previous_id) = supersedes_artifact_id
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        let previous = fetch_artifact_at_id(session_id, previous_id).ok_or_else(|| {
+        let previous = fetch_artifact_at_id(session_id.as_str(), previous_id).ok_or_else(|| {
             format!("supersedes artifact not found in this session: {previous_id}")
         })?;
         if previous.mime != "text/html" || previous.record.direction != "ui" {
@@ -259,7 +269,7 @@ pub fn persist_ui_artifact_revision(
         hash64,
         byte_size,
         stored_at_utc: now,
-        payload_path: payload_path.to_string_lossy().to_string(),
+        payload_path: payload_path.file_name().to_string(),
         content_type: "text/html".to_string(),
         label: Some(label.trim().to_string()),
         presentation: Some(presentation),
@@ -296,27 +306,30 @@ pub fn resolve_artifact_reference(session_id: &str, artifact_ref: &str) -> Strin
     resolve_artifact_alias(session_id, query).unwrap_or_else(|| query.to_string())
 }
 
-fn artifact_alias_path(session_id: &str) -> PathBuf {
-    artifacts_root()
-        .join(session_id)
-        .join("artifact_aliases.json")
+fn artifact_alias_path() -> StorePath {
+    StorePath::parse(ARTIFACT_ALIASES_FILE).expect("static artifact alias path must be valid")
 }
 
 fn load_artifact_aliases(session_id: &str) -> HashMap<String, String> {
-    let path = artifact_alias_path(session_id);
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(session_id) = crate::session_storage::SessionId::parse(session_id) else {
         return HashMap::new();
     };
-    serde_json::from_str(&raw).unwrap_or_default()
+    let Ok(raw) = ARTIFACT_FILES.read(&session_id, &artifact_alias_path()) else {
+        return HashMap::new();
+    };
+    serde_json::from_slice(&raw).unwrap_or_default()
 }
 
-fn save_artifact_aliases(session_id: &str, aliases: &HashMap<String, String>) -> Result<(), String> {
-    let path = artifact_alias_path(session_id);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
-    let raw = serde_json::to_string_pretty(aliases).map_err(|err| err.to_string())?;
-    std::fs::write(path, raw).map_err(|err| err.to_string())
+fn save_artifact_aliases(
+    session_id: &str,
+    aliases: &HashMap<String, String>,
+) -> Result<(), String> {
+    let session_id =
+        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
+    let raw = serde_json::to_vec_pretty(aliases).map_err(|err| err.to_string())?;
+    ARTIFACT_FILES
+        .atomic_write(&session_id, &artifact_alias_path(), &raw)
+        .map_err(|err| err.to_string())
 }
 
 /// Register a friendly alias (e.g. canvas component id) → canonical artifact id for a session.
@@ -341,11 +354,7 @@ pub fn register_artifact_alias(
 }
 
 /// Rebind aliases that pointed at `old_id` so they resolve to `new_id` after a revision.
-pub fn rebind_artifact_aliases(
-    session_id: &str,
-    old_id: &str,
-    new_id: &str,
-) -> Result<(), String> {
+pub fn rebind_artifact_aliases(session_id: &str, old_id: &str, new_id: &str) -> Result<(), String> {
     let old_id = old_id.trim();
     let new_id = new_id.trim();
     if old_id.is_empty() || new_id.is_empty() || old_id == new_id {
@@ -400,20 +409,17 @@ pub fn fetch_artifact_at_id(session_id: &str, artifact_id: &str) -> Option<Fetch
                 && (record.artifact_id == query || record.artifact_id.starts_with(query))
         })
         .or_else(|| {
-            records.iter().find(|record| {
-                record.artifact_id == query || record.artifact_id.starts_with(query)
-            })
+            records
+                .iter()
+                .find(|record| record.artifact_id == query || record.artifact_id.starts_with(query))
         })
-        .cloned()
-        .or_else(|| fetch_ui_artifact_record_from_disk(session_id, query))?;
+        .cloned()?;
 
     load_fetched_from_record(record)
 }
 
 pub fn is_ui_html_record(record: &ArtifactRecord) -> bool {
-    record.direction == "ui"
-        && (record.content_type == "text/html"
-            || record.payload_path.ends_with(".html"))
+    record.direction == "ui" && record.content_type == "text/html"
 }
 
 pub fn list_ui_artifacts(
@@ -430,9 +436,7 @@ pub fn list_ui_artifacts(
     let mut records: Vec<ArtifactRecord> = read_index_records()
         .into_iter()
         .filter(is_ui_html_record)
-        .filter(|record| {
-            session_id.is_none_or(|sid| record.session_id == sid)
-        })
+        .filter(|record| session_id.is_none_or(|sid| record.session_id == sid))
         .filter(|record| {
             query.as_ref().is_none_or(|needle| {
                 record.artifact_id.to_ascii_lowercase().contains(needle)
@@ -487,8 +491,7 @@ pub fn resolve_latest_artifact_id(session_id: &str, artifact_id: &str) -> Option
                 .iter()
                 .find(|record| record.artifact_id == query || record.artifact_id.starts_with(query))
         })
-        .cloned()
-        .or_else(|| fetch_ui_artifact_record_from_disk(session_id, query))?;
+        .cloned()?;
 
     for _ in 0..64 {
         let next = records.iter().find(|record| {
@@ -507,11 +510,16 @@ pub fn resolve_latest_artifact_id(session_id: &str, artifact_id: &str) -> Option
 }
 
 /// Delete a UI HTML artifact revision chain (root + superseding revisions). Payload files are removed.
-pub fn delete_ui_artifact(session_id: &str, artifact_ref: &str) -> std::result::Result<Vec<String>, String> {
+pub fn delete_ui_artifact(
+    session_id: &str,
+    artifact_ref: &str,
+) -> std::result::Result<Vec<String>, String> {
     let session_id = session_id.trim();
     if session_id.is_empty() {
         return Err("session_id is required".to_string());
     }
+    let parsed_session_id =
+        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
     let resolved = resolve_artifact_reference(session_id, artifact_ref);
     if resolved.is_empty() {
         return Err("artifact_id is required".to_string());
@@ -522,7 +530,6 @@ pub fn delete_ui_artifact(session_id: &str, artifact_ref: &str) -> std::result::
         .iter()
         .find(|record| record.session_id == session_id && record.artifact_id == latest)
         .cloned()
-        .or_else(|| fetch_ui_artifact_record_from_disk(session_id, &latest))
     else {
         return Err(format!("artifact not found: {latest}"));
     };
@@ -551,9 +558,7 @@ pub fn delete_ui_artifact(session_id: &str, artifact_ref: &str) -> std::result::
 
     let to_delete: Vec<ArtifactRecord> = records
         .iter()
-        .filter(|record| {
-            record.session_id == session_id && chain_ids.contains(&record.artifact_id)
-        })
+        .filter(|record| record.session_id == session_id && chain_ids.contains(&record.artifact_id))
         .cloned()
         .collect();
     if to_delete.is_empty() {
@@ -569,15 +574,35 @@ pub fn delete_ui_artifact(session_id: &str, artifact_ref: &str) -> std::result::
 
     let mut deleted_paths = HashSet::new();
     for record in &to_delete {
-        if deleted_paths.insert(record.payload_path.clone()) {
-            let path = std::path::Path::new(&record.payload_path);
-            if path.is_file() {
-                let _ = std::fs::remove_file(path);
+        let path = artifact_payload_path_for_record(record);
+        if deleted_paths.insert(path.file_name().to_string()) {
+            let exists = ARTIFACT_FILES
+                .is_file(&parsed_session_id, &path)
+                .map_err(|error| error.to_string())?;
+            if exists {
+                ARTIFACT_FILES
+                    .remove_file(&parsed_session_id, &path)
+                    .map_err(|error| error.to_string())?;
             }
         }
     }
 
     Ok(deleted_ids)
+}
+
+/// Delete the complete artifact satellite for one session.
+pub fn delete_artifacts_for_session(session_id: &str) -> Result<(), String> {
+    let session_id =
+        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
+    let remaining = artifact_index_store()
+        .read_all()
+        .into_iter()
+        .filter(|record| record.session_id != session_id.as_str())
+        .collect::<Vec<_>>();
+    overwrite_index_records(&remaining)?;
+    ARTIFACT_FILES
+        .remove_session(&session_id)
+        .map_err(|error| error.to_string())
 }
 
 pub fn grep_ui_artifact(
@@ -616,13 +641,21 @@ pub fn read_ui_artifact_excerpt(
 }
 
 fn load_fetched_from_record(record: ArtifactRecord) -> Option<FetchedArtifact> {
-    let path = Path::new(&record.payload_path);
-    if !path.exists() {
-        return None;
-    }
+    load_fetched_from_store(&ARTIFACT_FILES, record)
+}
 
+fn load_fetched_from_store(
+    files: &crate::session_storage::SessionDirectoryStore,
+    mut record: ArtifactRecord,
+) -> Option<FetchedArtifact> {
+    let session_id = crate::session_storage::SessionId::parse(&record.session_id).ok()?;
+    let path = artifact_payload_path_for_record(&record);
+    let raw = files
+        .read_limited(&session_id, &path, MAX_ARTIFACT_PAYLOAD_BYTES)
+        .ok()?;
+    record.payload_path = path.file_name().to_string();
     let mime = if record.content_type.is_empty() {
-        if path.extension().and_then(|ext| ext.to_str()) == Some("html") {
+        if record.direction == "ui" {
             "text/html".to_string()
         } else {
             "application/json".to_string()
@@ -632,157 +665,15 @@ fn load_fetched_from_record(record: ArtifactRecord) -> Option<FetchedArtifact> {
     };
 
     let body = if mime == "text/html" {
-        std::fs::read_to_string(path).ok()?
+        String::from_utf8(raw).ok()?
     } else {
-        std::fs::read_to_string(path)
+        serde_json::from_slice::<Value>(&raw)
             .ok()
-            .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
             .map(|value| serde_json::to_string_pretty(&value).unwrap_or_else(|_| value.to_string()))
-            .or_else(|| std::fs::read_to_string(path).ok())?
+            .or_else(|| String::from_utf8(raw).ok())?
     };
 
-    Some(FetchedArtifact {
-        record,
-        body,
-        mime,
-    })
-}
-
-fn ui_artifact_hash_short(artifact_id: &str) -> Option<&str> {
-    let hash_short = artifact_id.rsplit(':').next()?.trim();
-    if hash_short.len() < 8 {
-        return None;
-    }
-    Some(hash_short)
-}
-
-fn build_ui_artifact_id(session_id: &str, hash64: &str) -> String {
-    format!(
-        "art:{}:cognition_ui_present:ui:{}",
-        short_session(session_id),
-        hash64.chars().take(12).collect::<String>()
-    )
-}
-
-fn ui_artifact_record_from_path(session_id: &str, path: &Path) -> Option<ArtifactRecord> {
-    if path.extension().and_then(|ext| ext.to_str()) != Some("html") {
-        return None;
-    }
-    let hash64 = path.file_stem()?.to_str()?.to_string();
-    if hash64.is_empty() {
-        return None;
-    }
-    let byte_size = std::fs::metadata(path).ok()?.len() as usize;
-    let stored_at_utc = std::fs::metadata(path)
-        .ok()
-        .and_then(|meta| meta.modified().ok())
-        .and_then(|modified| {
-            modified
-                .duration_since(std::time::UNIX_EPOCH)
-                .ok()
-                .and_then(|duration| {
-                    DateTime::<Utc>::from_timestamp(duration.as_secs() as i64, duration.subsec_nanos())
-                })
-        })
-        .unwrap_or_else(Utc::now);
-
-    Some(ArtifactRecord {
-        artifact_id: build_ui_artifact_id(session_id, &hash64),
-        session_id: session_id.to_string(),
-        tool_name: "cognition_ui_present".to_string(),
-        direction: "ui".to_string(),
-        hash64,
-        byte_size,
-        stored_at_utc,
-        payload_path: path.to_string_lossy().to_string(),
-        content_type: "text/html".to_string(),
-        label: Some("Presentation".to_string()),
-        presentation: Some("inline".to_string()),
-        height_px: None,
-        supersedes_artifact_id: None,
-        root_artifact_id: None,
-    })
-}
-
-fn find_ui_payload_in_session_dir(session_id: &str, hash_short: &str) -> Option<ArtifactRecord> {
-    let ui_dir = artifacts_root()
-        .join(session_id)
-        .join("cognition_ui_present")
-        .join("ui");
-    let path = std::fs::read_dir(ui_dir).ok()?.flatten().find_map(|entry| {
-        let path = entry.path();
-        let stem = path.file_stem().and_then(|stem| stem.to_str())?;
-        if stem.starts_with(hash_short) {
-            Some(path)
-        } else {
-            None
-        }
-    })?;
-    ui_artifact_record_from_path(session_id, &path)
-}
-
-fn fetch_ui_artifact_record_from_disk(session_id: &str, artifact_id: &str) -> Option<ArtifactRecord> {
-    let hash_short = ui_artifact_hash_short(artifact_id)?;
-    if let Some(record) = find_ui_payload_in_session_dir(session_id, hash_short) {
-        return Some(record);
-    }
-
-    let root = artifacts_root();
-    let entries = std::fs::read_dir(root).ok()?;
-    for entry in entries.flatten() {
-        if !entry.file_type().ok()?.is_dir() {
-            continue;
-        }
-        let candidate_session = entry.file_name().to_string_lossy().to_string();
-        if candidate_session == session_id {
-            continue;
-        }
-        if let Some(record) = find_ui_payload_in_session_dir(&candidate_session, hash_short) {
-            return Some(record);
-        }
-    }
-    None
-}
-
-fn repair_ui_artifact_index_from_disk() {
-    let indexed_keys: HashSet<(String, String)> = artifact_index_store()
-        .read_all()
-        .into_iter()
-        .map(|record| (record.session_id, record.hash64))
-        .collect();
-
-    let root = artifacts_root();
-    let Ok(entries) = std::fs::read_dir(&root) else {
-        return;
-    };
-
-    for entry in entries.flatten() {
-        if !entry.file_type().ok().is_some_and(|kind| kind.is_dir()) {
-            continue;
-        }
-        let session_id = entry.file_name().to_string_lossy().to_string();
-        let ui_dir = root
-            .join(&session_id)
-            .join("cognition_ui_present")
-            .join("ui");
-        let Ok(files) = std::fs::read_dir(ui_dir) else {
-            continue;
-        };
-        for file in files.flatten() {
-            let Some(record) = ui_artifact_record_from_path(&session_id, &file.path()) else {
-                continue;
-            };
-            if indexed_keys.contains(&(record.session_id.clone(), record.hash64.clone())) {
-                continue;
-            }
-            if append_index_record(&record).is_ok() {
-                eprintln!(
-                    "Repaired missing UI artifact index entry {} ({})",
-                    record.artifact_id, record.session_id
-                );
-            }
-        }
-    }
+    Some(FetchedArtifact { record, body, mime })
 }
 
 const ARTIFACT_HOST_STYLE: &str = concat!(
@@ -879,9 +770,15 @@ pub fn find_artifact(session_id: &str, query: Option<&str>) -> Option<StoredArti
         })
     }?;
 
-    let payload = std::fs::read_to_string(&record.payload_path)
+    let session_id = crate::session_storage::SessionId::parse(&record.session_id).ok()?;
+    let payload = ARTIFACT_FILES
+        .read_limited(
+            &session_id,
+            &artifact_payload_path_for_record(&record),
+            MAX_ARTIFACT_PAYLOAD_BYTES,
+        )
         .ok()
-        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())?;
+        .and_then(|raw| serde_json::from_slice::<Value>(&raw).ok())?;
 
     Some(StoredArtifact { record, payload })
 }
@@ -925,7 +822,7 @@ pub fn run_artifact_maintenance(
     report.records_before = records.len();
 
     let before_missing = records.len();
-    records.retain(|record| Path::new(&record.payload_path).exists());
+    records.retain(artifact_payload_exists);
     report.missing_payload_pruned = before_missing.saturating_sub(records.len());
 
     let before_dedupe = records.len();
@@ -971,17 +868,19 @@ pub fn run_artifact_maintenance(
     }
     report.retention_pruned = pruned_records.len();
 
-    let referenced_payloads: HashSet<String> = kept_records
-        .iter()
-        .map(|record| record.payload_path.clone())
-        .collect();
+    let referenced_payloads: HashSet<(String, String)> =
+        kept_records.iter().map(artifact_payload_identity).collect();
 
     let mut payload_files_deleted = 0usize;
     for record in pruned_records {
-        if !referenced_payloads.contains(&record.payload_path)
-            && std::fs::remove_file(&record.payload_path).is_ok()
+        let identity = artifact_payload_identity(&record);
+        if !referenced_payloads.contains(&identity)
+            && let Ok(session_id) = crate::session_storage::SessionId::parse(&record.session_id)
+            && ARTIFACT_FILES
+                .remove_file(&session_id, &artifact_payload_path_for_record(&record))
+                .is_ok()
         {
-            payload_files_deleted = payload_files_deleted.saturating_add(1);
+            payload_files_deleted += 1;
         }
     }
     report.payload_files_deleted = payload_files_deleted;
@@ -1077,11 +976,8 @@ impl SurrealArtifactIndexStore {
 impl ArtifactIndexStore for SurrealArtifactIndexStore {
     fn read_all(&self) -> Vec<ArtifactRecord> {
         let sql = "SELECT * FROM type::table($table) ORDER BY stored_at_utc ASC";
-        let mut response = match block_on(
-            self.db
-                .query(sql)
-                .bind(("table", ARTIFACT_INDEX_TABLE)),
-        ) {
+        let mut response = match block_on(self.db.query(sql).bind(("table", ARTIFACT_INDEX_TABLE)))
+        {
             Ok(response) => response,
             Err(err) => {
                 eprintln!("SurrealArtifactIndexStore::read_all query error: {err}");
@@ -1107,10 +1003,11 @@ impl ArtifactIndexStore for SurrealArtifactIndexStore {
     }
 
     fn overwrite_all(&self, records: &[ArtifactRecord]) -> std::result::Result<(), String> {
-        block_on(self.db.query("DELETE type::table($table)").bind((
-            "table",
-            ARTIFACT_INDEX_TABLE,
-        )))
+        block_on(
+            self.db
+                .query("DELETE type::table($table)")
+                .bind(("table", ARTIFACT_INDEX_TABLE)),
+        )
         .map_err(|err| err.to_string())?;
 
         for record in records {
@@ -1125,56 +1022,79 @@ fn block_on<F: IntoFuture>(f: F) -> F::Output {
 }
 
 fn file_append_index_record(record: &ArtifactRecord) -> std::result::Result<(), String> {
-    let index_path = artifacts_root().join("index.jsonl");
-    if let Some(parent) = index_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&index_path)
-        .map_err(|err| err.to_string())?;
-    let line = serde_json::to_string(record).map_err(|err| err.to_string())?;
-    writeln!(file, "{line}").map_err(|err| err.to_string())?;
-    Ok(())
+    let mut line = serde_json::to_vec(record).map_err(|err| err.to_string())?;
+    line.push(b'\n');
+    ARTIFACT_FILES
+        .append_root(&artifact_index_path(), &line)
+        .map_err(|err| err.to_string())
 }
 
 fn file_overwrite_index_records(records: &[ArtifactRecord]) -> std::result::Result<(), String> {
-    let index_path = artifacts_root().join("index.jsonl");
-    if let Some(parent) = index_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
-
-    let temp_path = index_path.with_extension("jsonl.tmp");
-    let mut file = std::fs::File::create(&temp_path).map_err(|err| err.to_string())?;
+    let mut bytes = Vec::new();
     for record in records {
-        let line = serde_json::to_string(record).map_err(|err| err.to_string())?;
-        writeln!(file, "{line}").map_err(|err| err.to_string())?;
+        serde_json::to_writer(&mut bytes, record).map_err(|err| err.to_string())?;
+        bytes.push(b'\n');
     }
-    std::fs::rename(temp_path, index_path).map_err(|err| err.to_string())?;
-    Ok(())
+    ARTIFACT_FILES
+        .atomic_write_root(&artifact_index_path(), &bytes)
+        .map_err(|err| err.to_string())
 }
 
 fn file_read_index_records() -> Vec<ArtifactRecord> {
-    let index_path = artifacts_root().join("index.jsonl");
-    let Ok(file) = std::fs::File::open(index_path) else {
+    let Ok(bytes) = ARTIFACT_FILES.read_root(&artifact_index_path()) else {
         return Vec::new();
     };
-
-    std::io::BufReader::new(file)
-        .lines()
-        .map_while(Result::ok)
-        .filter(|line| !line.trim().is_empty())
-        .filter_map(|line| serde_json::from_str::<ArtifactRecord>(&line).ok())
+    bytes
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.iter().all(u8::is_ascii_whitespace))
+        .filter_map(|line| serde_json::from_slice::<ArtifactRecord>(line).ok())
         .collect()
 }
 
-fn artifacts_root() -> PathBuf {
-    data_local_medousa_dir().join("artifacts")
+fn artifact_payload_path(
+    tool_name: &str,
+    direction: &str,
+    hash64: &str,
+    extension: &str,
+) -> StorePath {
+    let object_id = format!("{tool_name}\0{direction}\0{hash64}");
+    crate::session_storage::session_object_path(ARTIFACT_PAYLOAD_DOMAIN, &object_id, extension)
 }
 
-fn data_local_medousa_dir() -> PathBuf {
-    crate::paths::medousa_data_dir()
+fn artifact_payload_path_for_record(record: &ArtifactRecord) -> StorePath {
+    let extension = if record.content_type == "text/html" || record.direction == "ui" {
+        "html"
+    } else {
+        "json"
+    };
+    artifact_payload_path(
+        &record.tool_name,
+        &record.direction,
+        &record.hash64,
+        extension,
+    )
+}
+
+fn artifact_payload_identity(record: &ArtifactRecord) -> (String, String) {
+    (
+        record.session_id.clone(),
+        artifact_payload_path_for_record(record)
+            .file_name()
+            .to_string(),
+    )
+}
+
+fn artifact_payload_exists(record: &ArtifactRecord) -> bool {
+    let Ok(session_id) = crate::session_storage::SessionId::parse(&record.session_id) else {
+        return false;
+    };
+    ARTIFACT_FILES
+        .is_file(&session_id, &artifact_payload_path_for_record(record))
+        .unwrap_or(false)
+}
+
+fn artifact_index_path() -> StorePath {
+    StorePath::parse(ARTIFACT_INDEX_FILE).expect("static artifact index path must be valid")
 }
 
 fn short_session(session_id: &str) -> String {
@@ -1197,17 +1117,16 @@ fn slugify_tool_name(tool_name: &str) -> String {
 mod tests {
     use super::*;
 
+    fn parsed_session_id(value: &str) -> crate::session_storage::SessionId {
+        crate::session_storage::SessionId::parse(value).unwrap()
+    }
+
     #[test]
     fn persist_ui_artifact_stores_html_with_metadata() {
         let session_id = "test-ui-artifact-session";
-        let record = persist_ui_artifact(
-            session_id,
-            "<p>Hello</p>",
-            "Greeting",
-            "inline",
-            Some(360),
-        )
-        .expect("persist");
+        let record =
+            persist_ui_artifact(session_id, "<p>Hello</p>", "Greeting", "inline", Some(360))
+                .expect("persist");
 
         assert_eq!(record.content_type, "text/html");
         assert_eq!(record.label.as_deref(), Some("Greeting"));
@@ -1224,8 +1143,8 @@ mod tests {
     fn persist_ui_artifact_rejects_oversize_payload() {
         let session_id = "test-ui-artifact-oversize";
         let huge = "x".repeat(UI_ARTIFACT_MAX_BYTES + 1);
-        let err = persist_ui_artifact(session_id, &huge, "Big", "inline", None)
-            .expect_err("should fail");
+        let err =
+            persist_ui_artifact(session_id, &huge, "Big", "inline", None).expect_err("should fail");
         assert!(err.contains("exceeds"));
     }
 
@@ -1251,39 +1170,54 @@ mod tests {
     }
 
     #[test]
-    fn fetch_ui_artifact_falls_back_to_disk_without_index_entry() {
-        let session_id = "test-ui-artifact-disk-fallback";
-        let html = "<p>Disk fallback</p>";
-        let wrapped = wrap_html_document(html);
-        let hash64 = crate::payload_receipt::hash_text(&wrapped);
-        let artifact_id = build_ui_artifact_id(session_id, &hash64);
+    fn fetch_ignores_persisted_payload_path_authority() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let files = crate::session_storage::SessionDirectoryStore::new(temp.path().join("store"));
+        let session_id = parsed_session_id("test-artifact-hostile-metadata");
+        let payload = serde_json::json!({"source": "capability"});
+        let raw = serde_json::to_vec(&payload).expect("serialize");
+        let hash64 = crate::payload_receipt::hash_text(
+            std::str::from_utf8(&raw).expect("JSON payload must be UTF-8"),
+        );
+        let path = artifact_payload_path("test_tool", "output", &hash64, "json");
+        files
+            .atomic_write(&session_id, &path, &raw)
+            .expect("write derived payload");
 
-        let payload_dir = artifacts_root()
-            .join(session_id)
-            .join("cognition_ui_present")
-            .join("ui");
-        std::fs::create_dir_all(&payload_dir).expect("mkdir");
-        let payload_path = payload_dir.join(format!("{hash64}.html"));
-        std::fs::write(&payload_path, wrapped.as_bytes()).expect("write html");
+        let outside = temp.path().join("outside.json");
+        std::fs::write(&outside, br#"{"source":"outside"}"#).expect("write canary");
+        let record = ArtifactRecord {
+            artifact_id: "art:test:test_tool:output:hostile".to_string(),
+            session_id: session_id.as_str().to_string(),
+            tool_name: "test_tool".to_string(),
+            direction: "output".to_string(),
+            hash64,
+            byte_size: raw.len(),
+            stored_at_utc: Utc::now(),
+            payload_path: outside.to_string_lossy().into_owned(),
+            content_type: "application/json".to_string(),
+            label: None,
+            presentation: None,
+            height_px: None,
+            supersedes_artifact_id: None,
+            root_artifact_id: None,
+        };
 
-        let fetched = fetch_artifact(session_id, &artifact_id).expect("disk fallback fetch");
-        assert_eq!(fetched.mime, "text/html");
-        assert!(fetched.body.contains("Disk fallback"));
-
-        let _ = std::fs::remove_dir_all(artifacts_root().join(session_id));
+        let fetched = load_fetched_from_store(&files, record).expect("fetch derived payload");
+        assert!(fetched.body.contains("capability"));
+        assert!(!fetched.body.contains("outside"));
+        assert_eq!(fetched.record.payload_path, path.file_name());
+        assert_eq!(
+            std::fs::read(&outside).expect("read canary"),
+            br#"{"source":"outside"}"#
+        );
     }
 
     #[test]
     fn artifact_alias_resolves_friendly_component_ids() {
         let session_id = "test-ui-artifact-alias-session";
-        let record = persist_ui_artifact(
-            session_id,
-            "<p>Alias test</p>",
-            "Alias",
-            "inline",
-            None,
-        )
-        .expect("persist");
+        let record = persist_ui_artifact(session_id, "<p>Alias test</p>", "Alias", "inline", None)
+            .expect("persist");
         register_artifact_alias(session_id, "adhd-guide-index", &record.artifact_id)
             .expect("register alias");
 
@@ -1318,20 +1252,14 @@ mod tests {
             resolve_artifact_alias(session_id, "widget-a").as_deref(),
             Some(second.artifact_id.as_str())
         );
-        let _ = std::fs::remove_dir_all(artifacts_root().join(session_id));
+        let _ = ARTIFACT_FILES.remove_session(&parsed_session_id(session_id));
     }
 
     #[test]
     fn resolve_latest_artifact_id_follows_supersedes_chain() {
         let session_id = "test-ui-artifact-lineage";
-        let first = persist_ui_artifact(
-            session_id,
-            "<p>v1</p>",
-            "Lineage",
-            "inline",
-            None,
-        )
-        .expect("first");
+        let first =
+            persist_ui_artifact(session_id, "<p>v1</p>", "Lineage", "inline", None).expect("first");
         let second = persist_ui_artifact_revision(
             session_id,
             "<p>v2</p>",
@@ -1351,7 +1279,7 @@ mod tests {
         );
         let fetched = fetch_artifact(session_id, &first.artifact_id).expect("latest fetch");
         assert!(fetched.body.contains("v2"));
-        let _ = std::fs::remove_dir_all(artifacts_root().join(session_id));
+        let _ = ARTIFACT_FILES.remove_session(&parsed_session_id(session_id));
     }
 
     #[test]
@@ -1365,9 +1293,9 @@ mod tests {
             None,
         )
         .expect("persist");
-        let result = grep_ui_artifact(session_id, &record.artifact_id, ".badge", 0, 10)
-            .expect("grep");
+        let result =
+            grep_ui_artifact(session_id, &record.artifact_id, ".badge", 0, 10).expect("grep");
         assert_eq!(result.match_count, 1);
-        let _ = std::fs::remove_dir_all(artifacts_root().join(session_id));
+        let _ = ARTIFACT_FILES.remove_session(&parsed_session_id(session_id));
     }
 }

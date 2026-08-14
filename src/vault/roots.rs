@@ -6,6 +6,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::load_product_config;
 use crate::product_config::{VaultProductConfig, VaultRootEntry, save_product_config};
+use crate::vault::path::{VaultPath, vault_capability_for_root};
 use crate::vault::store::vault_store;
 
 pub const DEFAULT_VAULT_ROOT_ID: &str = "personal";
@@ -108,7 +109,12 @@ pub fn list_vault_root_views() -> crate::daemon_api::VaultRootsResponse {
                 path: absolute.display().to_string(),
                 is_default,
                 active: entry.id == config.active_root_id,
-                is_obsidian: absolute.join(".obsidian").is_dir(),
+                is_obsidian: vault_capability_for_root(absolute.clone())
+                    .and_then(|root| {
+                        root.is_dir(&VaultPath::internal(".obsidian")?)
+                            .map_err(Into::into)
+                    })
+                    .unwrap_or(false),
             }
         })
         .collect();
@@ -136,7 +142,12 @@ pub fn active_root_skips_auto_workshop_tags() -> bool {
     if is_external {
         return true;
     }
-    resolve_root_path(&entry).join(".obsidian").is_dir()
+    vault_capability_for_root(resolve_root_path(&entry))
+        .and_then(|root| {
+            root.is_dir(&VaultPath::internal(".obsidian")?)
+                .map_err(Into::into)
+        })
+        .unwrap_or(false)
 }
 
 pub fn set_active_vault_root(root_id: &str) -> Result<crate::daemon_api::VaultRootsResponse> {
@@ -171,12 +182,8 @@ pub fn add_vault_root(
     }
 
     let absolute = normalize_vault_root_path(path)?;
-    std::fs::create_dir_all(&absolute).with_context(|| {
-        format!(
-            "create vault root directory {}",
-            absolute.display()
-        )
-    })?;
+    vault_capability_for_root(absolute.clone())
+        .with_context(|| format!("create vault root directory {}", absolute.display()))?;
 
     let root_id = match id.map(str::trim).filter(|value| !value.is_empty()) {
         Some(explicit) => validate_vault_root_id(explicit)?,
@@ -270,10 +277,8 @@ mod tests {
 
     #[test]
     fn detects_obsidian_dir_on_root_path() {
-        let dir = std::env::temp_dir().join(format!(
-            "medousa-obsidian-detect-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("medousa-obsidian-detect-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join(".obsidian")).expect("obsidian");
         let entry = VaultRootEntry {

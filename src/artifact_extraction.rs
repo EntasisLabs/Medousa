@@ -1,10 +1,18 @@
 use chrono::{DateTime, Utc};
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::io::{BufRead, Write};
-use std::path::PathBuf;
 
 use crate::artifact_chunking::SttpChunkNodeRef;
+use crate::store_root::StorePath;
+
+const EXTRACTION_OBJECT_DOMAIN: &[u8] = b"extraction";
+
+static EXTRACTION_STORE: Lazy<crate::session_storage::SessionDirectoryStore> = Lazy::new(|| {
+    crate::session_storage::SessionDirectoryStore::new(
+        crate::paths::medousa_data_dir().join("extractions"),
+    )
+});
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EvidenceClaim {
@@ -89,18 +97,20 @@ pub fn persist_extraction_run(
     artifact_id: &str,
     claims: &[EvidenceClaim],
 ) -> std::result::Result<ExtractionRunRecord, String> {
+    let session_id =
+        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
     let now = Utc::now();
     let extraction_id = format!(
         "ext:{}:{}",
-        short_session(session_id),
+        short_session(session_id.as_str()),
         now.timestamp_millis()
     );
 
-    let output_dir = extractions_root().join(session_id);
-    std::fs::create_dir_all(&output_dir).map_err(|err| err.to_string())?;
-    let output_path = output_dir.join(format!("{}.json", extraction_id));
+    let output_path = extraction_path(&extraction_id);
     let raw = serde_json::to_vec_pretty(claims).map_err(|err| err.to_string())?;
-    std::fs::write(&output_path, raw).map_err(|err| err.to_string())?;
+    EXTRACTION_STORE
+        .atomic_write(&session_id, &output_path, &raw)
+        .map_err(|err| err.to_string())?;
 
     let record = ExtractionRunRecord {
         extraction_id,
@@ -108,7 +118,7 @@ pub fn persist_extraction_run(
         artifact_id: artifact_id.to_string(),
         created_at_utc: now,
         claim_count: claims.len(),
-        output_path: output_path.to_string_lossy().to_string(),
+        output_path: output_path.file_name().to_string(),
     };
 
     append_index_record(&record)?;
@@ -134,9 +144,11 @@ pub fn find_extraction(session_id: &str, query: Option<&str>) -> Option<Extracti
         })
     }?;
 
-    let claims = std::fs::read_to_string(&record.output_path)
+    let session_id = crate::session_storage::SessionId::parse(&record.session_id).ok()?;
+    let claims = EXTRACTION_STORE
+        .read(&session_id, &extraction_path(&record.extraction_id))
         .ok()
-        .and_then(|raw| serde_json::from_str::<Vec<EvidenceClaim>>(&raw).ok())?;
+        .and_then(|raw| serde_json::from_slice::<Vec<EvidenceClaim>>(&raw).ok())?;
 
     Some(ExtractionRun { record, claims })
 }
@@ -150,41 +162,55 @@ pub fn list_extraction_runs(session_id: &str, limit: usize) -> Vec<ExtractionRun
     records.into_iter().take(limit.max(1)).collect()
 }
 
+pub fn delete_extractions_for_session(session_id: &str) -> Result<(), String> {
+    let session_id =
+        crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
+    let remaining = read_index_records()
+        .into_iter()
+        .filter(|record| record.session_id != session_id.as_str())
+        .collect::<Vec<_>>();
+    overwrite_index_records(&remaining)?;
+    EXTRACTION_STORE
+        .remove_session(&session_id)
+        .map_err(|error| error.to_string())
+}
+
 fn append_index_record(record: &ExtractionRunRecord) -> std::result::Result<(), String> {
-    let index_path = extractions_root().join("index.jsonl");
-    if let Some(parent) = index_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&index_path)
-        .map_err(|err| err.to_string())?;
-    let line = serde_json::to_string(record).map_err(|err| err.to_string())?;
-    writeln!(file, "{line}").map_err(|err| err.to_string())?;
-    Ok(())
+    let mut line = serde_json::to_vec(record).map_err(|err| err.to_string())?;
+    line.push(b'\n');
+    EXTRACTION_STORE
+        .append_root(&index_path(), &line)
+        .map_err(|err| err.to_string())
 }
 
 fn read_index_records() -> Vec<ExtractionRunRecord> {
-    let index_path = extractions_root().join("index.jsonl");
-    let Ok(file) = std::fs::File::open(index_path) else {
+    let Ok(bytes) = EXTRACTION_STORE.read_root(&index_path()) else {
         return Vec::new();
     };
-
-    std::io::BufReader::new(file)
-        .lines()
-        .map_while(Result::ok)
-        .filter(|line| !line.trim().is_empty())
-        .filter_map(|line| serde_json::from_str::<ExtractionRunRecord>(&line).ok())
+    bytes
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.iter().all(u8::is_ascii_whitespace))
+        .filter_map(|line| serde_json::from_slice::<ExtractionRunRecord>(line).ok())
         .collect()
 }
 
-fn extractions_root() -> PathBuf {
-    data_local_medousa_dir().join("extractions")
+fn overwrite_index_records(records: &[ExtractionRunRecord]) -> Result<(), String> {
+    let mut bytes = Vec::new();
+    for record in records {
+        serde_json::to_writer(&mut bytes, record).map_err(|error| error.to_string())?;
+        bytes.push(b'\n');
+    }
+    EXTRACTION_STORE
+        .atomic_write_root(&index_path(), &bytes)
+        .map_err(|error| error.to_string())
 }
 
-fn data_local_medousa_dir() -> PathBuf {
-    crate::paths::medousa_data_dir()
+fn extraction_path(extraction_id: &str) -> StorePath {
+    crate::session_storage::session_object_path(EXTRACTION_OBJECT_DOMAIN, extraction_id, "json")
+}
+
+fn index_path() -> StorePath {
+    StorePath::parse("index.jsonl").expect("static extraction index path must be valid")
 }
 
 fn short_session(session_id: &str) -> String {

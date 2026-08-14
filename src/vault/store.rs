@@ -2,20 +2,18 @@
 
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
-use std::fs::{self, File};
-use std::io::{BufRead, BufReader, Write};
-use std::path::{Path, PathBuf};
-use std::sync::RwLock;
+use std::path::Path;
+use std::sync::{Arc, RwLock};
 
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
 
+use crate::store_root::{StoreEntryKind, StoreRoot};
 use crate::vault::links::{VaultLinkIndex, load_link_index_from_disk, persist_link_index};
 use crate::vault::note::{VaultIndexEntry, VaultNoteSource, build_index_entry, content_hash};
 use crate::vault::path::{
-    normalize_vault_path, project_vault_overlay_root, resolve_overlay_note_path,
-    resolve_user_note_path, trash_path_for, user_vault_root,
+    VaultPath, normalize_vault_path, project_vault_overlay_capability, user_vault_capability,
 };
 
 const INDEX_FILE: &str = "index.jsonl";
@@ -33,7 +31,8 @@ struct ScanDraft {
 #[derive(Clone)]
 struct FileMeta {
     path: String,
-    absolute: PathBuf,
+    relative: VaultPath,
+    files: Arc<StoreRoot>,
     created_at: DateTime<Utc>,
     modified_at: DateTime<Utc>,
     source: VaultNoteSource,
@@ -60,20 +59,20 @@ impl VaultStore {
         store
     }
 
-    fn index_path() -> PathBuf {
-        user_vault_root().join(INDEX_FILE)
+    fn index_path() -> VaultPath {
+        VaultPath::parse(INDEX_FILE).expect("static vault index path must be valid")
     }
 
     fn reload_from_disk(&self) {
-        let _ = fs::create_dir_all(user_vault_root());
         let mut map = HashMap::new();
-        if let Ok(file) = File::open(Self::index_path()) {
-            for line in BufReader::new(file).lines().map_while(Result::ok) {
-                let trimmed = line.trim();
-                if trimmed.is_empty() {
+        if let Ok(files) = user_vault_capability()
+            && let Ok(bytes) = files.read(&Self::index_path())
+        {
+            for line in bytes.split(|byte| *byte == b'\n') {
+                if line.iter().all(u8::is_ascii_whitespace) {
                     continue;
                 }
-                if let Ok(entry) = serde_json::from_str::<VaultIndexEntry>(trimmed) {
+                if let Ok(entry) = serde_json::from_slice::<VaultIndexEntry>(line) {
                     map.insert(entry.path.clone(), entry);
                 }
             }
@@ -83,18 +82,16 @@ impl VaultStore {
 
     fn persist_index(&self) {
         let entries = self.index.read().expect("vault index").clone();
-        let _ = fs::create_dir_all(user_vault_root());
-        let path = Self::index_path();
-        let mut lines = entries
-            .values()
-            .cloned()
-            .collect::<Vec<_>>();
+        let mut lines = entries.values().cloned().collect::<Vec<_>>();
         lines.sort_by(|left, right| left.path.cmp(&right.path));
-        let mut file = File::create(&path).expect("vault index write");
+        let mut bytes = Vec::new();
         for entry in lines {
-            if let Ok(line) = serde_json::to_string(&entry) {
-                let _ = writeln!(file, "{line}");
+            if serde_json::to_writer(&mut bytes, &entry).is_ok() {
+                bytes.push(b'\n');
             }
+        }
+        if let Ok(files) = user_vault_capability() {
+            let _ = files.atomic_write(&Self::index_path(), &bytes);
         }
     }
 
@@ -102,11 +99,14 @@ impl VaultStore {
         self.reload_from_disk();
         let mut drafts = Vec::new();
 
-        self.scan_root(&user_vault_root(), VaultNoteSource::User, &mut drafts)?;
-        if let Some(overlay) = project_vault_overlay_root()
-            && overlay.is_dir() {
-                self.scan_root(&overlay, VaultNoteSource::ProjectOverlay, &mut drafts)?;
-            }
+        self.scan_root(
+            &user_vault_capability()?,
+            VaultNoteSource::User,
+            &mut drafts,
+        )?;
+        if let Some(overlay) = project_vault_overlay_capability()? {
+            self.scan_root(&overlay, VaultNoteSource::ProjectOverlay, &mut drafts)?;
+        }
 
         let mut by_path: HashMap<String, ScanDraft> = HashMap::new();
         for draft in drafts {
@@ -127,11 +127,9 @@ impl VaultStore {
     /// Cheap freshness pass for list/get: metadata walk, re-read only changed files.
     pub fn ensure_index_fresh(&self) -> Result<()> {
         let mut metas = Vec::new();
-        self.collect_metas(&user_vault_root(), VaultNoteSource::User, &mut metas)?;
-        if let Some(overlay) = project_vault_overlay_root()
-            && overlay.is_dir()
-        {
-            self.collect_metas(&overlay, VaultNoteSource::ProjectOverlay, &mut metas)?;
+        self.collect_metas(user_vault_capability()?, VaultNoteSource::User, &mut metas)?;
+        if let Some(overlay) = project_vault_overlay_capability()? {
+            self.collect_metas(overlay, VaultNoteSource::ProjectOverlay, &mut metas)?;
         }
 
         let mut by_path: HashMap<String, FileMeta> = HashMap::new();
@@ -176,8 +174,11 @@ impl VaultStore {
 
         let mut drafts = Vec::with_capacity(to_read.len());
         for meta in to_read {
-            let body = match fs::read_to_string(&meta.absolute) {
-                Ok(body) => body,
+            let body = match meta.files.read(&meta.relative) {
+                Ok(bytes) => match String::from_utf8(bytes) {
+                    Ok(body) => body,
+                    Err(_) => continue,
+                },
                 Err(_) => continue,
             };
             drafts.push(ScanDraft {
@@ -269,78 +270,61 @@ impl VaultStore {
 
     fn scan_root(
         &self,
-        root: &Path,
+        files: &Arc<StoreRoot>,
         source: VaultNoteSource,
         drafts: &mut Vec<ScanDraft>,
     ) -> Result<()> {
-        if !root.is_dir() {
-            return Ok(());
-        }
-        self.scan_dir(root, root, source, drafts)
+        self.scan_dir(files, None, source, drafts)
     }
 
     fn collect_metas(
         &self,
-        root: &Path,
+        files: Arc<StoreRoot>,
         source: VaultNoteSource,
         out: &mut Vec<FileMeta>,
     ) -> Result<()> {
-        if !root.is_dir() {
-            return Ok(());
-        }
-        self.collect_metas_dir(root, root, source, out)
+        self.collect_metas_dir(&files, None, source, out)
     }
 
     fn collect_metas_dir(
         &self,
-        root: &Path,
-        dir: &Path,
+        files: &Arc<StoreRoot>,
+        dir: Option<&VaultPath>,
         source: VaultNoteSource,
         out: &mut Vec<FileMeta>,
     ) -> Result<()> {
-        for entry in fs::read_dir(dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_dir() {
-                let dir_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("");
-                if dir_name == ".trash" || dir_name == ".obsidian" || dir_name == ".git" {
-                    continue;
-                }
-                if dir_name.starts_with('.') {
-                    continue;
-                }
-                self.collect_metas_dir(root, &path, source.clone(), out)?;
+        let entries = match dir {
+            Some(dir) => files.list_directory_utf8(dir)?,
+            None => files.list_root_utf8()?,
+        };
+        for entry in entries {
+            if entry.name.starts_with('.') {
                 continue;
             }
-            if !path.is_file() {
-                continue;
-            }
-            let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("");
-            if file_name == INDEX_FILE || file_name == LINKS_FILE {
-                continue;
-            }
-            if !Self::is_indexable_vault_file(&path) {
-                continue;
-            }
-            let relative = path
-                .strip_prefix(root)
-                .ok()
-                .and_then(|value| value.to_str())
-                .map(|value| value.replace('\\', "/"))
-                .unwrap_or_default();
-            let normalized = match normalize_vault_path(&relative) {
-                Ok(value) => value,
-                Err(_) => continue,
+            let relative = match dir {
+                Some(dir) => dir.join_segment(&entry.name),
+                None => VaultPath::parse(&entry.name),
             };
-            let metadata = match fs::metadata(&path) {
-                Ok(metadata) => metadata,
-                Err(_) => continue,
+            let Ok(relative) = relative else {
+                continue;
             };
+            if entry.kind == StoreEntryKind::Directory {
+                self.collect_metas_dir(files, Some(&relative), source.clone(), out)?;
+                continue;
+            }
+            if entry.kind != StoreEntryKind::File
+                || entry.name == INDEX_FILE
+                || entry.name == LINKS_FILE
+                || !Self::is_indexable_vault_file(Path::new(relative.as_str()))
+            {
+                continue;
+            }
             out.push(FileMeta {
-                path: normalized,
-                absolute: path,
-                created_at: Self::file_timestamp(metadata.created()),
-                modified_at: Self::file_timestamp(metadata.modified()),
+                path: relative.to_string(),
+                relative,
+                files: Arc::clone(files),
+                created_at: Self::optional_timestamp(entry.created),
+                modified_at: Self::optional_timestamp(entry.modified),
                 source: source.clone(),
             });
         }
@@ -349,62 +333,52 @@ impl VaultStore {
 
     fn scan_dir(
         &self,
-        root: &Path,
-        dir: &Path,
+        files: &Arc<StoreRoot>,
+        dir: Option<&VaultPath>,
         source: VaultNoteSource,
         drafts: &mut Vec<ScanDraft>,
     ) -> Result<()> {
-        for entry in fs::read_dir(dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_dir() {
-                let dir_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("");
-                if dir_name == ".trash" || dir_name == ".obsidian" || dir_name == ".git" {
-                    continue;
-                }
-                if dir_name.starts_with('.') {
-                    continue;
-                }
-                self.scan_dir(root, &path, source.clone(), drafts)?;
+        let entries = match dir {
+            Some(dir) => files.list_directory_utf8(dir)?,
+            None => files.list_root_utf8()?,
+        };
+        for entry in entries {
+            if entry.name.starts_with('.') {
                 continue;
             }
-            if !path.is_file() {
-                continue;
-            }
-            let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("");
-            if file_name == INDEX_FILE || file_name == LINKS_FILE {
-                continue;
-            }
-            if !Self::is_indexable_vault_file(&path) {
-                continue;
-            }
-            let relative = path
-                .strip_prefix(root)
-                .ok()
-                .and_then(|value| value.to_str())
-                .map(|value| value.replace('\\', "/"))
-                .unwrap_or_default();
-            let normalized = match normalize_vault_path(&relative) {
-                Ok(value) => value,
-                Err(_) => continue,
+            let relative = match dir {
+                Some(dir) => dir.join_segment(&entry.name),
+                None => VaultPath::parse(&entry.name),
             };
+            let Ok(relative) = relative else {
+                continue;
+            };
+            if entry.kind == StoreEntryKind::Directory {
+                self.scan_dir(files, Some(&relative), source.clone(), drafts)?;
+                continue;
+            }
+            if entry.kind != StoreEntryKind::File
+                || entry.name == INDEX_FILE
+                || entry.name == LINKS_FILE
+                || !Self::is_indexable_vault_file(Path::new(relative.as_str()))
+            {
+                continue;
+            }
             // Skip binary / non-UTF8 instead of failing the whole vault scan.
-            let body = match fs::read_to_string(&path) {
-                Ok(body) => body,
-                Err(_) => continue,
+            let body = match files
+                .read(&relative)
+                .ok()
+                .and_then(|bytes| String::from_utf8(bytes).ok())
+            {
+                Some(body) => body,
+                None => continue,
             };
-            let metadata = match fs::metadata(&path) {
-                Ok(metadata) => metadata,
-                Err(_) => continue,
-            };
-            let modified = Self::file_timestamp(metadata.modified());
-            let created = Self::file_timestamp(metadata.created());
 
             drafts.push(ScanDraft {
-                path: normalized,
+                path: relative.to_string(),
                 body,
-                created_at: created,
-                modified_at: modified,
+                created_at: Self::optional_timestamp(entry.created),
+                modified_at: Self::optional_timestamp(entry.modified),
                 source: source.clone(),
             });
         }
@@ -459,18 +433,23 @@ impl VaultStore {
 
     fn peek_entry(&self, path: &str) -> Option<VaultIndexEntry> {
         let normalized = normalize_vault_path(path).ok()?;
-        self.index.read().expect("vault index").get(&normalized).cloned()
+        self.index
+            .read()
+            .expect("vault index")
+            .get(&normalized)
+            .cloned()
     }
 
     pub fn read_content(&self, path: &str) -> Result<String> {
-        if let Ok(user_path) = resolve_user_note_path(path)
-            && user_path.is_file() {
-                return fs::read_to_string(&user_path)
-                    .with_context(|| format!("read {}", user_path.display()));
-            }
-        if let Ok(Some(overlay_path)) = resolve_overlay_note_path(path) {
-            return fs::read_to_string(&overlay_path)
-                .with_context(|| format!("read {}", overlay_path.display()));
+        let path = VaultPath::parse(path)?;
+        let user = user_vault_capability()?;
+        if user.is_file(&path)? {
+            return String::from_utf8(user.read(&path)?).context("vault note is not UTF-8");
+        }
+        if let Some(overlay) = project_vault_overlay_capability()?
+            && overlay.is_file(&path)?
+        {
+            return String::from_utf8(overlay.read(&path)?).context("vault note is not UTF-8");
         }
         bail!("vault note not found: {path}")
     }
@@ -481,11 +460,12 @@ impl VaultStore {
         content: &str,
         if_match: Option<&str>,
     ) -> Result<VaultIndexEntry> {
-        let normalized = normalize_vault_path(path)?;
-        let absolute = resolve_user_note_path(&normalized)?;
+        let path = VaultPath::parse(path)?;
+        let normalized = path.to_string();
+        let files = user_vault_capability()?;
         if let Some(expected) = if_match.map(str::trim).filter(|value| !value.is_empty()) {
-            if absolute.is_file() {
-                let existing = fs::read_to_string(&absolute)?;
+            if files.is_file(&path)? {
+                let existing = String::from_utf8(files.read(&path)?)?;
                 let actual = content_hash(&existing);
                 if actual != expected {
                     bail!("content_hash mismatch (If-Match failed)");
@@ -495,21 +475,19 @@ impl VaultStore {
             }
         }
 
-        if let Some(parent) = absolute.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        let created_at = if absolute.is_file() {
+        let existed = files.is_file(&path)?;
+        let created_at = if existed {
             self.peek_entry(&normalized)
                 .map(|entry| entry.created_at_utc)
                 .unwrap_or_else(Utc::now)
         } else {
             Utc::now()
         };
-        fs::write(&absolute, content)?;
-        let modified_at = fs::metadata(&absolute)
+        files.atomic_write(&path, content.as_bytes())?;
+        let modified_at = files
+            .metadata(&path)
             .ok()
-            .and_then(|meta| meta.modified().ok())
+            .and_then(|meta| meta.modified)
             .and_then(|value| value.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|duration| {
                 chrono::DateTime::<Utc>::from_timestamp(duration.as_secs() as i64, 0)
@@ -551,85 +529,79 @@ impl VaultStore {
     }
 
     pub fn delete_note(&self, path: &str) -> Result<()> {
-        let normalized = normalize_vault_path(path)?;
-        let absolute = resolve_user_note_path(&normalized)?;
-        if !absolute.is_file() {
+        let path = VaultPath::parse(path)?;
+        let normalized = path.to_string();
+        let files = user_vault_capability()?;
+        if !files.is_file(&path)? {
             bail!("vault note not found: {normalized}");
         }
 
-        let trash = trash_path_for(&normalized)?;
-        if let Some(parent) = trash.parent() {
-            fs::create_dir_all(parent)?;
+        let trash = path.trash_path();
+        if files.is_file(&trash)? {
+            files.remove_file(&trash)?;
         }
-        if trash.exists() {
-            fs::remove_file(&trash)?;
-        }
-        fs::rename(&absolute, &trash)?;
-        self.index
-            .write()
-            .expect("vault index")
-            .remove(&normalized);
+        files.rename(&path, &trash)?;
+        self.index.write().expect("vault index").remove(&normalized);
         self.rebuild_link_index();
         self.persist_index();
         Ok(())
     }
 
     pub fn list_trash(&self, limit: usize) -> Result<Vec<(String, Option<DateTime<Utc>>)>> {
-        let root = user_vault_root().join(".trash");
-        if !root.is_dir() {
+        let files = user_vault_capability()?;
+        let root = VaultPath::trash_root();
+        if !files.is_dir(&root)? {
             return Ok(Vec::new());
         }
         let mut entries = Vec::new();
         fn walk(
-            dir: &Path,
+            files: &StoreRoot,
+            dir: &VaultPath,
             prefix: &str,
             out: &mut Vec<(String, Option<DateTime<Utc>>)>,
         ) -> Result<()> {
-            for entry in fs::read_dir(dir)? {
-                let entry = entry?;
-                let name = entry.file_name().to_string_lossy().to_string();
-                if name.starts_with('.') {
+            for entry in files.list_directory_utf8(dir)? {
+                if entry.name.starts_with('.') || entry.kind == StoreEntryKind::Link {
                     continue;
                 }
                 let rel = if prefix.is_empty() {
-                    name.clone()
+                    entry.name.clone()
                 } else {
-                    format!("{prefix}/{name}")
+                    format!("{prefix}/{}", entry.name)
                 };
-                let path = entry.path();
-                if path.is_dir() {
-                    walk(&path, &rel, out)?;
-                } else if path.is_file() {
-                    let modified = path
-                        .metadata()
-                        .ok()
-                        .and_then(|m| m.modified().ok())
-                        .map(DateTime::<Utc>::from);
-                    out.push((rel, modified));
+                if VaultPath::parse(&rel).is_err() {
+                    continue;
+                }
+                let child = match dir.join_internal_segment(&entry.name) {
+                    Ok(child) => child,
+                    Err(_) => continue,
+                };
+                if entry.kind == StoreEntryKind::Directory {
+                    walk(files, &child, &rel, out)?;
+                } else if entry.kind == StoreEntryKind::File {
+                    out.push((rel, entry.modified.map(DateTime::<Utc>::from)));
                 }
             }
             Ok(())
         }
-        walk(&root, "", &mut entries)?;
+        walk(&files, &root, "", &mut entries)?;
         entries.sort_by_key(|entry| Reverse(entry.1));
         entries.truncate(limit.clamp(1, 500));
         Ok(entries)
     }
 
     pub fn restore_from_trash(&self, path: &str) -> Result<String> {
-        let normalized = normalize_vault_path(path)?;
-        let trash = trash_path_for(&normalized)?;
-        if !trash.is_file() {
+        let path = VaultPath::parse(path)?;
+        let normalized = path.to_string();
+        let trash = path.trash_path();
+        let files = user_vault_capability()?;
+        if !files.is_file(&trash)? {
             bail!("trashed note not found: {normalized}");
         }
-        let absolute = resolve_user_note_path(&normalized)?;
-        if absolute.exists() {
+        if files.is_file(&path)? {
             bail!("a note already exists at path: {normalized}");
         }
-        if let Some(parent) = absolute.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::rename(&trash, &absolute)?;
+        files.rename(&trash, &path)?;
         let _ = self.ensure_index_fresh();
         Ok(normalized)
     }
@@ -651,14 +623,12 @@ impl VaultStore {
             .backlinks_for(&normalized)
     }
 
-    fn file_timestamp(
-        value: Result<std::time::SystemTime, std::io::Error>,
-    ) -> DateTime<Utc> {
+    fn optional_timestamp(value: Option<std::time::SystemTime>) -> DateTime<Utc> {
         value
-            .ok()
             .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|duration| {
-                DateTime::<Utc>::from_timestamp(duration.as_secs() as i64, 0).unwrap_or_else(Utc::now)
+                DateTime::<Utc>::from_timestamp(duration.as_secs() as i64, 0)
+                    .unwrap_or_else(Utc::now)
             })
             .unwrap_or_else(Utc::now)
     }

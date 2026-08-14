@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 
 use chrono::{DateTime, Utc};
+use medousa_types::SessionId;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use stasis::prelude::RuntimeComposition;
@@ -18,7 +19,7 @@ use surrealdb_types::SurrealValue;
 use tokio::runtime::Handle;
 
 use crate::identity_memory::DEFAULT_USER_ID;
-use crate::session::{ConversationTurn, SessionHistorySummary, atomic_write, medousa_data_dir};
+use crate::session::{ConversationTurn, SessionHistorySummary, medousa_data_dir};
 use crate::turn_parts::TurnPart;
 use crate::verification_store::VerificationRunRecord;
 
@@ -49,7 +50,7 @@ const SCHEMA_MIGRATIONS: &[&str] =
     &["REMOVE INDEX IF EXISTS idx_session_catalog_last_activity ON TABLE session_catalog"];
 
 static SESSION_CATALOG_STORE: Lazy<RwLock<Arc<dyn SessionCatalogStore>>> =
-    Lazy::new(|| RwLock::new(Arc::new(FileSessionCatalogStore)));
+    Lazy::new(|| RwLock::new(Arc::new(FileSessionCatalogStore::new())));
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, SurrealValue)]
 pub struct SessionCatalogRow {
@@ -245,25 +246,24 @@ fn apply_origin_from_turn(row: &mut SessionCatalogRow, turn: &ConversationTurn) 
 
 /// Sticky mark once a Forge code binding is set (does not clear when unbound).
 pub fn mark_has_code_work(session_id: &str) {
-    let session_id = session_id.trim();
-    if session_id.is_empty() {
+    let Ok(session_id) = SessionId::parse(session_id) else {
         return;
-    }
+    };
     let mut row = catalog_store()
-        .get_row(session_id)
-        .unwrap_or_else(|| SessionCatalogRow::empty_session(session_id));
+        .get_row(&session_id)
+        .unwrap_or_else(|| SessionCatalogRow::empty_session(session_id.as_str()));
     if row.has_code_work {
         return;
     }
     row.has_code_work = true;
     stamp_profile_id(&mut row);
-    catalog_store().upsert_row(&row);
+    catalog_store().upsert_row(&session_id, &row);
 }
 
 trait SessionCatalogStore: Send + Sync {
-    fn upsert_row(&self, row: &SessionCatalogRow);
-    fn delete_row(&self, session_id: &str);
-    fn get_row(&self, session_id: &str) -> Option<SessionCatalogRow>;
+    fn upsert_row(&self, session_id: &SessionId, row: &SessionCatalogRow);
+    fn delete_row(&self, session_id: &SessionId);
+    fn get_row(&self, session_id: &SessionId) -> Option<SessionCatalogRow>;
     fn list_rows_page(
         &self,
         limit: usize,
@@ -348,10 +348,6 @@ fn catalog_dir() -> PathBuf {
     medousa_data_dir().join("catalog")
 }
 
-fn catalog_path(session_id: &str) -> PathBuf {
-    catalog_dir().join(format!("{session_id}.json"))
-}
-
 fn set_catalog_store(store: Arc<dyn SessionCatalogStore>) {
     // Wrap every configured store in a write-through row cache so the per-append
     // `get_row` read (a `block_on` SurrealKV SELECT) is served from memory.
@@ -387,23 +383,24 @@ impl CachingSessionCatalogStore {
 }
 
 impl SessionCatalogStore for CachingSessionCatalogStore {
-    fn upsert_row(&self, row: &SessionCatalogRow) {
-        self.inner.upsert_row(row);
+    fn upsert_row(&self, session_id: &SessionId, row: &SessionCatalogRow) {
+        assert_eq!(session_id.as_str(), row.session_id);
+        self.inner.upsert_row(session_id, row);
         if let Ok(mut cache) = self.cache.write() {
-            cache.insert(row.session_id.clone(), row.clone());
+            cache.insert(session_id.to_string(), row.clone());
         }
     }
 
-    fn delete_row(&self, session_id: &str) {
+    fn delete_row(&self, session_id: &SessionId) {
         self.inner.delete_row(session_id);
         if let Ok(mut cache) = self.cache.write() {
-            cache.remove(session_id);
+            cache.remove(session_id.as_str());
         }
     }
 
-    fn get_row(&self, session_id: &str) -> Option<SessionCatalogRow> {
+    fn get_row(&self, session_id: &SessionId) -> Option<SessionCatalogRow> {
         if let Ok(cache) = self.cache.read()
-            && let Some(row) = cache.get(session_id)
+            && let Some(row) = cache.get(session_id.as_str())
         {
             return Some(row.clone());
         }
@@ -437,29 +434,49 @@ impl SessionCatalogStore for CachingSessionCatalogStore {
     }
 }
 
-struct FileSessionCatalogStore;
+struct FileSessionCatalogStore {
+    files: crate::session_storage::SessionFileStore,
+}
+
+impl FileSessionCatalogStore {
+    fn new() -> Self {
+        Self::at(catalog_dir())
+    }
+
+    fn at(root: PathBuf) -> Self {
+        Self {
+            files: crate::session_storage::SessionFileStore::new(root, "json"),
+        }
+    }
+
+    fn rows(&self) -> Vec<SessionCatalogRow> {
+        let Ok(entries) = self.files.list() else {
+            return Vec::new();
+        };
+        entries
+            .iter()
+            .filter_map(|entry| self.files.read_entry(entry).ok())
+            .filter_map(|bytes| serde_json::from_slice(&bytes).ok())
+            .collect()
+    }
+}
 
 impl SessionCatalogStore for FileSessionCatalogStore {
-    fn upsert_row(&self, row: &SessionCatalogRow) {
-        let path = catalog_path(&row.session_id);
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
+    fn upsert_row(&self, session_id: &SessionId, row: &SessionCatalogRow) {
+        assert_eq!(session_id.as_str(), row.session_id);
         let Ok(bytes) = serde_json::to_vec_pretty(row) else {
             return;
         };
-        let _ = atomic_write(&path, &bytes);
+        let _ = self.files.atomic_write(session_id, &bytes);
     }
 
-    fn delete_row(&self, session_id: &str) {
-        let path = catalog_path(session_id);
-        let _ = std::fs::remove_file(path);
+    fn delete_row(&self, session_id: &SessionId) {
+        let _ = self.files.remove(session_id);
     }
 
-    fn get_row(&self, session_id: &str) -> Option<SessionCatalogRow> {
-        let path = catalog_path(session_id);
-        let raw = std::fs::read_to_string(path).ok()?;
-        serde_json::from_str(&raw).ok()
+    fn get_row(&self, session_id: &SessionId) -> Option<SessionCatalogRow> {
+        let bytes = self.files.read(session_id).ok()?;
+        serde_json::from_slice(&bytes).ok()
     }
 
     fn list_rows_page(
@@ -468,18 +485,9 @@ impl SessionCatalogStore for FileSessionCatalogStore {
         query: Option<&str>,
         cursor: Option<&SessionListCursor>,
     ) -> Vec<SessionCatalogRow> {
-        let dir = catalog_dir();
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return Vec::new();
-        };
-
-        let mut rows = entries
-            .filter_map(|entry| entry.ok())
-            .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("json"))
-            .filter_map(|entry| {
-                let raw = std::fs::read_to_string(entry.path()).ok()?;
-                serde_json::from_str::<SessionCatalogRow>(&raw).ok()
-            })
+        let mut rows = self
+            .rows()
+            .into_iter()
             .filter(|row| query.is_none_or(|needle| row_matches_query(row, needle)))
             .filter(|row| cursor.is_none_or(|cursor| row_is_older_than_cursor(row, cursor)))
             .collect::<Vec<_>>();
@@ -490,17 +498,7 @@ impl SessionCatalogStore for FileSessionCatalogStore {
     }
 
     fn row_count(&self) -> usize {
-        let dir = catalog_dir();
-        std::fs::read_dir(dir)
-            .map(|entries| {
-                entries
-                    .filter_map(|entry| entry.ok())
-                    .filter(|entry| {
-                        entry.path().extension().and_then(|ext| ext.to_str()) == Some("json")
-                    })
-                    .count()
-            })
-            .unwrap_or(0)
+        self.files.list().map_or(0, |entries| entries.len())
     }
 
     fn find_session_ids_by_prefix(&self, prefix: &str, max: usize) -> Vec<String> {
@@ -509,25 +507,9 @@ impl SessionCatalogStore for FileSessionCatalogStore {
             return Vec::new();
         }
 
-        let dir = catalog_dir();
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return Vec::new();
-        };
-
-        entries
-            .filter_map(|entry| entry.ok())
-            .filter_map(|entry| {
-                let path = entry.path();
-                if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-                    return None;
-                }
-                let stem = path.file_stem()?.to_string_lossy();
-                if stem.starts_with(prefix) {
-                    Some(stem.to_string())
-                } else {
-                    None
-                }
-            })
+        self.rows()
+            .into_iter()
+            .filter_map(|row| row.session_id.starts_with(prefix).then_some(row.session_id))
             .take(max.max(1))
             .collect()
     }
@@ -537,26 +519,11 @@ impl SessionCatalogStore for FileSessionCatalogStore {
             return Vec::new();
         }
 
-        let dir = catalog_dir();
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return Vec::new();
-        };
-
         let mut matches = Vec::new();
-        for entry in entries.filter_map(|entry| entry.ok()) {
+        for row in self.rows() {
             if matches.len() >= max.max(1) {
                 break;
             }
-            let path = entry.path();
-            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-                continue;
-            }
-            let Ok(raw) = std::fs::read_to_string(path) else {
-                continue;
-            };
-            let Ok(row) = serde_json::from_str::<SessionCatalogRow>(&raw) else {
-                continue;
-            };
             if row
                 .display_name
                 .as_deref()
@@ -598,8 +565,9 @@ impl SurrealSessionCatalogStore {
 }
 
 impl SessionCatalogStore for SurrealSessionCatalogStore {
-    fn upsert_row(&self, row: &SessionCatalogRow) {
-        let session_id = row.session_id.clone();
+    fn upsert_row(&self, session_id: &SessionId, row: &SessionCatalogRow) {
+        assert_eq!(session_id.as_str(), row.session_id);
+        let session_id = session_id.to_string();
         let update_sql = "UPDATE type::table($table) MERGE $data WHERE session_id = $session_id";
         let update = block_on(
             self.db
@@ -636,23 +604,23 @@ impl SessionCatalogStore for SurrealSessionCatalogStore {
         }
     }
 
-    fn delete_row(&self, session_id: &str) {
+    fn delete_row(&self, session_id: &SessionId) {
         let sql = "DELETE type::table($table) WHERE session_id = $session_id";
         let _ = block_on(
             self.db
                 .query(sql)
                 .bind(("table", SESSION_CATALOG_TABLE))
-                .bind(("session_id", session_id.trim().to_string())),
+                .bind(("session_id", session_id.to_string())),
         );
     }
 
-    fn get_row(&self, session_id: &str) -> Option<SessionCatalogRow> {
+    fn get_row(&self, session_id: &SessionId) -> Option<SessionCatalogRow> {
         let sql = "SELECT * FROM type::table($table) WHERE session_id = $session_id LIMIT 1";
         let mut response = block_on(
             self.db
                 .query(sql)
                 .bind(("table", SESSION_CATALOG_TABLE))
-                .bind(("session_id", session_id.trim().to_string())),
+                .bind(("session_id", session_id.to_string())),
         )
         .ok()?;
 
@@ -839,13 +807,17 @@ pub async fn init_surreal_catalog_for_db(db: Surreal<Any>) -> Result<(), surreal
 }
 
 pub fn record_turn_appended(session_id: &str, turn: &ConversationTurn) {
-    let session_id = session_id.trim();
-    if session_id.is_empty() {
+    let Ok(session_id) = SessionId::parse(session_id) else {
         return;
-    }
+    };
+    record_turn_appended_for_id(&session_id, turn);
+}
+
+pub(crate) fn record_turn_appended_for_id(session_id: &SessionId, turn: &ConversationTurn) {
+    let session_id_text = session_id.as_str();
 
     // Shared rooms live in a separate index — never create a conflicting single-catalog row.
-    if crate::shared_session_catalog::get_shared_row(session_id).is_some() {
+    if crate::shared_session_catalog::get_shared_row(session_id_text).is_some() {
         let preview = preview_from_turn(turn);
         let title = if turn.role == "user" {
             auto_title_from_turn(turn)
@@ -853,19 +825,19 @@ pub fn record_turn_appended(session_id: &str, turn: &ConversationTurn) {
             None
         };
         let _ = crate::shared_session_catalog::touch_shared_session(
-            session_id,
+            session_id_text,
             preview.as_deref(),
             title.as_deref(),
         );
         if let Some(title) = title.as_deref() {
-            let _ = crate::session_meta_store::set_session_display_name(session_id, title);
+            let _ = crate::session_meta_store::set_session_display_name(session_id_text, title);
         }
         return;
     }
 
     let mut row = catalog_store()
         .get_row(session_id)
-        .unwrap_or_else(|| SessionCatalogRow::empty_session(session_id));
+        .unwrap_or_else(|| SessionCatalogRow::empty_session(session_id_text));
 
     row.turn_count = row.turn_count.saturating_add(1);
     row.last_activity_at = Some(turn.timestamp);
@@ -879,44 +851,42 @@ pub fn record_turn_appended(session_id: &str, turn: &ConversationTurn) {
         && let Some(title) = auto_title_from_turn(turn)
     {
         row.display_name = Some(title.clone());
-        let _ = crate::session_meta_store::set_session_display_name(session_id, &title);
+        let _ = crate::session_meta_store::set_session_display_name(session_id_text, &title);
     }
 
     apply_origin_from_turn(&mut row, turn);
 
     stamp_profile_id(&mut row);
-    catalog_store().upsert_row(&row);
+    catalog_store().upsert_row(session_id, &row);
 }
 
 pub fn set_display_name(session_id: &str, display_name: &str) {
-    let session_id = session_id.trim();
-    if session_id.is_empty() {
+    let Ok(session_id) = SessionId::parse(session_id) else {
         return;
-    }
+    };
 
     let mut row = catalog_store()
-        .get_row(session_id)
-        .unwrap_or_else(|| SessionCatalogRow::named_session(session_id, None));
+        .get_row(&session_id)
+        .unwrap_or_else(|| SessionCatalogRow::named_session(session_id.as_str(), None));
 
     row.display_name = Some(display_name.to_string());
     stamp_profile_id(&mut row);
-    catalog_store().upsert_row(&row);
+    catalog_store().upsert_row(&session_id, &row);
 }
 
 pub fn ensure_named_session(session_id: &str, display_name: Option<String>) {
-    let session_id = session_id.trim();
-    if session_id.is_empty() {
+    let Ok(session_id) = SessionId::parse(session_id) else {
         return;
-    }
+    };
 
-    if catalog_store().get_row(session_id).is_some() {
+    if catalog_store().get_row(&session_id).is_some() {
         if let Some(name) = display_name {
-            set_display_name(session_id, &name);
+            set_display_name(session_id.as_str(), &name);
         }
         return;
     }
 
-    catalog_store().upsert_row(&SessionCatalogRow {
+    let row = SessionCatalogRow {
         session_id: session_id.to_string(),
         preview: "(named session)".to_string(),
         turn_count: 0,
@@ -930,7 +900,8 @@ pub fn ensure_named_session(session_id: &str, display_name: Option<String>) {
         profile_id: Some(active_workshop_profile_id()),
         origin_surface: None,
         has_code_work: false,
-    });
+    };
+    catalog_store().upsert_row(&session_id, &row);
 }
 
 pub fn record_verification(
@@ -938,14 +909,13 @@ pub fn record_verification(
     record: &VerificationRunRecord,
     citation_coverage: f32,
 ) {
-    let session_id = session_id.trim();
-    if session_id.is_empty() {
+    let Ok(session_id) = SessionId::parse(session_id) else {
         return;
-    }
+    };
 
     let mut row = catalog_store()
-        .get_row(session_id)
-        .unwrap_or_else(|| SessionCatalogRow::empty_session(session_id));
+        .get_row(&session_id)
+        .unwrap_or_else(|| SessionCatalogRow::empty_session(session_id.as_str()));
 
     row.verification_run_count = row.verification_run_count.saturating_add(1);
     row.last_verification_at = Some(record.created_at_utc);
@@ -953,12 +923,13 @@ pub fn record_verification(
     row.last_verification_coverage = Some(citation_coverage);
     row.last_verification_verified = Some(record.is_verified);
 
-    catalog_store().upsert_row(&row);
+    catalog_store().upsert_row(&session_id, &row);
 }
 
 pub fn get_summary(session_id: &str) -> Option<SessionHistorySummary> {
+    let session_id = SessionId::parse(session_id).ok()?;
     catalog_store()
-        .get_row(session_id.trim())
+        .get_row(&session_id)
         .map(SessionHistorySummary::from)
 }
 
@@ -966,27 +937,32 @@ pub fn get_summary(session_id: &str) -> Option<SessionHistorySummary> {
 /// Single-user sessions follow their stamped profile (legacy unstamped rows belong
 /// to the default profile); shared rooms require explicit membership.
 pub fn session_visible_to_profile(session_id: &str, profile_id: &str) -> bool {
-    let session_id = session_id.trim();
+    let Ok(session_id) = SessionId::parse(session_id) else {
+        return false;
+    };
     let profile_id = profile_id.trim();
-    if session_id.is_empty() || profile_id.is_empty() {
+    if profile_id.is_empty() {
         return false;
     }
-    if let Some(shared) = crate::shared_session_catalog::get_shared_row(session_id) {
+    if let Some(shared) = crate::shared_session_catalog::get_shared_row(session_id.as_str()) {
         return shared.includes_member(profile_id);
     }
     catalog_store()
-        .get_row(session_id)
+        .get_row(&session_id)
         .is_some_and(|row| row_matches_profile(&row, profile_id))
 }
 
 pub fn session_has_activity(session_id: &str) -> bool {
+    let Ok(session_id) = SessionId::parse(session_id) else {
+        return false;
+    };
     catalog_store()
-        .get_row(session_id.trim())
+        .get_row(&session_id)
         .is_some_and(|row| row.turn_count > 0)
 }
 
-pub fn delete_catalog_row(session_id: &str) {
-    catalog_store().delete_row(session_id.trim());
+pub fn delete_catalog_row(session_id: &SessionId) {
+    catalog_store().delete_row(session_id);
 }
 
 static CATALOG_SYNC_ATTEMPTED: AtomicBool = AtomicBool::new(false);
@@ -1056,6 +1032,9 @@ pub fn ensure_rail_metadata_repaired() {
 fn repair_has_code_work_from_bindings() -> usize {
     let mut count = 0usize;
     for session_id in crate::agent_mode_state::session_ids_with_code_binding() {
+        let Ok(session_id) = SessionId::parse(session_id) else {
+            continue;
+        };
         let Some(mut row) = catalog_store().get_row(&session_id) else {
             continue;
         };
@@ -1063,7 +1042,7 @@ fn repair_has_code_work_from_bindings() -> usize {
             continue;
         }
         row.has_code_work = true;
-        catalog_store().upsert_row(&row);
+        catalog_store().upsert_row(&session_id, &row);
         count += 1;
     }
     count
@@ -1077,13 +1056,16 @@ fn repair_origin_surfaces_from_history(limit: usize) -> usize {
         if row.origin_surface.is_some() {
             continue;
         }
-        let turns = crate::session_store::get_session_store().load_history(&row.session_id);
+        let Ok(session_id) = SessionId::parse(&row.session_id) else {
+            continue;
+        };
+        let turns = crate::session_store::get_session_store().load_history(&session_id);
         let Some(surface) = turns.iter().find_map(origin_surface_from_turn) else {
             continue;
         };
         let mut updated = row;
         updated.origin_surface = Some(surface);
-        catalog_store().upsert_row(&updated);
+        catalog_store().upsert_row(&session_id, &updated);
         count += 1;
     }
     count
@@ -1112,8 +1094,9 @@ fn sync_catalog_from_session_store(limit: usize) -> Result<usize, String> {
 }
 
 pub fn turn_count(session_id: &str) -> Option<usize> {
+    let session_id = SessionId::parse(session_id).ok()?;
     catalog_store()
-        .get_row(session_id.trim())
+        .get_row(&session_id)
         .map(|row| row.turn_count)
 }
 
@@ -1171,6 +1154,9 @@ fn backfill_from_legacy_stores(limit: usize) -> Result<usize, String> {
     let mut count = 0usize;
 
     for summary in crate::session_store::build_backfill_summaries(limit) {
+        let Ok(session_id) = SessionId::parse(&summary.session_id) else {
+            continue;
+        };
         let mut row = SessionCatalogRow {
             session_id: summary.session_id.clone(),
             preview: summary.preview,
@@ -1203,20 +1189,21 @@ fn backfill_from_legacy_stores(limit: usize) -> Result<usize, String> {
             row.display_name = auto_title_from_preview(&row.preview);
         }
 
-        catalog_store().upsert_row(&row);
+        catalog_store().upsert_row(&session_id, &row);
         count += 1;
     }
 
     for (session_id, display_name) in
         crate::session_meta_store::list_session_display_names(usize::MAX)
     {
-        if catalog_store().get_row(&session_id).is_some() {
+        let Ok(parsed_session_id) = SessionId::parse(&session_id) else {
+            continue;
+        };
+        if catalog_store().get_row(&parsed_session_id).is_some() {
             continue;
         }
-        catalog_store().upsert_row(&SessionCatalogRow::named_session(
-            session_id,
-            Some(display_name),
-        ));
+        let row = SessionCatalogRow::named_session(session_id, Some(display_name));
+        catalog_store().upsert_row(&parsed_session_id, &row);
         count += 1;
     }
 
@@ -1253,6 +1240,15 @@ fn group_latest_verifications() -> (
 mod tests {
     use super::*;
     use chrono::TimeZone;
+    use std::sync::Mutex;
+
+    static FILE_STORE_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn lock_file_store() -> std::sync::MutexGuard<'static, ()> {
+        FILE_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 
     #[test]
     fn preview_truncates_first_line() {
@@ -1263,12 +1259,12 @@ mod tests {
 
     #[test]
     fn record_turn_appended_increments_count() {
+        let _guard = lock_file_store();
         let suffix = uuid::Uuid::new_v4().simple().to_string();
         let tmp = std::env::temp_dir().join(format!("medousa-catalog-test-{suffix}"));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).expect("tempdir");
-        unsafe { std::env::set_var("XDG_DATA_HOME", &tmp) };
-        set_catalog_store(Arc::new(FileSessionCatalogStore));
+        set_catalog_store(Arc::new(FileSessionCatalogStore::at(tmp.join("catalog"))));
 
         let at = Utc.with_ymd_and_hms(2026, 6, 8, 12, 0, 0).unwrap();
         let turn = ConversationTurn::plain("user", "hello world".to_string(), at, vec![], None);
@@ -1328,6 +1324,7 @@ mod tests {
 
     #[test]
     fn record_turn_appended_sticky_origin_surface() {
+        let _guard = lock_file_store();
         use crate::turn_parts::TurnPart;
         use medousa_types::HostTurnContext;
 
@@ -1335,8 +1332,7 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("medousa-catalog-origin-{suffix}"));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).expect("tempdir");
-        unsafe { std::env::set_var("XDG_DATA_HOME", &tmp) };
-        set_catalog_store(Arc::new(FileSessionCatalogStore));
+        set_catalog_store(Arc::new(FileSessionCatalogStore::at(tmp.join("catalog"))));
 
         let at = Utc.with_ymd_and_hms(2026, 6, 8, 12, 0, 0).unwrap();
         let session_id = format!("sess-origin-{suffix}");
@@ -1434,12 +1430,12 @@ mod tests {
 
     #[test]
     fn mark_has_code_work_is_sticky() {
+        let _guard = lock_file_store();
         let suffix = uuid::Uuid::new_v4().simple().to_string();
         let tmp = std::env::temp_dir().join(format!("medousa-catalog-code-{suffix}"));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).expect("tempdir");
-        unsafe { std::env::set_var("XDG_DATA_HOME", &tmp) };
-        set_catalog_store(Arc::new(FileSessionCatalogStore));
+        set_catalog_store(Arc::new(FileSessionCatalogStore::at(tmp.join("catalog"))));
 
         let session_id = format!("sess-code-{suffix}");
         ensure_named_session(&session_id, Some("Code".into()));
@@ -1459,12 +1455,12 @@ mod tests {
 
     #[test]
     fn list_sessions_page_filters_query_and_cursor() {
+        let _guard = lock_file_store();
         let suffix = uuid::Uuid::new_v4().simple().to_string();
         let tmp = std::env::temp_dir().join(format!("medousa-catalog-page-test-{suffix}"));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).expect("tempdir");
-        unsafe { std::env::set_var("XDG_DATA_HOME", &tmp) };
-        set_catalog_store(Arc::new(FileSessionCatalogStore));
+        set_catalog_store(Arc::new(FileSessionCatalogStore::at(tmp.join("catalog"))));
 
         let needle = format!("budget-unique-{suffix}");
         let at = Utc.with_ymd_and_hms(2026, 6, 8, 12, 0, 0).unwrap();

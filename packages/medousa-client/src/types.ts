@@ -149,7 +149,6 @@ export interface VaultBacklinksResponse {
 }
 
 export interface CreateSessionRequest {
-  session_id?: string;
   catalog?: string;
   member_profile_ids?: string[];
   agent_profile_id?: string;

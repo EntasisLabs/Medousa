@@ -135,8 +135,10 @@ pub async fn vault_git_worktrees_list(
     let git = crate::vault_git::service::resolve_git_binary()
         .ok_or_else(|| map_err(anyhow::anyhow!("Git is not installed")))?;
     let vault_root = crate::vault::roots::active_vault_root();
+    let vault = crate::vault::path::user_vault_capability().map_err(map_err)?;
     let text = crate::vault_git::service::run_git(
         &git,
+        &vault,
         &vault_root,
         &["worktree", "list", "--porcelain"],
     )
@@ -177,60 +179,4 @@ pub async fn vault_git_worktrees_list(
         });
     }
     Ok(Json(entries))
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorktreeAddRequest {
-    pub path: String,
-    pub branch: Option<String>,
-}
-
-pub async fn vault_git_worktrees_add(
-    Json(body): Json<WorktreeAddRequest>,
-) -> Result<StatusCode, (StatusCode, String)> {
-    crate::vault_git::ensure_enabled().map_err(map_err)?;
-    let git = crate::vault_git::service::resolve_git_binary()
-        .ok_or_else(|| map_err(anyhow::anyhow!("Git is not installed")))?;
-    let vault_root = crate::vault::roots::active_vault_root();
-    let path = body.path.trim();
-    if path.is_empty() {
-        return Err(map_err(anyhow::anyhow!("path is required")));
-    }
-    let mut args = vec!["worktree".to_string(), "add".to_string()];
-    if let Some(branch) = body.branch.as_deref().map(str::trim).filter(|b| !b.is_empty()) {
-        args.push("-b".to_string());
-        args.push(branch.to_string());
-    }
-    args.push("--".to_string());
-    args.push(path.to_string());
-    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
-    crate::vault_git::service::run_git(&git, &vault_root, &arg_refs).map_err(map_err)?;
-    Ok(StatusCode::NO_CONTENT)
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorktreeRemoveRequest {
-    pub path: String,
-}
-
-pub async fn vault_git_worktrees_remove(
-    Json(body): Json<WorktreeRemoveRequest>,
-) -> Result<StatusCode, (StatusCode, String)> {
-    crate::vault_git::ensure_enabled().map_err(map_err)?;
-    let git = crate::vault_git::service::resolve_git_binary()
-        .ok_or_else(|| map_err(anyhow::anyhow!("Git is not installed")))?;
-    let vault_root = crate::vault::roots::active_vault_root();
-    let path = body.path.trim();
-    if path.is_empty() {
-        return Err(map_err(anyhow::anyhow!("path is required")));
-    }
-    crate::vault_git::service::run_git(
-        &git,
-        &vault_root,
-        &["worktree", "remove", "--force", "--", path],
-    )
-    .map_err(map_err)?;
-    Ok(StatusCode::NO_CONTENT)
 }

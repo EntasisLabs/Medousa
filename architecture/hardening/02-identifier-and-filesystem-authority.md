@@ -1,6 +1,6 @@
 # H02 — Identifier and filesystem authority
 
-> **Status:** Draft for filesystem threat-model review
+> **Status:** In progress — H02.2 implemented; H02.3 vault confinement underway
 >
 > **Accountable owner:** daemon storage maintainers
 >
@@ -20,6 +20,165 @@ Untrusted identifiers cannot select filesystem locations. User-facing vault
 paths remain useful but are confined by directory capabilities under hostile
 symlink, junction, and replacement state. Session deletion removes its declared
 data inventory or reports a retryable partial failure; it never lies.
+
+## Implementation progress
+
+The first H02.0 containment milestone is implemented:
+
+- the compatibility grammar rejects normalization, separators, dots, controls,
+  non-ASCII input, overlong input, and Windows device aliases;
+- session-owned filenames and directories use the domain-separated `s1-` SHA-256
+  storage key, preserving case-sensitive logical identity on insensitive filesystems;
+- transcript, catalog, shared catalog, artifacts, media, extraction, verification,
+  context-pack, tool-surface, and turn-ledger writes use the central layout;
+- strictly valid legacy files/directories migrate by same-root rename on first
+  write, while malformed entries remain untouched for H02.4 quarantine;
+- primary session HTTP, interactive-turn, artifact, and media ingress rejects
+  invalid identifiers without trimming or replacement; and
+- ledger cleanup unlinks the exact file and propagates failure instead of calling
+  recursive directory deletion and reporting success.
+
+The follow-on deletion milestone also registers artifacts, media, extractions,
+verifications, context packs, tool surfaces, and the ledger as required cleanup
+surfaces. Coder turn checkpoints are included and migrate from their older
+truncated-digest directory on first write. Cleanup removes both layouts. The
+deletion flow removes global index records, attempts every registered
+surface even after a failure, and withholds `deleted: true` when any required
+surface needs retry. Durable tombstones, concurrency exclusion, and the complete
+typed registry remain H02.4 work.
+
+Remaining ingress/type conversion, store migration, deletion registry, migration
+inventory, vault confinement, and the cross-platform abuse matrix remain open in
+H02.1 through H02.5.
+
+H02.1 is in progress: `medousa-types` now owns the validated, non-public
+`SessionId` representation and validated serde boundary; the daemon mints
+`ses_` IDs with 128 bits of randomness; caller-selected creation IDs are denied;
+and Home obtains ordinary and shared-room IDs from `POST /v1/sessions` instead
+of minting filesystem-authoritative UUID strings locally. Transcript and catalog
+store traits now require `SessionId` for lookup, append, upsert, and deletion;
+compatibility string parsing is confined to their public adapters, and repair /
+backfill paths skip malformed legacy identifiers instead of treating them as
+store authority. Central storage-key and session file/directory constructors now
+accept only `SessionId`; satellite adapters must parse before they can acquire a
+path. The report-job user hash also has its own domain instead of masquerading as
+a session storage key.
+
+Opaque transcript filenames are intentionally not reinterpreted as logical IDs
+during file-only catalog repair: the digest is irreversible, and hashing the
+`s1-…` filename again silently points at the wrong transcript. H02.4 must add the
+durable storage-key-to-session inventory before opaque transcripts can be
+recovered without their catalog rows.
+
+H02.2 has an approved capability-kernel spike using `cap-std` plus `cap-fs-ext`.
+`StoreRoot` opens ambient authority once, then accepts only bounded ASCII
+`StorePath` values and walks every ancestor with no-follow directory opens. The
+spike covers read, append, atomic replace, nested directory creation, relative
+rename, exact unlink, and handle-based recursive deletion. Hostile fixtures
+prove rejection of link leaves and ancestors, outside-root canary preservation,
+and continued authority over the originally opened root after its ambient path
+is renamed and replaced.
+
+The file-backed transcript/history, single-session catalog, shared-session
+catalog, tool-surface, and turn-ledger stores now own lazy `SessionFileStore`
+capabilities for their complete lifetime. Keyed reads, appends, atomic
+replacements, legacy first-write renames, exact deletion, and root enumeration
+no longer reconstruct ambient paths. Transcript and ledger JSONL encoding avoids
+the former per-line `String` allocation; catalog scans read only validated
+regular-file entries through the held root; tool-surface and catalog rewrites use
+the same atomic replacement primitive. Obsolete public flat-file path helpers
+have been removed, so new callers cannot bypass the capability owner.
+Replacement-path fixtures prove that the production wrapper continues writing
+to the originally opened directory after its ambient name is moved and replaced.
+
+The extraction, context-pack, and verification satellites now own lazy
+`SessionDirectoryStore` capabilities for their session directories and
+root-level indexes. Payload lookup is derived from `(SessionId, logical object
+ID)` input through a domain-separated `o1-` key; persisted `output_path` strings are
+metadata, never read or deletion authority. New index rows contain only the
+opaque relative object name, and JSONL scans avoid per-line `String`
+allocations. Safe legacy session directories migrate by handle-relative rename
+on first write. Existing platform-invalid object names and absolute index
+metadata are neither followed nor reinterpreted as authority; recovering those
+payloads waits for H02.4 inventory/quarantine.
+
+Coder turn checkpoints now use the same held-root directory capability for
+bounded scans, atomic writes, legacy-directory migration, and recursive session
+deletion. New turn snapshots use full domain-separated `o1-` keys instead of the
+legacy truncated turn digest. Scans admit only validated regular-file entries,
+cap each read before allocation, validate the embedded session/work scope, and
+deduplicate current and legacy copies by logical turn ID before deciding whether
+a checkpoint is resumable. This prevents an older active legacy copy from
+resurrecting after a newer terminal/superseded write. Hostile link-backed session
+directories fail closed with an outside-root canary intact.
+
+Media payloads, cached text extracts, session deletion, and the root index now
+use a held `SessionDirectoryStore` capability. Payload and extract lookup derives
+from `(SessionId, media ID, MIME)` using separate `o1-` domains; absolute
+`payload_path`/`extract_path` strings in legacy rows are metadata only and are
+never followed. New rows store opaque relative names, payload/extract reads are
+bounded, and index JSONL avoids per-line `String` allocation. Platform-invalid
+legacy media filenames require H02.4 inventory/recovery.
+
+Artifact payloads, aliases, the file index, fetch, search, maintenance, and
+deletion now use the held `SessionDirectoryStore` capability. Payload lookup is
+derived from `(SessionId, tool, direction, hash)` through a domain-separated
+`o1-` key; persisted `payload_path` strings are compatibility metadata only.
+Reads are bounded, content-addressed payloads avoid redundant rewrites, and
+index JSONL avoids per-line `String` allocation. Hostile absolute metadata is
+covered by an outside-root canary fixture. Indexless and platform-invalid
+legacy nested layouts are not scanned or followed; H02.4 inventory/quarantine
+must recover them explicitly.
+
+All known internal session-directory trains now use capability-owned I/O.
+Native Windows reparse/junction evidence remains open before H02.2 is complete.
+
+The public artifact fetch contract no longer returns `payload_path`. Home copy
+and share actions emit `medousa:artifact/{session_id}/{artifact_id}` references,
+so remote workshops do not leak unusable daemon-local paths and clients cannot
+mistake metadata for filesystem authority.
+
+H02.3 now has a typed `VaultPath` grammar with bounded depth/bytes, canonical
+Unicode, hidden/system-segment isolation, and cross-platform device, alias, ADS,
+separator, and control rejection. Explicit user and project-overlay roots are
+cached as held capabilities; existing root components and every later path walk
+use no-follow directory opens. A cached-root replacement fixture proves writes
+continue through the originally authorized handle rather than a replacement at
+the ambient spelling.
+
+Core note and calendar reads/writes, remote file preview, index/backlink
+persistence, metadata scans, overlay reads, trash, restore, and registered-root
+inspection now use those capabilities. Writes and generated indexes use atomic
+replacement, previews are bounded, JSONL index reads avoid per-line `String`
+allocation, and scanners admit only typed regular-file entries. Link-backed
+leaves and ancestors fail closed with an outside-root canary intact. The old
+`resolve_*_note_path`, `trash_path_for`, and lexical `ensure_within_root`
+authority helpers have been removed.
+
+The vault-Git boundary now uses the held vault directory as the child process
+working directory on Unix (`fchdir` between fork and exec), so renaming and
+replacing the configured root cannot redirect Git. Repository detection and
+`.gitignore` setup are capability-relative; note paths use `VaultPath`; and
+restore reads an exact commit blob before an atomic capability-relative write
+instead of letting `git checkout` mutate the worktree by ambient traversal.
+The unused POST/DELETE worktree endpoints were removed because their arbitrary
+caller-supplied paths gave Git recursive create/delete authority outside every
+Medousa-owned root. Worktree inspection remains read-only.
+
+On Windows, the no-follow capability retains handles opened without
+`FILE_SHARE_DELETE` for the entire configured-root component chain. That pins
+the ambient spelling against rename/delete replacement; immediately before
+`CreateProcessW`, Medousa reopens the chain without following reparse points and
+compares the volume/file identity of the final directory. Git only receives the
+string CWD after that check. Every Git subprocess uses the shared
+`CREATE_NO_WINDOW` policy, null stdin, and non-interactive Git/GCM settings.
+Portable MinGit extraction is now in-process with enclosed zip paths, removing
+the PowerShell subprocess entirely. Windows-only fixtures cover root rename
+locking, mismatched process-root identity, and directory-link rejection when
+the runner permits symlink creation. A real Windows CI/runtime pass and native
+junction/mount fixtures remain before H02.3 closure. The dedicated
+`windows-authority` CI job now compiles and runs the Windows root-lock/reparse
+fixtures and the in-process MinGit extraction tests on every change.
 
 ## Current evidence and blast radius
 
@@ -50,12 +209,10 @@ paths, before compatibility removal.
 
 ### Vault
 
-`normalize_vault_path` rejects obvious lexical traversal, but
-`ensure_within_root` compares absolute spellings without resolving filesystem
-objects. Store reads/writes, trash, restore, overlay lookup, index walks, and
-renames then use ordinary `std::fs` paths and follow existing links. A link
-inside the vault can therefore redirect an allowed spelling outside it; a
-preflight-only repair would retain a replacement race.
+The original lexical containment and ordinary-path implementation has been
+removed from the core vault store. Remaining evidence work covers Windows
+junction/reparse behavior, mount/bind boundaries, configured-root lifecycle,
+and vault-Git subprocess authority; see the implementation progress above.
 
 ### Deletion
 

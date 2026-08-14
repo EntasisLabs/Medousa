@@ -107,6 +107,7 @@ for the protocol and surface-scoping rules.
 
 | Method | Path | Types | SDK |
 |--------|------|-------|-----|
+| POST | `/v1/sessions` | `CreateSessionRequest` → daemon-generated `CreateSessionResponse.session_id` | `MedousaClient.createSession` (TypeScript) |
 | GET | `/v1/sessions` | `SessionHistoryListResponse` (`origin_surface`, `has_code_work` on each summary) | `sessions().list` |
 | GET | `/v1/sessions/{session_id}/history` | `SessionHistoryResponse` | `sessions().history` |
 | PUT | `/v1/sessions/{session_id}/name` | `SessionSetDisplayNameRequest` | `sessions().set_display_name` |
@@ -126,6 +127,11 @@ for the protocol and surface-scoping rules.
 | POST | `/v1/sessions/{session_id}/active-turn` | cancel active turn | `http().post` |
 | POST | `/v1/turns` | create turn ticket | `http().post` |
 | GET | `/v1/turns/{turn_id}` | turn ticket | `http().get` |
+
+`POST /v1/sessions` is the authority for new chat identifiers. Omit
+`session_id`; current daemons return a `ses_` identifier with 128 bits of
+randomness and reject caller-selected identifiers. Existing valid legacy IDs
+remain usable on read, turn, and deletion routes during migration.
 
 ---
 

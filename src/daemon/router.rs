@@ -1218,12 +1218,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 361);
-        assert_eq!(with_pairing.entries().len(), 373);
+        assert_eq!(without_pairing.entries().len(), 359);
+        assert_eq!(with_pairing.entries().len(), 371);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 373);
+        assert_eq!(rows.len(), 371);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"
