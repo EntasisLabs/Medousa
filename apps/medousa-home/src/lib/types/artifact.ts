@@ -11,7 +11,6 @@ export interface ArtifactFetchResponse {
   byte_size: number;
   presentation?: string | null;
   height_px?: number | null;
-  payload_path?: string | null;
 }
 
 export interface ArtifactSummary {

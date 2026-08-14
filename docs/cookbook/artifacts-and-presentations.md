@@ -31,7 +31,9 @@ client.runtime().artifact_list_ui(&ArtifactListUiRequest {
 }).await?;
 ```
 
-Preview uses `artifact_fetch` for HTML body.
+Preview uses `artifact_fetch` for the HTML body. Copy/share actions use the
+portable `medousa:artifact/{session_id}/{artifact_id}` reference rather than a
+daemon-local filesystem path, so the same reference works with remote workshops.
 
 ---
 

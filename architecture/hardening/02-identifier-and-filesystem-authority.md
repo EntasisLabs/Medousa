@@ -123,6 +123,11 @@ legacy media filenames require H02.4 inventory/recovery.
 Artifact payload authority remains the final session-directory train. Native
 Windows reparse/junction evidence also remains open before H02.2 is complete.
 
+The public artifact fetch contract no longer returns `payload_path`. Home copy
+and share actions emit `medousa:artifact/{session_id}/{artifact_id}` references,
+so remote workshops do not leak unusable daemon-local paths and clients cannot
+mistake metadata for filesystem authority.
+
 ## Current evidence and blast radius
 
 ### Session identifiers

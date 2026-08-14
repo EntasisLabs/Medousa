@@ -36,7 +36,10 @@ Vault parity: `cognition_vault_grep`, line-range `cognition_vault_read` — see 
 | POST | `/v1/runtime/artifact/list-ui` | Library catalog (`ArtifactListUiRequest`) |
 | POST | `/v1/runtime/artifact/command` | TUI slash command DSL (`ArtifactCommandSpec`) |
 
-`fetch` resolves to the **latest revision** in a lineage chain.
+`fetch` resolves to the **latest revision** in a lineage chain and returns the
+body plus portable metadata. Daemon filesystem paths are never part of the
+response; use `medousa:artifact/{session_id}/{artifact_id}` when a copyable
+reference is needed.
 
 SDK: `runtime().artifact_fetch`, `artifact_write`, `artifact_delete`, `artifact_list_ui`, `artifact_command` — [sdk/artifacts.md](../sdk/artifacts.md)
 
