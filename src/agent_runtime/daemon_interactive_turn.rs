@@ -973,19 +973,19 @@ pub async fn run_agent_turn(
         inner: sink,
         outcome: outcome.clone(),
     });
-    crate::engine_adapters::set_active_tool_sink(Some(
-        crate::engine_adapters::AgentStreamToolSinkAdapter::new(tracking_sink.clone()),
-    ))
-    .await;
-
-    run_agent_turn_inner(
-        turn_id,
-        request,
-        backend,
-        agent_rt,
-        tracking_sink,
-        context_telemetry,
-        project_state,
+    let tool_sink =
+        crate::engine_adapters::AgentStreamToolSinkAdapter::new(tracking_sink.clone());
+    crate::engine_adapters::with_active_tool_sink(
+        tool_sink,
+        run_agent_turn_inner(
+            turn_id,
+            request,
+            backend,
+            agent_rt,
+            tracking_sink,
+            context_telemetry,
+            project_state,
+        ),
     )
     .await;
 
@@ -1003,7 +1003,6 @@ pub async fn run_agent_turn(
             .await;
     }
 
-    crate::engine_adapters::set_active_tool_sink(None).await;
     *agent_rt.turn_scope.write().await = previous_scope;
 }
 

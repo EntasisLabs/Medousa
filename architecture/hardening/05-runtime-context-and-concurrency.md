@@ -1,6 +1,6 @@
 # H05 — Request-scoped runtime context and concurrency
 
-> **Status:** Draft for runtime/browser review
+> **Status:** Implementing — H05.0 inventory and isolation fixtures underway
 >
 > **Accountable owner:** daemon runtime maintainers
 >
@@ -12,7 +12,9 @@
 >
 > **Required decision:** [ADR-017](../../docs/architecture/decisions/adr-017-request-scoped-runtime-context.md)
 >
-> **Dependencies:** H01 authenticated principal; H02 typed identifiers/authority; H03 turn pipeline; H08 browser authority
+> **Dependencies:** H01 authenticated principal; H02 typed identifiers/authority
+>
+> **Coordinates with:** H03 turn pipeline; H08 browser authority
 >
 > **Verification:** [Crash/concurrency matrix](verification/crash-concurrency-matrix.md), [security abuse matrix](verification/security-abuse-matrix.md)
 
@@ -29,6 +31,34 @@ H05 owns runtime correlation, propagation, cancellation, task ownership, and
 browser reply correlation. H03 owns sequencing/backpressure inside a turn's
 output pipeline. H08 owns webview origin isolation and the minimum permitted
 IPC bridge. H01/H02 own the authority placed into the context.
+
+## Implementation progress
+
+H05.0 started from merged H01/H02 on `codex/h05-runtime-context`. The first
+deterministic two-turn fixture covers the ambient tool sink: two barrier-aligned
+turn futures install distinct canaries, yield in parallel, and prove each sees
+only its own sink. The process-global `ACTIVE_TOOL_SINK` mutable slot and its
+set/clear API are removed. A Tokio task-local compatibility scope now carries
+the sink only across the owning turn future and returns absence outside that
+scope. It is not authorization and must be deleted when H05.2 gives the
+upstream tool invocation boundary an explicit context.
+
+The current H05.0 request-state inventory is:
+
+| State | Classification | Current action |
+| --- | --- | --- |
+| Ambient tool sink | Per-turn request state | Task-scoped compatibility bridge; global slot deleted; H05.2 deletion remains |
+| Shared `TurnContinuationScope` | Per-turn request state retained by 24 tool/runtime modules and installed by save/restore | Open; freeze foreign-session/provider/surface canaries, then replace in H05.1/H05.2 |
+| Worker scheduler `runtime_ctx` and `bus_session` | Per-parent/worker request state in two process-wide `Option` slots | Open; freeze stale-clear and sibling-parent races before H05.3 |
+| Browser `SNAPSHOT_TX`, `ACT_TX`, `NAV_STATE_TX`, `FIND_TX` | Per-request reply state in four process-wide singleton mailboxes | Open; freeze overlap, reverse completion, timeout, and navigation races before H05.5 |
+| `LAST_GRAPHEME_SOURCE` | Per-invocation source selected through one global last-value slot | Open; key to invocation context in H05.2 |
+| Continuation last-resume value | Process diagnostic snapshot, not execution authority | Retain only as bounded diagnostics; never select runtime behavior from it |
+| Parent stream and ingest delivery bridge registrations | Process service references with keyed APIs | Retain as shared services; audit registration lifecycle separately |
+| Browser placement/viewport and per-surface active-tab slots | UI/surface state, not reply mailboxes | Move under `BrowserHostState` surface records in H05.5 where identity matters |
+
+This classification is intentionally narrower than a textual search for every
+`Mutex<Option<_>>`: shutdown senders, cached routes, device tokens, and service
+registrations are not request identity merely because they use `Option`.
 
 ## Current ownership failures
 
