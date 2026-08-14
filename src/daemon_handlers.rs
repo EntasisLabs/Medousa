@@ -291,7 +291,7 @@ pub async fn delete_session(
         query.purge_memory,
     )
     .await
-    .map_err(|err| (StatusCode::BAD_REQUEST, err))?;
+    .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err))?;
 
     Ok(Json(SessionDeleteResponse {
         session_id: summary.session_id,

@@ -321,5 +321,45 @@ mod tests {
 
         assert_eq!(resolved, session_file(&root, "../outside", "jsonl"));
         assert_eq!(std::fs::read(outside).unwrap(), b"canary");
+
+        let directory_root = temp.path().join("artifacts");
+        std::fs::create_dir_all(&directory_root).unwrap();
+        let outside_dir = temp.path().join("outside-dir");
+        std::fs::create_dir_all(&outside_dir).unwrap();
+        std::fs::write(outside_dir.join("canary"), b"safe").unwrap();
+
+        remove_session_dir(&directory_root, "../outside-dir").unwrap();
+
+        assert_eq!(
+            std::fs::read(outside_dir.join("canary")).unwrap(),
+            b"safe"
+        );
+    }
+
+    #[test]
+    fn every_declared_satellite_uses_one_flat_opaque_component() {
+        let trusted = Path::new("/trusted");
+        for root_name in [
+            "history",
+            "catalog",
+            "shared_catalog",
+            "session_surfaces",
+            "turn_ledger",
+        ] {
+            let root = trusted.join(root_name);
+            let path = session_file(&root, "../../hostile\\session", "json");
+            assert_eq!(path.parent(), Some(root.as_path()), "{root_name}");
+        }
+        for root_name in [
+            "artifacts",
+            "media",
+            "extractions",
+            "verifications",
+            "context_packs",
+        ] {
+            let root = trusted.join(root_name);
+            let path = session_dir(&root, "../../hostile\\session");
+            assert_eq!(path.parent(), Some(root.as_path()), "{root_name}");
+        }
     }
 }

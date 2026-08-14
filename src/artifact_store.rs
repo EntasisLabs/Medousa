@@ -133,6 +133,8 @@ pub fn persist_tool_artifact(
     byte_size: usize,
     payload: &Value,
 ) -> std::result::Result<ArtifactRecord, String> {
+    crate::session_storage::validate_session_id(session_id)
+        .map_err(|error| error.to_string())?;
     let now = Utc::now();
     let tool_slug = slugify_tool_name(tool_name);
     let hash_short = hash64.chars().take(12).collect::<String>();
@@ -198,6 +200,8 @@ pub fn persist_ui_artifact_revision(
     height_px: Option<u32>,
     supersedes_artifact_id: Option<&str>,
 ) -> std::result::Result<ArtifactRecord, String> {
+    crate::session_storage::validate_session_id(session_id)
+        .map_err(|error| error.to_string())?;
     let wrapped = wrap_html_document(html);
     let byte_size = wrapped.len();
     if byte_size > UI_ARTIFACT_MAX_BYTES {
@@ -584,6 +588,18 @@ pub fn delete_ui_artifact(session_id: &str, artifact_ref: &str) -> std::result::
     Ok(deleted_ids)
 }
 
+/// Delete the complete artifact satellite for one session.
+pub fn delete_artifacts_for_session(session_id: &str) -> Result<(), String> {
+    let remaining = artifact_index_store()
+        .read_all()
+        .into_iter()
+        .filter(|record| record.session_id != session_id)
+        .collect::<Vec<_>>();
+    overwrite_index_records(&remaining)?;
+    crate::session_storage::remove_session_dir(&artifacts_root(), session_id)
+        .map_err(|error| error.to_string())
+}
+
 pub fn grep_ui_artifact(
     session_id: &str,
     artifact_id: &str,
@@ -619,11 +635,26 @@ pub fn read_ui_artifact_excerpt(
     ))
 }
 
-fn load_fetched_from_record(record: ArtifactRecord) -> Option<FetchedArtifact> {
-    let path = Path::new(&record.payload_path);
+fn load_fetched_from_record(mut record: ArtifactRecord) -> Option<FetchedArtifact> {
+    let mut path = PathBuf::from(&record.payload_path);
+    if !path.exists() {
+        let extension = if record.content_type == "text/html" || record.direction == "ui" {
+            "html"
+        } else {
+            "json"
+        };
+        path = crate::session_storage::session_dir_for_read(
+            &artifacts_root(),
+            &record.session_id,
+        )
+        .join(slugify_tool_name(&record.tool_name))
+        .join(&record.direction)
+        .join(format!("{}.{}", record.hash64, extension));
+    }
     if !path.exists() {
         return None;
     }
+    record.payload_path = path.to_string_lossy().to_string();
 
     let mime = if record.content_type.is_empty() {
         if path.extension().and_then(|ext| ext.to_str()) == Some("html") {
@@ -636,13 +667,13 @@ fn load_fetched_from_record(record: ArtifactRecord) -> Option<FetchedArtifact> {
     };
 
     let body = if mime == "text/html" {
-        std::fs::read_to_string(path).ok()?
+        std::fs::read_to_string(&path).ok()?
     } else {
-        std::fs::read_to_string(path)
+        std::fs::read_to_string(&path)
             .ok()
             .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
             .map(|value| serde_json::to_string_pretty(&value).unwrap_or_else(|_| value.to_string()))
-            .or_else(|| std::fs::read_to_string(path).ok())?
+            .or_else(|| std::fs::read_to_string(&path).ok())?
     };
 
     Some(FetchedArtifact {

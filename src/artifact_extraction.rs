@@ -89,6 +89,8 @@ pub fn persist_extraction_run(
     artifact_id: &str,
     claims: &[EvidenceClaim],
 ) -> std::result::Result<ExtractionRunRecord, String> {
+    crate::session_storage::validate_session_id(session_id)
+        .map_err(|error| error.to_string())?;
     let now = Utc::now();
     let extraction_id = format!(
         "ext:{}:{}",
@@ -153,6 +155,16 @@ pub fn list_extraction_runs(session_id: &str, limit: usize) -> Vec<ExtractionRun
     records.into_iter().take(limit.max(1)).collect()
 }
 
+pub fn delete_extractions_for_session(session_id: &str) -> Result<(), String> {
+    let remaining = read_index_records()
+        .into_iter()
+        .filter(|record| record.session_id != session_id)
+        .collect::<Vec<_>>();
+    overwrite_index_records(&remaining)?;
+    crate::session_storage::remove_session_dir(&extractions_root(), session_id)
+        .map_err(|error| error.to_string())
+}
+
 fn append_index_record(record: &ExtractionRunRecord) -> std::result::Result<(), String> {
     let index_path = extractions_root().join("index.jsonl");
     if let Some(parent) = index_path.parent() {
@@ -180,6 +192,18 @@ fn read_index_records() -> Vec<ExtractionRunRecord> {
         .filter(|line| !line.trim().is_empty())
         .filter_map(|line| serde_json::from_str::<ExtractionRunRecord>(&line).ok())
         .collect()
+}
+
+fn overwrite_index_records(records: &[ExtractionRunRecord]) -> Result<(), String> {
+    std::fs::create_dir_all(extractions_root()).map_err(|error| error.to_string())?;
+    let index_path = extractions_root().join("index.jsonl");
+    let temp_path = index_path.with_extension("jsonl.tmp");
+    let mut file = std::fs::File::create(&temp_path).map_err(|error| error.to_string())?;
+    for record in records {
+        let line = serde_json::to_string(record).map_err(|error| error.to_string())?;
+        writeln!(file, "{line}").map_err(|error| error.to_string())?;
+    }
+    std::fs::rename(temp_path, index_path).map_err(|error| error.to_string())
 }
 
 fn extractions_root() -> PathBuf {

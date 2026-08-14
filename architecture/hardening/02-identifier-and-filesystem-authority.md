@@ -38,6 +38,13 @@ The first H02.0 containment milestone is implemented:
 - ledger cleanup unlinks the exact file and propagates failure instead of calling
   recursive directory deletion and reporting success.
 
+The follow-on deletion milestone also registers artifacts, media, extractions,
+verifications, context packs, tool surfaces, and the ledger as required cleanup
+surfaces. It removes their global index records, attempts every registered
+surface even after a failure, and withholds `deleted: true` when any required
+surface needs retry. Durable tombstones, concurrency exclusion, and the complete
+typed registry remain H02.4 work.
+
 The store-root capability layer, complete ingress/type conversion, deletion
 registry, migration inventory, vault confinement, and cross-platform abuse matrix
 remain open in H02.1 through H02.5.

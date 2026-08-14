@@ -19,8 +19,17 @@ pub async fn steer_bound_workshop_handler(
     Path(session_id): Path<String>,
     Json(body): Json<WorkshopSteerRequest>,
 ) -> (StatusCode, Json<serde_json::Value>) {
+    let session_id = match crate::session_storage::validate_session_id(&session_id) {
+        Ok(session_id) => session_id,
+        Err(error) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error.to_string() })),
+            );
+        }
+    };
     let speaker = resolve_steer_speaker(&principal);
-    match steer_bound_workshop_for_session(session_id.trim(), body.message.trim(), speaker) {
+    match steer_bound_workshop_for_session(session_id, body.message.trim(), speaker) {
         Ok(value) => {
             let status = if value.is_ok() {
                 StatusCode::OK

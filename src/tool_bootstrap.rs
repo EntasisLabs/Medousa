@@ -543,15 +543,18 @@ pub fn load_session_tool_surface(session_id: &str) -> SessionToolSurface {
 }
 
 /// Remove persisted per-session tool surface (MCP servers, allowlists, etc.).
-pub fn delete_session_tool_surface(session_id: &str) {
-    let _ = crate::session_storage::remove_session_file(
+pub fn delete_session_tool_surface(session_id: &str) -> Result<(), String> {
+    crate::session_storage::remove_session_file(
         &session::medousa_data_dir().join("session_surfaces"),
         session_id,
         "json",
-    );
+    )
+    .map_err(|error| error.to_string())
 }
 
 pub fn save_session_tool_surface(surface: &SessionToolSurface) -> Result<(), String> {
+    crate::session_storage::validate_session_id(&surface.session_id)
+        .map_err(|error| error.to_string())?;
     let path = crate::session_storage::session_file_for_write(
         &session::medousa_data_dir().join("session_surfaces"),
         &surface.session_id,

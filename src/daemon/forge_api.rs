@@ -1309,6 +1309,8 @@ async fn start_session_code_project(
     Path(session_id): Path<String>,
     Json(body): Json<StartSessionCodeProjectRequest>,
 ) -> ApiResult<Json<SessionCodeProjectResponse>> {
+    crate::session_storage::validate_session_id(&session_id)
+        .map_err(|error| request_error(StatusCode::BAD_REQUEST, error.to_string()))?;
     start_code_project_for_session_inner(&state, &session_id, body).map(Json)
 }
 

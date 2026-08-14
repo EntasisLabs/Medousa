@@ -159,10 +159,8 @@ pub fn create_shared_session(
     agent_profile_id: Option<String>,
     display_name: Option<String>,
 ) -> Result<SharedSessionCatalogRow> {
-    let session_id = session_id.trim();
-    if session_id.is_empty() {
-        bail!("session_id must not be empty");
-    }
+    let session_id = crate::session_storage::validate_session_id(session_id)
+        .map_err(|error| anyhow::anyhow!(error))?;
     if get_shared_row(session_id).is_some() {
         bail!("shared session already exists: {session_id}");
     }

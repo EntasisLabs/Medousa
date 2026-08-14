@@ -47,10 +47,8 @@ pub fn persist_user_media(
     mime: &str,
     label: Option<&str>,
 ) -> Result<MediaUploadResponse, String> {
-    let session_id = session_id.trim();
-    if session_id.is_empty() {
-        return Err("session_id is required".to_string());
-    }
+    let session_id = crate::session_storage::validate_session_id(session_id)
+        .map_err(|error| error.to_string())?;
 
     let byte_size = bytes.len() as u64;
     if byte_size == 0 {
@@ -151,6 +149,16 @@ pub fn media_ref_from_record(record: &MediaRecord) -> MediaRef {
         mime: record.mime.clone(),
         label: record.label.clone(),
     }
+}
+
+pub fn delete_media_for_session(session_id: &str) -> Result<(), String> {
+    let remaining = read_index_records()
+        .into_iter()
+        .filter(|record| record.session_id != session_id)
+        .collect::<Vec<_>>();
+    overwrite_index_records(&remaining)?;
+    crate::session_storage::remove_session_dir(&media_root(), session_id)
+        .map_err(|error| error.to_string())
 }
 
 pub fn validate_media_refs(session_id: &str, refs: &[MediaRef]) -> Result<(), String> {
@@ -423,6 +431,18 @@ fn read_index_records() -> Vec<MediaRecord> {
             }
         })
         .collect()
+}
+
+fn overwrite_index_records(records: &[MediaRecord]) -> Result<(), String> {
+    fs::create_dir_all(media_root()).map_err(|error| error.to_string())?;
+    let index_path = media_root().join(MEDIA_INDEX_FILE);
+    let temp_path = index_path.with_extension("jsonl.tmp");
+    let mut file = std::fs::File::create(&temp_path).map_err(|error| error.to_string())?;
+    for record in records {
+        let line = serde_json::to_string(record).map_err(|error| error.to_string())?;
+        writeln!(file, "{line}").map_err(|error| error.to_string())?;
+    }
+    fs::rename(temp_path, index_path).map_err(|error| error.to_string())
 }
 
 fn data_local_medousa_dir() -> PathBuf {
