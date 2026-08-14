@@ -70,6 +70,16 @@ during file-only catalog repair: the digest is irreversible, and hashing the
 durable storage-key-to-session inventory before opaque transcripts can be
 recovered without their catalog rows.
 
+H02.2 has an approved capability-kernel spike using `cap-std` plus `cap-fs-ext`.
+`StoreRoot` opens ambient authority once, then accepts only bounded ASCII
+`StorePath` values and walks every ancestor with no-follow directory opens. The
+spike covers read, append, atomic replace, nested directory creation, relative
+rename, exact unlink, and handle-based recursive deletion. Hostile fixtures
+prove rejection of link leaves and ancestors, outside-root canary preservation,
+and continued authority over the originally opened root after its ambient path
+is renamed and replaced. Production store migration and Windows reparse/junction
+evidence remain open before H02.2 can be called implemented.
+
 ## Current evidence and blast radius
 
 ### Session identifiers
