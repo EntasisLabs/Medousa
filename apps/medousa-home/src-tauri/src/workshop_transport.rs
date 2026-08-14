@@ -229,14 +229,32 @@ impl WorkshopByteStream {
 
 pub fn config_from_lan_base(lan_base: &str) -> WorkshopTransportConfig {
     crate::pairing_client::load_workshop_transport_config(lan_base).unwrap_or_else(|| {
+        let session_token = local_credential_for_lan_base(lan_base);
         WorkshopTransportConfig {
             lan_base: lan_base.trim().trim_end_matches('/').to_string(),
             iroh_ticket: None,
-            session_token: None,
+            session_token,
             phone_id: String::new(),
             workshop_device_id: String::new(),
         }
     })
+}
+
+fn local_credential_for_lan_base(lan_base: &str) -> Option<String> {
+    let url = url::Url::parse(lan_base).ok()?;
+    let loopback = url.host_str().is_some_and(|host| {
+        host.eq_ignore_ascii_case("localhost")
+            || host
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|address| address.is_loopback())
+    });
+    if !loopback || !matches!(url.scheme(), "http" | "https") {
+        return None;
+    }
+    let data_dir = crate::workshop_registry::active_local_data_dir_for_url(lan_base)?;
+    medousa_local_credential::load_home_local_secret(&data_dir)
+        .ok()
+        .map(|secret| secret.token().to_string())
 }
 
 enum RequestPayload {
@@ -284,7 +302,12 @@ async fn workshop_request(
 /// Select LAN vs Iroh via the shared `medousa-sdk-iroh` route cache so this
 /// legacy byte transport and the SDK JSON transport can never diverge.
 async fn pick_route(config: &WorkshopTransportConfig) -> WorkshopRoute {
-    medousa_sdk_iroh::pick_route(&config.lan_base, config.iroh_ticket.is_some()).await
+    medousa_sdk_iroh::pick_route_with_bearer(
+        &config.lan_base,
+        config.iroh_ticket.is_some(),
+        config.session_token.as_deref(),
+    )
+    .await
 }
 
 fn lan_client() -> Result<&'static Client, String> {
@@ -460,7 +483,7 @@ fn format_response_body_error(
     )
 }
 
-fn auth_headers(config: &WorkshopTransportConfig) -> reqwest::header::HeaderMap {
+pub(crate) fn auth_headers(config: &WorkshopTransportConfig) -> reqwest::header::HeaderMap {
     let mut headers = reqwest::header::HeaderMap::new();
     if let Some(token) = config.session_token.as_deref() {
         if let Ok(value) = reqwest::header::HeaderValue::from_str(&format!("Bearer {token}")) {
@@ -611,7 +634,7 @@ mod tests {
     use std::io::{Read, Write};
     use std::net::TcpListener;
 
-    use super::{RequestPayload, lan_body_attempts, lan_request};
+    use super::{RequestPayload, auth_headers, lan_body_attempts, lan_request};
     use crate::pairing_client::WorkshopTransportConfig;
 
     #[test]
@@ -621,6 +644,24 @@ mod tests {
         assert_eq!(lan_body_attempts("PUT"), 1);
         assert_eq!(lan_body_attempts("PATCH"), 1);
         assert_eq!(lan_body_attempts("DELETE"), 1);
+    }
+
+    #[test]
+    fn native_transport_attaches_configured_bearer() {
+        let config = WorkshopTransportConfig {
+            lan_base: "http://127.0.0.1:7419".to_string(),
+            iroh_ticket: None,
+            session_token: Some("home-secret".to_string()),
+            phone_id: String::new(),
+            workshop_device_id: String::new(),
+        };
+        let headers = auth_headers(&config);
+        assert_eq!(
+            headers
+                .get(reqwest::header::AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer home-secret")
+        );
     }
 
     #[tokio::test]

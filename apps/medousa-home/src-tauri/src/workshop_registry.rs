@@ -370,6 +370,17 @@ pub fn active_workshop(registry: &WorkshopRegistry) -> Option<&WorkshopServer> {
         .find(|workshop| workshop.id == registry.active_workshop_id)
 }
 
+pub fn active_local_data_dir_for_url(url: &str) -> Option<PathBuf> {
+    let registry = ensure_migrated().ok()?;
+    let workshop = active_workshop(&registry)?;
+    if workshop.kind != "local"
+        || normalize_url(&resolve_workshop_url(workshop)) != normalize_url(url)
+    {
+        return None;
+    }
+    Some(crate::workshop_runtime::resolve_workshop_data_dir(workshop))
+}
+
 pub fn sync_daemon_state_from_registry(state: &DaemonState) -> Result<(), String> {
     let registry = ensure_migrated()?;
     let Some(workshop) = active_workshop(&registry) else {

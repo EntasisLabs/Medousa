@@ -11,7 +11,7 @@ use medousa_sdk::{SdkError, Transport};
 use futures_util::{Stream, StreamExt, TryStreamExt};
 
 use crate::iroh_hook::IrohHttpHook;
-use crate::route::{is_connect_error, pick_route, invalidate_route_cache, WorkshopRoute};
+use crate::route::{is_connect_error, pick_route_with_bearer, invalidate_route_cache, WorkshopRoute};
 
 #[derive(Debug, Clone, Default)]
 pub struct WorkshopTransportConfig {
@@ -93,7 +93,12 @@ impl WorkshopTransport {
     }
 
     async fn pick_workshop_route(&self) -> WorkshopRoute {
-        pick_route(&self.config.lan_base_url, self.iroh_available()).await
+        pick_route_with_bearer(
+            &self.config.lan_base_url,
+            self.iroh_available(),
+            self.config.bearer_token.as_deref(),
+        )
+        .await
     }
 
     async fn request_json(

@@ -5,6 +5,7 @@
  */
 
 import type { Transport } from "@codemirror/lsp-client";
+import { invoke } from "@tauri-apps/api/core";
 import {
   LSPClient,
   languageServerExtensions,
@@ -655,6 +656,21 @@ async function codeAgentGet<T>(
   path: string,
   query: Record<string, string>,
 ): Promise<T> {
+  if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+    const operations: Record<string, string> = {
+      "/v1/code/language-root": "language_root",
+      "/v1/code/language-sessions": "language_sessions",
+      "/v1/code/language-matrix": "language_matrix",
+      "/v1/code/symbols": "symbols",
+      "/v1/code/workspace-symbols": "workspace_symbols",
+      "/v1/code/workspace-diagnostics": "workspace_diagnostics",
+      "/v1/code/capabilities": "capabilities",
+      "/v1/code/conventions": "conventions",
+    };
+    const operation = operations[path];
+    if (!operation) throw new Error(`Unsupported Code Intelligence read: ${path}`);
+    return invoke<T>("code_read", { operation, query });
+  }
   const base = (await getDaemonUrl()).replace(/\/$/, "");
   const params = new URLSearchParams(query);
   const response = await fetch(`${base}${path}?${params}`, {
@@ -670,6 +686,12 @@ async function codeAgentPost<T>(
   path: string,
   body: Record<string, unknown>,
 ): Promise<T> {
+  if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+    if (path !== "/v1/code/request") {
+      throw new Error(`Unsupported Code Intelligence mutation: ${path}`);
+    }
+    return invoke<T>("code_request", { body });
+  }
   const base = (await getDaemonUrl()).replace(/\/$/, "");
   const response = await fetch(`${base}${path}`, {
     method: "POST",
