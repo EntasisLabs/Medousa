@@ -47,11 +47,7 @@ impl StorageKey {
     }
 }
 
-pub(crate) fn session_object_path(
-    namespace: &'static [u8],
-    object_id: &str,
-    extension: &'static str,
-) -> StorePath {
+pub(crate) fn session_object_path(namespace: &[u8], object_id: &str, extension: &str) -> StorePath {
     debug_assert!(!namespace.is_empty());
     debug_assert!(
         !extension.is_empty() && extension.bytes().all(|byte| byte.is_ascii_alphanumeric())

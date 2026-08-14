@@ -112,8 +112,16 @@ a checkpoint is resumable. This prevents an older active legacy copy from
 resurrecting after a newer terminal/superseded write. Hostile link-backed session
 directories fail closed with an outside-root canary intact.
 
-Artifact/media payload leasing remains a separate directory-store train, and
-native Windows reparse/junction evidence remains open before H02.2 is complete.
+Media payloads, cached text extracts, session deletion, and the root index now
+use a held `SessionDirectoryStore` capability. Payload and extract lookup derives
+from `(SessionId, media ID, MIME)` using separate `o1-` domains; absolute
+`payload_path`/`extract_path` strings in legacy rows are metadata only and are
+never followed. New rows store opaque relative names, payload/extract reads are
+bounded, and index JSONL avoids per-line `String` allocation. Platform-invalid
+legacy media filenames require H02.4 inventory/recovery.
+
+Artifact payload authority remains the final session-directory train. Native
+Windows reparse/junction evidence also remains open before H02.2 is complete.
 
 ## Current evidence and blast radius
 
