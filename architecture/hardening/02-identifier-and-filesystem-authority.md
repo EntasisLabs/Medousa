@@ -75,14 +75,33 @@ are metadata only; consumers rederive authority from the typed logical ID.
 Hugging Face tree entries additionally pass a bounded cross-platform relative
 path grammar before any model payload is created.
 
+Model payload downloads now retain the opaque model-directory capability from
+directory creation through every streamed write and verification read. Shard
+hashing uses a fixed 64 KiB buffer instead of allocating the full model file.
+Nested model paths are walked without following links, and replacement fixtures
+prove that an ambient models-directory swap cannot redirect an active download.
+
+Turn-event journals now retain their opened directory capability for journal
+append and atomic commit-marker publication. Recovery enumerates and reads
+regular files through the same held root and rejects link-backed journals.
+Replacement fixtures prove that append and commit continue in the originally
+authorized directory after its ambient spelling is moved and replaced.
+
+Installed manuscript YAML, prompt assets, imported skill trees, editor writes,
+and script discovery now use held roots, bounded reads, and atomic writes.
+Skill import streams each regular source file between held source and destination
+roots with a per-file limit and rejects links or special entries. OpenShell skill
+upload starts from the held asset directory and passes `.` to the child instead
+of reopening an ambient asset path. Opaque manuscript filenames are accepted by
+validation only when their embedded logical owner matches exactly.
+
 Safe legacy layouts remain read-only compatibility inputs during the rollback
 window. A compatibility candidate must be a valid single-segment platform name
 and, where the record carries its logical ID, the embedded owner must exactly
 match the requested ID. Ambiguous lossy component/runtime names and TUI scope
 directories cannot be reassigned safely and remain untouched. Compatibility
-removal, model-download, manuscript/skill, and turn-journal replacement-race
-closure, native
-Windows evidence, and the full cross-platform abuse matrix remain H02.5 work.
+removal, native Windows evidence, and the full cross-platform abuse matrix
+remain H02.5 work.
 
 H02.1 is in progress: `medousa-types` now owns the validated, non-public
 `SessionId` representation and validated serde boundary; the daemon mints
@@ -530,7 +549,7 @@ propagates failure, but closure requires the complete inventory test.
   provider, manuscript/skill, Grapheme, turn-journal, workshop, and Forge IDs.
 - [x] Stop treating persisted path strings as read/delete authority on migrated
   surfaces.
-- [ ] Move model payload streaming, manuscript/skill file operations, and the
+- [x] Move model payload streaming, manuscript/skill file operations, and the
   engine turn journal onto held capabilities through the final read/write to
   close replacement races.
 - [ ] Delete compatibility parsers and legacy layouts after the rollback window.

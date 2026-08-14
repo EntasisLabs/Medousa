@@ -6,6 +6,8 @@ description = "Install manifests, package catalog, and model downloads for Medou
 
 [dependencies]
 medousa-types = { path = "../medousa-types" }
+cap-fs-ext = "4.0.2"
+cap-std = "4.0.2"
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "6"
 flate2 = "1"

@@ -7721,12 +7721,15 @@ name = "medousa-engine"
 version = "0.9.1"
 dependencies = [
  "async-trait",
+ "cap-fs-ext",
+ "cap-std",
  "chrono",
  "medousa-types",
  "serde",
  "serde_json",
  "tokio",
  "tracing",
+ "uuid 1.23.1",
 ]
 
 [[package]]
@@ -7760,6 +7763,8 @@ dependencies = [
 name = "medousa-install-support"
 version = "0.9.1"
 dependencies = [
+ "cap-fs-ext",
+ "cap-std",
  "chrono",
  "dirs 6.0.0",
  "flate2",

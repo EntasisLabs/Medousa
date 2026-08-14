@@ -10,9 +10,9 @@ use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::time::SystemTime;
 
-use cap_fs_ext::{DirExt as _, FollowSymlinks, OpenOptionsFollowExt as _};
 #[cfg(windows)]
 use cap_fs_ext::MetadataExt as _;
+use cap_fs_ext::{DirExt as _, FollowSymlinks, OpenOptionsFollowExt as _};
 use cap_std::ambient_authority;
 use cap_std::fs::{Dir, File, OpenOptions};
 
@@ -80,6 +80,18 @@ impl StorePath {
         segments.extend(self.segments.iter().cloned());
         segments.extend(child.segments.iter().cloned());
         Ok(Self { segments })
+    }
+}
+
+impl fmt::Display for StorePath {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, segment) in self.segments.iter().enumerate() {
+            if index > 0 {
+                formatter.write_str("/")?;
+            }
+            formatter.write_str(segment)?;
+        }
+        Ok(())
     }
 }
 
@@ -524,6 +536,66 @@ impl StoreRoot {
         Ok(())
     }
 
+    /// Copy one regular file between held roots through fixed-size buffering,
+    /// then atomically publish it at the destination.
+    pub fn atomic_copy_from(
+        &self,
+        destination: &impl StoreRootPath,
+        source_root: &Self,
+        source: &impl StoreRootPath,
+        max_bytes: u64,
+    ) -> Result<u64, StoreRootError> {
+        let input = source_root.open_file(source, false, false)?;
+        let source_size = input
+            .metadata()
+            .map_err(|error| StoreRootError::io("copy_source_metadata", error))?
+            .len();
+        if source_size > max_bytes {
+            return Err(StoreRootError::Limit {
+                operation: "atomic_copy_from",
+                max_bytes,
+            });
+        }
+
+        let (parent, leaf) = self.open_parent(destination, true, "atomic_copy_from")?;
+        reject_symlink(&parent, leaf, "atomic_copy_from")?;
+        let temporary = format!(".medousa-tmp-{}", uuid::Uuid::new_v4().simple());
+        let mut options = OpenOptions::new();
+        options
+            .write(true)
+            .create_new(true)
+            .follow(FollowSymlinks::No);
+        let mut output = parent
+            .open_with(&temporary, &options)
+            .map_err(|error| StoreRootError::io("create_copy_temporary", error))?;
+
+        let copied = match std::io::copy(&mut input.take(max_bytes.saturating_add(1)), &mut output)
+        {
+            Ok(copied) if copied <= max_bytes => copied,
+            Ok(_) => {
+                let _ = parent.remove_file(&temporary);
+                return Err(StoreRootError::Limit {
+                    operation: "atomic_copy_from",
+                    max_bytes,
+                });
+            }
+            Err(error) => {
+                let _ = parent.remove_file(&temporary);
+                return Err(StoreRootError::io("copy_temporary", error));
+            }
+        };
+        if let Err(error) = output.sync_data() {
+            let _ = parent.remove_file(&temporary);
+            return Err(StoreRootError::io("sync_copy_temporary", error));
+        }
+        drop(output);
+        if let Err(error) = parent.rename(&temporary, &parent, leaf) {
+            let _ = parent.remove_file(&temporary);
+            return Err(StoreRootError::io("publish_atomic_copy", error));
+        }
+        Ok(copied)
+    }
+
     pub fn create_dir_all(&self, path: &impl StoreRootPath) -> Result<(), StoreRootError> {
         let _ = self.open_directory_chain(path.segments(), true, "create_dir_all")?;
         Ok(())
@@ -812,6 +884,42 @@ mod tests {
                 max_bytes: 1024
             })
         ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_copy_uses_held_source_and_destination_roots() {
+        let temp = tempfile::tempdir().unwrap();
+        let source_path = temp.path().join("source");
+        let target_path = temp.path().join("target");
+        let held_source = temp.path().join("held-source");
+        let held_target = temp.path().join("held-target");
+        std::fs::create_dir(&source_path).unwrap();
+        std::fs::create_dir(&target_path).unwrap();
+        std::fs::write(source_path.join("asset.bin"), vec![b'x'; 128 * 1024]).unwrap();
+        let source = StoreRoot::open(&source_path).unwrap();
+        let target = StoreRoot::open(&target_path).unwrap();
+
+        std::fs::rename(&source_path, &held_source).unwrap();
+        std::fs::rename(&target_path, &held_target).unwrap();
+        std::fs::create_dir(&source_path).unwrap();
+        std::fs::create_dir(&target_path).unwrap();
+        let copied = target
+            .atomic_copy_from(
+                &path("nested/asset.bin"),
+                &source,
+                &path("asset.bin"),
+                256 * 1024,
+            )
+            .unwrap();
+
+        assert_eq!(copied, 128 * 1024);
+        assert_eq!(
+            std::fs::read(held_target.join("nested/asset.bin")).unwrap(),
+            vec![b'x'; 128 * 1024]
+        );
+        assert_eq!(std::fs::read_dir(&source_path).unwrap().count(), 0);
+        assert_eq!(std::fs::read_dir(&target_path).unwrap().count(), 0);
     }
 
     #[test]

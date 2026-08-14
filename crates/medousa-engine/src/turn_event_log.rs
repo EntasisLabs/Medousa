@@ -1,10 +1,12 @@
 //! Phase 1 (b/c/e) — the durable per-turn event-log spine.
 
-use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
+use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt as _};
+use cap_std::ambient_authority;
+use cap_std::fs::{Dir, File, OpenOptions};
 use chrono::Utc;
 use medousa_types::authority_id::TurnEventId;
 use medousa_types::session::ConversationTurn;
@@ -43,7 +45,7 @@ struct LogInner {
 /// Append-only event log for a single turn (the spine).
 pub struct TurnEventLog {
     envelope: TurnEnvelope,
-    root: PathBuf,
+    root: Dir,
     inner: Mutex<LogInner>,
 }
 
@@ -56,14 +58,13 @@ impl TurnEventLog {
     /// Open (create) the durable log for a turn under an explicit root
     /// (used by tests / alternate data dirs).
     pub fn open_in(root: impl AsRef<Path>, envelope: TurnEnvelope) -> std::io::Result<Self> {
-        let root = root.as_ref().to_path_buf();
-        fs::create_dir_all(&root)?;
+        std::fs::create_dir_all(root.as_ref())?;
+        let root = Dir::open_ambient_dir(root.as_ref(), ambient_authority())?;
         let turn_id = TurnEventId::parse(&envelope.turn_id).map_err(std::io::Error::other)?;
-        let journal_path = journal_path(&root, &turn_id);
-        let journal = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&journal_path)?;
+        let journal_path = journal_name(&turn_id);
+        let mut options = OpenOptions::new();
+        options.create(true).append(true).follow(FollowSymlinks::No);
+        let journal = root.open_with(&journal_path, &options)?;
         Ok(Self {
             envelope,
             root,
@@ -94,14 +95,17 @@ impl TurnEventLog {
         };
         if let Some(journal) = inner.journal.as_mut()
             && let Ok(line) = serde_json::to_string(&sequenced)
-                && writeln!(journal, "{line}").and_then(|_| journal.flush()).is_err() {
-                    tracing::warn!(
-                        turn_id = %self.envelope.turn_id,
-                        correlation_id = %self.envelope.correlation_id,
-                        seq,
-                        "turn_event_log journal append failed"
-                    );
-                }
+            && writeln!(journal, "{line}")
+                .and_then(|_| journal.flush())
+                .is_err()
+        {
+            tracing::warn!(
+                turn_id = %self.envelope.turn_id,
+                correlation_id = %self.envelope.correlation_id,
+                seq,
+                "turn_event_log journal append failed"
+            );
+        }
         inner.events.push(sequenced.clone());
         sequenced
     }
@@ -131,8 +135,8 @@ impl TurnEventLog {
             tracing::error!(turn_id = %self.envelope.turn_id, "invalid turn id reached commit");
             return;
         };
-        let marker = commit_marker_path(&self.root, &turn_id);
-        if let Err(err) = fs::write(&marker, Utc::now().to_rfc3339()) {
+        let marker = commit_marker_name(&turn_id);
+        if let Err(err) = atomic_write(&self.root, &marker, Utc::now().to_rfc3339().as_bytes()) {
             tracing::warn!(
                 turn_id = %self.envelope.turn_id,
                 correlation_id = %self.envelope.correlation_id,
@@ -153,16 +157,48 @@ impl TurnEventLog {
     }
 }
 
-fn journal_path(root: &Path, turn_id: &TurnEventId) -> PathBuf {
-    root.join(format!("{}.{JOURNAL_EXT}", turn_id.storage_key().as_str()))
+fn journal_name(turn_id: &TurnEventId) -> String {
+    format!("{}.{JOURNAL_EXT}", turn_id.storage_key().as_str())
 }
 
-fn commit_marker_path(root: &Path, turn_id: &TurnEventId) -> PathBuf {
-    marker_path_for_storage_key(root, turn_id.storage_key().as_str())
+fn commit_marker_name(turn_id: &TurnEventId) -> String {
+    marker_name_for_storage_key(turn_id.storage_key().as_str())
 }
 
-fn marker_path_for_storage_key(root: &Path, storage_key: &str) -> PathBuf {
-    root.join(format!("{storage_key}.{COMMIT_EXT}"))
+fn marker_name_for_storage_key(storage_key: &str) -> String {
+    format!("{storage_key}.{COMMIT_EXT}")
+}
+
+fn atomic_write(root: &Dir, name: &str, bytes: &[u8]) -> std::io::Result<()> {
+    reject_link(root, name)?;
+    let temporary = format!(".medousa-tmp-{}", uuid::Uuid::new_v4().simple());
+    let mut options = OpenOptions::new();
+    options
+        .write(true)
+        .create_new(true)
+        .follow(FollowSymlinks::No);
+    let mut file = root.open_with(&temporary, &options)?;
+    if let Err(error) = file.write_all(bytes).and_then(|()| file.sync_data()) {
+        let _ = root.remove_file(&temporary);
+        return Err(error);
+    }
+    drop(file);
+    if let Err(error) = root.rename(&temporary, root, name) {
+        let _ = root.remove_file(&temporary);
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn reject_link(root: &Dir, name: &str) -> std::io::Result<()> {
+    match root.symlink_metadata(name) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(std::io::Error::other(
+            "turn journal path is a symbolic link",
+        )),
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
 }
 
 pub fn fold_history_from_events(events: &[SequencedTurnEvent]) -> Vec<ConversationTurn> {
@@ -250,24 +286,32 @@ pub struct RecoveredTurn {
 }
 
 pub fn recover_uncommitted(root: impl AsRef<Path>) -> Vec<RecoveredTurn> {
-    let root = root.as_ref();
-    let Ok(entries) = fs::read_dir(root) else {
+    let Ok(root) = Dir::open_ambient_dir(root.as_ref(), ambient_authority()) else {
+        return Vec::new();
+    };
+    let Ok(entries) = root.entries() else {
         return Vec::new();
     };
 
     let mut recovered = Vec::new();
     for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some(JOURNAL_EXT) {
-            continue;
-        }
-        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+        let Some(name) = entry.file_name().to_str().map(str::to_string) else {
             continue;
         };
-        if marker_path_for_storage_key(root, stem).exists() {
+        let Some(stem) = name.strip_suffix(&format!(".{JOURNAL_EXT}")) else {
+            continue;
+        };
+        if !matches!(entry.file_type(), Ok(file_type) if file_type.is_file()) {
             continue;
         }
-        let Some(events) = read_journal(&path) else {
+        let marker = marker_name_for_storage_key(stem);
+        if root
+            .symlink_metadata(&marker)
+            .is_ok_and(|metadata| metadata.is_file() && !metadata.file_type().is_symlink())
+        {
+            continue;
+        }
+        let Some(events) = read_journal(&root, &name) else {
             continue;
         };
         if events.is_empty() {
@@ -280,7 +324,9 @@ pub fn recover_uncommitted(root: impl AsRef<Path>) -> Vec<RecoveredTurn> {
             continue;
         };
         if turn_id.storage_key().as_str() != stem
-            || events.iter().any(|event| event.envelope.turn_id != turn_id.as_str())
+            || events
+                .iter()
+                .any(|event| event.envelope.turn_id != turn_id.as_str())
         {
             continue;
         }
@@ -292,10 +338,7 @@ pub fn recover_uncommitted(root: impl AsRef<Path>) -> Vec<RecoveredTurn> {
             .last()
             .map(|ev| ev.envelope.clone())
             .unwrap_or_else(|| TurnEnvelope::new(stem, Principal::system()));
-        let session_id = envelope
-            .surface
-            .as_ref()
-            .and_then(|s| s.channel_id.clone());
+        let session_id = envelope.surface.as_ref().and_then(|s| s.channel_id.clone());
         recovered.push(RecoveredTurn {
             turn_id: envelope.turn_id.clone(),
             session_id,
@@ -306,8 +349,11 @@ pub fn recover_uncommitted(root: impl AsRef<Path>) -> Vec<RecoveredTurn> {
     recovered
 }
 
-fn read_journal(path: &Path) -> Option<Vec<SequencedTurnEvent>> {
-    let file = File::open(path).ok()?;
+fn read_journal(root: &Dir, name: &str) -> Option<Vec<SequencedTurnEvent>> {
+    reject_link(root, name).ok()?;
+    let mut options = OpenOptions::new();
+    options.read(true).follow(FollowSymlinks::No);
+    let file = root.open_with(name, &options).ok()?;
     let reader = BufReader::new(file);
     let mut events = Vec::new();
     for line in reader.lines() {
@@ -326,6 +372,7 @@ fn read_journal(path: &Path) -> Option<Vec<SequencedTurnEvent>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -368,7 +415,9 @@ mod tests {
     fn fold_history_projects_terminal_and_handoff_bodies() {
         let root = tmp_root("fold");
         let log = TurnEventLog::open_in(&root, env("turn-fold")).unwrap();
-        log.append(TurnEvent::ContentDelta { delta: "streamed".into() });
+        log.append(TurnEvent::ContentDelta {
+            delta: "streamed".into(),
+        });
         log.append(TurnEvent::WorkerAck {
             text: "on it".into(),
             tool_names: vec!["spawn".into()],
@@ -400,7 +449,9 @@ mod tests {
         }
         {
             let log = TurnEventLog::open_in(&root, env("turn-C")).unwrap();
-            log.append(TurnEvent::ContentDelta { delta: "partial".into() });
+            log.append(TurnEvent::ContentDelta {
+                delta: "partial".into(),
+            });
         }
 
         let mut recovered = recover_uncommitted(&root);
@@ -418,12 +469,17 @@ mod tests {
         let root = tmp_root("reopen");
         {
             let log = TurnEventLog::open_in(&root, env("turn-reopen")).unwrap();
-            log.append(TurnEvent::ContentDelta { delta: "one".into() });
+            log.append(TurnEvent::ContentDelta {
+                delta: "one".into(),
+            });
             log.append(final_ev("committed body", vec![]));
         }
         {
-            let path = journal_path(&root, &TurnEventId::parse("turn-reopen").unwrap());
-            let mut f = OpenOptions::new().append(true).open(&path).unwrap();
+            let path = root.join(journal_name(&TurnEventId::parse("turn-reopen").unwrap()));
+            let mut f = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap();
             writeln!(f, "{{\"envelope\":{{\"turn_id\":\"turn-reopen\"").unwrap();
         }
         let recovered = recover_uncommitted(&root);
@@ -443,12 +499,55 @@ mod tests {
         let journals = fs::read_dir(&root)
             .unwrap()
             .flatten()
-            .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some(JOURNAL_EXT))
+            .filter(|entry| {
+                entry.path().extension().and_then(|ext| ext.to_str()) == Some(JOURNAL_EXT)
+            })
             .count();
         assert_eq!(journals, 2);
         assert!(!root.parent().unwrap().join("escape.jsonl").exists());
         assert!(TurnEventLog::open_in(&root, env("../escape")).is_ok());
         assert!(!root.parent().unwrap().join("escape.jsonl").exists());
         fs::remove_dir_all(&root).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn held_root_survives_ambient_replacement() {
+        let root = tmp_root("replacement");
+        let held = root.with_extension("held");
+        let log = TurnEventLog::open_in(&root, env("turn-replacement")).unwrap();
+
+        fs::rename(&root, &held).unwrap();
+        fs::create_dir_all(&root).unwrap();
+        log.append(final_ev("held authority", vec![]));
+        log.mark_committed();
+        log.close_journal();
+
+        let turn_id = TurnEventId::parse("turn-replacement").unwrap();
+        assert!(held.join(journal_name(&turn_id)).is_file());
+        assert!(held.join(commit_marker_name(&turn_id)).is_file());
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 0);
+
+        fs::remove_dir_all(&root).ok();
+        fs::remove_dir_all(&held).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_rejects_link_backed_journal() {
+        use std::os::unix::fs::symlink;
+
+        let root = tmp_root("link");
+        let outside = root.with_extension("outside");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(&outside, b"outside canary").unwrap();
+        let turn_id = TurnEventId::parse("turn-link").unwrap();
+        symlink(&outside, root.join(journal_name(&turn_id))).unwrap();
+
+        assert!(recover_uncommitted(&root).is_empty());
+        assert_eq!(fs::read(&outside).unwrap(), b"outside canary");
+
+        fs::remove_dir_all(&root).ok();
+        fs::remove_file(&outside).ok();
     }
 }

@@ -7,14 +7,17 @@ use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
 use crate::identity_manuscript::{
-    IdentityManuscriptFile, ManuscriptMetadata, ManuscriptOpenshellSpec, ManuscriptPersonaSpec,
-    ManuscriptPromptsSpec, ManuscriptScope, ManuscriptSpec, ManuscriptToolsSpec,
-    MANUSCRIPT_API_VERSION, MANUSCRIPT_KIND, build_manuscript_context, project_manuscripts_dir,
-    manuscript_storage_name, user_manuscripts_dir, validate_manuscript,
+    IdentityManuscriptFile, MANUSCRIPT_API_VERSION, MANUSCRIPT_KIND, ManuscriptMetadata,
+    ManuscriptOpenshellSpec, ManuscriptPersonaSpec, ManuscriptPromptsSpec, ManuscriptScope,
+    ManuscriptSpec, ManuscriptToolsSpec, build_manuscript_context, manuscript_storage_name,
+    project_manuscripts_dir, user_manuscripts_dir, validate_manuscript,
 };
-use crate::skill_execution::skill_has_runnable_scripts;
+use crate::skill_execution::{skill_has_runnable_scripts, skill_has_runnable_scripts_in_store};
+use crate::store_root::{StoreEntryKind, StorePath, StoreRoot};
 
 const MAX_SKILL_ID_LEN: usize = 64;
+const MAX_SKILL_MANIFEST_BYTES: u64 = 1024 * 1024;
+const MAX_SKILL_ASSET_BYTES: u64 = 64 * 1024 * 1024;
 
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct SkillFrontmatter {
@@ -141,9 +144,14 @@ pub fn resolve_skill_source(path: &Path) -> Result<PathBuf> {
     bail!("skill path does not exist: {}", path.display());
 }
 
+#[cfg(test)]
 pub(crate) fn parse_skill_md(path: &Path) -> Result<(SkillFrontmatter, String)> {
     let raw = std::fs::read_to_string(path)
         .with_context(|| format!("read SKILL.md {}", path.display()))?;
+    parse_skill_text(&raw, path)
+}
+
+fn parse_skill_text(raw: &str, path: &Path) -> Result<(SkillFrontmatter, String)> {
     let trimmed = raw.trim_start();
     if !trimmed.starts_with("---") {
         bail!("SKILL.md must begin with YAML frontmatter (---)");
@@ -180,10 +188,9 @@ pub fn sanitize_skill_id(raw: &str, fallback_dir: &Path) -> String {
         let lower = ch.to_ascii_lowercase();
         if lower.is_ascii_alphanumeric() {
             slug.push(lower);
-        } else if matches!(lower, '-' | '_' | ' ')
-            && !slug.ends_with('-') {
-                slug.push('-');
-            }
+        } else if matches!(lower, '-' | '_' | ' ') && !slug.ends_with('-') {
+            slug.push('-');
+        }
     }
     while slug.ends_with('-') {
         slug.pop();
@@ -238,9 +245,9 @@ pub(crate) fn build_manuscript_from_skill(
         .filter(|value| !value.is_empty())
         .map(str::to_string);
 
-    let task_template = description.clone().map(|desc| {
-        format!("Apply the {name} specialty.\n\nTrigger context: {desc}")
-    });
+    let task_template = description
+        .clone()
+        .map(|desc| format!("Apply the {name} specialty.\n\nTrigger context: {desc}"));
 
     IdentityManuscriptFile {
         api_version: MANUSCRIPT_API_VERSION.to_string(),
@@ -266,25 +273,38 @@ pub(crate) fn build_manuscript_from_skill(
     }
 }
 
-fn copy_dir_recursive(source: &Path, target: &Path) -> Result<()> {
-    std::fs::create_dir_all(target)
-        .with_context(|| format!("create {}", target.display()))?;
-    for entry in std::fs::read_dir(source)
-        .with_context(|| format!("read {}", source.display()))?
-    {
-        let entry = entry?;
-        let src_path = entry.path();
-        let dst_path = target.join(entry.file_name());
-        if src_path.is_dir() {
-            copy_dir_recursive(&src_path, &dst_path)?;
-        } else {
-            std::fs::copy(&src_path, &dst_path).with_context(|| {
-                format!(
-                    "copy {} -> {}",
-                    src_path.display(),
-                    dst_path.display()
-                )
-            })?;
+fn copy_skill_tree(
+    source_root: &StoreRoot,
+    source_dir: Option<&StorePath>,
+    target_root: &StoreRoot,
+    target_dir: &StorePath,
+) -> Result<()> {
+    target_root.create_dir_all(target_dir)?;
+    let entries = match source_dir {
+        Some(path) => source_root.list_directory(path)?,
+        None => source_root.list_root()?,
+    };
+    for entry in entries {
+        let source_path = match source_dir {
+            Some(parent) => parent.join(&entry.path)?,
+            None => entry.path.clone(),
+        };
+        let target_path = target_dir.join(&entry.path)?;
+        match entry.kind {
+            StoreEntryKind::Directory => {
+                copy_skill_tree(source_root, Some(&source_path), target_root, &target_path)?
+            }
+            StoreEntryKind::File => {
+                target_root.atomic_copy_from(
+                    &target_path,
+                    source_root,
+                    &source_path,
+                    MAX_SKILL_ASSET_BYTES,
+                )?;
+            }
+            StoreEntryKind::Link | StoreEntryKind::Other => {
+                bail!("skill import rejects link-backed or special entries")
+            }
         }
     }
     Ok(())
@@ -297,45 +317,58 @@ pub fn import_skill(
     extends: Option<&str>,
 ) -> Result<SkillImportResult> {
     let skill_dir = resolve_skill_source(source)?;
+    let skill_dir = if skill_dir.is_absolute() {
+        skill_dir
+    } else {
+        std::env::current_dir()?.join(skill_dir)
+    };
+    let source_root = StoreRoot::open_nofollow(&skill_dir)
+        .with_context(|| format!("open skill source {}", skill_dir.display()))?;
     let skill_md = skill_dir.join("SKILL.md");
-    let (frontmatter, _) = parse_skill_md(&skill_md)?;
+    let skill_md_relative = StorePath::parse("SKILL.md")?;
+    let skill_md_bytes = source_root
+        .read_limited(&skill_md_relative, MAX_SKILL_MANIFEST_BYTES)
+        .with_context(|| format!("read SKILL.md {}", skill_md.display()))?;
+    let skill_md_text = std::str::from_utf8(&skill_md_bytes).context("SKILL.md is not UTF-8")?;
+    let (frontmatter, _) = parse_skill_text(skill_md_text, &skill_md)?;
 
-    let id = sanitize_skill_id(
-        frontmatter.name.as_deref().unwrap_or(""),
-        &skill_dir,
-    );
+    let id = sanitize_skill_id(frontmatter.name.as_deref().unwrap_or(""), &skill_dir);
     let storage_name = manuscript_storage_name(&id)?;
     let target_root = match scope {
         ManuscriptScope::Project => project_manuscripts_dir(),
         ManuscriptScope::User => user_manuscripts_dir(),
     };
-    std::fs::create_dir_all(&target_root)
-        .with_context(|| format!("create manuscript dir {}", target_root.display()))?;
+    let target_store = StoreRoot::open_or_create_nofollow(&target_root)
+        .with_context(|| format!("open manuscript dir {}", target_root.display()))?;
 
-    let yaml_path = target_root.join(format!("{storage_name}.yaml"));
-    let assets_dir = target_root.join(&storage_name);
-    if yaml_path.exists() || assets_dir.exists() {
+    let yaml_relative = StorePath::parse(&format!("{storage_name}.yaml"))?;
+    let assets_relative = StorePath::parse(&storage_name)?;
+    let yaml_path = target_root.join(yaml_relative.file_name());
+    let assets_dir = target_root.join(assets_relative.file_name());
+    if target_store.is_file(&yaml_relative)? || target_store.is_dir(&assets_relative)? {
         if !force {
-            bail!(
-                "specialty '{id}' already exists; pass --force to replace",
-            );
+            bail!("specialty '{id}' already exists; pass --force to replace",);
         }
-        if yaml_path.is_file() {
-            std::fs::remove_file(&yaml_path)?;
+        if target_store.is_file(&yaml_relative)? {
+            target_store.remove_file(&yaml_relative)?;
         }
-        if assets_dir.is_dir() {
-            std::fs::remove_dir_all(&assets_dir)?;
+        if target_store.is_dir(&assets_relative)? {
+            target_store.remove_dir_all(&assets_relative)?;
         }
     }
 
-    copy_dir_recursive(&skill_dir, &assets_dir)?;
+    copy_skill_tree(&source_root, None, &target_store, &assets_relative)?;
 
     let mut manuscript = build_manuscript_from_skill(&id, &frontmatter, &storage_name, extends);
-    apply_skill_sandbox_defaults(&mut manuscript, &skill_dir);
+    apply_skill_sandbox_defaults_for_scripts(
+        &mut manuscript,
+        skill_has_runnable_scripts_in_store(&source_root),
+    );
     validate_manuscript(&manuscript, &yaml_path)?;
 
     let yaml = serde_yaml::to_string(&manuscript).context("encode imported manuscript yaml")?;
-    std::fs::write(&yaml_path, yaml)
+    target_store
+        .atomic_write(&yaml_relative, yaml.as_bytes())
         .with_context(|| format!("write manuscript {}", yaml_path.display()))?;
 
     let _ = build_manuscript_context(&id)?;
@@ -351,7 +384,14 @@ pub fn import_skill(
 
 /// When a skill ships runnable scripts, enable OpenShell sandbox defaults on the manuscript.
 pub fn apply_skill_sandbox_defaults(manuscript: &mut IdentityManuscriptFile, skill_dir: &Path) {
-    if !skill_has_runnable_scripts(skill_dir) {
+    apply_skill_sandbox_defaults_for_scripts(manuscript, skill_has_runnable_scripts(skill_dir));
+}
+
+fn apply_skill_sandbox_defaults_for_scripts(
+    manuscript: &mut IdentityManuscriptFile,
+    has_runnable_scripts: bool,
+) {
+    if !has_runnable_scripts {
         return;
     }
     manuscript.spec.openshell = ManuscriptOpenshellSpec {
@@ -454,15 +494,15 @@ When tests run.
 
     #[test]
     fn sanitize_skill_id_normalizes_names() {
-        assert_eq!(sanitize_skill_id("My_Cool Skill!!", Path::new(".")), "my-cool-skill");
+        assert_eq!(
+            sanitize_skill_id("My_Cool Skill!!", Path::new(".")),
+            "my-cool-skill"
+        );
     }
 
     #[test]
     fn parse_skill_md_reads_frontmatter_and_body() {
-        let dir = std::env::temp_dir().join(format!(
-            "medousa-skill-parse-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("medousa-skill-parse-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         write_sample_skill(&dir, "parse-me");
         let (frontmatter, body) = parse_skill_md(&dir.join("SKILL.md")).expect("parse");
@@ -473,16 +513,16 @@ When tests run.
 
     #[test]
     fn import_skill_creates_manuscript_and_assets() {
-        let base = std::env::temp_dir().join(format!(
-            "medousa-skill-import-{}",
-            std::process::id()
-        ));
+        let base =
+            std::env::temp_dir().join(format!("medousa-skill-import-{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
         let source = base.join("source");
         write_sample_skill(&source, "invoice-helper");
+        let source = source.canonicalize().expect("canonical source");
 
         let manuscripts = base.join("manuscripts");
         fs::create_dir_all(&manuscripts).expect("dir");
+        let manuscripts = manuscripts.canonicalize().expect("canonical manuscripts");
 
         let original_user = user_manuscripts_dir();
         // We cannot easily override user_manuscripts_dir in tests without refactoring.
@@ -491,17 +531,21 @@ When tests run.
         let (frontmatter, _) = parse_skill_md(&skill_dir.join("SKILL.md")).expect("parse");
         let id = sanitize_skill_id("invoice-helper", &skill_dir);
         let storage_name = manuscript_storage_name(&id).unwrap();
-        let manuscript = build_manuscript_from_skill(
-            &id,
-            &frontmatter,
-            &storage_name,
-            Some("base-researcher"),
-        );
+        let manuscript =
+            build_manuscript_from_skill(&id, &frontmatter, &storage_name, Some("base-researcher"));
         let yaml_path = manuscripts.join(format!("{storage_name}.yaml"));
         let assets_dir = manuscripts.join(&storage_name);
-        copy_dir_recursive(&skill_dir, &assets_dir).expect("copy");
+        let source_store = StoreRoot::open_nofollow(&skill_dir).expect("source store");
+        let target_store = StoreRoot::open_nofollow(&manuscripts).expect("target store");
+        let assets_relative = StorePath::parse(&storage_name).expect("assets path");
+        copy_skill_tree(&source_store, None, &target_store, &assets_relative).expect("copy");
         let yaml = serde_yaml::to_string(&manuscript).expect("yaml");
-        fs::write(&yaml_path, yaml).expect("write yaml");
+        target_store
+            .atomic_write(
+                &StorePath::parse(&format!("{storage_name}.yaml")).expect("yaml path"),
+                yaml.as_bytes(),
+            )
+            .expect("write yaml");
 
         assert!(yaml_path.is_file());
         assert!(assets_dir.join("SKILL.md").is_file());
@@ -515,10 +559,8 @@ When tests run.
 
     #[test]
     fn discover_skill_dirs_finds_nested_skills() {
-        let base = std::env::temp_dir().join(format!(
-            "medousa-skill-discover-{}",
-            std::process::id()
-        ));
+        let base =
+            std::env::temp_dir().join(format!("medousa-skill-discover-{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
         write_sample_skill(&base.join("alpha"), "alpha");
         write_sample_skill(&base.join("group").join("beta"), "beta");

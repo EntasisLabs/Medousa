@@ -1,6 +1,7 @@
 //! YAML identity manuscripts — declarative specialty packs for turns and workers.
 
 use std::collections::HashSet;
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -13,9 +14,12 @@ use crate::openshell_tools::is_openshell_cognition_tool;
 use crate::shell_tools::is_shell_cognition_tool;
 use crate::skill_tools::is_skill_cognition_tool;
 use crate::stage_routing::{StageRoutingMatrix, normalize_role};
+use crate::store_root::{StoreEntryKind, StorePath, StoreRoot};
 
 pub const MANUSCRIPT_API_VERSION: &str = "medousa.dev/v1";
 pub const MANUSCRIPT_KIND: &str = "IdentityManuscript";
+const MAX_MANUSCRIPT_BYTES: u64 = 1024 * 1024;
+const MAX_MANUSCRIPT_PROMPT_BYTES: u64 = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IdentityManuscriptFile {
@@ -192,7 +196,9 @@ pub fn scheduled_lane_tool_universe() -> HashSet<String> {
     use crate::agent_runtime::turn_worker::{TurnWorkerIntent, allowed_tool_names_for_intent};
 
     let mut universe = allowed_tool_names_for_intent(TurnWorkerIntent::Research);
-    universe.extend(allowed_tool_names_for_intent(TurnWorkerIntent::MemoryContext));
+    universe.extend(allowed_tool_names_for_intent(
+        TurnWorkerIntent::MemoryContext,
+    ));
     universe.remove("cognition_identity_remember");
     universe.remove("cognition_spawn_turn_worker");
     // OS-native shell stays interactive-only for now (no scheduled allow flag yet).
@@ -267,7 +273,10 @@ pub fn render_manuscript_task_prompt(
     manuscript: &ManuscriptContext,
     override_prompt: Option<&str>,
 ) -> Result<String> {
-    if let Some(prompt) = override_prompt.map(str::trim).filter(|value| !value.is_empty()) {
+    if let Some(prompt) = override_prompt
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         return Ok(prompt.to_string());
     }
     manuscript
@@ -336,49 +345,116 @@ pub fn manuscript_storage_name(id: &str) -> Result<String> {
     Ok(id.storage_key().as_str().to_string())
 }
 
-pub fn resolve_manuscript_path(id: &str) -> Result<PathBuf> {
+fn manuscript_root(scope: ManuscriptScope) -> Result<(PathBuf, StoreRoot)> {
+    let directory = match scope {
+        ManuscriptScope::Project => project_manuscripts_dir(),
+        ManuscriptScope::User => user_manuscripts_dir(),
+    };
+    let root = StoreRoot::open_or_create_nofollow(&directory)
+        .with_context(|| format!("open manuscript dir {}", directory.display()))?;
+    Ok((directory, root))
+}
+
+fn manuscript_relative(id: &str) -> Result<StorePath> {
+    StorePath::parse(&format!("{}.yaml", manuscript_storage_name(id)?)).map_err(Into::into)
+}
+
+struct ManuscriptLocation {
+    root: StoreRoot,
+    directory: PathBuf,
+    relative: StorePath,
+}
+
+impl ManuscriptLocation {
+    fn ambient_path(&self) -> PathBuf {
+        self.directory.join(self.relative.file_name())
+    }
+}
+
+fn resolve_manuscript_location(id: &str) -> Result<ManuscriptLocation> {
     let id = medousa_types::authority_id::ManuscriptId::parse(id)?;
 
-    for dir in manuscript_search_dirs() {
-        let Ok(root) = crate::store_root::StoreRoot::open_nofollow(&dir) else {
+    for directory in manuscript_search_dirs() {
+        let Ok(root) = StoreRoot::open_nofollow(&directory) else {
             continue;
         };
         for ext in ["yaml", "yml"] {
-            let current = format!("{}.{ext}", id.storage_key().as_str());
-            let legacy = format!("{}.{ext}", id.as_str());
-            for file_name in [current, legacy] {
-                let Ok(relative) = crate::store_root::StorePath::parse(&file_name) else {
+            for file_name in [
+                format!("{}.{ext}", id.storage_key().as_str()),
+                format!("{}.{ext}", id.as_str()),
+            ] {
+                let Ok(relative) = StorePath::parse(&file_name) else {
                     continue;
                 };
                 if root.is_file(&relative).unwrap_or(false) {
-                    return Ok(dir.join(file_name));
+                    return Ok(ManuscriptLocation {
+                        root,
+                        directory,
+                        relative,
+                    });
                 }
             }
         }
     }
 
-    bail!("manuscript '{}' not found in project or user manuscript dirs", id)
+    bail!(
+        "manuscript '{}' not found in project or user manuscript dirs",
+        id
+    )
+}
+
+pub fn resolve_manuscript_path(id: &str) -> Result<PathBuf> {
+    Ok(resolve_manuscript_location(id)?.ambient_path())
 }
 
 pub fn load_manuscript_file(path: &Path) -> Result<IdentityManuscriptFile> {
-    let raw = std::fs::read_to_string(path)
+    let file =
+        std::fs::File::open(path).with_context(|| format!("open manuscript {}", path.display()))?;
+    let mut raw = String::with_capacity(8 * 1024);
+    file.take(MAX_MANUSCRIPT_BYTES.saturating_add(1))
+        .read_to_string(&mut raw)
         .with_context(|| format!("read manuscript {}", path.display()))?;
+    if raw.len() as u64 > MAX_MANUSCRIPT_BYTES {
+        bail!("manuscript exceeds {MAX_MANUSCRIPT_BYTES} bytes");
+    }
     let parsed: IdentityManuscriptFile = serde_yaml::from_str(&raw)
         .with_context(|| format!("parse manuscript yaml {}", path.display()))?;
     Ok(parsed)
 }
 
 pub fn load_manuscript(id: &str) -> Result<(IdentityManuscriptFile, PathBuf)> {
-    let path = resolve_manuscript_path(id)?;
-    let file = load_manuscript_file(&path)?;
-    Ok((file, path))
+    let (file, location) = load_manuscript_owned(id)?;
+    Ok((file, location.ambient_path()))
 }
 
 pub fn load_manuscript_merged(id: &str) -> Result<(IdentityManuscriptFile, PathBuf)> {
-    let path = resolve_manuscript_path(id)?;
-    let file = load_manuscript_file(&path)?;
+    let (file, location) = load_manuscript_owned(id)?;
+    let path = location.ambient_path();
     let merged = merge_manuscript_inheritance(&file, &path)?;
     Ok((merged, path))
+}
+
+fn load_manuscript_owned(id: &str) -> Result<(IdentityManuscriptFile, ManuscriptLocation)> {
+    let requested = medousa_types::authority_id::ManuscriptId::parse(id)?;
+    let location = resolve_manuscript_location(requested.as_str())?;
+    let bytes = location
+        .root
+        .read_limited(&location.relative, MAX_MANUSCRIPT_BYTES)
+        .with_context(|| format!("read manuscript {}", location.ambient_path().display()))?;
+    let file: IdentityManuscriptFile = serde_yaml::from_slice(&bytes).with_context(|| {
+        format!(
+            "parse manuscript yaml {}",
+            location.ambient_path().display()
+        )
+    })?;
+    if file.metadata.id != requested.as_str() {
+        bail!(
+            "manuscript '{}' storage contains owner '{}'",
+            requested,
+            file.metadata.id
+        );
+    }
+    Ok((file, location))
 }
 
 fn merge_manuscript_inheritance(
@@ -401,15 +477,15 @@ fn merge_manuscript_inheritance(
 
     let (base_file, base_path) = load_manuscript(base_id)
         .with_context(|| format!("resolve base manuscript '{base_id}' for extends"))?;
-    validate_extends_chain(base_id, &base_path)?;
+    validate_extends_chain(base_id)?;
 
     let merged_base = merge_manuscript_inheritance(&base_file, &base_path)?;
     Ok(merge_manuscript_layers(merged_base, file.clone()))
 }
 
-fn validate_extends_chain(base_id: &str, base_path: &Path) -> Result<()> {
-    let mut visited = HashSet::from([base_path.to_path_buf()]);
-    let mut current = load_manuscript_file(base_path)?;
+fn validate_extends_chain(base_id: &str) -> Result<()> {
+    let mut visited = HashSet::from([base_id.to_string()]);
+    let mut current = load_manuscript(base_id)?.0;
     while let Some(parent_id) = current
         .metadata
         .extends
@@ -420,11 +496,10 @@ fn validate_extends_chain(base_id: &str, base_path: &Path) -> Result<()> {
         if parent_id == base_id {
             bail!("manuscript extends cycle detected at '{parent_id}'");
         }
-        let parent_path = resolve_manuscript_path(parent_id)?;
-        if !visited.insert(parent_path.clone()) {
+        if !visited.insert(parent_id.to_string()) {
             bail!("manuscript extends cycle detected at '{parent_id}'");
         }
-        current = load_manuscript_file(&parent_path)?;
+        current = load_manuscript(parent_id)?.0;
     }
     Ok(())
 }
@@ -460,7 +535,10 @@ fn merge_persona_spec(
             .display_name
             .clone()
             .or_else(|| base.display_name.clone()),
-        voice_appendix: child.voice_appendix.clone().or_else(|| base.voice_appendix.clone()),
+        voice_appendix: child
+            .voice_appendix
+            .clone()
+            .or_else(|| base.voice_appendix.clone()),
         soul_md: child.soul_md.clone().or_else(|| base.soul_md.clone()),
     }
 }
@@ -474,7 +552,10 @@ fn merge_prompts_spec(
             .system_appendix_sttp
             .clone()
             .or_else(|| base.system_appendix_sttp.clone()),
-        task_template: child.task_template.clone().or_else(|| base.task_template.clone()),
+        task_template: child
+            .task_template
+            .clone()
+            .or_else(|| base.task_template.clone()),
     }
 }
 
@@ -491,34 +572,34 @@ fn merge_identity_spec(
     }
 }
 
-fn merge_worker_spec(base: &ManuscriptWorkerSpec, child: &ManuscriptWorkerSpec) -> ManuscriptWorkerSpec {
+fn merge_worker_spec(
+    base: &ManuscriptWorkerSpec,
+    child: &ManuscriptWorkerSpec,
+) -> ManuscriptWorkerSpec {
     ManuscriptWorkerSpec {
         intent: child.intent.clone().or_else(|| base.intent.clone()),
-        stage_role: child
-            .stage_role
-            .clone()
-            .or_else(|| base.stage_role.clone()),
-        model_hint: child
-            .model_hint
-            .clone()
-            .or_else(|| base.model_hint.clone()),
+        stage_role: child.stage_role.clone().or_else(|| base.stage_role.clone()),
+        model_hint: child.model_hint.clone().or_else(|| base.model_hint.clone()),
         max_tool_rounds: child.max_tool_rounds.or(base.max_tool_rounds),
         override_sttp: child.override_sttp || base.override_sttp,
     }
 }
 
-fn merge_tools_spec(base: &ManuscriptToolsSpec, child: &ManuscriptToolsSpec) -> ManuscriptToolsSpec {
+fn merge_tools_spec(
+    base: &ManuscriptToolsSpec,
+    child: &ManuscriptToolsSpec,
+) -> ManuscriptToolsSpec {
     ManuscriptToolsSpec {
         allow: merge_string_lists(&base.allow, &child.allow),
     }
 }
 
-fn merge_locus_spec(base: &ManuscriptLocusSpec, child: &ManuscriptLocusSpec) -> ManuscriptLocusSpec {
+fn merge_locus_spec(
+    base: &ManuscriptLocusSpec,
+    child: &ManuscriptLocusSpec,
+) -> ManuscriptLocusSpec {
     ManuscriptLocusSpec {
-        session_id: child
-            .session_id
-            .clone()
-            .or_else(|| base.session_id.clone()),
+        session_id: child.session_id.clone().or_else(|| base.session_id.clone()),
     }
 }
 
@@ -528,7 +609,10 @@ fn merge_delivery_spec(
 ) -> ManuscriptDeliverySpec {
     ManuscriptDeliverySpec {
         mode: child.mode.clone().or_else(|| base.mode.clone()),
-        on_complete: child.on_complete.clone().or_else(|| base.on_complete.clone()),
+        on_complete: child
+            .on_complete
+            .clone()
+            .or_else(|| base.on_complete.clone()),
     }
 }
 
@@ -593,30 +677,35 @@ pub fn validate_manuscript(file: &IdentityManuscriptFile, path: &Path) -> Result
         bail!("metadata.name is required");
     }
 
+    let manuscript_id = medousa_types::authority_id::ManuscriptId::parse(&file.metadata.id)?;
     if let Some(stem) = path.file_stem().and_then(|value| value.to_str())
-        && stem != file.metadata.id {
-            bail!(
-                "metadata.id '{}' must match filename stem '{}'",
-                file.metadata.id,
-                stem
-            );
-        }
+        && stem != manuscript_id.as_str()
+        && stem != manuscript_id.storage_key().as_str()
+    {
+        bail!(
+            "metadata.id '{}' must match filename stem '{}'",
+            file.metadata.id,
+            stem
+        );
+    }
 
     if let Some(intent) = file.spec.worker.intent.as_deref()
-        && TurnWorkerIntent::parse(intent).is_none() {
-            bail!(
-                "spec.worker.intent '{intent}' is invalid (expected research|general|memory.context|memory.avec_calibrate)"
-            );
-        }
+        && TurnWorkerIntent::parse(intent).is_none()
+    {
+        bail!(
+            "spec.worker.intent '{intent}' is invalid (expected research|general|memory.context|memory.avec_calibrate)"
+        );
+    }
 
     if let Some(role) = file.spec.worker.stage_role.as_deref() {
         validate_worker_stage_role(role)?;
     }
 
     if let Some(hint) = file.spec.worker.model_hint.as_deref()
-        && hint.trim().is_empty() {
-            bail!("spec.worker.model_hint must not be blank when set");
-        }
+        && hint.trim().is_empty()
+    {
+        bail!("spec.worker.model_hint must not be blank when set");
+    }
 
     if let Some(mode) = file.spec.delivery.mode.as_deref() {
         match mode.trim().to_ascii_lowercase().as_str() {
@@ -625,14 +714,18 @@ pub fn validate_manuscript(file: &IdentityManuscriptFile, path: &Path) -> Result
         }
     }
 
-    if let Some(base_id) = file.metadata.extends.as_deref().map(str::trim).filter(|v| !v.is_empty())
+    if let Some(base_id) = file
+        .metadata
+        .extends
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
     {
         if base_id == file.metadata.id {
             bail!("metadata.extends cannot reference the manuscript's own id");
         }
-        resolve_manuscript_path(base_id).with_context(|| {
-            format!("metadata.extends base manuscript '{base_id}' not found")
-        })?;
+        resolve_manuscript_path(base_id)
+            .with_context(|| format!("metadata.extends base manuscript '{base_id}' not found"))?;
     }
 
     validate_openshell_spec(&file.spec.openshell, &file.spec.tools.allow)?;
@@ -643,8 +736,7 @@ pub fn validate_manuscript(file: &IdentityManuscriptFile, path: &Path) -> Result
 /// Validates `spec.worker.stage_role` against [`StageRoutingMatrix`] role names.
 pub fn validate_worker_stage_role(role: &str) -> Result<()> {
     let normalized = normalize_role(role);
-    if StageRoutingMatrix::roles().contains(&normalized.as_str())
-    {
+    if StageRoutingMatrix::roles().contains(&normalized.as_str()) {
         return Ok(());
     }
     bail!(
@@ -653,7 +745,10 @@ pub fn validate_worker_stage_role(role: &str) -> Result<()> {
     )
 }
 
-fn validate_openshell_spec(openshell: &ManuscriptOpenshellSpec, tools_allow: &[String]) -> Result<()> {
+fn validate_openshell_spec(
+    openshell: &ManuscriptOpenshellSpec,
+    tools_allow: &[String],
+) -> Result<()> {
     let openshell_tools: Vec<_> = tools_allow
         .iter()
         .filter(|tool| is_openshell_cognition_tool(tool))
@@ -683,9 +778,7 @@ fn validate_openshell_spec(openshell: &ManuscriptOpenshellSpec, tools_allow: &[S
     }
 
     if !openshell_tools.is_empty() && !openshell.enabled {
-        bail!(
-            "spec.tools.allow lists openshell tools but spec.openshell.enabled is not true"
-        );
+        bail!("spec.tools.allow lists openshell tools but spec.openshell.enabled is not true");
     }
 
     Ok(())
@@ -785,26 +878,24 @@ pub fn install_manuscript(source: &Path, scope: ManuscriptScope) -> Result<PathB
     let file = load_manuscript_file(source)?;
     validate_manuscript(&file, source)?;
 
-    let target_dir = match scope {
-        ManuscriptScope::Project => project_manuscripts_dir(),
-        ManuscriptScope::User => user_manuscripts_dir(),
-    };
-    std::fs::create_dir_all(&target_dir)
-        .with_context(|| format!("create manuscript dir {}", target_dir.display()))?;
-
-    let stem = file.metadata.id.trim();
-    let target = target_dir.join(format!("{stem}.yaml"));
-    if target.exists() {
+    let (target_dir, root) = manuscript_root(scope)?;
+    let relative = manuscript_relative(&file.metadata.id)?;
+    let target = target_dir.join(relative.file_name());
+    if root.is_file(&relative)? {
         bail!(
             "manuscript '{}' already installed at {}",
-            stem,
+            file.metadata.id,
             target.display()
         );
     }
 
+    let source_size = source.metadata()?.len();
+    if source_size > MAX_MANUSCRIPT_BYTES {
+        bail!("manuscript source exceeds {MAX_MANUSCRIPT_BYTES} bytes");
+    }
     let bytes = std::fs::read(source)
         .with_context(|| format!("read manuscript source {}", source.display()))?;
-    std::fs::write(&target, bytes)
+    root.atomic_write(&relative, &bytes)
         .with_context(|| format!("write manuscript {}", target.display()))?;
     Ok(target)
 }
@@ -839,12 +930,7 @@ pub fn create_manuscript(
         bail!("name is required");
     }
 
-    let target_dir = match scope {
-        ManuscriptScope::Project => project_manuscripts_dir(),
-        ManuscriptScope::User => user_manuscripts_dir(),
-    };
-    std::fs::create_dir_all(&target_dir)
-        .with_context(|| format!("create manuscript dir {}", target_dir.display()))?;
+    let (target_dir, root) = manuscript_root(scope)?;
 
     let base_id = slugify_manuscript_id(name);
     let mut id = base_id.clone();
@@ -857,7 +943,8 @@ pub fn create_manuscript(
         }
     }
 
-    let target = target_dir.join(format!("{}.yaml", manuscript_storage_name(&id)?));
+    let relative = manuscript_relative(&id)?;
+    let target = target_dir.join(relative.file_name());
     let file = IdentityManuscriptFile {
         api_version: MANUSCRIPT_API_VERSION.to_string(),
         kind: MANUSCRIPT_KIND.to_string(),
@@ -886,11 +973,14 @@ pub fn create_manuscript(
             ..ManuscriptSpec::default()
         },
     };
-    save_manuscript_file(&target, &file)?;
+    save_manuscript_to_store(&root, &relative, &target, &file)?;
     Ok((id, target))
 }
 
-fn resolve_voice_appendix(base_dir: &Path, persona: &ManuscriptPersonaSpec) -> Result<Option<String>> {
+fn resolve_voice_appendix(
+    base_dir: &Path,
+    persona: &ManuscriptPersonaSpec,
+) -> Result<Option<String>> {
     let inline = persona
         .voice_appendix
         .as_deref()
@@ -924,25 +1014,39 @@ pub fn list_manuscripts() -> Result<Vec<ManuscriptListing>> {
         (ManuscriptScope::User, user_manuscripts_dir()),
         (ManuscriptScope::Project, project_manuscripts_dir()),
     ] {
-        if !dir.is_dir() {
+        let Ok(root) = StoreRoot::open_nofollow(&dir) else {
             continue;
-        }
-        for entry in std::fs::read_dir(&dir).with_context(|| format!("read {}", dir.display()))? {
-            let entry = entry?;
-            let path = entry.path();
-            if !path.is_file() {
+        };
+        for entry in root
+            .list_root()
+            .with_context(|| format!("read {}", dir.display()))?
+        {
+            if entry.kind != StoreEntryKind::File {
                 continue;
             }
-            let Some(ext) = path.extension().and_then(|value| value.to_str()) else {
-                continue;
-            };
-            if ext != "yaml" && ext != "yml" {
+            let file_name = entry.path.file_name();
+            if !file_name.ends_with(".yaml") && !file_name.ends_with(".yml") {
                 continue;
             }
-            let file = match load_manuscript_file(&path) {
-                Ok(file) => file,
-                Err(_) => continue,
+            let file = match root
+                .read_limited(&entry.path, MAX_MANUSCRIPT_BYTES)
+                .ok()
+                .and_then(|bytes| serde_yaml::from_slice::<IdentityManuscriptFile>(&bytes).ok())
+            {
+                Some(file) => file,
+                None => continue,
             };
+            let Ok(id) = medousa_types::authority_id::ManuscriptId::parse(&file.metadata.id) else {
+                continue;
+            };
+            let stem = file_name
+                .strip_suffix(".yaml")
+                .or_else(|| file_name.strip_suffix(".yml"))
+                .unwrap_or(file_name);
+            if stem != id.as_str() && stem != id.storage_key().as_str() {
+                continue;
+            }
+            let path = dir.join(file_name);
             by_id.insert(
                 file.metadata.id.clone(),
                 ManuscriptListing {
@@ -1012,7 +1116,9 @@ pub fn scheduled_tool_preview(
 pub fn palette_tools_for_editor() -> Vec<String> {
     use crate::shell_tools::SHELL_COGNITION_TOOLS;
 
-    let mut tools = scheduled_lane_tool_universe().into_iter().collect::<Vec<_>>();
+    let mut tools = scheduled_lane_tool_universe()
+        .into_iter()
+        .collect::<Vec<_>>();
     // Shell stays interactive-only on scheduled lane, but specialists may grant
     // cognition_shell_* for interactive/worker turns via the editor palette.
     for tool in SHELL_COGNITION_TOOLS {
@@ -1024,9 +1130,34 @@ pub fn palette_tools_for_editor() -> Vec<String> {
 }
 
 pub fn save_manuscript_file(path: &Path, file: &IdentityManuscriptFile) -> Result<()> {
+    let path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    let parent = path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("manuscript path has no parent"))?;
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| anyhow::anyhow!("manuscript filename is not valid UTF-8"))?;
+    let relative = StorePath::parse(file_name)?;
+    let root = StoreRoot::open_or_create_nofollow(parent)
+        .with_context(|| format!("open manuscript dir {}", parent.display()))?;
+    save_manuscript_to_store(&root, &relative, &path, file)
+}
+
+fn save_manuscript_to_store(
+    root: &StoreRoot,
+    relative: &StorePath,
+    path: &Path,
+    file: &IdentityManuscriptFile,
+) -> Result<()> {
     validate_manuscript(file, path)?;
     let yaml = serde_yaml::to_string(file).context("encode manuscript yaml")?;
-    std::fs::write(path, yaml).with_context(|| format!("write manuscript {}", path.display()))?;
+    root.atomic_write(relative, yaml.as_bytes())
+        .with_context(|| format!("write manuscript {}", path.display()))?;
     Ok(())
 }
 
@@ -1034,38 +1165,44 @@ pub fn apply_editor_lite_update(
     id: &str,
     request: &crate::daemon_api::UpdateManuscriptRequest,
 ) -> Result<ManuscriptContext> {
-    let (mut file, path) = load_manuscript(id)?;
+    let (mut file, location) = load_manuscript_owned(id)?;
+    let path = location.ambient_path();
 
-    if let Some(name) = request.name.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+    if let Some(name) = request
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
         file.metadata.name = name.to_string();
     }
 
     if request.clear_description == Some(true) {
         file.metadata.description = None;
     } else if let Some(description) = request.description.as_deref() {
-        file.metadata.description = Some(description.trim().to_string())
-            .filter(|value| !value.is_empty());
+        file.metadata.description =
+            Some(description.trim().to_string()).filter(|value| !value.is_empty());
     }
 
     if request.clear_display_name == Some(true) {
         file.spec.persona.display_name = None;
     } else if let Some(display_name) = request.display_name.as_deref() {
-        file.spec.persona.display_name = Some(display_name.trim().to_string())
-            .filter(|value| !value.is_empty());
+        file.spec.persona.display_name =
+            Some(display_name.trim().to_string()).filter(|value| !value.is_empty());
     }
 
     if request.clear_voice_appendix == Some(true) {
         file.spec.persona.voice_appendix = None;
     } else if let Some(voice_appendix) = request.voice_appendix.as_deref() {
-        file.spec.persona.voice_appendix = Some(voice_appendix.trim().to_string())
-            .filter(|value| !value.is_empty());
+        file.spec.persona.voice_appendix =
+            Some(voice_appendix.trim().to_string()).filter(|value| !value.is_empty());
     }
 
     if request.clear_task_template == Some(true) {
         file.spec.prompts.task_template = None;
     } else if let Some(task_template) = request.task_template.as_deref() {
-        file.spec.prompts.task_template = Some(task_template.trim().to_string())
-            .filter(|value| !value.is_empty());
+        file.spec.prompts.task_template =
+            Some(task_template.trim().to_string()).filter(|value| !value.is_empty());
     }
 
     if let Some(tools_allow) = &request.tools_allow {
@@ -1079,59 +1216,53 @@ pub fn apply_editor_lite_update(
     if request.clear_schedule_cron == Some(true) {
         file.spec.schedule.cron = None;
     } else if let Some(cron) = request.schedule_cron.as_deref() {
-        file.spec.schedule.cron = Some(cron.trim().to_string())
-            .filter(|value| !value.is_empty());
+        file.spec.schedule.cron = Some(cron.trim().to_string()).filter(|value| !value.is_empty());
     }
 
     if let Some(mode) = request.schedule_execution_mode.as_deref() {
-        file.spec.schedule.execution_mode = Some(mode.trim().to_string())
-            .filter(|value| !value.is_empty());
+        file.spec.schedule.execution_mode =
+            Some(mode.trim().to_string()).filter(|value| !value.is_empty());
     }
 
     if let Some(mode) = request.delivery_mode.as_deref() {
-        file.spec.delivery.mode = Some(mode.trim().to_string())
-            .filter(|value| !value.is_empty());
+        file.spec.delivery.mode = Some(mode.trim().to_string()).filter(|value| !value.is_empty());
     }
 
     if let Some(on_complete) = request.delivery_on_complete.as_deref() {
-        file.spec.delivery.on_complete = Some(on_complete.trim().to_string())
-            .filter(|value| !value.is_empty());
+        file.spec.delivery.on_complete =
+            Some(on_complete.trim().to_string()).filter(|value| !value.is_empty());
     }
 
     if let Some(allow_scheduled) = request.openshell_allow_scheduled {
         file.spec.openshell.allow_scheduled = allow_scheduled;
     }
 
-    save_manuscript_file(&path, &file)?;
+    save_manuscript_to_store(&location.root, &location.relative, &path, &file)?;
     build_manuscript_context(id)
 }
 
 pub async fn compile_manuscript_identity_summary(
-    store: &std::sync::Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>,
+    store: &std::sync::Arc<
+        dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore,
+    >,
     manuscript: &ManuscriptContext,
     query_hints: Option<&str>,
 ) -> String {
     use crate::cognitive_identity::{
-        DigestCompileOptions, cognitive_identity_diagnostics_with_stats,
-        compile_relational_memory_digest_with_options, load_cognitive_identity_snapshot,
-        DEFAULT_RELATIONAL_DIGEST_BUDGET,
+        DEFAULT_RELATIONAL_DIGEST_BUDGET, DigestCompileOptions,
+        cognitive_identity_diagnostics_with_stats, compile_relational_memory_digest_with_options,
+        load_cognitive_identity_snapshot,
     };
     use crate::identity_memory::resolve_identity_user_id;
 
     let user_id = resolve_identity_user_id(None);
-    let snapshot = load_cognitive_identity_snapshot(
-        Some(store),
-        &user_id,
-        Some("interactive"),
-        32,
-    )
-    .await;
+    let snapshot =
+        load_cognitive_identity_snapshot(Some(store), &user_id, Some("interactive"), 32).await;
     let mut options = DigestCompileOptions::from_product_config(DEFAULT_RELATIONAL_DIGEST_BUDGET)
         .with_query_hints(query_hints.unwrap_or_default());
     options = digest_options_for_manuscript(options, manuscript);
     let ranked = compile_relational_memory_digest_with_options(&snapshot, options);
-    let diagnostics =
-        cognitive_identity_diagnostics_with_stats(&snapshot, Some(&ranked.stats));
+    let diagnostics = cognitive_identity_diagnostics_with_stats(&snapshot, Some(&ranked.stats));
     format!("{}\n{diagnostics}", ranked.text)
 }
 
@@ -1140,12 +1271,20 @@ pub fn digest_options_for_manuscript(
     manuscript: &ManuscriptContext,
 ) -> DigestCompileOptions {
     for pin in &manuscript.pinned_preferences {
-        if !base.pinned_preferences.iter().any(|existing| existing == pin) {
+        if !base
+            .pinned_preferences
+            .iter()
+            .any(|existing| existing == pin)
+        {
             base.pinned_preferences.push(pin.clone());
         }
     }
     for pin in &manuscript.pinned_contact_ids {
-        if !base.pinned_contact_ids.iter().any(|existing| existing == pin) {
+        if !base
+            .pinned_contact_ids
+            .iter()
+            .any(|existing| existing == pin)
+        {
             base.pinned_contact_ids.push(pin.clone());
         }
     }
@@ -1198,7 +1337,11 @@ pub fn format_worker_manuscript_block(manuscript: &WorkerManuscriptHandoff) -> S
         format!("id={}", manuscript.id),
         format!("name={}", manuscript.name),
     ];
-    if let Some(intent) = manuscript.worker_intent.as_deref().filter(|v| !v.is_empty()) {
+    if let Some(intent) = manuscript
+        .worker_intent
+        .as_deref()
+        .filter(|v| !v.is_empty())
+    {
         lines.push(format!("worker_intent={intent}"));
     }
     if let Some(role) = manuscript.stage_role.as_deref().filter(|v| !v.is_empty()) {
@@ -1231,11 +1374,19 @@ pub fn format_worker_manuscript_block(manuscript: &WorkerManuscriptHandoff) -> S
                 .to_string(),
         );
     }
-    if let Some(voice) = manuscript.voice_appendix.as_deref().filter(|v| !v.is_empty()) {
+    if let Some(voice) = manuscript
+        .voice_appendix
+        .as_deref()
+        .filter(|v| !v.is_empty())
+    {
         lines.push("voice_appendix:".to_string());
         lines.push(voice.trim().to_string());
     }
-    if let Some(appendix) = manuscript.system_appendix.as_deref().filter(|v| !v.is_empty()) {
+    if let Some(appendix) = manuscript
+        .system_appendix
+        .as_deref()
+        .filter(|v| !v.is_empty())
+    {
         lines.push("system_appendix:".to_string());
         lines.push(appendix.trim().to_string());
     }
@@ -1254,27 +1405,51 @@ pub fn format_manuscript_prompt_block(manuscript: &ManuscriptContext) -> String 
     if let Some(display_name) = manuscript.display_name.as_deref().filter(|v| !v.is_empty()) {
         lines.push(format!("display_name={display_name}"));
     }
-    if let Some(voice) = manuscript.voice_appendix.as_deref().filter(|v| !v.is_empty()) {
+    if let Some(voice) = manuscript
+        .voice_appendix
+        .as_deref()
+        .filter(|v| !v.is_empty())
+    {
         lines.push("voice_appendix:".to_string());
         lines.push(voice.trim().to_string());
     }
-    if let Some(appendix) = manuscript.system_appendix.as_deref().filter(|v| !v.is_empty()) {
+    if let Some(appendix) = manuscript
+        .system_appendix
+        .as_deref()
+        .filter(|v| !v.is_empty())
+    {
         lines.push("system_appendix:".to_string());
         lines.push(appendix.trim().to_string());
     }
-    if let Some(task) = manuscript.task_template.as_deref().filter(|v| !v.is_empty()) {
+    if let Some(task) = manuscript
+        .task_template
+        .as_deref()
+        .filter(|v| !v.is_empty())
+    {
         lines.push("task_template:".to_string());
         lines.push(task.trim().to_string());
     }
-    if let Some(intent) = manuscript.worker_intent.as_deref().filter(|v| !v.is_empty()) {
+    if let Some(intent) = manuscript
+        .worker_intent
+        .as_deref()
+        .filter(|v| !v.is_empty())
+    {
         lines.push(format!("worker_intent={intent}"));
     }
-    if let Some(role) = manuscript.worker_stage_role.as_deref().filter(|v| !v.is_empty()) {
+    if let Some(role) = manuscript
+        .worker_stage_role
+        .as_deref()
+        .filter(|v| !v.is_empty())
+    {
         lines.push(format!(
             "worker_stage_role={role} (maps to StageRoutingMatrix for spawned workers)"
         ));
     }
-    if let Some(hint) = manuscript.worker_model_hint.as_deref().filter(|v| !v.is_empty()) {
+    if let Some(hint) = manuscript
+        .worker_model_hint
+        .as_deref()
+        .filter(|v| !v.is_empty())
+    {
         lines.push(format!("worker_model_hint={hint}"));
     }
     if !manuscript.tools_allow.is_empty() {
@@ -1299,10 +1474,20 @@ fn resolve_prompt_field(base_dir: &Path, raw: &str) -> Result<String> {
         return Ok(String::new());
     }
 
-    let candidate = base_dir.join(trimmed);
-    if candidate.is_file() {
-        return std::fs::read_to_string(&candidate)
-            .with_context(|| format!("read manuscript prompt file {}", candidate.display()));
+    let relative_text = trimmed.strip_prefix("./").unwrap_or(trimmed);
+    if let Ok(relative) = StorePath::parse(relative_text)
+        && let Ok(root) = StoreRoot::open_nofollow(base_dir)
+        && root.is_file(&relative).unwrap_or(false)
+    {
+        let bytes = root
+            .read_limited(&relative, MAX_MANUSCRIPT_PROMPT_BYTES)
+            .with_context(|| {
+                format!(
+                    "read manuscript prompt file {}",
+                    base_dir.join(relative_text).display()
+                )
+            })?;
+        return String::from_utf8(bytes).context("manuscript prompt file is not UTF-8");
     }
 
     Ok(trimmed.to_string())
@@ -1350,10 +1535,8 @@ spec:
 
     #[test]
     fn validate_and_build_context_from_yaml() {
-        let dir = std::env::temp_dir().join(format!(
-            "medousa-manuscript-test-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("medousa-manuscript-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         let path = write_sample_manuscript(&dir);
 
@@ -1363,17 +1546,22 @@ spec:
 
         assert_eq!(context.id, "morning-brief");
         assert_eq!(context.pinned_preferences, vec!["timezone", "beverage"]);
-        assert!(context.system_appendix.as_ref().is_some_and(|v| v.contains("overnight")));
-
-        let options = digest_options_for_manuscript(
-            DigestCompileOptions::from_product_config(800),
-            &context,
+        assert!(
+            context
+                .system_appendix
+                .as_ref()
+                .is_some_and(|v| v.contains("overnight"))
         );
+
+        let options =
+            digest_options_for_manuscript(DigestCompileOptions::from_product_config(800), &context);
         assert!(options.pinned_preferences.contains(&"timezone".to_string()));
-        assert!(options
-            .query_hints
-            .as_ref()
-            .is_some_and(|hints| hints.contains("priorities")));
+        assert!(
+            options
+                .query_hints
+                .as_ref()
+                .is_some_and(|hints| hints.contains("priorities"))
+        );
 
         let block = format_manuscript_prompt_block(&context);
         assert!(block.contains("morning-brief"));
@@ -1455,12 +1643,11 @@ spec:
 
     #[test]
     fn soul_md_file_appends_to_voice_appendix() {
-        let dir = std::env::temp_dir().join(format!(
-            "medousa-manuscript-soul-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("medousa-manuscript-soul-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("dir");
+        let dir = dir.canonicalize().expect("canonical temp dir");
         fs::write(dir.join("brief-soul.md"), "Long soul prose for brief.").expect("write soul");
         let path = dir.join("brief.yaml");
         fs::write(
@@ -1480,11 +1667,37 @@ spec:
 
         let file = load_manuscript_file(&path).expect("load");
         let context = build_manuscript_context_from_file(&file, &path).expect("context");
-        assert!(context
-            .voice_appendix
-            .as_ref()
-            .is_some_and(|voice| voice.contains("Short voice.") && voice.contains("Long soul prose")));
+        assert!(context.voice_appendix.as_ref().is_some_and(
+            |voice| voice.contains("Short voice.") && voice.contains("Long soul prose")
+        ));
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn manuscript_write_uses_held_root_after_replacement() {
+        let root_path = std::env::temp_dir().join(format!(
+            "medousa-manuscript-capability-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        fs::create_dir_all(&root_path).expect("root");
+        let root_path = root_path.canonicalize().expect("canonical root");
+        let held_path = root_path.with_extension("held");
+        let source = write_sample_manuscript(&root_path);
+        let file = load_manuscript_file(&source).expect("load sample");
+        let root = StoreRoot::open_nofollow(&root_path).expect("held root");
+        let relative = manuscript_relative(&file.metadata.id).expect("opaque path");
+
+        fs::rename(&root_path, &held_path).expect("move root");
+        fs::create_dir_all(&root_path).expect("replacement root");
+        let target = held_path.join(relative.file_name());
+        save_manuscript_to_store(&root, &relative, &target, &file).expect("save through handle");
+
+        assert!(target.is_file());
+        assert_eq!(fs::read_dir(&root_path).expect("replacement").count(), 0);
+
+        fs::remove_dir_all(&root_path).ok();
+        fs::remove_dir_all(&held_path).ok();
     }
 
     #[test]
