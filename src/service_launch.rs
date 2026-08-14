@@ -1,6 +1,7 @@
 //! Detached background process spawn for Medousa CLI / setup.
 
 use std::fs::{self, OpenOptions};
+#[cfg(unix)]
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};

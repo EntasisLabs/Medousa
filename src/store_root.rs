@@ -803,7 +803,9 @@ fn list_directory_utf8(dir: &Dir) -> Result<Vec<StoreDirectoryEntry>, StoreRootE
         } else {
             StoreEntryKind::Other
         };
-        let metadata = (kind != StoreEntryKind::Other).then_some(metadata).flatten();
+        let metadata = (kind != StoreEntryKind::Other)
+            .then_some(metadata)
+            .flatten();
         let size = metadata.as_ref().map_or(0, |metadata| metadata.len());
         let created = metadata
             .as_ref()
@@ -1091,6 +1093,7 @@ mod tests {
         assert_eq!(std::fs::read_dir(&target_path).unwrap().count(), 0);
     }
 
+    #[cfg(unix)]
     #[test]
     fn handle_remains_authoritative_after_root_path_replacement() {
         let temp = tempfile::tempdir().unwrap();

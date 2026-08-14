@@ -713,6 +713,7 @@ fn tempfile_seatbelt(contents: &str) -> Result<TempSeatbelt, String> {
     Ok(TempSeatbelt { path })
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn canonicalize_or_clone(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }

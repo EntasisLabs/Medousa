@@ -219,7 +219,6 @@ pub fn normalize_vault_path(raw: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
 
     #[test]
     fn normalize_rejects_traversal() {
@@ -255,7 +254,7 @@ mod tests {
         let temp = tempfile::tempdir().expect("tempdir");
         let root = temp.path().canonicalize().expect("canonical tempdir");
         let outside = root.join("outside");
-        fs::create_dir(&outside).expect("outside");
+        std::fs::create_dir(&outside).expect("outside");
         symlink(&outside, root.join("linked")).expect("symlink");
 
         let error = match StoreRoot::open_or_create_nofollow(&root.join("linked/vault")) {
@@ -265,6 +264,7 @@ mod tests {
         assert!(error.to_string().contains("confinement"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn cached_vault_capability_survives_ambient_root_replacement() {
         let temp = tempfile::tempdir().expect("tempdir");
@@ -283,5 +283,27 @@ mod tests {
             b"held"
         );
         assert!(!root.join("journal/proof.md").exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn cached_vault_capability_pins_ambient_root_on_windows() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let parent = temp.path().canonicalize().expect("canonical tempdir");
+        let root = parent.join("vault");
+        let moved = parent.join("moved-vault");
+        let files = vault_capability_for_root(root.clone()).expect("open vault");
+
+        assert!(std::fs::rename(&root, &moved).is_err());
+        let note = VaultPath::parse("journal/proof.md").expect("note path");
+        files
+            .atomic_write(&note, b"pinned")
+            .expect("write pinned root");
+
+        assert_eq!(
+            std::fs::read(root.join("journal/proof.md")).expect("read pinned root"),
+            b"pinned"
+        );
+        assert!(!moved.exists());
     }
 }
