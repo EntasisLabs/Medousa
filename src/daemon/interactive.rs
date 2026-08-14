@@ -85,13 +85,11 @@ pub async fn spawn_turn_ticket(
     interactive_request: InteractiveTurnRequest,
     workspace_card_id: Option<String>,
 ) -> Result<TurnTicketResponse, (StatusCode, String)> {
-    let session_id = interactive_request.session_id.trim().to_string();
-    if session_id.is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "session_id is required".to_string(),
-        ));
-    }
+    let session_id = crate::session_storage::validate_session_id(
+        &interactive_request.session_id,
+    )
+    .map(str::to_string)
+    .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
 
     let stream_port = crate::engine_adapters::turn_stream_registry_adapter(
         state.interactive_turn_streams.clone(),
@@ -310,13 +308,9 @@ pub async fn create_turn_ticket(
     Extension(principal): Extension<crate::request_principal::RequestPrincipal>,
     Json(mut request): Json<CreateTurnTicketRequest>,
 ) -> Result<Json<TurnTicketResponse>, (StatusCode, String)> {
-    let session_id = request.session_id.trim().to_string();
-    if session_id.is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "session_id is required".to_string(),
-        ));
-    }
+    let session_id = crate::session_storage::validate_session_id(&request.session_id)
+        .map(str::to_string)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
     if request.prompt.trim().is_empty() && request.media_refs.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "prompt is required".to_string()));
     }
@@ -406,13 +400,15 @@ pub async fn list_session_turns(
     State(state): State<AppState>,
     AxumPath(session_id): AxumPath<String>,
     Query(_query): Query<ListSessionTurnsQuery>,
-) -> Json<SessionActiveTurnsResponse> {
+) -> Result<Json<SessionActiveTurnsResponse>, (StatusCode, String)> {
+    crate::session_storage::validate_session_id(&session_id)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
     let turns = crate::turn_ticket::list_active_for_session(&state.turn_tickets, &session_id).await;
 
-    Json(SessionActiveTurnsResponse {
+    Ok(Json(SessionActiveTurnsResponse {
         session_id,
         turns: turns.iter().map(ticket_record_from_ticket).collect(),
-    })
+    }))
 }
 
 pub async fn start_interactive_turn(
@@ -498,23 +494,29 @@ pub async fn delete_session_handler(
 pub async fn get_active_session_turn(
     State(state): State<AppState>,
     AxumPath(session_id): AxumPath<String>,
-) -> Json<crate::turn_ticket::ActiveSessionTurnResponse> {
-    Json(crate::turn_ticket::get_active_interactive_turn(&state.turn_tickets, &session_id).await)
+) -> Result<Json<crate::turn_ticket::ActiveSessionTurnResponse>, (StatusCode, String)> {
+    crate::session_storage::validate_session_id(&session_id)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    Ok(Json(
+        crate::turn_ticket::get_active_interactive_turn(&state.turn_tickets, &session_id).await,
+    ))
 }
 
 pub async fn cancel_active_session_turn(
     State(state): State<AppState>,
     AxumPath(session_id): AxumPath<String>,
-) -> Json<crate::turn_ticket::CancelActiveSessionTurnResponse> {
+) -> Result<Json<crate::turn_ticket::CancelActiveSessionTurnResponse>, (StatusCode, String)> {
+    crate::session_storage::validate_session_id(&session_id)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
     let active =
         crate::turn_ticket::cancel_interactive_for_session(&state.turn_tickets, &session_id).await;
 
     let Some(active) = active else {
-        return Json(crate::turn_ticket::CancelActiveSessionTurnResponse {
+        return Ok(Json(crate::turn_ticket::CancelActiveSessionTurnResponse {
             cancelled: false,
             turn_id: None,
             message: "no active turn for session".to_string(),
-        });
+        }));
     };
 
     state
@@ -551,11 +553,11 @@ pub async fn cancel_active_session_turn(
         .await
         .remove(&active.turn_id);
 
-    Json(crate::turn_ticket::CancelActiveSessionTurnResponse {
+    Ok(Json(crate::turn_ticket::CancelActiveSessionTurnResponse {
         cancelled: true,
         turn_id: Some(active.turn_id),
         message: "interactive turn cancelled".to_string(),
-    })
+    }))
 }
 
 pub async fn interactive_turn_stream(

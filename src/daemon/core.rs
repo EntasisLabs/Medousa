@@ -158,12 +158,8 @@ pub async fn heartbeat_status(
 pub async fn artifact_command(
     Json(request): Json<ArtifactCommandRequest>,
 ) -> Result<Json<ArtifactCommandResponse>, (StatusCode, String)> {
-    if request.session_id.trim().is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "session_id is required".to_string(),
-        ));
-    }
+    crate::session_storage::validate_session_id(&request.session_id)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
 
     let response = crate::artifact_command_runtime::execute_artifact_command(request)
         .map_err(internal_error)?;
@@ -173,12 +169,8 @@ pub async fn artifact_command(
 pub async fn artifact_fetch(
     Json(request): Json<crate::daemon_api::ArtifactFetchRequest>,
 ) -> Result<Json<crate::daemon_api::ArtifactFetchResponse>, (StatusCode, String)> {
-    if request.session_id.trim().is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "session_id is required".to_string(),
-        ));
-    }
+    crate::session_storage::validate_session_id(&request.session_id)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
     if request.artifact_id.trim().is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -194,6 +186,10 @@ pub async fn artifact_fetch(
 pub async fn artifact_list_ui(
     Json(request): Json<crate::daemon_api::ArtifactListUiRequest>,
 ) -> Result<Json<crate::daemon_api::ArtifactListUiResponse>, (StatusCode, String)> {
+    if let Some(session_id) = request.session_id.as_deref() {
+        crate::session_storage::validate_session_id(session_id)
+            .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    }
     let response = crate::artifact_command_runtime::execute_artifact_list_ui(request)
         .map_err(internal_error)?;
     Ok(Json(response))
@@ -202,12 +198,8 @@ pub async fn artifact_list_ui(
 pub async fn artifact_write(
     Json(request): Json<crate::daemon_api::ArtifactWriteRequest>,
 ) -> Result<Json<crate::daemon_api::ArtifactWriteResponse>, (StatusCode, String)> {
-    if request.session_id.trim().is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "session_id is required".to_string(),
-        ));
-    }
+    crate::session_storage::validate_session_id(&request.session_id)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
     if request.artifact_id.trim().is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -222,12 +214,8 @@ pub async fn artifact_write(
 pub async fn artifact_delete(
     Json(request): Json<crate::daemon_api::ArtifactDeleteRequest>,
 ) -> Result<Json<crate::daemon_api::ArtifactDeleteResponse>, (StatusCode, String)> {
-    if request.session_id.trim().is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "session_id is required".to_string(),
-        ));
-    }
+    crate::session_storage::validate_session_id(&request.session_id)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
     if request.artifact_id.trim().is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,

@@ -230,24 +230,11 @@ impl TurnLoopDiscipline {
 }
 
 pub fn turn_ledger_path(session_id: &str) -> PathBuf {
-    let safe = session_id
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
-                ch
-            } else {
-                '_'
-            }
-        })
-        .collect::<String>();
-    let safe = if safe.is_empty() {
-        "default".to_string()
-    } else {
-        safe
-    };
-    crate::paths::medousa_data_dir()
-        .join("turn_ledger")
-        .join(format!("{safe}.jsonl"))
+    crate::session_storage::session_file_for_read(
+        &crate::paths::medousa_data_dir().join("turn_ledger"),
+        session_id,
+        "jsonl",
+    )
 }
 
 pub fn append_turn_ledger_record(session_id: &str, record: &TurnLedgerRecord) {
@@ -255,10 +242,13 @@ pub fn append_turn_ledger_record(session_id: &str, record: &TurnLedgerRecord) {
     if record.active_profile_id.is_none() {
         record.active_profile_id = Some(crate::user_profiles::resolve_workshop_active_profile_id());
     }
-    let path = turn_ledger_path(session_id);
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
+    let Ok(path) = crate::session_storage::session_file_for_write(
+        &crate::paths::medousa_data_dir().join("turn_ledger"),
+        session_id,
+        "jsonl",
+    ) else {
+        return;
+    };
     let Ok(line) = serde_json::to_string(&record) else {
         return;
     };

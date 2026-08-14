@@ -118,13 +118,18 @@ fn catalog_dir() -> PathBuf {
 }
 
 fn catalog_path(session_id: &str) -> PathBuf {
-    catalog_dir().join(format!("{session_id}.json"))
+    crate::session_storage::session_file_for_read(&catalog_dir(), session_id, "json")
 }
 
 pub fn upsert_shared_row(row: &SharedSessionCatalogRow) -> Result<()> {
     let dir = catalog_dir();
     fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
-    let path = catalog_path(&row.session_id);
+    let path = crate::session_storage::session_file_for_write(
+        &catalog_dir(),
+        &row.session_id,
+        "json",
+    )
+    .with_context(|| "prepare shared catalog storage")?;
     let raw = serde_json::to_string_pretty(row).context("encode shared catalog row")?;
     atomic_write(&path, raw.as_bytes()).with_context(|| format!("write {}", path.display()))?;
     Ok(())
@@ -141,8 +146,11 @@ pub fn get_shared_row(session_id: &str) -> Option<SharedSessionCatalogRow> {
 }
 
 pub fn delete_shared_row(session_id: &str) {
-    let path = catalog_path(session_id.trim());
-    let _ = fs::remove_file(path);
+    let _ = crate::session_storage::remove_session_file(
+        &catalog_dir(),
+        session_id,
+        "json",
+    );
 }
 
 pub fn create_shared_session(

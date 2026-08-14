@@ -170,10 +170,11 @@ impl SessionStore for FileSessionStore {
     }
 
     fn delete_session(&self, session_id: &str) {
-        let path = crate::session::medousa_data_dir()
-            .join("history")
-            .join(format!("{session_id}.jsonl"));
-        let _ = std::fs::remove_file(path);
+        let _ = crate::session_storage::remove_session_file(
+            &crate::session::medousa_data_dir().join("history"),
+            session_id,
+            "jsonl",
+        );
     }
 
     fn list_history_sessions(&self, limit: usize) -> Vec<SessionHistorySummary> {

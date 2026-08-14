@@ -70,8 +70,8 @@ pub fn persist_user_media(
 
     let media_id = format!("usr:{}:{}", short_session(session_id), Uuid::new_v4().simple());
     let ext = extension_for_mime(&mime);
-    let dir = media_root().join(session_id);
-    fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
+    let dir = crate::session_storage::session_dir_for_write(&media_root(), session_id)
+        .map_err(|err| err.to_string())?;
 
     let filename = if ext.is_empty() {
         media_id.clone()

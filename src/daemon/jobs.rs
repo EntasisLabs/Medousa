@@ -531,7 +531,8 @@ pub async fn enqueue_report(
 
     let now = Utc::now();
     let job_id = format!("medousa-daemon-report-{}", now.timestamp_millis());
-    let session_id = format!("daemon-report:{}", identity_context.user_id);
+    let user_key = crate::session_storage::StorageKey::for_session(&identity_context.user_id);
+    let session_id = format!("daemon-report-{}", &user_key.as_str()[3..19]);
     let (provider, model) =
         resolve_api_model_routing(request.model_hint.as_deref(), &state.default_runtime_config);
     let prompt = build_report_prompt(&request.query);

@@ -144,10 +144,13 @@ pub fn persist_tool_artifact(
         hash_short
     );
 
-    let payload_dir = artifacts_root()
-        .join(session_id)
-        .join(&tool_slug)
-        .join(direction);
+    let payload_dir = crate::session_storage::session_dir_for_write(
+        &artifacts_root(),
+        session_id,
+    )
+    .map_err(|err| err.to_string())?
+    .join(&tool_slug)
+    .join(direction);
     std::fs::create_dir_all(&payload_dir).map_err(|err| err.to_string())?;
 
     let payload_path = payload_dir.join(format!("{}.json", hash64));
@@ -220,10 +223,13 @@ pub fn persist_ui_artifact_revision(
         hash_short
     );
 
-    let payload_dir = artifacts_root()
-        .join(session_id)
-        .join(&tool_slug)
-        .join("ui");
+    let payload_dir = crate::session_storage::session_dir_for_write(
+        &artifacts_root(),
+        session_id,
+    )
+    .map_err(|err| err.to_string())?
+    .join(&tool_slug)
+    .join("ui");
     std::fs::create_dir_all(&payload_dir).map_err(|err| err.to_string())?;
 
     let payload_path = payload_dir.join(format!("{}.html", hash64));
@@ -297,8 +303,7 @@ pub fn resolve_artifact_reference(session_id: &str, artifact_ref: &str) -> Strin
 }
 
 fn artifact_alias_path(session_id: &str) -> PathBuf {
-    artifacts_root()
-        .join(session_id)
+    crate::session_storage::session_dir_for_read(&artifacts_root(), session_id)
         .join("artifact_aliases.json")
 }
 
@@ -311,10 +316,9 @@ fn load_artifact_aliases(session_id: &str) -> HashMap<String, String> {
 }
 
 fn save_artifact_aliases(session_id: &str, aliases: &HashMap<String, String>) -> Result<(), String> {
-    let path = artifact_alias_path(session_id);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
+    let path = crate::session_storage::session_dir_for_write(&artifacts_root(), session_id)
+        .map_err(|err| err.to_string())?
+        .join("artifact_aliases.json");
     let raw = serde_json::to_string_pretty(aliases).map_err(|err| err.to_string())?;
     std::fs::write(path, raw).map_err(|err| err.to_string())
 }
@@ -705,8 +709,7 @@ fn ui_artifact_record_from_path(session_id: &str, path: &Path) -> Option<Artifac
 }
 
 fn find_ui_payload_in_session_dir(session_id: &str, hash_short: &str) -> Option<ArtifactRecord> {
-    let ui_dir = artifacts_root()
-        .join(session_id)
+    let ui_dir = crate::session_storage::session_dir_for_read(&artifacts_root(), session_id)
         .join("cognition_ui_present")
         .join("ui");
     let path = std::fs::read_dir(ui_dir).ok()?.flatten().find_map(|entry| {
@@ -723,25 +726,7 @@ fn find_ui_payload_in_session_dir(session_id: &str, hash_short: &str) -> Option<
 
 fn fetch_ui_artifact_record_from_disk(session_id: &str, artifact_id: &str) -> Option<ArtifactRecord> {
     let hash_short = ui_artifact_hash_short(artifact_id)?;
-    if let Some(record) = find_ui_payload_in_session_dir(session_id, hash_short) {
-        return Some(record);
-    }
-
-    let root = artifacts_root();
-    let entries = std::fs::read_dir(root).ok()?;
-    for entry in entries.flatten() {
-        if !entry.file_type().ok()?.is_dir() {
-            continue;
-        }
-        let candidate_session = entry.file_name().to_string_lossy().to_string();
-        if candidate_session == session_id {
-            continue;
-        }
-        if let Some(record) = find_ui_payload_in_session_dir(&candidate_session, hash_short) {
-            return Some(record);
-        }
-    }
-    None
+    find_ui_payload_in_session_dir(session_id, hash_short)
 }
 
 fn repair_ui_artifact_index_from_disk() {
@@ -761,6 +746,11 @@ fn repair_ui_artifact_index_from_disk() {
             continue;
         }
         let session_id = entry.file_name().to_string_lossy().to_string();
+        if crate::session_storage::StorageKey::is_encoded(&session_id)
+            || crate::session_storage::validate_session_id(&session_id).is_err()
+        {
+            continue;
+        }
         let ui_dir = root
             .join(&session_id)
             .join("cognition_ui_present")
@@ -1258,10 +1248,13 @@ mod tests {
         let hash64 = crate::payload_receipt::hash_text(&wrapped);
         let artifact_id = build_ui_artifact_id(session_id, &hash64);
 
-        let payload_dir = artifacts_root()
-            .join(session_id)
-            .join("cognition_ui_present")
-            .join("ui");
+        let payload_dir = crate::session_storage::session_dir_for_write(
+            &artifacts_root(),
+            session_id,
+        )
+        .expect("session dir")
+        .join("cognition_ui_present")
+        .join("ui");
         std::fs::create_dir_all(&payload_dir).expect("mkdir");
         let payload_path = payload_dir.join(format!("{hash64}.html"));
         std::fs::write(&payload_path, wrapped.as_bytes()).expect("write html");
@@ -1270,7 +1263,7 @@ mod tests {
         assert_eq!(fetched.mime, "text/html");
         assert!(fetched.body.contains("Disk fallback"));
 
-        let _ = std::fs::remove_dir_all(artifacts_root().join(session_id));
+        let _ = crate::session_storage::remove_session_dir(&artifacts_root(), session_id);
     }
 
     #[test]
@@ -1318,7 +1311,7 @@ mod tests {
             resolve_artifact_alias(session_id, "widget-a").as_deref(),
             Some(second.artifact_id.as_str())
         );
-        let _ = std::fs::remove_dir_all(artifacts_root().join(session_id));
+        let _ = crate::session_storage::remove_session_dir(&artifacts_root(), session_id);
     }
 
     #[test]
@@ -1351,7 +1344,7 @@ mod tests {
         );
         let fetched = fetch_artifact(session_id, &first.artifact_id).expect("latest fetch");
         assert!(fetched.body.contains("v2"));
-        let _ = std::fs::remove_dir_all(artifacts_root().join(session_id));
+        let _ = crate::session_storage::remove_session_dir(&artifacts_root(), session_id);
     }
 
     #[test]
@@ -1368,6 +1361,6 @@ mod tests {
         let result = grep_ui_artifact(session_id, &record.artifact_id, ".badge", 0, 10)
             .expect("grep");
         assert_eq!(result.match_count, 1);
-        let _ = std::fs::remove_dir_all(artifacts_root().join(session_id));
+        let _ = crate::session_storage::remove_session_dir(&artifacts_root(), session_id);
     }
 }

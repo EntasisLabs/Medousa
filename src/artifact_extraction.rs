@@ -96,8 +96,11 @@ pub fn persist_extraction_run(
         now.timestamp_millis()
     );
 
-    let output_dir = extractions_root().join(session_id);
-    std::fs::create_dir_all(&output_dir).map_err(|err| err.to_string())?;
+    let output_dir = crate::session_storage::session_dir_for_write(
+        &extractions_root(),
+        session_id,
+    )
+    .map_err(|err| err.to_string())?;
     let output_path = output_dir.join(format!("{}.json", extraction_id));
     let raw = serde_json::to_vec_pretty(claims).map_err(|err| err.to_string())?;
     std::fs::write(&output_path, raw).map_err(|err| err.to_string())?;

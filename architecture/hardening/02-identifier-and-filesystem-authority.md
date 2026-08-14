@@ -1,6 +1,6 @@
 # H02 — Identifier and filesystem authority
 
-> **Status:** Draft for filesystem threat-model review
+> **Status:** In progress — H02.0 session-path containment implemented; capability filesystem pending
 >
 > **Accountable owner:** daemon storage maintainers
 >
@@ -20,6 +20,27 @@ Untrusted identifiers cannot select filesystem locations. User-facing vault
 paths remain useful but are confined by directory capabilities under hostile
 symlink, junction, and replacement state. Session deletion removes its declared
 data inventory or reports a retryable partial failure; it never lies.
+
+## Implementation progress
+
+The first H02.0 containment milestone is implemented:
+
+- the compatibility grammar rejects normalization, separators, dots, controls,
+  non-ASCII input, overlong input, and Windows device aliases;
+- session-owned filenames and directories use the domain-separated `s1-` SHA-256
+  storage key, preserving case-sensitive logical identity on insensitive filesystems;
+- transcript, catalog, shared catalog, artifacts, media, extraction, verification,
+  context-pack, tool-surface, and turn-ledger writes use the central layout;
+- strictly valid legacy files/directories migrate by same-root rename on first
+  write, while malformed entries remain untouched for H02.4 quarantine;
+- primary session HTTP, interactive-turn, artifact, and media ingress rejects
+  invalid identifiers without trimming or replacement; and
+- ledger cleanup unlinks the exact file and propagates failure instead of calling
+  recursive directory deletion and reporting success.
+
+The store-root capability layer, complete ingress/type conversion, deletion
+registry, migration inventory, vault confinement, and cross-platform abuse matrix
+remain open in H02.1 through H02.5.
 
 ## Current evidence and blast radius
 

@@ -349,7 +349,7 @@ fn catalog_dir() -> PathBuf {
 }
 
 fn catalog_path(session_id: &str) -> PathBuf {
-    catalog_dir().join(format!("{session_id}.json"))
+    crate::session_storage::session_file_for_read(&catalog_dir(), session_id, "json")
 }
 
 fn set_catalog_store(store: Arc<dyn SessionCatalogStore>) {
@@ -441,10 +441,13 @@ struct FileSessionCatalogStore;
 
 impl SessionCatalogStore for FileSessionCatalogStore {
     fn upsert_row(&self, row: &SessionCatalogRow) {
-        let path = catalog_path(&row.session_id);
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
+        let Ok(path) = crate::session_storage::session_file_for_write(
+            &catalog_dir(),
+            &row.session_id,
+            "json",
+        ) else {
+            return;
+        };
         let Ok(bytes) = serde_json::to_vec_pretty(row) else {
             return;
         };
@@ -452,8 +455,11 @@ impl SessionCatalogStore for FileSessionCatalogStore {
     }
 
     fn delete_row(&self, session_id: &str) {
-        let path = catalog_path(session_id);
-        let _ = std::fs::remove_file(path);
+        let _ = crate::session_storage::remove_session_file(
+            &catalog_dir(),
+            session_id,
+            "json",
+        );
     }
 
     fn get_row(&self, session_id: &str) -> Option<SessionCatalogRow> {
@@ -521,12 +527,9 @@ impl SessionCatalogStore for FileSessionCatalogStore {
                 if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
                     return None;
                 }
-                let stem = path.file_stem()?.to_string_lossy();
-                if stem.starts_with(prefix) {
-                    Some(stem.to_string())
-                } else {
-                    None
-                }
+                let raw = std::fs::read_to_string(path).ok()?;
+                let row = serde_json::from_str::<SessionCatalogRow>(&raw).ok()?;
+                row.session_id.starts_with(prefix).then_some(row.session_id)
             })
             .take(max.max(1))
             .collect()

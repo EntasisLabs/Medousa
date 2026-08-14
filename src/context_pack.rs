@@ -76,8 +76,11 @@ pub fn build_context_pack(input: BuildContextPackInput) -> ContextPack {
 }
 
 pub fn persist_context_pack(pack: &ContextPack) -> std::result::Result<(), String> {
-    let session_dir = packs_root().join(&pack.session_id);
-    std::fs::create_dir_all(&session_dir).map_err(|err| err.to_string())?;
+    let session_dir = crate::session_storage::session_dir_for_write(
+        &packs_root(),
+        &pack.session_id,
+    )
+    .map_err(|err| err.to_string())?;
     let output_path = session_dir.join(format!("{}.json", pack.pack_id));
     let raw = serde_json::to_vec_pretty(pack).map_err(|err| err.to_string())?;
     std::fs::write(&output_path, raw).map_err(|err| err.to_string())?;

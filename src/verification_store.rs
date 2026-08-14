@@ -96,8 +96,11 @@ pub fn persist_verification(
         now.timestamp_millis()
     );
 
-    let output_dir = verifications_root().join(session_id);
-    std::fs::create_dir_all(&output_dir).map_err(|err| err.to_string())?;
+    let output_dir = crate::session_storage::session_dir_for_write(
+        &verifications_root(),
+        session_id,
+    )
+    .map_err(|err| err.to_string())?;
     let output_path = output_dir.join(format!("{}.json", verification_id));
 
     let run = VerificationRun {
@@ -151,7 +154,7 @@ pub fn list_verifications(session_id: &str, limit: usize) -> Vec<VerificationRun
 
 pub fn delete_verifications_for_session(session_id: &str) {
     verification_index_store().delete_for_session(session_id.trim());
-    let _ = std::fs::remove_dir_all(verifications_root().join(session_id.trim()));
+    let _ = crate::session_storage::remove_session_dir(&verifications_root(), session_id);
 }
 
 pub fn find_verification(session_id: &str, query: Option<&str>) -> Option<VerificationRun> {

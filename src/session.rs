@@ -31,9 +31,11 @@ pub(crate) fn medousa_data_dir() -> PathBuf {
 }
 
 pub fn history_path(session_id: &str) -> PathBuf {
-    medousa_data_dir()
-        .join("history")
-        .join(format!("{session_id}.jsonl"))
+    crate::session_storage::session_file_for_read(
+        &medousa_data_dir().join("history"),
+        session_id,
+        "jsonl",
+    )
 }
 
 fn last_session_path() -> PathBuf {
@@ -621,10 +623,13 @@ pub(crate) fn file_load_history(session_id: &str) -> Vec<ConversationTurn> {
 }
 
 pub(crate) fn file_append_turn(session_id: &str, turn: &ConversationTurn) {
-    let path = history_path(session_id);
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
+    let Ok(path) = crate::session_storage::session_file_for_write(
+        &medousa_data_dir().join("history"),
+        session_id,
+        "jsonl",
+    ) else {
+        return;
+    };
     let Ok(mut file) = std::fs::OpenOptions::new()
         .create(true)
         .append(true)

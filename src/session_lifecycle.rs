@@ -27,10 +27,8 @@ pub async fn delete_session(
     turn_tickets: &TurnTicketRegistry,
     purge_locus: bool,
 ) -> Result<SessionDeleteSummary, String> {
-    let session_id = session_id.trim();
-    if session_id.is_empty() {
-        return Err("session_id is required".to_string());
-    }
+    let session_id = crate::session_storage::validate_session_id(session_id)
+        .map_err(|error| error.to_string())?;
 
     let mut cancelled_active_turn = false;
     if crate::turn_ticket::get_active_interactive_turn(turn_tickets, session_id)
@@ -79,8 +77,7 @@ pub async fn delete_session(
     crate::agent_mode_state::delete_session_mode_state(session_id);
     crate::verification_store::delete_verifications_for_session(session_id);
     crate::tool_bootstrap::delete_session_tool_surface(session_id);
-    remove_turn_ledger_dir(session_id);
-    remove_session_history_file(session_id);
+    remove_turn_ledger_file(session_id)?;
     crate::channel_session_store::purge_session_references(session_id);
 
     Ok(SessionDeleteSummary {
@@ -92,20 +89,19 @@ pub async fn delete_session(
     })
 }
 
-fn remove_session_history_file(session_id: &str) {
-    let path = medousa_data_dir()
-        .join("history")
-        .join(format!("{session_id}.jsonl"));
-    let _ = std::fs::remove_file(path);
-}
-
-fn remove_turn_ledger_dir(session_id: &str) {
-    let path = crate::agent_runtime::turn_ledger::turn_ledger_path(session_id);
-    let _ = std::fs::remove_dir_all(path);
+fn remove_turn_ledger_file(session_id: &str) -> Result<(), String> {
+    crate::session_storage::remove_session_file(
+        &medousa_data_dir().join("turn_ledger"),
+        session_id,
+        "jsonl",
+    )
+    .map_err(|error| format!("turn ledger delete failed: {error}"))
 }
 
 pub fn session_surfaces_path(session_id: &str) -> PathBuf {
-    medousa_data_dir()
-        .join("session_surfaces")
-        .join(format!("{session_id}.json"))
+    crate::session_storage::session_file_for_read(
+        &medousa_data_dir().join("session_surfaces"),
+        session_id,
+        "json",
+    )
 }

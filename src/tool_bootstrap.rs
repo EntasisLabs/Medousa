@@ -544,17 +544,20 @@ pub fn load_session_tool_surface(session_id: &str) -> SessionToolSurface {
 
 /// Remove persisted per-session tool surface (MCP servers, allowlists, etc.).
 pub fn delete_session_tool_surface(session_id: &str) {
-    let path = session_surface_path(session_id);
-    if path.exists() {
-        let _ = fs::remove_file(path);
-    }
+    let _ = crate::session_storage::remove_session_file(
+        &session::medousa_data_dir().join("session_surfaces"),
+        session_id,
+        "json",
+    );
 }
 
 pub fn save_session_tool_surface(surface: &SessionToolSurface) -> Result<(), String> {
-    let path = session_surface_path(&surface.session_id);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
+    let path = crate::session_storage::session_file_for_write(
+        &session::medousa_data_dir().join("session_surfaces"),
+        &surface.session_id,
+        "json",
+    )
+    .map_err(|err| err.to_string())?;
     let mut surface = surface.clone();
     surface.updated_at_utc = Utc::now();
     let raw = serde_json::to_string_pretty(&surface).map_err(|err| err.to_string())?;
@@ -833,22 +836,11 @@ pub fn worker_should_unlock_vault(
 }
 
 fn session_surface_path(session_id: &str) -> PathBuf {
-    session::medousa_data_dir()
-        .join("session_surfaces")
-        .join(format!("{}.json", sanitize_session_filename(session_id)))
-}
-
-fn sanitize_session_filename(session_id: &str) -> String {
-    session_id
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect()
+    crate::session_storage::session_file_for_read(
+        &session::medousa_data_dir().join("session_surfaces"),
+        session_id,
+        "json",
+    )
 }
 
 #[cfg(test)]
