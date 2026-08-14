@@ -27,7 +27,7 @@ pub fn run_pair(args: &[String]) -> Result<()> {
 }
 
 fn run_pair_status(daemon_url: &str) -> Result<()> {
-    let client = http_client()?;
+    let client = http_client(daemon_url)?;
     let response = client
         .get(format!("{daemon_url}/pair/status"))
         .send()
@@ -80,7 +80,7 @@ fn run_pair_status(daemon_url: &str) -> Result<()> {
 }
 
 fn run_pair_qr(daemon_url: &str, args: &[String]) -> Result<()> {
-    let client = http_client()?;
+    let client = http_client(daemon_url)?;
     let path = if has_flag(args, "--full") {
         format!("{daemon_url}/qr?full=true")
     } else {
@@ -128,7 +128,7 @@ fn run_pair_remove(daemon_url: &str, args: &[String]) -> Result<()> {
         .map(String::as_str)
         .filter(|value| !value.starts_with("--"))
         .context("usage: medousa pair remove <pairing_id>")?;
-    let client = http_client()?;
+    let client = http_client(daemon_url)?;
     let response = client
         .delete(format!("{daemon_url}/pair/{pairing_id}"))
         .send()
@@ -220,11 +220,12 @@ fn resolve_pair_daemon_url(args: &[String]) -> String {
         .unwrap_or_else(|| resolve_daemon_url(None))
 }
 
-fn http_client() -> Result<reqwest::blocking::Client> {
-    reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .context("build HTTP client")
+fn http_client(daemon_url: &str) -> Result<reqwest::blocking::Client> {
+    medousa::local_daemon_auth::blocking_client_with_timeout(
+        daemon_url,
+        medousa_local_credential::CLI_LOCAL_NAME,
+        std::time::Duration::from_secs(10),
+    )
 }
 
 fn print_terminal_qr(url: &str) -> Result<()> {

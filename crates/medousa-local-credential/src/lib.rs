@@ -19,11 +19,12 @@ use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
 
 pub const HOME_LOCAL_NAME: &str = "home-local";
+pub const CLI_LOCAL_NAME: &str = "medousa-cli";
+pub const TUI_LOCAL_NAME: &str = "medousa-tui";
+pub const FIRST_PARTY_LOCAL_NAMES: [&str; 3] = [HOME_LOCAL_NAME, CLI_LOCAL_NAME, TUI_LOCAL_NAME];
 const RECORD_VERSION: u8 = 1;
 const KEYRING_SERVICE: &str = "com.entasislabs.medousa.local-credentials";
 const CREDENTIALS_DIR: &str = "credentials";
-const RECORD_FILE: &str = "home-local.json";
-const SECRET_FILE: &str = "home-local.secret";
 
 #[derive(Clone)]
 pub struct LocalCredentialVerifier {
@@ -49,6 +50,31 @@ impl LocalCredentialVerifier {
 
     pub fn verify(&self, token: &str) -> bool {
         constant_time_eq(&self.digest, &Sha256::digest(token.as_bytes()))
+    }
+}
+
+#[derive(Clone)]
+pub struct LocalCredentialSet {
+    verifiers: Arc<[LocalCredentialVerifier]>,
+}
+
+impl LocalCredentialSet {
+    pub fn new(verifiers: impl IntoIterator<Item = LocalCredentialVerifier>) -> Self {
+        Self {
+            verifiers: verifiers.into_iter().collect(),
+        }
+    }
+
+    /// Resolve a bearer to its stable credential id with one hash operation.
+    pub fn resolve(&self, token: &str) -> Option<Arc<str>> {
+        let digest = Sha256::digest(token.as_bytes());
+        let mut resolved = None;
+        for verifier in self.verifiers.iter() {
+            if constant_time_eq(&verifier.digest, &digest) {
+                resolved = Some(verifier.credential_id_arc());
+            }
+        }
+        resolved
     }
 }
 
@@ -108,39 +134,55 @@ impl Drop for SecretPayload {
 /// This validates that the verifier and secret agree on every startup. Missing
 /// or mismatched material fails closed instead of silently rotating authority.
 pub fn provision_home_local(data_dir: &Path) -> Result<LocalCredentialVerifier> {
+    provision_named(data_dir, HOME_LOCAL_NAME)
+}
+
+/// Provision each independently revocable first-party local client credential.
+pub fn provision_first_party(data_dir: &Path) -> Result<LocalCredentialSet> {
+    FIRST_PARTY_LOCAL_NAMES
+        .into_iter()
+        .map(|name| provision_named(data_dir, name))
+        .collect::<Result<Vec<_>>>()
+        .map(LocalCredentialSet::new)
+}
+
+pub fn provision_named(data_dir: &Path, name: &str) -> Result<LocalCredentialVerifier> {
+    validate_name(name)?;
     let credentials_dir = data_dir.join(CREDENTIALS_DIR);
     create_private_dir(&credentials_dir)?;
-    let record_path = credentials_dir.join(RECORD_FILE);
+    let record_path = credentials_dir.join(record_file(name));
 
     if record_path.is_file() {
         let record = read_record(&record_path)?;
         let secret = load_secret_for_record(data_dir, &record)?;
-        return verifier_from_parts(&record, &secret);
+        return verifier_from_parts(&record, &secret, name);
     }
 
-    let account = keyring_account(data_dir)?;
+    let account = keyring_account(data_dir, name)?;
     if let Ok(Some(secret)) = read_keyring_secret(&account) {
         let record = record_for_secret(
+            name,
             secret.credential_id.clone(),
             &secret,
             SecretStore::Keyring { account },
         );
         create_record(&record_path, &record)?;
-        return load_verifier(data_dir, &record_path);
+        return load_verifier(data_dir, &record_path, name);
     }
 
-    let secret_path = credentials_dir.join(SECRET_FILE);
+    let secret_path = credentials_dir.join(secret_file(name));
     if secret_path.is_file() {
         let secret = read_file_secret(&secret_path)?;
         let record = record_for_secret(
+            name,
             secret.credential_id.clone(),
             &secret,
             SecretStore::OwnerOnlyFile {
-                relative_path: format!("{CREDENTIALS_DIR}/{SECRET_FILE}"),
+                relative_path: format!("{CREDENTIALS_DIR}/{}", secret_file(name)),
             },
         );
         create_record(&record_path, &record)?;
-        return load_verifier(data_dir, &record_path);
+        return load_verifier(data_dir, &record_path, name);
     }
 
     let secret = generate_secret();
@@ -152,31 +194,51 @@ pub fn provision_home_local(data_dir: &Path) -> Result<LocalCredentialVerifier> 
             encoded.zeroize();
             result?;
             SecretStore::OwnerOnlyFile {
-                relative_path: format!("{CREDENTIALS_DIR}/{SECRET_FILE}"),
+                relative_path: format!("{CREDENTIALS_DIR}/{}", secret_file(name)),
             }
         }
     };
-    let record = record_for_secret(secret.credential_id.clone(), &secret, secret_store);
+    let record = record_for_secret(name, secret.credential_id.clone(), &secret, secret_store);
     create_record(&record_path, &record)?;
-    load_verifier(data_dir, &record_path)
+    load_verifier(data_dir, &record_path, name)
 }
 
 /// Load the Home bearer for a native first-party transport.
 pub fn load_home_local_secret(data_dir: &Path) -> Result<LocalCredentialSecret> {
-    let record_path = data_dir.join(CREDENTIALS_DIR).join(RECORD_FILE);
+    load_named_secret(data_dir, HOME_LOCAL_NAME)
+}
+
+pub fn load_named_secret(data_dir: &Path, name: &str) -> Result<LocalCredentialSecret> {
+    validate_name(name)?;
+    let record_path = data_dir.join(CREDENTIALS_DIR).join(record_file(name));
     let record = read_record(&record_path)?;
     let mut secret = load_secret_for_record(data_dir, &record)?;
-    verifier_from_parts(&record, &secret)?;
+    verifier_from_parts(&record, &secret, name)?;
     Ok(LocalCredentialSecret {
         credential_id: std::mem::take(&mut secret.credential_id),
         token: std::mem::take(&mut secret.token),
     })
 }
 
-fn load_verifier(data_dir: &Path, record_path: &Path) -> Result<LocalCredentialVerifier> {
+/// Load a named secret when it has been provisioned by a compatible daemon.
+/// A present but invalid record remains a hard error.
+pub fn try_load_named_secret(data_dir: &Path, name: &str) -> Result<Option<LocalCredentialSecret>> {
+    validate_name(name)?;
+    let record_path = data_dir.join(CREDENTIALS_DIR).join(record_file(name));
+    if !record_path.exists() {
+        return Ok(None);
+    }
+    load_named_secret(data_dir, name).map(Some)
+}
+
+fn load_verifier(
+    data_dir: &Path,
+    record_path: &Path,
+    expected_name: &str,
+) -> Result<LocalCredentialVerifier> {
     let record = read_record(record_path)?;
     let secret = load_secret_for_record(data_dir, &record)?;
-    verifier_from_parts(&record, &secret)
+    verifier_from_parts(&record, &secret, expected_name)
 }
 
 fn generate_secret() -> SecretPayload {
@@ -189,13 +251,14 @@ fn generate_secret() -> SecretPayload {
 }
 
 fn record_for_secret(
+    name: &str,
     credential_id: String,
     secret: &SecretPayload,
     secret_store: SecretStore,
 ) -> CredentialRecord {
     CredentialRecord {
         version: RECORD_VERSION,
-        name: HOME_LOCAL_NAME.to_string(),
+        name: name.to_string(),
         credential_id,
         token_sha256: digest_hex(&Sha256::digest(secret.token.as_bytes())),
         secret_store,
@@ -205,8 +268,9 @@ fn record_for_secret(
 fn verifier_from_parts(
     record: &CredentialRecord,
     secret: &SecretPayload,
+    expected_name: &str,
 ) -> Result<LocalCredentialVerifier> {
-    validate_record(record)?;
+    validate_record(record, expected_name)?;
     if secret.credential_id != record.credential_id {
         bail!("local credential identifier does not match its verifier record");
     }
@@ -220,15 +284,16 @@ fn verifier_from_parts(
     })
 }
 
-fn validate_record(record: &CredentialRecord) -> Result<()> {
+fn validate_record(record: &CredentialRecord, expected_name: &str) -> Result<()> {
     if record.version != RECORD_VERSION {
         bail!(
             "unsupported local credential record version {}",
             record.version
         );
     }
-    if record.name != HOME_LOCAL_NAME || record.credential_id.trim().is_empty() {
-        bail!("invalid home-local credential record");
+    validate_name(expected_name)?;
+    if record.name != expected_name || record.credential_id.trim().is_empty() {
+        bail!("invalid {expected_name} local credential record");
     }
     Ok(())
 }
@@ -236,7 +301,10 @@ fn validate_record(record: &CredentialRecord) -> Result<()> {
 fn load_secret_for_record(data_dir: &Path, record: &CredentialRecord) -> Result<SecretPayload> {
     match &record.secret_store {
         SecretStore::Keyring { account } => read_keyring_secret(account)?.ok_or_else(|| {
-            anyhow::anyhow!("home-local credential is missing from the platform credential store")
+            anyhow::anyhow!(
+                "{} local credential is missing from the platform credential store",
+                record.name
+            )
         }),
         SecretStore::OwnerOnlyFile { relative_path } => {
             let relative = Path::new(relative_path);
@@ -306,14 +374,31 @@ fn write_keyring_secret(account: &str, secret: &SecretPayload) -> Result<()> {
     result
 }
 
-fn keyring_account(data_dir: &Path) -> Result<String> {
+fn keyring_account(data_dir: &Path, name: &str) -> Result<String> {
+    validate_name(name)?;
     let absolute = if data_dir.is_absolute() {
         data_dir.to_path_buf()
     } else {
         std::env::current_dir()?.join(data_dir)
     };
     let digest = Sha256::digest(absolute.to_string_lossy().as_bytes());
-    Ok(format!("{HOME_LOCAL_NAME}-{}", &digest_hex(&digest)[..24]))
+    Ok(format!("{name}-{}", &digest_hex(&digest)[..24]))
+}
+
+fn validate_name(name: &str) -> Result<()> {
+    if FIRST_PARTY_LOCAL_NAMES.contains(&name) {
+        Ok(())
+    } else {
+        bail!("unsupported local credential name")
+    }
+}
+
+fn record_file(name: &str) -> String {
+    format!("{name}.json")
+}
+
+fn secret_file(name: &str) -> String {
+    format!("{name}.secret")
 }
 
 fn create_private_dir(path: &Path) -> Result<()> {
@@ -389,28 +474,29 @@ mod tests {
         ))
     }
 
-    fn provision_file_fixture(data_dir: &Path) -> Result<LocalCredentialSecret> {
+    fn provision_file_fixture(data_dir: &Path, name: &str) -> Result<LocalCredentialSecret> {
         let credentials = data_dir.join(CREDENTIALS_DIR);
         create_private_dir(&credentials)?;
         let secret = generate_secret();
         let mut encoded = serde_json::to_vec(&secret)?;
-        create_private_file(&credentials.join(SECRET_FILE), &encoded)?;
+        create_private_file(&credentials.join(secret_file(name)), &encoded)?;
         encoded.zeroize();
         let record = record_for_secret(
+            name,
             secret.credential_id.clone(),
             &secret,
             SecretStore::OwnerOnlyFile {
-                relative_path: format!("{CREDENTIALS_DIR}/{SECRET_FILE}"),
+                relative_path: format!("{CREDENTIALS_DIR}/{}", secret_file(name)),
             },
         );
-        create_record(&credentials.join(RECORD_FILE), &record)?;
-        load_home_local_secret(data_dir)
+        create_record(&credentials.join(record_file(name)), &record)?;
+        load_named_secret(data_dir, name)
     }
 
     #[test]
     fn file_secret_is_stable_and_verifies_without_string_allocation() -> Result<()> {
         let data_dir = test_dir("stable");
-        let secret = provision_file_fixture(&data_dir)?;
+        let secret = provision_file_fixture(&data_dir, HOME_LOCAL_NAME)?;
         let first = provision_home_local(&data_dir)?;
         let second = provision_home_local(&data_dir)?;
         assert_eq!(first.credential_id(), second.credential_id());
@@ -430,8 +516,10 @@ mod tests {
     #[test]
     fn mismatched_secret_fails_closed() -> Result<()> {
         let data_dir = test_dir("mismatch");
-        let secret = provision_file_fixture(&data_dir)?;
-        let path = data_dir.join(CREDENTIALS_DIR).join(SECRET_FILE);
+        let secret = provision_file_fixture(&data_dir, HOME_LOCAL_NAME)?;
+        let path = data_dir
+            .join(CREDENTIALS_DIR)
+            .join(secret_file(HOME_LOCAL_NAME));
         let replacement = SecretPayload {
             credential_id: secret.credential_id().to_string(),
             token: "replacement".to_string(),
@@ -447,21 +535,21 @@ mod tests {
     fn file_fallback_is_owner_only() -> Result<()> {
         use std::os::unix::fs::PermissionsExt;
         let data_dir = test_dir("permissions");
-        let _ = provision_file_fixture(&data_dir)?;
+        let _ = provision_file_fixture(&data_dir, HOME_LOCAL_NAME)?;
         let credentials = data_dir.join(CREDENTIALS_DIR);
         assert_eq!(
             fs::metadata(&credentials)?.permissions().mode() & 0o777,
             0o700
         );
         assert_eq!(
-            fs::metadata(credentials.join(SECRET_FILE))?
+            fs::metadata(credentials.join(secret_file(HOME_LOCAL_NAME)))?
                 .permissions()
                 .mode()
                 & 0o777,
             0o600
         );
         assert_eq!(
-            fs::metadata(credentials.join(RECORD_FILE))?
+            fs::metadata(credentials.join(record_file(HOME_LOCAL_NAME)))?
                 .permissions()
                 .mode()
                 & 0o777,
@@ -469,5 +557,54 @@ mod tests {
         );
         fs::remove_dir_all(data_dir)?;
         Ok(())
+    }
+
+    #[test]
+    fn named_credentials_are_distinct_and_resolve_to_their_own_ids() -> Result<()> {
+        let data_dir = test_dir("named");
+        let cli = provision_file_fixture(&data_dir, CLI_LOCAL_NAME)?;
+        let tui = provision_file_fixture(&data_dir, TUI_LOCAL_NAME)?;
+        let set = LocalCredentialSet::new([
+            provision_named(&data_dir, CLI_LOCAL_NAME)?,
+            provision_named(&data_dir, TUI_LOCAL_NAME)?,
+        ]);
+
+        assert_ne!(cli.credential_id(), tui.credential_id());
+        assert_ne!(cli.token(), tui.token());
+        assert_eq!(
+            set.resolve(cli.token()).as_deref(),
+            Some(cli.credential_id())
+        );
+        assert_eq!(
+            set.resolve(tui.token()).as_deref(),
+            Some(tui.credential_id())
+        );
+        assert!(set.resolve("wrong-token").is_none());
+        fs::remove_dir_all(data_dir)?;
+        Ok(())
+    }
+
+    #[test]
+    fn named_record_cannot_be_substituted_for_another_client() -> Result<()> {
+        let data_dir = test_dir("substitution");
+        let _ = provision_file_fixture(&data_dir, CLI_LOCAL_NAME)?;
+        fs::copy(
+            data_dir
+                .join(CREDENTIALS_DIR)
+                .join(record_file(CLI_LOCAL_NAME)),
+            data_dir
+                .join(CREDENTIALS_DIR)
+                .join(record_file(TUI_LOCAL_NAME)),
+        )?;
+        assert!(load_named_secret(&data_dir, TUI_LOCAL_NAME).is_err());
+        fs::remove_dir_all(data_dir)?;
+        Ok(())
+    }
+
+    #[test]
+    fn arbitrary_credential_names_are_rejected() {
+        let data_dir = test_dir("invalid-name");
+        assert!(provision_named(&data_dir, "../escape").is_err());
+        assert!(load_named_secret(&data_dir, "unknown").is_err());
     }
 }

@@ -64,7 +64,7 @@ pub fn run_peer(args: &[String]) -> Result<()> {
 
 fn run_nearby(args: &[String]) -> Result<()> {
     let daemon_url = resolve_daemon_url_arg(args);
-    let client = http_client()?;
+    let client = http_client(&daemon_url)?;
     let response = client
         .get(format!("{daemon_url}/v1/lan/workshops"))
         .send()
@@ -117,7 +117,7 @@ fn run_connect(args: &[String]) -> Result<()> {
     };
     let label = find_arg_value(args, "--name");
 
-    let client = http_client()?;
+    let client = http_client(&daemon_url)?;
     let qr = client
         .get(format!("{daemon_url}/qr"))
         .send()
@@ -224,7 +224,7 @@ fn run_send(args: &[String]) -> Result<()> {
     );
     let wrapped = medousa::mesh::MeshEnvelopedRequest { envelope, payload };
 
-    let client = http_client()?;
+    let client = http_client(&connection.daemon_url)?;
     let response = client
         .post(format!("{}/v1/peer/messages", connection.daemon_url))
         .bearer_auth(&connection.session_token)
@@ -239,17 +239,19 @@ fn run_send(args: &[String]) -> Result<()> {
 
     // Keep a local outbound copy when this machine also runs an engine (Home threads / local inbox).
     let local_url = resolve_daemon_url(None);
-    let _ = client
-        .post(format!("{local_url}/v1/peer/messages"))
-        .json(&serde_json::json!({
-            "body": message,
-            "fromDeviceId": identity.phone_id,
-            "fromName": display_name,
-            "toDeviceId": connection.workshop_device_id,
-            "toName": connection.label,
-            "direction": "out",
-        }))
-        .send();
+    if let Ok(local_client) = http_client(&local_url) {
+        let _ = local_client
+            .post(format!("{local_url}/v1/peer/messages"))
+            .json(&serde_json::json!({
+                "body": message,
+                "fromDeviceId": identity.phone_id,
+                "fromName": display_name,
+                "toDeviceId": connection.workshop_device_id,
+                "toName": connection.label,
+                "direction": "out",
+            }))
+            .send();
+    }
 
     println!("Sent to {}", connection.label);
     Ok(())
@@ -257,12 +259,11 @@ fn run_send(args: &[String]) -> Result<()> {
 
 fn run_inbox(args: &[String]) -> Result<()> {
     let unread_only = has_flag(args, "--unread");
-    let client = http_client()?;
     let mut rows: Vec<(String, Value)> = Vec::new();
 
     // Local workshop inbox (when this machine is also a host).
     let local_url = resolve_daemon_url_arg(args);
-    if let Ok(messages) = fetch_messages(&client, &local_url, None, unread_only) {
+    if let Ok(messages) = fetch_messages(&local_url, None, unread_only) {
         for message in messages {
             rows.push(("local".to_string(), message));
         }
@@ -272,7 +273,6 @@ fn run_inbox(args: &[String]) -> Result<()> {
     let store = load_store()?;
     for connection in &store.connections {
         match fetch_messages(
-            &client,
             &connection.daemon_url,
             Some(&connection.session_token),
             unread_only,
@@ -353,11 +353,11 @@ fn run_inbox(args: &[String]) -> Result<()> {
 }
 
 fn fetch_messages(
-    client: &reqwest::blocking::Client,
     daemon_url: &str,
     bearer: Option<&str>,
     unread_only: bool,
 ) -> Result<Vec<Value>> {
+    let client = http_client(daemon_url)?;
     let mut url = format!("{daemon_url}/v1/peer/messages");
     if unread_only {
         url.push_str("?unreadOnly=true");
@@ -384,7 +384,6 @@ fn run_read(args: &[String]) -> Result<()> {
         .map(String::as_str)
         .filter(|value| !value.starts_with("--"))
         .context("usage: medousa peer read <message-id>")?;
-    let client = http_client()?;
     let store = load_store()?;
 
     // Prefer marking read on the host that owns the conversation.
@@ -397,6 +396,7 @@ fn run_read(args: &[String]) -> Result<()> {
     }
 
     for (daemon_url, token) in targets {
+        let client = http_client(&daemon_url)?;
         let mut request = client.post(format!("{daemon_url}/v1/peer/messages/{id}/read"));
         if let Some(token) = token.as_deref() {
             request = request.bearer_auth(token);
@@ -789,11 +789,12 @@ fn connections_path() -> PathBuf {
     cli_dir().join("connections.json")
 }
 
-fn http_client() -> Result<reqwest::blocking::Client> {
-    reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(20))
-        .build()
-        .context("build HTTP client")
+fn http_client(daemon_url: &str) -> Result<reqwest::blocking::Client> {
+    medousa::local_daemon_auth::blocking_client_with_timeout(
+        daemon_url,
+        medousa_local_credential::CLI_LOCAL_NAME,
+        std::time::Duration::from_secs(20),
+    )
 }
 
 fn resolve_daemon_url_arg(args: &[String]) -> String {

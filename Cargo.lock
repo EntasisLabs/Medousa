@@ -7534,6 +7534,7 @@ dependencies = [
  "uuid 1.23.1",
  "vte 0.15.0",
  "windows 0.61.3",
+ "zeroize",
 ]
 
 [[package]]

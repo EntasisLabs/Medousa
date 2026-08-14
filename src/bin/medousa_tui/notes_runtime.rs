@@ -17,7 +17,9 @@ fn note_title_from_path(path: &str) -> String {
 }
 
 async fn fetch_vault_tree(daemon_url: &str) -> Vec<String> {
-    let client = daemon_client(daemon_url);
+    let Ok(client) = daemon_client(daemon_url) else {
+        return Vec::new();
+    };
     match client
         .vault()
         .list_notes(&VaultNotesQuery {
@@ -58,8 +60,20 @@ fn link_targets(note: &NoteBuffer) -> Vec<String> {
     targets
 }
 
+fn observed_daemon_client(state: &mut TuiState) -> Option<medousa_sdk::MedousaClient> {
+    match daemon_client(&state.daemon_url) {
+        Ok(client) => Some(client),
+        Err(error) => {
+            super::push_obs(state, format!("⚠ daemon authentication failed: {error}"));
+            None
+        }
+    }
+}
+
 pub(crate) async fn refresh_notes_picker(state: &mut TuiState) {
-    let client = daemon_client(&state.daemon_url);
+    let Some(client) = observed_daemon_client(state) else {
+        return;
+    };
     let query = state.notes_picker_query.trim();
     let result = if query.is_empty() {
         client
@@ -143,7 +157,9 @@ pub(crate) async fn open_note_path(state: &mut TuiState, path: &str) -> bool {
         return false;
     }
 
-    let client = daemon_client(&state.daemon_url);
+    let Some(client) = observed_daemon_client(state) else {
+        return false;
+    };
     let tree = fetch_vault_tree(&state.daemon_url).await;
     match client.vault().get_note(path).await {
         Ok(resp) => {
@@ -187,7 +203,9 @@ pub(crate) async fn open_note_path(state: &mut TuiState, path: &str) -> bool {
 }
 
 pub(crate) async fn create_note(state: &mut TuiState, path: &str, content: &str) -> bool {
-    let client = daemon_client(&state.daemon_url);
+    let Some(client) = observed_daemon_client(state) else {
+        return false;
+    };
     let request = VaultWriteRequest {
         path: Some(path.to_string()),
         content: content.to_string(),
@@ -270,7 +288,9 @@ async fn put_active_note(state: &mut TuiState, force: bool) {
     } else {
         Some(note.content_hash.clone())
     };
-    let client = daemon_client(&state.daemon_url);
+    let Some(client) = observed_daemon_client(state) else {
+        return;
+    };
     match client
         .vault()
         .update_note(
@@ -348,7 +368,9 @@ pub(crate) async fn refresh_active_note_sidebars(state: &mut TuiState) {
         return;
     };
     let tree = fetch_vault_tree(&state.daemon_url).await;
-    let client = daemon_client(&state.daemon_url);
+    let Some(client) = observed_daemon_client(state) else {
+        return;
+    };
     let (backlinks, wikilinks_out) = match client.vault().get_note(&path).await {
         Ok(resp) => (resp.note.backlinks, resp.note.wikilinks_out),
         Err(_) => {
@@ -380,7 +402,9 @@ pub(crate) async fn reload_active_note(state: &mut TuiState) {
         super::push_obs(state, "⚠ no note tab focused".to_string());
         return;
     };
-    let client = daemon_client(&state.daemon_url);
+    let Some(client) = observed_daemon_client(state) else {
+        return;
+    };
     match client.vault().get_note(&path).await {
         Ok(resp) => {
             if let Some(note) = state.note_buffers.get_mut(&path) {

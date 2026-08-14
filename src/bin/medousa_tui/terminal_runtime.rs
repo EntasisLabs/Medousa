@@ -15,6 +15,8 @@ use medousa_sdk::transport::decode;
 use serde::Deserialize;
 use serde_json::json;
 use tokio::sync::mpsc;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use tokio_tungstenite::tungstenite::http::header::AUTHORIZATION;
 use tokio_tungstenite::tungstenite::Message;
 use vte::Parser;
 
@@ -92,7 +94,7 @@ async fn shell_get<T: serde::de::DeserializeOwned>(
     daemon_url: &str,
     path: &str,
 ) -> Result<T, String> {
-    let client = daemon_client(daemon_url);
+    let client = daemon_client(daemon_url).map_err(|error| error.to_string())?;
     let value = client
         .transport()
         .get_json(client.base_url(), path)
@@ -106,7 +108,7 @@ async fn shell_post<T: serde::de::DeserializeOwned>(
     path: &str,
     body: serde_json::Value,
 ) -> Result<T, String> {
-    let client = daemon_client(daemon_url);
+    let client = daemon_client(daemon_url).map_err(|error| error.to_string())?;
     let value = client
         .transport()
         .post_json(client.base_url(), path, body)
@@ -404,7 +406,34 @@ async fn run_attach(
             urlencoding::encode(&session_id)
         ),
     );
-    let Ok((websocket, _)) = tokio_tungstenite::connect_async(&url).await else {
+    let Ok(mut request) = url.as_str().into_client_request() else {
+        let _ = event_tx
+            .send(TerminalUiEvent::Status {
+                session_id,
+                connected: false,
+                message: Some("invalid ws URL".to_string()),
+            })
+            .await;
+        return;
+    };
+    let authorization = medousa::local_daemon_auth::authorization_header(
+        &url,
+        medousa_local_credential::TUI_LOCAL_NAME,
+    );
+    let Ok(authorization) = authorization else {
+        let _ = event_tx
+            .send(TerminalUiEvent::Status {
+                session_id,
+                connected: false,
+                message: Some("ws authentication failed".to_string()),
+            })
+            .await;
+        return;
+    };
+    if let Some(value) = authorization {
+        request.headers_mut().insert(AUTHORIZATION, value);
+    }
+    let Ok((websocket, _)) = tokio_tungstenite::connect_async(request).await else {
         let _ = event_tx
             .send(TerminalUiEvent::Status {
                 session_id,

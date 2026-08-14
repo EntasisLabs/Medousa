@@ -16,12 +16,12 @@ use crate::daemon::route_policy::DeclaredRouter;
 use crate::pairing::PairingService;
 use crate::remote_trust::is_trusted_local;
 use crate::request_principal::{Capability, RequestPrincipal, TransportClass};
-use medousa_local_credential::LocalCredentialVerifier;
+use medousa_local_credential::LocalCredentialSet;
 
 #[derive(Clone)]
 pub struct DaemonAccessState {
     pairing: Option<Arc<PairingService>>,
-    local_credential: Option<Arc<LocalCredentialVerifier>>,
+    local_credentials: Option<Arc<LocalCredentialSet>>,
     mcp_policy_token: Option<Arc<str>>,
     surface: AccessSurface,
     legacy_loopback_compatibility: bool,
@@ -31,15 +31,15 @@ impl DaemonAccessState {
     pub fn new(pairing: Option<Arc<PairingService>>) -> Self {
         Self {
             pairing,
-            local_credential: None,
+            local_credentials: None,
             mcp_policy_token: None,
             surface: AccessSurface::Protected,
             legacy_loopback_compatibility: true,
         }
     }
 
-    pub fn with_local_credential(mut self, verifier: Arc<LocalCredentialVerifier>) -> Self {
-        self.local_credential = Some(verifier);
+    pub fn with_local_credentials(mut self, credentials: Arc<LocalCredentialSet>) -> Self {
+        self.local_credentials = Some(credentials);
         self
     }
 
@@ -59,7 +59,7 @@ impl DaemonAccessState {
     fn for_surface(&self, surface: AccessSurface) -> Self {
         Self {
             pairing: self.pairing.clone(),
-            local_credential: self.local_credential.clone(),
+            local_credentials: self.local_credentials.clone(),
             mcp_policy_token: self.mcp_policy_token.clone(),
             surface,
             legacy_loopback_compatibility: self.legacy_loopback_compatibility,
@@ -236,10 +236,9 @@ pub async fn enforce_daemon_access(
     let credential = bearer_credential(request.headers());
     let local_credential_id = match credential {
         BearerCredential::Valid(token) if trusted_local => state
-            .local_credential
+            .local_credentials
             .as_ref()
-            .filter(|verifier| verifier.verify(token))
-            .map(|verifier| verifier.credential_id_arc()),
+            .and_then(|credentials| credentials.resolve(token)),
         _ => None,
     };
     let record = match credential {
@@ -399,10 +398,12 @@ mod tests {
             protected,
             Router::new(),
             DaemonAccessState::new(None)
-                .with_local_credential(Arc::new(LocalCredentialVerifier::from_token(
-                    "home-id",
-                    "home-secret",
-                )))
+                .with_local_credentials(Arc::new(LocalCredentialSet::new([
+                    medousa_local_credential::LocalCredentialVerifier::from_token(
+                        "home-id",
+                        "home-secret",
+                    ),
+                ])))
                 .with_legacy_loopback_compatibility(compatibility),
         )
     }

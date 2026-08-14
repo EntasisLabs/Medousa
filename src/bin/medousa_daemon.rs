@@ -317,9 +317,9 @@ async fn main() -> Result<()> {
     let pairing_enabled = medousa::pairing::pairing_enabled_from_env();
     medousa::peer_scope::validate_listener_security(addr, pairing_enabled)
         .map_err(anyhow::Error::msg)?;
-    let local_credential = Arc::new(
-        medousa_local_credential::provision_home_local(&medousa::paths::medousa_data_dir())
-            .context("failed to provision the home-local daemon credential")?,
+    let local_credentials = Arc::new(
+        medousa_local_credential::provision_first_party(&medousa::paths::medousa_data_dir())
+            .context("failed to provision first-party local daemon credentials")?,
     );
     let listener = tokio::net::TcpListener::bind(addr).await.with_context(|| {
         format!("failed to bind medousa daemon on {addr} — another daemon may already be running")
@@ -727,7 +727,7 @@ async fn main() -> Result<()> {
     };
     let daemon_access_state =
         medousa::peer_scope::DaemonAccessState::new(peer_message_state.pairing.clone())
-            .with_local_credential(local_credential)
+            .with_local_credentials(local_credentials)
             .with_legacy_loopback_compatibility(
                 medousa::peer_scope::legacy_loopback_compatibility_enabled(addr),
             )

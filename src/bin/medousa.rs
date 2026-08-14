@@ -1792,10 +1792,10 @@ fn run_identity_profiles(args: &[String]) -> Result<()> {
         .unwrap_or_else(|| DEFAULT_DAEMON_URL.to_string());
 
     let long_running = matches!(args[0].as_str(), "export" | "import");
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(if long_running { 120 } else { 15 }))
-        .build()
-        .context("build HTTP client")?;
+    let client = cli_daemon_client(
+        &daemon_url,
+        Duration::from_secs(if long_running { 120 } else { 15 }),
+    )?;
 
     match args[0].as_str() {
         "list" => {
@@ -2170,11 +2170,20 @@ fn fetch_mcp_gateway_health(gateway_url: &str) -> Result<medousa::McpGatewayHeal
     Ok(response.json()?)
 }
 
+fn cli_daemon_client(
+    daemon_url: &str,
+    timeout: Duration,
+) -> Result<reqwest::blocking::Client> {
+    medousa::local_daemon_auth::blocking_client_with_timeout(
+        daemon_url,
+        medousa_local_credential::CLI_LOCAL_NAME,
+        timeout,
+    )
+}
+
 fn fetch_capabilities(daemon_url: &str) -> Result<medousa::CapabilityListResponse> {
     let daemon_url = daemon_url.trim_end_matches('/');
-    let response = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(3))
-        .build()?
+    let response = cli_daemon_client(daemon_url, Duration::from_secs(3))?
         .get(format!("{daemon_url}/v1/capabilities"))
         .send()?
         .error_for_status()?;
@@ -2183,9 +2192,7 @@ fn fetch_capabilities(daemon_url: &str) -> Result<medousa::CapabilityListRespons
 
 fn fetch_daemon_health(daemon_url: &str) -> Result<medousa::HealthResponse> {
     let daemon_url = daemon_url.trim_end_matches('/');
-    let response = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(3))
-        .build()?
+    let response = cli_daemon_client(daemon_url, Duration::from_secs(3))?
         .get(format!("{daemon_url}/v1/health"))
         .send()?
         .error_for_status()?;
@@ -2194,9 +2201,7 @@ fn fetch_daemon_health(daemon_url: &str) -> Result<medousa::HealthResponse> {
 
 fn fetch_delivery_health(daemon_url: &str) -> Result<medousa::DeliveryHealthResponse> {
     let daemon_url = daemon_url.trim_end_matches('/');
-    let response = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(3))
-        .build()?
+    let response = cli_daemon_client(daemon_url, Duration::from_secs(3))?
         .get(format!("{daemon_url}/v1/delivery/status"))
         .send()?
         .error_for_status()?;
@@ -2205,9 +2210,7 @@ fn fetch_delivery_health(daemon_url: &str) -> Result<medousa::DeliveryHealthResp
 
 fn fetch_continuation_health(daemon_url: &str) -> Result<medousa::ContinuationStatusResponse> {
     let daemon_url = daemon_url.trim_end_matches('/');
-    let response = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(3))
-        .build()?
+    let response = cli_daemon_client(daemon_url, Duration::from_secs(3))?
         .get(format!("{daemon_url}/v1/continuations/status"))
         .send()?
         .error_for_status()?;
@@ -2446,10 +2449,7 @@ fn daemon_http_healthy(daemon_url: &str) -> bool {
 
 fn probe_daemon_http(daemon_url: &str) -> DaemonHttpProbe {
     let daemon_url = daemon_url.trim_end_matches('/');
-    let client = match reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(3))
-        .build()
-    {
+    let client = match cli_daemon_client(daemon_url, Duration::from_secs(3)) {
         Ok(client) => client,
         Err(err) => {
             return DaemonHttpProbe {
@@ -3244,10 +3244,7 @@ fn run_workspace(args: &[String]) -> Result<()> {
         ));
     }
 
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()
-        .context("failed to build HTTP client")?;
+    let client = cli_daemon_client(&daemon_url, Duration::from_secs(10))?;
 
     let (method, path, body) = match sub {
         "cancel" => {
@@ -3407,10 +3404,7 @@ fn run_workspace_stream(daemon_url: &str, args: &[String]) -> Result<()> {
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(0);
 
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(600))
-        .build()
-        .context("failed to build HTTP client")?;
+    let client = cli_daemon_client(daemon_url, Duration::from_secs(600))?;
 
     let response = client
         .get(&url)
@@ -3465,10 +3459,7 @@ fn run_vault(args: &[String]) -> Result<()> {
         ));
     }
 
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .context("failed to build HTTP client")?;
+    let client = cli_daemon_client(&daemon_url, Duration::from_secs(30))?;
 
     let (method, path, body) = match sub {
         "list" => {
