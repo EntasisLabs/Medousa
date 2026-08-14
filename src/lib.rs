@@ -194,6 +194,8 @@ pub mod session_storage;
 pub mod store_root;
 pub mod session_writer;
 pub mod session_lifecycle;
+pub mod session_deletion;
+pub mod session_migration;
 pub mod session_retention;
 pub mod locus_semantic_tags;
 pub mod session_meta_store;

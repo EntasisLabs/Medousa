@@ -85,11 +85,11 @@ pub async fn spawn_turn_ticket(
     interactive_request: InteractiveTurnRequest,
     workspace_card_id: Option<String>,
 ) -> Result<TurnTicketResponse, (StatusCode, String)> {
-    let session_id = crate::session_storage::validate_session_id(
-        &interactive_request.session_id,
-    )
-    .map(str::to_string)
-    .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    let session_id = crate::session_storage::SessionId::parse(&interactive_request.session_id)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    let admission = crate::session_deletion::acquire_mutation(&session_id)
+        .map_err(|error| (StatusCode::CONFLICT, error))?;
+    let session_id = session_id.to_string();
 
     let stream_port = crate::engine_adapters::turn_stream_registry_adapter(
         state.interactive_turn_streams.clone(),
@@ -131,6 +131,7 @@ pub async fn spawn_turn_ticket(
         stream_port.drop_stream(&turn_id).await;
         return Err((StatusCode::CONFLICT, conflict.message));
     }
+    drop(admission);
 
     if mode == crate::turn_ticket::TurnTicketMode::Background
         && let Some(job_id) = workspace_card_id.as_deref()
@@ -484,6 +485,7 @@ pub async fn delete_session_handler(
         State(crate::daemon_handlers::SessionDeleteState {
             memory_operations: Some(state.platform.memory_operations()),
             turn_tickets: state.turn_tickets.clone(),
+            turn_streams: Some(state.interactive_turn_streams.clone()),
         }),
         AxumPath(session_id),
         Query(query),

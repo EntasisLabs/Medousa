@@ -262,7 +262,7 @@ pub fn mark_has_code_work(session_id: &str) {
 
 trait SessionCatalogStore: Send + Sync {
     fn upsert_row(&self, session_id: &SessionId, row: &SessionCatalogRow);
-    fn delete_row(&self, session_id: &SessionId);
+    fn delete_row(&self, session_id: &SessionId) -> Result<(), String>;
     fn get_row(&self, session_id: &SessionId) -> Option<SessionCatalogRow>;
     fn list_rows_page(
         &self,
@@ -391,11 +391,12 @@ impl SessionCatalogStore for CachingSessionCatalogStore {
         }
     }
 
-    fn delete_row(&self, session_id: &SessionId) {
-        self.inner.delete_row(session_id);
+    fn delete_row(&self, session_id: &SessionId) -> Result<(), String> {
+        self.inner.delete_row(session_id)?;
         if let Ok(mut cache) = self.cache.write() {
             cache.remove(session_id.as_str());
         }
+        Ok(())
     }
 
     fn get_row(&self, session_id: &SessionId) -> Option<SessionCatalogRow> {
@@ -470,8 +471,12 @@ impl SessionCatalogStore for FileSessionCatalogStore {
         let _ = self.files.atomic_write(session_id, &bytes);
     }
 
-    fn delete_row(&self, session_id: &SessionId) {
-        let _ = self.files.remove(session_id);
+    fn delete_row(&self, session_id: &SessionId) -> Result<(), String> {
+        self.files.remove(session_id).map_err(|error| error.to_string())?;
+        if self.files.contains(session_id).map_err(|error| error.to_string())? {
+            return Err("session catalog row remains after deletion".to_string());
+        }
+        Ok(())
     }
 
     fn get_row(&self, session_id: &SessionId) -> Option<SessionCatalogRow> {
@@ -604,14 +609,20 @@ impl SessionCatalogStore for SurrealSessionCatalogStore {
         }
     }
 
-    fn delete_row(&self, session_id: &SessionId) {
+    fn delete_row(&self, session_id: &SessionId) -> Result<(), String> {
         let sql = "DELETE type::table($table) WHERE session_id = $session_id";
-        let _ = block_on(
+        let response = block_on(
             self.db
                 .query(sql)
                 .bind(("table", SESSION_CATALOG_TABLE))
                 .bind(("session_id", session_id.to_string())),
-        );
+        )
+        .map_err(|error| error.to_string())?;
+        response.check().map_err(|error| error.to_string())?;
+        if self.get_row(session_id).is_some() {
+            return Err("session catalog row remains after deletion".to_string());
+        }
+        Ok(())
     }
 
     fn get_row(&self, session_id: &SessionId) -> Option<SessionCatalogRow> {
@@ -961,8 +972,8 @@ pub fn session_has_activity(session_id: &str) -> bool {
         .is_some_and(|row| row.turn_count > 0)
 }
 
-pub fn delete_catalog_row(session_id: &SessionId) {
-    catalog_store().delete_row(session_id);
+pub fn delete_catalog_row(session_id: &SessionId) -> Result<(), String> {
+    catalog_store().delete_row(session_id)
 }
 
 static CATALOG_SYNC_ATTEMPTED: AtomicBool = AtomicBool::new(false);

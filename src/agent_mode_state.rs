@@ -204,6 +204,8 @@ pub fn set_session_mode(
     if session_id.is_empty() {
         return Err("session_id is required".to_string());
     }
+    let (_session, _mutation) =
+        crate::session_deletion::acquire_mutation_for_str(session_id)?;
     crate::agent_runtime::resolve_agent_mode(request.mode).map_err(|err| err.to_string())?;
     if request
         .expires_at_utc
@@ -268,6 +270,8 @@ pub fn set_session_code_binding(
     if session_id.is_empty() || work_id.is_empty() {
         return Err("session_id and work_id are required".to_string());
     }
+    let (_session, _mutation) =
+        crate::session_deletion::acquire_mutation_for_str(session_id)?;
     let _guard = MODE_STATE_LOCK.lock().unwrap();
     let mut index = read_index();
     let state = index.sessions.entry(session_id.to_string()).or_default();
@@ -301,6 +305,8 @@ pub fn clear_session_code_binding(session_id: &str) -> Result<SessionCodeBinding
     if session_id.is_empty() {
         return Err("session_id is required".to_string());
     }
+    let (_session, _mutation) =
+        crate::session_deletion::acquire_mutation_for_str(session_id)?;
     let _guard = MODE_STATE_LOCK.lock().unwrap();
     let mut index = read_index();
     let state = index.sessions.entry(session_id.to_string()).or_default();
@@ -355,6 +361,8 @@ pub fn propose_mode_transition(
     if reason.is_empty() {
         return Err("reason is required".to_string());
     }
+    let (_session, _mutation) =
+        crate::session_deletion::acquire_mutation_for_str(session_id)?;
     crate::agent_runtime::resolve_agent_mode(to_mode).map_err(|err| err.to_string())?;
     let task_id = normalize_task_id(scope, task_id)?;
 
@@ -400,6 +408,8 @@ pub fn list_mode_proposals(session_id: &str) -> Result<AgentModeProposalListResp
     if session_id.is_empty() {
         return Err("session_id is required".to_string());
     }
+    let (_session, _mutation) =
+        crate::session_deletion::acquire_mutation_for_str(session_id)?;
     let _guard = MODE_STATE_LOCK.lock().unwrap();
     let mut index = read_index();
     let now = Utc::now();
@@ -435,6 +445,8 @@ pub fn decide_mode_proposal(
     if session_id.is_empty() || proposal_id.is_empty() {
         return Err("session_id and proposal_id are required".to_string());
     }
+    let (_session, _mutation) =
+        crate::session_deletion::acquire_mutation_for_str(session_id)?;
     let _guard = MODE_STATE_LOCK.lock().unwrap();
     let mut index = read_index();
     let state = index
@@ -556,6 +568,8 @@ pub fn clear_session_mode(
     if session_id.is_empty() {
         return Err("session_id is required".to_string());
     }
+    let (_session, _mutation) =
+        crate::session_deletion::acquire_mutation_for_str(session_id)?;
     let _guard = MODE_STATE_LOCK.lock().unwrap();
     let mut index = read_index();
     if let Some(state) = index.sessions.get_mut(session_id) {
@@ -573,12 +587,16 @@ pub fn clear_session_mode(
     get_session_mode(session_id)
 }
 
-pub fn delete_session_mode_state(session_id: &str) {
+pub fn delete_session_mode_state(session_id: &str) -> Result<(), String> {
     let _guard = MODE_STATE_LOCK.lock().unwrap();
     let mut index = read_index();
     if index.sessions.remove(session_id.trim()).is_some() {
-        let _ = write_index(&index);
+        write_index(&index)?;
     }
+    if read_index().sessions.contains_key(session_id.trim()) {
+        return Err("agent mode state remains after deletion".to_string());
+    }
+    Ok(())
 }
 
 fn record_transition(

@@ -366,6 +366,7 @@ impl CoderTurnCheckpointStore {
     fn save_unlocked(&self, checkpoint: &ActiveTurnCheckpoint) -> Result<(), String> {
         let session_id = crate::session_storage::SessionId::parse(&checkpoint.session_id)
             .map_err(|error| error.to_string())?;
+        let _mutation = crate::session_deletion::acquire_mutation(&session_id)?;
         validate_checkpoint(
             checkpoint,
             &checkpoint.session_id,
@@ -417,7 +418,15 @@ impl CoderTurnCheckpointStore {
         let _guard = self.lock.lock().map_err(|err| err.to_string())?;
         self.files
             .remove_session(session_id)
-            .map_err(|error| format!("cannot delete Coder checkpoint directory: {error}"))
+            .map_err(|error| format!("cannot delete Coder checkpoint directory: {error}"))?;
+        if self
+            .files
+            .contains_session(session_id)
+            .map_err(|error| format!("cannot verify Coder checkpoint deletion: {error}"))?
+        {
+            return Err("Coder checkpoint directory remains after deletion".to_string());
+        }
+        Ok(())
     }
 }
 

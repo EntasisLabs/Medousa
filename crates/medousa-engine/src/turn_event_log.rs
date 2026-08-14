@@ -139,6 +139,12 @@ impl TurnEventLog {
     pub fn is_committed(&self) -> bool {
         self.lock().committed
     }
+
+    /// Close the durable journal handle before a capability-owning adapter
+    /// unlinks the exact journal during session deletion.
+    pub fn close_journal(&self) {
+        self.lock().journal.take();
+    }
 }
 
 fn journal_path(root: &Path, turn_id: &str) -> PathBuf {

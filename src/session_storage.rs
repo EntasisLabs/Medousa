@@ -136,6 +136,22 @@ impl SessionFileStore {
         }
     }
 
+    pub fn read_limited(
+        &self,
+        session_id: &SessionId,
+        max_bytes: u64,
+    ) -> Result<Vec<u8>, StoreRootError> {
+        let root = self.root()?;
+        let current = self.current_path(session_id);
+        match root.read_limited(&current, max_bytes) {
+            Ok(bytes) => Ok(bytes),
+            Err(error) if error.is_not_found() => {
+                root.read_limited(&self.legacy_path(session_id), max_bytes)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
     pub fn append(&self, session_id: &SessionId, bytes: &[u8]) -> Result<(), StoreRootError> {
         let path = self.migrate_legacy(session_id)?;
         self.root()?.append(&path, bytes)
@@ -150,6 +166,12 @@ impl SessionFileStore {
         let root = self.root()?;
         root.remove_file(&self.current_path(session_id))?;
         root.remove_file(&self.legacy_path(session_id))
+    }
+
+    pub fn contains(&self, session_id: &SessionId) -> Result<bool, StoreRootError> {
+        let root = self.root()?;
+        Ok(root.is_file(&self.current_path(session_id))?
+            || root.is_file(&self.legacy_path(session_id))?)
     }
 
     pub fn list(&self) -> Result<Vec<SessionFileEntry>, StoreRootError> {
@@ -169,6 +191,14 @@ impl SessionFileStore {
 
     pub fn read_entry(&self, entry: &SessionFileEntry) -> Result<Vec<u8>, StoreRootError> {
         self.root()?.read(&entry.path)
+    }
+
+    pub fn read_entry_limited(
+        &self,
+        entry: &SessionFileEntry,
+        max_bytes: u64,
+    ) -> Result<Vec<u8>, StoreRootError> {
+        self.root()?.read_limited(&entry.path, max_bytes)
     }
 }
 
@@ -309,6 +339,12 @@ impl SessionDirectoryStore {
         let root = self.root()?;
         root.remove_dir_all(&self.current_dir(session_id))?;
         root.remove_dir_all(&self.legacy_dir(session_id))
+    }
+
+    pub fn contains_session(&self, session_id: &SessionId) -> Result<bool, StoreRootError> {
+        let root = self.root()?;
+        Ok(root.is_dir(&self.current_dir(session_id))?
+            || root.is_dir(&self.legacy_dir(session_id))?)
     }
 
     pub fn read_root(&self, path: &StorePath) -> Result<Vec<u8>, StoreRootError> {

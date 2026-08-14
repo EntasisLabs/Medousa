@@ -9,6 +9,9 @@ use medousa_engine::{
 
 use crate::engine_adapters::SessionTurnStore;
 use crate::paths;
+use crate::store_root::{StoreEntryKind, StorePath, StoreRoot};
+
+const MAX_RECOVERY_LOG_BYTES: u64 = 128 * 1024 * 1024;
 
 pub fn recovery_ledger_path() -> PathBuf {
     default_log_root().join("recovery_ledger.json")
@@ -40,6 +43,11 @@ pub fn recovery_ledger_contains(session_id: &str, turn_id: &str) -> bool {
 }
 
 pub fn mark_recovery_ledger(session_id: &str, turn_id: &str) {
+    let Ok((_session, _mutation)) = crate::session_deletion::acquire_mutation_for_str(session_id)
+    else {
+        tracing::warn!(session_id, "rejected recovery ledger write for deleting session");
+        return;
+    };
     let mut map = load_recovery_ledger();
     let entry = map
         .entry(session_id.to_string())
@@ -49,6 +57,65 @@ pub fn mark_recovery_ledger(session_id: &str, turn_id: &str) {
             arr.push(serde_json::Value::String(turn_id.to_string()));
         }
     save_recovery_ledger(&map);
+}
+
+pub fn delete_session_recovery(session_id: &str) -> Result<(), String> {
+    let root_path = paths::medousa_data_dir().join(TURN_LOG_DIR);
+    let root = StoreRoot::open_or_create(&root_path).map_err(|error| error.to_string())?;
+    let ledger_path = StorePath::parse("recovery_ledger.json").expect("static recovery ledger path");
+    let mut ledger = match root.read(&ledger_path) {
+        Ok(bytes) => serde_json::from_slice::<serde_json::Map<String, serde_json::Value>>(&bytes)
+            .map_err(|_| "recovery ledger is corrupt".to_string())?,
+        Err(error) if error.is_not_found() => serde_json::Map::new(),
+        Err(error) => return Err(error.to_string()),
+    };
+    ledger.remove(session_id);
+    let ledger_bytes = serde_json::to_vec_pretty(&ledger).map_err(|error| error.to_string())?;
+    root.atomic_write(&ledger_path, &ledger_bytes)
+        .map_err(|error| error.to_string())?;
+
+    for entry in root.list_root().map_err(|error| error.to_string())? {
+        if entry.kind != StoreEntryKind::File || !entry.path.file_name().ends_with(".jsonl") {
+            continue;
+        }
+        let bytes = root
+            .read_limited(&entry.path, MAX_RECOVERY_LOG_BYTES)
+            .map_err(|error| error.to_string())?;
+        let belongs_to_session = bytes
+            .split(|byte| *byte == b'\n')
+            .filter(|line| !line.iter().all(u8::is_ascii_whitespace))
+            .filter_map(|line| {
+                serde_json::from_slice::<medousa_engine::SequencedTurnEvent>(line).ok()
+            })
+            .any(|event| {
+                event
+                    .envelope
+                    .surface
+                    .as_ref()
+                    .and_then(|surface| surface.channel_id.as_deref())
+                    == Some(session_id)
+            });
+        if !belongs_to_session {
+            continue;
+        }
+        let marker_name = format!(
+            "{}.committed",
+            entry.path.file_name().trim_end_matches(".jsonl")
+        );
+        let marker = StorePath::parse(&marker_name).map_err(|error| error.to_string())?;
+        root.remove_file(&entry.path).map_err(|error| error.to_string())?;
+        root.remove_file(&marker).map_err(|error| error.to_string())?;
+    }
+
+    let verify_ledger = root.read(&ledger_path).map_err(|error| error.to_string())?;
+    let verify_ledger = serde_json::from_slice::<serde_json::Map<String, serde_json::Value>>(
+        &verify_ledger,
+    )
+    .map_err(|_| "recovery ledger is corrupt".to_string())?;
+    if verify_ledger.contains_key(session_id) {
+        return Err("session recovery ledger entry remains after deletion".to_string());
+    }
+    Ok(())
 }
 
 /// Configure the engine journal root from the daemon data dir and replay any
@@ -70,6 +137,12 @@ pub async fn run_startup_turn_recovery() {
             .session_id
             .clone()
             .unwrap_or_else(|| "default".to_string());
+        let Ok((_typed_session_id, _mutation)) =
+            crate::session_deletion::acquire_mutation_for_str(&session_id)
+        else {
+            let _ = delete_session_recovery(&session_id);
+            continue;
+        };
         let turn_id = item.turn_id.clone();
         let mut committed_any = false;
 
@@ -116,20 +189,10 @@ mod tests {
     use super::*;
     use chrono::Utc;
     use medousa_engine::{Principal, TurnEnvelope, TurnEvent, TurnStorePort};
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-    fn tmp_root() -> PathBuf {
-        std::env::temp_dir().join(format!(
-            "medousa-recovery-test-{}",
-            TMP_COUNTER.fetch_add(1, Ordering::Relaxed)
-        ))
-    }
-
     #[tokio::test]
     async fn recovery_replays_uncommitted_journal_and_marks_committed() {
-        let root = tmp_root();
+        let temp = tempfile::tempdir().expect("temporary recovery root");
+        let root = temp.path().join("turn-logs");
         configure_log_root(root.clone());
         let envelope = TurnEnvelope::new("turn-recover-1", Principal::operator())
             .with_surface(Some(medousa_engine::TurnSurface {
@@ -163,7 +226,5 @@ mod tests {
 
         assert!(recover_uncommitted(&root).is_empty());
         assert!(recovery_ledger_contains("session-recover", "turn-recover-1"));
-
-        std::fs::remove_dir_all(&root).ok();
     }
 }

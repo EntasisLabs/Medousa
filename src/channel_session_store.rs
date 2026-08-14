@@ -81,7 +81,7 @@ pub trait ChannelSessionStore: Send + Sync {
     async fn list_distinct_session_ids(&self, limit: usize) -> Vec<String>;
     /// Most recently updated mapping for `channel` whose session id matches (e.g. TUI session linked via prior Telegram ingest).
     async fn find_mapping_key_for_session(&self, channel: &str, session_id: &str) -> Option<String>;
-    async fn purge_session_references(&self, session_id: &str);
+    async fn purge_session_references(&self, session_id: &str) -> Result<(), String>;
 }
 
 #[derive(Default)]
@@ -97,6 +97,12 @@ impl ChannelSessionStore for InMemoryChannelSessionStore {
     }
 
     async fn set_session_id(&self, mapping_key: &str, session_id: String) {
+        let Ok((_session, _mutation)) =
+            crate::session_deletion::acquire_mutation_for_str(&session_id)
+        else {
+            tracing::warn!(session_id, "rejected channel mapping for deleting session");
+            return;
+        };
         self.mappings
             .write()
             .await
@@ -104,6 +110,12 @@ impl ChannelSessionStore for InMemoryChannelSessionStore {
     }
 
     async fn push_session_history(&self, mapping_key: &str, session_id: String) {
+        let Ok((_session, _mutation)) =
+            crate::session_deletion::acquire_mutation_for_str(&session_id)
+        else {
+            tracing::warn!(session_id, "rejected channel history for deleting session");
+            return;
+        };
         let mut history = self.history.write().await;
         let entries = history.entry(mapping_key.to_string()).or_default();
         entries.retain(|existing| existing != &session_id);
@@ -148,14 +160,19 @@ impl ChannelSessionStore for InMemoryChannelSessionStore {
             .map(|(key, _)| key.clone())
     }
 
-    async fn purge_session_references(&self, session_id: &str) {
+    async fn purge_session_references(&self, session_id: &str) -> Result<(), String> {
         let mut mappings = self.mappings.write().await;
         mappings.retain(|_, sid| sid != session_id);
-        drop(mappings);
         let mut history = self.history.write().await;
         for entries in history.values_mut() {
             entries.retain(|sid| sid != session_id);
         }
+        if mappings.values().any(|sid| sid == session_id)
+            || history.values().any(|entries| entries.iter().any(|sid| sid == session_id))
+        {
+            return Err("channel session references remain after deletion".to_string());
+        }
+        Ok(())
     }
 }
 
@@ -220,6 +237,12 @@ impl ChannelSessionStore for SurrealChannelSessionStore {
     }
 
     async fn set_session_id(&self, mapping_key: &str, session_id: String) {
+        let Ok((_session, _mutation)) =
+            crate::session_deletion::acquire_mutation_for_str(&session_id)
+        else {
+            tracing::warn!(session_id, "rejected channel mapping for deleting session");
+            return;
+        };
         let record = ChannelSessionMappingRecord {
             mapping_key: mapping_key.to_string(),
             session_id: session_id.clone(),
@@ -237,6 +260,12 @@ impl ChannelSessionStore for SurrealChannelSessionStore {
     }
 
     async fn push_session_history(&self, mapping_key: &str, session_id: String) {
+        let Ok((_session, _mutation)) =
+            crate::session_deletion::acquire_mutation_for_str(&session_id)
+        else {
+            tracing::warn!(session_id, "rejected channel history for deleting session");
+            return;
+        };
         let delete_sql = "DELETE type::table($table) \
                           WHERE mapping_key = $mapping_key AND session_id = $session_id";
         let _ = self
@@ -365,21 +394,44 @@ impl ChannelSessionStore for SurrealChannelSessionStore {
             .map(|row| row.mapping_key)
     }
 
-    async fn purge_session_references(&self, session_id: &str) {
-        let _ = self
+    async fn purge_session_references(&self, session_id: &str) -> Result<(), String> {
+        let response = self
             .db
             .query("DELETE type::table($mapping) WHERE session_id = $session_id")
             .bind(("mapping", MAPPING_TABLE))
             .bind(("session_id", session_id.to_string()))
-            .await;
-        let _ = self
+            .await
+            .map_err(|error| error.to_string())?;
+        response.check().map_err(|error| error.to_string())?;
+        let response = self
             .db
             .query(
                 "UPDATE type::table($history) SET session_ids = array::filter(session_ids, |sid| sid != $session_id)",
             )
             .bind(("history", HISTORY_TABLE))
             .bind(("session_id", session_id.to_string()))
-            .await;
+            .await
+            .map_err(|error| error.to_string())?;
+        response.check().map_err(|error| error.to_string())?;
+        let mut verify = self
+            .db
+            .query("SELECT * FROM type::table($mapping) WHERE session_id = $session_id LIMIT 1")
+            .query("SELECT * FROM type::table($history) WHERE session_ids CONTAINS $session_id LIMIT 1")
+            .bind(("mapping", MAPPING_TABLE))
+            .bind(("history", HISTORY_TABLE))
+            .bind(("session_id", session_id.to_string()))
+            .await
+            .map_err(|error| error.to_string())?;
+        let mapping_rows = verify
+            .take::<Vec<ChannelSessionMappingRecord>>(0)
+            .map_err(|error| error.to_string())?;
+        let history_rows = verify
+            .take::<Vec<ChannelSessionHistoryRecord>>(1)
+            .map_err(|error| error.to_string())?;
+        if !mapping_rows.is_empty() || !history_rows.is_empty() {
+            return Err("channel session references remain after deletion".to_string());
+        }
+        Ok(())
     }
 }
 
@@ -394,7 +446,7 @@ pub fn list_distinct_channel_session_ids(limit: usize) -> Vec<String> {
 }
 
 /// Remove channel mapping/history rows that reference a deleted session.
-pub fn purge_session_references(session_id: &str) {
+pub async fn purge_session_references(session_id: &str) -> Result<(), String> {
     let store = channel_session_store();
-    block_on(store.purge_session_references(session_id));
+    store.purge_session_references(session_id).await
 }

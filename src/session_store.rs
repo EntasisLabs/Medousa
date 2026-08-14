@@ -138,7 +138,7 @@ impl From<&ConversationTurn> for SessionTurnRecord {
 pub trait SessionStore: Send + Sync + 'static {
     fn load_history(&self, session_id: &SessionId) -> Vec<ConversationTurn>;
     fn append_turn(&self, session_id: &SessionId, turn: &ConversationTurn);
-    fn delete_session(&self, session_id: &SessionId);
+    fn delete_session(&self, session_id: &SessionId) -> Result<(), String>;
     fn list_history_sessions(&self, limit: usize) -> Vec<SessionHistorySummary>;
     fn build_backfill_summaries(&self, limit: usize) -> Vec<SessionHistorySummary>;
     fn has_persisted_sessions(&self) -> bool;
@@ -180,8 +180,12 @@ impl SessionStore for FileSessionStore {
         crate::session_catalog::record_turn_appended_for_id(session_id, turn);
     }
 
-    fn delete_session(&self, session_id: &SessionId) {
-        let _ = self.files.remove(session_id);
+    fn delete_session(&self, session_id: &SessionId) -> Result<(), String> {
+        self.files.remove(session_id).map_err(|error| error.to_string())?;
+        if self.files.contains(session_id).map_err(|error| error.to_string())? {
+            return Err("session transcript remains after deletion".to_string());
+        }
+        Ok(())
     }
 
     fn list_history_sessions(&self, limit: usize) -> Vec<SessionHistorySummary> {
@@ -289,14 +293,31 @@ impl SessionStore for SurrealSessionStore {
         crate::session_catalog::record_turn_appended_for_id(session_id, turn);
     }
 
-    fn delete_session(&self, session_id: &SessionId) {
+    fn delete_session(&self, session_id: &SessionId) -> Result<(), String> {
         let sql = "DELETE type::table($table) WHERE session_id = $session_id";
-        let _ = block_on(
+        let response = block_on(
             self.db
                 .query(sql)
                 .bind(("table", SESSION_TURN_TABLE))
                 .bind(("session_id", session_id.to_string())),
-        );
+        )
+        .map_err(|error| error.to_string())?;
+        response.check().map_err(|error| error.to_string())?;
+        let mut verify = block_on(
+            self.db
+                .query("SELECT * FROM type::table($table) WHERE session_id = $session_id LIMIT 1")
+                .bind(("table", SESSION_TURN_TABLE))
+                .bind(("session_id", session_id.to_string())),
+        )
+        .map_err(|error| error.to_string())?;
+        if !verify
+            .take::<Vec<SessionTurnRecord>>(0)
+            .map_err(|error| error.to_string())?
+            .is_empty()
+        {
+            return Err("session transcript rows remain after deletion".to_string());
+        }
+        Ok(())
     }
 
     fn list_history_sessions(&self, limit: usize) -> Vec<SessionHistorySummary> {
@@ -449,6 +470,6 @@ pub fn has_persisted_sessions() -> bool {
     get_session_store().has_persisted_sessions()
 }
 
-pub fn delete_session_transcript(session_id: &SessionId) {
-    get_session_store().delete_session(session_id);
+pub fn delete_session_transcript(session_id: &SessionId) -> Result<(), String> {
+    get_session_store().delete_session(session_id)
 }

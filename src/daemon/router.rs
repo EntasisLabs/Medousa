@@ -701,6 +701,10 @@ pub fn build_workshop_surface() -> DeclaredRouter<AppState> {
             ),
             delete(delete_session_handler),
         )
+        .route(
+            workshop_read_policy("/v1/session-deletions/{deletion_id}"),
+            get(crate::daemon_handlers::get_session_deletion),
+        )
         .methods([
             (
                 workshop_read_policy("/v1/sessions/{session_id}/active-turn"),
@@ -1218,12 +1222,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 359);
-        assert_eq!(with_pairing.entries().len(), 371);
+        assert_eq!(without_pairing.entries().len(), 360);
+        assert_eq!(with_pairing.entries().len(), 372);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 371);
+        assert_eq!(rows.len(), 372);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"
@@ -1290,13 +1294,13 @@ mod tests {
             .inventory()
             .entries()
             .collect::<Vec<_>>();
-        assert_eq!(entries.len(), 35);
+        assert_eq!(entries.len(), 36);
         assert_eq!(
             entries
                 .iter()
                 .filter(|entry| entry.required_capability == Some("workshop.read"))
                 .count(),
-            16
+            17
         );
         assert_eq!(
             entries

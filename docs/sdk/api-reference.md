@@ -111,6 +111,12 @@ this generic HTTP client rather than a dedicated typed SDK accessor. See the
 | `active_turn(session_id)` | `GET .../active-turn` | active turn ticket |
 | `cancel_active_turn(session_id)` | `POST .../active-turn` | cancel |
 
+`delete` is complete only when `response.status == "complete"` and
+`response.deleted` is true. Retry the same session ID for
+`retryable_partial`; the daemon reuses `deletion_id` and replaces successful
+per-surface results. Raw HTTP clients can query
+`GET /v1/session-deletions/{deletion_id}`.
+
 ---
 
 ## `interactive()`

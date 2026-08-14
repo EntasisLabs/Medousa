@@ -731,11 +731,22 @@ pub fn append_turn_with_scratch(
     turn: &ConversationTurn,
     scratch: Option<&crate::agent_runtime::turn_context::TurnScratchpad>,
 ) {
-    let Ok(session_id) = crate::session_storage::SessionId::parse(session_id) else {
-        return;
-    };
+    if let Err(error) = try_append_turn_with_scratch(session_id, turn, scratch) {
+        tracing::warn!(session_id, error, "rejected turn persistence");
+    }
+}
+
+pub fn try_append_turn_with_scratch(
+    session_id: &str,
+    turn: &ConversationTurn,
+    scratch: Option<&crate::agent_runtime::turn_context::TurnScratchpad>,
+) -> Result<(), String> {
+    let session_id = crate::session_storage::SessionId::parse(session_id)
+        .map_err(|error| error.to_string())?;
+    let _mutation = crate::session_deletion::acquire_mutation(&session_id)?;
     let enriched = crate::turn_slice::ensure_turn_slice_summary(turn, scratch);
     crate::session_store::get_session_store().append_turn(&session_id, &enriched);
+    Ok(())
 }
 
 pub fn list_history_sessions(limit: usize) -> Vec<SessionHistorySummary> {

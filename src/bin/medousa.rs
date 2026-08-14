@@ -79,6 +79,7 @@ fn main() -> Result<()> {
         Some(cli::Commands::Slack(args)) => run_slack(&args.to_legacy()),
         Some(cli::Commands::Whatsapp(args)) => run_whatsapp(&args.to_legacy()),
         Some(cli::Commands::Doctor(args)) => run_doctor(&args.to_legacy()),
+        Some(cli::Commands::SessionStorage(args)) => run_session_storage(args.apply, args.json),
         Some(cli::Commands::Status) => run_status(&[]),
         Some(cli::Commands::Stop(args)) => run_stop(&args.to_legacy()),
         Some(cli::Commands::IdentityExport(args)) => run_identity_export(&args.to_legacy()),
@@ -1112,6 +1113,35 @@ fn run_stop(args: &[String]) -> Result<()> {
     if include_local {
         let _ = medousa_host::request_process_stop_by_name("medousa_local");
         println!("local_brain=stop_requested");
+    }
+    Ok(())
+}
+
+fn run_session_storage(apply: bool, json: bool) -> Result<()> {
+    let report = medousa::session_migration::inventory(
+        &medousa::paths::medousa_data_dir(),
+        apply,
+    )
+    .map_err(anyhow::Error::msg)?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!(
+            "session_storage mode={} scanned={} bytes={} current={} planned={} migrated={} quarantined={} record={}",
+            if apply { "apply" } else { "dry-run" },
+            report.entries_scanned,
+            report.bytes_scanned,
+            report.current,
+            report.planned,
+            report.migrated,
+            report.quarantined,
+            medousa::session_migration::record_path(&medousa::paths::medousa_data_dir()).display(),
+        );
+        if report.quarantined > 0 {
+            println!("action=inspect the JSON report; quarantined entries were not followed or changed");
+        } else if !apply && report.planned > 0 {
+            println!("next=medousa session-storage --apply");
+        }
     }
     Ok(())
 }
@@ -3635,6 +3665,7 @@ fn print_help() {
     println!();
     println!("Diagnose:");
     println!("  medousa doctor [--config] [--json] [--local-engine]");
+    println!("  medousa session-storage [--apply] [--json]   Inventory/migrate legacy sessions");
     println!("  medousa models probe|catalog|list|download|remove|engine-status|engine-load");
     println!();
     println!("Workshop (sessions, artifacts, remote):");

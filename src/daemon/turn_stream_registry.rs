@@ -115,3 +115,26 @@ pub async fn turn_stream_log(
         .get(turn_id)
         .map(|entry| entry.log.clone())
 }
+
+pub async fn delete_turn_stream(
+    registry: &TurnStreamRegistry,
+    turn_id: &str,
+) -> Result<(), String> {
+    let entry = registry.write().await.remove(turn_id);
+    if let Some(entry) = entry {
+        entry.log.close_journal();
+        let root = crate::store_root::StoreRoot::open_or_create(
+            &crate::paths::medousa_data_dir().join(medousa_engine::TURN_LOG_DIR),
+        )
+        .map_err(|error| error.to_string())?;
+        let journal = crate::store_root::StorePath::parse(&format!("{turn_id}.jsonl"))
+            .map_err(|error| error.to_string())?;
+        let marker = crate::store_root::StorePath::parse(&format!("{turn_id}.committed"))
+            .map_err(|error| error.to_string())?;
+        root.remove_file(&journal)
+            .map_err(|error| error.to_string())?;
+        root.remove_file(&marker)
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}

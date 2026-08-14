@@ -1,6 +1,6 @@
 # H02 — Identifier and filesystem authority
 
-> **Status:** In progress — H02.2 implemented; H02.3 vault confinement underway
+> **Status:** In progress — H02.1–H02.4 implemented; H02.3 platform evidence and H02.5 closure remain
 >
 > **Accountable owner:** daemon storage maintainers
 >
@@ -38,18 +38,29 @@ The first H02.0 containment milestone is implemented:
 - ledger cleanup unlinks the exact file and propagates failure instead of calling
   recursive directory deletion and reporting success.
 
-The follow-on deletion milestone also registers artifacts, media, extractions,
-verifications, context packs, tool surfaces, and the ledger as required cleanup
-surfaces. Coder turn checkpoints are included and migrate from their older
-truncated-digest directory on first write. Cleanup removes both layouts. The
-deletion flow removes global index records, attempts every registered
-surface even after a failure, and withholds `deleted: true` when any required
-surface needs retry. Durable tombstones, concurrency exclusion, and the complete
-typed registry remain H02.4 work.
+H02.4 now owns deletion through a durable per-session record and a typed surface
+registry. The record is persisted before cancellation; pre-existing mutation
+leases drain, and later transcript, catalog, artifact, media, extraction,
+verification, context-pack, tool-surface, ledger, checkpoint, agent-mode,
+metadata, shared-catalog, and turn-worker mutations fail closed. Concurrent
+deletes reuse one opaque deletion ID. Every surface result is persisted before
+the next surface runs, backend DELETE calls are followed by absence reads, and
+the wire status distinguishes `complete`, `retryable_partial`, `blocked`, and
+`deleting`. `deleted` is true only for `complete`; Home retains the row and
+surfaces a retry when deletion is partial.
 
-Remaining ingress/type conversion, store migration, deletion registry, migration
-inventory, vault confinement, and the cross-platform abuse matrix remain open in
-H02.1 through H02.5.
+The `medousa session-storage` operator command now inventories all declared
+file/directory layouts through no-follow capabilities. Dry-run is the default;
+`--apply` copies only valid unambiguous legacy entries to their `s1-` key,
+verifies content, journals each boundary, and retains the source for rollback.
+Malformed, link-backed, wrong-type, ownership-ambiguous, and conflicting entries
+receive bounded quarantine reasons and name digests. A planned copy can resume
+after restart. Fresh-process fixtures populate every declared filesystem
+surface, delete in a second process, and verify absence/tombstone enforcement in
+a third.
+
+Broader externally influenced identifiers, compatibility removal, supported-
+platform evidence, and the cross-platform abuse matrix remain H02.5 work.
 
 H02.1 is in progress: `medousa-types` now owns the validated, non-public
 `SessionId` representation and validated serde boundary; the daemon mints
@@ -216,11 +227,11 @@ and vault-Git subprocess authority; see the implementation progress above.
 
 ### Deletion
 
-`delete_session` ignores most cleanup results and always returns `deleted:
-true`. `remove_turn_ledger_dir` calls `remove_dir_all` on the ledger's `.jsonl`
-file, so the ledger survives. The current function also lacks artifacts,
-media, extraction, context-pack, and other likely satellites in one verifiable
-owner inventory.
+The old best-effort deletion path is removed. Durable tombstones, mutation
+exclusion, the typed registry, per-surface results, retry, status lookup, and
+fresh-process absence evidence are implemented. Locus is included only when
+requested; failure remains visible and retryable instead of preventing local
+surface cleanup.
 
 ## Invariants
 
@@ -483,10 +494,10 @@ propagates failure, but closure requires the complete inventory test.
 
 ### H02.4 — Migration and deletion inventory
 
-- Build dry-run inventory and collision/quarantine reporting.
-- Implement restartable legacy storage migration.
-- Add deletion tombstones, surface registry, truthful result schema, and retry.
-- Add fresh-process completeness and injected-failure tests.
+- [x] Build dry-run inventory and collision/quarantine reporting.
+- [x] Implement restartable legacy storage migration.
+- [x] Add deletion tombstones, surface registry, truthful result schema, and retry.
+- [x] Add fresh-process completeness and injected-failure tests.
 
 ### H02.5 — Broader identifier inventory and closure
 

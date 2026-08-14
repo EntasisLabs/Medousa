@@ -28,6 +28,8 @@ pub enum Commands {
     Slack(SlackArgs),
     Whatsapp(WhatsappArgs),
     Doctor(DoctorArgs),
+    #[command(name = "session-storage")]
+    SessionStorage(SessionStorageArgs),
     Status,
     Stop(StopArgs),
     #[command(name = "identity-export")]
@@ -190,6 +192,15 @@ pub struct DoctorArgs {
     pub json: bool,
     #[arg(long = "local-engine")]
     pub local_engine: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct SessionStorageArgs {
+    /// Apply safe, unambiguous migrations. The default is a read-only dry run.
+    #[arg(long)]
+    pub apply: bool,
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -771,6 +782,24 @@ mod tests {
                 );
             }
             other => panic!("expected Credentials, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn session_storage_is_dry_run_unless_apply_is_explicit() {
+        let dry_run = Cli::try_parse_from(["medousa", "session-storage"]).unwrap();
+        match dry_run.command {
+            Some(Commands::SessionStorage(args)) => assert!(!args.apply),
+            other => panic!("expected SessionStorage, got {other:?}"),
+        }
+        let apply = Cli::try_parse_from(["medousa", "session-storage", "--apply", "--json"])
+            .unwrap();
+        match apply.command {
+            Some(Commands::SessionStorage(args)) => {
+                assert!(args.apply);
+                assert!(args.json);
+            }
+            other => panic!("expected SessionStorage, got {other:?}"),
         }
     }
 

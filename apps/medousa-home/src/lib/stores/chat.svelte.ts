@@ -748,7 +748,17 @@ export class ChatStore {
     if (!trimmed) {
       throw new Error("session_id is required");
     }
-    await daemonDeleteSession(trimmed, options);
+    const deletion = await daemonDeleteSession(trimmed, options);
+    const deletionStatus = deletion.status ?? (deletion.deleted ? "complete" : "retryable_partial");
+    if (deletionStatus !== "complete" || !deletion.deleted) {
+      const failed = (deletion.surfaces ?? [])
+        .filter((surface) => !surface.deleted)
+        .map((surface) => surface.surface)
+        .join(", ");
+      throw new Error(
+        `Session deletion ${deletionStatus}; retry ${deletion.deletion_id ?? trimmed}${failed ? ` (${failed})` : ""}`,
+      );
+    }
     this.sessions = this.sessions.filter((session) => session.session_id !== trimmed);
     this.pinnedIds = this.pinnedIds.filter((id) => id !== trimmed);
     localStorage.setItem(PINS_KEY, JSON.stringify(this.pinnedIds));
