@@ -138,6 +138,21 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::grapheme_handlers::grapheme_surface().inventory())
         .expect("duplicate Grapheme route policy");
     inventory
+        .extend(crate::local_inference_handlers::surface().inventory())
+        .expect("duplicate local inference route policy");
+    inventory
+        .extend(crate::model_capability_registry::handlers::surface().inventory())
+        .expect("duplicate model catalog route policy");
+    inventory
+        .extend(crate::stt_handlers::surface().inventory())
+        .expect("duplicate STT route policy");
+    inventory
+        .extend(crate::lan_handlers::lan_surface().inventory())
+        .expect("duplicate LAN discovery route policy");
+    inventory
+        .extend(crate::component_runtime_handlers::component_runtime_surface().inventory())
+        .expect("duplicate component runtime route policy");
+    inventory
 }
 
 pub fn build_identity_surface() -> DeclaredRouter<AppState> {
@@ -513,11 +528,6 @@ pub fn build_feature_routers(
             state.clone(),
         ))
         .merge(crate::daemon::detamu_host::world_router(state.clone()))
-        .merge(crate::component_runtime_handlers::component_runtime_router())
-        .merge(crate::local_inference_handlers::routes())
-        .merge(crate::model_capability_registry::handlers::routes())
-        .merge(crate::stt_handlers::routes())
-        .merge(crate::lan_handlers::lan_router())
         .merge(dashboard)
 }
 
@@ -1182,12 +1192,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 225);
-        assert_eq!(with_pairing.entries().len(), 237);
+        assert_eq!(without_pairing.entries().len(), 242);
+        assert_eq!(with_pairing.entries().len(), 254);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 237);
+        assert_eq!(rows.len(), 254);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"
@@ -1468,5 +1478,55 @@ mod tests {
             entry.path == "/v1/grapheme/lsp"
                 && entry.rate_limit_class == RateLimitClass::Stream
         }));
+    }
+
+    #[test]
+    fn runtime_support_inventory_uses_narrow_authority_classes() {
+        let local = crate::local_inference_handlers::surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let models = crate::model_capability_registry::handlers::surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let stt = crate::stt_handlers::surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let lan = crate::lan_handlers::lan_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let components = crate::component_runtime_handlers::component_runtime_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let entries = local
+            .iter()
+            .chain(&models)
+            .chain(&stt)
+            .chain(&lan)
+            .chain(&components)
+            .collect::<Vec<_>>();
+
+        assert_eq!(entries.len(), 17);
+        for (capability, count) in [
+            ("admin.runtime", 11),
+            ("admin.identity", 1),
+            ("workshop.read", 1),
+            ("workshop.interact", 1),
+            ("content.read", 1),
+            ("content.write", 2),
+        ] {
+            assert_eq!(
+                entries
+                    .iter()
+                    .filter(|entry| entry.required_capability == Some(capability))
+                    .count(),
+                count,
+                "unexpected route count for {capability}",
+            );
+        }
     }
 }

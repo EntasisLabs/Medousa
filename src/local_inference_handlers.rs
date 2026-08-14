@@ -5,7 +5,7 @@ use axum::{
     extract::Path,
     response::sse::{Event, KeepAlive, Sse},
     routing::{delete, get, post},
-    Json, Router,
+    Json,
 };
 use futures_util::stream::{self, Stream};
 use serde::{Deserialize, Serialize};
@@ -16,6 +16,9 @@ use crate::local_inference::{
     resolve_inference_device, write_hardware_profile, CatalogModelEntry, HardwareProfile,
     HardwareTier, InstalledModelRecord, LocalEngineStatus, ModelDownloadProgress, MODEL_STORE,
     LOCAL_ENGINE,
+};
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,19 +59,98 @@ pub struct LocalModelDownloadResponse {
     pub job: ModelDownloadProgress,
 }
 
-pub fn routes() -> Router {
-    Router::new()
-        .route("/v1/local/hardware", get(local_hardware))
-        .route("/v1/local/catalog", get(local_catalog))
-        .route("/v1/local/models", get(local_models))
-        .route("/v1/local/models/download", post(local_model_download))
-        .route("/v1/local/models/download/{job_id}", get(local_model_download_status))
+pub fn surface() -> DeclaredRouter {
+    DeclaredRouter::default()
         .route(
-            "/v1/local/models/download/{job_id}/events",
+            local_runtime_policy(
+                axum::http::Method::GET,
+                "/v1/local/hardware",
+                1024,
+                RateLimitClass::Administration,
+            ),
+            get(local_hardware),
+        )
+        .route(
+            local_runtime_policy(
+                axum::http::Method::GET,
+                "/v1/local/catalog",
+                1024,
+                RateLimitClass::Administration,
+            ),
+            get(local_catalog),
+        )
+        .route(
+            local_runtime_policy(
+                axum::http::Method::GET,
+                "/v1/local/models",
+                1024,
+                RateLimitClass::Administration,
+            ),
+            get(local_models),
+        )
+        .route(
+            local_runtime_policy(
+                axum::http::Method::POST,
+                "/v1/local/models/download",
+                64 * 1024,
+                RateLimitClass::Administration,
+            ),
+            post(local_model_download),
+        )
+        .route(
+            local_runtime_policy(
+                axum::http::Method::GET,
+                "/v1/local/models/download/{job_id}",
+                1024,
+                RateLimitClass::Administration,
+            ),
+            get(local_model_download_status),
+        )
+        .route(
+            local_runtime_policy(
+                axum::http::Method::GET,
+                "/v1/local/models/download/{job_id}/events",
+                1024,
+                RateLimitClass::Stream,
+            ),
             get(local_model_download_events),
         )
-        .route("/v1/local/models/{model_id}", delete(local_model_delete))
-        .route("/v1/local/engine/status", get(local_engine_status))
+        .route(
+            local_runtime_policy(
+                axum::http::Method::DELETE,
+                "/v1/local/models/{model_id}",
+                1024,
+                RateLimitClass::Administration,
+            ),
+            delete(local_model_delete),
+        )
+        .route(
+            local_runtime_policy(
+                axum::http::Method::GET,
+                "/v1/local/engine/status",
+                1024,
+                RateLimitClass::Administration,
+            ),
+            get(local_engine_status),
+        )
+}
+
+fn local_runtime_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    body_limit: usize,
+    rate_limit_class: RateLimitClass,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Administration,
+        required_capability: Some(crate::request_principal::Capability::AdminRuntime),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class,
+    }
 }
 
 async fn local_hardware() -> Result<Json<LocalHardwareResponse>, (axum::http::StatusCode, String)> {
@@ -209,12 +291,21 @@ fn internal_error(message: String) -> (axum::http::StatusCode, String) {
 mod tests {
     use super::*;
     use axum::body::Body;
+    use axum::Extension;
     use axum::http::{Request, StatusCode};
     use tower::ServiceExt;
 
+    fn test_router() -> axum::Router {
+        surface()
+            .into_router()
+            .layer(Extension(
+                crate::request_principal::RequestPrincipal::legacy_local(),
+            ))
+    }
+
     #[tokio::test]
     async fn local_catalog_route_returns_gemma_models() {
-        let app = routes();
+        let app = test_router();
         let response = app
             .oneshot(
                 Request::builder()
@@ -235,7 +326,7 @@ mod tests {
 
     #[tokio::test]
     async fn local_engine_status_route_returns_idle_by_default() {
-        let app = routes();
+        let app = test_router();
         let response = app
             .oneshot(
                 Request::builder()
@@ -255,7 +346,7 @@ mod tests {
 
     #[tokio::test]
     async fn local_models_route_returns_lists() {
-        let app = routes();
+        let app = test_router();
         let response = app
             .oneshot(
                 Request::builder()

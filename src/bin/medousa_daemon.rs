@@ -696,6 +696,15 @@ async fn main() -> Result<()> {
                 composition: std::sync::Arc::new(state.composition().clone()),
             },
         ))
+        .merge(medousa::local_inference_handlers::surface().with_state(()))
+        .merge(medousa::model_capability_registry::handlers::surface().with_state(()))
+        .merge(medousa::stt_handlers::surface().with_state(()))
+        .merge(medousa::lan_handlers::lan_surface().with_state(()))
+        .merge(
+            medousa::component_runtime_handlers::component_runtime_surface().with_state(
+                medousa::component_runtime_handlers::ComponentRuntimeApiState,
+            ),
+        )
         .with_state(state.clone());
     if let Some((pairing_bootstrap, pairing_protected)) = pairing_routers {
         bootstrap = bootstrap.merge(pairing_bootstrap);

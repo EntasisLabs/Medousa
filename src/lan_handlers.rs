@@ -3,10 +3,13 @@
 use std::time::Duration;
 
 use axum::routing::get;
-use axum::{Json, Router};
+use axum::Json;
 use serde::Serialize;
 
 use crate::pairing::mdns::{browse_workshops, DiscoveredWorkshop};
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -15,8 +18,20 @@ pub struct LanWorkshopsResponse {
     pub browse_ms: u64,
 }
 
-pub fn lan_router() -> Router {
-    Router::new().route("/v1/lan/workshops", get(list_lan_workshops))
+pub fn lan_surface() -> DeclaredRouter {
+    DeclaredRouter::default().route(
+        RoutePolicy {
+            method: axum::http::Method::GET,
+            path: "/v1/lan/workshops",
+            group: RouteGroup::Administration,
+            required_capability: Some(crate::request_principal::Capability::AdminIdentity),
+            bootstrap_public: false,
+            browser_policy: BrowserPolicy::NativeOnly,
+            body_limit: 1024,
+            rate_limit_class: RateLimitClass::Administration,
+        },
+        get(list_lan_workshops),
+    )
 }
 
 async fn list_lan_workshops() -> Result<Json<LanWorkshopsResponse>, (axum::http::StatusCode, String)> {

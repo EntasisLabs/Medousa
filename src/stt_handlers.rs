@@ -2,15 +2,55 @@ use axum::{
     extract::Multipart,
     http::StatusCode,
     routing::{get, post},
-    Json, Router,
+    Json,
 };
 
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
 use crate::stt::{self, SttStatusResponse, SttTranscribeResponse};
 
-pub fn routes() -> Router {
-    Router::new()
-        .route("/v1/stt/status", get(stt_status))
-        .route("/v1/stt/transcribe", post(stt_transcribe))
+pub fn surface() -> DeclaredRouter {
+    DeclaredRouter::default()
+        .route(
+            stt_policy(
+                axum::http::Method::GET,
+                "/v1/stt/status",
+                crate::request_principal::Capability::WorkshopRead,
+                1024,
+                RateLimitClass::Read,
+            ),
+            get(stt_status),
+        )
+        .route(
+            stt_policy(
+                axum::http::Method::POST,
+                "/v1/stt/transcribe",
+                crate::request_principal::Capability::WorkshopInteract,
+                32 * 1024 * 1024,
+                RateLimitClass::Mutation,
+            ),
+            post(stt_transcribe),
+        )
+}
+
+fn stt_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    required_capability: crate::request_principal::Capability,
+    body_limit: usize,
+    rate_limit_class: RateLimitClass,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Portal,
+        required_capability: Some(required_capability),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class,
+    }
 }
 
 async fn stt_status() -> Json<SttStatusResponse> {

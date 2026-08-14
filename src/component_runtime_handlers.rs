@@ -3,7 +3,7 @@
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::Json;
 use medousa_types::component_runtime::{
     ComponentRuntimeEventsQuery, ComponentRuntimeEventsRequest, ComponentRuntimeEventsResponse,
     ComponentRuntimeEventsTailResponse, ComponentRuntimeProbeResult,
@@ -11,22 +11,67 @@ use medousa_types::component_runtime::{
 
 use crate::component_runtime_store::{component_runtime_hub, default_tail_limit};
 use crate::component_store::component_exists_in_profile;
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
 use crate::environment_store::resolve_profile_id;
 
 #[derive(Clone)]
 pub struct ComponentRuntimeApiState;
 
-pub fn component_runtime_router() -> Router {
-    Router::new()
+pub fn component_runtime_surface() -> DeclaredRouter<ComponentRuntimeApiState> {
+    DeclaredRouter::default()
+        .methods([
+            (
+                component_runtime_policy(
+                    axum::http::Method::GET,
+                    "/v1/components/{component_id}/runtime/events",
+                    crate::request_principal::Capability::ContentRead,
+                    1024,
+                    RateLimitClass::Read,
+                ),
+                get(tail_runtime_events),
+            ),
+            (
+                component_runtime_policy(
+                    axum::http::Method::POST,
+                    "/v1/components/{component_id}/runtime/events",
+                    crate::request_principal::Capability::ContentWrite,
+                    1024 * 1024,
+                    RateLimitClass::Mutation,
+                ),
+                post(append_runtime_events),
+            ),
+        ])
         .route(
-            "/v1/components/{component_id}/runtime/events",
-            get(tail_runtime_events).post(append_runtime_events),
-        )
-        .route(
-            "/v1/components/{component_id}/runtime/probe/{probe_id}/result",
+            component_runtime_policy(
+                axum::http::Method::POST,
+                "/v1/components/{component_id}/runtime/probe/{probe_id}/result",
+                crate::request_principal::Capability::ContentWrite,
+                256 * 1024,
+                RateLimitClass::Mutation,
+            ),
             post(complete_probe),
         )
-        .with_state(ComponentRuntimeApiState)
+}
+
+fn component_runtime_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    required_capability: crate::request_principal::Capability,
+    body_limit: usize,
+    rate_limit_class: RateLimitClass,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Portal,
+        required_capability: Some(required_capability),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class,
+    }
 }
 
 async fn ensure_component_allowed(
