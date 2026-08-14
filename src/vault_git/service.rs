@@ -2,14 +2,16 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use medousa_host::{find_command_in_path, hide_subprocess_window};
 use medousa_install_support::shared_bin_dir;
 use serde::{Deserialize, Serialize};
 
 use crate::paths::medousa_data_dir;
-use crate::vault::path::normalize_vault_path;
+use crate::store_root::StoreRoot;
+use crate::vault::path::{VaultPath, user_vault_capability};
 use crate::vault::roots::active_vault_root;
 
 pub fn vault_git_enabled() -> bool {
@@ -27,11 +29,7 @@ pub fn ensure_enabled() -> Result<()> {
 }
 
 fn platform_git_name() -> &'static str {
-    if cfg!(windows) {
-        "git.exe"
-    } else {
-        "git"
-    }
+    if cfg!(windows) { "git.exe" } else { "git" }
 }
 
 pub fn resolve_git_binary() -> Option<PathBuf> {
@@ -62,7 +60,7 @@ pub fn resolve_git_binary() -> Option<PathBuf> {
     find_command_in_path(platform_git_name())
 }
 
-pub(crate) fn run_git(git: &Path, cwd: &Path, args: &[&str]) -> Result<String> {
+fn run_command(git: &Path, cwd: &Path, args: &[&str]) -> Result<Vec<u8>> {
     let mut command = Command::new(git);
     hide_subprocess_window(&mut command);
     let output = command
@@ -84,10 +82,60 @@ pub(crate) fn run_git(git: &Path, cwd: &Path, args: &[&str]) -> Result<String> {
             }
         );
     }
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    Ok(output.stdout)
 }
 
-fn resolve_commit(git: &Path, vault_root: &Path, raw: &str) -> Result<String> {
+pub(crate) fn run_git(
+    git: &Path,
+    vault: &StoreRoot,
+    ambient_root: &Path,
+    args: &[&str],
+) -> Result<String> {
+    let output = run_git_bytes(git, vault, ambient_root, args)?;
+    Ok(String::from_utf8_lossy(&output).into_owned())
+}
+
+fn run_git_bytes(
+    git: &Path,
+    vault: &StoreRoot,
+    _ambient_root: &Path,
+    args: &[&str],
+) -> Result<Vec<u8>> {
+    let mut command = Command::new(git);
+    hide_subprocess_window(&mut command);
+    command.args(args);
+    #[cfg(unix)]
+    vault.configure_command_current_dir(&mut command);
+    #[cfg(not(unix))]
+    command.current_dir(_ambient_root);
+
+    let output = command
+        .output()
+        .with_context(|| format!("failed to run git {}", args.join(" ")))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let detail = if !stderr.is_empty() { stderr } else { stdout };
+        bail!(
+            "git {} failed: {}",
+            args.join(" "),
+            if detail.is_empty() {
+                output.status.to_string()
+            } else {
+                detail
+            }
+        );
+    }
+    Ok(output.stdout)
+}
+
+fn vault_authority() -> Result<(PathBuf, Arc<StoreRoot>)> {
+    let ambient_root = active_vault_root();
+    let vault = user_vault_capability()?;
+    Ok((ambient_root, vault))
+}
+
+fn resolve_commit(git: &Path, vault: &StoreRoot, ambient_root: &Path, raw: &str) -> Result<String> {
     let commit = raw.trim();
     if commit.is_empty() {
         bail!("commit is required");
@@ -95,7 +143,8 @@ fn resolve_commit(git: &Path, vault_root: &Path, raw: &str) -> Result<String> {
     let revision = format!("{commit}^{{commit}}");
     Ok(run_git(
         git,
-        vault_root,
+        vault,
+        ambient_root,
         &["rev-parse", "--verify", "--end-of-options", &revision],
     )?
     .trim()
@@ -134,9 +183,9 @@ pub fn detect_git() -> GitDetectResponse {
             platform_hint,
         };
     };
-    let version = run_git(&path, &std::env::temp_dir(), &["--version"])
+    let version = run_command(&path, &std::env::temp_dir(), &["--version"])
         .ok()
-        .map(|s| s.trim().to_string());
+        .map(|bytes| String::from_utf8_lossy(&bytes).trim().to_string());
     GitDetectResponse {
         available: true,
         path: Some(path.display().to_string()),
@@ -179,10 +228,17 @@ pub fn git_status() -> Result<GitStatusResponse> {
         });
     }
     let git = git.expect("checked");
-    let is_repo = vault_root.join(".git").exists()
-        || run_git(&git, &vault_root, &["rev-parse", "--is-inside-work-tree"])
-            .map(|s| s.trim() == "true")
-            .unwrap_or(false);
+    let vault = user_vault_capability()?;
+    let git_dir = VaultPath::internal(".git")?;
+    let is_repo = vault.is_dir(&git_dir)?
+        || run_git(
+            &git,
+            &vault,
+            &vault_root,
+            &["rev-parse", "--is-inside-work-tree"],
+        )
+        .map(|s| s.trim() == "true")
+        .unwrap_or(false);
 
     if !is_repo {
         return Ok(GitStatusResponse {
@@ -196,12 +252,18 @@ pub fn git_status() -> Result<GitStatusResponse> {
         });
     }
 
-    let branch = run_git(&git, &vault_root, &["rev-parse", "--abbrev-ref", "HEAD"])
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty() && s != "HEAD");
+    let branch = run_git(
+        &git,
+        &vault,
+        &vault_root,
+        &["rev-parse", "--abbrev-ref", "HEAD"],
+    )
+    .ok()
+    .map(|s| s.trim().to_string())
+    .filter(|s| !s.is_empty() && s != "HEAD");
 
-    let porcelain = run_git(&git, &vault_root, &["status", "--porcelain"]).unwrap_or_default();
+    let porcelain =
+        run_git(&git, &vault, &vault_root, &["status", "--porcelain"]).unwrap_or_default();
     let dirty_count = porcelain
         .lines()
         .filter(|line| !line.trim().is_empty())
@@ -229,22 +291,28 @@ const DEFAULT_GITIGNORE: &str = "\
 pub fn init_repo() -> Result<GitStatusResponse> {
     ensure_enabled()?;
     let git = resolve_git_binary().ok_or_else(|| anyhow!("Git is not installed"))?;
-    let vault_root = active_vault_root();
-    std::fs::create_dir_all(&vault_root)?;
-    if !vault_root.join(".git").exists() {
-        run_git(&git, &vault_root, &["init"])?;
+    let (vault_root, vault) = vault_authority()?;
+    let git_dir = VaultPath::internal(".git")?;
+    if !vault.is_dir(&git_dir)? {
+        run_git(&git, &vault, &vault_root, &["init"])?;
     }
-    let ignore = vault_root.join(".gitignore");
-    if !ignore.exists() {
-        std::fs::write(&ignore, DEFAULT_GITIGNORE)?;
+    let ignore = VaultPath::internal(".gitignore")?;
+    if !vault.is_file(&ignore)? {
+        vault.atomic_write(&ignore, DEFAULT_GITIGNORE.as_bytes())?;
     }
     // Identity for local-only commits if unset
     let _ = run_git(
         &git,
+        &vault,
         &vault_root,
         &["config", "user.email", "medousa@localhost"],
     );
-    let _ = run_git(&git, &vault_root, &["config", "user.name", "Medousa"]);
+    let _ = run_git(
+        &git,
+        &vault,
+        &vault_root,
+        &["config", "user.name", "Medousa"],
+    );
     git_status()
 }
 
@@ -268,19 +336,24 @@ pub struct GitLogQuery {
 pub fn git_log(query: &GitLogQuery) -> Result<Vec<GitLogEntry>> {
     ensure_enabled()?;
     let git = resolve_git_binary().ok_or_else(|| anyhow!("Git is not installed"))?;
-    let vault_root = active_vault_root();
+    let (vault_root, vault) = vault_authority()?;
     let limit = query.limit.unwrap_or(40).clamp(1, 200);
     let mut args = vec![
         "log".to_string(),
         format!("-n{limit}"),
         "--pretty=format:%H%x09%h%x09%an%x09%aI%x09%s".to_string(),
     ];
-    if let Some(path) = query.path.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
+    if let Some(path) = query
+        .path
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+    {
         args.push("--".to_string());
-        args.push(normalize_vault_path(path)?);
+        args.push(VaultPath::parse(path)?.to_string());
     }
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let out = run_git(&git, &vault_root, &arg_refs)?;
+    let out = run_git(&git, &vault, &vault_root, &arg_refs)?;
     Ok(out
         .lines()
         .filter_map(|line| {
@@ -317,8 +390,9 @@ pub struct GitCommitResponse {
 pub fn commit_version(request: &GitCommitRequest) -> Result<GitCommitResponse> {
     ensure_enabled()?;
     let git = resolve_git_binary().ok_or_else(|| anyhow!("Git is not installed"))?;
-    let vault_root = active_vault_root();
-    if !vault_root.join(".git").exists() {
+    let (vault_root, vault) = vault_authority()?;
+    let git_dir = VaultPath::internal(".git")?;
+    if !vault.is_dir(&git_dir)? {
         init_repo()?;
     }
     let message = request.message.trim();
@@ -326,25 +400,30 @@ pub fn commit_version(request: &GitCommitRequest) -> Result<GitCommitResponse> {
         bail!("version message is required");
     }
     if request.paths.is_empty() {
-        run_git(&git, &vault_root, &["add", "-A"])?;
+        run_git(&git, &vault, &vault_root, &["add", "-A"])?;
     } else {
         let mut args = vec!["add".to_string(), "--".to_string()];
         for path in &request.paths {
             let trimmed = path.trim();
             if !trimmed.is_empty() {
-                args.push(normalize_vault_path(trimmed)?);
+                args.push(VaultPath::parse(trimmed)?.to_string());
             }
         }
         let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        run_git(&git, &vault_root, &arg_refs)?;
+        run_git(&git, &vault, &vault_root, &arg_refs)?;
     }
     // Nothing to commit?
-    let staged = run_git(&git, &vault_root, &["diff", "--cached", "--name-only"])?;
+    let staged = run_git(
+        &git,
+        &vault,
+        &vault_root,
+        &["diff", "--cached", "--name-only"],
+    )?;
     if staged.trim().is_empty() {
         bail!("nothing to save — working tree matches the last version");
     }
-    run_git(&git, &vault_root, &["commit", "-m", message])?;
-    let id = run_git(&git, &vault_root, &["rev-parse", "HEAD"])?
+    run_git(&git, &vault, &vault_root, &["commit", "-m", message])?;
+    let id = run_git(&git, &vault, &vault_root, &["rev-parse", "HEAD"])?
         .trim()
         .to_string();
     Ok(GitCommitResponse {
@@ -363,10 +442,26 @@ pub struct GitRestoreRequest {
 pub fn restore_note(request: &GitRestoreRequest) -> Result<()> {
     ensure_enabled()?;
     let git = resolve_git_binary().ok_or_else(|| anyhow!("Git is not installed"))?;
-    let vault_root = active_vault_root();
-    let commit = resolve_commit(&git, &vault_root, &request.commit)?;
-    let path = normalize_vault_path(&request.path)?;
-    run_git(&git, &vault_root, &["checkout", &commit, "--", &path])?;
+    let (vault_root, vault) = vault_authority()?;
+    let commit = resolve_commit(&git, &vault, &vault_root, &request.commit)?;
+    let path = VaultPath::parse(&request.path)?;
+    restore_blob(&git, &vault, &vault_root, &commit, &path)
+}
+
+fn restore_blob(
+    git: &Path,
+    vault: &StoreRoot,
+    ambient_root: &Path,
+    commit: &str,
+    path: &VaultPath,
+) -> Result<()> {
+    let object = format!("{commit}:{}", path.as_str());
+    let bytes = run_git_bytes(git, vault, ambient_root, &["show", &object])?;
+    const MAX_RESTORED_NOTE_BYTES: usize = 8 * 1024 * 1024;
+    if bytes.len() > MAX_RESTORED_NOTE_BYTES {
+        bail!("restored note exceeds the 8 MiB limit");
+    }
+    vault.atomic_write(path, &bytes)?;
     Ok(())
 }
 
@@ -387,8 +482,8 @@ pub struct GitDiffResponse {
 pub fn diff_note(query: &GitDiffQuery) -> Result<GitDiffResponse> {
     ensure_enabled()?;
     let git = resolve_git_binary().ok_or_else(|| anyhow!("Git is not installed"))?;
-    let vault_root = active_vault_root();
-    let path = normalize_vault_path(
+    let (vault_root, vault) = vault_authority()?;
+    let path = VaultPath::parse(
         query
             .path
             .as_deref()
@@ -398,6 +493,7 @@ pub fn diff_note(query: &GitDiffQuery) -> Result<GitDiffResponse> {
     )?;
     let commit = resolve_commit(
         &git,
+        &vault,
         &vault_root,
         query
             .commit
@@ -406,9 +502,83 @@ pub fn diff_note(query: &GitDiffQuery) -> Result<GitDiffResponse> {
             .filter(|c| !c.is_empty())
             .unwrap_or("HEAD"),
     )?;
-    let patch = run_git(&git, &vault_root, &["diff", &commit, "--", &path])?;
+    let patch = run_git(
+        &git,
+        &vault,
+        &vault_root,
+        &["diff", &commit, "--", path.as_str()],
+    )?;
     Ok(GitDiffResponse {
-        path,
+        path: path.to_string(),
         patch,
     })
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    fn committed_note() -> (tempfile::TempDir, PathBuf, StoreRoot, String, VaultPath) {
+        let temp = tempfile::tempdir().unwrap();
+        let root_path = temp.path().canonicalize().unwrap().join("vault");
+        let vault = StoreRoot::open_or_create_nofollow(&root_path).unwrap();
+        let path = VaultPath::parse("notes/proof.md").unwrap();
+        vault.atomic_write(&path, b"committed").unwrap();
+        let git = Path::new("git");
+        run_git(git, &vault, &root_path, &["init"]).unwrap();
+        run_git(
+            git,
+            &vault,
+            &root_path,
+            &["config", "user.email", "test@localhost"],
+        )
+        .unwrap();
+        run_git(
+            git,
+            &vault,
+            &root_path,
+            &["config", "user.name", "Medousa Test"],
+        )
+        .unwrap();
+        run_git(git, &vault, &root_path, &["add", "--", path.as_str()]).unwrap();
+        run_git(git, &vault, &root_path, &["commit", "-m", "proof"]).unwrap();
+        let commit = run_git(git, &vault, &root_path, &["rev-parse", "HEAD"])
+            .unwrap()
+            .trim()
+            .to_string();
+        (temp, root_path, vault, commit, path)
+    }
+
+    #[test]
+    fn restore_writes_through_held_root_after_ambient_replacement() {
+        let (_temp, root_path, vault, commit, path) = committed_note();
+        let held_path = root_path.with_file_name("held-vault");
+        vault.atomic_write(&path, b"newer").unwrap();
+        std::fs::rename(&root_path, &held_path).unwrap();
+        std::fs::create_dir(&root_path).unwrap();
+
+        restore_blob(Path::new("git"), &vault, &root_path, &commit, &path).unwrap();
+
+        assert_eq!(
+            std::fs::read(held_path.join(path.as_str())).unwrap(),
+            b"committed"
+        );
+        assert!(!root_path.join(path.as_str()).exists());
+    }
+
+    #[test]
+    fn restore_refuses_a_link_ancestor_and_preserves_the_outside_canary() {
+        use std::os::unix::fs::symlink;
+
+        let (temp, root_path, vault, commit, path) = committed_note();
+        let notes = root_path.join("notes");
+        let outside = temp.path().join("outside");
+        std::fs::remove_dir_all(&notes).unwrap();
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(outside.join("proof.md"), b"outside").unwrap();
+        symlink(&outside, &notes).unwrap();
+
+        assert!(restore_blob(Path::new("git"), &vault, &root_path, &commit, &path).is_err());
+        assert_eq!(std::fs::read(outside.join("proof.md")).unwrap(), b"outside");
+    }
 }

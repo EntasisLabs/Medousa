@@ -7,6 +7,7 @@
 use std::fmt;
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
+use std::process::Command;
 use std::time::SystemTime;
 
 use cap_fs_ext::{DirExt as _, FollowSymlinks, OpenOptionsFollowExt as _};
@@ -284,6 +285,28 @@ impl StoreRoot {
                 .map_err(|error| StoreRootError::io("open_root_component", error))?;
         }
         Ok(Self { dir: current })
+    }
+
+    /// Make a Unix child start in this exact opened directory rather than
+    /// reopening its ambient pathname. The descriptor is still live between
+    /// `fork` and `exec`, even though it is close-on-exec.
+    #[cfg(unix)]
+    pub fn configure_command_current_dir(&self, command: &mut Command) {
+        use std::os::fd::AsRawFd as _;
+        use std::os::unix::process::CommandExt as _;
+
+        let root_fd = self.dir.as_raw_fd();
+        // SAFETY: the closure performs only the async-signal-safe `fchdir`
+        // syscall and constructs the error from errno. `root_fd` remains owned
+        // by `self`, which the caller must keep alive through `Command::output`.
+        unsafe {
+            command.pre_exec(move || {
+                if libc::fchdir(root_fd) == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
     }
 
     pub fn read(&self, path: &impl StoreRootPath) -> Result<Vec<u8>, StoreRootError> {
@@ -728,6 +751,29 @@ mod tests {
 
         assert_eq!(std::fs::read(held_path.join("proof.txt")).unwrap(), b"held");
         assert!(!root_path.join("proof.txt").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn child_process_starts_from_the_held_root_after_path_replacement() {
+        let temp = tempfile::tempdir().unwrap();
+        let root_path = temp.path().join("root");
+        let held_path = temp.path().join("held-root");
+        std::fs::create_dir(&root_path).unwrap();
+        let root = StoreRoot::open(&root_path).unwrap();
+
+        std::fs::rename(&root_path, &held_path).unwrap();
+        std::fs::create_dir(&root_path).unwrap();
+        let mut command = Command::new("sh");
+        command.args(["-c", "printf held > process-proof.txt"]);
+        root.configure_command_current_dir(&mut command);
+        assert!(command.status().unwrap().success());
+
+        assert_eq!(
+            std::fs::read(held_path.join("process-proof.txt")).unwrap(),
+            b"held"
+        );
+        assert!(!root_path.join("process-proof.txt").exists());
     }
 
     #[test]

@@ -153,8 +153,19 @@ replacement, previews are bounded, JSONL index reads avoid per-line `String`
 allocation, and scanners admit only typed regular-file entries. Link-backed
 leaves and ancestors fail closed with an outside-root canary intact. The old
 `resolve_*_note_path`, `trash_path_for`, and lexical `ensure_within_root`
-authority helpers have been removed. Native Windows reparse/mount evidence and
-the vault-Git/process boundary audit remain before H02.3 closure.
+authority helpers have been removed.
+
+The vault-Git boundary now uses the held vault directory as the child process
+working directory on Unix (`fchdir` between fork and exec), so renaming and
+replacing the configured root cannot redirect Git. Repository detection and
+`.gitignore` setup are capability-relative; note paths use `VaultPath`; and
+restore reads an exact commit blob before an atomic capability-relative write
+instead of letting `git checkout` mutate the worktree by ambient traversal.
+The unused POST/DELETE worktree endpoints were removed because their arbitrary
+caller-supplied paths gave Git recursive create/delete authority outside every
+Medousa-owned root. Worktree inspection remains read-only. Windows still uses
+the ambient root for Git process launch, so native handle-anchored Windows
+launch plus reparse/mount evidence remain before H02.3 closure.
 
 ## Current evidence and blast radius
 

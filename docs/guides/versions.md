@@ -23,7 +23,10 @@ From a note overflow menu → **Versions…**, or the quiet branch label in the 
 - **Restore** — bring a past version back into the working file
 - **Diff vs last** — see the patch against the last version
 
-**Advanced Git** (inside the panel) shows branch / dirty count and worktrees. Power users can still use a normal Git client on the vault root.
+**Advanced Git** (inside the panel) shows branch / dirty count and worktrees.
+Worktree management is read-only in Medousa; create or remove advanced Git
+worktrees with your own Git client. Power users can still use a normal Git
+client on the vault root.
 
 ## Trash
 
