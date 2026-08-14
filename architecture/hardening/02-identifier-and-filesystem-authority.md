@@ -1,6 +1,6 @@
 # H02 — Identifier and filesystem authority
 
-> **Status:** In progress — H02.0 session-path containment implemented; capability filesystem pending
+> **Status:** In progress — H02.2 capability kernel implemented; production store migration underway
 >
 > **Accountable owner:** daemon storage maintainers
 >
@@ -47,9 +47,9 @@ surface even after a failure, and withholds `deleted: true` when any required
 surface needs retry. Durable tombstones, concurrency exclusion, and the complete
 typed registry remain H02.4 work.
 
-The store-root capability layer, complete ingress/type conversion, deletion
-registry, migration inventory, vault confinement, and cross-platform abuse matrix
-remain open in H02.1 through H02.5.
+Remaining ingress/type conversion, store migration, deletion registry, migration
+inventory, vault confinement, and the cross-platform abuse matrix remain open in
+H02.1 through H02.5.
 
 H02.1 is in progress: `medousa-types` now owns the validated, non-public
 `SessionId` representation and validated serde boundary; the daemon mints
@@ -77,8 +77,18 @@ spike covers read, append, atomic replace, nested directory creation, relative
 rename, exact unlink, and handle-based recursive deletion. Hostile fixtures
 prove rejection of link leaves and ancestors, outside-root canary preservation,
 and continued authority over the originally opened root after its ambient path
-is renamed and replaced. Production store migration and Windows reparse/junction
-evidence remain open before H02.2 can be called implemented.
+is renamed and replaced.
+
+The file-backed transcript/history and single-session catalog stores now own a
+lazy `SessionFileStore` capability for their complete lifetime. Keyed reads,
+appends, atomic replacements, legacy first-write renames, exact deletion, and
+root enumeration no longer reconstruct ambient paths. Transcript parsing reads
+JSONL directly from capability-returned bytes, and catalog scans read only
+validated regular-file entries through the held root. Replacement-path fixtures
+prove that the production wrapper continues writing to the originally opened
+directory after its ambient name is moved and replaced. Shared catalog and the
+remaining session satellites still require migration, and native Windows
+reparse/junction evidence remains open before H02.2 is complete.
 
 ## Current evidence and blast radius
 

@@ -6,8 +6,12 @@
 //! malformed legacy entries are left untouched for the H02 quarantine flow.
 
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
+use once_cell::sync::OnceCell;
 use sha2::{Digest as _, Sha256};
+
+use crate::store_root::{StoreEntryKind, StorePath, StoreRoot, StoreRootError};
 
 pub use medousa_types::session::{
     InvalidSessionId, MAX_SESSION_ID_BYTES, SessionId, validate_session_id,
@@ -39,6 +43,117 @@ impl StorageKey {
         value.len() == 67
             && value.starts_with("s1-")
             && value.as_bytes()[3..].iter().all(u8::is_ascii_hexdigit)
+    }
+}
+
+pub(crate) struct SessionFileEntry {
+    path: StorePath,
+    pub modified: Option<SystemTime>,
+}
+
+impl SessionFileEntry {
+    pub fn file_stem(&self) -> &str {
+        self.path
+            .file_name()
+            .rsplit_once('.')
+            .map(|(stem, _)| stem)
+            .expect("session file entry extension was validated")
+    }
+}
+
+/// Capability-owned flat file store for one session data surface.
+pub(crate) struct SessionFileStore {
+    root_path: PathBuf,
+    extension: &'static str,
+    root: OnceCell<StoreRoot>,
+}
+
+impl SessionFileStore {
+    pub fn new(root_path: PathBuf, extension: &'static str) -> Self {
+        debug_assert!(
+            !extension.is_empty() && extension.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        );
+        Self {
+            root_path,
+            extension,
+            root: OnceCell::new(),
+        }
+    }
+
+    fn root(&self) -> Result<&StoreRoot, StoreRootError> {
+        self.root
+            .get_or_try_init(|| StoreRoot::open_or_create(&self.root_path))
+    }
+
+    fn current_path(&self, session_id: &SessionId) -> StorePath {
+        self.path_for_stem(StorageKey::for_session(session_id).as_str())
+    }
+
+    fn legacy_path(&self, session_id: &SessionId) -> StorePath {
+        self.path_for_stem(session_id.as_str())
+    }
+
+    fn path_for_stem(&self, stem: &str) -> StorePath {
+        StorePath::parse(&format!("{stem}.{}", self.extension))
+            .expect("validated session file name must be a valid store path")
+    }
+
+    fn migrate_legacy(&self, session_id: &SessionId) -> Result<StorePath, StoreRootError> {
+        let root = self.root()?;
+        let current = self.current_path(session_id);
+        if root.is_file(&current)? {
+            return Ok(current);
+        }
+        let legacy = self.legacy_path(session_id);
+        if root.is_file(&legacy)? {
+            root.rename(&legacy, &current)?;
+        }
+        Ok(current)
+    }
+
+    pub fn read(&self, session_id: &SessionId) -> Result<Vec<u8>, StoreRootError> {
+        let root = self.root()?;
+        let current = self.current_path(session_id);
+        match root.read(&current) {
+            Ok(bytes) => Ok(bytes),
+            Err(error) if error.is_not_found() => root.read(&self.legacy_path(session_id)),
+            Err(error) => Err(error),
+        }
+    }
+
+    pub fn append(&self, session_id: &SessionId, bytes: &[u8]) -> Result<(), StoreRootError> {
+        let path = self.migrate_legacy(session_id)?;
+        self.root()?.append(&path, bytes)
+    }
+
+    pub fn atomic_write(&self, session_id: &SessionId, bytes: &[u8]) -> Result<(), StoreRootError> {
+        let path = self.migrate_legacy(session_id)?;
+        self.root()?.atomic_write(&path, bytes)
+    }
+
+    pub fn remove(&self, session_id: &SessionId) -> Result<(), StoreRootError> {
+        let root = self.root()?;
+        root.remove_file(&self.current_path(session_id))?;
+        root.remove_file(&self.legacy_path(session_id))
+    }
+
+    pub fn list(&self) -> Result<Vec<SessionFileEntry>, StoreRootError> {
+        let suffix = format!(".{}", self.extension);
+        Ok(self
+            .root()?
+            .list_root()?
+            .into_iter()
+            .filter(|entry| entry.kind == StoreEntryKind::File)
+            .filter(|entry| entry.path.file_name().ends_with(&suffix))
+            .map(|entry| SessionFileEntry {
+                path: entry.path,
+                modified: entry.modified,
+            })
+            .collect())
+    }
+
+    pub fn read_entry(&self, entry: &SessionFileEntry) -> Result<Vec<u8>, StoreRootError> {
+        self.root()?.read(&entry.path)
     }
 }
 
@@ -244,6 +359,47 @@ mod tests {
         assert_eq!(std::fs::read(&current).unwrap(), b"turn\n");
         assert!(!legacy.exists());
         assert_eq!(current, session_file(&root, &session_id, "jsonl"));
+    }
+
+    #[test]
+    fn capability_file_store_migrates_appends_replaces_lists_and_removes() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("history");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("session-a.jsonl"), b"legacy\n").unwrap();
+        let files = SessionFileStore::new(root.clone(), "jsonl");
+        let session_id = id("session-a");
+
+        assert_eq!(files.read(&session_id).unwrap(), b"legacy\n");
+        files.append(&session_id, b"next\n").unwrap();
+        assert_eq!(files.read(&session_id).unwrap(), b"legacy\nnext\n");
+        assert!(!root.join("session-a.jsonl").exists());
+        assert_eq!(files.list().unwrap().len(), 1);
+
+        files.atomic_write(&session_id, b"replacement\n").unwrap();
+        assert_eq!(files.read(&session_id).unwrap(), b"replacement\n");
+        files.remove(&session_id).unwrap();
+        assert!(files.list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn capability_file_store_retains_the_original_root_handle() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("history");
+        let held = temp.path().join("held-history");
+        let files = SessionFileStore::new(root.clone(), "jsonl");
+        assert!(files.list().unwrap().is_empty());
+
+        std::fs::rename(&root, &held).unwrap();
+        std::fs::create_dir(&root).unwrap();
+        files.append(&id("session-a"), b"held\n").unwrap();
+
+        let file_name = format!(
+            "{}.jsonl",
+            StorageKey::for_session(&id("session-a")).as_str()
+        );
+        assert_eq!(std::fs::read(held.join(&file_name)).unwrap(), b"held\n");
+        assert!(!root.join(file_name).exists());
     }
 
     #[test]

@@ -19,7 +19,7 @@ use surrealdb_types::SurrealValue;
 use tokio::runtime::Handle;
 
 use crate::identity_memory::DEFAULT_USER_ID;
-use crate::session::{ConversationTurn, SessionHistorySummary, atomic_write, medousa_data_dir};
+use crate::session::{ConversationTurn, SessionHistorySummary, medousa_data_dir};
 use crate::turn_parts::TurnPart;
 use crate::verification_store::VerificationRunRecord;
 
@@ -50,7 +50,7 @@ const SCHEMA_MIGRATIONS: &[&str] =
     &["REMOVE INDEX IF EXISTS idx_session_catalog_last_activity ON TABLE session_catalog"];
 
 static SESSION_CATALOG_STORE: Lazy<RwLock<Arc<dyn SessionCatalogStore>>> =
-    Lazy::new(|| RwLock::new(Arc::new(FileSessionCatalogStore)));
+    Lazy::new(|| RwLock::new(Arc::new(FileSessionCatalogStore::new())));
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, SurrealValue)]
 pub struct SessionCatalogRow {
@@ -348,10 +348,6 @@ fn catalog_dir() -> PathBuf {
     medousa_data_dir().join("catalog")
 }
 
-fn catalog_path(session_id: &SessionId) -> PathBuf {
-    crate::session_storage::session_file_for_read(&catalog_dir(), session_id, "json")
-}
-
 fn set_catalog_store(store: Arc<dyn SessionCatalogStore>) {
     // Wrap every configured store in a write-through row cache so the per-append
     // `get_row` read (a `block_on` SurrealKV SELECT) is served from memory.
@@ -438,30 +434,49 @@ impl SessionCatalogStore for CachingSessionCatalogStore {
     }
 }
 
-struct FileSessionCatalogStore;
+struct FileSessionCatalogStore {
+    files: crate::session_storage::SessionFileStore,
+}
+
+impl FileSessionCatalogStore {
+    fn new() -> Self {
+        Self::at(catalog_dir())
+    }
+
+    fn at(root: PathBuf) -> Self {
+        Self {
+            files: crate::session_storage::SessionFileStore::new(root, "json"),
+        }
+    }
+
+    fn rows(&self) -> Vec<SessionCatalogRow> {
+        let Ok(entries) = self.files.list() else {
+            return Vec::new();
+        };
+        entries
+            .iter()
+            .filter_map(|entry| self.files.read_entry(entry).ok())
+            .filter_map(|bytes| serde_json::from_slice(&bytes).ok())
+            .collect()
+    }
+}
 
 impl SessionCatalogStore for FileSessionCatalogStore {
     fn upsert_row(&self, session_id: &SessionId, row: &SessionCatalogRow) {
         assert_eq!(session_id.as_str(), row.session_id);
-        let Ok(path) =
-            crate::session_storage::session_file_for_write(&catalog_dir(), session_id, "json")
-        else {
-            return;
-        };
         let Ok(bytes) = serde_json::to_vec_pretty(row) else {
             return;
         };
-        let _ = atomic_write(&path, &bytes);
+        let _ = self.files.atomic_write(session_id, &bytes);
     }
 
     fn delete_row(&self, session_id: &SessionId) {
-        let _ = crate::session_storage::remove_session_file(&catalog_dir(), session_id, "json");
+        let _ = self.files.remove(session_id);
     }
 
     fn get_row(&self, session_id: &SessionId) -> Option<SessionCatalogRow> {
-        let path = catalog_path(session_id);
-        let raw = std::fs::read_to_string(path).ok()?;
-        serde_json::from_str(&raw).ok()
+        let bytes = self.files.read(session_id).ok()?;
+        serde_json::from_slice(&bytes).ok()
     }
 
     fn list_rows_page(
@@ -470,18 +485,9 @@ impl SessionCatalogStore for FileSessionCatalogStore {
         query: Option<&str>,
         cursor: Option<&SessionListCursor>,
     ) -> Vec<SessionCatalogRow> {
-        let dir = catalog_dir();
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return Vec::new();
-        };
-
-        let mut rows = entries
-            .filter_map(|entry| entry.ok())
-            .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("json"))
-            .filter_map(|entry| {
-                let raw = std::fs::read_to_string(entry.path()).ok()?;
-                serde_json::from_str::<SessionCatalogRow>(&raw).ok()
-            })
+        let mut rows = self
+            .rows()
+            .into_iter()
             .filter(|row| query.is_none_or(|needle| row_matches_query(row, needle)))
             .filter(|row| cursor.is_none_or(|cursor| row_is_older_than_cursor(row, cursor)))
             .collect::<Vec<_>>();
@@ -492,17 +498,7 @@ impl SessionCatalogStore for FileSessionCatalogStore {
     }
 
     fn row_count(&self) -> usize {
-        let dir = catalog_dir();
-        std::fs::read_dir(dir)
-            .map(|entries| {
-                entries
-                    .filter_map(|entry| entry.ok())
-                    .filter(|entry| {
-                        entry.path().extension().and_then(|ext| ext.to_str()) == Some("json")
-                    })
-                    .count()
-            })
-            .unwrap_or(0)
+        self.files.list().map_or(0, |entries| entries.len())
     }
 
     fn find_session_ids_by_prefix(&self, prefix: &str, max: usize) -> Vec<String> {
@@ -511,22 +507,9 @@ impl SessionCatalogStore for FileSessionCatalogStore {
             return Vec::new();
         }
 
-        let dir = catalog_dir();
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return Vec::new();
-        };
-
-        entries
-            .filter_map(|entry| entry.ok())
-            .filter_map(|entry| {
-                let path = entry.path();
-                if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-                    return None;
-                }
-                let raw = std::fs::read_to_string(path).ok()?;
-                let row = serde_json::from_str::<SessionCatalogRow>(&raw).ok()?;
-                row.session_id.starts_with(prefix).then_some(row.session_id)
-            })
+        self.rows()
+            .into_iter()
+            .filter_map(|row| row.session_id.starts_with(prefix).then_some(row.session_id))
             .take(max.max(1))
             .collect()
     }
@@ -536,26 +519,11 @@ impl SessionCatalogStore for FileSessionCatalogStore {
             return Vec::new();
         }
 
-        let dir = catalog_dir();
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return Vec::new();
-        };
-
         let mut matches = Vec::new();
-        for entry in entries.filter_map(|entry| entry.ok()) {
+        for row in self.rows() {
             if matches.len() >= max.max(1) {
                 break;
             }
-            let path = entry.path();
-            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-                continue;
-            }
-            let Ok(raw) = std::fs::read_to_string(path) else {
-                continue;
-            };
-            let Ok(row) = serde_json::from_str::<SessionCatalogRow>(&raw) else {
-                continue;
-            };
             if row
                 .display_name
                 .as_deref()
@@ -1272,6 +1240,15 @@ fn group_latest_verifications() -> (
 mod tests {
     use super::*;
     use chrono::TimeZone;
+    use std::sync::Mutex;
+
+    static FILE_STORE_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn lock_file_store() -> std::sync::MutexGuard<'static, ()> {
+        FILE_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 
     #[test]
     fn preview_truncates_first_line() {
@@ -1282,12 +1259,12 @@ mod tests {
 
     #[test]
     fn record_turn_appended_increments_count() {
+        let _guard = lock_file_store();
         let suffix = uuid::Uuid::new_v4().simple().to_string();
         let tmp = std::env::temp_dir().join(format!("medousa-catalog-test-{suffix}"));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).expect("tempdir");
-        unsafe { std::env::set_var("XDG_DATA_HOME", &tmp) };
-        set_catalog_store(Arc::new(FileSessionCatalogStore));
+        set_catalog_store(Arc::new(FileSessionCatalogStore::at(tmp.join("catalog"))));
 
         let at = Utc.with_ymd_and_hms(2026, 6, 8, 12, 0, 0).unwrap();
         let turn = ConversationTurn::plain("user", "hello world".to_string(), at, vec![], None);
@@ -1347,6 +1324,7 @@ mod tests {
 
     #[test]
     fn record_turn_appended_sticky_origin_surface() {
+        let _guard = lock_file_store();
         use crate::turn_parts::TurnPart;
         use medousa_types::HostTurnContext;
 
@@ -1354,8 +1332,7 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("medousa-catalog-origin-{suffix}"));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).expect("tempdir");
-        unsafe { std::env::set_var("XDG_DATA_HOME", &tmp) };
-        set_catalog_store(Arc::new(FileSessionCatalogStore));
+        set_catalog_store(Arc::new(FileSessionCatalogStore::at(tmp.join("catalog"))));
 
         let at = Utc.with_ymd_and_hms(2026, 6, 8, 12, 0, 0).unwrap();
         let session_id = format!("sess-origin-{suffix}");
@@ -1453,12 +1430,12 @@ mod tests {
 
     #[test]
     fn mark_has_code_work_is_sticky() {
+        let _guard = lock_file_store();
         let suffix = uuid::Uuid::new_v4().simple().to_string();
         let tmp = std::env::temp_dir().join(format!("medousa-catalog-code-{suffix}"));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).expect("tempdir");
-        unsafe { std::env::set_var("XDG_DATA_HOME", &tmp) };
-        set_catalog_store(Arc::new(FileSessionCatalogStore));
+        set_catalog_store(Arc::new(FileSessionCatalogStore::at(tmp.join("catalog"))));
 
         let session_id = format!("sess-code-{suffix}");
         ensure_named_session(&session_id, Some("Code".into()));
@@ -1478,12 +1455,12 @@ mod tests {
 
     #[test]
     fn list_sessions_page_filters_query_and_cursor() {
+        let _guard = lock_file_store();
         let suffix = uuid::Uuid::new_v4().simple().to_string();
         let tmp = std::env::temp_dir().join(format!("medousa-catalog-page-test-{suffix}"));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).expect("tempdir");
-        unsafe { std::env::set_var("XDG_DATA_HOME", &tmp) };
-        set_catalog_store(Arc::new(FileSessionCatalogStore));
+        set_catalog_store(Arc::new(FileSessionCatalogStore::at(tmp.join("catalog"))));
 
         let needle = format!("budget-unique-{suffix}");
         let at = Utc.with_ymd_and_hms(2026, 6, 8, 12, 0, 0).unwrap();

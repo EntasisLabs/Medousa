@@ -1,4 +1,3 @@
-use std::io::{BufRead, Write};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -623,67 +622,49 @@ pub fn save_slack_app_token(token: Option<&str>) {
 }
 
 pub(crate) fn file_load_history(
+    files: &crate::session_storage::SessionFileStore,
     session_id: &crate::session_storage::SessionId,
 ) -> Vec<ConversationTurn> {
-    let path = history_path(session_id);
-    let Ok(file) = std::fs::File::open(&path) else {
+    let Ok(bytes) = files.read(session_id) else {
         return Vec::new();
     };
-    std::io::BufReader::new(file)
-        .lines()
-        .map_while(Result::ok)
-        .filter(|line| !line.trim().is_empty())
-        .filter_map(|line| serde_json::from_str(&line).ok())
+    bytes
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.iter().all(u8::is_ascii_whitespace))
+        .filter_map(|line| serde_json::from_slice(line).ok())
         .collect()
 }
 
 pub(crate) fn file_append_turn(
+    files: &crate::session_storage::SessionFileStore,
     session_id: &crate::session_storage::SessionId,
     turn: &ConversationTurn,
 ) {
-    let Ok(path) = crate::session_storage::session_file_for_write(
-        &medousa_data_dir().join("history"),
-        session_id,
-        "jsonl",
-    ) else {
+    let Ok(mut line) = serde_json::to_vec(turn) else {
         return;
     };
-    let Ok(mut file) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-    else {
-        return;
-    };
-    if let Ok(line) = serde_json::to_string(turn) {
-        let _ = writeln!(file, "{line}");
-    }
+    line.push(b'\n');
+    let _ = files.append(session_id, &line);
 }
 
 /// One-time backfill helper — loads full history per session. Not for list API hot path.
-pub(crate) fn file_build_history_summaries_from_files(limit: usize) -> Vec<SessionHistorySummary> {
-    let history_dir = medousa_data_dir().join("history");
-    let Ok(entries) = std::fs::read_dir(history_dir) else {
+pub(crate) fn file_build_history_summaries_from_files(
+    files: &crate::session_storage::SessionFileStore,
+    limit: usize,
+) -> Vec<SessionHistorySummary> {
+    let Ok(entries) = files.list() else {
         return Vec::new();
     };
 
     let mut sessions = entries
-        .filter_map(|entry| entry.ok())
+        .into_iter()
         .filter_map(|entry| {
-            let path = entry.path();
-            let ext = path.extension().and_then(|e| e.to_str());
-            if ext != Some("jsonl") {
-                return None;
-            }
-
-            let session_id = path.file_stem()?.to_str()?;
+            let session_id = entry.file_stem();
             if crate::session_storage::StorageKey::is_encoded(session_id) {
                 return None;
             }
             let session_id = crate::session_storage::SessionId::parse(session_id).ok()?;
-            let metadata = entry.metadata().ok();
-            let modified = metadata.and_then(|m| m.modified().ok());
-            Some((session_id, modified))
+            Some((session_id, entry.modified))
         })
         .collect::<Vec<_>>();
 
@@ -693,7 +674,7 @@ pub(crate) fn file_build_history_summaries_from_files(limit: usize) -> Vec<Sessi
         .into_iter()
         .take(limit)
         .map(|(session_id, _)| {
-            let turns = file_load_history(&session_id);
+            let turns = file_load_history(files, &session_id);
             let verifications =
                 crate::verification_store::list_verifications(session_id.as_str(), usize::MAX);
             let last_timestamp = turns.last().map(|t| t.timestamp);

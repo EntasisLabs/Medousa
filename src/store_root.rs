@@ -7,6 +7,7 @@
 use std::fmt;
 use std::io::{Read, Write};
 use std::path::Path;
+use std::time::SystemTime;
 
 use cap_fs_ext::{DirExt as _, FollowSymlinks, OpenOptionsFollowExt as _};
 use cap_std::ambient_authority;
@@ -57,6 +58,12 @@ impl StorePath {
             .split_last()
             .expect("validated non-empty path");
         (parents, leaf)
+    }
+
+    pub fn file_name(&self) -> &str {
+        self.segments
+            .last()
+            .expect("validated non-empty store path")
     }
 }
 
@@ -112,6 +119,13 @@ impl StoreRootError {
     fn io(operation: &'static str, source: std::io::Error) -> Self {
         Self::Io { operation, source }
     }
+
+    pub fn is_not_found(&self) -> bool {
+        matches!(
+            self,
+            Self::Io { source, .. } if source.kind() == std::io::ErrorKind::NotFound
+        )
+    }
 }
 
 impl fmt::Display for StoreRootError {
@@ -144,6 +158,21 @@ pub struct StoreRoot {
     dir: Dir,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoreEntryKind {
+    File,
+    Directory,
+    Link,
+    Other,
+}
+
+#[derive(Debug)]
+pub struct StoreEntry {
+    pub path: StorePath,
+    pub kind: StoreEntryKind,
+    pub modified: Option<SystemTime>,
+}
+
 impl StoreRoot {
     /// Open an existing trusted root using ambient authority exactly once.
     pub fn open(path: &Path) -> Result<Self, StoreRootError> {
@@ -152,12 +181,76 @@ impl StoreRoot {
         Ok(Self { dir })
     }
 
+    /// Create a trusted root if needed, then open and retain its authority.
+    pub fn open_or_create(path: &Path) -> Result<Self, StoreRootError> {
+        std::fs::create_dir_all(path).map_err(|error| StoreRootError::io("create_root", error))?;
+        Self::open(path)
+    }
+
     pub fn read(&self, path: &StorePath) -> Result<Vec<u8>, StoreRootError> {
         let mut file = self.open_file(path, false, false)?;
         let mut bytes = Vec::new();
         file.read_to_end(&mut bytes)
             .map_err(|error| StoreRootError::io("read", error))?;
         Ok(bytes)
+    }
+
+    pub fn is_file(&self, path: &StorePath) -> Result<bool, StoreRootError> {
+        let (parent, leaf) = self.open_parent(path, false, "metadata")?;
+        match parent.symlink_metadata(leaf) {
+            Ok(metadata) if metadata.file_type().is_symlink() => Err(StoreRootError::Confinement {
+                operation: "metadata",
+                reason: ConfinementReason::SymbolicLink,
+            }),
+            Ok(metadata) => Ok(metadata.is_file()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(StoreRootError::io("metadata", error)),
+        }
+    }
+
+    /// Enumerate validated direct children from the held root handle.
+    ///
+    /// Non-UTF-8 and policy-invalid names are ignored; callers never receive a
+    /// path they could feed back into the capability without validation.
+    pub fn list_root(&self) -> Result<Vec<StoreEntry>, StoreRootError> {
+        let entries = self
+            .dir
+            .entries()
+            .map_err(|error| StoreRootError::io("list_root", error))?;
+        let mut listed = Vec::new();
+        for entry in entries {
+            let entry = entry.map_err(|error| StoreRootError::io("list_entry", error))?;
+            let Ok(name) = entry.file_name().into_string() else {
+                continue;
+            };
+            let Ok(path) = StorePath::parse(&name) else {
+                continue;
+            };
+            let file_type = entry
+                .file_type()
+                .map_err(|error| StoreRootError::io("entry_type", error))?;
+            let kind = if file_type.is_symlink() {
+                StoreEntryKind::Link
+            } else if file_type.is_file() {
+                StoreEntryKind::File
+            } else if file_type.is_dir() {
+                StoreEntryKind::Directory
+            } else {
+                StoreEntryKind::Other
+            };
+            let modified = self
+                .dir
+                .symlink_metadata(&name)
+                .ok()
+                .and_then(|metadata| metadata.modified().ok())
+                .map(|modified| modified.into_std());
+            listed.push(StoreEntry {
+                path,
+                kind,
+                modified,
+            });
+        }
+        Ok(listed)
     }
 
     pub fn append(&self, path: &StorePath, bytes: &[u8]) -> Result<(), StoreRootError> {
@@ -400,12 +493,20 @@ mod tests {
         symlink(&outside, root_path.join("ancestor")).unwrap();
         let root = StoreRoot::open(&root_path).unwrap();
 
+        let entries = root.list_root().unwrap();
+        assert!(entries.iter().any(|entry| {
+            entry.path.file_name() == "leaf.txt" && entry.kind == StoreEntryKind::Link
+        }));
+        assert!(entries.iter().any(|entry| {
+            entry.path.file_name() == "ancestor" && entry.kind == StoreEntryKind::Link
+        }));
         assert!(root.read(&path("leaf.txt")).is_err());
         assert!(root.atomic_write(&path("leaf.txt"), b"changed").is_err());
         assert!(root.read(&path("ancestor/canary.txt")).is_err());
-        assert!(root
-            .atomic_write(&path("ancestor/new.txt"), b"changed")
-            .is_err());
+        assert!(
+            root.atomic_write(&path("ancestor/new.txt"), b"changed")
+                .is_err()
+        );
         assert_eq!(
             std::fs::read(outside.join("canary.txt")).unwrap(),
             b"outside"

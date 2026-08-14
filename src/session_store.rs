@@ -154,30 +154,34 @@ fn block_on<F: IntoFuture>(f: F) -> F::Output {
 // File-backed store (original)
 // ---------------------------------------------------------------------------
 
-struct FileSessionStore;
+struct FileSessionStore {
+    files: crate::session_storage::SessionFileStore,
+}
 
 impl FileSessionStore {
     fn new() -> Self {
-        FileSessionStore {}
+        Self::at(crate::session::medousa_data_dir().join("history"))
+    }
+
+    fn at(root: std::path::PathBuf) -> Self {
+        Self {
+            files: crate::session_storage::SessionFileStore::new(root, "jsonl"),
+        }
     }
 }
 
 impl SessionStore for FileSessionStore {
     fn load_history(&self, session_id: &SessionId) -> Vec<ConversationTurn> {
-        crate::session::file_load_history(session_id)
+        crate::session::file_load_history(&self.files, session_id)
     }
 
     fn append_turn(&self, session_id: &SessionId, turn: &ConversationTurn) {
-        crate::session::file_append_turn(session_id, turn);
+        crate::session::file_append_turn(&self.files, session_id, turn);
         crate::session_catalog::record_turn_appended_for_id(session_id, turn);
     }
 
     fn delete_session(&self, session_id: &SessionId) {
-        let _ = crate::session_storage::remove_session_file(
-            &crate::session::medousa_data_dir().join("history"),
-            session_id,
-            "jsonl",
-        );
+        let _ = self.files.remove(session_id);
     }
 
     fn list_history_sessions(&self, limit: usize) -> Vec<SessionHistorySummary> {
@@ -185,20 +189,11 @@ impl SessionStore for FileSessionStore {
     }
 
     fn build_backfill_summaries(&self, limit: usize) -> Vec<SessionHistorySummary> {
-        crate::session::file_build_history_summaries_from_files(limit)
+        crate::session::file_build_history_summaries_from_files(&self.files, limit)
     }
 
     fn has_persisted_sessions(&self) -> bool {
-        let history_dir = crate::session::medousa_data_dir().join("history");
-        std::fs::read_dir(history_dir)
-            .ok()
-            .is_some_and(|mut entries| {
-                entries.any(|entry| {
-                    entry.ok().is_some_and(|item| {
-                        item.path().extension().and_then(|ext| ext.to_str()) == Some("jsonl")
-                    })
-                })
-            })
+        self.files.list().is_ok_and(|entries| !entries.is_empty())
     }
 }
 
