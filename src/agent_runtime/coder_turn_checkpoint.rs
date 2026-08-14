@@ -293,8 +293,10 @@ impl CoderTurnCheckpointStore {
         session_id: &str,
         work_id: &str,
     ) -> Result<Option<ActiveTurnCheckpoint>, String> {
+        let session_id = crate::session_storage::SessionId::parse(session_id)
+            .map_err(|error| error.to_string())?;
         let _guard = self.lock.lock().map_err(|err| err.to_string())?;
-        let dir = self.session_dir(session_id);
+        let dir = self.session_dir_for_read(&session_id);
         let entries = match std::fs::read_dir(&dir) {
             Ok(entries) => entries,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -326,7 +328,7 @@ impl CoderTurnCheckpointStore {
                     continue;
                 }
             };
-            if validate_checkpoint(&checkpoint, session_id, work_id).is_err()
+            if validate_checkpoint(&checkpoint, session_id.as_str(), work_id).is_err()
                 || !checkpoint.status.is_resume_candidate()
             {
                 continue;
@@ -360,6 +362,8 @@ impl CoderTurnCheckpointStore {
     }
 
     fn save_unlocked(&self, checkpoint: &ActiveTurnCheckpoint) -> Result<(), String> {
+        let session_id = crate::session_storage::SessionId::parse(&checkpoint.session_id)
+            .map_err(|error| error.to_string())?;
         validate_checkpoint(
             checkpoint,
             &checkpoint.session_id,
@@ -395,20 +399,62 @@ impl CoderTurnCheckpointStore {
                 MAX_CHECKPOINT_BYTES
             ));
         }
+        let session_dir = self.session_dir_for_write(&session_id)?;
         crate::session::atomic_write(
-            &self.turn_path(&bounded.session_id, &bounded.daemon_turn_id),
+            &self.turn_path(&session_dir, &bounded.daemon_turn_id),
             &bytes,
         )
         .map_err(|err| format!("cannot persist Coder turn checkpoint: {err}"))
     }
 
-    fn session_dir(&self, session_id: &str) -> PathBuf {
-        self.root.join(short_digest(session_id))
+    fn session_dir_for_read(&self, session_id: &crate::session_storage::SessionId) -> PathBuf {
+        let current = crate::session_storage::session_dir(&self.root, session_id);
+        if current.is_dir() {
+            return current;
+        }
+        let legacy = self.root.join(short_digest(session_id.as_str()));
+        if legacy.is_dir() { legacy } else { current }
     }
 
-    fn turn_path(&self, session_id: &str, turn_id: &str) -> PathBuf {
-        self.session_dir(session_id)
-            .join(format!("{}.json", short_digest(turn_id)))
+    fn session_dir_for_write(
+        &self,
+        session_id: &crate::session_storage::SessionId,
+    ) -> Result<PathBuf, String> {
+        std::fs::create_dir_all(&self.root)
+            .map_err(|error| format!("cannot create Coder checkpoint root: {error}"))?;
+        let current = crate::session_storage::session_dir(&self.root, session_id);
+        let legacy = self.root.join(short_digest(session_id.as_str()));
+        if !current.exists() && legacy.is_dir() {
+            std::fs::rename(&legacy, &current)
+                .map_err(|error| format!("cannot migrate Coder checkpoint directory: {error}"))?;
+        }
+        std::fs::create_dir_all(&current)
+            .map_err(|error| format!("cannot create Coder checkpoint directory: {error}"))?;
+        Ok(current)
+    }
+
+    fn turn_path(&self, session_dir: &Path, turn_id: &str) -> PathBuf {
+        session_dir.join(format!("{}.json", short_digest(turn_id)))
+    }
+
+    pub fn delete_session(
+        &self,
+        session_id: &crate::session_storage::SessionId,
+    ) -> Result<(), String> {
+        let _guard = self.lock.lock().map_err(|err| err.to_string())?;
+        remove_dir_if_present(&crate::session_storage::session_dir(&self.root, session_id))?;
+        remove_dir_if_present(&self.root.join(short_digest(session_id.as_str())))
+    }
+}
+
+fn remove_dir_if_present(path: &Path) -> Result<(), String> {
+    match std::fs::remove_dir_all(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!(
+            "cannot delete Coder checkpoint directory {}: {error}",
+            path.display()
+        )),
     }
 }
 
@@ -1336,6 +1382,10 @@ mod tests {
 
     use super::*;
 
+    fn session_id(value: &str) -> crate::session_storage::SessionId {
+        crate::session_storage::SessionId::parse(value).unwrap()
+    }
+
     fn checkpoint(session: &str, turn: &str, work: &str) -> ActiveTurnCheckpoint {
         let now = Utc::now();
         ActiveTurnCheckpoint {
@@ -1609,8 +1659,8 @@ mod tests {
         }];
 
         store.save(&durable).unwrap();
-        let raw =
-            std::fs::read_to_string(store.turn_path("session-redact", "turn-redact")).unwrap();
+        let dir = store.session_dir_for_read(&session_id("session-redact"));
+        let raw = std::fs::read_to_string(store.turn_path(&dir, "turn-redact")).unwrap();
         for secret in [
             "prompt-secret",
             "goal-secret",
@@ -1644,16 +1694,57 @@ mod tests {
     }
 
     #[test]
-    fn checkpoint_files_are_keyed_without_raw_session_or_turn_ids() {
+    fn checkpoint_files_require_typed_sessions_and_hide_turn_ids() {
         let temp = tempdir().unwrap();
         let store = CoderTurnCheckpointStore::open(temp.path());
-        let path = store.turn_path("private/session", "turn:secret");
-        assert!(!path.to_string_lossy().contains("private/session"));
+        assert!(
+            store
+                .save(&checkpoint("private/session", "turn:secret", "work-secret"))
+                .is_err()
+        );
+        let id = session_id("private-session");
+        let dir = crate::session_storage::session_dir(temp.path(), &id);
+        let path = store.turn_path(&dir, "turn:secret");
+        assert!(!path.to_string_lossy().contains("private-session"));
         assert!(!path.to_string_lossy().contains("turn:secret"));
         assert_eq!(
             path.extension().and_then(|value| value.to_str()),
             Some("json")
         );
+    }
+
+    #[test]
+    fn checkpoint_write_migrates_the_legacy_truncated_digest_directory() {
+        let temp = tempdir().unwrap();
+        let store = CoderTurnCheckpointStore::open(temp.path());
+        let id = session_id("session-migrate");
+        let legacy = temp.path().join(short_digest(id.as_str()));
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("canary.json"), b"{}").unwrap();
+
+        store
+            .save(&checkpoint(id.as_str(), "turn-migrate", "work-migrate"))
+            .unwrap();
+
+        let current = crate::session_storage::session_dir(temp.path(), &id);
+        assert!(current.join("canary.json").is_file());
+        assert!(!legacy.exists());
+    }
+
+    #[test]
+    fn checkpoint_delete_removes_current_and_legacy_layouts() {
+        let temp = tempdir().unwrap();
+        let store = CoderTurnCheckpointStore::open(temp.path());
+        let id = session_id("session-delete");
+        let current = crate::session_storage::session_dir(temp.path(), &id);
+        let legacy = temp.path().join(short_digest(id.as_str()));
+        std::fs::create_dir_all(&current).unwrap();
+        std::fs::create_dir_all(&legacy).unwrap();
+
+        store.delete_session(&id).unwrap();
+
+        assert!(!current.exists());
+        assert!(!legacy.exists());
     }
 
     #[test]
@@ -1672,7 +1763,8 @@ mod tests {
             })
             .collect();
         store.save(&deep).unwrap();
-        let path = store.turn_path("session-deep", "turn-deep");
+        let dir = store.session_dir_for_read(&session_id("session-deep"));
+        let path = store.turn_path(&dir, "turn-deep");
         assert!(std::fs::metadata(path).unwrap().len() <= MAX_CHECKPOINT_BYTES);
         assert!(
             store

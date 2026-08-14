@@ -304,6 +304,7 @@ mod tests {
             "extractions",
             "verifications",
             "context_packs",
+            "coder_turn_checkpoints",
         ] {
             let root = trusted.join(root_name);
             let path = session_dir(&root, &session_id);

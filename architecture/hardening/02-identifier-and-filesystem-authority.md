@@ -40,7 +40,9 @@ The first H02.0 containment milestone is implemented:
 
 The follow-on deletion milestone also registers artifacts, media, extractions,
 verifications, context packs, tool surfaces, and the ledger as required cleanup
-surfaces. It removes their global index records, attempts every registered
+surfaces. Coder turn checkpoints are included and migrate from their older
+truncated-digest directory on first write. Cleanup removes both layouts. The
+deletion flow removes global index records, attempts every registered
 surface even after a failure, and withholds `deleted: true` when any required
 surface needs retry. Durable tombstones, concurrency exclusion, and the complete
 typed registry remain H02.4 work.

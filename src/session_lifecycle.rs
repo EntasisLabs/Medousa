@@ -114,6 +114,12 @@ pub async fn delete_session(
         "turn_ledger",
         remove_turn_ledger_file(&session_id),
     );
+    record_surface_result(
+        &mut failed_surfaces,
+        "coder_turn_checkpoints",
+        crate::agent_runtime::coder_turn_checkpoint::coder_turn_checkpoint_store()
+            .delete_session(&session_id),
+    );
     crate::channel_session_store::purge_session_references(session_id_text);
 
     if !failed_surfaces.is_empty() {
