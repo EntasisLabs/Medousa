@@ -53,6 +53,7 @@ impl DaemonAccessState {
 enum AccessSurface {
     Bootstrap,
     Declared,
+    Preview,
     Protected,
 }
 
@@ -105,17 +106,21 @@ pub fn assemble_daemon_access_boundary(
     assemble_daemon_access_boundary_with_declared(
         protected,
         DeclaredRouter::default(),
+        DeclaredRouter::default(),
         bootstrap,
         state,
     )
 }
 
-/// Assemble legacy protected, declared-policy, and bootstrap authority branches.
-/// Declared routes authenticate here and authorize in their per-method policy
-/// layer; they never consult the transitional string classifier.
+/// Assemble compatibility, capability-declared, preview-token, and bootstrap
+/// authority branches. Capability routes authenticate here and authorize in
+/// their per-method policy layer. Preview routes intentionally bypass daemon
+/// bearer authentication and authorize the short-lived resource token in their
+/// declared method layer.
 pub fn assemble_daemon_access_boundary_with_declared(
     protected: Router,
     declared: DeclaredRouter,
+    preview: DeclaredRouter,
     bootstrap: Router,
     state: DaemonAccessState,
 ) -> Router {
@@ -129,11 +134,17 @@ pub fn assemble_daemon_access_boundary_with_declared(
             state.for_surface(AccessSurface::Declared),
             enforce_daemon_access,
         ));
+    let preview = preview
+        .into_router()
+        .layer(axum::middleware::from_fn_with_state(
+            state.for_surface(AccessSurface::Preview),
+            enforce_daemon_access,
+        ));
     let bootstrap = bootstrap.layer(axum::middleware::from_fn_with_state(
         state.for_surface(AccessSurface::Bootstrap),
         enforce_daemon_access,
     ));
-    protected.merge(declared).merge(bootstrap)
+    protected.merge(declared).merge(preview).merge(bootstrap)
 }
 
 /// Refuse a remotely reachable listener when no credential verifier can exist.
@@ -160,6 +171,13 @@ pub async fn enforce_daemon_access(
 ) -> Response {
     let trusted_local = is_trusted_local(addr.ip(), request.headers());
     let transport = TransportClass::from_request(addr.ip(), request.headers());
+
+    // Preview URLs carry their own short-lived resource token. The declared
+    // preview middleware validates it before the proxy handler runs, so this
+    // branch must not require or forward a daemon bearer credential.
+    if matches!(state.surface, AccessSurface::Preview) {
+        return next.run(request).await;
+    }
 
     let credential = bearer_credential(request.headers());
     let record = match credential {
@@ -307,6 +325,7 @@ mod tests {
         assemble_daemon_access_boundary_with_declared(
             Router::new(),
             declared,
+            DeclaredRouter::default(),
             Router::new(),
             DaemonAccessState::new(None).with_mcp_policy_token(token.map(str::to_string)),
         )
@@ -609,6 +628,7 @@ mod tests {
         let app = assemble_daemon_access_boundary_with_declared(
             Router::new(),
             declared,
+            DeclaredRouter::default(),
             Router::new(),
             DaemonAccessState::new(None),
         );
@@ -623,6 +643,54 @@ mod tests {
             app.oneshot(request).await.unwrap().status(),
             StatusCode::NO_CONTENT
         );
+    }
+
+    #[tokio::test]
+    async fn preview_branch_accepts_only_a_live_resource_token() {
+        let token = crate::daemon::forge_preview::mint_preview_grant(
+            "work-preview-test",
+            "run-preview-test",
+            "http://127.0.0.1:3000/",
+        )
+        .await
+        .expect("preview token");
+        let preview = DeclaredRouter::default().route(
+            RoutePolicy {
+                method: axum::http::Method::GET,
+                path: "/v1/forge/preview/{token}",
+                group: RouteGroup::Preview,
+                required_capability: None,
+                bootstrap_public: false,
+                browser_policy: BrowserPolicy::ExactOrigin,
+                body_limit: 2 * 1024 * 1024,
+                rate_limit_class: RateLimitClass::Read,
+            },
+            get(|| async { StatusCode::NO_CONTENT }),
+        );
+        let app = assemble_daemon_access_boundary_with_declared(
+            Router::new(),
+            DeclaredRouter::default(),
+            preview,
+            Router::new(),
+            DaemonAccessState::new(None),
+        );
+
+        for (candidate, expected) in [
+            (token.as_str(), StatusCode::NO_CONTENT),
+            ("missing-preview-token", StatusCode::NOT_FOUND),
+        ] {
+            let mut request = Request::builder()
+                .uri(format!("/v1/forge/preview/{candidate}"))
+                .body(Body::empty())
+                .unwrap();
+            request.extensions_mut().insert(ConnectInfo(
+                "192.0.2.10:43100".parse::<SocketAddr>().unwrap(),
+            ));
+            assert_eq!(
+                app.clone().oneshot(request).await.unwrap().status(),
+                expected
+            );
+        }
     }
 
     #[tokio::test]

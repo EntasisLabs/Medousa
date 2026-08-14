@@ -165,6 +165,9 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::daemon::forge_api::forge_surface().inventory())
         .expect("duplicate Forge route policy");
     inventory
+        .extend(crate::daemon::forge_preview::forge_preview_surface().inventory())
+        .expect("duplicate Forge preview route policy");
+    inventory
 }
 
 pub fn build_identity_surface() -> DeclaredRouter<AppState> {
@@ -515,8 +518,10 @@ pub fn apply_dashboard_action_auth(
     state
 }
 
-/// Catalog, capability, grapheme, workflow, vault, workspace, budget, and dashboard routers.
-pub fn build_feature_routers(
+/// Transitional compatibility boundary for the dependency-owned Stasis
+/// dashboard. New Medousa routes must use `DeclaredRouter`; this remains raw
+/// only until Stasis exports method/path descriptors with its router.
+pub fn build_dashboard_compatibility_router(
     state: &AppState,
     dashboard_action_auth: &DashboardActionAuthConfig,
 ) -> Router {
@@ -527,10 +532,7 @@ pub fn build_feature_routers(
         DashboardState::new(dashboard_service),
         dashboard_action_auth,
     );
-    let dashboard = dashboard_router(dashboard_state);
-
-    crate::daemon::forge_preview::forge_preview_router(state.clone())
-        .merge(dashboard)
+    dashboard_router(dashboard_state)
 }
 
 fn parse_arg_or_env(args: &[String], arg_key: &str, env_key: &str) -> Option<String> {
@@ -1104,18 +1106,23 @@ fn service_policy(
     }
 }
 
-/// Core daemon API routes (health, jobs, sessions, interactive, identity, ingest, continuations).
-pub fn build_core_router(state: AppState) -> Router {
+/// Transitional H08 boundary for the browser bridge and its legacy aliases.
+/// New daemon routes must not be added here.
+pub fn build_browser_compatibility_router(state: AppState) -> Router {
     crate::browser_handlers::browser_router().with_state(state)
 }
 
-/// Full daemon HTTP surface: core routes plus feature routers (catalog, vault, dashboard, …).
+/// Remaining compatibility surface. Policy-owned application and preview
+/// routes are assembled separately at the final socket boundary.
 pub fn build_daemon_router(
     state: AppState,
     dashboard_action_auth: &DashboardActionAuthConfig,
 ) -> Router {
-    build_core_router(state.clone())
-        .merge(build_feature_routers(&state, dashboard_action_auth))
+    build_browser_compatibility_router(state.clone())
+        .merge(build_dashboard_compatibility_router(
+            &state,
+            dashboard_action_auth,
+        ))
         // Home runs at localhost:1420 in development and consumes Forge/SSE
         // directly from the daemon. Keep the local daemon surface consistent
         // with the standalone code/session hosts.
@@ -1133,6 +1140,7 @@ mod tests {
         build_declared_route_inventory, build_identity_surface, build_liveness_router,
         build_liveness_surface, build_runtime_admin_surface, build_workshop_surface,
     };
+    use crate::daemon::route_policy::AuthorizationClass;
 
     #[tokio::test]
     async fn public_liveness_is_constant_and_contains_no_runtime_detail() {
@@ -1194,12 +1202,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 344);
-        assert_eq!(with_pairing.entries().len(), 356);
+        assert_eq!(without_pairing.entries().len(), 358);
+        assert_eq!(with_pairing.entries().len(), 370);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 356);
+        assert_eq!(rows.len(), 370);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"
@@ -1596,5 +1604,24 @@ mod tests {
             .find(|entry| entry.path.ends_with("/source/workspace-edit"))
             .expect("workspace edit policy");
         assert_eq!(workspace_edit.body_limit, 64 * 1024 * 1024);
+    }
+
+    #[test]
+    fn preview_inventory_is_token_owned_and_excludes_tunnel_methods() {
+        let entries = crate::daemon::forge_preview::forge_preview_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 14);
+        assert!(entries.iter().all(|entry| {
+            entry.group == RouteGroup::Preview
+                && entry.required_capability.is_none()
+                && entry.authorization == AuthorizationClass::PreviewToken
+                && entry.browser_policy == super::BrowserPolicy::ExactOrigin
+                && entry.body_limit == 2 * 1024 * 1024
+        }));
+        assert!(!entries
+            .iter()
+            .any(|entry| matches!(entry.method.as_str(), "CONNECT" | "TRACE")));
     }
 }

@@ -710,6 +710,8 @@ async fn main() -> Result<()> {
         .merge(medousa::daemon::detamu_host::world_surface())
         .merge(medousa::daemon::forge_api::forge_surface())
         .with_state(state.clone());
+    let preview = medousa::daemon::forge_preview::forge_preview_surface()
+        .with_state(state.clone());
     if let Some((pairing_bootstrap, pairing_protected)) = pairing_routers {
         bootstrap = bootstrap.merge(pairing_bootstrap);
         declared = declared.merge(pairing_protected);
@@ -765,6 +767,7 @@ async fn main() -> Result<()> {
     app = medousa::peer_scope::assemble_daemon_access_boundary_with_declared(
         app,
         declared,
+        preview,
         bootstrap,
         daemon_access_state,
     );
