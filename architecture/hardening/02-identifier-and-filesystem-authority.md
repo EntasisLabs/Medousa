@@ -182,8 +182,10 @@ covered by an outside-root canary fixture. Indexless and platform-invalid
 legacy nested layouts are not scanned or followed; H02.4 inventory/quarantine
 must recover them explicitly.
 
-All known internal session-directory trains now use capability-owned I/O.
-Native Windows reparse/junction evidence remains open before H02.2 is complete.
+All known internal session-directory trains now use capability-owned I/O. The
+native Windows authority fixture creates a privilege-free NTFS junction in
+process and exercises the shared capability surface against it; the fixture is
+required by the Linux/macOS/Windows CI matrix rather than silently skipped.
 
 The public artifact fetch contract no longer returns `payload_path`. Home copy
 and share actions emit `medousa:artifact/{session_id}/{artifact_id}` references,
@@ -226,11 +228,14 @@ string CWD after that check. Every Git subprocess uses the shared
 `CREATE_NO_WINDOW` policy, null stdin, and non-interactive Git/GCM settings.
 Portable MinGit extraction is now in-process with enclosed zip paths, removing
 the PowerShell subprocess entirely. Windows-only fixtures cover root rename
-locking, mismatched process-root identity, and directory-link rejection when
-the runner permits symlink creation. A real Windows CI/runtime pass and native
-junction/mount fixtures remain before H02.3 closure. The dedicated
-`windows-authority` CI job now compiles and runs the Windows root-lock/reparse
-fixtures and the in-process MinGit extraction tests on every change.
+locking, mismatched process-root identity, root-component reparse rejection,
+and junction-backed read, list, append, write, rename, file-delete, and
+recursive-delete denial. Junctions are created directly with the Win32 reparse
+API, so the suite neither needs symbolic-link privilege nor shells out. The
+`filesystem-authority` CI matrix runs shared root, held-journal, and held-model
+payload fixtures on native Linux, macOS, and Windows; Windows additionally runs
+in-process MinGit extraction. Host-provisioned mount/bind fixtures and retained
+release evidence remain before H02.3 closure.
 
 ## Current evidence and blast radius
 

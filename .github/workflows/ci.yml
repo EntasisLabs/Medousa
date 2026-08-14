@@ -32,8 +32,13 @@ jobs:
       - name: cargo test (lib)
         run: cargo test -p medousa --lib
 
-  windows-authority:
-    runs-on: windows-latest
+  filesystem-authority:
+    name: Filesystem authority (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -43,9 +48,14 @@ jobs:
             . -> .cache/cargo-target
           cache-workspace-crates: true
           cache-on-failure: true
-      - name: Test Windows filesystem authority
+      - name: Test root filesystem authority
         run: "cargo test -p medousa --lib store_root::tests::"
-      - name: Test in-process MinGit extraction
+      - name: Test held-authority journals
+        run: "cargo test -p medousa-engine turn_event_log::tests::"
+      - name: Test held-authority model payloads
+        run: "cargo test -p medousa-install-support model_download::tests::"
+      - name: Test in-process MinGit extraction (Windows)
+        if: runner.os == 'Windows'
         run: "cargo test -p medousa --lib vault_git::install::tests::"
 
   home:

@@ -10,9 +10,7 @@ use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::time::SystemTime;
 
-#[cfg(windows)]
-use cap_fs_ext::MetadataExt as _;
-use cap_fs_ext::{DirExt as _, FollowSymlinks, OpenOptionsFollowExt as _};
+use cap_fs_ext::{DirExt as _, FollowSymlinks, MetadataExt as _, OpenOptionsFollowExt as _};
 use cap_std::ambient_authority;
 use cap_std::fs::{Dir, File, OpenOptions};
 
@@ -151,6 +149,7 @@ fn validate_segment(segment: &str) -> Result<(), StoreRootError> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfinementReason {
     SymbolicLink,
+    HardLink,
     RootIdentity,
 }
 
@@ -436,6 +435,12 @@ impl StoreRoot {
                 operation: "metadata",
                 reason: ConfinementReason::SymbolicLink,
             }),
+            Ok(metadata) if file_has_multiple_links(&metadata) => {
+                Err(StoreRootError::Confinement {
+                    operation: "metadata",
+                    reason: ConfinementReason::HardLink,
+                })
+            }
             Ok(metadata) => Ok(metadata.is_file()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
             Err(error) => Err(StoreRootError::io("metadata", error)),
@@ -468,6 +473,12 @@ impl StoreRoot {
             return Err(StoreRootError::Confinement {
                 operation: "metadata",
                 reason: ConfinementReason::SymbolicLink,
+            });
+        }
+        if file_has_multiple_links(&metadata) {
+            return Err(StoreRootError::Confinement {
+                operation: "metadata",
+                reason: ConfinementReason::HardLink,
             });
         }
         Ok(store_metadata(&metadata))
@@ -647,6 +658,7 @@ impl StoreRoot {
     ) -> Result<(), StoreRootError> {
         let (from_parent, from_leaf) = self.open_parent(from, false, "rename_source")?;
         reject_symlink(&from_parent, from_leaf, "rename_source")?;
+        reject_hard_link(&from_parent, from_leaf, "rename_source")?;
         let (to_parent, to_leaf) = self.open_parent(to, true, "rename_destination")?;
         reject_symlink(&to_parent, to_leaf, "rename_destination")?;
         from_parent
@@ -669,9 +681,19 @@ impl StoreRoot {
             .append(append)
             .create(create)
             .follow(FollowSymlinks::No);
-        parent
+        let file = parent
             .open_with(leaf, &options)
-            .map_err(|error| StoreRootError::io("open_file", error))
+            .map_err(|error| StoreRootError::io("open_file", error))?;
+        let metadata = file
+            .metadata()
+            .map_err(|error| StoreRootError::io("open_file_metadata", error))?;
+        if file_has_multiple_links(&metadata) {
+            return Err(StoreRootError::Confinement {
+                operation: "open_file",
+                reason: ConfinementReason::HardLink,
+            });
+        }
+        Ok(file)
     }
 
     fn open_parent<'path, P: StoreRootPath + ?Sized>(
@@ -769,8 +791,11 @@ fn list_directory_utf8(dir: &Dir) -> Result<Vec<StoreDirectoryEntry>, StoreRootE
         let file_type = entry
             .file_type()
             .map_err(|error| StoreRootError::io("entry_type", error))?;
+        let metadata = dir.symlink_metadata(&name).ok();
         let kind = if file_type.is_symlink() {
             StoreEntryKind::Link
+        } else if metadata.as_ref().is_some_and(file_has_multiple_links) {
+            StoreEntryKind::Other
         } else if file_type.is_file() {
             StoreEntryKind::File
         } else if file_type.is_dir() {
@@ -778,7 +803,7 @@ fn list_directory_utf8(dir: &Dir) -> Result<Vec<StoreDirectoryEntry>, StoreRootE
         } else {
             StoreEntryKind::Other
         };
-        let metadata = dir.symlink_metadata(&name).ok();
+        let metadata = (kind != StoreEntryKind::Other).then_some(metadata).flatten();
         let size = metadata.as_ref().map_or(0, |metadata| metadata.len());
         let created = metadata
             .as_ref()
@@ -829,9 +854,113 @@ fn reject_symlink(parent: &Dir, name: &str, operation: &'static str) -> Result<(
     }
 }
 
+fn reject_hard_link(
+    parent: &Dir,
+    name: &str,
+    operation: &'static str,
+) -> Result<(), StoreRootError> {
+    match parent.symlink_metadata(name) {
+        Ok(metadata) if file_has_multiple_links(&metadata) => Err(StoreRootError::Confinement {
+            operation,
+            reason: ConfinementReason::HardLink,
+        }),
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(StoreRootError::io(operation, error)),
+    }
+}
+
+fn file_has_multiple_links(metadata: &cap_std::fs::Metadata) -> bool {
+    metadata.is_file() && metadata.nlink() > 1
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    fn create_junction(target: &Path, junction: &Path) {
+        use std::os::windows::ffi::OsStrExt as _;
+        use windows::Win32::Foundation::{CloseHandle, GENERIC_WRITE};
+        use windows::Win32::Storage::FileSystem::{
+            CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_MODE,
+            OPEN_EXISTING,
+        };
+        use windows::Win32::System::IO::DeviceIoControl;
+        use windows::Win32::System::Ioctl::FSCTL_SET_REPARSE_POINT;
+        use windows::Win32::System::SystemServices::IO_REPARSE_TAG_MOUNT_POINT;
+        use windows::core::PCWSTR;
+
+        let target = target.canonicalize().expect("canonical junction target");
+        std::fs::create_dir(junction).expect("create junction placeholder");
+
+        let target_wide = target.as_os_str().encode_wide().collect::<Vec<_>>();
+        let target_wide = target_wide
+            .strip_prefix(&[b'\\' as u16, b'\\' as u16, b'?' as u16, b'\\' as u16])
+            .unwrap_or(&target_wide);
+        let mut substitute = r"\??\".encode_utf16().collect::<Vec<_>>();
+        substitute.extend_from_slice(target_wide);
+        let print = target_wide.to_vec();
+        let substitute_bytes = u16::try_from(substitute.len() * 2).expect("junction target length");
+        let print_bytes = u16::try_from(print.len() * 2).expect("junction print length");
+        let print_offset = substitute_bytes.checked_add(2).expect("junction offset");
+        let reparse_data_length = 8_u16
+            .checked_add(print_offset)
+            .and_then(|length| length.checked_add(print_bytes))
+            .and_then(|length| length.checked_add(2))
+            .expect("junction reparse data length");
+
+        let mut reparse = Vec::with_capacity(8 + usize::from(reparse_data_length));
+        reparse.extend_from_slice(&IO_REPARSE_TAG_MOUNT_POINT.to_le_bytes());
+        reparse.extend_from_slice(&reparse_data_length.to_le_bytes());
+        reparse.extend_from_slice(&0_u16.to_le_bytes());
+        reparse.extend_from_slice(&0_u16.to_le_bytes());
+        reparse.extend_from_slice(&substitute_bytes.to_le_bytes());
+        reparse.extend_from_slice(&print_offset.to_le_bytes());
+        reparse.extend_from_slice(&print_bytes.to_le_bytes());
+        for unit in substitute {
+            reparse.extend_from_slice(&unit.to_le_bytes());
+        }
+        reparse.extend_from_slice(&0_u16.to_le_bytes());
+        for unit in print {
+            reparse.extend_from_slice(&unit.to_le_bytes());
+        }
+        reparse.extend_from_slice(&0_u16.to_le_bytes());
+        assert_eq!(reparse.len(), 8 + usize::from(reparse_data_length));
+
+        let mut junction_wide = junction.as_os_str().encode_wide().collect::<Vec<_>>();
+        junction_wide.push(0);
+        // SAFETY: the path is NUL-terminated and remains live for the call.
+        let handle = unsafe {
+            CreateFileW(
+                PCWSTR::from_raw(junction_wide.as_ptr()),
+                GENERIC_WRITE.0,
+                FILE_SHARE_MODE(0),
+                None,
+                OPEN_EXISTING,
+                FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS,
+                None,
+            )
+        }
+        .expect("open junction placeholder");
+        // SAFETY: `handle` is an open directory handle and `reparse` contains a
+        // complete mount-point reparse buffer for the duration of the call.
+        let result = unsafe {
+            DeviceIoControl(
+                handle,
+                FSCTL_SET_REPARSE_POINT,
+                Some(reparse.as_ptr().cast()),
+                u32::try_from(reparse.len()).expect("junction buffer length"),
+                None,
+                0,
+                None,
+                None,
+            )
+        };
+        // SAFETY: this function owns `handle` and closes it exactly once.
+        unsafe { CloseHandle(handle) }.expect("close junction handle");
+        result.expect("set junction reparse point");
+    }
 
     fn path(value: &str) -> StorePath {
         StorePath::parse(value).unwrap()
@@ -884,6 +1013,46 @@ mod tests {
                 max_bytes: 1024
             })
         ));
+    }
+
+    #[test]
+    fn hard_link_cannot_leak_or_mutate_an_outside_inode() {
+        let temp = tempfile::tempdir().unwrap();
+        let root_path = temp.path().join("root");
+        let copy_path = temp.path().join("copy");
+        let outside = temp.path().join("outside.txt");
+        std::fs::create_dir(&root_path).unwrap();
+        std::fs::create_dir(&copy_path).unwrap();
+        std::fs::write(&outside, b"outside").unwrap();
+        std::fs::hard_link(&outside, root_path.join("linked.txt")).unwrap();
+        let root = StoreRoot::open(&root_path).unwrap();
+        let copy = StoreRoot::open(&copy_path).unwrap();
+
+        let linked = path("linked.txt");
+        let entry = root
+            .list_root()
+            .unwrap()
+            .into_iter()
+            .find(|entry| entry.path == linked)
+            .unwrap();
+        assert_eq!(entry.kind, StoreEntryKind::Other);
+        assert_eq!(entry.size, 0);
+        assert!(root.read(&linked).is_err());
+        assert!(root.metadata(&linked).is_err());
+        assert!(root.is_file(&linked).is_err());
+        assert!(root.append(&linked, b"changed").is_err());
+        assert!(root.rename(&linked, &path("renamed.txt")).is_err());
+        assert!(
+            copy.atomic_copy_from(&path("copy.txt"), &root, &linked, 1024)
+                .is_err()
+        );
+        assert_eq!(std::fs::read(&outside).unwrap(), b"outside");
+
+        // Atomic replacement does not mutate the linked inode; it safely
+        // publishes a new store-owned file at the same name.
+        root.atomic_write(&linked, b"inside").unwrap();
+        assert_eq!(root.read(&linked).unwrap(), b"inside");
+        assert_eq!(std::fs::read(&outside).unwrap(), b"outside");
     }
 
     #[cfg(unix)]
@@ -1001,18 +1170,11 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn windows_reparse_ancestor_cannot_acquire_root_authority() {
-        use std::os::windows::fs::symlink_dir;
-
         let temp = tempfile::tempdir().unwrap();
         let outside = temp.path().join("outside");
         let linked = temp.path().join("linked");
         std::fs::create_dir(&outside).unwrap();
-        if let Err(error) = symlink_dir(&outside, &linked) {
-            if error.kind() == std::io::ErrorKind::PermissionDenied {
-                return;
-            }
-            panic!("create Windows directory link: {error}");
-        }
+        create_junction(&outside, &linked);
 
         let error = match StoreRoot::open_or_create_nofollow(&linked.join("vault")) {
             Ok(_) => panic!("reparse ancestor must fail"),
@@ -1025,6 +1187,49 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_junction_cannot_escape_any_root_operation() {
+        let temp = tempfile::tempdir().unwrap();
+        let root_path = temp.path().join("root");
+        let outside = temp.path().join("outside");
+        std::fs::create_dir(&root_path).unwrap();
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(outside.join("canary.txt"), b"outside").unwrap();
+        create_junction(&outside, &root_path.join("junction"));
+        let root = StoreRoot::open_nofollow(&root_path).unwrap();
+
+        let entries = root.list_root_utf8().unwrap();
+        assert!(
+            entries
+                .iter()
+                .any(|entry| { entry.name == "junction" && entry.kind == StoreEntryKind::Link })
+        );
+        assert!(root.list_directory(&path("junction")).is_err());
+        assert!(root.read(&path("junction/canary.txt")).is_err());
+        assert!(
+            root.append(&path("junction/canary.txt"), b"changed")
+                .is_err()
+        );
+        assert!(
+            root.atomic_write(&path("junction/new.txt"), b"changed")
+                .is_err()
+        );
+        assert!(
+            root.rename(&path("junction/canary.txt"), &path("moved.txt"))
+                .is_err()
+        );
+        assert!(root.remove_file(&path("junction/canary.txt")).is_err());
+        assert!(root.remove_dir_all(&path("junction")).is_err());
+
+        assert_eq!(
+            std::fs::read(outside.join("canary.txt")).unwrap(),
+            b"outside"
+        );
+        assert!(!outside.join("new.txt").exists());
+        assert!(!root_path.join("moved.txt").exists());
     }
 
     #[test]
