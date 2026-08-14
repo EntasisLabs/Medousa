@@ -407,7 +407,9 @@ impl CognitionJobEnqueueTool {
         )
         .build();
 
-        if let Some(scope) = self.turn_scope.read().await.clone() {
+        if let Some(scope) =
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope).await
+        {
             wire_turn_child_job(
                 &mut job,
                 &scope,
@@ -428,7 +430,11 @@ impl CognitionJobEnqueueTool {
             })
             .await;
 
-        let continuation = self.turn_scope.read().await.clone().map(|scope| {
+        let continuation = crate::agent_runtime::execution_context::turn_continuation_scope(
+            &self.turn_scope,
+        )
+        .await
+        .map(|scope| {
             ExternalJson::new(continuation_tool_metadata(
                 &scope,
                 &job_id,
@@ -522,7 +528,9 @@ impl CognitionGraphemeRunTool {
         )
         .build();
 
-        if let Some(scope) = self.turn_scope.read().await.clone() {
+        if let Some(scope) =
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope).await
+        {
             wire_turn_child_job(
                 &mut job,
                 &scope,
@@ -534,7 +542,9 @@ impl CognitionGraphemeRunTool {
         }
 
         let continuation_meta =
-            self.turn_scope.read().await.clone().map(|scope| {
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
+                .await
+                .map(|scope| {
                 continuation_tool_metadata(&scope, &job_id, ContinuationAwaitMode::Sync)
             });
 
@@ -1208,7 +1218,9 @@ impl CognitionGraphemePromoteToJobTool {
         .max_attempts(input.max_attempts as u32)
         .build();
 
-        if let Some(scope) = self.turn_scope.read().await.clone() {
+        if let Some(scope) =
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope).await
+        {
             wire_turn_child_job(
                 &mut job,
                 &scope,
@@ -1229,7 +1241,11 @@ impl CognitionGraphemePromoteToJobTool {
             })
             .await;
 
-        let continuation = self.turn_scope.read().await.clone().map(|scope| {
+        let continuation = crate::agent_runtime::execution_context::turn_continuation_scope(
+            &self.turn_scope,
+        )
+        .await
+        .map(|scope| {
             ExternalJson::new(continuation_tool_metadata(
                 &scope,
                 &job_id,
@@ -1403,7 +1419,10 @@ impl CognitionGraphemePromoteToRecurringTool {
         .start_immediately(input.start_immediately)
         .build(now)?;
 
-        let scope = self.turn_scope.read().await.clone();
+        let scope = crate::agent_runtime::execution_context::turn_continuation_scope(
+            &self.turn_scope,
+        )
+        .await;
         let ambient = ambient_from_turn_scope(scope.as_ref());
         let fallback_session_id = scope
             .as_ref()
@@ -1611,7 +1630,10 @@ impl CognitionGraphemePromoteLastRunToRecurringTool {
         .start_immediately(input.start_immediately)
         .build(now)?;
 
-        let scope = self.turn_scope.read().await.clone();
+        let scope = crate::agent_runtime::execution_context::turn_continuation_scope(
+            &self.turn_scope,
+        )
+        .await;
         let ambient = ambient_from_turn_scope(scope.as_ref());
         let fallback_session_id = scope
             .as_ref()
@@ -2865,6 +2887,7 @@ pub struct TuiRuntime {
         Arc<dyn stasis::ports::outbound::memory::memory_operations::MemoryOperations>,
     pub client_registry: crate::client_tools::ClientRegistry,
     pub turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    pub execution_registry: crate::agent_runtime::execution_context::TurnExecutionRegistry,
     pub worker_scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
 }
 

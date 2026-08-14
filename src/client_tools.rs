@@ -359,7 +359,10 @@ impl ClientToolRegistry {
     }
 
     async fn turn_surface(&self) -> (Option<String>, String) {
-        let scope = self.turn_scope.read().await.clone();
+        let scope = crate::agent_runtime::execution_context::turn_continuation_scope(
+            &self.turn_scope,
+        )
+        .await;
         let surface = scope
             .as_ref()
             .and_then(|scope| scope.channel_surface.clone());

@@ -88,7 +88,10 @@ impl CognitionBrowserActTool {
     }
 
     async fn browser_enabled(&self) -> bool {
-        let scope = self.turn_scope.read().await.clone();
+        let scope = crate::agent_runtime::execution_context::turn_continuation_scope(
+            &self.turn_scope,
+        )
+        .await;
         surface_supports_browser_host(surface_from_scope(scope.as_ref()).as_ref())
     }
 }
@@ -314,7 +317,10 @@ impl CognitionBrowserActTool {
             })
             .await;
 
-        let scope = self.turn_scope.read().await.clone();
+        let scope = crate::agent_runtime::execution_context::turn_continuation_scope(
+            &self.turn_scope,
+        )
+        .await;
         if client_executed(scope.as_ref()) {
             return self
                 .invoke_client_executed(body, &scope)

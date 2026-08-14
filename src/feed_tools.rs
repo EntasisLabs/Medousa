@@ -33,10 +33,10 @@ const COGNITION_FEED_SUBSCRIBE_ID: ToolId = ToolId::new(COGNITION_FEED_SUBSCRIBE
 pub fn register_feed_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
     capability_registry: Arc<RwLock<CapabilityRegistry>>,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    _turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 ) -> StasisResult<()> {
     registry.register_typed_tool(CognitionIntentResolveTool::new(capability_registry.clone()))?;
-    registry.register_typed_tool(CognitionFeedSubscribeTool::new(turn_scope))?;
+    registry.register_typed_tool(CognitionFeedSubscribeTool)?;
     registry.register_typed_tool(CognitionFeedPublishTool)?;
     Ok(())
 }
@@ -114,15 +114,7 @@ impl CognitionIntentResolveTool {
     }
 }
 
-struct CognitionFeedSubscribeTool {
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
-}
-
-impl CognitionFeedSubscribeTool {
-    fn new(turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>) -> Self {
-        Self { turn_scope }
-    }
-}
+struct CognitionFeedSubscribeTool;
 
 #[derive(Debug, JsonSchema)]
 struct FeedSubscribeInput {
@@ -297,7 +289,6 @@ impl CognitionFeedSubscribeTool {
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
         let nav_visible =
             crate::custom_view_status::surface_nav_visible(&updated.spec, &surface_id);
-        let _ = self.turn_scope.read().await;
         Ok(FeedSubscribeOutput::Success {
             ok: true,
             revision: updated.revision,

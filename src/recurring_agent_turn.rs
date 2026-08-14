@@ -242,6 +242,7 @@ impl JobHandler for RecurringAgentTurnJobHandler {
             None,
             None,
             None,
+            None,
         )
         .await;
 

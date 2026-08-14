@@ -438,7 +438,9 @@ impl CognitionOpenshellSandboxRunTool {
         )
         .build();
 
-        if let Some(scope) = self.turn_scope.read().await.clone() {
+        if let Some(scope) =
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope).await
+        {
             wire_turn_child_job(
                 &mut job,
                 &scope,
@@ -459,7 +461,11 @@ impl CognitionOpenshellSandboxRunTool {
             })
             .await;
 
-        let continuation = self.turn_scope.read().await.clone().map(|scope| {
+        let continuation = crate::agent_runtime::execution_context::turn_continuation_scope(
+            &self.turn_scope,
+        )
+        .await
+        .map(|scope| {
             ExternalJson::new(continuation_tool_metadata(
                 &scope,
                 &job_id,

@@ -986,7 +986,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         })
         .await;
 
-    let scope_snapshot = turn_scope.read().await.clone();
+    let scope_snapshot = super::execution_context::turn_continuation_scope(&turn_scope).await;
     if let Some(bundle) = host_continuity_bundle.as_mut() {
         bundle.parent_turn_correlation_id = scope_snapshot
             .as_ref()

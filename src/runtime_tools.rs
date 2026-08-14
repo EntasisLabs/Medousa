@@ -1074,7 +1074,10 @@ impl CognitionRuntimeRecurringRegisterTool {
         .start_immediately(start_immediately)
         .build(Utc::now())?;
 
-        let scope = self.turn_scope.read().await.clone();
+        let scope = crate::agent_runtime::execution_context::turn_continuation_scope(
+            &self.turn_scope,
+        )
+        .await;
         let ambient = ambient_from_turn_scope(scope.as_ref());
         let fallback_session_id = scope
             .as_ref()
@@ -1624,7 +1627,10 @@ impl CognitionRuntimeWorkflowRunTool {
 
         let workflow_id = new_workflow_id();
         let payload = build_workflow_payload(&workflow_id, &request, "interactive");
-        let scope = self.turn_scope.read().await.clone();
+        let scope = crate::agent_runtime::execution_context::turn_continuation_scope(
+            &self.turn_scope,
+        )
+        .await;
         let continuation = scope
             .as_ref()
             .map(|turn_scope| WorkflowEnqueueContinuation {
@@ -1907,7 +1913,10 @@ impl CognitionRuntimeWorkflowScheduleTool {
         .start_immediately(command.start_immediately)
         .build(now)?;
 
-        let scope = self.turn_scope.read().await.clone();
+        let scope = crate::agent_runtime::execution_context::turn_continuation_scope(
+            &self.turn_scope,
+        )
+        .await;
         let ambient = ambient_from_turn_scope(scope.as_ref());
         let fallback_session_id = scope
             .as_ref()
@@ -1940,7 +1949,12 @@ impl CognitionRuntimeWorkflowScheduleTool {
             if let Some(job_id) =
                 find_active_job_by_correlation_id(self.runtime.as_ref(), &workflow_id).await
             {
-                if let Some(scope) = self.turn_scope.read().await.clone() {
+                if let Some(scope) =
+                    crate::agent_runtime::execution_context::turn_continuation_scope(
+                        &self.turn_scope,
+                    )
+                    .await
+                {
                     let job_type = workflow_job_type_for_strategy(&request.strategy)
                         .unwrap_or(WORKFLOW_SEQUENTIAL_JOB_TYPE);
                     let _ = patch_existing_job_correlation(
@@ -1986,7 +2000,10 @@ impl CognitionRuntimeWorkflowScheduleTool {
             })
             .await;
 
-        let scope = self.turn_scope.read().await.clone();
+        let scope = crate::agent_runtime::execution_context::turn_continuation_scope(
+            &self.turn_scope,
+        )
+        .await;
         let continuation = materialized_job_id.as_ref().and_then(|job_id| {
             scope.as_ref().map(|turn_scope| {
                 ExternalJson::new(continuation_tool_metadata(

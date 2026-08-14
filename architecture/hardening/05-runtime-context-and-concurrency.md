@@ -1,6 +1,6 @@
 # H05 — Request-scoped runtime context and concurrency
 
-> **Status:** Implementing — H05.0 inventory and isolation fixtures underway
+> **Status:** Implementing — H05.1 daemon execution ownership underway
 >
 > **Accountable owner:** daemon runtime maintainers
 >
@@ -43,12 +43,37 @@ the sink only across the owning turn future and returns absence outside that
 scope. It is not authorization and must be deleted when H05.2 gives the
 upstream tool invocation boundary an explicit context.
 
+H05.1 now owns daemon ticket executions with a daemon-issued `TurnHandle`, an
+immutable context carrying the typed session, authenticated `RequestPrincipal`,
+provider route, surface capabilities, deadline, cancellation root, and a frozen
+legacy-scope projection. Admission reserves one of 256 live registry entries
+before stream/ticket allocation and returns an explicit overload response at
+the boundary. The spawned task retains an RAII lease; terminal drop removes
+only the exact `Arc` generation. Registry tests cover capacity/high-water,
+same-session concurrency, foreign cancel rejection, cancellation isolation,
+task-local isolation, steady-state release, and stale-lease replacement safety.
+
+Authenticated principals from interactive and background HTTP entry points are
+now carried through admission instead of being discarded after identity
+rewriting. The existing session cancel endpoint also signals the matching
+execution's cancellation root while the public API remains on its legacy
+session/turn identifier contract.
+
+Daemon turns no longer mirror their continuation scope into
+`TuiRuntime::turn_scope`. A task-local compatibility read derives the old scope
+from the immutable admitted context. The first authority-sensitive tool group
+(history/session, client surfaces, browser, shell, skill, bridge, runtime, and
+workflow tools) has moved to that read. TUI, recurring/ingest, and worker entry
+surfaces still use the shared fallback until they receive their own admission
+contexts; the registry still needs tracked task ownership and full
+cancellation/deadline propagation before H05.1 is complete.
+
 The current H05.0 request-state inventory is:
 
 | State | Classification | Current action |
 | --- | --- | --- |
 | Ambient tool sink | Per-turn request state | Task-scoped compatibility bridge; global slot deleted; H05.2 deletion remains |
-| Shared `TurnContinuationScope` | Per-turn request state retained by 24 tool/runtime modules and installed by save/restore | Open; freeze foreign-session/provider/surface canaries, then replace in H05.1/H05.2 |
+| Shared `TurnContinuationScope` | Per-turn request state retained by tool/runtime modules and installed by non-daemon save/restore paths | Daemon writes removed; authority-sensitive reads prefer immutable task context; TUI/worker/ingest removal remains |
 | Worker scheduler `runtime_ctx` and `bus_session` | Per-parent/worker request state in two process-wide `Option` slots | Open; freeze stale-clear and sibling-parent races before H05.3 |
 | Browser `SNAPSHOT_TX`, `ACT_TX`, `NAV_STATE_TX`, `FIND_TX` | Per-request reply state in four process-wide singleton mailboxes | Open; freeze overlap, reverse completion, timeout, and navigation races before H05.5 |
 | `LAST_GRAPHEME_SOURCE` | Per-invocation source selected through one global last-value slot | Open; key to invocation context in H05.2 |

@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use axum::Json;
-use axum::extract::{Path as AxumPath, Query, State};
+use axum::extract::{Extension, Path as AxumPath, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{delete, get, patch, post};
 use chrono::Utc;
@@ -294,6 +294,7 @@ fn resolve_enqueue_ask_prompt(prompt: &str, manuscript_ids: &[String]) -> Result
 
 pub async fn enqueue_ask(
     State(state): State<AppState>,
+    Extension(principal): Extension<crate::request_principal::RequestPrincipal>,
     Json(request): Json<EnqueueAskRequest>,
 ) -> Result<Json<EnqueueResponse>, (StatusCode, String)> {
     let manuscript_ids = normalize_ask_manuscript_ids(
@@ -381,6 +382,7 @@ pub async fn enqueue_ask(
 
     let ticket = spawn_turn_ticket(
         &state,
+        principal,
         job_id.clone(),
         crate::turn_ticket::TurnTicketMode::Background,
         interactive_request,
