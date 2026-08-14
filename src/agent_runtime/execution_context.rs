@@ -87,6 +87,7 @@ pub struct TurnExecutionContext {
     cancellation: CancellationToken,
     deadline: Instant,
     legacy_scope: Arc<TurnContinuationScope>,
+    tasks: Arc<TurnTaskGroup>,
 }
 
 impl TurnExecutionContext {
@@ -102,6 +103,7 @@ impl TurnExecutionContext {
         deadline: Instant,
         legacy_scope: TurnContinuationScope,
     ) -> Self {
+        let tasks = Arc::new(TurnTaskGroup::new(cancellation.clone(), 64));
         Self {
             handle: TurnHandle::new(),
             turn_id: turn_id.into(),
@@ -113,6 +115,7 @@ impl TurnExecutionContext {
             cancellation,
             deadline,
             legacy_scope: Arc::new(legacy_scope),
+            tasks,
         }
     }
 
@@ -154,6 +157,98 @@ impl TurnExecutionContext {
 
     pub fn legacy_scope(&self) -> &TurnContinuationScope {
         &self.legacy_scope
+    }
+
+    pub fn tasks(&self) -> &Arc<TurnTaskGroup> {
+        &self.tasks
+    }
+
+    /// Spawn a context-retaining child owned by this execution.
+    pub fn spawn<F>(self: &Arc<Self>, future: F) -> Result<(), TurnTaskSpawnError>
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        self.tasks.spawn(self.clone(), future)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TurnTaskSpawnError {
+    pub limit: usize,
+}
+
+impl fmt::Display for TurnTaskSpawnError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "turn task capacity reached (limit {})",
+            self.limit
+        )
+    }
+}
+
+impl std::error::Error for TurnTaskSpawnError {}
+
+/// Bounded owner for child tasks that retain turn context.
+#[derive(Debug)]
+pub struct TurnTaskGroup {
+    cancellation: CancellationToken,
+    permits: Arc<tokio::sync::Semaphore>,
+    limit: usize,
+    tasks: Mutex<Vec<tokio::task::AbortHandle>>,
+}
+
+impl TurnTaskGroup {
+    fn new(cancellation: CancellationToken, limit: usize) -> Self {
+        Self {
+            cancellation,
+            permits: Arc::new(tokio::sync::Semaphore::new(limit)),
+            limit,
+            tasks: Mutex::new(Vec::with_capacity(limit)),
+        }
+    }
+
+    fn spawn<F>(
+        &self,
+        context: Arc<TurnExecutionContext>,
+        future: F,
+    ) -> Result<(), TurnTaskSpawnError>
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        let permit = self
+            .permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| TurnTaskSpawnError { limit: self.limit })?;
+        let cancellation = self.cancellation.clone();
+        let task = tokio::spawn(with_turn_execution_context(context, async move {
+            let _permit = permit;
+            tokio::select! {
+                () = cancellation.cancelled() => {}
+                () = future => {}
+            }
+        }));
+        let mut tasks = self.tasks.lock().expect("turn task group poisoned");
+        tasks.retain(|task| !task.is_finished());
+        tasks.push(task.abort_handle());
+        Ok(())
+    }
+
+    pub fn active_count(&self) -> usize {
+        self.limit - self.permits.available_permits()
+    }
+
+    pub fn shutdown(&self) {
+        self.cancellation.cancel();
+        for task in self
+            .tasks
+            .lock()
+            .expect("turn task group poisoned")
+            .drain(..)
+        {
+            task.abort();
+        }
     }
 }
 
@@ -311,6 +406,7 @@ impl TurnExecutionLease {
 
 impl Drop for TurnExecutionLease {
     fn drop(&mut self) {
+        self.context.tasks().shutdown();
         self.registry
             .remove_exact(self.context.handle(), &self.context);
     }
@@ -438,6 +534,23 @@ mod tests {
         assert!(active_turn_execution_context().is_none());
     }
 
+    #[tokio::test]
+    async fn owned_child_inherits_context_and_releases_its_permit() {
+        let context = Arc::new(context("session-a", "provider-a"));
+        let expected = context.handle();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        context
+            .spawn(async move {
+                tx.send(active_turn_execution_context().unwrap().handle())
+                    .unwrap();
+            })
+            .unwrap();
+
+        assert_eq!(rx.await.unwrap(), expected);
+        tokio::task::yield_now().await;
+        assert_eq!(context.tasks().active_count(), 0);
+    }
+
     #[test]
     fn cancellation_is_owned_by_one_execution() {
         let first = context("session-a", "provider-a");
@@ -487,5 +600,20 @@ mod tests {
         );
         assert!(first.context().cancellation().is_cancelled());
         assert!(!second.context().cancellation().is_cancelled());
+    }
+
+    #[test]
+    fn cancellation_tree_flows_from_parent_only() {
+        let parent = CancellationToken::new();
+        let first_child = parent.child_token();
+        let second_child = parent.child_token();
+
+        first_child.cancel();
+        assert!(first_child.is_cancelled());
+        assert!(!parent.is_cancelled());
+        assert!(!second_child.is_cancelled());
+
+        parent.cancel();
+        assert!(second_child.is_cancelled());
     }
 }

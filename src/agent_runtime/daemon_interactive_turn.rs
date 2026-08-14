@@ -991,13 +991,31 @@ pub async fn run_agent_turn(
             request,
             backend,
             agent_rt,
-            tracking_sink,
+            tracking_sink.clone(),
             context_telemetry,
             project_state,
         ),
     );
     if let Some(context) = execution_context {
-        super::execution_context::with_turn_execution_context(context, turn_future).await;
+        let cancellation = context.cancellation().clone();
+        let deadline = tokio::time::Instant::from_std(context.deadline());
+        let scoped_turn =
+            super::execution_context::with_turn_execution_context(context, turn_future);
+        tokio::pin!(scoped_turn);
+        tokio::select! {
+            () = cancellation.cancelled() => {
+                tracking_sink
+                    .agent_error(0, "turn cancelled".to_string())
+                    .await;
+            }
+            () = tokio::time::sleep_until(deadline) => {
+                cancellation.cancel();
+                tracking_sink
+                    .agent_error(0, "turn execution deadline exceeded".to_string())
+                    .await;
+            }
+            () = &mut scoped_turn => {}
+        }
     } else {
         turn_future.await;
     }

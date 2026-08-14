@@ -52,12 +52,18 @@ the boundary. The spawned task retains an RAII lease; terminal drop removes
 only the exact `Arc` generation. Registry tests cover capacity/high-water,
 same-session concurrency, foreign cancel rejection, cancellation isolation,
 task-local isolation, steady-state release, and stale-lease replacement safety.
+Each context also owns a 64-per-turn child-task group. Child spawns inherit the
+same task-local context and cancellation root, reserve before spawning, release
+their permit on exit, and are aborted when the exact execution lease closes.
 
 Authenticated principals from interactive and background HTTP entry points are
 now carried through admission instead of being discarded after identity
 rewriting. The existing session cancel endpoint also signals the matching
 execution's cancellation root while the public API remains on its legacy
 session/turn identifier contract.
+The daemon turn future races its cancellation root and admitted deadline;
+cancellation or expiry drops the in-flight provider/tool future and emits a
+terminal error instead of waiting for cooperative polling at a later round.
 
 Daemon turns no longer mirror their continuation scope into
 `TuiRuntime::turn_scope`. A task-local compatibility read derives the old scope
@@ -65,8 +71,9 @@ from the immutable admitted context. The first authority-sensitive tool group
 (history/session, client surfaces, browser, shell, skill, bridge, runtime, and
 workflow tools) has moved to that read. TUI, recurring/ingest, and worker entry
 surfaces still use the shared fallback until they receive their own admission
-contexts; the registry still needs tracked task ownership and full
-cancellation/deadline propagation before H05.1 is complete.
+contexts; existing detached spawn sites still need conversion to the tracked
+task API, plus cancellation/deadline propagation into every blocking leaf,
+before H05.1 is complete.
 
 The current H05.0 request-state inventory is:
 
