@@ -5,7 +5,7 @@ use std::sync::Arc;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::Json;
 use chrono::Utc;
 use stasis::application::runtime::runtime_factory::RuntimeComposition;
 use stasis::domain::runtime::job::{Job, JobState};
@@ -16,6 +16,9 @@ use crate::daemon_api::{
     WorkflowPlanResponse, WorkflowRunRequest, WorkflowRunResponse, WorkflowRunsQuery,
     WorkflowRunsResponse, WorkflowScheduleRequest, WorkflowScheduleResponse,
     WorkflowStepResultDto, WorkflowsListQuery, WorkflowsListResponse,
+};
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
 use crate::recurring_delivery::{DeliveryResolveContext, bind_recurring_delivery_for_registration};
 use crate::recurring_schedule::RecurringScheduleSpec;
@@ -445,18 +448,81 @@ async fn job_to_run_entry(
     })
 }
 
-pub fn workflow_router(state: WorkflowApiState) -> Router {
-    Router::new()
-        .route("/v1/workflows", get(list_workflows).post(run_workflow))
-        .route("/v1/workflows/plan", post(plan_workflow))
-        .route("/v1/workflows/schedule", post(schedule_workflow))
+pub fn workflow_surface() -> DeclaredRouter<WorkflowApiState> {
+    use crate::request_principal::Capability;
+
+    DeclaredRouter::default()
+        .methods([
+            (
+                workflow_read_policy("/v1/workflows"),
+                get(list_workflows),
+            ),
+            (
+                workflow_policy(
+                    axum::http::Method::POST,
+                    "/v1/workflows",
+                    Capability::AdminExecute,
+                    1024 * 1024,
+                    RateLimitClass::Administration,
+                ),
+                post(run_workflow),
+            ),
+        ])
         .route(
-            "/v1/workflows/{workflow_id}",
+            workflow_policy(
+                axum::http::Method::POST,
+                "/v1/workflows/plan",
+                Capability::WorkshopInteract,
+                256 * 1024,
+                RateLimitClass::Mutation,
+            ),
+            post(plan_workflow),
+        )
+        .route(
+            workflow_policy(
+                axum::http::Method::POST,
+                "/v1/workflows/schedule",
+                Capability::AdminExecute,
+                1024 * 1024,
+                RateLimitClass::Administration,
+            ),
+            post(schedule_workflow),
+        )
+        .route(
+            workflow_read_policy("/v1/workflows/{workflow_id}"),
             get(get_workflow_detail),
         )
         .route(
-            "/v1/workflows/{workflow_id}/runs",
+            workflow_read_policy("/v1/workflows/{workflow_id}/runs"),
             get(list_workflow_runs),
         )
-        .with_state(state)
+}
+
+fn workflow_read_policy(path: &'static str) -> RoutePolicy {
+    workflow_policy(
+        axum::http::Method::GET,
+        path,
+        crate::request_principal::Capability::WorkshopRead,
+        1024,
+        RateLimitClass::Read,
+    )
+}
+
+fn workflow_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    required_capability: crate::request_principal::Capability,
+    body_limit: usize,
+    rate_limit_class: RateLimitClass,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Portal,
+        required_capability: Some(required_capability),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class,
+    }
 }

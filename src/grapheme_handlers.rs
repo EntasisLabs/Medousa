@@ -12,6 +12,9 @@ use crate::daemon_api::{
     GraphemeModuleOpsResponse, GraphemeRunRequest, GraphemeRunResponse, GraphemeScriptDetailResponse,
     GraphemeScriptEntryDto, GraphemeScriptsListQuery, GraphemeScriptsListResponse,
 };
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
 use crate::grapheme_host_catalog::{
     discover_modules_with_host, examples_for_module, modules_info_with_host, modules_ops_with_host,
 };
@@ -309,63 +312,182 @@ pub async fn get_grapheme_lifecycle() -> Json<GraphemeLifecycleResponse> {
     Json(lifecycle_events().await)
 }
 
-pub fn grapheme_router(state: GraphemeApiState) -> axum::Router {
-    use axum::routing::{get, post};
+pub fn grapheme_surface() -> DeclaredRouter<GraphemeApiState> {
+    use axum::routing::{delete, get, post, put};
+    use crate::request_principal::Capability;
 
-    axum::Router::new()
+    DeclaredRouter::default()
         .route(
-            "/v1/grapheme/modules",
+            grapheme_read_policy("/v1/grapheme/modules"),
             get(list_grapheme_modules),
         )
         .route(
-            "/v1/grapheme/modules/{module_id}",
+            grapheme_read_policy("/v1/grapheme/modules/{module_id}"),
             get(get_grapheme_module),
         )
         .route(
-            "/v1/grapheme/modules/{module_id}/ops",
+            grapheme_read_policy("/v1/grapheme/modules/{module_id}/ops"),
             get(get_grapheme_module_ops),
         )
+        .methods([
+            (
+                grapheme_policy(
+                    axum::http::Method::GET,
+                    "/v1/grapheme/allowlist",
+                    Capability::AdminRuntime,
+                    1024,
+                    RateLimitClass::Administration,
+                ),
+                get(get_grapheme_allowlist),
+            ),
+            (
+                grapheme_policy(
+                    axum::http::Method::PUT,
+                    "/v1/grapheme/allowlist",
+                    Capability::AdminRuntime,
+                    256 * 1024,
+                    RateLimitClass::Administration,
+                ),
+                put(put_grapheme_allowlist),
+            ),
+        ])
+        .methods([
+            (
+                grapheme_content_read_policy("/v1/grapheme/scripts"),
+                get(list_grapheme_scripts),
+            ),
+            (
+                grapheme_content_write_policy(
+                    axum::http::Method::POST,
+                    "/v1/grapheme/scripts",
+                    1024 * 1024,
+                ),
+                post(post_grapheme_script_save),
+            ),
+        ])
         .route(
-            "/v1/grapheme/allowlist",
-            get(get_grapheme_allowlist).put(put_grapheme_allowlist),
-        )
-        .route(
-            "/v1/grapheme/scripts",
-            get(list_grapheme_scripts).post(post_grapheme_script_save),
-        )
-        .route(
-            "/v1/grapheme/compile",
+            grapheme_policy(
+                axum::http::Method::POST,
+                "/v1/grapheme/compile",
+                Capability::AdminExecute,
+                1024 * 1024,
+                RateLimitClass::Administration,
+            ),
             post(post_grapheme_compile),
         )
         .route(
-            "/v1/grapheme/modules/load",
+            grapheme_policy(
+                axum::http::Method::POST,
+                "/v1/grapheme/modules/load",
+                Capability::AdminRuntime,
+                8 * 1024 * 1024,
+                RateLimitClass::Administration,
+            ),
             post(post_grapheme_module_load),
         )
         .route(
-            "/v1/grapheme/lifecycle",
+            grapheme_read_policy("/v1/grapheme/lifecycle"),
             get(get_grapheme_lifecycle),
         )
         .route(
-            "/v1/grapheme/lsp/workspace",
+            grapheme_read_policy("/v1/grapheme/lsp/workspace"),
             get(get_lsp_workspace),
         )
         .route(
-            "/v1/grapheme/lsp",
+            grapheme_policy(
+                axum::http::Method::GET,
+                "/v1/grapheme/lsp",
+                Capability::AdminExecute,
+                1024,
+                RateLimitClass::Stream,
+            ),
             get(grapheme_lsp_ws),
         )
+        .methods([
+            (
+                grapheme_content_read_policy("/v1/grapheme/scripts/{script_id}"),
+                get(get_grapheme_script),
+            ),
+            (
+                grapheme_content_write_policy(
+                    axum::http::Method::DELETE,
+                    "/v1/grapheme/scripts/{script_id}",
+                    1024,
+                ),
+                delete(delete_grapheme_script),
+            ),
+        ])
         .route(
-            "/v1/grapheme/scripts/{script_id}",
-            get(get_grapheme_script).delete(delete_grapheme_script),
-        )
-        .route(
-            "/v1/grapheme/scripts/{script_id}/rename",
+            grapheme_content_write_policy(
+                axum::http::Method::POST,
+                "/v1/grapheme/scripts/{script_id}/rename",
+                64 * 1024,
+            ),
             post(post_grapheme_script_rename),
         )
         .route(
-            "/v1/grapheme/run",
+            grapheme_policy(
+                axum::http::Method::POST,
+                "/v1/grapheme/run",
+                Capability::AdminExecute,
+                1024 * 1024,
+                RateLimitClass::Administration,
+            ),
             post(run_grapheme_source),
         )
-        .with_state(state)
+}
+
+fn grapheme_read_policy(path: &'static str) -> RoutePolicy {
+    grapheme_policy(
+        axum::http::Method::GET,
+        path,
+        crate::request_principal::Capability::WorkshopRead,
+        1024,
+        RateLimitClass::Read,
+    )
+}
+
+fn grapheme_content_read_policy(path: &'static str) -> RoutePolicy {
+    grapheme_policy(
+        axum::http::Method::GET,
+        path,
+        crate::request_principal::Capability::ContentRead,
+        1024,
+        RateLimitClass::Read,
+    )
+}
+
+fn grapheme_content_write_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    body_limit: usize,
+) -> RoutePolicy {
+    grapheme_policy(
+        method,
+        path,
+        crate::request_principal::Capability::ContentWrite,
+        body_limit,
+        RateLimitClass::Mutation,
+    )
+}
+
+fn grapheme_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    required_capability: crate::request_principal::Capability,
+    body_limit: usize,
+    rate_limit_class: RateLimitClass,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Portal,
+        required_capability: Some(required_capability),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class,
+    }
 }
 
 #[cfg(test)]

@@ -129,6 +129,15 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         )
         .expect("duplicate component store route policy");
     inventory
+        .extend(crate::workflow_handlers::workflow_surface().inventory())
+        .expect("duplicate workflow route policy");
+    inventory
+        .extend(crate::tool_history_handlers::tool_history_surface().inventory())
+        .expect("duplicate tool history route policy");
+    inventory
+        .extend(crate::grapheme_handlers::grapheme_surface().inventory())
+        .expect("duplicate Grapheme route policy");
+    inventory
 }
 
 pub fn build_identity_surface() -> DeclaredRouter<AppState> {
@@ -484,17 +493,6 @@ pub fn build_feature_routers(
     state: &AppState,
     dashboard_action_auth: &DashboardActionAuthConfig,
 ) -> Router {
-    let grapheme_router =
-        crate::grapheme_handlers::grapheme_router(crate::grapheme_handlers::GraphemeApiState {
-            composition: Arc::new(state.composition().clone()),
-        });
-
-    let workflow_state = crate::workflow_handlers::WorkflowApiState {
-        composition: Arc::new(state.composition().clone()),
-    };
-    let workflow_router = crate::workflow_handlers::workflow_router(workflow_state.clone());
-    let tool_history_router = crate::tool_history_handlers::tool_history_router(workflow_state);
-
     let dashboard_service = Arc::new(RuntimeDashboardQueryService::from_runtime_composition(
         state.composition().clone(),
     ));
@@ -504,10 +502,7 @@ pub fn build_feature_routers(
     );
     let dashboard = dashboard_router(dashboard_state);
 
-    grapheme_router
-        .merge(workflow_router)
-        .merge(tool_history_router)
-        .merge(crate::daemon::forge_api::forge_router(state.clone()))
+    crate::daemon::forge_api::forge_router(state.clone())
         .merge(crate::daemon::forge_preview::forge_preview_router(
             state.clone(),
         ))
@@ -1187,12 +1182,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 201);
-        assert_eq!(with_pairing.entries().len(), 213);
+        assert_eq!(without_pairing.entries().len(), 225);
+        assert_eq!(with_pairing.entries().len(), 237);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 213);
+        assert_eq!(rows.len(), 237);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"
@@ -1427,6 +1422,50 @@ mod tests {
         }));
         assert!(entries.iter().any(|entry| {
             entry.path == "/v1/feeds/stream"
+                && entry.rate_limit_class == RateLimitClass::Stream
+        }));
+    }
+
+    #[test]
+    fn workflow_and_grapheme_inventory_separates_execution_from_authoring() {
+        let workflows = crate::workflow_handlers::workflow_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let history = crate::tool_history_handlers::tool_history_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let grapheme = crate::grapheme_handlers::grapheme_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let entries = workflows
+            .iter()
+            .chain(&history)
+            .chain(&grapheme)
+            .collect::<Vec<_>>();
+
+        assert_eq!(entries.len(), 24);
+        for (capability, count) in [
+            ("workshop.read", 9),
+            ("workshop.interact", 1),
+            ("content.read", 2),
+            ("content.write", 3),
+            ("admin.runtime", 3),
+            ("admin.execute", 6),
+        ] {
+            assert_eq!(
+                entries
+                    .iter()
+                    .filter(|entry| entry.required_capability == Some(capability))
+                    .count(),
+                count,
+                "unexpected route count for {capability}",
+            );
+        }
+        assert!(entries.iter().any(|entry| {
+            entry.path == "/v1/grapheme/lsp"
                 && entry.rate_limit_class == RateLimitClass::Stream
         }));
     }

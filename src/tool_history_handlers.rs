@@ -3,11 +3,14 @@
 use axum::extract::Query;
 use axum::http::StatusCode;
 use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::Json;
 
 use crate::daemon_api::{
     ToolHistoryListQuery, ToolHistoryListResponse, WorkflowFromSliceRequest,
     WorkflowFromSliceResponse,
+};
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
 use crate::tool_history_index::{
     build_workflow_from_slice_refs, list_tool_history_runs, new_workflow_id_for_promotion,
@@ -110,9 +113,47 @@ pub async fn workflow_from_slice(
     }))
 }
 
-pub fn tool_history_router(state: WorkflowApiState) -> Router {
-    Router::new()
-        .route("/v1/tool-history/slices", get(list_tool_history))
-        .route("/v1/workflows/from-slice", post(workflow_from_slice))
-        .with_state(state)
+pub fn tool_history_surface() -> DeclaredRouter<WorkflowApiState> {
+    use crate::request_principal::Capability;
+
+    DeclaredRouter::default()
+        .route(
+            tool_history_policy(
+                axum::http::Method::GET,
+                "/v1/tool-history/slices",
+                Capability::WorkshopRead,
+                1024,
+                RateLimitClass::Read,
+            ),
+            get(list_tool_history),
+        )
+        .route(
+            tool_history_policy(
+                axum::http::Method::POST,
+                "/v1/workflows/from-slice",
+                Capability::AdminExecute,
+                1024 * 1024,
+                RateLimitClass::Administration,
+            ),
+            post(workflow_from_slice),
+        )
+}
+
+fn tool_history_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    required_capability: crate::request_principal::Capability,
+    body_limit: usize,
+    rate_limit_class: RateLimitClass,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Portal,
+        required_capability: Some(required_capability),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class,
+    }
 }

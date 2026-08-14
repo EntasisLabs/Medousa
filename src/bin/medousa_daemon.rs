@@ -681,6 +681,21 @@ async fn main() -> Result<()> {
             medousa::component_store_handlers::component_store_surface()
                 .with_state(medousa::component_store_handlers::ComponentStoreApiState),
         )
+        .merge(medousa::workflow_handlers::workflow_surface().with_state(
+            medousa::workflow_handlers::WorkflowApiState {
+                composition: std::sync::Arc::new(state.composition().clone()),
+            },
+        ))
+        .merge(medousa::tool_history_handlers::tool_history_surface().with_state(
+            medousa::workflow_handlers::WorkflowApiState {
+                composition: std::sync::Arc::new(state.composition().clone()),
+            },
+        ))
+        .merge(medousa::grapheme_handlers::grapheme_surface().with_state(
+            medousa::grapheme_handlers::GraphemeApiState {
+                composition: std::sync::Arc::new(state.composition().clone()),
+            },
+        ))
         .with_state(state.clone());
     if let Some((pairing_bootstrap, pairing_protected)) = pairing_routers {
         bootstrap = bootstrap.merge(pairing_bootstrap);
