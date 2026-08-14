@@ -1,13 +1,12 @@
 use std::env;
 use std::path::PathBuf;
 
-use axum::extract::Path as AxumPath;
+use axum::extract::{Extension, Path as AxumPath};
 use axum::Json;
 
+use medousa::daemon_api::{SessionHistoryListRequest, SessionSetDisplayNameRequest};
 use medousa::daemon_handlers::{list_session_history, set_session_display_name};
-use medousa::daemon_api::{
-    SessionHistoryListRequest, SessionSetDisplayNameRequest,
-};
+use medousa::request_principal::{RequestPrincipal, TransportClass};
 
 fn make_temp_data_dir() -> PathBuf {
     let base = env::temp_dir();
@@ -28,8 +27,7 @@ async fn set_and_list_session_display_name_via_handlers() {
         display_name: "Research Sprint".to_string(),
     };
 
-    let set_res =
-        set_session_display_name(AxumPath(session_id.clone()), Json(request)).await;
+    let set_res = set_session_display_name(AxumPath(session_id.clone()), Json(request)).await;
     assert!(set_res.is_ok());
     let Json(body) = set_res.unwrap();
     assert_eq!(body.session_id, session_id);
@@ -41,7 +39,7 @@ async fn set_and_list_session_display_name_via_handlers() {
     );
 
     let list_res = list_session_history(
-        axum::http::HeaderMap::new(),
+        Extension(RequestPrincipal::anonymous(TransportClass::Loopback)),
         axum::extract::Query(SessionHistoryListRequest {
             limit: Some(50),
             include_verification: None,

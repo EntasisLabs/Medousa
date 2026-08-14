@@ -75,6 +75,27 @@ rollback. Re-running `--apply` resumes an interrupted planned copy. Inspect and
 back up quarantined data; do not rename it into place while the daemon is
 running.
 
+### Other identifier-backed storage
+
+Current releases also use opaque, versioned directory and file names for
+profiles, feeds, components, packages, downloaded models, pairing records,
+workshops, Forge items, manuscripts, skills, provider state, and Grapheme
+scripts. The logical ID remains visible in the app and APIs; the opaque disk
+name is an internal integrity boundary and should not be renamed to the logical
+ID.
+
+During the rollback window, Medousa reads a legacy direct-name entry only when
+the name is cross-platform safe and the stored record proves that it belongs to
+the requested logical ID. Ambiguous names produced by older character-
+replacement sanitizers are left untouched. Back up these entries before an
+upgrade and keep them for rollback; do not merge or rename two apparent aliases
+by hand.
+
+Manuscript YAML and skill directories created by older releases with readable
+IDs remain supported during this window. Newly created or imported manuscripts
+have opaque disk names; use the manuscript ID shown by Medousa rather than the
+filename when invoking CLI or API operations.
+
 ---
 
 ## Vault roots

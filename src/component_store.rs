@@ -8,6 +8,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use chrono::Utc;
+use medousa_types::authority_id::{
+    component_store_record_key, ComponentId, ComponentStoreKey, EnvironmentProfileId,
+};
 use medousa_types::component_store::{
     is_valid_component_store_key, is_valid_component_store_scope,
     ComponentStoreDeleteResponse, ComponentStoreGetResponse, ComponentStoreListResponse,
@@ -22,8 +25,11 @@ use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
 use surrealdb_types::SurrealValue;
 
+use crate::store_root::{StorePath, StoreRoot};
+
 const COMPONENT_KV_TABLE: &str = "component_kv";
 const FILE_STORE_DIR: &str = "component_store";
+const MAX_FILE_STORE_BYTES: u64 = 4 * 1024 * 1024;
 
 const COMPONENT_KV_SCHEMA_STATEMENTS: &[&str] = &[
     "DEFINE TABLE component_kv SCHEMAFULL",
@@ -113,6 +119,7 @@ impl ComponentStoreService {
         component_id: &str,
         key: Option<&str>,
     ) -> Result<ComponentStoreGetResponse, String> {
+        validate_profile(profile_id)?;
         validate_scope(component_id)?;
         if let Some(key) = key {
             validate_key(key)?;
@@ -141,6 +148,7 @@ impl ComponentStoreService {
         key: &str,
         value: Value,
     ) -> Result<ComponentStoreSetResponse, String> {
+        validate_profile(profile_id)?;
         validate_scope(component_id)?;
         validate_key(key)?;
         validate_value(&value)?;
@@ -168,6 +176,7 @@ impl ComponentStoreService {
         component_id: &str,
         key: &str,
     ) -> Result<ComponentStoreDeleteResponse, String> {
+        validate_profile(profile_id)?;
         validate_scope(component_id)?;
         validate_key(key)?;
 
@@ -259,7 +268,7 @@ impl ComponentStoreService {
             value_json,
             updated_at,
         };
-        let record_id = store_record_id(profile_id, component_id, key);
+        let record_id = store_record_id(profile_id, component_id, key)?;
         db.query("UPSERT type::record($table, $id) CONTENT $data")
             .bind(("table", COMPONENT_KV_TABLE))
             .bind(("id", record_id))
@@ -343,14 +352,14 @@ impl ComponentStoreService {
         profile_id: &str,
         component_id: &str,
     ) -> Result<FileComponentStoreDocument, String> {
-        let path = file_doc_path(profile_id, component_id);
-        if !path.exists() {
-            return Ok(FileComponentStoreDocument::default());
+        let store = file_store()?;
+        let path = file_doc_path(profile_id, component_id)?;
+        match store.read_limited(&path, MAX_FILE_STORE_BYTES) {
+            Ok(raw) => serde_json::from_slice(&raw)
+                .map_err(|_| "component store document is corrupt".to_string()),
+            Err(error) if error.is_not_found() => Ok(FileComponentStoreDocument::default()),
+            Err(error) => Err(error.to_string()),
         }
-        let raw = tokio::fs::read_to_string(&path)
-            .await
-            .map_err(|err| err.to_string())?;
-        Ok(serde_json::from_str(&raw).unwrap_or_else(|_| FileComponentStoreDocument::default()))
     }
 
     async fn write_file_doc(
@@ -359,17 +368,17 @@ impl ComponentStoreService {
         component_id: &str,
         doc: &FileComponentStoreDocument,
     ) -> Result<(), String> {
-        let path = file_doc_path(profile_id, component_id);
-        if let Some(parent) = path.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|err| err.to_string())?;
-        }
+        let store = file_store()?;
+        let path = file_doc_path(profile_id, component_id)?;
         let raw = serde_json::to_string_pretty(doc).map_err(|err| err.to_string())?;
-        tokio::fs::write(path, raw)
-            .await
-            .map_err(|err| err.to_string())
+        store.atomic_write(&path, raw.as_bytes()).map_err(|err| err.to_string())
     }
+}
+
+fn validate_profile(profile_id: &str) -> Result<(), String> {
+    EnvironmentProfileId::parse(profile_id)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 fn validate_scope(component_id: &str) -> Result<(), String> {
@@ -399,26 +408,13 @@ fn validate_value(value: &Value) -> Result<(), String> {
     Ok(())
 }
 
-fn store_record_id(profile_id: &str, component_id: &str, key: &str) -> String {
-    format!(
-        "{}__{}__{}",
-        sanitize_record_segment(profile_id),
-        sanitize_record_segment(component_id),
-        sanitize_record_segment(key),
-    )
-}
-
-fn sanitize_record_segment(value: &str) -> String {
-    value
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
-                ch
-            } else {
-                '_'
-            }
-        })
-        .collect()
+fn store_record_id(profile_id: &str, component_id: &str, key: &str) -> Result<String, String> {
+    let profile = EnvironmentProfileId::parse(profile_id).map_err(|error| error.to_string())?;
+    let component = ComponentId::parse(component_id).map_err(|error| error.to_string())?;
+    let key = ComponentStoreKey::parse(key).map_err(|error| error.to_string())?;
+    Ok(component_store_record_key(&profile, &component, &key)
+        .as_str()
+        .to_string())
 }
 
 fn file_store_root() -> PathBuf {
@@ -431,10 +427,19 @@ fn file_store_root() -> PathBuf {
     crate::paths::medousa_data_dir().join(FILE_STORE_DIR)
 }
 
-fn file_doc_path(profile_id: &str, component_id: &str) -> PathBuf {
-    file_store_root()
-        .join(sanitize_record_segment(profile_id))
-        .join(format!("{}.json", sanitize_record_segment(component_id)))
+fn file_store() -> Result<StoreRoot, String> {
+    StoreRoot::open_or_create_nofollow(&file_store_root()).map_err(|error| error.to_string())
+}
+
+fn file_doc_path(profile_id: &str, component_id: &str) -> Result<StorePath, String> {
+    let profile = EnvironmentProfileId::parse(profile_id).map_err(|error| error.to_string())?;
+    let component = ComponentId::parse(component_id).map_err(|error| error.to_string())?;
+    StorePath::parse(&format!(
+        "{}/{}.json",
+        profile.storage_key().as_str(),
+        component.storage_key().as_str()
+    ))
+    .map_err(|error| error.to_string())
 }
 
 pub async fn component_exists_in_profile(profile_id: &str, component_id: &str) -> bool {
@@ -464,9 +469,11 @@ mod tests {
     }
 
     #[test]
-    fn record_id_sanitizes_colons() {
-        let id = store_record_id("default", "braindump", "thoughts:v1");
-        assert!(!id.contains(':'));
+    fn record_ids_are_opaque_and_collision_free() {
+        let dotted = store_record_id("default", "braindump.v1", "thoughts").unwrap();
+        let underscored = store_record_id("default", "braindump_v1", "thoughts").unwrap();
+        assert_ne!(dotted, underscored);
+        assert!(!dotted.contains("braindump"));
     }
 
     #[tokio::test]

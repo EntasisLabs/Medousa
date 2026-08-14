@@ -1,6 +1,5 @@
 //! Manuscript overlay proposals — operator-approved working notes (Phase 8E.3).
 
-use std::fs;
 use std::path::PathBuf;
 
 use chrono::Utc;
@@ -8,7 +7,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 
+use medousa_types::authority_id::{ManuscriptId, ManuscriptOverlayProposalId};
+
 use crate::session;
+use crate::store_root::{StoreEntryKind, StorePath, StoreRoot};
 use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_MANUSCRIPT_OVERLAY_PROPOSE: &str = "cognition_manuscript_overlay_propose";
@@ -47,31 +49,43 @@ fn pending_dir() -> PathBuf {
     overlay_root().join("pending")
 }
 
-fn proposal_path(proposal_id: &str) -> PathBuf {
-    pending_dir().join(format!("{proposal_id}.yaml"))
+fn pending_store() -> Result<StoreRoot, String> {
+    StoreRoot::open_or_create_nofollow(&pending_dir()).map_err(|error| error.to_string())
 }
 
-fn slug_token(raw: &str) -> String {
-    raw.to_ascii_lowercase()
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .collect::<String>()
-        .split('-')
-        .filter(|segment| !segment.is_empty())
-        .collect::<Vec<_>>()
-        .join("-")
+fn proposal_path(proposal_id: &str) -> Result<StorePath, String> {
+    let proposal_id = ManuscriptOverlayProposalId::parse(proposal_id)
+        .map_err(|error| error.to_string())?;
+    StorePath::parse(&format!("{}.yaml", proposal_id.storage_key().as_str()))
+        .map_err(|error| error.to_string())
+}
+
+fn proposal_ambient_path(proposal_id: &str) -> Result<PathBuf, String> {
+    Ok(pending_dir().join(proposal_path(proposal_id)?.file_name()))
+}
+
+fn legacy_proposal_path(proposal_id: &str) -> Result<StorePath, String> {
+    let proposal_id = ManuscriptOverlayProposalId::parse(proposal_id)
+        .map_err(|error| error.to_string())?;
+    StorePath::parse(&format!("{}.yaml", proposal_id.as_str()))
+        .map_err(|error| error.to_string())
 }
 
 pub fn list_pending_proposals(limit: usize) -> Result<Vec<ManuscriptOverlayProposal>, String> {
-    fs::create_dir_all(pending_dir()).map_err(|err| err.to_string())?;
+    let store = pending_store()?;
     let mut proposals = Vec::new();
-    for entry in fs::read_dir(pending_dir()).map_err(|err| err.to_string())? {
-        let entry = entry.map_err(|err| err.to_string())?;
-        if entry.path().extension().and_then(|ext| ext.to_str()) != Some("yaml") {
+    for entry in store.list_root().map_err(|error| error.to_string())? {
+        if entry.kind != StoreEntryKind::File || !entry.path.file_name().ends_with(".yaml") {
             continue;
         }
-        let raw = fs::read_to_string(entry.path()).map_err(|err| err.to_string())?;
-        if let Ok(proposal) = serde_yaml::from_str::<ManuscriptOverlayProposal>(&raw) {
+        let raw = store
+            .read_limited(&entry.path, 4 * 1024 * 1024)
+            .map_err(|error| error.to_string())?;
+        if let Ok(proposal) = serde_yaml::from_slice::<ManuscriptOverlayProposal>(&raw)
+            && (proposal_path(&proposal.proposal_id).is_ok_and(|path| path == entry.path)
+                || legacy_proposal_path(&proposal.proposal_id)
+                    .is_ok_and(|path| path == entry.path))
+        {
             proposals.push(proposal);
         }
     }
@@ -86,12 +100,10 @@ pub fn propose_overlay(
     reason: &str,
     session_id: Option<String>,
 ) -> Result<ManuscriptOverlayProposal, String> {
-    let manuscript_id = manuscript_id.trim();
+    let manuscript_id = ManuscriptId::parse(manuscript_id)
+        .map_err(|error| error.to_string())?;
     let appendix = appendix.trim();
     let reason = reason.trim();
-    if manuscript_id.is_empty() {
-        return Err("manuscript_id is required".to_string());
-    }
     if appendix.is_empty() {
         return Err("appendix is required".to_string());
     }
@@ -99,14 +111,7 @@ pub fn propose_overlay(
         return Err("reason is required".to_string());
     }
 
-    fs::create_dir_all(pending_dir()).map_err(|err| err.to_string())?;
-    let stamp = Utc::now().format("%Y%m%d%H%M%S");
-    let proposal_id = format!(
-        "{}-{}-{}",
-        slug_token(manuscript_id),
-        stamp,
-        &uuid::Uuid::new_v4().simple().to_string()[..8]
-    );
+    let proposal_id = format!("overlay-{}", uuid::Uuid::new_v4().simple());
     let proposal = ManuscriptOverlayProposal {
         proposal_id: proposal_id.clone(),
         manuscript_id: manuscript_id.to_string(),
@@ -117,7 +122,9 @@ pub fn propose_overlay(
         session_id: session_id.filter(|value| !value.trim().is_empty()),
     };
     let yaml = serde_yaml::to_string(&proposal).map_err(|err| err.to_string())?;
-    fs::write(proposal_path(&proposal_id), yaml).map_err(|err| err.to_string())?;
+    pending_store()?
+        .atomic_write(&proposal_path(&proposal_id)?, yaml.as_bytes())
+        .map_err(|error| error.to_string())?;
     Ok(proposal)
 }
 
@@ -170,7 +177,10 @@ impl CognitionManuscriptOverlayProposeTool {
 
         Ok(ManuscriptOverlayProposeOutput {
             ok: true,
-            path: proposal_path(&proposal.proposal_id).display().to_string(),
+            path: proposal_ambient_path(&proposal.proposal_id)
+                .map_err(StasisError::PortFailure)?
+                .display()
+                .to_string(),
             proposal_id: proposal.proposal_id,
             manuscript_id: proposal.manuscript_id,
             status: proposal.status,
@@ -242,7 +252,11 @@ mod tests {
                 .any(|entry| entry.proposal_id == proposal.proposal_id)
         );
 
-        let _ = fs::remove_file(proposal_path(&proposal.proposal_id));
+        let _ = pending_store().and_then(|store| {
+            store
+                .remove_file(&proposal_path(&proposal.proposal_id)?)
+                .map_err(|error| error.to_string())
+        });
     }
 
     #[test]

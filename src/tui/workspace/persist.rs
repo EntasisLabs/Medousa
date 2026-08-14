@@ -18,12 +18,13 @@ pub fn legacy_workspace_session_path() -> PathBuf {
     crate::paths::medousa_data_dir().join(WORKSPACE_FILE)
 }
 
-pub fn workspace_session_path_for(scope: &str) -> PathBuf {
-    let safe = sanitize_scope(scope);
-    crate::paths::medousa_data_dir()
+pub fn workspace_session_path_for(scope: &str) -> std::io::Result<PathBuf> {
+    let scope = medousa_types::authority_id::WorkshopScopeId::parse(scope)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))?;
+    Ok(crate::paths::medousa_data_dir()
         .join(WORKSPACES_DIR)
-        .join(safe)
-        .join(WORKSPACE_FILE)
+        .join(scope.storage_key().as_str())
+        .join(WORKSPACE_FILE))
 }
 
 /// Back-compat path helper (unscoped legacy location).
@@ -31,25 +32,10 @@ pub fn workspace_session_path() -> PathBuf {
     legacy_workspace_session_path()
 }
 
-fn sanitize_scope(scope: &str) -> String {
-    let trimmed = scope.trim();
-    if trimmed.is_empty() {
-        return "personal".to_string();
-    }
-    trimmed
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect()
-}
-
 fn migrate_legacy_into(scope: &str) {
-    let scoped = workspace_session_path_for(scope);
+    let Ok(scoped) = workspace_session_path_for(scope) else {
+        return;
+    };
     if scoped.exists() {
         return;
     }
@@ -71,7 +57,7 @@ fn migrate_legacy_into(scope: &str) {
 
 pub fn load_workspace_session_for(scope: &str) -> Option<WorkspaceShell> {
     migrate_legacy_into(scope);
-    load_from_path(&workspace_session_path_for(scope))
+    load_from_path(&workspace_session_path_for(scope).ok()?)
 }
 
 /// Load legacy unscoped file (tests / migration helpers).
@@ -90,7 +76,7 @@ fn load_from_path(path: &Path) -> Option<WorkspaceShell> {
 }
 
 pub fn save_workspace_session_for(scope: &str, shell: &WorkspaceShell) -> std::io::Result<()> {
-    save_to_path(&workspace_session_path_for(scope), shell)
+    save_to_path(&workspace_session_path_for(scope)?, shell)
 }
 
 pub fn save_workspace_session(shell: &WorkspaceShell) -> std::io::Result<()> {
@@ -110,7 +96,7 @@ fn save_to_path(path: &Path, shell: &WorkspaceShell) -> std::io::Result<()> {
 }
 
 pub fn clear_workspace_session_for(scope: &str) -> std::io::Result<()> {
-    clear_path(&workspace_session_path_for(scope))
+    clear_path(&workspace_session_path_for(scope)?)
 }
 
 pub fn clear_workspace_session() -> std::io::Result<()> {
@@ -168,7 +154,7 @@ mod tests {
 
         let loaded = load_workspace_session_for("personal").expect("migrated load");
         assert_eq!(loaded.layout().tabs.len(), 1);
-        assert!(workspace_session_path_for("personal").exists());
+        assert!(workspace_session_path_for("personal").unwrap().exists());
         // Rename should have moved the legacy file away.
         assert!(!legacy_workspace_session_path().exists());
 

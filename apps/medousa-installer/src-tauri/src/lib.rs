@@ -5,8 +5,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use medousa_install_support::manifest::{
-    package_installed, read_install_manifest, write_install_manifest, InstallManifest,
-    PackageInstallRecord, ReleaseManifest,
+    package_dir, package_installed, read_install_manifest, write_install_manifest,
+    InstallManifest, PackageInstallRecord, ReleaseManifest,
 };
 use medousa_install_support::packages::{
     catalog_entry, default_install_profiles, expand_package_dependencies, package_catalog,
@@ -588,7 +588,7 @@ async fn installer_run(app: AppHandle, request: InstallRequest) -> Result<(), St
         let record = PackageInstallRecord {
             id: package_id.clone(),
             version: manifest.version.clone(),
-            install_path: Some(data.join("packages").join(package_id).display().to_string()),
+            install_path: Some(package_dir(&data, package_id)?.display().to_string()),
             sha256: remote
                 .as_ref()
                 .and_then(|m| install::resolve_release_package(m, package_id).ok())

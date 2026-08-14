@@ -1,13 +1,18 @@
 use std::env;
 use std::path::PathBuf;
 
-use axum::extract::{Path as AxumPath, Query};
+use axum::extract::{Extension, Path as AxumPath, Query};
 use axum::Json;
 use chrono::Utc;
 
-use medousa::daemon_handlers::{append_session_turn, get_session_history, list_session_history};
 use medousa::daemon_api::{SessionAppendTurnRequest, SessionHistoryListRequest};
+use medousa::daemon_handlers::{append_session_turn, get_session_history, list_session_history};
+use medousa::request_principal::{RequestPrincipal, TransportClass};
 use medousa::session::ConversationTurn;
+
+fn test_principal() -> Extension<RequestPrincipal> {
+    Extension(RequestPrincipal::anonymous(TransportClass::Loopback))
+}
 
 fn make_temp_data_dir() -> PathBuf {
     let base = env::temp_dir();
@@ -59,13 +64,8 @@ async fn list_history_sessions_handler() {
     // create two sessions
     for i in 0..2 {
         let sid = format!("session-{}", i);
-        let turn = ConversationTurn::plain(
-            "user",
-            format!("content {}", i),
-            Utc::now(),
-            vec![],
-            None,
-        );
+        let turn =
+            ConversationTurn::plain("user", format!("content {}", i), Utc::now(), vec![], None);
         medousa::session::append_turn(&sid, &turn);
     }
 
@@ -75,7 +75,7 @@ async fn list_history_sessions_handler() {
         q: None,
         cursor: None,
     });
-    let res = list_session_history(axum::http::HeaderMap::new(), query).await;
+    let res = list_session_history(test_principal(), query).await;
     assert!(res.is_ok());
     let Json(list) = res.unwrap();
     assert!(list.sessions.len() >= 2);
@@ -86,7 +86,7 @@ async fn list_history_sessions_handler() {
         q: None,
         cursor: None,
     });
-    let slim_res = list_session_history(axum::http::HeaderMap::new(), slim_query).await;
+    let slim_res = list_session_history(test_principal(), slim_query).await;
     assert!(slim_res.is_ok());
     let Json(slim_list) = slim_res.unwrap();
     assert!(slim_list.sessions.iter().all(|session| {
@@ -106,13 +106,7 @@ async fn list_history_sessions_search_via_handlers() {
     medousa::session::set_session_display_name("alpha-session", "Budget planning").unwrap();
     medousa::session::set_session_display_name("beta-session", "Morning brief").unwrap();
 
-    let turn = ConversationTurn::plain(
-        "user",
-        "hello".to_string(),
-        Utc::now(),
-        vec![],
-        None,
-    );
+    let turn = ConversationTurn::plain("user", "hello".to_string(), Utc::now(), vec![], None);
     medousa::session::append_turn("alpha-session", &turn);
     medousa::session::append_turn("beta-session", &turn);
 
@@ -122,7 +116,7 @@ async fn list_history_sessions_search_via_handlers() {
         q: Some("budget".to_string()),
         cursor: None,
     });
-    let res = list_session_history(axum::http::HeaderMap::new(), search).await;
+    let res = list_session_history(test_principal(), search).await;
     assert!(res.is_ok());
     let Json(list) = res.unwrap();
     assert_eq!(list.sessions.len(), 1);

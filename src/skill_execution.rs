@@ -11,8 +11,10 @@ use crate::identity_manuscript::{
     ManuscriptContext, resolve_manuscript_path, user_manuscripts_dir,
 };
 use crate::openshell_sandbox_run::OpenshellSandboxRunPayload;
+use crate::store_root::{StoreEntryKind, StorePath, StoreRoot};
 
 const SKILL_SCRIPT_DIRS: &[&str] = &["scripts", "bin"];
+const MAX_SKILL_SCRIPT_BYTES: u64 = 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -68,20 +70,48 @@ pub struct SkillAdoptionProposal {
     pub rationale: String,
 }
 
-pub fn resolve_skill_assets_dir(manuscript_id: &str) -> Result<PathBuf> {
-    let manuscript_path = resolve_manuscript_path(manuscript_id)?;
+struct SkillAssetsLocation {
+    root: StoreRoot,
+    base_dir: PathBuf,
+    relative: StorePath,
+}
+
+impl SkillAssetsLocation {
+    fn ambient_path(&self) -> PathBuf {
+        self.base_dir.join(self.relative.file_name())
+    }
+}
+
+fn resolve_skill_assets_location(manuscript_id: &str) -> Result<SkillAssetsLocation> {
+    let manuscript_id = medousa_types::authority_id::ManuscriptId::parse(manuscript_id)?;
+    let manuscript_path = resolve_manuscript_path(manuscript_id.as_str())?;
     let base = manuscript_path
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(user_manuscripts_dir);
-    let assets = base.join(manuscript_id);
-    if assets.is_dir() && assets.join("SKILL.md").is_file() {
-        return Ok(assets);
+    let root = StoreRoot::open_nofollow(&base)
+        .with_context(|| format!("open skill assets root {}", base.display()))?;
+    let skill_md = StorePath::parse("SKILL.md")?;
+    let storage_key = manuscript_id.storage_key();
+    for name in [storage_key.as_str(), manuscript_id.as_str()] {
+        let relative = StorePath::parse(name)?;
+        let manifest = relative.join(&skill_md)?;
+        if root.is_dir(&relative)? && root.is_file(&manifest)? {
+            return Ok(SkillAssetsLocation {
+                root,
+                base_dir: base,
+                relative,
+            });
+        }
     }
     bail!(
-        "skill assets not found for manuscript '{manuscript_id}' at {}",
-        assets.display()
+        "skill assets not found for manuscript '{manuscript_id}' under {}",
+        base.display()
     )
+}
+
+pub fn resolve_skill_assets_dir(manuscript_id: &str) -> Result<PathBuf> {
+    Ok(resolve_skill_assets_location(manuscript_id)?.ambient_path())
 }
 
 pub fn discover_skill_scripts(assets_dir: &Path) -> Result<Vec<SkillScriptEntry>> {
@@ -102,12 +132,16 @@ fn collect_scripts_recursive(
     assets_root: &Path,
     scripts: &mut Vec<SkillScriptEntry>,
 ) -> Result<()> {
-    for entry in std::fs::read_dir(current)
-        .with_context(|| format!("read {}", current.display()))?
+    for entry in
+        std::fs::read_dir(current).with_context(|| format!("read {}", current.display()))?
     {
         let entry = entry?;
         let path = entry.path();
-        if path.is_dir() {
+        let metadata = path.symlink_metadata()?;
+        if metadata.file_type().is_symlink() {
+            continue;
+        }
+        if metadata.is_dir() {
             collect_scripts_recursive(&path, assets_root, scripts)?;
             continue;
         }
@@ -155,6 +189,10 @@ pub(crate) struct ScriptAssessment {
 pub(crate) fn assess_skill_script(path: &Path) -> Result<ScriptAssessment> {
     let raw = std::fs::read_to_string(path)
         .with_context(|| format!("read skill script {}", path.display()))?;
+    Ok(assess_skill_script_text(&raw))
+}
+
+fn assess_skill_script_text(raw: &str) -> ScriptAssessment {
     let lower = raw.to_ascii_lowercase();
     let mut risk_score = 10u8;
     let mut tags = Vec::new();
@@ -211,16 +249,95 @@ pub(crate) fn assess_skill_script(path: &Path) -> Result<ScriptAssessment> {
         format!("Risk markers: {}", tags.join(", "))
     };
 
-    Ok(ScriptAssessment {
+    ScriptAssessment {
         risk_class,
         risk_score: risk_score.min(100),
         rationale,
-    })
+    }
+}
+
+fn discover_skill_scripts_in_store(
+    root: &StoreRoot,
+    assets: Option<&StorePath>,
+) -> Result<Vec<SkillScriptEntry>> {
+    let mut scripts = Vec::new();
+    for dir_name in SKILL_SCRIPT_DIRS {
+        let child = StorePath::parse(dir_name)?;
+        let scripts_dir = match assets {
+            Some(base) => base.join(&child)?,
+            None => child,
+        };
+        if root.is_dir(&scripts_dir)? {
+            collect_scripts_from_store(root, &scripts_dir, assets, &mut scripts)?;
+        }
+    }
+    scripts.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+    Ok(scripts)
+}
+
+fn collect_scripts_from_store(
+    root: &StoreRoot,
+    current: &StorePath,
+    assets: Option<&StorePath>,
+    scripts: &mut Vec<SkillScriptEntry>,
+) -> Result<()> {
+    for entry in root.list_directory(current)? {
+        let path = current.join(&entry.path)?;
+        match entry.kind {
+            StoreEntryKind::Directory => {
+                collect_scripts_from_store(root, &path, assets, scripts)?;
+            }
+            StoreEntryKind::File => {
+                let file_name = entry.path.file_name();
+                if file_name.starts_with('.') {
+                    continue;
+                }
+                let bytes = root.read_limited(&path, MAX_SKILL_SCRIPT_BYTES)?;
+                let known_extension = Path::new(file_name)
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .is_some_and(|ext| {
+                        matches!(
+                            ext.to_ascii_lowercase().as_str(),
+                            "sh" | "bash" | "py" | "rb" | "pl" | "js" | "ts"
+                        )
+                    });
+                if !known_extension && !bytes.starts_with(b"#!") {
+                    continue;
+                }
+                let raw = std::str::from_utf8(&bytes)
+                    .with_context(|| format!("skill script {path} is not UTF-8"))?;
+                let assessment = assess_skill_script_text(raw);
+                let full_path = path.to_string();
+                let relative_path = assets
+                    .map(|base| {
+                        full_path
+                            .strip_prefix(&format!("{base}/"))
+                            .unwrap_or(&full_path)
+                            .to_string()
+                    })
+                    .unwrap_or(full_path);
+                scripts.push(SkillScriptEntry {
+                    relative_path,
+                    risk_class: assessment.risk_class,
+                    risk_score: assessment.risk_score,
+                    rationale: assessment.rationale,
+                });
+            }
+            StoreEntryKind::Link | StoreEntryKind::Other => continue,
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn skill_has_runnable_scripts_in_store(root: &StoreRoot) -> bool {
+    discover_skill_scripts_in_store(root, None).is_ok_and(|scripts| !scripts.is_empty())
 }
 
 pub fn discover_skill_for_manuscript(manuscript_id: &str) -> Result<SkillDiscoveryReport> {
-    let assets_dir = resolve_skill_assets_dir(manuscript_id)?;
-    let scripts = discover_skill_scripts(&assets_dir)?;
+    let assets = resolve_skill_assets_location(manuscript_id)?;
+    let assets_dir = assets.ambient_path();
+    let scripts = discover_skill_scripts_in_store(&assets.root, Some(&assets.relative))?;
     let has_scripts = !scripts.is_empty();
     let (max_risk_class, max_risk_score) = max_script_risk(&scripts);
     Ok(SkillDiscoveryReport {
@@ -234,18 +351,16 @@ pub fn discover_skill_for_manuscript(manuscript_id: &str) -> Result<SkillDiscove
 }
 
 fn max_script_risk(scripts: &[SkillScriptEntry]) -> (SkillScriptRiskClass, u8) {
-    scripts
-        .iter()
-        .fold(
-            (SkillScriptRiskClass::ReadOnly, 0u8),
-            |(class, score), script| {
-                if script.risk_score >= score {
-                    (script.risk_class, script.risk_score)
-                } else {
-                    (class, score)
-                }
-            },
-        )
+    scripts.iter().fold(
+        (SkillScriptRiskClass::ReadOnly, 0u8),
+        |(class, score), script| {
+            if script.risk_score >= score {
+                (script.risk_class, script.risk_score)
+            } else {
+                (class, score)
+            }
+        },
+    )
 }
 
 pub fn skill_security_level_parse(raw: &str) -> Option<SkillSecurityLevel> {
@@ -292,13 +407,14 @@ pub fn evaluate_skill_adoption(
             approval_reasons.push("requested script not found in skill assets".to_string());
         }
         if let Some(manuscript) = manuscript
-            && !manuscript.openshell_enabled {
-                granted = SkillSecurityLevel::Propose;
-                approval_reasons.push(
-                    "manuscript spec.openshell.enabled is false — propose import/enabled first"
-                        .to_string(),
-                );
-            }
+            && !manuscript.openshell_enabled
+        {
+            granted = SkillSecurityLevel::Propose;
+            approval_reasons.push(
+                "manuscript spec.openshell.enabled is false — propose import/enabled first"
+                    .to_string(),
+            );
+        }
     }
 
     if requested == SkillSecurityLevel::Deny {
@@ -374,9 +490,12 @@ pub fn build_sandbox_payload_for_skill(
     manuscript: &ManuscriptContext,
     correlation_id: Option<String>,
 ) -> Result<OpenshellSandboxRunPayload> {
-    let assets_dir = resolve_skill_assets_dir(manuscript_id)?;
-    let script_path = assets_dir.join(script_relative);
-    if !script_path.is_file() {
+    let assets = resolve_skill_assets_location(manuscript_id)?;
+    let assets_dir = assets.ambient_path();
+    let script_relative = StorePath::parse(script_relative)?;
+    let script_store_path = assets.relative.join(&script_relative)?;
+    let script_path = assets_dir.join(script_relative.to_string());
+    if !assets.root.is_file(&script_store_path)? {
         bail!("skill script not found: {}", script_path.display());
     }
     let command = build_skill_script_command(&script_path)?;
@@ -431,8 +550,7 @@ fn script_path_executable(path: &Path) -> bool {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        path
-            .metadata()
+        path.metadata()
             .map(|meta| meta.permissions().mode() & 0o111 != 0)
             .unwrap_or(false)
     }
@@ -528,9 +646,11 @@ mod tests {
             Some("scripts/echo.sh"),
         );
         assert_eq!(proposal.granted_level, SkillSecurityLevel::Propose);
-        assert!(proposal
-            .approval_reasons
-            .iter()
-            .any(|reason| reason.contains("openshell.enabled")));
+        assert!(
+            proposal
+                .approval_reasons
+                .iter()
+                .any(|reason| reason.contains("openshell.enabled"))
+        );
     }
 }

@@ -1,6 +1,6 @@
 # H02 — Identifier and filesystem authority
 
-> **Status:** In progress — H02.1–H02.4 implemented; H02.3 platform evidence and H02.5 closure remain
+> **Status:** In progress — H02.1–H02.4 implemented; H02.5 identifier migration underway and platform evidence remains
 >
 > **Accountable owner:** daemon storage maintainers
 >
@@ -59,8 +59,49 @@ after restart. Fresh-process fixtures populate every declared filesystem
 surface, delete in a second process, and verify absence/tombstone enforcement in
 a third.
 
-Broader externally influenced identifiers, compatibility removal, supported-
-platform evidence, and the cross-platform abuse matrix remain H02.5 work.
+H02.5 now has a shared typed authority-ID module. Environment profiles,
+component state/runtime events, packages, model installs, pairing devices,
+feeds, manuscripts and skill assets, provider caches/secrets, workshop scopes,
+Grapheme refs/scripts, and turn-event journals derive full domain-separated
+SHA-256 storage keys. Forge work items, attempts, reviews, repository locks, and
+Detamu bindings use the same mapping inside the Forge domain. Home pairing
+credentials, pairing token files/keyring accounts, and per-workshop process
+state no longer embed remotely supplied workshop or device IDs.
+
+The migrated daemon-owned stores use `StoreRoot` for bounded no-follow reads,
+atomic writes, exact removal, and enumeration. Persisted `output_path`,
+`body_path`, pairing credential relative paths, and model `local_path` fields
+are metadata only; consumers rederive authority from the typed logical ID.
+Hugging Face tree entries additionally pass a bounded cross-platform relative
+path grammar before any model payload is created.
+
+Model payload downloads now retain the opaque model-directory capability from
+directory creation through every streamed write and verification read. Shard
+hashing uses a fixed 64 KiB buffer instead of allocating the full model file.
+Nested model paths are walked without following links, and replacement fixtures
+prove that an ambient models-directory swap cannot redirect an active download.
+
+Turn-event journals now retain their opened directory capability for journal
+append and atomic commit-marker publication. Recovery enumerates and reads
+regular files through the same held root and rejects link-backed journals.
+Replacement fixtures prove that append and commit continue in the originally
+authorized directory after its ambient spelling is moved and replaced.
+
+Installed manuscript YAML, prompt assets, imported skill trees, editor writes,
+and script discovery now use held roots, bounded reads, and atomic writes.
+Skill import streams each regular source file between held source and destination
+roots with a per-file limit and rejects links or special entries. OpenShell skill
+upload starts from the held asset directory and passes `.` to the child instead
+of reopening an ambient asset path. Opaque manuscript filenames are accepted by
+validation only when their embedded logical owner matches exactly.
+
+Safe legacy layouts remain read-only compatibility inputs during the rollback
+window. A compatibility candidate must be a valid single-segment platform name
+and, where the record carries its logical ID, the embedded owner must exactly
+match the requested ID. Ambiguous lossy component/runtime names and TUI scope
+directories cannot be reassigned safely and remain untouched. Compatibility
+removal, native Windows evidence, and the full cross-platform abuse matrix
+remain H02.5 work.
 
 H02.1 is in progress: `medousa-types` now owns the validated, non-public
 `SessionId` representation and validated serde boundary; the daemon mints
@@ -141,8 +182,10 @@ covered by an outside-root canary fixture. Indexless and platform-invalid
 legacy nested layouts are not scanned or followed; H02.4 inventory/quarantine
 must recover them explicitly.
 
-All known internal session-directory trains now use capability-owned I/O.
-Native Windows reparse/junction evidence remains open before H02.2 is complete.
+All known internal session-directory trains now use capability-owned I/O. The
+native Windows authority fixture creates a privilege-free NTFS junction in
+process and exercises the shared capability surface against it; the fixture is
+required by the Linux/macOS/Windows CI matrix rather than silently skipped.
 
 The public artifact fetch contract no longer returns `payload_path`. Home copy
 and share actions emit `medousa:artifact/{session_id}/{artifact_id}` references,
@@ -185,11 +228,14 @@ string CWD after that check. Every Git subprocess uses the shared
 `CREATE_NO_WINDOW` policy, null stdin, and non-interactive Git/GCM settings.
 Portable MinGit extraction is now in-process with enclosed zip paths, removing
 the PowerShell subprocess entirely. Windows-only fixtures cover root rename
-locking, mismatched process-root identity, and directory-link rejection when
-the runner permits symlink creation. A real Windows CI/runtime pass and native
-junction/mount fixtures remain before H02.3 closure. The dedicated
-`windows-authority` CI job now compiles and runs the Windows root-lock/reparse
-fixtures and the in-process MinGit extraction tests on every change.
+locking, mismatched process-root identity, root-component reparse rejection,
+and junction-backed read, list, append, write, rename, file-delete, and
+recursive-delete denial. Junctions are created directly with the Win32 reparse
+API, so the suite neither needs symbolic-link privilege nor shells out. The
+`filesystem-authority` CI matrix runs shared root, held-journal, and held-model
+payload fixtures on native Linux, macOS, and Windows; Windows additionally runs
+in-process MinGit extraction. Host-provisioned mount/bind fixtures and retained
+release evidence remain before H02.3 closure.
 
 ## Current evidence and blast radius
 
@@ -501,10 +547,31 @@ propagates failure, but closure requires the complete inventory test.
 
 ### H02.5 — Broader identifier inventory and closure
 
-- Audit every externally influenced path-bearing ID.
-- Migrate critical profile/feed/component/environment/pairing/package/Forge IDs.
-- Delete compatibility parsers and legacy layouts after the rollback window.
-- Ship canonical docs and supported-platform evidence.
+- [x] Audit externally influenced path-bearing IDs across daemon, crates, Home,
+  installer, CLI, and TUI.
+- [x] Add shared typed IDs and domain-separated opaque storage mappings.
+- [x] Migrate critical profile/feed/component/environment/pairing/package/model,
+  provider, manuscript/skill, Grapheme, turn-journal, workshop, and Forge IDs.
+- [x] Stop treating persisted path strings as read/delete authority on migrated
+  surfaces.
+- [x] Move model payload streaming, manuscript/skill file operations, and the
+  engine turn journal onto held capabilities through the final read/write to
+  close replacement races.
+- [ ] Delete compatibility parsers and legacy layouts after the rollback window.
+- [ ] Complete native Windows junction/reparse and supported-platform evidence.
+- [x] Update the canonical data-directory/upgrade guidance.
+
+#### H02.5 compatibility ledger
+
+| Surface | New authority | Legacy policy |
+| --- | --- | --- |
+| Environment/component/runtime/feed/provider cache | typed ID + opaque key + `StoreRoot` | safe exact-owner read; ambiguous lossy entries untouched |
+| Packages/models | catalog-validated typed ID + opaque directory | known-catalog safe directory read during rollback |
+| Pairing and Home workshop credentials/tokens | device/workshop key + no-follow daemon store | safe name plus embedded-owner verification; Home migrates bounded token spellings |
+| Forge/Detamu | typed Forge ID + domain key | strict safe item directory only; snapshot/event owner verification |
+| Manuscripts, skill assets, Grapheme refs/scripts | typed ID + opaque file/directory | safe direct name only; persisted path metadata ignored |
+| Turn-event journals | typed turn ID + opaque journal/marker | old lossy journals are not guessed because ownership can be ambiguous |
+| TUI workspace scope | opaque scope directory | old sanitized scopes remain untouched because the file does not prove ownership |
 
 ## Verification
 

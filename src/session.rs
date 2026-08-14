@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use medousa_types::authority_id::ProviderId;
+
 pub use medousa_types::session::{ConversationTurn, SessionHistorySummary, TuiDefaults};
 
 const API_KEY_SERVICE: &str = "medousa.tui";
@@ -62,21 +64,31 @@ fn api_key_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
     keyring::Entry::new(API_KEY_SERVICE, API_KEY_ACCOUNT)
 }
 
-fn provider_api_key_keyring_entry(provider: &str) -> Result<keyring::Entry, keyring::Error> {
-    keyring::Entry::new("medousa.providers", provider)
+fn provider_api_key_keyring_entry(provider: &ProviderId) -> Result<keyring::Entry, keyring::Error> {
+    keyring::Entry::new("medousa.providers", provider.storage_key().as_str())
 }
 
-fn provider_api_key_secret_path(provider: &str) -> PathBuf {
+fn provider_api_key_secret_path(provider: &ProviderId) -> PathBuf {
     medousa_data_dir()
         .join("secrets")
-        .join(format!("api_key_{}", provider.trim().to_ascii_lowercase()))
+        .join(format!("api_key_{}", provider.storage_key().as_str()))
 }
 
-fn file_provider_api_key(provider: &str) -> Option<String> {
+fn file_provider_api_key(provider: &ProviderId) -> Option<String> {
     std::fs::read_to_string(provider_api_key_secret_path(provider))
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
+        .or_else(|| {
+            std::fs::read_to_string(
+                medousa_data_dir()
+                    .join("secrets")
+                    .join(format!("api_key_{}", provider.as_str())),
+            )
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+        })
 }
 
 fn discord_bot_token_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
@@ -319,19 +331,25 @@ pub fn load_tui_api_key() -> Option<String> {
 
 /// Per-provider API key (Phase 3). Falls back to legacy workshop key when provider matches main.
 pub fn load_provider_api_key(provider: &str) -> Option<String> {
-    let provider = provider.trim().to_ascii_lowercase();
-    if provider.is_empty() {
-        return None;
-    }
-    if provider == "ollama"
-        || provider == "local"
-        || provider == "lmstudio"
-        || provider == "lm-studio"
+    let provider = provider.to_ascii_lowercase();
+    let provider = ProviderId::parse(&provider).ok()?;
+    if provider.as_str() == "ollama"
+        || provider.as_str() == "local"
+        || provider.as_str() == "lmstudio"
+        || provider.as_str() == "lm-studio"
     {
         return None;
     }
 
     if let Ok(entry) = provider_api_key_keyring_entry(&provider)
+        && let Ok(value) = entry.get_password()
+    {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+    if let Ok(entry) = keyring::Entry::new("medousa.providers", provider.as_str())
         && let Ok(value) = entry.get_password()
     {
         let trimmed = value.trim();
@@ -347,11 +365,11 @@ pub fn load_provider_api_key(provider: &str) -> Option<String> {
     let main_provider = crate::resolve_llm_provider(defaults.provider.as_deref())
         .trim()
         .to_ascii_lowercase();
-    if provider == main_provider {
+    if provider.as_str() == main_provider {
         return load_tui_api_key();
     }
 
-    provider_api_key_from_env(&provider)
+    provider_api_key_from_env(provider.as_str())
 }
 
 pub fn provider_api_key_configured(provider: &str) -> bool {
@@ -363,10 +381,10 @@ pub fn chatgpt_oauth_configured() -> bool {
 }
 
 pub fn save_provider_api_key(provider: &str, api_key: Option<&str>) {
-    let provider = provider.trim().to_ascii_lowercase();
-    if provider.is_empty() {
+    let provider = provider.to_ascii_lowercase();
+    let Ok(provider) = ProviderId::parse(&provider) else {
         return;
-    }
+    };
     let path = provider_api_key_secret_path(&provider);
     match api_key.map(str::trim).filter(|value| !value.is_empty()) {
         Some(value) => {
@@ -376,6 +394,14 @@ pub fn save_provider_api_key(provider: &str, api_key: Option<&str>) {
             }
             if persisted {
                 let _ = std::fs::remove_file(&path);
+                let _ = std::fs::remove_file(
+                    medousa_data_dir()
+                        .join("secrets")
+                        .join(format!("api_key_{}", provider.as_str())),
+                );
+                if let Ok(entry) = keyring::Entry::new("medousa.providers", provider.as_str()) {
+                    let _ = entry.delete_password();
+                }
             } else {
                 let _ = atomic_write(&path, value.as_bytes());
             }
@@ -384,7 +410,15 @@ pub fn save_provider_api_key(provider: &str, api_key: Option<&str>) {
             if let Ok(entry) = provider_api_key_keyring_entry(&provider) {
                 let _ = entry.delete_password();
             }
+            if let Ok(entry) = keyring::Entry::new("medousa.providers", provider.as_str()) {
+                let _ = entry.delete_password();
+            }
             let _ = std::fs::remove_file(path);
+            let _ = std::fs::remove_file(
+                medousa_data_dir()
+                    .join("secrets")
+                    .join(format!("api_key_{}", provider.as_str())),
+            );
         }
     }
 }
@@ -912,5 +946,20 @@ pub fn format_session_history_label(session_id: &str, display_name: Option<&str>
     match display_name.filter(|name| !name.trim().is_empty()) {
         Some(name) => format!("{name} ({id_short})"),
         None => format!("{id_short}…"),
+    }
+}
+
+#[cfg(test)]
+mod provider_authority_tests {
+    use super::*;
+
+    #[test]
+    fn provider_secret_paths_are_opaque_and_reject_traversal() {
+        let provider = ProviderId::parse("openai.compatible").unwrap();
+        let path = provider_api_key_secret_path(&provider);
+        let name = path.file_name().unwrap().to_string_lossy();
+        assert!(name.starts_with("api_key_pv1-"));
+        assert!(!name.contains("openai.compatible"));
+        assert!(ProviderId::parse("../../outside").is_err());
     }
 }

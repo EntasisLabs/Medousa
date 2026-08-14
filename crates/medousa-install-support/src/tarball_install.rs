@@ -10,7 +10,8 @@ use sha2::{Digest, Sha256};
 use tar::Archive;
 
 use crate::manifest::{
-    mark_package_installed, shared_bin_dir, unmark_package_installed, resolve_release_package,
+    mark_package_installed, package_dir, shared_bin_dir, unmark_package_installed,
+    resolve_release_package,
     ReleaseManifest, ReleasePackage,
 };
 use crate::packages::{catalog_entry, is_tarball_package};
@@ -60,7 +61,7 @@ pub async fn install_tarball_package(
     verify_sha256(&bytes, &package.sha256)?;
     progress(78.0, "Extracting…");
 
-    let packages_dir = data_dir.join("packages").join(package_id);
+    let packages_dir = package_dir(data_dir, package_id)?;
     fs::create_dir_all(&packages_dir).map_err(|err| err.to_string())?;
     let archive_path = packages_dir.join("package.tar.gz");
     fs::write(&archive_path, &bytes).map_err(|err| err.to_string())?;
@@ -94,7 +95,7 @@ pub fn remove_tarball_package(data_dir: &Path, package_id: &str) -> Result<(), S
         }
     }
 
-    let packages_dir = data_dir.join("packages").join(package_id);
+    let packages_dir = package_dir(data_dir, package_id)?;
     if packages_dir.exists() {
         fs::remove_dir_all(&packages_dir).map_err(|err| err.to_string())?;
     }

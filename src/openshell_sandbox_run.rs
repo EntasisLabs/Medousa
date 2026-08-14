@@ -139,7 +139,14 @@ impl JobHandler for OpenshellSandboxRunJobHandler {
             let sandbox_from = sandbox_from.clone();
             let policy_path = policy_path.clone();
             let gateway_url = gateway_url.clone();
-            move || run_sandbox_create(&gateway_url, &sandbox_name, &sandbox_from, policy_path.as_deref())
+            move || {
+                run_sandbox_create(
+                    &gateway_url,
+                    &sandbox_name,
+                    &sandbox_from,
+                    policy_path.as_deref(),
+                )
+            }
         })
         .await
         .map_err(|err| StasisError::PortFailure(format!("openshell create join error: {err}")))?;
@@ -170,7 +177,9 @@ impl JobHandler for OpenshellSandboxRunJobHandler {
                 move || run_sandbox_upload(&gateway_url, &sandbox_name, &assets_dir, &upload_dest)
             })
             .await
-            .map_err(|err| StasisError::PortFailure(format!("openshell upload join error: {err}")))?;
+            .map_err(|err| {
+                StasisError::PortFailure(format!("openshell upload join error: {err}"))
+            })?;
             if let Err(message) = upload_result {
                 let _ = tokio::task::spawn_blocking({
                     let sandbox_name = sandbox_name.clone();
@@ -194,9 +203,7 @@ impl JobHandler for OpenshellSandboxRunJobHandler {
             }
         }
 
-        let timeout_secs = payload
-            .timeout_secs
-            .unwrap_or(DEFAULT_EXEC_TIMEOUT_SECS);
+        let timeout_secs = payload.timeout_secs.unwrap_or(DEFAULT_EXEC_TIMEOUT_SECS);
         let exec_result = tokio::task::spawn_blocking({
             let sandbox_name = sandbox_name.clone();
             let command = payload.command.clone();
@@ -276,13 +283,7 @@ fn fatal_outcome(message: impl Into<String>, diagnostics: Option<String>) -> Job
 pub fn sandbox_name_for_job(job_id: &str) -> String {
     let slug: String = job_id
         .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() {
-                ch
-            } else {
-                '-'
-            }
-        })
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '-' })
         .take(24)
         .collect();
     format!("medousa-{slug}")
@@ -298,11 +299,7 @@ pub fn resolve_policy_template_path(template: &str) -> Option<std::path::PathBuf
     } else {
         medousa_openshell_policies_dir().join(format!("{trimmed}.yaml"))
     };
-    if path.is_file() {
-        Some(path)
-    } else {
-        None
-    }
+    if path.is_file() { Some(path) } else { None }
 }
 
 fn truncate_output(text: &str) -> String {
@@ -386,12 +383,18 @@ fn run_sandbox_upload(
     local_assets_dir: &str,
     dest_path: &str,
 ) -> Result<(), String> {
+    let assets_path = std::path::Path::new(local_assets_dir);
+    let assets_root = crate::store_root::StoreRoot::open_nofollow(assets_path)
+        .map_err(|error| format!("open skill upload root: {error}"))?;
     let mut command = openshell_command(gateway_url);
+    assets_root
+        .configure_command_current_dir(&mut command, assets_path)
+        .map_err(|error| format!("pin skill upload root: {error}"))?;
     command
         .arg("sandbox")
         .arg("upload")
         .arg(sandbox_name)
-        .arg(local_assets_dir)
+        .arg(".")
         .arg(dest_path);
     run_cli_capture(&mut command, "sandbox upload")
         .map(|_| ())
@@ -410,7 +413,10 @@ fn run_sandbox_delete(gateway_url: &str, sandbox_name: &str) -> Result<(), Strin
         .map_err(|err| format!("openshell sandbox delete failed: {err}"))
 }
 
-fn run_cli_capture(command: &mut std::process::Command, label: &str) -> Result<CliRunResult, String> {
+fn run_cli_capture(
+    command: &mut std::process::Command,
+    label: &str,
+) -> Result<CliRunResult, String> {
     let result = run_cli_capture_allow_failure(command, label);
     if result.status_code == Some(0) {
         return Ok(result);
@@ -457,7 +463,12 @@ pub fn probe_grapheme_in_sandbox(
     preflight_gateway(&gateway_url)?;
     let sandbox_name = format!("medousa-probe-{}", Uuid::new_v4().simple());
     let policy_path = policy_template.and_then(resolve_policy_template_path);
-    run_sandbox_create(&gateway_url, &sandbox_name, sandbox_from, policy_path.as_deref())?;
+    run_sandbox_create(
+        &gateway_url,
+        &sandbox_name,
+        sandbox_from,
+        policy_path.as_deref(),
+    )?;
     let exec = run_sandbox_exec(
         &gateway_url,
         &sandbox_name,
@@ -507,10 +518,7 @@ pub fn probe_skill_script_in_sandbox(
                 .as_deref()
                 .and_then(resolve_policy_template_path)
         });
-    let from = payload
-        .sandbox_from
-        .as_deref()
-        .unwrap_or(sandbox_from);
+    let from = payload.sandbox_from.as_deref().unwrap_or(sandbox_from);
     run_sandbox_create(&gateway_url, &sandbox_name, from, policy_path.as_deref())?;
     if let (Some(assets), Some(dest)) = (
         payload.skill_assets_dir.as_deref(),
@@ -580,8 +588,7 @@ mod tests {
             skill_script: None,
         };
         let raw = payload.to_payload_ref().expect("encode");
-        let decoded: OpenshellSandboxRunPayload =
-            serde_json::from_str(&raw).expect("decode");
+        let decoded: OpenshellSandboxRunPayload = serde_json::from_str(&raw).expect("decode");
         assert_eq!(decoded.command, payload.command);
     }
 

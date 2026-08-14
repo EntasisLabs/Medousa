@@ -24,6 +24,31 @@ macro_rules! id_type {
             pub fn as_str(&self) -> &str {
                 &self.0
             }
+
+            pub fn parse_storage(value: &str) -> Result<Self, &'static str> {
+                if value.is_empty() || value.len() > 128 {
+                    return Err("invalid_length");
+                }
+                if value.trim() != value
+                    || !value
+                        .chars()
+                        .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+                {
+                    return Err("unsupported_syntax");
+                }
+                Ok(Self(value.to_string()))
+            }
+
+            /// Domain-separated, collision-free name for durable storage.
+            pub fn storage_key(&self) -> String {
+                use sha2::{Digest as _, Sha256};
+                let mut digest = Sha256::new();
+                digest.update(b"medousa-forge-id\0");
+                digest.update($prefix.as_bytes());
+                digest.update((self.0.len() as u64).to_be_bytes());
+                digest.update(self.0.as_bytes());
+                format!("{}1-{:x}", $prefix, digest.finalize())
+            }
         }
 
         impl Default for $name {

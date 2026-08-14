@@ -3,13 +3,17 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use cap_fs_ext::{DirExt as _, FollowSymlinks, OpenOptionsFollowExt as _};
+use cap_std::ambient_authority;
+use cap_std::fs::{Dir, OpenOptions};
 use chrono::{DateTime, Utc};
+use medousa_types::authority_id::ModelId;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tokio::fs::{self, OpenOptions};
-use tokio::io::AsyncWriteExt;
-use tokio::sync::{broadcast, RwLock};
+use tokio::fs;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::sync::{RwLock, broadcast};
 use uuid::Uuid;
 
 use crate::model_catalog::CatalogModelEntry;
@@ -128,18 +132,25 @@ impl ModelStore {
         medousa_data_dir().join("models")
     }
 
-    pub fn model_dir(model_id: &str) -> PathBuf {
-        Self::models_dir().join(model_id)
+    pub fn model_dir(model_id: &str) -> Result<PathBuf, String> {
+        let model_id = ModelId::parse(model_id).map_err(|error| error.to_string())?;
+        let models = Self::models_dir();
+        let opaque = models.join(model_id.storage_key().as_str());
+        if opaque.exists() {
+            return Ok(opaque);
+        }
+        let legacy = models.join(model_id.as_str());
+        if legacy
+            .symlink_metadata()
+            .is_ok_and(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
+        {
+            return Ok(legacy);
+        }
+        Ok(opaque)
     }
 
     pub async fn list_installed(&self) -> Vec<InstalledModelRecord> {
-        self.index
-            .read()
-            .await
-            .models
-            .values()
-            .cloned()
-            .collect()
+        self.index.read().await.models.values().cloned().collect()
     }
 
     pub async fn get_installed(&self, model_id: &str) -> Option<InstalledModelRecord> {
@@ -151,9 +162,10 @@ impl ModelStore {
     }
 
     pub async fn local_repo_path(&self, model_id: &str) -> Option<String> {
-        self.get_installed(model_id)
-            .await
-            .map(|record| record.local_path)
+        self.get_installed(model_id).await?;
+        Self::model_dir(model_id)
+            .ok()
+            .map(|path| path.to_string_lossy().to_string())
     }
 
     pub async fn get_job_progress(&self, job_id: &str) -> Option<ModelDownloadProgress> {
@@ -189,6 +201,7 @@ impl ModelStore {
         &self,
         entry: CatalogModelEntry,
     ) -> Result<ModelDownloadProgress, String> {
+        ModelId::parse(&entry.id).map_err(|error| error.to_string())?;
         if self.is_installed(&entry.id).await {
             return Err(format!("model {} is already installed", entry.id));
         }
@@ -215,7 +228,8 @@ impl ModelStore {
 
         let store = self.clone_handle();
         tokio::spawn(async move {
-            if let Err(err) = run_download_job(store.clone_handle(), entry, job_id.clone(), tx).await
+            if let Err(err) =
+                run_download_job(store.clone_handle(), entry, job_id.clone(), tx).await
             {
                 store.fail_job(&job_id, err).await;
             }
@@ -225,7 +239,7 @@ impl ModelStore {
     }
 
     pub async fn remove_model(&self, model_id: &str) -> Result<(), String> {
-        let dir = Self::model_dir(model_id);
+        let dir = Self::model_dir(model_id)?;
         if dir.exists() {
             fs::remove_dir_all(&dir)
                 .await
@@ -277,12 +291,9 @@ pub static MODEL_STORE: Lazy<Arc<ModelStore>> = Lazy::new(|| Arc::new(ModelStore
 pub fn local_repo_if_installed(model_id: &str) -> Option<String> {
     read_models_index()
         .ok()
-        .and_then(|index| {
-            index
-                .models
-                .get(model_id)
-                .map(|record| record.local_path.clone())
-        })
+        .and_then(|index| index.models.contains_key(model_id).then_some(index))
+        .and_then(|_| ModelStore::model_dir(model_id).ok())
+        .map(|path| path.to_string_lossy().to_string())
 }
 
 fn read_models_index() -> Result<ModelsIndex, String> {
@@ -313,6 +324,9 @@ struct HfTreeEntry {
 }
 
 pub fn include_hf_file(path: &str) -> bool {
+    if validated_model_relative_path(path).is_err() {
+        return false;
+    }
     let lower = path.to_ascii_lowercase();
     if lower.ends_with(".md") || lower.contains("readme") {
         return false;
@@ -326,6 +340,43 @@ pub fn include_hf_file(path: &str) -> bool {
         || lower.ends_with(".model")
         || lower.ends_with(".tiktoken")
         || (lower.ends_with(".txt") && lower.contains("merges"))
+}
+
+fn validated_model_relative_path(path: &str) -> Result<PathBuf, String> {
+    if path.is_empty() || path.len() > 1024 || !path.is_ascii() {
+        return Err("invalid model file path".to_string());
+    }
+    if path.starts_with(['/', '\\']) || path.contains('\\') {
+        return Err("invalid model file path".to_string());
+    }
+    let segments = path.split('/').collect::<Vec<_>>();
+    if segments.len() > 32 {
+        return Err("invalid model file path".to_string());
+    }
+    for segment in &segments {
+        if segment.is_empty()
+            || matches!(*segment, "." | "..")
+            || segment.ends_with(['.', ' '])
+            || !segment
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+        {
+            return Err("invalid model file path".to_string());
+        }
+        let base = segment.split_once('.').map_or(*segment, |(base, _)| base);
+        let upper = base.to_ascii_uppercase();
+        if matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+            || upper
+                .strip_prefix("COM")
+                .or_else(|| upper.strip_prefix("LPT"))
+                .is_some_and(|suffix| {
+                    suffix.len() == 1 && matches!(suffix.as_bytes()[0], b'1'..=b'9')
+                })
+        {
+            return Err("invalid model file path".to_string());
+        }
+    }
+    Ok(segments.iter().collect())
 }
 
 fn hf_auth_header() -> Option<String> {
@@ -359,34 +410,115 @@ async fn list_hf_files(repo: &str) -> Result<Vec<(String, u64)>, String> {
         .collect())
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    format!("{:x}", hasher.finalize())
+struct ModelPayloadStore {
+    ambient_root: PathBuf,
+    root: Dir,
 }
 
-async fn sha256_file(path: &Path) -> Result<String, String> {
-    let bytes = fs::read(path).await.map_err(|err| err.to_string())?;
-    Ok(sha256_hex(&bytes))
+impl ModelPayloadStore {
+    fn open() -> Result<Self, String> {
+        Self::open_at(ModelStore::models_dir())
+    }
+
+    fn open_at(ambient_root: PathBuf) -> Result<Self, String> {
+        std::fs::create_dir_all(&ambient_root).map_err(|error| error.to_string())?;
+        let root = Dir::open_ambient_dir(&ambient_root, ambient_authority())
+            .map_err(|error| error.to_string())?;
+        Ok(Self { ambient_root, root })
+    }
+
+    fn open_model(&self, model_id: &ModelId) -> Result<Dir, String> {
+        let storage_key = model_id.storage_key();
+        let name = storage_key.as_str();
+        match self.root.create_dir(name) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error.to_string()),
+        }
+        self.root
+            .open_dir_nofollow(name)
+            .map_err(|error| error.to_string())
+    }
+
+    fn ambient_model_dir(&self, model_id: &ModelId) -> PathBuf {
+        self.ambient_root.join(model_id.storage_key().as_str())
+    }
+}
+
+fn open_model_file(
+    model_dir: &Dir,
+    relative_path: &Path,
+    existing: u64,
+) -> Result<cap_std::fs::File, String> {
+    let mut components = relative_path.components().peekable();
+    let mut current = model_dir.try_clone().map_err(|error| error.to_string())?;
+    while let Some(component) = components.next() {
+        let segment = component.as_os_str();
+        if components.peek().is_none() {
+            let mut options = OpenOptions::new();
+            options
+                .write(true)
+                .create(true)
+                .append(existing > 0)
+                .truncate(existing == 0)
+                .follow(FollowSymlinks::No);
+            return current
+                .open_with(segment, &options)
+                .map_err(|error| error.to_string());
+        }
+        match current.create_dir(segment) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error.to_string()),
+        }
+        current = current
+            .open_dir_nofollow(segment)
+            .map_err(|error| error.to_string())?;
+    }
+    Err("invalid empty model file path".to_string())
+}
+
+fn model_file_len(model_dir: &Dir, relative_path: &Path) -> Result<u64, String> {
+    match model_dir.symlink_metadata(relative_path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            Err("model file path is a symbolic link".to_string())
+        }
+        Ok(metadata) if metadata.is_file() => Ok(metadata.len()),
+        Ok(_) => Err("model file path is not a regular file".to_string()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(0),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+async fn sha256_model_file(model_dir: &Dir, relative_path: &Path) -> Result<String, String> {
+    let mut options = OpenOptions::new();
+    options.read(true).follow(FollowSymlinks::No);
+    let file = model_dir
+        .open_with(relative_path, &options)
+        .map_err(|error| error.to_string())?;
+    let mut file = tokio::fs::File::from_std(file.into_std());
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0u8; 64 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .await
+            .map_err(|error| error.to_string())?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 async fn download_hf_file(
     repo: &str,
     relative_path: &str,
+    model_dir: &Dir,
     destination: &Path,
 ) -> Result<u64, String> {
-    fs::create_dir_all(
-        destination
-            .parent()
-            .ok_or_else(|| "invalid destination path".to_string())?,
-    )
-    .await
-    .map_err(|err| err.to_string())?;
-
-    let existing = fs::metadata(destination)
-        .await
-        .map(|meta| meta.len())
-        .unwrap_or(0);
+    let existing = model_file_len(model_dir, destination)?;
     let url = format!(
         "https://huggingface.co/{repo}/resolve/main/{}",
         relative_path.replace('\\', "/")
@@ -411,31 +543,27 @@ async fn download_hf_file(
     {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(format!("download failed for {relative_path} ({status}): {body}"));
+        return Err(format!(
+            "download failed for {relative_path} ({status}): {body}"
+        ));
     }
 
-    let mut file = if existing > 0 && response.status() == reqwest::StatusCode::PARTIAL_CONTENT {
-        OpenOptions::new()
-            .append(true)
-            .open(destination)
-            .await
-            .map_err(|err| err.to_string())?
+    let resumed = existing > 0 && response.status() == reqwest::StatusCode::PARTIAL_CONTENT;
+    let file = if resumed {
+        open_model_file(model_dir, destination, existing)?
     } else {
-        OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(destination)
-            .await
-            .map_err(|err| err.to_string())?
+        open_model_file(model_dir, destination, 0)?
     };
+    let mut file = tokio::fs::File::from_std(file.into_std());
 
-    let mut downloaded = existing;
+    let mut downloaded = if resumed { existing } else { 0 };
     let mut stream = response.bytes_stream();
     use futures_util::StreamExt;
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|err| err.to_string())?;
-        file.write_all(&chunk).await.map_err(|err| err.to_string())?;
+        file.write_all(&chunk)
+            .await
+            .map_err(|err| err.to_string())?;
         downloaded += chunk.len() as u64;
     }
     file.flush().await.map_err(|err| err.to_string())?;
@@ -468,15 +596,15 @@ async fn run_download_job(
         })
         .await;
 
-    let model_dir = ModelStore::model_dir(&entry.id);
-    fs::create_dir_all(&model_dir)
-        .await
-        .map_err(|err| err.to_string())?;
+    let model_id = ModelId::parse(&entry.id).map_err(|error| error.to_string())?;
+    let payload_store = ModelPayloadStore::open()?;
+    let model_dir = payload_store.open_model(&model_id)?;
+    let ambient_model_dir = payload_store.ambient_model_dir(&model_id);
 
     let mut file_records = Vec::new();
     let mut bytes_done = 0u64;
     for (relative_path, _expected_size) in files {
-        let destination = model_dir.join(&relative_path);
+        let destination = validated_model_relative_path(&relative_path)?;
         store
             .update_job(&job_id, |progress| {
                 progress.current_file = Some(relative_path.clone());
@@ -485,7 +613,8 @@ async fn run_download_job(
             })
             .await;
 
-        let file_bytes = download_hf_file(&entry.repo, &relative_path, &destination).await?;
+        let file_bytes =
+            download_hf_file(&entry.repo, &relative_path, &model_dir, &destination).await?;
         bytes_done = bytes_done.saturating_add(file_bytes);
         store
             .update_job(&job_id, |progress| {
@@ -500,11 +629,8 @@ async fn run_download_job(
             })
             .await;
 
-        let digest = sha256_file(&destination).await?;
-        let bytes = fs::metadata(&destination)
-            .await
-            .map_err(|err| err.to_string())?
-            .len();
+        let digest = sha256_model_file(&model_dir, &destination).await?;
+        let bytes = model_file_len(&model_dir, &destination)?;
         file_records.push(DownloadFileRecord {
             path: relative_path,
             bytes,
@@ -516,7 +642,7 @@ async fn run_download_job(
     let record = InstalledModelRecord {
         model_id: entry.id.clone(),
         repo: entry.repo.clone(),
-        local_path: model_dir.to_string_lossy().to_string(),
+        local_path: ambient_model_dir.to_string_lossy().to_string(),
         installed_at: Utc::now(),
         bytes_on_disk,
         verified: true,
@@ -548,11 +674,83 @@ async fn run_download_job(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write as _;
 
     #[test]
     fn include_hf_file_filters_docs() {
         assert!(include_hf_file("config.json"));
         assert!(include_hf_file("model-00001-of-00002.safetensors"));
         assert!(!include_hf_file("README.md"));
+        assert!(!include_hf_file("../../outside.json"));
+        assert!(!include_hf_file("C:\\outside.json"));
+        assert!(!include_hf_file("nested/CON.json"));
+    }
+
+    #[test]
+    fn model_ids_map_to_opaque_directories() {
+        let path = ModelStore::model_dir("gemma-4-12b-it").unwrap();
+        assert!(
+            !path
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .contains("gemma")
+        );
+        assert!(ModelStore::model_dir("../../outside").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn payload_writes_survive_ambient_root_replacement() {
+        let root = std::env::temp_dir().join(format!(
+            "medousa-model-capability-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let held = root.with_extension("held");
+        let store = ModelPayloadStore::open_at(root.clone()).unwrap();
+        let model_id = ModelId::parse("replacement-model").unwrap();
+        let model_dir = store.open_model(&model_id).unwrap();
+
+        std::fs::rename(&root, &held).unwrap();
+        std::fs::create_dir_all(&root).unwrap();
+        let relative = Path::new("nested/config.json");
+        let mut file = open_model_file(&model_dir, relative, 0).unwrap();
+        file.write_all(b"held authority").unwrap();
+        file.sync_data().unwrap();
+
+        let storage_key = model_id.storage_key();
+        assert_eq!(
+            std::fs::read(held.join(storage_key.as_str()).join(relative)).unwrap(),
+            b"held authority"
+        );
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 0);
+
+        std::fs::remove_dir_all(&root).ok();
+        std::fs::remove_dir_all(&held).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn payload_writes_reject_link_backed_ancestors() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!(
+            "medousa-model-link-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let outside = root.with_extension("outside");
+        let store = ModelPayloadStore::open_at(root.clone()).unwrap();
+        let model_id = ModelId::parse("link-model").unwrap();
+        let model_dir = store.open_model(&model_id).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("canary"), b"outside").unwrap();
+        let storage_key = model_id.storage_key();
+        symlink(&outside, root.join(storage_key.as_str()).join("nested")).unwrap();
+
+        assert!(open_model_file(&model_dir, Path::new("nested/config.json"), 0).is_err());
+        assert_eq!(std::fs::read(outside.join("canary")).unwrap(), b"outside");
+
+        std::fs::remove_dir_all(&root).ok();
+        std::fs::remove_dir_all(&outside).ok();
     }
 }

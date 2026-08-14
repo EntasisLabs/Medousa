@@ -4,8 +4,8 @@
 //! ```text
 //! {forge_root}/
 //!   schema_version                 # single line, u32
-//!   items/{work_id}/manifest.json  # snapshot — strictly a replay cache
-//!   items/{work_id}/events.jsonl   # append-only source of truth
+//!   items/{opaque_work_key}/manifest.json  # snapshot — strictly a replay cache
+//!   items/{opaque_work_key}/events.jsonl   # append-only source of truth
 //! ```
 //!
 //! Snapshots are written atomically (tmp + sync + rename + dir sync). Replay
@@ -110,7 +110,21 @@ impl FsWorkStore {
     }
 
     pub fn item_dir(&self, work_id: &WorkId) -> PathBuf {
-        self.root.join("items").join(work_id.as_str())
+        let items = self.root.join("items");
+        let opaque = items.join(work_id.storage_key());
+        if opaque.exists() {
+            return opaque;
+        }
+        if is_legacy_forge_id(work_id.as_str()) {
+            let legacy = items.join(work_id.as_str());
+            if legacy
+                .symlink_metadata()
+                .is_ok_and(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
+            {
+                return legacy;
+            }
+        }
+        opaque
     }
 
     pub fn events_path(&self, work_id: &WorkId) -> PathBuf {
@@ -264,8 +278,29 @@ impl FsWorkStore {
         }
         for entry in fs::read_dir(&items_dir)? {
             let entry = entry?;
-            if entry.file_type()?.is_dir() {
-                ids.push(WorkId::from(entry.file_name().to_string_lossy().into_owned()));
+            if !entry.file_type()?.is_dir() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let snapshot = entry.path().join("manifest.json");
+            if let Ok(raw) = fs::read_to_string(snapshot)
+                && let Ok(envelope) = serde_json::from_str::<SnapshotEnvelope>(&raw)
+                && envelope.item.id.storage_key() == name
+            {
+                ids.push(envelope.item.id);
+                continue;
+            }
+            let events = entry.path().join("events.jsonl");
+            if let Ok(raw) = fs::read_to_string(events)
+                && let Some(line) = raw.lines().find(|line| !line.trim().is_empty())
+                && let Ok(event) = serde_json::from_str::<TransitionEvent>(line)
+                && event.work_id.storage_key() == name
+            {
+                ids.push(event.work_id);
+                continue;
+            }
+            if is_legacy_forge_id(&name) && !name.starts_with("work1-") {
+                ids.push(WorkId::from(name));
             }
         }
         ids.sort_by(|a, b| a.as_str().cmp(b.as_str()));
@@ -286,8 +321,23 @@ impl FsWorkStore {
     /// (integration, worktree add/remove). Always acquired *before* any item
     /// lock — lock ordering is repo → item.
     pub fn lock_repo(&self, repo_key: &str) -> Result<FileLock> {
-        FileLock::acquire(&self.root.join("repos").join(repo_key).join(".lock"))
+        let key = crate::model::Digest::sha256_hex(repo_key.as_bytes());
+        FileLock::acquire(
+            &self
+                .root
+                .join("repos")
+                .join(format!("repo1-{}", key.as_str()))
+                .join(".lock"),
+        )
     }
+}
+
+fn is_legacy_forge_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
 }
 
 fn snapshot_io_error(action: &str, path: &Path, error: std::io::Error) -> ForgeError {
@@ -590,8 +640,13 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let store = FsWorkStore::open(tmp.path()).unwrap();
         let held = store.lock_repo("repo-key").unwrap();
+        let digest = crate::model::Digest::sha256_hex(b"repo-key");
         let second = FileLock::try_acquire(
-            &store.root().join("repos/repo-key/.lock"),
+            &store
+                .root()
+                .join("repos")
+                .join(format!("repo1-{}", digest.as_str()))
+                .join(".lock"),
         )
         .unwrap();
         assert!(second.is_none());
@@ -610,5 +665,16 @@ mod tests {
         assert_eq!(ids.len(), 2);
         assert!(ids.contains(&a.id));
         assert!(ids.contains(&b.id));
+    }
+
+    #[test]
+    fn hostile_work_ids_cannot_select_store_paths() {
+        let tmp = TempDir::new().unwrap();
+        let store = FsWorkStore::open(tmp.path().join("forge")).unwrap();
+        let hostile = WorkId::from("../../outside".to_string());
+        let path = store.item_dir(&hostile);
+        assert_eq!(path.parent(), Some(store.root().join("items").as_path()));
+        assert!(path.file_name().unwrap().to_string_lossy().starts_with("work1-"));
+        assert!(!path.to_string_lossy().contains("outside"));
     }
 }

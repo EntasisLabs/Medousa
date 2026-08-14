@@ -1,5 +1,4 @@
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::collections::HashMap;
 
 use anyhow::{Context, Result, bail};
 use chacha20poly1305::aead::{Aead, KeyInit};
@@ -11,7 +10,13 @@ use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use super::paths::{pairings_dir, revoked_pairings_path};
+use medousa_types::authority_id::PairingDeviceId;
+
+use super::paths::pairings_dir;
+use crate::store_root::{StoreEntryKind, StorePath, StoreRoot};
+
+const MAX_PAIRING_RECORD_BYTES: u64 = 1024 * 1024;
+const REVOKED_PAIRINGS_FILE: &str = "revoked.json";
 
 /// How this surface relates to the workshop.
 /// - `portal`: full client of this brain (phone / workshop switcher)
@@ -105,45 +110,53 @@ impl PairingStore {
     }
 
     pub fn list_paired(&self) -> Result<Vec<PairedDeviceRecord>> {
-        let dir = pairings_dir();
-        if !dir.is_dir() {
-            return Ok(Vec::new());
-        }
+        let root = pairing_root()?;
         let revoked = self.load_revoked()?;
-        let mut out = Vec::new();
-        for entry in fs::read_dir(&dir).with_context(|| format!("read {}", dir.display()))? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+        let mut by_phone_id = HashMap::new();
+        for entry in root.list_root()? {
+            if entry.kind != StoreEntryKind::File || !entry.path.file_name().ends_with(".json") {
                 continue;
             }
-            if path.file_name().and_then(|name| name.to_str()) == Some("revoked.json") {
+            if entry.path.file_name() == REVOKED_PAIRINGS_FILE {
                 continue;
             }
-            match self.read_record(&path) {
+            match self.read_record(&root, &entry.path) {
                 Ok(record) => {
                     if !revoked.pairing_ids.contains(&record.pairing_id) {
-                        out.push(record);
+                        let replace = by_phone_id
+                            .get(&record.phone_id)
+                            .is_none_or(|current: &PairedDeviceRecord| {
+                                record.last_seen > current.last_seen
+                            });
+                        if replace {
+                            by_phone_id.insert(record.phone_id.clone(), record);
+                        }
                     }
                 }
                 Err(err) => {
-                    eprintln!(
-                        "medousa-daemon: skipping unreadable pairing record {} ({err:#})",
-                        path.display()
-                    );
+                    eprintln!("medousa-daemon: skipping unreadable pairing record ({err:#})");
                 }
             }
         }
+        let mut out = by_phone_id.into_values().collect::<Vec<_>>();
         out.sort_by_key(|right| std::cmp::Reverse(right.last_seen));
         Ok(out)
     }
 
     pub fn get_by_phone_id(&self, phone_id: &str) -> Result<Option<PairedDeviceRecord>> {
-        let path = record_path(phone_id);
-        if !path.is_file() {
+        let root = pairing_root()?;
+        let path = record_path(phone_id)?;
+        let record = if root.is_file(&path)? {
+            Some(self.read_record(&root, &path)?)
+        } else {
+            self.find_legacy_record(&root, phone_id)?
+        };
+        let Some(record) = record else {
             return Ok(None);
+        };
+        if record.phone_id != phone_id {
+            bail!("pairing record ownership mismatch");
         }
-        let record = self.read_record(&path)?;
         let revoked = self.load_revoked()?;
         if revoked.pairing_ids.contains(&record.pairing_id) {
             return Ok(None);
@@ -152,15 +165,30 @@ impl PairingStore {
     }
 
     pub fn save_record(&self, record: &PairedDeviceRecord) -> Result<()> {
-        fs::create_dir_all(pairings_dir()).context("create pairings directory")?;
-        let path = record_path(&record.phone_id);
-        self.write_record(&path, record)
+        let root = pairing_root()?;
+        let path = record_path(&record.phone_id)?;
+        self.write_record(&root, &path, record)
     }
 
     pub fn delete_record(&self, phone_id: &str) -> Result<()> {
-        let path = record_path(phone_id);
-        if path.is_file() {
-            fs::remove_file(&path).with_context(|| format!("delete {}", path.display()))?;
+        let root = pairing_root()?;
+        let path = record_path(phone_id)?;
+        if root.is_file(&path)? {
+            root.remove_file(&path)?;
+        }
+        for entry in root.list_root()? {
+            if entry.kind != StoreEntryKind::File
+                || entry.path == path
+                || entry.path.file_name() == REVOKED_PAIRINGS_FILE
+            {
+                continue;
+            }
+            if self
+                .read_record(&root, &entry.path)
+                .is_ok_and(|record| record.phone_id == phone_id)
+            {
+                root.remove_file(&entry.path)?;
+            }
         }
         Ok(())
     }
@@ -187,8 +215,8 @@ impl PairingStore {
         Ok(record)
     }
 
-    fn read_record(&self, path: &Path) -> Result<PairedDeviceRecord> {
-        let raw = fs::read(path).with_context(|| format!("read {}", path.display()))?;
+    fn read_record(&self, root: &StoreRoot, path: &StorePath) -> Result<PairedDeviceRecord> {
+        let raw = root.read_limited(path, MAX_PAIRING_RECORD_BYTES)?;
         if let Ok(envelope) = serde_json::from_slice::<EncryptedEnvelope>(&raw)
             && let Ok(plaintext) = self.decrypt(&envelope)
             && let Ok(record) = serde_json::from_slice::<PairedDeviceRecord>(&plaintext)
@@ -198,28 +226,56 @@ impl PairingStore {
         serde_json::from_slice(&raw).context("parse plaintext pairing record")
     }
 
-    fn write_record(&self, path: &Path, record: &PairedDeviceRecord) -> Result<()> {
+    fn write_record(
+        &self,
+        root: &StoreRoot,
+        path: &StorePath,
+        record: &PairedDeviceRecord,
+    ) -> Result<()> {
         let plaintext = serde_json::to_vec(record).context("serialize pairing record")?;
         let envelope = self.encrypt(&plaintext)?;
         let encoded =
             serde_json::to_vec_pretty(&envelope).context("serialize encrypted envelope")?;
-        fs::write(path, encoded).with_context(|| format!("write {}", path.display()))
+        root.atomic_write(path, &encoded)?;
+        Ok(())
     }
 
     fn load_revoked(&self) -> Result<RevokedPairings> {
-        let path = revoked_pairings_path();
-        if !path.is_file() {
-            return Ok(RevokedPairings::default());
+        let root = pairing_root()?;
+        let path = revoked_pairings_store_path();
+        match root.read_limited(&path, MAX_PAIRING_RECORD_BYTES) {
+            Ok(raw) => serde_json::from_slice(&raw).context("parse revoked pairings"),
+            Err(error) if error.is_not_found() => Ok(RevokedPairings::default()),
+            Err(error) => Err(error.into()),
         }
-        let raw = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-        serde_json::from_str(&raw).context("parse revoked pairings")
     }
 
     fn write_revoked(&self, revoked: &RevokedPairings) -> Result<()> {
-        fs::create_dir_all(pairings_dir()).context("create pairings directory")?;
+        let root = pairing_root()?;
         let encoded =
-            serde_json::to_string_pretty(revoked).context("serialize revoked pairings")?;
-        fs::write(revoked_pairings_path(), encoded).context("write revoked pairings")
+            serde_json::to_vec_pretty(revoked).context("serialize revoked pairings")?;
+        root.atomic_write(&revoked_pairings_store_path(), &encoded)?;
+        Ok(())
+    }
+
+    fn find_legacy_record(
+        &self,
+        root: &StoreRoot,
+        phone_id: &str,
+    ) -> Result<Option<PairedDeviceRecord>> {
+        for entry in root.list_root()? {
+            if entry.kind != StoreEntryKind::File
+                || entry.path.file_name() == REVOKED_PAIRINGS_FILE
+            {
+                continue;
+            }
+            if let Ok(record) = self.read_record(root, &entry.path)
+                && record.phone_id == phone_id
+            {
+                return Ok(Some(record));
+            }
+        }
+        Ok(None)
     }
 
     pub(crate) fn encrypt(&self, plaintext: &[u8]) -> Result<EncryptedEnvelope> {
@@ -260,24 +316,27 @@ fn derive_storage_key(signing_key: &SigningKey) -> [u8; 32] {
     Sha256::digest(signing_key.to_bytes()).into()
 }
 
-fn record_path(phone_id: &str) -> PathBuf {
-    let safe = phone_id
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
-                ch
-            } else {
-                '_'
-            }
-        })
-        .collect::<String>();
-    pairings_dir().join(format!("{safe}.json"))
+fn pairing_root() -> Result<StoreRoot> {
+    Ok(StoreRoot::open_or_create_nofollow(&pairings_dir())?)
+}
+
+fn record_path(phone_id: &str) -> Result<StorePath> {
+    let phone_id = PairingDeviceId::parse(phone_id)?;
+    Ok(StorePath::parse(&format!(
+        "{}.json",
+        phone_id.storage_key().as_str()
+    ))?)
+}
+
+fn revoked_pairings_store_path() -> StorePath {
+    StorePath::parse(REVOKED_PAIRINGS_FILE).expect("static pairing revocation path")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::pairing::identity::DeviceIdentity;
+    use std::fs;
 
     #[test]
     fn encrypted_payload_roundtrip() {
@@ -324,6 +383,15 @@ mod tests {
         });
         let record: PairedDeviceRecord = serde_json::from_value(value).unwrap();
         assert_eq!(record.credential_generation, 1);
+    }
+
+    #[test]
+    fn pairing_device_paths_are_opaque_and_collision_free() {
+        let colon = record_path("phone:a").unwrap();
+        let underscore = record_path("phone_a").unwrap();
+        assert_ne!(colon, underscore);
+        assert!(!colon.file_name().contains("phone"));
+        assert!(record_path(" phone").is_err());
     }
 
     #[test]

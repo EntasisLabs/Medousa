@@ -11,6 +11,8 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use medousa_types::authority_id::PairingDeviceId;
+
 const SESSION_TOKEN_SERVICE: &str = "medousa.pairing";
 const LEGACY_SESSION_TOKEN_ACCOUNT: &str = "session_token";
 
@@ -275,9 +277,7 @@ pub fn load_workshop_transport_config_for_id(
     workshop_id: &str,
     lan_base: &str,
 ) -> Option<WorkshopTransportConfig> {
-    let path = crate::workshop_registry::pairing_credentials_abs_path(workshop_id);
-    let raw = fs::read_to_string(path).ok()?;
-    let file = serde_json::from_str::<PairingCredentialsFile>(&raw).ok()?;
+    let file = read_credentials_for_workshop(workshop_id)?;
     build_transport_config(&file, lan_base)
 }
 
@@ -310,9 +310,19 @@ fn build_transport_config(
 }
 
 fn read_credentials_for_workshop(workshop_id: &str) -> Option<PairingCredentialsFile> {
-    let path = crate::workshop_registry::pairing_credentials_abs_path(workshop_id);
-    let raw = fs::read_to_string(path).ok()?;
-    serde_json::from_str(&raw).ok()
+    let current = crate::workshop_registry::pairing_credentials_abs_path(workshop_id).ok()?;
+    let legacy = crate::workshop_registry::legacy_pairing_credentials_abs_path(workshop_id);
+    [Some(current), legacy]
+        .into_iter()
+        .flatten()
+        .find_map(|path| {
+            let raw = fs::read_to_string(path).ok()?;
+            let file = serde_json::from_str::<PairingCredentialsFile>(&raw).ok()?;
+            let owns_workshop = workshop_id
+                == crate::workshop_registry::paired_workshop_id(&file.workshop_device_id)
+                || workshop_id == format!("peer-{}", file.workshop_device_id);
+            owns_workshop.then_some(file)
+        })
 }
 
 pub async fn send_pair_heartbeat(
@@ -735,7 +745,7 @@ fn save_pairing_credentials(
     iroh_ticket: Option<&str>,
 ) -> Result<(), String> {
     store_session_token(session_token, workshop_device_id)?;
-    let path = crate::workshop_registry::pairing_credentials_abs_path(workshop_id);
+    let path = crate::workshop_registry::pairing_credentials_abs_path(workshop_id)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| err.to_string())?;
     }
@@ -761,13 +771,7 @@ fn read_credentials_file() -> Option<PairingCredentialsFile> {
     if !crate::workshop_registry::is_portal_kind(&workshop.kind) {
         return None;
     }
-    let rel = workshop
-        .pairing
-        .as_ref()
-        .and_then(|pairing| pairing.credentials_rel_path.as_deref())?;
-    let path = crate::workshop_registry::medousa_data_dir().join(rel);
-    let raw = fs::read_to_string(path).ok()?;
-    serde_json::from_str(&raw).ok()
+    read_credentials_for_workshop(&workshop.id)
 }
 
 pub fn migrate_legacy_session_token(workshop_device_id: &str) {
@@ -780,18 +784,20 @@ pub fn migrate_legacy_session_token(workshop_device_id: &str) {
     let _ = store_session_token(&legacy, workshop_device_id);
 }
 
-fn session_token_account(workshop_device_id: &str) -> String {
-    format!("session_token.{workshop_device_id}")
+fn session_token_account(workshop_device_id: &PairingDeviceId) -> String {
+    format!("session_token.{}", workshop_device_id.storage_key().as_str())
 }
 
 fn store_session_token(token: &str, workshop_device_id: &str) -> Result<(), String> {
-    let account = session_token_account(workshop_device_id);
+    let workshop_device_id =
+        PairingDeviceId::parse(workshop_device_id).map_err(|err| err.to_string())?;
+    let account = session_token_account(&workshop_device_id);
     if let Ok(entry) = keyring::Entry::new(SESSION_TOKEN_SERVICE, &account) {
         if entry.set_password(token).is_ok() {
             return Ok(());
         }
     }
-    let path = session_token_file_path(workshop_device_id);
+    let path = session_token_file_path(&workshop_device_id);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| err.to_string())?;
     }
@@ -799,29 +805,45 @@ fn store_session_token(token: &str, workshop_device_id: &str) -> Result<(), Stri
 }
 
 fn delete_session_token(workshop_device_id: &str) {
-    let account = session_token_account(workshop_device_id);
+    let Ok(workshop_device_id) = PairingDeviceId::parse(workshop_device_id) else {
+        return;
+    };
+    let account = session_token_account(&workshop_device_id);
     if let Ok(entry) = keyring::Entry::new(SESSION_TOKEN_SERVICE, &account) {
         let _ = entry.delete_password();
     }
-    let _ = fs::remove_file(session_token_file_path(workshop_device_id));
+    let _ = fs::remove_file(session_token_file_path(&workshop_device_id));
+    if let Ok(entry) = keyring::Entry::new(
+        SESSION_TOKEN_SERVICE,
+        &format!("session_token.{}", workshop_device_id.as_str()),
+    ) {
+        let _ = entry.delete_password();
+    }
+    if let Some(path) = legacy_session_token_file_path(workshop_device_id.as_str()) {
+        let _ = fs::remove_file(path);
+    }
 }
 
 pub fn remove_workshop_credentials(
     workshop_id: &str,
     workshop_device_id: Option<&str>,
 ) -> Result<(), String> {
-    let path = crate::workshop_registry::pairing_credentials_abs_path(workshop_id);
+    let path = crate::workshop_registry::pairing_credentials_abs_path(workshop_id)?;
     let device_id = workshop_device_id.map(str::to_string).or_else(|| {
-        fs::read_to_string(&path)
-            .ok()
-            .and_then(|raw| serde_json::from_str::<PairingCredentialsFile>(&raw).ok())
-            .map(|file| file.workshop_device_id)
+        read_credentials_for_workshop(workshop_id).map(|file| file.workshop_device_id)
     });
     if path.exists() {
         fs::remove_file(&path).map_err(|err| err.to_string())?;
     }
     if let Some(parent) = path.parent() {
         let _ = fs::remove_dir(parent);
+    }
+    if let Some(legacy) = crate::workshop_registry::legacy_pairing_credentials_abs_path(workshop_id)
+    {
+        let _ = fs::remove_file(&legacy);
+        if let Some(parent) = legacy.parent() {
+            let _ = fs::remove_dir(parent);
+        }
     }
     if let Some(device_id) = device_id {
         delete_session_token(&device_id);
@@ -830,7 +852,8 @@ pub fn remove_workshop_credentials(
 }
 
 fn read_session_token(workshop_device_id: &str) -> Option<String> {
-    let account = session_token_account(workshop_device_id);
+    let workshop_device_id = PairingDeviceId::parse(workshop_device_id).ok()?;
+    let account = session_token_account(&workshop_device_id);
     if let Ok(entry) = keyring::Entry::new(SESSION_TOKEN_SERVICE, &account) {
         if let Ok(value) = entry.get_password() {
             let trimmed = value.trim();
@@ -839,13 +862,27 @@ fn read_session_token(workshop_device_id: &str) -> Option<String> {
             }
         }
     }
-    let value = fs::read_to_string(session_token_file_path(workshop_device_id)).ok()?;
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
+    if let Ok(value) = fs::read_to_string(session_token_file_path(&workshop_device_id)) {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
     }
+
+    let legacy_account = format!("session_token.{}", workshop_device_id.as_str());
+    let legacy = keyring::Entry::new(SESSION_TOKEN_SERVICE, &legacy_account)
+        .ok()
+        .and_then(|entry| entry.get_password().ok())
+        .or_else(|| {
+            legacy_session_token_file_path(workshop_device_id.as_str())
+                .and_then(|path| fs::read_to_string(path).ok())
+        })?;
+    let legacy = legacy.trim();
+    if legacy.is_empty() {
+        return None;
+    }
+    let _ = store_session_token(legacy, workshop_device_id.as_str());
+    Some(legacy.to_string())
 }
 
 fn read_legacy_session_token() -> Option<String> {
@@ -881,10 +918,28 @@ fn pairing_credentials_path() -> PathBuf {
     medousa_data_dir().join("pairing_credentials.json")
 }
 
-fn session_token_file_path(workshop_device_id: &str) -> PathBuf {
+fn session_token_file_path(workshop_device_id: &PairingDeviceId) -> PathBuf {
     medousa_data_dir()
         .join("secrets")
-        .join(format!("pairing_session_token.{workshop_device_id}"))
+        .join(format!(
+            "pairing_session_token.{}",
+            workshop_device_id.storage_key().as_str()
+        ))
+}
+
+fn legacy_session_token_file_path(workshop_device_id: &str) -> Option<PathBuf> {
+    let valid = !workshop_device_id.is_empty()
+        && workshop_device_id.len() <= 128
+        && workshop_device_id != "."
+        && workshop_device_id != ".."
+        && workshop_device_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'));
+    valid.then(|| {
+        medousa_data_dir()
+            .join("secrets")
+            .join(format!("pairing_session_token.{workshop_device_id}"))
+    })
 }
 
 fn http_client() -> Result<Client, String> {
@@ -1054,5 +1109,19 @@ mod tests {
         let config = build_transport_config(&file, "http://192.168.1.2:7419").expect("config");
         assert_eq!(config.lan_base, "http://192.168.1.2:7419");
         assert_eq!(config.iroh_ticket.as_deref(), Some("ticket-abc"));
+    }
+
+    #[test]
+    fn session_token_files_do_not_embed_device_ids() {
+        let colon = PairingDeviceId::parse("device:a").unwrap();
+        let underscore = PairingDeviceId::parse("device_a").unwrap();
+        let colon = session_token_file_path(&colon);
+        let underscore = session_token_file_path(&underscore);
+        assert_ne!(colon, underscore);
+        assert!(!colon.to_string_lossy().contains("device:a"));
+
+        let traversal = PairingDeviceId::parse("../../outside").unwrap();
+        let path = session_token_file_path(&traversal);
+        assert_eq!(path.parent().unwrap().file_name().unwrap(), "secrets");
     }
 }

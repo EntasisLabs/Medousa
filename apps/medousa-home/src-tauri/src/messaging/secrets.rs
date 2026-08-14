@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use medousa_types::authority_id::ProviderId;
+
 const DISCORD_BOT_TOKEN_SERVICE: &str = "medousa.discord";
 const DISCORD_BOT_TOKEN_ACCOUNT: &str = "bot_token";
 const TELEGRAM_BOT_TOKEN_SERVICE: &str = "medousa.telegram";
@@ -37,6 +39,49 @@ fn file_secret(name: &str) -> Option<String> {
 
 fn load_secret(service: &str, account: &str, file_name: &str) -> bool {
     read_secret_value(service, account, file_name).is_some()
+}
+
+fn provider_secret_coordinates(kind: &str, provider: &str) -> Result<(String, String), String> {
+    let provider = ProviderId::parse(provider).map_err(|err| err.to_string())?;
+    let key = provider.storage_key();
+    Ok((
+        format!("{kind}.{}", key.as_str()),
+        format!("{kind}_{}", key.as_str()),
+    ))
+}
+
+fn read_provider_secret(kind: &str, provider: &str) -> Result<Option<String>, String> {
+    let (account, file_name) = provider_secret_coordinates(kind, provider)?;
+    if let Some(value) = read_secret_value("medousa.providers", &account, &file_name) {
+        return Ok(Some(value));
+    }
+    let (legacy_account, legacy_file) = if kind == "api_key" {
+        (provider.to_string(), format!("api_key_{provider}"))
+    } else {
+        let legacy = format!("base_url_{provider}");
+        (legacy.clone(), legacy)
+    };
+    Ok(read_secret_value(
+        "medousa.providers",
+        &legacy_account,
+        &legacy_file,
+    ))
+}
+
+fn save_provider_secret(kind: &str, provider: &str, value: Option<&str>) -> Result<(), String> {
+    let (account, file_name) = provider_secret_coordinates(kind, provider)?;
+    save_secret_value("medousa.providers", &account, &file_name, value)?;
+    let (legacy_account, legacy_file) = if kind == "api_key" {
+        (provider.to_string(), format!("api_key_{provider}"))
+    } else {
+        let legacy = format!("base_url_{provider}");
+        (legacy.clone(), legacy)
+    };
+    if let Ok(entry) = keyring_entry("medousa.providers", &legacy_account) {
+        let _ = entry.delete_password();
+    }
+    let _ = std::fs::remove_file(secret_file_path(&legacy_file));
+    Ok(())
 }
 
 fn read_secret_value(service: &str, account: &str, file_name: &str) -> Option<String> {
@@ -77,7 +122,7 @@ pub fn load_secret_value(secret_id: &str) -> Result<Option<String>, String> {
         "stt_api_key" => read_secret_value(STT_API_KEY_SERVICE, STT_API_KEY_ACCOUNT, "stt_api_key"),
         other if other.starts_with("api_key_") => {
             let provider = other.trim_start_matches("api_key_");
-            read_secret_value("medousa.providers", provider, other)
+            read_provider_secret("api_key", provider)?
         }
         "custom_provider_id" => read_secret_value(
             "medousa.providers",
@@ -85,7 +130,7 @@ pub fn load_secret_value(secret_id: &str) -> Result<Option<String>, String> {
             "custom_provider_id",
         ),
         other if other.starts_with("base_url_") => {
-            read_secret_value("medousa.providers", other, other)
+            read_provider_secret("base_url", other.trim_start_matches("base_url_"))?
         }
         other => return Err(format!("unknown secret_id '{other}'")),
     })
@@ -147,14 +192,16 @@ pub fn secret_is_set(secret_id: &str) -> Result<bool, String> {
         "stt_api_key" => load_secret(STT_API_KEY_SERVICE, STT_API_KEY_ACCOUNT, "stt_api_key"),
         other if other.starts_with("api_key_") => {
             let provider = other.trim_start_matches("api_key_");
-            load_secret("medousa.providers", provider, other)
+            read_provider_secret("api_key", provider)?.is_some()
         }
         "custom_provider_id" => load_secret(
             "medousa.providers",
             "custom_provider_id",
             "custom_provider_id",
         ),
-        other if other.starts_with("base_url_") => load_secret("medousa.providers", other, other),
+        other if other.starts_with("base_url_") => {
+            read_provider_secret("base_url", other.trim_start_matches("base_url_"))?.is_some()
+        }
         other => return Err(format!("unknown secret_id '{other}'")),
     })
 }
@@ -199,7 +246,7 @@ pub fn save_secret(secret_id: &str, value: Option<String>) -> Result<(), String>
         ),
         other if other.starts_with("api_key_") => {
             let provider = other.trim_start_matches("api_key_");
-            save_secret_value("medousa.providers", provider, other, value.as_deref())
+            save_provider_secret("api_key", provider, value.as_deref())
         }
         "custom_provider_id" => save_secret_value(
             "medousa.providers",
@@ -208,7 +255,11 @@ pub fn save_secret(secret_id: &str, value: Option<String>) -> Result<(), String>
             value.as_deref(),
         ),
         other if other.starts_with("base_url_") => {
-            save_secret_value("medousa.providers", other, other, value.as_deref())
+            save_provider_secret(
+                "base_url",
+                other.trim_start_matches("base_url_"),
+                value.as_deref(),
+            )
         }
         other => Err(format!("unknown secret_id '{other}'")),
     }
@@ -216,4 +267,18 @@ pub fn save_secret(secret_id: &str, value: Option<String>) -> Result<(), String>
 
 pub fn clear_secret(secret_id: &str) -> Result<(), String> {
     save_secret(secret_id, None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dynamic_provider_secrets_use_opaque_coordinates() {
+        let (account, file) = provider_secret_coordinates("api_key", "openai.compatible").unwrap();
+        assert!(account.starts_with("api_key.pv1-"));
+        assert!(file.starts_with("api_key_pv1-"));
+        assert!(!file.contains("openai.compatible"));
+        assert!(provider_secret_coordinates("api_key", "../../outside").is_err());
+    }
 }

@@ -1,13 +1,13 @@
 # Security abuse verification matrix
 
-> **Status:** Active contract; H01 automated coverage implemented, external platform evidence pending
+> **Status:** Active contract; H01/H02 automated coverage implemented, packaged-app evidence pending
 > **Program:** [Medousa hardening](../README.md)
 > **Primary findings:** SEC-001, SEC-002, SEC-003, DESKTOP-001
 > **Required decisions:** ADR-013, ADR-014, ADR-018 (planned)
 
 This document defines the evidence required to close Gate A. It describes
-tests that must exist and pass. In-repository H01 coverage is linked below;
-packaged-app, real-browser, and supported-platform evidence remains a release
+tests that must exist and pass. In-repository H01/H02 coverage is linked below;
+packaged-app, real-browser, and provisioned-host evidence remains a release
 artifact rather than an inference from unit tests.
 
 ## Verification principles
@@ -188,6 +188,22 @@ ledger, vault, trash, overlay, Forge work/attempt, and export identifiers.
 
 Run FS-001–008 on Linux, macOS, and Windows. Unix symlink tests are not a
 substitute for Windows junction/reparse and path-alias tests.
+
+The `filesystem-authority` CI matrix runs the shared root-capability fixtures,
+held turn-journal fixtures, and held model-payload fixtures on native Linux,
+macOS, and Windows runners. Its Windows root suite creates an NTFS mount-point
+reparse buffer directly with `DeviceIoControl`; it cannot silently skip for
+missing symbolic-link privilege and does not invoke PowerShell, `cmd.exe`, or
+another shell to manufacture the junction. The suite denies junction-backed
+read, list, append, atomic write, rename, file delete, and recursive delete,
+then verifies the outside canary. Cross-platform hard-link fixtures deny
+content/metadata reads, append, copy, and rename while proving atomic replace
+severs the inside name without mutating the outside inode.
+
+This CI matrix is repeatable supported-platform library evidence. It does not
+replace the fresh-process destructive runner, mount/bind cases that require
+host provisioning, or packaged Tauri evidence required by the Gate A exit
+criteria.
 
 Each destructive test creates canaries immediately inside and outside the
 allowed root. Success requires the intended object state and byte-identical

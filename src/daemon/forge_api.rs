@@ -290,17 +290,15 @@ fn actor_from_state(state: &AppState) -> ActorRef {
 }
 
 fn parse_work_id(raw: &str) -> ApiResult<WorkId> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return Err((
+    WorkId::parse_storage(raw).map_err(|_| {
+        (
             StatusCode::BAD_REQUEST,
             Json(ErrorBody {
-                error: "work_id is required".into(),
+                error: "invalid work_id".into(),
                 kind: Some("bad_request"),
             }),
-        ));
-    }
-    Ok(WorkId::from(trimmed.to_string()))
+        )
+    })
 }
 
 fn request_error(status: StatusCode, message: impl Into<String>) -> ApiError {

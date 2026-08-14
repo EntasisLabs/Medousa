@@ -6,6 +6,8 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
+use crate::store_root::{StorePath, StoreRoot};
+
 pub const DEFAULT_OPENSHELL_GATEWAY_URL: &str = "http://127.0.0.1:8080";
 pub const ENV_OPENSHELL_GATEWAY_URL: &str = "MEDOUSA_OPENSHELL_GATEWAY_URL";
 
@@ -57,8 +59,10 @@ pub fn resolve_openshell_gateway_url(explicit: Option<&str>) -> String {
 }
 
 pub fn read_active_gateway_name() -> Option<String> {
-    let path = openshell_config_dir().join("active_gateway");
-    let raw = std::fs::read_to_string(&path).ok()?;
+    let root = StoreRoot::open_nofollow(&openshell_config_dir()).ok()?;
+    let path = StorePath::parse("active_gateway").expect("constant store path");
+    let raw = root.read_limited(&path, 4096).ok()?;
+    let raw = String::from_utf8(raw).ok()?;
     let name = raw.trim();
     if name.is_empty() {
         None
@@ -69,12 +73,10 @@ pub fn read_active_gateway_name() -> Option<String> {
 
 fn read_active_gateway_endpoint() -> Option<String> {
     let name = read_active_gateway_name()?;
-    let metadata_path = openshell_config_dir()
-        .join("gateways")
-        .join(&name)
-        .join("metadata.json");
-    let raw = std::fs::read_to_string(&metadata_path).ok()?;
-    let parsed: OpenshellGatewayMetadata = serde_json::from_str(&raw).ok()?;
+    let root = StoreRoot::open_nofollow(&openshell_config_dir()).ok()?;
+    let metadata_path = StorePath::parse(&format!("gateways/{name}/metadata.json")).ok()?;
+    let raw = root.read_limited(&metadata_path, 64 * 1024).ok()?;
+    let parsed: OpenshellGatewayMetadata = serde_json::from_slice(&raw).ok()?;
     let endpoint = parsed.gateway_endpoint.trim();
     if endpoint.is_empty() {
         None

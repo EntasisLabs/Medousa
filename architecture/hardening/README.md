@@ -133,8 +133,8 @@ one without retaining the history.
 | Finding | Severity | Primary owner | Gate | State | Closure evidence |
 | --- | --- | --- | --- | --- | --- |
 | SEC-001 | Critical | H01 | A | Mitigated; release validation pending | Authentication/route abuse matrix |
-| SEC-002 | Critical | H02 | A | Proposed | Cross-platform traversal/destructive-operation tests |
-| SEC-003 | High | H02 | A | Proposed | Symlink/junction race tests |
+| SEC-002 | Critical | H02 | A | Mitigated; H02.5 platform validation pending | Typed opaque authority IDs, no-follow stores, cross-platform traversal/destructive-operation tests |
+| SEC-003 | High | H02 | A | Mitigated; replacement-race and native Windows validation pending | Symlink/junction race tests |
 | DESKTOP-001 | Critical | H08 | A | Proposed | Packaged remote-origin IPC denial/bridge tests |
 | PERF-001 | Critical | H03 | C | Proposed | Stream allocation/I/O/latency profile |
 | MEM-002 | High | H03 | C | Proposed | Stalled-consumer memory and cancellation stress |
