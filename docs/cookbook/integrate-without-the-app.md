@@ -24,6 +24,10 @@ medousa-cli daemon-ask "What changed in ops this week?" \
 
 Or `POST /v1/jobs/ask` + poll `/v1/jobs/{id}/result` from your service.
 
+Direct HTTP integrations must pair and send the issued bearer on every
+protected request, including requests to `127.0.0.1`. Do not copy one of
+Medousa's first-party local credentials into another process.
+
 **Corp angle:** Internal dashboard → your backend → Medousa Engine on VPC. Employees never see Medousa UI; they see *your* product powered by the same brain.
 
 ---
@@ -34,6 +38,7 @@ Build a custom chat UI:
 
 - `POST /v1/interactive/turn` with SSE
 - Same route the TUI and app use
+- `Authorization: Bearer <paired credential>` on start, stream, and reconnect
 - Session + identity headers per your policy
 
 Reference client: `medousa_tui`, `apps/medousa-home` frontend.

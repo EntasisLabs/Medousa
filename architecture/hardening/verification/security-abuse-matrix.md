@@ -1,13 +1,14 @@
 # Security abuse verification matrix
 
-> **Status:** Draft baseline contract
+> **Status:** Active contract; H01 automated coverage implemented, external platform evidence pending
 > **Program:** [Medousa hardening](../README.md)
 > **Primary findings:** SEC-001, SEC-002, SEC-003, DESKTOP-001
 > **Required decisions:** ADR-013, ADR-014, ADR-018 (planned)
 
 This document defines the evidence required to close Gate A. It describes
-tests that must exist and pass; it does not claim the current implementation
-passes them. Current known failures are recorded explicitly.
+tests that must exist and pass. In-repository H01 coverage is linked below;
+packaged-app, real-browser, and supported-platform evidence remains a release
+artifact rather than an inference from unit tests.
 
 ## Verification principles
 
@@ -110,7 +111,7 @@ capability and ownership policy,” never unconditional success.
 
 | ID | Case | Expected evidence |
 | --- | --- | --- |
-| DA-001 | Start Personal mode on non-loopback; call every non-bootstrap route anonymously | Every call denied before handler side effects; current code is expected to fail this case |
+| DA-001 | Start Personal mode on non-loopback; call every non-bootstrap route anonymously | Every call denied before handler side effects |
 | DA-002 | Repeat DA-001 in Shared mode | Same default-deny behavior |
 | DA-003 | Present malformed, wrong-signature, expired, and revoked credentials | Uniform denial; no identity enrichment fallback |
 | DA-004 | Use peer token against every non-peer route | Denial with no mutation, file access, subprocess, or model work |
@@ -122,6 +123,14 @@ capability and ownership policy,” never unconditional success.
 | DA-010 | Route through Iroh/proxy transport with forged loopback-looking metadata | Transport identity, not peer IP, determines trust |
 | DA-011 | Saturate pairing/bootstrap attempts from one and many identities | Rate limit and bounded resource behavior; existing sessions remain responsive |
 | DA-012 | Add a synthetic undeclared route in a test build | Inventory/policy build or test fails closed |
+
+H01 automated evidence lives in `peer_scope`, `daemon::request_boundary`,
+`daemon::route_policy`, `pairing`, `credential_lifecycle`, and
+`medousa-local-credential` tests. These cover assembled socket enforcement,
+ambiguous credentials, capability policy, host/origin/CORS behavior, bounded
+pairing, rotation, revocation, and live stream closure. Real browser and
+packaged supported-platform runs are still required for the final evidence
+bundle.
 
 ## Browser origin, CORS, and request-forgery matrix
 

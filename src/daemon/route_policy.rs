@@ -437,7 +437,10 @@ mod tests {
         let router = DeclaredRouter::default()
             .route(protected(), get(|| async { StatusCode::NO_CONTENT }))
             .into_router()
-            .layer(Extension(RequestPrincipal::legacy_local()));
+            .layer(Extension(RequestPrincipal::local_app(
+                Arc::from("test-local"),
+                TransportClass::Loopback,
+            )));
         let response = router
             .oneshot(
                 Request::builder()
@@ -466,7 +469,10 @@ mod tests {
                 }),
             )
             .into_router()
-            .layer(Extension(RequestPrincipal::legacy_local()));
+            .layer(Extension(RequestPrincipal::local_app(
+                Arc::from("test-local"),
+                TransportClass::Loopback,
+            )));
         let response = router
             .oneshot(
                 Request::builder()
@@ -487,7 +493,10 @@ mod tests {
         let router = DeclaredRouter::default()
             .route(protected(), get(|| async { StatusCode::NO_CONTENT }))
             .into_router()
-            .layer(Extension(RequestPrincipal::legacy_local()));
+            .layer(Extension(RequestPrincipal::local_app(
+                Arc::from("test-local"),
+                TransportClass::Loopback,
+            )));
         let response = router
             .oneshot(
                 Request::builder()

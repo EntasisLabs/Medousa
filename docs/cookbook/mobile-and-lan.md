@@ -42,7 +42,8 @@ npm run tauri ios dev
 ## Non-loopback bind
 
 `--public` publishes the complete daemon router, but application routes require
-local-app or paired credentials. QR/status/code/ticket operations are protected;
+local-app or paired credentials exactly as they do on loopback.
+QR/status/code/ticket operations are protected;
 only the bounded pairing ceremony is anonymous. Browser origins and request
 hosts are exact allowlists rather than wildcard CORS.
 

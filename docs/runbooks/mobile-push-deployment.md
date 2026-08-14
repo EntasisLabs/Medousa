@@ -169,7 +169,7 @@ Admin remove from the Mac:
 ```bash
 medousa pair list
 medousa pair remove <full-pairing-uuid>
-# defaults to http://127.0.0.1:7419 (loopback admin)
+# defaults to http://127.0.0.1:7419 (authenticated local admin)
 ```
 
 ---

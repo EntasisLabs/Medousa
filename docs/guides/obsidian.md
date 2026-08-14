@@ -28,6 +28,8 @@ run **Medousa: Open chat** from the Command Palette.
 The default workshop is `http://127.0.0.1:7419`. Change the endpoint under
 **Settings → Community plugins → Medousa**. The local development slice keeps a
 remote bearer token in memory only; it is not written into vault plugin data.
+Protected routes require that paired bearer for local loopback workshops too;
+loopback alone does not identify the plugin.
 
 The plugin needs the Medousa daemon endpoint, not the MCP gateway (`:7420`) or
 the local inference endpoint (`:7421`). In Medousa Home, use the active

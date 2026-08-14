@@ -298,9 +298,10 @@ mod tests {
     fn test_router() -> axum::Router {
         surface()
             .into_router()
-            .layer(Extension(
-                crate::request_principal::RequestPrincipal::legacy_local(),
-            ))
+            .layer(Extension(crate::request_principal::RequestPrincipal::local_app(
+                std::sync::Arc::from("test-local"),
+                crate::request_principal::TransportClass::Loopback,
+            )))
     }
 
     #[tokio::test]

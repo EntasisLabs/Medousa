@@ -77,12 +77,12 @@ pub struct PairHeartbeatInvokeRequest {
     pub mesh_iroh_endpoint_id: Option<String>,
 }
 
-fn pairing_http_client() -> Result<Client, String> {
-    Client::builder()
-        .connect_timeout(Duration::from_secs(5))
-        .timeout(Duration::from_secs(10))
-        .build()
-        .map_err(|err| err.to_string())
+fn pairing_http_client(base_url: &str) -> Result<Client, String> {
+    crate::workshop_transport::protected_http_client(
+        base_url,
+        Duration::from_secs(5),
+        Duration::from_secs(10),
+    )
 }
 
 fn daemon_base(state: &State<'_, DaemonState>) -> Result<String, String> {
@@ -112,7 +112,7 @@ pub async fn pairing_fetch_qr(
     full: Option<bool>,
 ) -> Result<PairingQrResponse, String> {
     let base = daemon_base(&state)?;
-    let client = pairing_http_client()?;
+    let client = pairing_http_client(&base)?;
     let path = if full.unwrap_or(false) {
         format!("{base}/qr?full=true")
     } else {
@@ -171,7 +171,7 @@ pub async fn pairing_fetch_qr_image(
     state: State<'_, DaemonState>,
 ) -> Result<PairingQrImage, String> {
     let base = daemon_base(&state)?;
-    let client = pairing_http_client()?;
+    let client = pairing_http_client(&base)?;
     fetch_qr_image_once(&base, &client).await
 }
 
@@ -184,7 +184,7 @@ pub async fn pairing_wait_ready(
     let poll = Duration::from_millis(750);
     let started = Instant::now();
     let base = daemon_base(&state)?;
-    let client = pairing_http_client()?;
+    let client = pairing_http_client(&base)?;
     let mut last_error = "Pairing is still starting…".to_string();
 
     while started.elapsed() < timeout {
@@ -203,7 +203,7 @@ pub async fn pairing_fetch_status(
     state: State<'_, DaemonState>,
 ) -> Result<PairingStatusResponse, String> {
     let base = daemon_base(&state)?;
-    let client = pairing_http_client()?;
+    let client = pairing_http_client(&base)?;
     let response = client
         .get(format!("{base}/pair/status"))
         .send()
@@ -233,7 +233,7 @@ pub async fn pairing_rotate_invite(
     profile_id: Option<String>,
 ) -> Result<PairingQrResponse, String> {
     let base = daemon_base(&state)?;
-    let client = pairing_http_client()?;
+    let client = pairing_http_client(&base)?;
     let body = RotateInviteBody {
         profile_id: profile_id
             .map(|value| value.trim().to_string())
@@ -266,7 +266,7 @@ pub async fn pairing_revoke(
         return Err("pairing_id is required".to_string());
     }
     let base = daemon_base(&state)?;
-    let client = pairing_http_client()?;
+    let client = pairing_http_client(&base)?;
     let response = client
         .delete(format!("{base}/pair/{trimmed}"))
         .send()

@@ -2,7 +2,6 @@
 
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU8, Ordering};
 
 use axum::Router;
 use axum::body::Body;
@@ -25,7 +24,6 @@ pub struct DaemonAccessState {
     local_credentials: Option<Arc<LocalCredentialSet>>,
     mcp_policy_token: Option<Arc<str>>,
     surface: AccessSurface,
-    legacy_loopback_compatibility: bool,
     credential_lifecycle: CredentialLifecycle,
 }
 
@@ -40,7 +38,6 @@ impl DaemonAccessState {
             local_credentials: None,
             mcp_policy_token: None,
             surface: AccessSurface::Protected,
-            legacy_loopback_compatibility: true,
             credential_lifecycle,
         }
     }
@@ -52,11 +49,6 @@ impl DaemonAccessState {
 
     pub fn with_credential_lifecycle(mut self, lifecycle: CredentialLifecycle) -> Self {
         self.credential_lifecycle = lifecycle;
-        self
-    }
-
-    pub fn with_legacy_loopback_compatibility(mut self, enabled: bool) -> Self {
-        self.legacy_loopback_compatibility = enabled;
         self
     }
 
@@ -74,7 +66,6 @@ impl DaemonAccessState {
             local_credentials: self.local_credentials.clone(),
             mcp_policy_token: self.mcp_policy_token.clone(),
             surface,
-            legacy_loopback_compatibility: self.legacy_loopback_compatibility,
             credential_lifecycle: self.credential_lifecycle.clone(),
         }
     }
@@ -86,42 +77,6 @@ enum AccessSurface {
     Declared,
     Preview,
     Protected,
-}
-
-static LEGACY_COMPATIBILITY_SURFACES: AtomicU8 = AtomicU8::new(0);
-pub const LEGACY_LOOPBACK_COMPATIBILITY_REMOVAL_VERSION: &str = "0.11.0";
-
-pub fn legacy_loopback_compatibility_enabled(listener: SocketAddr) -> bool {
-    listener.ip().is_loopback()
-        && version_tuple(env!("CARGO_PKG_VERSION"))
-            < version_tuple(LEGACY_LOOPBACK_COMPATIBILITY_REMOVAL_VERSION)
-}
-
-fn version_tuple(version: &str) -> (u64, u64, u64) {
-    let mut parts = version
-        .split('.')
-        .map(|part| part.parse().unwrap_or(u64::MAX));
-    (
-        parts.next().unwrap_or(u64::MAX),
-        parts.next().unwrap_or(u64::MAX),
-        parts.next().unwrap_or(u64::MAX),
-    )
-}
-
-fn record_legacy_compatibility_use(surface: AccessSurface) {
-    let (bit, surface) = match surface {
-        AccessSurface::Bootstrap => (1, "bootstrap"),
-        AccessSurface::Declared => (2, "declared"),
-        AccessSurface::Preview => (4, "preview"),
-        AccessSurface::Protected => (8, "compatibility"),
-    };
-    if LEGACY_COMPATIBILITY_SURFACES.fetch_or(bit, Ordering::Relaxed) & bit == 0 {
-        tracing::warn!(
-            client_surface = surface,
-            removal_release = LEGACY_LOOPBACK_COMPATIBILITY_REMOVAL_VERSION,
-            "credentialless loopback request used temporary compatibility authority"
-        );
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -187,7 +142,7 @@ pub fn assemble_daemon_access_boundary(
     )
 }
 
-/// Assemble compatibility, capability-declared, preview-token, and bootstrap
+/// Assemble protected, capability-declared, preview-token, and bootstrap
 /// authority branches. Capability routes authenticate here and authorize in
 /// their per-method policy layer. Preview routes intentionally bypass daemon
 /// bearer authentication and authorize the short-lived resource token in their
@@ -224,7 +179,6 @@ pub fn assemble_daemon_access_boundary_with_declared(
 
 /// Refuse a remotely reachable listener when no credential verifier can exist.
 ///
-/// Loopback retains the bounded legacy-local compatibility path during H01.
 /// This check is deliberately performed before binding or runtime startup.
 pub fn validate_listener_security(
     addr: SocketAddr,
@@ -311,11 +265,7 @@ pub async fn enforce_daemon_access(
         return run_with_principal(&state.credential_lifecycle, principal, request, next).await;
     }
 
-    if record.is_none()
-        && local_credential.is_none()
-        && !mcp_policy_authenticated
-        && (!trusted_local || !state.legacy_loopback_compatibility)
-    {
+    if record.is_none() && local_credential.is_none() && !mcp_policy_authenticated {
         return deny(
             &state.credential_lifecycle,
             AccessDenial::AuthenticationRequired,
@@ -331,18 +281,6 @@ pub async fn enforce_daemon_access(
             RequestPrincipal::from_pairing_record(record, transport, shared_mode)
         }
         (None, None) if mcp_policy_authenticated => RequestPrincipal::mcp_policy_service(transport),
-        (None, None)
-            if trusted_local
-                && state.legacy_loopback_compatibility
-                && state.mcp_policy_token.is_none() =>
-        {
-            record_legacy_compatibility_use(state.surface);
-            RequestPrincipal::legacy_local_with_mcp_policy()
-        }
-        (None, None) if trusted_local && state.legacy_loopback_compatibility => {
-            record_legacy_compatibility_use(state.surface);
-            RequestPrincipal::legacy_local()
-        }
         (None, None) => RequestPrincipal::anonymous(transport),
     };
     if matches!(state.surface, AccessSurface::Declared) {
@@ -428,7 +366,7 @@ mod tests {
         assemble_daemon_access_boundary(protected, bootstrap, DaemonAccessState::new(None))
     }
 
-    fn authenticated_local_test_app(compatibility: bool) -> Router {
+    fn authenticated_local_test_app() -> Router {
         let protected = Router::new().route(
             "/v1/turns",
             get(
@@ -446,14 +384,14 @@ mod tests {
         assemble_daemon_access_boundary(
             protected,
             Router::new(),
-            DaemonAccessState::new(None)
-                .with_local_credentials(Arc::new(LocalCredentialSet::new([
+            DaemonAccessState::new(None).with_local_credentials(Arc::new(LocalCredentialSet::new(
+                [
                     medousa_local_credential::LocalCredentialVerifier::from_token(
                         "home-id",
                         "home-secret",
                     ),
-                ])))
-                .with_legacy_loopback_compatibility(compatibility),
+                ],
+            ))),
         )
     }
 
@@ -471,7 +409,7 @@ mod tests {
                 format!("Bearer {bearer}").parse().expect("valid header"),
             );
         }
-        authenticated_local_test_app(false)
+        authenticated_local_test_app()
             .oneshot(request)
             .await
             .expect("middleware response")
@@ -489,8 +427,7 @@ mod tests {
             Router::new(),
             DaemonAccessState::new(None)
                 .with_local_credentials(credentials.clone())
-                .with_credential_lifecycle(lifecycle.clone())
-                .with_legacy_loopback_compatibility(false),
+                .with_credential_lifecycle(lifecycle.clone()),
         );
         let request = |token: &'static str| {
             let mut request = Request::builder()
@@ -644,22 +581,6 @@ mod tests {
     }
 
     #[test]
-    fn compatibility_window_has_not_reached_its_removal_release() {
-        assert!(
-            version_tuple(env!("CARGO_PKG_VERSION"))
-                < version_tuple(LEGACY_LOOPBACK_COMPATIBILITY_REMOVAL_VERSION),
-            "remove credentialless loopback compatibility before releasing {}",
-            LEGACY_LOOPBACK_COMPATIBILITY_REMOVAL_VERSION
-        );
-        assert!(legacy_loopback_compatibility_enabled(
-            "127.0.0.1:7419".parse().unwrap()
-        ));
-        assert!(!legacy_loopback_compatibility_enabled(
-            "0.0.0.0:7419".parse().unwrap()
-        ));
-    }
-
-    #[test]
     fn listener_security_rejects_remote_without_pairing() {
         for addr in ["0.0.0.0:7419", "[::]:7419", "192.0.2.10:7419"] {
             let addr = addr.parse().expect("valid address");
@@ -756,7 +677,7 @@ mod tests {
     async fn configured_mcp_policy_token_cannot_be_bypassed_on_loopback() {
         assert_eq!(
             mcp_request("/v1/mcp/policy/evaluate", "127.0.0.1:43100", None).await,
-            StatusCode::FORBIDDEN
+            StatusCode::UNAUTHORIZED
         );
         assert_eq!(
             mcp_request("/v1/mcp/policy/evaluate", "127.0.0.1:43100", Some("wrong")).await,
@@ -765,7 +686,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unset_mcp_policy_token_retains_loopback_compatibility_only() {
+    async fn unset_mcp_policy_token_denies_credentialless_loopback() {
         let mut request = Request::builder()
             .method(axum::http::Method::POST)
             .uri("/v1/mcp/policy/evaluate")
@@ -780,7 +701,7 @@ mod tests {
             .oneshot(request)
             .await
             .expect("middleware response");
-        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
@@ -835,15 +756,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn loopback_retains_temporary_local_compatibility() {
+    async fn loopback_requires_a_named_local_credential() {
         assert_eq!(
             request_from("/v1/turns", "127.0.0.1:43100", None).await,
-            StatusCode::NO_CONTENT
+            StatusCode::UNAUTHORIZED
         );
     }
 
     #[tokio::test]
-    async fn named_local_credential_replaces_loopback_authority() {
+    async fn named_local_credential_grants_loopback_authority() {
         assert_eq!(
             authenticated_local_request("127.0.0.1:43100", Some("home-secret")).await,
             StatusCode::NO_CONTENT
@@ -883,7 +804,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn declared_branch_uses_method_policy_not_legacy_path_classification() {
+    async fn declared_branch_uses_method_policy_not_path_classification() {
         let declared = DeclaredRouter::default().route(
             RoutePolicy {
                 method: axum::http::Method::GET,
@@ -902,10 +823,18 @@ mod tests {
             declared,
             DeclaredRouter::default(),
             Router::new(),
-            DaemonAccessState::new(None),
+            DaemonAccessState::new(None).with_local_credentials(Arc::new(LocalCredentialSet::new(
+                [
+                    medousa_local_credential::LocalCredentialVerifier::from_token(
+                        "home-id",
+                        "home-secret",
+                    ),
+                ],
+            ))),
         );
         let mut request = Request::builder()
             .uri("/health")
+            .header(AUTHORIZATION, "Bearer home-secret")
             .body(Body::empty())
             .unwrap();
         request.extensions_mut().insert(ConnectInfo(

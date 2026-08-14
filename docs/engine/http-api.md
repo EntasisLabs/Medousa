@@ -13,6 +13,27 @@ Subsystem guides: [interactive-streaming](interactive-streaming.md) · [artifact
 
 ---
 
+## Authentication
+
+Protected requests must send exactly one `Authorization: Bearer <credential>`
+header. This is required on loopback as well as LAN/Iroh: a loopback socket is
+not caller identity. Missing credentials return `401 authentication_required`;
+malformed, expired, revoked, or unknown credentials return `401
+invalid_credential`; insufficient capability returns `403 forbidden`.
+
+Medousa, `medousa`, and `medousa tui` provision and load independent
+`home-local`, `medousa-cli`, and `medousa-tui` credentials without exposing the
+secrets to webview state or command-line arguments. External integrations must
+pair, retain the issued bearer in an OS secret store, and configure their SDK
+transport with it.
+
+Anonymous access is limited to constant `/health` liveness, the bounded
+`/pair/init` + `/pair/verify` ceremony while an operator pairing window is
+active, and scoped preview URLs carrying their own short-lived grant. A supplied
+but invalid bearer never falls back to anonymous access.
+
+---
+
 ## Health & ops
 
 | Method | Path | Types / response | SDK | CLI |
@@ -574,7 +595,7 @@ operator-issued, unexpired, single-use invite can enter the ceremony.
 | POST | `/pair/verify` |
 | GET | `/pair/heartbeat` |
 | POST | `/pair/heartbeat` |
-| DELETE | `/pair/{pairing_id}` — loopback admin, or `Authorization: Bearer` session token for that pairing |
+| DELETE | `/pair/{pairing_id}` — `admin.identity`, or the paired bearer revoking itself |
 
 Cookbook: [mobile-and-lan.md](../cookbook/mobile-and-lan.md)
 

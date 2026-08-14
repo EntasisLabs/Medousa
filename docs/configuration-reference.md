@@ -72,6 +72,11 @@ Medousa resolves LLM settings in order: **saved defaults → env → built-in de
 | `MEDOUSA_MEDOUSA_DAEMON_BIN` | Explicit path to `medousa_daemon` | Tauri sidecar or PATH |
 | `MEDOUSA_PROJECT_ROOT` | Vault / project root override | unset |
 
+There is no `no_auth` or loopback bypass setting. Except for constant liveness,
+an active pairing ceremony, and scoped preview URLs, daemon routes require a
+named local-app or paired bearer. First-party native clients load their own
+credential from the platform keyring or owner-only data-directory file.
+
 **Tauri app (desktop dev):**
 
 | Variable | Purpose |
@@ -190,8 +195,9 @@ in **Settings → Runtime Controls → Worker capacity**; restart the engine aft
 | `MEDOUSA_PAIRING_ADVERTISE` | Force mDNS when not `--public` |
 | `MEDOUSA_PAIRING_DISABLE_TLS` | Dev only — plaintext pairing |
 
-`--public` still binds the complete daemon router, but application routes require
-local-app or paired credentials. Pair initiation and verification are the only
+`--public` binds the complete daemon router, but protected routes require
+local-app or paired credentials exactly as they do on loopback. Pair initiation
+and verification are the only
 anonymous ceremony routes; invite generation, status, codes, and Iroh tickets
 remain authenticated. Host and browser-origin checks are exact. Prefer Iroh and
 do not expose port 7419 directly to the internet; use a trusted LAN for compact

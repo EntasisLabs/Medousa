@@ -711,7 +711,13 @@ mod tests {
 
     #[test]
     fn local_only_checks_use_normalized_principal_transport() {
-        assert!(require_trusted_local(&RequestPrincipal::legacy_local()).is_ok());
+        assert!(
+            require_trusted_local(&RequestPrincipal::local_app(
+                Arc::from("test-local"),
+                TransportClass::Loopback,
+            ))
+            .is_ok()
+        );
         assert!(
             require_trusted_local(&RequestPrincipal::anonymous(TransportClass::Direct)).is_err()
         );

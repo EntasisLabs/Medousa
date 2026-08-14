@@ -268,7 +268,7 @@ fn print_pair_help() {
     );
     println!("Generate an invite with `medousa pair qr`, then turn LAN pairing off after use.");
     println!();
-    println!("Remove defaults to {DEFAULT_DAEMON_URL} (loopback admin).");
+    println!("Remove defaults to {DEFAULT_DAEMON_URL} (authenticated local admin).");
     println!("Connect as a client: medousa peer --help");
 }
 

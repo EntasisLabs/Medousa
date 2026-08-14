@@ -360,9 +360,7 @@ async fn revoke_pairing(
     Path(pairing_id): Path<String>,
 ) -> Result<StatusCode, StatusCode> {
     let authority = match principal.kind() {
-        PrincipalKind::LegacyLocal | PrincipalKind::LocalApp | PrincipalKind::Root => {
-            RevokePairingAuthority::Administrator
-        }
+        PrincipalKind::LocalApp | PrincipalKind::Root => RevokePairingAuthority::Administrator,
         _ => principal
             .credential_id()
             .map(|id| RevokePairingAuthority::Credential(id.as_str()))

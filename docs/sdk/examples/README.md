@@ -5,11 +5,21 @@ Runnable snippets (add to `crates/medousa-sdk/examples/` when wiring CI).
 ## Health check
 
 ```rust
-use medousa_sdk::MedousaClient;
+use std::sync::Arc;
+use medousa_sdk::{MedousaClient, Transport};
+use medousa_sdk_iroh::{WorkshopTransport, WorkshopTransportConfig};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client = MedousaClient::new("http://127.0.0.1:7419");
+    let transport = WorkshopTransport::new(WorkshopTransportConfig::from_workshop_parts(
+        "http://127.0.0.1:7419",
+        Some(std::env::var("MEDOUSA_TOKEN")?),
+        None,
+    ));
+    let client = MedousaClient::with_transport(
+        Arc::new(transport) as Arc<dyn Transport>,
+        "http://127.0.0.1:7419",
+    );
     let health = client.health().get().await?;
     println!("{:?}", health);
     Ok(())

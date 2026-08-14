@@ -75,12 +75,12 @@ pub struct TrustWorkshopFromQrRequest {
     pub workshop_name: Option<String>,
 }
 
-fn daemon_http_client() -> Result<Client, String> {
-    Client::builder()
-        .connect_timeout(Duration::from_secs(5))
-        .timeout(Duration::from_secs(30))
-        .build()
-        .map_err(|err| err.to_string())
+fn daemon_http_client(base_url: &str) -> Result<Client, String> {
+    crate::workshop_transport::protected_http_client(
+        base_url,
+        Duration::from_secs(5),
+        Duration::from_secs(30),
+    )
 }
 
 fn daemon_base(state: &State<'_, DaemonState>) -> Result<String, String> {
@@ -105,7 +105,7 @@ pub async fn lan_discover_workshops(
     state: State<'_, DaemonState>,
 ) -> Result<LanWorkshopsResponse, String> {
     let base = daemon_base(&state)?;
-    let client = daemon_http_client()?;
+    let client = daemon_http_client(&base)?;
     let response = client
         .get(format!("{base}/v1/lan/workshops"))
         .send()
@@ -128,7 +128,7 @@ pub async fn share_export_bundle(
     request: ShareExportInvokeRequest,
 ) -> Result<serde_json::Value, String> {
     let base = daemon_base(&state)?;
-    let client = daemon_http_client()?;
+    let client = daemon_http_client(&base)?;
     let response = client
         .post(format!("{base}/v1/share/export"))
         .json(&request)
@@ -152,7 +152,7 @@ pub async fn share_import_bundle(
     request: ShareImportInvokeRequest,
 ) -> Result<serde_json::Value, String> {
     let base = daemon_base(&state)?;
-    let client = daemon_http_client()?;
+    let client = daemon_http_client(&base)?;
     let response = client
         .post(format!("{base}/v1/share/import"))
         .json(&request)
@@ -269,7 +269,7 @@ async fn fetch_pair_status_value(
     state: &State<'_, DaemonState>,
 ) -> Result<serde_json::Value, String> {
     let base = daemon_base(state)?;
-    let client = daemon_http_client()?;
+    let client = daemon_http_client(&base)?;
     let response = client
         .get(format!("{base}/pair/status"))
         .send()
@@ -306,7 +306,7 @@ pub async fn revoke_trusted_workshop(
             .ok_or_else(|| format!("Inbound peer '{phone_id}' not found"))?
             .to_string();
         let base = daemon_base(&state)?;
-        let client = daemon_http_client()?;
+        let client = daemon_http_client(&base)?;
         let response = client
             .delete(format!("{base}/pair/{pairing_id}"))
             .send()

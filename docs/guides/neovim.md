@@ -33,6 +33,8 @@ require("medousa").setup({
 ```
 
 The token is read from configuration or `MEDOUSA_TOKEN`; it is not logged.
+It is required for protected routes even when the endpoint is loopback. Obtain
+it through pairing and inject it from your editor's secret-management setup.
 The active daemon session id is stored in Neovim's state directory so the
 coding room can resume after restarting the editor.
 

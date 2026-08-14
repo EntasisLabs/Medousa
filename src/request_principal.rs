@@ -11,7 +11,6 @@ use crate::shared_mode::root_profile_id;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PrincipalKind {
     Anonymous,
-    LegacyLocal,
     LocalApp,
     McpGateway,
     Portal,
@@ -146,24 +145,6 @@ impl RequestPrincipal {
             capabilities: CapabilitySet::empty(),
             transport,
             revocation_generation: 0,
-        }
-    }
-
-    pub fn legacy_local() -> Self {
-        Self {
-            kind: PrincipalKind::LegacyLocal,
-            credential_id: None,
-            profile_id: None,
-            capabilities: CapabilitySet::operator(),
-            transport: TransportClass::Loopback,
-            revocation_generation: 0,
-        }
-    }
-
-    pub fn legacy_local_with_mcp_policy() -> Self {
-        Self {
-            capabilities: CapabilitySet::operator().with(Capability::McpPolicyEvaluate),
-            ..Self::legacy_local()
         }
     }
 
@@ -334,20 +315,6 @@ mod tests {
         assert_eq!(principal.kind(), PrincipalKind::Peer);
         assert!(principal.capabilities().contains(Capability::PeerExchange));
         assert!(!principal.capabilities().contains(Capability::ContentRead));
-    }
-
-    #[test]
-    fn legacy_local_is_explicit_and_temporary() {
-        let principal = RequestPrincipal::legacy_local();
-        assert_eq!(principal.kind(), PrincipalKind::LegacyLocal);
-        assert!(principal.credential_id().is_none());
-        assert_eq!(principal.transport(), TransportClass::Loopback);
-        assert!(principal.capabilities().contains(Capability::AdminExecute));
-        assert!(
-            !principal
-                .capabilities()
-                .contains(Capability::McpPolicyEvaluate)
-        );
     }
 
     #[test]

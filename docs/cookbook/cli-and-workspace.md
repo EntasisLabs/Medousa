@@ -60,6 +60,11 @@ revocation epoch, and active authenticated stream leases. Revocation closes
 matching SSE and daemon-owned WebSocket sessions; reconnects with the old token
 receive `401`.
 
+All protected CLI and TUI calls require these credentials even when the daemon
+is on `127.0.0.1`. If a credential is missing or revoked, start Medousa once to
+provision the first-party records, or use another active administrator to rotate
+the affected credential. There is no anonymous loopback fallback.
+
 ### Local models (`medousa models`)
 
 ```

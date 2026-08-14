@@ -19,16 +19,27 @@ Shared client libraries for talking to **medousa_daemon** without duplicating HT
 
 ```rust
 use std::sync::Arc;
+use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use medousa_sdk::{HttpTransport, MedousaClient};
 
+let bearer = std::env::var("MEDOUSA_TOKEN")?;
+let mut headers = HeaderMap::new();
+let mut authorization = HeaderValue::from_str(&format!("Bearer {bearer}"))?;
+authorization.set_sensitive(true);
+headers.insert(AUTHORIZATION, authorization);
+let http = reqwest::Client::builder().default_headers(headers).build()?;
 let client = MedousaClient::with_transport(
-    Arc::new(HttpTransport::new()),
+    Arc::new(HttpTransport::with_client(http)),
     "http://127.0.0.1:7419",
 );
 
 let health = client.health().get().await?;
 let sessions = client.sessions().list(20).await?;
 ```
+
+The bearer is required for protected routes even on loopback. External clients
+should obtain a paired credential and store it in an OS secret store; do not
+reuse Medousa's private first-party local credentials.
 
 ## `MedousaClient` accessors
 

@@ -744,9 +744,6 @@ async fn main() -> Result<()> {
         medousa::peer_scope::DaemonAccessState::new(peer_message_state.pairing.clone())
             .with_local_credentials(local_credentials)
             .with_credential_lifecycle(credential_lifecycle)
-            .with_legacy_loopback_compatibility(
-                medousa::peer_scope::legacy_loopback_compatibility_enabled(addr),
-            )
             .with_mcp_policy_token(medousa::mcp_gateway::resolve_mcp_policy_token());
     let mesh_api_state = medousa::mesh::MeshApiState {
         pairing: peer_message_state.pairing.clone(),

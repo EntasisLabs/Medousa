@@ -1,6 +1,6 @@
 # ADR-013: Daemon trust zones and mandatory authentication
 
-> **Status:** Proposed
+> **Status:** Accepted
 >
 > **Date:** 2026-08-13
 >
@@ -15,7 +15,7 @@ assembled Axum router can start turns, read and mutate vault data, manage
 packages and models, approve operations, control runtime state, and reach
 process- and filesystem-adjacent features.
 
-The current boundary does not match that authority:
+Before this decision was implemented, the boundary did not match that authority:
 
 - Personal mode permits unauthenticated non-loopback requests to almost the
   entire router.
@@ -90,10 +90,10 @@ Credentials are individually revocable and rotatable. File permissions are a
 defense in depth and enrollment mechanism, not the request authentication
 decision itself.
 
-Raw loopback trust is a migration-only compatibility state. It is permitted
-only on a loopback-bound daemon, emits a bounded warning/metric, grants no
-remote or Iroh authority, and is removed after first-party native clients have
-migrated. No permanent `--no-auth` production mode is introduced.
+Raw loopback trust was permitted only as a bounded migration state while
+first-party clients adopted named credentials. That compatibility path is now
+deleted: protected loopback requests without a credential receive `401`, and no
+permanent `--no-auth` production mode exists.
 
 ### 4. Routes declare policy where they are assembled
 
@@ -193,8 +193,8 @@ confirming whether a specific secret or identity exists.
 
 - Home, CLI, TUI, SDK transports, SSE, multipart, and raw-upload paths must all
   learn the local or paired credential contract.
-- Existing loopback clients need a bounded compatibility release before raw
-  loopback trust is removed.
+- Legacy loopback clients must migrate to a named local-app or paired credential;
+  credentialless protected requests now fail with `401`.
 - Route composition changes are broad and require an assembled-router inventory
   test, not only policy-helper unit tests.
 - Credential rotation and live-stream revocation add state and operational work.
