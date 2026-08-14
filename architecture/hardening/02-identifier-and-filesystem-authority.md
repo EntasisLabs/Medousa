@@ -90,8 +90,19 @@ the same atomic replacement primitive. Obsolete public flat-file path helpers
 have been removed, so new callers cannot bypass the capability owner.
 Replacement-path fixtures prove that the production wrapper continues writing
 to the originally opened directory after its ambient name is moved and replaced.
-Directory-shaped session satellites still require migration, and native Windows
-reparse/junction evidence remains open before H02.2 is complete.
+
+The extraction, context-pack, and verification satellites now own lazy
+`SessionDirectoryStore` capabilities for their session directories and
+root-level indexes. Payload lookup is derived from `(SessionId, logical object
+ID)` input through a domain-separated `o1-` key; persisted `output_path` strings are
+metadata, never read or deletion authority. New index rows contain only the
+opaque relative object name, and JSONL scans avoid per-line `String`
+allocations. Safe legacy session directories migrate by handle-relative rename
+on first write. Existing platform-invalid object names and absolute index
+metadata are neither followed nor reinterpreted as authority; recovering those
+payloads waits for H02.4 inventory/quarantine. Artifact/media payload leasing
+and coder-checkpoint migration remain separate directory-store trains, and
+native Windows reparse/junction evidence remains open before H02.2 is complete.
 
 ## Current evidence and blast radius
 

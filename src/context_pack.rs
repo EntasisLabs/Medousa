@@ -1,10 +1,18 @@
 use chrono::{DateTime, Utc};
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use std::io::{BufRead, Write};
-use std::path::{Path, PathBuf};
 
 use crate::artifact_chunking::SttpChunkNodeRef;
 use crate::artifact_extraction::EvidenceClaim;
+use crate::store_root::StorePath;
+
+const CONTEXT_PACK_OBJECT_DOMAIN: &[u8] = b"context-pack";
+
+static CONTEXT_PACK_STORE: Lazy<crate::session_storage::SessionDirectoryStore> = Lazy::new(|| {
+    crate::session_storage::SessionDirectoryStore::new(
+        crate::paths::medousa_data_dir().join("context_packs"),
+    )
+});
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextPackBudgetProfile {
@@ -78,11 +86,11 @@ pub fn build_context_pack(input: BuildContextPackInput) -> ContextPack {
 pub fn persist_context_pack(pack: &ContextPack) -> std::result::Result<(), String> {
     let session_id = crate::session_storage::SessionId::parse(&pack.session_id)
         .map_err(|error| error.to_string())?;
-    let session_dir = crate::session_storage::session_dir_for_write(&packs_root(), &session_id)
-        .map_err(|err| err.to_string())?;
-    let output_path = session_dir.join(format!("{}.json", pack.pack_id));
+    let output_path = context_pack_path(&pack.pack_id);
     let raw = serde_json::to_vec_pretty(pack).map_err(|err| err.to_string())?;
-    std::fs::write(&output_path, raw).map_err(|err| err.to_string())?;
+    CONTEXT_PACK_STORE
+        .atomic_write(&session_id, &output_path, &raw)
+        .map_err(|err| err.to_string())?;
     append_index_record(pack, &output_path)?;
     Ok(())
 }
@@ -124,9 +132,11 @@ pub fn find_context_pack(session_id: &str, query: Option<&str>) -> Option<Contex
         })
     }?;
 
-    std::fs::read_to_string(&record.output_path)
+    let session_id = crate::session_storage::SessionId::parse(&record.session_id).ok()?;
+    CONTEXT_PACK_STORE
+        .read(&session_id, &context_pack_path(&record.pack_id))
         .ok()
-        .and_then(|raw| serde_json::from_str::<ContextPack>(&raw).ok())
+        .and_then(|raw| serde_json::from_slice::<ContextPack>(&raw).ok())
 }
 
 pub fn delete_context_packs_for_session(session_id: &str) -> Result<(), String> {
@@ -137,67 +147,59 @@ pub fn delete_context_packs_for_session(session_id: &str) -> Result<(), String> 
         .filter(|record| record.session_id != session_id.as_str())
         .collect::<Vec<_>>();
     overwrite_index_records(&remaining)?;
-    crate::session_storage::remove_session_dir(&packs_root(), &session_id)
+    CONTEXT_PACK_STORE
+        .remove_session(&session_id)
         .map_err(|error| error.to_string())
 }
 
-fn append_index_record(pack: &ContextPack, output_path: &Path) -> std::result::Result<(), String> {
-    let index_path = packs_root().join("index.jsonl");
-    if let Some(parent) = index_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
-
+fn append_index_record(
+    pack: &ContextPack,
+    output_path: &StorePath,
+) -> std::result::Result<(), String> {
     let record = ContextPackIndexRecord {
         pack_id: pack.pack_id.clone(),
         session_id: pack.session_id.clone(),
         artifact_id: pack.artifact_id.clone(),
         created_at_utc: pack.created_at_utc,
         total_token_estimate: pack.total_token_estimate,
-        output_path: output_path.to_string_lossy().to_string(),
+        output_path: output_path.file_name().to_string(),
     };
 
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(index_path)
-        .map_err(|err| err.to_string())?;
-    let line = serde_json::to_string(&record).map_err(|err| err.to_string())?;
-    writeln!(file, "{line}").map_err(|err| err.to_string())?;
-    Ok(())
+    let mut line = serde_json::to_vec(&record).map_err(|err| err.to_string())?;
+    line.push(b'\n');
+    CONTEXT_PACK_STORE
+        .append_root(&index_path(), &line)
+        .map_err(|err| err.to_string())
 }
 
 fn read_index_records() -> Vec<ContextPackIndexRecord> {
-    let index_path = packs_root().join("index.jsonl");
-    let Ok(file) = std::fs::File::open(index_path) else {
+    let Ok(bytes) = CONTEXT_PACK_STORE.read_root(&index_path()) else {
         return Vec::new();
     };
-
-    std::io::BufReader::new(file)
-        .lines()
-        .map_while(Result::ok)
-        .filter(|line| !line.trim().is_empty())
-        .filter_map(|line| serde_json::from_str::<ContextPackIndexRecord>(&line).ok())
+    bytes
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.iter().all(u8::is_ascii_whitespace))
+        .filter_map(|line| serde_json::from_slice::<ContextPackIndexRecord>(line).ok())
         .collect()
 }
 
 fn overwrite_index_records(records: &[ContextPackIndexRecord]) -> Result<(), String> {
-    std::fs::create_dir_all(packs_root()).map_err(|error| error.to_string())?;
-    let index_path = packs_root().join("index.jsonl");
-    let temp_path = index_path.with_extension("jsonl.tmp");
-    let mut file = std::fs::File::create(&temp_path).map_err(|error| error.to_string())?;
+    let mut bytes = Vec::new();
     for record in records {
-        let line = serde_json::to_string(record).map_err(|error| error.to_string())?;
-        writeln!(file, "{line}").map_err(|error| error.to_string())?;
+        serde_json::to_writer(&mut bytes, record).map_err(|error| error.to_string())?;
+        bytes.push(b'\n');
     }
-    std::fs::rename(temp_path, index_path).map_err(|error| error.to_string())
+    CONTEXT_PACK_STORE
+        .atomic_write_root(&index_path(), &bytes)
+        .map_err(|error| error.to_string())
 }
 
-fn packs_root() -> PathBuf {
-    data_local_medousa_dir().join("context_packs")
+fn context_pack_path(pack_id: &str) -> StorePath {
+    crate::session_storage::session_object_path(CONTEXT_PACK_OBJECT_DOMAIN, pack_id, "json")
 }
 
-fn data_local_medousa_dir() -> PathBuf {
-    crate::paths::medousa_data_dir()
+fn index_path() -> StorePath {
+    StorePath::parse("index.jsonl").expect("static context-pack index path must be valid")
 }
 
 fn short_session(session_id: &str) -> String {

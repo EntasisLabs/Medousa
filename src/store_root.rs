@@ -65,6 +65,27 @@ impl StorePath {
             .last()
             .expect("validated non-empty store path")
     }
+
+    pub fn join(&self, child: &Self) -> Result<Self, StoreRootError> {
+        let segment_count = self.segments.len() + child.segments.len();
+        if segment_count > MAX_STORE_PATH_SEGMENTS {
+            return Err(StoreRootError::InvalidPath("too_deep"));
+        }
+        let byte_count = self
+            .segments
+            .iter()
+            .chain(&child.segments)
+            .map(String::len)
+            .sum::<usize>()
+            + segment_count.saturating_sub(1);
+        if byte_count > MAX_STORE_PATH_BYTES {
+            return Err(StoreRootError::InvalidPath("too_long"));
+        }
+        let mut segments = Vec::with_capacity(self.segments.len() + child.segments.len());
+        segments.extend(self.segments.iter().cloned());
+        segments.extend(child.segments.iter().cloned());
+        Ok(Self { segments })
+    }
 }
 
 fn validate_segment(segment: &str) -> Result<(), StoreRootError> {
@@ -208,49 +229,30 @@ impl StoreRoot {
         }
     }
 
+    pub fn is_dir(&self, path: &StorePath) -> Result<bool, StoreRootError> {
+        let (parent, leaf) = self.open_parent(path, false, "metadata")?;
+        match parent.symlink_metadata(leaf) {
+            Ok(metadata) if metadata.file_type().is_symlink() => Err(StoreRootError::Confinement {
+                operation: "metadata",
+                reason: ConfinementReason::SymbolicLink,
+            }),
+            Ok(metadata) => Ok(metadata.is_dir()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(StoreRootError::io("metadata", error)),
+        }
+    }
+
     /// Enumerate validated direct children from the held root handle.
     ///
     /// Non-UTF-8 and policy-invalid names are ignored; callers never receive a
     /// path they could feed back into the capability without validation.
     pub fn list_root(&self) -> Result<Vec<StoreEntry>, StoreRootError> {
-        let entries = self
-            .dir
-            .entries()
-            .map_err(|error| StoreRootError::io("list_root", error))?;
-        let mut listed = Vec::new();
-        for entry in entries {
-            let entry = entry.map_err(|error| StoreRootError::io("list_entry", error))?;
-            let Ok(name) = entry.file_name().into_string() else {
-                continue;
-            };
-            let Ok(path) = StorePath::parse(&name) else {
-                continue;
-            };
-            let file_type = entry
-                .file_type()
-                .map_err(|error| StoreRootError::io("entry_type", error))?;
-            let kind = if file_type.is_symlink() {
-                StoreEntryKind::Link
-            } else if file_type.is_file() {
-                StoreEntryKind::File
-            } else if file_type.is_dir() {
-                StoreEntryKind::Directory
-            } else {
-                StoreEntryKind::Other
-            };
-            let modified = self
-                .dir
-                .symlink_metadata(&name)
-                .ok()
-                .and_then(|metadata| metadata.modified().ok())
-                .map(|modified| modified.into_std());
-            listed.push(StoreEntry {
-                path,
-                kind,
-                modified,
-            });
-        }
-        Ok(listed)
+        list_directory(&self.dir)
+    }
+
+    pub fn list_directory(&self, path: &StorePath) -> Result<Vec<StoreEntry>, StoreRootError> {
+        let directory = self.open_directory_chain(&path.segments, false, "list_directory")?;
+        list_directory(&directory)
     }
 
     pub fn append(&self, path: &StorePath, bytes: &[u8]) -> Result<(), StoreRootError> {
@@ -396,6 +398,45 @@ impl StoreRoot {
     }
 }
 
+fn list_directory(dir: &Dir) -> Result<Vec<StoreEntry>, StoreRootError> {
+    let entries = dir
+        .entries()
+        .map_err(|error| StoreRootError::io("list_directory", error))?;
+    let mut listed = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|error| StoreRootError::io("list_entry", error))?;
+        let Ok(name) = entry.file_name().into_string() else {
+            continue;
+        };
+        let Ok(path) = StorePath::parse(&name) else {
+            continue;
+        };
+        let file_type = entry
+            .file_type()
+            .map_err(|error| StoreRootError::io("entry_type", error))?;
+        let kind = if file_type.is_symlink() {
+            StoreEntryKind::Link
+        } else if file_type.is_file() {
+            StoreEntryKind::File
+        } else if file_type.is_dir() {
+            StoreEntryKind::Directory
+        } else {
+            StoreEntryKind::Other
+        };
+        let modified = dir
+            .symlink_metadata(&name)
+            .ok()
+            .and_then(|metadata| metadata.modified().ok())
+            .map(|modified| modified.into_std());
+        listed.push(StoreEntry {
+            path,
+            kind,
+            modified,
+        });
+    }
+    Ok(listed)
+}
+
 fn reject_symlink(parent: &Dir, name: &str, operation: &'static str) -> Result<(), StoreRootError> {
     match parent.symlink_metadata(name) {
         Ok(metadata) if metadata.file_type().is_symlink() => Err(StoreRootError::Confinement {
@@ -438,6 +479,16 @@ mod tests {
         ] {
             assert!(StorePath::parse(value).is_err(), "accepted {value:?}");
         }
+    }
+
+    #[test]
+    fn joined_paths_retain_store_path_bounds() {
+        let left = StorePath::parse(&vec!["a"; 40].join("/")).unwrap();
+        let right = StorePath::parse(&vec!["b"; 25].join("/")).unwrap();
+        assert!(matches!(
+            left.join(&right),
+            Err(StoreRootError::InvalidPath("too_deep"))
+        ));
     }
 
     #[test]

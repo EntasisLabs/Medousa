@@ -11,6 +11,8 @@ use std::time::SystemTime;
 use once_cell::sync::OnceCell;
 use sha2::{Digest as _, Sha256};
 
+#[cfg(test)]
+use crate::store_root::StoreEntry;
 use crate::store_root::{StoreEntryKind, StorePath, StoreRoot, StoreRootError};
 
 pub use medousa_types::session::{
@@ -18,6 +20,7 @@ pub use medousa_types::session::{
 };
 
 const STORAGE_KEY_DOMAIN: &[u8] = b"medousa/session-storage/v1\0";
+const OBJECT_KEY_DOMAIN: &[u8] = b"medousa/session-object/v1\0";
 
 pub fn new_session_id() -> SessionId {
     SessionId::parse(format!("ses_{}", uuid::Uuid::new_v4().simple()))
@@ -44,6 +47,24 @@ impl StorageKey {
             && value.starts_with("s1-")
             && value.as_bytes()[3..].iter().all(u8::is_ascii_hexdigit)
     }
+}
+
+pub(crate) fn session_object_path(
+    namespace: &'static [u8],
+    object_id: &str,
+    extension: &'static str,
+) -> StorePath {
+    debug_assert!(!namespace.is_empty());
+    debug_assert!(
+        !extension.is_empty() && extension.bytes().all(|byte| byte.is_ascii_alphanumeric())
+    );
+    let mut hasher = Sha256::new();
+    hasher.update(OBJECT_KEY_DOMAIN);
+    hasher.update(namespace);
+    hasher.update([0]);
+    hasher.update(object_id.as_bytes());
+    StorePath::parse(&format!("o1-{:x}.{extension}", hasher.finalize()))
+        .expect("object key must be a valid store path")
 }
 
 pub(crate) struct SessionFileEntry {
@@ -157,6 +178,107 @@ impl SessionFileStore {
     }
 }
 
+/// Capability-owned session-directory store with confined root-level indexes.
+pub(crate) struct SessionDirectoryStore {
+    root_path: PathBuf,
+    root: OnceCell<StoreRoot>,
+}
+
+impl SessionDirectoryStore {
+    pub fn new(root_path: PathBuf) -> Self {
+        Self {
+            root_path,
+            root: OnceCell::new(),
+        }
+    }
+
+    fn root(&self) -> Result<&StoreRoot, StoreRootError> {
+        self.root
+            .get_or_try_init(|| StoreRoot::open_or_create(&self.root_path))
+    }
+
+    fn current_dir(&self, session_id: &SessionId) -> StorePath {
+        StorePath::parse(StorageKey::for_session(session_id).as_str())
+            .expect("storage key must be a valid store path")
+    }
+
+    fn legacy_dir(&self, session_id: &SessionId) -> StorePath {
+        StorePath::parse(session_id.as_str()).expect("session id must be a valid store path")
+    }
+
+    fn session_dir_for_read(&self, session_id: &SessionId) -> Result<StorePath, StoreRootError> {
+        let root = self.root()?;
+        let current = self.current_dir(session_id);
+        if root.is_dir(&current)? {
+            return Ok(current);
+        }
+        let legacy = self.legacy_dir(session_id);
+        if root.is_dir(&legacy)? {
+            Ok(legacy)
+        } else {
+            Ok(current)
+        }
+    }
+
+    fn session_dir_for_write(&self, session_id: &SessionId) -> Result<StorePath, StoreRootError> {
+        let root = self.root()?;
+        let current = self.current_dir(session_id);
+        if root.is_dir(&current)? {
+            return Ok(current);
+        }
+        let legacy = self.legacy_dir(session_id);
+        if root.is_dir(&legacy)? {
+            root.rename(&legacy, &current)?;
+        } else {
+            root.create_dir_all(&current)?;
+        }
+        Ok(current)
+    }
+
+    pub fn read(
+        &self,
+        session_id: &SessionId,
+        relative: &StorePath,
+    ) -> Result<Vec<u8>, StoreRootError> {
+        let directory = self.session_dir_for_read(session_id)?;
+        self.root()?.read(&directory.join(relative)?)
+    }
+
+    pub fn atomic_write(
+        &self,
+        session_id: &SessionId,
+        relative: &StorePath,
+        bytes: &[u8],
+    ) -> Result<(), StoreRootError> {
+        let directory = self.session_dir_for_write(session_id)?;
+        self.root()?.atomic_write(&directory.join(relative)?, bytes)
+    }
+
+    #[cfg(test)]
+    pub fn list(&self, session_id: &SessionId) -> Result<Vec<StoreEntry>, StoreRootError> {
+        let directory = self.session_dir_for_read(session_id)?;
+        self.root()?.list_directory(&directory)
+    }
+
+    pub fn remove_session(&self, session_id: &SessionId) -> Result<(), StoreRootError> {
+        let root = self.root()?;
+        root.remove_dir_all(&self.current_dir(session_id))?;
+        root.remove_dir_all(&self.legacy_dir(session_id))
+    }
+
+    pub fn read_root(&self, path: &StorePath) -> Result<Vec<u8>, StoreRootError> {
+        self.root()?.read(path)
+    }
+
+    pub fn append_root(&self, path: &StorePath, bytes: &[u8]) -> Result<(), StoreRootError> {
+        self.root()?.append(path, bytes)
+    }
+
+    pub fn atomic_write_root(&self, path: &StorePath, bytes: &[u8]) -> Result<(), StoreRootError> {
+        self.root()?.atomic_write(path, bytes)
+    }
+}
+
 pub fn session_dir(root: &Path, session_id: &SessionId) -> PathBuf {
     root.join(StorageKey::for_session(session_id).as_str())
 }
@@ -255,6 +377,20 @@ mod tests {
     }
 
     #[test]
+    fn object_paths_are_stable_safe_and_domain_separated() {
+        let extraction = session_object_path(b"extraction", "ext:session:1", "json");
+        let same = session_object_path(b"extraction", "ext:session:1", "json");
+        let verification = session_object_path(b"verification", "ext:session:1", "json");
+
+        assert_eq!(extraction, same);
+        assert_ne!(extraction, verification);
+        assert!(extraction.file_name().starts_with("o1-"));
+        assert!(extraction.file_name().ends_with(".json"));
+        assert!(!extraction.file_name().contains(':'));
+        assert!(StorePath::parse(extraction.file_name()).is_ok());
+    }
+
+    #[test]
     fn daemon_generated_ids_use_the_canonical_128_bit_format() {
         let first = new_session_id();
         let second = new_session_id();
@@ -323,6 +459,87 @@ mod tests {
         );
         assert_eq!(std::fs::read(held.join(&file_name)).unwrap(), b"held\n");
         assert!(!root.join(file_name).exists());
+    }
+
+    #[test]
+    fn capability_directory_store_migrates_nested_data_and_owns_its_index() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("artifacts");
+        let legacy = root.join("session-a");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("old.json"), b"legacy").unwrap();
+        let store = SessionDirectoryStore::new(root.clone());
+        let session_id = id("session-a");
+        let old = StorePath::parse("old.json").unwrap();
+        let nested = StorePath::parse("nested/new.json").unwrap();
+        let index = StorePath::parse("index.jsonl").unwrap();
+
+        assert_eq!(store.read(&session_id, &old).unwrap(), b"legacy");
+        store
+            .atomic_write(&session_id, &nested, b"replacement")
+            .unwrap();
+        store.append_root(&index, b"one\n").unwrap();
+        store.atomic_write_root(&index, b"two\n").unwrap();
+
+        assert!(!legacy.exists());
+        assert_eq!(store.read(&session_id, &nested).unwrap(), b"replacement");
+        assert_eq!(store.read_root(&index).unwrap(), b"two\n");
+        assert_eq!(store.list(&session_id).unwrap().len(), 2);
+        store.remove_session(&session_id).unwrap();
+        assert!(store.list(&session_id).is_err());
+    }
+
+    #[test]
+    fn capability_directory_store_retains_the_original_root_handle() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("artifacts");
+        let held = temp.path().join("held-artifacts");
+        let store = SessionDirectoryStore::new(root.clone());
+        store.root().unwrap();
+
+        std::fs::rename(&root, &held).unwrap();
+        std::fs::create_dir(&root).unwrap();
+        store
+            .atomic_write(
+                &id("session-a"),
+                &StorePath::parse("proof.json").unwrap(),
+                b"held",
+            )
+            .unwrap();
+
+        let directory = StorageKey::for_session(&id("session-a"));
+        assert_eq!(
+            std::fs::read(held.join(directory.as_str()).join("proof.json")).unwrap(),
+            b"held"
+        );
+        assert!(!root.join(directory.as_str()).join("proof.json").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn capability_directory_store_rejects_link_backed_session_entries() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("artifacts");
+        let outside = temp.path().join("outside");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("canary"), b"safe").unwrap();
+        let session_id = id("session-a");
+        let directory = root.join(StorageKey::for_session(&session_id).as_str());
+        std::fs::create_dir(&directory).unwrap();
+        symlink(outside.join("canary"), directory.join("payload.json")).unwrap();
+        let store = SessionDirectoryStore::new(root);
+        let payload = StorePath::parse("payload.json").unwrap();
+
+        assert!(store.read(&session_id, &payload).is_err());
+        assert!(
+            store
+                .atomic_write(&session_id, &payload, b"changed")
+                .is_err()
+        );
+        assert_eq!(std::fs::read(outside.join("canary")).unwrap(), b"safe");
     }
 
     #[test]
