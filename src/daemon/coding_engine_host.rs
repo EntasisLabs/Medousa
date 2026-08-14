@@ -13,7 +13,7 @@ use axum::extract::ws::{Message as AxumMessage, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::Json;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::process::{Child, Command};
@@ -21,6 +21,9 @@ use tokio::sync::Mutex;
 use tokio_tungstenite::{connect_async, tungstenite::Message as TungsteniteMessage};
 
 use crate::daemon::state::AppState;
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
 use crate::grapheme_script::store::GraphemeScriptStore;
 use crate::paths::medousa_data_dir;
 
@@ -329,26 +332,65 @@ pub async fn ensure_coding_engine(host: &CodingEngineHost) -> CodingEngineInfo {
     )
 }
 
-pub fn coding_engine_router(state: AppState) -> Router {
-    Router::new()
-        .route("/v1/coding-engine", get(coding_engine_info))
-        .route("/v1/code/lsp", get(code_lsp_ws))
-        .route("/v1/code/hover", get(code_hover))
-        .route("/v1/code/definition", get(code_definition))
-        .route("/v1/code/diagnostics", get(code_diagnostics))
+pub fn coding_engine_surface() -> DeclaredRouter<AppState> {
+    DeclaredRouter::default()
+        .route(coding_engine_read_policy("/v1/coding-engine"), get(coding_engine_info))
         .route(
-            "/v1/code/workspace-diagnostics",
-            get(code_workspace_diagnostics),
+            coding_engine_policy(
+                axum::http::Method::GET,
+                "/v1/code/lsp",
+                1024,
+                RateLimitClass::Stream,
+            ),
+            get(code_lsp_ws),
         )
-        .route("/v1/code/symbols", get(code_symbols))
-        .route("/v1/code/workspace-symbols", get(code_workspace_symbols))
-        .route("/v1/code/capabilities", get(code_capabilities))
-        .route("/v1/code/conventions", get(code_conventions))
-        .route("/v1/code/language-root", get(code_language_root))
-        .route("/v1/code/language-sessions", get(code_language_sessions))
-        .route("/v1/code/language-matrix", get(code_language_matrix))
-        .route("/v1/code/request", post(code_request))
-        .with_state(state)
+        .route(coding_engine_read_policy("/v1/code/hover"), get(code_hover))
+        .route(coding_engine_read_policy("/v1/code/definition"), get(code_definition))
+        .route(coding_engine_read_policy("/v1/code/diagnostics"), get(code_diagnostics))
+        .route(coding_engine_read_policy("/v1/code/workspace-diagnostics"), get(code_workspace_diagnostics))
+        .route(coding_engine_read_policy("/v1/code/symbols"), get(code_symbols))
+        .route(coding_engine_read_policy("/v1/code/workspace-symbols"), get(code_workspace_symbols))
+        .route(coding_engine_read_policy("/v1/code/capabilities"), get(code_capabilities))
+        .route(coding_engine_read_policy("/v1/code/conventions"), get(code_conventions))
+        .route(coding_engine_read_policy("/v1/code/language-root"), get(code_language_root))
+        .route(coding_engine_read_policy("/v1/code/language-sessions"), get(code_language_sessions))
+        .route(coding_engine_read_policy("/v1/code/language-matrix"), get(code_language_matrix))
+        .route(
+            coding_engine_policy(
+                axum::http::Method::POST,
+                "/v1/code/request",
+                1024 * 1024,
+                RateLimitClass::Administration,
+            ),
+            post(code_request),
+        )
+}
+
+fn coding_engine_read_policy(path: &'static str) -> RoutePolicy {
+    coding_engine_policy(
+        axum::http::Method::GET,
+        path,
+        1024,
+        RateLimitClass::Administration,
+    )
+}
+
+fn coding_engine_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    body_limit: usize,
+    rate_limit_class: RateLimitClass,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Administration,
+        required_capability: Some(crate::request_principal::Capability::AdminExecute),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class,
+    }
 }
 
 pub async fn coding_engine_info(State(state): State<AppState>) -> Json<CodingEngineInfo> {

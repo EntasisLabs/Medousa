@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use axum::extract::{Query, State};
 use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::Json;
 use detamu::code::{AvecCodeScorer, GraphMetricsDeriver};
 use detamu::code_query::{CodeEntityFilter, CodeQuery};
 use detamu::core::SnapshotId;
@@ -24,6 +24,9 @@ use serde_json::{Value, json};
 use tokio::sync::RwLock;
 
 use crate::daemon::state::AppState;
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
 use crate::paths::medousa_data_dir;
 
 /// Pointers from a Forge work item to Detamu snapshots (sidecar — not on
@@ -513,18 +516,48 @@ pub fn spawn_index_forge_item(
 // HTTP — /v1/world/* (distinct from medousa-code /v1/detamu/* stubs)
 // ---------------------------------------------------------------------------
 
-pub fn world_router(state: AppState) -> Router {
-    Router::new()
-        .route("/v1/world", get(world_status))
-        .route("/v1/world/status", get(world_status))
-        .route("/v1/world/index", post(world_index))
-        .route("/v1/world/files", get(world_files))
-        .route("/v1/world/impact", get(world_impact))
-        .route("/v1/world/code_avec", get(world_code_avec))
-        .route("/v1/world/find", get(world_find))
-        .route("/v1/world/at_location", get(world_at_location))
-        .route("/v1/world/bindings/{work_id}", get(world_binding))
-        .with_state(state)
+pub fn world_surface() -> DeclaredRouter<AppState> {
+    DeclaredRouter::default()
+        .route(world_read_policy("/v1/world"), get(world_status))
+        .route(world_read_policy("/v1/world/status"), get(world_status))
+        .route(
+            RoutePolicy {
+                method: axum::http::Method::POST,
+                path: "/v1/world/index",
+                group: RouteGroup::Administration,
+                required_capability: Some(crate::request_principal::Capability::AdminExecute),
+                bootstrap_public: false,
+                browser_policy: BrowserPolicy::NativeOnly,
+                body_limit: 256 * 1024,
+                rate_limit_class: RateLimitClass::Administration,
+            },
+            post(world_index),
+        )
+        .route(world_read_policy("/v1/world/files"), get(world_files))
+        .route(world_read_policy("/v1/world/impact"), get(world_impact))
+        .route(world_read_policy("/v1/world/code_avec"), get(world_code_avec))
+        .route(world_read_policy("/v1/world/find"), get(world_find))
+        .route(
+            world_read_policy("/v1/world/at_location"),
+            get(world_at_location),
+        )
+        .route(
+            world_read_policy("/v1/world/bindings/{work_id}"),
+            get(world_binding),
+        )
+}
+
+fn world_read_policy(path: &'static str) -> RoutePolicy {
+    RoutePolicy {
+        method: axum::http::Method::GET,
+        path,
+        group: RouteGroup::Portal,
+        required_capability: Some(crate::request_principal::Capability::WorkshopRead),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit: 1024,
+        rate_limit_class: RateLimitClass::Read,
+    }
 }
 
 async fn world_status(State(state): State<AppState>) -> Json<Value> {

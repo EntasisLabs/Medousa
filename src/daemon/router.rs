@@ -153,6 +153,15 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::component_runtime_handlers::component_runtime_surface().inventory())
         .expect("duplicate component runtime route policy");
     inventory
+        .extend(crate::daemon::coding_engine_host::coding_engine_surface().inventory())
+        .expect("duplicate coding engine route policy");
+    inventory
+        .extend(crate::daemon::shell_session_host::shell_session_surface().inventory())
+        .expect("duplicate shell session route policy");
+    inventory
+        .extend(crate::daemon::detamu_host::world_surface().inventory())
+        .expect("duplicate world model route policy");
+    inventory
 }
 
 pub fn build_identity_surface() -> DeclaredRouter<AppState> {
@@ -521,13 +530,6 @@ pub fn build_feature_routers(
         .merge(crate::daemon::forge_preview::forge_preview_router(
             state.clone(),
         ))
-        .merge(crate::daemon::coding_engine_host::coding_engine_router(
-            state.clone(),
-        ))
-        .merge(crate::daemon::shell_session_host::shell_session_router(
-            state.clone(),
-        ))
-        .merge(crate::daemon::detamu_host::world_router(state.clone()))
         .merge(dashboard)
 }
 
@@ -1192,12 +1194,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 242);
-        assert_eq!(with_pairing.entries().len(), 254);
+        assert_eq!(without_pairing.entries().len(), 270);
+        assert_eq!(with_pairing.entries().len(), 282);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 254);
+        assert_eq!(rows.len(), 282);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"
@@ -1528,5 +1530,45 @@ mod tests {
                 "unexpected route count for {capability}",
             );
         }
+    }
+
+    #[test]
+    fn native_execution_hosts_require_execute_authority() {
+        let coding = crate::daemon::coding_engine_host::coding_engine_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let shell = crate::daemon::shell_session_host::shell_session_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let world = crate::daemon::detamu_host::world_surface()
+            .inventory()
+            .entries()
+            .collect::<Vec<_>>();
+        let entries = coding.iter().chain(&shell).chain(&world).collect::<Vec<_>>();
+
+        assert_eq!(entries.len(), 28);
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("admin.execute"))
+                .count(),
+            20
+        );
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.required_capability == Some("workshop.read"))
+                .count(),
+            8
+        );
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.rate_limit_class == RateLimitClass::Stream)
+                .count(),
+            2
+        );
     }
 }
