@@ -84,8 +84,8 @@ and performance budgets must prevent the same classes of defect from returning.
 | --- | --- | --- | --- | --- | --- |
 | H01 | [01-daemon-trust-and-auth.md](01-daemon-trust-and-auth.md) | Daemon trust zones, authentication, CORS, bootstrap and route exposure | SEC-001 | ADR-013 | Implemented; release validation pending |
 | H02 | [02-identifier-and-filesystem-authority.md](02-identifier-and-filesystem-authority.md) | Validated IDs, path derivation, symlinks, deletion inventory | SEC-002, SEC-003, DATA-001 | ADR-014 | Implementing; H02.1–H02.4 landed |
-| H03 | [03-turn-stream-v2.md](03-turn-stream-v2.md) | Bounded single-writer stream, replay, journal, bridge, UI tail | PERF-001, DUR-001, MEM-002, TYPE-001, PERF-005 | ADR-015, H05 | Draft |
-| H04 | [04-persistence-and-crash-consistency.md](04-persistence-and-crash-consistency.md) | Feed/workspace/task storage ownership and commit policy | STORE-001, STORE-002, MEM-001 | ADR-016 | Draft |
+| H03 | [03-turn-stream-v2.md](03-turn-stream-v2.md) | Bounded single-writer stream, replay, journal, bridge, UI tail | PERF-001, DUR-001, MEM-002, TYPE-001, PERF-005 | ADR-015, H05 | Implemented; release validation pending |
+| H04 | [04-persistence-and-crash-consistency.md](04-persistence-and-crash-consistency.md) | Feed/workspace/task storage ownership and commit policy | STORE-001, STORE-002, MEM-001 | ADR-016 | Implemented; packaged crash/soak validation pending |
 | H05 | [05-runtime-context-and-concurrency.md](05-runtime-context-and-concurrency.md) | Request-scoped turn/browser state and cancellation | CONC-001, CONC-002 | ADR-017 | Implemented; packaged-platform release validation pending |
 | H06 | [06-forge-coder-scaling.md](06-forge-coder-scaling.md) | Incremental Forge state, checkpoint observation, blocking work | PERF-002, PERF-004, ASYNC-001 | ADR-016, H05 | Draft |
 | H07 | [07-vault-scaling-and-consistency.md](07-vault-scaling-and-consistency.md) | Incremental index, atomic mutation, backend/frontend lookups | PERF-003, PERF-006, CONSIST-001 | ADR-014, ADR-016 | Draft |
@@ -104,8 +104,8 @@ duplicate ADR-010 history.
 | --- | --- | --- | --- |
 | [ADR-013](../../docs/architecture/decisions/adr-013-daemon-trust-zones-and-auth.md) | Daemon trust zones, mandatory authentication, CORS, and public exposure | Narrows ADR-003 and ADR-011 | Accepted |
 | [ADR-014](../../docs/architecture/decisions/adr-014-identifier-and-filesystem-authority.md) | Validated identifiers and handle-relative filesystem confinement | New | Proposed |
-| [ADR-015](../../docs/architecture/decisions/adr-015-bounded-durable-turn-pipeline.md) | Bounded single-writer durable turn pipeline | Supersedes ADR-004's per-event write tradeoff; preserves replay contract | Proposed |
-| [ADR-016](../../docs/architecture/decisions/adr-016-transactional-store-ownership.md) | Transactional store ownership and crash-consistency policy | Extends durable runtime decisions | Proposed |
+| [ADR-015](../../docs/architecture/decisions/adr-015-bounded-durable-turn-pipeline.md) | Bounded single-writer durable turn pipeline | Supersedes ADR-004's per-event write tradeoff; preserves replay contract | Accepted |
+| [ADR-016](../../docs/architecture/decisions/adr-016-transactional-store-ownership.md) | Transactional store ownership and crash-consistency policy | Extends durable runtime decisions | Accepted |
 | [ADR-017](../../docs/architecture/decisions/adr-017-request-scoped-runtime-context.md) | Request-scoped runtime context; no process-global turn state | Extends ADR-005/ADR-008 | Proposed |
 | [ADR-018](../../docs/architecture/decisions/adr-018-untrusted-webview-isolation.md) | Untrusted webview isolation and minimal browser bridge | Revises browser-host assumptions | Proposed |
 | [ADR-019](../../docs/architecture/decisions/adr-019-generated-api-contract.md) | Route-owned generated API and client contract | Replaces handwritten parity convention | Proposed |
@@ -136,21 +136,21 @@ one without retaining the history.
 | SEC-002 | Critical | H02 | A | Mitigated; H02.5 platform validation pending | Typed opaque authority IDs, no-follow stores, cross-platform traversal/destructive-operation tests |
 | SEC-003 | High | H02 | A | Mitigated; replacement-race and native Windows validation pending | Symlink/junction race tests |
 | DESKTOP-001 | Critical | H08 | A | Mitigated; packaged-platform release validation pending | Frozen application/ACL/CSP/Tauri-Wry inventory, bounded broker/resource tests, three-platform CI and package gate |
-| PERF-001 | Critical | H03 | C | Proposed | Stream allocation/I/O/latency profile |
-| MEM-002 | High | H03 | C | Proposed | Stalled-consumer memory and cancellation stress |
-| STORE-001 | Critical | H04 | B | Proposed | Concurrent append and crash-recovery tests |
-| DUR-001 | Critical | H03 | B | Proposed | Injected write/sync failure tests |
+| PERF-001 | Critical | H03 | C | Mitigated; retained benchmark evidence pending | Stream allocation/I/O/latency profile |
+| MEM-002 | High | H03 | C | Mitigated; packaged stress evidence pending | Stalled-consumer memory and cancellation stress |
+| STORE-001 | Critical | H04 | B | Mitigated; packaged platform crash validation pending | Per-feed owner, incremental log, concurrent append/reopen and partial-tail recovery tests |
+| DUR-001 | Critical | H03 | B | Mitigated; release validation pending | Injected write/sync failure tests |
 | PERF-002 | Critical | H06 | C | Proposed | Forge replay/mutation benchmark and compaction proof |
-| MEM-001 | Critical | H04 | C | Proposed | Retention/eviction stress and restart test |
+| MEM-001 | Critical | H04 | C | Mitigated; packaged soak evidence pending | Count/byte/TTL bounds plus feed, workspace, and task-run retention tests |
 | ASYNC-001 | High | H06 | C | Proposed | Executor-blocking and saturation profile |
 | PERF-003 | High | H07 | C | Proposed | Vault cold/warm scaling benchmark |
 | CONSIST-001 | High | H07 | B | Proposed | Atomic compare-and-write race test |
 | CONC-001 | Critical | H05 | B | Validating | Concurrent-turn isolation matrix |
 | CONC-002 | High | H05 | B | Validating | Correlated concurrent browser request tests |
-| TYPE-001 | High | H03 | D | Proposed | Generated exhaustive protocol/reducer tests |
-| STORE-002 | High | H04 | C | Proposed | Serialization-to-delta amplification benchmark |
+| TYPE-001 | High | H03 | D | Mitigated; H10 generation enforcement pending | Generated exhaustive protocol/reducer tests |
+| STORE-002 | High | H04 | C | Mitigated; retained benchmark evidence pending | Incremental feed/workspace journals and pre-serialization mutation coalescing; P03 artifact pending |
 | PERF-004 | Critical | H06 | C | Proposed | Checkpoint repository-size/dirty-byte benchmark |
-| PERF-005 | Critical | H03 | C | Proposed | Browser streaming render/long-task profile |
+| PERF-005 | Critical | H03 | C | Mitigated; retained browser profile pending | Browser streaming render/long-task profile |
 | FRONT-001 | High | H09 | D | Proposed | Manifest and cold-start budgets |
 | ARCH-001 | High | H09 | D | Proposed | Zero-new-cycle check and migration ledger |
 | PERF-006 | High | H07 | C | Proposed | Large-vault tree/link interaction benchmark |

@@ -262,6 +262,10 @@ impl TurnWorkerStore {
 
     fn reload_from_disk(&self) {
         let _ = fs::create_dir_all(session::medousa_data_dir().join("workspace"));
+        if let Some(projection) = crate::workspace::persist::startup_projection() {
+            *self.records.lock().expect("turn worker records") = projection.turn_workers;
+            return;
+        }
         self.reload_from_paths(&Self::path(), &Self::legacy_path());
     }
 
@@ -292,16 +296,26 @@ impl TurnWorkerStore {
 
     fn persist(&self, work_id: &str, stasis_job_id: Option<&str>) {
         let mut guard = self.records.lock().expect("turn worker records");
-        Self::prune_map(&mut guard);
-        let body = match serde_json::to_string_pretty(&*guard) {
-            Ok(body) => body,
-            Err(err) => {
-                eprintln!("turn_worker_store: serialize failed: {err}");
-                return;
-            }
-        };
+        let mut changed = Self::prune_map(&mut guard);
+        if let Some(record) = guard.get(work_id).cloned() {
+            changed.push(record);
+        }
+        let retained = guard.keys().cloned().collect::<Vec<_>>();
         drop(guard);
-        crate::workspace::persist::queue_snapshot_turn_workers(body);
+        changed.sort_by(|left, right| left.work_id.cmp(&right.work_id));
+        changed.dedup_by(|left, right| left.work_id == right.work_id);
+        for record in changed {
+            let _ = crate::workspace::persist::queue_mutation(
+                crate::workspace::persist::WorkspaceMutation::UpsertTurnWorker {
+                    record: Box::new(record),
+                },
+            );
+        }
+        let _ = crate::workspace::persist::queue_mutation(
+            crate::workspace::persist::WorkspaceMutation::RetainTurnWorkers {
+                work_ids: retained,
+            },
+        );
         Self::notify_turn_worker_changed(work_id, stasis_job_id);
     }
 
@@ -320,7 +334,8 @@ impl TurnWorkerStore {
         }
     }
 
-    fn prune_map(map: &mut HashMap<String, TurnWorkRecord>) {
+    fn prune_map(map: &mut HashMap<String, TurnWorkRecord>) -> Vec<TurnWorkRecord> {
+        let mut changed = Vec::new();
         let retention = WorkspaceRetentionConfig::load();
         let cutoff = retention.wipe_cutoff(Utc::now());
         map.retain(|_, record| {
@@ -357,9 +372,11 @@ impl TurnWorkerStore {
                     entry.result_text = None;
                     entry.worker_scratch = None;
                     entry.updated_at = Utc::now();
+                    changed.push(entry.clone());
                 }
             }
         }
+        changed
     }
 
     pub fn insert(&self, record: TurnWorkRecord) {
@@ -528,13 +545,24 @@ impl TurnWorkerStore {
             }
         }
         drop(live);
-        let body = serde_json::to_string_pretty(&*guard).map_err(|error| error.to_string())?;
+        let retained = guard.keys().cloned().collect::<Vec<_>>();
         drop(guard);
-        crate::workspace::persist::queue_snapshot_turn_workers(body);
+        crate::workspace::persist::queue_mutation(
+            crate::workspace::persist::WorkspaceMutation::RetainTurnWorkers {
+                work_ids: retained,
+            },
+        )
+        .map_err(|error| error.to_string())?;
         Ok(())
     }
 
     pub fn session_absent_on_disk(session_id: &str) -> Result<bool, String> {
+        if let Ok(projection) = crate::workspace::persist::persisted_projection() {
+            return Ok(!projection
+                .turn_workers
+                .values()
+                .any(|record| record.session_id == session_id));
+        }
         for path in [Self::path(), Self::legacy_path()] {
             let raw = match fs::read_to_string(path) {
                 Ok(raw) => raw,

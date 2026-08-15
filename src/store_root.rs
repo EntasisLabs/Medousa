@@ -513,9 +513,24 @@ impl StoreRoot {
     }
 
     pub fn append(&self, path: &impl StoreRootPath, bytes: &[u8]) -> Result<(), StoreRootError> {
+        self.append_durable(path, bytes, false)
+    }
+
+    /// Append bytes and optionally cross a data durability fence before returning.
+    pub fn append_durable(
+        &self,
+        path: &impl StoreRootPath,
+        bytes: &[u8],
+        sync: bool,
+    ) -> Result<(), StoreRootError> {
         let mut file = self.open_file(path, true, true)?;
         file.write_all(bytes)
-            .map_err(|error| StoreRootError::io("append", error))
+            .map_err(|error| StoreRootError::io("append", error))?;
+        if sync {
+            file.sync_data()
+                .map_err(|error| StoreRootError::io("sync_append", error))?;
+        }
+        Ok(())
     }
 
     pub fn atomic_write(
@@ -544,6 +559,7 @@ impl StoreRoot {
             let _ = parent.remove_file(&temporary);
             return Err(StoreRootError::io("publish_atomic", error));
         }
+        sync_directory(&parent).map_err(|error| StoreRootError::io("sync_parent", error))?;
         Ok(())
     }
 
@@ -870,6 +886,20 @@ fn reject_hard_link(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(StoreRootError::io(operation, error)),
     }
+}
+
+#[cfg(unix)]
+fn sync_directory(directory: &Dir) -> std::io::Result<()> {
+    directory.open(".")?.sync_all()
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_directory: &Dir) -> std::io::Result<()> {
+    // Rust does not expose the directory handle flags needed by
+    // FlushFileBuffers on Windows. The temporary file itself is synced before
+    // publication; supported Unix targets additionally fence the directory
+    // entry here.
+    Ok(())
 }
 
 fn file_has_multiple_links(metadata: &cap_std::fs::Metadata) -> bool {

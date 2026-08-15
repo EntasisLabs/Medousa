@@ -159,9 +159,10 @@ pub async fn publish(request: FeedPublishRequest) -> Result<FeedEvent> {
         payload: payload.clone(),
     };
 
-    let seq = feed_store()
+    let receipt = feed_store()
         .append(&profile_id, &feed_id, event.clone())
         .await?;
+    let seq = receipt.seq;
     event.id = new_feed_event_id(seq);
 
     let subscribers = FeedHub::subscribers_for_feed(&profile_id, &feed_id).await;

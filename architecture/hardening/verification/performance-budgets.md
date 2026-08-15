@@ -214,6 +214,12 @@ work needs an explicit rich-embed admission or virtualization budget.
 
 **Findings:** STORE-001, STORE-002
 
+**H04 implementation state:** the hot paths now append delta records, coalesce
+typed workspace mutations before serialization, and enforce bounded admission.
+Focused tests cover ordering, recovery, and thresholds. A retained benchmark
+artifact across the full matrix below is still pending; no latency/RSS closure
+is inferred from unit tests.
+
 | Dimension | Values |
 | --- | --- |
 | Feeds/records | 1, 100, 500, 10,000 where supported |
@@ -357,6 +363,11 @@ duplicate-version explanation.
 ### P10 — Retention soak
 
 **Findings:** MEM-001, MEM-002
+
+**H04 implementation state:** feed tails, workspace projections/journal, task
+output/replay, and terminal run registries now have enforced count/byte/TTL
+bounds with threshold tests. The required multi-hour packaged soak and
+post-idle RSS evidence remain pending.
 
 Run multi-hour synthetic operation with repeated turns, workers, task runs,
 browser requests, reconnects, failures, and cancellations. Include a workload

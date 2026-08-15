@@ -1,6 +1,6 @@
 # Crash and concurrency verification matrix
 
-> **Status:** Draft baseline contract
+> **Status:** Active — H04 implementation coverage landed; packaged matrix pending
 > **Program:** [Medousa hardening](../README.md)
 > **Primary findings:** DUR-001, STORE-001, STORE-002, CONSIST-001,
 > CONC-001, CONC-002, MEM-001, DATA-001
@@ -216,6 +216,12 @@ Running everything serially is allowed only for cases that intentionally model
 a singleton external resource; it cannot hide process-global test pollution.
 
 ## Evidence record
+
+H04 unit coverage currently exercises CM-001/003/004/005 and the recoverable
+tail portions of CR-004/005/006/012 using temporary store roots and explicit
+retention boundaries. It also verifies that task replay reports gaps and that
+terminal eviction preserves active runs. This is PR implementation evidence;
+the supported-filesystem process-kill sweep remains a release requirement.
 
 Each run records:
 
