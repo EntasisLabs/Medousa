@@ -96,6 +96,13 @@ whose authority has been reconstructed and validated. The scheduler derives a
 child context from the parent and may only attenuate its tool, filesystem,
 delivery, provider, surface, and deadline capabilities.
 
+Durable continuation records are versioned and retain only the originating
+profile reference, session, delivery intent, and route preferences. Replay
+revalidates current session visibility before atomically claiming the record,
+then admits a fresh member-scoped execution with its own handle, cancellation
+root, deadline, and task owner. Legacy records without that authority snapshot,
+revoked profiles, and cross-session delivery targets are abandoned fail-closed.
+
 Worker bus sessions are stored by parent/child handle with count, byte, and
 lifetime bounds. Output and handoff slots are part of the keyed parent
 execution. Sibling workers cannot replace one another's sink or host metadata.

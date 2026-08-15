@@ -11,6 +11,7 @@ use crate::shared_mode::root_profile_id;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PrincipalKind {
     Anonymous,
+    Continuation,
     LocalApp,
     McpGateway,
     Portal,
@@ -150,6 +151,20 @@ impl RequestPrincipal {
 
     pub fn local_app(credential_id: Arc<str>, transport: TransportClass) -> Self {
         Self::local_app_with_generation(credential_id, transport, 1)
+    }
+
+    /// Reauthorized internal principal for one durable continuation replay.
+    /// It receives member capabilities only; replay can never recover operator
+    /// authority from process-global state.
+    pub fn continuation(profile_id: impl Into<String>) -> Self {
+        Self {
+            kind: PrincipalKind::Continuation,
+            credential_id: None,
+            profile_id: Some(profile_id.into()),
+            capabilities: CapabilitySet::member(),
+            transport: TransportClass::Loopback,
+            revocation_generation: 0,
+        }
     }
 
     pub fn local_app_with_generation(
@@ -331,5 +346,18 @@ mod tests {
                 .contains(Capability::McpPolicyEvaluate)
         );
         assert!(!principal.capabilities().contains(Capability::AdminRuntime));
+    }
+
+    #[test]
+    fn continuation_principal_is_member_scoped() {
+        let principal = RequestPrincipal::continuation("user:alice");
+        assert_eq!(principal.kind(), PrincipalKind::Continuation);
+        assert_eq!(principal.profile_id(), Some("user:alice"));
+        assert!(
+            principal
+                .capabilities()
+                .contains(Capability::WorkshopInteract)
+        );
+        assert!(!principal.capabilities().contains(Capability::AdminExecute));
     }
 }

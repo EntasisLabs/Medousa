@@ -47,6 +47,12 @@ but invalid bearer never falls back to anonymous access.
 | GET | `/v1/continuations/lineage/{turn_correlation_id}` | `TurnContinuationLineageResponse` | `http().get` | — |
 | POST | `/v1/jobs/{job_id}/replay-and-resume` | `ReplayAndResumeResponse` | `http().post` | — |
 
+Continuation replay is single-claim and reauthorizes the recorded profile
+against the current session catalog. Records from older unversioned authority
+formats, profiles that no longer have access, and delivery targets for another
+session are abandoned rather than resumed. An accepted replay runs as a new
+bounded execution with its own cancellation root and deadline.
+
 Stasis dashboard mounted at `/dashboard` (HTML UI).
 
 ---

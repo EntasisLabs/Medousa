@@ -930,6 +930,16 @@ pub async fn maybe_resume_agent_turn_from_child_job(state: &AppState, child_job_
     if !record.should_resume() {
         return false;
     }
+    if !record.resume_authorized_by(crate::session_catalog::session_visible_to_profile) {
+        let _ = store.mark_abandoned(child_job_id).await;
+        tracing::warn!(
+            child_job_id,
+            session_id = %record.session_id,
+            version = record.version,
+            "turn continuation abandoned after authority revalidation"
+        );
+        return false;
+    }
     if !store.mark_resumed(child_job_id).await.unwrap_or(false) {
         return false;
     }
@@ -954,7 +964,16 @@ pub async fn maybe_resume_agent_turn_from_child_job(state: &AppState, child_job_
         record.turn_correlation_id, record.session_id
     );
 
-    spawn_continuation_agent_turn(state, &record, resume_prompt).await;
+    if let Err(error) = spawn_continuation_agent_turn(state, &record, resume_prompt).await {
+        let _ = store.mark_abandoned(child_job_id).await;
+        tracing::warn!(
+            child_job_id,
+            session_id = %record.session_id,
+            %error,
+            "turn continuation abandoned after replay admission failed"
+        );
+        return false;
+    }
     crate::turn_continuation::record_continuation_resume(
         crate::turn_continuation::TurnContinuationResumeEvent {
             child_job_id: child_job_id.to_string(),
@@ -970,7 +989,7 @@ async fn spawn_continuation_agent_turn(
     state: &AppState,
     record: &crate::turn_continuation::TurnContinuationRecord,
     resume_prompt: String,
-) {
+) -> Result<(), String> {
     let now = Utc::now();
     let job_id = format!(
         "medousa-daemon-continue-{}-{}",
@@ -992,10 +1011,15 @@ async fn spawn_continuation_agent_turn(
     );
     interactive_request.persist_user_turn = false;
 
+    let identity_user_id = record
+        .identity_user_id
+        .clone()
+        .ok_or_else(|| "continuation identity missing after authorization".to_string())?;
+    interactive_request.identity_user_id = Some(identity_user_id.clone());
     let continuation_scope = crate::turn_continuation::TurnContinuationScope {
         turn_correlation_id: job_id.clone(),
         session_id: record.session_id.clone(),
-        identity_user_id: None,
+        identity_user_id: Some(identity_user_id.clone()),
         original_prompt: record.original_prompt.clone(),
         delivery_target: record
             .delivery_target
@@ -1012,6 +1036,29 @@ async fn spawn_continuation_agent_turn(
             .as_ref()
             .and_then(|surface| surface.channel_surface.clone()),
     };
+    let session_id = crate::session_storage::SessionId::parse(&record.session_id)
+        .map_err(|error| error.to_string())?;
+    let execution = crate::agent_runtime::execution_context::TurnExecutionContext::new(
+        job_id.clone(),
+        record.turn_correlation_id.clone(),
+        session_id,
+        crate::request_principal::RequestPrincipal::continuation(identity_user_id),
+        crate::agent_runtime::execution_context::ProviderRoute::new(
+            record.provider.clone(),
+            record.model.clone(),
+        ),
+        crate::agent_runtime::execution_context::SurfaceCapabilities::default(),
+        tokio_util::sync::CancellationToken::new(),
+        std::time::Instant::now() + std::time::Duration::from_secs(2 * 60 * 60),
+        continuation_scope.clone(),
+    );
+    let execution_lease = state
+        .platform
+        .agent_handle()
+        .execution_registry
+        .admit(execution)
+        .map_err(|error| error.to_string())?;
+    let execution_context = execution_lease.context().clone();
 
     if let Some(target) = record
         .delivery_target
@@ -1059,6 +1106,7 @@ async fn spawn_continuation_agent_turn(
         let agent_runtime = state.platform.agent_handle();
         let backend = state.backend.clone();
         tokio::spawn(async move {
+            let _execution_lease = execution_lease;
             crate::agent_runtime::run_agent_turn(
                 &stream_id,
                 interactive_request,
@@ -1066,13 +1114,13 @@ async fn spawn_continuation_agent_turn(
                 agent_runtime.as_ref(),
                 sink,
                 Some(continuation_scope),
-                None,
+                Some(execution_context),
                 None,
                 None,
             )
             .await;
         });
-        return;
+        return Ok(());
     }
 
     spawn_daemon_api_agent_turn_with_scope(
@@ -1088,8 +1136,10 @@ async fn spawn_continuation_agent_turn(
         interactive_request.manuscript_id.clone(),
         interactive_request.additional_manuscript_ids.clone(),
         interactive_request.suggested_capability_ids.clone(),
+        Some((execution_lease, execution_context)),
     )
     .await;
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1106,10 +1156,11 @@ pub async fn spawn_daemon_api_agent_turn(
     additional_manuscript_ids: Option<Vec<String>>,
     suggested_capability_ids: Option<Vec<String>>,
 ) {
+    let identity_user_id = crate::user_profiles::resolve_workshop_identity_user_id();
     let continuation_scope = crate::turn_continuation::TurnContinuationScope {
         turn_correlation_id: job_id.clone(),
         session_id: session_id.clone(),
-        identity_user_id: None,
+        identity_user_id: Some(identity_user_id),
         original_prompt: prompt.clone(),
         delivery_target: None,
         provider: provider.clone(),
@@ -1133,6 +1184,7 @@ pub async fn spawn_daemon_api_agent_turn(
         manuscript_id,
         additional_manuscript_ids,
         suggested_capability_ids,
+        None,
     )
     .await;
 }
@@ -1151,6 +1203,10 @@ pub async fn spawn_daemon_api_agent_turn_with_scope(
     manuscript_id: Option<String>,
     additional_manuscript_ids: Option<Vec<String>>,
     suggested_capability_ids: Option<Vec<String>>,
+    admitted_execution: Option<(
+        crate::agent_runtime::execution_context::TurnExecutionLease,
+        Arc<crate::agent_runtime::execution_context::TurnExecutionContext>,
+    )>,
 ) {
     state
         .agent_turn_jobs
@@ -1182,8 +1238,12 @@ pub async fn spawn_daemon_api_agent_turn_with_scope(
     let last_agent_turn_latency_ms = state.last_agent_turn_latency_ms.clone();
     let job_id_for_task = job_id.clone();
     let session_id_for_sink = session_id.clone();
+    let execution_context = admitted_execution
+        .as_ref()
+        .map(|(_, context)| context.clone());
 
     tokio::spawn(async move {
+        let _execution_lease = admitted_execution.map(|(lease, _)| lease);
         let sink: Arc<dyn AgentStreamSink> = Arc::new(ApiAgentStreamSink {
             job_id: job_id_for_task.clone(),
             session_id: session_id_for_sink,
@@ -1200,7 +1260,7 @@ pub async fn spawn_daemon_api_agent_turn_with_scope(
             agent_runtime.as_ref(),
             sink,
             Some(continuation_scope),
-            None,
+            execution_context,
             None,
             None,
         )

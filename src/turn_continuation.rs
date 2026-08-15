@@ -16,12 +16,19 @@ use crate::channel_delivery::{self, ChannelDeliveryTarget};
 use crate::runtime_composition_ext::RuntimeCompositionExt;
 
 const TABLE: &str = "turn_continuation_record";
+pub const TURN_CONTINUATION_VERSION: u16 = 2;
+
+fn legacy_turn_continuation_version() -> u16 {
+    1
+}
 
 const SCHEMA_STATEMENTS: &[&str] = &[
     "DEFINE TABLE turn_continuation_record SCHEMAFULL",
+    "DEFINE FIELD version ON TABLE turn_continuation_record TYPE int DEFAULT 1",
     "DEFINE FIELD child_job_id ON TABLE turn_continuation_record TYPE string",
     "DEFINE FIELD turn_correlation_id ON TABLE turn_continuation_record TYPE string",
     "DEFINE FIELD session_id ON TABLE turn_continuation_record TYPE string",
+    "DEFINE FIELD identity_user_id ON TABLE turn_continuation_record TYPE option<string>",
     "DEFINE FIELD original_prompt ON TABLE turn_continuation_record TYPE string",
     "DEFINE FIELD tool_name ON TABLE turn_continuation_record TYPE string",
     "DEFINE FIELD job_type ON TABLE turn_continuation_record TYPE string",
@@ -149,9 +156,13 @@ pub struct TurnContinuationScope {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, SurrealValue)]
 pub struct TurnContinuationRecord {
+    #[serde(default = "legacy_turn_continuation_version")]
+    pub version: u16,
     pub child_job_id: String,
     pub turn_correlation_id: String,
     pub session_id: String,
+    #[serde(default)]
+    pub identity_user_id: Option<String>,
     pub original_prompt: String,
     pub tool_name: String,
     pub job_type: String,
@@ -180,6 +191,31 @@ impl TurnContinuationRecord {
             return true;
         }
         false
+    }
+
+    pub fn resume_authorized_by(
+        &self,
+        session_visible_to_profile: impl FnOnce(&str, &str) -> bool,
+    ) -> bool {
+        if self.version != TURN_CONTINUATION_VERSION {
+            return false;
+        }
+        let Some(profile_id) = self
+            .identity_user_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            return false;
+        };
+        if self
+            .delivery_target
+            .as_ref()
+            .is_some_and(|target| target.session_id != self.session_id)
+        {
+            return false;
+        }
+        session_visible_to_profile(&self.session_id, profile_id)
     }
 }
 
@@ -390,9 +426,11 @@ pub async fn register_turn_child_job(
 ) {
     let now = Utc::now();
     let record = TurnContinuationRecord {
+        version: TURN_CONTINUATION_VERSION,
         child_job_id: child_job_id.to_string(),
         turn_correlation_id: scope.turn_correlation_id.clone(),
         session_id: scope.session_id.clone(),
+        identity_user_id: scope.identity_user_id.clone(),
         original_prompt: scope.original_prompt.clone(),
         tool_name: tool_name.to_string(),
         job_type: job_type.to_string(),
@@ -434,6 +472,7 @@ pub trait TurnContinuationStore: Send + Sync {
     async fn get(&self, child_job_id: &str) -> Option<TurnContinuationRecord>;
     async fn mark_consumed(&self, child_job_id: &str) -> anyhow::Result<()>;
     async fn mark_resumed(&self, child_job_id: &str) -> anyhow::Result<bool>;
+    async fn mark_abandoned(&self, child_job_id: &str) -> anyhow::Result<()>;
     async fn mark_child_dead_letter(&self, child_job_id: &str) -> anyhow::Result<()>;
     async fn mark_turn_finished(
         &self,
@@ -487,6 +526,15 @@ impl TurnContinuationStore for InMemoryTurnContinuationStore {
         record.status = TurnContinuationStatus::Resumed;
         record.updated_at = Utc::now();
         Ok(true)
+    }
+
+    async fn mark_abandoned(&self, child_job_id: &str) -> anyhow::Result<()> {
+        let mut guard = self.records.write().await;
+        if let Some(record) = guard.get_mut(child_job_id) {
+            record.status = TurnContinuationStatus::Abandoned;
+            record.updated_at = Utc::now();
+        }
+        Ok(())
     }
 
     async fn mark_child_dead_letter(&self, child_job_id: &str) -> anyhow::Result<()> {
@@ -624,16 +672,25 @@ impl TurnContinuationStore for SurrealTurnContinuationStore {
     }
 
     async fn mark_resumed(&self, child_job_id: &str) -> anyhow::Result<bool> {
+        let id = Self::record_id(child_job_id);
+        let sql = "UPDATE type::record($table, $id) SET status = 'resumed', updated_at = time::now() WHERE status = 'pending' RETURN AFTER";
+        let mut response = self
+            .db
+            .query(sql)
+            .bind(("table", TABLE))
+            .bind(("id", id))
+            .await?;
+        let updated = response.take::<Vec<TurnContinuationRecord>>(0)?;
+        Ok(!updated.is_empty())
+    }
+
+    async fn mark_abandoned(&self, child_job_id: &str) -> anyhow::Result<()> {
         let Some(mut record) = self.get(child_job_id).await else {
-            return Ok(false);
+            return Ok(());
         };
-        if record.status != TurnContinuationStatus::Pending {
-            return Ok(false);
-        }
-        record.status = TurnContinuationStatus::Resumed;
+        record.status = TurnContinuationStatus::Abandoned;
         record.updated_at = Utc::now();
-        self.upsert(record).await?;
-        Ok(true)
+        self.upsert(record).await
     }
 
     async fn mark_child_dead_letter(&self, child_job_id: &str) -> anyhow::Result<()> {
@@ -726,9 +783,11 @@ mod tests {
     fn sample_record() -> TurnContinuationRecord {
         let now = Utc::now();
         TurnContinuationRecord {
+            version: TURN_CONTINUATION_VERSION,
             child_job_id: "cognition-gph-abc".to_string(),
             turn_correlation_id: "medousa-daemon-ingest-1".to_string(),
             session_id: "sess-1".to_string(),
+            identity_user_id: Some("user:alice".to_string()),
             original_prompt: "run this script".to_string(),
             tool_name: "cognition_grapheme_run".to_string(),
             job_type: "workflow.grapheme.run".to_string(),
@@ -782,5 +841,45 @@ mod tests {
         store.upsert(sample_record()).await.unwrap();
         assert!(store.mark_resumed("cognition-gph-abc").await.unwrap());
         assert!(!store.mark_resumed("cognition-gph-abc").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn concurrent_resume_claim_has_one_winner() {
+        let store = Arc::new(InMemoryTurnContinuationStore::default());
+        store.upsert(sample_record()).await.unwrap();
+        let first = {
+            let store = store.clone();
+            tokio::spawn(async move { store.mark_resumed("cognition-gph-abc").await.unwrap() })
+        };
+        let second = {
+            let store = store.clone();
+            tokio::spawn(async move { store.mark_resumed("cognition-gph-abc").await.unwrap() })
+        };
+        let results = [first.await.unwrap(), second.await.unwrap()];
+        assert_eq!(results.into_iter().filter(|won| *won).count(), 1);
+    }
+
+    #[test]
+    fn resume_authority_rejects_legacy_revoked_and_cross_session_delivery() {
+        let record = sample_record();
+        assert!(record.resume_authorized_by(|session, profile| {
+            session == "sess-1" && profile == "user:alice"
+        }));
+
+        let mut legacy = record.clone();
+        legacy.version = 1;
+        assert!(!legacy.resume_authorized_by(|_, _| true));
+
+        assert!(!record.resume_authorized_by(|_, _| false));
+
+        let mut crossed = record;
+        crossed.delivery_target = Some(StoredDeliveryTarget {
+            channel: "test".to_string(),
+            user_id: "external-user".to_string(),
+            channel_id: "channel-1".to_string(),
+            session_id: "sess-2".to_string(),
+            stream_id: None,
+        });
+        assert!(!crossed.resume_authorized_by(|_, _| true));
     }
 }

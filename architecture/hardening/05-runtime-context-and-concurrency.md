@@ -105,6 +105,14 @@ also names the exact `work_id` and verifies that its durable record belongs to
 the active host session before mutation; a cross-session regression test freezes
 that authority boundary.
 
+Durable child-job continuations now write an explicit format version and the
+originating profile reference. Resume fails closed for legacy authority-less
+records, revoked session visibility, and cross-session delivery targets. The
+resume claim is single-winner (including the Surreal update path), and an
+accepted replay is admitted into the bounded execution registry with a fresh
+member-scoped principal, cancellation root, deadline, task owner, and exact
+lease instead of running as a detached authority-less turn.
+
 The current H05.0 request-state inventory is:
 
 | State | Classification | Current action |
