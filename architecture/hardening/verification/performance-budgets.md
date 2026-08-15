@@ -242,9 +242,13 @@ Target properties:
 **Harness:** `cargo run -p medousa-forge --example p04_forge_store`
 CI sizes: 0 / 100 / 10k events. Nightly: `MEDOUSA_P04_EVENTS=1000000`.
 
-Local 2026-08-15 baseline (darwin): `events=100 append_ms=373 tail_ms=0.004`; `events=10000 append_ms=38236 tail_ms=0.002`. Tail lookup stays O(1) after the in-memory owner.
+**Evidence status:** Scaffolding only. Local 2026-08-15 darwin probe numbers
+(`events=100 append_ms=373 tail_ms=0.004`; `events=10000 append_ms=38236
+tail_ms=0.002`) are not closure evidence for PERF-002 or ASYNC-001. Retained
+throughput/p50/p95/p99, bytes, sync count, decoded events, lock hold time, and
+cold/warm memory envelopes are still required before Validated.
 
-**Findings:** PERF-002, ASYNC-001
+**Findings:** PERF-002, ASYNC-001 (open)
 
 Generate valid Forge histories at 0, 100, 10k, and 1m events with small and
 large evidence payloads. Exercise reads and every common mutation, including
@@ -266,9 +270,12 @@ Target properties:
 **Harness:** `cargo run -p medousa-forge --example p05_coder_observation`
 CI size: 1k files. Larger: `MEDOUSA_P05_FILES=100000`.
 
-Local 2026-08-15 baseline (darwin): `files=1000 completeness=Exact limits=[] ms=42.535`.
+**Evidence status:** Scaffolding only. Local 2026-08-15 darwin probe
+(`files=1000 completeness=Exact limits=[] ms=42.535`) is not closure evidence
+for PERF-004. Clean/dirty/large-diff/concurrent/budget matrices and retained
+memory/wall-clock envelopes are still required before Validated.
 
-**Finding:** PERF-004
+**Finding:** PERF-004 (open)
 
 Use generated Git repositories at 1k, 100k, and 1m files with these states:
 

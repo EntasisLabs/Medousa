@@ -1,4 +1,8 @@
-//! H06 crash/concurrency evidence (CR-007, CM-009/010, ISO-006).
+//! H06 verification scaffolding.
+//!
+//! Tests here are intentionally named for what they currently prove. Full
+//! CR-007 / CM-009 / CM-010 / ISO-006 acceptance remains Open/Scaffolding in
+//! the H06 acceptance matrix until later cars add real coverage.
 
 #[cfg(test)]
 mod tests {
@@ -39,7 +43,7 @@ mod tests {
     }
 
     #[test]
-    fn cr007_partial_append_replays_one_valid_prefix() {
+    fn partial_final_json_line_is_skipped_on_replay() {
         let tmp = TempDir::new().unwrap();
         let store = FsWorkStore::open(tmp.path()).unwrap();
         let work = item("cr007");
@@ -82,7 +86,7 @@ mod tests {
     }
 
     #[test]
-    fn cm009_same_item_seq_is_monotonic_and_consumed() {
+    fn append_returns_monotonic_seq_and_updates_cached_tail() {
         let tmp = TempDir::new().unwrap();
         let store = FsWorkStore::open(tmp.path()).unwrap();
         let work = item("cm009");
@@ -106,7 +110,7 @@ mod tests {
     }
 
     #[test]
-    fn cm010_unrelated_items_have_independent_tails() {
+    fn unrelated_items_maintain_independent_cached_tails() {
         let tmp = TempDir::new().unwrap();
         let store = FsWorkStore::open(tmp.path()).unwrap();
         let left = item("left");
@@ -132,7 +136,7 @@ mod tests {
     }
 
     #[test]
-    fn iso006_item_paths_do_not_cross() {
+    fn distinct_work_ids_use_distinct_event_paths() {
         let tmp = TempDir::new().unwrap();
         let store = FsWorkStore::open(tmp.path()).unwrap();
         let left = item("iso-left");

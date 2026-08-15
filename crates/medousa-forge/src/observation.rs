@@ -416,7 +416,7 @@ mod tests {
     }
 
     #[test]
-    fn cm012_generation_change_during_observe_is_unknown() {
+    fn observe_marks_unknown_when_generation_capture_changes_mid_scan() {
         let observer = WorkspaceObserver::default();
         let git = GitEngine::detect().unwrap();
         let observation = observer

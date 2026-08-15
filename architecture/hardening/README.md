@@ -87,7 +87,7 @@ and performance budgets must prevent the same classes of defect from returning.
 | H03 | [03-turn-stream-v2.md](03-turn-stream-v2.md) | Bounded single-writer stream, replay, journal, bridge, UI tail | PERF-001, DUR-001, MEM-002, TYPE-001, PERF-005 | ADR-015, H05 | Implemented; release validation pending |
 | H04 | [04-persistence-and-crash-consistency.md](04-persistence-and-crash-consistency.md) | Feed/workspace/task storage ownership and commit policy | STORE-001, STORE-002, MEM-001 | ADR-016 | Implemented; packaged crash/soak validation pending |
 | H05 | [05-runtime-context-and-concurrency.md](05-runtime-context-and-concurrency.md) | Request-scoped turn/browser state and cancellation | CONC-001, CONC-002 | ADR-017 | Implemented; packaged-platform release validation pending |
-| H06 | [06-forge-coder-scaling.md](06-forge-coder-scaling.md) | Incremental Forge state, checkpoint observation, blocking work | PERF-002, PERF-004, ASYNC-001 | ADR-016, H05 | Implemented; packaged multi-OS migration evidence pending |
+| H06 | [06-forge-coder-scaling.md](06-forge-coder-scaling.md) | Incremental Forge state, checkpoint observation, blocking work | PERF-002, PERF-004, ASYNC-001 | ADR-016, H05 | Implementing; H06.0 checkpoint; acceptance evidence pending |
 | H07 | [07-vault-scaling-and-consistency.md](07-vault-scaling-and-consistency.md) | Incremental index, atomic mutation, backend/frontend lookups | PERF-003, PERF-006, CONSIST-001 | ADR-014, ADR-016 | Draft |
 | H08 | [08-desktop-browser-isolation.md](08-desktop-browser-isolation.md) | Remote webview capabilities and request-correlated bridge | DESKTOP-001 | ADR-018, H05 | Implemented; packaged-platform release validation pending |
 | H09 | [09-home-runtime-boundaries.md](09-home-runtime-boundaries.md) | Feature loading, runtime cycles, store/component/CSS ownership | FRONT-001, ARCH-001, ARCH-002 | ADR-020, H03 | Draft |
@@ -140,16 +140,16 @@ one without retaining the history.
 | MEM-002 | High | H03 | C | Mitigated; packaged stress evidence pending | Stalled-consumer memory and cancellation stress |
 | STORE-001 | Critical | H04 | B | Mitigated; packaged platform crash validation pending | Per-feed owner, incremental log, concurrent append/reopen and partial-tail recovery tests |
 | DUR-001 | Critical | H03 | B | Mitigated; release validation pending | Injected write/sync failure tests |
-| PERF-002 | Critical | H06 | C | Validated; packaged multi-OS evidence pending | P04 harness + in-memory tail / catalog / CR-007 tests |
+| PERF-002 | Critical | H06 | C | Implementing; not validated | P04 harness scaffolding only; see H06 acceptance matrix |
 | MEM-001 | Critical | H04 | C | Mitigated; packaged soak evidence pending | Count/byte/TTL bounds plus feed, workspace, and task-run retention tests |
-| ASYNC-001 | High | H06 | C | Validated; packaged multi-OS evidence pending | Admission service, supervised Git, executor canary |
+| ASYNC-001 | High | H06 | C | Implementing; not validated | Admission/Git supervision scaffolding only; see H06 acceptance matrix |
 | PERF-003 | High | H07 | C | Proposed | Vault cold/warm scaling benchmark |
 | CONSIST-001 | High | H07 | B | Proposed | Atomic compare-and-write race test |
 | CONC-001 | Critical | H05 | B | Validating | Concurrent-turn isolation matrix |
 | CONC-002 | High | H05 | B | Validating | Correlated concurrent browser request tests |
 | TYPE-001 | High | H03 | D | Mitigated; H10 generation enforcement pending | Generated exhaustive protocol/reducer tests |
 | STORE-002 | High | H04 | C | Mitigated; retained benchmark evidence pending | Incremental feed/workspace journals and pre-serialization mutation coalescing; P03 artifact pending |
-| PERF-004 | Critical | H06 | C | Validated; packaged multi-OS evidence pending | P05 harness + generation-fenced observation; logical boundaries skip repo audit |
+| PERF-004 | Critical | H06 | C | Implementing; not validated | P05 harness scaffolding only; see H06 acceptance matrix |
 | PERF-005 | Critical | H03 | C | Mitigated; retained browser profile pending | Browser streaming render/long-task profile |
 | FRONT-001 | High | H09 | D | Proposed | Manifest and cold-start budgets |
 | ARCH-001 | High | H09 | D | Proposed | Zero-new-cycle check and migration ledger |
