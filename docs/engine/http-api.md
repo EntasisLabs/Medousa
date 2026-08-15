@@ -47,6 +47,12 @@ but invalid bearer never falls back to anonymous access.
 | GET | `/v1/continuations/lineage/{turn_correlation_id}` | `TurnContinuationLineageResponse` | `http().get` | — |
 | POST | `/v1/jobs/{job_id}/replay-and-resume` | `ReplayAndResumeResponse` | `http().post` | — |
 
+Continuation replay is single-claim and reauthorizes the recorded profile
+against the current session catalog. Records from older unversioned authority
+formats, profiles that no longer have access, and delivery targets for another
+session are abandoned rather than resumed. An accepted replay runs as a new
+bounded execution with its own cancellation root and deadline.
+
 Stasis dashboard mounted at `/dashboard` (HTML UI).
 
 ---
@@ -126,8 +132,13 @@ for the protocol and surface-scoping rules.
 | GET | `/v1/sessions/{session_id}/turns` | turn list | `http().get` |
 | GET | `/v1/sessions/{session_id}/active-turn` | active turn ticket | `http().get` |
 | POST | `/v1/sessions/{session_id}/active-turn` | cancel active turn | `http().post` |
+| POST | `/v1/sessions/{session_id}/workshop/steer` | steer one exact bound-workshop generation (`work_id`, `message`) | `http().post` |
 | POST | `/v1/turns` | create turn ticket | `http().post` |
 | GET | `/v1/turns/{turn_id}` | turn ticket | `http().get` |
+
+Workshop steering requires the exact `work_id` returned by the bound-workshop
+handoff. A stale generation receives `409 Conflict` and cannot steer a newer
+workshop for the same session.
 
 `POST /v1/sessions` is the authority for new chat identifiers. Omit
 `session_id`; current daemons return a `ses_` identifier with 128 bits of

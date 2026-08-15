@@ -7,7 +7,6 @@ use medousa_engine::{
     ToolSinkEvent, ToolSinkPort, TurnStorePort, TurnTicketPort, UpsertOutcome, StoreError,
 };
 use medousa_types::session::ConversationTurn;
-use tokio::sync::RwLock;
 
 use crate::daemon::turn_stream_registry::{
     TurnStreamRegistry, TurnStreamRegistryPortAdapter,
@@ -120,16 +119,25 @@ impl ToolSinkPort for AgentStreamToolSinkAdapter {
     }
 }
 
-/// Per-turn ambient tool sink (replaces the legacy `active_stream_sink` global).
-static ACTIVE_TOOL_SINK: once_cell::sync::Lazy<RwLock<Option<Arc<dyn ToolSinkPort + Send + Sync>>>> =
-    once_cell::sync::Lazy::new(|| RwLock::new(None));
+tokio::task_local! {
+    /// Compatibility boundary for upstream tool traits that cannot yet accept
+    /// an explicit invocation context. The sink is scoped to the owning turn
+    /// future, so concurrent turns cannot replace or clear each other's sink.
+    static ACTIVE_TOOL_SINK: Arc<dyn ToolSinkPort + Send + Sync>;
+}
 
-pub async fn set_active_tool_sink(sink: Option<Arc<dyn ToolSinkPort + Send + Sync>>) {
-    *ACTIVE_TOOL_SINK.write().await = sink;
+pub async fn with_active_tool_sink<F>(
+    sink: Arc<dyn ToolSinkPort + Send + Sync>,
+    future: F,
+) -> F::Output
+where
+    F: std::future::Future,
+{
+    ACTIVE_TOOL_SINK.scope(sink, future).await
 }
 
 pub async fn active_tool_sink() -> Option<Arc<dyn ToolSinkPort + Send + Sync>> {
-    ACTIVE_TOOL_SINK.read().await.clone()
+    ACTIVE_TOOL_SINK.try_with(Arc::clone).ok()
 }
 
 #[cfg(test)]
@@ -138,6 +146,39 @@ mod tests {
     use medousa_engine::TurnStreamRegistryPort;
     use chrono::Utc;
     use medousa_types::turn_ticket::{TurnTicket, TurnTicketMode, TurnTicketPhase};
+
+    struct CanaryToolSink;
+
+    #[async_trait]
+    impl ToolSinkPort for CanaryToolSink {
+        async fn emit(&self, _event: ToolSinkEvent) {}
+    }
+
+    #[tokio::test]
+    async fn concurrent_turn_tool_sinks_never_cross_or_clear() {
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        let sink_a: Arc<dyn ToolSinkPort + Send + Sync> = Arc::new(CanaryToolSink);
+        let sink_b: Arc<dyn ToolSinkPort + Send + Sync> = Arc::new(CanaryToolSink);
+
+        let run = |expected: Arc<dyn ToolSinkPort + Send + Sync>| {
+            let barrier = barrier.clone();
+            tokio::spawn(async move {
+                with_active_tool_sink(expected.clone(), async move {
+                    barrier.wait().await;
+                    tokio::task::yield_now().await;
+                    let observed = active_tool_sink().await.expect("turn-scoped sink");
+                    assert!(Arc::ptr_eq(&observed, &expected));
+                })
+                .await;
+                assert!(active_tool_sink().await.is_none());
+            })
+        };
+
+        let (result_a, result_b) = tokio::join!(run(sink_a), run(sink_b));
+        result_a.expect("turn A task");
+        result_b.expect("turn B task");
+        assert!(active_tool_sink().await.is_none());
+    }
 
     #[tokio::test]
     async fn ticket_port_adapter_enforces_interactive_mutex() {

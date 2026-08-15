@@ -9,6 +9,7 @@ pub const AGENT_RUNTIME_VERSION: &str = "centralized-v1";
 pub mod active_stream_sink;
 pub mod ambient_context;
 pub mod daemon_interactive_turn;
+pub mod execution_context;
 #[cfg(test)]
 mod golden_turn;
 #[cfg(test)]

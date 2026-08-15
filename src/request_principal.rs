@@ -11,11 +11,13 @@ use crate::shared_mode::root_profile_id;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PrincipalKind {
     Anonymous,
+    Continuation,
     LocalApp,
     McpGateway,
     Portal,
     Peer,
     Root,
+    Worker,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -150,6 +152,33 @@ impl RequestPrincipal {
 
     pub fn local_app(credential_id: Arc<str>, transport: TransportClass) -> Self {
         Self::local_app_with_generation(credential_id, transport, 1)
+    }
+
+    /// Reauthorized internal principal for one durable continuation replay.
+    /// It receives member capabilities only; replay can never recover operator
+    /// authority from process-global state.
+    pub fn continuation(profile_id: impl Into<String>) -> Self {
+        Self {
+            kind: PrincipalKind::Continuation,
+            credential_id: None,
+            profile_id: Some(profile_id.into()),
+            capabilities: CapabilitySet::member(),
+            transport: TransportClass::Loopback,
+            revocation_generation: 0,
+        }
+    }
+
+    /// Reauthorized durable worker principal. Workers inherit member authority
+    /// only and cannot recover host operator capabilities from ambient state.
+    pub fn worker(profile_id: impl Into<String>) -> Self {
+        Self {
+            kind: PrincipalKind::Worker,
+            credential_id: None,
+            profile_id: Some(profile_id.into()),
+            capabilities: CapabilitySet::member(),
+            transport: TransportClass::Loopback,
+            revocation_generation: 0,
+        }
     }
 
     pub fn local_app_with_generation(
@@ -330,6 +359,28 @@ mod tests {
                 .capabilities()
                 .contains(Capability::McpPolicyEvaluate)
         );
+        assert!(!principal.capabilities().contains(Capability::AdminRuntime));
+    }
+
+    #[test]
+    fn continuation_principal_is_member_scoped() {
+        let principal = RequestPrincipal::continuation("user:alice");
+        assert_eq!(principal.kind(), PrincipalKind::Continuation);
+        assert_eq!(principal.profile_id(), Some("user:alice"));
+        assert!(
+            principal
+                .capabilities()
+                .contains(Capability::WorkshopInteract)
+        );
+        assert!(!principal.capabilities().contains(Capability::AdminExecute));
+    }
+
+    #[test]
+    fn worker_principal_is_member_scoped() {
+        let principal = RequestPrincipal::worker("user:alice");
+        assert_eq!(principal.kind(), PrincipalKind::Worker);
+        assert_eq!(principal.profile_id(), Some("user:alice"));
+        assert!(principal.capabilities().contains(Capability::ContentWrite));
         assert!(!principal.capabilities().contains(Capability::AdminRuntime));
     }
 }

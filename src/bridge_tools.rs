@@ -948,7 +948,10 @@ impl CognitionMcpPromoteToJobTool {
             }],
         };
 
-        let scope = self.turn_scope.read().await.clone();
+        let scope = crate::agent_runtime::execution_context::turn_continuation_scope(
+            &self.turn_scope,
+        )
+        .await;
         let continuation = scope
             .as_ref()
             .map(|turn_scope| WorkflowEnqueueContinuation {

@@ -627,7 +627,9 @@ async fn enqueue_openshell_job(
         now,
     )
     .build();
-    if let Some(scope) = turn_scope.read().await.clone() {
+    if let Some(scope) =
+        crate::agent_runtime::execution_context::turn_continuation_scope(turn_scope).await
+    {
         wire_turn_child_job(
             &mut job,
             &scope,

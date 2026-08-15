@@ -51,7 +51,8 @@ pub async fn resolve_active_chat_session_id_async(
     turn_scope: &RwLock<Option<TurnContinuationScope>>,
     bootstrap_fallback: &str,
 ) -> String {
-    let scope = turn_scope.read().await;
+    let scope =
+        crate::agent_runtime::execution_context::turn_continuation_scope(turn_scope).await;
     resolve_active_chat_session_id(scope.as_ref(), bootstrap_fallback)
 }
 

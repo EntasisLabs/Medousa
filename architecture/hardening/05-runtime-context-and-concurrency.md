@@ -1,6 +1,6 @@
 # H05 — Request-scoped runtime context and concurrency
 
-> **Status:** Draft for runtime/browser review
+> **Status:** Implementing — H05.1/H05.3 execution and worker ownership underway
 >
 > **Accountable owner:** daemon runtime maintainers
 >
@@ -12,7 +12,9 @@
 >
 > **Required decision:** [ADR-017](../../docs/architecture/decisions/adr-017-request-scoped-runtime-context.md)
 >
-> **Dependencies:** H01 authenticated principal; H02 typed identifiers/authority; H03 turn pipeline; H08 browser authority
+> **Dependencies:** H01 authenticated principal; H02 typed identifiers/authority
+>
+> **Coordinates with:** H03 turn pipeline; H08 browser authority
 >
 > **Verification:** [Crash/concurrency matrix](verification/crash-concurrency-matrix.md), [security abuse matrix](verification/security-abuse-matrix.md)
 
@@ -29,6 +31,121 @@ H05 owns runtime correlation, propagation, cancellation, task ownership, and
 browser reply correlation. H03 owns sequencing/backpressure inside a turn's
 output pipeline. H08 owns webview origin isolation and the minimum permitted
 IPC bridge. H01/H02 own the authority placed into the context.
+
+## Implementation progress
+
+H05.0 started from merged H01/H02 on `codex/h05-runtime-context`. The first
+deterministic two-turn fixture covers the ambient tool sink: two barrier-aligned
+turn futures install distinct canaries, yield in parallel, and prove each sees
+only its own sink. The process-global `ACTIVE_TOOL_SINK` mutable slot and its
+set/clear API are removed. A Tokio task-local compatibility scope now carries
+the sink only across the owning turn future and returns absence outside that
+scope. It is not authorization and must be deleted when H05.2 gives the
+upstream tool invocation boundary an explicit context.
+
+H05.1 now owns daemon ticket executions with a daemon-issued `TurnHandle`, an
+immutable context carrying the typed session, authenticated `RequestPrincipal`,
+provider route, surface capabilities, deadline, cancellation root, and a frozen
+legacy-scope projection. Admission reserves one of 256 live registry entries
+before stream/ticket allocation and returns an explicit overload response at
+the boundary. The spawned task retains an RAII lease; terminal drop removes
+only the exact `Arc` generation. Registry tests cover capacity/high-water,
+same-session concurrency, foreign cancel rejection, cancellation isolation,
+task-local isolation, steady-state release, and stale-lease replacement safety.
+Each context also owns a 64-per-turn child-task group. Child spawns inherit the
+same task-local context and cancellation root, reserve before spawning, release
+their permit on exit, and are aborted when the exact execution lease closes.
+
+Authenticated principals from interactive and background HTTP entry points are
+now carried through admission instead of being discarded after identity
+rewriting. The existing session cancel endpoint also signals the matching
+execution's cancellation root while the public API remains on its legacy
+session/turn identifier contract.
+The daemon turn future races its cancellation root and admitted deadline;
+cancellation or expiry drops the in-flight provider/tool future and emits a
+terminal error instead of waiting for cooperative polling at a later round.
+
+Daemon turns no longer mirror their continuation scope into
+`TuiRuntime::turn_scope`. A task-local compatibility read derives the old scope
+from the immutable admitted context. The first authority-sensitive tool group
+(history/session, client surfaces, browser, shell, skill, bridge, runtime, and
+workflow tools) has moved to that read. TUI, recurring/ingest, and worker entry
+surfaces still use the shared fallback until they receive their own admission
+contexts; existing detached spawn sites still need conversion to the tracked
+task API, plus cancellation/deadline propagation into every blocking leaf,
+before H05.1 is complete.
+
+H05.3 has started at the host/worker boundary. `TurnWorkerScheduler` no longer
+stores a process-wide `runtime_ctx` or `bus_session`. Each local turn receives
+an opaque `WorkerParentHandle`; the scheduler admits a bounded parent record
+containing that turn's runtime services, sink, session, route, delivery,
+handoff, continuity, and surface capabilities. Worker tools resolve only the
+handle scoped to their invoking turn. An RAII lease compare-removes the exact
+`Arc` generation on every return path, replacing ten unconditional clear calls
+that could erase a newer sibling. The scheduler reports live/high-water counts,
+and barrier tests prove concurrent parents cannot cross sessions while stale
+lease cleanup cannot remove a replacement generation.
+
+Worker execution no longer installs and restores canvas scope through the
+shared runtime lock. Every durable worker record now snapshots the delegating
+identity alongside its session/route/surface data, and worker execution scopes
+that frozen projection task-locally for both canvas and non-canvas lanes. The
+worker execution path no longer reads or writes the shared scope; retained tool
+constructors see only the task-local compatibility projection. A two-worker barrier fixture
+proves distinct session canaries remain isolated while the shared fallback
+stays empty.
+
+Bound-workshop admission is now one atomic store operation: check and insert
+share the same lock, so two simultaneous begin requests for one session cannot
+both win. Steering carries the exact `work_id` generation from Home through
+Tauri and HTTP into a compare-before-mutate store operation. A stale steer
+reports the replacement generation and cannot append to it. Concurrent
+admission and stale-replacement tests freeze both races. Worker cancellation
+also names the exact `work_id` and verifies that its durable record belongs to
+the active host session before mutation; a cross-session regression test freezes
+that authority boundary.
+
+Durable child-job continuations now write an explicit format version and the
+originating profile reference. Resume fails closed for legacy authority-less
+records, revoked session visibility, and cross-session delivery targets. The
+resume claim is single-winner (including the Surreal update path), and an
+accepted replay is admitted into the bounded execution registry with a fresh
+member-scoped principal, cancellation root, deadline, task owner, and exact
+lease instead of running as a detached authority-less turn.
+
+Provider completions, tool catalog reads, sequential tool calls, fallback
+synthesis, and parallel tool calls now cross a shared execution leaf boundary
+that races the operation against the exact turn cancellation root and absolute
+deadline. Parallel `JoinSet` tasks reinstall their parent's immutable context
+before invoking tools. Turn and inference-attempt stream pumps now abort on
+owner drop (including with live sender clones), closing the detached-delta leak;
+normal completion still drains in order.
+
+Durable workers now register a bounded live cancellation token before entering
+execution. Exact session-authorized cancellation changes the durable record and
+signals that generation under the same records-then-live lock order. Workers
+revalidate their durable profile/session authority, reconstruct a member-scoped
+`TurnExecutionContext`, and run provider/tool leaves under the live token and an
+absolute deadline. Duplicate execution admission is rejected, stale lease drop
+cannot remove a replacement token, and worker delta pumps abort on owner drop;
+durable status polling remains a restart/recovery backstop.
+
+The current H05.0 request-state inventory is:
+
+| State | Classification | Current action |
+| --- | --- | --- |
+| Ambient tool sink | Per-turn request state | Task-scoped compatibility bridge; global slot deleted; H05.2 deletion remains |
+| Shared `TurnContinuationScope` | Per-turn request state retained by tool/runtime modules and installed by non-daemon save/restore paths | Daemon writes removed; authority-sensitive reads prefer immutable task context; TUI/worker/ingest removal remains |
+| Worker scheduler `runtime_ctx` and `bus_session` | Per-parent/worker request state formerly held in two process-wide `Option` slots | Slots deleted; bounded keyed parent registry and exact leases landed; child execution and bound-workshop generation ownership remain |
+| Browser `SNAPSHOT_TX`, `ACT_TX`, `NAV_STATE_TX`, `FIND_TX` | Per-request reply state in four process-wide singleton mailboxes | Open; freeze overlap, reverse completion, timeout, and navigation races before H05.5 |
+| `LAST_GRAPHEME_SOURCE` | Per-invocation source selected through one global last-value slot | Open; key to invocation context in H05.2 |
+| Continuation last-resume value | Process diagnostic snapshot, not execution authority | Retain only as bounded diagnostics; never select runtime behavior from it |
+| Parent stream and ingest delivery bridge registrations | Process service references with keyed APIs | Retain as shared services; audit registration lifecycle separately |
+| Browser placement/viewport and per-surface active-tab slots | UI/surface state, not reply mailboxes | Move under `BrowserHostState` surface records in H05.5 where identity matters |
+
+This classification is intentionally narrower than a textual search for every
+`Mutex<Option<_>>`: shutdown senders, cached routes, device tokens, and service
+registrations are not request identity merely because they use `Option`.
 
 ## Current ownership failures
 

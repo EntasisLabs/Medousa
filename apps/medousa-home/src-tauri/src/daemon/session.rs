@@ -345,6 +345,7 @@ pub async fn session_cancel_active_turn(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkshopSteerRequest {
+    pub work_id: String,
     pub message: String,
 }
 
@@ -361,13 +362,14 @@ pub struct WorkshopSteerResponse {
 pub async fn session_steer_bound_workshop(
     state: State<'_, DaemonState>,
     session_id: String,
+    work_id: String,
     message: String,
 ) -> Result<WorkshopSteerResponse, String> {
     let trimmed = session_id.trim();
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
     }
-    let body = WorkshopSteerRequest { message };
+    let body = WorkshopSteerRequest { work_id, message };
     workshop_http::post_json(
         &state,
         &format!("/v1/sessions/{trimmed}/workshop/steer"),

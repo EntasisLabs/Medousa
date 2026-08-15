@@ -334,7 +334,15 @@ impl CognitionTurnWorkerStatusTool {
     }
 }
 
-pub struct CognitionTurnWorkerCancelTool;
+pub struct CognitionTurnWorkerCancelTool {
+    scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
+}
+
+impl CognitionTurnWorkerCancelTool {
+    pub fn new(scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>) -> Self {
+        Self { scheduler }
+    }
+}
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct TurnWorkerCancelInput {
@@ -351,20 +359,40 @@ pub struct TurnWorkerCancelOutput {
 
 #[medousa_tool(id = COGNITION_TURN_WORKER_CANCEL_ID)]
 impl CognitionTurnWorkerCancelTool {
-    /// Mark a pending or running turn worker as cancelled (best-effort; in-flight worker may still finish).
+    /// Cancel an exact worker generation owned by the active host session (best-effort; in-flight worker may still finish).
     async fn invoke_typed(
         &self,
         input: TurnWorkerCancelInput,
     ) -> stasis::prelude::Result<TurnWorkerCancelOutput> {
-        let work_id = input.work_id;
+        let work_id = input.work_id.trim();
+        if work_id.is_empty() {
+            return Err(StasisError::PortFailure(
+                "cognition_turn_worker_cancel: work_id required".to_string(),
+            ));
+        }
+        let session_id = self
+            .scheduler
+            .active_bus_session_id()
+            .await
+            .ok_or_else(|| {
+                StasisError::PortFailure(
+                    "cognition_turn_worker_cancel: no active host turn session".to_string(),
+                )
+            })?;
         let store = turn_worker_store();
-        let updated = store
-            .update(&work_id, |r| {
-                if matches!(r.status, TurnWorkStatus::Pending | TurnWorkStatus::Running) {
-                    r.status = TurnWorkStatus::Cancelled;
+        let updated = store.cancel_exact(&session_id, work_id).map_err(|error| {
+            use crate::agent_runtime::turn_worker::TurnWorkerMutationError;
+            let message = match error {
+                TurnWorkerMutationError::MissingWork => format!("work_id not found: {work_id}"),
+                TurnWorkerMutationError::ForeignSession => {
+                    format!("work_id does not belong to active session: {work_id}")
                 }
-            })
-            .ok_or_else(|| StasisError::PortFailure(format!("work_id not found: {work_id}")))?;
+                TurnWorkerMutationError::SessionDeleting => {
+                    format!("session is being deleted: {session_id}")
+                }
+            };
+            StasisError::PortFailure(message)
+        })?;
         Ok(TurnWorkerCancelOutput {
             ok: true,
             record: updated,
@@ -378,8 +406,8 @@ pub fn register_turn_worker_tools(
 ) -> stasis::prelude::Result<()> {
     registry.register_typed_tool(CognitionSpawnTurnWorkerTool::new(scheduler.clone()))?;
     registry.register_typed_tool(CognitionWorkshopSteerTool::new(scheduler.clone()))?;
-    registry.register_typed_tool(CognitionTurnWorkerStatusTool::new(scheduler))?;
-    registry.register_typed_tool(CognitionTurnWorkerCancelTool)?;
+    registry.register_typed_tool(CognitionTurnWorkerStatusTool::new(scheduler.clone()))?;
+    registry.register_typed_tool(CognitionTurnWorkerCancelTool::new(scheduler))?;
     Ok(())
 }
 
@@ -395,6 +423,8 @@ impl CognitionWorkshopSteerTool {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct WorkshopSteerInput {
+    /// Exact bound-workshop generation returned by begin-work.
+    work_id: String,
     /// Steer text for the bound workshop
     message: String,
 }
@@ -443,23 +473,17 @@ impl CognitionWorkshopSteerTool {
                 )
             })?;
         let speaker = crate::user_profiles::resolve_workshop_identity_user_id();
-        steer_bound_workshop_for_session(&session_id, message, Some(speaker))
+        steer_bound_workshop_for_session(&session_id, &input.work_id, message, Some(speaker))
     }
 }
 
 pub fn steer_bound_workshop_for_session(
     session_id: &str,
+    work_id: &str,
     message: &str,
     speaker_profile_id: Option<String>,
 ) -> stasis::prelude::Result<WorkshopSteerOutput> {
     let store = turn_worker_store();
-    let Some(record) = store.active_bound_workshop(session_id) else {
-        return Ok(WorkshopSteerOutput::Failure {
-            ok: false,
-            error: "no active bound workshop for session".to_string(),
-        });
-    };
-
     let speaker = speaker_profile_id
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
@@ -473,9 +497,30 @@ pub fn steer_bound_workshop_for_session(
         });
     }
 
-    let updated = store
-        .push_steer(&record.work_id, message.to_string(), speaker.clone())
-        .ok_or_else(|| StasisError::PortFailure("failed to queue steer message".to_string()))?;
+    let updated = match store.push_steer_exact(
+        session_id,
+        work_id.trim(),
+        message.to_string(),
+        speaker.clone(),
+    ) {
+        Ok(updated) => updated,
+        Err(crate::agent_runtime::turn_worker::BoundWorkshopMutationError::StaleGeneration {
+            active_work_id,
+        }) => {
+            return Ok(WorkshopSteerOutput::Failure {
+                ok: false,
+                error: active_work_id.map_or_else(
+                    || "no active bound workshop for session".to_string(),
+                    |active| format!("stale workshop generation; active work_id is {active}"),
+                ),
+            });
+        }
+        Err(error) => {
+            return Err(StasisError::PortFailure(format!(
+                "failed to queue steer message: {error:?}"
+            )));
+        }
+    };
 
     // Surface the steer in the shared transcript so Home can attribute the speaker.
     let turn = crate::turn_parts::user_conversation_turn_with_media_and_speaker(

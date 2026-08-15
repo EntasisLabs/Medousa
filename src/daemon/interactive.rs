@@ -80,6 +80,7 @@ pub fn build_interactive_request_from_ticket(
 
 pub async fn spawn_turn_ticket(
     state: &AppState,
+    principal: crate::request_principal::RequestPrincipal,
     turn_id: String,
     mode: crate::turn_ticket::TurnTicketMode,
     interactive_request: InteractiveTurnRequest,
@@ -89,7 +90,63 @@ pub async fn spawn_turn_ticket(
         .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
     let admission = crate::session_deletion::acquire_mutation(&session_id)
         .map_err(|error| (StatusCode::CONFLICT, error))?;
-    let session_id = session_id.to_string();
+    let session_id_text = session_id.to_string();
+    let delivery_target =
+        channel_delivery::delivery_target_from_interactive_turn(&interactive_request, &turn_id);
+    let continuation_scope = crate::turn_continuation::TurnContinuationScope {
+        turn_correlation_id: turn_id.clone(),
+        session_id: interactive_request.session_id.clone(),
+        identity_user_id: Some(
+            interactive_request
+                .identity_user_id
+                .clone()
+                .unwrap_or_else(|| state.workshop_identity_user_id()),
+        ),
+        original_prompt: interactive_request.prompt.clone(),
+        delivery_target: Some(delivery_target.clone()),
+        provider: interactive_request.provider.clone(),
+        model: interactive_request.model.clone(),
+        response_depth_mode: interactive_request.response_depth_mode.clone(),
+        supports_ui_artifacts: crate::ui_present_tools::surface_supports_ui_artifacts(
+            interactive_request.surface.as_ref(),
+        ),
+        supports_liquid_markdown: interactive_request
+            .surface
+            .as_ref()
+            .is_some_and(|surface| surface.supports_liquid_markdown),
+        supports_browser_host: crate::browser_tools::surface_supports_browser_host(
+            interactive_request.surface.as_ref(),
+        ),
+        channel_surface: interactive_request
+            .surface
+            .as_ref()
+            .and_then(|surface| surface.channel_surface.clone()),
+    };
+    let execution_context = crate::agent_runtime::execution_context::TurnExecutionContext::new(
+        turn_id.clone(),
+        turn_id.clone(),
+        session_id,
+        principal,
+        crate::agent_runtime::execution_context::ProviderRoute::new(
+            interactive_request.provider.clone(),
+            interactive_request.model.clone(),
+        ),
+        crate::agent_runtime::execution_context::SurfaceCapabilities {
+            ui_artifacts: continuation_scope.supports_ui_artifacts,
+            liquid_markdown: continuation_scope.supports_liquid_markdown,
+            browser_host: continuation_scope.supports_browser_host,
+        },
+        tokio_util::sync::CancellationToken::new(),
+        std::time::Instant::now() + std::time::Duration::from_secs(2 * 60 * 60),
+        continuation_scope.clone(),
+    );
+    let execution_lease = state
+        .platform
+        .agent_handle()
+        .execution_registry
+        .admit(execution_context)
+        .map_err(|error| (StatusCode::TOO_MANY_REQUESTS, error.to_string()))?;
+    let execution_context = execution_lease.context().clone();
 
     let stream_port = crate::engine_adapters::turn_stream_registry_adapter(
         state.interactive_turn_streams.clone(),
@@ -117,7 +174,7 @@ pub async fn spawn_turn_ticket(
     let prompt_preview = crate::turn_ticket::prompt_preview(&interactive_request.prompt);
     let ticket = crate::turn_ticket::TurnTicket {
         turn_id: turn_id.clone(),
-        session_id: session_id.clone(),
+        session_id: session_id_text.clone(),
         mode,
         phase: crate::turn_ticket::TurnTicketPhase::Accepted,
         stream_url: stream_url.clone(),
@@ -144,7 +201,7 @@ pub async fn spawn_turn_ticket(
                 output_text: None,
                 interim_text: None,
                 error: None,
-                session_id: session_id.clone(),
+                session_id: session_id_text.clone(),
                 manuscript_id: interactive_request.manuscript_id.clone(),
                 additional_manuscript_ids: interactive_request.additional_manuscript_ids.clone(),
                 suggested_capability_ids: interactive_request.suggested_capability_ids.clone(),
@@ -160,8 +217,6 @@ pub async fn spawn_turn_ticket(
         crate::workspace::ask_job_store::ask_job_store().mark_running(job_id);
     }
 
-    let delivery_target =
-        channel_delivery::delivery_target_from_interactive_turn(&interactive_request, &turn_id);
     state
         .channel_deliveries
         .write()
@@ -189,35 +244,6 @@ pub async fn spawn_turn_ticket(
         last_turn_latency_ms: last_agent_turn_latency_ms,
         started: std::time::Instant::now(),
     };
-    let continuation_scope = crate::turn_continuation::TurnContinuationScope {
-        turn_correlation_id: turn_id.clone(),
-        session_id: interactive_request.session_id.clone(),
-        identity_user_id: Some(
-            interactive_request
-                .identity_user_id
-                .clone()
-                .unwrap_or_else(|| state.workshop_identity_user_id()),
-        ),
-        original_prompt: interactive_request.prompt.clone(),
-        delivery_target: Some(delivery_target),
-        provider: interactive_request.provider.clone(),
-        model: interactive_request.model.clone(),
-        response_depth_mode: interactive_request.response_depth_mode.clone(),
-        supports_ui_artifacts: crate::ui_present_tools::surface_supports_ui_artifacts(
-            interactive_request.surface.as_ref(),
-        ),
-        supports_liquid_markdown: interactive_request
-            .surface
-            .as_ref()
-            .is_some_and(|surface| surface.supports_liquid_markdown),
-        supports_browser_host: crate::browser_tools::surface_supports_browser_host(
-            interactive_request.surface.as_ref(),
-        ),
-        channel_surface: interactive_request
-            .surface
-            .as_ref()
-            .and_then(|surface| surface.channel_surface.clone()),
-    };
     let ask_job_id = workspace_card_id.clone();
     let ask_job_id_for_notify = ask_job_id.clone();
     let session_hooks = crate::agent_runtime::InteractiveTurnSessionHooks {
@@ -238,6 +264,7 @@ pub async fn spawn_turn_ticket(
         streams: Arc::new(stream_port_for_task),
     };
     tokio::spawn(async move {
+        let _execution_lease = execution_lease;
         let _handle = run_turn(lifecycle_ports, envelope, || async {
             crate::agent_runtime::run_daemon_interactive_turn(
                 &turn_id_for_task,
@@ -248,6 +275,7 @@ pub async fn spawn_turn_ticket(
                 stream_entry,
                 Some(delivery),
                 Some(continuation_scope),
+                execution_context,
                 Some(session_hooks),
             )
             .await;
@@ -283,7 +311,7 @@ pub async fn spawn_turn_ticket(
 
     Ok(TurnTicketResponse {
         turn_id,
-        session_id,
+        session_id: session_id_text,
         mode,
         phase: crate::turn_ticket::TurnTicketPhase::Accepted,
         accepted_at_utc: now,
@@ -366,6 +394,7 @@ pub async fn create_turn_ticket(
 
     spawn_turn_ticket(
         &state,
+        principal,
         turn_id,
         request.mode,
         interactive_request,
@@ -458,6 +487,7 @@ pub async fn start_interactive_turn(
 
     let ticket = spawn_turn_ticket(
         &state,
+        principal,
         turn_id,
         crate::turn_ticket::TurnTicketMode::Interactive,
         interactive_request,
@@ -508,7 +538,7 @@ pub async fn cancel_active_session_turn(
     State(state): State<AppState>,
     AxumPath(session_id): AxumPath<String>,
 ) -> Result<Json<crate::turn_ticket::CancelActiveSessionTurnResponse>, (StatusCode, String)> {
-    crate::session_storage::validate_session_id(&session_id)
+    let typed_session_id = crate::session_storage::SessionId::parse(&session_id)
         .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
     let active =
         crate::turn_ticket::cancel_interactive_for_session(&state.turn_tickets, &session_id).await;
@@ -526,6 +556,11 @@ pub async fn cancel_active_session_turn(
         .write()
         .await
         .insert(active.turn_id.clone());
+    state
+        .platform
+        .agent_handle()
+        .execution_registry
+        .cancel_matching_turn(&typed_session_id, &active.turn_id);
     crate::turn_ticket::mark_cancelled(&state.turn_tickets, &active.turn_id).await;
 
     if let Some(entry) = state

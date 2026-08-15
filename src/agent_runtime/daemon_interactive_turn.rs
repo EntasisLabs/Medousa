@@ -865,6 +865,7 @@ pub async fn run_daemon_interactive_turn(
     stream: crate::daemon::turn_stream_registry::TurnStreamEntry,
     delivery: Option<InteractiveTurnDeliveryContext>,
     continuation_scope: Option<TurnContinuationScope>,
+    execution_context: Arc<super::execution_context::TurnExecutionContext>,
     session_hooks: Option<InteractiveTurnSessionHooks>,
 ) {
     use super::turn_event::{Principal, TurnEnvelope};
@@ -907,6 +908,7 @@ pub async fn run_daemon_interactive_turn(
             agent_rt,
             sink,
             continuation_scope,
+            Some(execution_context),
             Some(interactive_sink),
             Some(project_state),
         )
@@ -925,10 +927,15 @@ pub async fn run_agent_turn(
     agent_rt: &super::runtime::MedousaAgentRuntime,
     sink: SharedAgentStreamSink,
     continuation_scope: Option<TurnContinuationScope>,
+    execution_context: Option<Arc<super::execution_context::TurnExecutionContext>>,
     context_telemetry: Option<Arc<InteractiveTurnStreamSink>>,
     project_state: Option<crate::daemon::state::AppState>,
 ) {
-    let previous_scope = agent_rt.turn_scope.read().await.clone();
+    let previous_scope = if execution_context.is_none() {
+        Some(agent_rt.turn_scope.read().await.clone())
+    } else {
+        None
+    };
     let turn_correlation_id = continuation_scope
         .as_ref()
         .map(|scope| scope.turn_correlation_id.clone());
@@ -967,27 +974,51 @@ pub async fn run_agent_turn(
     effective_scope.supports_liquid_markdown = supports_liquid_markdown;
     effective_scope.supports_browser_host = supports_browser_host;
     effective_scope.channel_surface = channel_surface;
-    *agent_rt.turn_scope.write().await = Some(effective_scope);
+    if execution_context.is_none() {
+        *agent_rt.turn_scope.write().await = Some(effective_scope);
+    }
     let outcome: Arc<RwLock<Option<TurnOutcome>>> = Arc::new(RwLock::new(None));
     let tracking_sink: SharedAgentStreamSink = Arc::new(TurnOutcomeTrackingSink {
         inner: sink,
         outcome: outcome.clone(),
     });
-    crate::engine_adapters::set_active_tool_sink(Some(
-        crate::engine_adapters::AgentStreamToolSinkAdapter::new(tracking_sink.clone()),
-    ))
-    .await;
-
-    run_agent_turn_inner(
-        turn_id,
-        request,
-        backend,
-        agent_rt,
-        tracking_sink,
-        context_telemetry,
-        project_state,
-    )
-    .await;
+    let tool_sink =
+        crate::engine_adapters::AgentStreamToolSinkAdapter::new(tracking_sink.clone());
+    let turn_future = crate::engine_adapters::with_active_tool_sink(
+        tool_sink,
+        run_agent_turn_inner(
+            turn_id,
+            request,
+            backend,
+            agent_rt,
+            tracking_sink.clone(),
+            context_telemetry,
+            project_state,
+        ),
+    );
+    if let Some(context) = execution_context {
+        let cancellation = context.cancellation().clone();
+        let deadline = tokio::time::Instant::from_std(context.deadline());
+        let scoped_turn =
+            super::execution_context::with_turn_execution_context(context, turn_future);
+        tokio::pin!(scoped_turn);
+        tokio::select! {
+            () = cancellation.cancelled() => {
+                tracking_sink
+                    .agent_error(0, "turn cancelled".to_string())
+                    .await;
+            }
+            () = tokio::time::sleep_until(deadline) => {
+                cancellation.cancel();
+                tracking_sink
+                    .agent_error(0, "turn execution deadline exceeded".to_string())
+                    .await;
+            }
+            () = &mut scoped_turn => {}
+        }
+    } else {
+        turn_future.await;
+    }
 
     if let Some(correlation_id) = turn_correlation_id {
         let final_outcome = outcome.read().await.unwrap_or(TurnOutcome::Error);
@@ -1003,8 +1034,9 @@ pub async fn run_agent_turn(
             .await;
     }
 
-    crate::engine_adapters::set_active_tool_sink(None).await;
-    *agent_rt.turn_scope.write().await = previous_scope;
+    if let Some(previous_scope) = previous_scope {
+        *agent_rt.turn_scope.write().await = previous_scope;
+    }
 }
 
 async fn run_agent_turn_inner(

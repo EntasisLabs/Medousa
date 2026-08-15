@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use tokio_util::sync::CancellationToken;
 
 use crate::agent_runtime::turn_context::WorkerHandoffCapsule;
 use crate::session;
@@ -87,6 +88,8 @@ fn default_parent_stream_turn_id() -> u64 {
 pub struct TurnWorkRecord {
     pub work_id: String,
     pub session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity_user_id: Option<String>,
     pub parent_turn_correlation_id: Option<String>,
     #[serde(default = "default_parent_stream_turn_id")]
     pub parent_stream_turn_id: u64,
@@ -158,6 +161,63 @@ pub struct TurnWorkRecord {
 
 pub struct TurnWorkerStore {
     records: Mutex<HashMap<String, TurnWorkRecord>>,
+    live_cancellations: Mutex<HashMap<String, Arc<CancellationToken>>>,
+}
+
+pub struct WorkerExecutionLease {
+    store: Arc<TurnWorkerStore>,
+    work_id: String,
+    cancellation: Arc<CancellationToken>,
+}
+
+impl WorkerExecutionLease {
+    pub fn cancellation(&self) -> &CancellationToken {
+        &self.cancellation
+    }
+}
+
+impl Drop for WorkerExecutionLease {
+    fn drop(&mut self) {
+        let mut live = self
+            .store
+            .live_cancellations
+            .lock()
+            .expect("turn worker cancellations");
+        if live
+            .get(&self.work_id)
+            .is_some_and(|current| Arc::ptr_eq(current, &self.cancellation))
+        {
+            live.remove(&self.work_id);
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BoundWorkshopAdmissionError {
+    SessionDeleting,
+    ActiveGeneration { work_id: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BoundWorkshopMutationError {
+    SessionDeleting,
+    MissingGeneration,
+    StaleGeneration { active_work_id: Option<String> },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TurnWorkerMutationError {
+    SessionDeleting,
+    MissingWork,
+    ForeignSession,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WorkerExecutionRegistrationError {
+    MissingWork,
+    NotActive,
+    AlreadyRunning,
+    AtCapacity { limit: usize },
 }
 
 impl Default for TurnWorkerStore {
@@ -170,9 +230,18 @@ impl TurnWorkerStore {
     pub fn new() -> Self {
         let store = Self {
             records: Mutex::new(HashMap::new()),
+            live_cancellations: Mutex::new(HashMap::new()),
         };
         store.reload_from_disk();
         store
+    }
+
+    #[cfg(test)]
+    pub(crate) fn empty_for_tests() -> Self {
+        Self {
+            records: Mutex::new(HashMap::new()),
+            live_cancellations: Mutex::new(HashMap::new()),
+        }
     }
 
     fn path() -> PathBuf {
@@ -308,6 +377,32 @@ impl TurnWorkerStore {
         self.persist(&work_id, stasis_job_id.as_deref());
     }
 
+    pub fn try_insert_bound(
+        &self,
+        record: TurnWorkRecord,
+    ) -> Result<(), BoundWorkshopAdmissionError> {
+        debug_assert_eq!(record.disposition, TurnWorkDisposition::Bound);
+        let Ok((_session, _mutation)) =
+            crate::session_deletion::acquire_mutation_for_str(&record.session_id)
+        else {
+            return Err(BoundWorkshopAdmissionError::SessionDeleting);
+        };
+        let work_id = record.work_id.clone();
+        let stasis_job_id = record.stasis_job_id.clone();
+        let mut records = self.records.lock().expect("turn worker records");
+        if let Some(active) = records.values().find(|candidate| {
+            is_active_bound(candidate) && candidate.session_id == record.session_id
+        }) {
+            return Err(BoundWorkshopAdmissionError::ActiveGeneration {
+                work_id: active.work_id.clone(),
+            });
+        }
+        records.insert(work_id.clone(), record);
+        drop(records);
+        self.persist(&work_id, stasis_job_id.as_deref());
+        Ok(())
+    }
+
     pub fn get(&self, work_id: &str) -> Option<TurnWorkRecord> {
         self.records
             .lock()
@@ -417,7 +512,22 @@ impl TurnWorkerStore {
 
     pub fn delete_session(&self, session_id: &str) -> Result<(), String> {
         let mut guard = self.records.lock().map_err(|error| error.to_string())?;
+        let removed_work_ids: Vec<_> = guard
+            .values()
+            .filter(|record| record.session_id == session_id)
+            .map(|record| record.work_id.clone())
+            .collect();
         guard.retain(|_, record| record.session_id != session_id);
+        let mut live = self
+            .live_cancellations
+            .lock()
+            .map_err(|error| error.to_string())?;
+        for work_id in &removed_work_ids {
+            if let Some(cancellation) = live.remove(work_id) {
+                cancellation.cancel();
+            }
+        }
+        drop(live);
         let body = serde_json::to_string_pretty(&*guard).map_err(|error| error.to_string())?;
         drop(guard);
         crate::workspace::persist::queue_snapshot_turn_workers(body);
@@ -433,7 +543,10 @@ impl TurnWorkerStore {
             };
             let records = serde_json::from_str::<HashMap<String, TurnWorkRecord>>(&raw)
                 .map_err(|_| "turn-worker snapshot is corrupt".to_string())?;
-            if records.values().any(|record| record.session_id == session_id) {
+            if records
+                .values()
+                .any(|record| record.session_id == session_id)
+            {
                 return Ok(false);
             }
         }
@@ -445,39 +558,128 @@ impl TurnWorkerStore {
             .lock()
             .expect("turn worker records")
             .values()
-            .filter(|record| {
-                !record.archived
-                    && record.session_id == session_id
-                    && record.disposition == TurnWorkDisposition::Bound
-                    && matches!(
-                        record.status,
-                        TurnWorkStatus::Pending | TurnWorkStatus::Running
-                    )
-            })
+            .filter(|record| record.session_id == session_id && is_active_bound(record))
             .max_by_key(|record| record.updated_at)
             .cloned()
     }
 
-    pub fn push_steer(
+    pub fn push_steer_exact(
         &self,
+        session_id: &str,
         work_id: &str,
         text: String,
         speaker_profile_id: Option<String>,
-    ) -> Option<TurnWorkRecord> {
-        let trimmed = text.trim();
-        if trimmed.is_empty() {
-            return None;
+    ) -> Result<TurnWorkRecord, BoundWorkshopMutationError> {
+        let Ok((_session, _mutation)) =
+            crate::session_deletion::acquire_mutation_for_str(session_id)
+        else {
+            return Err(BoundWorkshopMutationError::SessionDeleting);
+        };
+        let mut records = self.records.lock().expect("turn worker records");
+        let active_work_id = records
+            .values()
+            .find(|record| record.session_id == session_id && is_active_bound(record))
+            .map(|record| record.work_id.clone());
+        if active_work_id.as_deref() != Some(work_id) {
+            return Err(BoundWorkshopMutationError::StaleGeneration { active_work_id });
         }
-        let speaker = speaker_profile_id
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty());
-        self.update(work_id, |record| {
-            record.steer_messages.push(WorkshopSteerMessage {
-                text: trimmed.to_string(),
-                at: Utc::now(),
-                speaker_profile_id: speaker,
+        let record = records
+            .get_mut(work_id)
+            .ok_or(BoundWorkshopMutationError::MissingGeneration)?;
+        record.steer_messages.push(WorkshopSteerMessage {
+            text,
+            at: Utc::now(),
+            speaker_profile_id,
+        });
+        record.updated_at = Utc::now();
+        let updated = record.clone();
+        drop(records);
+        self.persist(&updated.work_id, updated.stasis_job_id.as_deref());
+        Ok(updated)
+    }
+
+    pub fn cancel_exact(
+        &self,
+        session_id: &str,
+        work_id: &str,
+    ) -> Result<TurnWorkRecord, TurnWorkerMutationError> {
+        let Ok((_session, _mutation)) =
+            crate::session_deletion::acquire_mutation_for_str(session_id)
+        else {
+            return Err(TurnWorkerMutationError::SessionDeleting);
+        };
+        let mut records = self.records.lock().expect("turn worker records");
+        let record = records
+            .get_mut(work_id)
+            .ok_or(TurnWorkerMutationError::MissingWork)?;
+        if record.session_id != session_id {
+            return Err(TurnWorkerMutationError::ForeignSession);
+        }
+        if matches!(
+            record.status,
+            TurnWorkStatus::Pending | TurnWorkStatus::Running
+        ) {
+            record.status = TurnWorkStatus::Cancelled;
+            record.updated_at = Utc::now();
+        }
+        let updated = record.clone();
+        if let Some(cancellation) = self
+            .live_cancellations
+            .lock()
+            .expect("turn worker cancellations")
+            .get(work_id)
+            .cloned()
+        {
+            cancellation.cancel();
+        }
+        drop(records);
+        self.persist(&updated.work_id, updated.stasis_job_id.as_deref());
+        Ok(updated)
+    }
+
+    pub fn register_execution(
+        self: &Arc<Self>,
+        work_id: &str,
+    ) -> Result<WorkerExecutionLease, WorkerExecutionRegistrationError> {
+        let records = self.records.lock().expect("turn worker records");
+        let record = records
+            .get(work_id)
+            .ok_or(WorkerExecutionRegistrationError::MissingWork)?;
+        if !matches!(
+            record.status,
+            TurnWorkStatus::Pending | TurnWorkStatus::Running
+        ) {
+            return Err(WorkerExecutionRegistrationError::NotActive);
+        }
+        let mut live = self
+            .live_cancellations
+            .lock()
+            .expect("turn worker cancellations");
+        if live.contains_key(work_id) {
+            return Err(WorkerExecutionRegistrationError::AlreadyRunning);
+        }
+        if live.len() >= MAX_ACTIVE_TURN_WORKERS {
+            return Err(WorkerExecutionRegistrationError::AtCapacity {
+                limit: MAX_ACTIVE_TURN_WORKERS,
             });
+        }
+        let cancellation = Arc::new(CancellationToken::new());
+        live.insert(work_id.to_string(), cancellation.clone());
+        drop(live);
+        drop(records);
+        Ok(WorkerExecutionLease {
+            store: self.clone(),
+            work_id: work_id.to_string(),
+            cancellation,
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn live_execution_count(&self) -> usize {
+        self.live_cancellations
+            .lock()
+            .expect("turn worker cancellations")
+            .len()
     }
 
     pub fn drain_steer_messages(&self, work_id: &str) -> Vec<WorkshopSteerMessage> {
@@ -492,6 +694,15 @@ impl TurnWorkerStore {
         self.get(work_id)
             .is_some_and(|record| record.status == TurnWorkStatus::Cancelled)
     }
+}
+
+fn is_active_bound(record: &TurnWorkRecord) -> bool {
+    !record.archived
+        && record.disposition == TurnWorkDisposition::Bound
+        && matches!(
+            record.status,
+            TurnWorkStatus::Pending | TurnWorkStatus::Running
+        )
 }
 
 #[cfg(test)]
@@ -512,6 +723,39 @@ mod tests {
     }
 
     #[test]
+    fn stale_execution_lease_cannot_remove_replacement_token() {
+        let store = Arc::new(TurnWorkerStore::empty_for_tests());
+        let stale_token = Arc::new(CancellationToken::new());
+        store
+            .live_cancellations
+            .lock()
+            .unwrap()
+            .insert("work-1".to_string(), stale_token.clone());
+        let stale = WorkerExecutionLease {
+            store: store.clone(),
+            work_id: "work-1".to_string(),
+            cancellation: stale_token,
+        };
+        let replacement = Arc::new(CancellationToken::new());
+        store
+            .live_cancellations
+            .lock()
+            .unwrap()
+            .insert("work-1".to_string(), replacement.clone());
+
+        drop(stale);
+
+        let current = store
+            .live_cancellations
+            .lock()
+            .unwrap()
+            .get("work-1")
+            .cloned()
+            .unwrap();
+        assert!(Arc::ptr_eq(&current, &replacement));
+    }
+
+    #[test]
     fn legacy_snapshot_is_migrated_without_deleting_source() {
         let temp = tempfile::tempdir().expect("temp data directory");
         let canonical = TurnWorkerStore::path_in(temp.path());
@@ -519,6 +763,7 @@ mod tests {
         fs::write(&legacy, "{}").expect("write legacy snapshot");
         let store = TurnWorkerStore {
             records: Mutex::new(HashMap::new()),
+            live_cancellations: Mutex::new(HashMap::new()),
         };
 
         store.reload_from_paths(&canonical, &legacy);

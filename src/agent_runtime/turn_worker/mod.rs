@@ -33,9 +33,11 @@ pub use run::{
     ActiveWorkerBusSession, EnterBoundWorkshopOutput, SpawnTurnWorkerOutput, TurnWorkerScheduler,
     WorkerRuntimeContext, host_bus_mode_enabled, pipeline_for_turn_profile,
     resume_synthesis_if_needed, run_worker_turn, system_prompt_for_host_bus,
+    with_worker_parent_scope,
 };
 pub use status::{append_active_workers_hint, format_active_workers_block};
 pub use store::{
-    TurnWorkDisposition, TurnWorkRecord, TurnWorkStatus, TurnWorkerStore, WorkerToolActivity,
-    turn_worker_store,
+    BoundWorkshopAdmissionError, BoundWorkshopMutationError, TurnWorkDisposition, TurnWorkRecord,
+    TurnWorkStatus, TurnWorkerMutationError, TurnWorkerStore, WorkerExecutionLease,
+    WorkerExecutionRegistrationError, WorkerToolActivity, turn_worker_store,
 };

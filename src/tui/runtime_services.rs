@@ -531,6 +531,7 @@ pub(crate) async fn assemble_tui_runtime(
         memory_operations,
         client_registry,
         turn_scope,
+        execution_registry: crate::agent_runtime::execution_context::TurnExecutionRegistry::default(),
         worker_scheduler,
     })
 }

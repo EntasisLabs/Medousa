@@ -1,6 +1,7 @@
 //! Medousa tool loop with policy-coherent parallel tool-call batches.
 
 use std::collections::HashSet;
+use std::future::Future;
 use std::sync::Arc;
 
 use genai::chat::{ChatMessage, ChatRequest, ToolResponse};
@@ -21,6 +22,10 @@ use crate::agent_runtime::coder_turn_checkpoint::{
     ActiveTurnCheckpointStatus, ActiveTurnCounters, CheckpointToolInvocation,
     OutstandingTurnBoundary, SafeCheckpointBoundary, TOOL_ROUND_BUDGET_EXHAUSTED_REASON,
     ToolLoopCheckpointState,
+};
+use crate::agent_runtime::execution_context::{
+    TurnExecutionBoundaryError, active_turn_execution_context, await_turn_boundary,
+    with_optional_turn_execution_context,
 };
 use crate::agent_runtime::perception_governor::ToolPerceptionGovernor;
 use crate::agent_runtime::turn_completion::{ToolLoopCompletionGate, collect_tool_names};
@@ -53,6 +58,22 @@ use crate::turn_control_tools::{
 
 const DEFAULT_MAX_TOOL_ROUNDS: usize =
     crate::agent_runtime::turn_loop_settings::DEFAULT_GENERAL_MAX_TOOL_ROUNDS;
+
+fn turn_boundary_failure(
+    operation: &str,
+    error: TurnExecutionBoundaryError,
+) -> StasisError {
+    StasisError::PortFailure(format!("{error} during {operation}"))
+}
+
+async fn await_turn_result<F, T>(operation: &str, future: F) -> Result<T>
+where
+    F: Future<Output = Result<T>>,
+{
+    await_turn_boundary(future)
+        .await
+        .map_err(|error| turn_boundary_failure(operation, error))?
+}
 
 #[derive(Debug, Default)]
 struct AssistantPackHold {
@@ -223,7 +244,8 @@ impl MedousaToolLoopPipeline {
             turn_ctx.scratchpad = seed.clone();
         }
 
-        let mut tools = self.tool_registry.list_tools().await?;
+        let mut tools =
+            await_turn_result("tool catalog lookup", self.tool_registry.list_tools()).await?;
         if has_selected_tool {
             let selected_sanitized =
                 sanitize_tool_name_for_model(shared_inputs.selected_tool_name());
@@ -429,11 +451,14 @@ impl MedousaToolLoopPipeline {
                 let chat_request = ChatRequest::new(messages).with_tools(tools.clone());
                 let response = match chunk_tx {
                     Some(tx) => {
-                        match complete_chat_stream_once(
-                            &self.prompt_pipeline,
-                            chat_request.clone(),
-                            shared_inputs.context_clone(),
-                            Some(tx),
+                        match await_turn_result(
+                            "streaming model completion",
+                            complete_chat_stream_once(
+                                &self.prompt_pipeline,
+                                chat_request.clone(),
+                                shared_inputs.context_clone(),
+                                Some(tx),
+                            ),
                         )
                         .await?
                         {
@@ -458,10 +483,13 @@ impl MedousaToolLoopPipeline {
                         }
                     }
                     None => {
-                        match complete_chat_once(
-                            &self.prompt_pipeline,
-                            chat_request.clone(),
-                            shared_inputs.context_clone(),
+                        match await_turn_result(
+                            "model completion",
+                            complete_chat_once(
+                                &self.prompt_pipeline,
+                                chat_request.clone(),
+                                shared_inputs.context_clone(),
+                            ),
                         )
                         .await?
                         {
@@ -775,11 +803,22 @@ impl MedousaToolLoopPipeline {
                             .await;
                         }
                         let registry = self.tool_registry.clone();
+                        let execution_context = active_turn_execution_context();
                         let run_id_spawn = run_id.clone();
                         join_set.spawn(async move {
-                            let output = registry
-                                .invoke_tool(&call.fn_name, call.fn_arguments.clone())
-                                .await;
+                            let output = with_optional_turn_execution_context(
+                                execution_context,
+                                async {
+                                    await_turn_boundary(
+                                        registry.invoke_tool(
+                                            &call.fn_name,
+                                            call.fn_arguments.clone(),
+                                        ),
+                                    )
+                                    .await
+                                },
+                            )
+                            .await;
                             (call, output, run_id_spawn)
                         });
                     }
@@ -797,6 +836,9 @@ impl MedousaToolLoopPipeline {
                                 continue;
                             }
                         };
+                        let output = output.map_err(|error| {
+                            turn_boundary_failure("parallel tool invocation", error)
+                        })?;
                         let tool_output = tool_output_from_invoke(output);
                         let tool_output_text = perception_governor
                             .observe_for_call(
@@ -861,11 +903,13 @@ impl MedousaToolLoopPipeline {
                             )
                             .await;
                         }
-                        let tool_output = tool_output_from_invoke(
+                        let output = await_turn_boundary(
                             self.tool_registry
-                                .invoke_tool(&call.fn_name, call.fn_arguments.clone())
-                                .await,
-                        );
+                                .invoke_tool(&call.fn_name, call.fn_arguments.clone()),
+                        )
+                        .await
+                        .map_err(|error| turn_boundary_failure("tool invocation", error))?;
+                        let tool_output = tool_output_from_invoke(output);
 
                         if is_prepare_final_tool_name(&call.fn_name) {
                             prepare_final_in_batch = true;
@@ -969,7 +1013,9 @@ impl MedousaToolLoopPipeline {
                 // A mode-owned registry may reveal a narrower or wider model-visible
                 // subset between rounds, but it cannot change its authority superset.
                 if !has_selected_tool {
-                    tools = self.tool_registry.list_tools().await?;
+                    tools =
+                        await_turn_result("tool catalog refresh", self.tool_registry.list_tools())
+                            .await?;
                 }
                 if let Some(gate) = completion_gate.as_ref() {
                     let parent_for_handoff = gate
@@ -1451,16 +1497,22 @@ impl MedousaToolLoopPipeline {
             if let Some(system_prompt) = shared_inputs.system_prompt.as_ref() {
                 first_request = first_request.with_system_prompt(system_prompt.to_string());
             }
-            self.prompt_pipeline.execute(first_request).await?.text
+            await_turn_result(
+                "fallback draft completion",
+                self.prompt_pipeline.execute(first_request),
+            )
+            .await?
+            .text
         };
-        let tool_output = tool_output_from_invoke(
-            self.tool_registry
-                .invoke_tool(
-                    shared_inputs.selected_tool_name(),
-                    (*shared_inputs.tool_input).clone(),
-                )
-                .await,
-        );
+        let tool_result = await_turn_boundary(
+            self.tool_registry.invoke_tool(
+                shared_inputs.selected_tool_name(),
+                (*shared_inputs.tool_input).clone(),
+            ),
+        )
+        .await
+        .map_err(|error| turn_boundary_failure("fallback tool invocation", error))?;
+        let tool_output = tool_output_from_invoke(tool_result);
 
         let synthesis_prompt = build_fallback_synthesis_prompt(
             &shared_inputs.user_prompt,
@@ -1475,7 +1527,11 @@ impl MedousaToolLoopPipeline {
             final_request = final_request.with_system_prompt(system_prompt.to_string());
         }
 
-        let final_response = self.prompt_pipeline.execute(final_request).await?;
+        let final_response = await_turn_result(
+            "fallback synthesis completion",
+            self.prompt_pipeline.execute(final_request),
+        )
+        .await?;
 
         let fallback_invocation = ToolInvocation {
             tool_name: shared_inputs.selected_tool_name().to_string(),

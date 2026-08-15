@@ -789,6 +789,7 @@ mod tests {
         let record = TurnWorkRecord {
             work_id: "work-1".to_string(),
             session_id: "sess".to_string(),
+            identity_user_id: None,
             parent_turn_correlation_id: None,
             parent_stream_turn_id: 0,
             intent: "research".to_string(),
@@ -842,6 +843,7 @@ mod tests {
         let record = TurnWorkRecord {
             work_id: "work-2".to_string(),
             session_id: "sess".to_string(),
+            identity_user_id: None,
             parent_turn_correlation_id: None,
             parent_stream_turn_id: 0,
             intent: "research".to_string(),
@@ -901,6 +903,7 @@ mod tests {
         TurnWorkRecord {
             work_id: "work-live".to_string(),
             session_id: "sess".to_string(),
+            identity_user_id: None,
             parent_turn_correlation_id: None,
             parent_stream_turn_id: 0,
             intent: "research".to_string(),

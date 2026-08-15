@@ -51,9 +51,11 @@ async fn history_access(
     turn_scope: &RwLock<Option<TurnContinuationScope>>,
     tool_name: &str,
 ) -> Result<HistoryAccess, StasisError> {
-    let scope = turn_scope.read().await.clone().ok_or_else(|| {
-        StasisError::PortFailure(format!("{tool_name}: active turn scope required"))
-    })?;
+    let scope = crate::agent_runtime::execution_context::turn_continuation_scope(turn_scope)
+        .await
+        .ok_or_else(|| {
+            StasisError::PortFailure(format!("{tool_name}: active turn scope required"))
+        })?;
     let source_session_id = TrimmedText::new(scope.session_id)
         .map(TrimmedText::into_string)
         .map_err(|_| StasisError::PortFailure(format!("{tool_name}: active session required")))?;

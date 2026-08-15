@@ -47,6 +47,12 @@ SDK: [`docs/sdk/interactive-streaming.md`](../sdk/interactive-streaming.md)
 
 Rust/Python SDK: `client.interactive().cancel(session_id)`. Tauri: `session_cancel_active_turn`.
 
+Accepted cancellation interrupts provider and tool waits at the execution
+boundary. Parallel tool invocations retain the same turn authority and are
+aborted with their batch owner. Model-stream pumps are drained on normal
+completion and aborted if the turn or inference attempt is dropped, preventing
+late detached deltas from outliving the cancelled turn.
+
 ---
 
 ## Event schema (`InteractiveTurnStreamEvent`)

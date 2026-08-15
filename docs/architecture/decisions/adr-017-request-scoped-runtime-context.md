@@ -96,11 +96,25 @@ whose authority has been reconstructed and validated. The scheduler derives a
 child context from the parent and may only attenuate its tool, filesystem,
 delivery, provider, surface, and deadline capabilities.
 
+Durable continuation records are versioned and retain only the originating
+profile reference, session, delivery intent, and route preferences. Replay
+revalidates current session visibility before atomically claiming the record,
+then admits a fresh member-scoped execution with its own handle, cancellation
+root, deadline, and task owner. Legacy records without that authority snapshot,
+revoked profiles, and cross-session delivery targets are abandoned fail-closed.
+
 Worker bus sessions are stored by parent/child handle with count, byte, and
 lifetime bounds. Output and handoff slots are part of the keyed parent
 execution. Sibling workers cannot replace one another's sink or host metadata.
 Removal uses the exact handle/generation, so late completion from an old worker
 cannot clear a replacement.
+
+Each live durable worker registers one bounded cancellation token keyed by its
+exact `work_id` before execution. The session-authorized cancel mutation updates
+the durable record and signals that same generation under one lock order. Worker
+provider/tool leaves run inside a reconstructed member-scoped execution context,
+so the signal interrupts the active leaf rather than waiting for the next
+durable polling round. Lease drop compare-removes only its own token generation.
 
 ADR-005's “one bound workshop per session” remains an admission rule for that
 mode. It is enforced by the session ticket/owner, not by a process-global bus
@@ -118,6 +132,12 @@ Cancellation is idempotent and records one accepted sequence fence. No new
 semantic work is admitted beyond that fence. Cleanup waits within a finite
 deadline, aborts only tasks owned by the execution, and reports incomplete
 children/resources. Detached tasks that retain turn authority are forbidden.
+
+Provider and tool futures are awaited through the active execution boundary,
+which races each leaf against the root token and absolute deadline. Parallel
+tool tasks reinstall the same immutable context before invocation. Stream and
+attempt pumps are owned resources: normal completion drains them, while owner
+drop aborts them even if another sender clone remains live.
 
 Same-session cancel and steer operations must name the target turn/generation
 or be resolved by the session owner under one atomic admission rule. A stale

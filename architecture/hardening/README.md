@@ -86,7 +86,7 @@ and performance budgets must prevent the same classes of defect from returning.
 | H02 | [02-identifier-and-filesystem-authority.md](02-identifier-and-filesystem-authority.md) | Validated IDs, path derivation, symlinks, deletion inventory | SEC-002, SEC-003, DATA-001 | ADR-014 | Implementing; H02.1–H02.4 landed |
 | H03 | [03-turn-stream-v2.md](03-turn-stream-v2.md) | Bounded single-writer stream, replay, journal, bridge, UI tail | PERF-001, DUR-001, MEM-002, TYPE-001, PERF-005 | ADR-015, H05 | Draft |
 | H04 | [04-persistence-and-crash-consistency.md](04-persistence-and-crash-consistency.md) | Feed/workspace/task storage ownership and commit policy | STORE-001, STORE-002, MEM-001 | ADR-016 | Draft |
-| H05 | [05-runtime-context-and-concurrency.md](05-runtime-context-and-concurrency.md) | Request-scoped turn/browser state and cancellation | CONC-001, CONC-002 | ADR-017 | Draft |
+| H05 | [05-runtime-context-and-concurrency.md](05-runtime-context-and-concurrency.md) | Request-scoped turn/browser state and cancellation | CONC-001, CONC-002 | ADR-017 | Implementing; H05.0 inventory/isolation fixtures underway |
 | H06 | [06-forge-coder-scaling.md](06-forge-coder-scaling.md) | Incremental Forge state, checkpoint observation, blocking work | PERF-002, PERF-004, ASYNC-001 | ADR-016, H05 | Draft |
 | H07 | [07-vault-scaling-and-consistency.md](07-vault-scaling-and-consistency.md) | Incremental index, atomic mutation, backend/frontend lookups | PERF-003, PERF-006, CONSIST-001 | ADR-014, ADR-016 | Draft |
 | H08 | [08-desktop-browser-isolation.md](08-desktop-browser-isolation.md) | Remote webview capabilities and request-correlated bridge | DESKTOP-001 | ADR-018, H05 | Draft |

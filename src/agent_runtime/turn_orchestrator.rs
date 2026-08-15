@@ -106,11 +106,19 @@ impl TurnStreamBridge {
     }
 }
 
+impl Drop for TurnStreamBridge {
+    fn drop(&mut self) {
+        if let Some(pump) = self.pump.take() {
+            pump.abort();
+        }
+    }
+}
+
 /// Owns one inference attempt's stream so retry/fallback decisions happen only
 /// after every delta from that attempt has been observed.
 struct AttemptStreamBridge {
     sender: Option<tokio::sync::mpsc::UnboundedSender<StreamDelta>>,
-    pump: tokio::task::JoinHandle<bool>,
+    pump: Option<tokio::task::JoinHandle<bool>>,
 }
 
 impl AttemptStreamBridge {
@@ -130,7 +138,7 @@ impl AttemptStreamBridge {
         });
         Self {
             sender: Some(sender),
-            pump,
+            pump: Some(pump),
         }
     }
 
@@ -140,7 +148,18 @@ impl AttemptStreamBridge {
 
     async fn finish(mut self) -> bool {
         self.sender.take();
-        self.pump.await.unwrap_or(true)
+        match self.pump.take() {
+            Some(pump) => pump.await.unwrap_or(true),
+            None => true,
+        }
+    }
+}
+
+impl Drop for AttemptStreamBridge {
+    fn drop(&mut self) {
+        if let Some(pump) = self.pump.take() {
+            pump.abort();
+        }
     }
 }
 
@@ -651,14 +670,14 @@ pub async fn classify_turn_intent_with_model(
         )),
     ];
 
-    let completion = pipeline
-        .complete_chat_stream(
-            ChatRequest::new(messages),
-            PromptExecutionContext::default(),
-            None,
-        )
-        .await
-        .ok()?;
+    let completion = super::execution_context::await_turn_boundary(pipeline.complete_chat_stream(
+        ChatRequest::new(messages),
+        PromptExecutionContext::default(),
+        None,
+    ))
+    .await
+    .ok()?
+    .ok()?;
 
     let raw = completion
         .response
@@ -865,6 +884,13 @@ fn require_operator_budget_gate() -> bool {
 }
 
 pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnExecutionParams) {
+    super::turn_worker::with_worker_parent_scope(execute_local_turn_inner(sink, params)).await;
+}
+
+async fn execute_local_turn_inner(
+    sink: SharedAgentStreamSink,
+    params: LocalTurnExecutionParams,
+) {
     let LocalTurnExecutionParams {
         agent_mode,
         turn_id,
@@ -974,19 +1000,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         .map(|i| i.as_str());
     sink.notice(host_route_notice(&host_profile)).await;
 
-    worker_scheduler
-        .set_runtime_context(WorkerRuntimeContext {
-            tool_registry: tool_registry.clone(),
-            client_registry: client_registry.clone(),
-            identity_memory_store: identity_memory_store.clone(),
-            provider: provider.clone(),
-            model: model.clone(),
-            base_url: base_url.clone(),
-            turn_scope: turn_scope.clone(),
-        })
-        .await;
-
-    let scope_snapshot = turn_scope.read().await.clone();
+    let scope_snapshot = super::execution_context::turn_continuation_scope(&turn_scope).await;
     if let Some(bundle) = host_continuity_bundle.as_mut() {
         bundle.parent_turn_correlation_id = scope_snapshot
             .as_ref()
@@ -996,11 +1010,22 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
     }
     let handoff_continuity_bundle = host_continuity_bundle.clone();
     let host_handoff_slot = Arc::new(tokio::sync::RwLock::new(None));
-    worker_scheduler
-        .set_bus_session(ActiveWorkerBusSession {
+    let worker_runtime = WorkerRuntimeContext {
+        tool_registry: tool_registry.clone(),
+        client_registry: client_registry.clone(),
+        identity_memory_store: identity_memory_store.clone(),
+        provider: provider.clone(),
+        model: model.clone(),
+        base_url: base_url.clone(),
+        turn_scope: turn_scope.clone(),
+    };
+    let worker_bus = ActiveWorkerBusSession {
             sink: sink.clone(),
             stream_turn_id: turn_id,
             session_id: session_id.clone(),
+            identity_user_id: scope_snapshot
+                .as_ref()
+                .and_then(|scope| scope.identity_user_id.clone()),
             backend: backend.clone(),
             parent_user_prompt: original_prompt.clone(),
             provider: provider.clone(),
@@ -1019,8 +1044,15 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             supports_ui_artifacts: params.supports_ui_artifacts,
             supports_liquid_markdown: params.supports_liquid_markdown,
             supports_browser_host: params.supports_browser_host,
-        })
-        .await;
+        };
+    let _worker_parent_lease = match worker_scheduler.register_parent(worker_runtime, worker_bus) {
+        Ok(lease) => lease,
+        Err(error) => {
+            sink.agent_error(turn_id, format!("worker parent admission failed: {error}"))
+                .await;
+            return;
+        }
+    };
 
     let pipeline = if host_bus {
         pipeline_for_turn_profile(
@@ -1132,7 +1164,6 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             )
             .await;
             emit_orchestration_summary(&sink, &orchestration_state).await;
-            worker_scheduler.clear_bus_session().await;
             return;
         }
         orchestration_state.final_mode = "prompt_only".to_string();
@@ -1140,13 +1171,20 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         sink.notice("◈ fallback_mode=prompt_only retry_count=0 retry_reason=none".to_string())
             .await;
 
-        let prompt_only_result = no_tools_pipeline
-            .complete_chat_stream(
+        let prompt_only_result = match super::execution_context::await_turn_boundary(
+            no_tools_pipeline.complete_chat_stream(
                 ChatRequest::new(messages),
                 prompt_ctx.clone(),
                 Some(stream_bridge.sender()),
-            )
-            .await;
+            ),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(error) => Err(stasis::domain::errors::StasisError::PortFailure(format!(
+                "{error} during prompt-only model completion"
+            ))),
+        };
         stream_bridge.drain().await;
         match prompt_only_result {
             Ok(completion) => {
@@ -1192,7 +1230,6 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 emit_orchestration_summary(&sink, &orchestration_state).await;
             }
         }
-        worker_scheduler.clear_bus_session().await;
         return;
     }
 
@@ -1231,7 +1268,6 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         )
         .await;
         emit_orchestration_summary(&sink, &orchestration_state).await;
-        worker_scheduler.clear_bus_session().await;
         return;
     }
     orchestration_state.final_mode = "tool_loop".to_string();
@@ -1467,7 +1503,6 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 sink.agent_worker_ack(turn_id, final_text, tool_names, work_id)
                     .await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
-                worker_scheduler.clear_bus_session().await;
                 return;
             }
             if response.termination_reason == "workshop_entered" {
@@ -1481,7 +1516,6 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 sink.agent_workshop_ack(turn_id, final_text, tool_names, work_id)
                     .await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
-                worker_scheduler.clear_bus_session().await;
                 return;
             }
             if response.termination_reason == "cognition_turn_checkpoint" {
@@ -1501,7 +1535,6 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 )
                 .await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
-                worker_scheduler.clear_bus_session().await;
                 return;
             }
             let tool_budget_exhausted = response.termination_reason
@@ -1675,7 +1708,6 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                         sink.agent_error(turn_id, "turn budget exhausted before retry".to_string())
                             .await;
                         emit_orchestration_summary(&sink, &orchestration_state).await;
-                        worker_scheduler.clear_bus_session().await;
                         return;
                     }
                     orchestration_state.final_mode = "tool_loop_retry".to_string();
@@ -1726,7 +1758,6 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                             .await;
                             orchestration_state.final_mode = "tool_loop_retry_success".to_string();
                             emit_orchestration_summary(&sink, &orchestration_state).await;
-                            worker_scheduler.clear_bus_session().await;
                             return;
                         }
                         Err(retry_err) => {
@@ -1801,7 +1832,6 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
     }
 
     stream_bridge.drain().await;
-    worker_scheduler.clear_bus_session().await;
 }
 
 #[cfg(test)]
@@ -1909,6 +1939,45 @@ mod stream_bridge_tests {
 
         assert!(!attempt.finish().await);
         bridge.drain().await;
+    }
+
+    #[tokio::test]
+    async fn dropped_stream_bridge_aborts_pump_with_live_sender_clone() {
+        let concrete = Arc::new(OrderedSink::default());
+        let sink: SharedAgentStreamSink = concrete;
+        let bridge = TurnStreamBridge::new(sink, 10);
+        let retained_sender = bridge.sender_clone();
+        let pump = bridge.pump.as_ref().unwrap().abort_handle();
+
+        drop(bridge);
+        for _ in 0..10 {
+            if pump.is_finished() {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+
+        assert!(pump.is_finished());
+        drop(retained_sender);
+    }
+
+    #[tokio::test]
+    async fn dropped_attempt_bridge_aborts_pump_with_live_sender_clone() {
+        let (target, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        let attempt = AttemptStreamBridge::new(target);
+        let retained_sender = attempt.sender().clone();
+        let pump = attempt.pump.as_ref().unwrap().abort_handle();
+
+        drop(attempt);
+        for _ in 0..10 {
+            if pump.is_finished() {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+
+        assert!(pump.is_finished());
+        drop(retained_sender);
     }
 
     #[test]

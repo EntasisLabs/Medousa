@@ -185,6 +185,7 @@ pub async fn run_heartbeat_agent_turn(
         None,
         None,
         None,
+        None,
     )
     .await;
 

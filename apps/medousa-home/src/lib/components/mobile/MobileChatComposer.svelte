@@ -140,7 +140,9 @@
 
       if (chat.hasWorkshopHandoff()) {
         const { steerBoundWorkshop } = await import("$lib/daemon");
-        await steerBoundWorkshop(chat.sessionId, prompt);
+        const workId = chat.activeWorkshopWorkId();
+        if (!workId) throw new Error("Active workshop generation is missing");
+        await steerBoundWorkshop(chat.sessionId, workId, prompt);
         await chat.reloadCurrentSession();
         window.dispatchEvent(
           new CustomEvent("medousa-chat-scroll-to-bottom", {

@@ -144,7 +144,8 @@ pub fn search_response_to_tool_json(
 pub async fn resolve_browser_host_enabled(
     turn_scope: &Arc<RwLock<Option<TurnContinuationScope>>>,
 ) -> (bool, Option<String>) {
-    let scope = turn_scope.read().await.clone();
+    let scope =
+        crate::agent_runtime::execution_context::turn_continuation_scope(turn_scope).await;
     let Some(scope) = scope else {
         return (false, None);
     };
