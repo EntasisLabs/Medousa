@@ -4,6 +4,7 @@
 use chrono::Utc;
 use medousa_engine::{SequencedTurnEvent, TurnEvent};
 use medousa_types::daemon_api::InteractiveTurnStreamEvent;
+use medousa_types::turn_stream::{TurnStreamEnvelopeV2, TurnStreamEventV2, WorkerAckKind};
 
 /// Lift a live SSE payload into the typed spine vocabulary for journaling.
 pub fn stream_event_to_turn_event(event: &InteractiveTurnStreamEvent) -> TurnEvent {
@@ -386,6 +387,286 @@ fn empty_stream_event(turn_id: &str) -> InteractiveTurnStreamEvent {
     }
 }
 
+/// The only v2-to-v1 compatibility projection. New producers emit v2; legacy
+/// clients receive this deliberately lossy nullable DTO until v1 removal.
+pub fn v2_to_v1(envelope: &TurnStreamEnvelopeV2) -> InteractiveTurnStreamEvent {
+    let mut wire = empty_stream_event(&envelope.turn_id);
+    wire.seq = envelope.seq;
+    wire.emitted_at_utc = envelope.emitted_at_utc;
+    match &envelope.event {
+        TurnStreamEventV2::ContentAppend { text } => {
+            wire.event_type = "content_delta".to_string();
+            wire.phase = "streaming".to_string();
+            wire.content_delta = Some(text.clone());
+        }
+        TurnStreamEventV2::ReasoningAppend { text } => {
+            wire.event_type = "reasoning_delta".to_string();
+            wire.phase = "streaming".to_string();
+            wire.reasoning_delta = Some(text.clone());
+        }
+        TurnStreamEventV2::Status {
+            phase,
+            operator_message,
+            debug_message,
+        } => {
+            wire.event_type = "status".to_string();
+            wire.phase = phase.clone();
+            wire.message = operator_message
+                .clone()
+                .or_else(|| debug_message.clone())
+                .unwrap_or_default();
+            wire.operator_message = operator_message.clone();
+            wire.debug_message = debug_message.clone();
+        }
+        TurnStreamEventV2::Progress {
+            message,
+            tool_names,
+        } => {
+            wire.event_type = "turn_progress".to_string();
+            wire.phase = "tool_loop".to_string();
+            wire.message = message.clone();
+            wire.operator_message = Some(message.clone());
+            wire.tool_names = Some(tool_names.clone());
+        }
+        TurnStreamEventV2::PackHold { text, tool_names } => {
+            wire.event_type = "assistant_pack_hold".to_string();
+            wire.phase = "pack_hold".to_string();
+            wire.message = text.clone();
+            wire.operator_message = Some(text.clone());
+            wire.final_text = Some(text.clone());
+            wire.tool_names = Some(tool_names.clone());
+        }
+        TurnStreamEventV2::ModelReceipt { provider, model } => {
+            wire.event_type = "model_receipt".to_string();
+            wire.phase = "inference".to_string();
+            wire.message = "Inference route selected".to_string();
+            wire.response_provider = Some(provider.clone());
+            wire.response_model = Some(model.clone());
+        }
+        TurnStreamEventV2::Final { text, tool_names } => {
+            terminal_body(&mut wire, "final", "complete", text, tool_names);
+        }
+        TurnStreamEventV2::NeedsInput { text, tool_names } => {
+            terminal_body(
+                &mut wire,
+                "needs_input",
+                "awaiting_operator",
+                text,
+                tool_names,
+            );
+        }
+        TurnStreamEventV2::Checkpoint { text, tool_names } => {
+            terminal_body(&mut wire, "turn_checkpoint", "handoff", text, tool_names);
+        }
+        TurnStreamEventV2::WorkerAck {
+            ack_kind,
+            text,
+            tool_names,
+            work_id,
+        } => {
+            wire.event_type = match ack_kind {
+                WorkerAckKind::Worker => "worker_ack",
+                WorkerAckKind::Workshop => "workshop_ack",
+            }
+            .to_string();
+            wire.phase = wire.event_type.clone();
+            wire.message = match ack_kind {
+                WorkerAckKind::Worker => "background worker started",
+                WorkerAckKind::Workshop => "bound workshop started",
+            }
+            .to_string();
+            wire.operator_message = Some(wire.message.clone());
+            wire.final_text = Some(text.clone());
+            wire.tool_names = Some(tool_names.clone());
+            wire.work_id = work_id.clone();
+        }
+        TurnStreamEventV2::WorkerSynthesis {
+            text,
+            tool_names,
+            work_id,
+        } => {
+            terminal_body(
+                &mut wire,
+                "worker_synthesis",
+                "worker_synthesis",
+                text,
+                tool_names,
+            );
+            wire.work_id = work_id.clone();
+        }
+        TurnStreamEventV2::FinalPending { text, tool_names } => {
+            wire.event_type = "final_pending".to_string();
+            wire.phase = "wrapping_up".to_string();
+            wire.message = "Medousa is preparing your final answer".to_string();
+            wire.operator_message = Some(wire.message.clone());
+            wire.final_text = Some(text.clone());
+            wire.tool_names = Some(tool_names.clone());
+        }
+        TurnStreamEventV2::Error {
+            operator_message,
+            debug_message,
+        } => {
+            wire.event_type = "error".to_string();
+            wire.phase = "failed".to_string();
+            wire.message = operator_message.clone();
+            wire.operator_message = Some(operator_message.clone());
+            wire.debug_message = debug_message.clone();
+            wire.terminal = true;
+        }
+        TurnStreamEventV2::ScratchReset => {
+            wire.event_type = "scratch_reset".to_string();
+            wire.phase = "streaming".to_string();
+            wire.debug_message = Some("assistant scratch cleared".to_string());
+        }
+        TurnStreamEventV2::ToolStarted {
+            tool_run_id,
+            tool_name,
+            input_summary,
+            input_params,
+            tool_round,
+        } => {
+            wire.event_type = "tool_started".to_string();
+            wire.phase = "tool_loop".to_string();
+            wire.message = format!("Running {tool_name}");
+            wire.operator_message = Some(wire.message.clone());
+            wire.tool_run_id = Some(tool_run_id.clone());
+            wire.tool_name = Some(tool_name.clone());
+            wire.tool_status = Some("running".to_string());
+            wire.tool_input_summary = Some(input_summary.clone());
+            wire.tool_input_params = (!input_params.is_empty()).then(|| input_params.clone());
+            wire.tool_round = Some(*tool_round);
+        }
+        TurnStreamEventV2::ToolFinished {
+            tool_run_id,
+            tool_name,
+            status,
+            input_summary,
+            input_params,
+            output_summary,
+            tool_round,
+            artifact_refs,
+        } => {
+            wire.event_type = "tool_finished".to_string();
+            wire.phase = "tool_loop".to_string();
+            wire.message = output_summary
+                .as_ref()
+                .map(|summary| format!("{tool_name}: {summary}"))
+                .unwrap_or_else(|| format!("{tool_name} {status}"));
+            wire.operator_message = Some(wire.message.clone());
+            wire.tool_run_id = Some(tool_run_id.clone());
+            wire.tool_name = Some(tool_name.clone());
+            wire.tool_status = Some(status.clone());
+            wire.tool_input_summary = Some(input_summary.clone());
+            wire.tool_input_params = (!input_params.is_empty()).then(|| input_params.clone());
+            wire.tool_output_summary = output_summary.clone();
+            wire.tool_round = Some(*tool_round);
+            wire.tool_artifact_refs = (!artifact_refs.is_empty()).then(|| artifact_refs.clone());
+        }
+        TurnStreamEventV2::ArtifactPresented { artifact } => {
+            wire.event_type = "artifact_presented".to_string();
+            wire.phase = "tool_loop".to_string();
+            wire.message = format!("Presented {}", artifact.label);
+            wire.operator_message = Some(wire.message.clone());
+            wire.ui_artifact = Some(artifact.clone());
+        }
+        TurnStreamEventV2::ArtifactUpdated {
+            previous_artifact_id,
+            artifact,
+            root_artifact_id,
+        } => {
+            wire.event_type = "artifact_updated".to_string();
+            wire.phase = "tool_loop".to_string();
+            wire.message = format!("Updated {}", artifact.label);
+            wire.operator_message = Some(wire.message.clone());
+            wire.ui_artifact = Some(artifact.clone());
+            wire.previous_artifact_id = Some(previous_artifact_id.clone());
+            wire.root_artifact_id = root_artifact_id.clone();
+        }
+        TurnStreamEventV2::UiScene { scene } => {
+            wire.event_type = "ui_scene".to_string();
+            wire.phase = "tool_loop".to_string();
+            wire.message = "Updated the view".to_string();
+            wire.operator_message = Some(wire.message.clone());
+            wire.ui_scene = Some(scene.clone());
+        }
+        TurnStreamEventV2::BudgetApprovalRequired {
+            request_id,
+            rounds_executed,
+            max_tool_rounds,
+            requested_rounds,
+            reason,
+            progress_summary,
+        } => {
+            wire.event_type = "budget_approval".to_string();
+            wire.phase = "awaiting_operator".to_string();
+            wire.message = format!(
+                "Turn paused at {rounds_executed}/{max_tool_rounds}. Requesting +{requested_rounds} rounds: {reason}"
+            );
+            wire.operator_message = progress_summary.clone().or_else(|| Some(wire.message.clone()));
+            wire.budget_request_id = Some(request_id.clone());
+            wire.requested_rounds = Some(*requested_rounds);
+        }
+        TurnStreamEventV2::BrowserChallenge {
+            session_id,
+            challenge_url,
+            reason,
+        } => {
+            wire.event_type = "browser_challenge".to_string();
+            wire.phase = "awaiting_operator".to_string();
+            wire.message = reason.clone();
+            wire.operator_message = Some(reason.clone());
+            wire.browser_session_id = Some(session_id.clone());
+            wire.browser_challenge_url = Some(challenge_url.clone());
+        }
+        TurnStreamEventV2::BrowserNavigated { url, title, .. } => {
+            wire.event_type = "browser_navigated".to_string();
+            wire.phase = "tool".to_string();
+            wire.message = url.clone();
+            wire.operator_message = title.clone();
+        }
+        TurnStreamEventV2::ContextUsage {
+            report,
+            operator_summary,
+        } => {
+            wire.event_type = "context_usage".to_string();
+            wire.phase = "orchestration".to_string();
+            wire.message = operator_summary.clone().unwrap_or_default();
+            wire.operator_message = operator_summary.clone();
+            wire.context_usage = Some(report.clone());
+        }
+        TurnStreamEventV2::PermissionRequest {
+            request_id,
+            message,
+            agent_session_id,
+            agent_runtime,
+        } => {
+            wire.event_type = "permission_request".to_string();
+            wire.phase = "awaiting_permission".to_string();
+            wire.message = message.clone();
+            wire.operator_message = Some(message.clone());
+            wire.permission_request_id = Some(request_id.clone());
+            wire.agent_session_id = agent_session_id.clone();
+            wire.agent_runtime = agent_runtime.clone();
+        }
+    }
+    wire
+}
+
+fn terminal_body(
+    wire: &mut InteractiveTurnStreamEvent,
+    event_type: &str,
+    phase: &str,
+    text: &str,
+    tool_names: &[String],
+) {
+    wire.event_type = event_type.to_string();
+    wire.phase = phase.to_string();
+    wire.message = text.to_string();
+    wire.final_text = Some(text.to_string());
+    wire.tool_names = Some(tool_names.to_vec());
+    wire.terminal = true;
+}
+
 /// Prefer a lossless mirror for wire events carrying rich UI / artifact fields.
 pub fn journal_turn_event_for_stream(
     event: &InteractiveTurnStreamEvent,
@@ -453,5 +734,27 @@ mod tests {
             TurnEvent::ContentDelta { delta } => assert_eq!(delta, "hello"),
             other => panic!("unexpected {other:?}"),
         }
+    }
+
+    #[test]
+    fn v2_projection_preserves_envelope_and_variant_semantics() {
+        let emitted_at = Utc::now();
+        let envelope = TurnStreamEnvelopeV2::new(
+            "turn-v2",
+            42,
+            emitted_at,
+            TurnStreamEventV2::Checkpoint {
+                text: "continue when ready".to_string(),
+                tool_names: vec!["search".to_string()],
+            },
+        )
+        .unwrap();
+        let legacy = v2_to_v1(&envelope);
+        assert_eq!(legacy.turn_id, "turn-v2");
+        assert_eq!(legacy.seq, 42);
+        assert_eq!(legacy.emitted_at_utc, emitted_at);
+        assert_eq!(legacy.event_type, "turn_checkpoint");
+        assert_eq!(legacy.final_text.as_deref(), Some("continue when ready"));
+        assert!(legacy.terminal);
     }
 }

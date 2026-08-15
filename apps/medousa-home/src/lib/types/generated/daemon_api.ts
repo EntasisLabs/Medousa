@@ -87,6 +87,18 @@ export interface InteractiveTurnStreamEvent {
   work_id?: string | null;
 }
 
+export type WorkerAckKind = "worker" | "workshop";
+
+export type TurnStreamEventV2 = { text: string; type: "content_append" } | { text: string; type: "reasoning_append" } | { debug_message?: string | null; operator_message?: string | null; phase: string; type: "status" } | { message: string; tool_names?: string[]; type: "progress" } | { text: string; tool_names?: string[]; type: "pack_hold" } | { model: string; provider: string; type: "model_receipt" } | { text: string; tool_names?: string[]; type: "final" } | { text: string; tool_names?: string[]; type: "needs_input" } | { text: string; tool_names?: string[]; type: "checkpoint" } | { ack_kind: WorkerAckKind; text: string; tool_names?: string[]; type: "worker_ack"; work_id?: string | null } | { text: string; tool_names?: string[]; type: "worker_synthesis"; work_id?: string | null } | { text: string; tool_names?: string[]; type: "final_pending" } | { debug_message?: string | null; operator_message: string; type: "error" } | { type: "scratch_reset" } | { input_params?: ToolInputParam[]; input_summary: string; tool_name: string; tool_round: number; tool_run_id: string; type: "tool_started" } | { artifact_refs?: StreamToolArtifactRef[]; input_params?: ToolInputParam[]; input_summary: string; output_summary?: string | null; status: string; tool_name: string; tool_round: number; tool_run_id: string; type: "tool_finished" } | { artifact: StreamUiArtifact; type: "artifact_presented" } | { artifact: StreamUiArtifact; previous_artifact_id: string; root_artifact_id?: string | null; type: "artifact_updated" } | { scene: StreamUiScene; type: "ui_scene" } | { max_tool_rounds: number; progress_summary?: string | null; reason: string; request_id: string; requested_rounds: number; rounds_executed: number; type: "budget_approval_required" } | { challenge_url: string; reason: string; session_id: string; type: "browser_challenge" } | { opened_by_agent?: boolean; title?: string | null; type: "browser_navigated"; url: string } | { operator_summary?: string | null; report: ContextUsageReport; type: "context_usage" } | { agent_runtime?: string | null; agent_session_id?: string | null; message: string; request_id: string; type: "permission_request" };
+
+export interface TurnStreamEnvelopeV2 {
+  emitted_at_utc: string;
+  event: TurnStreamEventV2;
+  schema_version: number;
+  seq: number;
+  turn_id: string;
+}
+
 export interface InteractiveTurnResponse {
   accepted_at_utc: string;
   daemon_notice?: string | null;

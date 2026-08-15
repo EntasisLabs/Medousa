@@ -15965,6 +15965,1854 @@
       }
     }
   },
+  "TurnStreamEnvelopeV2": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "TurnStreamEnvelopeV2",
+    "type": "object",
+    "required": [
+      "emitted_at_utc",
+      "event",
+      "schema_version",
+      "seq",
+      "turn_id"
+    ],
+    "properties": {
+      "emitted_at_utc": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "event": {
+        "$ref": "#/definitions/TurnStreamEventV2"
+      },
+      "schema_version": {
+        "type": "integer",
+        "format": "uint8",
+        "maximum": 2.0,
+        "minimum": 2.0
+      },
+      "seq": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 1.0
+      },
+      "turn_id": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false,
+    "definitions": {
+      "ContextUsageLayer": {
+        "description": "One slice of the prompt/context budget (Cursor-style context usage UI).",
+        "type": "object",
+        "required": [
+          "chars",
+          "id",
+          "label",
+          "tokens_estimate"
+        ],
+        "properties": {
+          "chars": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "id": {
+            "description": "Stable machine id, e.g. `system_prompt`, `tool_definitions`.",
+            "type": "string"
+          },
+          "label": {
+            "description": "Human label for UI.",
+            "type": "string"
+          },
+          "tokens_estimate": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "ContextUsageReport": {
+        "description": "Turn-start context composition sent once per interactive turn.",
+        "type": "object",
+        "required": [
+          "estimator",
+          "layers",
+          "tool_count",
+          "total_chars",
+          "total_tokens_estimate"
+        ],
+        "properties": {
+          "context_limit_tokens": {
+            "description": "Model context window when known from capability registry / route.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "estimator": {
+            "description": "`chars / 4` — documented estimator; not tokenizer-exact.",
+            "type": "string"
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ContextUsageLayer"
+            }
+          },
+          "tool_count": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "total_chars": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "total_tokens_estimate": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "StreamToolArtifactRef": {
+        "type": "object",
+        "required": [
+          "byte_size",
+          "content_type",
+          "hash64",
+          "role"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "byte_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "hash64": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": "string"
+          }
+        }
+      },
+      "StreamUiArtifact": {
+        "type": "object",
+        "required": [
+          "artifact_id",
+          "label",
+          "mime",
+          "presentation"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          },
+          "byte_size": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "height_px": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "label": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "presentation": {
+            "type": "string"
+          }
+        }
+      },
+      "StreamUiScene": {
+        "description": "Liquid UI scene channel payload — a batch of model-authored scene ops for one turn. `ops` are forwarded verbatim as opaque JSON (the client decodes and validates them into typed `SceneOp`s); the daemon never inspects their shape.",
+        "type": "object",
+        "required": [
+          "ops"
+        ],
+        "properties": {
+          "ops": {
+            "description": "Ordered scene operations, opaque JSON validated client-side.",
+            "type": "array",
+            "items": true
+          },
+          "rev": {
+            "description": "Owning `plan_layout` revision for ordering (informational).",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "surface_id": {
+            "description": "Scene surface id; the client defaults to `chat:{turn_id}` when absent.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "turn_id": {
+            "description": "Owning turn id (stamped by the stream event builder).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ToolInputParam": {
+        "description": "One redacted key/value from a tool's arguments, for chat-adjacent tool evidence. Values are truncated at the emit site; `truncated` tells the UI to say so.",
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "type": "boolean"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      "TurnStreamEventV2": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "text",
+              "type"
+            ],
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "content_append"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "text",
+              "type"
+            ],
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "reasoning_append"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "phase",
+              "type"
+            ],
+            "properties": {
+              "debug_message": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "operator_message": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "phase": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "status"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "message",
+              "type"
+            ],
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "tool_names": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "progress"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "text",
+              "type"
+            ],
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "tool_names": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "pack_hold"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "model",
+              "provider",
+              "type"
+            ],
+            "properties": {
+              "model": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "model_receipt"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "text",
+              "type"
+            ],
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "tool_names": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "final"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "text",
+              "type"
+            ],
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "tool_names": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "needs_input"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "text",
+              "type"
+            ],
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "tool_names": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "checkpoint"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "ack_kind",
+              "text",
+              "type"
+            ],
+            "properties": {
+              "ack_kind": {
+                "$ref": "#/definitions/WorkerAckKind"
+              },
+              "text": {
+                "type": "string"
+              },
+              "tool_names": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "worker_ack"
+                ]
+              },
+              "work_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "text",
+              "type"
+            ],
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "tool_names": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "worker_synthesis"
+                ]
+              },
+              "work_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "text",
+              "type"
+            ],
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "tool_names": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "final_pending"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "operator_message",
+              "type"
+            ],
+            "properties": {
+              "debug_message": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "operator_message": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "error"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "scratch_reset"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "input_summary",
+              "tool_name",
+              "tool_round",
+              "tool_run_id",
+              "type"
+            ],
+            "properties": {
+              "input_params": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/ToolInputParam"
+                }
+              },
+              "input_summary": {
+                "type": "string"
+              },
+              "tool_name": {
+                "type": "string"
+              },
+              "tool_round": {
+                "type": "integer",
+                "format": "uint",
+                "minimum": 0.0
+              },
+              "tool_run_id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool_started"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "input_summary",
+              "status",
+              "tool_name",
+              "tool_round",
+              "tool_run_id",
+              "type"
+            ],
+            "properties": {
+              "artifact_refs": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/StreamToolArtifactRef"
+                }
+              },
+              "input_params": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/ToolInputParam"
+                }
+              },
+              "input_summary": {
+                "type": "string"
+              },
+              "output_summary": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "tool_name": {
+                "type": "string"
+              },
+              "tool_round": {
+                "type": "integer",
+                "format": "uint",
+                "minimum": 0.0
+              },
+              "tool_run_id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool_finished"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "artifact",
+              "type"
+            ],
+            "properties": {
+              "artifact": {
+                "$ref": "#/definitions/StreamUiArtifact"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "artifact_presented"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "artifact",
+              "previous_artifact_id",
+              "type"
+            ],
+            "properties": {
+              "artifact": {
+                "$ref": "#/definitions/StreamUiArtifact"
+              },
+              "previous_artifact_id": {
+                "type": "string"
+              },
+              "root_artifact_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "artifact_updated"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "scene",
+              "type"
+            ],
+            "properties": {
+              "scene": {
+                "$ref": "#/definitions/StreamUiScene"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "ui_scene"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "max_tool_rounds",
+              "reason",
+              "request_id",
+              "requested_rounds",
+              "rounds_executed",
+              "type"
+            ],
+            "properties": {
+              "max_tool_rounds": {
+                "type": "integer",
+                "format": "uint",
+                "minimum": 0.0
+              },
+              "progress_summary": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              },
+              "request_id": {
+                "type": "string"
+              },
+              "requested_rounds": {
+                "type": "integer",
+                "format": "uint",
+                "minimum": 0.0
+              },
+              "rounds_executed": {
+                "type": "integer",
+                "format": "uint",
+                "minimum": 0.0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "budget_approval_required"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "challenge_url",
+              "reason",
+              "session_id",
+              "type"
+            ],
+            "properties": {
+              "challenge_url": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "session_id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "browser_challenge"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "type",
+              "url"
+            ],
+            "properties": {
+              "opened_by_agent": {
+                "default": false,
+                "type": "boolean"
+              },
+              "title": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "browser_navigated"
+                ]
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "report",
+              "type"
+            ],
+            "properties": {
+              "operator_summary": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "report": {
+                "$ref": "#/definitions/ContextUsageReport"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "context_usage"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "message",
+              "request_id",
+              "type"
+            ],
+            "properties": {
+              "agent_runtime": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "agent_session_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "request_id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "permission_request"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "WorkerAckKind": {
+        "type": "string",
+        "enum": [
+          "worker",
+          "workshop"
+        ]
+      }
+    }
+  },
+  "TurnStreamEventV2": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "TurnStreamEventV2",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": [
+          "text",
+          "type"
+        ],
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "content_append"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "text",
+          "type"
+        ],
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "reasoning_append"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "phase",
+          "type"
+        ],
+        "properties": {
+          "debug_message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "operator_message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phase": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "status"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "message",
+          "type"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "tool_names": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "progress"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "text",
+          "type"
+        ],
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "tool_names": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "pack_hold"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "model",
+          "provider",
+          "type"
+        ],
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "model_receipt"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "text",
+          "type"
+        ],
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "tool_names": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "final"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "text",
+          "type"
+        ],
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "tool_names": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "needs_input"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "text",
+          "type"
+        ],
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "tool_names": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "checkpoint"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "ack_kind",
+          "text",
+          "type"
+        ],
+        "properties": {
+          "ack_kind": {
+            "$ref": "#/definitions/WorkerAckKind"
+          },
+          "text": {
+            "type": "string"
+          },
+          "tool_names": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "worker_ack"
+            ]
+          },
+          "work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "text",
+          "type"
+        ],
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "tool_names": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "worker_synthesis"
+            ]
+          },
+          "work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "text",
+          "type"
+        ],
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "tool_names": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "final_pending"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "operator_message",
+          "type"
+        ],
+        "properties": {
+          "debug_message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "operator_message": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "error"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "scratch_reset"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "input_summary",
+          "tool_name",
+          "tool_round",
+          "tool_run_id",
+          "type"
+        ],
+        "properties": {
+          "input_params": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ToolInputParam"
+            }
+          },
+          "input_summary": {
+            "type": "string"
+          },
+          "tool_name": {
+            "type": "string"
+          },
+          "tool_round": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "tool_run_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "tool_started"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "input_summary",
+          "status",
+          "tool_name",
+          "tool_round",
+          "tool_run_id",
+          "type"
+        ],
+        "properties": {
+          "artifact_refs": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/StreamToolArtifactRef"
+            }
+          },
+          "input_params": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ToolInputParam"
+            }
+          },
+          "input_summary": {
+            "type": "string"
+          },
+          "output_summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "tool_name": {
+            "type": "string"
+          },
+          "tool_round": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "tool_run_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "tool_finished"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "artifact",
+          "type"
+        ],
+        "properties": {
+          "artifact": {
+            "$ref": "#/definitions/StreamUiArtifact"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "artifact_presented"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "artifact",
+          "previous_artifact_id",
+          "type"
+        ],
+        "properties": {
+          "artifact": {
+            "$ref": "#/definitions/StreamUiArtifact"
+          },
+          "previous_artifact_id": {
+            "type": "string"
+          },
+          "root_artifact_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "artifact_updated"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "scene",
+          "type"
+        ],
+        "properties": {
+          "scene": {
+            "$ref": "#/definitions/StreamUiScene"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "ui_scene"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "max_tool_rounds",
+          "reason",
+          "request_id",
+          "requested_rounds",
+          "rounds_executed",
+          "type"
+        ],
+        "properties": {
+          "max_tool_rounds": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "progress_summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "requested_rounds": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "rounds_executed": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "budget_approval_required"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "challenge_url",
+          "reason",
+          "session_id",
+          "type"
+        ],
+        "properties": {
+          "challenge_url": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "browser_challenge"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "type",
+          "url"
+        ],
+        "properties": {
+          "opened_by_agent": {
+            "default": false,
+            "type": "boolean"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "browser_navigated"
+            ]
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "report",
+          "type"
+        ],
+        "properties": {
+          "operator_summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "report": {
+            "$ref": "#/definitions/ContextUsageReport"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "context_usage"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "message",
+          "request_id",
+          "type"
+        ],
+        "properties": {
+          "agent_runtime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "agent_session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "permission_request"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    ],
+    "definitions": {
+      "ContextUsageLayer": {
+        "description": "One slice of the prompt/context budget (Cursor-style context usage UI).",
+        "type": "object",
+        "required": [
+          "chars",
+          "id",
+          "label",
+          "tokens_estimate"
+        ],
+        "properties": {
+          "chars": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "id": {
+            "description": "Stable machine id, e.g. `system_prompt`, `tool_definitions`.",
+            "type": "string"
+          },
+          "label": {
+            "description": "Human label for UI.",
+            "type": "string"
+          },
+          "tokens_estimate": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "ContextUsageReport": {
+        "description": "Turn-start context composition sent once per interactive turn.",
+        "type": "object",
+        "required": [
+          "estimator",
+          "layers",
+          "tool_count",
+          "total_chars",
+          "total_tokens_estimate"
+        ],
+        "properties": {
+          "context_limit_tokens": {
+            "description": "Model context window when known from capability registry / route.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "estimator": {
+            "description": "`chars / 4` — documented estimator; not tokenizer-exact.",
+            "type": "string"
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ContextUsageLayer"
+            }
+          },
+          "tool_count": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "total_chars": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "total_tokens_estimate": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "StreamToolArtifactRef": {
+        "type": "object",
+        "required": [
+          "byte_size",
+          "content_type",
+          "hash64",
+          "role"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "byte_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "hash64": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": "string"
+          }
+        }
+      },
+      "StreamUiArtifact": {
+        "type": "object",
+        "required": [
+          "artifact_id",
+          "label",
+          "mime",
+          "presentation"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          },
+          "byte_size": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "height_px": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "label": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "presentation": {
+            "type": "string"
+          }
+        }
+      },
+      "StreamUiScene": {
+        "description": "Liquid UI scene channel payload — a batch of model-authored scene ops for one turn. `ops` are forwarded verbatim as opaque JSON (the client decodes and validates them into typed `SceneOp`s); the daemon never inspects their shape.",
+        "type": "object",
+        "required": [
+          "ops"
+        ],
+        "properties": {
+          "ops": {
+            "description": "Ordered scene operations, opaque JSON validated client-side.",
+            "type": "array",
+            "items": true
+          },
+          "rev": {
+            "description": "Owning `plan_layout` revision for ordering (informational).",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "surface_id": {
+            "description": "Scene surface id; the client defaults to `chat:{turn_id}` when absent.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "turn_id": {
+            "description": "Owning turn id (stamped by the stream event builder).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ToolInputParam": {
+        "description": "One redacted key/value from a tool's arguments, for chat-adjacent tool evidence. Values are truncated at the emit site; `truncated` tells the UI to say so.",
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "type": "boolean"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      "WorkerAckKind": {
+        "type": "string",
+        "enum": [
+          "worker",
+          "workshop"
+        ]
+      }
+    }
+  },
   "TurnTicketRecord": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "TurnTicketRecord",
