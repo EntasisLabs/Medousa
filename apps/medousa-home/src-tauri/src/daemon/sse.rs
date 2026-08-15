@@ -18,6 +18,7 @@ struct SseFrame {
 struct SseDecoder {
     buffer: BytesMut,
     max_frame_bytes: usize,
+    high_water_bytes: usize,
 }
 
 impl SseDecoder {
@@ -25,6 +26,7 @@ impl SseDecoder {
         Self {
             buffer: BytesMut::new(),
             max_frame_bytes,
+            high_water_bytes: 0,
         }
     }
 
@@ -39,6 +41,7 @@ impl SseDecoder {
             }
             let take = capacity.min(chunk.len());
             self.buffer.extend_from_slice(&chunk[..take]);
+            self.high_water_bytes = self.high_water_bytes.max(self.buffer.len());
             chunk = &chunk[take..];
             self.drain_frames(&mut on_frame)?;
             if self.buffer.len() > self.max_frame_bytes {
@@ -72,6 +75,61 @@ impl SseDecoder {
             }
         }
         Ok(())
+    }
+}
+
+enum StreamStep<T> {
+    Item(T),
+    End,
+    Cancelled,
+}
+
+async fn next_stream_step<S>(
+    stream: &mut S,
+    cancel: &mut tokio::sync::watch::Receiver<bool>,
+) -> StreamStep<S::Item>
+where
+    S: futures_util::Stream + Unpin,
+{
+    loop {
+        if *cancel.borrow() {
+            return StreamStep::Cancelled;
+        }
+        tokio::select! {
+            item = stream.next() => {
+                return item.map_or(StreamStep::End, StreamStep::Item);
+            }
+            changed = cancel.changed() => {
+                match changed {
+                    Ok(()) if *cancel.borrow() => return StreamStep::Cancelled,
+                    Ok(()) => continue,
+                    Err(_) => {
+                        return stream.next().await.map_or(StreamStep::End, StreamStep::Item);
+                    }
+                }
+            }
+        }
+    }
+}
+
+async fn next_workshop_step(
+    source: &mut WorkshopByteStream,
+    cancel: &mut tokio::sync::watch::Receiver<bool>,
+) -> StreamStep<Result<Option<Vec<u8>>, String>> {
+    loop {
+        if *cancel.borrow() {
+            return StreamStep::Cancelled;
+        }
+        tokio::select! {
+            chunk = source.next_chunk() => return StreamStep::Item(chunk),
+            changed = cancel.changed() => {
+                match changed {
+                    Ok(()) if *cancel.borrow() => return StreamStep::Cancelled,
+                    Ok(()) => continue,
+                    Err(_) => return StreamStep::Item(source.next_chunk().await),
+                }
+            }
+        }
     }
 }
 
@@ -231,14 +289,10 @@ pub async fn stream_sse_json_workshop<T>(
             break;
         }
 
-        let next = tokio::select! {
-            chunk = source.next_chunk() => chunk,
-            changed = cancel_rx.changed() => {
-                if changed.is_ok() && *cancel_rx.borrow() {
-                    break;
-                }
-                continue;
-            }
+        let next = match next_workshop_step(&mut source, &mut cancel_rx).await {
+            StreamStep::Cancelled => break,
+            StreamStep::End => unreachable!("workshop result carries its own EOF"),
+            StreamStep::Item(next) => next,
         };
 
         let chunk = match next {
@@ -293,18 +347,9 @@ async fn pump_sse_stream<S, T>(
             break;
         }
 
-        let next = tokio::select! {
-            chunk = stream.next() => chunk,
-            changed = cancel.changed() => {
-                if changed.is_ok() && *cancel.borrow() {
-                    break;
-                }
-                continue;
-            }
-        };
-
-        let Some(chunk) = next else {
-            if !*cancel.borrow() {
+        let chunk = match next_stream_step(stream, &mut cancel).await {
+            StreamStep::Cancelled => break,
+            StreamStep::End => {
                 if let Err(error) = decoder.finish(|frame| {
                     emit_decoded_frame::<T>(app, frame, event_name, error_event);
                 }) {
@@ -319,8 +364,9 @@ async fn pump_sse_stream<S, T>(
                     "http",
                     "eof",
                 );
+                break;
             }
-            break;
+            StreamStep::Item(chunk) => chunk,
         };
 
         let chunk = match chunk {
@@ -422,5 +468,68 @@ mod tests {
     fn done_and_comment_only_frames_are_not_dispatched() {
         let frames = feed_chunks(&[b"data: [DONE]\n\n: keep-alive\n\n"]).unwrap();
         assert!(frames.is_empty());
+    }
+
+    #[tokio::test]
+    async fn cancellation_wakes_a_stalled_stream_promptly() {
+        let (cancel_tx, mut cancel_rx) = tokio::sync::watch::channel(false);
+        let mut stalled = futures_util::stream::pending::<Result<bytes::Bytes, reqwest::Error>>();
+        let waiter = tokio::spawn(async move {
+            matches!(
+                next_stream_step(&mut stalled, &mut cancel_rx).await,
+                StreamStep::Cancelled
+            )
+        });
+
+        tokio::task::yield_now().await;
+        cancel_tx.send(true).unwrap();
+        let cancelled = tokio::time::timeout(std::time::Duration::from_millis(100), waiter)
+            .await
+            .expect("stalled stream cancellation deadline")
+            .expect("cancellation task");
+        assert!(cancelled);
+    }
+
+    #[tokio::test]
+    async fn closed_cancel_watch_does_not_spin_or_starve_the_stream() {
+        let (cancel_tx, mut cancel_rx) = tokio::sync::watch::channel(false);
+        drop(cancel_tx);
+        let mut stream = futures_util::stream::iter([7_u8]);
+        assert!(matches!(
+            next_stream_step(&mut stream, &mut cancel_rx).await,
+            StreamStep::Item(7)
+        ));
+    }
+
+    #[test]
+    #[ignore = "manual release-profile evidence; run with --ignored --nocapture"]
+    fn profile_10k_frames_reports_bridge_throughput_and_memory_bound() {
+        const FRAMES: usize = 10_000;
+        let encoded = b"event: turn_stream_v2\ndata: {\"schema_version\":2,\"seq\":1}\n\n";
+        let mut input = Vec::with_capacity(encoded.len() * FRAMES);
+        for _ in 0..FRAMES {
+            input.extend_from_slice(encoded);
+        }
+
+        for chunk_bytes in [1, 8, 64, 4096] {
+            let started = std::time::Instant::now();
+            let mut decoder = SseDecoder::new(MAX_SSE_FRAME_BYTES);
+            let mut decoded = 0_usize;
+            for chunk in input.chunks(chunk_bytes) {
+                decoder.feed(chunk, |_| decoded += 1).unwrap();
+            }
+            decoder.finish(|_| decoded += 1).unwrap();
+            let elapsed = started.elapsed();
+            assert_eq!(decoded, FRAMES);
+            assert!(decoder.high_water_bytes <= encoded.len() + chunk_bytes);
+            let mib_per_second = input.len() as f64 / (1024.0 * 1024.0) / elapsed.as_secs_f64();
+            eprintln!(
+                "h03_sse_bridge frames={FRAMES} chunk_bytes={chunk_bytes} input_bytes={} high_water_bytes={} elapsed_us={} ns_per_frame={} mib_per_second={mib_per_second:.2}",
+                input.len(),
+                decoder.high_water_bytes,
+                elapsed.as_micros(),
+                elapsed.as_nanos() / FRAMES as u128,
+            );
+        }
     }
 }
