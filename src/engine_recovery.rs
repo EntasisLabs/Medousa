@@ -178,11 +178,11 @@ pub async fn run_startup_turn_recovery() {
         }
 
         if (committed_any || recovery_ledger_contains(&session_id, &turn_id))
-            && let Ok(log) = TurnEventLog::open_in(&root, item.envelope) {
-                if let Err(error) = log.mark_committed() {
-                    tracing::warn!(%turn_id, %error, "recovery commit marker write failed");
-                }
-            }
+            && let Ok(log) = TurnEventLog::open_in(&root, item.envelope)
+            && let Err(error) = log.mark_committed()
+        {
+            tracing::warn!(%turn_id, %error, "recovery commit marker write failed");
+        }
     }
 }
 

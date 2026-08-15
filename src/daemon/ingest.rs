@@ -1,6 +1,6 @@
 //! Channel ingest (`POST /v1/ingest`), SSE stream, and delivery webhook handlers.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::convert::Infallible;
 use std::sync::Arc;
 use std::time::Duration;
@@ -68,19 +68,11 @@ struct SseUnfoldState {
     _channel: Arc<TurnEventChannel>,
     log: Arc<TurnEventLog>,
     receiver: broadcast::Receiver<InteractiveTurnStreamEvent>,
-    pending: std::collections::VecDeque<InteractiveTurnStreamEvent>,
+    pending: VecDeque<InteractiveTurnStreamEvent>,
     last_seq: u64,
+    replay_until: Option<u64>,
+    drain_after_replay: bool,
     drained: bool,
-}
-
-fn replay_from_log(
-    log: &TurnEventLog,
-    since: u64,
-) -> std::collections::VecDeque<InteractiveTurnStreamEvent> {
-    log.snapshot_since(since)
-        .iter()
-        .map(crate::sse_turn_projection::sequenced_to_stream_event)
-        .collect()
 }
 
 fn sse_event_from_payload(payload: InteractiveTurnStreamEvent) -> Event {
@@ -119,14 +111,22 @@ pub async fn stream_events_from_registry(
     // and the live subscription. Any event in both is deduped by seq below.
     let receiver = channel.subscribe();
     let since = since.unwrap_or(0);
-    let pending = replay_from_log(&log, since);
+    let replay_fence = log.replay_fence();
+    if since > replay_fence {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("stream cursor {since} is beyond current sequence {replay_fence}"),
+        ));
+    }
 
     let initial = SseUnfoldState {
         _channel: channel,
         log,
         receiver,
-        pending,
+        pending: VecDeque::new(),
         last_seq: since,
+        replay_until: (replay_fence > since).then_some(replay_fence),
+        drain_after_replay: false,
         drained: false,
     };
 
@@ -147,7 +147,57 @@ pub async fn stream_events_from_registry(
                 return None;
             }
 
-            // 2) Otherwise pull the next live event.
+            // 2) Pull at most one bounded journal page through the captured
+            // replay fence. Disk work stays off the async runtime worker.
+            if let Some(fence) = state.replay_until {
+                if state.last_seq >= fence {
+                    state.replay_until = None;
+                    if state.drain_after_replay {
+                        state.drained = true;
+                    }
+                    continue;
+                }
+                let log = Arc::clone(&state.log);
+                let since = state.last_seq;
+                let replay = tokio::task::spawn_blocking(move || log.replay_page(since, fence))
+                    .await;
+                match replay {
+                    Ok(Ok(page)) => {
+                        state.pending = page
+                            .events
+                            .iter()
+                            .map(crate::sse_turn_projection::sequenced_to_stream_event)
+                            .collect();
+                        if !page.has_more {
+                            state.replay_until = None;
+                            if state.drain_after_replay && state.pending.is_empty() {
+                                state.drained = true;
+                            }
+                        }
+                        continue;
+                    }
+                    Ok(Err(error)) => {
+                        state.drained = true;
+                        return Some((
+                            Ok::<Event, Infallible>(Event::default()
+                                .event("error")
+                                .data(format!("turn replay failed: {error}"))),
+                            state,
+                        ));
+                    }
+                    Err(error) => {
+                        state.drained = true;
+                        return Some((
+                            Ok::<Event, Infallible>(Event::default()
+                                .event("error")
+                                .data(format!("turn replay worker stopped: {error}"))),
+                            state,
+                        ));
+                    }
+                }
+            }
+
+            // 3) Otherwise pull the next live event.
             match state.receiver.recv().await {
                 Ok(payload) => {
                     // Skip anything already covered by the replay snapshot / prior emits.
@@ -163,18 +213,19 @@ pub async fn stream_events_from_registry(
                 Err(broadcast::error::RecvError::Lagged(_)) => {
                     // We fell behind the live ring; recover the gap from the
                     // durable spine rather than dropping events outright.
-                    state
-                        .pending
-                        .extend(replay_from_log(&state.log, state.last_seq));
+                    let fence = state.log.replay_fence();
+                    state.replay_until = (fence > state.last_seq).then_some(fence);
                     continue;
                 }
                 Err(broadcast::error::RecvError::Closed) => {
                     // Senders gone: drain any buffered tail from the spine so a
                     // client reconnecting right at the end still sees it.
-                    state
-                        .pending
-                        .extend(replay_from_log(&state.log, state.last_seq));
-                    state.drained = true;
+                    let fence = state.log.replay_fence();
+                    state.replay_until = (fence > state.last_seq).then_some(fence);
+                    state.drain_after_replay = true;
+                    if state.replay_until.is_none() {
+                        state.drained = true;
+                    }
                     continue;
                 }
             }
