@@ -51,6 +51,8 @@ import {
 import type { EnvironmentStreamEvent } from "$lib/types/environment";
 import { homeChannelSurface } from "$lib/platform";
 import type { InteractiveTurnStreamEvent } from "$lib/types/chat";
+import type { TurnStreamEnvelopeV2 } from "$lib/types/generated/daemon_api";
+import { turnStreamPayloadToLegacy } from "$lib/stream/v2ToLegacy";
 import type { WorkspaceStreamEvent } from "$lib/types/workspace";
 
 export type WorkshopConnection = {
@@ -204,7 +206,8 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
     }),
   );
   unlisteners.push(
-    onInteractiveEvent<InteractiveTurnStreamEvent>((event) => {
+    onInteractiveEvent<TurnStreamEnvelopeV2 | InteractiveTurnStreamEvent>((payload) => {
+      const event = turnStreamPayloadToLegacy(payload);
       const turnBefore = chat.turns.get(event.turn_id);
       chat.applyStreamEvent(event);
       if (!isTauriMobilePlatform()) return;

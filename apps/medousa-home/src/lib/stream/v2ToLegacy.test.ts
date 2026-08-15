@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { emptyTurnStreamV2State, reduceTurnStreamV2 } from "$lib/stream/v2Reducer";
+import {
+  turnStreamPayloadToLegacy,
+  turnStreamV2ToLegacy,
+} from "$lib/stream/v2ToLegacy";
 import type {
   TurnStreamEnvelopeV2,
   TurnStreamEventV2,
@@ -74,42 +77,77 @@ const variants = [
   { type: "permission_request", request_id: "p1", message: "Allow?" },
 ] satisfies TurnStreamEventV2[];
 
+const legacyTypes = [
+  "content_delta",
+  "reasoning_delta",
+  "status",
+  "turn_progress",
+  "assistant_pack_hold",
+  "model_receipt",
+  "final",
+  "needs_input",
+  "turn_checkpoint",
+  "worker_ack",
+  "worker_synthesis",
+  "final_pending",
+  "error",
+  "scratch_reset",
+  "tool_started",
+  "tool_finished",
+  "artifact_presented",
+  "artifact_updated",
+  "ui_scene",
+  "budget_approval",
+  "browser_challenge",
+  "browser_navigated",
+  "context_usage",
+  "permission_request",
+];
+
 function envelope(event: TurnStreamEventV2, seq: number): TurnStreamEnvelopeV2 {
   return {
     schema_version: 2,
     turn_id: "turn-1",
     seq,
-    emitted_at_utc: "2026-08-14T00:00:00Z",
+    emitted_at_utc: "2026-08-15T00:00:00Z",
     event,
   };
 }
 
-describe("turn stream v2 reducer", () => {
-  it("handles every generated union variant", () => {
-    const state = variants.reduce(
-      (current, event, index) => {
-        const encoded = JSON.stringify(envelope(event, index + 1));
-        const decoded = JSON.parse(encoded) as TurnStreamEnvelopeV2;
-        expect(JSON.stringify(decoded)).toBe(encoded);
-        return reduceTurnStreamV2(current, decoded);
-      },
-      emptyTurnStreamV2State(),
+describe("turnStreamV2ToLegacy", () => {
+  it("projects every generated union variant through the production seam", () => {
+    const projected = variants.map((event, index) =>
+      turnStreamV2ToLegacy(envelope(event, index + 1)),
     );
-    expect(state.seq).toBe(variants.length);
+
+    expect(projected.map((event) => event.event_type)).toEqual(legacyTypes);
+    expect(projected.every((event) => event.turn_id === "turn-1")).toBe(true);
+    expect(projected.map((event) => event.seq)).toEqual(
+      variants.map((_, index) => index + 1),
+    );
   });
 
-  it("concatenates batches in sequence and ignores replay duplicates", () => {
-    const first = reduceTurnStreamV2(
-      emptyTurnStreamV2State(),
-      envelope({ type: "content_append", text: "hello " }, 1),
-    );
-    const second = reduceTurnStreamV2(
-      first,
-      envelope({ type: "content_append", text: "world" }, 2),
-    );
-    expect(second.content).toBe("hello world");
-    expect(reduceTurnStreamV2(second, envelope({ type: "content_append", text: "bad" }, 2))).toBe(
-      second,
-    );
+  it("preserves append, terminal, and tool payload semantics", () => {
+    expect(turnStreamV2ToLegacy(envelope(variants[0], 1))).toMatchObject({
+      content_delta: "hello",
+      terminal: false,
+    });
+    const terminal = turnStreamV2ToLegacy(envelope(variants[6], 2));
+    expect(terminal).toMatchObject({
+      final_text: "done",
+      terminal: true,
+    });
+    expect(terminal).not.toHaveProperty("operator_message");
+    expect(turnStreamV2ToLegacy(envelope(variants[14], 3))).toMatchObject({
+      tool_run_id: "run-1",
+      tool_name: "search",
+      tool_status: "running",
+      tool_round: 1,
+    });
+  });
+
+  it("passes a legacy payload through during the compatibility window", () => {
+    const legacy = turnStreamV2ToLegacy(envelope(variants[0], 1));
+    expect(turnStreamPayloadToLegacy(legacy)).toBe(legacy);
   });
 });

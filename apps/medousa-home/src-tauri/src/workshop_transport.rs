@@ -191,8 +191,22 @@ pub async fn workshop_get_bytes_stream(
     config: &WorkshopTransportConfig,
     path: &str,
 ) -> Result<WorkshopByteStream, String> {
+    workshop_get_bytes_stream_with_accept(config, path, None).await
+}
+
+pub async fn workshop_get_bytes_stream_with_accept(
+    config: &WorkshopTransportConfig,
+    path: &str,
+    accept: Option<&str>,
+) -> Result<WorkshopByteStream, String> {
     let route = pick_route(config).await;
-    let headers = auth_headers(config);
+    let mut headers = auth_headers(config);
+    if let Some(accept) = accept {
+        headers.insert(
+            reqwest::header::ACCEPT,
+            reqwest::header::HeaderValue::from_str(accept).map_err(|err| err.to_string())?,
+        );
+    }
     match route {
         WorkshopRoute::Lan => lan_get_stream(config, path, &headers).await,
         #[cfg(any(target_os = "ios", target_os = "android"))]
