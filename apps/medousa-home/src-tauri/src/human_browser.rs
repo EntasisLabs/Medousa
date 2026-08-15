@@ -15,7 +15,7 @@ use medousa_browser_lite::{
     FetchResult, SearchResponse, markdown_from_html, search_response_from_ddg_html,
 };
 use serde::{Deserialize, Serialize};
-use tauri::webview::{Color, NewWindowResponse, WebviewBuilder};
+use tauri::webview::{Color, DownloadEvent, NewWindowResponse, WebviewBuilder};
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Rect, WebviewUrl};
 use tokio::sync::oneshot;
 
@@ -26,6 +26,8 @@ const EMBED_SURFACE_COLOR: Color = Color(12, 14, 18, 255);
 const BROWSER_WINDOW_LABEL: &str = "browser";
 const BROWSER_CONTENT_LABEL: &str = "browser-content-popout";
 const BROWSER_CHROME_LABEL: &str = "browser-chrome";
+const MAX_BROWSER_URL_BYTES: usize = 8 * 1024;
+const MAX_BROWSER_TITLE_BYTES: usize = 512;
 /// Workshop-layout fallback only (desktop freeform uses DOM host measure).
 /// Keep roughly in sync with AppTitlebar (~40) + browser toolbar (~36).
 const CHROME_HEIGHT_LOGICAL: f64 = 96.0;
@@ -68,6 +70,90 @@ impl BrowserSurface {
             Self::Popout => "popout",
         }
     }
+}
+
+#[derive(Debug, Clone)]
+struct BrowserWebviewIdentity {
+    surface: BrowserSurface,
+    tab_id: Option<String>,
+    navigation_generation: u64,
+    current_url: String,
+}
+
+static BROWSER_WEBVIEWS: LazyLock<Mutex<HashMap<String, BrowserWebviewIdentity>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn register_browser_webview(label: &str, surface: BrowserSurface, tab_id: Option<String>) {
+    if let Ok(mut webviews) = BROWSER_WEBVIEWS.lock() {
+        webviews.insert(
+            label.to_string(),
+            BrowserWebviewIdentity {
+                surface,
+                tab_id,
+                navigation_generation: 0,
+                current_url: "about:blank".to_string(),
+            },
+        );
+    }
+}
+
+fn unregister_browser_webview(label: &str) {
+    if let Ok(mut webviews) = BROWSER_WEBVIEWS.lock() {
+        webviews.remove(label);
+    }
+}
+
+fn browser_webview_identity(label: &str) -> Option<BrowserWebviewIdentity> {
+    BROWSER_WEBVIEWS
+        .lock()
+        .ok()
+        .and_then(|webviews| webviews.get(label).cloned())
+}
+
+fn begin_browser_navigation(label: &str, url: &str) -> Option<BrowserWebviewIdentity> {
+    let mut webviews = BROWSER_WEBVIEWS.lock().ok()?;
+    let identity = webviews.get_mut(label)?;
+    identity.navigation_generation = identity.navigation_generation.saturating_add(1);
+    identity.current_url.clear();
+    identity.current_url.push_str(url);
+    Some(identity.clone())
+}
+
+fn finish_browser_navigation(label: &str, url: &str) -> Option<BrowserWebviewIdentity> {
+    let mut webviews = BROWSER_WEBVIEWS.lock().ok()?;
+    let identity = webviews.get_mut(label)?;
+    identity.current_url.clear();
+    identity.current_url.push_str(url);
+    Some(identity.clone())
+}
+
+fn set_browser_tab_identity(label: &str, tab_id: Option<String>) {
+    if let Ok(mut webviews) = BROWSER_WEBVIEWS.lock() {
+        if let Some(identity) = webviews.get_mut(label) {
+            identity.tab_id = tab_id;
+        }
+    }
+}
+
+fn is_allowed_browser_navigation(url: &url::Url) -> bool {
+    if url.as_str().len() > MAX_BROWSER_URL_BYTES {
+        return false;
+    }
+    matches!(url.scheme(), "http" | "https") || url.as_str() == "about:blank"
+}
+
+fn bounded_browser_title(title: &str) -> Option<String> {
+    let mut bounded = String::with_capacity(title.len().min(MAX_BROWSER_TITLE_BYTES));
+    for ch in title.trim().chars() {
+        if ch.is_control() {
+            continue;
+        }
+        if bounded.len() + ch.len_utf8() > MAX_BROWSER_TITLE_BYTES {
+            break;
+        }
+        bounded.push(ch);
+    }
+    (!bounded.is_empty()).then_some(bounded)
 }
 
 fn surface_url_lock(surface: BrowserSurface) -> &'static Mutex<String> {
@@ -171,9 +257,11 @@ fn close_all_tab_webviews(app: &AppHandle, surface: BrowserSurface) {
         .map(|guard| guard.clone())
         .unwrap_or_default();
     for id in ids {
-        if let Some(webview) = tab_webview(app, surface, &id) {
+        let label = tab_webview_label(surface, &id);
+        if let Some(webview) = app.get_webview(&label) {
             let _ = webview.close();
         }
+        unregister_browser_webview(&label);
     }
     if let Ok(mut ids) = tab_ids_lock(surface).lock() {
         ids.clear();
@@ -309,6 +397,13 @@ struct HumanBrowserLoadingPayload {
 struct HumanBrowserNewWindowPayload {
     url: String,
     #[serde(default = "default_embed_surface")]
+    surface: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HumanBrowserPolicyBlockedPayload {
+    action: &'static str,
     surface: String,
 }
 
@@ -924,9 +1019,13 @@ fn parse_external_url(url: &str) -> Result<url::Url, String> {
     if trimmed.is_empty() || trimmed == "about:blank" {
         return Err("url is empty".to_string());
     }
-    trimmed
+    let parsed = trimmed
         .parse()
-        .map_err(|err: url::ParseError| err.to_string())
+        .map_err(|err: url::ParseError| err.to_string())?;
+    if !is_allowed_browser_navigation(&parsed) || parsed.as_str() == "about:blank" {
+        return Err("browser navigation requires a bounded HTTP(S) URL".to_string());
+    }
+    Ok(parsed)
 }
 
 fn window_inner_logical(window: &tauri::Window) -> Result<(f64, f64), String> {
@@ -1024,135 +1123,116 @@ fn parse_surface(raw: Option<&str>) -> BrowserSurface {
     }
 }
 
-fn probe_page_metadata(
-    webview: &tauri::Webview,
-    app: &AppHandle,
-    url: &str,
-    surface: BrowserSurface,
-) {
-    let url_json = serde_json::to_string(url).unwrap_or_else(|_| "\"\"".to_string());
-    let surface_json =
-        serde_json::to_string(surface.as_str()).unwrap_or_else(|_| "\"embed\"".to_string());
-    // Prefer live location.href so server redirects aren't stuck on the requested URL.
-    let script = [
-        "(function(){try{var u=(window.location&&window.location.href)||",
-        &url_json,
-        ";var s=",
-        &surface_json,
-        ";var t=(document.title||'').trim();var fav=null;try{var link=document.querySelector('link[rel~=\"icon\"]');if(link&&link.href)fav=link.href;}catch(e){}var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;",
-        "i.invoke('human_browser_report_location',{url:u,title:t||null,surface:s,inPage:false});",
-        "if(fav)i.invoke('human_browser_report_favicon',{url:u,favicon:fav,surface:s});",
-        "i.invoke('human_browser_report_nav_state',{payload:{canGoBack:window.history.length>1,canGoForward:false,surface:s,requestId:null}});",
-        "}catch(e){}})();",
-    ]
-    .concat();
-    let _ = webview.eval(&script);
-    let _ = app;
-}
-
-/// Intercept window.open and target=_blank clicks — WKWebView on_new_window misses many cases.
-fn desktop_new_window_install_js(surface: BrowserSurface) -> String {
-    let surface = surface.as_str();
-    format!(
-        r#"(function(){{if(window.__medousaNewWindowInstalled)return;window.__medousaNewWindowInstalled=true;function report(u){{if(!u||u==='about:blank')return;var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;i.invoke('human_browser_report_new_window',{{url:u,surface:'{surface}'}});}}var o=window.open;window.open=function(u){{report(u);return null}};document.addEventListener('click',function(e){{var a=e.target.closest&&e.target.closest('a[target="_blank"]');if(a&&a.href){{e.preventDefault();report(a.href)}}}},true);}})();"#
-    )
-}
-
-/// Forward chrome hotkeys from the focused page webview to the shell (Cmd/Ctrl shortcuts).
-fn desktop_hotkey_install_js(surface: BrowserSurface) -> String {
-    let surface = surface.as_str();
-    format!(
-        r#"(function(){{if(window.__medousaHotkeysInstalled)return;window.__medousaHotkeysInstalled=true;function report(a){{var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;i.invoke('human_browser_report_hotkey',{{action:a,surface:'{surface}'}});}}document.addEventListener('keydown',function(e){{var mod=e.metaKey||e.ctrlKey;if(!mod)return;var key=(e.key||'').toLowerCase();var action=null;if(key==='l'&&!e.shiftKey&&!e.altKey)action='focusUrl';else if(key==='f'&&!e.shiftKey&&!e.altKey)action='find';else if(key==='b'&&e.shiftKey&&!e.altKey)action='bookmarks';else if(key==='t'&&e.shiftKey&&!e.altKey)action='reopenTab';else if(key==='t'&&!e.shiftKey&&!e.altKey)action='newTab';else if(key==='w'&&!e.shiftKey&&!e.altKey)action='closeTab';else if(key==='r'&&!e.shiftKey&&!e.altKey)action='reload';else if(e.key==='['||e.key===']')action=e.key==='['?'goBack':'goForward';if(!action)return;e.preventDefault();e.stopPropagation();report(action);}},true);}})();"#
-    )
-}
-
-/// Keep the shell URL bar in sync with SPA / History API navigations and redirects.
-fn desktop_location_sync_install_js(surface: BrowserSurface) -> String {
-    let surface = surface.as_str();
-    format!(
-        r#"(function(){{if(window.__medousaLocationSyncInstalled)return;window.__medousaLocationSyncInstalled=true;var last='';function report(){{try{{var u=(window.location&&window.location.href)||'';if(!u||u==='about:blank'||u===last)return;last=u;var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;var t=(document.title||'').trim()||null;i.invoke('human_browser_report_location',{{url:u,title:t,surface:'{surface}',inPage:true}});}}catch(e){{}}}}function wrap(name){{var orig=history[name];if(typeof orig!=='function')return;history[name]=function(){{var ret=orig.apply(this,arguments);report();return ret;}};}}wrap('pushState');wrap('replaceState');window.addEventListener('popstate',report);window.addEventListener('hashchange',report);report();}})();"#
-    )
-}
-
-fn desktop_report_location_js(surface: BrowserSurface) -> String {
-    let surface = surface.as_str();
-    format!(
-        r#"(function(){{try{{var u=(window.location&&window.location.href)||'';if(!u||u==='about:blank')return;var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;var t=(document.title||'').trim()||null;i.invoke('human_browser_report_location',{{url:u,title:t,surface:'{surface}',inPage:true}});}}catch(e){{}}}})();"#
-    )
-}
-
 fn content_builder(
     app: &AppHandle,
     label: String,
-    tab_id: Option<String>,
     mobile_ua: bool,
-    surface: BrowserSurface,
 ) -> WebviewBuilder<tauri::Wry> {
-    let app_nav = app.clone();
+    let app_navigation = app.clone();
     let app_load = app.clone();
     let app_new_window = app.clone();
-    let surface_nav = surface;
-    let surface_load = surface;
-    let surface_new_window = surface;
-    let tab_id_load = tab_id;
-    let new_window_js = desktop_new_window_install_js(surface);
-    let hotkey_js = desktop_hotkey_install_js(surface);
-    let location_sync_js = desktop_location_sync_install_js(surface);
+    let app_title = app.clone();
+    let app_download = app.clone();
+    let navigation_label = label.clone();
+    let new_window_label = label.clone();
     let mut builder =
         WebviewBuilder::new(label, WebviewUrl::External("about:blank".parse().unwrap()))
-            .initialization_script(hotkey_js.clone())
-            .initialization_script(location_sync_js.clone())
             .on_new_window(move |url, _features| {
                 let href = url.as_str();
-                if !(href.starts_with("http://") || href.starts_with("https://")) {
+                let Some(identity) = browser_webview_identity(&new_window_label) else {
+                    return NewWindowResponse::Deny;
+                };
+                if !is_allowed_browser_navigation(&url) || href == "about:blank" {
                     return NewWindowResponse::Deny;
                 }
-                if href == "about:blank"
-                    || href.contains("doubleclick")
-                    || href.contains("googlesyndication")
-                {
-                    return NewWindowResponse::Deny;
-                }
-                emit_new_window(&app_new_window, surface_new_window, href);
+                emit_new_window(&app_new_window, identity.surface, href);
                 NewWindowResponse::Deny
             })
             .on_navigation(move |nav_url| {
-                let href = nav_url.as_str();
-                if href.starts_with("http://") || href.starts_with("https://") {
-                    BROWSER_HOST_STATE.advance_navigation(surface_nav);
-                    emit_loading(&app_nav, surface_nav, true);
+                let Some(identity) = browser_webview_identity(&navigation_label) else {
+                    return false;
+                };
+                if !is_allowed_browser_navigation(nav_url) {
+                    let _ = app_navigation.emit(
+                        "human-browser-policy-blocked",
+                        HumanBrowserPolicyBlockedPayload {
+                            action: "navigation",
+                            surface: identity.surface.as_str().to_string(),
+                        },
+                    );
+                    return false;
                 }
+                BROWSER_HOST_STATE.advance_navigation(identity.surface);
+                let _ = begin_browser_navigation(&navigation_label, nav_url.as_str());
+                emit_loading(&app_navigation, identity.surface, true);
                 true
             })
             .on_page_load(move |webview, payload| {
                 use tauri::webview::PageLoadEvent;
+                let Some(identity) = browser_webview_identity(webview.label()) else {
+                    return;
+                };
                 match payload.event() {
-                    PageLoadEvent::Started => emit_loading(&app_load, surface_load, true),
+                    PageLoadEvent::Started => emit_loading(&app_load, identity.surface, true),
                     PageLoadEvent::Finished => {
-                        emit_loading(&app_load, surface_load, false);
+                        emit_loading(&app_load, identity.surface, false);
                         let href = payload.url().as_str().to_string();
+                        if !is_allowed_browser_navigation(payload.url()) {
+                            return;
+                        }
+                        let identity = finish_browser_navigation(webview.label(), &href)
+                            .unwrap_or(identity);
                         emit_navigated(
                             &app_load,
-                            surface_load,
+                            identity.surface,
                             &href,
                             None,
                             None,
-                            tab_id_load.clone(),
+                            identity.tab_id,
                         );
-                        probe_page_metadata(&webview, &app_load, &href, surface_load);
                         if mobile_ua {
                             let _ = webview.eval(MOBILE_EMBED_FIX_JS);
-                            let _ = webview.eval(&new_window_js);
-                            let _ = webview.eval(&hotkey_js);
-                            let _ = webview.eval(&location_sync_js);
                         } else {
                             let _ = webview.eval(DESKTOP_EMBED_FILL_JS);
-                            let _ = webview.eval(&new_window_js);
-                            let _ = webview.eval(&hotkey_js);
-                            let _ = webview.eval(&location_sync_js);
                         }
                     }
                 }
+            })
+            .on_document_title_changed(move |webview, title| {
+                let Some(identity) = browser_webview_identity(webview.label()) else {
+                    return;
+                };
+                let Some(title) = bounded_browser_title(&title) else {
+                    return;
+                };
+                let url = webview
+                    .url()
+                    .ok()
+                    .filter(is_allowed_browser_navigation)
+                    .map(|url| url.to_string())
+                    .unwrap_or(identity.current_url);
+                emit_navigated(
+                    &app_title,
+                    identity.surface,
+                    &url,
+                    Some(title),
+                    None,
+                    identity.tab_id,
+                );
+            })
+            .on_download(move |webview, event| {
+                if matches!(event, DownloadEvent::Requested { .. }) {
+                    if let Some(identity) = browser_webview_identity(webview.label()) {
+                        let _ = app_download.emit(
+                            "human-browser-policy-blocked",
+                            HumanBrowserPolicyBlockedPayload {
+                                action: "download",
+                                surface: identity.surface.as_str().to_string(),
+                            },
+                        );
+                    }
+                }
+                false
             });
     if mobile_ua {
         builder = builder.user_agent(MOBILE_SAFARI_UA);
@@ -2020,19 +2100,25 @@ fn create_tab_webview(
     let label = tab_webview_label(BrowserSurface::Embed, tab_id);
     let window = workshop_window(app)?;
     let mobile_ua = EMBED_MOBILE_UA.load(Ordering::SeqCst);
-    window
+    register_browser_webview(
+        &label,
+        BrowserSurface::Embed,
+        Some(tab_id.to_string()),
+    );
+    if let Err(err) = window
         .add_child(
             content_builder(
                 app,
-                label,
-                Some(tab_id.to_string()),
+                label.clone(),
                 mobile_ua,
-                BrowserSurface::Embed,
             ),
             LogicalPosition::new(x, y),
             LogicalSize::new(width.max(8.0), height.max(8.0)),
         )
-        .map_err(|err| err.to_string())?;
+    {
+        unregister_browser_webview(&label);
+        return Err(err.to_string());
+    }
     register_tab_id(BrowserSurface::Embed, tab_id);
     EMBED_READY.store(true, Ordering::SeqCst);
     if let Some(created) = tab_webview(app, BrowserSurface::Embed, tab_id) {
@@ -2200,6 +2286,7 @@ fn activate_popout_tab(app: &AppHandle, tab_id: &str, initial_url: &str) -> Resu
             .map_err(|_| "active tab lock poisoned".to_string())?;
         *guard = Some(tab_id.to_string());
     }
+    set_browser_tab_identity(BROWSER_CONTENT_LABEL, Some(tab_id.to_string()));
 
     apply_popout_layout(app)?;
 
@@ -2235,13 +2322,16 @@ fn activate_surface_tab(
 fn close_surface_tab(app: &AppHandle, surface: BrowserSurface, tab_id: &str) -> Result<(), String> {
     match surface {
         BrowserSurface::Embed => {
-            if let Some(webview) = tab_webview(app, BrowserSurface::Embed, tab_id) {
+            let label = tab_webview_label(BrowserSurface::Embed, tab_id);
+            if let Some(webview) = app.get_webview(&label) {
                 webview.close().map_err(|err| err.to_string())?;
             }
+            unregister_browser_webview(&label);
             unregister_tab_id(BrowserSurface::Embed, tab_id);
         }
         BrowserSurface::Popout => {
             // Pop-out uses a single shared content webview — only drop tab metadata.
+            set_browser_tab_identity(BROWSER_CONTENT_LABEL, None);
         }
     }
     if active_tab_id(surface).as_deref() == Some(tab_id) {
@@ -2580,19 +2670,21 @@ pub fn ensure_popout_shell(app: &AppHandle) -> Result<(), String> {
     let content_height = (height - POPOUT_CHROME_HEIGHT_LOGICAL).max(8.0);
 
     if popout_content_webview(app).is_none() {
-        window
+        register_browser_webview(BROWSER_CONTENT_LABEL, BrowserSurface::Popout, None);
+        if let Err(err) = window
             .add_child(
                 content_builder(
                     app,
                     BROWSER_CONTENT_LABEL.to_string(),
-                    None,
                     false,
-                    BrowserSurface::Popout,
                 ),
                 LogicalPosition::new(0.0, POPOUT_CHROME_HEIGHT_LOGICAL),
                 LogicalSize::new(width, content_height),
             )
-            .map_err(|err| err.to_string())?;
+        {
+            unregister_browser_webview(BROWSER_CONTENT_LABEL);
+            return Err(err.to_string());
+        }
         if let Some(content) = popout_content_webview(app) {
             attach_webview_chrome_hotkeys(&content, app, BrowserSurface::Popout);
         }
@@ -2652,14 +2744,6 @@ pub async fn human_browser_popout_close_tab(app: AppHandle, tab_id: String) -> R
     close_surface_tab(&app, BrowserSurface::Popout, tab_id.trim())
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HumanBrowserNewWindowReport {
-    pub url: String,
-    #[serde(default = "default_embed_surface")]
-    pub surface: String,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HumanBrowserHotkeyPayload {
@@ -2676,56 +2760,6 @@ fn focus_shell_webview(app: &AppHandle) {
 
 fn hotkey_needs_shell_focus(action: &str) -> bool {
     matches!(action, "focusUrl" | "find" | "bookmarks")
-}
-
-fn is_known_browser_hotkey(action: &str) -> bool {
-    matches!(
-        action,
-        "focusUrl"
-            | "find"
-            | "bookmarks"
-            | "newTab"
-            | "reopenTab"
-            | "closeTab"
-            | "reload"
-            | "goBack"
-            | "goForward"
-    )
-}
-
-#[tauri::command]
-pub fn human_browser_report_new_window(
-    app: AppHandle,
-    payload: HumanBrowserNewWindowReport,
-) -> Result<(), String> {
-    emit_new_window(
-        &app,
-        parse_surface(Some(payload.surface.as_str())),
-        payload.url.trim(),
-    );
-    Ok(())
-}
-
-#[tauri::command]
-pub fn human_browser_report_hotkey(
-    app: AppHandle,
-    payload: HumanBrowserHotkeyPayload,
-) -> Result<(), String> {
-    let action = payload.action.trim();
-    if !is_known_browser_hotkey(action) {
-        return Ok(());
-    }
-    if hotkey_needs_shell_focus(action) {
-        focus_shell_webview(&app);
-    }
-    let _ = app.emit(
-        "human-browser-hotkey",
-        HumanBrowserHotkeyPayload {
-            action: action.to_string(),
-            surface: payload.surface,
-        },
-    );
-    Ok(())
 }
 
 #[tauri::command]
@@ -2759,9 +2793,7 @@ pub async fn human_browser_reload(app: AppHandle) -> Result<(), String> {
     }
     let content = embedded_content_webview(&app)
         .ok_or_else(|| "browser content webview not ready".to_string())?;
-    content
-        .eval("window.location.reload()")
-        .map_err(|err| err.to_string())?;
+    content.reload().map_err(|err| err.to_string())?;
     emit_loading(&app, BrowserSurface::Embed, true);
     Ok(())
 }
@@ -2770,9 +2802,7 @@ pub async fn human_browser_reload(app: AppHandle) -> Result<(), String> {
 pub async fn human_browser_popout_reload(app: AppHandle) -> Result<(), String> {
     let content = popout_content_webview(&app)
         .ok_or_else(|| "pop-out browser content not ready".to_string())?;
-    content
-        .eval("window.location.reload()")
-        .map_err(|err| err.to_string())
+    content.reload().map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -2781,11 +2811,7 @@ pub async fn human_browser_go_back(app: AppHandle) -> Result<(), String> {
         .ok_or_else(|| "browser content webview not ready".to_string())?;
     content
         .eval("window.history.back()")
-        .map_err(|err| err.to_string())?;
-    // History API may not fire Finished — pull live location after the stack settles.
-    let report = desktop_report_location_js(BrowserSurface::Embed);
-    let _ = content.eval(&format!("setTimeout(function(){{{report}}},0)"));
-    Ok(())
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -2794,10 +2820,7 @@ pub async fn human_browser_popout_go_back(app: AppHandle) -> Result<(), String> 
         .ok_or_else(|| "pop-out browser content not ready".to_string())?;
     content
         .eval("window.history.back()")
-        .map_err(|err| err.to_string())?;
-    let report = desktop_report_location_js(BrowserSurface::Popout);
-    let _ = content.eval(&format!("setTimeout(function(){{{report}}},0)"));
-    Ok(())
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -2806,10 +2829,7 @@ pub async fn human_browser_go_forward(app: AppHandle) -> Result<(), String> {
         .ok_or_else(|| "browser content webview not ready".to_string())?;
     content
         .eval("window.history.forward()")
-        .map_err(|err| err.to_string())?;
-    let report = desktop_report_location_js(BrowserSurface::Embed);
-    let _ = content.eval(&format!("setTimeout(function(){{{report}}},0)"));
-    Ok(())
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -2818,61 +2838,7 @@ pub async fn human_browser_popout_go_forward(app: AppHandle) -> Result<(), Strin
         .ok_or_else(|| "pop-out browser content not ready".to_string())?;
     content
         .eval("window.history.forward()")
-        .map_err(|err| err.to_string())?;
-    let report = desktop_report_location_js(BrowserSurface::Popout);
-    let _ = content.eval(&format!("setTimeout(function(){{{report}}},0)"));
-    Ok(())
-}
-
-#[tauri::command]
-pub fn human_browser_report_location(
-    app: AppHandle,
-    url: String,
-    title: Option<String>,
-    surface: Option<String>,
-    in_page: Option<bool>,
-) -> Result<(), String> {
-    let trimmed = url.trim();
-    if trimmed.is_empty() || trimmed == "about:blank" {
-        return Ok(());
-    }
-    let title = title
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string);
-    emit_navigated_ex(
-        &app,
-        parse_surface(surface.as_deref()),
-        trimmed,
-        title,
-        None,
-        None,
-        in_page.unwrap_or(true),
-    );
-    Ok(())
-}
-
-#[tauri::command]
-pub fn human_browser_report_title(
-    app: AppHandle,
-    url: String,
-    title: String,
-    surface: Option<String>,
-) -> Result<(), String> {
-    let trimmed = title.trim();
-    if trimmed.is_empty() {
-        return Ok(());
-    }
-    emit_navigated(
-        &app,
-        parse_surface(surface.as_deref()),
-        url.trim(),
-        Some(trimmed.to_string()),
-        None,
-        None,
-    );
-    Ok(())
+        .map_err(|err| err.to_string())
 }
 
 fn snapshot_capture_js(request_id: &str) -> Result<String, String> {
@@ -3134,29 +3100,6 @@ pub fn human_browser_report_nav_state(payload: HumanBrowserNavStatePayload) -> R
 }
 
 #[tauri::command]
-pub fn human_browser_report_favicon(
-    url: String,
-    favicon: String,
-    surface: Option<String>,
-) -> Result<(), String> {
-    let trimmed = favicon.trim();
-    if trimmed.is_empty() {
-        return Ok(());
-    }
-    if let Some(app) = app_handle() {
-        emit_navigated(
-            &app,
-            parse_surface(surface.as_deref()),
-            url.trim(),
-            None,
-            Some(trimmed.to_string()),
-            None,
-        );
-    }
-    Ok(())
-}
-
-#[tauri::command]
 pub fn human_browser_report_find_result(
     found: bool,
     request_id: Option<String>,
@@ -3314,6 +3257,59 @@ pub async fn human_browser_popout_find_in_page(
 #[cfg(test)]
 mod request_broker_tests {
     use super::*;
+
+    #[test]
+    fn remote_navigation_policy_is_http_only_with_bounded_blank_bootstrap() {
+        for allowed in [
+            "about:blank",
+            "https://example.test/path",
+            "http://127.0.0.1:8080/",
+        ] {
+            assert!(is_allowed_browser_navigation(
+                &url::Url::parse(allowed).unwrap()
+            ));
+        }
+        for denied in [
+            "file:///tmp/secret",
+            "data:text/html,owned",
+            "javascript:alert(1)",
+            "tauri://localhost/",
+            "medousa://settings",
+        ] {
+            assert!(!is_allowed_browser_navigation(
+                &url::Url::parse(denied).unwrap()
+            ));
+        }
+
+        let oversized = format!("https://example.test/{}", "a".repeat(MAX_BROWSER_URL_BYTES));
+        assert!(!is_allowed_browser_navigation(
+            &url::Url::parse(&oversized).unwrap()
+        ));
+    }
+
+    #[test]
+    fn native_titles_are_control_free_and_bounded_before_shell_delivery() {
+        let title = format!("  hello\nworld\0{}  ", "x".repeat(MAX_BROWSER_TITLE_BYTES));
+        let bounded = bounded_browser_title(&title).unwrap();
+        assert!(!bounded.chars().any(char::is_control));
+        assert!(bounded.len() <= MAX_BROWSER_TITLE_BYTES);
+        assert!(bounded.starts_with("helloworld"));
+        assert_eq!(bounded_browser_title(" \n\0 "), None);
+    }
+
+    #[test]
+    fn registry_binds_surface_and_generation_to_native_webview_label() {
+        let label = "browser-content-embed-registry-test";
+        register_browser_webview(label, BrowserSurface::Embed, Some("tab-a".into()));
+        let first = begin_browser_navigation(label, "https://example.test/one").unwrap();
+        let second = begin_browser_navigation(label, "https://example.test/two").unwrap();
+        assert_eq!(first.surface, BrowserSurface::Embed);
+        assert_eq!(first.tab_id.as_deref(), Some("tab-a"));
+        assert_eq!(first.navigation_generation + 1, second.navigation_generation);
+        assert_eq!(second.current_url, "https://example.test/two");
+        unregister_browser_webview(label);
+        assert!(browser_webview_identity(label).is_none());
+    }
 
     fn snapshot(request_id: &str, marker: &str) -> SnapshotReport {
         SnapshotReport {

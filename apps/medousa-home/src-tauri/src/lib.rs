@@ -414,10 +414,6 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_popout_close_tab,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            human_browser::human_browser_report_new_window,
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            human_browser::human_browser_report_hotkey,
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_reload,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_popout_reload,
@@ -446,10 +442,6 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_set_mobile_shell_active,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            human_browser::human_browser_report_location,
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            human_browser::human_browser_report_title,
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_report_snapshot,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_report_act,
@@ -469,8 +461,6 @@ pub fn run() {
             human_browser::human_browser_popout_query_nav_state,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_report_nav_state,
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            human_browser::human_browser_report_favicon,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_find_in_page,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
