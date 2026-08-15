@@ -1,6 +1,6 @@
 //! Append-only workspace feed + revision persistence.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
@@ -13,15 +13,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::daemon_api::{WorkBoardColumn, WorkCardAssociations, WorkspaceEvent};
 use crate::session;
-use crate::workspace::persist::{
-    queue_append_feed_line, queue_snapshot_associations, queue_snapshot_card_states,
-    queue_write_revision,
-};
+use crate::workspace::persist::{queue_mutation, startup_projection, WorkspaceMutation};
 
 const FEED_FILE: &str = "workspace/feed.jsonl";
 const REVISION_FILE: &str = "workspace/revision";
 const CARD_STATE_FILE: &str = "workspace/card_states.json";
 const ASSOC_FILE: &str = "workspace/associations.json";
+const MAX_FEED_EVENTS: usize = 4_096;
+const MAX_FEED_BYTES: usize = 8 * 1024 * 1024;
 
 static STORE: Lazy<WorkspaceStore> = Lazy::new(WorkspaceStore::new);
 
@@ -47,7 +46,8 @@ struct AssociationRecord {
 
 pub struct WorkspaceStore {
     revision: Mutex<u64>,
-    feed: Mutex<Vec<WorkspaceEvent>>,
+    feed: Mutex<VecDeque<WorkspaceEvent>>,
+    feed_bytes: Mutex<usize>,
     card_states: RwLock<CardStateSnapshot>,
     associations: RwLock<HashMap<String, WorkCardAssociations>>,
 }
@@ -56,7 +56,8 @@ impl WorkspaceStore {
     fn new() -> Self {
         let store = Self {
             revision: Mutex::new(0),
-            feed: Mutex::new(Vec::new()),
+            feed: Mutex::new(VecDeque::new()),
+            feed_bytes: Mutex::new(0),
             card_states: RwLock::new(CardStateSnapshot::default()),
             associations: RwLock::new(HashMap::new()),
         };
@@ -75,12 +76,28 @@ impl WorkspaceStore {
     fn reload_from_disk(&self) {
         let _ = std::fs::create_dir_all(Self::workspace_dir());
 
+        if let Some(projection) = startup_projection() {
+            *self.revision.lock().expect("revision") = projection.revision;
+            let feed_bytes = projection
+                .feed
+                .iter()
+                .map(|event| serde_json::to_vec(event).map_or(0, |bytes| bytes.len()))
+                .sum();
+            *self.feed.lock().expect("feed") = projection.feed;
+            *self.feed_bytes.lock().expect("feed bytes") = feed_bytes;
+            *self.card_states.write().expect("card states") = CardStateSnapshot {
+                columns: projection.card_columns,
+            };
+            *self.associations.write().expect("associations") = projection.associations;
+            return;
+        }
+
         if let Ok(raw) = std::fs::read_to_string(Self::path(REVISION_FILE))
             && let Ok(value) = raw.trim().parse::<u64>() {
                 *self.revision.lock().expect("revision") = value;
             }
 
-        let mut events = Vec::new();
+        let mut events = VecDeque::new();
         if let Ok(file) = File::open(Self::path(FEED_FILE)) {
             for line in BufReader::new(file).lines().map_while(Result::ok) {
                 let trimmed = line.trim();
@@ -88,10 +105,14 @@ impl WorkspaceStore {
                     continue;
                 }
                 if let Ok(event) = serde_json::from_str::<WorkspaceEvent>(trimmed) {
-                    events.push(event);
+                    events.push_back(event);
                 }
             }
         }
+        *self.feed_bytes.lock().expect("feed bytes") = events
+            .iter()
+            .map(|event| serde_json::to_vec(event).map_or(0, |bytes| bytes.len()))
+            .sum();
         *self.feed.lock().expect("feed") = events;
 
         if let Ok(raw) = std::fs::read_to_string(Self::path(CARD_STATE_FILE))
@@ -124,19 +145,35 @@ impl WorkspaceStore {
         let mut guard = self.revision.lock().expect("revision");
         *guard = guard.saturating_add(1);
         let value = *guard;
-        let _ = queue_write_revision(value);
+        let _ = queue_mutation(WorkspaceMutation::SetRevision { revision: value });
         value
     }
 
     pub fn append_event(&self, event: WorkspaceEvent) -> u64 {
-        {
-            let mut feed = self.feed.lock().expect("feed");
-            feed.push(event.clone());
-            if let Ok(line) = serde_json::to_string(&event) {
-                let _ = queue_append_feed_line(line);
-            }
+        let event_bytes = serde_json::to_vec(&event).map_or(0, |bytes| bytes.len());
+        let mut feed = self.feed.lock().expect("feed");
+        let mut feed_bytes = self.feed_bytes.lock().expect("feed bytes");
+        feed.push_back(event.clone());
+        *feed_bytes = feed_bytes.saturating_add(event_bytes);
+        while feed.len() > MAX_FEED_EVENTS || *feed_bytes > MAX_FEED_BYTES {
+            let Some(evicted) = feed.pop_front() else {
+                break;
+            };
+            *feed_bytes = feed_bytes.saturating_sub(
+                serde_json::to_vec(&evicted).map_or(0, |bytes| bytes.len()),
+            );
         }
-        self.bump_revision()
+        drop(feed_bytes);
+        drop(feed);
+        let mut revision = self.revision.lock().expect("revision");
+        *revision = revision.saturating_add(1);
+        let value = *revision;
+        drop(revision);
+        let _ = queue_mutation(WorkspaceMutation::AppendEventAndRevision {
+            event,
+            revision: value,
+        });
+        value
     }
 
     pub fn list_feed(
@@ -151,28 +188,27 @@ impl WorkspaceStore {
             return Vec::new();
         }
 
-        let slice = if let Some(marker) = since_id {
+        let mut slice = if let Some(marker) = since_id {
             let start = feed
                 .iter()
                 .position(|event| event.id == marker)
                 .map(|index| index + 1)
                 .unwrap_or(0);
-            feed[start..].to_vec()
+            feed.iter().skip(start).cloned().collect::<Vec<_>>()
         } else {
-            feed.clone()
+            feed.iter().cloned().collect::<Vec<_>>()
         };
 
         if slice.len() > limit {
-            slice[slice.len() - limit..].to_vec()
-        } else {
-            slice
+            slice.drain(..slice.len() - limit);
         }
+        slice
     }
 
     pub fn feed_tail(&self, limit: usize) -> Vec<WorkspaceEvent> {
         let feed = self.feed.lock().expect("feed");
         let start = feed.len().saturating_sub(limit);
-        feed[start..].to_vec()
+        feed.iter().skip(start).cloned().collect()
     }
 
     pub fn feed_len(&self) -> usize {
@@ -184,7 +220,7 @@ impl WorkspaceStore {
         if index >= feed.len() {
             Vec::new()
         } else {
-            feed[index..].to_vec()
+            feed.iter().skip(index).cloned().collect()
         }
     }
 
@@ -211,7 +247,10 @@ impl WorkspaceStore {
             .expect("card states")
             .columns
             .insert(card_id.to_string(), column);
-        self.persist_card_states();
+        let _ = queue_mutation(WorkspaceMutation::SetCardColumn {
+            card_id: card_id.to_string(),
+            column: Some(column),
+        });
     }
 
     pub fn prune_card_state(&self, card_id: &str) {
@@ -220,14 +259,10 @@ impl WorkspaceStore {
             .expect("card states")
             .columns
             .remove(card_id);
-        self.persist_card_states();
-    }
-
-    fn persist_card_states(&self) {
-        let snapshot = self.card_states.read().expect("card states").clone();
-        if let Ok(raw) = serde_json::to_string_pretty(&snapshot) {
-            let _ = queue_snapshot_card_states(raw);
-        }
+        let _ = queue_mutation(WorkspaceMutation::SetCardColumn {
+            card_id: card_id.to_string(),
+            column: None,
+        });
     }
 
     pub fn associations(&self, card_id: &str) -> WorkCardAssociations {
@@ -245,26 +280,20 @@ impl WorkspaceStore {
         if !entry.vault_paths.iter().any(|path| path == &vault_path) {
             entry.vault_paths.push(vault_path);
         }
-        Self::persist_associations(&guard);
-    }
-
-    fn persist_associations(map: &HashMap<String, WorkCardAssociations>) {
-        let rows = map
-            .iter()
-            .map(|(card_id, assoc)| AssociationRecord {
-                card_id: card_id.clone(),
-                vault_paths: assoc.vault_paths.clone(),
-                artifact_ids: assoc.artifact_ids.clone(),
-                locus_node_ids: assoc.locus_node_ids.clone(),
-            })
-            .collect::<Vec<_>>();
-        if let Ok(raw) = serde_json::to_string_pretty(&rows) {
-            let _ = queue_snapshot_associations(raw);
-        }
+        let association = entry.clone();
+        drop(guard);
+        let _ = queue_mutation(WorkspaceMutation::SetAssociation {
+            card_id: card_id.to_string(),
+            association,
+        });
     }
 
     pub fn prune_feed_older_than(&self, cutoff: DateTime<Utc>) {
         let mut feed = self.feed.lock().expect("feed");
         feed.retain(|event| event.timestamp_utc >= cutoff);
+        *self.feed_bytes.lock().expect("feed bytes") = feed
+            .iter()
+            .map(|event| serde_json::to_vec(event).map_or(0, |bytes| bytes.len()))
+            .sum();
     }
 }

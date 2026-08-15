@@ -88,6 +88,10 @@ impl AskJobStore {
 
     fn reload_from_disk(&self) {
         let _ = fs::create_dir_all(session::medousa_data_dir().join("workspace"));
+        if let Some(projection) = crate::workspace::persist::startup_projection() {
+            *self.records.lock().expect("ask job records") = projection.ask_jobs;
+            return;
+        }
         let Ok(raw) = fs::read_to_string(Self::path()) else {
             return;
         };
@@ -121,16 +125,24 @@ impl AskJobStore {
 
     fn persist(&self, job_id: &str) {
         let mut guard = self.records.lock().expect("ask job records");
-        Self::prune_map(&mut guard);
-        let body = match serde_json::to_string_pretty(&*guard) {
-            Ok(body) => body,
-            Err(err) => {
-                eprintln!("ask_job_store: serialize failed: {err}");
-                return;
-            }
-        };
+        let mut changed = Self::prune_map(&mut guard);
+        if let Some(record) = guard.get(job_id).cloned() {
+            changed.push(record);
+        }
+        let retained = guard.keys().cloned().collect::<Vec<_>>();
         drop(guard);
-        let _ = crate::workspace::persist::queue_snapshot_ask_jobs(body);
+        changed.sort_by(|left, right| left.job_id.cmp(&right.job_id));
+        changed.dedup_by(|left, right| left.job_id == right.job_id);
+        for record in changed {
+            let _ = crate::workspace::persist::queue_mutation(
+                crate::workspace::persist::WorkspaceMutation::UpsertAskJob {
+                    record: Box::new(record),
+                },
+            );
+        }
+        let _ = crate::workspace::persist::queue_mutation(
+            crate::workspace::persist::WorkspaceMutation::RetainAskJobs { job_ids: retained },
+        );
         Self::notify_ask_job_changed(job_id);
     }
 
@@ -142,7 +154,8 @@ impl AskJobStore {
         );
     }
 
-    fn prune_map(map: &mut HashMap<String, AskJobRecord>) {
+    fn prune_map(map: &mut HashMap<String, AskJobRecord>) -> Vec<AskJobRecord> {
+        let mut changed = Vec::new();
         let retention = WorkspaceRetentionConfig::load();
         let cutoff = retention.wipe_cutoff(Utc::now());
         map.retain(|_, record| {
@@ -171,9 +184,11 @@ impl AskJobStore {
                     entry.output_text = None;
                     entry.interim_text = None;
                     entry.updated_at_utc = Utc::now();
+                    changed.push(entry.clone());
                 }
             }
         }
+        changed
     }
 
     pub fn register_pending(&self, record: AskJobRecord) {
