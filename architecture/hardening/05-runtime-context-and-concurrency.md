@@ -121,6 +121,15 @@ before invoking tools. Turn and inference-attempt stream pumps now abort on
 owner drop (including with live sender clones), closing the detached-delta leak;
 normal completion still drains in order.
 
+Durable workers now register a bounded live cancellation token before entering
+execution. Exact session-authorized cancellation changes the durable record and
+signals that generation under the same records-then-live lock order. Workers
+revalidate their durable profile/session authority, reconstruct a member-scoped
+`TurnExecutionContext`, and run provider/tool leaves under the live token and an
+absolute deadline. Duplicate execution admission is rejected, stale lease drop
+cannot remove a replacement token, and worker delta pumps abort on owner drop;
+durable status polling remains a restart/recovery backstop.
+
 The current H05.0 request-state inventory is:
 
 | State | Classification | Current action |

@@ -17,6 +17,7 @@ pub enum PrincipalKind {
     Portal,
     Peer,
     Root,
+    Worker,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -159,6 +160,19 @@ impl RequestPrincipal {
     pub fn continuation(profile_id: impl Into<String>) -> Self {
         Self {
             kind: PrincipalKind::Continuation,
+            credential_id: None,
+            profile_id: Some(profile_id.into()),
+            capabilities: CapabilitySet::member(),
+            transport: TransportClass::Loopback,
+            revocation_generation: 0,
+        }
+    }
+
+    /// Reauthorized durable worker principal. Workers inherit member authority
+    /// only and cannot recover host operator capabilities from ambient state.
+    pub fn worker(profile_id: impl Into<String>) -> Self {
+        Self {
+            kind: PrincipalKind::Worker,
             credential_id: None,
             profile_id: Some(profile_id.into()),
             capabilities: CapabilitySet::member(),
@@ -359,5 +373,14 @@ mod tests {
                 .contains(Capability::WorkshopInteract)
         );
         assert!(!principal.capabilities().contains(Capability::AdminExecute));
+    }
+
+    #[test]
+    fn worker_principal_is_member_scoped() {
+        let principal = RequestPrincipal::worker("user:alice");
+        assert_eq!(principal.kind(), PrincipalKind::Worker);
+        assert_eq!(principal.profile_id(), Some("user:alice"));
+        assert!(principal.capabilities().contains(Capability::ContentWrite));
+        assert!(!principal.capabilities().contains(Capability::AdminRuntime));
     }
 }

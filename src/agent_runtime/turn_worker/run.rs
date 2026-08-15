@@ -779,6 +779,30 @@ fn ledger_bus_event(
     persist_ledger_record(Some(session_id), &record);
 }
 
+struct WorkerChunkPump {
+    task: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl WorkerChunkPump {
+    fn new(task: tokio::task::JoinHandle<()>) -> Self {
+        Self { task: Some(task) }
+    }
+
+    async fn drain(mut self) {
+        if let Some(task) = self.task.take() {
+            let _ = task.await;
+        }
+    }
+}
+
+impl Drop for WorkerChunkPump {
+    fn drop(&mut self) {
+        if let Some(task) = self.task.take() {
+            task.abort();
+        }
+    }
+}
+
 pub async fn run_worker_turn(
     store: Arc<TurnWorkerStore>,
     ctx: WorkerRuntimeContext,
@@ -789,10 +813,82 @@ pub async fn run_worker_turn(
     let Some(record) = store.get(&work_id) else {
         return;
     };
+    let Some(identity_user_id) = record
+        .identity_user_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+    else {
+        store.update(&work_id, |record| {
+            record.status = TurnWorkStatus::Failed;
+            record.error = Some("worker execution identity is missing".to_string());
+        });
+        sink.notice(format!(
+            "◈ work_failed work_id={work_id} error=missing_identity"
+        ))
+        .await;
+        return;
+    };
+    if !crate::session_catalog::session_visible_to_profile(&record.session_id, &identity_user_id) {
+        store.update(&work_id, |record| {
+            record.status = TurnWorkStatus::Failed;
+            record.error = Some("worker session authority was revoked".to_string());
+        });
+        sink.notice(format!(
+            "◈ work_failed work_id={work_id} error=revoked_authority"
+        ))
+        .await;
+        return;
+    }
+    let Ok(session_id) = crate::session_storage::SessionId::parse(&record.session_id) else {
+        store.update(&work_id, |record| {
+            record.status = TurnWorkStatus::Failed;
+            record.error = Some("worker session id is invalid".to_string());
+        });
+        return;
+    };
+    let execution_lease = match store.register_execution(&work_id) {
+        Ok(lease) => lease,
+        Err(error) => {
+            sink.notice(format!(
+                "◈ work_execution_rejected work_id={work_id} reason={error:?}"
+            ))
+            .await;
+            return;
+        }
+    };
     let scope = worker_turn_scope(&record);
-    crate::agent_runtime::execution_context::with_legacy_turn_scope(
-        Arc::new(scope),
-        run_worker_turn_inner(store, ctx, work_id, sink, stream_turn_id, record),
+    let execution_context = Arc::new(
+        crate::agent_runtime::execution_context::TurnExecutionContext::new(
+            work_id.clone(),
+            record
+                .parent_turn_correlation_id
+                .clone()
+                .unwrap_or_else(|| work_id.clone()),
+            session_id,
+            crate::request_principal::RequestPrincipal::worker(identity_user_id),
+            crate::agent_runtime::execution_context::ProviderRoute::new(
+                record.provider.clone(),
+                record.model.clone(),
+            ),
+            crate::agent_runtime::execution_context::SurfaceCapabilities {
+                ui_artifacts: record.supports_ui_artifacts,
+                liquid_markdown: record.supports_liquid_markdown,
+                browser_host: record.supports_browser_host,
+            },
+            execution_lease.cancellation().clone(),
+            std::time::Instant::now() + std::time::Duration::from_secs(2 * 60 * 60),
+            scope.clone(),
+        ),
+    );
+    let _execution_lease = execution_lease;
+    crate::agent_runtime::execution_context::with_turn_execution_context(
+        execution_context,
+        crate::agent_runtime::execution_context::with_legacy_turn_scope(
+            Arc::new(scope),
+            run_worker_turn_inner(store, ctx, work_id, sink, stream_turn_id, record),
+        ),
     )
     .await;
 }
@@ -805,10 +901,16 @@ async fn run_worker_turn_inner(
     stream_turn_id: u64,
     record: TurnWorkRecord,
 ) {
-
-    store.update(&work_id, |r| {
-        r.status = TurnWorkStatus::Running;
+    store.update(&work_id, |record| {
+        if record.status == TurnWorkStatus::Pending {
+            record.status = TurnWorkStatus::Running;
+        }
     });
+    if store.is_work_cancelled(&work_id) {
+        sink.notice(format!("◈ work_cancelled work_id={work_id}"))
+            .await;
+        return;
+    }
     sink.notice(format!("◈ work_running work_id={work_id}"))
         .await;
 
@@ -982,7 +1084,7 @@ async fn run_worker_turn_inner(
     // draft output. The sink batches these before touching the store.
     let (chunk_tx, mut chunk_rx) = tokio::sync::mpsc::unbounded_channel::<StreamDelta>();
     let chunk_sink = sink.clone();
-    let chunk_pump = tokio::spawn(async move {
+    let chunk_pump = WorkerChunkPump::new(tokio::spawn(async move {
         while let Some(delta) = chunk_rx.recv().await {
             match delta {
                 StreamDelta::Content(delta) => chunk_sink.content_chunk(0, delta).await,
@@ -991,7 +1093,7 @@ async fn run_worker_turn_inner(
                 }
             }
         }
-    });
+    }));
 
     let result = worker_pipeline
         .execute_with_stream_prior_messages_max_rounds(
@@ -1005,7 +1107,7 @@ async fn run_worker_turn_inner(
         .await;
 
     drop(chunk_tx);
-    let _ = chunk_pump.await;
+    chunk_pump.drain().await;
 
     match result {
         Ok(response) => {
@@ -1051,6 +1153,18 @@ async fn run_worker_turn_inner(
             }
         }
         Err(err) => {
+            if store.is_work_cancelled(&work_id) {
+                store.update(&work_id, |record| {
+                    record.termination_reason = Some("workshop_cancelled".to_string());
+                });
+                sink.notice(format!("◈ work_cancelled work_id={work_id}"))
+                    .await;
+                if is_bound_workshop && let Some(cancelled) = store.get(&work_id) {
+                    crate::feed_adapters::publish_workshop_terminal(&cancelled, "cancelled", None)
+                        .await;
+                }
+                return;
+            }
             let message = err.to_string();
             store.update(&work_id, |r| {
                 r.status = TurnWorkStatus::Failed;
@@ -1077,7 +1191,6 @@ async fn run_worker_turn_inner(
             }
         }
     }
-
 }
 
 pub async fn resume_synthesis_if_needed(
@@ -1708,11 +1821,19 @@ mod tests {
 
     #[test]
     fn exact_cancel_cannot_cross_session_authority() {
-        let store = TurnWorkerStore::empty_for_tests();
+        let store = Arc::new(TurnWorkerStore::empty_for_tests());
         let mut record = sample_record(None, None);
         record.work_id = "session-a-worker".to_string();
         record.status = TurnWorkStatus::Running;
         store.insert(record);
+        let execution = store.register_execution("session-a-worker").unwrap();
+        assert_eq!(store.live_execution_count(), 1);
+        assert!(!execution.cancellation().is_cancelled());
+
+        assert!(matches!(
+            store.register_execution("session-a-worker"),
+            Err(super::super::store::WorkerExecutionRegistrationError::AlreadyRunning)
+        ));
 
         assert!(matches!(
             store.cancel_exact("session-b", "session-a-worker"),
@@ -1722,8 +1843,33 @@ mod tests {
             store.get("session-a-worker").unwrap().status,
             TurnWorkStatus::Running
         );
+        assert!(!execution.cancellation().is_cancelled());
 
         let cancelled = store.cancel_exact("s1", "session-a-worker").unwrap();
         assert_eq!(cancelled.status, TurnWorkStatus::Cancelled);
+        assert!(execution.cancellation().is_cancelled());
+
+        drop(execution);
+        assert_eq!(store.live_execution_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn dropped_worker_chunk_pump_aborts_with_live_sender() {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<()>();
+        let pump = WorkerChunkPump::new(tokio::spawn(async move {
+            while receiver.recv().await.is_some() {}
+        }));
+        let task = pump.task.as_ref().unwrap().abort_handle();
+
+        drop(pump);
+        for _ in 0..10 {
+            if task.is_finished() {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+
+        assert!(task.is_finished());
+        drop(sender);
     }
 }

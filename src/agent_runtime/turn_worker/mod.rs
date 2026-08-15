@@ -38,6 +38,6 @@ pub use run::{
 pub use status::{append_active_workers_hint, format_active_workers_block};
 pub use store::{
     BoundWorkshopAdmissionError, BoundWorkshopMutationError, TurnWorkDisposition, TurnWorkRecord,
-    TurnWorkStatus, TurnWorkerMutationError, TurnWorkerStore, WorkerToolActivity,
-    turn_worker_store,
+    TurnWorkStatus, TurnWorkerMutationError, TurnWorkerStore, WorkerExecutionLease,
+    WorkerExecutionRegistrationError, WorkerToolActivity, turn_worker_store,
 };

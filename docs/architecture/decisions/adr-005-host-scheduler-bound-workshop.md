@@ -16,6 +16,11 @@ The host console tool loop tried to be both a conversational partner and an exec
 5. **Deprecate** `cognition_turn_update_user` — workshop internal monologue replaces mid-turn host status tools.
 6. **Host FSM** — cooperative prose on host (`host_scheduler_lane`); worker/workshop FSM unchanged.
 
+Cancellation also names the exact `work_id` and is authorized against its
+owning session. If that generation is live, the same mutation signals its
+registered cancellation token immediately; the durable cancelled state remains
+the recovery truth across restart.
+
 ## Consequences
 
 **Positive**

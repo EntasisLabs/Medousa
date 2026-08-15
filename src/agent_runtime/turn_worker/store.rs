@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use tokio_util::sync::CancellationToken;
 
 use crate::agent_runtime::turn_context::WorkerHandoffCapsule;
 use crate::session;
@@ -160,6 +161,35 @@ pub struct TurnWorkRecord {
 
 pub struct TurnWorkerStore {
     records: Mutex<HashMap<String, TurnWorkRecord>>,
+    live_cancellations: Mutex<HashMap<String, Arc<CancellationToken>>>,
+}
+
+pub struct WorkerExecutionLease {
+    store: Arc<TurnWorkerStore>,
+    work_id: String,
+    cancellation: Arc<CancellationToken>,
+}
+
+impl WorkerExecutionLease {
+    pub fn cancellation(&self) -> &CancellationToken {
+        &self.cancellation
+    }
+}
+
+impl Drop for WorkerExecutionLease {
+    fn drop(&mut self) {
+        let mut live = self
+            .store
+            .live_cancellations
+            .lock()
+            .expect("turn worker cancellations");
+        if live
+            .get(&self.work_id)
+            .is_some_and(|current| Arc::ptr_eq(current, &self.cancellation))
+        {
+            live.remove(&self.work_id);
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,6 +212,14 @@ pub enum TurnWorkerMutationError {
     ForeignSession,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WorkerExecutionRegistrationError {
+    MissingWork,
+    NotActive,
+    AlreadyRunning,
+    AtCapacity { limit: usize },
+}
+
 impl Default for TurnWorkerStore {
     fn default() -> Self {
         Self::new()
@@ -192,6 +230,7 @@ impl TurnWorkerStore {
     pub fn new() -> Self {
         let store = Self {
             records: Mutex::new(HashMap::new()),
+            live_cancellations: Mutex::new(HashMap::new()),
         };
         store.reload_from_disk();
         store
@@ -201,6 +240,7 @@ impl TurnWorkerStore {
     pub(crate) fn empty_for_tests() -> Self {
         Self {
             records: Mutex::new(HashMap::new()),
+            live_cancellations: Mutex::new(HashMap::new()),
         }
     }
 
@@ -472,7 +512,22 @@ impl TurnWorkerStore {
 
     pub fn delete_session(&self, session_id: &str) -> Result<(), String> {
         let mut guard = self.records.lock().map_err(|error| error.to_string())?;
+        let removed_work_ids: Vec<_> = guard
+            .values()
+            .filter(|record| record.session_id == session_id)
+            .map(|record| record.work_id.clone())
+            .collect();
         guard.retain(|_, record| record.session_id != session_id);
+        let mut live = self
+            .live_cancellations
+            .lock()
+            .map_err(|error| error.to_string())?;
+        for work_id in &removed_work_ids {
+            if let Some(cancellation) = live.remove(work_id) {
+                cancellation.cancel();
+            }
+        }
+        drop(live);
         let body = serde_json::to_string_pretty(&*guard).map_err(|error| error.to_string())?;
         drop(guard);
         crate::workspace::persist::queue_snapshot_turn_workers(body);
@@ -568,9 +623,63 @@ impl TurnWorkerStore {
             record.updated_at = Utc::now();
         }
         let updated = record.clone();
+        if let Some(cancellation) = self
+            .live_cancellations
+            .lock()
+            .expect("turn worker cancellations")
+            .get(work_id)
+            .cloned()
+        {
+            cancellation.cancel();
+        }
         drop(records);
         self.persist(&updated.work_id, updated.stasis_job_id.as_deref());
         Ok(updated)
+    }
+
+    pub fn register_execution(
+        self: &Arc<Self>,
+        work_id: &str,
+    ) -> Result<WorkerExecutionLease, WorkerExecutionRegistrationError> {
+        let records = self.records.lock().expect("turn worker records");
+        let record = records
+            .get(work_id)
+            .ok_or(WorkerExecutionRegistrationError::MissingWork)?;
+        if !matches!(
+            record.status,
+            TurnWorkStatus::Pending | TurnWorkStatus::Running
+        ) {
+            return Err(WorkerExecutionRegistrationError::NotActive);
+        }
+        let mut live = self
+            .live_cancellations
+            .lock()
+            .expect("turn worker cancellations");
+        if live.contains_key(work_id) {
+            return Err(WorkerExecutionRegistrationError::AlreadyRunning);
+        }
+        if live.len() >= MAX_ACTIVE_TURN_WORKERS {
+            return Err(WorkerExecutionRegistrationError::AtCapacity {
+                limit: MAX_ACTIVE_TURN_WORKERS,
+            });
+        }
+        let cancellation = Arc::new(CancellationToken::new());
+        live.insert(work_id.to_string(), cancellation.clone());
+        drop(live);
+        drop(records);
+        Ok(WorkerExecutionLease {
+            store: self.clone(),
+            work_id: work_id.to_string(),
+            cancellation,
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn live_execution_count(&self) -> usize {
+        self.live_cancellations
+            .lock()
+            .expect("turn worker cancellations")
+            .len()
     }
 
     pub fn drain_steer_messages(&self, work_id: &str) -> Vec<WorkshopSteerMessage> {
@@ -614,6 +723,39 @@ mod tests {
     }
 
     #[test]
+    fn stale_execution_lease_cannot_remove_replacement_token() {
+        let store = Arc::new(TurnWorkerStore::empty_for_tests());
+        let stale_token = Arc::new(CancellationToken::new());
+        store
+            .live_cancellations
+            .lock()
+            .unwrap()
+            .insert("work-1".to_string(), stale_token.clone());
+        let stale = WorkerExecutionLease {
+            store: store.clone(),
+            work_id: "work-1".to_string(),
+            cancellation: stale_token,
+        };
+        let replacement = Arc::new(CancellationToken::new());
+        store
+            .live_cancellations
+            .lock()
+            .unwrap()
+            .insert("work-1".to_string(), replacement.clone());
+
+        drop(stale);
+
+        let current = store
+            .live_cancellations
+            .lock()
+            .unwrap()
+            .get("work-1")
+            .cloned()
+            .unwrap();
+        assert!(Arc::ptr_eq(&current, &replacement));
+    }
+
+    #[test]
     fn legacy_snapshot_is_migrated_without_deleting_source() {
         let temp = tempfile::tempdir().expect("temp data directory");
         let canonical = TurnWorkerStore::path_in(temp.path());
@@ -621,6 +763,7 @@ mod tests {
         fs::write(&legacy, "{}").expect("write legacy snapshot");
         let store = TurnWorkerStore {
             records: Mutex::new(HashMap::new()),
+            live_cancellations: Mutex::new(HashMap::new()),
         };
 
         store.reload_from_paths(&canonical, &legacy);

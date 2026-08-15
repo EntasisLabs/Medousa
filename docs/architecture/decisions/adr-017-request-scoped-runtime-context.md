@@ -109,6 +109,13 @@ execution. Sibling workers cannot replace one another's sink or host metadata.
 Removal uses the exact handle/generation, so late completion from an old worker
 cannot clear a replacement.
 
+Each live durable worker registers one bounded cancellation token keyed by its
+exact `work_id` before execution. The session-authorized cancel mutation updates
+the durable record and signals that same generation under one lock order. Worker
+provider/tool leaves run inside a reconstructed member-scoped execution context,
+so the signal interrupts the active leaf rather than waiting for the next
+durable polling round. Lease drop compare-removes only its own token generation.
+
 ADR-005's “one bound workshop per session” remains an admission rule for that
 mode. It is enforced by the session ticket/owner, not by a process-global bus
 slot. Independent sessions and explicitly parallel workers remain concurrent.
