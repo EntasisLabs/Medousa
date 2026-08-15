@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use medousa_browser_lite::{
     FetchResult, SearchResponse, markdown_from_html, search_response_from_ddg_html,
@@ -28,6 +28,8 @@ const BROWSER_CONTENT_LABEL: &str = "browser-content-popout";
 const BROWSER_CHROME_LABEL: &str = "browser-chrome";
 const MAX_BROWSER_URL_BYTES: usize = 8 * 1024;
 const MAX_BROWSER_TITLE_BYTES: usize = 512;
+const MAX_BROWSER_REPORTS_PER_SECOND: u32 = 64;
+const MAX_BROWSER_REQUEST_ID_BYTES: usize = 128;
 /// Workshop-layout fallback only (desktop freeform uses DOM host measure).
 /// Keep roughly in sync with AppTitlebar (~40) + browser toolbar (~36).
 const CHROME_HEIGHT_LOGICAL: f64 = 96.0;
@@ -74,10 +76,13 @@ impl BrowserSurface {
 
 #[derive(Debug, Clone)]
 struct BrowserWebviewIdentity {
+    label: String,
     surface: BrowserSurface,
     tab_id: Option<String>,
     navigation_generation: u64,
     current_url: String,
+    report_window_started: Instant,
+    report_count: u32,
 }
 
 static BROWSER_WEBVIEWS: LazyLock<Mutex<HashMap<String, BrowserWebviewIdentity>>> =
@@ -88,10 +93,13 @@ fn register_browser_webview(label: &str, surface: BrowserSurface, tab_id: Option
         webviews.insert(
             label.to_string(),
             BrowserWebviewIdentity {
+                label: label.to_string(),
                 surface,
                 tab_id,
                 navigation_generation: 0,
                 current_url: "about:blank".to_string(),
+                report_window_started: Instant::now(),
+                report_count: 0,
             },
         );
     }
@@ -116,6 +124,8 @@ fn begin_browser_navigation(label: &str, url: &str) -> Option<BrowserWebviewIden
     identity.navigation_generation = identity.navigation_generation.saturating_add(1);
     identity.current_url.clear();
     identity.current_url.push_str(url);
+    identity.report_window_started = Instant::now();
+    identity.report_count = 0;
     Some(identity.clone())
 }
 
@@ -133,6 +143,36 @@ fn set_browser_tab_identity(label: &str, tab_id: Option<String>) {
             identity.tab_id = tab_id;
         }
     }
+}
+
+fn admit_browser_report(label: &str) -> Result<BrowserWebviewIdentity, String> {
+    let mut webviews = BROWSER_WEBVIEWS
+        .lock()
+        .map_err(|_| "browser webview registry is unavailable".to_string())?;
+    let identity = webviews
+        .get_mut(label)
+        .ok_or_else(|| "browser webview is not registered".to_string())?;
+    let now = Instant::now();
+    if now.duration_since(identity.report_window_started) >= Duration::from_secs(1) {
+        identity.report_window_started = now;
+        identity.report_count = 0;
+    }
+    if identity.report_count >= MAX_BROWSER_REPORTS_PER_SECOND {
+        return Err("browser report rate limit exceeded".to_string());
+    }
+    identity.report_count += 1;
+    Ok(identity.clone())
+}
+
+fn validate_request_id(request_id: &str) -> Result<&str, String> {
+    let request_id = request_id.trim();
+    if request_id.is_empty()
+        || request_id.len() > MAX_BROWSER_REQUEST_ID_BYTES
+        || !request_id.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+    {
+        return Err("invalid browser request id".to_string());
+    }
+    Ok(request_id)
 }
 
 fn is_allowed_browser_navigation(url: &url::Url) -> bool {
@@ -471,6 +511,7 @@ impl BrowserPendingReply {
 }
 
 struct BrowserPendingRequest {
+    webview_label: String,
     surface: BrowserSurface,
     navigation_generation: u64,
     reply: BrowserPendingReply,
@@ -503,10 +544,44 @@ pub struct BrowserRequestDiagnostics {
     pub capacity_rejected: u64,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub(crate) enum BrowserPageReportV1 {
+    Snapshot {
+        request_id: String,
+        html: String,
+    },
+    Action {
+        request_id: String,
+        ok: bool,
+        #[serde(default)]
+        error: Option<String>,
+    },
+    NavQuery {
+        request_id: String,
+        can_go_back: bool,
+        can_go_forward: bool,
+    },
+    Find {
+        request_id: String,
+        found: bool,
+    },
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct BrowserPageReport {
+    version: u8,
+    #[serde(flatten)]
+    report: BrowserPageReportV1,
+}
+
 #[derive(Default)]
 struct BrowserBrokerState {
-    embed_navigation_generation: u64,
-    popout_navigation_generation: u64,
     pending: HashMap<String, BrowserPendingRequest>,
     counters: BrowserBrokerCounters,
     high_water: usize,
@@ -517,6 +592,31 @@ struct BrowserHostState {
     broker: Mutex<BrowserBrokerState>,
 }
 
+trait BrowserRequestIdentity {
+    fn request_identity(self) -> BrowserWebviewIdentity;
+}
+
+impl BrowserRequestIdentity for &BrowserWebviewIdentity {
+    fn request_identity(self) -> BrowserWebviewIdentity {
+        self.clone()
+    }
+}
+
+#[cfg(test)]
+impl BrowserRequestIdentity for BrowserSurface {
+    fn request_identity(self) -> BrowserWebviewIdentity {
+        BrowserWebviewIdentity {
+            label: format!("test-{}", self.as_str()),
+            surface: self,
+            tab_id: None,
+            navigation_generation: 0,
+            current_url: "https://example.test/".to_string(),
+            report_window_started: Instant::now(),
+            report_count: 0,
+        }
+    }
+}
+
 impl BrowserHostState {
     fn new() -> Self {
         Self {
@@ -525,19 +625,14 @@ impl BrowserHostState {
         }
     }
 
-    fn navigation_generation(state: &BrowserBrokerState, surface: BrowserSurface) -> u64 {
-        match surface {
-            BrowserSurface::Embed => state.embed_navigation_generation,
-            BrowserSurface::Popout => state.popout_navigation_generation,
-        }
-    }
-
-    fn register(
+    fn register<I: BrowserRequestIdentity>(
         &self,
-        surface: BrowserSurface,
+        identity: I,
         reply: BrowserPendingReply,
     ) -> Result<String, String> {
+        let identity = identity.request_identity();
         let mut state = self.broker.lock().expect("browser request broker");
+        let surface = identity.surface;
         if state.pending.len() >= MAX_BROWSER_PENDING_REQUESTS {
             state.counters.capacity_rejected =
                 state.counters.capacity_rejected.saturating_add(1);
@@ -560,12 +655,12 @@ impl BrowserHostState {
         }
         let sequence = self.next_request_id.fetch_add(1, Ordering::Relaxed);
         let request_id = format!("browser-{sequence}");
-        let navigation_generation = Self::navigation_generation(&state, surface);
         state.pending.insert(
             request_id.clone(),
             BrowserPendingRequest {
+                webview_label: identity.label.clone(),
                 surface,
-                navigation_generation,
+                navigation_generation: identity.navigation_generation,
                 reply,
             },
         );
@@ -573,12 +668,13 @@ impl BrowserHostState {
         Ok(request_id)
     }
 
-    fn take(
+    fn take<I: BrowserRequestIdentity>(
         &self,
         request_id: &str,
-        surface: BrowserSurface,
+        identity: I,
         kind: BrowserRequestKind,
     ) -> Option<BrowserPendingReply> {
+        let identity = identity.request_identity();
         let mut state = self.broker.lock().expect("browser request broker");
         let Some(pending) = state.pending.get(request_id) else {
             state.counters.late_or_unsolicited =
@@ -589,12 +685,12 @@ impl BrowserHostState {
             state.counters.wrong_kind = state.counters.wrong_kind.saturating_add(1);
             return None;
         }
-        if pending.surface != surface {
+        if pending.surface != identity.surface || pending.webview_label != identity.label {
             state.counters.wrong_surface = state.counters.wrong_surface.saturating_add(1);
             return None;
         }
         let pending = state.pending.remove(request_id).expect("pending request exists");
-        if pending.navigation_generation != Self::navigation_generation(&state, surface) {
+        if pending.navigation_generation != identity.navigation_generation {
             state.counters.stale_navigation =
                 state.counters.stale_navigation.saturating_add(1);
             return None;
@@ -612,16 +708,6 @@ impl BrowserHostState {
 
     fn advance_navigation(&self, surface: BrowserSurface) {
         let mut state = self.broker.lock().expect("browser request broker");
-        match surface {
-            BrowserSurface::Embed => {
-                state.embed_navigation_generation =
-                    state.embed_navigation_generation.wrapping_add(1);
-            }
-            BrowserSurface::Popout => {
-                state.popout_navigation_generation =
-                    state.popout_navigation_generation.wrapping_add(1);
-            }
-        }
         let before = state.pending.len();
         state.pending.retain(|_, pending| pending.surface != surface);
         state.counters.cancelled = state
@@ -653,6 +739,127 @@ impl BrowserHostState {
 }
 
 static BROWSER_HOST_STATE: LazyLock<BrowserHostState> = LazyLock::new(BrowserHostState::new);
+
+fn request_identity<R: tauri::Runtime>(
+    webview: &tauri::Webview<R>,
+    expected_surface: BrowserSurface,
+) -> Result<BrowserWebviewIdentity, String> {
+    let identity = browser_webview_identity(webview.label())
+        .ok_or_else(|| "browser webview is not registered".to_string())?;
+    if identity.surface != expected_surface {
+        return Err("browser webview surface mismatch".to_string());
+    }
+    let native_url = webview.url().map_err(|err| err.to_string())?;
+    if !is_allowed_browser_navigation(&native_url) || native_url.as_str() == "about:blank" {
+        return Err("browser webview has no reportable HTTP(S) document".to_string());
+    }
+    if identity.current_url != native_url.as_str() {
+        return Err("browser webview navigation identity is stale".to_string());
+    }
+    Ok(identity)
+}
+
+pub(crate) fn accept_browser_page_report<R: tauri::Runtime>(
+    webview: tauri::Webview<R>,
+    message: BrowserPageReport,
+) -> Result<(), String> {
+    if message.version != 1 {
+        return Err("unsupported browser report version".to_string());
+    }
+    let registered = browser_webview_identity(webview.label())
+        .ok_or_else(|| "browser webview is not registered".to_string())?;
+    let _ = request_identity(&webview, registered.surface)?;
+    let identity = admit_browser_report(webview.label())?;
+    let native_url = identity.current_url.clone();
+    let surface = identity.surface.as_str().to_string();
+
+    match message.report {
+        BrowserPageReportV1::Snapshot { request_id, html } => {
+            let validated_request_id = validate_request_id(&request_id)?;
+            if html.len() > MAX_SNAPSHOT_REPORT_BYTES {
+                BROWSER_HOST_STATE.cancel_request(validated_request_id);
+                BROWSER_HOST_STATE.record_oversize();
+                return Err(format!(
+                    "snapshot exceeds {MAX_SNAPSHOT_REPORT_BYTES} byte limit"
+                ));
+            }
+            if let Some(BrowserPendingReply::Snapshot(tx)) = BROWSER_HOST_STATE.take(
+                validated_request_id,
+                &identity,
+                BrowserRequestKind::Snapshot,
+            ) {
+                let _ = tx.send(SnapshotReport {
+                    request_id,
+                    surface,
+                    url: native_url,
+                    html,
+                });
+            }
+        }
+        BrowserPageReportV1::Action {
+            request_id,
+            ok,
+            error,
+        } => {
+            let validated_request_id = validate_request_id(&request_id)?;
+            let report_bytes = request_id.len() + error.as_deref().map_or(0, str::len);
+            if report_bytes > MAX_BROWSER_CONTROL_REPORT_BYTES {
+                BROWSER_HOST_STATE.cancel_request(validated_request_id);
+                BROWSER_HOST_STATE.record_oversize();
+                return Err(format!(
+                    "browser action report exceeds {MAX_BROWSER_CONTROL_REPORT_BYTES} byte limit"
+                ));
+            }
+            if let Some(BrowserPendingReply::Act(tx)) = BROWSER_HOST_STATE.take(
+                validated_request_id,
+                &identity,
+                BrowserRequestKind::Act,
+            ) {
+                let _ = tx.send(BrowserActReport {
+                    request_id,
+                    surface,
+                    ok,
+                    url: native_url,
+                    error,
+                });
+            }
+        }
+        BrowserPageReportV1::NavQuery {
+            request_id,
+            can_go_back,
+            can_go_forward,
+        } => {
+            let validated_request_id = validate_request_id(&request_id)?;
+            let payload = HumanBrowserNavStatePayload {
+                can_go_back,
+                can_go_forward,
+                surface,
+                request_id: Some(request_id.clone()),
+            };
+            if let Some(BrowserPendingReply::Navigation(tx)) = BROWSER_HOST_STATE.take(
+                validated_request_id,
+                &identity,
+                BrowserRequestKind::Navigation,
+            ) {
+                let _ = tx.send(payload.clone());
+                if let Some(app) = app_handle() {
+                    emit_nav_state(&app, identity.surface, can_go_back, can_go_forward);
+                }
+            }
+        }
+        BrowserPageReportV1::Find { request_id, found } => {
+            let validated_request_id = validate_request_id(&request_id)?;
+            if let Some(BrowserPendingReply::Find(tx)) = BROWSER_HOST_STATE.take(
+                validated_request_id,
+                &identity,
+                BrowserRequestKind::Find,
+            ) {
+                let _ = tx.send(FindInPageResult { found });
+            }
+        }
+    }
+    Ok(())
+}
 
 #[tauri::command]
 pub fn human_browser_request_diagnostics() -> BrowserRequestDiagnostics {
@@ -1114,13 +1321,6 @@ fn emit_new_window(app: &AppHandle, surface: BrowserSurface, url: &str) {
             surface: surface.as_str().to_string(),
         },
     );
-}
-
-fn parse_surface(raw: Option<&str>) -> BrowserSurface {
-    match raw {
-        Some("popout") => BrowserSurface::Popout,
-        _ => BrowserSurface::Embed,
-    }
 }
 
 fn content_builder(
@@ -2849,7 +3049,7 @@ try{{
   var url=window.location.href||"";
   var i=window.__TAURI_INTERNALS__||window.__TAURI__;
   if(!i||!i.invoke)return;
-  i.invoke("human_browser_report_snapshot",{{payload:{{requestId:{request_id},surface:"embed",url:url,html:html}}}});
+  i.invoke("plugin:browser-bridge|report",{{report:{{version:1,kind:"snapshot",requestId:{request_id},html:html}}}});
 }}catch(e){{}}
 }})();"#))
 }
@@ -2881,7 +3081,7 @@ try{{
   function done(ok,error){{
     var i=window.__TAURI_INTERNALS__||window.__TAURI__;
     if(!i||!i.invoke)return;
-    i.invoke("human_browser_report_act",{{payload:{{requestId:requestId,surface:"embed",ok:ok,url:window.location.href||"",error:error||null}}}});
+    i.invoke("plugin:browser-bridge|report",{{report:{{version:1,kind:"action",requestId:requestId,ok:ok,error:error||null}}}});
   }}
   function visible(el){{
     if(!el)return false;
@@ -2917,33 +3117,9 @@ try{{
       return;
     default: done(false,"unsupported action: "+req.action); return;
   }}
-}}catch(e){{try{{var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(i&&i.invoke)i.invoke("human_browser_report_act",{{payload:{{requestId:requestId,surface:"embed",ok:false,url:"",error:String(e)}}}});}}catch(_err){{}}}}
+}}catch(e){{try{{var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(i&&i.invoke)i.invoke("plugin:browser-bridge|report",{{report:{{version:1,kind:"action",requestId:requestId,ok:false,error:String(e)}}}});}}catch(_err){{}}}}
 }})();"#
     ))
-}
-
-#[tauri::command]
-pub fn human_browser_report_act(payload: BrowserActReport) -> Result<(), String> {
-    let report_bytes = payload.request_id.len()
-        + payload.surface.len()
-        + payload.url.len()
-        + payload.error.as_deref().map_or(0, str::len);
-    if report_bytes > MAX_BROWSER_CONTROL_REPORT_BYTES {
-        BROWSER_HOST_STATE.cancel_request(payload.request_id.trim());
-        BROWSER_HOST_STATE.record_oversize();
-        return Err(format!(
-            "browser action report exceeds {MAX_BROWSER_CONTROL_REPORT_BYTES} byte limit"
-        ));
-    }
-    let surface = parse_surface(Some(payload.surface.as_str()));
-    if let Some(BrowserPendingReply::Act(tx)) = BROWSER_HOST_STATE.take(
-        payload.request_id.trim(),
-        surface,
-        BrowserRequestKind::Act,
-    ) {
-        let _ = tx.send(payload);
-    }
-    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2970,9 +3146,10 @@ pub async fn browser_act_embed(
 ) -> Result<BrowserActReport, String> {
     let content = embedded_content_webview(app)
         .ok_or_else(|| "browser content webview not ready".to_string())?;
+    let identity = request_identity(&content, BrowserSurface::Embed)?;
     let (tx, rx) = oneshot::channel();
     let request_id = BROWSER_HOST_STATE.register(
-        BrowserSurface::Embed,
+        &identity,
         BrowserPendingReply::Act(tx),
     )?;
     let _guard = BrowserPendingGuard::new(&BROWSER_HOST_STATE, request_id.clone());
@@ -2985,32 +3162,13 @@ pub async fn browser_act_embed(
         .map_err(|_| "browser act channel closed".to_string())
 }
 
-#[tauri::command]
-pub fn human_browser_report_snapshot(payload: SnapshotReport) -> Result<(), String> {
-    let surface = parse_surface(Some(payload.surface.as_str()));
-    if payload.html.len() > MAX_SNAPSHOT_REPORT_BYTES {
-        BROWSER_HOST_STATE.cancel_request(payload.request_id.trim());
-        BROWSER_HOST_STATE.record_oversize();
-        return Err(format!(
-            "snapshot exceeds {MAX_SNAPSHOT_REPORT_BYTES} byte limit"
-        ));
-    }
-    if let Some(BrowserPendingReply::Snapshot(tx)) = BROWSER_HOST_STATE.take(
-        payload.request_id.trim(),
-        surface,
-        BrowserRequestKind::Snapshot,
-    ) {
-        let _ = tx.send(payload);
-    }
-    Ok(())
-}
-
 async fn capture_html(app: &AppHandle) -> Result<SnapshotReport, String> {
     let content = embedded_content_webview(app)
         .ok_or_else(|| "browser content webview not ready".to_string())?;
+    let identity = request_identity(&content, BrowserSurface::Embed)?;
     let (tx, rx) = oneshot::channel();
     let request_id = BROWSER_HOST_STATE.register(
-        BrowserSurface::Embed,
+        &identity,
         BrowserPendingReply::Snapshot(tx),
     )?;
     let _guard = BrowserPendingGuard::new(&BROWSER_HOST_STATE, request_id.clone());
@@ -3077,46 +3235,6 @@ pub async fn snapshot_markdown_for_url(
 }
 
 #[tauri::command]
-pub fn human_browser_report_nav_state(payload: HumanBrowserNavStatePayload) -> Result<(), String> {
-    let surface = parse_surface(Some(payload.surface.as_str()));
-    if let Some(request_id) = payload.request_id.as_deref() {
-        if let Some(BrowserPendingReply::Navigation(tx)) = BROWSER_HOST_STATE.take(
-            request_id.trim(),
-            surface,
-            BrowserRequestKind::Navigation,
-        ) {
-            let _ = tx.send(payload.clone());
-        }
-    }
-    if let Some(app) = app_handle() {
-        emit_nav_state(
-            &app,
-            parse_surface(Some(payload.surface.as_str())),
-            payload.can_go_back,
-            payload.can_go_forward,
-        );
-    }
-    Ok(())
-}
-
-#[tauri::command]
-pub fn human_browser_report_find_result(
-    found: bool,
-    request_id: Option<String>,
-    surface: Option<String>,
-) -> Result<(), String> {
-    let request_id = request_id.unwrap_or_default();
-    if let Some(BrowserPendingReply::Find(tx)) = BROWSER_HOST_STATE.take(
-        request_id.trim(),
-        parse_surface(surface.as_deref()),
-        BrowserRequestKind::Find,
-    ) {
-        let _ = tx.send(FindInPageResult { found });
-    }
-    Ok(())
-}
-
-#[tauri::command]
 pub async fn human_browser_stop(app: AppHandle) -> Result<(), String> {
     let content = embedded_content_webview(&app)
         .ok_or_else(|| "browser content webview not ready".to_string())?;
@@ -3142,16 +3260,17 @@ pub async fn human_browser_query_nav_state(
 ) -> Result<HumanBrowserNavStatePayload, String> {
     let content = embedded_content_webview(&app)
         .ok_or_else(|| "browser content webview not ready".to_string())?;
+    let identity = request_identity(&content, BrowserSurface::Embed)?;
     let (tx, rx) = oneshot::channel();
     let request_id = BROWSER_HOST_STATE.register(
-        BrowserSurface::Embed,
+        &identity,
         BrowserPendingReply::Navigation(tx),
     )?;
     let _guard = BrowserPendingGuard::new(&BROWSER_HOST_STATE, request_id.clone());
     let request_id = serde_json::to_string(&request_id).map_err(|err| err.to_string())?;
     content
         .eval(&format!(
-            r#"(function(){{try{{var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;i.invoke('human_browser_report_nav_state',{{payload:{{canGoBack:window.history.length>1,canGoForward:false,surface:'embed',requestId:{request_id}}}}});}}catch(e){{}}}})();"#,
+            r#"(function(){{try{{var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;i.invoke('plugin:browser-bridge|report',{{report:{{version:1,kind:'navQuery',requestId:{request_id},canGoBack:window.history.length>1,canGoForward:false}}}});}}catch(e){{}}}})();"#,
         ))
         .map_err(|err| err.to_string())?;
     tokio::time::timeout(Duration::from_secs(2), rx)
@@ -3166,16 +3285,17 @@ pub async fn human_browser_popout_query_nav_state(
 ) -> Result<HumanBrowserNavStatePayload, String> {
     let content = popout_content_webview(&app)
         .ok_or_else(|| "pop-out browser content not ready".to_string())?;
+    let identity = request_identity(&content, BrowserSurface::Popout)?;
     let (tx, rx) = oneshot::channel();
     let request_id = BROWSER_HOST_STATE.register(
-        BrowserSurface::Popout,
+        &identity,
         BrowserPendingReply::Navigation(tx),
     )?;
     let _guard = BrowserPendingGuard::new(&BROWSER_HOST_STATE, request_id.clone());
     let request_id = serde_json::to_string(&request_id).map_err(|err| err.to_string())?;
     content
         .eval(&format!(
-            r#"(function(){{try{{var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;i.invoke('human_browser_report_nav_state',{{payload:{{canGoBack:window.history.length>1,canGoForward:false,surface:'popout',requestId:{request_id}}}}});}}catch(e){{}}}})();"#,
+            r#"(function(){{try{{var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;i.invoke('plugin:browser-bridge|report',{{report:{{version:1,kind:'navQuery',requestId:{request_id},canGoBack:window.history.length>1,canGoForward:false}}}});}}catch(e){{}}}})();"#,
         ))
         .map_err(|err| err.to_string())?;
     tokio::time::timeout(Duration::from_secs(2), rx)
@@ -3196,9 +3316,10 @@ pub async fn human_browser_find_in_page(
     }
     let content = embedded_content_webview(&app)
         .ok_or_else(|| "browser content webview not ready".to_string())?;
+    let identity = request_identity(&content, BrowserSurface::Embed)?;
     let (tx, rx) = oneshot::channel();
     let request_id = BROWSER_HOST_STATE.register(
-        BrowserSurface::Embed,
+        &identity,
         BrowserPendingReply::Find(tx),
     )?;
     let _guard = BrowserPendingGuard::new(&BROWSER_HOST_STATE, request_id.clone());
@@ -3210,7 +3331,7 @@ pub async fn human_browser_find_in_page(
     let query_json = serde_json::to_string(trimmed).map_err(|err| err.to_string())?;
     let request_id = serde_json::to_string(&request_id).map_err(|err| err.to_string())?;
     let script = format!(
-        r#"(function(){{try{{var q={query_json};var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;var found=window.find(q,false,{forward_lit},true,false,true,false);i.invoke('human_browser_report_find_result',{{found:!!found,requestId:{request_id},surface:'embed'}});}}catch(e){{}}}})();"#
+        r#"(function(){{try{{var q={query_json};var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;var found=window.find(q,false,{forward_lit},true,false,true,false);i.invoke('plugin:browser-bridge|report',{{report:{{version:1,kind:'find',requestId:{request_id},found:!!found}}}});}}catch(e){{}}}})();"#
     );
     content.eval(&script).map_err(|err| err.to_string())?;
     tokio::time::timeout(Duration::from_secs(2), rx)
@@ -3231,9 +3352,10 @@ pub async fn human_browser_popout_find_in_page(
     }
     let content = popout_content_webview(&app)
         .ok_or_else(|| "pop-out browser content not ready".to_string())?;
+    let identity = request_identity(&content, BrowserSurface::Popout)?;
     let (tx, rx) = oneshot::channel();
     let request_id = BROWSER_HOST_STATE.register(
-        BrowserSurface::Popout,
+        &identity,
         BrowserPendingReply::Find(tx),
     )?;
     let _guard = BrowserPendingGuard::new(&BROWSER_HOST_STATE, request_id.clone());
@@ -3245,7 +3367,7 @@ pub async fn human_browser_popout_find_in_page(
     let query_json = serde_json::to_string(trimmed).map_err(|err| err.to_string())?;
     let request_id = serde_json::to_string(&request_id).map_err(|err| err.to_string())?;
     let script = format!(
-        r#"(function(){{try{{var q={query_json};var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;var found=window.find(q,false,{forward_lit},true,false,true,false);i.invoke('human_browser_report_find_result',{{found:!!found,requestId:{request_id},surface:'popout'}});}}catch(e){{}}}})();"#
+        r#"(function(){{try{{var q={query_json};var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;var found=window.find(q,false,{forward_lit},true,false,true,false);i.invoke('plugin:browser-bridge|report',{{report:{{version:1,kind:'find',requestId:{request_id},found:!!found}}}});}}catch(e){{}}}})();"#
     );
     content.eval(&script).map_err(|err| err.to_string())?;
     tokio::time::timeout(Duration::from_secs(2), rx)
@@ -3309,6 +3431,66 @@ mod request_broker_tests {
         assert_eq!(second.current_url, "https://example.test/two");
         unregister_browser_webview(label);
         assert!(browser_webview_identity(label).is_none());
+    }
+
+    #[test]
+    fn report_envelope_is_versioned_and_closed() {
+        let report: BrowserPageReport = serde_json::from_value(serde_json::json!({
+            "version": 1,
+            "kind": "find",
+            "requestId": "browser-1",
+            "found": true
+        }))
+        .unwrap();
+        assert!(matches!(report.report, BrowserPageReportV1::Find { found: true, .. }));
+
+        assert!(serde_json::from_value::<BrowserPageReport>(serde_json::json!({
+            "version": 1,
+            "kind": "find",
+            "requestId": "browser-1",
+            "found": true,
+            "authority": "shell"
+        }))
+        .is_err());
+        assert!(serde_json::from_value::<BrowserPageReport>(serde_json::json!({
+            "version": 1,
+            "kind": "hotkey",
+            "requestId": "browser-1"
+        }))
+        .is_err());
+    }
+
+    #[test]
+    fn broker_rejects_same_surface_wrong_webview_and_generation() {
+        let state = BrowserHostState::new();
+        let identity = BrowserWebviewIdentity {
+            label: "browser-content-embed-a".to_string(),
+            surface: BrowserSurface::Embed,
+            tab_id: Some("a".to_string()),
+            navigation_generation: 7,
+            current_url: "https://example.test/".to_string(),
+            report_window_started: Instant::now(),
+            report_count: 0,
+        };
+        let (tx, _rx) = oneshot::channel();
+        let request_id = state
+            .register(&identity, BrowserPendingReply::Find(tx))
+            .unwrap();
+
+        let mut forged = identity.clone();
+        forged.label = "browser-content-embed-b".to_string();
+        assert!(state
+            .take(&request_id, &forged, BrowserRequestKind::Find)
+            .is_none());
+        assert_eq!(state.diagnostics().pending, 1);
+
+        let mut stale = identity.clone();
+        stale.navigation_generation += 1;
+        assert!(state
+            .take(&request_id, &stale, BrowserRequestKind::Find)
+            .is_none());
+        assert_eq!(state.diagnostics().pending, 0);
+        assert_eq!(state.diagnostics().stale_navigation, 1);
     }
 
     fn snapshot(request_id: &str, marker: &str) -> SnapshotReport {

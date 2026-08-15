@@ -13,6 +13,7 @@ const sortedUnique = (values) => [...new Set(values)].sort();
 const trusted = await readJson(join(tauriRoot, "capabilities", "default.json"));
 const remote = await readJson(join(tauriRoot, "capabilities", "browser-tab-webviews.json"));
 const lib = await readFile(join(tauriRoot, "src", "lib.rs"), "utf8");
+const bridge = await readFile(join(tauriRoot, "src", "browser_report_bridge.rs"), "utf8");
 const handlerStart = lib.indexOf(".invoke_handler(tauri::generate_handler![");
 assert.notEqual(handlerStart, -1, "Tauri application invoke handler was not found");
 const handlerEnd = lib.indexOf("\n        ])", handlerStart);
@@ -23,6 +24,12 @@ const applicationCommands = sortedUnique(
     ([, command]) => command,
   ),
 );
+const browserBridgeCommands = sortedUnique(
+  [...bridge.matchAll(/#\[tauri::command\]\s+fn\s+([A-Za-z_][\w]*)/g)].map(
+    ([, command]) => command,
+  ),
+);
+assert.deepEqual(browserBridgeCommands, ["report"], "browser bridge must expose exactly one command");
 
 const permissionId = (permission) =>
   typeof permission === "string" ? permission : permission.identifier;
@@ -39,7 +46,11 @@ assert.deepEqual(
   ["browser-content-embed-*", "browser-content-popout"],
   "remote capability labels changed; review their authority before updating the inventory",
 );
-assert.deepEqual(remotePermissions, [], "H08.0 remote webviews must have zero permissions");
+assert.deepEqual(
+  remotePermissions,
+  ["browser-bridge:allow-report"],
+  "remote webviews may receive only the report-only browser bridge",
+);
 assert.ok(trustedWebviews.includes("main"), "main shell webview must retain trusted authority");
 assert.ok(
   trustedWebviews.includes("browser-chrome"),
@@ -59,6 +70,9 @@ assert.equal(
 const inventory = {
   schemaVersion: 1,
   applicationCommands,
+  plugins: {
+    "browser-bridge": browserBridgeCommands,
+  },
   trusted: {
     webviews: trustedWebviews,
     permissions: sortedUnique(trustedPermissions),

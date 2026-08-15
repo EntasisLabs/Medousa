@@ -261,10 +261,6 @@
     "human_browser::human_browser_popout_stop",
     "human_browser::human_browser_query_nav_state",
     "human_browser::human_browser_reload",
-    "human_browser::human_browser_report_act",
-    "human_browser::human_browser_report_find_result",
-    "human_browser::human_browser_report_nav_state",
-    "human_browser::human_browser_report_snapshot",
     "human_browser::human_browser_request_diagnostics",
     "human_browser::human_browser_set_mobile_shell_active",
     "human_browser::human_browser_snapshot_html",
@@ -429,6 +425,11 @@
     "workshop_registry::workshops_update_branding",
     "workshop_registry::workshops_update_client_state"
   ],
+  "plugins": {
+    "browser-bridge": [
+      "report"
+    ]
+  },
   "trusted": {
     "webviews": [
       "browser-chrome",
@@ -467,6 +468,8 @@
       "https://*",
       "http://*"
     ],
-    "permissions": []
+    "permissions": [
+      "browser-bridge:allow-report"
+    ]
   }
 }

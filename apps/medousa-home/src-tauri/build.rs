@@ -5,7 +5,11 @@ fn main() {
         compile_ios_live_activity();
         println!("cargo:rustc-link-lib=framework=WebKit");
     }
-    tauri_build::build();
+    let attributes = tauri_build::Attributes::new().plugin(
+        "browser-bridge",
+        tauri_build::InlinedPlugin::new().commands(&["report"]),
+    );
+    tauri_build::try_build(attributes).expect("failed to build Tauri application metadata");
 }
 
 fn is_ios_build_target() -> bool {

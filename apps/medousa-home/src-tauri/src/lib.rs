@@ -6,6 +6,8 @@ mod autostart;
 mod badge;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod browser_host;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+mod browser_report_bridge;
 #[cfg(any(target_os = "ios", target_os = "android"))]
 mod browser_host_mobile;
 mod capabilities;
@@ -80,6 +82,11 @@ pub fn run() {
     }
 
     let mut builder = tauri::Builder::default();
+
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        builder = builder.plugin(browser_report_bridge::init());
+    }
 
     // UIKit otherwise shrinks WKWebView scroll content and exposes window background
     // as a band below fixed bottom UI (matches env(safe-area-inset-bottom) ~34px).
@@ -442,10 +449,6 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_set_mobile_shell_active,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            human_browser::human_browser_report_snapshot,
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            human_browser::human_browser_report_act,
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_snapshot_html,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_snapshot_markdown,
@@ -460,13 +463,9 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_popout_query_nav_state,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            human_browser::human_browser_report_nav_state,
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_find_in_page,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_popout_find_in_page,
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            human_browser::human_browser_report_find_result,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_request_diagnostics,
             #[cfg(target_os = "android")]

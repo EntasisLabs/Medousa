@@ -8,5 +8,5 @@
   "remote": {
     "urls": ["https://*", "http://*"]
   },
-  "permissions": []
+  "permissions": ["browser-bridge:allow-report"]
 }
