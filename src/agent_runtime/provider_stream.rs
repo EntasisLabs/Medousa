@@ -6,6 +6,7 @@ use tokio::sync::{Semaphore, mpsc};
 use super::stream_sink::SharedAgentStreamSink;
 
 pub(crate) const PROVIDER_STREAM_MESSAGE_CAPACITY: usize = 256;
+const PROVIDER_ATTEMPT_INGRESS_CAPACITY: usize = 1;
 pub(crate) const PROVIDER_STREAM_BYTE_CAPACITY: usize = 1024 * 1024;
 const GLOBAL_PROVIDER_STREAM_BYTE_CAPACITY: usize = 64 * 1024 * 1024;
 
@@ -93,11 +94,10 @@ impl Drop for ProviderStreamBridge {
     }
 }
 
-/// The provider API is fixed to an unbounded Tokio sender. This compatibility
-/// pump never blocks on downstream work: it admits into bounded memory or marks
-/// the attempt overflowed so the turn fails visibly after the provider returns.
+/// One provider attempt's bounded ingress. Stasis awaits this sender, so a slow
+/// journal/UI path propagates capacity pressure all the way to the provider.
 pub(crate) struct ProviderStreamAttempt {
-    sender: Option<mpsc::UnboundedSender<StreamDelta>>,
+    sender: Option<mpsc::Sender<StreamDelta>>,
     pump: Option<tokio::task::JoinHandle<ProviderStreamReport>>,
 }
 
@@ -107,7 +107,8 @@ impl ProviderStreamAttempt {
         turn_bytes: Arc<Semaphore>,
         global_bytes: Arc<Semaphore>,
     ) -> Self {
-        let (sender, mut receiver) = mpsc::unbounded_channel::<StreamDelta>();
+        let (sender, mut receiver) =
+            mpsc::channel::<StreamDelta>(PROVIDER_ATTEMPT_INGRESS_CAPACITY);
         let pump = tokio::spawn(async move {
             let mut report = ProviderStreamReport::default();
             while let Some(delta) = receiver.recv().await {
@@ -120,26 +121,30 @@ impl ProviderStreamAttempt {
                     report.overflowed = true;
                     continue;
                 }
-                let Ok(turn_permit) = Arc::clone(&turn_bytes).try_acquire_many_owned(bytes as u32)
+                let Ok(turn_permit) = Arc::clone(&turn_bytes)
+                    .acquire_many_owned(bytes as u32)
+                    .await
                 else {
                     report.overflowed = true;
-                    continue;
+                    break;
                 };
                 let Ok(global_permit) =
-                    Arc::clone(&global_bytes).try_acquire_many_owned(bytes as u32)
+                    Arc::clone(&global_bytes).acquire_many_owned(bytes as u32).await
                 else {
                     report.overflowed = true;
-                    continue;
+                    break;
                 };
                 if target
-                    .try_send(QueuedStreamDelta {
+                    .send(QueuedStreamDelta {
                         delta,
                         _turn_bytes: turn_permit,
                         _global_bytes: global_permit,
                     })
+                    .await
                     .is_err()
                 {
                     report.overflowed = true;
+                    break;
                 }
             }
             report
@@ -150,7 +155,7 @@ impl ProviderStreamAttempt {
         }
     }
 
-    pub(crate) fn sender(&self) -> &mpsc::UnboundedSender<StreamDelta> {
+    pub(crate) fn sender(&self) -> &mpsc::Sender<StreamDelta> {
         self.sender
             .as_ref()
             .expect("provider sender already closed")

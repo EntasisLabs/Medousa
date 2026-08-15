@@ -1837,10 +1837,12 @@ mod stream_bridge_tests {
         attempt
             .sender()
             .send(StreamDelta::Content("first".to_string()))
+            .await
             .expect("first delta");
         attempt
             .sender()
             .send(StreamDelta::Content("second".to_string()))
+            .await
             .expect("second delta");
         let report = attempt.finish().await;
         assert_eq!(
@@ -1871,6 +1873,7 @@ mod stream_bridge_tests {
         attempt
             .sender()
             .send(StreamDelta::Content("visible".to_string()))
+            .await
             .expect("attempt delta");
 
         assert_eq!(
@@ -1909,6 +1912,7 @@ mod stream_bridge_tests {
             .send(StreamDelta::Content("x".repeat(
                 STREAM_BRIDGE_BYTE_CAPACITY + 1,
             )))
+            .await
             .expect("provider delta");
 
         let report = attempt.finish().await;
@@ -1925,23 +1929,32 @@ mod stream_bridge_tests {
     }
 
     #[tokio::test]
-    async fn saturated_provider_queue_fails_instead_of_growing_or_dropping_silently() {
+    async fn saturated_provider_queue_backpressures_without_growing_or_dropping() {
         let gate = Arc::new(tokio::sync::Semaphore::new(0));
         let concrete = Arc::new(OrderedSink::blocked_on_first(Arc::clone(&gate)));
         let sink: SharedAgentStreamSink = concrete;
         let mut bridge = TurnStreamBridge::new(sink, 11);
         let attempt = bridge.attempt();
-        for _ in 0..(STREAM_BRIDGE_MESSAGE_CAPACITY + 2) {
-            attempt
-                .sender()
-                .send(StreamDelta::Content("x".to_string()))
-                .expect("provider delta");
-        }
-
+        let sender = attempt.sender().clone();
+        let mut producer = tokio::spawn(async move {
+            for _ in 0..(STREAM_BRIDGE_MESSAGE_CAPACITY + 8) {
+                sender
+                    .send(StreamDelta::Content("x".to_string()))
+                    .await
+                    .expect("provider delta");
+            }
+        });
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(25), &mut producer)
+                .await
+                .is_err(),
+            "a stalled sink must propagate backpressure to the provider"
+        );
+        gate.add_permits(1);
+        producer.await.unwrap();
         let report = attempt.finish().await;
         assert!(report.emitted);
-        assert!(report.overflowed);
-        gate.add_permits(1);
+        assert!(!report.overflowed);
         bridge.drain().await;
     }
 

@@ -40,7 +40,7 @@ use stasis::application::orchestration::tool_loop_pipeline::{
 use stasis::application::orchestration::tool_registry::{
     InMemoryToolRegistry, StasisTool, ToolRegistry,
 };
-use stasis::domain::errors::Result as StasisResult;
+use stasis::domain::errors::{Result as StasisResult, StasisError};
 use stasis::ports::outbound::ai_chat_client::{AiChatClient, StreamDelta};
 
 use crate::agent_runtime::stream_sink::{AgentStreamSink, SharedAgentStreamSink};
@@ -141,12 +141,14 @@ impl AiChatClient for ScriptedClient {
         &self,
         request: ChatRequest,
         _options: Option<&ChatOptions>,
-        chunk_tx: Option<&mpsc::UnboundedSender<StreamDelta>>,
+        chunk_tx: Option<&mpsc::Sender<StreamDelta>>,
     ) -> StasisResult<ChatResponse> {
         self.requests.lock().unwrap().push(request);
         let response = self.next();
         if let (Some(tx), Some(text)) = (chunk_tx, response.first_text()) {
-            let _ = tx.send(StreamDelta::Content(text.to_string()));
+            tx.send(StreamDelta::Content(text.to_string()))
+                .await
+                .map_err(|_| StasisError::StreamClosed)?;
         }
         Ok(response)
     }
@@ -422,7 +424,7 @@ async fn run_golden(
     };
 
     // Bridge StreamDelta → content_chunk exactly like the daemon's execute_local_turn.
-    let (chunk_tx, mut chunk_rx) = mpsc::unbounded_channel::<StreamDelta>();
+    let (chunk_tx, mut chunk_rx) = mpsc::channel::<StreamDelta>(32);
     let streamed: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let bridge = if stream {
         let bridge_sink = sink.clone();

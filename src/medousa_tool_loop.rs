@@ -136,7 +136,7 @@ impl MedousaToolLoopPipeline {
     pub async fn execute_with_stream(
         &self,
         request: ToolLoopExecutionRequest,
-        chunk_tx: Option<&mpsc::UnboundedSender<StreamDelta>>,
+        chunk_tx: Option<&mpsc::Sender<StreamDelta>>,
     ) -> Result<ToolLoopExecutionResponse> {
         self.execute_with_defaults(request, Vec::new(), chunk_tx)
             .await
@@ -146,7 +146,7 @@ impl MedousaToolLoopPipeline {
         &self,
         request: ToolLoopExecutionRequest,
         prior_messages: Vec<ChatMessage>,
-        chunk_tx: Option<&mpsc::UnboundedSender<StreamDelta>>,
+        chunk_tx: Option<&mpsc::Sender<StreamDelta>>,
     ) -> Result<ToolLoopExecutionResponse> {
         self.execute_with_defaults(request, prior_messages, chunk_tx)
             .await
@@ -156,7 +156,7 @@ impl MedousaToolLoopPipeline {
         &self,
         request: ToolLoopExecutionRequest,
         prior_messages: Vec<ChatMessage>,
-        chunk_tx: Option<&mpsc::UnboundedSender<StreamDelta>>,
+        chunk_tx: Option<&mpsc::Sender<StreamDelta>>,
         max_tool_rounds: usize,
         completion_gate: Option<&mut ToolLoopCompletionGate<'_>>,
         current_turn_user_message: Option<ChatMessage>,
@@ -176,7 +176,7 @@ impl MedousaToolLoopPipeline {
         &self,
         request: ToolLoopExecutionRequest,
         prior_messages: Vec<ChatMessage>,
-        chunk_tx: Option<&mpsc::UnboundedSender<StreamDelta>>,
+        chunk_tx: Option<&mpsc::Sender<StreamDelta>>,
     ) -> Result<ToolLoopExecutionResponse> {
         self.execute_internal(
             request,
@@ -193,7 +193,7 @@ impl MedousaToolLoopPipeline {
         &self,
         request: ToolLoopExecutionRequest,
         prior_messages: Vec<ChatMessage>,
-        chunk_tx: Option<&mpsc::UnboundedSender<StreamDelta>>,
+        chunk_tx: Option<&mpsc::Sender<StreamDelta>>,
         max_tool_rounds: usize,
         mut completion_gate: Option<&mut ToolLoopCompletionGate<'_>>,
         current_turn_user_message: Option<ChatMessage>,
@@ -1987,7 +1987,7 @@ async fn complete_chat_stream_once(
     pipeline: &PromptExecutionPipeline,
     request: ChatRequest,
     context: PromptExecutionContext,
-    chunk_tx: Option<&mpsc::UnboundedSender<StreamDelta>>,
+    chunk_tx: Option<&mpsc::Sender<StreamDelta>>,
 ) -> Result<ChatCompletionOutcome> {
     match pipeline
         .complete_chat_stream(request, context, chunk_tx)

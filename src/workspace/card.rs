@@ -766,6 +766,7 @@ mod tests {
             lease_expires_at: None,
             sttp_output_node_id: None,
             last_error: None,
+            progress_json: None,
             backoff_policy: Default::default(),
         }
     }
