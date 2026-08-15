@@ -609,6 +609,7 @@ pub(crate) async fn start_prompt_run(
         medousa::turn_slice::session_scratch_seed_from_history(&state.conversation, &prompt);
     let sink: Arc<dyn AgentStreamSink> = Arc::new(TuiStreamSink { tx: tx.clone() });
     let turn_scope = tui_rt.turn_scope.clone();
+    let execution_registry = tui_rt.execution_registry.clone();
     let worker_scheduler = tui_rt.worker_scheduler.clone();
     let tool_registry = tui_rt.tool_registry.clone();
     let client_registry = tui_rt.client_registry.clone();
@@ -630,8 +631,7 @@ pub(crate) async fn start_prompt_run(
     let response_depth_mode = state.response_depth_mode.clone();
     let reasoning_effort = state.reasoning_effort.clone();
     let handle = tokio::spawn(async move {
-        let previous_scope = turn_scope.read().await.clone();
-        *turn_scope.write().await = Some(TurnContinuationScope {
+        let scope = TurnContinuationScope {
             turn_correlation_id: format!("tui-turn-{turn_id}"),
             session_id: session_id.clone(),
             identity_user_id: Some(medousa::user_profiles::resolve_workshop_identity_user_id()),
@@ -644,10 +644,36 @@ pub(crate) async fn start_prompt_run(
             supports_liquid_markdown: false,
             supports_browser_host: false,
             channel_surface: Some("tui".to_string()),
-        });
+        };
+        let execution = match medousa::agent_runtime::execution_context::TurnExecutionContext::from_scope(
+            format!("tui-turn-{turn_id}"),
+            medousa::request_principal::RequestPrincipal::local_app(
+                std::sync::Arc::from("medousa-tui"),
+                medousa::request_principal::TransportClass::Loopback,
+            ),
+            tokio_util::sync::CancellationToken::new(),
+            std::time::Instant::now() + std::time::Duration::from_secs(2 * 60 * 60),
+            scope,
+        ) {
+            Ok(execution) => execution,
+            Err(error) => {
+                sink.agent_error(turn_id, format!("turn admission failed: {error}")).await;
+                return;
+            }
+        };
+        let execution_lease = match execution_registry.admit(execution) {
+            Ok(lease) => lease,
+            Err(error) => {
+                sink.agent_error(turn_id, format!("turn admission failed: {error}")).await;
+                return;
+            }
+        };
+        let execution_context = execution_lease.context().clone();
 
-        turn_orchestrator::execute_local_turn(
-            sink,
+        medousa::agent_runtime::execution_context::with_turn_execution_context(
+            execution_context,
+            turn_orchestrator::execute_local_turn(
+            sink.clone(),
             LocalTurnExecutionParams {
                 agent_mode,
                 turn_id,
@@ -693,10 +719,9 @@ pub(crate) async fn start_prompt_run(
                 active_turn_checkpoint_sink: None,
                 active_turn_resume: None,
             },
-        )
+        ))
         .await;
-
-        *turn_scope.write().await = previous_scope;
+        drop(execution_lease);
     });
 
     state.active_request_task = Some(handle);

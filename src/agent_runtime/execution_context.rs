@@ -119,6 +119,37 @@ impl TurnExecutionContext {
         }
     }
 
+    /// Build an execution owner from the compatibility scope at an admission
+    /// boundary. Keeping this conversion here makes route, surface, and
+    /// authority derivation identical for every non-HTTP turn source.
+    pub fn from_scope(
+        turn_id: impl Into<Arc<str>>,
+        principal: RequestPrincipal,
+        cancellation: CancellationToken,
+        deadline: Instant,
+        scope: TurnContinuationScope,
+    ) -> Result<Self, crate::session_storage::InvalidSessionId> {
+        let session_id = SessionId::parse(&scope.session_id)?;
+        let route = ProviderRoute::new(scope.provider.clone(), scope.model.clone());
+        let surface = SurfaceCapabilities {
+            ui_artifacts: scope.supports_ui_artifacts,
+            liquid_markdown: scope.supports_liquid_markdown,
+            browser_host: scope.supports_browser_host,
+        };
+        let correlation_id: Arc<str> = Arc::from(scope.turn_correlation_id.as_str());
+        Ok(Self::new(
+            turn_id,
+            correlation_id,
+            session_id,
+            principal,
+            route,
+            surface,
+            cancellation,
+            deadline,
+            scope,
+        ))
+    }
+
     pub fn handle(&self) -> TurnHandle {
         self.handle
     }
@@ -539,6 +570,43 @@ mod tests {
             Instant::now() + Duration::from_secs(60),
             scope,
         )
+    }
+
+    #[test]
+    fn scoped_admission_derives_route_and_surface_without_shared_state() {
+        let mut scope = context("session-a", "provider-a").legacy_scope().clone();
+        scope.supports_ui_artifacts = true;
+        scope.supports_browser_host = true;
+        let admitted = TurnExecutionContext::from_scope(
+            "turn-a",
+            RequestPrincipal::anonymous(TransportClass::Loopback),
+            CancellationToken::new(),
+            Instant::now() + Duration::from_secs(30),
+            scope,
+        )
+        .unwrap();
+
+        assert_eq!(admitted.session_id().as_str(), "session-a");
+        assert_eq!(admitted.route().provider(), "provider-a");
+        assert!(admitted.surface().ui_artifacts);
+        assert!(admitted.surface().browser_host);
+    }
+
+    #[test]
+    fn scoped_admission_rejects_invalid_session_authority() {
+        let mut scope = context("session-a", "provider-a").legacy_scope().clone();
+        scope.session_id = "../outside".to_string();
+
+        assert!(
+            TurnExecutionContext::from_scope(
+                "turn-a",
+                RequestPrincipal::anonymous(TransportClass::Loopback),
+                CancellationToken::new(),
+                Instant::now() + Duration::from_secs(30),
+                scope,
+            )
+            .is_err()
+        );
     }
 
     #[test]

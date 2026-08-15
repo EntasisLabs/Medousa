@@ -147,7 +147,7 @@ pub async fn resume_pending_synthesis(agent: Arc<TuiRuntime>, record: TurnWorkRe
     }
     let ctx = WorkerRuntimeContext::from_tui_runtime(agent.as_ref());
     let sink = durable_worker_sink(&record);
-    resume_synthesis_if_needed(&ctx, record, sink).await;
+    resume_synthesis_if_needed(&ctx, &agent.execution_registry, record, sink).await;
 }
 
 struct TurnWorkerJobHandler {
@@ -195,7 +195,7 @@ impl JobHandler for TurnWorkerJobHandler {
         let sink = durable_worker_sink(&record);
 
         if record.status == TurnWorkStatus::Completed && !record.synthesis_delivered {
-            resume_synthesis_if_needed(&ctx, record, sink).await;
+            resume_synthesis_if_needed(&ctx, &self.agent.execution_registry, record, sink).await;
             return Ok(success_outcome(
                 &payload.work_id,
                 format!("work_id={} synthesis resumed", payload.work_id),

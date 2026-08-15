@@ -153,7 +153,7 @@ pub async fn run_heartbeat_agent_turn(
 ) -> Option<String> {
     let prompt = build_heartbeat_turn_prompt(snapshot);
     let session_id = format!(
-        "daemon-heartbeat:{}",
+        "daemon-heartbeat-{}",
         default_policy_profile_for_lane(crate::engine_context::EngineExecutionLane::Heartbeat)
     );
     let mut request = build_interactive_turn_request_for_ingest(
@@ -176,6 +176,32 @@ pub async fn run_heartbeat_agent_turn(
         output: output.clone(),
     });
 
+    let identity_user_id = crate::user_profiles::resolve_workshop_identity_user_id();
+    let scope = crate::turn_continuation::TurnContinuationScope {
+        turn_correlation_id: "heartbeat-agent-turn".to_string(),
+        session_id: session_id.clone(),
+        identity_user_id: Some(identity_user_id.clone()),
+        original_prompt: request.prompt.clone(),
+        delivery_target: None,
+        provider: request.provider.clone(),
+        model: request.model.clone(),
+        response_depth_mode: request.response_depth_mode.clone(),
+        supports_ui_artifacts: false,
+        supports_liquid_markdown: false,
+        supports_browser_host: false,
+        channel_surface: Some("heartbeat".to_string()),
+    };
+    let execution = super::execution_context::TurnExecutionContext::from_scope(
+        "heartbeat-agent-turn",
+        crate::request_principal::RequestPrincipal::continuation(identity_user_id),
+        tokio_util::sync::CancellationToken::new(),
+        std::time::Instant::now() + std::time::Duration::from_secs(2 * 60 * 60),
+        scope,
+    )
+    .ok()?;
+    let execution_lease = agent_rt.execution_registry.admit(execution).ok()?;
+    let execution_context = execution_lease.context().clone();
+
     super::run_agent_turn(
         "heartbeat-agent-turn",
         request,
@@ -183,11 +209,13 @@ pub async fn run_heartbeat_agent_turn(
         agent_rt,
         sink,
         None,
-        None,
+        execution_context,
         None,
         None,
     )
     .await;
+
+    drop(execution_lease);
 
     output.lock().await.clone()
 }

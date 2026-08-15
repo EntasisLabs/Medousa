@@ -1195,14 +1195,54 @@ async fn run_worker_turn_inner(
 
 pub async fn resume_synthesis_if_needed(
     ctx: &WorkerRuntimeContext,
+    execution_registry: &crate::agent_runtime::execution_context::TurnExecutionRegistry,
     record: TurnWorkRecord,
     sink: SharedAgentStreamSink,
 ) {
     if record.synthesis_delivered || record.status != TurnWorkStatus::Completed {
         return;
     }
+    let Some(identity_user_id) = record
+        .identity_user_id
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+    else {
+        tracing::warn!(work_id = %record.work_id, "refusing synthesis resume without identity");
+        return;
+    };
+    if !crate::session_catalog::session_visible_to_profile(&record.session_id, &identity_user_id) {
+        tracing::warn!(work_id = %record.work_id, "refusing synthesis resume after authority revocation");
+        return;
+    }
+    let scope = worker_turn_scope(&record);
+    let execution = match crate::agent_runtime::execution_context::TurnExecutionContext::from_scope(
+        format!("{}-synthesis", record.work_id),
+        crate::request_principal::RequestPrincipal::worker(identity_user_id),
+        tokio_util::sync::CancellationToken::new(),
+        std::time::Instant::now() + std::time::Duration::from_secs(2 * 60 * 60),
+        scope,
+    ) {
+        Ok(execution) => execution,
+        Err(error) => {
+            tracing::warn!(work_id = %record.work_id, error = %error, "refusing synthesis resume with invalid session");
+            return;
+        }
+    };
+    let execution_lease = match execution_registry.admit(execution) {
+        Ok(lease) => lease,
+        Err(error) => {
+            tracing::warn!(work_id = %record.work_id, error = %error, "synthesis resume admission rejected");
+            return;
+        }
+    };
+    let execution_context = execution_lease.context().clone();
     let stream_turn_id = record.parent_stream_turn_id;
-    run_synthesis_turn(ctx, record, sink, stream_turn_id).await;
+    crate::agent_runtime::execution_context::with_turn_execution_context(
+        execution_context,
+        run_synthesis_turn(ctx, record, sink, stream_turn_id),
+    )
+    .await;
+    drop(execution_lease);
 }
 
 async fn run_worker_failure_notify(

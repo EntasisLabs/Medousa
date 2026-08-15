@@ -195,6 +195,7 @@ impl JobHandler for RecurringAgentTurnJobHandler {
             .unwrap_or_else(|| crate::resolve_llm_model(None));
 
         let stage_routing = StageRoutingMatrix::default_for(&provider, &model);
+        let identity_user_id = crate::user_profiles::resolve_workshop_identity_user_id();
         let request = InteractiveTurnRequest {
             session_id: payload.session_id.clone(),
             prompt: payload.user_prompt.clone(),
@@ -225,8 +226,37 @@ impl JobHandler for RecurringAgentTurnJobHandler {
             voice_preset_id: None,
             voice_appendix: None,
             media_refs: Vec::new(),
-            identity_user_id: None,
+            identity_user_id: Some(identity_user_id.clone()),
         };
+
+        let scope = crate::turn_continuation::TurnContinuationScope {
+            turn_correlation_id: job.id.clone(),
+            session_id: request.session_id.clone(),
+            identity_user_id: Some(identity_user_id.clone()),
+            original_prompt: request.prompt.clone(),
+            delivery_target: None,
+            provider: request.provider.clone(),
+            model: request.model.clone(),
+            response_depth_mode: request.response_depth_mode.clone(),
+            supports_ui_artifacts: false,
+            supports_liquid_markdown: false,
+            supports_browser_host: false,
+            channel_surface: Some("scheduled".to_string()),
+        };
+        let execution = match crate::agent_runtime::execution_context::TurnExecutionContext::from_scope(
+            job.id.clone(),
+            crate::request_principal::RequestPrincipal::continuation(identity_user_id),
+            tokio_util::sync::CancellationToken::new(),
+            std::time::Instant::now() + std::time::Duration::from_secs(2 * 60 * 60),
+            scope,
+        ) {
+            Ok(execution) => execution,
+            Err(error) => return Ok(fatal_outcome(&format!("invalid recurring turn session: {error}"))),
+        };
+        let execution_lease = self.agent.execution_registry.admit(execution).map_err(|error| {
+            StasisError::PortFailure(format!("recurring turn admission failed: {error}"))
+        })?;
+        let execution_context = execution_lease.context().clone();
 
         let output = Arc::new(Mutex::new(None));
         let sink: Arc<dyn AgentStreamSink> = Arc::new(CapturingAgentSink {
@@ -240,11 +270,12 @@ impl JobHandler for RecurringAgentTurnJobHandler {
             self.agent.as_ref(),
             sink,
             None,
-            None,
+            execution_context,
             None,
             None,
         )
         .await;
+        drop(execution_lease);
 
         let text = output.lock().await.clone().unwrap_or_else(|| {
             "recurring agent turn completed without assistant text".to_string()
