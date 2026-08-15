@@ -452,6 +452,8 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_report_snapshot,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_report_act,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_snapshot_html,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_snapshot_markdown,

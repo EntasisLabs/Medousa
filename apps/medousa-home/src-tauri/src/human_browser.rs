@@ -6,8 +6,9 @@
 //! **Pop-out (secondary):** `browser-content` + `browser-chrome` on the dedicated
 //! browser window — kept for a future "Pop out" action.
 
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use medousa_browser_lite::{
@@ -53,7 +54,6 @@ static EMBED_ACTIVE_TAB_ID: Mutex<Option<String>> = Mutex::new(None);
 static POPOUT_ACTIVE_TAB_ID: Mutex<Option<String>> = Mutex::new(None);
 static EMBED_TAB_IDS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static POPOUT_TAB_IDS: Mutex<Vec<String>> = Mutex::new(Vec::new());
-static SNAPSHOT_TX: Mutex<Option<oneshot::Sender<SnapshotReport>>> = Mutex::new(None);
 static APP_HANDLE: std::sync::OnceLock<AppHandle> = std::sync::OnceLock::new();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -171,6 +171,7 @@ fn close_legacy_content_webview(app: &AppHandle, label: &str) {
 }
 
 fn close_all_tab_webviews(app: &AppHandle, surface: BrowserSurface) {
+    BROWSER_HOST_STATE.advance_navigation(surface);
     let ids = tab_ids_lock(surface)
         .lock()
         .ok()
@@ -298,6 +299,8 @@ pub struct HumanBrowserNavStatePayload {
     pub can_go_forward: bool,
     #[serde(default = "default_embed_surface")]
     pub surface: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -322,12 +325,13 @@ pub struct FindInPageResult {
     pub found: bool,
 }
 
-static NAV_STATE_TX: Mutex<Option<oneshot::Sender<HumanBrowserNavStatePayload>>> = Mutex::new(None);
-static FIND_TX: Mutex<Option<oneshot::Sender<FindInPageResult>>> = Mutex::new(None);
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SnapshotReport {
+    #[serde(default)]
+    pub request_id: String,
+    #[serde(default = "default_embed_surface")]
+    pub surface: String,
     pub url: String,
     pub html: String,
 }
@@ -345,6 +349,198 @@ pub struct SnapshotMarkdownDto {
     pub url: String,
     pub title: String,
     pub markdown: String,
+}
+
+const MAX_BROWSER_PENDING_REQUESTS: usize = 64;
+const MAX_SNAPSHOT_REPORT_BYTES: usize = 8 * 1024 * 1024;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BrowserRequestKind {
+    Snapshot,
+    Act,
+    Navigation,
+    Find,
+}
+
+enum BrowserPendingReply {
+    Snapshot(oneshot::Sender<SnapshotReport>),
+    Act(oneshot::Sender<BrowserActReport>),
+    Navigation(oneshot::Sender<HumanBrowserNavStatePayload>),
+    Find(oneshot::Sender<FindInPageResult>),
+}
+
+impl BrowserPendingReply {
+    fn kind(&self) -> BrowserRequestKind {
+        match self {
+            Self::Snapshot(_) => BrowserRequestKind::Snapshot,
+            Self::Act(_) => BrowserRequestKind::Act,
+            Self::Navigation(_) => BrowserRequestKind::Navigation,
+            Self::Find(_) => BrowserRequestKind::Find,
+        }
+    }
+}
+
+struct BrowserPendingRequest {
+    surface: BrowserSurface,
+    navigation_generation: u64,
+    reply: BrowserPendingReply,
+}
+
+#[derive(Default)]
+struct BrowserBrokerCounters {
+    matched: u64,
+    late_or_unsolicited: u64,
+    wrong_kind: u64,
+    wrong_surface: u64,
+    stale_navigation: u64,
+    cancelled: u64,
+    oversize: u64,
+}
+
+#[derive(Default)]
+struct BrowserBrokerState {
+    embed_navigation_generation: u64,
+    popout_navigation_generation: u64,
+    pending: HashMap<String, BrowserPendingRequest>,
+    counters: BrowserBrokerCounters,
+    high_water: usize,
+}
+
+struct BrowserHostState {
+    next_request_id: AtomicU64,
+    broker: Mutex<BrowserBrokerState>,
+}
+
+impl BrowserHostState {
+    fn new() -> Self {
+        Self {
+            next_request_id: AtomicU64::new(1),
+            broker: Mutex::new(BrowserBrokerState::default()),
+        }
+    }
+
+    fn navigation_generation(state: &BrowserBrokerState, surface: BrowserSurface) -> u64 {
+        match surface {
+            BrowserSurface::Embed => state.embed_navigation_generation,
+            BrowserSurface::Popout => state.popout_navigation_generation,
+        }
+    }
+
+    fn register(
+        &self,
+        surface: BrowserSurface,
+        reply: BrowserPendingReply,
+    ) -> Result<String, String> {
+        let mut state = self.broker.lock().expect("browser request broker");
+        if state.pending.len() >= MAX_BROWSER_PENDING_REQUESTS {
+            return Err(format!(
+                "browser request capacity reached (limit {MAX_BROWSER_PENDING_REQUESTS})"
+            ));
+        }
+        let sequence = self.next_request_id.fetch_add(1, Ordering::Relaxed);
+        let request_id = format!("browser-{sequence}");
+        let navigation_generation = Self::navigation_generation(&state, surface);
+        state.pending.insert(
+            request_id.clone(),
+            BrowserPendingRequest {
+                surface,
+                navigation_generation,
+                reply,
+            },
+        );
+        state.high_water = state.high_water.max(state.pending.len());
+        Ok(request_id)
+    }
+
+    fn take(
+        &self,
+        request_id: &str,
+        surface: BrowserSurface,
+        kind: BrowserRequestKind,
+    ) -> Option<BrowserPendingReply> {
+        let mut state = self.broker.lock().expect("browser request broker");
+        let Some(pending) = state.pending.get(request_id) else {
+            state.counters.late_or_unsolicited =
+                state.counters.late_or_unsolicited.saturating_add(1);
+            return None;
+        };
+        if pending.reply.kind() != kind {
+            state.counters.wrong_kind = state.counters.wrong_kind.saturating_add(1);
+            return None;
+        }
+        let pending = state.pending.remove(request_id).expect("pending request exists");
+        if pending.surface != surface {
+            state.counters.wrong_surface = state.counters.wrong_surface.saturating_add(1);
+            return None;
+        }
+        if pending.navigation_generation != Self::navigation_generation(&state, surface) {
+            state.counters.stale_navigation =
+                state.counters.stale_navigation.saturating_add(1);
+            return None;
+        }
+        state.counters.matched = state.counters.matched.saturating_add(1);
+        Some(pending.reply)
+    }
+
+    fn cancel_request(&self, request_id: &str) {
+        let mut state = self.broker.lock().expect("browser request broker");
+        if state.pending.remove(request_id).is_some() {
+            state.counters.cancelled = state.counters.cancelled.saturating_add(1);
+        }
+    }
+
+    fn advance_navigation(&self, surface: BrowserSurface) {
+        let mut state = self.broker.lock().expect("browser request broker");
+        match surface {
+            BrowserSurface::Embed => {
+                state.embed_navigation_generation =
+                    state.embed_navigation_generation.wrapping_add(1);
+            }
+            BrowserSurface::Popout => {
+                state.popout_navigation_generation =
+                    state.popout_navigation_generation.wrapping_add(1);
+            }
+        }
+        let before = state.pending.len();
+        state.pending.retain(|_, pending| pending.surface != surface);
+        state.counters.cancelled = state
+            .counters
+            .cancelled
+            .saturating_add((before - state.pending.len()) as u64);
+    }
+
+    fn record_oversize(&self) {
+        let mut state = self.broker.lock().expect("browser request broker");
+        state.counters.oversize = state.counters.oversize.saturating_add(1);
+    }
+
+    #[cfg(test)]
+    fn pending_count(&self) -> usize {
+        self.broker
+            .lock()
+            .expect("browser request broker")
+            .pending
+            .len()
+    }
+}
+
+static BROWSER_HOST_STATE: LazyLock<BrowserHostState> = LazyLock::new(BrowserHostState::new);
+
+struct BrowserPendingGuard<'a> {
+    state: &'a BrowserHostState,
+    request_id: String,
+}
+
+impl<'a> BrowserPendingGuard<'a> {
+    fn new(state: &'a BrowserHostState, request_id: String) -> Self {
+        Self { state, request_id }
+    }
+}
+
+impl Drop for BrowserPendingGuard<'_> {
+    fn drop(&mut self) {
+        self.state.cancel_request(&self.request_id);
+    }
 }
 
 pub fn init_app_handle(app: AppHandle) {
@@ -678,6 +874,7 @@ pub fn on_browser_popout_opened(app: &AppHandle) -> Result<(), String> {
 }
 
 pub fn on_browser_popout_closed(app: &AppHandle) -> Result<(), String> {
+    BROWSER_HOST_STATE.advance_navigation(BrowserSurface::Popout);
     if let Some(content) = popout_content_webview(app) {
         let _ = content.hide();
     }
@@ -725,6 +922,7 @@ fn emit_nav_state(
             can_go_back,
             can_go_forward,
             surface: surface.as_str().to_string(),
+            request_id: None,
         },
     );
 }
@@ -806,7 +1004,7 @@ fn probe_page_metadata(
         ";var t=(document.title||'').trim();var fav=null;try{var link=document.querySelector('link[rel~=\"icon\"]');if(link&&link.href)fav=link.href;}catch(e){}var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;",
         "i.invoke('human_browser_report_location',{url:u,title:t||null,surface:s,inPage:false});",
         "if(fav)i.invoke('human_browser_report_favicon',{url:u,favicon:fav,surface:s});",
-        "i.invoke('human_browser_report_nav_state',{canGoBack:window.history.length>1,canGoForward:false,surface:s});",
+        "i.invoke('human_browser_report_nav_state',{payload:{canGoBack:window.history.length>1,canGoForward:false,surface:s,requestId:null}});",
         "}catch(e){}})();",
     ]
     .concat();
@@ -883,6 +1081,7 @@ fn content_builder(
             .on_navigation(move |nav_url| {
                 let href = nav_url.as_str();
                 if href.starts_with("http://") || href.starts_with("https://") {
+                    BROWSER_HOST_STATE.advance_navigation(surface_nav);
                     emit_loading(&app_nav, surface_nav, true);
                 }
                 true
@@ -1896,6 +2095,10 @@ fn hide_embed_surface(app: &AppHandle) {
 fn activate_embed_tab(app: &AppHandle, tab_id: &str, initial_url: &str) -> Result<(), String> {
     close_legacy_content_webview(app, EMBED_CONTENT_LABEL);
 
+    if active_tab_id(BrowserSurface::Embed).as_deref() != Some(tab_id) {
+        BROWSER_HOST_STATE.advance_navigation(BrowserSurface::Embed);
+    }
+
     {
         let mut guard = active_tab_id_lock(BrowserSurface::Embed)
             .lock()
@@ -1955,6 +2158,10 @@ fn activate_embed_tab(app: &AppHandle, tab_id: &str, initial_url: &str) -> Resul
 fn activate_popout_tab(app: &AppHandle, tab_id: &str, initial_url: &str) -> Result<(), String> {
     ensure_popout_shell(app)?;
 
+    if active_tab_id(BrowserSurface::Popout).as_deref() != Some(tab_id) {
+        BROWSER_HOST_STATE.advance_navigation(BrowserSurface::Popout);
+    }
+
     {
         let mut guard = active_tab_id_lock(BrowserSurface::Popout)
             .lock()
@@ -2006,6 +2213,7 @@ fn close_surface_tab(app: &AppHandle, surface: BrowserSurface, tab_id: &str) -> 
         }
     }
     if active_tab_id(surface).as_deref() == Some(tab_id) {
+        BROWSER_HOST_STATE.advance_navigation(surface);
         if let Ok(mut guard) = active_tab_id_lock(surface).lock() {
             *guard = None;
         }
@@ -2635,22 +2843,28 @@ pub fn human_browser_report_title(
     Ok(())
 }
 
-const SNAPSHOT_CAPTURE_JS: &str = r#"(function(){
-try{
+fn snapshot_capture_js(request_id: &str) -> Result<String, String> {
+    let request_id = serde_json::to_string(request_id).map_err(|err| err.to_string())?;
+    Ok(format!(r#"(function(){{
+try{{
   var html=document.documentElement?document.documentElement.outerHTML:"";
   var url=window.location.href||"";
   var i=window.__TAURI_INTERNALS__||window.__TAURI__;
   if(!i||!i.invoke)return;
-  i.invoke("human_browser_report_snapshot",{url:url,html:html});
-}catch(e){}
-})();"#;
+  i.invoke("human_browser_report_snapshot",{{payload:{{requestId:{request_id},surface:"embed",url:url,html:html}}}});
+}}catch(e){{}}
+}})();"#))
+}
 
 const ACT_REPORT_TIMEOUT: Duration = Duration::from_secs(8);
-static ACT_TX: Mutex<Option<oneshot::Sender<BrowserActReport>>> = Mutex::new(None);
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowserActReport {
+    #[serde(default)]
+    pub request_id: String,
+    #[serde(default = "default_embed_surface")]
+    pub surface: String,
     pub ok: bool,
     #[serde(default)]
     pub url: String,
@@ -2658,16 +2872,18 @@ pub struct BrowserActReport {
     pub error: Option<String>,
 }
 
-fn browser_act_js(request: &BrowserActRequest) -> Result<String, String> {
+fn browser_act_js(request: &BrowserActRequest, request_id: &str) -> Result<String, String> {
     let payload = serde_json::to_string(request).map_err(|err| err.to_string())?;
+    let request_id = serde_json::to_string(request_id).map_err(|err| err.to_string())?;
     Ok(format!(
         r#"(function(){{
 try{{
   var req={payload};
+  var requestId={request_id};
   function done(ok,error){{
     var i=window.__TAURI_INTERNALS__||window.__TAURI__;
     if(!i||!i.invoke)return;
-    i.invoke("human_browser_report_act",{{payload:{{ok:ok,url:window.location.href||"",error:error||null}}}});
+    i.invoke("human_browser_report_act",{{payload:{{requestId:requestId,surface:"embed",ok:ok,url:window.location.href||"",error:error||null}}}});
   }}
   function visible(el){{
     if(!el)return false;
@@ -2703,14 +2919,19 @@ try{{
       return;
     default: done(false,"unsupported action: "+req.action); return;
   }}
-}}catch(e){{try{{var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(i&&i.invoke)i.invoke("human_browser_report_act",{{payload:{{ok:false,url:"",error:String(e)}}}});}}catch(_err){{}}}}
+}}catch(e){{try{{var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(i&&i.invoke)i.invoke("human_browser_report_act",{{payload:{{requestId:requestId,surface:"embed",ok:false,url:"",error:String(e)}}}});}}catch(_err){{}}}}
 }})();"#
     ))
 }
 
 #[tauri::command]
 pub fn human_browser_report_act(payload: BrowserActReport) -> Result<(), String> {
-    if let Some(tx) = ACT_TX.lock().expect("browser act").take() {
+    let surface = parse_surface(Some(payload.surface.as_str()));
+    if let Some(BrowserPendingReply::Act(tx)) = BROWSER_HOST_STATE.take(
+        payload.request_id.trim(),
+        surface,
+        BrowserRequestKind::Act,
+    ) {
         let _ = tx.send(payload);
     }
     Ok(())
@@ -2741,9 +2962,13 @@ pub async fn browser_act_embed(
     let content = embedded_content_webview(app)
         .ok_or_else(|| "browser content webview not ready".to_string())?;
     let (tx, rx) = oneshot::channel();
-    *ACT_TX.lock().expect("browser act") = Some(tx);
+    let request_id = BROWSER_HOST_STATE.register(
+        BrowserSurface::Embed,
+        BrowserPendingReply::Act(tx),
+    )?;
+    let _guard = BrowserPendingGuard::new(&BROWSER_HOST_STATE, request_id.clone());
     content
-        .eval(&browser_act_js(request)?)
+        .eval(&browser_act_js(request, &request_id)?)
         .map_err(|err| err.to_string())?;
     tokio::time::timeout(ACT_REPORT_TIMEOUT, rx)
         .await
@@ -2753,7 +2978,19 @@ pub async fn browser_act_embed(
 
 #[tauri::command]
 pub fn human_browser_report_snapshot(payload: SnapshotReport) -> Result<(), String> {
-    if let Some(tx) = SNAPSHOT_TX.lock().expect("snapshot").take() {
+    let surface = parse_surface(Some(payload.surface.as_str()));
+    if payload.html.len() > MAX_SNAPSHOT_REPORT_BYTES {
+        BROWSER_HOST_STATE.cancel_request(payload.request_id.trim());
+        BROWSER_HOST_STATE.record_oversize();
+        return Err(format!(
+            "snapshot exceeds {MAX_SNAPSHOT_REPORT_BYTES} byte limit"
+        ));
+    }
+    if let Some(BrowserPendingReply::Snapshot(tx)) = BROWSER_HOST_STATE.take(
+        payload.request_id.trim(),
+        surface,
+        BrowserRequestKind::Snapshot,
+    ) {
         let _ = tx.send(payload);
     }
     Ok(())
@@ -2763,9 +3000,13 @@ async fn capture_html(app: &AppHandle) -> Result<SnapshotReport, String> {
     let content = embedded_content_webview(app)
         .ok_or_else(|| "browser content webview not ready".to_string())?;
     let (tx, rx) = oneshot::channel();
-    *SNAPSHOT_TX.lock().expect("snapshot") = Some(tx);
+    let request_id = BROWSER_HOST_STATE.register(
+        BrowserSurface::Embed,
+        BrowserPendingReply::Snapshot(tx),
+    )?;
+    let _guard = BrowserPendingGuard::new(&BROWSER_HOST_STATE, request_id.clone());
     content
-        .eval(SNAPSHOT_CAPTURE_JS)
+        .eval(&snapshot_capture_js(&request_id)?)
         .map_err(|err| err.to_string())?;
     tokio::time::timeout(Duration::from_secs(8), rx)
         .await
@@ -2828,8 +3069,15 @@ pub async fn snapshot_markdown_for_url(
 
 #[tauri::command]
 pub fn human_browser_report_nav_state(payload: HumanBrowserNavStatePayload) -> Result<(), String> {
-    if let Some(tx) = NAV_STATE_TX.lock().expect("nav state").take() {
-        let _ = tx.send(payload.clone());
+    let surface = parse_surface(Some(payload.surface.as_str()));
+    if let Some(request_id) = payload.request_id.as_deref() {
+        if let Some(BrowserPendingReply::Navigation(tx)) = BROWSER_HOST_STATE.take(
+            request_id.trim(),
+            surface,
+            BrowserRequestKind::Navigation,
+        ) {
+            let _ = tx.send(payload.clone());
+        }
     }
     if let Some(app) = app_handle() {
         emit_nav_state(
@@ -2866,8 +3114,17 @@ pub fn human_browser_report_favicon(
 }
 
 #[tauri::command]
-pub fn human_browser_report_find_result(found: bool) -> Result<(), String> {
-    if let Some(tx) = FIND_TX.lock().expect("find").take() {
+pub fn human_browser_report_find_result(
+    found: bool,
+    request_id: Option<String>,
+    surface: Option<String>,
+) -> Result<(), String> {
+    let request_id = request_id.unwrap_or_default();
+    if let Some(BrowserPendingReply::Find(tx)) = BROWSER_HOST_STATE.take(
+        request_id.trim(),
+        parse_surface(surface.as_deref()),
+        BrowserRequestKind::Find,
+    ) {
         let _ = tx.send(FindInPageResult { found });
     }
     Ok(())
@@ -2900,11 +3157,16 @@ pub async fn human_browser_query_nav_state(
     let content = embedded_content_webview(&app)
         .ok_or_else(|| "browser content webview not ready".to_string())?;
     let (tx, rx) = oneshot::channel();
-    *NAV_STATE_TX.lock().expect("nav state") = Some(tx);
+    let request_id = BROWSER_HOST_STATE.register(
+        BrowserSurface::Embed,
+        BrowserPendingReply::Navigation(tx),
+    )?;
+    let _guard = BrowserPendingGuard::new(&BROWSER_HOST_STATE, request_id.clone());
+    let request_id = serde_json::to_string(&request_id).map_err(|err| err.to_string())?;
     content
-        .eval(
-            r#"(function(){try{var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;i.invoke('human_browser_report_nav_state',{canGoBack:window.history.length>1,canGoForward:false,surface:'embed'});}catch(e){}})();"#,
-        )
+        .eval(&format!(
+            r#"(function(){{try{{var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;i.invoke('human_browser_report_nav_state',{{payload:{{canGoBack:window.history.length>1,canGoForward:false,surface:'embed',requestId:{request_id}}}}});}}catch(e){{}}}})();"#,
+        ))
         .map_err(|err| err.to_string())?;
     tokio::time::timeout(Duration::from_secs(2), rx)
         .await
@@ -2919,11 +3181,16 @@ pub async fn human_browser_popout_query_nav_state(
     let content = popout_content_webview(&app)
         .ok_or_else(|| "pop-out browser content not ready".to_string())?;
     let (tx, rx) = oneshot::channel();
-    *NAV_STATE_TX.lock().expect("nav state") = Some(tx);
+    let request_id = BROWSER_HOST_STATE.register(
+        BrowserSurface::Popout,
+        BrowserPendingReply::Navigation(tx),
+    )?;
+    let _guard = BrowserPendingGuard::new(&BROWSER_HOST_STATE, request_id.clone());
+    let request_id = serde_json::to_string(&request_id).map_err(|err| err.to_string())?;
     content
-        .eval(
-            r#"(function(){try{var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;i.invoke('human_browser_report_nav_state',{canGoBack:window.history.length>1,canGoForward:false,surface:'popout'});}catch(e){}})();"#,
-        )
+        .eval(&format!(
+            r#"(function(){{try{{var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;i.invoke('human_browser_report_nav_state',{{payload:{{canGoBack:window.history.length>1,canGoForward:false,surface:'popout',requestId:{request_id}}}}});}}catch(e){{}}}})();"#,
+        ))
         .map_err(|err| err.to_string())?;
     tokio::time::timeout(Duration::from_secs(2), rx)
         .await
@@ -2944,15 +3211,20 @@ pub async fn human_browser_find_in_page(
     let content = embedded_content_webview(&app)
         .ok_or_else(|| "browser content webview not ready".to_string())?;
     let (tx, rx) = oneshot::channel();
-    *FIND_TX.lock().expect("find") = Some(tx);
+    let request_id = BROWSER_HOST_STATE.register(
+        BrowserSurface::Embed,
+        BrowserPendingReply::Find(tx),
+    )?;
+    let _guard = BrowserPendingGuard::new(&BROWSER_HOST_STATE, request_id.clone());
     let forward_lit = if forward.unwrap_or(true) {
         "true"
     } else {
         "false"
     };
     let query_json = serde_json::to_string(trimmed).map_err(|err| err.to_string())?;
+    let request_id = serde_json::to_string(&request_id).map_err(|err| err.to_string())?;
     let script = format!(
-        r#"(function(){{try{{var q={query_json};var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;var found=window.find(q,false,{forward_lit},true,false,true,false);i.invoke('human_browser_report_find_result',{{found:!!found}});}}catch(e){{}}}})();"#
+        r#"(function(){{try{{var q={query_json};var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;var found=window.find(q,false,{forward_lit},true,false,true,false);i.invoke('human_browser_report_find_result',{{found:!!found,requestId:{request_id},surface:'embed'}});}}catch(e){{}}}})();"#
     );
     content.eval(&script).map_err(|err| err.to_string())?;
     tokio::time::timeout(Duration::from_secs(2), rx)
@@ -2974,19 +3246,255 @@ pub async fn human_browser_popout_find_in_page(
     let content = popout_content_webview(&app)
         .ok_or_else(|| "pop-out browser content not ready".to_string())?;
     let (tx, rx) = oneshot::channel();
-    *FIND_TX.lock().expect("find") = Some(tx);
+    let request_id = BROWSER_HOST_STATE.register(
+        BrowserSurface::Popout,
+        BrowserPendingReply::Find(tx),
+    )?;
+    let _guard = BrowserPendingGuard::new(&BROWSER_HOST_STATE, request_id.clone());
     let forward_lit = if forward.unwrap_or(true) {
         "true"
     } else {
         "false"
     };
     let query_json = serde_json::to_string(trimmed).map_err(|err| err.to_string())?;
+    let request_id = serde_json::to_string(&request_id).map_err(|err| err.to_string())?;
     let script = format!(
-        r#"(function(){{try{{var q={query_json};var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;var found=window.find(q,false,{forward_lit},true,false,true,false);i.invoke('human_browser_report_find_result',{{found:!!found}});}}catch(e){{}}}})();"#
+        r#"(function(){{try{{var q={query_json};var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;var found=window.find(q,false,{forward_lit},true,false,true,false);i.invoke('human_browser_report_find_result',{{found:!!found,requestId:{request_id},surface:'popout'}});}}catch(e){{}}}})();"#
     );
     content.eval(&script).map_err(|err| err.to_string())?;
     tokio::time::timeout(Duration::from_secs(2), rx)
         .await
         .map_err(|_| "find in page timed out".to_string())?
         .map_err(|_| "find in page channel closed".to_string())
+}
+
+#[cfg(test)]
+mod request_broker_tests {
+    use super::*;
+
+    fn snapshot(request_id: &str, marker: &str) -> SnapshotReport {
+        SnapshotReport {
+            request_id: request_id.to_string(),
+            surface: "embed".to_string(),
+            url: format!("https://example.test/{marker}"),
+            html: marker.to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn overlapping_snapshot_responses_match_exact_request_ids() {
+        let state = BrowserHostState::new();
+        let (first_tx, first_rx) = oneshot::channel();
+        let first_id = state
+            .register(
+                BrowserSurface::Embed,
+                BrowserPendingReply::Snapshot(first_tx),
+            )
+            .unwrap();
+        let (second_tx, second_rx) = oneshot::channel();
+        let second_id = state
+            .register(
+                BrowserSurface::Embed,
+                BrowserPendingReply::Snapshot(second_tx),
+            )
+            .unwrap();
+
+        let second = snapshot(&second_id, "second");
+        if let Some(BrowserPendingReply::Snapshot(tx)) = state.take(
+            &second_id,
+            BrowserSurface::Embed,
+            BrowserRequestKind::Snapshot,
+        ) {
+            tx.send(second).unwrap();
+        }
+        let first = snapshot(&first_id, "first");
+        if let Some(BrowserPendingReply::Snapshot(tx)) = state.take(
+            &first_id,
+            BrowserSurface::Embed,
+            BrowserRequestKind::Snapshot,
+        ) {
+            tx.send(first).unwrap();
+        }
+
+        assert_eq!(first_rx.await.unwrap().html, "first");
+        assert_eq!(second_rx.await.unwrap().html, "second");
+        assert_eq!(state.pending_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn wrong_kind_cannot_consume_another_request() {
+        let state = BrowserHostState::new();
+        let (tx, rx) = oneshot::channel();
+        let request_id = state
+            .register(
+                BrowserSurface::Embed,
+                BrowserPendingReply::Snapshot(tx),
+            )
+            .unwrap();
+
+        assert!(
+            state
+                .take(
+                    &request_id,
+                    BrowserSurface::Embed,
+                    BrowserRequestKind::Find,
+                )
+                .is_none()
+        );
+        assert_eq!(state.pending_count(), 1);
+        if let Some(BrowserPendingReply::Snapshot(tx)) = state.take(
+            &request_id,
+            BrowserSurface::Embed,
+            BrowserRequestKind::Snapshot,
+        ) {
+            tx.send(snapshot(&request_id, "matched")).unwrap();
+        }
+        assert_eq!(rx.await.unwrap().html, "matched");
+    }
+
+    #[tokio::test]
+    async fn every_reply_kind_can_overlap_and_complete_in_reverse_order() {
+        let state = BrowserHostState::new();
+        let (act_tx, act_rx) = oneshot::channel();
+        let act_id = state
+            .register(BrowserSurface::Embed, BrowserPendingReply::Act(act_tx))
+            .unwrap();
+        let (nav_tx, nav_rx) = oneshot::channel();
+        let nav_id = state
+            .register(
+                BrowserSurface::Popout,
+                BrowserPendingReply::Navigation(nav_tx),
+            )
+            .unwrap();
+        let (find_tx, find_rx) = oneshot::channel();
+        let find_id = state
+            .register(BrowserSurface::Embed, BrowserPendingReply::Find(find_tx))
+            .unwrap();
+
+        if let Some(BrowserPendingReply::Find(tx)) = state.take(
+            &find_id,
+            BrowserSurface::Embed,
+            BrowserRequestKind::Find,
+        ) {
+            tx.send(FindInPageResult { found: true }).unwrap();
+        }
+        if let Some(BrowserPendingReply::Navigation(tx)) = state.take(
+            &nav_id,
+            BrowserSurface::Popout,
+            BrowserRequestKind::Navigation,
+        ) {
+            tx.send(HumanBrowserNavStatePayload {
+                can_go_back: true,
+                can_go_forward: false,
+                surface: "popout".to_string(),
+                request_id: Some(nav_id.clone()),
+            })
+            .unwrap();
+        }
+        if let Some(BrowserPendingReply::Act(tx)) = state.take(
+            &act_id,
+            BrowserSurface::Embed,
+            BrowserRequestKind::Act,
+        ) {
+            tx.send(BrowserActReport {
+                request_id: act_id,
+                surface: "embed".to_string(),
+                ok: true,
+                url: "https://example.test".to_string(),
+                error: None,
+            })
+            .unwrap();
+        }
+
+        assert!(find_rx.await.unwrap().found);
+        assert!(nav_rx.await.unwrap().can_go_back);
+        assert!(act_rx.await.unwrap().ok);
+        assert_eq!(state.pending_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn wrong_surface_closes_only_the_target_request() {
+        let state = BrowserHostState::new();
+        let (tx, rx) = oneshot::channel();
+        let request_id = state
+            .register(BrowserSurface::Embed, BrowserPendingReply::Find(tx))
+            .unwrap();
+
+        assert!(
+            state
+                .take(
+                    &request_id,
+                    BrowserSurface::Popout,
+                    BrowserRequestKind::Find,
+                )
+                .is_none()
+        );
+        assert!(rx.await.is_err());
+        assert_eq!(state.pending_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn dropped_request_guard_removes_the_pending_sender() {
+        let state = BrowserHostState::new();
+        let (tx, rx) = oneshot::channel();
+        let request_id = state
+            .register(BrowserSurface::Embed, BrowserPendingReply::Find(tx))
+            .unwrap();
+        let guard = BrowserPendingGuard::new(&state, request_id);
+
+        drop(guard);
+
+        assert_eq!(state.pending_count(), 0);
+        assert!(rx.await.is_err());
+    }
+
+    #[tokio::test]
+    async fn navigation_cancels_only_the_stale_surface_generation() {
+        let state = BrowserHostState::new();
+        let (embed_tx, embed_rx) = oneshot::channel();
+        state
+            .register(
+                BrowserSurface::Embed,
+                BrowserPendingReply::Find(embed_tx),
+            )
+            .unwrap();
+        let (popout_tx, _popout_rx) = oneshot::channel();
+        state
+            .register(
+                BrowserSurface::Popout,
+                BrowserPendingReply::Find(popout_tx),
+            )
+            .unwrap();
+
+        state.advance_navigation(BrowserSurface::Embed);
+
+        assert!(embed_rx.await.is_err());
+        assert_eq!(state.pending_count(), 1);
+        let state = state.broker.lock().expect("browser request broker");
+        assert_eq!(state.counters.cancelled, 1);
+    }
+
+    #[test]
+    fn pending_request_admission_is_bounded() {
+        let state = BrowserHostState::new();
+        let mut receivers = Vec::new();
+        for _ in 0..MAX_BROWSER_PENDING_REQUESTS {
+            let (tx, rx) = oneshot::channel();
+            state
+                .register(BrowserSurface::Embed, BrowserPendingReply::Find(tx))
+                .unwrap();
+            receivers.push(rx);
+        }
+        let (overflow_tx, _overflow_rx) = oneshot::channel();
+        assert!(
+            state
+                .register(
+                    BrowserSurface::Embed,
+                    BrowserPendingReply::Find(overflow_tx),
+                )
+                .is_err()
+        );
+        assert_eq!(state.pending_count(), MAX_BROWSER_PENDING_REQUESTS);
+        drop(receivers);
+    }
 }
