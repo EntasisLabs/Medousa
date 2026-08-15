@@ -1,6 +1,6 @@
 # H08 — Desktop browser isolation and minimal native bridge
 
-> **Status:** Draft for desktop security review
+> **Status:** Implemented; packaged-platform release validation pending
 >
 > **Accountable owner:** Medousa desktop maintainers
 >
@@ -30,7 +30,7 @@ and application command inventory on macOS, Windows, and Linux. The trusted
 shell also ships with CSP and an authorized local-resource path instead of
 home-wide asset access.
 
-## Current authority graph
+## Baseline authority graph (removed)
 
 ```text
 attacker-controlled http(s) page
@@ -49,10 +49,27 @@ trusted shell injection
   -> asset protocol scoped across broad home/document/download/desktop/tmp
 ```
 
-Tauri 2.11.2 ACL-checks remote application commands, so the custom browser
-reports are currently undeclared and expected to time out while `core:default`
-remains exposed. This is neither safe compatibility nor working functionality.
-The generated handler count is inventory input, not a permission boundary.
+At the baseline, Tauri 2.11.2 ACL-checked remote application commands, so the
+custom browser reports were undeclared and timed out while `core:default`
+remained exposed. That was neither safe compatibility nor working
+functionality. The generated handler count remains inventory input, not a
+permission boundary.
+
+## Implementation status
+
+H08.0–H08.5 are implemented on the desktop code path. Remote content labels are
+disjoint from trusted shell webviews and receive only the generated
+`browser-bridge:allow-report` permission. Native hooks own lifecycle; the typed
+report bridge and bounded request broker bind the actual webview and navigation
+generation; snapshot/action work is bounded and revoked on control/lifecycle
+changes; trusted-shell CSP and opaque vault-resource delivery replaced disabled
+CSP and the broad asset protocol.
+
+The reviewed command/ACL/CSP/dependency inventory runs on Linux, macOS, and
+Windows CI and immediately before every desktop package build. Canonical app,
+user, and operator docs are linked from `docs/README.md`. Final audit closure
+still requires retained packaged-system-webview evidence from that release
+matrix; source/unit validation alone is not marked `Validated` or `Shipped`.
 
 ## Threat model
 

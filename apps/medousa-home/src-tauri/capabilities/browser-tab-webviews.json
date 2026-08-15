@@ -1,11 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "browser-tab-webviews",
-  "description": "Remote browser tab webviews — IPC back to the shell for chrome hotkeys / new-window / metadata",
+  "description": "Remote browser content webviews with zero ambient Tauri authority",
   "platforms": ["linux", "macOS", "windows"],
-  "webviews": ["embed-tab-*", "popout-tab-*", "main-browser-content", "browser-content"],
+  "local": false,
+  "webviews": ["browser-content-embed-*", "browser-content-popout"],
   "remote": {
     "urls": ["https://*", "http://*"]
   },
-  "permissions": ["core:default"]
+  "permissions": ["browser-bridge:allow-report"]
 }

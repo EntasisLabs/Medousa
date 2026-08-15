@@ -89,7 +89,7 @@ and performance budgets must prevent the same classes of defect from returning.
 | H05 | [05-runtime-context-and-concurrency.md](05-runtime-context-and-concurrency.md) | Request-scoped turn/browser state and cancellation | CONC-001, CONC-002 | ADR-017 | Implemented; packaged-platform release validation pending |
 | H06 | [06-forge-coder-scaling.md](06-forge-coder-scaling.md) | Incremental Forge state, checkpoint observation, blocking work | PERF-002, PERF-004, ASYNC-001 | ADR-016, H05 | Draft |
 | H07 | [07-vault-scaling-and-consistency.md](07-vault-scaling-and-consistency.md) | Incremental index, atomic mutation, backend/frontend lookups | PERF-003, PERF-006, CONSIST-001 | ADR-014, ADR-016 | Draft |
-| H08 | [08-desktop-browser-isolation.md](08-desktop-browser-isolation.md) | Remote webview capabilities and request-correlated bridge | DESKTOP-001 | ADR-018, H05 | Draft |
+| H08 | [08-desktop-browser-isolation.md](08-desktop-browser-isolation.md) | Remote webview capabilities and request-correlated bridge | DESKTOP-001 | ADR-018, H05 | Implemented; packaged-platform release validation pending |
 | H09 | [09-home-runtime-boundaries.md](09-home-runtime-boundaries.md) | Feature loading, runtime cycles, store/component/CSS ownership | FRONT-001, ARCH-001, ARCH-002 | ADR-020, H03 | Draft |
 | H10 | [10-api-contract-generation.md](10-api-contract-generation.md) | Authoritative API definition and generated clients/tests | CONTRACT-001 | ADR-019, H01 | Draft |
 | H11 | `11-package-and-dependency-boundaries.md` | Optional workload features and dependency budgets | DEP-001 | ADR-020 | Proposed |
@@ -135,7 +135,7 @@ one without retaining the history.
 | SEC-001 | Critical | H01 | A | Mitigated; release validation pending | Authentication/route abuse matrix |
 | SEC-002 | Critical | H02 | A | Mitigated; H02.5 platform validation pending | Typed opaque authority IDs, no-follow stores, cross-platform traversal/destructive-operation tests |
 | SEC-003 | High | H02 | A | Mitigated; replacement-race and native Windows validation pending | Symlink/junction race tests |
-| DESKTOP-001 | Critical | H08 | A | Proposed | Packaged remote-origin IPC denial/bridge tests |
+| DESKTOP-001 | Critical | H08 | A | Mitigated; packaged-platform release validation pending | Frozen application/ACL/CSP/Tauri-Wry inventory, bounded broker/resource tests, three-platform CI and package gate |
 | PERF-001 | Critical | H03 | C | Proposed | Stream allocation/I/O/latency profile |
 | MEM-002 | High | H03 | C | Proposed | Stalled-consumer memory and cancellation stress |
 | STORE-001 | Critical | H04 | B | Proposed | Concurrent append and crash-recovery tests |

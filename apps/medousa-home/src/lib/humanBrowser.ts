@@ -162,6 +162,7 @@ export interface HumanBrowserSnapshotMarkdown {
   url: string;
   title: string;
   markdown: string;
+  truncated?: boolean;
 }
 
 export interface HumanBrowserSearchSnapshot {

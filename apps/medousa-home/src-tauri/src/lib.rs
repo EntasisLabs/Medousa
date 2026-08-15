@@ -5,7 +5,11 @@ mod app_update;
 mod autostart;
 mod badge;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
+mod authorized_resource;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod browser_host;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+mod browser_report_bridge;
 #[cfg(any(target_os = "ios", target_os = "android"))]
 mod browser_host_mobile;
 mod capabilities;
@@ -81,6 +85,11 @@ pub fn run() {
 
     let mut builder = tauri::Builder::default();
 
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        builder = builder.plugin(browser_report_bridge::init());
+    }
+
     // UIKit otherwise shrinks WKWebView scroll content and exposes window background
     // as a band below fixed bottom UI (matches env(safe-area-inset-bottom) ~34px).
     #[cfg(target_os = "ios")]
@@ -97,6 +106,11 @@ pub fn run() {
         .manage(DaemonState::new())
         .manage(daemon::local_inference::LocalInferenceStreamState::new())
         .manage(daemon::local_inference::LocalInferenceActivationState::new());
+
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        builder = builder.manage(authorized_resource::AuthorizedResourceState::default());
+    }
 
     // Desktop only: restore main window size / position / maximized across restarts.
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -391,6 +405,10 @@ pub fn run() {
             browser_host::browser_bridge_link_work_card,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             browser_host::browser_bridge_snapshot,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            authorized_resource::authorized_resource_admit,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            authorized_resource::authorized_resource_read,
             #[cfg(any(target_os = "ios", target_os = "android"))]
             browser_host_mobile::browser_host_search,
             #[cfg(any(target_os = "ios", target_os = "android"))]
@@ -413,10 +431,6 @@ pub fn run() {
             human_browser::human_browser_popout_activate_tab,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_popout_close_tab,
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            human_browser::human_browser_report_new_window,
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            human_browser::human_browser_report_hotkey,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_reload,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -446,14 +460,6 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_set_mobile_shell_active,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            human_browser::human_browser_report_location,
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            human_browser::human_browser_report_title,
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            human_browser::human_browser_report_snapshot,
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            human_browser::human_browser_report_act,
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_snapshot_html,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_snapshot_markdown,
@@ -468,15 +474,9 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_popout_query_nav_state,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            human_browser::human_browser_report_nav_state,
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            human_browser::human_browser_report_favicon,
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_find_in_page,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_popout_find_in_page,
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            human_browser::human_browser_report_find_result,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_request_diagnostics,
             #[cfg(target_os = "android")]

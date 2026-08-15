@@ -282,7 +282,11 @@ async fn set_tab_group_control(
     Path(tab_group_id): Path<String>,
     Json(request): Json<TabControlRequest>,
 ) -> Json<serde_json::Value> {
-    match TabGroupManager::set_control(&tab_group_id, parse_control(&request.control)) {
+    let control = parse_control(&request.control);
+    if control != BrowserControl::Agent {
+        crate::human_browser::revoke_agent_browser_actions();
+    }
+    match TabGroupManager::set_control(&tab_group_id, control) {
         Some(group) => Json(serde_json::json!({ "ok": true, "tab_group": group })),
         None => Json(serde_json::json!({ "ok": false, "error": "tab group not found" })),
     }
@@ -343,6 +347,23 @@ async fn act_tab_group(
     if group.control != BrowserControl::Agent {
         return Json(act_blocked_json(group.control));
     }
+    let Some(active_tab) = group.tabs.iter().find(|tab| tab.active).cloned() else {
+        return Json(serde_json::json!({
+            "ok": false,
+            "code": "no_active_tab",
+            "error": "tab group has no active tab",
+        }));
+    };
+    if !crate::human_browser::urls_match_for_snapshot(
+        &crate::human_browser::human_browser_active_url(),
+        &active_tab.url,
+    ) {
+        return Json(serde_json::json!({
+            "ok": false,
+            "code": "stale_surface_lease",
+            "error": "active native webview no longer matches the admitted tab",
+        }));
+    }
     let Some(app) = crate::human_browser::app_handle() else {
         return Json(serde_json::json!({
             "ok": false,
@@ -360,7 +381,16 @@ async fn act_tab_group(
         ms: request.ms,
     };
     match crate::human_browser::browser_act_embed(&app, &act_request).await {
-        Ok(report) if report.ok => Json(serde_json::json!({
+        Ok(report)
+            if report.ok
+                && TabGroupManager::get_group(&group.id).is_some_and(|current| {
+                    current.control == BrowserControl::Agent
+                        && current
+                            .tabs
+                            .iter()
+                            .any(|tab| tab.active && tab.id == active_tab.id)
+                })
+                && crate::human_browser::urls_match_for_snapshot(&report.url, &active_tab.url) => Json(serde_json::json!({
             "ok": true,
             "action": request.action,
             "selector": request.selector,
@@ -370,8 +400,12 @@ async fn act_tab_group(
         })),
         Ok(report) => Json(serde_json::json!({
             "ok": false,
-            "code": "act_failed",
-            "error": report.error.unwrap_or_else(|| "browser act failed".to_string()),
+            "code": if report.ok { "stale_surface_lease" } else { "act_failed" },
+            "error": report.error.unwrap_or_else(|| if report.ok {
+                "browser control, tab, or navigation changed before action completion".to_string()
+            } else {
+                "browser act failed".to_string()
+            }),
             "binding_used": "human_webview",
         })),
         Err(err) => Json(serde_json::json!({
@@ -809,7 +843,11 @@ pub fn browser_bridge_set_control(
     tab_group_id: String,
     control: String,
 ) -> Result<TabGroup, String> {
-    let group = TabGroupManager::set_control(&tab_group_id, parse_control(&control))
+    let control = parse_control(&control);
+    if control != BrowserControl::Agent {
+        crate::human_browser::revoke_agent_browser_actions();
+    }
+    let group = TabGroupManager::set_control(&tab_group_id, control)
         .ok_or_else(|| "tab group not found".to_string())?;
     emit_browser_context_updated(&app, &tab_group_id);
     Ok(group)
