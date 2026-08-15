@@ -341,6 +341,55 @@ impl ForgeExecutionService {
         join.map_err(|err| ForgeError::Store(format!("execution worker failed: {err}")))?
     }
 
+    /// Like [`Self::run_on_repo`], but probes Tokio worker delay while the
+    /// blocking job is active (ASYNC-001 executor-delay canary).
+    pub async fn run_with_canary<T, F>(
+        &self,
+        class: ExecutionClass,
+        estimated_bytes: usize,
+        repo_key: Option<String>,
+        work: F,
+    ) -> Result<T>
+    where
+        T: Send + 'static,
+        F: FnOnce() -> Result<T> + Send + 'static,
+    {
+        let admission = self
+            .admit(class, estimated_bytes, repo_key.as_deref())
+            .await?;
+        if admission.nested {
+            return work();
+        }
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel::<()>();
+        let join = tokio::task::spawn_blocking(move || {
+            let _nested = NestedAdmissionGuard::enter();
+            let _ = started_tx.send(());
+            work()
+        });
+        tokio::pin!(join);
+        tokio::select! {
+            result = &mut join => {
+                drop(admission);
+                return result
+                    .map_err(|err| ForgeError::Store(format!("execution worker failed: {err}")))?;
+            }
+            start = started_rx => {
+                let _ = start;
+            }
+        }
+        let probe_started = Instant::now();
+        tokio::task::yield_now().await;
+        let delay = probe_started.elapsed();
+        self.metrics
+            .canary_delay_us
+            .store(delay.as_micros() as u64, Ordering::Relaxed);
+        let result = join
+            .await
+            .map_err(|err| ForgeError::Store(format!("execution worker failed: {err}")))?;
+        drop(admission);
+        result
+    }
+
     /// Admit capacity, then run an already-async job (supervised Git) without
     /// occupying a blocking worker for the child wait.
     pub async fn run_async<T, Fut>(
@@ -579,6 +628,73 @@ async fn terminate_and_reap(child: &mut tokio::process::Child) {
     }
     let _ = child.start_kill();
     let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
+}
+
+/// Capture stdout/stderr from a spawned child with a hard byte bound.
+/// Excess bytes are drained so the child cannot stall on a full pipe.
+pub fn capture_child_output_bounded(
+    mut child: std::process::Child,
+    max_output: usize,
+) -> Result<(Vec<u8>, Vec<u8>, bool, std::process::ExitStatus)> {
+    let mut stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| ForgeError::Git("git stdout was unavailable".into()))?;
+    let mut stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| ForgeError::Git("git stderr was unavailable".into()))?;
+
+    let max = max_output.max(1);
+    let stdout_thread = std::thread::spawn(move || drain_sync_capped(&mut stdout, max));
+    let stderr_thread = std::thread::spawn(move || drain_sync_capped(&mut stderr, max));
+    let status = child
+        .wait()
+        .map_err(|err| ForgeError::Git(format!("git wait failed: {err}")))?;
+    let (stdout, stdout_trunc) = stdout_thread
+        .join()
+        .map_err(|_| ForgeError::Git("git stdout reader panicked".into()))?;
+    let (stderr, stderr_trunc) = stderr_thread
+        .join()
+        .map_err(|_| ForgeError::Git("git stderr reader panicked".into()))?;
+    Ok((stdout, stderr, stdout_trunc || stderr_trunc, status))
+}
+
+fn drain_sync_capped(reader: &mut impl std::io::Read, max_output: usize) -> (Vec<u8>, bool) {
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 8192];
+    let mut truncated = false;
+    loop {
+        let read = match std::io::Read::read(reader, &mut chunk) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(_) => break,
+        };
+        if buf.len() < max_output {
+            let take = (max_output - buf.len()).min(read);
+            buf.extend_from_slice(&chunk[..take]);
+            if take < read {
+                truncated = true;
+            }
+        } else {
+            truncated = true;
+        }
+    }
+    (buf, truncated)
+}
+
+/// Run a configured `std::process::Command` with bounded stdout/stderr capture.
+pub fn run_command_bounded(
+    mut command: std::process::Command,
+    max_output: usize,
+) -> Result<(Vec<u8>, Vec<u8>, bool, std::process::ExitStatus)> {
+    command
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let child = command
+        .spawn()
+        .map_err(|err| ForgeError::Git(format!("failed to spawn command: {err}")))?;
+    capture_child_output_bounded(child, max_output)
 }
 
 /// Supervise a Git child with timeout, output caps, and kill-on-drop.
@@ -859,6 +975,33 @@ mod tests {
             "canary should measure worker responsiveness, got {delay:?}"
         );
         assert!(service.metrics().canary_delay_us.load(Ordering::Relaxed) > 0);
+    }
+
+    #[tokio::test]
+    async fn run_with_canary_records_delay_around_heavy_work() {
+        let service = ForgeExecutionService::new();
+        let value = service
+            .run_with_canary(ExecutionClass::StoreIo, 32, None, || {
+                std::thread::sleep(Duration::from_millis(40));
+                Ok(11u32)
+            })
+            .await
+            .unwrap();
+        assert_eq!(value, 11);
+        assert!(service.metrics().canary_delay_us.load(Ordering::Relaxed) > 0);
+        assert_eq!(service.queued_commands(), 0);
+        assert_eq!(service.running_commands(), 0);
+    }
+
+    #[tokio::test]
+    async fn sync_command_capture_bounds_output() {
+        let mut command = std::process::Command::new("python3");
+        command.args(["-c", "print('x'*200000)"]);
+        let (stdout, _stderr, truncated, status) =
+            run_command_bounded(command, 1024).expect("bounded capture");
+        assert!(status.success());
+        assert!(truncated);
+        assert!(stdout.len() <= 1024);
     }
 
     #[tokio::test]

@@ -167,9 +167,7 @@ impl Forge {
         let store = FsWorkStore::open(root)?;
         let git = GitEngine::detect()?;
         let instance_id = format!("boot-{}", LeaseId::new().as_str());
-        let canonical = root
-            .canonicalize()
-            .unwrap_or_else(|_| root.to_path_buf());
+        let canonical = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
         let store_root = Arc::new(
             medousa_store::StoreRoot::open_or_create_nofollow(&canonical)
                 .map_err(|err| ForgeError::Store(err.to_string()))?,
@@ -186,7 +184,9 @@ impl Forge {
             observer: WorkspaceObserver::default(),
             execution: None,
         };
-        forge.rebuild_catalog_from_snapshots();
+        // Catalog rebuild is an unbounded snapshot scan — callers (daemon boot,
+        // list fallback) must admit it through ForgeExecutionService rather than
+        // running it inline on a Tokio worker during open.
         Ok(forge)
     }
 
@@ -206,7 +206,9 @@ impl Forge {
         &self.observer
     }
 
-    fn rebuild_catalog_from_snapshots(&self) {
+    /// Rebuild the listing catalog from on-disk snapshots. Must run under
+    /// [`ForgeExecutionService`] admission when invoked from async contexts.
+    pub fn rebuild_catalog_from_snapshots(&self) {
         let mut rebuilt = Vec::new();
         if let Ok(ids) = self.store.list_item_ids() {
             for id in ids {

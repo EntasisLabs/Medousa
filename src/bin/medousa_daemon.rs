@@ -116,15 +116,22 @@ impl DaemonSchedulerSideEffects {
         }
         *self.state.last_storage_maintenance_at.write().await = Some(now_utc);
         let forge = self.state.forge.clone();
+        let execution = self.state.forge_execution.clone();
         let data_root = medousa::paths::medousa_data_dir();
         let settings = medousa::daemon::storage_governor::load_settings(&data_root);
         let evidence_root = data_root.clone();
-        match tokio::task::spawn_blocking(move || {
-            medousa::agent_runtime::coder_evidence::maintain_default_store(&evidence_root)
-        })
-        .await
+        match execution
+            .run(
+                medousa_forge::execution::ExecutionClass::Compaction,
+                64 * 1024,
+                move || {
+                    medousa::agent_runtime::coder_evidence::maintain_default_store(&evidence_root)
+                        .map_err(|err| medousa_forge::error::ForgeError::Store(err.to_string()))
+                },
+            )
+            .await
         {
-            Ok(Ok(report))
+            Ok(report)
                 if report.expired_objects > 0
                     || report.pressure_evicted_objects > 0
                     || report.orphan_objects > 0 =>
@@ -138,19 +145,26 @@ impl DaemonSchedulerSideEffects {
                     "ephemeral Coder evidence maintenance completed"
                 );
             }
-            Ok(Ok(_)) => {}
-            Ok(Err(err)) => tracing::warn!(error = %err, "Coder evidence maintenance failed"),
-            Err(err) => tracing::warn!(error = %err, "Coder evidence maintenance task failed"),
+            Ok(_) => {}
+            Err(err) => tracing::warn!(error = %err, "Coder evidence maintenance failed"),
         }
         if !settings.enabled {
             return;
         }
-        let report = tokio::task::spawn_blocking(move || {
-            medousa::daemon::storage_governor::maintain_storage(&data_root, &forge, settings, false)
-        })
-        .await;
+        let report = execution
+            .run(
+                medousa_forge::execution::ExecutionClass::Compaction,
+                medousa_forge::execution::MAX_COMPACTION_BUFFER_BYTES,
+                move || {
+                    medousa::daemon::storage_governor::maintain_storage(
+                        &data_root, &forge, settings, false,
+                    )
+                    .map_err(|err| medousa_forge::error::ForgeError::Store(err))
+                },
+            )
+            .await;
         match report {
-            Ok(Ok(report)) if !report.actions.is_empty() || report.pressure_remaining => {
+            Ok(report) if !report.actions.is_empty() || report.pressure_remaining => {
                 tracing::info!(
                     selected_bytes = report.selected_bytes,
                     reclaimed_bytes = report.reclaimed_bytes,
@@ -159,9 +173,8 @@ impl DaemonSchedulerSideEffects {
                     "Forge cache maintenance completed"
                 );
             }
-            Ok(Ok(_)) => {}
-            Ok(Err(err)) => tracing::warn!(error = %err, "Forge cache maintenance failed"),
-            Err(err) => tracing::warn!(error = %err, "Forge cache maintenance task failed"),
+            Ok(_) => {}
+            Err(err) => tracing::warn!(error = %err, "Forge cache maintenance failed"),
         }
     }
 }
@@ -327,11 +340,10 @@ async fn main() -> Result<()> {
     let bound_addr = listener
         .local_addr()
         .context("failed to read medousa daemon listener address")?;
-    let request_boundary = medousa::daemon::request_boundary::RequestBoundary::for_listener(
-        bound_addr,
-    )
-    .context("failed to configure daemon Host/Origin boundary")?
-    .install();
+    let request_boundary =
+        medousa::daemon::request_boundary::RequestBoundary::for_listener(bound_addr)
+            .context("failed to configure daemon Host/Origin boundary")?
+            .install();
     let credential_lifecycle = medousa::credential_lifecycle::CredentialLifecycle::default();
     tracing::info!(requested = %addr, bound = %bound_addr, "acquired bind address, initializing runtime");
     // In-process tool proxies dial the API over loopback; point them at the
@@ -417,10 +429,37 @@ async fn main() -> Result<()> {
     let default_runtime_config = session_mapping::IngestSessionRuntimeConfig::from_saved_defaults();
     let retention_config = medousa::session_retention::SessionRetentionConfig::from_env();
 
-    let forge = medousa::daemon::forge_host::open_forge()?;
+    let forge_execution = Arc::new(medousa_forge::execution::ForgeExecutionService::new());
+    let mut forge = medousa::daemon::forge_host::open_forge()?;
+    forge.attach_execution(Arc::clone(&forge_execution));
+    let forge = Arc::new(forge);
+    // Startup catalog rebuild + boot reconcile are unbounded scans — admit them
+    // off the Tokio worker before serving HTTP.
+    {
+        let forge_for_rebuild = Arc::clone(&forge);
+        forge_execution
+            .run(
+                medousa_forge::execution::ExecutionClass::Compaction,
+                medousa_forge::execution::MAX_COMPACTION_BUFFER_BYTES,
+                move || {
+                    forge_for_rebuild.rebuild_catalog_from_snapshots();
+                    Ok(())
+                },
+            )
+            .await
+            .map_err(|err| anyhow::anyhow!("forge catalog rebuild failed: {err}"))?;
+    }
     {
         let probe = medousa::daemon::forge_host::DaemonLivenessProbe::new(forge.instance_id());
-        match forge.reconcile_on_boot(&probe) {
+        let forge_for_reconcile = Arc::clone(&forge);
+        match forge_execution
+            .run(
+                medousa_forge::execution::ExecutionClass::StoreIo,
+                medousa_forge::execution::MAX_STORE_PAYLOAD_BYTES,
+                move || forge_for_reconcile.reconcile_on_boot(&probe),
+            )
+            .await
+        {
             Ok(report) => {
                 if !report.interrupted_attempts.is_empty()
                     || !report.rolled_forward.is_empty()
@@ -489,7 +528,7 @@ async fn main() -> Result<()> {
         last_context_usage_by_session: Arc::new(RwLock::new(HashMap::new())),
         client_registry: platform.client_registry(),
         forge,
-        forge_execution: Arc::new(medousa_forge::execution::ForgeExecutionService::new()),
+        forge_execution,
         forge_events: medousa::daemon::forge_events::ForgeEventBus::new(),
         coding_engine: Some(medousa::daemon::coding_engine_host::CodingEngineHost::new()),
         shell_sessions: Some(medousa::daemon::shell_session_host::ShellSessionHost::new()),
@@ -508,7 +547,10 @@ async fn main() -> Result<()> {
             }
         },
     };
-    medousa::daemon::forge_watch::spawn_forge_worktree_watcher(state.forge_events.clone());
+    medousa::daemon::forge_watch::spawn_forge_worktree_watcher(
+        state.forge_events.clone(),
+        state.forge_execution.clone(),
+    );
 
     medousa::turn_worker_notify::register_ingest_channel_delivery_bridge(
         medousa::turn_worker_notify::IngestChannelDeliveryBridge::new(
@@ -686,8 +728,7 @@ async fn main() -> Result<()> {
             },
         ))
         .merge(
-            medousa::feed_handlers::feed_surface()
-                .with_state(medousa::feed_handlers::FeedApiState),
+            medousa::feed_handlers::feed_surface().with_state(medousa::feed_handlers::FeedApiState),
         )
         .merge(
             medousa::component_store_handlers::component_store_surface()
@@ -698,11 +739,13 @@ async fn main() -> Result<()> {
                 composition: std::sync::Arc::new(state.composition().clone()),
             },
         ))
-        .merge(medousa::tool_history_handlers::tool_history_surface().with_state(
-            medousa::workflow_handlers::WorkflowApiState {
-                composition: std::sync::Arc::new(state.composition().clone()),
-            },
-        ))
+        .merge(
+            medousa::tool_history_handlers::tool_history_surface().with_state(
+                medousa::workflow_handlers::WorkflowApiState {
+                    composition: std::sync::Arc::new(state.composition().clone()),
+                },
+            ),
+        )
         .merge(medousa::grapheme_handlers::grapheme_surface().with_state(
             medousa::grapheme_handlers::GraphemeApiState {
                 composition: std::sync::Arc::new(state.composition().clone()),
@@ -713,27 +756,23 @@ async fn main() -> Result<()> {
         .merge(medousa::stt_handlers::surface().with_state(()))
         .merge(medousa::lan_handlers::lan_surface().with_state(()))
         .merge(
-            medousa::component_runtime_handlers::component_runtime_surface().with_state(
-                medousa::component_runtime_handlers::ComponentRuntimeApiState,
-            ),
+            medousa::component_runtime_handlers::component_runtime_surface()
+                .with_state(medousa::component_runtime_handlers::ComponentRuntimeApiState),
         )
         .merge(medousa::daemon::coding_engine_host::coding_engine_surface())
         .merge(medousa::daemon::shell_session_host::shell_session_surface())
         .merge(medousa::daemon::detamu_host::world_surface())
         .merge(medousa::daemon::forge_api::forge_surface())
         .with_state(state.clone());
-    declared = declared.merge(
-        medousa::local_credential_handlers::surface().with_state(
-            medousa::local_credential_handlers::LocalCredentialApiState {
-                data_dir: medousa::paths::medousa_data_dir(),
-                credentials: local_credentials.clone(),
-                lifecycle: credential_lifecycle.clone(),
-                operation_lock: Arc::new(tokio::sync::Mutex::new(())),
-            },
-        ),
-    );
-    let preview = medousa::daemon::forge_preview::forge_preview_surface()
-        .with_state(state.clone());
+    declared = declared.merge(medousa::local_credential_handlers::surface().with_state(
+        medousa::local_credential_handlers::LocalCredentialApiState {
+            data_dir: medousa::paths::medousa_data_dir(),
+            credentials: local_credentials.clone(),
+            lifecycle: credential_lifecycle.clone(),
+            operation_lock: Arc::new(tokio::sync::Mutex::new(())),
+        },
+    ));
+    let preview = medousa::daemon::forge_preview::forge_preview_surface().with_state(state.clone());
     if let Some((pairing_bootstrap, pairing_protected)) = pairing_routers {
         bootstrap = bootstrap.merge(pairing_bootstrap);
         declared = declared.merge(pairing_protected);
@@ -753,13 +792,11 @@ async fn main() -> Result<()> {
         local_device_id: peer_message_state.local_device_id.clone(),
     };
     declared = declared
-        .merge(
-            medousa::workspace_handlers::workspace_surface().with_state(
-                medousa::workspace_handlers::WorkspaceHandlerState {
-                    composition: std::sync::Arc::new(state.composition().clone()),
-                },
-            ),
-        )
+        .merge(medousa::workspace_handlers::workspace_surface().with_state(
+            medousa::workspace_handlers::WorkspaceHandlerState {
+                composition: std::sync::Arc::new(state.composition().clone()),
+            },
+        ))
         .merge(medousa::daemon::agents::permission_surface())
         .merge(medousa::vault_handlers::vault_surface())
         .merge(
@@ -784,8 +821,7 @@ async fn main() -> Result<()> {
         )
         .merge(medousa::share_handlers::share_surface().with_state(share_api_state))
         .merge(
-            medousa::peer_message_handlers::peer_message_surface()
-                .with_state(peer_message_state),
+            medousa::peer_message_handlers::peer_message_surface().with_state(peer_message_state),
         )
         .merge(medousa::mesh::handlers::mesh_surface().with_state(mesh_api_state));
     app = medousa::peer_scope::assemble_daemon_access_boundary_with_declared(
