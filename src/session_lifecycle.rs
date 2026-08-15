@@ -138,10 +138,21 @@ pub async fn delete_session(
         deletion.record_surface(surface_result(surface.name(), result))?;
     }
 
+    // Deletion also runs from repair/fresh-process entry points that do not
+    // perform normal daemon startup. Establish the sole workspace writer before
+    // asking the turn-worker store to persist its retention mutation.
+    let writer_result = crate::workspace::persist::init_persist_writer();
     let turn_workers = crate::agent_runtime::turn_worker::turn_worker_store();
-    let mut turn_worker_result = turn_workers.delete_session(session_id_text);
+    let mut turn_worker_result = writer_result
+        .map_err(|error| error.to_string())
+        .and_then(|()| turn_workers.delete_session(session_id_text));
     if turn_worker_result.is_ok() {
-        let _ = crate::workspace::persist::flush_persist_writer().await;
+        turn_worker_result = crate::workspace::persist::flush_persist_writer()
+            .await
+            .map(|_| ())
+            .map_err(|error| error.to_string());
+    }
+    if turn_worker_result.is_ok() {
         turn_worker_result =
             crate::agent_runtime::turn_worker::TurnWorkerStore::session_absent_on_disk(
                 session_id_text,
@@ -416,7 +427,12 @@ mod tests {
                         false,
                     ))
                     .unwrap();
-                assert_eq!(summary.status, SessionDeletionStatus::Complete);
+                assert_eq!(
+                    summary.status,
+                    SessionDeletionStatus::Complete,
+                    "deletion surfaces: {:?}",
+                    summary.surfaces
+                );
                 assert!(summary.deleted);
             }
             "verify" => {
@@ -482,13 +498,14 @@ mod tests {
     #[test]
     fn deletion_inventory_is_absent_from_a_fresh_process() {
         let temp = tempfile::tempdir().unwrap();
+        let temp_root = temp.path().canonicalize().unwrap();
         let executable = std::env::current_exe().unwrap();
         for action in ["populate", "delete", "verify"] {
             let status = std::process::Command::new(&executable)
                 .arg("--exact")
                 .arg("session_lifecycle::tests::fresh_process_fixture")
                 .arg("--nocapture")
-                .env("MEDOUSA_DATA_DIR", temp.path())
+                .env("MEDOUSA_DATA_DIR", &temp_root)
                 .env("MEDOUSA_H02_FRESH_PROCESS_ACTION", action)
                 .status()
                 .unwrap();

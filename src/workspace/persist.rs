@@ -149,33 +149,20 @@ enum PersistCommand {
     Flush(oneshot::Sender<Result<CommitReceipt, PersistenceError>>),
 }
 
-pub fn init_persist_writer() {
+pub fn init_persist_writer() -> Result<(), PersistenceError> {
     if WRITER.get().is_some() {
-        return;
+        return Ok(());
     }
     let root_path = workspace_dir();
-    let mut projection = match load_projection_at(&root_path) {
-        Ok(projection) => projection,
-        Err(error) => {
-            tracing::error!(%error, "workspace recovery failed; persistence admission remains closed");
-            return;
-        }
-    };
+    let mut projection = load_projection_at(&root_path)?;
     projection.recalculate_bounds();
 
-    let root = match StoreRoot::open_or_create_nofollow(&root_path) {
-        Ok(root) => Arc::new(root),
-        Err(error) => {
-            tracing::error!(%error, "workspace persistence root unavailable");
-            return;
-        }
-    };
+    let root = Arc::new(StoreRoot::open_or_create_nofollow(&root_path)?);
     let snapshot_path = StorePath::parse(SNAPSHOT_FILE).expect("static workspace snapshot path");
     let snapshot_exists = root.metadata(&snapshot_path).is_ok();
     let transaction = FileTransaction::new(root);
-    if !snapshot_exists && let Err(error) = publish_snapshot(&transaction, &projection) {
-        tracing::error!(%error, "workspace legacy migration snapshot failed");
-        return;
+    if !snapshot_exists {
+        publish_snapshot(&transaction, &projection)?;
     }
 
     let (tx, rx) = mpsc::channel(COMMAND_CAPACITY);
@@ -185,6 +172,7 @@ pub fn init_persist_writer() {
     };
     tokio::spawn(run_persist_writer(rx, transaction, projection));
     let _ = WRITER.set(handle);
+    Ok(())
 }
 
 pub async fn flush_persist_writer() -> Result<CommitReceipt, PersistenceError> {

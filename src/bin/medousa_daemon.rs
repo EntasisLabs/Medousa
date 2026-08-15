@@ -522,7 +522,9 @@ async fn main() -> Result<()> {
         state.interactive_turn_streams.clone(),
     );
 
-    medousa::workspace::init_persist_writer();
+    if let Err(error) = medousa::workspace::init_persist_writer() {
+        tracing::error!(%error, "workspace persistence initialization failed");
+    }
     medousa::engine_recovery::run_startup_turn_recovery().await;
     medousa::workspace::init_workspace_hub(Arc::new(state.composition().clone()));
     if let Some(hub) = medousa::workspace::workspace_hub() {
