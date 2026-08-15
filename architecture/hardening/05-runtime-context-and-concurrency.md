@@ -113,6 +113,14 @@ accepted replay is admitted into the bounded execution registry with a fresh
 member-scoped principal, cancellation root, deadline, task owner, and exact
 lease instead of running as a detached authority-less turn.
 
+Provider completions, tool catalog reads, sequential tool calls, fallback
+synthesis, and parallel tool calls now cross a shared execution leaf boundary
+that races the operation against the exact turn cancellation root and absolute
+deadline. Parallel `JoinSet` tasks reinstall their parent's immutable context
+before invoking tools. Turn and inference-attempt stream pumps now abort on
+owner drop (including with live sender clones), closing the detached-delta leak;
+normal completion still drains in order.
+
 The current H05.0 request-state inventory is:
 
 | State | Classification | Current action |

@@ -126,6 +126,12 @@ semantic work is admitted beyond that fence. Cleanup waits within a finite
 deadline, aborts only tasks owned by the execution, and reports incomplete
 children/resources. Detached tasks that retain turn authority are forbidden.
 
+Provider and tool futures are awaited through the active execution boundary,
+which races each leaf against the root token and absolute deadline. Parallel
+tool tasks reinstall the same immutable context before invocation. Stream and
+attempt pumps are owned resources: normal completion drains them, while owner
+drop aborts them even if another sender clone remains live.
+
 Same-session cancel and steer operations must name the target turn/generation
 or be resolved by the session owner under one atomic admission rule. A stale
 request receives a typed conflict/gone result; it never targets whatever is

@@ -106,11 +106,19 @@ impl TurnStreamBridge {
     }
 }
 
+impl Drop for TurnStreamBridge {
+    fn drop(&mut self) {
+        if let Some(pump) = self.pump.take() {
+            pump.abort();
+        }
+    }
+}
+
 /// Owns one inference attempt's stream so retry/fallback decisions happen only
 /// after every delta from that attempt has been observed.
 struct AttemptStreamBridge {
     sender: Option<tokio::sync::mpsc::UnboundedSender<StreamDelta>>,
-    pump: tokio::task::JoinHandle<bool>,
+    pump: Option<tokio::task::JoinHandle<bool>>,
 }
 
 impl AttemptStreamBridge {
@@ -130,7 +138,7 @@ impl AttemptStreamBridge {
         });
         Self {
             sender: Some(sender),
-            pump,
+            pump: Some(pump),
         }
     }
 
@@ -140,7 +148,18 @@ impl AttemptStreamBridge {
 
     async fn finish(mut self) -> bool {
         self.sender.take();
-        self.pump.await.unwrap_or(true)
+        match self.pump.take() {
+            Some(pump) => pump.await.unwrap_or(true),
+            None => true,
+        }
+    }
+}
+
+impl Drop for AttemptStreamBridge {
+    fn drop(&mut self) {
+        if let Some(pump) = self.pump.take() {
+            pump.abort();
+        }
     }
 }
 
@@ -651,14 +670,14 @@ pub async fn classify_turn_intent_with_model(
         )),
     ];
 
-    let completion = pipeline
-        .complete_chat_stream(
-            ChatRequest::new(messages),
-            PromptExecutionContext::default(),
-            None,
-        )
-        .await
-        .ok()?;
+    let completion = super::execution_context::await_turn_boundary(pipeline.complete_chat_stream(
+        ChatRequest::new(messages),
+        PromptExecutionContext::default(),
+        None,
+    ))
+    .await
+    .ok()?
+    .ok()?;
 
     let raw = completion
         .response
@@ -1152,13 +1171,20 @@ async fn execute_local_turn_inner(
         sink.notice("◈ fallback_mode=prompt_only retry_count=0 retry_reason=none".to_string())
             .await;
 
-        let prompt_only_result = no_tools_pipeline
-            .complete_chat_stream(
+        let prompt_only_result = match super::execution_context::await_turn_boundary(
+            no_tools_pipeline.complete_chat_stream(
                 ChatRequest::new(messages),
                 prompt_ctx.clone(),
                 Some(stream_bridge.sender()),
-            )
-            .await;
+            ),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(error) => Err(stasis::domain::errors::StasisError::PortFailure(format!(
+                "{error} during prompt-only model completion"
+            ))),
+        };
         stream_bridge.drain().await;
         match prompt_only_result {
             Ok(completion) => {
@@ -1913,6 +1939,45 @@ mod stream_bridge_tests {
 
         assert!(!attempt.finish().await);
         bridge.drain().await;
+    }
+
+    #[tokio::test]
+    async fn dropped_stream_bridge_aborts_pump_with_live_sender_clone() {
+        let concrete = Arc::new(OrderedSink::default());
+        let sink: SharedAgentStreamSink = concrete;
+        let bridge = TurnStreamBridge::new(sink, 10);
+        let retained_sender = bridge.sender_clone();
+        let pump = bridge.pump.as_ref().unwrap().abort_handle();
+
+        drop(bridge);
+        for _ in 0..10 {
+            if pump.is_finished() {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+
+        assert!(pump.is_finished());
+        drop(retained_sender);
+    }
+
+    #[tokio::test]
+    async fn dropped_attempt_bridge_aborts_pump_with_live_sender_clone() {
+        let (target, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        let attempt = AttemptStreamBridge::new(target);
+        let retained_sender = attempt.sender().clone();
+        let pump = attempt.pump.as_ref().unwrap().abort_handle();
+
+        drop(attempt);
+        for _ in 0..10 {
+            if pump.is_finished() {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+
+        assert!(pump.is_finished());
+        drop(retained_sender);
     }
 
     #[test]

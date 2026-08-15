@@ -427,8 +427,61 @@ where
     ACTIVE_TURN_CONTEXT.scope(context, future).await
 }
 
+pub async fn with_optional_turn_execution_context<F>(
+    context: Option<Arc<TurnExecutionContext>>,
+    future: F,
+) -> F::Output
+where
+    F: Future,
+{
+    match context {
+        Some(context) => with_turn_execution_context(context, future).await,
+        None => future.await,
+    }
+}
+
 pub fn active_turn_execution_context() -> Option<Arc<TurnExecutionContext>> {
     ACTIVE_TURN_CONTEXT.try_with(Arc::clone).ok()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnExecutionBoundaryError {
+    Cancelled,
+    DeadlineExceeded,
+}
+
+impl fmt::Display for TurnExecutionBoundaryError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Cancelled => formatter.write_str("turn cancelled"),
+            Self::DeadlineExceeded => formatter.write_str("turn execution deadline exceeded"),
+        }
+    }
+}
+
+impl std::error::Error for TurnExecutionBoundaryError {}
+
+/// Await one provider/tool leaf under the active turn's cancellation root and
+/// absolute deadline. Callers without an admitted context retain legacy behavior.
+pub async fn await_turn_boundary<F, T>(future: F) -> Result<T, TurnExecutionBoundaryError>
+where
+    F: Future<Output = T>,
+{
+    let Some(context) = active_turn_execution_context() else {
+        return Ok(future.await);
+    };
+    let cancellation = context.cancellation().clone();
+    let deadline = tokio::time::Instant::from_std(context.deadline());
+    tokio::pin!(future);
+    tokio::select! {
+        biased;
+        () = cancellation.cancelled() => Err(TurnExecutionBoundaryError::Cancelled),
+        () = tokio::time::sleep_until(deadline) => {
+            cancellation.cancel();
+            Err(TurnExecutionBoundaryError::DeadlineExceeded)
+        }
+        output = &mut future => Ok(output),
+    }
 }
 
 pub async fn with_legacy_turn_scope<F>(scope: Arc<TurnContinuationScope>, future: F) -> F::Output
@@ -651,5 +704,55 @@ mod tests {
 
         parent.cancel();
         assert!(second_child.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn leaf_boundary_stops_on_exact_execution_cancellation() {
+        let context = Arc::new(context("session-a", "provider-a"));
+        let cancellation = context.cancellation().clone();
+        let waiting = with_turn_execution_context(context, async {
+            await_turn_boundary(std::future::pending::<()>()).await
+        });
+        tokio::pin!(waiting);
+        tokio::task::yield_now().await;
+        cancellation.cancel();
+
+        assert_eq!(waiting.await, Err(TurnExecutionBoundaryError::Cancelled));
+    }
+
+    #[tokio::test]
+    async fn leaf_boundary_enforces_absolute_deadline() {
+        let mut expired = context("session-a", "provider-a");
+        expired.deadline = Instant::now();
+        let cancellation = expired.cancellation().clone();
+        let result = with_turn_execution_context(Arc::new(expired), async {
+            await_turn_boundary(std::future::pending::<()>()).await
+        })
+        .await;
+
+        assert_eq!(result, Err(TurnExecutionBoundaryError::DeadlineExceeded));
+        assert!(cancellation.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn spawned_leaf_reinstalls_context_before_waiting() {
+        let context = Arc::new(context("session-a", "provider-a"));
+        let expected = context.handle();
+        let cancellation = context.cancellation().clone();
+        let child_context = context.clone();
+        let child = tokio::spawn(with_optional_turn_execution_context(
+            Some(child_context),
+            async move {
+                let observed = active_turn_execution_context().unwrap().handle();
+                let result = await_turn_boundary(std::future::pending::<()>()).await;
+                (observed, result)
+            },
+        ));
+        tokio::task::yield_now().await;
+        cancellation.cancel();
+        let (observed, result) = child.await.unwrap();
+
+        assert_eq!(observed, expected);
+        assert_eq!(result, Err(TurnExecutionBoundaryError::Cancelled));
     }
 }
