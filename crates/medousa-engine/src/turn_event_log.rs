@@ -511,6 +511,24 @@ impl TurnEventLog {
     pub fn close_journal(&self) {
         self.lock().journal.take();
     }
+
+    /// Remove this turn's journal and marker only after an exact commit receipt
+    /// has been validated. Uncommitted journals remain startup-recovery authority.
+    pub fn delete_committed_files(&self) -> std::io::Result<bool> {
+        let mut inner = self.lock();
+        if !inner.committed {
+            return Ok(false);
+        }
+        inner.journal.take();
+        drop(inner);
+
+        let turn_id = TurnEventId::parse(&self.envelope.turn_id).map_err(std::io::Error::other)?;
+        remove_file_if_present(&self.root, &commit_marker_name(&turn_id))?;
+        sync_directory(&self.root)?;
+        remove_file_if_present(&self.root, &journal_name(&turn_id))?;
+        sync_directory(&self.root)?;
+        Ok(true)
+    }
 }
 
 fn journal_name(turn_id: &TurnEventId) -> String {
@@ -523,6 +541,15 @@ fn commit_marker_name(turn_id: &TurnEventId) -> String {
 
 fn marker_name_for_storage_key(storage_key: &str) -> String {
     format!("{storage_key}.{COMMIT_EXT}")
+}
+
+fn remove_file_if_present(root: &Dir, name: &str) -> std::io::Result<()> {
+    reject_link(root, name)?;
+    match root.remove_file(name) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
 }
 
 fn atomic_write(root: &Dir, name: &str, bytes: &[u8]) -> std::io::Result<()> {
@@ -563,28 +590,32 @@ fn sync_directory(_root: &Dir) -> std::io::Result<()> {
 
 fn commit_marker_matches(root: &Dir, turn_id: &TurnEventId, through_seq: u64) -> bool {
     let name = commit_marker_name(turn_id);
-    if reject_link(root, &name).is_err() {
-        return false;
-    }
-    let mut options = OpenOptions::new();
-    options.read(true).follow(FollowSymlinks::No);
-    let Ok(file) = root.open_with(&name, &options) else {
-        return false;
-    };
-    let mut reader = BufReader::new(file).take(4097);
-    let mut bytes = Vec::with_capacity(256);
-    if reader.read_to_end(&mut bytes).is_err() {
-        return false;
-    }
-    if bytes.len() > 4096 {
-        return false;
-    }
-    let Ok(marker) = serde_json::from_slice::<CommitMarker>(&bytes) else {
+    let Some(marker) = read_commit_marker(root, &name) else {
         return false;
     };
     marker.schema_version == COMMIT_MARKER_SCHEMA_VERSION
         && marker.turn_id == turn_id.as_str()
         && marker.through_seq == through_seq
+}
+
+fn read_commit_marker(root: &Dir, name: &str) -> Option<CommitMarker> {
+    if reject_link(root, name).is_err() {
+        return None;
+    }
+    let mut options = OpenOptions::new();
+    options.read(true).follow(FollowSymlinks::No);
+    let Ok(file) = root.open_with(name, &options) else {
+        return None;
+    };
+    let mut reader = BufReader::new(file).take(4097);
+    let mut bytes = Vec::with_capacity(256);
+    if reader.read_to_end(&mut bytes).is_err() {
+        return None;
+    }
+    if bytes.len() > 4096 {
+        return None;
+    }
+    serde_json::from_slice::<CommitMarker>(&bytes).ok()
 }
 
 fn reject_link(root: &Dir, name: &str) -> std::io::Result<()> {
@@ -741,6 +772,50 @@ pub fn recover_uncommitted(root: impl AsRef<Path>) -> Vec<RecoveredTurn> {
         });
     }
     recovered
+}
+
+/// Delete journals whose marker proves that the exact durable prefix was
+/// committed. Intended for startup cleanup after recovery has run.
+pub fn prune_committed(root: impl AsRef<Path>) -> std::io::Result<usize> {
+    let root = Dir::open_ambient_dir(root.as_ref(), ambient_authority())?;
+    let entries = root.entries()?;
+    let mut deleted = 0usize;
+    for entry in entries.flatten() {
+        let Some(marker_name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        let Some(stem) = marker_name.strip_suffix(&format!(".{COMMIT_EXT}")) else {
+            continue;
+        };
+        if !matches!(entry.file_type(), Ok(file_type) if file_type.is_file()) {
+            continue;
+        }
+        let Some(marker) = read_commit_marker(&root, &marker_name) else {
+            continue;
+        };
+        let Ok(turn_id) = TurnEventId::parse(&marker.turn_id) else {
+            continue;
+        };
+        if turn_id.storage_key().as_str() != stem {
+            continue;
+        }
+        let journal_name = journal_name(&turn_id);
+        let Ok(scan) = scan_journal(&root, &journal_name, turn_id.as_str()) else {
+            continue;
+        };
+        let through_seq = scan.next_seq.saturating_sub(1);
+        if marker.schema_version != COMMIT_MARKER_SCHEMA_VERSION
+            || marker.through_seq != through_seq
+        {
+            continue;
+        }
+        remove_file_if_present(&root, &marker_name)?;
+        sync_directory(&root)?;
+        remove_file_if_present(&root, &journal_name)?;
+        sync_directory(&root)?;
+        deleted = deleted.saturating_add(1);
+    }
+    Ok(deleted)
 }
 
 fn scan_journal(root: &Dir, name: &str, turn_id: &str) -> std::io::Result<JournalScan> {
@@ -1081,6 +1156,31 @@ mod tests {
 
         fs::write(&marker_path, b"not a commit receipt").unwrap();
         assert_eq!(recover_uncommitted(&root).len(), 1);
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn committed_retention_prunes_only_exactly_receipted_journals() {
+        let root = tmp_root("committed-retention");
+        {
+            let committed = TurnEventLog::open_in(&root, env("turn-prune-me")).unwrap();
+            committed.append(final_ev("done", vec![])).unwrap();
+            committed.mark_committed().unwrap();
+        }
+        {
+            let recoverable = TurnEventLog::open_in(&root, env("turn-keep-me")).unwrap();
+            recoverable.append(final_ev("recover", vec![])).unwrap();
+        }
+
+        assert_eq!(prune_committed(&root).unwrap(), 1);
+        assert_eq!(recover_uncommitted(&root).len(), 1);
+        let names = fs::read_dir(&root)
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.file_name())
+            .collect::<Vec<_>>();
+        assert_eq!(names.len(), 1);
+        assert!(names[0].to_string_lossy().ends_with(".jsonl"));
         fs::remove_dir_all(&root).ok();
     }
 

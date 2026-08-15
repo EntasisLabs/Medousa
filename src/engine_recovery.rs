@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use medousa_engine::{
     TurnEventLog, TurnStorePort, UpsertOutcome, configure_log_root, default_log_root,
-    recover_uncommitted, TURN_LOG_DIR,
+    prune_committed, recover_uncommitted, TURN_LOG_DIR,
 };
 
 use crate::engine_adapters::SessionTurnStore;
@@ -125,11 +125,9 @@ pub async fn run_startup_turn_recovery() {
     configure_log_root(root.clone());
 
     let recovered = recover_uncommitted(&root);
-    if recovered.is_empty() {
-        return;
+    if !recovered.is_empty() {
+        tracing::info!(count = recovered.len(), "recovering uncommitted turn journals");
     }
-
-    tracing::info!(count = recovered.len(), "recovering uncommitted turn journals");
 
     let store = SessionTurnStore;
     for item in recovered {
@@ -183,6 +181,12 @@ pub async fn run_startup_turn_recovery() {
         {
             tracing::warn!(%turn_id, %error, "recovery commit marker write failed");
         }
+    }
+
+    match prune_committed(&root) {
+        Ok(0) => {}
+        Ok(count) => tracing::info!(count, "pruned committed turn journals"),
+        Err(error) => tracing::warn!(%error, "failed to prune committed turn journals"),
     }
 }
 
