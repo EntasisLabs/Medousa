@@ -36,11 +36,12 @@ pub mod workspace_card;
 
 use crate::daemon::sse::stream_sse_json_workshop;
 use crate::daemon::types::{
-    AgentModeId, DEFAULT_DAEMON_URL, DaemonHealth, EnvironmentStreamEvent, InteractiveTurnAccepted,
+    AgentModeId, DaemonHealth, EnvironmentStreamEvent, InteractiveTurnAccepted,
     InteractiveTurnRequest, InteractiveTurnStreamEvent, StageRoutingMatrix, TurnSurfaceContext,
-    WorkspaceStreamEvent,
+    WorkspaceStreamEvent, DEFAULT_DAEMON_URL,
 };
 use crate::workshop_transport;
+use medousa_types::turn_stream::{TurnStreamEnvelopeV2, TURN_STREAM_V2_MEDIA_TYPE};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -53,6 +54,13 @@ pub struct DaemonState {
     environment_cancel: Mutex<Option<watch::Sender<bool>>>,
     /// One SSE listener per turn id — Tier 2c multi-stream bridge.
     interactive_streams: Mutex<HashMap<String, watch::Sender<bool>>>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(untagged)]
+enum InteractiveStreamPayload {
+    V2(TurnStreamEnvelopeV2),
+    V1(InteractiveTurnStreamEvent),
 }
 
 impl DaemonState {
@@ -259,12 +267,11 @@ pub async fn workspace_stream_start(
     tokio::spawn(async move {
         match workshop_transport::workshop_get_bytes_stream(&config, &path).await {
             Ok(source) => {
-                stream_sse_json_workshop::<WorkspaceStreamEvent, _>(
+                stream_sse_json_workshop::<WorkspaceStreamEvent>(
                     &app,
                     source,
                     "workspace://event",
                     "workspace://error",
-                    |_event| {},
                     cancel_rx,
                 )
                 .await;
@@ -317,12 +324,11 @@ pub async fn environment_stream_start(
     tokio::spawn(async move {
         match workshop_transport::workshop_get_bytes_stream(&config, &path).await {
             Ok(source) => {
-                stream_sse_json_workshop::<EnvironmentStreamEvent, _>(
+                stream_sse_json_workshop::<EnvironmentStreamEvent>(
                     &app,
                     source,
                     "environment://event",
                     "environment://error",
-                    |_event| {},
                     cancel_rx,
                 )
                 .await;
@@ -499,14 +505,19 @@ pub async fn interactive_stream_start(
         .unwrap_or_else(|| stream_url.clone());
 
     tokio::spawn(async move {
-        match workshop_transport::workshop_get_bytes_stream(&config, &path).await {
+        match workshop_transport::workshop_get_bytes_stream_with_accept(
+            &config,
+            &path,
+            Some(TURN_STREAM_V2_MEDIA_TYPE),
+        )
+        .await
+        {
             Ok(source) => {
-                stream_sse_json_workshop::<InteractiveTurnStreamEvent, _>(
+                stream_sse_json_workshop::<InteractiveStreamPayload>(
                     &app,
                     source,
                     "interactive://event",
                     "interactive://error",
-                    |_event| {},
                     cancel_rx,
                 )
                 .await;
@@ -550,4 +561,39 @@ pub fn interactive_stream_stop_turn(
         let _ = tx.send(true);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::InteractiveStreamPayload;
+
+    #[test]
+    fn interactive_stream_payload_accepts_v2_and_legacy_frames() {
+        let v2 = serde_json::json!({
+            "schema_version": 2,
+            "turn_id": "turn-1",
+            "seq": 1,
+            "emitted_at_utc": "2026-08-15T00:00:00Z",
+            "event": { "type": "content_append", "text": "hello" }
+        });
+        assert!(matches!(
+            serde_json::from_value(v2).unwrap(),
+            InteractiveStreamPayload::V2(_)
+        ));
+
+        let legacy = serde_json::json!({
+            "turn_id": "turn-1",
+            "seq": 1,
+            "event_type": "content_delta",
+            "phase": "streaming",
+            "message": "",
+            "content_delta": "hello",
+            "terminal": false,
+            "emitted_at_utc": "2026-08-15T00:00:00Z"
+        });
+        assert!(matches!(
+            serde_json::from_value(legacy).unwrap(),
+            InteractiveStreamPayload::V1(_)
+        ));
+    }
 }

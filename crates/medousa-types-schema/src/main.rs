@@ -64,6 +64,8 @@ fn main() {
     export_type!(schemas, TurnTicketRecord, "TurnTicketRecord");
     export_type!(schemas, InteractiveTurnResponse, "InteractiveTurnResponse");
     export_type!(schemas, InteractiveTurnStreamEvent, "InteractiveTurnStreamEvent");
+    export_type!(schemas, TurnStreamEnvelopeV2, "TurnStreamEnvelopeV2");
+    export_type!(schemas, TurnStreamEventV2, "TurnStreamEventV2");
 
     // Recurring
     export_type!(schemas, RegisterRecurringPromptRequest, "RegisterRecurringPromptRequest");

@@ -177,9 +177,7 @@ fn required_worker_text(value: Option<String>, field: &str) -> Result<String, St
     TrimmedText::new(value.unwrap_or_default())
         .map(TrimmedText::into_string)
         .map_err(|_| {
-            StasisError::PortFailure(format!(
-                "cognition_spawn_turn_worker: {field} is required"
-            ))
+            StasisError::PortFailure(format!("cognition_spawn_turn_worker: {field} is required"))
         })
 }
 
@@ -473,11 +471,11 @@ impl CognitionWorkshopSteerTool {
                 )
             })?;
         let speaker = crate::user_profiles::resolve_workshop_identity_user_id();
-        steer_bound_workshop_for_session(&session_id, &input.work_id, message, Some(speaker))
+        steer_bound_workshop_for_session(&session_id, &input.work_id, message, Some(speaker)).await
     }
 }
 
-pub fn steer_bound_workshop_for_session(
+pub async fn steer_bound_workshop_for_session(
     session_id: &str,
     work_id: &str,
     message: &str,
@@ -528,7 +526,9 @@ pub fn steer_bound_workshop_for_session(
         &[],
         speaker.as_deref(),
     );
-    crate::session_writer::persist_turn(session_id, turn, None);
+    crate::session_writer::persist_turn(session_id, turn, None)
+        .await
+        .map_err(|error| StasisError::PortFailure(error.to_string()))?;
 
     Ok(WorkshopSteerOutput::Queued {
         ok: true,
@@ -557,7 +557,10 @@ mod tests {
         assert_eq!(command.explicit_intent, Some(TurnWorkerIntent::Research));
         assert_eq!(command.task, "inspect the feed");
         assert_eq!(command.user_ack, "I am on it");
-        assert_eq!(command.manuscript_id.as_deref(), Some("research-specialist"));
+        assert_eq!(
+            command.manuscript_id.as_deref(),
+            Some("research-specialist")
+        );
         assert_eq!(command.stage_role.as_deref(), Some("verifier"));
         assert_eq!(command.model_hint.as_deref(), Some("auto"));
     }

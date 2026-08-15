@@ -30,8 +30,8 @@ sequenceDiagram
 
 1. **POST** [`/v1/interactive/turn`](http-api.md) with `InteractiveTurnRequest` (session, prompt, surface context, attachments).
 2. Response `InteractiveTurnResponse` includes `turn_id` and **`stream_url`** (typically `/v1/interactive/turn/{turn_id}/stream`).
-3. **GET** `stream_url` with `Accept: text/event-stream`.
-4. Parse each SSE data line as `InteractiveTurnStreamEvent` until `terminal: true`. Track **`seq`** on every event.
+3. **GET** `stream_url` with `Accept: text/event-stream` for the legacy v1 DTO, or explicitly negotiate the typed v2 envelope as described below.
+4. Track **`seq`** on every event. For v1, parse each SSE data line as `InteractiveTurnStreamEvent` until `terminal: true`.
    `worker_ack` and `workshop_ack` are non-terminal host handoff boundaries:
    release the host composer there, then follow the background result through
    the stream or session history rather than holding the composer until the
@@ -74,6 +74,26 @@ late detached deltas from outliving the cancelled turn.
 
 Types: `medousa_types::daemon_api::InteractiveTurnStreamEvent`
 
+### Typed v2 negotiation
+
+The existing stream URLs also serve the typed v2 contract. Request it explicitly:
+
+```http
+Accept: text/event-stream; medousa-version=2
+```
+
+The response repeats that media type in `Content-Type` and includes
+`Vary: Accept`. An unsupported explicit `medousa-version` returns `406 Not
+Acceptable`. Missing version negotiation remains v1 for compatibility.
+
+Each v2 SSE message uses `event: turn_stream_v2`; its `data` is a
+`TurnStreamEnvelopeV2` with `schema_version`, `turn_id`, monotonic `seq`,
+`emitted_at_utc`, and a required tagged `event`. Terminality comes from the
+typed event variant instead of a separate boolean. Live delivery and
+`?since=` replay use the same sequenced journal projection.
+
+Types: `medousa_types::turn_stream::{TurnStreamEnvelopeV2, TurnStreamEventV2}`
+
 ---
 
 ## Reattach & reliability
@@ -84,6 +104,7 @@ The daemon journals every turn event to a **durable spine** (`TurnEventLog` on d
 
 ```
 GET /v1/interactive/turn/{turn_id}/stream?since=42
+Accept: text/event-stream; medousa-version=2
 ```
 
 The server replays events with `seq > 42`, then continues live. Dedupe any duplicate `seq` client-side after replay.

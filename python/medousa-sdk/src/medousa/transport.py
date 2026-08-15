@@ -36,6 +36,10 @@ class Transport(Protocol):
 
     async def stream_sse(self, base_url: str, path: str) -> httpx.Response: ...
 
+    async def stream_sse_with_accept(
+        self, base_url: str, path: str, accept: str
+    ) -> httpx.Response: ...
+
 
 class HttpTransport:
     """Default httpx-based transport."""
@@ -119,11 +123,16 @@ class HttpTransport:
         return response.json()
 
     async def stream_sse(self, base_url: str, path: str) -> httpx.Response:
+        return await self.stream_sse_with_accept(base_url, path, "text/event-stream")
+
+    async def stream_sse_with_accept(
+        self, base_url: str, path: str, accept: str
+    ) -> httpx.Response:
         client = await self._client_or_create()
         request = client.build_request(
             "GET",
             f"{base_url.rstrip('/')}{normalize_path(path)}",
-            headers={"Accept": "text/event-stream"},
+            headers={"Accept": accept},
         )
         response = await client.send(request, stream=True)
         self._raise_for_status(response)
@@ -175,13 +184,18 @@ class WorkshopTransport(HttpTransport):
         return response.json() if response.content else {}
 
     async def stream_sse(self, base_url: str, path: str) -> httpx.Response:
+        return await self.stream_sse_with_accept(base_url, path, "text/event-stream")
+
+    async def stream_sse_with_accept(
+        self, base_url: str, path: str, accept: str
+    ) -> httpx.Response:
         url = f"{base_url.rstrip('/')}{normalize_path(path)}"
         client = await self._client_or_create()
         response = await client.send(
             client.build_request(
                 "GET",
                 url,
-                headers={**self._headers, "Accept": "text/event-stream"},
+                headers={**self._headers, "Accept": accept},
             ),
             stream=True,
         )

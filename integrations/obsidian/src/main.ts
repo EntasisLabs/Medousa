@@ -19,6 +19,7 @@ import {
   MedousaClient,
   MedousaHttpError,
   isBackgroundHandoffEvent,
+  isTurnStreamTerminal,
   type InteractiveTurnRequest,
   type SessionHistoryResponse,
   type SessionSummary,
@@ -368,7 +369,7 @@ export default class MedousaPlugin extends Plugin {
       const accepted = await client.startTurn(request, { signal: controller.signal });
       const projection = createProjectionState();
       let handedOff = false;
-      for await (const event of client.streamTurn(accepted, {
+      for await (const event of client.streamTurnV2(accepted, {
         signal: controller.signal,
         stopOnHandoff: true,
       })) {
@@ -406,12 +407,12 @@ export default class MedousaPlugin extends Plugin {
     }
 
     try {
-      for await (const event of client.streamTurn(response, {
+      for await (const event of client.streamTurnV2(response, {
         signal: watcher.signal,
         maxReconnectAttempts: 8,
       })) {
         if (isBackgroundHandoffEvent(event)) continue;
-        if (event.terminal) {
+        if (isTurnStreamTerminal(event)) {
           await this.pollWorkshopHistory(sessionId, watcher.signal, callbacks, 8);
           return;
         }

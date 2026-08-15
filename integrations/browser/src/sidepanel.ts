@@ -2,6 +2,7 @@ import {
   boundContext,
   hostContext,
   isBackgroundHandoffEvent,
+  isTurnStreamTerminal,
   MedousaClient,
   MedousaHttpError,
   type ClientToolDefinition,
@@ -567,7 +568,7 @@ async function sendPrompt(value?: string): Promise<void> {
     const response = await client.startTurn(request, { signal: abort.signal });
     activeTurn = response;
     const projection = createProjectionState();
-    for await (const event of client.streamTurn(response, { signal: abort.signal, stopOnHandoff: true })) {
+    for await (const event of client.streamTurnV2(response, { signal: abort.signal, stopOnHandoff: true })) {
       for (const projected of projectStreamEvent(event, projection)) {
         if (projected.kind === "handoff") {
           handedOff = true;
@@ -576,7 +577,7 @@ async function sendPrompt(value?: string): Promise<void> {
           handleProjected(projected);
         }
       }
-      if (handedOff || event.terminal) break;
+      if (handedOff || isTurnStreamTerminal(event)) break;
     }
     if (handedOff) {
       activeAbort = null;
@@ -658,9 +659,9 @@ async function followWorkshop(response: InteractiveTurnResponse, turnSessionId: 
   const watcher = new AbortController();
   workshopWatchers.set(response.turn_id, watcher);
   try {
-    for await (const event of client.streamTurn(response, { signal: watcher.signal, maxReconnectAttempts: 8 })) {
+    for await (const event of client.streamTurnV2(response, { signal: watcher.signal, maxReconnectAttempts: 8 })) {
       if (isBackgroundHandoffEvent(event)) continue;
-      if (event.terminal) {
+      if (isTurnStreamTerminal(event)) {
         await reconcileWorkshopHistory(turnSessionId, watcher.signal, 8);
         return;
       }

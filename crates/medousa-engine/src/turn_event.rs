@@ -18,6 +18,7 @@
 //! code aligned with the live SSE `event_type` taxonomy.
 
 use chrono::{DateTime, Utc};
+use medousa_types::TurnStreamEventV2;
 use medousa_types::turn::TurnPart;
 use serde::{Deserialize, Serialize};
 
@@ -368,10 +369,18 @@ impl TurnEvent {
 
 /// A `TurnEvent` stamped with its envelope (turn identity + monotonic `seq`).
 /// This is the unit appended to the durable per-turn event log (the spine).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SequencedTurnEvent {
     pub envelope: TurnEnvelope,
     pub event: TurnEvent,
+    /// Original stream timestamp for exact replay without duplicating hot-path
+    /// content in the journal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub emitted_at_utc: Option<DateTime<Utc>>,
+    /// Frozen payload only for variants the domain event cannot reconstruct
+    /// losslessly. Common deltas/statuses pay no duplicate-payload cost.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_event_v2: Option<TurnStreamEventV2>,
 }
 
 impl SequencedTurnEvent {
@@ -447,10 +456,15 @@ mod tests {
                 }],
                 committed_at: Utc::now(),
             },
+            emitted_at_utc: None,
+            stream_event_v2: None,
         };
         let json = serde_json::to_string(&original).unwrap();
         let decoded: SequencedTurnEvent = serde_json::from_str(&json).unwrap();
-        assert_eq!(decoded, original);
+        assert_eq!(decoded.envelope, original.envelope);
+        assert_eq!(decoded.event, original.event);
+        assert_eq!(decoded.emitted_at_utc, original.emitted_at_utc);
+        assert!(decoded.stream_event_v2.is_none());
         assert_eq!(decoded.seq(), 3);
         assert_eq!(decoded.event.kind(), "final");
     }

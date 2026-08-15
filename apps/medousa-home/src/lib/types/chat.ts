@@ -33,7 +33,13 @@ export interface ToolRunState {
 }
 
 import type { ChatMediaAttachment } from "$lib/types/media";
-import type { HostTurnContext } from "$lib/types/generated/daemon_api";
+import type {
+  ContextUsageLayer as GeneratedContextUsageLayer,
+  ContextUsageReport as GeneratedContextUsageReport,
+  HostTurnContext,
+  InteractiveTurnStreamEvent as GeneratedInteractiveTurnStreamEvent,
+  StreamUiScene as GeneratedStreamUiScene,
+} from "$lib/types/generated/daemon_api";
 
 export interface ChatMessage {
   id: string;
@@ -126,88 +132,8 @@ export interface TurnTicketState {
   requestedRounds?: number | null;
 }
 
-export interface InteractiveTurnStreamEvent {
-  turn_id: string;
-  /** Monotonic per-turn sequence stamped server-side; enables exactly-once replay/dedup. */
-  /** @see $lib/types/generated/daemon_api.ts (schema-generated contract) */
-  seq?: number;
-  event_type: string;
-  phase: string;
-  message: string;
-  content_delta?: string | null;
-  reasoning_delta?: string | null;
-  final_text?: string | null;
-  tool_names?: string[] | null;
-  response_provider?: string | null;
-  response_model?: string | null;
-  terminal: boolean;
-  emitted_at_utc: string;
-  budget_request_id?: string | null;
-  requested_rounds?: number | null;
-  work_id?: string | null;
-  tool_run_id?: string | null;
-  tool_name?: string | null;
-  tool_status?: string | null;
-  tool_input_summary?: string | null;
-  /** Redacted tool arguments; truncated at the emit site. */
-  tool_input_params?: import("$lib/types/card").ToolInputParam[] | null;
-  tool_output_summary?: string | null;
-  tool_round?: number | null;
-  tool_artifact_refs?: ToolArtifactRef[] | null;
-  ui_artifact?: {
-    artifact_id: string;
-    mime: string;
-    label: string;
-    presentation: string;
-    byte_size?: number | null;
-    height_px?: number | null;
-  } | null;
-  previous_artifact_id?: string | null;
-  root_artifact_id?: string | null;
-  /** Liquid UI scene operations for this turn (structure-then-fill). */
-  ui_scene?: StreamUiScene | null;
-  /** Human-facing status whisper (Home default). */
-  operator_message?: string | null;
-  /** Engine telemetry — shown only with engine details enabled. */
-  debug_message?: string | null;
-  browser_session_id?: string | null;
-  browser_challenge_url?: string | null;
-  /** Turn-start context budget breakdown (Cursor-style telemetry). */
-  context_usage?: ContextUsageReport | null;
-  /** ACP permission pause — approve/deny via agents permission API. */
-  permission_request_id?: string | null;
-  agent_session_id?: string | null;
-  agent_runtime?: string | null;
-}
-
-/**
- * Liquid UI scene channel (Phase 2 of the daemon seam). The model authors scene
- * operations in the `SceneOp` JSON shape; the daemon forwards them verbatim as
- * opaque JSON, and the client decodes/validates them. See
- * `$lib/liquid/surfaces/chat/sceneStream`.
- */
-export interface StreamUiScene {
-  turn_id?: string | null;
-  /** Scene surface id (defaults to `chat:{turn_id}` on the client). */
-  surface_id?: string | null;
-  /** Owning `plan_layout` revision for ordering (informational). */
-  rev?: number | null;
-  /** Ordered scene operations, opaque JSON validated client-side. */
-  ops: unknown[];
-}
-
-export interface ContextUsageLayer {
-  id: string;
-  label: string;
-  chars: number;
-  tokens_estimate: number;
-}
-
-export interface ContextUsageReport {
-  layers: ContextUsageLayer[];
-  total_tokens_estimate: number;
-  total_chars: number;
-  context_limit_tokens?: number | null;
-  tool_count: number;
-  estimator: string;
-}
+/** Frozen v1 compatibility DTO. The schema generator is its sole Home owner. */
+export type InteractiveTurnStreamEvent = GeneratedInteractiveTurnStreamEvent;
+export type StreamUiScene = GeneratedStreamUiScene;
+export type ContextUsageLayer = GeneratedContextUsageLayer;
+export type ContextUsageReport = GeneratedContextUsageReport;

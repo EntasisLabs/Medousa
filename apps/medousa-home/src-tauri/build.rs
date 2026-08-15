@@ -1,4 +1,10 @@
 fn main() {
+    println!("cargo:rustc-check-cfg=cfg(p02_benchmark)");
+    println!("cargo:rerun-if-env-changed=PUBLIC_P02_HARNESS");
+    if std::env::var("PUBLIC_P02_HARNESS").as_deref() == Ok("1") {
+        println!("cargo:rustc-cfg=p02_benchmark");
+    }
+
     embed_macos_dev_info_plist();
     if is_ios_build_target() {
         // Widget extension is wired by ios-prepare; always compile the ActivityKit bridge.

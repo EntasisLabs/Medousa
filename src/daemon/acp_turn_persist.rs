@@ -102,19 +102,25 @@ fn input_summary(input: &Value) -> String {
 }
 
 /// Persist the user prompt at the start of an ACP pump.
-pub fn persist_user_prompt(session_id: &str, prompt: &str) {
-    session_writer::persist_turn(session_id, user_conversation_turn(prompt), None);
+pub async fn persist_user_prompt(
+    session_id: &str,
+    prompt: &str,
+) -> Result<crate::session_store::CommitReceipt, crate::session_store::StoreError> {
+    session_writer::persist_turn(session_id, user_conversation_turn(prompt), None).await
 }
 
 /// Persist the assistant turn once (Done / idle / Error).
-pub fn persist_assistant_if_needed(
+pub async fn persist_assistant_if_needed(
     session_id: &str,
     state: &mut AcpPromptPersistState,
     answer_state: Option<&str>,
-) {
+) -> Result<Option<crate::session_store::CommitReceipt>, crate::session_store::StoreError> {
     if let Some(turn) = state.take_assistant_turn(answer_state) {
-        session_writer::persist_turn(session_id, turn, None);
+        return session_writer::persist_turn(session_id, turn, None)
+            .await
+            .map(Some);
     }
+    Ok(None)
 }
 
 /// Fold a sequence of ACP events into user + assistant turns (for tests).

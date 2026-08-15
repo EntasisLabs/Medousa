@@ -1,6 +1,8 @@
+use std::fmt;
 use std::future::IntoFuture;
 use std::sync::{Arc, RwLock};
 
+use async_trait::async_trait;
 use medousa_types::SessionId;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -135,9 +137,59 @@ impl From<&ConversationTurn> for SessionTurnRecord {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommitDurability {
+    /// The bytes were accepted by the capability-owned filesystem handle.
+    FilesystemWrite,
+    /// The database accepted the complete batch as one statement.
+    DatabaseCommit,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CommitReceipt {
+    pub turns: usize,
+    pub bytes: usize,
+    pub durability: CommitDurability,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StoreError {
+    InvalidInput(String),
+    Serialization(String),
+    Backend(String),
+    Worker(String),
+}
+
+impl fmt::Display for StoreError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidInput(message) => write!(formatter, "invalid input: {message}"),
+            Self::Serialization(message) => write!(formatter, "serialization failed: {message}"),
+            Self::Backend(message) => write!(formatter, "store backend failed: {message}"),
+            Self::Worker(message) => write!(formatter, "store worker failed: {message}"),
+        }
+    }
+}
+
+impl std::error::Error for StoreError {}
+
+#[async_trait]
 pub trait SessionStore: Send + Sync + 'static {
     fn load_history(&self, session_id: &SessionId) -> Vec<ConversationTurn>;
-    fn append_turn(&self, session_id: &SessionId, turn: &ConversationTurn);
+    async fn append_turn_batch(
+        &self,
+        session_id: &SessionId,
+        turns: &[ConversationTurn],
+    ) -> Result<CommitReceipt, StoreError>;
+
+    async fn append_turn(
+        &self,
+        session_id: &SessionId,
+        turn: &ConversationTurn,
+    ) -> Result<CommitReceipt, StoreError> {
+        self.append_turn_batch(session_id, std::slice::from_ref(turn))
+            .await
+    }
     fn delete_session(&self, session_id: &SessionId) -> Result<(), String>;
     fn list_history_sessions(&self, limit: usize) -> Vec<SessionHistorySummary>;
     fn build_backfill_summaries(&self, limit: usize) -> Vec<SessionHistorySummary>;
@@ -155,7 +207,7 @@ fn block_on<F: IntoFuture>(f: F) -> F::Output {
 // ---------------------------------------------------------------------------
 
 struct FileSessionStore {
-    files: crate::session_storage::SessionFileStore,
+    files: Arc<crate::session_storage::SessionFileStore>,
 }
 
 impl FileSessionStore {
@@ -165,24 +217,65 @@ impl FileSessionStore {
 
     fn at(root: std::path::PathBuf) -> Self {
         Self {
-            files: crate::session_storage::SessionFileStore::new(root, "jsonl"),
+            files: Arc::new(crate::session_storage::SessionFileStore::new(root, "jsonl")),
         }
     }
 }
 
+#[async_trait]
 impl SessionStore for FileSessionStore {
     fn load_history(&self, session_id: &SessionId) -> Vec<ConversationTurn> {
         crate::session::file_load_history(&self.files, session_id)
     }
 
-    fn append_turn(&self, session_id: &SessionId, turn: &ConversationTurn) {
-        crate::session::file_append_turn(&self.files, session_id, turn);
-        crate::session_catalog::record_turn_appended_for_id(session_id, turn);
+    async fn append_turn_batch(
+        &self,
+        session_id: &SessionId,
+        turns: &[ConversationTurn],
+    ) -> Result<CommitReceipt, StoreError> {
+        if turns.is_empty() {
+            return Ok(CommitReceipt {
+                turns: 0,
+                bytes: 0,
+                durability: CommitDurability::FilesystemWrite,
+            });
+        }
+
+        let files = Arc::clone(&self.files);
+        let session_id = session_id.clone();
+        let turns = turns.to_vec();
+        tokio::task::spawn_blocking(move || {
+            let mut bytes = Vec::new();
+            for turn in &turns {
+                serde_json::to_writer(&mut bytes, turn)
+                    .map_err(|error| StoreError::Serialization(error.to_string()))?;
+                bytes.push(b'\n');
+            }
+            files
+                .append(&session_id, &bytes)
+                .map_err(|error| StoreError::Backend(error.to_string()))?;
+            for turn in &turns {
+                crate::session_catalog::record_turn_appended_for_id(&session_id, turn);
+            }
+            Ok(CommitReceipt {
+                turns: turns.len(),
+                bytes: bytes.len(),
+                durability: CommitDurability::FilesystemWrite,
+            })
+        })
+        .await
+        .map_err(|error| StoreError::Worker(error.to_string()))?
     }
 
     fn delete_session(&self, session_id: &SessionId) -> Result<(), String> {
-        self.files.remove(session_id).map_err(|error| error.to_string())?;
-        if self.files.contains(session_id).map_err(|error| error.to_string())? {
+        self.files
+            .remove(session_id)
+            .map_err(|error| error.to_string())?;
+        if self
+            .files
+            .contains(session_id)
+            .map_err(|error| error.to_string())?
+        {
             return Err("session transcript remains after deletion".to_string());
         }
         Ok(())
@@ -237,6 +330,7 @@ impl SurrealSessionStore {
     }
 }
 
+#[async_trait]
 impl SessionStore for SurrealSessionStore {
     fn load_history(&self, session_id: &SessionId) -> Vec<ConversationTurn> {
         let sql = "SELECT session_id, role, content, timestamp, tool_names, answer_state, parts, \
@@ -267,30 +361,53 @@ impl SessionStore for SurrealSessionStore {
         }
     }
 
-    fn append_turn(&self, session_id: &SessionId, turn: &ConversationTurn) {
-        let mut record = SessionTurnRecord::from(turn);
-        record.session_id = session_id.to_string();
-
-        let sql = "CREATE type::table($table) CONTENT $data";
-        let response = match block_on(
-            self.db
-                .query(sql)
-                .bind(("table", SESSION_TURN_TABLE))
-                .bind(("data", record)),
-        ) {
-            Ok(response) => response,
-            Err(err) => {
-                eprintln!("SurrealSessionStore::append_turn query error: {err}");
-                return;
-            }
-        };
-
-        if let Err(err) = response.check() {
-            eprintln!("SurrealSessionStore::append_turn error: {err}");
-            return;
+    async fn append_turn_batch(
+        &self,
+        session_id: &SessionId,
+        turns: &[ConversationTurn],
+    ) -> Result<CommitReceipt, StoreError> {
+        if turns.is_empty() {
+            return Ok(CommitReceipt {
+                turns: 0,
+                bytes: 0,
+                durability: CommitDurability::DatabaseCommit,
+            });
         }
 
-        crate::session_catalog::record_turn_appended_for_id(session_id, turn);
+        let records = turns
+            .iter()
+            .map(|turn| {
+                let mut record = SessionTurnRecord::from(turn);
+                record.session_id = session_id.to_string();
+                record
+            })
+            .collect::<Vec<_>>();
+        let bytes = records
+            .iter()
+            .map(|record| serde_json::to_vec(record).map(|value| value.len()))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| StoreError::Serialization(error.to_string()))?
+            .into_iter()
+            .sum();
+
+        let response = self
+            .db
+            .query("INSERT INTO session_turn $data")
+            .bind(("data", records))
+            .await
+            .map_err(|error| StoreError::Backend(error.to_string()))?;
+        response
+            .check()
+            .map_err(|error| StoreError::Backend(error.to_string()))?;
+
+        for turn in turns {
+            crate::session_catalog::record_turn_appended_for_id(session_id, turn);
+        }
+        Ok(CommitReceipt {
+            turns: turns.len(),
+            bytes,
+            durability: CommitDurability::DatabaseCommit,
+        })
     }
 
     fn delete_session(&self, session_id: &SessionId) -> Result<(), String> {
@@ -472,4 +589,62 @@ pub fn has_persisted_sessions() -> bool {
 
 pub fn delete_session_transcript(session_id: &SessionId) -> Result<(), String> {
     get_session_store().delete_session(session_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+
+    fn turn(content: &str) -> ConversationTurn {
+        ConversationTurn {
+            role: "assistant".to_string(),
+            content: content.to_string(),
+            timestamp: Utc::now(),
+            tool_names: Vec::new(),
+            answer_state: None,
+            parts: None,
+            slice_summary: None,
+            speaker_profile_id: None,
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn file_receipt_is_visible_to_a_fresh_store_instance() {
+        let root = std::env::temp_dir().join(format!(
+            "medousa-session-receipt-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let session_id = SessionId::parse("receipt-reload").unwrap();
+        let store = FileSessionStore::at(root.clone());
+        let receipt = store
+            .append_turn_batch(&session_id, &[turn("one"), turn("two")])
+            .await
+            .unwrap();
+        assert_eq!(receipt.turns, 2);
+        assert!(receipt.bytes > 0);
+
+        let reopened = FileSessionStore::at(root.clone());
+        let history = reopened.load_history(&session_id);
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[1].content, "two");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn file_backend_failure_never_produces_a_receipt() {
+        let parent = std::env::temp_dir().join(format!(
+            "medousa-session-failure-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        std::fs::write(&parent, b"not a directory").unwrap();
+        let store = FileSessionStore::at(parent.join("history"));
+        let session_id = SessionId::parse("receipt-failure").unwrap();
+        let error = store
+            .append_turn(&session_id, &turn("must fail"))
+            .await
+            .unwrap_err();
+        assert!(matches!(error, StoreError::Backend(_)));
+        std::fs::remove_file(parent).unwrap();
+    }
 }

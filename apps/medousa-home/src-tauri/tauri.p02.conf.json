@@ -1,0 +1,21 @@
+{
+  "build": {
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Medousa P02 packaged benchmark",
+        "url": "/p02-browser-harness",
+        "width": 1440,
+        "height": 900,
+        "visible": true
+      }
+    ]
+  },
+  "bundle": {
+    "externalBin": [],
+    "targets": ["app"]
+  }
+}

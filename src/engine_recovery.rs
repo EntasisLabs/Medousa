@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use medousa_engine::{
     TurnEventLog, TurnStorePort, UpsertOutcome, configure_log_root, default_log_root,
-    recover_uncommitted, TURN_LOG_DIR,
+    prune_committed, recover_uncommitted, TURN_LOG_DIR,
 };
 
 use crate::engine_adapters::SessionTurnStore;
@@ -125,11 +125,9 @@ pub async fn run_startup_turn_recovery() {
     configure_log_root(root.clone());
 
     let recovered = recover_uncommitted(&root);
-    if recovered.is_empty() {
-        return;
+    if !recovered.is_empty() {
+        tracing::info!(count = recovered.len(), "recovering uncommitted turn journals");
     }
-
-    tracing::info!(count = recovered.len(), "recovering uncommitted turn journals");
 
     let store = SessionTurnStore;
     for item in recovered {
@@ -178,9 +176,17 @@ pub async fn run_startup_turn_recovery() {
         }
 
         if (committed_any || recovery_ledger_contains(&session_id, &turn_id))
-            && let Ok(log) = TurnEventLog::open_in(&root, item.envelope) {
-                log.mark_committed();
-            }
+            && let Ok(log) = TurnEventLog::open_in(&root, item.envelope)
+            && let Err(error) = log.mark_committed()
+        {
+            tracing::warn!(%turn_id, %error, "recovery commit marker write failed");
+        }
+    }
+
+    match prune_committed(&root) {
+        Ok(0) => {}
+        Ok(count) => tracing::info!(count, "pruned committed turn journals"),
+        Err(error) => tracing::warn!(%error, "failed to prune committed turn journals"),
     }
 }
 
@@ -206,7 +212,7 @@ mod tests {
                 tool_names: vec![],
                 parts: vec![],
                 committed_at: Utc::now(),
-            });
+            }).unwrap();
         }
 
         let pending = recover_uncommitted(&root);
@@ -221,7 +227,7 @@ mod tests {
                 .expect("upsert");
         }
         if let Ok(log) = TurnEventLog::open_in(&root, envelope) {
-            log.mark_committed();
+            log.mark_committed().unwrap();
         }
 
         assert!(recover_uncommitted(&root).is_empty());

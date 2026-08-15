@@ -66,7 +66,7 @@ async fn list_history_sessions_handler() {
         let sid = format!("session-{}", i);
         let turn =
             ConversationTurn::plain("user", format!("content {}", i), Utc::now(), vec![], None);
-        medousa::session::append_turn(&sid, &turn);
+        medousa::session::append_turn(&sid, &turn).await.unwrap();
     }
 
     let query = Query(SessionHistoryListRequest {
@@ -107,8 +107,12 @@ async fn list_history_sessions_search_via_handlers() {
     medousa::session::set_session_display_name("beta-session", "Morning brief").unwrap();
 
     let turn = ConversationTurn::plain("user", "hello".to_string(), Utc::now(), vec![], None);
-    medousa::session::append_turn("alpha-session", &turn);
-    medousa::session::append_turn("beta-session", &turn);
+    medousa::session::append_turn("alpha-session", &turn)
+        .await
+        .unwrap();
+    medousa::session::append_turn("beta-session", &turn)
+        .await
+        .unwrap();
 
     let search = Query(SessionHistoryListRequest {
         limit: Some(10),

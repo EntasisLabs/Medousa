@@ -1162,6 +1162,19 @@ class TurnSliceSummary(MedousaModel):
     working_notes: list[str] | None = None
 
 
+class SessionDeletionStatus(Enum):
+    deleting = 'deleting'
+    complete = 'complete'
+    retryable_partial = 'retryable_partial'
+    blocked = 'blocked'
+
+
+class SessionDeletionSurfaceResult(MedousaModel):
+    deleted: bool
+    reason_class: str | None = None
+    surface: str
+
+
 class SessionHistorySummary(MedousaModel):
     catalog: str | None = Field(
         None,
@@ -1243,6 +1256,328 @@ class TurnBudgetRequestRecord(MedousaModel):
     stream_turn_id: int = Field(..., ge=0)
     turn_correlation_id: str | None = None
     updated_at_utc: AwareDatetime
+
+
+class Type5(Enum):
+    content_append = 'content_append'
+
+
+class TurnStreamEventV21(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    text: str
+    type: Type5
+
+
+class Type6(Enum):
+    reasoning_append = 'reasoning_append'
+
+
+class TurnStreamEventV22(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    text: str
+    type: Type6
+
+
+class Type7(Enum):
+    status = 'status'
+
+
+class TurnStreamEventV23(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    debug_message: str | None = None
+    operator_message: str | None = None
+    phase: str
+    type: Type7
+
+
+class Type8(Enum):
+    progress = 'progress'
+
+
+class TurnStreamEventV24(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    message: str
+    tool_names: list[str] | None = []
+    type: Type8
+
+
+class Type9(Enum):
+    pack_hold = 'pack_hold'
+
+
+class TurnStreamEventV25(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    text: str
+    tool_names: list[str] | None = []
+    type: Type9
+
+
+class Type10(Enum):
+    model_receipt = 'model_receipt'
+
+
+class TurnStreamEventV26(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    model: str
+    provider: str
+    type: Type10
+
+
+class Type11(Enum):
+    final = 'final'
+
+
+class TurnStreamEventV27(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    text: str
+    tool_names: list[str] | None = []
+    type: Type11
+
+
+class Type12(Enum):
+    needs_input = 'needs_input'
+
+
+class TurnStreamEventV28(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    text: str
+    tool_names: list[str] | None = []
+    type: Type12
+
+
+class Type13(Enum):
+    checkpoint = 'checkpoint'
+
+
+class TurnStreamEventV29(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    text: str
+    tool_names: list[str] | None = []
+    type: Type13
+
+
+class Type14(Enum):
+    worker_ack = 'worker_ack'
+
+
+class Type15(Enum):
+    worker_synthesis = 'worker_synthesis'
+
+
+class TurnStreamEventV211(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    text: str
+    tool_names: list[str] | None = []
+    type: Type15
+    work_id: str | None = None
+
+
+class Type16(Enum):
+    final_pending = 'final_pending'
+
+
+class TurnStreamEventV212(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    text: str
+    tool_names: list[str] | None = []
+    type: Type16
+
+
+class Type17(Enum):
+    error = 'error'
+
+
+class TurnStreamEventV213(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    debug_message: str | None = None
+    operator_message: str
+    type: Type17
+
+
+class Type18(Enum):
+    scratch_reset = 'scratch_reset'
+
+
+class TurnStreamEventV214(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    type: Type18
+
+
+class Type19(Enum):
+    tool_started = 'tool_started'
+
+
+class TurnStreamEventV215(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    input_params: list[ToolInputParam] | None = Field([], validate_default=True)
+    input_summary: str
+    tool_name: str
+    tool_round: int = Field(..., ge=0)
+    tool_run_id: str
+    type: Type19
+
+
+class Type20(Enum):
+    tool_finished = 'tool_finished'
+
+
+class TurnStreamEventV216(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    artifact_refs: list[StreamToolArtifactRef] | None = Field([], validate_default=True)
+    input_params: list[ToolInputParam] | None = Field([], validate_default=True)
+    input_summary: str
+    output_summary: str | None = None
+    status: str
+    tool_name: str
+    tool_round: int = Field(..., ge=0)
+    tool_run_id: str
+    type: Type20
+
+
+class Type21(Enum):
+    artifact_presented = 'artifact_presented'
+
+
+class TurnStreamEventV217(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    artifact: StreamUiArtifact
+    type: Type21
+
+
+class Type22(Enum):
+    artifact_updated = 'artifact_updated'
+
+
+class TurnStreamEventV218(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    artifact: StreamUiArtifact
+    previous_artifact_id: str
+    root_artifact_id: str | None = None
+    type: Type22
+
+
+class Type23(Enum):
+    ui_scene = 'ui_scene'
+
+
+class TurnStreamEventV219(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    scene: StreamUiScene
+    type: Type23
+
+
+class Type24(Enum):
+    budget_approval_required = 'budget_approval_required'
+
+
+class TurnStreamEventV220(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    max_tool_rounds: int = Field(..., ge=0)
+    progress_summary: str | None = None
+    reason: str
+    request_id: str
+    requested_rounds: int = Field(..., ge=0)
+    rounds_executed: int = Field(..., ge=0)
+    type: Type24
+
+
+class Type25(Enum):
+    browser_challenge = 'browser_challenge'
+
+
+class TurnStreamEventV221(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    challenge_url: str
+    reason: str
+    session_id: str
+    type: Type25
+
+
+class Type26(Enum):
+    browser_navigated = 'browser_navigated'
+
+
+class TurnStreamEventV222(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    opened_by_agent: bool | None = False
+    title: str | None = None
+    type: Type26
+    url: str
+
+
+class Type27(Enum):
+    context_usage = 'context_usage'
+
+
+class TurnStreamEventV223(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    operator_summary: str | None = None
+    report: ContextUsageReport
+    type: Type27
+
+
+class Type28(Enum):
+    permission_request = 'permission_request'
+
+
+class TurnStreamEventV224(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    agent_runtime: str | None = None
+    agent_session_id: str | None = None
+    message: str
+    request_id: str
+    type: Type28
+
+
+class WorkerAckKind(Enum):
+    worker = 'worker'
+    workshop = 'workshop'
 
 
 class TurnTicketMode(Enum):
@@ -1427,7 +1762,6 @@ class ArtifactFetchResponse(MedousaModel):
     height_px: int | None = Field(None, ge=0)
     label: str
     mime: str
-    payload_path: str | None = None
     presentation: str | None = None
 
 
@@ -2058,9 +2392,12 @@ class SessionCodeProjectResponse(MedousaModel):
 class SessionDeleteResponse(MedousaModel):
     cancelled_active_turn: bool
     deleted: bool
+    deletion_id: str | None = ''
     locus_nodes_deleted: int = Field(..., ge=0)
     locus_purged: bool
     session_id: str
+    status: SessionDeletionStatus | None = 'complete'
+    surfaces: list[SessionDeletionSurfaceResult] | None = Field([], validate_default=True)
 
 
 class SessionHistoryListResponse(MedousaModel):
@@ -2416,6 +2753,73 @@ class TurnPart(
     root: TurnPart1 | TurnPart2 | TurnPart3 | TurnPart4 | TurnPart5 | TurnPart6 | TurnPart7 | TurnPart8 | TurnPart9 | TurnPart10
 
 
+class TurnStreamEventV210(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    ack_kind: WorkerAckKind
+    text: str
+    tool_names: list[str] | None = []
+    type: Type14
+    work_id: str | None = None
+
+
+class TurnStreamEventV2(
+    RootModel[
+        TurnStreamEventV21
+        | TurnStreamEventV22
+        | TurnStreamEventV23
+        | TurnStreamEventV24
+        | TurnStreamEventV25
+        | TurnStreamEventV26
+        | TurnStreamEventV27
+        | TurnStreamEventV28
+        | TurnStreamEventV29
+        | TurnStreamEventV210
+        | TurnStreamEventV211
+        | TurnStreamEventV212
+        | TurnStreamEventV213
+        | TurnStreamEventV214
+        | TurnStreamEventV215
+        | TurnStreamEventV216
+        | TurnStreamEventV217
+        | TurnStreamEventV218
+        | TurnStreamEventV219
+        | TurnStreamEventV220
+        | TurnStreamEventV221
+        | TurnStreamEventV222
+        | TurnStreamEventV223
+        | TurnStreamEventV224
+    ]
+):
+    root: (
+        TurnStreamEventV21
+        | TurnStreamEventV22
+        | TurnStreamEventV23
+        | TurnStreamEventV24
+        | TurnStreamEventV25
+        | TurnStreamEventV26
+        | TurnStreamEventV27
+        | TurnStreamEventV28
+        | TurnStreamEventV29
+        | TurnStreamEventV210
+        | TurnStreamEventV211
+        | TurnStreamEventV212
+        | TurnStreamEventV213
+        | TurnStreamEventV214
+        | TurnStreamEventV215
+        | TurnStreamEventV216
+        | TurnStreamEventV217
+        | TurnStreamEventV218
+        | TurnStreamEventV219
+        | TurnStreamEventV220
+        | TurnStreamEventV221
+        | TurnStreamEventV222
+        | TurnStreamEventV223
+        | TurnStreamEventV224
+    ) = Field(..., title='TurnStreamEventV2')
+
+
 class WorkCard(MedousaModel):
     column: WorkBoardColumn
     created_at_utc: AwareDatetime
@@ -2561,6 +2965,17 @@ class RuntimeConfigCommandRequest(MedousaModel):
     current_response_depth_mode: str
     draft_model: str
     draft_provider: str
+
+
+class TurnStreamEnvelopeV2(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    emitted_at_utc: AwareDatetime
+    event: TurnStreamEventV2
+    schema_version: int = Field(..., ge=2, le=2)
+    seq: int = Field(..., ge=1)
+    turn_id: str
 
 
 class WorkspaceStreamEvent(MedousaModel):

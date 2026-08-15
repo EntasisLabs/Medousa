@@ -71,8 +71,23 @@ where
 }
 
 #[cfg(feature = "sse")]
-pub fn decode_sse_json<T: serde::de::DeserializeOwned>(
-    data: &str,
-) -> Result<T, SdkError> {
+pub fn decode_sse_json<T: serde::de::DeserializeOwned>(data: &str) -> Result<T, SdkError> {
     serde_json::from_str(data).map_err(Into::into)
+}
+
+#[cfg(all(test, feature = "sse"))]
+mod tests {
+    use super::*;
+    use medousa_types::TurnStreamEnvelopeV2;
+
+    #[test]
+    fn sdk_decoder_roundtrips_v2_discriminated_events() {
+        let json = r#"{"schema_version":2,"turn_id":"turn-1","seq":7,"emitted_at_utc":"2026-08-14T00:00:00Z","event":{"type":"content_append","text":"hello"}}"#;
+        let decoded: TurnStreamEnvelopeV2 = decode_sse_json(json).unwrap();
+        assert_eq!(decoded.seq, 7);
+        assert_eq!(
+            serde_json::to_value(decoded).unwrap()["event"]["type"],
+            "content_append"
+        );
+    }
 }

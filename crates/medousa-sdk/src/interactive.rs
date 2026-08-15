@@ -1,5 +1,8 @@
 #[cfg(feature = "async")]
-use medousa_types::{InteractiveTurnRequest, InteractiveTurnResponse, InteractiveTurnStreamEvent};
+use medousa_types::{
+    InteractiveTurnRequest, InteractiveTurnResponse, InteractiveTurnStreamEvent,
+    TurnStreamEnvelopeV2,
+};
 
 #[cfg(all(feature = "async", feature = "sse"))]
 use futures_util::Stream;
@@ -12,9 +15,9 @@ use crate::client::MedousaClient;
 use crate::transport::decode;
 
 #[cfg(all(feature = "async", feature = "sse"))]
-use crate::streaming::{SseLineStream, decode_sse_json};
+use crate::reconnecting_stream::{ReconnectingInteractiveStream, ReconnectingInteractiveStreamV2};
 #[cfg(all(feature = "async", feature = "sse"))]
-use crate::reconnecting_stream::ReconnectingInteractiveStream;
+use crate::streaming::{SseLineStream, decode_sse_json};
 
 #[cfg(feature = "async")]
 pub struct InteractiveApi<'a> {
@@ -27,7 +30,8 @@ impl InteractiveApi<'_> {
         &self,
         request: &InteractiveTurnRequest,
     ) -> Result<InteractiveTurnResponse, crate::SdkError> {
-        let body = serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let body =
+            serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
         let value = self
             .client
             .transport()
@@ -61,6 +65,25 @@ impl InteractiveApi<'_> {
         ReconnectingInteractiveStream::with_policy(self.client, stream_url, policy)
     }
 
+    /// Open the recommended typed v2 stream with spine-backed reconnect.
+    #[cfg(feature = "sse")]
+    pub fn stream_reconnecting_v2(
+        &self,
+        stream_url: impl Into<String>,
+    ) -> ReconnectingInteractiveStreamV2<'_> {
+        ReconnectingInteractiveStreamV2::new_v2(self.client, stream_url)
+    }
+
+    /// Open the typed v2 stream with a custom reconnect policy.
+    #[cfg(feature = "sse")]
+    pub fn stream_reconnecting_v2_with_policy(
+        &self,
+        stream_url: impl Into<String>,
+        policy: crate::ReconnectPolicy,
+    ) -> ReconnectingInteractiveStreamV2<'_> {
+        ReconnectingInteractiveStreamV2::with_policy_v2(self.client, stream_url, policy)
+    }
+
     #[cfg(feature = "sse")]
     pub async fn stream_turn_reconnecting(
         &self,
@@ -68,6 +91,16 @@ impl InteractiveApi<'_> {
     ) -> Result<ReconnectingInteractiveStream<'_>, crate::SdkError> {
         let response = self.start_turn(request).await?;
         Ok(self.stream_reconnecting(response.stream_url))
+    }
+
+    /// Start a turn and follow its typed v2 stream through bounded reconnects.
+    #[cfg(feature = "sse")]
+    pub async fn stream_turn_reconnecting_v2(
+        &self,
+        request: &InteractiveTurnRequest,
+    ) -> Result<ReconnectingInteractiveStreamV2<'_>, crate::SdkError> {
+        let response = self.start_turn(request).await?;
+        Ok(self.stream_reconnecting_v2(response.stream_url))
     }
 
     #[cfg(feature = "sse")]
@@ -79,6 +112,20 @@ impl InteractiveApi<'_> {
             .client
             .transport()
             .stream_sse(self.client.base_url(), stream_url.into());
+        SseLineStream::new(byte_stream).map(|line| line.and_then(|data| decode_sse_json(&data)))
+    }
+
+    /// Open the typed v2 turn stream without reconnecting.
+    #[cfg(feature = "sse")]
+    pub fn stream_v2(
+        &self,
+        stream_url: impl Into<String>,
+    ) -> impl Stream<Item = Result<TurnStreamEnvelopeV2, crate::SdkError>> + '_ {
+        let byte_stream = self.client.transport().stream_sse_with_accept(
+            self.client.base_url(),
+            stream_url.into(),
+            medousa_types::turn_stream::TURN_STREAM_V2_MEDIA_TYPE,
+        );
         SseLineStream::new(byte_stream).map(|line| line.and_then(|data| decode_sse_json(&data)))
     }
 

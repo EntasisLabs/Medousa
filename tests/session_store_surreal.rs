@@ -51,11 +51,16 @@ async fn surreal_session_store_append_and_load_history() {
     let base = Utc.with_ymd_and_hms(2026, 6, 8, 12, 0, 0).unwrap();
 
     let session_id = session_id("medousa-home");
-    store.append_turn(&session_id, &user_turn("first", base));
+    store
+        .append_turn(&session_id, &user_turn("first", base))
+        .await
+        .unwrap();
     store.append_turn(
         &session_id,
         &user_turn("second", base + Duration::minutes(1)),
-    );
+    )
+    .await
+    .unwrap();
 
     let turns = store.load_history(&session_id);
     assert_eq!(turns.len(), 2);
@@ -70,7 +75,9 @@ async fn surreal_session_store_persists_turns_with_parts_timeline() {
     store.append_turn(
         &session_id,
         &user_conversation_turn("hello with structured parts"),
-    );
+    )
+    .await
+    .unwrap();
 
     let turns = store.load_history(&session_id);
     assert_eq!(turns.len(), 1);
@@ -92,15 +99,21 @@ async fn surreal_list_history_sessions_includes_named_workshop_sessions() {
     store.append_turn(
         &session_id("medousa-home"),
         &user_turn("workshop default", base),
-    );
+    )
+    .await
+    .unwrap();
     store.append_turn(
         &session_id("medousa-home-30ddc8bf-e469-40f0-8b5d-ca1c0397c8a4"),
         &user_turn("ios new chat", base + Duration::minutes(5)),
-    );
+    )
+    .await
+    .unwrap();
     store.append_turn(
         &session_id("2e326df0bb3f42219f51aa4d776efe2c"),
         &user_turn("tui uuid session", base + Duration::minutes(10)),
-    );
+    )
+    .await
+    .unwrap();
 
     let sessions = store.list_history_sessions(50);
     let ids: Vec<_> = sessions.iter().map(|s| s.session_id.as_str()).collect();
@@ -125,11 +138,16 @@ async fn surreal_list_history_sessions_ordered_by_recency() {
     let store = setup_store().await;
     let base = Utc.with_ymd_and_hms(2026, 6, 8, 10, 0, 0).unwrap();
 
-    store.append_turn(&session_id("older-session"), &user_turn("old", base));
+    store
+        .append_turn(&session_id("older-session"), &user_turn("old", base))
+        .await
+        .unwrap();
     store.append_turn(
         &session_id("newer-session"),
         &user_turn("new", base + Duration::hours(2)),
-    );
+    )
+    .await
+    .unwrap();
 
     let sessions = store.list_history_sessions(10);
     assert_eq!(sessions.len(), 2);
@@ -147,7 +165,9 @@ async fn surreal_list_history_sessions_respects_limit() {
         store.append_turn(
             &session_id,
             &user_turn(&format!("turn {i}"), base + Duration::minutes(i as i64)),
-        );
+        )
+        .await
+        .unwrap();
     }
 
     let sessions = store.list_history_sessions(3);
@@ -165,7 +185,10 @@ async fn surreal_group_by_uses_time_max_not_math_max() {
 
     let base = Utc.with_ymd_and_hms(2026, 6, 8, 14, 0, 0).unwrap();
     let store = SurrealSessionStore::new(db.clone());
-    store.append_turn(&session_id("medousa-home"), &user_turn("probe", base));
+    store
+        .append_turn(&session_id("medousa-home"), &user_turn("probe", base))
+        .await
+        .unwrap();
 
     #[derive(serde::Deserialize, SurrealValue)]
     struct Agg {

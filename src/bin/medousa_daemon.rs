@@ -928,6 +928,11 @@ async fn main() -> Result<()> {
     .with_graceful_shutdown(async move {
         let _ = tokio::signal::ctrl_c().await;
         let _ = shutdown_tx.send(true);
+        if let Err(error) =
+            medousa::session_writer::drain(std::time::Duration::from_secs(5)).await
+        {
+            tracing::error!(%error, "session writer did not reach durable drain before shutdown deadline");
+        }
         medousa::workspace::flush_persist_writer().await;
         tracing::info!("stopping");
         remove_surrealkv_lock(&parse_backend(Some(&state.backend)));

@@ -1,11 +1,18 @@
-import type { InteractiveTurnStreamEvent } from "./types.js";
+import type { InteractiveTurnStreamEvent, TurnStreamEnvelopeV2 } from "./types.js";
+
+export const TURN_STREAM_V2_MEDIA_TYPE = "text/event-stream; medousa-version=2";
 
 /**
  * A host turn has handed work to the background worker/workshop lane. The
  * daemon keeps the stream alive so a capable surface can observe the later
  * synthesis, but a chat composer should be released at this boundary.
  */
-export function isBackgroundHandoffEvent(event: InteractiveTurnStreamEvent): boolean {
+export function isBackgroundHandoffEvent(
+  event: InteractiveTurnStreamEvent | TurnStreamEnvelopeV2,
+): boolean {
+  if ("event" in event) {
+    return event.event.type === "worker_ack";
+  }
   const eventType = event.event_type.toLowerCase();
   const phase = event.phase.toLowerCase();
   return (
@@ -16,13 +23,19 @@ export function isBackgroundHandoffEvent(event: InteractiveTurnStreamEvent): boo
   );
 }
 
+export function isTurnStreamTerminal(event: TurnStreamEnvelopeV2): boolean {
+  return ["final", "needs_input", "checkpoint", "worker_synthesis", "error"].includes(
+    event.event.type,
+  );
+}
+
 export function streamPathWithSince(path: string, since: number): string {
   const url = new URL(path, "http://medousa.invalid");
   if (since > 0) url.searchParams.set("since", String(since));
   return `${url.pathname}${url.search}`;
 }
 
-export function parseSseBlock(block: string): InteractiveTurnStreamEvent | null {
+export function parseSseBlock<T = InteractiveTurnStreamEvent>(block: string): T | null {
   const data = block
     .split(/\r?\n/)
     .filter((line) => line.startsWith("data:"))
@@ -31,12 +44,12 @@ export function parseSseBlock(block: string): InteractiveTurnStreamEvent | null 
   if (!data || data === "[DONE]") return null;
   const parsed: unknown = JSON.parse(data);
   if (!parsed || typeof parsed !== "object") throw new Error("Invalid Medousa SSE event");
-  return parsed as InteractiveTurnStreamEvent;
+  return parsed as T;
 }
 
-export async function* readSse(
+export async function* readSse<T = InteractiveTurnStreamEvent>(
   response: Response,
-): AsyncGenerator<InteractiveTurnStreamEvent> {
+): AsyncGenerator<T> {
   if (!response.body) throw new Error("Medousa stream response has no body");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -49,13 +62,13 @@ export async function* readSse(
       const blocks = pending.split(/\r?\n\r?\n/);
       pending = blocks.pop() ?? "";
       for (const block of blocks) {
-        const event = parseSseBlock(block);
+        const event = parseSseBlock<T>(block);
         if (event) yield event;
       }
       if (done) break;
     }
     if (pending.trim()) {
-      const event = parseSseBlock(pending);
+      const event = parseSseBlock<T>(pending);
       if (event) yield event;
     }
   } finally {

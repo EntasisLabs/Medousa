@@ -785,12 +785,8 @@ export async function componentRuntimeCompleteProbe(
 export function onEnvironmentEvent<T>(
   handler: (payload: T) => void,
 ): Promise<UnlistenFn> {
-  return listen<string>("environment://event", (event) => {
-    try {
-      handler(JSON.parse(event.payload) as T);
-    } catch {
-      // Ignore malformed SSE payloads.
-    }
+  return listen<T>("environment://event", (event) => {
+    handler(event.payload);
   });
 }
 
@@ -980,12 +976,8 @@ export type StreamErrorPayload = {
 export function onWorkspaceEvent<T>(
   handler: (payload: T) => void,
 ): Promise<UnlistenFn> {
-  return listen<string>("workspace://event", (event) => {
-    try {
-      handler(JSON.parse(event.payload) as T);
-    } catch {
-      // Ignore malformed SSE payloads.
-    }
+  return listen<T>("workspace://event", (event) => {
+    handler(event.payload);
   });
 }
 
@@ -1000,12 +992,8 @@ export function onWorkspaceError(
 export function onInteractiveEvent<T>(
   handler: (payload: T) => void,
 ): Promise<UnlistenFn> {
-  return listen<string>("interactive://event", (event) => {
-    try {
-      handler(JSON.parse(event.payload) as T);
-    } catch {
-      // Ignore malformed SSE payloads.
-    }
+  return listen<T>("interactive://event", (event) => {
+    handler(event.payload);
   });
 }
 

@@ -70,6 +70,15 @@ Helper: `medousa_sdk::transport::path_with_query`, `arc_transport`.
 
 ---
 
-## Streaming limitation
+## Streaming transport
 
-`Transport` is **JSON-only**. SSE streams (interactive turn, workspace, ingest) require a separate HTTP stream client or app-specific bridge.
+With the Rust SDK's `sse` feature, `Transport` also owns `stream_sse` and
+`stream_sse_with_accept`. `HttpTransport` accepts relative paths and absolute
+daemon `stream_url` responses. `WorkshopTransport` forwards the negotiated
+media type over LAN and Iroh, converting an absolute URL to a route path only
+for the Iroh hook.
+
+Custom transports that support typed turn stream v2 must override
+`stream_sse_with_accept`; the trait default intentionally rejects media types
+other than plain `text/event-stream` instead of silently returning the v1
+projection.

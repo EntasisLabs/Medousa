@@ -1,21 +1,25 @@
 //! Channel ingest (`POST /v1/ingest`), SSE stream, and delivery webhook handlers.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::convert::Infallible;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use anyhow::Result as AnyhowResult;
 use async_trait::async_trait;
 use axum::Json;
 use axum::extract::{Path as AxumPath, Query as AxumQuery, State};
-use axum::http::{HeaderMap, StatusCode, header::AUTHORIZATION};
+use axum::http::{
+    HeaderMap, StatusCode,
+    header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, VARY},
+};
 use axum::response::sse::{Event, KeepAlive, Sse};
+use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Utc};
-use futures_util::stream::{self, Stream};
+use futures_util::stream;
 use serde_json::Value;
 use stasis::prelude::{JobState, RuntimeComposition};
-use tokio::sync::{RwLock, broadcast};
+use tokio::sync::{OwnedSemaphorePermit, RwLock, Semaphore, broadcast};
 use uuid::Uuid;
 
 use crate::agent_runtime::stream_sink::AgentStreamSink;
@@ -25,8 +29,11 @@ use crate::daemon::heartbeat::is_missing_runtime_table_error;
 use crate::daemon::state::{AgentTurnJobRecord, AppState};
 use crate::runtime_composition_ext::RuntimeCompositionExt;
 use medousa_engine::TurnStreamRegistryPort;
+use medousa_types::turn_stream::TURN_STREAM_V2_MEDIA_TYPE;
 
-use crate::daemon::turn_event_channel::TurnEventChannel;
+use crate::daemon::turn_event_channel::{
+    PublishedTurnEvent, TurnEventChannel, TurnEventSubscription,
+};
 use crate::daemon::turn_stream_registry::{TurnStreamEntry, TurnStreamRegistry};
 use crate::daemon_api::{
     DeliverPollResponse, DeliveryHealthResponse, IngestRequest, IngestResponse,
@@ -49,16 +56,76 @@ pub struct StreamSinceQuery {
     pub since: Option<u64>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StreamWireVersion {
+    V1,
+    V2,
+}
+
+fn requested_stream_version(
+    headers: &HeaderMap,
+) -> Result<StreamWireVersion, (StatusCode, String)> {
+    let mut accepts_v1 = false;
+    let mut unsupported_version = false;
+    for value in headers.get_all(ACCEPT) {
+        let Ok(value) = value.to_str() else {
+            continue;
+        };
+        for media_range in value.split(',') {
+            let mut parts = media_range.split(';').map(str::trim);
+            let Some(media_type) = parts.next() else {
+                continue;
+            };
+            if !media_type.eq_ignore_ascii_case("text/event-stream") {
+                continue;
+            }
+            let mut version = None;
+            let mut disabled = false;
+            for parameter in parts {
+                let Some((name, value)) = parameter.split_once('=') else {
+                    continue;
+                };
+                let value = value.trim().trim_matches('"');
+                if name.trim().eq_ignore_ascii_case("medousa-version") {
+                    version = Some(value);
+                } else if name.trim().eq_ignore_ascii_case("q") && value == "0" {
+                    disabled = true;
+                }
+            }
+            if disabled {
+                continue;
+            }
+            match version {
+                Some("2") => return Ok(StreamWireVersion::V2),
+                Some(_) => unsupported_version = true,
+                None => accepts_v1 = true,
+            }
+        }
+    }
+    if unsupported_version && !accepts_v1 {
+        return Err((
+            StatusCode::NOT_ACCEPTABLE,
+            "unsupported Medousa turn stream version".into(),
+        ));
+    }
+    Ok(StreamWireVersion::V1)
+}
+
 pub async fn ingest_stream(
     State(state): State<AppState>,
     AxumPath(stream_id): AxumPath<String>,
     AxumQuery(query): AxumQuery<StreamSinceQuery>,
-) -> Result<
-    Sse<impl Stream<Item = std::result::Result<Event, Infallible>> + use<>>,
-    (StatusCode, String),
-> {
+    headers: HeaderMap,
+) -> Result<Response, (StatusCode, String)> {
     let registry = state.interactive_turn_streams.clone();
-    stream_events_from_registry(&registry, &stream_id, "ingest stream", query.since).await
+    stream_events_from_registry(
+        &registry,
+        &stream_id,
+        "ingest stream",
+        query.since,
+        &headers,
+    )
+    .await
 }
 
 /// State carried through the SSE unfold: live fan-out channel, durable replay log,
@@ -67,25 +134,40 @@ struct SseUnfoldState {
     /// Kept alive so the broadcast channel is not dropped while streaming.
     _channel: Arc<TurnEventChannel>,
     log: Arc<TurnEventLog>,
-    receiver: broadcast::Receiver<InteractiveTurnStreamEvent>,
-    pending: std::collections::VecDeque<InteractiveTurnStreamEvent>,
+    receiver: TurnEventSubscription,
+    replay_permit: Option<OwnedSemaphorePermit>,
+    pending: VecDeque<PublishedTurnEvent>,
+    wire_version: StreamWireVersion,
     last_seq: u64,
+    replay_until: Option<u64>,
+    drain_after_replay: bool,
     drained: bool,
 }
 
-fn replay_from_log(
-    log: &TurnEventLog,
-    since: u64,
-) -> std::collections::VecDeque<InteractiveTurnStreamEvent> {
-    log.snapshot_since(since)
-        .iter()
-        .map(crate::sse_turn_projection::sequenced_to_stream_event)
-        .collect()
+const MAX_CONCURRENT_TURN_REPLAY_READERS: usize = 32;
+static TURN_REPLAY_READER_PERMITS: OnceLock<Arc<Semaphore>> = OnceLock::new();
+
+fn try_acquire_replay_reader() -> Option<OwnedSemaphorePermit> {
+    TURN_REPLAY_READER_PERMITS
+        .get_or_init(|| Arc::new(Semaphore::new(MAX_CONCURRENT_TURN_REPLAY_READERS)))
+        .clone()
+        .try_acquire_owned()
+        .ok()
 }
 
-fn sse_event_from_payload(payload: InteractiveTurnStreamEvent) -> Event {
-    let event_type = payload.event_type.clone();
-    match Event::default().event(event_type).json_data(payload) {
+fn sse_event_from_payload(payload: PublishedTurnEvent, version: StreamWireVersion) -> Event {
+    let encoded = match (version, payload.v2) {
+        (StreamWireVersion::V1, _) => Event::default()
+            .event(payload.v1.event_type.clone())
+            .json_data(payload.v1),
+        (StreamWireVersion::V2, Some(v2)) => Event::default().event("turn_stream_v2").json_data(v2),
+        (StreamWireVersion::V2, None) => {
+            return Event::default()
+                .event("error")
+                .data("turn event has no v2 projection");
+        }
+    };
+    match encoded {
         Ok(value) => value,
         Err(err) => Event::default()
             .event("error")
@@ -98,10 +180,9 @@ pub async fn stream_events_from_registry(
     stream_id: &str,
     label: &str,
     since: Option<u64>,
-) -> Result<
-    Sse<impl Stream<Item = std::result::Result<Event, Infallible>> + use<>>,
-    (StatusCode, String),
-> {
+    headers: &HeaderMap,
+) -> Result<Response, (StatusCode, String)> {
+    let wire_version = requested_stream_version(headers)?;
     let (channel, log) = {
         let guard = registry.read().await;
         guard
@@ -117,16 +198,41 @@ pub async fn stream_events_from_registry(
 
     // Subscribe BEFORE snapshotting so no event can slip between the snapshot
     // and the live subscription. Any event in both is deduped by seq below.
-    let receiver = channel.subscribe();
+    let receiver = channel.try_subscribe().ok_or_else(|| {
+        (
+            StatusCode::TOO_MANY_REQUESTS,
+            "turn stream subscriber limit reached".to_string(),
+        )
+    })?;
     let since = since.unwrap_or(0);
-    let pending = replay_from_log(&log, since);
+    let replay_fence = log.replay_fence();
+    if since > replay_fence {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("stream cursor {since} is beyond current sequence {replay_fence}"),
+        ));
+    }
+    let replay_permit = if replay_fence > since {
+        Some(try_acquire_replay_reader().ok_or_else(|| {
+            (
+                StatusCode::TOO_MANY_REQUESTS,
+                "turn stream replay reader limit reached".to_string(),
+            )
+        })?)
+    } else {
+        None
+    };
 
     let initial = SseUnfoldState {
         _channel: channel,
         log,
         receiver,
-        pending,
+        replay_permit,
+        pending: VecDeque::new(),
+        wire_version,
         last_seq: since,
+        replay_until: (replay_fence > since).then_some(replay_fence),
+        drain_after_replay: false,
         drained: false,
     };
 
@@ -134,12 +240,12 @@ pub async fn stream_events_from_registry(
         loop {
             // 1) Flush any buffered/replayed events first (exactly-once by seq).
             if let Some(payload) = state.pending.pop_front() {
-                if payload.seq != 0 && payload.seq <= state.last_seq {
+                if payload.seq() != 0 && payload.seq() <= state.last_seq {
                     continue;
                 }
-                state.last_seq = state.last_seq.max(payload.seq);
+                state.last_seq = state.last_seq.max(payload.seq());
                 return Some((
-                    Ok::<Event, Infallible>(sse_event_from_payload(payload)),
+                    Ok::<Event, Infallible>(sse_event_from_payload(payload, state.wire_version)),
                     state,
                 ));
             }
@@ -147,45 +253,167 @@ pub async fn stream_events_from_registry(
                 return None;
             }
 
-            // 2) Otherwise pull the next live event.
+            // 2) Pull at most one bounded journal page through the captured
+            // replay fence. Disk work stays off the async runtime worker.
+            if let Some(fence) = state.replay_until {
+                if state.last_seq >= fence {
+                    state.replay_until = None;
+                    state.replay_permit = None;
+                    if state.drain_after_replay {
+                        state.drained = true;
+                    }
+                    continue;
+                }
+                let log = Arc::clone(&state.log);
+                let since = state.last_seq;
+                let replay =
+                    tokio::task::spawn_blocking(move || log.replay_page(since, fence)).await;
+                match replay {
+                    Ok(Ok(page)) => {
+                        let projected = page
+                            .events
+                            .iter()
+                            .map(|event| {
+                                let v1 =
+                                    crate::sse_turn_projection::sequenced_to_stream_event(event);
+                                let v2 = match state.wire_version {
+                                    StreamWireVersion::V1 => None,
+                                    StreamWireVersion::V2 => {
+                                        Some(crate::sse_turn_projection::sequenced_to_v2(event)?)
+                                    }
+                                };
+                                Ok::<PublishedTurnEvent, String>(PublishedTurnEvent { v1, v2 })
+                            })
+                            .collect::<Result<VecDeque<_>, _>>();
+                        let Ok(projected) = projected else {
+                            state.drained = true;
+                            return Some((
+                                Ok::<Event, Infallible>(
+                                    Event::default()
+                                        .event("error")
+                                        .data("turn replay has no v2 projection"),
+                                ),
+                                state,
+                            ));
+                        };
+                        state.pending = projected;
+                        if !page.has_more {
+                            state.replay_until = None;
+                            state.replay_permit = None;
+                            if state.drain_after_replay && state.pending.is_empty() {
+                                state.drained = true;
+                            }
+                        }
+                        continue;
+                    }
+                    Ok(Err(error)) => {
+                        state.drained = true;
+                        return Some((
+                            Ok::<Event, Infallible>(
+                                Event::default()
+                                    .event("error")
+                                    .data(format!("turn replay failed: {error}")),
+                            ),
+                            state,
+                        ));
+                    }
+                    Err(error) => {
+                        state.drained = true;
+                        return Some((
+                            Ok::<Event, Infallible>(
+                                Event::default()
+                                    .event("error")
+                                    .data(format!("turn replay worker stopped: {error}")),
+                            ),
+                            state,
+                        ));
+                    }
+                }
+            }
+
+            // 3) Otherwise pull the next live event.
             match state.receiver.recv().await {
                 Ok(payload) => {
                     // Skip anything already covered by the replay snapshot / prior emits.
-                    if payload.seq != 0 && payload.seq <= state.last_seq {
+                    if payload.seq() != 0 && payload.seq() <= state.last_seq {
                         continue;
                     }
-                    state.last_seq = state.last_seq.max(payload.seq);
+                    state.last_seq = state.last_seq.max(payload.seq());
                     return Some((
-                        Ok::<Event, Infallible>(sse_event_from_payload(payload)),
+                        Ok::<Event, Infallible>(sse_event_from_payload(
+                            payload,
+                            state.wire_version,
+                        )),
                         state,
                     ));
                 }
                 Err(broadcast::error::RecvError::Lagged(_)) => {
                     // We fell behind the live ring; recover the gap from the
                     // durable spine rather than dropping events outright.
-                    state
-                        .pending
-                        .extend(replay_from_log(&state.log, state.last_seq));
+                    let fence = state.log.replay_fence();
+                    if fence > state.last_seq {
+                        let Some(permit) = try_acquire_replay_reader() else {
+                            state.drained = true;
+                            return Some((
+                                Ok::<Event, Infallible>(
+                                    Event::default()
+                                        .event("error")
+                                        .data("turn stream replay reader limit reached"),
+                                ),
+                                state,
+                            ));
+                        };
+                        state.replay_permit = Some(permit);
+                        state.replay_until = Some(fence);
+                    }
                     continue;
                 }
                 Err(broadcast::error::RecvError::Closed) => {
                     // Senders gone: drain any buffered tail from the spine so a
                     // client reconnecting right at the end still sees it.
-                    state
-                        .pending
-                        .extend(replay_from_log(&state.log, state.last_seq));
-                    state.drained = true;
+                    let fence = state.log.replay_fence();
+                    if fence > state.last_seq {
+                        let Some(permit) = try_acquire_replay_reader() else {
+                            state.drained = true;
+                            return Some((
+                                Ok::<Event, Infallible>(
+                                    Event::default()
+                                        .event("error")
+                                        .data("turn stream replay reader limit reached"),
+                                ),
+                                state,
+                            ));
+                        };
+                        state.replay_permit = Some(permit);
+                        state.replay_until = Some(fence);
+                    }
+                    state.drain_after_replay = true;
+                    if state.replay_until.is_none() {
+                        state.drained = true;
+                    }
                     continue;
                 }
             }
         }
     });
 
-    Ok(Sse::new(stream).keep_alive(
-        KeepAlive::new()
-            .interval(Duration::from_secs(15))
-            .text("keep-alive"),
-    ))
+    let mut response = Sse::new(stream)
+        .keep_alive(
+            KeepAlive::new()
+                .interval(Duration::from_secs(15))
+                .text("keep-alive"),
+        )
+        .into_response();
+    response
+        .headers_mut()
+        .insert(VARY, axum::http::HeaderValue::from_static("Accept"));
+    if matches!(wire_version, StreamWireVersion::V2) {
+        response.headers_mut().insert(
+            CONTENT_TYPE,
+            axum::http::HeaderValue::from_static(TURN_STREAM_V2_MEDIA_TYPE),
+        );
+    }
+    Ok(response)
 }
 
 pub fn publish_interactive_turn_event(
@@ -194,9 +422,13 @@ pub fn publish_interactive_turn_event(
 ) {
     if let Ok(mut payload) = event {
         let journal = crate::sse_turn_projection::journal_turn_event_for_stream(&payload, None);
-        let sequenced = entry.log.append(journal);
-        payload.seq = sequenced.seq();
-        entry.channel.publish(payload);
+        match entry.log.append(journal) {
+            Ok(receipt) => {
+                payload.seq = receipt.seq();
+                entry.channel.publish(payload);
+            }
+            Err(error) => tracing::error!(%error, "interactive turn journal append failed"),
+        }
     }
 }
 
@@ -1184,7 +1416,12 @@ pub async fn spawn_daemon_api_agent_turn(
             return;
         }
     };
-    let execution_lease = match state.platform.agent_handle().execution_registry.admit(execution) {
+    let execution_lease = match state
+        .platform
+        .agent_handle()
+        .execution_registry
+        .admit(execution)
+    {
         Ok(lease) => lease,
         Err(error) => {
             tracing::warn!(job_id = %job_id, error = %error, "rejecting API agent turn admission");
@@ -1309,7 +1546,7 @@ impl AgentStreamSink for ApiAgentStreamSink {
         tool_names: Vec<String>,
         _work_id: Option<String>,
     ) {
-        crate::session::append_turn(
+        if let Err(error) = crate::session::append_turn(
             &self.session_id,
             &crate::turn_parts::conversation_turn_from_parts(
                 "assistant",
@@ -1320,7 +1557,12 @@ impl AgentStreamSink for ApiAgentStreamSink {
                     markdown: text.clone(),
                 }],
             ),
-        );
+        )
+        .await
+        {
+            tracing::error!(session_id = %self.session_id, %error, "API worker acknowledgement persistence failed");
+            return;
+        }
 
         if crate::workspace::ask_job_store::AskJobStore::is_ask_job_id(&self.job_id) {
             crate::workspace::ask_job_store::ask_job_store().set_interim_text(&self.job_id, text);
@@ -1339,7 +1581,7 @@ impl AgentStreamSink for ApiAgentStreamSink {
     }
 
     async fn agent_response(&self, _turn_id: u64, text: String, _tool_names: Vec<String>) {
-        crate::session::append_turn(
+        if let Err(error) = crate::session::append_turn(
             &self.session_id,
             &crate::session::ConversationTurn::plain(
                 "assistant",
@@ -1348,7 +1590,12 @@ impl AgentStreamSink for ApiAgentStreamSink {
                 _tool_names,
                 None,
             ),
-        );
+        )
+        .await
+        {
+            tracing::error!(session_id = %self.session_id, %error, "API terminal turn persistence failed");
+            return;
+        }
 
         if crate::workspace::ask_job_store::AskJobStore::is_ask_job_id(&self.job_id) {
             crate::workspace::ask_job_store::ask_job_store()
@@ -1423,7 +1670,7 @@ struct IngestAgentStreamSink {
 }
 
 impl IngestAgentStreamSink {
-    fn persist_assistant_turn(
+    async fn persist_assistant_turn(
         &self,
         content: String,
         tool_names: Vec<String>,
@@ -1448,7 +1695,9 @@ impl IngestAgentStreamSink {
                     vec![],
                 )
             });
-        crate::session::append_turn(&self.session_id, &turn);
+        if let Err(error) = crate::session::append_turn(&self.session_id, &turn).await {
+            tracing::error!(session_id = %self.session_id, %error, "ingest assistant turn persistence failed");
+        }
     }
 }
 
@@ -1504,7 +1753,10 @@ impl AgentStreamSink for IngestAgentStreamSink {
                     }],
                 )
             });
-        crate::session::append_turn(&self.session_id, &assistant_turn);
+        if let Err(error) = crate::session::append_turn(&self.session_id, &assistant_turn).await {
+            tracing::error!(session_id = %self.session_id, %error, "ingest worker acknowledgement persistence failed");
+            return;
+        }
 
         if crate::channel_delivery::is_external_push_channel(&self.delivery_target.channel) {
             let payload = crate::turn_worker_notify::TurnWorkerSpawnNotifyPayload {
@@ -1597,7 +1849,8 @@ impl AgentStreamSink for IngestAgentStreamSink {
             text.clone(),
             tool_names.clone(),
             Some("needs_input".to_string()),
-        );
+        )
+        .await;
 
         let latency_ms = self.delivery_started.elapsed().as_millis() as u64;
         let delivery_text = crate::agent_runtime::format_channel_delivery_text(
@@ -1666,7 +1919,8 @@ impl AgentStreamSink for IngestAgentStreamSink {
             return;
         }
 
-        self.persist_assistant_turn(text.clone(), tool_names.clone(), None);
+        self.persist_assistant_turn(text.clone(), tool_names.clone(), None)
+            .await;
 
         let latency_ms = self.delivery_started.elapsed().as_millis() as u64;
         let delivery_text = crate::agent_runtime::format_channel_delivery_text(
@@ -2088,5 +2342,109 @@ pub async fn get_job_attempts_graceful(
         Ok(attempts) => Ok(attempts),
         Err(err) if is_missing_runtime_table_error(&err.to_string()) => Ok(Vec::new()),
         Err(err) => Err(internal_error(err)),
+    }
+}
+
+#[cfg(test)]
+mod stream_version_tests {
+    use super::*;
+    use axum::body::to_bytes;
+    use axum::http::HeaderValue;
+    use medousa_engine::{Principal, TurnEnvelope};
+
+    #[test]
+    fn stream_v1_remains_the_default() {
+        assert_eq!(
+            requested_stream_version(&HeaderMap::new()).unwrap(),
+            StreamWireVersion::V1
+        );
+    }
+
+    #[test]
+    fn stream_v2_requires_an_explicit_accepted_media_type() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("TEXT/EVENT-STREAM; Medousa-Version=\"2\""),
+        );
+        assert_eq!(
+            requested_stream_version(&headers).unwrap(),
+            StreamWireVersion::V2
+        );
+    }
+
+    #[test]
+    fn unsupported_explicit_stream_version_is_rejected() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("text/event-stream; medousa-version=99"),
+        );
+        let (status, message) = requested_stream_version(&headers).unwrap_err();
+        assert_eq!(status, StatusCode::NOT_ACCEPTABLE);
+        assert!(message.contains("unsupported"));
+    }
+
+    #[test]
+    fn compatible_fallback_wins_over_an_unsupported_alternative() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("text/event-stream; medousa-version=99, text/event-stream"),
+        );
+        assert_eq!(
+            requested_stream_version(&headers).unwrap(),
+            StreamWireVersion::V1
+        );
+    }
+
+    #[tokio::test]
+    async fn replay_live_join_emits_each_sequence_exactly_once() {
+        let root = std::env::temp_dir().join(format!("medousa-sse-join-{}", Uuid::new_v4()));
+        let turn_id = "turn-replay-live-join";
+        let entry = TurnStreamEntry {
+            channel: TurnEventChannel::new(8),
+            log: Arc::new(
+                TurnEventLog::open_in(
+                    &root,
+                    TurnEnvelope::new(turn_id, Principal::operator()),
+                )
+                .unwrap(),
+            ),
+        };
+        publish_interactive_turn_event(
+            &entry,
+            crate::interactive_turn_runtime::status_stream_event(turn_id, "one", "replay"),
+        );
+        let registry = crate::daemon::turn_stream_registry::new_turn_stream_registry();
+        registry
+            .write()
+            .await
+            .insert(turn_id.to_string(), entry.clone());
+
+        let response = stream_events_from_registry(
+            &registry,
+            turn_id,
+            "test stream",
+            Some(0),
+            &HeaderMap::new(),
+        )
+        .await
+        .unwrap();
+
+        publish_interactive_turn_event(
+            &entry,
+            crate::interactive_turn_runtime::status_stream_event(turn_id, "two", "live"),
+        );
+        entry.channel.mark_closed();
+
+        let body = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert_eq!(body.matches("\"seq\":1").count(), 1, "{body}");
+        assert_eq!(body.matches("\"seq\":2").count(), 1, "{body}");
+        assert!(body.find("\"seq\":1").unwrap() < body.find("\"seq\":2").unwrap());
+
+        entry.log.close_journal();
+        std::fs::remove_dir_all(root).ok();
     }
 }

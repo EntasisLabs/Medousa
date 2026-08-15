@@ -9,6 +9,7 @@ use stasis::application::orchestration::prompt_pipeline::{
 use stasis::application::orchestration::tool_loop_pipeline::{
     ToolCallMode, ToolInvocation, ToolLoopExecutionRequest,
 };
+#[cfg(test)]
 use stasis::ports::outbound::ai_chat_client::StreamDelta;
 
 use crate::channel_delivery;
@@ -59,110 +60,15 @@ use super::turn_worker::{
 use crate::turn_continuation::StoredDeliveryTarget;
 use crate::turn_slice::session_scratch_seed_from_history;
 
-/// Serializes streamed model deltas ahead of terminal delivery.
-///
-/// Model pipelines enqueue deltas through an unbounded sender. The consumer must
-/// be drained before publishing a terminal event; otherwise the terminal commit
-/// can overtake a queued delta and the client can append stale prose afterward.
-struct TurnStreamBridge {
-    sender: Option<tokio::sync::mpsc::UnboundedSender<StreamDelta>>,
-    pump: Option<tokio::task::JoinHandle<()>>,
-}
-
-impl TurnStreamBridge {
-    fn new(sink: SharedAgentStreamSink, turn_id: u64) -> Self {
-        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<StreamDelta>();
-        let pump = tokio::spawn(async move {
-            while let Some(delta) = receiver.recv().await {
-                match delta {
-                    StreamDelta::Content(delta) => sink.content_chunk(turn_id, delta).await,
-                    StreamDelta::Reasoning(delta) | StreamDelta::ThoughtSignature(delta) => {
-                        sink.reasoning_chunk(turn_id, delta).await
-                    }
-                }
-            }
-        });
-        Self {
-            sender: Some(sender),
-            pump: Some(pump),
-        }
-    }
-
-    fn sender(&self) -> &tokio::sync::mpsc::UnboundedSender<StreamDelta> {
-        self.sender
-            .as_ref()
-            .expect("stream bridge sender requested after drain")
-    }
-
-    fn sender_clone(&self) -> tokio::sync::mpsc::UnboundedSender<StreamDelta> {
-        self.sender().clone()
-    }
-
-    async fn drain(&mut self) {
-        self.sender.take();
-        if let Some(pump) = self.pump.take() {
-            let _ = pump.await;
-        }
-    }
-}
-
-impl Drop for TurnStreamBridge {
-    fn drop(&mut self) {
-        if let Some(pump) = self.pump.take() {
-            pump.abort();
-        }
-    }
-}
-
-/// Owns one inference attempt's stream so retry/fallback decisions happen only
-/// after every delta from that attempt has been observed.
-struct AttemptStreamBridge {
-    sender: Option<tokio::sync::mpsc::UnboundedSender<StreamDelta>>,
-    pump: Option<tokio::task::JoinHandle<bool>>,
-}
-
-impl AttemptStreamBridge {
-    fn new(target: tokio::sync::mpsc::UnboundedSender<StreamDelta>) -> Self {
-        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<StreamDelta>();
-        let pump = tokio::spawn(async move {
-            let mut emitted = false;
-            while let Some(delta) = receiver.recv().await {
-                emitted |= match &delta {
-                    StreamDelta::Content(text)
-                    | StreamDelta::Reasoning(text)
-                    | StreamDelta::ThoughtSignature(text) => !text.is_empty(),
-                };
-                let _ = target.send(delta);
-            }
-            emitted
-        });
-        Self {
-            sender: Some(sender),
-            pump: Some(pump),
-        }
-    }
-
-    fn sender(&self) -> &tokio::sync::mpsc::UnboundedSender<StreamDelta> {
-        self.sender.as_ref().expect("attempt sender already closed")
-    }
-
-    async fn finish(mut self) -> bool {
-        self.sender.take();
-        match self.pump.take() {
-            Some(pump) => pump.await.unwrap_or(true),
-            None => true,
-        }
-    }
-}
-
-impl Drop for AttemptStreamBridge {
-    fn drop(&mut self) {
-        if let Some(pump) = self.pump.take() {
-            pump.abort();
-        }
-    }
-}
-
+use super::provider_stream::{
+    ProviderStreamBridge as TurnStreamBridge, fail_on_stream_overflow,
+};
+#[cfg(test)]
+use super::provider_stream::{
+    PROVIDER_STREAM_BYTE_CAPACITY as STREAM_BRIDGE_BYTE_CAPACITY,
+    PROVIDER_STREAM_MESSAGE_CAPACITY as STREAM_BRIDGE_MESSAGE_CAPACITY,
+    ProviderStreamReport as AttemptStreamReport,
+};
 pub const MAX_PRIOR_TOTAL_CHARS: usize = 24_000;
 pub const MAX_SINGLE_PRIOR_MESSAGE_CHARS: usize = 4_000;
 pub const DEFAULT_HOT_WINDOW_TURNS: usize = 8;
@@ -1170,11 +1076,12 @@ async fn execute_local_turn_inner(
         sink.notice("◈ fallback_mode=prompt_only retry_count=0 retry_reason=none".to_string())
             .await;
 
+        let prompt_stream = stream_bridge.attempt();
         let prompt_only_result = match super::execution_context::await_turn_boundary(
             no_tools_pipeline.complete_chat_stream(
                 ChatRequest::new(messages),
                 prompt_ctx.clone(),
-                Some(stream_bridge.sender()),
+                Some(prompt_stream.sender()),
             ),
         )
         .await
@@ -1184,6 +1091,8 @@ async fn execute_local_turn_inner(
                 "{error} during prompt-only model completion"
             ))),
         };
+        let prompt_only_result =
+            fail_on_stream_overflow(prompt_only_result, prompt_stream.finish().await);
         stream_bridge.drain().await;
         match prompt_only_result {
             Ok(completion) => {
@@ -1398,7 +1307,7 @@ async fn execute_local_turn_inner(
                 pending_active_turn_resume.take(),
             );
 
-            let attempt_stream = AttemptStreamBridge::new(stream_bridge.sender_clone());
+            let attempt_stream = stream_bridge.attempt();
             let attempt_result = attempt_pipeline
                 .execute_with_stream_prior_messages_max_rounds(
                     request.clone(),
@@ -1409,7 +1318,9 @@ async fn execute_local_turn_inner(
                     Some(current_turn_user_message.clone()),
                 )
                 .await;
-            let attempt_emitted = attempt_stream.finish().await;
+            let attempt_report = attempt_stream.finish().await;
+            let attempt_result = fail_on_stream_overflow(attempt_result, attempt_report);
+            let attempt_emitted = attempt_report.emitted;
             visible_output_emitted |= attempt_emitted;
 
             match attempt_result {
@@ -1589,6 +1500,7 @@ async fn execute_local_turn_inner(
                 {
                     orchestration_state.final_mode = "tool_loop_with_continuation".to_string();
 
+                    let continuation_stream = stream_bridge.attempt();
                     let continuation_result = {
                         let continuation_max_rounds = activation
                             .max_tool_rounds
@@ -1615,13 +1527,17 @@ async fn execute_local_turn_inner(
                             .execute_with_stream_prior_messages_max_rounds(
                                 continuation_request,
                                 continuation_prior_messages,
-                                Some(stream_bridge.sender()),
+                                Some(continuation_stream.sender()),
                                 continuation_max_rounds,
                                 Some(&mut continuation_gate),
                                 None,
                             )
                             .await
                     };
+                    let continuation_result = fail_on_stream_overflow(
+                        continuation_result,
+                        continuation_stream.finish().await,
+                    );
 
                     match continuation_result {
                         Ok(continuation_response) => {
@@ -1711,7 +1627,7 @@ async fn execute_local_turn_inner(
                     }
                     orchestration_state.final_mode = "tool_loop_retry".to_string();
 
-                    let retry_stream = AttemptStreamBridge::new(stream_bridge.sender_clone());
+                    let retry_stream = stream_bridge.attempt();
                     let retry_result = {
                         let initial_worker_scratch = scratch_seed_for_tool_loop(
                             &session_scratch_seed,
@@ -1738,7 +1654,9 @@ async fn execute_local_turn_inner(
                             )
                             .await
                     };
-                    let retry_emitted = retry_stream.finish().await;
+                    let retry_report = retry_stream.finish().await;
+                    let retry_result = fail_on_stream_overflow(retry_result, retry_report);
+                    let retry_emitted = retry_report.emitted;
 
                     match retry_result {
                         Ok(response) => {
@@ -1835,6 +1753,7 @@ async fn execute_local_turn_inner(
 
 #[cfg(test)]
 mod stream_bridge_tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
 
     use async_trait::async_trait;
@@ -1843,20 +1762,44 @@ mod stream_bridge_tests {
     use super::*;
     use crate::agent_runtime::stream_sink::AgentStreamSink;
 
-    #[derive(Default)]
     struct OrderedSink {
         events: Mutex<Vec<String>>,
+        first_gate: Option<Arc<tokio::sync::Semaphore>>,
+        first_blocked: AtomicBool,
+    }
+
+    impl Default for OrderedSink {
+        fn default() -> Self {
+            Self {
+                events: Mutex::new(Vec::new()),
+                first_gate: None,
+                first_blocked: AtomicBool::new(false),
+            }
+        }
     }
 
     impl OrderedSink {
         fn push(&self, event: String) {
             self.events.lock().expect("events lock").push(event);
         }
+
+        fn blocked_on_first(gate: Arc<tokio::sync::Semaphore>) -> Self {
+            Self {
+                events: Mutex::new(Vec::new()),
+                first_gate: Some(gate),
+                first_blocked: AtomicBool::new(false),
+            }
+        }
     }
 
     #[async_trait]
     impl AgentStreamSink for OrderedSink {
         async fn content_chunk(&self, _turn_id: u64, delta: String) {
+            if !self.first_blocked.swap(true, Ordering::Relaxed)
+                && let Some(gate) = &self.first_gate
+            {
+                let _permit = gate.acquire().await.expect("test gate open");
+            }
             tokio::task::yield_now().await;
             self.push(delta);
         }
@@ -1889,15 +1832,26 @@ mod stream_bridge_tests {
         let concrete = Arc::new(OrderedSink::default());
         let sink: SharedAgentStreamSink = concrete.clone();
         let mut bridge = TurnStreamBridge::new(sink, 7);
+        let attempt = bridge.attempt();
 
-        bridge
+        attempt
             .sender()
             .send(StreamDelta::Content("first".to_string()))
+            .await
             .expect("first delta");
-        bridge
+        attempt
             .sender()
             .send(StreamDelta::Content("second".to_string()))
+            .await
             .expect("second delta");
+        let report = attempt.finish().await;
+        assert_eq!(
+            report,
+            AttemptStreamReport {
+                emitted: true,
+                overflowed: false,
+            }
+        );
         bridge.drain().await;
         concrete
             .agent_response(7, "terminal".to_string(), Vec::new())
@@ -1914,14 +1868,21 @@ mod stream_bridge_tests {
         let concrete = Arc::new(OrderedSink::default());
         let sink: SharedAgentStreamSink = concrete.clone();
         let mut bridge = TurnStreamBridge::new(sink, 8);
-        let attempt = AttemptStreamBridge::new(bridge.sender_clone());
+        let attempt = bridge.attempt();
 
         attempt
             .sender()
             .send(StreamDelta::Content("visible".to_string()))
+            .await
             .expect("attempt delta");
 
-        assert!(attempt.finish().await);
+        assert_eq!(
+            attempt.finish().await,
+            AttemptStreamReport {
+                emitted: true,
+                overflowed: false,
+            }
+        );
         bridge.drain().await;
         assert_eq!(
             *concrete.events.lock().expect("events lock"),
@@ -1934,9 +1895,66 @@ mod stream_bridge_tests {
         let concrete = Arc::new(OrderedSink::default());
         let sink: SharedAgentStreamSink = concrete;
         let mut bridge = TurnStreamBridge::new(sink, 9);
-        let attempt = AttemptStreamBridge::new(bridge.sender_clone());
+        let attempt = bridge.attempt();
 
-        assert!(!attempt.finish().await);
+        assert_eq!(attempt.finish().await, AttemptStreamReport::default());
+        bridge.drain().await;
+    }
+
+    #[tokio::test]
+    async fn oversized_provider_delta_fails_attempt_without_entering_turn_queue() {
+        let concrete = Arc::new(OrderedSink::default());
+        let sink: SharedAgentStreamSink = concrete.clone();
+        let mut bridge = TurnStreamBridge::new(sink, 10);
+        let attempt = bridge.attempt();
+        attempt
+            .sender()
+            .send(StreamDelta::Content("x".repeat(
+                STREAM_BRIDGE_BYTE_CAPACITY + 1,
+            )))
+            .await
+            .expect("provider delta");
+
+        let report = attempt.finish().await;
+        assert_eq!(
+            report,
+            AttemptStreamReport {
+                emitted: true,
+                overflowed: true,
+            }
+        );
+        assert!(fail_on_stream_overflow(Ok(()), report).is_err());
+        bridge.drain().await;
+        assert!(concrete.events.lock().expect("events lock").is_empty());
+    }
+
+    #[tokio::test]
+    async fn saturated_provider_queue_backpressures_without_growing_or_dropping() {
+        let gate = Arc::new(tokio::sync::Semaphore::new(0));
+        let concrete = Arc::new(OrderedSink::blocked_on_first(Arc::clone(&gate)));
+        let sink: SharedAgentStreamSink = concrete;
+        let mut bridge = TurnStreamBridge::new(sink, 11);
+        let attempt = bridge.attempt();
+        let sender = attempt.sender().clone();
+        let mut producer = tokio::spawn(async move {
+            for _ in 0..(STREAM_BRIDGE_MESSAGE_CAPACITY + 8) {
+                sender
+                    .send(StreamDelta::Content("x".to_string()))
+                    .await
+                    .expect("provider delta");
+            }
+        });
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(25), &mut producer)
+                .await
+                .is_err(),
+            "a stalled sink must propagate backpressure to the provider"
+        );
+        gate.add_permits(1);
+        producer.await.unwrap();
+        let report = attempt.finish().await;
+        assert!(report.emitted);
+        assert!(!report.overflowed);
         bridge.drain().await;
     }
 
@@ -1945,8 +1963,8 @@ mod stream_bridge_tests {
         let concrete = Arc::new(OrderedSink::default());
         let sink: SharedAgentStreamSink = concrete;
         let bridge = TurnStreamBridge::new(sink, 10);
-        let retained_sender = bridge.sender_clone();
-        let pump = bridge.pump.as_ref().unwrap().abort_handle();
+        let retained_sender = bridge.retained_sender();
+        let pump = bridge.pump_abort_handle();
 
         drop(bridge);
         for _ in 0..10 {
@@ -1962,10 +1980,12 @@ mod stream_bridge_tests {
 
     #[tokio::test]
     async fn dropped_attempt_bridge_aborts_pump_with_live_sender_clone() {
-        let (target, _receiver) = tokio::sync::mpsc::unbounded_channel();
-        let attempt = AttemptStreamBridge::new(target);
+        let concrete = Arc::new(OrderedSink::default());
+        let sink: SharedAgentStreamSink = concrete;
+        let bridge = TurnStreamBridge::new(sink, 11);
+        let attempt = bridge.attempt();
         let retained_sender = attempt.sender().clone();
-        let pump = attempt.pump.as_ref().unwrap().abort_handle();
+        let pump = attempt.pump_abort_handle();
 
         drop(attempt);
         for _ in 0..10 {

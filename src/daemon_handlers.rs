@@ -1,6 +1,6 @@
+use axum::Json;
 use axum::extract::{Extension, Path as AxumPath, Query, State};
 use axum::http::StatusCode;
-use axum::Json;
 use std::sync::Arc;
 
 fn validated_session_id(session_id: String) -> Result<String, (StatusCode, String)> {
@@ -12,14 +12,13 @@ fn validated_session_id(session_id: String) -> Result<String, (StatusCode, Strin
 use stasis::ports::outbound::memory::memory_operations::MemoryOperations;
 
 use crate::daemon_api::{
-    AgentModeListResponse, AgentModeProposalListResponse, AgentModeProposalResponse, AgentModeScope,
-    AgentModeTransitionPolicy, CreateSessionRequest, CreateSessionResponse,
-    DecideAgentModeProposalRequest, SessionAgentModeResponse,
-    SessionCodeBindingResponse, SetSessionAgentModeRequest, SetSessionCodeBindingRequest,
-    SessionAppendTurnRequest,
-    SessionAppendTurnResponse, SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListRequest,
-    SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameRequest,
-    SessionSetDisplayNameResponse,
+    AgentModeListResponse, AgentModeProposalListResponse, AgentModeProposalResponse,
+    AgentModeScope, AgentModeTransitionPolicy, CreateSessionRequest, CreateSessionResponse,
+    DecideAgentModeProposalRequest, SessionAgentModeResponse, SessionAppendTurnRequest,
+    SessionAppendTurnResponse, SessionCodeBindingResponse, SessionDeleteQuery,
+    SessionDeleteResponse, SessionHistoryListRequest, SessionHistoryListResponse,
+    SessionHistoryResponse, SessionSetDisplayNameRequest, SessionSetDisplayNameResponse,
+    SetSessionAgentModeRequest, SetSessionCodeBindingRequest,
 };
 use crate::shared_session_catalog::SessionCatalogKind;
 use crate::turn_ticket::TurnTicketRegistry;
@@ -148,7 +147,8 @@ pub async fn append_session_turn(
     let session_id = validated_session_id(session_id)?;
 
     crate::session::try_append_turn_with_scratch(&session_id, &request.turn, None)
-        .map_err(|error| (StatusCode::CONFLICT, error))?;
+        .await
+        .map_err(|error| (StatusCode::CONFLICT, error.to_string()))?;
     Ok(Json(SessionAppendTurnResponse {
         session_id,
         stored: true,
@@ -246,7 +246,12 @@ pub async fn set_session_code_binding(
     state
         .forge
         .load(&medousa_forge::model::WorkId::from(work_id.to_string()))
-        .map_err(|err| (StatusCode::BAD_REQUEST, format!("cannot bind undertaking: {err}")))?;
+        .map_err(|err| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("cannot bind undertaking: {err}"),
+            )
+        })?;
     crate::agent_mode_state::set_session_code_binding(&session_id, work_id)
         .map(Json)
         .map_err(|err| (StatusCode::BAD_REQUEST, err))
@@ -314,7 +319,12 @@ pub async fn get_session_deletion(
     let record = crate::session_deletion::coordinator()
         .find_record(&deletion_id)
         .map_err(|error| (StatusCode::BAD_REQUEST, error))?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "session deletion not found".to_string()))?;
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                "session deletion not found".to_string(),
+            )
+        })?;
     let summary = crate::session_lifecycle::SessionDeleteSummary::from_record(record);
     Ok(Json(SessionDeleteResponse {
         session_id: summary.session_id,

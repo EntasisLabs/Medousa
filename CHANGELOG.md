@@ -7,6 +7,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Bounded provider streaming** — upgraded to `stasis-rs` 0.9.0 and replaced the provider/tool-loop unbounded delta channel with awaited bounded admission. Slow consumers now backpressure providers, while closed receivers and oversized deltas fail visibly instead of being dropped or accumulating without limit.
+
 ## [0.9.1] — 2026-08-12
 
 ### Fixed

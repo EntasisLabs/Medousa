@@ -128,9 +128,9 @@ function assistantFlow(message: ChatMessage, opts: ChatSceneOptions): SceneNode[
 
   // 5. Body (substance) — never paint leaked reasoning callouts in prose
   if (hasContent) {
-    flow.push(child(`${id}:body`, "prose", { markdown: bodyMarkdown }));
+    flow.push(child(`${id}:body`, "prose", { markdown: bodyMarkdown, streaming }));
   } else if (streaming && !hasToolRuns && !hasReasoning) {
-    flow.push(child(`${id}:body`, "prose", { markdown: "…" }));
+    flow.push(child(`${id}:body`, "prose", { markdown: "…", streaming: true }));
   }
 
   if (message.uiArtifacts && message.uiArtifacts.length > 0) {

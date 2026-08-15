@@ -64,3 +64,12 @@ class MockTransport:
         if key not in self.handlers:
             raise KeyError(f"No handler for SSE {path}")
         return self.handlers[key](base_url, path)
+
+    async def stream_sse_with_accept(
+        self, base_url: str, path: str, accept: str
+    ) -> httpx.Response:
+        self.calls.append(("SSE", path, accept))
+        key = ("SSE", path)
+        if key not in self.handlers:
+            raise KeyError(f"No handler for SSE {path}")
+        return self.handlers[key](base_url, path)

@@ -35,11 +35,6 @@ impl TurnPartsAccumulator {
         &self.progress_notes
     }
 
-    pub fn push_content_delta(&mut self, _delta: &str) {
-        // Final answer text is taken from the terminal sink payload; deltas are
-        // mirrored in SSE only.
-    }
-
     pub fn push_reasoning_delta(&mut self, delta: &str) {
         self.reasoning.push_str(delta);
     }

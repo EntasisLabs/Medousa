@@ -1,6 +1,9 @@
+use std::sync::Arc;
+
 use anyhow::{Context, Result, anyhow};
 use futures_util::StreamExt;
-use medousa_types::daemon_api::InteractiveTurnStreamEvent;
+use medousa_sdk::{HttpTransport, MedousaClient};
+use medousa_types::TurnStreamEventV2;
 use reqwest::Client;
 
 /// Accumulated outcome from consuming an ingest SSE stream.
@@ -36,83 +39,67 @@ pub fn build_ingest_stream_url(daemon_base_url: &str, stream_id: &str) -> String
 
 /// Consume an ingest SSE stream until a terminal event arrives.
 pub async fn consume_ingest_stream(client: &Client, stream_url: &str) -> Result<IngestStreamResult> {
-    let response = client
-        .get(stream_url)
-        .send()
-        .await
-        .context("failed to reach ingest stream endpoint")?
-        .error_for_status()
-        .context("ingest stream endpoint returned error")?;
-
-    let mut bytes = response.bytes_stream();
-    let mut buffer = String::new();
+    let sdk = MedousaClient::with_transport(
+        Arc::new(HttpTransport::with_client(client.clone())),
+        stream_url,
+    );
+    let interactive = sdk.interactive();
+    let mut events = interactive.stream_reconnecting_v2(stream_url);
     let mut result = IngestStreamResult::default();
 
-    while let Some(chunk) = bytes.next().await {
-        let chunk = chunk.context("ingest stream read failed")?;
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
+    while let Some(payload) = events.next().await {
+        let payload = payload.context("ingest stream read failed")?;
 
-        while let Some(idx) = buffer.find("\n\n") {
-            let frame = buffer[..idx].to_string();
-            buffer = buffer[idx + 2..].to_string();
-
-            let Some(payload) = parse_sse_payload(&frame) else {
-                continue;
-            };
-
-            match payload.event_type.as_str() {
-                "content_delta" => {
-                    if let Some(delta) = payload.content_delta.filter(|value| !value.is_empty()) {
-                        let entry = result
-                            .final_text
-                            .get_or_insert_with(String::new);
-                        entry.push_str(&delta);
-                    }
+        match payload.event {
+            TurnStreamEventV2::ContentAppend { text } => {
+                if !text.is_empty() {
+                    result.final_text.get_or_insert_with(String::new).push_str(&text);
                 }
-                "needs_input" => {
-                    result.needs_input = true;
-                    result.final_text = payload.final_text.or_else(|| {
-                        if payload.message.trim().is_empty() {
-                            None
-                        } else {
-                            Some(payload.message)
-                        }
-                    });
-                    return Ok(result);
-                }
-                "final_pending" => {
-                    result.final_pending = true;
-                    if let Some(delta) = payload
-                        .final_text
-                        .filter(|value| !value.trim().is_empty())
-                    {
-                        result.final_text = Some(delta);
-                    }
-                }
-                "final" => {
-                    result.final_text = payload.final_text.or_else(|| {
-                        if payload.message.trim().is_empty() {
-                            None
-                        } else {
-                            Some(payload.message)
-                        }
-                    });
-                    return Ok(result);
-                }
-                "error" => {
-                    result.error = Some(if payload.message.trim().is_empty() {
-                        "ingest stream failed".to_string()
-                    } else {
-                        payload.message
-                    });
-                    return Ok(result);
-                }
-                _ => {}
             }
-
-            if payload.terminal {
+            TurnStreamEventV2::NeedsInput { text, .. } => {
+                result.needs_input = true;
+                result.final_text = non_empty(text);
                 return Ok(result);
             }
+            TurnStreamEventV2::FinalPending { text, .. } => {
+                result.final_pending = true;
+                if let Some(text) = non_empty(text) {
+                    result.final_text = Some(text);
+                }
+            }
+            TurnStreamEventV2::Final { text, .. }
+            | TurnStreamEventV2::Checkpoint { text, .. }
+            | TurnStreamEventV2::WorkerSynthesis { text, .. } => {
+                if let Some(text) = non_empty(text) {
+                    result.final_text = Some(text);
+                }
+                return Ok(result);
+            }
+            TurnStreamEventV2::Error {
+                operator_message, ..
+            } => {
+                result.error = Some(non_empty(operator_message).unwrap_or_else(|| {
+                    "ingest stream failed".to_string()
+                }));
+                return Ok(result);
+            }
+            TurnStreamEventV2::ReasoningAppend { .. }
+            | TurnStreamEventV2::Status { .. }
+            | TurnStreamEventV2::Progress { .. }
+            | TurnStreamEventV2::PackHold { .. }
+            | TurnStreamEventV2::ModelReceipt { .. }
+            | TurnStreamEventV2::WorkerAck { .. }
+            | TurnStreamEventV2::ScratchReset
+            | TurnStreamEventV2::ToolStarted { .. }
+            | TurnStreamEventV2::ToolFinished { .. }
+            | TurnStreamEventV2::ArtifactPresented { .. }
+            | TurnStreamEventV2::ArtifactUpdated { .. }
+            | TurnStreamEventV2::UiScene { .. }
+            | TurnStreamEventV2::BudgetApprovalRequired { .. }
+            | TurnStreamEventV2::BrowserChallenge { .. }
+            | TurnStreamEventV2::BrowserNavigated { .. }
+            | TurnStreamEventV2::ContextUsage { .. }
+            | TurnStreamEventV2::PermissionRequest { .. } => {}
         }
     }
 
@@ -123,26 +110,8 @@ pub async fn consume_ingest_stream(client: &Client, stream_url: &str) -> Result<
     Err(anyhow!("ingest stream closed without terminal event"))
 }
 
-fn parse_sse_payload(frame: &str) -> Option<InteractiveTurnStreamEvent> {
-    let data = frame
-        .lines()
-        .filter_map(|line| {
-            if let Some(value) = line.strip_prefix("data: ") {
-                Some(value)
-            } else if let Some(value) = line.strip_prefix("data:") {
-                Some(value.trim_start())
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    if data.trim().is_empty() {
-        return None;
-    }
-
-    serde_json::from_str::<InteractiveTurnStreamEvent>(&data).ok()
+fn non_empty(value: String) -> Option<String> {
+    (!value.trim().is_empty()).then_some(value)
 }
 
 #[cfg(test)]
@@ -158,10 +127,15 @@ mod tests {
     }
 
     #[test]
-    fn parse_sse_payload_reads_json_data_line() {
-        let frame = "event: content_delta\ndata: {\"turn_id\":\"ingest-1\",\"event_type\":\"final\",\"phase\":\"complete\",\"message\":\"done\",\"content_delta\":null,\"reasoning_delta\":null,\"final_text\":\"hello\",\"tool_names\":null,\"terminal\":true,\"emitted_at_utc\":\"2026-05-30T00:00:00Z\"}\n";
-        let payload = parse_sse_payload(frame).expect("payload");
-        assert_eq!(payload.event_type, "final");
-        assert_eq!(payload.final_text.as_deref(), Some("hello"));
+    fn v2_final_payload_decodes() {
+        let payload: medousa_types::TurnStreamEnvelopeV2 =
+            medousa_sdk::streaming::decode_sse_json(
+                r#"{"schema_version":2,"turn_id":"ingest-1","seq":1,"emitted_at_utc":"2026-05-30T00:00:00Z","event":{"type":"final","text":"hello"}}"#,
+            )
+            .expect("payload");
+        assert!(matches!(
+            payload.event,
+            TurnStreamEventV2::Final { text, .. } if text == "hello"
+        ));
     }
 }

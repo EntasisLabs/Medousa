@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { InteractiveTurnStreamEvent } from "$lib/types/chat";
+import type {
+  TurnStreamEnvelopeV2,
+  TurnStreamEventV2,
+} from "$lib/types/generated/daemon_api";
 import {
   applyCompanionStreamEvent,
   companionSpriteState,
@@ -7,16 +10,14 @@ import {
 } from "./companionState";
 
 function event(
-  partial: Partial<InteractiveTurnStreamEvent>,
-): InteractiveTurnStreamEvent {
+  payload: TurnStreamEventV2,
+): TurnStreamEnvelopeV2 {
   return {
+    schema_version: 2,
     turn_id: "turn-1",
-    event_type: "status",
-    phase: "streaming",
-    message: "Working",
-    terminal: false,
+    seq: 1,
     emitted_at_utc: "2026-08-02T00:00:00Z",
-    ...partial,
+    event: payload,
   };
 }
 
@@ -24,13 +25,19 @@ describe("applyCompanionStreamEvent", () => {
   it("tracks active work and settles on success", () => {
     const working = applyCompanionStreamEvent(
       initialCompanionActivity(),
-      event({ event_type: "tool_started" }),
+      event({
+        type: "tool_started",
+        tool_run_id: "run-1",
+        tool_name: "search",
+        input_summary: "query",
+        tool_round: 1,
+      }),
     );
     expect(working.activeTurnIds.has("turn-1")).toBe(true);
 
     const done = applyCompanionStreamEvent(
       working,
-      event({ terminal: true, final_text: "Finished the task" }),
+      event({ type: "final", text: "Finished the task" }),
     );
     expect(done.activeTurnIds.size).toBe(0);
     expect(done.feedback).toEqual({
@@ -43,9 +50,13 @@ describe("applyCompanionStreamEvent", () => {
     const result = applyCompanionStreamEvent(
       initialCompanionActivity(),
       event({
-        event_type: "budget_approval",
-        phase: "budget_blocked",
-        operator_message: "Approve two more tool rounds",
+        type: "budget_approval_required",
+        request_id: "approval-1",
+        rounds_executed: 4,
+        max_tool_rounds: 4,
+        requested_rounds: 2,
+        reason: "more work remains",
+        progress_summary: "Approve two more tool rounds",
       }),
     );
     expect(result.approvalChanged).toBe(true);

@@ -19,6 +19,7 @@ import type {
   ToolRunState,
   TurnTicketState,
 } from "$lib/types/chat";
+import type { TurnStreamEnvelopeV2 } from "$lib/types/generated/daemon_api";
 import type { WorkCardDetail } from "$lib/types/card";
 import type {
   SessionHistoryResponse,
@@ -58,6 +59,8 @@ import {
   type StreamOwner,
 } from "$lib/utils/streamOwnership";
 import { applyStreamSeq, streamPathWithSince } from "$lib/stream/reconnect";
+import { StreamEventPump, type StreamEventTarget } from "$lib/stream/eventPump";
+import { turnStreamV2ToLegacy } from "$lib/stream/v2ToLegacy";
 import { resolveTurnContent } from "$lib/utils/resolveTurnContent";
 import { friendlyUserError, MAX_MEDIA_REFS_PER_TURN } from "$lib/utils/normieErrors";
 import { settings } from "$lib/stores/settings.svelte";
@@ -212,9 +215,19 @@ export class ChatStore {
   private terminalReconcileTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Background + focused session caches (focused also mirrored on public fields). */
   private sessionRuntimes = new Map<string, ChatSessionRuntime>();
+  private messageIndexes = new Map<
+    string,
+    {
+      messages: ChatMessage[];
+      byId: Map<string, number>;
+      assistantByTurn: Map<string, string>;
+    }
+  >();
   /** Bumps when a non-focused runtime is mutated (multi-pane transcript reactivity). */
   runtimeRevision = $state(0);
-  private streamApplyChain: Promise<void> = Promise.resolve();
+  private streamEventPump = new StreamEventPump((target) => {
+    this.applyPumpedStreamEvent(target);
+  });
   private multiLiveBootstrapped = false;
   /**
    * When set, public `$state` fields are temporarily swapped to another session
@@ -392,20 +405,18 @@ export class ChatStore {
   private snapshotFocusedRuntime(): ChatSessionRuntime {
     return {
       sessionId: this.sessionId,
-      messages: this.messages.map((message) => ({ ...message })),
+      messages: this.messages,
       draft: this.draft,
       streamError: this.streamError,
       historyLoading: this.historyLoading,
       sessionPristine: this.sessionPristine,
       historyNotice: this.historyNotice,
       activeTurnId: this.activeTurnId,
-      turns: new Map(this.turns),
-      workers: new Map(
-        [...this.workers.entries()].map(([key, value]) => [key, { ...value }]),
-      ),
+      turns: this.turns,
+      workers: this.workers,
       assistantId: this.assistantId,
       transcriptEpoch: this.transcriptEpoch,
-      lastSeqByTurn: new Map(this.lastSeqByTurn),
+      lastSeqByTurn: this.lastSeqByTurn,
       backgroundActivity: this.backgroundActivity,
     };
   }
@@ -417,20 +428,18 @@ export class ChatStore {
 
   private loadRuntimeIntoFocused(runtime: ChatSessionRuntime) {
     this.sessionId = runtime.sessionId;
-    this.messages = runtime.messages.map((message) => ({ ...message }));
+    this.messages = runtime.messages;
     this.draft = runtime.draft;
     this.streamError = runtime.streamError;
     this.historyLoading = runtime.historyLoading;
     this.sessionPristine = runtime.sessionPristine;
     this.historyNotice = runtime.historyNotice;
     this.activeTurnId = runtime.activeTurnId;
-    this.turns = new Map(runtime.turns);
-    this.workers = new Map(
-      [...runtime.workers.entries()].map(([key, value]) => [key, { ...value }]),
-    ) as typeof this.workers;
+    this.turns = runtime.turns;
+    this.workers = runtime.workers as typeof this.workers;
     this.assistantId = runtime.assistantId;
     this.transcriptEpoch = runtime.transcriptEpoch;
-    this.lastSeqByTurn = new Map(runtime.lastSeqByTurn);
+    this.lastSeqByTurn = runtime.lastSeqByTurn;
     this.backgroundActivity = runtime.backgroundActivity;
   }
 
@@ -456,14 +465,14 @@ export class ChatStore {
       this.sessionRuntimes.get(trimmed) ??
       emptySessionRuntime(trimmed, loadDraftForSession(trimmed));
     this.streamApplyPrincipalId = focusedId;
-    this.loadRuntimeIntoFocused(cloneRuntime(target));
+    this.loadRuntimeIntoFocused(target);
     try {
       fn();
       this.stashFocusedRuntime();
     } finally {
       const restore =
         this.sessionRuntimes.get(focusedId) ?? emptySessionRuntime(focusedId);
-      this.loadRuntimeIntoFocused(cloneRuntime(restore));
+      this.loadRuntimeIntoFocused(restore);
       this.streamApplyPrincipalId = null;
       this.bumpRuntimeRevision();
     }
@@ -2413,18 +2422,74 @@ export class ChatStore {
     }
   }
 
-  applyStreamEvent(event: InteractiveTurnStreamEvent) {
+  applyStreamEvent(event: TurnStreamEnvelopeV2) {
     const owner = this.streamOwners.get(event.turn_id);
     const targetSession = owner?.sessionId?.trim() || this.sessionId;
-    this.streamApplyChain = this.streamApplyChain
-      .then(() => {
-        this.withSessionFields(targetSession, () => {
-          this.applyStreamEventOnFocusedFields(event);
-        });
-      })
-      .catch(() => {
-        /* keep queue alive */
-      });
+    const appliedSeq = this.lastAppliedSeq(targetSession, event.turn_id);
+    this.streamEventPump.enqueue({ sessionId: targetSession, event }, appliedSeq);
+  }
+
+  private applyPumpedStreamEvent(target: StreamEventTarget) {
+    this.withSessionFields(target.sessionId, () => {
+      this.applyStreamEventOnFocusedFields(turnStreamV2ToLegacy(target.event));
+    });
+  }
+
+  private lastAppliedSeq(sessionId: string, turnId: string): number {
+    if (sessionId === this.sessionId) {
+      return this.lastSeqByTurn.get(turnId) ?? 0;
+    }
+    return this.sessionRuntimes.get(sessionId)?.lastSeqByTurn.get(turnId) ?? 0;
+  }
+
+  private currentMessageIndexes() {
+    const cached = this.messageIndexes.get(this.sessionId);
+    if (cached?.messages === this.messages) return cached;
+
+    const byId = new Map<string, number>();
+    const assistantByTurn = new Map<string, string>();
+    for (let index = 0; index < this.messages.length; index += 1) {
+      const message = this.messages[index];
+      byId.set(message.id, index);
+      if (message.role === "assistant" && message.turnId) {
+        assistantByTurn.set(message.turnId, message.id);
+      }
+    }
+    const indexes = { messages: this.messages, byId, assistantByTurn };
+    this.messageIndexes.set(this.sessionId, indexes);
+    return indexes;
+  }
+
+  private messageIndexForId(messageId: string): number {
+    return this.currentMessageIndexes().byId.get(messageId) ?? -1;
+  }
+
+  private replaceMessageAt(index: number, message: ChatMessage) {
+    const indexes = this.currentMessageIndexes();
+    const previous = this.messages[index];
+    const messages = [...this.messages];
+    messages[index] = message;
+    this.messages = messages;
+    indexes.messages = messages;
+    if (previous.id !== message.id) indexes.byId.delete(previous.id);
+    indexes.byId.set(message.id, index);
+    if (previous.turnId && indexes.assistantByTurn.get(previous.turnId) === previous.id) {
+      indexes.assistantByTurn.delete(previous.turnId);
+    }
+    if (message.role === "assistant" && message.turnId) {
+      indexes.assistantByTurn.set(message.turnId, message.id);
+    }
+  }
+
+  private appendMessage(message: ChatMessage) {
+    const indexes = this.currentMessageIndexes();
+    const messages = [...this.messages, message];
+    this.messages = messages;
+    indexes.messages = messages;
+    indexes.byId.set(message.id, messages.length - 1);
+    if (message.role === "assistant" && message.turnId) {
+      indexes.assistantByTurn.set(message.turnId, message.id);
+    }
   }
 
   private applyStreamEventOnFocusedFields(event: InteractiveTurnStreamEvent) {
@@ -2627,11 +2692,7 @@ export class ChatStore {
     }
     if (turn?.messageId) return turn.messageId;
     if (workerLink?.synthesisMessageId) return workerLink.synthesisMessageId;
-    return (
-      this.messages.find(
-        (message) => message.turnId === turnId && message.role === "assistant",
-      )?.id ?? null
-    );
+    return this.currentMessageIndexes().assistantByTurn.get(turnId) ?? null;
   }
 
   /** Route worker tool receipts into the same turn envelope as synthesis. */
@@ -2775,7 +2836,7 @@ export class ChatStore {
     messageId: string,
     event: InteractiveTurnStreamEvent,
   ) {
-    const idx = this.messages.findIndex((m) => m.id === messageId);
+    const idx = this.messageIndexForId(messageId);
     if (idx < 0) {
       if (event.terminal) this.noteTurnTerminal(event);
       return;
@@ -2788,11 +2849,7 @@ export class ChatStore {
       const responseProvider = event.response_provider?.trim();
       const responseModel = event.response_model?.trim();
       if (responseProvider && responseModel) {
-        this.messages = [
-          ...this.messages.slice(0, idx),
-          { ...current, responseProvider, responseModel },
-          ...this.messages.slice(idx + 1),
-        ];
+        this.replaceMessageAt(idx, { ...current, responseProvider, responseModel });
       }
       return;
     }
@@ -2807,11 +2864,7 @@ export class ChatStore {
         phase: null,
         statusLine: null,
       };
-      this.messages = [
-        ...this.messages.slice(0, idx),
-        next,
-        ...this.messages.slice(idx + 1),
-      ];
+      this.replaceMessageAt(idx, next);
       return;
     }
 
@@ -2824,11 +2877,7 @@ export class ChatStore {
           ? [...new Set([...(current.tools ?? []), ...event.tool_names])]
           : current.tools,
       };
-      this.messages = [
-        ...this.messages.slice(0, idx),
-        next,
-        ...this.messages.slice(idx + 1),
-      ];
+      this.replaceMessageAt(idx, next);
       return;
     }
 
@@ -2849,11 +2898,7 @@ export class ChatStore {
           ? [...new Set([...(current.tools ?? []), ...event.tool_names])]
           : current.tools,
       };
-      this.messages = [
-        ...this.messages.slice(0, idx),
-        next,
-        ...this.messages.slice(idx + 1),
-      ];
+      this.replaceMessageAt(idx, next);
       return;
     }
 
@@ -2876,11 +2921,7 @@ export class ChatStore {
           ? [...new Set([...(current.tools ?? []), ...event.tool_names])]
           : current.tools,
       };
-      this.messages = [
-        ...this.messages.slice(0, idx),
-        next,
-        ...this.messages.slice(idx + 1),
-      ];
+      this.replaceMessageAt(idx, next);
       if (event.terminal) {
         this.finishMessage(messageId);
         this.finishAskLaneTurn(event.turn_id);
@@ -2902,11 +2943,7 @@ export class ChatStore {
         phase: "tool_loop",
         statusLine: statusLineAfterScratchReset(current.content, current.statusLine),
       };
-      this.messages = [
-        ...this.messages.slice(0, idx),
-        next,
-        ...this.messages.slice(idx + 1),
-      ];
+      this.replaceMessageAt(idx, next);
       return;
     }
 
@@ -2961,11 +2998,7 @@ export class ChatStore {
           reasoning: reasoning || current.reasoning,
           streaming: false,
         };
-        this.messages = [
-          ...this.messages.slice(0, idx),
-          next,
-          ...this.messages.slice(idx + 1),
-        ];
+        this.replaceMessageAt(idx, next);
 
         if (isWorkerHandoffStreamEvent(event)) {
           this.releaseComposerHandoff(messageId, "worker_ack", event);
@@ -3011,11 +3044,7 @@ export class ChatStore {
       tools: tools.length > 0 ? tools : current.tools,
       reasoning: reasoning || current.reasoning,
     };
-    this.messages = [
-      ...this.messages.slice(0, idx),
-      next,
-      ...this.messages.slice(idx + 1),
-    ];
+    this.replaceMessageAt(idx, next);
 
     if (isWorkerHandoffStreamEvent(event)) {
       this.releaseComposerHandoff(messageId, "worker_ack", event);
@@ -3085,19 +3114,16 @@ export class ChatStore {
 
     const id = crypto.randomUUID();
     const turn = this.turns.get(event.turn_id);
-    this.messages = [
-      ...this.messages,
-      {
-        id,
-        role: "assistant",
-        content,
-        streaming: !event.terminal,
-        turnId: event.turn_id,
-        phase: event.phase || null,
-        statusLine: this.resolveStatusLine(event, null),
-        tools: event.tool_names?.length ? [...event.tool_names] : undefined,
-      },
-    ];
+    this.appendMessage({
+      id,
+      role: "assistant",
+      content,
+      streaming: !event.terminal,
+      turnId: event.turn_id,
+      phase: event.phase || null,
+      statusLine: this.resolveStatusLine(event, null),
+      tools: event.tool_names?.length ? [...event.tool_names] : undefined,
+    });
     if (turn) {
       const next = new Map(this.turns);
       next.set(event.turn_id, { ...turn, messageId: id });

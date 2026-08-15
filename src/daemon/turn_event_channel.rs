@@ -1,52 +1,131 @@
 //! Per-turn live SSE fan-out channel. Replay durability lives on the
 //! per-turn [`TurnEventLog`] spine; this type broadcasts pre-sequenced events only.
 
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Arc;
 
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, watch};
 
 use crate::daemon_api::InteractiveTurnStreamEvent;
+use medousa_types::TurnStreamEnvelopeV2;
 
-struct ChannelState {
-    closed: bool,
+#[derive(Debug, Clone)]
+pub struct PublishedTurnEvent {
+    pub v1: InteractiveTurnStreamEvent,
+    pub v2: Option<TurnStreamEnvelopeV2>,
+}
+
+impl PublishedTurnEvent {
+    pub fn seq(&self) -> u64 {
+        self.v1.seq
+    }
+}
+
+pub const MAX_TURN_STREAM_SUBSCRIBERS: usize = 64;
+
+/// One admitted live subscriber. Dropping it returns its admission slot.
+pub struct TurnEventSubscription {
+    receiver: broadcast::Receiver<PublishedTurnEvent>,
+    closed: watch::Receiver<bool>,
+    active_subscribers: Arc<AtomicUsize>,
+}
+
+impl TurnEventSubscription {
+    pub async fn recv(
+        &mut self,
+    ) -> Result<PublishedTurnEvent, broadcast::error::RecvError> {
+        if *self.closed.borrow() {
+            return Err(broadcast::error::RecvError::Closed);
+        }
+        tokio::select! {
+            biased;
+            changed = self.closed.changed() => {
+                let _ = changed;
+                Err(broadcast::error::RecvError::Closed)
+            }
+            event = self.receiver.recv() => event,
+        }
+    }
+
+    #[cfg(test)]
+    fn try_recv(
+        &mut self,
+    ) -> Result<PublishedTurnEvent, broadcast::error::TryRecvError> {
+        self.receiver.try_recv()
+    }
+}
+
+impl Drop for TurnEventSubscription {
+    fn drop(&mut self) {
+        self.active_subscribers.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 
 /// Broadcast channel for one interactive turn's live event stream.
 pub struct TurnEventChannel {
-    tx: broadcast::Sender<InteractiveTurnStreamEvent>,
-    state: Mutex<ChannelState>,
+    tx: broadcast::Sender<PublishedTurnEvent>,
+    closed: AtomicBool,
+    close_tx: watch::Sender<bool>,
+    active_subscribers: Arc<AtomicUsize>,
+    max_subscribers: usize,
 }
 
 impl TurnEventChannel {
     /// Create a new channel with the given live broadcast capacity.
     pub fn new(broadcast_capacity: usize) -> Arc<Self> {
+        Self::with_limits(broadcast_capacity, MAX_TURN_STREAM_SUBSCRIBERS)
+    }
+
+    fn with_limits(broadcast_capacity: usize, max_subscribers: usize) -> Arc<Self> {
         let (tx, _rx) = broadcast::channel(broadcast_capacity);
+        let (close_tx, _close_rx) = watch::channel(false);
         Arc::new(Self {
             tx,
-            state: Mutex::new(ChannelState { closed: false }),
+            closed: AtomicBool::new(false),
+            close_tx,
+            active_subscribers: Arc::new(AtomicUsize::new(0)),
+            max_subscribers,
         })
     }
 
-    /// Subscribe to live events. Used by each attached SSE stream.
-    pub fn subscribe(&self) -> broadcast::Receiver<InteractiveTurnStreamEvent> {
-        self.tx.subscribe()
+    /// Admit a live SSE subscriber without allowing an unbounded receiver set.
+    pub fn try_subscribe(&self) -> Option<TurnEventSubscription> {
+        self.active_subscribers
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |active| {
+                (active < self.max_subscribers).then_some(active + 1)
+            })
+            .ok()?;
+        Some(TurnEventSubscription {
+            receiver: self.tx.subscribe(),
+            closed: self.close_tx.subscribe(),
+            active_subscribers: Arc::clone(&self.active_subscribers),
+        })
     }
 
     /// Broadcast a pre-sequenced event to live SSE subscribers.
     pub fn publish(&self, event: InteractiveTurnStreamEvent) {
         debug_assert!(event.seq > 0, "SSE events must carry spine-assigned seq");
-        let _ = self.tx.send(event);
+        let v2 = crate::sse_turn_projection::v1_to_v2(&event)
+            .inspect_err(|error| tracing::error!(%error, "stream event has no v2 projection"))
+            .ok();
+        let _ = self.tx.send(PublishedTurnEvent { v1: event, v2 });
+    }
+
+    /// Broadcast the canonical v2 event and its frozen v1 compatibility view.
+    pub fn publish_pair(&self, v1: InteractiveTurnStreamEvent, v2: TurnStreamEnvelopeV2) {
+        debug_assert_eq!(v1.seq, v2.seq, "v1/v2 stream sequence must match");
+        let _ = self.tx.send(PublishedTurnEvent { v1, v2: Some(v2) });
     }
 
     /// Mark the turn finished while the registry retains replay state.
     pub fn mark_closed(&self) {
-        if let Ok(mut state) = self.state.lock() {
-            state.closed = true;
+        if !self.closed.swap(true, Ordering::AcqRel) {
+            self.close_tx.send_replace(true);
         }
     }
 
     pub fn is_closed(&self) -> bool {
-        self.state.lock().map(|state| state.closed).unwrap_or(true)
+        self.closed.load(Ordering::Acquire)
     }
 }
 
@@ -64,10 +143,11 @@ mod tests {
     #[test]
     fn publish_broadcasts_presequenced_events() {
         let ch = TurnEventChannel::new(8);
-        let mut rx = ch.subscribe();
+        let mut rx = ch.try_subscribe().unwrap();
         ch.publish(ev(1));
         let got = rx.try_recv().expect("live event");
-        assert_eq!(got.seq, 1);
+        assert_eq!(got.seq(), 1);
+        assert!(got.v2.is_some());
     }
 
     #[test]
@@ -76,5 +156,28 @@ mod tests {
         assert!(!ch.is_closed());
         ch.mark_closed();
         assert!(ch.is_closed());
+    }
+
+    #[tokio::test]
+    async fn closing_wakes_an_attached_subscriber() {
+        let ch = TurnEventChannel::new(8);
+        let mut subscriber = ch.try_subscribe().unwrap();
+        ch.mark_closed();
+        assert!(matches!(
+            subscriber.recv().await,
+            Err(broadcast::error::RecvError::Closed)
+        ));
+    }
+
+    #[test]
+    fn subscriber_admission_is_bounded_and_released_on_drop() {
+        let ch = TurnEventChannel::with_limits(8, 2);
+        let first = ch.try_subscribe().expect("first subscriber");
+        let second = ch.try_subscribe().expect("second subscriber");
+        assert!(ch.try_subscribe().is_none());
+
+        drop(first);
+        assert!(ch.try_subscribe().is_some());
+        drop(second);
     }
 }

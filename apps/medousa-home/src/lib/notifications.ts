@@ -1,4 +1,10 @@
 import type { InteractiveTurnStreamEvent } from "$lib/types/chat";
+import type { TurnStreamEnvelopeV2 } from "$lib/types/generated/daemon_api";
+import {
+  isTerminalTurnStreamEventV2,
+  isTurnStreamEnvelopeV2,
+  terminalTurnStreamTextV2,
+} from "$lib/stream/v2";
 import type { OpenWorkHandler } from "$lib/mobileNative";
 import { isTauriMobilePlatform } from "$lib/platform";
 
@@ -228,8 +234,13 @@ export async function notifyBudgetApprovalRequired(
 }
 
 export function budgetRequestIdFromStreamEvent(
-  event: InteractiveTurnStreamEvent,
+  event: InteractiveTurnStreamEvent | TurnStreamEnvelopeV2,
 ): string | null {
+  if (isTurnStreamEnvelopeV2(event)) {
+    return event.event.type === "budget_approval_required"
+      ? budgetWorkCardId(event.event.request_id)
+      : null;
+  }
   const explicit = event.budget_request_id?.trim();
   if (explicit) return budgetWorkCardId(explicit);
   const match = event.message.match(/\(request ([^)]+)\)/);
@@ -240,10 +251,13 @@ export function budgetRequestIdFromStreamEvent(
 const turnTerminalNotified = new Set<string>();
 
 export async function notifyTurnTicketTerminal(
-  event: InteractiveTurnStreamEvent,
+  event: InteractiveTurnStreamEvent | TurnStreamEnvelopeV2,
   workspaceCardId?: string | null,
 ) {
-  if (!isTauriMobilePlatform() || !event.terminal) return;
+  const terminal = isTurnStreamEnvelopeV2(event)
+    ? isTerminalTurnStreamEventV2(event.event)
+    : event.terminal;
+  if (!isTauriMobilePlatform() || !terminal) return;
   const turnId = event.turn_id.trim();
   if (!turnId || turnTerminalNotified.has(turnId)) return;
   turnTerminalNotified.add(turnId);
@@ -253,13 +267,9 @@ export async function notifyTurnTicketTerminal(
   }
 
   const cardId = workspaceCardId?.trim() || turnId;
-  const preview =
-    event.operator_message?.trim() ||
-    event.final_text?.trim().split("\n")[0]?.trim() ||
-    event.message?.trim() ||
-    "Turn finished";
+  const preview = streamNotificationPreview(event);
 
-  if (event.event_type === "error") {
+  if (isTurnStreamEnvelopeV2(event) ? event.event.type === "error" : event.event_type === "error") {
     try {
       await sendWorkNotification(
         `turn-error-${turnId}`,
@@ -286,22 +296,47 @@ export async function notifyTurnTicketTerminal(
 }
 
 export async function notifyWorkerHandoff(
-  event: InteractiveTurnStreamEvent,
+  event: InteractiveTurnStreamEvent | TurnStreamEnvelopeV2,
   workspaceCardId?: string | null,
 ) {
-  if (!isTauriMobilePlatform() || event.event_type !== "worker_ack") return;
+  const workerAck = isTurnStreamEnvelopeV2(event)
+    ? event.event.type === "worker_ack" && event.event.ack_kind === "worker"
+    : event.event_type === "worker_ack";
+  if (!isTauriMobilePlatform() || !workerAck) return;
   const cardId = workspaceCardId?.trim() || event.turn_id.trim();
   if (!cardId) return;
+  const message = isTurnStreamEnvelopeV2(event)
+    ? event.event.type === "worker_ack"
+      ? event.event.text
+      : ""
+    : event.message;
   try {
     await sendWorkNotification(
       `worker-${event.turn_id}`,
       "Medousa — worker started",
-      event.message?.trim() || "Background worker is on it",
+      message.trim() || "Background worker is on it",
       cardId,
     );
   } catch {
     // ignore
   }
+}
+
+function streamNotificationPreview(
+  event: InteractiveTurnStreamEvent | TurnStreamEnvelopeV2,
+): string {
+  if (!isTurnStreamEnvelopeV2(event)) {
+    return (
+      event.operator_message?.trim() ||
+      event.final_text?.trim().split("\n")[0]?.trim() ||
+      event.message?.trim() ||
+      "Turn finished"
+    );
+  }
+  return isTerminalTurnStreamEventV2(event.event)
+    ? terminalTurnStreamTextV2(event.event).trim().split("\n")[0]?.trim() ||
+        "Turn finished"
+    : "Turn finished";
 }
 
 function rememberWorkNotification(seed: string): boolean {

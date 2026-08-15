@@ -4,6 +4,21 @@
 
 Native desktop and mobile shell (Tauri v2 + SvelteKit). Product README: [../../README.md](../../README.md). Dev quickstart: [../cookbook/build-from-source.md](../cookbook/build-from-source.md).
 
+## Interactive stream boundary
+
+Home explicitly negotiates the typed turn-stream v2 media type. The native
+bridge emits the decoded `TurnStreamEnvelopeV2` value, and the webview performs
+sequence dedupe plus frame-batched coalescing on that generated union before
+updating reactive chat state. Content and reasoning are coalesced only while
+adjacent; switching lanes or receiving a tool, approval, reset, or terminal
+variant flushes the previous batch first.
+
+During the v1 support window, an older workshop may still return the frozen v1
+DTO. Home converts that payload once at the ingress compatibility seam. Current
+v2 traffic does not allocate that conversion. The mature chat reducer still
+uses the generated v1 projection after batching; removing that final reducer
+projection is tracked by H03 migration and does not change the wire contract.
+
 ## Surfaces
 
 | Viewport | Shell | Primary surfaces |

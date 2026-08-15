@@ -1,8 +1,10 @@
 //! Phase 1 (b/c/e) — the durable per-turn event-log spine.
 
-use std::io::{BufRead, BufReader, Write};
+use std::collections::VecDeque;
+use std::io::{BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt as _};
 use cap_std::ambient_authority;
@@ -11,6 +13,7 @@ use chrono::Utc;
 use medousa_types::authority_id::TurnEventId;
 use medousa_types::session::ConversationTurn;
 use medousa_types::turn::TurnPart;
+use serde::{Deserialize, Serialize};
 
 use crate::turn_event::{Principal, SequencedTurnEvent, TurnEnvelope, TurnEvent};
 
@@ -18,6 +21,14 @@ use crate::turn_event::{Principal, SequencedTurnEvent, TurnEnvelope, TurnEvent};
 pub const TURN_LOG_DIR: &str = "turn_log";
 const JOURNAL_EXT: &str = "jsonl";
 const COMMIT_EXT: &str = "committed";
+const LIVE_RING_MAX_EVENTS: usize = 512;
+const LIVE_RING_MAX_BYTES: usize = 4 * 1024 * 1024;
+const REPLAY_PAGE_MAX_EVENTS: usize = 256;
+const REPLAY_PAGE_MAX_BYTES: usize = 1024 * 1024;
+const JOURNAL_RECORD_MAX_BYTES: usize = 2 * 1024 * 1024;
+const SPARSE_INDEX_STRIDE: u64 = 64;
+const ACTIVE_SYNC_INTERVAL: Duration = Duration::from_millis(250);
+const COMMIT_MARKER_SCHEMA_VERSION: u8 = 1;
 
 static LOG_ROOT: OnceLock<PathBuf> = OnceLock::new();
 
@@ -37,9 +48,99 @@ pub fn default_log_root() -> PathBuf {
 
 struct LogInner {
     next_seq: u64,
-    events: Vec<SequencedTurnEvent>,
-    journal: Option<File>,
+    events: VecDeque<RetainedEvent>,
+    retained_bytes: usize,
+    evicted_events: u64,
+    evicted_bytes: u64,
+    sparse_offsets: Vec<SparseOffset>,
+    journal: Option<BufWriter<File>>,
+    journal_writes: u64,
+    journal_flushes: u64,
+    journal_bytes: u64,
+    journal_syncs: u64,
+    last_synced_seq: u64,
+    last_sync: Instant,
     committed: bool,
+}
+
+struct RetainedEvent {
+    event: SequencedTurnEvent,
+    encoded_bytes: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SparseOffset {
+    seq: u64,
+    offset: u64,
+}
+
+struct JournalScan {
+    next_seq: u64,
+    events: VecDeque<RetainedEvent>,
+    retained_bytes: usize,
+    evicted_events: u64,
+    evicted_bytes: u64,
+    sparse_offsets: Vec<SparseOffset>,
+    valid_bytes: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TurnEventLogMetrics {
+    pub retained_events: usize,
+    pub retained_bytes: usize,
+    pub evicted_events: u64,
+    pub evicted_bytes: u64,
+    pub journal_writes: u64,
+    pub journal_flushes: u64,
+    pub journal_syncs: u64,
+    pub journal_bytes: u64,
+    pub last_synced_seq: u64,
+    pub sparse_checkpoints: usize,
+}
+
+/// One bounded replay read through a stable high-water fence.
+#[derive(Debug, Clone)]
+pub struct TurnReplayPage {
+    pub events: Vec<SequencedTurnEvent>,
+    pub fence_seq: u64,
+    pub has_more: bool,
+}
+
+/// Durability reached by a successful journal append.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JournalDurability {
+    /// The complete record has been flushed to the filesystem.
+    Written,
+    /// The journal has crossed an explicit `sync_data` fence.
+    Synced,
+}
+
+/// Result of one acknowledged journal append.
+#[derive(Debug, Clone)]
+pub struct JournalAppendReceipt {
+    pub sequenced: SequencedTurnEvent,
+    pub durability: JournalDurability,
+    pub through_offset: u64,
+}
+
+impl JournalAppendReceipt {
+    pub fn seq(&self) -> u64 {
+        self.sequenced.seq()
+    }
+}
+
+/// Result of atomically recording that a terminal turn was committed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JournalCommitReceipt {
+    pub through_seq: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CommitMarker {
+    schema_version: u8,
+    turn_id: String,
+    through_seq: u64,
+    committed_at: chrono::DateTime<Utc>,
 }
 
 /// Append-only event log for a single turn (the spine).
@@ -65,14 +166,33 @@ impl TurnEventLog {
         let mut options = OpenOptions::new();
         options.create(true).append(true).follow(FollowSymlinks::No);
         let journal = root.open_with(&journal_path, &options)?;
+        let scan = scan_journal(&root, &journal_path, &envelope.turn_id)?;
+        if journal.metadata()?.len() != scan.valid_bytes {
+            journal.set_len(scan.valid_bytes)?;
+        }
+        let committed = commit_marker_matches(
+            &root,
+            &turn_id,
+            scan.next_seq.saturating_sub(1),
+        );
         Ok(Self {
             envelope,
             root,
             inner: Mutex::new(LogInner {
-                next_seq: 1,
-                events: Vec::new(),
-                journal: Some(journal),
-                committed: false,
+                next_seq: scan.next_seq,
+                events: scan.events,
+                retained_bytes: scan.retained_bytes,
+                evicted_events: scan.evicted_events,
+                evicted_bytes: scan.evicted_bytes,
+                sparse_offsets: scan.sparse_offsets,
+                journal: Some(BufWriter::new(journal)),
+                journal_writes: 0,
+                journal_flushes: 0,
+                journal_bytes: scan.valid_bytes,
+                journal_syncs: 0,
+                last_synced_seq: 0,
+                last_sync: Instant::now(),
+                committed,
             }),
         })
     }
@@ -85,75 +205,329 @@ impl TurnEventLog {
         self.inner.lock().unwrap_or_else(|p| p.into_inner())
     }
 
-    pub fn append(&self, event: TurnEvent) -> SequencedTurnEvent {
-        let mut inner = self.lock();
-        let seq = inner.next_seq;
-        inner.next_seq = inner.next_seq.saturating_add(1);
+    /// Append using the journal's next sequence and wait for an honest write receipt.
+    pub fn append(&self, event: TurnEvent) -> std::io::Result<JournalAppendReceipt> {
+        let seq = self.lock().next_seq;
+        self.append_sequenced(seq, event)
+    }
+
+    /// Append an actor-sequenced event, rejecting divergence from journal order.
+    pub fn append_sequenced(
+        &self,
+        seq: u64,
+        event: TurnEvent,
+    ) -> std::io::Result<JournalAppendReceipt> {
+        self.append_sequenced_with_stream_v2(seq, event, None, None)
+    }
+
+    /// Append an actor-sequenced domain event with its exact typed stream view.
+    pub fn append_sequenced_with_stream_v2(
+        &self,
+        seq: u64,
+        event: TurnEvent,
+        emitted_at_utc: Option<chrono::DateTime<chrono::Utc>>,
+        stream_event_v2: Option<medousa_types::TurnStreamEventV2>,
+    ) -> std::io::Result<JournalAppendReceipt> {
+        let terminal = event.is_terminal();
         let sequenced = SequencedTurnEvent {
             envelope: self.envelope.at_seq(seq),
             event,
+            emitted_at_utc,
+            stream_event_v2,
         };
-        if let Some(journal) = inner.journal.as_mut()
-            && let Ok(line) = serde_json::to_string(&sequenced)
-            && writeln!(journal, "{line}")
-                .and_then(|_| journal.flush())
-                .is_err()
-        {
-            tracing::warn!(
-                turn_id = %self.envelope.turn_id,
-                correlation_id = %self.envelope.correlation_id,
-                seq,
-                "turn_event_log journal append failed"
-            );
+        let mut line = serde_json::to_vec(&sequenced).map_err(std::io::Error::other)?;
+        line.push(b'\n');
+        if line.len() > JOURNAL_RECORD_MAX_BYTES {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "turn journal record exceeds the configured byte limit",
+            ));
         }
-        inner.events.push(sequenced.clone());
-        sequenced
+
+        let mut inner = self.lock();
+        if seq != inner.next_seq {
+            return Err(std::io::Error::other(format!(
+                "journal sequence {seq} diverged from expected {}",
+                inner.next_seq
+            )));
+        }
+        let should_sync = terminal || inner.last_sync.elapsed() >= ACTIVE_SYNC_INTERVAL;
+        {
+            let journal = inner
+                .journal
+                .as_mut()
+                .ok_or_else(|| std::io::Error::other("turn journal is closed"))?;
+            journal.write_all(&line)?;
+            journal.flush()?;
+            if should_sync {
+                journal.get_ref().sync_data()?;
+            }
+        }
+        let durability = if should_sync {
+            JournalDurability::Synced
+        } else {
+            JournalDurability::Written
+        };
+
+        let record_offset = inner.journal_bytes;
+        inner.next_seq = inner.next_seq.saturating_add(1);
+        inner.journal_writes = inner.journal_writes.saturating_add(1);
+        inner.journal_flushes = inner.journal_flushes.saturating_add(1);
+        inner.journal_bytes = inner
+            .journal_bytes
+            .saturating_add(u64::try_from(line.len()).unwrap_or(u64::MAX));
+        if (seq - 1).is_multiple_of(SPARSE_INDEX_STRIDE) {
+            inner.sparse_offsets.push(SparseOffset {
+                seq,
+                offset: record_offset,
+            });
+        }
+        if should_sync {
+            inner.journal_syncs = inner.journal_syncs.saturating_add(1);
+            inner.last_synced_seq = seq;
+            inner.last_sync = Instant::now();
+        }
+        inner.retained_bytes = inner.retained_bytes.saturating_add(line.len());
+        inner.events.push_back(RetainedEvent {
+            event: sequenced.clone(),
+            encoded_bytes: line.len(),
+        });
+        while inner.events.len() > LIVE_RING_MAX_EVENTS
+            || inner.retained_bytes > LIVE_RING_MAX_BYTES
+        {
+            let Some(evicted) = inner.events.pop_front() else { break };
+            inner.retained_bytes = inner.retained_bytes.saturating_sub(evicted.encoded_bytes);
+            inner.evicted_events = inner.evicted_events.saturating_add(1);
+            inner.evicted_bytes = inner
+                .evicted_bytes
+                .saturating_add(u64::try_from(evicted.encoded_bytes).unwrap_or(u64::MAX));
+        }
+        Ok(JournalAppendReceipt {
+            sequenced,
+            durability,
+            through_offset: inner.journal_bytes,
+        })
     }
 
     pub fn snapshot_since(&self, since: u64) -> Vec<SequencedTurnEvent> {
-        self.lock()
-            .events
-            .iter()
-            .filter(|ev| ev.seq() > since)
-            .cloned()
-            .collect()
+        let fence = self.replay_fence();
+        let mut cursor = since;
+        let mut events = Vec::new();
+        while cursor < fence {
+            let Ok(page) = self.replay_page(cursor, fence) else { break };
+            let Some(last) = page.events.last() else { break };
+            cursor = last.seq();
+            events.extend(page.events);
+            if !page.has_more {
+                break;
+            }
+        }
+        events
+    }
+
+    /// Capture the highest sequence accepted by the journal owner.
+    pub fn replay_fence(&self) -> u64 {
+        self.lock().next_seq.saturating_sub(1)
+    }
+
+    /// Read one event/byte-bounded page after `since`, never beyond `fence`.
+    pub fn replay_page(&self, since: u64, fence: u64) -> std::io::Result<TurnReplayPage> {
+        let (fence, checkpoint, ring_page) = {
+            let inner = self.lock();
+            let fence = fence.min(inner.next_seq.saturating_sub(1));
+            if since >= fence {
+                return Ok(TurnReplayPage {
+                    events: Vec::new(),
+                    fence_seq: fence,
+                    has_more: false,
+                });
+            }
+            let ring_start = inner.events.front().map(|event| event.event.seq());
+            let ring_covers_cursor = ring_start
+                .map(|start| since.saturating_add(1) >= start)
+                .unwrap_or(false);
+            if ring_covers_cursor {
+                let mut bytes = 0usize;
+                let events = inner
+                    .events
+                    .iter()
+                    .filter(|retained| retained.event.seq() > since && retained.event.seq() <= fence)
+                    .take_while(|retained| {
+                        let fits = bytes == 0
+                            || bytes.saturating_add(retained.encoded_bytes)
+                                <= REPLAY_PAGE_MAX_BYTES;
+                        if fits {
+                            bytes = bytes.saturating_add(retained.encoded_bytes);
+                        }
+                        fits
+                    })
+                    .take(REPLAY_PAGE_MAX_EVENTS)
+                    .map(|retained| retained.event.clone())
+                    .collect::<Vec<_>>();
+                (fence, None, Some(events))
+            } else {
+                let target = since.saturating_add(1);
+                let checkpoint = inner
+                    .sparse_offsets
+                    .iter()
+                    .rev()
+                    .find(|checkpoint| checkpoint.seq <= target)
+                    .copied()
+                    .unwrap_or(SparseOffset { seq: 1, offset: 0 });
+                (fence, Some(checkpoint), None)
+            }
+        };
+
+        let events = match ring_page {
+            Some(events) => events,
+            None => self.read_replay_page(
+                since,
+                fence,
+                checkpoint.expect("disk replay has a checkpoint"),
+            )?,
+        };
+        let last_seq = events.last().map(SequencedTurnEvent::seq).unwrap_or(since);
+        if last_seq == since && since < fence {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "turn journal ended before the replay fence",
+            ));
+        }
+        Ok(TurnReplayPage {
+            events,
+            fence_seq: fence,
+            has_more: last_seq < fence,
+        })
+    }
+
+    fn read_replay_page(
+        &self,
+        since: u64,
+        fence: u64,
+        checkpoint: SparseOffset,
+    ) -> std::io::Result<Vec<SequencedTurnEvent>> {
+        let turn_id = TurnEventId::parse(&self.envelope.turn_id).map_err(std::io::Error::other)?;
+        let name = journal_name(&turn_id);
+        reject_link(&self.root, &name)?;
+        let mut options = OpenOptions::new();
+        options.read(true).follow(FollowSymlinks::No);
+        let file = self.root.open_with(&name, &options)?;
+        let mut reader = BufReader::new(file);
+        reader.seek(SeekFrom::Start(checkpoint.offset))?;
+
+        let mut expected_seq = checkpoint.seq;
+        let mut bytes = 0usize;
+        let mut line = Vec::new();
+        let mut events = Vec::new();
+        while events.len() < REPLAY_PAGE_MAX_EVENTS {
+            let Some(_terminated) =
+                read_bounded_line(&mut reader, &mut line, JOURNAL_RECORD_MAX_BYTES)?
+            else {
+                break;
+            };
+            if line.iter().all(u8::is_ascii_whitespace) {
+                continue;
+            }
+            let event: SequencedTurnEvent =
+                serde_json::from_slice(&line).map_err(std::io::Error::other)?;
+            if event.envelope.turn_id != self.envelope.turn_id || event.seq() != expected_seq {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "turn journal sequence or identity mismatch",
+                ));
+            }
+            expected_seq = expected_seq.saturating_add(1);
+            if event.seq() <= since {
+                continue;
+            }
+            if event.seq() > fence {
+                break;
+            }
+            if !events.is_empty() && bytes.saturating_add(line.len()) > REPLAY_PAGE_MAX_BYTES {
+                break;
+            }
+            bytes = bytes.saturating_add(line.len());
+            events.push(event);
+        }
+        Ok(events)
     }
 
     pub fn fold_history(&self) -> Vec<ConversationTurn> {
-        fold_history_from_events(&self.lock().events)
+        let Ok(turn_id) = TurnEventId::parse(&self.envelope.turn_id) else { return Vec::new() };
+        read_journal(&self.root, &journal_name(&turn_id))
+            .map(|events| fold_history_from_events(&events))
+            .unwrap_or_default()
     }
 
-    pub fn mark_committed(&self) {
+    pub fn mark_committed(&self) -> std::io::Result<JournalCommitReceipt> {
+        let through_seq;
         {
             let mut inner = self.lock();
-            inner.committed = true;
+            through_seq = inner.next_seq.saturating_sub(1);
             if let Some(journal) = inner.journal.as_mut() {
-                let _ = journal.flush();
+                journal.flush()?;
+                journal.get_ref().sync_data()?;
+                inner.journal_syncs = inner.journal_syncs.saturating_add(1);
+                inner.last_synced_seq = through_seq;
+                inner.last_sync = Instant::now();
             }
         }
-        let Ok(turn_id) = TurnEventId::parse(&self.envelope.turn_id) else {
-            tracing::error!(turn_id = %self.envelope.turn_id, "invalid turn id reached commit");
-            return;
-        };
+        let turn_id = TurnEventId::parse(&self.envelope.turn_id).map_err(std::io::Error::other)?;
         let marker = commit_marker_name(&turn_id);
-        if let Err(err) = atomic_write(&self.root, &marker, Utc::now().to_rfc3339().as_bytes()) {
-            tracing::warn!(
-                turn_id = %self.envelope.turn_id,
-                correlation_id = %self.envelope.correlation_id,
-                error = %err,
-                "turn_event_log failed to write commit marker"
-            );
-        }
+        let marker_body = serde_json::to_vec(&CommitMarker {
+            schema_version: COMMIT_MARKER_SCHEMA_VERSION,
+            turn_id: turn_id.as_str().to_owned(),
+            through_seq,
+            committed_at: Utc::now(),
+        })
+        .map_err(std::io::Error::other)?;
+        atomic_write(&self.root, &marker, &marker_body)?;
+        self.lock().committed = true;
+        Ok(JournalCommitReceipt { through_seq })
     }
 
     pub fn is_committed(&self) -> bool {
         self.lock().committed
     }
 
+    pub fn metrics(&self) -> TurnEventLogMetrics {
+        let inner = self.lock();
+        TurnEventLogMetrics {
+            retained_events: inner.events.len(),
+            retained_bytes: inner.retained_bytes,
+            evicted_events: inner.evicted_events,
+            evicted_bytes: inner.evicted_bytes,
+            journal_writes: inner.journal_writes,
+            journal_flushes: inner.journal_flushes,
+            journal_syncs: inner.journal_syncs,
+            journal_bytes: inner.journal_bytes,
+            last_synced_seq: inner.last_synced_seq,
+            sparse_checkpoints: inner.sparse_offsets.len(),
+        }
+    }
+
     /// Close the durable journal handle before a capability-owning adapter
     /// unlinks the exact journal during session deletion.
     pub fn close_journal(&self) {
         self.lock().journal.take();
+    }
+
+    /// Remove this turn's journal and marker only after an exact commit receipt
+    /// has been validated. Uncommitted journals remain startup-recovery authority.
+    pub fn delete_committed_files(&self) -> std::io::Result<bool> {
+        let mut inner = self.lock();
+        if !inner.committed {
+            return Ok(false);
+        }
+        inner.journal.take();
+        drop(inner);
+
+        let turn_id = TurnEventId::parse(&self.envelope.turn_id).map_err(std::io::Error::other)?;
+        remove_file_if_present(&self.root, &commit_marker_name(&turn_id))?;
+        sync_directory(&self.root)?;
+        remove_file_if_present(&self.root, &journal_name(&turn_id))?;
+        sync_directory(&self.root)?;
+        Ok(true)
     }
 }
 
@@ -167,6 +541,15 @@ fn commit_marker_name(turn_id: &TurnEventId) -> String {
 
 fn marker_name_for_storage_key(storage_key: &str) -> String {
     format!("{storage_key}.{COMMIT_EXT}")
+}
+
+fn remove_file_if_present(root: &Dir, name: &str) -> std::io::Result<()> {
+    reject_link(root, name)?;
+    match root.remove_file(name) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
 }
 
 fn atomic_write(root: &Dir, name: &str, bytes: &[u8]) -> std::io::Result<()> {
@@ -187,7 +570,52 @@ fn atomic_write(root: &Dir, name: &str, bytes: &[u8]) -> std::io::Result<()> {
         let _ = root.remove_file(&temporary);
         return Err(error);
     }
+    sync_directory(root)?;
     Ok(())
+}
+
+#[cfg(unix)]
+fn sync_directory(root: &Dir) -> std::io::Result<()> {
+    root.open(".")?.sync_all()
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_root: &Dir) -> std::io::Result<()> {
+    // Windows does not provide a portable Rust API for opening a directory
+    // handle with the flags required by FlushFileBuffers. The marker file is
+    // still synced before the atomic rename; Unix additionally fences the
+    // directory entry above.
+    Ok(())
+}
+
+fn commit_marker_matches(root: &Dir, turn_id: &TurnEventId, through_seq: u64) -> bool {
+    let name = commit_marker_name(turn_id);
+    let Some(marker) = read_commit_marker(root, &name) else {
+        return false;
+    };
+    marker.schema_version == COMMIT_MARKER_SCHEMA_VERSION
+        && marker.turn_id == turn_id.as_str()
+        && marker.through_seq == through_seq
+}
+
+fn read_commit_marker(root: &Dir, name: &str) -> Option<CommitMarker> {
+    if reject_link(root, name).is_err() {
+        return None;
+    }
+    let mut options = OpenOptions::new();
+    options.read(true).follow(FollowSymlinks::No);
+    let Ok(file) = root.open_with(name, &options) else {
+        return None;
+    };
+    let mut reader = BufReader::new(file).take(4097);
+    let mut bytes = Vec::with_capacity(256);
+    if reader.read_to_end(&mut bytes).is_err() {
+        return None;
+    }
+    if bytes.len() > 4096 {
+        return None;
+    }
+    serde_json::from_slice::<CommitMarker>(&bytes).ok()
 }
 
 fn reject_link(root: &Dir, name: &str) -> std::io::Result<()> {
@@ -304,13 +732,6 @@ pub fn recover_uncommitted(root: impl AsRef<Path>) -> Vec<RecoveredTurn> {
         if !matches!(entry.file_type(), Ok(file_type) if file_type.is_file()) {
             continue;
         }
-        let marker = marker_name_for_storage_key(stem);
-        if root
-            .symlink_metadata(&marker)
-            .is_ok_and(|metadata| metadata.is_file() && !metadata.file_type().is_symlink())
-        {
-            continue;
-        }
         let Some(events) = read_journal(&root, &name) else {
             continue;
         };
@@ -328,6 +749,10 @@ pub fn recover_uncommitted(root: impl AsRef<Path>) -> Vec<RecoveredTurn> {
                 .iter()
                 .any(|event| event.envelope.turn_id != turn_id.as_str())
         {
+            continue;
+        }
+        let through_seq = events.last().map(SequencedTurnEvent::seq).unwrap_or(0);
+        if commit_marker_matches(&root, &turn_id, through_seq) {
             continue;
         }
         let history = fold_history_from_events(&events);
@@ -349,24 +774,169 @@ pub fn recover_uncommitted(root: impl AsRef<Path>) -> Vec<RecoveredTurn> {
     recovered
 }
 
+/// Delete journals whose marker proves that the exact durable prefix was
+/// committed. Intended for startup cleanup after recovery has run.
+pub fn prune_committed(root: impl AsRef<Path>) -> std::io::Result<usize> {
+    let root = Dir::open_ambient_dir(root.as_ref(), ambient_authority())?;
+    let entries = root.entries()?;
+    let mut deleted = 0usize;
+    for entry in entries.flatten() {
+        let Some(marker_name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        let Some(stem) = marker_name.strip_suffix(&format!(".{COMMIT_EXT}")) else {
+            continue;
+        };
+        if !matches!(entry.file_type(), Ok(file_type) if file_type.is_file()) {
+            continue;
+        }
+        let Some(marker) = read_commit_marker(&root, &marker_name) else {
+            continue;
+        };
+        let Ok(turn_id) = TurnEventId::parse(&marker.turn_id) else {
+            continue;
+        };
+        if turn_id.storage_key().as_str() != stem {
+            continue;
+        }
+        let journal_name = journal_name(&turn_id);
+        let Ok(scan) = scan_journal(&root, &journal_name, turn_id.as_str()) else {
+            continue;
+        };
+        let through_seq = scan.next_seq.saturating_sub(1);
+        if marker.schema_version != COMMIT_MARKER_SCHEMA_VERSION
+            || marker.through_seq != through_seq
+        {
+            continue;
+        }
+        remove_file_if_present(&root, &marker_name)?;
+        sync_directory(&root)?;
+        remove_file_if_present(&root, &journal_name)?;
+        sync_directory(&root)?;
+        deleted = deleted.saturating_add(1);
+    }
+    Ok(deleted)
+}
+
+fn scan_journal(root: &Dir, name: &str, turn_id: &str) -> std::io::Result<JournalScan> {
+    reject_link(root, name)?;
+    let mut options = OpenOptions::new();
+    options.read(true).follow(FollowSymlinks::No);
+    let file = root.open_with(name, &options)?;
+    let mut reader = BufReader::new(file);
+    let mut scan = JournalScan {
+        next_seq: 1,
+        events: VecDeque::new(),
+        retained_bytes: 0,
+        evicted_events: 0,
+        evicted_bytes: 0,
+        sparse_offsets: Vec::new(),
+        valid_bytes: 0,
+    };
+    let mut line = Vec::new();
+    loop {
+        let Some(terminated) =
+            read_bounded_line(&mut reader, &mut line, JOURNAL_RECORD_MAX_BYTES)?
+        else {
+            return Ok(scan);
+        };
+        if !terminated {
+            return Ok(scan);
+        }
+        if line.iter().all(u8::is_ascii_whitespace) {
+            scan.valid_bytes = scan
+                .valid_bytes
+                .saturating_add(u64::try_from(line.len()).unwrap_or(u64::MAX));
+            continue;
+        }
+        let event: SequencedTurnEvent =
+            serde_json::from_slice(&line).map_err(std::io::Error::other)?;
+        if event.envelope.turn_id != turn_id || event.seq() != scan.next_seq {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "turn journal sequence or identity mismatch",
+            ));
+        }
+        if (event.seq() - 1).is_multiple_of(SPARSE_INDEX_STRIDE) {
+            scan.sparse_offsets.push(SparseOffset {
+                seq: event.seq(),
+                offset: scan.valid_bytes,
+            });
+        }
+        scan.next_seq = scan.next_seq.saturating_add(1);
+        scan.valid_bytes = scan
+            .valid_bytes
+            .saturating_add(u64::try_from(line.len()).unwrap_or(u64::MAX));
+        scan.retained_bytes = scan.retained_bytes.saturating_add(line.len());
+        scan.events.push_back(RetainedEvent {
+            event,
+            encoded_bytes: line.len(),
+        });
+        while scan.events.len() > LIVE_RING_MAX_EVENTS
+            || scan.retained_bytes > LIVE_RING_MAX_BYTES
+        {
+            let Some(evicted) = scan.events.pop_front() else { break };
+            scan.retained_bytes = scan.retained_bytes.saturating_sub(evicted.encoded_bytes);
+            scan.evicted_events = scan.evicted_events.saturating_add(1);
+            scan.evicted_bytes = scan
+                .evicted_bytes
+                .saturating_add(u64::try_from(evicted.encoded_bytes).unwrap_or(u64::MAX));
+        }
+    }
+}
+
 fn read_journal(root: &Dir, name: &str) -> Option<Vec<SequencedTurnEvent>> {
     reject_link(root, name).ok()?;
     let mut options = OpenOptions::new();
     options.read(true).follow(FollowSymlinks::No);
     let file = root.open_with(name, &options).ok()?;
-    let reader = BufReader::new(file);
+    let mut reader = BufReader::new(file);
     let mut events = Vec::new();
-    for line in reader.lines() {
-        let Ok(line) = line else { break };
-        if line.trim().is_empty() {
+    let mut line = Vec::new();
+    loop {
+        let Some(terminated) =
+            read_bounded_line(&mut reader, &mut line, JOURNAL_RECORD_MAX_BYTES).ok()?
+        else {
+            return Some(events);
+        };
+        if line.iter().all(u8::is_ascii_whitespace) {
             continue;
         }
-        match serde_json::from_str::<SequencedTurnEvent>(&line) {
+        match serde_json::from_slice::<SequencedTurnEvent>(&line) {
             Ok(ev) => events.push(ev),
-            Err(_) => break,
+            Err(_) if !terminated => return Some(events),
+            Err(_) => return None,
         }
     }
-    Some(events)
+}
+
+/// Read at most `limit` bytes without allowing `BufRead::read_line` to grow an
+/// attacker-controlled allocation before it finds a delimiter.
+fn read_bounded_line<R: BufRead>(
+    reader: &mut R,
+    output: &mut Vec<u8>,
+    limit: usize,
+) -> std::io::Result<Option<bool>> {
+    output.clear();
+    loop {
+        let available = reader.fill_buf()?;
+        if available.is_empty() {
+            return Ok((!output.is_empty()).then_some(false));
+        }
+        let newline = available.iter().position(|byte| *byte == b'\n');
+        let take = newline.map_or(available.len(), |index| index.saturating_add(1));
+        if output.len().saturating_add(take) > limit {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "turn journal record exceeds the configured byte limit",
+            ));
+        }
+        output.extend_from_slice(&available[..take]);
+        reader.consume(take);
+        if newline.is_some() {
+            return Ok(Some(true));
+        }
+    }
 }
 
 #[cfg(test)]
@@ -401,13 +971,110 @@ mod tests {
     fn append_stamps_monotonic_seq_and_snapshot_since_filters() {
         let root = tmp_root("seq");
         let log = TurnEventLog::open_in(&root, env("turn-seq")).unwrap();
-        log.append(TurnEvent::ContentDelta { delta: "a".into() });
-        log.append(TurnEvent::ContentDelta { delta: "b".into() });
-        log.append(final_ev("done", vec![]));
+        log.append(TurnEvent::ContentDelta { delta: "a".into() }).unwrap();
+        log.append(TurnEvent::ContentDelta { delta: "b".into() }).unwrap();
+        log.append(final_ev("done", vec![])).unwrap();
         let seqs: Vec<u64> = log.snapshot_since(0).iter().map(|e| e.seq()).collect();
         assert_eq!(seqs, vec![1, 2, 3]);
         let tail: Vec<u64> = log.snapshot_since(2).iter().map(|e| e.seq()).collect();
         assert_eq!(tail, vec![3]);
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn append_receipts_enforce_actor_order_and_terminal_sync() {
+        let root = tmp_root("receipts");
+        let log = TurnEventLog::open_in(&root, env("turn-receipts")).unwrap();
+
+        let written = log
+            .append_sequenced(1, TurnEvent::ContentDelta { delta: "a".into() })
+            .unwrap();
+        assert_eq!(written.durability, JournalDurability::Written);
+        assert!(log
+            .append_sequenced(3, TurnEvent::ContentDelta { delta: "gap".into() })
+            .is_err());
+
+        let synced = log.append_sequenced(2, final_ev("done", vec![])).unwrap();
+        assert_eq!(synced.durability, JournalDurability::Synced);
+        assert!(synced.through_offset > written.through_offset);
+
+        log.close_journal();
+        assert!(log.append(TurnEvent::Notice { message: "late".into() }).is_err());
+        assert_eq!(log.snapshot_since(0).len(), 2);
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn bounded_ring_replays_evicted_prefix_in_pages() {
+        let root = tmp_root("paged-replay");
+        let log = TurnEventLog::open_in(&root, env("turn-paged-replay")).unwrap();
+        for index in 0..700 {
+            log.append(TurnEvent::Notice {
+                message: format!("event-{index}"),
+            })
+            .unwrap();
+        }
+        log.append(final_ev("done", vec![])).unwrap();
+
+        let metrics = log.metrics();
+        assert_eq!(metrics.retained_events, LIVE_RING_MAX_EVENTS);
+        assert_eq!(metrics.evicted_events, 701 - LIVE_RING_MAX_EVENTS as u64);
+        assert!(metrics.retained_bytes <= LIVE_RING_MAX_BYTES);
+        assert!(metrics.sparse_checkpoints > 1);
+
+        let fence = log.replay_fence();
+        let first = log.replay_page(0, fence).unwrap();
+        assert_eq!(first.events.len(), REPLAY_PAGE_MAX_EVENTS);
+        assert_eq!(first.events.first().unwrap().seq(), 1);
+        assert!(first.has_more);
+
+        let mut cursor = 0;
+        let mut replayed = Vec::new();
+        while cursor < fence {
+            let page = log.replay_page(cursor, fence).unwrap();
+            cursor = page.events.last().unwrap().seq();
+            replayed.extend(page.events);
+        }
+        assert_eq!(replayed.len(), 701);
+        assert_eq!(replayed.last().unwrap().seq(), fence);
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn bounded_line_reader_rejects_missing_delimiter_without_growing_past_limit() {
+        let bytes = vec![b'x'; 65];
+        let mut reader = std::io::Cursor::new(bytes);
+        let mut output = Vec::new();
+        let error = read_bounded_line(&mut reader, &mut output, 64).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert!(output.len() <= 64);
+    }
+
+    #[test]
+    fn reopen_rejects_malformed_record_before_a_valid_suffix() {
+        let root = tmp_root("malformed-middle");
+        let envelope = env("turn-malformed-middle");
+        {
+            let log = TurnEventLog::open_in(&root, envelope.clone()).unwrap();
+            log.append(TurnEvent::Notice { message: "first".into() }).unwrap();
+        }
+        let path = root.join(journal_name(
+            &TurnEventId::parse("turn-malformed-middle").unwrap(),
+        ));
+        let valid_suffix = SequencedTurnEvent {
+            envelope: envelope.at_seq(2),
+            event: TurnEvent::Notice { message: "suffix".into() },
+            emitted_at_utc: None,
+            stream_event_v2: None,
+        };
+        let mut file = std::fs::OpenOptions::new().append(true).open(path).unwrap();
+        writeln!(file, "{{malformed}}").unwrap();
+        serde_json::to_writer(&mut file, &valid_suffix).unwrap();
+        writeln!(file).unwrap();
+        drop(file);
+
+        assert!(TurnEventLog::open_in(&root, envelope).is_err());
+        assert!(recover_uncommitted(&root).is_empty());
         fs::remove_dir_all(&root).ok();
     }
 
@@ -417,15 +1084,15 @@ mod tests {
         let log = TurnEventLog::open_in(&root, env("turn-fold")).unwrap();
         log.append(TurnEvent::ContentDelta {
             delta: "streamed".into(),
-        });
+        }).unwrap();
         log.append(TurnEvent::WorkerAck {
             text: "on it".into(),
             tool_names: vec!["spawn".into()],
             work_id: Some("w1".into()),
             parts: vec![],
             committed_at: Utc::now(),
-        });
-        log.append(final_ev("final body", vec!["data_probe".into()]));
+        }).unwrap();
+        log.append(final_ev("final body", vec!["data_probe".into()])).unwrap();
         let history = log.fold_history();
         assert_eq!(history.len(), 2, "worker ack + final fold to history");
         assert_eq!(history[0].content, "on it");
@@ -439,19 +1106,19 @@ mod tests {
         let root = tmp_root("recover");
         {
             let log = TurnEventLog::open_in(&root, env("turn-A")).unwrap();
-            log.append(TurnEvent::ContentDelta { delta: "hi".into() });
-            log.append(final_ev("answer A", vec![]));
+            log.append(TurnEvent::ContentDelta { delta: "hi".into() }).unwrap();
+            log.append(final_ev("answer A", vec![])).unwrap();
         }
         {
             let log = TurnEventLog::open_in(&root, env("turn-B")).unwrap();
-            log.append(final_ev("answer B", vec![]));
-            log.mark_committed();
+            log.append(final_ev("answer B", vec![])).unwrap();
+            log.mark_committed().unwrap();
         }
         {
             let log = TurnEventLog::open_in(&root, env("turn-C")).unwrap();
             log.append(TurnEvent::ContentDelta {
                 delta: "partial".into(),
-            });
+            }).unwrap();
         }
 
         let mut recovered = recover_uncommitted(&root);
@@ -465,14 +1132,100 @@ mod tests {
     }
 
     #[test]
+    fn recovery_only_trusts_a_marker_for_the_exact_durable_prefix() {
+        let root = tmp_root("commit-marker-validation");
+        let turn_id = TurnEventId::parse("turn-marker-validation").unwrap();
+        {
+            let log = TurnEventLog::open_in(&root, env(turn_id.as_str())).unwrap();
+            log.append(final_ev("durable answer", vec![])).unwrap();
+            let receipt = log.mark_committed().unwrap();
+            assert_eq!(receipt.through_seq, 1);
+        }
+
+        let reopened = TurnEventLog::open_in(&root, env(turn_id.as_str())).unwrap();
+        assert!(reopened.is_committed());
+        drop(reopened);
+
+        let marker_path = root.join(commit_marker_name(&turn_id));
+        fs::write(
+            &marker_path,
+            br#"{"schema_version":1,"turn_id":"turn-marker-validation","through_seq":0,"committed_at":"2026-01-01T00:00:00Z"}"#,
+        )
+        .unwrap();
+        assert_eq!(recover_uncommitted(&root).len(), 1);
+
+        fs::write(&marker_path, b"not a commit receipt").unwrap();
+        assert_eq!(recover_uncommitted(&root).len(), 1);
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn committed_retention_prunes_only_exactly_receipted_journals() {
+        let root = tmp_root("committed-retention");
+        {
+            let committed = TurnEventLog::open_in(&root, env("turn-prune-me")).unwrap();
+            committed.append(final_ev("done", vec![])).unwrap();
+            committed.mark_committed().unwrap();
+        }
+        {
+            let recoverable = TurnEventLog::open_in(&root, env("turn-keep-me")).unwrap();
+            recoverable.append(final_ev("recover", vec![])).unwrap();
+        }
+
+        assert_eq!(prune_committed(&root).unwrap(), 1);
+        assert_eq!(recover_uncommitted(&root).len(), 1);
+        let names = fs::read_dir(&root)
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.file_name())
+            .collect::<Vec<_>>();
+        assert_eq!(names.len(), 1);
+        assert!(names[0].to_string_lossy().ends_with(".jsonl"));
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn typed_stream_replay_metadata_survives_reopen() {
+        let root = tmp_root("typed-stream-replay");
+        let emitted_at = Utc::now();
+        {
+            let log = TurnEventLog::open_in(&root, env("turn-typed-stream")).unwrap();
+            log.append_sequenced_with_stream_v2(
+                1,
+                TurnEvent::Notice {
+                    message: "route selected".into(),
+                },
+                Some(emitted_at),
+                Some(medousa_types::TurnStreamEventV2::ModelReceipt {
+                    provider: "openai".into(),
+                    model: "gpt".into(),
+                }),
+            )
+            .unwrap();
+        }
+
+        let reopened = TurnEventLog::open_in(&root, env("turn-typed-stream")).unwrap();
+        let replay = reopened.snapshot_since(0);
+        assert_eq!(replay[0].emitted_at_utc, Some(emitted_at));
+        match replay[0].stream_event_v2.as_ref() {
+            Some(medousa_types::TurnStreamEventV2::ModelReceipt { provider, model }) => {
+                assert_eq!(provider, "openai");
+                assert_eq!(model, "gpt");
+            }
+            other => panic!("unexpected replay payload: {other:?}"),
+        }
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
     fn journal_survives_reopen_and_tolerates_torn_tail() {
         let root = tmp_root("reopen");
         {
             let log = TurnEventLog::open_in(&root, env("turn-reopen")).unwrap();
             log.append(TurnEvent::ContentDelta {
                 delta: "one".into(),
-            });
-            log.append(final_ev("committed body", vec![]));
+            }).unwrap();
+            log.append(final_ev("committed body", vec![])).unwrap();
         }
         {
             let path = root.join(journal_name(&TurnEventId::parse("turn-reopen").unwrap()));
@@ -480,7 +1233,14 @@ mod tests {
                 .append(true)
                 .open(&path)
                 .unwrap();
-            writeln!(f, "{{\"envelope\":{{\"turn_id\":\"turn-reopen\"").unwrap();
+            write!(f, "{{\"envelope\":{{\"turn_id\":\"turn-reopen\"").unwrap();
+        }
+        {
+            let reopened = TurnEventLog::open_in(&root, env("turn-reopen")).unwrap();
+            let receipt = reopened
+                .append(TurnEvent::Notice { message: "after restart".into() })
+                .unwrap();
+            assert_eq!(receipt.seq(), 3);
         }
         let recovered = recover_uncommitted(&root);
         assert_eq!(recovered.len(), 1);
@@ -493,8 +1253,8 @@ mod tests {
         let root = tmp_root("authority");
         let colon = TurnEventLog::open_in(&root, env("turn:a")).unwrap();
         let underscore = TurnEventLog::open_in(&root, env("turn_a")).unwrap();
-        colon.append(final_ev("colon", vec![]));
-        underscore.append(final_ev("underscore", vec![]));
+        colon.append(final_ev("colon", vec![])).unwrap();
+        underscore.append(final_ev("underscore", vec![])).unwrap();
 
         let journals = fs::read_dir(&root)
             .unwrap()
@@ -519,8 +1279,8 @@ mod tests {
 
         fs::rename(&root, &held).unwrap();
         fs::create_dir_all(&root).unwrap();
-        log.append(final_ev("held authority", vec![]));
-        log.mark_committed();
+        log.append(final_ev("held authority", vec![])).unwrap();
+        log.mark_committed().unwrap();
         log.close_journal();
 
         let turn_id = TurnEventId::parse("turn-replacement").unwrap();

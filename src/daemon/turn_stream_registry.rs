@@ -72,7 +72,12 @@ impl TurnStreamRegistryPort for TurnStreamRegistryPortAdapter {
     }
 
     async fn drop_stream(&self, turn_id: &str) {
-        self.registry.write().await.remove(turn_id);
+        let entry = self.registry.write().await.remove(turn_id);
+        if let Some(entry) = entry
+            && let Err(error) = entry.log.delete_committed_files()
+        {
+            tracing::warn!(turn_id, %error, "failed to prune committed turn journal");
+        }
     }
 
     async fn has_stream(&self, turn_id: &str) -> bool {

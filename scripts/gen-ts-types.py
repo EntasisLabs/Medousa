@@ -17,6 +17,7 @@ OUT = ROOT / "apps" / "medousa-home" / "src" / "lib" / "types" / "generated" / "
 # Nested $ref targets (MediaRef, ContextUsageReport, …) are resolved automatically.
 EXPORTED_TYPES = [
     "InteractiveTurnStreamEvent",
+    "TurnStreamEnvelopeV2",
     "InteractiveTurnResponse",
     "InteractiveTurnRequest",
     "SetSessionAgentModeRequest",
@@ -100,7 +101,16 @@ def ts_type(schema: dict, defs: dict) -> str:
         inner = ts_type(items, defs)
         return f"{inner}[]"
     if t == "object":
-        return "Record<string, unknown>"
+        props = schema.get("properties") or {}
+        if not props:
+            return "Record<string, unknown>"
+        required = set(schema.get("required", []))
+        fields = []
+        for prop, prop_schema in props.items():
+            optional = "" if prop in required else "?"
+            ts_name = prop if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", prop) else json.dumps(prop)
+            fields.append(f"{ts_name}{optional}: {ts_type(prop_schema, defs)}")
+        return "{ " + "; ".join(fields) + " }"
 
     if "anyOf" in schema or "oneOf" in schema:
         parts = schema.get("anyOf") or schema.get("oneOf") or []
@@ -145,6 +155,9 @@ def emit_definition(name: str, schema_root: dict, defs: dict) -> list[str]:
     if schema.get("enum"):
         variants = " | ".join(json.dumps(value) for value in schema["enum"])
         return [f"export type {name} = {variants};"]
+    if schema.get("oneOf") or schema.get("anyOf"):
+        variants = schema.get("oneOf") or schema.get("anyOf")
+        return [f"export type {name} = " + " | ".join(ts_type(item, defs) for item in variants) + ";"]
     return emit_interface(name, schema_root, defs)
 
 

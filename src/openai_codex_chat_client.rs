@@ -8,12 +8,27 @@ use genai::{Client, Headers};
 use stasis::application::runtime::chat_options_resolver::apply_model_reasoning_suffix;
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
-use stasis::ports::outbound::ai_chat_client::{AiChatClient, StreamDelta};
+use stasis::ports::outbound::ai_chat_client::{
+    AiChatClient, StreamDelta, send_stream_delta,
+};
 use tokio::sync::mpsc;
 
 use crate::inference_router::OPENAI_CODEX_PROVIDER_ID;
 
 const DEFAULT_RESPONSES_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
+
+#[derive(Debug)]
+enum StreamOnceError {
+    Transport(genai::Error),
+    Delivery(StasisError),
+}
+
+impl From<genai::Error> for StreamOnceError {
+    fn from(error: genai::Error) -> Self {
+        Self::Transport(error)
+    }
+}
+
 /// Version of the Codex backend contract implemented by this adapter. This is
 /// intentionally independent from Medousa's product version: the ChatGPT Codex
 /// backend gates newer models on this protocol identity.
@@ -87,8 +102,8 @@ impl OpenAiCodexChatClient {
         credentials: &(String, String),
         request: ChatRequest,
         options: Option<&ChatOptions>,
-        chunk_tx: Option<&mpsc::UnboundedSender<StreamDelta>>,
-    ) -> genai::Result<ChatResponse> {
+        chunk_tx: Option<&mpsc::Sender<StreamDelta>>,
+    ) -> Result<ChatResponse, StreamOnceError> {
         let mut stream_options =
             apply_model_reasoning_suffix(&self.model, options.cloned().unwrap_or_default());
         stream_options = stream_options
@@ -115,7 +130,9 @@ impl OpenAiCodexChatClient {
                     if !chunk.content.is_empty() {
                         streamed_text.push_str(&chunk.content);
                         if let Some(tx) = chunk_tx {
-                            let _ = tx.send(StreamDelta::Content(chunk.content));
+                            send_stream_delta(tx, StreamDelta::Content(chunk.content))
+                                .await
+                                .map_err(StreamOnceError::Delivery)?;
                         }
                     }
                 }
@@ -123,7 +140,9 @@ impl OpenAiCodexChatClient {
                     if !chunk.content.is_empty() {
                         reasoning_text.push_str(&chunk.content);
                         if let Some(tx) = chunk_tx {
-                            let _ = tx.send(StreamDelta::Reasoning(chunk.content));
+                            send_stream_delta(tx, StreamDelta::Reasoning(chunk.content))
+                                .await
+                                .map_err(StreamOnceError::Delivery)?;
                         }
                     }
                 }
@@ -131,7 +150,9 @@ impl OpenAiCodexChatClient {
                     if !chunk.content.is_empty()
                         && let Some(tx) = chunk_tx
                     {
-                        let _ = tx.send(StreamDelta::ThoughtSignature(chunk.content));
+                        send_stream_delta(tx, StreamDelta::ThoughtSignature(chunk.content))
+                            .await
+                            .map_err(StreamOnceError::Delivery)?;
                     }
                 }
                 ChatStreamEvent::End(end) => {
@@ -175,13 +196,13 @@ impl AiChatClient for OpenAiCodexChatClient {
             .await
         {
             Ok(response) => Ok(response),
-            Err(error) if is_unauthorized(&error) => {
+            Err(StreamOnceError::Transport(error)) if is_unauthorized(&error) => {
                 let refreshed = self.refreshed_credentials(&credentials.0).await?;
                 self.stream_once(&refreshed, request, options, None)
                     .await
-                    .map_err(|error| transport_error(&self.model, "stream", error))
+                    .map_err(|error| stream_once_error(&self.model, error))
             }
-            Err(error) => Err(transport_error(&self.model, "stream", error)),
+            Err(error) => Err(stream_once_error(&self.model, error)),
         }
     }
 
@@ -189,7 +210,7 @@ impl AiChatClient for OpenAiCodexChatClient {
         &self,
         request: ChatRequest,
         options: Option<&ChatOptions>,
-        chunk_tx: Option<&mpsc::UnboundedSender<StreamDelta>>,
+        chunk_tx: Option<&mpsc::Sender<StreamDelta>>,
     ) -> StasisResult<ChatResponse> {
         let credentials = self.credentials().await?;
         match self
@@ -197,13 +218,13 @@ impl AiChatClient for OpenAiCodexChatClient {
             .await
         {
             Ok(response) => Ok(response),
-            Err(error) if is_unauthorized(&error) => {
+            Err(StreamOnceError::Transport(error)) if is_unauthorized(&error) => {
                 let refreshed = self.refreshed_credentials(&credentials.0).await?;
                 self.stream_once(&refreshed, request.clone(), options, chunk_tx)
                     .await
-                    .map_err(|error| transport_error(&self.model, "stream", error))
+                    .map_err(|error| stream_once_error(&self.model, error))
             }
-            Err(error) => Err(transport_error(&self.model, "stream", error)),
+            Err(error) => Err(stream_once_error(&self.model, error)),
         }
     }
 }
@@ -243,7 +264,7 @@ impl AiChatClient for RoutedChatClient {
         &self,
         request: ChatRequest,
         options: Option<&ChatOptions>,
-        chunk_tx: Option<&mpsc::UnboundedSender<StreamDelta>>,
+        chunk_tx: Option<&mpsc::Sender<StreamDelta>>,
     ) -> StasisResult<ChatResponse> {
         match self {
             Self::Provider(client) => client.complete_stream(request, options, chunk_tx).await,
@@ -279,6 +300,13 @@ fn transport_error(model: &str, operation: &str, error: genai::Error) -> StasisE
     StasisError::PortFailure(format!(
         "ChatGPT Responses {operation} failed for model '{model}': {error}"
     ))
+}
+
+fn stream_once_error(model: &str, error: StreamOnceError) -> StasisError {
+    match error {
+        StreamOnceError::Transport(error) => transport_error(model, "stream", error),
+        StreamOnceError::Delivery(error) => error,
+    }
 }
 
 #[cfg(test)]
@@ -375,7 +403,7 @@ mod tests {
         tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
         let client =
             OpenAiCodexChatClient::with_url("gpt-5.6-sol", format!("http://{address}/responses"));
-        let (tx, mut rx) = mpsc::unbounded_channel();
+        let (tx, mut rx) = mpsc::channel(8);
         let image_base64 = Arc::<str>::from(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
         );
