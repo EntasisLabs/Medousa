@@ -1,5 +1,5 @@
 import DOMPurify from "dompurify";
-import { marked, type Tokens } from "marked";
+import { Marked, type Tokens } from "marked";
 
 import { parseWikilinkTarget, resolveWikilinkTarget } from "$lib/utils/resolveWikilink";
 import type { VaultNote } from "$lib/types/vault";
@@ -23,12 +23,6 @@ export interface MarkdownRenderOptions {
   resolveLocalImages?: boolean;
 }
 
-let previewTaskCheckboxIndex = 0;
-
-let configured = false;
-let activeRenderOptions: MarkdownRenderOptions = {};
-let activeHeadingSlugCounts = new Map<string, number>();
-
 function notesStubFromKnown(paths: ReadonlySet<string> | undefined): VaultNote[] {
   if (!paths) return [];
   return [...paths].map(
@@ -40,8 +34,11 @@ function notesStubFromKnown(paths: ReadonlySet<string> | undefined): VaultNote[]
   );
 }
 
-function wikilinkIsUnresolved(target: string): boolean {
-  const known = activeRenderOptions.knownPaths;
+function wikilinkIsUnresolved(
+  target: string,
+  options: MarkdownRenderOptions,
+): boolean {
+  const known = options.knownPaths;
   if (!known || known.size === 0) return false;
   const { pathToken, heading } = parseWikilinkTarget(target);
   const token = pathToken.trim();
@@ -51,28 +48,30 @@ function wikilinkIsUnresolved(target: string): boolean {
   return (
     resolveWikilinkTarget(
       token,
-      activeRenderOptions.sourcePath ?? null,
+      options.sourcePath ?? null,
       notesStubFromKnown(known),
     ) === null
   );
 }
 
-function configureMarked(): void {
-  if (configured) return;
-  configured = true;
-
-  marked.use({
+function createMarked(
+  options: MarkdownRenderOptions,
+  headingSlugCounts: Map<string, number>,
+  taskCheckboxIndex: { value: number },
+): Marked {
+  const parser = new Marked();
+  parser.use({
     gfm: true,
     breaks: false,
   });
 
-  marked.use({
+  parser.use({
     renderer: {
       heading(this: { parser: { parseInline: (t: Tokens.Heading["tokens"]) => string } }, token: Tokens.Heading) {
         const html = this.parser.parseInline(token.tokens);
         const stripped = stripTrailingBlockIdHtml(html);
         const plain = plainHeadingText(stripped.html);
-        const slug = uniqueHeadingSlug(plain, activeHeadingSlugCounts);
+        const slug = uniqueHeadingSlug(plain, headingSlugCounts);
         const blockAttr = stripped.blockId
           ? ` data-block-id="${escapeAttr(stripped.blockId)}"`
           : "";
@@ -90,7 +89,7 @@ function configureMarked(): void {
         if (href?.startsWith("wikilink:")) {
           const target = decodeURIComponent(href.slice("wikilink:".length));
           const label = escapeHtml(text);
-          const unresolved = wikilinkIsUnresolved(target);
+          const unresolved = wikilinkIsUnresolved(target, options);
           const className = unresolved
             ? "markdown-wikilink markdown-wikilink-unresolved"
             : "markdown-wikilink";
@@ -138,11 +137,11 @@ function configureMarked(): void {
         return `<div class="markdown-code-block"><div class="markdown-code-header">${langLabel}</div><pre class="markdown-pre"><code class="markdown-code ${className}">${escapeHtml(text)}</code></pre></div>`;
       },
       checkbox({ checked }: Tokens.Checkbox) {
-        if (!activeRenderOptions.interactiveTasks) {
+        if (!options.interactiveTasks) {
           return `<input ${checked ? 'checked="" ' : ""}disabled="" type="checkbox"> `;
         }
-        const index = previewTaskCheckboxIndex;
-        previewTaskCheckboxIndex += 1;
+        const index = taskCheckboxIndex.value;
+        taskCheckboxIndex.value += 1;
         return `<input ${checked ? 'checked="" ' : ""}type="checkbox" class="vault-preview-task" data-vault-task="${index}" aria-label="Toggle task"> `;
       },
       image({ href, title, text }: Tokens.Image) {
@@ -158,7 +157,7 @@ function configureMarked(): void {
           : "";
         const sizeClass = size ? " markdown-image--sized" : "";
         if (
-          activeRenderOptions.resolveLocalImages &&
+          options.resolveLocalImages &&
           cleanHref &&
           !isRemoteImageHref(cleanHref) &&
           isLocalImageHref(cleanHref)
@@ -170,6 +169,7 @@ function configureMarked(): void {
       },
     },
   });
+  return parser;
 }
 
 function sanitizeHtml(html: string): string {
@@ -253,8 +253,8 @@ function normalizeRenderOptions(
  */
 export function renderInlineMarkdown(source: string): string {
   if (!source.trim()) return "";
-  configureMarked();
-  const raw = marked.parseInline(source, { async: false }) as string;
+  const parser = createMarked({}, new Map(), { value: 0 });
+  const raw = parser.parseInline(source, { async: false }) as string;
   return sanitizeHtml(raw);
 }
 
@@ -265,16 +265,13 @@ export function renderMarkdown(
 ): string {
   if (!source.trim()) return "";
 
-  activeRenderOptions = normalizeRenderOptions(options);
-  activeHeadingSlugCounts = new Map();
-  previewTaskCheckboxIndex = 0;
-
-  configureMarked();
+  const renderOptions = normalizeRenderOptions(options);
+  const parser = createMarked(renderOptions, new Map(), { value: 0 });
   const preprocessed = preprocessMarkdown(
     source,
-    activeRenderOptions.titleByPath,
+    renderOptions.titleByPath,
   );
-  const raw = marked.parse(preprocessed, { async: false }) as string;
+  const raw = parser.parse(preprocessed, { async: false }) as string;
   return sanitizeHtml(enhanceResumePresentation(wrapMarkdownTables(raw)));
 }
 
