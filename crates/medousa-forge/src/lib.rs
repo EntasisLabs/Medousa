@@ -14,6 +14,7 @@ pub mod catalog;
 pub mod error;
 pub mod events;
 pub mod execution;
+pub mod fold;
 pub mod forge;
 pub mod git;
 pub mod log_v2;
@@ -26,6 +27,7 @@ pub mod slug;
 pub mod store;
 
 pub use error::{ForgeError, Result};
+pub use fold::{apply_payload, fold};
 
 #[cfg(test)]
 mod h06_verify;

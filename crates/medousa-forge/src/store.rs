@@ -16,14 +16,14 @@ use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use fs2::FileExt;
 use sha2::{Digest as _, Sha256};
 
 use crate::error::{ForgeError, Result};
-use crate::events::{EventPayload, TransitionEvent, EVENT_SCHEMA_VERSION};
+use crate::events::{EVENT_SCHEMA_VERSION, EventPayload, TransitionEvent};
 use crate::model::{ActorRef, WorkId, WorkItem};
 
 pub const STORE_SCHEMA_VERSION: u32 = 1;
@@ -158,6 +158,11 @@ impl FsWorkStore {
 
     /// Append an event, assigning the next monotonic seq for this work item.
     /// The write is flushed and synced before returning.
+    ///
+    /// Production Forge/reconcile mutations must use
+    /// [`crate::forge::Forge::commit_event`] / [`crate::owner::append_owned`]
+    /// so the per-item owner remains authoritative. Prefer those paths outside
+    /// store-unit tests and fixtures.
     pub fn append(
         &self,
         work_id: &WorkId,
@@ -291,7 +296,10 @@ impl FsWorkStore {
                         .as_ref()
                         .map(|tail| {
                             tail.lease_acquisitions
-                                + u64::from(matches!(event.payload, EventPayload::LeaseAcquired { .. }))
+                                + u64::from(matches!(
+                                    event.payload,
+                                    EventPayload::LeaseAcquired { .. }
+                                ))
                         })
                         .unwrap_or(u64::from(matches!(
                             event.payload,
@@ -398,8 +406,7 @@ impl FsWorkStore {
             let _ = fs::remove_file(&tmp);
             return Err(snapshot_io_error("replace snapshot", &final_path, err));
         }
-        sync_dir(&dir)
-            .map_err(|err| snapshot_io_error("sync snapshot directory", &dir, err))?;
+        sync_dir(&dir).map_err(|err| snapshot_io_error("sync snapshot directory", &dir, err))?;
         Ok(())
     }
 
@@ -592,9 +599,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let store = FsWorkStore::open(tmp.path()).unwrap();
         let item = WorkItem::new("t", "b", target(), "user-1");
-        let e1 = store
-            .append(&item.id, &actor(), registered(&item))
-            .unwrap();
+        let e1 = store.append(&item.id, &actor(), registered(&item)).unwrap();
         let e2 = store
             .append(
                 &item.id,
@@ -617,21 +622,18 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let store = FsWorkStore::open(tmp.path()).unwrap();
         let item = WorkItem::new("t", "b", target(), "user-1");
-        store
-            .append(&item.id, &actor(), registered(&item))
-            .unwrap();
+        store.append(&item.id, &actor(), registered(&item)).unwrap();
         // Simulate crash mid-append: garbage at the end of the file.
         let path = store.events_path(&item.id);
         let mut file = OpenOptions::new().append(true).open(&path).unwrap();
-        file.write_all(b"{\"schema_version\":1,\"work_id\":\"wor").unwrap();
+        file.write_all(b"{\"schema_version\":1,\"work_id\":\"wor")
+            .unwrap();
         drop(file);
         let events = store.replay(&item.id).unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].payload, registered(&item));
         // Appending after the truncated tail resumes at seq 2.
-        let next = store
-            .append(&item.id, &actor(), registered(&item))
-            .unwrap();
+        let next = store.append(&item.id, &actor(), registered(&item)).unwrap();
         assert_eq!(next.seq, 2);
     }
 
@@ -640,9 +642,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let store = FsWorkStore::open(tmp.path()).unwrap();
         let item = WorkItem::new("t", "b", target(), "user-1");
-        store
-            .append(&item.id, &actor(), registered(&item))
-            .unwrap();
+        store.append(&item.id, &actor(), registered(&item)).unwrap();
         // Corrupt the middle by rewriting the file with a bad first line.
         let path = store.events_path(&item.id);
         let original = fs::read_to_string(&path).unwrap();
@@ -656,9 +656,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let store = FsWorkStore::open(tmp.path()).unwrap();
         let item = WorkItem::new("t", "b", target(), "user-1");
-        store
-            .append(&item.id, &actor(), registered(&item))
-            .unwrap();
+        store.append(&item.id, &actor(), registered(&item)).unwrap();
         store.write_snapshot(&item, 1).unwrap();
         let back = store.read_snapshot(&item.id).unwrap().unwrap();
         assert_eq!(back.applied_seq, 1);
@@ -696,9 +694,7 @@ mod tests {
         let store = FsWorkStore::open(tmp.path()).unwrap();
         let item = WorkItem::new("t", "b", target(), "user-1");
         let op = OperationId::new();
-        store
-            .append(&item.id, &actor(), registered(&item))
-            .unwrap();
+        store.append(&item.id, &actor(), registered(&item)).unwrap();
         store
             .append(
                 &item.id,
@@ -735,9 +731,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let store = FsWorkStore::open(tmp.path()).unwrap();
         let item = WorkItem::new("t", "b", target(), "user-1");
-        store
-            .append(&item.id, &actor(), registered(&item))
-            .unwrap();
+        store.append(&item.id, &actor(), registered(&item)).unwrap();
         // Rewrite the log with a backwards seq.
         let path = store.events_path(&item.id);
         let line = fs::read_to_string(&path).unwrap();
@@ -769,9 +763,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let store = FsWorkStore::open(tmp.path()).unwrap();
         let item = WorkItem::new("t", "b", target(), "user-1");
-        store
-            .append(&item.id, &actor(), registered(&item))
-            .unwrap();
+        store.append(&item.id, &actor(), registered(&item)).unwrap();
         fs::create_dir_all(store.item_dir(&item.id)).unwrap();
         fs::write(store.snapshot_path(&item.id), b"{not json").unwrap();
         assert!(store.read_snapshot(&item.id).unwrap().is_none());
@@ -829,7 +821,12 @@ mod tests {
         let hostile = WorkId::from("../../outside".to_string());
         let path = store.item_dir(&hostile);
         assert_eq!(path.parent(), Some(store.root().join("items").as_path()));
-        assert!(path.file_name().unwrap().to_string_lossy().starts_with("work1-"));
+        assert!(
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("work1-")
+        );
         assert!(!path.to_string_lossy().contains("outside"));
     }
 }

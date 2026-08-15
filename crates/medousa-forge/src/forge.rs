@@ -9,8 +9,10 @@ use std::sync::Arc;
 
 use chrono::Utc;
 
+use crate::catalog::{CatalogPage, ForgeCatalog, SlugReservationJournal};
 use crate::error::{ForgeError, Result};
 use crate::events::{EventPayload, OperationKind, SideEffect, TransitionEvent};
+use crate::execution::ForgeExecutionService;
 use crate::git::{CheckpointAuthor, GitEngine};
 use crate::model::{
     AcceptedDisposition, ActorKind, ActorRef, Attempt, AttemptId, AttemptState, CaptureRisk,
@@ -21,8 +23,6 @@ use crate::model::{
     RecoveryDisposition, ReviewComment, ReviewCommentId, ReviewDecision, ReviewDecisionId, WorkId,
     WorkItem, WorkPolicy, WorkState, WorkTarget, anchor_digest_for, compose_revision_brief,
 };
-use crate::catalog::{CatalogPage, ForgeCatalog, SlugReservationJournal};
-use crate::execution::ForgeExecutionService;
 use crate::observation::WorkspaceObserver;
 use crate::owner::ForgeItemRegistry;
 use crate::store::FsWorkStore;
@@ -235,6 +235,36 @@ impl Forge {
         }
     }
 
+    /// Authoritative per-item mutation path. Production Forge/reconcile code
+    /// must use this instead of `FsWorkStore::append`.
+    pub(crate) fn commit_event(
+        &self,
+        work_id: &WorkId,
+        actor: &ActorRef,
+        payload: EventPayload,
+    ) -> Result<TransitionEvent> {
+        let (event, _receipt) =
+            crate::owner::append_owned(&self.store, &self.owners, work_id, actor, payload, None)?;
+        Ok(event)
+    }
+
+    pub(crate) fn commit_event_receipt(
+        &self,
+        work_id: &WorkId,
+        actor: &ActorRef,
+        payload: EventPayload,
+        expected_item_generation: Option<u64>,
+    ) -> Result<(TransitionEvent, crate::owner::ForgeCommitReceipt)> {
+        crate::owner::append_owned(
+            &self.store,
+            &self.owners,
+            work_id,
+            actor,
+            payload,
+            expected_item_generation,
+        )
+    }
+
     // ------------------------------------------------------------------
     // Registration
     // ------------------------------------------------------------------
@@ -294,48 +324,29 @@ impl Forge {
         );
         item.policy = policy;
         let taken = self.slugs.taken_slugs().unwrap_or_default();
-        item.slug = crate::slug::allocate_unique_slug(
-            &item.slug,
-            taken.iter().map(String::as_str),
-        );
+        item.slug = crate::slug::allocate_unique_slug(&item.slug, taken.iter().map(String::as_str));
         let operation_id = OperationId::new();
         self.slugs.reserve(&item.slug, operation_id.as_str())?;
         let _item_lock = self.store.lock_item(&item.id)?;
-        let event = match self.store.append(
+        let (event, receipt) = match self.commit_event_receipt(
             &item.id,
             actor,
             EventPayload::ItemRegistered {
                 item: Box::new(item.clone()),
             },
+            None,
         ) {
-            Ok(event) => event,
+            Ok(result) => result,
             Err(err) => {
                 let _ = self.slugs.release(&item.slug);
                 return Err(err);
             }
         };
-        let _ = self.owners.get_or_open(&self.store, &item.id);
         self.persist(&item, event.seq)?;
         if let Err(err) = self.slugs.commit(&item.slug, item.id.clone(), event.seq) {
             let _ = self.slugs.release(&item.slug);
             return Err(err);
         }
-        let receipt = crate::owner::ForgeCommitReceipt {
-            work_id: item.id.clone(),
-            item_generation: event.seq,
-            first_seq: event.seq,
-            last_seq: event.seq,
-            log_offset: 0,
-            durability: medousa_store::DurabilityLevel::Synced,
-            operation_generation: None,
-            persistence: medousa_store::CommitReceipt::new(
-                medousa_store::StoreKind::Forge,
-                item.id.as_str(),
-                event.seq,
-                medousa_store::DurabilityLevel::Synced,
-                0,
-            ),
-        };
         self.catalog.publish(&item, &receipt);
         Ok(item)
     }
@@ -467,7 +478,7 @@ impl Forge {
 
         let operation_id = OperationId::new();
         self.transition(&mut item, WorkState::Provisioning, None, actor)?;
-        self.store.append(
+        self.commit_event(
             work_id,
             actor,
             EventPayload::OperationStarted {
@@ -479,7 +490,7 @@ impl Forge {
 
         match self.provision_inner(&mut item, &target, &operation_id, actor) {
             Ok(()) => {
-                self.store.append(
+                self.commit_event(
                     work_id,
                     actor,
                     EventPayload::OperationCommitted {
@@ -491,7 +502,7 @@ impl Forge {
                 Ok(item)
             }
             Err(err) => {
-                let _ = self.store.append(
+                let _ = self.commit_event(
                     work_id,
                     actor,
                     EventPayload::OperationAborted {
@@ -533,7 +544,7 @@ impl Forge {
         let branch = crate::slug::staging_branch(&slug, generation);
         self.git
             .worktree_add(&target.repo_path, &worktree, &branch, &baseline_oid)?;
-        self.store.append(
+        self.commit_event(
             &item.id,
             actor,
             EventPayload::OperationSideEffect {
@@ -555,7 +566,7 @@ impl Forge {
             derived_from: None,
         };
         item.environment = Some(env.clone());
-        self.store.append(
+        self.commit_event(
             &item.id,
             actor,
             EventPayload::EnvironmentProvisioned { env: Box::new(env) },
@@ -684,14 +695,14 @@ impl Forge {
         };
         item.activate_attempt(attempt_id.clone());
         item.attempts.push(attempt.clone());
-        self.store.append(
+        self.commit_event(
             work_id,
             actor,
             EventPayload::AttemptStarted {
                 attempt: Box::new(attempt),
             },
         )?;
-        self.store.append(
+        self.commit_event(
             work_id,
             actor,
             EventPayload::LeaseAcquired {
@@ -931,7 +942,7 @@ impl Forge {
         self.fence(&item, lease)?;
 
         let operation_id = OperationId::new();
-        self.store.append(
+        self.commit_event(
             &lease.work_id,
             actor,
             EventPayload::OperationStarted {
@@ -951,7 +962,7 @@ impl Forge {
                     actor,
                 )?;
                 let resulting_state = item.state_after_attempts();
-                self.store.append(
+                self.commit_event(
                     &lease.work_id,
                     actor,
                     EventPayload::OperationCommitted {
@@ -963,7 +974,7 @@ impl Forge {
                 Ok(item)
             }
             Err(err) => {
-                let _ = self.store.append(
+                let _ = self.commit_event(
                     &lease.work_id,
                     actor,
                     EventPayload::OperationAborted {
@@ -1030,7 +1041,7 @@ impl Forge {
             &author,
             &exclusions,
         )?;
-        self.store.append(
+        self.commit_event(
             &item.id,
             actor,
             EventPayload::OperationSideEffect {
@@ -1047,7 +1058,7 @@ impl Forge {
         if let Some(att) = item.attempt_mut(&lease.attempt_id) {
             att.evidence_id = Some(evidence.evidence_id.clone());
         }
-        self.store.append(
+        self.commit_event(
             &item.id,
             actor,
             EventPayload::EvidenceSealed {
@@ -1233,7 +1244,7 @@ impl Forge {
         let mut item = self.load(work_id)?;
         expect_state(&item, WorkState::AwaitingReview, "record review decision")?;
         item.review_decisions.push(decision.clone());
-        self.store.append(
+        self.commit_event(
             &item.id,
             actor,
             EventPayload::ReviewDecided {
@@ -1275,7 +1286,7 @@ impl Forge {
 
         let operation_id = OperationId::new();
         self.transition(&mut item, WorkState::ApplyingDecision, None, actor)?;
-        self.store.append(
+        self.commit_event(
             work_id,
             actor,
             EventPayload::OperationStarted {
@@ -1291,7 +1302,7 @@ impl Forge {
                 match self.integrate_fast_forward(&item, &decision, &operation_id, actor) {
                     Ok(detail) => (AcceptedDisposition::BaseFastForwarded, Some(detail)),
                     Err(err) => {
-                        let _ = self.store.append(
+                        let _ = self.commit_event(
                             work_id,
                             actor,
                             EventPayload::OperationAborted {
@@ -1310,7 +1321,7 @@ impl Forge {
                 match self.integrate_export_patch(&item, &decision, &operation_id, actor) {
                     Ok(detail) => (AcceptedDisposition::PatchExported, Some(detail)),
                     Err(err) => {
-                        let _ = self.store.append(
+                        let _ = self.commit_event(
                             work_id,
                             actor,
                             EventPayload::OperationAborted {
@@ -1326,7 +1337,7 @@ impl Forge {
         };
 
         item.disposition = Some(disposition);
-        self.store.append(
+        self.commit_event(
             work_id,
             actor,
             EventPayload::DispositionApplied {
@@ -1334,7 +1345,7 @@ impl Forge {
                 detail,
             },
         )?;
-        self.store.append(
+        self.commit_event(
             work_id,
             actor,
             EventPayload::OperationCommitted {
@@ -1416,7 +1427,7 @@ impl Forge {
                     .ref_oid(&target.repo_path, &target.base_ref)
                     .unwrap_or_else(|_| decision.expected_base_oid.clone()),
             })?;
-        self.store.append(
+        self.commit_event(
             &item.id,
             actor,
             EventPayload::OperationSideEffect {
@@ -1461,7 +1472,7 @@ impl Forge {
         let path = dir.join(format!("patch-{}.diff", decision.id.storage_key()));
         std::fs::write(&path, &patch)?;
         let digest = Digest::sha256_hex(&patch);
-        self.store.append(
+        self.commit_event(
             &item.id,
             actor,
             EventPayload::OperationSideEffect {
@@ -1502,11 +1513,7 @@ impl Forge {
 
         // Owner-initiated teardown: interrupt active attempts before deleting
         // worktrees so leases cannot keep Executing after discard.
-        let active_ids: Vec<_> = item
-            .active_attempt_ids()
-            .into_iter()
-            .cloned()
-            .collect();
+        let active_ids: Vec<_> = item.active_attempt_ids().into_iter().cloned().collect();
         for attempt_id in &active_ids {
             if item.attempt(attempt_id).is_none() {
                 continue;
@@ -1526,7 +1533,7 @@ impl Forge {
         }
 
         let operation_id = OperationId::new();
-        self.store.append(
+        self.commit_event(
             work_id,
             actor,
             EventPayload::OperationStarted {
@@ -1550,7 +1557,7 @@ impl Forge {
             if env.worktree.exists() {
                 self.git.worktree_remove(&target.repo_path, &env.worktree)?;
             }
-            self.store.append(
+            self.commit_event(
                 work_id,
                 actor,
                 EventPayload::OperationSideEffect {
@@ -1563,7 +1570,7 @@ impl Forge {
             if self.git.branch_exists(&target.repo_path, &env.branch) {
                 self.git.branch_delete(&target.repo_path, &env.branch)?;
             }
-            self.store.append(
+            self.commit_event(
                 work_id,
                 actor,
                 EventPayload::OperationSideEffect {
@@ -1574,7 +1581,7 @@ impl Forge {
                 },
             )?;
         }
-        self.store.append(
+        self.commit_event(
             work_id,
             actor,
             EventPayload::OperationCommitted {
@@ -1598,7 +1605,7 @@ impl Forge {
         let _item_lock = self.store.lock_item(work_id)?;
         let mut item = self.load(work_id)?;
         item.review_decisions.retain(|d| &d.id != decision_id);
-        self.store.append(
+        self.commit_event(
             work_id,
             actor,
             EventPayload::DecisionInvalidated {
@@ -1632,7 +1639,7 @@ impl Forge {
         let mut item = self.load(work_id)?;
         expect_state(&item, WorkState::AwaitingReview, "request review changes")?;
         for decision in std::mem::take(&mut item.review_decisions) {
-            self.store.append(
+            self.commit_event(
                 work_id,
                 actor,
                 EventPayload::DecisionInvalidated {
@@ -1709,7 +1716,9 @@ impl Forge {
                 .review_comments
                 .iter()
                 .find(|c| c.id == parent_id)
-                .ok_or_else(|| ForgeError::Store(format!("parent comment {parent_id} not found")))?;
+                .ok_or_else(|| {
+                    ForgeError::Store(format!("parent comment {parent_id} not found"))
+                })?;
             if parent.evidence_id != evidence_id {
                 return Err(ForgeError::Store(
                     "parent comment belongs to different evidence".into(),
@@ -1743,7 +1752,7 @@ impl Forge {
             resolved_by: None,
         };
         item.review_comments.push(comment.clone());
-        self.store.append(
+        self.commit_event(
             &item.id,
             actor,
             EventPayload::ReviewCommentAdded {
@@ -1771,7 +1780,7 @@ impl Forge {
         let resolved_at = Utc::now();
         comment.resolved_at = Some(resolved_at);
         comment.resolved_by = Some(actor.clone());
-        self.store.append(
+        self.commit_event(
             &item.id,
             actor,
             EventPayload::ReviewCommentResolved {
@@ -1805,7 +1814,7 @@ impl Forge {
             .ok_or_else(|| ForgeError::Store(format!("review comment {comment_id} not found")))?;
         comment.body = body;
         let updated = comment.clone();
-        self.store.append(
+        self.commit_event(
             &item.id,
             actor,
             EventPayload::ReviewCommentAdded {
@@ -1832,7 +1841,7 @@ impl Forge {
                 "review comment {comment_id} not found"
             )));
         }
-        self.store.append(
+        self.commit_event(
             &item.id,
             actor,
             EventPayload::ReviewCommentDeleted {
@@ -1869,9 +1878,10 @@ impl Forge {
 
         if let Some(ids) = comment_ids.as_ref() {
             for id in ids {
-                let found = item.review_comments.iter().any(|c| {
-                    &c.id == id && c.evidence_id == evidence_id
-                });
+                let found = item
+                    .review_comments
+                    .iter()
+                    .any(|c| &c.id == id && c.evidence_id == evidence_id);
                 if !found {
                     return Err(ForgeError::Store(format!(
                         "review comment {id} not found for evidence"
@@ -1906,7 +1916,7 @@ impl Forge {
             decided_at: Utc::now(),
         };
         item.changes_requested.push(request.clone());
-        self.store.append(
+        self.commit_event(
             &item.id,
             actor,
             EventPayload::ChangesRequested {
@@ -2098,7 +2108,7 @@ impl Forge {
             attempt.lease = None;
         }
         item.deactivate_attempt(attempt_id);
-        self.store.append(
+        self.commit_event(
             &item.id,
             actor,
             EventPayload::AttemptEnded {
@@ -2120,7 +2130,7 @@ impl Forge {
         let from = item.state;
         item.state = to;
         item.updated_at = Utc::now();
-        let event = self.store.append(
+        let event = self.commit_event(
             &item.id,
             actor,
             EventPayload::StateChanged { from, to, reason },
@@ -2151,7 +2161,15 @@ impl Forge {
     }
 
     fn persist(&self, item: &WorkItem, applied_seq: u64) -> Result<()> {
-        self.store.write_snapshot(item, applied_seq)
+        self.store.write_snapshot(item, applied_seq)?;
+        if let Ok(handle) = self.owners.get_or_open(&self.store, &item.id)
+            && let Ok(mut owner) = handle.lock()
+        {
+            crate::owner::mark_projection_clean(&mut owner, applied_seq);
+            let _ = owner.sync_projection(item.clone());
+            owner.dirty = false;
+        }
+        Ok(())
     }
 
     fn compact_if_needed(&self, work_id: &WorkId) -> Result<()> {
@@ -2192,117 +2210,8 @@ fn expect_state(item: &WorkItem, expected: WorkState, action: &'static str) -> R
     Ok(())
 }
 
-/// Fold events into state. The first event must be `item_registered`; all
-/// other payloads update the item deterministically. Operation-journal events
-/// are crash-recovery records, not state.
-pub fn fold(events: &[TransitionEvent]) -> Result<WorkItem> {
-    let mut iter = events.iter();
-    let mut item = match iter.next().map(|e| &e.payload) {
-        Some(EventPayload::ItemRegistered { item }) => (**item).clone(),
-        _ => {
-            return Err(ForgeError::Store(
-                "event log does not start with item_registered".into(),
-            ));
-        }
-    };
-    for event in iter {
-        match &event.payload {
-            EventPayload::ItemRegistered { .. } => {
-                return Err(ForgeError::Store("duplicate item_registered".into()));
-            }
-            EventPayload::EnvironmentProvisioned { env } => {
-                item.environment = Some((**env).clone());
-            }
-            EventPayload::StateChanged { to, .. } => {
-                item.state = *to;
-                item.updated_at = event.at;
-            }
-            EventPayload::AttemptStarted { attempt } => {
-                item.activate_attempt(attempt.id.clone());
-                item.attempts.push((**attempt).clone());
-            }
-            EventPayload::AttemptEnded {
-                attempt_id,
-                state,
-                recovery,
-            } => {
-                if let Some(att) = item.attempt_mut(attempt_id) {
-                    att.state = *state;
-                    att.recovery = Some(recovery.clone());
-                    att.ended_at = Some(event.at);
-                    att.lease = None;
-                }
-                item.deactivate_attempt(attempt_id);
-            }
-            EventPayload::LeaseAcquired {
-                attempt_id,
-                lease_id,
-                generation,
-                owner_instance_id,
-            } => {
-                if let Some(att) = item.attempt_mut(attempt_id)
-                    && let Some(lease) = att.lease.as_mut()
-                {
-                    lease.lease_id = lease_id.clone();
-                    lease.generation = *generation;
-                    lease.owner_instance_id = owner_instance_id.clone();
-                }
-            }
-            EventPayload::EvidenceSealed {
-                attempt_id,
-                evidence_id,
-                ..
-            } => {
-                if let Some(att) = item.attempt_mut(attempt_id) {
-                    att.evidence_id = Some(evidence_id.clone());
-                }
-            }
-            EventPayload::ReviewDecided { decision } => {
-                item.review_decisions.push((**decision).clone());
-            }
-            EventPayload::ReviewCommentAdded { comment } => {
-                if let Some(existing) = item
-                    .review_comments
-                    .iter_mut()
-                    .find(|c| c.id == comment.id)
-                {
-                    *existing = (**comment).clone();
-                } else {
-                    item.review_comments.push((**comment).clone());
-                }
-            }
-            EventPayload::ReviewCommentResolved {
-                comment_id,
-                resolved_by,
-                resolved_at,
-            } => {
-                if let Some(comment) = item.review_comments.iter_mut().find(|c| &c.id == comment_id)
-                {
-                    comment.resolved_at = Some(*resolved_at);
-                    comment.resolved_by = Some(resolved_by.clone());
-                }
-            }
-            EventPayload::ReviewCommentDeleted { comment_id } => {
-                item.review_comments.retain(|c| &c.id != comment_id);
-            }
-            EventPayload::ChangesRequested { request } => {
-                item.changes_requested.push((**request).clone());
-            }
-            EventPayload::DecisionInvalidated { decision_id, .. } => {
-                item.review_decisions.retain(|d| &d.id != decision_id);
-            }
-            EventPayload::DispositionApplied { disposition, .. } => {
-                item.disposition = Some(*disposition);
-            }
-            // Operation journal: crash-recovery records, not state.
-            EventPayload::OperationStarted { .. }
-            | EventPayload::OperationSideEffect { .. }
-            | EventPayload::OperationCommitted { .. }
-            | EventPayload::OperationAborted { .. } => {}
-        }
-    }
-    Ok(item)
-}
+/// Fold / apply helpers live in [`crate::fold`]; re-exported for callers.
+pub use crate::fold::{apply_payload, fold};
 
 #[cfg(test)]
 mod tests {
@@ -2880,7 +2789,10 @@ mod tests {
             item.review_comments[0].anchor_digest,
             anchor_digest_for("shipped")
         );
-        assert_eq!(item.review_comments[0].thread_id, item.review_comments[0].id);
+        assert_eq!(
+            item.review_comments[0].thread_id,
+            item.review_comments[0].id
+        );
 
         let events = forge.store().replay(&item.id).unwrap();
         let folded = fold(&events).unwrap();
