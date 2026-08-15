@@ -8,6 +8,8 @@
 //!   items/{opaque_work_key}/events.jsonl       # v1 append-only log
 //!   items/{opaque_work_key}/events.v2          # v2 framed log (when migrated)
 //!   items/{opaque_work_key}/store_generation   # 1=v1 authority, 2=v2 authority
+//!   items/{opaque_work_key}/compaction.json    # last successful compaction cursor
+//!   items/{opaque_work_key}/segments/seg-*     # sealed compacted prefixes
 //! ```
 //!
 //! Snapshots are written atomically (tmp + sync + rename + dir sync). Replay
@@ -83,10 +85,21 @@ impl Drop for FileLock {
 
 /// Snapshot cache envelope: the folded item plus how far the log had been
 /// applied when cached. Never authoritative — replay is.
+///
+/// Optional fields are stamped by generation-fenced compaction (H06.6) so load
+/// can validate snapshot/log pairing and seek the replay suffix.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SnapshotEnvelope {
     pub applied_seq: u64,
     pub item: WorkItem,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_log_offset: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anchor_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_generation: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_generation: Option<u32>,
 }
 
 /// In-memory tail recovered once per item, then advanced on append.
@@ -513,6 +526,10 @@ impl FsWorkStore {
         let envelope = SnapshotEnvelope {
             applied_seq,
             item: item.clone(),
+            next_log_offset: None,
+            anchor_hash: None,
+            item_generation: None,
+            log_generation: None,
         };
         {
             let mut file = OpenOptions::new()

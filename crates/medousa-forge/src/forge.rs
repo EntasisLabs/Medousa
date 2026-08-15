@@ -10,6 +10,7 @@ use std::sync::Arc;
 use chrono::Utc;
 
 use crate::catalog::{CatalogPage, ForgeCatalog, SlugReservationJournal};
+use crate::compaction;
 use crate::error::{ForgeError, Result};
 use crate::events::{EventPayload, OperationKind, SideEffect, TransitionEvent};
 use crate::execution::ForgeExecutionService;
@@ -358,7 +359,8 @@ impl Forge {
         Ok(item)
     }
 
-    /// Load an item: snapshot cache when fresh, fold-from-events otherwise.
+    /// Load an item: snapshot cache when fresh, snapshot+tail when compacted,
+    /// or bounded fold-from-events otherwise.
     pub fn load(&self, work_id: &WorkId) -> Result<WorkItem> {
         if !self.store.item_exists(work_id) {
             return Err(ForgeError::WorkNotFound(work_id.clone()));
@@ -367,13 +369,26 @@ impl Forge {
         if last_seq == 0 {
             return Err(ForgeError::WorkNotFound(work_id.clone()));
         }
-        if let Some(envelope) = self.store.read_snapshot(work_id)?
-            && envelope.applied_seq == last_seq
-            && envelope.item.schema_version == MODEL_SCHEMA_VERSION
-        {
-            return Ok(envelope.item);
+        if let Some(envelope) = self.store.read_snapshot(work_id)? {
+            compaction::validate_snapshot_log_pair(&self.store, work_id, &envelope)?;
+            if envelope.item.schema_version == MODEL_SCHEMA_VERSION {
+                if envelope.applied_seq == last_seq {
+                    return Ok(envelope.item);
+                }
+                if envelope.applied_seq < last_seq
+                    && (envelope.next_log_offset.is_some() || envelope.anchor_hash.is_some())
+                {
+                    let mut item = envelope.item;
+                    let tail =
+                        compaction::replay_after(&self.store, work_id, envelope.applied_seq)?;
+                    for event in &tail {
+                        apply_payload(&mut item, event)?;
+                    }
+                    return Ok(item);
+                }
+            }
         }
-        let events = self.store.replay(work_id)?;
+        let events = compaction::replay_bounded(&self.store, work_id)?;
         if events.is_empty() {
             return Err(ForgeError::WorkNotFound(work_id.clone()));
         }
@@ -2184,14 +2199,7 @@ impl Forge {
     }
 
     fn compact_if_needed(&self, work_id: &WorkId) -> Result<()> {
-        let path = self.store.events_path(work_id);
-        let bytes = path.metadata().map(|meta| meta.len()).unwrap_or(0);
-        let seq = self.store.cached_last_seq(work_id)?;
-        if (seq >= 1_000 || bytes >= 8 * 1024 * 1024)
-            && let Ok(item) = self.load(work_id)
-        {
-            self.store.write_snapshot(&item, seq)?;
-        }
+        let _ = compaction::compact_if_needed(&self.store, &self.owners, work_id)?;
         Ok(())
     }
 }

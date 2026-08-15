@@ -519,6 +519,10 @@ pub fn v1_snapshot_from_v2(envelope: SnapshotEnvelopeV2) -> SnapshotEnvelope {
     SnapshotEnvelope {
         applied_seq: envelope.applied_seq,
         item: envelope.item,
+        next_log_offset: Some(envelope.next_log_offset),
+        anchor_hash: Some(envelope.anchor_hash),
+        item_generation: Some(envelope.item_generation),
+        log_generation: Some(LOG_V2_SCHEMA),
     }
 }
 

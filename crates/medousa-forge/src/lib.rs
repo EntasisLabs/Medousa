@@ -11,6 +11,7 @@
 
 pub mod adapter;
 pub mod catalog;
+pub mod compaction;
 pub mod error;
 pub mod events;
 pub mod execution;
