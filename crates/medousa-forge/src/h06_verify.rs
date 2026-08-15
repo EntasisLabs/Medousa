@@ -153,11 +153,19 @@ mod tests {
     #[test]
     fn slug_reservation_survives_reopen() {
         let tmp = TempDir::new().unwrap();
+        let root = std::sync::Arc::new(
+            medousa_store::StoreRoot::open_or_create_nofollow(
+                &tmp.path()
+                    .canonicalize()
+                    .unwrap_or_else(|_| tmp.path().to_path_buf()),
+            )
+            .unwrap(),
+        );
         {
-            let journal = SlugReservationJournal::open(tmp.path()).unwrap();
+            let journal = SlugReservationJournal::open(std::sync::Arc::clone(&root)).unwrap();
             journal.reserve("held", "op-crash").unwrap();
         }
-        let journal = SlugReservationJournal::open(tmp.path()).unwrap();
+        let journal = SlugReservationJournal::open(root).unwrap();
         let orphans = journal.recover_orphans().unwrap();
         assert_eq!(orphans.len(), 1);
         assert_eq!(orphans[0].slug, "held");

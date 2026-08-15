@@ -166,8 +166,15 @@ impl Forge {
         let store = FsWorkStore::open(root)?;
         let git = GitEngine::detect()?;
         let instance_id = format!("boot-{}", LeaseId::new().as_str());
-        let slugs = SlugReservationJournal::open(root)?;
-        let catalog = ForgeCatalog::new();
+        let canonical = root
+            .canonicalize()
+            .unwrap_or_else(|_| root.to_path_buf());
+        let store_root = Arc::new(
+            medousa_store::StoreRoot::open_or_create_nofollow(&canonical)
+                .map_err(|err| ForgeError::Store(err.to_string()))?,
+        );
+        let slugs = SlugReservationJournal::open(Arc::clone(&store_root))?;
+        let catalog = ForgeCatalog::open(store_root)?;
         let forge = Self {
             store,
             git,
@@ -207,7 +214,7 @@ impl Forge {
                 }
             }
         }
-        self.catalog.rebuild_from(rebuilt);
+        let _ = self.catalog.rebuild_from(rebuilt);
     }
 
     pub fn with_git(forge_root: impl AsRef<Path>, git: GitEngine) -> Result<Self> {
@@ -323,7 +330,7 @@ impl Forge {
             owner,
         );
         item.policy = policy;
-        let taken = self.slugs.taken_slugs().unwrap_or_default();
+        let taken = self.slugs.taken_slugs()?;
         item.slug = crate::slug::allocate_unique_slug(&item.slug, taken.iter().map(String::as_str));
         let operation_id = OperationId::new();
         self.slugs.reserve(&item.slug, operation_id.as_str())?;
@@ -344,10 +351,10 @@ impl Forge {
         };
         self.persist(&item, event.seq)?;
         if let Err(err) = self.slugs.commit(&item.slug, item.id.clone(), event.seq) {
-            let _ = self.slugs.release(&item.slug);
+            // Item is already durable — never release the slug.
             return Err(err);
         }
-        self.catalog.publish(&item, &receipt);
+        self.catalog.publish(&item, &receipt)?;
         Ok(item)
     }
 
@@ -389,12 +396,12 @@ impl Forge {
     }
 
     pub fn list(&self) -> Result<Vec<WorkItem>> {
-        let (entries, _truncated) = self.catalog.all_capped();
+        let entries = self.catalog.all_entries()?;
         if !entries.is_empty() {
             return self.load_catalog_entries(&entries);
         }
         self.rebuild_catalog_from_snapshots();
-        let (entries, _) = self.catalog.all_capped();
+        let entries = self.catalog.all_entries()?;
         if !entries.is_empty() {
             return self.load_catalog_entries(&entries);
         }
@@ -406,10 +413,10 @@ impl Forge {
     }
 
     pub fn list_page(&self, limit: Option<usize>, cursor: Option<&str>) -> Result<CatalogPage> {
-        if self.catalog.all_capped().0.is_empty() {
+        if self.catalog.all_entries()?.is_empty() {
             self.rebuild_catalog_from_snapshots();
         }
-        Ok(self.catalog.page(limit, cursor))
+        self.catalog.page(limit, cursor)
     }
 
     fn load_catalog_entries(
@@ -418,18 +425,22 @@ impl Forge {
     ) -> Result<Vec<WorkItem>> {
         let mut items = Vec::new();
         for entry in entries {
-            items.push(self.load(&entry.work_id)?);
+            match self.load(&entry.work_id) {
+                Ok(item) => items.push(item),
+                Err(err) => {
+                    return Err(ForgeError::CatalogStale(format!(
+                        "catalog entry {} unloadable: {err}",
+                        entry.work_id.as_str()
+                    )));
+                }
+            }
         }
         Ok(items)
     }
 
     pub fn find_lease(&self, lease_id: &LeaseId, generation: u64) -> Result<ExecutionLease> {
-        let (entries, _) = self.catalog.all_capped();
-        let ids: Vec<WorkId> = if entries.is_empty() {
-            self.store.list_item_ids()?
-        } else {
-            entries.into_iter().map(|entry| entry.work_id).collect()
-        };
+        // Complete scan — never limited to the unparameterized list cap.
+        let ids = self.store.list_item_ids()?;
         for id in ids {
             let item = self.load(&id)?;
             for active_id in item.active_attempt_ids() {
