@@ -1,9 +1,9 @@
 //! Human-first browser: Rust-managed native webviews.
 //!
-//! **Embedded (primary):** `main-browser-content` child on the main window, positioned
+//! **Embedded (primary):** `browser-content-embed-*` children on the main window, positioned
 //! from the Web surface content pane. Chrome lives in Svelte (`HumanBrowserPanel`).
 //!
-//! **Pop-out (secondary):** `browser-content` + `browser-chrome` on the dedicated
+//! **Pop-out (secondary):** `browser-content-popout` + `browser-chrome` on the dedicated
 //! browser window — kept for a future "Pop out" action.
 
 use std::collections::HashMap;
@@ -20,12 +20,11 @@ use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Rect, Web
 use tokio::sync::oneshot;
 
 const MAIN_WINDOW_LABEL: &str = "main";
-const EMBED_CONTENT_LABEL: &str = "main-browser-content";
 /// Shell surface background — aligns WKWebView under-page compositing with the workshop chrome.
 const EMBED_SURFACE_COLOR: Color = Color(12, 14, 18, 255);
 
 const BROWSER_WINDOW_LABEL: &str = "browser";
-const BROWSER_CONTENT_LABEL: &str = "browser-content";
+const BROWSER_CONTENT_LABEL: &str = "browser-content-popout";
 const BROWSER_CHROME_LABEL: &str = "browser-chrome";
 /// Workshop-layout fallback only (desktop freeform uses DOM host measure).
 /// Keep roughly in sync with AppTitlebar (~40) + browser toolbar (~36).
@@ -112,8 +111,8 @@ fn sanitize_tab_id(tab_id: &str) -> String {
 
 fn tab_webview_label(surface: BrowserSurface, tab_id: &str) -> String {
     let prefix = match surface {
-        BrowserSurface::Embed => "embed-tab-",
-        BrowserSurface::Popout => "popout-tab-",
+        BrowserSurface::Embed => "browser-content-embed-",
+        BrowserSurface::Popout => "browser-content-popout-",
     };
     format!("{}{}", prefix, sanitize_tab_id(tab_id))
 }
@@ -161,12 +160,6 @@ fn hide_tab_webviews(app: &AppHandle, surface: BrowserSurface, except: Option<&s
         if let Some(webview) = tab_webview(app, surface, &id) {
             let _ = webview.hide();
         }
-    }
-}
-
-fn close_legacy_content_webview(app: &AppHandle, label: &str) {
-    if let Some(content) = app.get_webview(label) {
-        let _ = content.close();
     }
 }
 
@@ -905,7 +898,7 @@ fn workshop_window(app: &AppHandle) -> Result<tauri::Window, String> {
 }
 
 fn embedded_content_webview(app: &AppHandle) -> Option<tauri::Webview> {
-    active_tab_webview(app, BrowserSurface::Embed).or_else(|| app.get_webview(EMBED_CONTENT_LABEL))
+    active_tab_webview(app, BrowserSurface::Embed)
 }
 
 pub fn on_browser_popout_opened(app: &AppHandle) -> Result<(), String> {
@@ -1221,7 +1214,6 @@ fn default_mobile_embed_layout() -> EmbedMobileLayoutParams {
 
 /// Drop embedded tab webviews so they can be recreated (e.g. when switching mobile/desktop UA).
 fn reset_embedded_content(app: &AppHandle) -> Result<(), String> {
-    close_legacy_content_webview(app, EMBED_CONTENT_LABEL);
     close_all_tab_webviews(app, BrowserSurface::Embed);
     EMBED_READY.store(false, Ordering::SeqCst);
     Ok(())
@@ -2132,14 +2124,9 @@ fn hide_embed_surface(app: &AppHandle) {
             let _ = content.hide();
         }
     }
-    if let Some(content) = app.get_webview(EMBED_CONTENT_LABEL) {
-        let _ = content.hide();
-    }
 }
 
 fn activate_embed_tab(app: &AppHandle, tab_id: &str, initial_url: &str) -> Result<(), String> {
-    close_legacy_content_webview(app, EMBED_CONTENT_LABEL);
-
     if active_tab_id(BrowserSurface::Embed).as_deref() != Some(tab_id) {
         BROWSER_HOST_STATE.advance_navigation(BrowserSurface::Embed);
     }

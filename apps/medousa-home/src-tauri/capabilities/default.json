@@ -1,14 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
+  "description": "Trusted Medousa shell webviews only; never parent windows that host remote content",
   "platforms": ["linux", "macOS", "windows"],
-  "windows": [
+  "webviews": [
     "main",
-    "main-browser-content",
     "chat-popout",
     "vault-sticky",
-    "browser",
+    "browser-chrome",
     "desktop-toolbar",
     "view-popout",
     "guide"
