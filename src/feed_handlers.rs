@@ -141,7 +141,8 @@ async fn mark_feed_read(
     let seq = body.seq.unwrap_or(0);
     feed_store()
         .set_read_cursor(&profile_id, feed_id.as_str(), seq)
-        .await;
+        .await
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
     Ok(StatusCode::NO_CONTENT)
 }
 

@@ -1,6 +1,6 @@
 # H04 — Persistence ownership and crash consistency
 
-> **Status:** Implementing — H04.0 persistence foundation landed
+> **Status:** Implementing — H04.0–H04.1 landed
 >
 > **Accountable owner:** daemon persistence maintainers
 >
