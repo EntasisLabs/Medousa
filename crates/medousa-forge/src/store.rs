@@ -3,14 +3,16 @@
 //!
 //! ```text
 //! {forge_root}/
-//!   schema_version                 # single line, u32
-//!   items/{opaque_work_key}/manifest.json  # snapshot — strictly a replay cache
-//!   items/{opaque_work_key}/events.jsonl   # append-only source of truth
+//!   schema_version                 # single line, u32 (store layout)
+//!   items/{opaque_work_key}/manifest.json      # snapshot — strictly a replay cache
+//!   items/{opaque_work_key}/events.jsonl       # v1 append-only log
+//!   items/{opaque_work_key}/events.v2          # v2 framed log (when migrated)
+//!   items/{opaque_work_key}/store_generation   # 1=v1 authority, 2=v2 authority
 //! ```
 //!
 //! Snapshots are written atomically (tmp + sync + rename + dir sync). Replay
-//! tolerates a truncated trailing line, which is the expected aftermath of a
-//! crash mid-append.
+//! tolerates a truncated trailing record, which is the expected aftermath of a
+//! crash mid-append. Per-item `store_generation` selects v1 vs v2 authority.
 
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
@@ -20,10 +22,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use fs2::FileExt;
+use medousa_store::{DurabilityLevel, FileTransaction, StoreRoot};
 use sha2::{Digest as _, Sha256};
 
 use crate::error::{ForgeError, Result};
 use crate::events::{EVENT_SCHEMA_VERSION, EventPayload, TransitionEvent};
+use crate::log_v2::{
+    self, LogAuthority, append_v2_frame_at, events_v2_path, recover_tail_v2, replay_v2,
+    select_log_authority,
+};
 use crate::model::{ActorRef, WorkId, WorkItem};
 
 pub const STORE_SCHEMA_VERSION: u32 = 1;
@@ -94,6 +101,8 @@ pub struct TailMeta {
 
 pub struct FsWorkStore {
     root: PathBuf,
+    store_root: Arc<StoreRoot>,
+    transaction: FileTransaction,
     tails: Mutex<HashMap<String, TailMeta>>,
     append_gates: Mutex<HashMap<String, Arc<Mutex<()>>>>,
 }
@@ -117,8 +126,18 @@ impl FsWorkStore {
         } else {
             fs::write(&version_path, format!("{STORE_SCHEMA_VERSION}\n"))?;
         }
+        // StoreRoot needs a stable no-follow handle; keep `self.root` as the
+        // caller-facing spelling so worktree/orphan paths stay comparable.
+        let canonical = root.canonicalize().unwrap_or_else(|_| root.clone());
+        let store_root = Arc::new(
+            StoreRoot::open_or_create_nofollow(&canonical)
+                .map_err(|err| ForgeError::Store(err.to_string()))?,
+        );
+        let transaction = FileTransaction::new(Arc::clone(&store_root));
         Ok(Self {
             root,
+            store_root,
+            transaction,
             tails: Mutex::new(HashMap::new()),
             append_gates: Mutex::new(HashMap::new()),
         })
@@ -126,6 +145,23 @@ impl FsWorkStore {
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    pub fn store_root(&self) -> &StoreRoot {
+        &self.store_root
+    }
+
+    pub fn store_root_arc(&self) -> &Arc<StoreRoot> {
+        &self.store_root
+    }
+
+    pub fn transaction(&self) -> &FileTransaction {
+        &self.transaction
+    }
+
+    /// Replace the store's transaction (used by failpoint tests).
+    pub fn set_transaction(&mut self, transaction: FileTransaction) {
+        self.transaction = transaction;
     }
 
     pub fn item_dir(&self, work_id: &WorkId) -> PathBuf {
@@ -155,7 +191,7 @@ impl FsWorkStore {
     }
 
     pub fn item_exists(&self, work_id: &WorkId) -> bool {
-        self.events_path(work_id).exists()
+        self.events_path(work_id).exists() || events_v2_path(self, work_id).exists()
     }
 
     /// Append an event, assigning the next monotonic seq for this work item.
@@ -201,6 +237,7 @@ impl FsWorkStore {
         fs::create_dir_all(&dir)?;
         // Always re-scan the durable log before writing so a stale in-memory
         // tail cannot reuse sequences past a torn or repaired prefix.
+        let authority = select_log_authority(self, work_id)?;
         let tail = self.recover_tail(work_id)?;
         if seq != tail.last_seq.saturating_add(1) {
             return Err(ForgeError::Conflict(format!(
@@ -208,34 +245,69 @@ impl FsWorkStore {
                 tail.last_seq.saturating_add(1)
             )));
         }
-        let path = self.events_path(work_id);
-        if path.exists() {
-            let len = fs::metadata(&path)?.len();
-            if len > tail.last_offset {
-                // Incomplete final record only — truncate before appending so
-                // the next frame cannot glue onto torn bytes.
-                let file = OpenOptions::new().write(true).open(&path)?;
-                file.set_len(tail.last_offset)?;
-                file.sync_all()?;
-            } else if len < tail.last_offset {
-                return Err(ForgeError::Store(format!(
-                    "events log shorter than recovered tail at {}",
-                    path.display()
-                )));
-            }
-        }
         let event = TransitionEvent::new(work_id.clone(), seq, actor.clone(), payload);
         if event.schema_version != EVENT_SCHEMA_VERSION {
             return Err(ForgeError::Store("event schema drift".into()));
         }
-        let mut line = serde_json::to_vec(&event)?;
-        line.push(b'\n');
-        let mut file = OpenOptions::new().create(true).append(true).open(&path)?;
-        file.write_all(&line)?;
-        file.sync_all()?;
-        let offset = file.metadata().map(|meta| meta.len()).unwrap_or(0);
-        self.remember_tail(work_id, &event, offset);
-        Ok(event)
+
+        match authority {
+            LogAuthority::V2 => {
+                let path = events_v2_path(self, work_id);
+                if path.exists() {
+                    let len = fs::metadata(&path)?.len();
+                    if len > tail.last_offset {
+                        let file = OpenOptions::new().write(true).open(&path)?;
+                        file.set_len(tail.last_offset)?;
+                        file.sync_all()?;
+                    } else if len < tail.last_offset {
+                        return Err(ForgeError::Store(format!(
+                            "events.v2 shorter than recovered tail at {}",
+                            path.display()
+                        )));
+                    }
+                }
+                let written = append_v2_frame_at(
+                    self,
+                    work_id,
+                    &event,
+                    &tail.last_hash,
+                    DurabilityLevel::Synced,
+                )?;
+                let offset = tail.last_offset.saturating_add(written as u64);
+                let payload = serde_json::to_vec(&event)?;
+                let digest = Sha256::digest(&payload);
+                let mut frame_checksum = [0u8; 32];
+                frame_checksum.copy_from_slice(&digest);
+                self.remember_tail_hash(work_id, &event, offset, frame_checksum);
+                Ok(event)
+            }
+            LogAuthority::V1 => {
+                let path = self.events_path(work_id);
+                if path.exists() {
+                    let len = fs::metadata(&path)?.len();
+                    if len > tail.last_offset {
+                        // Incomplete final record only — truncate before appending so
+                        // the next frame cannot glue onto torn bytes.
+                        let file = OpenOptions::new().write(true).open(&path)?;
+                        file.set_len(tail.last_offset)?;
+                        file.sync_all()?;
+                    } else if len < tail.last_offset {
+                        return Err(ForgeError::Store(format!(
+                            "events log shorter than recovered tail at {}",
+                            path.display()
+                        )));
+                    }
+                }
+                let mut line = serde_json::to_vec(&event)?;
+                line.push(b'\n');
+                let mut file = OpenOptions::new().create(true).append(true).open(&path)?;
+                file.write_all(&line)?;
+                file.sync_all()?;
+                let offset = file.metadata().map(|meta| meta.len()).unwrap_or(0);
+                self.remember_tail(work_id, &event, offset);
+                Ok(event)
+            }
+        }
     }
 
     pub fn cached_last_seq(&self, work_id: &WorkId) -> Result<u64> {
@@ -250,7 +322,10 @@ impl FsWorkStore {
             .get(work_id.as_str())
             .cloned()
         {
-            let path = self.events_path(work_id);
+            let path = match select_log_authority(self, work_id)? {
+                LogAuthority::V2 => events_v2_path(self, work_id),
+                LogAuthority::V1 => self.events_path(work_id),
+            };
             let len = if path.exists() {
                 fs::metadata(&path)?.len()
             } else {
@@ -277,21 +352,44 @@ impl FsWorkStore {
     /// Tolerates only a demonstrably incomplete final record (unparseable
     /// bytes at EOF). Corruption anywhere before EOF fails closed.
     pub fn recover_tail(&self, work_id: &WorkId) -> Result<TailMeta> {
-        let path = self.events_path(work_id);
-        if !path.exists() {
-            return Ok(TailMeta {
-                last_seq: 0,
-                last_offset: 0,
-                last_hash: [0; 32],
-                lease_acquisitions: 0,
-                operations_started: 0,
-            });
+        match select_log_authority(self, work_id)? {
+            LogAuthority::V2 => {
+                let _ = log_v2::cleanup_migration_staging(self, work_id);
+                recover_tail_v2(&events_v2_path(self, work_id))
+            }
+            LogAuthority::V1 => {
+                let path = self.events_path(work_id);
+                if !path.exists() {
+                    return Ok(TailMeta {
+                        last_seq: 0,
+                        last_offset: 0,
+                        last_hash: [0; 32],
+                        lease_acquisitions: 0,
+                        operations_started: 0,
+                    });
+                }
+                let data = fs::read(&path)?;
+                scan_jsonl_tail(&path, &data)
+            }
         }
-        let data = fs::read(&path)?;
-        scan_jsonl_tail(&path, &data)
     }
 
     fn remember_tail(&self, work_id: &WorkId, event: &TransitionEvent, offset: u64) {
+        self.remember_tail_hash(
+            work_id,
+            event,
+            offset,
+            hash_line(&serde_json::to_string(event).unwrap_or_default()),
+        );
+    }
+
+    fn remember_tail_hash(
+        &self,
+        work_id: &WorkId,
+        event: &TransitionEvent,
+        offset: u64,
+        last_hash: [u8; 32],
+    ) {
         if let Ok(mut tails) = self.tails.lock() {
             let previous = tails.get(work_id.as_str()).cloned();
             tails.insert(
@@ -299,7 +397,7 @@ impl FsWorkStore {
                 TailMeta {
                     last_seq: event.seq,
                     last_offset: offset,
-                    last_hash: hash_line(&serde_json::to_string(event).unwrap_or_default()),
+                    last_hash,
                     lease_acquisitions: previous
                         .as_ref()
                         .map(|tail| {
@@ -331,9 +429,19 @@ impl FsWorkStore {
         }
     }
 
-    /// Replay the full event log. A malformed trailing line (crash mid-append)
-    /// is skipped; a malformed line anywhere else is a hard error.
+    /// Replay the authoritative event log for this item (v1 or v2).
     pub fn replay(&self, work_id: &WorkId) -> Result<Vec<TransitionEvent>> {
+        match select_log_authority(self, work_id)? {
+            LogAuthority::V2 => {
+                let _ = log_v2::cleanup_migration_staging(self, work_id);
+                replay_v2(&events_v2_path(self, work_id))
+            }
+            LogAuthority::V1 => self.replay_v1(work_id),
+        }
+    }
+
+    /// Replay v1 JSONL regardless of generation marker (migration validation).
+    pub fn replay_v1(&self, work_id: &WorkId) -> Result<Vec<TransitionEvent>> {
         let path = self.events_path(work_id);
         if !path.exists() {
             return Ok(Vec::new());
@@ -380,6 +488,13 @@ impl FsWorkStore {
             }
         }
         Ok(events)
+    }
+
+    /// Drop a cached tail after authority changes (e.g. v1→v2 migration).
+    pub fn invalidate_tail(&self, work_id: &WorkId) {
+        if let Ok(mut tails) = self.tails.lock() {
+            tails.remove(work_id.as_str());
+        }
     }
 
     /// Write the snapshot cache atomically: tmp file + sync + rename + dir sync.
@@ -462,6 +577,15 @@ impl FsWorkStore {
                 ids.push(event.work_id);
                 continue;
             }
+            let events_v2 = entry.path().join("events.v2");
+            if events_v2.exists()
+                && let Ok(events) = crate::log_v2::replay_v2(&events_v2)
+                && let Some(event) = events.first()
+                && event.work_id.storage_key() == name
+            {
+                ids.push(event.work_id.clone());
+                continue;
+            }
             if is_legacy_forge_id(&name) && !name.starts_with("work1-") {
                 ids.push(WorkId::from(name));
             }
@@ -505,9 +629,7 @@ fn scan_jsonl_tail(path: &Path, data: &[u8]) -> Result<TailMeta> {
     let mut start = 0usize;
 
     while start < data.len() {
-        let relative_newline = data[start..]
-            .iter()
-            .position(|&byte| byte == b'\n');
+        let relative_newline = data[start..].iter().position(|&byte| byte == b'\n');
         let (line_end, record_end, at_eof) = match relative_newline {
             Some(index) => {
                 let line_end = start + index;
@@ -751,7 +873,10 @@ mod tests {
                 },
             )
             .unwrap_err();
-        assert!(matches!(err, ForgeError::Store(_) | ForgeError::Conflict(_)));
+        assert!(matches!(
+            err,
+            ForgeError::Store(_) | ForgeError::Conflict(_)
+        ));
     }
 
     #[test]
@@ -867,9 +992,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let store = Arc::new(FsWorkStore::open(tmp.path()).unwrap());
         let item = WorkItem::new("t", "b", target(), "user-1");
-        store
-            .append(&item.id, &actor(), registered(&item))
-            .unwrap();
+        store.append(&item.id, &actor(), registered(&item)).unwrap();
         let barrier = Arc::new(Barrier::new(2));
         let mut handles = Vec::new();
         for _ in 0..2 {
@@ -907,9 +1030,7 @@ mod tests {
         let item = WorkItem::new("t", "b", target(), "user-1");
         {
             let store = FsWorkStore::open(tmp.path()).unwrap();
-            store
-                .append(&item.id, &actor(), registered(&item))
-                .unwrap();
+            store.append(&item.id, &actor(), registered(&item)).unwrap();
             store
                 .append(
                     &item.id,
