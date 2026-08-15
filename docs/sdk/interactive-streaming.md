@@ -65,11 +65,10 @@ while let Some(envelope) = events.next().await {
 }
 ```
 
-`stream_v2` is currently one-shot. The reconnecting helpers continue to use
-the frozen v1 projection until their typed v2 migration; raw v2 reconnects use
-the same URL with `?since=<last_seq>` and the v2 `Accept` header.
+`stream_v2` is one-shot. Use the typed reconnecting helpers below for durable
+replay across connection drops.
 
-### Reconnecting stream (recommended)
+### Reconnecting typed v2 stream (recommended)
 
 Tracks `event.seq`, reattaches with `?since=<last_seq>` after drops, and applies bounded exponential backoff + circuit breaker + overlap guard.
 
@@ -79,7 +78,7 @@ use medousa_types::InteractiveTurnRequest;
 
 let mut events = client
     .interactive()
-    .stream_turn_reconnecting(&InteractiveTurnRequest {
+    .stream_turn_reconnecting_v2(&InteractiveTurnRequest {
         session_id: "my-session".into(),
         prompt: "Hello".into(),
         ..Default::default()
@@ -87,9 +86,9 @@ let mut events = client
     .await?;
 
 while let Some(event) = events.next().await {
-    let event = event?;
+    let envelope = event?;
     // `seq` is monotonic per turn; duplicates after replay are deduped client-side.
-    if event.terminal {
+    if envelope.event.is_terminal() {
         break;
     }
 }
@@ -103,37 +102,42 @@ use medousa_sdk::ReconnectPolicy;
 let policy = ReconnectPolicy::default();
 let mut events = client
     .interactive()
-    .stream_reconnecting_with_policy(&stream_url, policy);
+    .stream_reconnecting_v2_with_policy(&stream_url, policy);
 ```
 
 Helper: `medousa_sdk::stream_path_with_since("/v1/interactive/turn/t1/stream", 42)` → `...?since=42`.
 
+The unsuffixed `stream_reconnecting*` and `stream_turn_reconnecting` methods
+remain frozen v1 compatibility adapters during the support window.
+
 ### Python
 
-One-shot:
+One-shot typed v2:
 
 ```python
-async with client.interactive().stream_turn(request) as events:
+response = await client.interactive().start_turn(request)
+async with client.interactive().stream_v2(response.stream_url) as events:
     async for event in events:
-        if event.terminal:
-            break
+        handle(event)
 ```
 
 Reconnecting (spine replay):
 
 ```python
-async with client.interactive().stream_turn_reconnecting(request) as events:
+async with client.interactive().stream_turn_reconnecting_v2(request) as events:
     async for event in events:
-        if event.terminal:
-            break
+        handle(event)
 ```
 
 Or open an existing URL:
 
 ```python
-async for event in client.interactive().stream_reconnecting(stream_url):
+async for event in client.interactive().stream_reconnecting_v2(stream_url):
     ...
 ```
+
+The v2 iterator stops on the typed terminal variants. Unsuffixed Python stream
+helpers retain the frozen v1 projection for compatibility only.
 
 ### TypeScript
 

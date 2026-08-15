@@ -820,9 +820,13 @@ client_helpers:
   - accessor: interactive
     methods:
       - stream_turn
+      - stream_v2
       - stream_reconnecting
       - stream_reconnecting_with_policy
       - stream_turn_reconnecting
+      - stream_reconnecting_v2
+      - stream_reconnecting_v2_with_policy
+      - stream_turn_reconnecting_v2
     rust_module: medousa_sdk::interactive
     python_module: medousa.interactive
   - accessor: agents

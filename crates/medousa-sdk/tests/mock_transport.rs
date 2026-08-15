@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -10,6 +10,7 @@ type Handler = Box<dyn Fn() -> serde_json::Value + Send + Sync>;
 struct MockTransport {
     handlers: HashMap<(String, String), Handler>,
     calls: Arc<Mutex<Vec<(String, String)>>>,
+    sse_batches: Arc<Mutex<VecDeque<Vec<bytes::Bytes>>>>,
 }
 
 impl MockTransport {
@@ -17,6 +18,7 @@ impl MockTransport {
         Self {
             handlers: HashMap::new(),
             calls: Arc::new(Mutex::new(Vec::new())),
+            sse_batches: Arc::new(Mutex::new(VecDeque::new())),
         }
     }
 
@@ -38,6 +40,14 @@ impl MockTransport {
 
     fn call_count(&self) -> usize {
         self.calls.lock().expect("calls lock").len()
+    }
+
+    fn with_sse_batches(self, batches: Vec<Vec<bytes::Bytes>>) -> Self {
+        self.sse_batches
+            .lock()
+            .expect("SSE batches lock")
+            .extend(batches);
+        self
     }
 
     fn dispatch(&self, method: &str, path: &str) -> Result<serde_json::Value, SdkError> {
@@ -136,6 +146,78 @@ impl Transport for MockTransport {
             Err(SdkError::Transport("mock SSE not configured".to_string()))
         }))
     }
+
+    #[cfg(feature = "sse")]
+    fn stream_sse_with_accept<'a>(
+        &'a self,
+        _base_url: &'a str,
+        path: String,
+        accept: &'static str,
+    ) -> Pin<Box<dyn futures_util::Stream<Item = Result<bytes::Bytes, SdkError>> + Send + 'a>> {
+        self.calls
+            .lock()
+            .expect("calls lock")
+            .push((accept.to_string(), path));
+        let batch = self
+            .sse_batches
+            .lock()
+            .expect("SSE batches lock")
+            .pop_front()
+            .unwrap_or_default();
+        Box::pin(futures_util::stream::iter(batch.into_iter().map(Ok)))
+    }
+}
+
+#[cfg(feature = "sse")]
+#[tokio::test]
+async fn typed_v2_stream_reconnects_with_cursor_and_dedupes_replay() {
+    use futures_util::StreamExt;
+    use medousa_sdk::{BackoffPolicy, ReconnectPolicy};
+    use std::time::Duration;
+
+    let first_payload = r#"{"schema_version":2,"turn_id":"turn-1","seq":1,"emitted_at_utc":"2026-08-14T00:00:00Z","event":{"type":"content_append","text":"Hel"}}"#;
+    let final_payload = r#"{"schema_version":2,"turn_id":"turn-1","seq":2,"emitted_at_utc":"2026-08-14T00:00:01Z","event":{"type":"final","text":"Hello"}}"#;
+    let first = bytes::Bytes::from(format!("data: {first_payload}\n\n"));
+    let replay_and_final = bytes::Bytes::from(format!(
+        "data: {first_payload}\n\ndata: {final_payload}\n\n"
+    ));
+    let transport =
+        Arc::new(MockTransport::new().with_sse_batches(vec![vec![first], vec![replay_and_final]]));
+    let client =
+        medousa_sdk::MedousaClient::with_transport(transport.clone(), "http://127.0.0.1:8080");
+    let policy = ReconnectPolicy {
+        backoff: BackoffPolicy {
+            base: Duration::ZERO,
+            max: Duration::ZERO,
+            ..BackoffPolicy::default()
+        },
+        ..ReconnectPolicy::default()
+    };
+
+    let events: Vec<_> = client
+        .interactive()
+        .stream_reconnecting_v2_with_policy("/v1/interactive/turn/turn-1/stream", policy)
+        .map(|event| event.expect("v2 event"))
+        .collect()
+        .await;
+
+    assert_eq!(
+        events.iter().map(|event| event.seq).collect::<Vec<_>>(),
+        [1, 2]
+    );
+    assert_eq!(
+        transport.calls.lock().expect("calls lock").as_slice(),
+        [
+            (
+                medousa_types::turn_stream::TURN_STREAM_V2_MEDIA_TYPE.to_string(),
+                "/v1/interactive/turn/turn-1/stream".to_string(),
+            ),
+            (
+                medousa_types::turn_stream::TURN_STREAM_V2_MEDIA_TYPE.to_string(),
+                "/v1/interactive/turn/turn-1/stream?since=1".to_string(),
+            ),
+        ]
+    );
 }
 
 #[tokio::test]

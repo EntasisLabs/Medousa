@@ -62,7 +62,10 @@ pub use reconnect::{
     OverlapPermit, ReconnectPolicy, stream_path_with_since,
 };
 #[cfg(all(feature = "async", feature = "sse"))]
-pub use reconnecting_stream::{apply_stream_seq, ReconnectingInteractiveStream};
+pub use reconnecting_stream::{
+    ReconnectingInteractiveStream, ReconnectingInteractiveStreamV2, ReconnectingTurnStream,
+    apply_stream_seq, apply_stream_seq_v2,
+};
 
 #[cfg(feature = "blocking")]
 pub use blocking::BlockingMedousaClient;

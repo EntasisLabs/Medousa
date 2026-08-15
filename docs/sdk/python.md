@@ -63,39 +63,41 @@ Same names as Rust `MedousaClient` (full table in [api-reference.md](api-referen
 
 ## Interactive streaming
 
-Both Rust (`sse` feature, default) and Python ship built-in SSE clients:
+Both Rust (`sse` feature, default) and Python ship built-in SSE clients. New
+code should use the typed v2 reconnecting stream:
 
 ```python
 from medousa import MedousaClient
 from medousa.types import InteractiveTurnRequest
 
 async def chat(client: MedousaClient):
-    async with client.interactive().stream_turn(
+    async with client.interactive().stream_turn_reconnecting_v2(
         InteractiveTurnRequest(session_id="my-session", prompt="Hello"),
     ) as events:
-        async for event in events:
-            if event.content_delta:
-                print(event.content_delta, end="", flush=True)
-            if event.terminal:
-                break
+        async for envelope in events:
+            event = envelope.event.root
+            if event.type.value == "content_append":
+                print(event.text, end="", flush=True)
 ```
 
 Cancel: `await client.interactive().cancel("my-session")`
 
-**Reconnecting** (durable spine replay via `?since=<seq>`):
+The iterator negotiates `text/event-stream; medousa-version=2`, reconnects from
+the last durable sequence, drops replay overlap, and stops on a typed terminal
+variant. Open an existing URL with
+`client.interactive().stream_reconnecting_v2(url)`.
+
+For a one-shot typed stream:
 
 ```python
-async with client.interactive().stream_turn_reconnecting(
-    InteractiveTurnRequest(session_id="my-session", prompt="Hello"),
-) as events:
+response = await client.interactive().start_turn(request)
+async with client.interactive().stream_v2(response.stream_url) as events:
     async for event in events:
-        if event.content_delta:
-            print(event.content_delta, end="", flush=True)
-        if event.terminal:
-            break
+        handle(event)
 ```
 
-Or open an existing `stream_url`: `client.interactive().stream_reconnecting(url)`.
+The unsuffixed `stream`, `stream_turn`, and `stream_reconnecting*` methods remain
+frozen v1 compatibility adapters during the support window.
 
 See [interactive-streaming.md](interactive-streaming.md).
 

@@ -127,9 +127,10 @@ per-surface results. Raw HTTP clients can query
 | `stream(stream_url)` | SSE from `stream_url` | `InteractiveTurnStreamEvent` stream |
 | `stream_v2(stream_url)` | negotiated SSE from `stream_url` | `TurnStreamEnvelopeV2` stream |
 | `stream_turn(request)` | start + SSE | combined helper |
-| `stream_reconnecting(stream_url)` | SSE with `?since=` replay | `InteractiveTurnStreamEvent` stream (client helper) |
-| `stream_reconnecting_with_policy(stream_url, policy)` | SSE with custom `ReconnectPolicy` | `InteractiveTurnStreamEvent` stream |
-| `stream_turn_reconnecting(request)` | start + reconnecting SSE | combined helper (recommended) |
+| `stream_reconnecting_v2(stream_url)` | negotiated SSE with `?since=` replay | `TurnStreamEnvelopeV2` stream (recommended) |
+| `stream_reconnecting_v2_with_policy(stream_url, policy)` | negotiated SSE with custom `ReconnectPolicy` | `TurnStreamEnvelopeV2` stream |
+| `stream_turn_reconnecting_v2(request)` | start + typed reconnecting SSE | combined helper (recommended) |
+| `stream_reconnecting*`, `stream_turn_reconnecting` | legacy SSE replay | frozen `InteractiveTurnStreamEvent` compatibility helpers |
 | `cancel(session_id)` | `POST /v1/sessions/{id}/active-turn` | cancel active turn |
 
 Set `InteractiveTurnRequest.code_project_setup_authorized` only after the
@@ -137,7 +138,7 @@ principal explicitly chooses a client action that allows unbound Coder to
 choose, bind, or create a project. It does not expand authority on bound or
 non-Coder turns, and it is stored separately from the human prompt.
 
-**Client helpers** (`stream_reconnecting*`, `stream_turn_reconnecting`) are not separate HTTP routes — they track `event.seq`, reconnect with `?since=<last_seq>`, and apply bounded backoff + overlap guard. See `medousa_sdk::ReconnectPolicy` and `medousa_sdk::stream_path_with_since`.
+**Client helpers** (`stream_reconnecting*`, `stream_turn_reconnecting*`) are not separate HTTP routes — they track `event.seq`, reconnect with `?since=<last_seq>`, and apply bounded backoff + overlap guard. See `medousa_sdk::ReconnectPolicy` and `medousa_sdk::stream_path_with_since`.
 
 Both Rust (`sse` feature) and Python ship built-in SSE clients — [interactive-streaming.md](interactive-streaming.md).
 
