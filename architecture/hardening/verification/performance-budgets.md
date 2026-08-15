@@ -152,7 +152,13 @@ Harnesses:
 - While `npm run dev` is active, open
   `/p02-browser-harness?bytes=100000&fragment=256` for the dev-only real-browser
   frame, task-delay, Long Task, heap, DOM, and hydration counters. The route is
-  unavailable in production builds.
+  unavailable in ordinary production builds.
+- To build the isolated packaged-app probe on macOS, run
+  `PUBLIC_P02_HARNESS=1 npx tauri build --config src-tauri/tauri.p02.conf.json --bundles app`.
+  The dedicated config omits the daemon sidecar, opens the harness route directly,
+  prints one `MEDOUSA_P02_RESULT=<json>` line, and exits. Select the workload at
+  runtime with `MEDOUSA_P02_BYTES` and `MEDOUSA_P02_FRAGMENT_BYTES`. Neither the
+  route nor its two native commands is enabled in an ordinary production build.
 
 Run in the packaged app and a browser harness with 1k, 10k, and 100k generated
 characters containing prose, links, tables, fenced code, Mermaid, and Liquid.
@@ -173,6 +179,36 @@ Target properties:
 - no whole-answer DOM replacement per provider fragment; and
 - a user can scroll/type/select during the 100k stream without sustained long
   tasks beyond the accepted UI budget.
+
+#### 2026-08-15 packaged WebKit evidence
+
+Candidate: H03.5 on `codex/h03-turn-stream-v2`. Environment: release `.app`,
+macOS 26.5.2 (25F84), Mac16,10, Apple M4, 16 GiB RAM. These are single-run
+closure observations, not a statistically accepted H12 regression ratchet.
+WKWebView did not expose `performance.memory`, so packaged heap remains
+unavailable.
+
+The representative fixture contains prose, links, inline code, one table, one
+fenced Rust block, one Mermaid block, and one Liquid block. Remaining bytes are
+ordinary linked/code prose. Fragment size was 256 bytes.
+
+| Source | Elapsed | Update p95 / p99 / max | Frame gap p95 / max | Task delay p95 / max | Stable blocks | DOM nodes | Long tasks / whole replacements / teardowns |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1,000 B | 67 ms | 1 / 1 / 7 ms | 20 / 21 ms | 10 / 19 ms | 12 | 136 | 0 / 0 / 0 |
+| 10,000 B | 664 ms | 3 / 4 / 7 ms | 19 / 21 ms | 5 / 19 ms | 92 | 457 | 0 / 0 / 0 |
+| 100,000 B | 6,517 ms | 4 / 4 / 7 ms | 18 / 21 ms | 5 / 19 ms | 896 | 3,671 | 0 / 0 / 0 |
+
+The 100k packaged run therefore preserves interactive frame/task latency while
+the answer grows, hydrates every completed block once, and performs no
+whole-answer replacement or mount teardown.
+
+Fixture density is a material dimension. An earlier diagnostic repeated the
+entire rich prelude every roughly 270 bytes, producing about 375 Mermaid and
+Liquid blocks in 100k. Packaged WebKit took 52,383 ms with 249 ms p95 frame gaps,
+269 ms maximum task delay, and 38,917 DOM nodes even though individual update
+work stayed at or below 9 ms. That is an embed-density/DOM pressure workload,
+not the accepted prose-stream fixture; retain it as evidence that future H09/H12
+work needs an explicit rich-embed admission or virtualization budget.
 
 ### P03 — Feed and workspace persistence
 

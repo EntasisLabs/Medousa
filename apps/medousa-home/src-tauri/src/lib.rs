@@ -1,3 +1,5 @@
+#![cfg_attr(p02_benchmark, allow(unused, private_interfaces))]
+
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod account_connections;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -41,6 +43,8 @@ mod packages;
 mod pairing;
 mod pairing_client;
 mod paths;
+#[cfg(p02_benchmark)]
+mod p02_benchmark;
 mod peer_inbox_sink;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod power_events;
@@ -75,6 +79,18 @@ fn exit_after_requesting_local_brain_stop(app: &tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(p02_benchmark)]
+    {
+        p02_benchmark::run();
+        return;
+    }
+
+    #[cfg(not(p02_benchmark))]
+    run_home();
+}
+
+#[cfg(not(p02_benchmark))]
+fn run_home() {
     // rustls 0.23+ requires an explicit crypto provider before any reqwest client is built.
     // Tauri's custom-protocol handler uses reqwest during the first WKWebView load.
     let _ = rustls::crypto::ring::default_provider().install_default();

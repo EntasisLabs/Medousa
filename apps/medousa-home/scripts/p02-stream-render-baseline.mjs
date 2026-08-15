@@ -7,7 +7,7 @@ const window = new Window();
 const DOMPurify = createDOMPurify(window);
 
 function fixture(targetBytes) {
-  const block = [
+  const richPrelude = [
     "## Streaming benchmark\n\n",
     "Prose with a [link](https://example.invalid) and `inline code`.\n\n",
     "| column | value |\n| --- | ---: |\n| latency | 42 |\n\n",
@@ -15,7 +15,12 @@ function fixture(targetBytes) {
     "```mermaid\ngraph TD; provider-->pipeline-->home;\n```\n\n",
     "{% card id=\"synthetic-benchmark\" %}\n\n",
   ].join("");
-  return block.repeat(Math.ceil(targetBytes / block.length)).slice(0, targetBytes);
+  const prose =
+    "Streaming prose keeps a [reference](https://example.invalid) and `small value` visible while the answer grows.\n\n";
+  if (targetBytes <= richPrelude.length) return richPrelude.slice(0, targetBytes);
+  return (
+    richPrelude + prose.repeat(Math.ceil((targetBytes - richPrelude.length) / prose.length))
+  ).slice(0, targetBytes);
 }
 
 function percentile(values, percent) {
