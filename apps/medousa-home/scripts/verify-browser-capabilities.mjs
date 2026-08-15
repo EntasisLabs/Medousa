@@ -14,6 +14,7 @@ const trusted = await readJson(join(tauriRoot, "capabilities", "default.json"));
 const remote = await readJson(join(tauriRoot, "capabilities", "browser-tab-webviews.json"));
 const tauriConfig = await readJson(join(tauriRoot, "tauri.conf.json"));
 const cargoManifest = await readFile(join(tauriRoot, "Cargo.toml"), "utf8");
+const cargoLock = await readFile(join(tauriRoot, "Cargo.lock"), "utf8");
 const lib = await readFile(join(tauriRoot, "src", "lib.rs"), "utf8");
 const bridge = await readFile(join(tauriRoot, "src", "browser_report_bridge.rs"), "utf8");
 const handlerStart = lib.indexOf(".invoke_handler(tauri::generate_handler![");
@@ -129,6 +130,33 @@ assert.ok(
   "trusted-shell injection fixture escaped script-src",
 );
 
+const lockedVersion = (name) => {
+  const match = cargoLock.match(
+    new RegExp(`\\[\\[package\\]\\]\\nname = "${name}"\\nversion = "([^"]+)"`),
+  );
+  assert.ok(match, `${name} is missing from the desktop Cargo.lock`);
+  return match[1];
+};
+
+try {
+  const generatedCapabilities = await readJson(join(tauriRoot, "gen", "schemas", "capabilities.json"));
+  const reviewedRemoteCapability = { ...remote };
+  delete reviewedRemoteCapability.$schema;
+  assert.deepEqual(
+    generatedCapabilities[remote.identifier],
+    reviewedRemoteCapability,
+    "generated remote capability differs from the reviewed source capability",
+  );
+  const acl = await readJson(join(tauriRoot, "gen", "schemas", "acl-manifests.json"));
+  assert.deepEqual(
+    acl["browser-bridge"]?.permissions?.["allow-report"]?.commands,
+    { allow: ["report"], deny: [] },
+    "generated browser bridge ACL is not report-only",
+  );
+} catch (error) {
+  if (error?.code !== "ENOENT") throw error;
+}
+
 const inventory = {
   schemaVersion: 2,
   applicationCommands,
@@ -147,6 +175,11 @@ const inventory = {
   trustedShell: {
     csp,
     assetProtocolEnabled: false,
+  },
+  lockedRuntime: {
+    tauri: lockedVersion("tauri"),
+    tauriRuntimeWry: lockedVersion("tauri-runtime-wry"),
+    wry: lockedVersion("wry"),
   },
 };
 

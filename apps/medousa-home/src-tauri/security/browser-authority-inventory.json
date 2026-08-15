@@ -477,5 +477,10 @@
   "trustedShell": {
     "csp": "default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: http: https:; media-src 'self' data: blob: http: https:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* https: wss:; frame-src 'self' http: https:; worker-src 'self' blob:",
     "assetProtocolEnabled": false
+  },
+  "lockedRuntime": {
+    "tauri": "2.11.2",
+    "tauriRuntimeWry": "2.11.2",
+    "wry": "0.55.1"
   }
 }

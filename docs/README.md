@@ -34,6 +34,7 @@ Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 | [Neovim](guides/neovim.md) | Keyboard-first coding room with contextual chat and safe code application |
 | [Obsidian](guides/obsidian.md) | Vault-native Medousa chat and bounded note context |
 | [Browser](guides/browser.md) | Page-aware Medousa side panel for Chrome and Edge |
+| [Web in Medousa](guides/web-in-medousa.md) | Shared desktop browser, control handoff, and privacy boundaries |
 | [Desktop companion](guides/desktop-companion.md) | Floating pet for chat, approvals, notes, Web, and views |
 | [Drawing](guides/drawing.md) | Sketch inside notes or use a full drawing note |
 | [Undertakings & ForgeLens](guides/undertakings.md) | Governed work, seal, review, World |
@@ -111,6 +112,7 @@ Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 | [Connection reliability](runbooks/connection-reliability.md) | SSE/workshop lifecycle |
 | [Doctor & health](runbooks/doctor-and-health.md) | `medousa doctor`, probes |
 | [Upgrade & data dir](runbooks/upgrade-and-data-dir.md) | `MEDOUSA_DATA_DIR`, multi-workshop |
+| [Desktop browser isolation](runbooks/browser-isolation.md) | Capability, CSP, resource, and dependency-upgrade failures |
 
 Full index: [runbooks/README.md](runbooks/README.md)
 

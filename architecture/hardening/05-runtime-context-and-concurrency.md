@@ -477,7 +477,7 @@ immutable, fail-closed, and covered by the CI singleton guard.
 
 ### H05.5 — Replace browser mailboxes
 
-**Implemented on desktop; H08 still owns origin/capability enforcement.**
+**Implemented on desktop; H08 origin/capability enforcement is also implemented.**
 
 - Add `BrowserHostState`, surface registry, navigation generation, request
   broker, typed response DTOs, limits, and cleanup guards.
@@ -485,7 +485,7 @@ immutable, fail-closed, and covered by the CI singleton guard.
 - Wire eval failure, timeout, cancellation, navigation, close, recreate, and
   shutdown cleanup.
 - Delete `SNAPSHOT_TX`, `ACT_TX`, `NAV_STATE_TX`, and `FIND_TX`.
-- Hand origin/capability enforcement to H08 without weakening correlation.
+- Preserve correlation under H08's report-only, actual-webview capability boundary.
 
 ### H05.6 — Remove compatibility and ship evidence
 

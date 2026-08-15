@@ -112,17 +112,53 @@ Full list: [`src-tauri/src/lib.rs`](../../apps/medousa-home/src-tauri/src/lib.rs
 
 ### Native browser request ownership
 
-Desktop snapshot, action, navigation-state, and find calls are correlated by a
-native request ID, concrete embed/pop-out surface, response kind, and navigation
-generation. Overlapping calls may complete in any order. Evaluation failure,
-timeout, caller drop, navigation, tab replacement, and close remove only the
-matching pending request; late or mismatched callbacks cannot consume a sibling
-request. The broker admits at most 64 pending calls and caps snapshot callback
-payloads at 8 MiB.
+Desktop browser content is a hostile-origin webview class. Its capability
+matches only `browser-content-embed-*` and `browser-content-popout`, grants one
+`browser-bridge:allow-report` permission, and does not grant application, core,
+event, window, webview, path, resource, menu, tray, opener, or general plugin
+commands. Lifecycle state—URL, title, navigation generation, popups, and
+downloads—comes from native webview hooks rather than page-supplied routing.
+
+Snapshot, action, navigation-state, and find calls are correlated by a native
+request ID, the actual injected webview label, embed/pop-out surface, response
+kind, and navigation generation. Overlapping calls may complete in any order.
+Evaluation failure, timeout, caller drop, navigation, tab replacement, control
+takeover, close, and shutdown revoke the matching pending authority; late or
+mismatched callbacks cannot consume a sibling request.
+
+Snapshots serialize at most 128 KiB of inert DOM-shaped text without first
+materializing `outerHTML`; callback transport is capped at 512 KiB and exposes a
+`truncated` bit. Agent actions are bounded and allow only ordinary
+click/type/press/scroll/select/wait operations under the current agent-control
+lease. Credential/file/payment inputs, sensitive forms, downloads, active or
+external schemes, popups, and permission-affecting behavior fail closed.
 
 `human_browser_request_diagnostics` exposes payload-free broker counts for
 pending/high-water, matched, late-or-unsolicited, wrong-kind, wrong-surface,
 stale-navigation, cancelled, oversize, and capacity-rejected outcomes.
+
+### Trusted shell CSP and local resources
+
+The trusted shell ships with an explicit CSP: scripts are bundled/self-only,
+objects and embedding are denied, and connection/image/frame/worker sources are
+listed by feature. CSP diagnostics record only the effective directive and a
+source class; they never log the blocked URL, query, local path, or payload.
+
+The Tauri asset protocol is disabled. Co-located vault image previews use
+`authorized_resource_admit` followed by the one-use
+`authorized_resource_read`. Admission accepts only a strict vault-relative path
+that the daemon opens under vault authority, safe raster MIME types, and at most
+8 MiB. The opaque ID is bound to the requesting trusted webview, expires after
+two minutes, and is consumed by the read. SVG, HTML, PDF, arbitrary absolute
+paths, and non-vault files are not inline preview resources. Remote workshops
+continue to fetch vault bytes from their authenticated daemon.
+
+The reviewed inventory is
+[`browser-authority-inventory.json`](../../apps/medousa-home/src-tauri/security/browser-authority-inventory.json).
+`npm run check:browser-capabilities` freezes all application commands, the
+report-only plugin ACL, concrete label classes, CSP, asset-protocol state, and
+locked Tauri/Wry versions. CI runs it on Linux, macOS, and Windows; release jobs
+run it again immediately before packaging.
 
 ## Mobile development
 
