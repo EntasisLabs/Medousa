@@ -1,6 +1,6 @@
 # H04 — Persistence ownership and crash consistency
 
-> **Status:** Implementing — H04.0–H04.4 landed; closure evidence in progress
+> **Status:** Implemented — release/platform validation pending
 >
 > **Accountable owner:** daemon persistence maintainers
 >
@@ -27,7 +27,20 @@ persistence. H06 owns Forge event replay/checkpoints/blocking Git. H07 owns
 vault compare-and-write and indexes. Shared primitives should converge, but
 finding closure remains with those plans.
 
-## Current ownership failures
+## Implementation record
+
+The implementation portions of H04.0–H04.5 landed on
+`codex/h04-persistence-ownership`: shared durability receipts and file
+transactions, independent feed owners with incremental logs, one typed
+workspace journal owner, bounded per-run Forge task state, and canonical
+behavior documentation. Focused unit and lint evidence is recorded below.
+
+This is not yet a **Validated** or **Shipped** claim. The supported-platform
+packaged crash matrix, retained P03 benchmark, and multi-hour P10 soak remain
+release evidence. Until those artifacts exist, STORE-001, STORE-002, and
+MEM-001 stay mitigated with validation pending.
+
+## Original ownership failures
 
 ### Feed channels
 
@@ -450,6 +463,10 @@ escaped filenames under explicit operator action.
 - Offer the proven primitives to H06/H07 without expanding H04 ownership.
 - Ship canonical storage, retention, recovery, configuration, and upgrade docs.
 
+Implementation closure documents the fixed initial safety limits rather than
+inventing configuration keys. Compatibility readers remain intentionally for
+the rollback window; there are no compatibility writers in the new paths.
+
 ## Migration and rollback
 
 Each store migration is versioned and restartable:
@@ -472,6 +489,23 @@ runs on daemon restart, but the product must report this; no unsafe disk
 migration is invented for state that was never durable.
 
 ## Verification and exit criteria
+
+### Implementation evidence
+
+The H04 branch carries deterministic coverage for concurrent same-feed append
+and reopen, durable cursors, partial feed/workspace journal tails, legacy
+migration, workspace coalescing and retention, bounded task output/replay,
+explicit replay gaps, and terminal eviction that preserves active runs. The PR
+gate commands are:
+
+```bash
+cargo clippy --workspace --all-targets --exclude medousa-sdk-iroh -- -D warnings
+cargo test -p medousa --lib
+cd apps/medousa-home && npm ci && npm run check
+```
+
+Those gates establish implementation health, not the packaged kill/restart,
+benchmark, or long-soak evidence required by the criteria below.
 
 H04 reaches **Validated** when:
 
@@ -507,7 +541,7 @@ documentation are released.
 
 ## Removal ledger
 
-Delete after migration:
+Removed from the active write paths:
 
 - global feed map lock across cold I/O and whole-channel snapshot rewrites;
 - `Vec::remove(0)` feed retention and clone-based count/latest-good reads;
@@ -522,3 +556,7 @@ Delete after migration:
 - lagged-task-stream silent `continue`; and
 - incomplete generic `atomic_write` uses where the new transaction primitive is
   required.
+
+The version-2 workspace owner retains read-only legacy import paths through the
+rollback window. Removing those readers is release cleanup after packaged
+migration evidence, not a prerequisite for stopping legacy writes.

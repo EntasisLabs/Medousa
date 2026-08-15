@@ -5650,6 +5650,8 @@ struct ProjectTaskOutputEvent {
     run_id: String,
     kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    available_from: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     stream: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     text: Option<String>,
@@ -5819,6 +5821,7 @@ fn task_replay_gap_event(
         seq: requested,
         run_id: run_id.to_owned(),
         kind: "gap".into(),
+        available_from: Some(available_from),
         stream: None,
         text: Some(format!(
             "requested sequence {requested} expired; replay resumes at {available_from}"
@@ -5981,6 +5984,7 @@ async fn publish_task_output(run_id: &str, stream: &str, text: &str) {
                 seq,
                 run_id: run_id.to_owned(),
                 kind: "output".into(),
+                available_from: None,
                 stream: Some(stream.into()),
                 text: Some(text.to_owned()),
                 state: None,
@@ -6046,6 +6050,7 @@ async fn publish_task_state(run_id: &str, state: &str, result: Option<ProjectTas
         seq,
         run_id: run_id.to_owned(),
         kind: "state".into(),
+        available_from: None,
         stream: None,
         text: None,
         state: Some(state.to_owned()),
@@ -8788,6 +8793,7 @@ mod source_tests {
                     seq,
                     run_id: "run-1".into(),
                     kind: "output".into(),
+                    available_from: None,
                     stream: Some("stdout".into()),
                     text: Some("x".repeat(4096)),
                     state: None,
@@ -8804,6 +8810,7 @@ mod source_tests {
         let gap = task_replay_gap_event("run-1", 0, available_from);
         assert_eq!(gap.kind, "gap");
         assert_eq!(gap.state.as_deref(), Some("replay_gap"));
+        assert_eq!(gap.available_from, Some(available_from));
     }
 
     #[test]
@@ -8880,6 +8887,7 @@ mod source_tests {
             seq: 2,
             run_id: "run-1".into(),
             kind: "state".into(),
+            available_from: None,
             stream: None,
             text: None,
             state: Some("cancelled".into()),
@@ -8891,6 +8899,7 @@ mod source_tests {
             seq: 1,
             run_id: "run-1".into(),
             kind: "state".into(),
+            available_from: None,
             stream: None,
             text: None,
             state: Some("cancelled".into()),

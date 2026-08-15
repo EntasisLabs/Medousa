@@ -126,8 +126,13 @@ state, event kind). It does not carry paths or a replay cursor.
 `GET /v1/forge/items/{id}/task-runs/{run_id}/events?since=<seq>` streams live
 stdout/stderr for a named project run. Each SSE `task` payload is a
 `ProjectTaskOutputEvent` with monotonic `seq`, `run_id`, `kind`
-(`output` / `state`), optional `stream`/`text` for chunks, optional incremental
-`locations`, and optional `state`/`result` when status changes.
+(`output` / `state` / `gap`), optional `stream`/`text` for chunks, optional
+incremental `locations`, and optional `state`/`result` when status changes.
+
+If `since` predates retained replay, or a live receiver falls behind, the stream
+emits `kind=gap` with structured `available_from`, the next retained sequence.
+Clients must refetch the run snapshot and resume from that sequence; absence of
+output events must not be interpreted as a contiguous replay.
 
 Long-running / background tasks may emit `state=ready` (no `result`) when
 output matches a built-in readiness pattern or a task's `ready_pattern` from
@@ -143,7 +148,10 @@ catalogs, `dependsOn`, and presentation panels are not supported.
 `GET …/task-runs/{run_id}` also returns bounded live `stdout`/`stderr`,
 `output_truncated`, `locations`, `ready_url` (when a background task becomes
 ready), and `next_seq` while the process is still running (and after exit for
-replay). Output buffers cap at 256 KiB; chunk replay keeps the last ~400 events.
+replay). Each stdout/stderr tail caps at 256 KiB. Chunk replay keeps at most 400
+events and 1 MiB. The registry admits at most 128 runs and 64 MiB of run
+reservations, retains at most 64 terminal runs, and expires terminal entries
+after 10 minutes. Active runs are never removed by terminal retention.
 
 When readiness fires, the daemon may extract a loopback URL (`localhost` /
 `127.0.0.1` / `0.0.0.0`) into `ready_url` and mint a short-lived preview token.

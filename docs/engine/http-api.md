@@ -251,6 +251,18 @@ Patch ops (`remove_custom_surface`, `remove_component`, etc.) are **agent-tool o
 | POST | `/v1/feeds/{feed_id}/read` | `feeds().mark_read` |
 | GET (SSE) | `/v1/feeds/stream` | `feeds().stream` |
 
+Each `(profile, feed)` has an independent ordered persistence owner. Appends
+write one framed record before publication; mark-read writes a synced cursor
+whose event generation cannot exceed the committed log. Recovery ignores only
+an incomplete final JSONL record and migrates legacy feed paths on the next
+append.
+
+The retained tail is capped at 200 events and 4 MiB, and one event may not
+exceed 256 KiB. Logs compact after 400 records or 8 MiB and are read with a
+16 MiB hard limit. These fixed limits make `tail` a recent-view API, not an
+archive. Independent feeds may progress concurrently; disk work is globally
+limited to 16 operations.
+
 ---
 
 ## Turn budget

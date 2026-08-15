@@ -85,7 +85,7 @@ and performance budgets must prevent the same classes of defect from returning.
 | H01 | [01-daemon-trust-and-auth.md](01-daemon-trust-and-auth.md) | Daemon trust zones, authentication, CORS, bootstrap and route exposure | SEC-001 | ADR-013 | Implemented; release validation pending |
 | H02 | [02-identifier-and-filesystem-authority.md](02-identifier-and-filesystem-authority.md) | Validated IDs, path derivation, symlinks, deletion inventory | SEC-002, SEC-003, DATA-001 | ADR-014 | Implementing; H02.1–H02.4 landed |
 | H03 | [03-turn-stream-v2.md](03-turn-stream-v2.md) | Bounded single-writer stream, replay, journal, bridge, UI tail | PERF-001, DUR-001, MEM-002, TYPE-001, PERF-005 | ADR-015, H05 | Implemented; release validation pending |
-| H04 | [04-persistence-and-crash-consistency.md](04-persistence-and-crash-consistency.md) | Feed/workspace/task storage ownership and commit policy | STORE-001, STORE-002, MEM-001 | ADR-016 | Implementing; H04.0–H04.4 landed |
+| H04 | [04-persistence-and-crash-consistency.md](04-persistence-and-crash-consistency.md) | Feed/workspace/task storage ownership and commit policy | STORE-001, STORE-002, MEM-001 | ADR-016 | Implemented; packaged crash/soak validation pending |
 | H05 | [05-runtime-context-and-concurrency.md](05-runtime-context-and-concurrency.md) | Request-scoped turn/browser state and cancellation | CONC-001, CONC-002 | ADR-017 | Implemented; packaged-platform release validation pending |
 | H06 | [06-forge-coder-scaling.md](06-forge-coder-scaling.md) | Incremental Forge state, checkpoint observation, blocking work | PERF-002, PERF-004, ASYNC-001 | ADR-016, H05 | Draft |
 | H07 | [07-vault-scaling-and-consistency.md](07-vault-scaling-and-consistency.md) | Incremental index, atomic mutation, backend/frontend lookups | PERF-003, PERF-006, CONSIST-001 | ADR-014, ADR-016 | Draft |
@@ -138,17 +138,17 @@ one without retaining the history.
 | DESKTOP-001 | Critical | H08 | A | Mitigated; packaged-platform release validation pending | Frozen application/ACL/CSP/Tauri-Wry inventory, bounded broker/resource tests, three-platform CI and package gate |
 | PERF-001 | Critical | H03 | C | Mitigated; retained benchmark evidence pending | Stream allocation/I/O/latency profile |
 | MEM-002 | High | H03 | C | Mitigated; packaged stress evidence pending | Stalled-consumer memory and cancellation stress |
-| STORE-001 | Critical | H04 | B | Proposed | Concurrent append and crash-recovery tests |
+| STORE-001 | Critical | H04 | B | Mitigated; packaged platform crash validation pending | Per-feed owner, incremental log, concurrent append/reopen and partial-tail recovery tests |
 | DUR-001 | Critical | H03 | B | Mitigated; release validation pending | Injected write/sync failure tests |
 | PERF-002 | Critical | H06 | C | Proposed | Forge replay/mutation benchmark and compaction proof |
-| MEM-001 | Critical | H04 | C | Proposed | Retention/eviction stress and restart test |
+| MEM-001 | Critical | H04 | C | Mitigated; packaged soak evidence pending | Count/byte/TTL bounds plus feed, workspace, and task-run retention tests |
 | ASYNC-001 | High | H06 | C | Proposed | Executor-blocking and saturation profile |
 | PERF-003 | High | H07 | C | Proposed | Vault cold/warm scaling benchmark |
 | CONSIST-001 | High | H07 | B | Proposed | Atomic compare-and-write race test |
 | CONC-001 | Critical | H05 | B | Validating | Concurrent-turn isolation matrix |
 | CONC-002 | High | H05 | B | Validating | Correlated concurrent browser request tests |
 | TYPE-001 | High | H03 | D | Mitigated; H10 generation enforcement pending | Generated exhaustive protocol/reducer tests |
-| STORE-002 | High | H04 | C | Proposed | Serialization-to-delta amplification benchmark |
+| STORE-002 | High | H04 | C | Mitigated; retained benchmark evidence pending | Incremental feed/workspace journals and pre-serialization mutation coalescing; P03 artifact pending |
 | PERF-004 | Critical | H06 | C | Proposed | Checkpoint repository-size/dirty-byte benchmark |
 | PERF-005 | Critical | H03 | C | Mitigated; retained browser profile pending | Browser streaming render/long-task profile |
 | FRONT-001 | High | H09 | D | Proposed | Manifest and cold-start budgets |
