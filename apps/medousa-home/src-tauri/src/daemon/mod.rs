@@ -259,12 +259,11 @@ pub async fn workspace_stream_start(
     tokio::spawn(async move {
         match workshop_transport::workshop_get_bytes_stream(&config, &path).await {
             Ok(source) => {
-                stream_sse_json_workshop::<WorkspaceStreamEvent, _>(
+                stream_sse_json_workshop::<WorkspaceStreamEvent>(
                     &app,
                     source,
                     "workspace://event",
                     "workspace://error",
-                    |_event| {},
                     cancel_rx,
                 )
                 .await;
@@ -317,12 +316,11 @@ pub async fn environment_stream_start(
     tokio::spawn(async move {
         match workshop_transport::workshop_get_bytes_stream(&config, &path).await {
             Ok(source) => {
-                stream_sse_json_workshop::<EnvironmentStreamEvent, _>(
+                stream_sse_json_workshop::<EnvironmentStreamEvent>(
                     &app,
                     source,
                     "environment://event",
                     "environment://error",
-                    |_event| {},
                     cancel_rx,
                 )
                 .await;
@@ -501,12 +499,11 @@ pub async fn interactive_stream_start(
     tokio::spawn(async move {
         match workshop_transport::workshop_get_bytes_stream(&config, &path).await {
             Ok(source) => {
-                stream_sse_json_workshop::<InteractiveTurnStreamEvent, _>(
+                stream_sse_json_workshop::<InteractiveTurnStreamEvent>(
                     &app,
                     source,
                     "interactive://event",
                     "interactive://error",
-                    |_event| {},
                     cancel_rx,
                 )
                 .await;

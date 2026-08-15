@@ -171,8 +171,8 @@ export async function stopLocalModelDownloadStream(): Promise<void> {
 export function onModelDownloadProgress(
   handler: (progress: ModelDownloadProgress) => void,
 ): Promise<UnlistenFn> {
-  return listen<string>("model_download_progress", (event) => {
-    handler(JSON.parse(event.payload) as ModelDownloadProgress);
+  return listen<ModelDownloadProgress>("model_download_progress", (event) => {
+    handler(event.payload);
   });
 }
 

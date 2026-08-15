@@ -289,12 +289,11 @@ pub async fn local_inference_stream_download(
     tauri::async_runtime::spawn(async move {
         match workshop_http::get_bytes_stream_for_config(&config, &path).await {
             Ok(source) => {
-                stream_sse_json_workshop::<ModelDownloadProgress, _>(
+                stream_sse_json_workshop::<ModelDownloadProgress>(
                     &app,
                     source,
                     "model_download_progress",
                     "model_download_progress://error",
-                    |_| {},
                     cancel_rx,
                 )
                 .await;

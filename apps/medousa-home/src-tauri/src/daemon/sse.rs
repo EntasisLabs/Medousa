@@ -178,17 +178,15 @@ fn emit_stream_error(
     );
 }
 
-pub async fn stream_sse_json<T, F>(
+pub async fn stream_sse_json<T>(
     app: &AppHandle,
     client: &Client,
     url: &str,
     event_name: &str,
     error_event: &str,
-    mut on_payload: F,
     cancel: tokio::sync::watch::Receiver<bool>,
 ) where
-    T: serde::de::DeserializeOwned,
-    F: FnMut(T),
+    T: serde::de::DeserializeOwned + serde::Serialize,
 {
     let response = match client.get(url).send().await {
         Ok(response) => response,
@@ -213,27 +211,17 @@ pub async fn stream_sse_json<T, F>(
     }
 
     let mut stream = response.bytes_stream();
-    pump_sse_stream(
-        app,
-        &mut stream,
-        event_name,
-        error_event,
-        &mut on_payload,
-        cancel,
-    )
-    .await;
+    pump_sse_stream::<_, T>(app, &mut stream, event_name, error_event, cancel).await;
 }
 
-pub async fn stream_sse_json_workshop<T, F>(
+pub async fn stream_sse_json_workshop<T>(
     app: &AppHandle,
     mut source: WorkshopByteStream,
     event_name: &str,
     error_event: &str,
-    mut on_payload: F,
     cancel: tokio::sync::watch::Receiver<bool>,
 ) where
-    T: serde::de::DeserializeOwned,
-    F: FnMut(T),
+    T: serde::de::DeserializeOwned + serde::Serialize,
 {
     let mut cancel_rx = cancel;
     let mut decoder = SseDecoder::new(MAX_SSE_FRAME_BYTES);
@@ -263,7 +251,7 @@ pub async fn stream_sse_json_workshop<T, F>(
         };
 
         if let Err(error) = decoder.feed(&chunk, |frame| {
-            emit_decoded_frame(app, frame, event_name, error_event, &mut on_payload);
+            emit_decoded_frame::<T>(app, frame, event_name, error_event);
         }) {
             emit_stream_error(app, error_event, &error, false, "sse", "frame");
             return;
@@ -272,7 +260,7 @@ pub async fn stream_sse_json_workshop<T, F>(
 
     if !*cancel_rx.borrow() {
         if let Err(error) = decoder.finish(|frame| {
-            emit_decoded_frame(app, frame, event_name, error_event, &mut on_payload);
+            emit_decoded_frame::<T>(app, frame, event_name, error_event);
         }) {
             emit_stream_error(app, error_event, &error, false, "sse", "eof_frame");
             return;
@@ -288,17 +276,15 @@ pub async fn stream_sse_json_workshop<T, F>(
     }
 }
 
-async fn pump_sse_stream<S, T, F>(
+async fn pump_sse_stream<S, T>(
     app: &AppHandle,
     stream: &mut S,
     event_name: &str,
     error_event: &str,
-    on_payload: &mut F,
     mut cancel: tokio::sync::watch::Receiver<bool>,
 ) where
     S: futures_util::Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Unpin,
-    T: serde::de::DeserializeOwned,
-    F: FnMut(T),
+    T: serde::de::DeserializeOwned + serde::Serialize,
 {
     let mut decoder = SseDecoder::new(MAX_SSE_FRAME_BYTES);
 
@@ -320,7 +306,7 @@ async fn pump_sse_stream<S, T, F>(
         let Some(chunk) = next else {
             if !*cancel.borrow() {
                 if let Err(error) = decoder.finish(|frame| {
-                    emit_decoded_frame(app, frame, event_name, error_event, on_payload);
+                    emit_decoded_frame::<T>(app, frame, event_name, error_event);
                 }) {
                     emit_stream_error(app, error_event, &error, false, "sse", "eof_frame");
                     break;
@@ -346,7 +332,7 @@ async fn pump_sse_stream<S, T, F>(
         };
 
         if let Err(error) = decoder.feed(&chunk, |frame| {
-            emit_decoded_frame(app, frame, event_name, error_event, on_payload);
+            emit_decoded_frame::<T>(app, frame, event_name, error_event);
         }) {
             emit_stream_error(app, error_event, &error, false, "sse", "frame");
             break;
@@ -354,22 +340,13 @@ async fn pump_sse_stream<S, T, F>(
     }
 }
 
-fn emit_decoded_frame<T, F>(
-    app: &AppHandle,
-    frame: SseFrame,
-    event_name: &str,
-    error_event: &str,
-    on_payload: &mut F,
-) where
-    T: serde::de::DeserializeOwned,
-    F: FnMut(T),
+fn emit_decoded_frame<T>(app: &AppHandle, frame: SseFrame, event_name: &str, error_event: &str)
+where
+    T: serde::de::DeserializeOwned + serde::Serialize,
 {
     match serde_json::from_slice::<T>(&frame.data) {
         Ok(payload) => {
-            on_payload(payload);
-            if let Ok(data) = String::from_utf8(frame.data) {
-                let _ = app.emit(event_name, &data);
-            }
+            let _ = app.emit(event_name, &payload);
         }
         Err(err) => {
             emit_stream_error(
