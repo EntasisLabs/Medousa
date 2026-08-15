@@ -20,6 +20,7 @@ members = [
     "crates/medousa-local-engine",
     "crates/medousa-local-inference",
     "crates/medousa-host",
+    "crates/medousa-store",
     "crates/medousa-browser-lite",
     "crates/medousa-browser-bridge",
     "crates/medousa-install-support",
@@ -62,6 +63,7 @@ medousa-install-support = { path = "crates/medousa-install-support" }
 medousa-local-credential = { path = "crates/medousa-local-credential" }
 medousa-engine = { path = "crates/medousa-engine" }
 medousa-host = { path = "crates/medousa-host" }
+medousa-store = { path = "crates/medousa-store" }
 medousa-sdk = { path = "crates/medousa-sdk" }
 medousa-acp-client = { path = "crates/medousa-acp-client" }
 medousa-forge = { path = "crates/medousa-forge" }

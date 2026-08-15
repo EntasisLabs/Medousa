@@ -72,6 +72,18 @@ pub enum ForgeError {
     #[error("store error: {0}")]
     Store(String),
 
+    #[error("execution overloaded: {0}")]
+    Overloaded(String),
+
+    #[error("slug already reserved: {0}")]
+    SlugConflict(String),
+
+    #[error("catalog stale: {0}")]
+    CatalogStale(String),
+
+    #[error("incomplete workspace observation: {0}")]
+    ObservationIncomplete(String),
+
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 

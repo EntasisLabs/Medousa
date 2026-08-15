@@ -1,6 +1,6 @@
 # H06 — Incremental Forge and Coder runtime
 
-> **Status:** Draft for Forge/Coder review
+> **Status:** Implemented — packaged multi-OS migration evidence pending
 >
 > **Accountable owner:** Forge and Coder runtime maintainers
 >
@@ -15,6 +15,12 @@
 > **Dependencies:** H02 filesystem authority; H03 durable turn pipeline; H05 request context and cancellation
 >
 > **Verification:** [Performance budgets P04/P05](verification/performance-budgets.md), [crash/concurrency matrix](verification/crash-concurrency-matrix.md)
+
+## H06.0.5 placement decision
+
+Extracted `FileTransaction`, receipts, fault points, and `StoreRoot` into
+`crates/medousa-store`. Both `medousa` and `medousa-forge` depend on that crate.
+Forge does not depend on the main crate.
 
 ## Outcome
 

@@ -5,6 +5,7 @@
 //! an executor and never resumes a provider.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use chrono::Utc;
 
@@ -20,6 +21,10 @@ use crate::model::{
     RecoveryDisposition, ReviewComment, ReviewCommentId, ReviewDecision, ReviewDecisionId, WorkId,
     WorkItem, WorkPolicy, WorkState, WorkTarget, anchor_digest_for, compose_revision_brief,
 };
+use crate::catalog::{CatalogPage, ForgeCatalog, SlugReservationJournal};
+use crate::execution::ForgeExecutionService;
+use crate::observation::WorkspaceObserver;
+use crate::owner::ForgeItemRegistry;
 use crate::store::FsWorkStore;
 
 const MAX_COMPACT_EVIDENCE_RECEIPTS: usize = 512;
@@ -148,18 +153,61 @@ pub struct Forge {
     /// Boot identity stamped into every lease; reconciliation across restarts
     /// keys on this.
     pub(crate) instance_id: String,
+    pub(crate) owners: ForgeItemRegistry,
+    pub(crate) catalog: ForgeCatalog,
+    pub(crate) slugs: SlugReservationJournal,
+    pub(crate) observer: WorkspaceObserver,
+    pub(crate) execution: Option<Arc<ForgeExecutionService>>,
 }
 
 impl Forge {
     pub fn open(forge_root: impl AsRef<Path>) -> Result<Self> {
-        let store = FsWorkStore::open(forge_root)?;
+        let root = forge_root.as_ref();
+        let store = FsWorkStore::open(root)?;
         let git = GitEngine::detect()?;
         let instance_id = format!("boot-{}", LeaseId::new().as_str());
-        Ok(Self {
+        let slugs = SlugReservationJournal::open(root)?;
+        let catalog = ForgeCatalog::new();
+        let forge = Self {
             store,
             git,
             instance_id,
-        })
+            owners: ForgeItemRegistry::new(),
+            catalog,
+            slugs,
+            observer: WorkspaceObserver::default(),
+            execution: None,
+        };
+        forge.rebuild_catalog_from_snapshots();
+        Ok(forge)
+    }
+
+    pub fn attach_execution(&mut self, execution: Arc<ForgeExecutionService>) {
+        self.execution = Some(execution);
+    }
+
+    pub fn execution(&self) -> Option<Arc<ForgeExecutionService>> {
+        self.execution.clone()
+    }
+
+    pub fn catalog(&self) -> &ForgeCatalog {
+        &self.catalog
+    }
+
+    pub fn observer(&self) -> &WorkspaceObserver {
+        &self.observer
+    }
+
+    fn rebuild_catalog_from_snapshots(&self) {
+        let mut rebuilt = Vec::new();
+        if let Ok(ids) = self.store.list_item_ids() {
+            for id in ids {
+                if let Ok(Some(envelope)) = self.store.read_snapshot(&id) {
+                    rebuilt.push((envelope.item, envelope.applied_seq));
+                }
+            }
+        }
+        self.catalog.rebuild_from(rebuilt);
     }
 
     pub fn with_git(forge_root: impl AsRef<Path>, git: GitEngine) -> Result<Self> {
@@ -245,41 +293,71 @@ impl Forge {
             owner,
         );
         item.policy = policy;
-        let taken: Vec<String> = self
-            .list()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|existing| existing.slug)
-            .filter(|slug| !slug.is_empty())
-            .collect();
+        let taken = self.slugs.taken_slugs().unwrap_or_default();
         item.slug = crate::slug::allocate_unique_slug(
             &item.slug,
             taken.iter().map(String::as_str),
         );
+        let operation_id = OperationId::new();
+        self.slugs.reserve(&item.slug, operation_id.as_str())?;
         let _item_lock = self.store.lock_item(&item.id)?;
-        self.store.append(
+        let event = match self.store.append(
             &item.id,
             actor,
             EventPayload::ItemRegistered {
                 item: Box::new(item.clone()),
             },
-        )?;
-        self.persist(&item, 1)?;
+        ) {
+            Ok(event) => event,
+            Err(err) => {
+                let _ = self.slugs.release(&item.slug);
+                return Err(err);
+            }
+        };
+        let _ = self.owners.get_or_open(&self.store, &item.id);
+        self.persist(&item, event.seq)?;
+        if let Err(err) = self.slugs.commit(&item.slug, item.id.clone(), event.seq) {
+            let _ = self.slugs.release(&item.slug);
+            return Err(err);
+        }
+        let receipt = crate::owner::ForgeCommitReceipt {
+            work_id: item.id.clone(),
+            item_generation: event.seq,
+            first_seq: event.seq,
+            last_seq: event.seq,
+            log_offset: 0,
+            durability: medousa_store::DurabilityLevel::Synced,
+            operation_generation: None,
+            persistence: medousa_store::CommitReceipt::new(
+                medousa_store::StoreKind::Forge,
+                item.id.as_str(),
+                event.seq,
+                medousa_store::DurabilityLevel::Synced,
+                0,
+            ),
+        };
+        self.catalog.publish(&item, &receipt);
         Ok(item)
     }
 
     /// Load an item: snapshot cache when fresh, fold-from-events otherwise.
     pub fn load(&self, work_id: &WorkId) -> Result<WorkItem> {
-        let events = self.store.replay(work_id)?;
-        if events.is_empty() {
+        if !self.store.item_exists(work_id) {
             return Err(ForgeError::WorkNotFound(work_id.clone()));
         }
-        let last_seq = events.last().map(|e| e.seq).unwrap_or(0);
+        let last_seq = self.store.cached_last_seq(work_id)?;
+        if last_seq == 0 {
+            return Err(ForgeError::WorkNotFound(work_id.clone()));
+        }
         if let Some(envelope) = self.store.read_snapshot(work_id)?
             && envelope.applied_seq == last_seq
             && envelope.item.schema_version == MODEL_SCHEMA_VERSION
         {
             return Ok(envelope.item);
+        }
+        let events = self.store.replay(work_id)?;
+        if events.is_empty() {
+            return Err(ForgeError::WorkNotFound(work_id.clone()));
         }
         let item = fold(&events)?;
         self.persist(&item, last_seq)?;
@@ -300,11 +378,73 @@ impl Forge {
     }
 
     pub fn list(&self) -> Result<Vec<WorkItem>> {
+        let (entries, _truncated) = self.catalog.all_capped();
+        if !entries.is_empty() {
+            return self.load_catalog_entries(&entries);
+        }
+        self.rebuild_catalog_from_snapshots();
+        let (entries, _) = self.catalog.all_capped();
+        if !entries.is_empty() {
+            return self.load_catalog_entries(&entries);
+        }
         let mut items = Vec::new();
         for id in self.store.list_item_ids()? {
             items.push(self.load(&id)?);
         }
         Ok(items)
+    }
+
+    pub fn list_page(&self, limit: Option<usize>, cursor: Option<&str>) -> Result<CatalogPage> {
+        if self.catalog.all_capped().0.is_empty() {
+            self.rebuild_catalog_from_snapshots();
+        }
+        Ok(self.catalog.page(limit, cursor))
+    }
+
+    fn load_catalog_entries(
+        &self,
+        entries: &[crate::catalog::CatalogEntry],
+    ) -> Result<Vec<WorkItem>> {
+        let mut items = Vec::new();
+        for entry in entries {
+            items.push(self.load(&entry.work_id)?);
+        }
+        Ok(items)
+    }
+
+    pub fn find_lease(&self, lease_id: &LeaseId, generation: u64) -> Result<ExecutionLease> {
+        let (entries, _) = self.catalog.all_capped();
+        let ids: Vec<WorkId> = if entries.is_empty() {
+            self.store.list_item_ids()?
+        } else {
+            entries.into_iter().map(|entry| entry.work_id).collect()
+        };
+        for id in ids {
+            let item = self.load(&id)?;
+            for active_id in item.active_attempt_ids() {
+                let Some(attempt) = item.attempt(active_id) else {
+                    continue;
+                };
+                let Some(lease) = &attempt.lease else {
+                    continue;
+                };
+                if &lease.lease_id == lease_id {
+                    if lease.generation != generation {
+                        return Err(ForgeError::StaleLease {
+                            presented: lease_id.clone(),
+                            presented_generation: generation,
+                            active: lease.lease_id.clone(),
+                            active_generation: lease.generation,
+                        });
+                    }
+                    return Ok(lease.clone());
+                }
+            }
+        }
+        Err(ForgeError::Store(format!(
+            "active lease not found: {}",
+            lease_id.as_str()
+        )))
     }
 
     // ------------------------------------------------------------------
@@ -1909,12 +2049,7 @@ impl Forge {
     /// leases ever acquired (the event log is the source of truth, so this
     /// survives restarts).
     fn next_lease_generation(&self, work_id: &WorkId) -> Result<u64> {
-        let events = self.store.replay(work_id)?;
-        let acquired = events
-            .iter()
-            .filter(|e| matches!(e.payload, EventPayload::LeaseAcquired { .. }))
-            .count() as u64;
-        Ok(acquired + 1)
+        Ok(self.store.cached_tail(work_id)?.lease_acquisitions + 1)
     }
 
     /// Fencing: the presented lease must be the active lease of its addressed
@@ -1985,18 +2120,13 @@ impl Forge {
         let from = item.state;
         item.state = to;
         item.updated_at = Utc::now();
-        self.store.append(
+        let event = self.store.append(
             &item.id,
             actor,
             EventPayload::StateChanged { from, to, reason },
         )?;
-        let seq = self
-            .store
-            .replay(&item.id)?
-            .last()
-            .map(|e| e.seq)
-            .unwrap_or(0);
-        self.persist(item, seq)?;
+        self.persist(item, event.seq)?;
+        self.compact_if_needed(&item.id)?;
         Ok(())
     }
 
@@ -2016,17 +2146,24 @@ impl Forge {
 
     fn persist_fresh(&self, item: &mut WorkItem) -> Result<()> {
         item.updated_at = Utc::now();
-        let seq = self
-            .store
-            .replay(&item.id)?
-            .last()
-            .map(|e| e.seq)
-            .unwrap_or(0);
+        let seq = self.store.cached_last_seq(&item.id)?;
         self.persist(item, seq)
     }
 
     fn persist(&self, item: &WorkItem, applied_seq: u64) -> Result<()> {
         self.store.write_snapshot(item, applied_seq)
+    }
+
+    fn compact_if_needed(&self, work_id: &WorkId) -> Result<()> {
+        let path = self.store.events_path(work_id);
+        let bytes = path.metadata().map(|meta| meta.len()).unwrap_or(0);
+        let seq = self.store.cached_last_seq(work_id)?;
+        if (seq >= 1_000 || bytes >= 8 * 1024 * 1024)
+            && let Ok(item) = self.load(work_id)
+        {
+            self.store.write_snapshot(&item, seq)?;
+        }
+        Ok(())
     }
 }
 

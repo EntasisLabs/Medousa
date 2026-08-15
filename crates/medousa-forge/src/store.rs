@@ -12,12 +12,15 @@
 //! tolerates a truncated trailing line, which is the expected aftermath of a
 //! crash mid-append.
 
+use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 
 use fs2::FileExt;
+use sha2::{Digest as _, Sha256};
 
 use crate::error::{ForgeError, Result};
 use crate::events::{EventPayload, TransitionEvent, EVENT_SCHEMA_VERSION};
@@ -79,8 +82,19 @@ pub struct SnapshotEnvelope {
     pub item: WorkItem,
 }
 
+/// In-memory tail recovered once per item, then advanced on append.
+#[derive(Debug, Clone)]
+pub struct TailMeta {
+    pub last_seq: u64,
+    pub last_offset: u64,
+    pub last_hash: [u8; 32],
+    pub lease_acquisitions: u64,
+    pub operations_started: u64,
+}
+
 pub struct FsWorkStore {
     root: PathBuf,
+    tails: Mutex<HashMap<String, TailMeta>>,
 }
 
 impl FsWorkStore {
@@ -102,7 +116,10 @@ impl FsWorkStore {
         } else {
             fs::write(&version_path, format!("{STORE_SCHEMA_VERSION}\n"))?;
         }
-        Ok(Self { root })
+        Ok(Self {
+            root,
+            tails: Mutex::new(HashMap::new()),
+        })
     }
 
     pub fn root(&self) -> &Path {
@@ -147,9 +164,19 @@ impl FsWorkStore {
         actor: &ActorRef,
         payload: EventPayload,
     ) -> Result<TransitionEvent> {
+        let tail = self.cached_tail(work_id)?;
+        self.append_at(work_id, actor, payload, tail.last_seq + 1)
+    }
+
+    pub fn append_at(
+        &self,
+        work_id: &WorkId,
+        actor: &ActorRef,
+        payload: EventPayload,
+        seq: u64,
+    ) -> Result<TransitionEvent> {
         let dir = self.item_dir(work_id);
         fs::create_dir_all(&dir)?;
-        let seq = self.last_seq(work_id)? + 1;
         let event = TransitionEvent::new(work_id.clone(), seq, actor.clone(), payload);
         if event.schema_version != EVENT_SCHEMA_VERSION {
             return Err(ForgeError::Store("event schema drift".into()));
@@ -160,11 +187,132 @@ impl FsWorkStore {
         let mut file = OpenOptions::new().create(true).append(true).open(&path)?;
         file.write_all(&line)?;
         file.sync_all()?;
+        let offset = file.metadata().map(|meta| meta.len()).unwrap_or(0);
+        self.remember_tail(work_id, &event, offset);
         Ok(event)
     }
 
-    fn last_seq(&self, work_id: &WorkId) -> Result<u64> {
-        Ok(self.replay(work_id)?.last().map(|e| e.seq).unwrap_or(0))
+    pub fn cached_last_seq(&self, work_id: &WorkId) -> Result<u64> {
+        Ok(self.cached_tail(work_id)?.last_seq)
+    }
+
+    pub fn cached_tail(&self, work_id: &WorkId) -> Result<TailMeta> {
+        if let Some(tail) = self
+            .tails
+            .lock()
+            .map_err(|_| ForgeError::Store("tail cache poisoned".into()))?
+            .get(work_id.as_str())
+            .cloned()
+        {
+            return Ok(tail);
+        }
+        let tail = self.recover_tail(work_id)?;
+        self.tails
+            .lock()
+            .map_err(|_| ForgeError::Store("tail cache poisoned".into()))?
+            .insert(work_id.as_str().to_owned(), tail.clone());
+        Ok(tail)
+    }
+
+    /// Stream the log once, keeping only tail metadata. Does not build a
+    /// `Vec<String>` of the whole file.
+    pub fn recover_tail(&self, work_id: &WorkId) -> Result<TailMeta> {
+        let path = self.events_path(work_id);
+        if !path.exists() {
+            return Ok(TailMeta {
+                last_seq: 0,
+                last_offset: 0,
+                last_hash: [0; 32],
+                lease_acquisitions: 0,
+                operations_started: 0,
+            });
+        }
+        let file = File::open(&path)?;
+        let reader = BufReader::new(file);
+        let mut last_seq = 0u64;
+        let mut last_hash = [0u8; 32];
+        let mut lease_acquisitions = 0u64;
+        let mut operations_started = 0u64;
+        let mut last_good_offset = 0u64;
+        let mut offset = 0u64;
+        let mut previous_seq = 0u64;
+        for (idx, line) in reader.lines().enumerate() {
+            let line = line?;
+            let line_len = line.len() as u64 + 1;
+            if line.trim().is_empty() {
+                offset += line_len;
+                continue;
+            }
+            match serde_json::from_str::<TransitionEvent>(&line) {
+                Ok(event) => {
+                    if event.seq <= previous_seq && previous_seq != 0 {
+                        return Err(ForgeError::Store(format!(
+                            "non-monotonic seq at {} ({} then {})",
+                            path.display(),
+                            previous_seq,
+                            event.seq
+                        )));
+                    }
+                    previous_seq = event.seq;
+                    last_seq = event.seq;
+                    last_hash = hash_line(&line);
+                    if matches!(event.payload, EventPayload::LeaseAcquired { .. }) {
+                        lease_acquisitions += 1;
+                    }
+                    if matches!(event.payload, EventPayload::OperationStarted { .. }) {
+                        operations_started += 1;
+                    }
+                    offset += line_len;
+                    last_good_offset = offset;
+                    let _ = idx;
+                }
+                Err(_) => break,
+            }
+        }
+        Ok(TailMeta {
+            last_seq,
+            last_offset: last_good_offset,
+            last_hash,
+            lease_acquisitions,
+            operations_started,
+        })
+    }
+
+    fn remember_tail(&self, work_id: &WorkId, event: &TransitionEvent, offset: u64) {
+        if let Ok(mut tails) = self.tails.lock() {
+            let previous = tails.get(work_id.as_str()).cloned();
+            tails.insert(
+                work_id.as_str().to_owned(),
+                TailMeta {
+                    last_seq: event.seq,
+                    last_offset: offset,
+                    last_hash: hash_line(&serde_json::to_string(event).unwrap_or_default()),
+                    lease_acquisitions: previous
+                        .as_ref()
+                        .map(|tail| {
+                            tail.lease_acquisitions
+                                + u64::from(matches!(event.payload, EventPayload::LeaseAcquired { .. }))
+                        })
+                        .unwrap_or(u64::from(matches!(
+                            event.payload,
+                            EventPayload::LeaseAcquired { .. }
+                        ))),
+                    operations_started: previous
+                        .as_ref()
+                        .map(|tail| {
+                            tail.operations_started
+                                + u64::from(matches!(
+                                    event.payload,
+                                    EventPayload::OperationStarted { .. }
+                                ))
+                        })
+                        .unwrap_or(u64::from(matches!(
+                            event.payload,
+                            EventPayload::OperationStarted { .. }
+                        ))),
+                },
+            );
+        }
     }
 
     /// Replay the full event log. A malformed trailing line (crash mid-append)
@@ -177,34 +325,34 @@ impl FsWorkStore {
         let file = File::open(&path)?;
         let reader = BufReader::new(file);
         let mut events = Vec::new();
-        let mut lines: Vec<String> = Vec::new();
-        for line in reader.lines() {
+        let mut pending: Option<(usize, String)> = None;
+        for (idx, line) in reader.lines().enumerate() {
             let line = line?;
             if line.trim().is_empty() {
                 continue;
             }
-            lines.push(line);
+            if let Some((prev_idx, prev)) = pending.take() {
+                match serde_json::from_str::<TransitionEvent>(&prev) {
+                    Ok(event) => events.push(event),
+                    Err(err) => {
+                        return Err(ForgeError::Store(format!(
+                            "corrupt event at {} line {}: {err}",
+                            path.display(),
+                            prev_idx + 1
+                        )));
+                    }
+                }
+            }
+            pending = Some((idx, line));
         }
-        let total = lines.len();
-        for (idx, line) in lines.into_iter().enumerate() {
+        if let Some((idx, line)) = pending {
             match serde_json::from_str::<TransitionEvent>(&line) {
                 Ok(event) => events.push(event),
-                Err(err) if idx == total - 1 => {
-                    // Truncated tail after a crash mid-append: the append never
-                    // synced, so the event never happened. Drop it.
-                    let _ = err;
-                    break;
-                }
-                Err(err) => {
-                    return Err(ForgeError::Store(format!(
-                        "corrupt event at {} line {}: {err}",
-                        path.display(),
-                        idx + 1
-                    )));
+                Err(_) => {
+                    let _ = idx;
                 }
             }
         }
-        // Seq must be strictly monotonic — anything else is corruption.
         for window in events.windows(2) {
             if window[1].seq <= window[0].seq {
                 return Err(ForgeError::Store(format!(
@@ -330,6 +478,13 @@ impl FsWorkStore {
                 .join(".lock"),
         )
     }
+}
+
+fn hash_line(line: &str) -> [u8; 32] {
+    let digest = Sha256::digest(line.as_bytes());
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&digest);
+    out
 }
 
 fn is_legacy_forge_id(value: &str) -> bool {

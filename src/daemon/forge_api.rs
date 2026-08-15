@@ -532,6 +532,12 @@ fn map_err(err: ForgeError) -> ApiError {
         ForgeError::Store(_) | ForgeError::Io(_) | ForgeError::Json(_) => {
             (StatusCode::INTERNAL_SERVER_ERROR, Some("store"))
         }
+        ForgeError::Overloaded(_) => (StatusCode::SERVICE_UNAVAILABLE, Some("overloaded")),
+        ForgeError::SlugConflict(_) => (StatusCode::CONFLICT, Some("slug_conflict")),
+        ForgeError::CatalogStale(_) => (StatusCode::CONFLICT, Some("catalog_stale")),
+        ForgeError::ObservationIncomplete(_) => {
+            (StatusCode::CONFLICT, Some("observation_incomplete"))
+        }
     };
     (
         status,
@@ -767,35 +773,7 @@ fn forge(state: &AppState) -> Arc<Forge> {
 /// `lease_id` + fencing `generation`.
 fn resolve_lease(forge: &Forge, lease_id: &str, generation: u64) -> ApiResult<ExecutionLease> {
     let want = LeaseId::from(lease_id.to_string());
-    let items = forge.list().map_err(map_err)?;
-    for item in items {
-        for active_id in item.active_attempt_ids() {
-            let Some(attempt) = item.attempt(active_id) else {
-                continue;
-            };
-            let Some(lease) = &attempt.lease else {
-                continue;
-            };
-            if lease.lease_id == want {
-                if lease.generation != generation {
-                    return Err(map_err(ForgeError::StaleLease {
-                        presented: want,
-                        presented_generation: generation,
-                        active: lease.lease_id.clone(),
-                        active_generation: lease.generation,
-                    }));
-                }
-                return Ok(lease.clone());
-            }
-        }
-    }
-    Err((
-        StatusCode::NOT_FOUND,
-        Json(ErrorBody {
-            error: format!("active lease not found: {lease_id}"),
-            kind: Some("not_found"),
-        }),
-    ))
+    forge.find_lease(&want, generation).map_err(map_err)
 }
 
 #[derive(Debug, Deserialize)]
@@ -1803,9 +1781,54 @@ fn project_slug(title: &str) -> String {
     medousa_forge::slug::project_slug(title)
 }
 
-async fn list_items(State(state): State<AppState>) -> ApiResult<Json<Vec<ItemProjection>>> {
-    let items = forge(&state).list().map_err(map_err)?;
-    Ok(Json(project_items(items)))
+#[derive(Debug, Deserialize)]
+struct ListItemsQuery {
+    limit: Option<usize>,
+    cursor: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ItemPage {
+    items: Vec<ItemProjection>,
+    next_cursor: Option<String>,
+    truncated: bool,
+}
+
+async fn list_items(
+    State(state): State<AppState>,
+    Query(query): Query<ListItemsQuery>,
+) -> ApiResult<axum::response::Response> {
+    use axum::response::IntoResponse;
+    let execution = state.forge_execution.clone();
+    let forge = forge(&state);
+    let paginated = query.limit.is_some() || query.cursor.is_some();
+    let result = execution
+        .run(
+            medousa_forge::execution::ExecutionClass::StoreIo,
+            1024,
+            move || {
+                if paginated {
+                    let page = forge.list_page(query.limit, query.cursor.as_deref())?;
+                    let items = page
+                        .items
+                        .into_iter()
+                        .filter_map(|entry| forge.load(&entry.work_id).ok())
+                        .collect::<Vec<_>>();
+                    Ok(serde_json::to_value(ItemPage {
+                        items: project_items(items),
+                        next_cursor: page.next_cursor,
+                        truncated: page.truncated,
+                    })
+                    .unwrap_or(serde_json::Value::Null))
+                } else {
+                    let items = forge.list()?;
+                    Ok(serde_json::to_value(project_items(items)).unwrap_or(serde_json::Value::Null))
+                }
+            },
+        )
+        .await
+        .map_err(map_err)?;
+    Ok(Json(result).into_response())
 }
 
 async fn get_item(
@@ -2870,14 +2893,19 @@ async fn source_tree(
         )
     })?;
     let worktree = environment.worktree.clone();
-    let listed = tokio::task::spawn_blocking(move || list_source_tree(&id, &worktree))
+    let listed = match state
+        .forge_execution
+        .run(
+            medousa_forge::execution::ExecutionClass::Observation,
+            64 * 1024,
+            move || Ok(list_source_tree(&id, &worktree)),
+        )
         .await
-        .map_err(|err| {
-            request_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("source tree enumeration failed: {err}"),
-            )
-        })??;
+    {
+        Ok(Ok(listed)) => listed,
+        Ok(Err(error)) => return Err(error),
+        Err(error) => return Err(map_err(error)),
+    };
     Ok(Json(listed))
 }
 
@@ -2901,15 +2929,19 @@ async fn search_source(
             format!("governed workspace is unavailable: {err}"),
         )
     })?;
-    let (hits, truncated, next_cursor) =
-        tokio::task::spawn_blocking(move || run_repository_search(&root, &options))
-            .await
-            .map_err(|err| {
-                request_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("repository search worker failed: {err}"),
-                )
-            })??;
+    let (hits, truncated, next_cursor) = match state
+        .forge_execution
+        .run(
+            medousa_forge::execution::ExecutionClass::Observation,
+            256 * 1024,
+            move || Ok(run_repository_search(&root, &options)),
+        )
+        .await
+    {
+        Ok(Ok(value)) => value,
+        Ok(Err(error)) => return Err(error),
+        Err(error) => return Err(map_err(error)),
+    };
     Ok(Json(SourceSearchResponse {
         work_id: id.as_str().to_owned(),
         hits,
@@ -2960,22 +2992,27 @@ async fn replace_source(
         })?;
         let replacement = body.replacement.clone();
         let filter = path_filter.clone();
-        let (files, truncated) = tokio::task::spawn_blocking(move || {
-            run_repository_replace_plan(
-                &root,
-                &options,
-                &replacement,
-                file_limit,
-                filter.as_deref(),
+        let (files, truncated) = match state
+            .forge_execution
+            .run(
+                medousa_forge::execution::ExecutionClass::LocalMutation,
+                256 * 1024,
+                move || {
+                    Ok(run_repository_replace_plan(
+                        &root,
+                        &options,
+                        &replacement,
+                        file_limit,
+                        filter.as_deref(),
+                    ))
+                },
             )
-        })
-        .await
-        .map_err(|err| {
-            request_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("repository replace worker failed: {err}"),
-            )
-        })??;
+            .await
+        {
+            Ok(Ok(value)) => value,
+            Ok(Err(error)) => return Err(error),
+            Err(error) => return Err(map_err(error)),
+        };
         return Ok(Json(SourceReplaceResponse {
             work_id: id.as_str().to_owned(),
             files,
@@ -3017,26 +3054,31 @@ async fn replace_source(
     })?;
     let replacement = body.replacement.clone();
     let filter = path_filter.clone();
-    let (files, truncated) = tokio::task::spawn_blocking({
-        let root = root.clone();
-        let options = options.clone();
-        move || {
-            run_repository_replace_plan(
-                &root,
-                &options,
-                &replacement,
-                file_limit,
-                filter.as_deref(),
-            )
-        }
-    })
-    .await
-    .map_err(|err| {
-        request_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("repository replace worker failed: {err}"),
+    let (files, truncated) = match state
+        .forge_execution
+        .run(
+            medousa_forge::execution::ExecutionClass::LocalMutation,
+            256 * 1024,
+            {
+                let root = root.clone();
+                let options = options.clone();
+                move || {
+                    Ok(run_repository_replace_plan(
+                        &root,
+                        &options,
+                        &replacement,
+                        file_limit,
+                        filter.as_deref(),
+                    ))
+                }
+            },
         )
-    })??;
+        .await
+    {
+        Ok(Ok(value)) => value,
+        Ok(Err(error)) => return Err(error),
+        Err(error) => return Err(map_err(error)),
+    };
     apply_repository_replace_plan(&root, &files, &preconditions)?;
     for file in &files {
         publish_project_change(
@@ -4204,6 +4246,40 @@ fn has_tracked_worktree_edits(
     }))
 }
 
+async fn run_network_git(
+    state: &AppState,
+    worktree: &FsPath,
+    args: Vec<String>,
+) -> Result<String, ApiError> {
+    let git = forge(state).git().binary().to_path_buf();
+    let cwd = worktree.to_path_buf();
+    let repo = cwd.display().to_string();
+    state
+        .forge_execution
+        .run_async(
+            medousa_forge::execution::ExecutionClass::NetworkGit,
+            64 * 1024,
+            Some(repo),
+            async move {
+                let (stdout, _stderr, truncated) = medousa_forge::execution::supervise_git(
+                    git,
+                    cwd,
+                    args,
+                    std::time::Duration::from_secs(120),
+                    medousa_forge::execution::MAX_CAPTURE_BYTES,
+                )
+                .await?;
+                let mut message = String::from_utf8_lossy(&stdout).into_owned();
+                if truncated {
+                    message.push_str("\n[git output truncated]");
+                }
+                Ok(message)
+            },
+        )
+        .await
+        .map_err(map_err)
+}
+
 async fn changes_fetch(
     State(state): State<AppState>,
     Path(work_id): Path<String>,
@@ -4215,11 +4291,13 @@ async fn changes_fetch(
         .workspace_environment()
         .cloned()
         .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
-    let remote = body.remote.as_deref().unwrap_or("origin");
-    let message = forge(&state)
-        .git()
-        .fetch(&environment.worktree, remote)
-        .map_err(map_err)?;
+    let remote = body.remote.as_deref().unwrap_or("origin").to_owned();
+    let message = run_network_git(
+        &state,
+        &environment.worktree,
+        vec!["fetch".into(), "--prune".into(), remote],
+    )
+    .await?;
     remember_worktree(&state, &item, &environment.worktree);
     publish_project_change(
         &state,
@@ -4262,15 +4340,12 @@ async fn changes_pull(
         ));
     }
     let remote = body.remote.as_deref().unwrap_or("origin");
-    let message = forge(&state)
-        .git()
-        .pull_ff_only(&environment.worktree, remote)
-        .map_err(|err| {
-            request_error(
-                StatusCode::CONFLICT,
-                format!("fast-forward pull refused: {err}"),
-            )
-        })?;
+    let message = run_network_git(
+        &state,
+        &environment.worktree,
+        vec!["pull".into(), "--ff-only".into(), remote.to_owned()],
+    )
+    .await?;
     remember_worktree(&state, &item, &environment.worktree);
     publish_project_change(
         &state,
@@ -4314,10 +4389,17 @@ async fn changes_push(
         ));
     }
     let remote = body.remote.as_deref().unwrap_or("origin");
-    let message = forge(&state)
-        .git()
-        .push_branch(&environment.worktree, remote, &environment.branch)
-        .map_err(|err| request_error(StatusCode::CONFLICT, format!("push refused: {err}")))?;
+    let message = run_network_git(
+        &state,
+        &environment.worktree,
+        vec![
+            "push".into(),
+            "--set-upstream".into(),
+            remote.to_owned(),
+            format!("refs/heads/{}", environment.branch),
+        ],
+    )
+    .await?;
     remember_worktree(&state, &item, &environment.worktree);
     publish_project_change(
         &state,
@@ -4357,10 +4439,12 @@ async fn changes_sync(
     let mut messages = Vec::new();
     let mut pulled = false;
     let mut pushed = false;
-    let fetch_msg = forge(&state)
-        .git()
-        .fetch(&environment.worktree, remote)
-        .map_err(|err| request_error(StatusCode::CONFLICT, format!("sync fetch failed: {err}")))?;
+    let fetch_msg = run_network_git(
+        &state,
+        &environment.worktree,
+        vec!["fetch".into(), "--prune".into(), remote.to_owned()],
+    )
+    .await?;
     let fetched = true;
     if !fetch_msg.trim().is_empty() {
         messages.push(fetch_msg.trim().to_owned());
@@ -4375,12 +4459,12 @@ async fn changes_sync(
                 "remote is ahead; restore or seal local changes before sync pull",
             ));
         }
-        let msg = forge(&state)
-            .git()
-            .pull_ff_only(&environment.worktree, remote)
-            .map_err(|err| {
-                request_error(StatusCode::CONFLICT, format!("sync pull refused: {err}"))
-            })?;
+        let msg = run_network_git(
+            &state,
+            &environment.worktree,
+            vec!["pull".into(), "--ff-only".into(), remote.to_owned()],
+        )
+        .await?;
         pulled = true;
         messages.push(if msg.trim().is_empty() {
             "Pulled (fast-forward)".into()
@@ -4397,12 +4481,17 @@ async fn changes_sync(
                 "refusing to push the protected base branch from Changes",
             ));
         }
-        let msg = forge(&state)
-            .git()
-            .push_branch(&environment.worktree, remote, &environment.branch)
-            .map_err(|err| {
-                request_error(StatusCode::CONFLICT, format!("sync push refused: {err}"))
-            })?;
+        let msg = run_network_git(
+            &state,
+            &environment.worktree,
+            vec![
+                "push".into(),
+                "--set-upstream".into(),
+                remote.to_owned(),
+                format!("refs/heads/{}", environment.branch),
+            ],
+        )
+        .await?;
         pushed = true;
         messages.push(if msg.trim().is_empty() {
             format!("Pushed {}", environment.branch)
@@ -7092,25 +7181,26 @@ async fn run_project_task(
     let argv = task.argv.clone();
     let root_for_command = root.clone();
     let started = std::time::Instant::now();
-    let output = tokio::task::spawn_blocking(move || {
-        background_command(&argv[0])
-            .args(&argv[1..])
-            .current_dir(root_for_command)
-            .output()
-    })
-    .await
-    .map_err(|err| {
-        request_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Project command stopped unexpectedly: {err}"),
+    let output = state
+        .forge_execution
+        .run(
+            medousa_forge::execution::ExecutionClass::LocalMutation,
+            64 * 1024,
+            move || {
+                background_command(&argv[0])
+                    .args(&argv[1..])
+                    .current_dir(root_for_command)
+                    .output()
+                    .map_err(|err| ForgeError::Git(err.to_string()))
+            },
         )
-    })?
-    .map_err(|err| {
-        request_error(
-            StatusCode::BAD_REQUEST,
-            format!("Could not run {}: {err}", task.label),
-        )
-    })?;
+        .await
+        .map_err(|err| {
+            request_error(
+                StatusCode::BAD_REQUEST,
+                format!("Could not run {}: {err}", task.label),
+            )
+        })?;
     const OUTPUT_CAP: usize = 64 * 1024;
     let truncated = output.stdout.len() > OUTPUT_CAP || output.stderr.len() > OUTPUT_CAP;
     let stdout =
@@ -8246,20 +8336,15 @@ async fn run_script(
     }
     let forge = forge(&state);
     let argv = body.argv;
-    let item = tokio::task::spawn_blocking(move || {
-        ScriptAdapter::new(forge.as_ref()).run_script(&id, &argv)
-    })
-    .await
-    .map_err(|err| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorBody {
-                error: format!("run-script join failed: {err}"),
-                kind: Some("store"),
-            }),
+    let item = state
+        .forge_execution
+        .run(
+            medousa_forge::execution::ExecutionClass::LocalMutation,
+            64 * 1024,
+            move || ScriptAdapter::new(forge.as_ref()).run_script(&id, &argv),
         )
-    })?
-    .map_err(map_err)?;
+        .await
+        .map_err(map_err)?;
     Ok(ok_item(&state, item, "script_ran"))
 }
 

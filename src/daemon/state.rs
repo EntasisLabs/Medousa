@@ -96,6 +96,8 @@ pub struct AppState {
     pub client_registry: ClientRegistry,
     /// Forge — durable version-controlled work custody (undertakings).
     pub forge: Arc<medousa_forge::forge::Forge>,
+    /// Bounded Forge/Git admission (H06.1).
+    pub forge_execution: Arc<medousa_forge::execution::ForgeExecutionService>,
     /// Forge freshness bus for Home SSE invalidation.
     pub forge_events: crate::daemon::forge_events::ForgeEventBus,
     /// LSP Interoperability Orchestrator host (medousa-code sidecar).

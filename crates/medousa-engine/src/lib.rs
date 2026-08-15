@@ -9,6 +9,7 @@ pub mod receipt;
 pub mod scratch;
 pub mod stream_sink;
 pub mod turn_event;
+pub mod transcript_cursor;
 pub mod turn_event_log;
 pub mod turn_pipeline;
 
@@ -22,6 +23,9 @@ pub use scratch::{TurnScratchPhase, TurnScratchpad, WorkerDelegateScratch};
 pub use stream_sink::{AgentStreamSink, SharedAgentStreamSink, ToolInputParam};
 pub use turn_event::{
     Principal, PrincipalKind, SequencedTurnEvent, TurnEnvelope, TurnEvent, TurnSurface,
+};
+pub use transcript_cursor::{
+    reconstruct_from_journal, TranscriptCursor,
 };
 pub use turn_event_log::{
     configure_log_root, default_log_root, fold_history_from_events, project_turn_to_history,

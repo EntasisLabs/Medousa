@@ -53,6 +53,8 @@ pub struct ForgeEventBus {
     project_log: Arc<Mutex<VecDeque<ForgeProjectEvent>>>,
     /// Latest known worktree root per work item (for FS observation).
     worktrees: Arc<Mutex<HashMap<String, std::path::PathBuf>>>,
+    watcher_generation: Arc<AtomicU64>,
+    watcher_overflow: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Default for ForgeEventBus {
@@ -71,7 +73,26 @@ impl ForgeEventBus {
             next_seq: Arc::new(AtomicU64::new(0)),
             project_log: Arc::new(Mutex::new(VecDeque::with_capacity(PROJECT_CAPACITY))),
             worktrees: Arc::new(Mutex::new(HashMap::new())),
+            watcher_generation: Arc::new(AtomicU64::new(1)),
+            watcher_overflow: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
+    }
+
+    pub fn watcher_generation(&self) -> u64 {
+        self.watcher_generation.load(Ordering::Relaxed)
+    }
+
+    pub fn watcher_overflow(&self) -> bool {
+        self.watcher_overflow.load(Ordering::Relaxed)
+    }
+
+    pub fn bump_watcher_generation(&self) {
+        self.watcher_generation.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn mark_watcher_overflow(&self) {
+        self.watcher_overflow.store(true, Ordering::Relaxed);
+        self.bump_watcher_generation();
     }
 
     pub fn publish(&self, work_id: &str, state: &str, event_kind: &str) {

@@ -399,7 +399,7 @@ Custody of intentional work episodes over a git target (vault or any repo). Dist
 | GET, PUT | `/v1/forge/repositories` | Workshop repository recents and pins |
 | GET | `/v1/forge/repositories/browse?path=…` | Scoped workshop directory/repository browser |
 | GET, POST | `/v1/forge/repositories/provider` | Discover optional provider adapters or clone on the workshop |
-| GET | `/v1/forge/items` | List |
+| GET | `/v1/forge/items` | List. Unparameterized response is still a JSON array (compatibility window, catalog-backed, capped at 256). `?limit=&cursor=` returns `{ items, next_cursor, truncated }`. Queue-full Forge/Git work returns `503` / `overloaded`. |
 | GET | `/v1/forge/items/{id}` | Get |
 | POST | `/v1/forge/items/{id}/provision` | Provision env |
 | POST | `/v1/forge/items/{id}/attempts` | Begin isolated attempt → lease plus exact `attempt_id`, `worktree`, and `branch` |

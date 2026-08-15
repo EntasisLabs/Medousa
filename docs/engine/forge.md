@@ -25,6 +25,19 @@ Architecture notes: [v0.7.0-forge-plan.md](../../architecture/v0.7.0-forge-plan.
 
 Storage root: `{MEDOUSA_DATA_DIR}/forge` (events + evidence outside the worktree).
 
+H06 scaling notes:
+
+- Item appends keep an in-memory tail; listings read a catalog projection, not every history.
+- `GET /v1/forge/items` without query params still returns an array (compatibility window, catalog-backed, capped). `?limit=&cursor=` returns `{ items, next_cursor, truncated }`.
+- Forge/Git work is admitted through a bounded execution service. Queue-full returns `503` / `overloaded`. Do not call blocking Forge/Git from async code without that service.
+- Slug uniqueness is a durable reservation journal, not a full-item scan.
+- Coder logical checkpoints no longer audit the worktree on model-only boundaries. Resume requires an exact generation-fenced observation; incomplete/unknown denies automatic resume.
+- v1 JSONL readers remain for rollback. New writes use the owner/tail path; framed log v2 sits beside v1 until the later cleanup car.
+
+Contributor rule: do not call blocking Forge, Git, filesystem, or process waits from async handlers. Admit work through `ForgeExecutionService` (`run` / `run_on_repo` / `run_async` + `supervise_git`). Queue-full must return typed overload, never inline fallback.
+
+Coder safe boundaries: `persist_boundary` and `mark_status` write logical state only. `persist_current` and `latest_safe_resume` obtain a current exact observation via capture → observe → recheck. Incomplete or unknown denies automatic resume.
+
 ---
 
 ## HTTP API

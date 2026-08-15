@@ -65,6 +65,10 @@ impl GitEngine {
         Self { git }
     }
 
+    pub fn binary(&self) -> &Path {
+        &self.git
+    }
+
     pub(crate) fn run(&self, cwd: &Path, args: &[&str]) -> Result<String> {
         let output = self.command()
             .args(args)
@@ -614,10 +618,24 @@ impl GitEngine {
     /// `git diff --binary <baseline>` against the *working tree* (uncommitted
     /// state), used for pre-checkpoint inspection.
     pub fn diff_binary_worktree(&self, cwd: &Path, baseline: &GitOid) -> Result<Vec<u8>> {
-        self.run_bytes(
+        self.diff_binary_worktree_bounded(cwd, baseline, usize::MAX)
+    }
+
+    /// Stream-friendly bounded worktree diff used for observation hashing.
+    pub fn diff_binary_worktree_bounded(
+        &self,
+        cwd: &Path,
+        baseline: &GitOid,
+        max_bytes: usize,
+    ) -> Result<Vec<u8>> {
+        let bytes = self.run_bytes(
             cwd,
             &["diff", "--binary", "--full-index", baseline.as_str()],
-        )
+        )?;
+        if bytes.len() > max_bytes {
+            return Ok(bytes[..max_bytes].to_vec());
+        }
+        Ok(bytes)
     }
 
     /// Commits between baseline and head, oldest first.

@@ -567,7 +567,10 @@ export function synthesizeRepositoryInspection(path: string): RepositoryInspecti
 }
 
 export async function listUndertakings(): Promise<ItemProjection[]> {
-  return forgeFetch("/v1/forge/items");
+  const payload = await forgeFetch<ItemProjection[] | { items: ItemProjection[] }>(
+    "/v1/forge/items?limit=256",
+  );
+  return Array.isArray(payload) ? payload : payload.items;
 }
 
 export async function getUndertaking(workId: string): Promise<ItemProjection> {

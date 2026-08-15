@@ -6,16 +6,17 @@
 //! after every tool call in a batch has a matching result.
 
 use std::collections::HashMap;
-use std::io::Read;
-use std::path::{Component, Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
 use genai::chat::{ChatMessage, ContentPart, MessageContent, ToolCall, ToolResponse};
 use medousa_forge::forge::Forge;
-use medousa_forge::git::PorcelainKind;
 use medousa_forge::model::{
     AttemptId, AttemptState, ExecutionLease, GovernedEnv, RecoveryDisposition, WorkId,
+};
+use medousa_forge::observation::{
+    GenerationCapture, ObservationCompleteness, WorkspaceObserver,
 };
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -201,6 +202,12 @@ pub struct ActiveTurnCheckpoint {
     pub outstanding_boundary: Option<OutstandingTurnBoundary>,
     pub last_completed_tool_boundary: Option<CompletedToolBoundary>,
     pub termination_reason: Option<String>,
+    #[serde(default)]
+    pub transcript_cursor: Option<medousa_engine::TranscriptCursor>,
+    #[serde(default)]
+    pub checkpoint_generation: u64,
+    #[serde(default)]
+    pub required_workspace_generation: u64,
 }
 
 impl ActiveTurnCheckpoint {
@@ -374,28 +381,9 @@ impl CoderTurnCheckpointStore {
         )?;
         let mut bounded = checkpoint.clone();
         bound_checkpoint(&mut bounded);
-        let mut bytes = serde_json::to_vec_pretty(&bounded)
+        evict_prefix_to_budget(&mut bounded);
+        let bytes = serde_json::to_vec(&bounded)
             .map_err(|err| format!("cannot serialize Coder turn checkpoint: {err}"))?;
-        while bytes.len() as u64 > MAX_CHECKPOINT_BYTES
-            && bounded.transcript.tool_lane_messages.len() > 1
-        {
-            bounded.transcript.tool_lane_messages.remove(0);
-            strip_orphaned_tool_responses(&mut bounded.transcript.tool_lane_messages);
-            bytes = serde_json::to_vec_pretty(&bounded)
-                .map_err(|err| format!("cannot serialize Coder turn checkpoint: {err}"))?;
-        }
-        while bytes.len() as u64 > MAX_CHECKPOINT_BYTES
-            && bounded.transcript.user_lane_prefix.len() > 1
-        {
-            bounded.transcript.user_lane_prefix.remove(0);
-            bytes = serde_json::to_vec_pretty(&bounded)
-                .map_err(|err| format!("cannot serialize Coder turn checkpoint: {err}"))?;
-        }
-        while bytes.len() as u64 > MAX_CHECKPOINT_BYTES && bounded.invocations.len() > 1 {
-            bounded.invocations.remove(0);
-            bytes = serde_json::to_vec_pretty(&bounded)
-                .map_err(|err| format!("cannot serialize Coder turn checkpoint: {err}"))?;
-        }
         if bytes.len() as u64 > MAX_CHECKPOINT_BYTES {
             return Err(format!(
                 "Coder turn checkpoint exceeds {} bytes after bounding",
@@ -669,6 +657,9 @@ impl CoderTurnCheckpointController {
                 .as_ref()
                 .and_then(|checkpoint| checkpoint.last_completed_tool_boundary.clone()),
             termination_reason: None,
+            transcript_cursor: None,
+            checkpoint_generation: 0,
+            required_workspace_generation: 0,
         };
         let controller = Arc::new(Self {
             store: params.store,
@@ -753,7 +744,7 @@ impl CoderTurnCheckpointController {
 impl ActiveTurnCheckpointSink for CoderTurnCheckpointController {
     fn persist_boundary(&self, state: ToolLoopCheckpointState) -> Result<(), String> {
         let mut checkpoint = self.checkpoint.lock().map_err(|err| err.to_string())?;
-        self.refresh_runtime_metadata(&mut checkpoint)?;
+        checkpoint.checkpoint_generation = checkpoint.checkpoint_generation.saturating_add(1);
         checkpoint.status = state.status;
         checkpoint.safe_boundary = state.boundary;
         checkpoint.counters = state.counters;
@@ -789,7 +780,7 @@ impl ActiveTurnCheckpointSink for CoderTurnCheckpointController {
         orchestration: Option<&TurnOrchestrationState>,
     ) -> Result<(), String> {
         let mut checkpoint = self.checkpoint.lock().map_err(|err| err.to_string())?;
-        self.refresh_runtime_metadata(&mut checkpoint)?;
+        checkpoint.checkpoint_generation = checkpoint.checkpoint_generation.saturating_add(1);
         checkpoint.status = status;
         checkpoint.safe_boundary = boundary;
         checkpoint.termination_reason = reason.map(|reason| truncate(reason, 2_000));
@@ -896,52 +887,28 @@ fn observe_environment(
     if actual_root != worktree {
         return Err("checkpoint worktree root no longer matches Forge authority".into());
     }
-    let branch = forge
-        .git()
-        .current_branch(&worktree)
-        .map_err(|err| format!("cannot read checkpoint branch: {err}"))?
-        .ok_or_else(|| "checkpoint worktree is detached".to_string())?;
-    let head_oid = forge
-        .git()
-        .head_oid(&worktree)
-        .map_err(|err| format!("cannot read checkpoint HEAD: {err}"))?
-        .to_string();
-    let mut status = forge
-        .git()
-        .status_porcelain(&worktree)
-        .map_err(|err| format!("cannot read checkpoint dirty state: {err}"))?;
-    status.sort_by(|left, right| left.path.cmp(&right.path));
-    let dirty_material = status
-        .iter()
-        .map(|entry| {
-            format!(
-                "{:?}|{}|{}|{}",
-                entry.kind,
-                entry.xy.as_deref().unwrap_or(""),
-                entry.path,
-                entry.orig_path.as_deref().unwrap_or("")
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let tracked_patch = forge
-        .git()
-        .diff_binary_worktree(
-            &worktree,
-            &medousa_forge::model::GitOid::new(head_oid.clone()),
-        )
-        .map_err(|err| format!("cannot fingerprint checkpoint worktree patch: {err}"))?;
-    let mut dirty_hasher = Sha256::new();
-    dirty_hasher.update(dirty_material.as_bytes());
-    dirty_hasher.update(b"\0tracked-patch\0");
-    dirty_hasher.update(&tracked_patch);
-    for entry in status
-        .iter()
-        .filter(|entry| entry.kind == PorcelainKind::Untracked)
-    {
-        hash_untracked_path(&mut dirty_hasher, &worktree, &entry.path)?;
+    let capture = GenerationCapture {
+        workspace_generation: u64::from(environment.generation),
+        watcher_generation: 0,
+        repository_generation: u64::from(environment.generation),
+        watcher_overflow: false,
+    };
+    let observation = WorkspaceObserver::default()
+        .observe_exact(forge.git(), work_id, &worktree, &capture, true)
+        .map_err(|err| format!("cannot observe checkpoint worktree: {err}"))?;
+    if observation.completeness != ObservationCompleteness::Exact {
+        return Err(format!(
+            "workspace observation is {:?}: {}",
+            observation.completeness,
+            observation.limits_hit.join(", ")
+        ));
     }
-    let dirty_digest = format!("{:x}", dirty_hasher.finalize());
+    let branch = observation
+        .branch
+        .ok_or_else(|| "checkpoint worktree is detached".to_string())?;
+    let head_oid = observation
+        .head_oid
+        .ok_or_else(|| "cannot read checkpoint HEAD".to_string())?;
     Ok(CheckpointForgeState {
         work_id: work_id.to_string(),
         attempt_id: attempt_id.to_string(),
@@ -950,67 +917,15 @@ fn observe_environment(
         branch,
         environment_generation: environment.generation,
         head_oid,
-        dirty: !status.is_empty(),
-        dirty_digest,
-        changed_paths: status
+        dirty: !observation.changed_paths.is_empty(),
+        dirty_digest: observation.dirty_digest,
+        changed_paths: observation
+            .changed_paths
             .into_iter()
-            .map(|entry| truncate(&entry.path, 512))
+            .map(|path| truncate(&path, 512))
             .take(MAX_CHANGED_PATHS)
             .collect(),
     })
-}
-
-fn hash_untracked_path(hasher: &mut Sha256, root: &Path, relative: &str) -> Result<(), String> {
-    let relative_path = Path::new(relative);
-    if relative.is_empty()
-        || relative_path.is_absolute()
-        || relative_path
-            .components()
-            .any(|component| !matches!(component, Component::Normal(_)))
-    {
-        return Err(format!(
-            "cannot fingerprint unsafe untracked checkpoint path: {relative}"
-        ));
-    }
-    let path = root.join(relative_path);
-    let metadata = std::fs::symlink_metadata(&path)
-        .map_err(|err| format!("cannot inspect untracked checkpoint path {relative}: {err}"))?;
-    hasher.update(b"\0untracked\0");
-    hasher.update(relative.as_bytes());
-    hasher.update(metadata.len().to_le_bytes());
-    hasher.update([u8::from(metadata.permissions().readonly())]);
-    if metadata.file_type().is_symlink() {
-        hasher.update(b"\0symlink\0");
-        let target = std::fs::read_link(&path)
-            .map_err(|err| format!("cannot read untracked checkpoint symlink {relative}: {err}"))?;
-        hasher.update(target.to_string_lossy().as_bytes());
-        return Ok(());
-    }
-    if !metadata.is_file() {
-        return Err(format!(
-            "cannot exactly fingerprint non-file untracked checkpoint path: {relative}"
-        ));
-    }
-    let canonical = std::fs::canonicalize(&path)
-        .map_err(|err| format!("cannot resolve untracked checkpoint path {relative}: {err}"))?;
-    if !canonical.starts_with(root) {
-        return Err(format!(
-            "untracked checkpoint path escaped the governed worktree: {relative}"
-        ));
-    }
-    let mut file = std::fs::File::open(&canonical)
-        .map_err(|err| format!("cannot open untracked checkpoint path {relative}: {err}"))?;
-    let mut buffer = [0_u8; 64 * 1024];
-    loop {
-        let read = file
-            .read(&mut buffer)
-            .map_err(|err| format!("cannot hash untracked checkpoint path {relative}: {err}"))?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-    }
-    Ok(())
 }
 
 fn forge_drift_reason(
@@ -1120,11 +1035,15 @@ fn bound_checkpoint(checkpoint: &mut ActiveTurnCheckpoint) {
         .into_iter()
         .rev()
         .collect();
-    while serialized_size(&checkpoint.invocations) > MAX_INVOCATION_BYTES
-        && checkpoint.invocations.len() > 1
-    {
-        checkpoint.invocations.remove(0);
-    }
+    evict_front_to_budget(
+        &mut checkpoint.invocations,
+        MAX_INVOCATION_BYTES,
+        |invocation| {
+            invocation.tool_name.len()
+                + estimated_json_bytes(&invocation.tool_input)
+                + estimated_json_bytes(&invocation.tool_output)
+        },
+    );
     checkpoint.transcript.user_lane_prefix = bounded_messages(
         &checkpoint.transcript.user_lane_prefix,
         MAX_TRANSCRIPT_MESSAGES / 2,
@@ -1174,9 +1093,7 @@ fn bounded_messages(
     if bounded.len() > max_messages {
         bounded.drain(0..bounded.len() - max_messages);
     }
-    while serialized_size(&bounded) > max_bytes && bounded.len() > 1 {
-        bounded.remove(0);
-    }
+    evict_front_to_budget(&mut bounded, max_bytes, estimated_message_bytes);
     strip_orphaned_tool_responses(&mut bounded);
     bounded
 }
@@ -1247,13 +1164,13 @@ fn bounded_chat_message(message: &ChatMessage) -> ChatMessage {
 
 fn bounded_json_value(value: &Value) -> Value {
     let redacted = redact_checkpoint_json_value(&crate::settings_guard::redact_json_value(value));
-    if serialized_size(&redacted) <= MAX_JSON_VALUE_BYTES {
+    if estimated_json_bytes(&redacted) <= MAX_JSON_VALUE_BYTES {
         return redacted;
     }
     json!({
         "checkpoint_truncated": true,
         "sha256": full_digest(&redacted.to_string()),
-        "logical_bytes": serialized_size(&redacted),
+        "logical_bytes": estimated_json_bytes(&redacted),
     })
 }
 
@@ -1322,10 +1239,50 @@ fn bounded_checkpoint_text(value: &str, max_chars: usize) -> String {
     )
 }
 
-fn serialized_size(value: &impl Serialize) -> usize {
-    serde_json::to_vec(value)
+fn estimated_json_bytes(value: &Value) -> usize {
+    match value {
+        Value::Null | Value::Bool(_) => 8,
+        Value::Number(_) => 16,
+        Value::String(text) => text.len(),
+        Value::Array(items) => items.iter().map(estimated_json_bytes).sum::<usize>().saturating_add(2),
+        Value::Object(map) => map
+            .iter()
+            .map(|(key, value)| key.len().saturating_add(estimated_json_bytes(value)))
+            .sum::<usize>()
+            .saturating_add(2),
+    }
+}
+
+fn estimated_message_bytes(message: &ChatMessage) -> usize {
+    serde_json::to_vec(message)
         .map(|bytes| bytes.len())
-        .unwrap_or(usize::MAX)
+        .unwrap_or(256)
+}
+
+fn evict_prefix_to_budget(checkpoint: &mut ActiveTurnCheckpoint) {
+    evict_front_to_budget(
+        &mut checkpoint.transcript.tool_lane_messages,
+        MAX_TRANSCRIPT_BYTES,
+        estimated_message_bytes,
+    );
+    strip_orphaned_tool_responses(&mut checkpoint.transcript.tool_lane_messages);
+    evict_front_to_budget(
+        &mut checkpoint.transcript.user_lane_prefix,
+        MAX_TRANSCRIPT_BYTES / 3,
+        estimated_message_bytes,
+    );
+}
+
+fn evict_front_to_budget<T>(items: &mut Vec<T>, max_bytes: usize, estimate: impl Fn(&T) -> usize) {
+    let mut bytes: usize = items.iter().map(&estimate).sum();
+    let mut drop_count = 0;
+    while bytes > max_bytes && drop_count + 1 < items.len() {
+        bytes = bytes.saturating_sub(estimate(&items[drop_count]));
+        drop_count += 1;
+    }
+    if drop_count > 0 {
+        items.drain(0..drop_count);
+    }
 }
 
 fn truncate(value: &str, max_chars: usize) -> String {
@@ -1415,6 +1372,9 @@ mod tests {
             outstanding_boundary: None,
             last_completed_tool_boundary: None,
             termination_reason: None,
+            transcript_cursor: None,
+            checkpoint_generation: 0,
+            required_workspace_generation: 0,
         }
     }
 
@@ -1950,6 +1910,26 @@ mod tests {
             CoderRecoveryPlan::Semantic { ref reason, .. }
                 if reason.contains("tool start")
         ));
+    }
+
+    #[test]
+    fn cm011_checkpoint_generations_are_monotonic() {
+        let root = tempdir().unwrap();
+        let store = CoderTurnCheckpointStore::open(root.path());
+        let mut first = checkpoint("session-cm011", "turn-cm011", "work-cm011");
+        first.checkpoint_generation = 1;
+        first.status = ActiveTurnCheckpointStatus::Active;
+        store.save(&first).unwrap();
+        let mut second = first.clone();
+        second.checkpoint_generation = 2;
+        second.updated_at_utc = first.updated_at_utc + chrono::Duration::seconds(1);
+        store.save(&second).unwrap();
+        let loaded = store
+            .load_latest_resume_candidate("session-cm011", "work-cm011")
+            .unwrap()
+            .expect("checkpoint");
+        assert_eq!(loaded.checkpoint_generation, 2);
+        assert!(loaded.checkpoint_generation > first.checkpoint_generation);
     }
 
     #[test]

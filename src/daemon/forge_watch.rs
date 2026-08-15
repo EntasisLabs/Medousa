@@ -59,7 +59,9 @@ pub fn spawn_forge_worktree_watcher(bus: ForgeEventBus) {
                         let watched_id = work_id.clone();
                         let watched_root = worktree.clone();
                         match notify::recommended_watcher(move |result: Result<notify::Event, notify::Error>| {
-                            let Ok(event) = result else { return };
+                            let Ok(event) = result else {
+                                return;
+                            };
                             let Some(kind) = event_kind(&event.kind) else { return };
                             for path in event.paths {
                                 let _ = tx.send((watched_id.clone(), path, kind));
@@ -100,6 +102,7 @@ pub fn spawn_forge_worktree_watcher(bus: ForgeEventBus) {
                                 })
                             })
                         };
+                        bus.bump_watcher_generation();
                         bus.publish_project(
                             &work_id,
                             kind,

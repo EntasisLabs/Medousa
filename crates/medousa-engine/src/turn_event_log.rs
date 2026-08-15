@@ -326,6 +326,10 @@ impl TurnEventLog {
     }
 
     /// Capture the highest sequence accepted by the journal owner.
+    pub fn envelope(&self) -> &TurnEnvelope {
+        &self.envelope
+    }
+
     pub fn replay_fence(&self) -> u64 {
         self.lock().next_seq.saturating_sub(1)
     }

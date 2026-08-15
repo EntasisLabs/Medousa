@@ -239,6 +239,11 @@ Target properties:
 
 ### P04 — Forge event store
 
+**Harness:** `cargo run -p medousa-forge --example p04_forge_store`
+CI sizes: 0 / 100 / 10k events. Nightly: `MEDOUSA_P04_EVENTS=1000000`.
+
+Local 2026-08-15 baseline (darwin): `events=100 append_ms=373 tail_ms=0.004`; `events=10000 append_ms=38236 tail_ms=0.002`. Tail lookup stays O(1) after the in-memory owner.
+
 **Findings:** PERF-002, ASYNC-001
 
 Generate valid Forge histories at 0, 100, 10k, and 1m events with small and
@@ -257,6 +262,11 @@ Target properties:
 - compaction does not block unrelated item progress beyond its budget.
 
 ### P05 — Coder checkpoint
+
+**Harness:** `cargo run -p medousa-forge --example p05_coder_observation`
+CI size: 1k files. Larger: `MEDOUSA_P05_FILES=100000`.
+
+Local 2026-08-15 baseline (darwin): `files=1000 completeness=Exact limits=[] ms=42.535`.
 
 **Finding:** PERF-004
 
