@@ -144,6 +144,16 @@ Target properties:
 
 **Findings:** PERF-005, PERF-006
 
+Harnesses:
+
+- `cd apps/medousa-home && npm run bench:p02 -- --full` runs the deterministic
+  happy-dom allocation/work baseline; add `--baseline` only to reproduce the
+  retired whole-answer replacement path.
+- While `npm run dev` is active, open
+  `/p02-browser-harness?bytes=100000&fragment=256` for the dev-only real-browser
+  frame, task-delay, Long Task, heap, DOM, and hydration counters. The route is
+  unavailable in production builds.
+
 Run in the packaged app and a browser harness with 1k, 10k, and 100k generated
 characters containing prose, links, tables, fenced code, Mermaid, and Liquid.
 Compare fragment rates and the accepted engine batch cadence.
