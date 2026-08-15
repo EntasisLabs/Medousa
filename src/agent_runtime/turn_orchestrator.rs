@@ -1004,6 +1004,9 @@ async fn execute_local_turn_inner(
             sink: sink.clone(),
             stream_turn_id: turn_id,
             session_id: session_id.clone(),
+            identity_user_id: scope_snapshot
+                .as_ref()
+                .and_then(|scope| scope.identity_user_id.clone()),
             backend: backend.clone(),
             parent_user_prompt: original_prompt.clone(),
             provider: provider.clone(),

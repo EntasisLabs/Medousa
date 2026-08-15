@@ -414,6 +414,7 @@ impl Drop for TurnExecutionLease {
 
 tokio::task_local! {
     static ACTIVE_TURN_CONTEXT: Arc<TurnExecutionContext>;
+    static ACTIVE_LEGACY_TURN_SCOPE: Arc<TurnContinuationScope>;
 }
 
 pub async fn with_turn_execution_context<F>(
@@ -430,6 +431,13 @@ pub fn active_turn_execution_context() -> Option<Arc<TurnExecutionContext>> {
     ACTIVE_TURN_CONTEXT.try_with(Arc::clone).ok()
 }
 
+pub async fn with_legacy_turn_scope<F>(scope: Arc<TurnContinuationScope>, future: F) -> F::Output
+where
+    F: Future,
+{
+    ACTIVE_LEGACY_TURN_SCOPE.scope(scope, future).await
+}
+
 /// Compatibility read for tools whose upstream trait cannot yet accept context.
 /// Admitted daemon turns never consult the shared fallback.
 pub async fn turn_continuation_scope(
@@ -437,6 +445,9 @@ pub async fn turn_continuation_scope(
 ) -> Option<TurnContinuationScope> {
     if let Some(context) = active_turn_execution_context() {
         return Some(context.legacy_scope().clone());
+    }
+    if let Ok(scope) = ACTIVE_LEGACY_TURN_SCOPE.try_with(Arc::clone) {
+        return Some(scope.as_ref().clone());
     }
     fallback.read().await.clone()
 }
@@ -549,6 +560,31 @@ mod tests {
         assert_eq!(rx.await.unwrap(), expected);
         tokio::task::yield_now().await;
         assert_eq!(context.tasks().active_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn legacy_worker_scopes_are_isolated_without_shared_writes() {
+        let fallback = Arc::new(tokio::sync::RwLock::new(None));
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        let run = |session: &'static str,
+                   fallback: Arc<tokio::sync::RwLock<Option<TurnContinuationScope>>>,
+                   barrier: Arc<tokio::sync::Barrier>| async move {
+            let scope = context(session, "provider").legacy_scope().clone();
+            with_legacy_turn_scope(Arc::new(scope), async move {
+                barrier.wait().await;
+                tokio::task::yield_now().await;
+                turn_continuation_scope(&fallback).await.unwrap().session_id
+            })
+            .await
+        };
+
+        let (first, second) = tokio::join!(
+            run("session-a", fallback.clone(), barrier.clone()),
+            run("session-b", fallback.clone(), barrier.clone())
+        );
+        assert_eq!(first, "session-a");
+        assert_eq!(second, "session-b");
+        assert!(fallback.read().await.is_none());
     }
 
     #[test]

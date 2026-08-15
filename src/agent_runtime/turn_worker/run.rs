@@ -64,21 +64,18 @@ fn worker_canvas_lane_enabled(is_bound_workshop: bool, record: &TurnWorkRecord) 
     is_bound_workshop || record.supports_ui_artifacts
 }
 
-async fn establish_worker_canvas_turn_scope(
-    turn_scope: &Arc<RwLock<Option<TurnContinuationScope>>>,
-    record: &TurnWorkRecord,
-) {
-    let previous = turn_scope.read().await.clone();
-    let inherited_identity = previous
-        .as_ref()
-        .and_then(|scope| scope.identity_user_id.clone());
-    let mut next = previous.unwrap_or_else(|| TurnContinuationScope {
+fn worker_turn_scope(record: &TurnWorkRecord) -> TurnContinuationScope {
+    let canvas_lane = worker_canvas_lane_enabled(
+        record.disposition == TurnWorkDisposition::Bound,
+        record,
+    );
+    TurnContinuationScope {
         turn_correlation_id: record
             .parent_turn_correlation_id
             .clone()
             .unwrap_or_else(|| format!("work-{}", record.work_id)),
         session_id: record.session_id.clone(),
-        identity_user_id: inherited_identity,
+        identity_user_id: record.identity_user_id.clone(),
         original_prompt: record.task_prompt.clone(),
         delivery_target: record
             .delivery_target
@@ -87,20 +84,15 @@ async fn establish_worker_canvas_turn_scope(
         provider: record.provider.clone(),
         model: record.model.clone(),
         response_depth_mode: record.response_depth_mode.clone(),
-        supports_ui_artifacts: true,
+        supports_ui_artifacts: canvas_lane,
         supports_liquid_markdown: record.supports_liquid_markdown,
         supports_browser_host: record.supports_browser_host,
-        channel_surface: Some("workshop-canvas".to_string()),
-    });
-    next.supports_ui_artifacts = true;
-    if record.supports_liquid_markdown {
-        next.supports_liquid_markdown = true;
+        channel_surface: Some(if record.disposition == TurnWorkDisposition::Bound {
+            "workshop-canvas".to_string()
+        } else {
+            "worker".to_string()
+        }),
     }
-    if record.supports_browser_host {
-        next.supports_browser_host = true;
-    }
-    next.session_id = record.session_id.clone();
-    *turn_scope.write().await = Some(next);
 }
 
 /// Live host-turn context used when spawning a worker from the tool loop.
@@ -109,6 +101,7 @@ pub struct ActiveWorkerBusSession {
     pub sink: SharedAgentStreamSink,
     pub stream_turn_id: u64,
     pub session_id: String,
+    pub identity_user_id: Option<String>,
     pub backend: String,
     pub parent_user_prompt: String,
     pub provider: String,
@@ -451,6 +444,7 @@ impl TurnWorkerScheduler {
         let record = TurnWorkRecord {
             work_id: work_id.clone(),
             session_id: bus.session_id.clone(),
+            identity_user_id: bus.identity_user_id.clone(),
             parent_turn_correlation_id,
             parent_stream_turn_id: bus.stream_turn_id,
             intent: intent.as_str().to_string(),
@@ -657,6 +651,7 @@ impl TurnWorkerScheduler {
         let record = TurnWorkRecord {
             work_id: work_id.clone(),
             session_id: bus.session_id.clone(),
+            identity_user_id: bus.identity_user_id.clone(),
             parent_turn_correlation_id,
             parent_stream_turn_id: bus.stream_turn_id,
             intent: intent.as_str().to_string(),
@@ -788,6 +783,22 @@ pub async fn run_worker_turn(
     let Some(record) = store.get(&work_id) else {
         return;
     };
+    let scope = worker_turn_scope(&record);
+    crate::agent_runtime::execution_context::with_legacy_turn_scope(
+        Arc::new(scope),
+        run_worker_turn_inner(store, ctx, work_id, sink, stream_turn_id, record),
+    )
+    .await;
+}
+
+async fn run_worker_turn_inner(
+    store: Arc<TurnWorkerStore>,
+    ctx: WorkerRuntimeContext,
+    work_id: String,
+    sink: SharedAgentStreamSink,
+    stream_turn_id: u64,
+    record: TurnWorkRecord,
+) {
 
     store.update(&work_id, |r| {
         r.status = TurnWorkStatus::Running;
@@ -840,13 +851,6 @@ pub async fn run_worker_turn(
             record.session_id.clone(),
             allowlist,
         ))
-    };
-    let previous_turn_scope = if canvas_lane {
-        let previous = ctx.turn_scope.read().await.clone();
-        establish_worker_canvas_turn_scope(&ctx.turn_scope, &record).await;
-        Some(previous)
-    } else {
-        None
     };
     // Genai reads env vars; keys live in keyring/file first — inject for the
     // *worker* provider (may differ from the host turn).
@@ -959,9 +963,6 @@ pub async fn run_worker_turn(
     };
 
     if store.is_work_cancelled(&work_id) {
-        if let Some(restore) = previous_turn_scope {
-            *ctx.turn_scope.write().await = restore;
-        }
         store.update(&work_id, |r| {
             r.status = TurnWorkStatus::Cancelled;
             r.termination_reason = Some("workshop_cancelled".to_string());
@@ -1071,9 +1072,6 @@ pub async fn run_worker_turn(
         }
     }
 
-    if let Some(restore) = previous_turn_scope {
-        *ctx.turn_scope.write().await = restore;
-    }
 }
 
 pub async fn resume_synthesis_if_needed(
@@ -1423,6 +1421,7 @@ mod tests {
             sink: Arc::new(NoopSink),
             stream_turn_id: 1,
             session_id: session_id.to_string(),
+            identity_user_id: None,
             backend: "memory".to_string(),
             parent_user_prompt: "prompt".to_string(),
             provider: "provider".to_string(),
@@ -1447,6 +1446,7 @@ mod tests {
         TurnWorkRecord {
             work_id: "w1".to_string(),
             session_id: "s1".to_string(),
+            identity_user_id: None,
             parent_turn_correlation_id: None,
             parent_stream_turn_id: 0,
             intent: "general".to_string(),
@@ -1523,6 +1523,20 @@ mod tests {
             Some("cognition_turn_finish"),
             Some("Here is the report.")
         )));
+    }
+
+    #[test]
+    fn worker_scope_is_rebuilt_only_from_the_durable_record() {
+        let mut record = sample_record(Some("cognition_turn_finish"), Some("done"));
+        record.identity_user_id = Some("user:alice".to_string());
+        record.provider = "worker-provider".to_string();
+        record.model = "worker-model".to_string();
+        let scope = worker_turn_scope(&record);
+
+        assert_eq!(scope.session_id, "s1");
+        assert_eq!(scope.identity_user_id.as_deref(), Some("user:alice"));
+        assert_eq!(scope.provider, "worker-provider");
+        assert_eq!(scope.model, "worker-model");
     }
 
     #[tokio::test]

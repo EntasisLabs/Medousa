@@ -86,6 +86,15 @@ that could erase a newer sibling. The scheduler reports live/high-water counts,
 and barrier tests prove concurrent parents cannot cross sessions while stale
 lease cleanup cannot remove a replacement generation.
 
+Worker execution no longer installs and restores canvas scope through the
+shared runtime lock. Every durable worker record now snapshots the delegating
+identity alongside its session/route/surface data, and worker execution scopes
+that frozen projection task-locally for both canvas and non-canvas lanes. The
+worker execution path no longer reads or writes the shared scope; retained tool
+constructors see only the task-local compatibility projection. A two-worker barrier fixture
+proves distinct session canaries remain isolated while the shared fallback
+stays empty.
+
 The current H05.0 request-state inventory is:
 
 | State | Classification | Current action |

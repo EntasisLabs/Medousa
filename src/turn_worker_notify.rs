@@ -335,6 +335,7 @@ mod tests {
         let record = TurnWorkRecord {
             work_id: "work-1".to_string(),
             session_id: "s1".to_string(),
+            identity_user_id: None,
             parent_turn_correlation_id: Some("ingest-job-99".to_string()),
             parent_stream_turn_id: 0,
             intent: "general".to_string(),

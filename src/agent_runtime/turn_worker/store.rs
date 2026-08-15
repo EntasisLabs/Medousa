@@ -87,6 +87,8 @@ fn default_parent_stream_turn_id() -> u64 {
 pub struct TurnWorkRecord {
     pub work_id: String,
     pub session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity_user_id: Option<String>,
     pub parent_turn_correlation_id: Option<String>,
     #[serde(default = "default_parent_stream_turn_id")]
     pub parent_stream_turn_id: u64,
