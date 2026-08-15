@@ -192,6 +192,7 @@ pub mod session_mapping;
 pub mod session_store;
 pub mod session_storage;
 pub mod store_root;
+pub mod persistence;
 pub mod session_writer;
 pub mod session_lifecycle;
 pub mod session_deletion;

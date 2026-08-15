@@ -1,6 +1,6 @@
 # ADR-016: Transactional store ownership and crash consistency
 
-> **Status:** Proposed
+> **Status:** Accepted
 >
 > **Date:** 2026-08-13
 >

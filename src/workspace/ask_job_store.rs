@@ -130,7 +130,7 @@ impl AskJobStore {
             }
         };
         drop(guard);
-        crate::workspace::persist::queue_snapshot_ask_jobs(body);
+        let _ = crate::workspace::persist::queue_snapshot_ask_jobs(body);
         Self::notify_ask_job_changed(job_id);
     }
 

@@ -933,7 +933,7 @@ async fn main() -> Result<()> {
         {
             tracing::error!(%error, "session writer did not reach durable drain before shutdown deadline");
         }
-        medousa::workspace::flush_persist_writer().await;
+        let _ = medousa::workspace::flush_persist_writer().await;
         tracing::info!("stopping");
         remove_surrealkv_lock(&parse_backend(Some(&state.backend)));
     })

@@ -141,7 +141,7 @@ pub async fn delete_session(
     let turn_workers = crate::agent_runtime::turn_worker::turn_worker_store();
     let mut turn_worker_result = turn_workers.delete_session(session_id_text);
     if turn_worker_result.is_ok() {
-        crate::workspace::persist::flush_persist_writer().await;
+        let _ = crate::workspace::persist::flush_persist_writer().await;
         turn_worker_result =
             crate::agent_runtime::turn_worker::TurnWorkerStore::session_absent_on_disk(
                 session_id_text,

@@ -1,6 +1,6 @@
 # H04 — Persistence ownership and crash consistency
 
-> **Status:** Draft for storage/recovery review
+> **Status:** Implementing — H04.0 persistence foundation landed
 >
 > **Accountable owner:** daemon persistence maintainers
 >

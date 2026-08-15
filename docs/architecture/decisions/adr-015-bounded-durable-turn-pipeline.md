@@ -1,6 +1,6 @@
 # ADR-015: Bounded single-writer durable turn pipeline
 
-> **Status:** Proposed
+> **Status:** Accepted
 >
 > **Date:** 2026-08-13
 >

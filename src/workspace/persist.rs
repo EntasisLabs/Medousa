@@ -10,6 +10,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{self, Sleep};
 
+use crate::persistence::{PersistenceError, PersistenceErrorKind};
 use crate::session;
 
 const DEBOUNCE_MS: u64 = 1500;
@@ -30,7 +31,7 @@ enum PersistOp {
     SnapshotAssociations(String),
     SnapshotAskJobs(String),
     SnapshotTurnWorkers(String),
-    Flush(oneshot::Sender<()>),
+    Flush(oneshot::Sender<Result<(), PersistenceError>>),
 }
 
 #[derive(Default)]
@@ -54,7 +55,6 @@ impl PendingSnapshots {
     }
 }
 
-
 fn workspace_dir() -> PathBuf {
     session::medousa_data_dir().join("workspace")
 }
@@ -77,76 +77,99 @@ pub fn init_persist_writer() {
     let _ = WRITER_TX.set(tx);
 }
 
-pub async fn flush_persist_writer() {
+pub async fn flush_persist_writer() -> Result<(), PersistenceError> {
     let Some(tx) = WRITER_TX.get() else {
-        return;
+        return Err(PersistenceError::new(
+            PersistenceErrorKind::ShuttingDown,
+            "workspace persistence writer is not running",
+        ));
     };
     let (done, rx) = oneshot::channel();
     if tx.send(PersistOp::Flush(done)).await.is_err() {
-        return;
+        return Err(PersistenceError::new(
+            PersistenceErrorKind::ShuttingDown,
+            "workspace persistence writer is closed",
+        ));
     }
-    let _ = rx.await;
+    rx.await.map_err(|_| {
+        PersistenceError::new(
+            PersistenceErrorKind::ShuttingDown,
+            "workspace persistence writer stopped before flush acknowledgement",
+        )
+    })?
 }
 
-fn try_enqueue(op: PersistOp) {
+fn try_enqueue(op: PersistOp) -> Result<(), PersistenceError> {
     let Some(tx) = WRITER_TX.get() else {
-        apply_sync_fallback(op);
-        return;
+        return Err(PersistenceError::new(
+            PersistenceErrorKind::ShuttingDown,
+            "workspace persistence writer is not running",
+        ));
     };
     match tx.try_send(op) {
-        Ok(()) => {}
-        Err(mpsc::error::TrySendError::Full(op) | mpsc::error::TrySendError::Closed(op)) => {
-            apply_sync_fallback(op);
-        }
+        Ok(()) => Ok(()),
+        Err(mpsc::error::TrySendError::Full(_)) => Err(PersistenceError::new(
+            PersistenceErrorKind::Overloaded,
+            "workspace persistence queue is full",
+        )),
+        Err(mpsc::error::TrySendError::Closed(_)) => Err(PersistenceError::new(
+            PersistenceErrorKind::ShuttingDown,
+            "workspace persistence writer is closed",
+        )),
     }
 }
 
-pub fn queue_append_feed_line(line: String) {
-    try_enqueue(PersistOp::AppendFeedLine(line));
+pub fn queue_append_feed_line(line: String) -> Result<(), PersistenceError> {
+    try_enqueue(PersistOp::AppendFeedLine(line))
 }
 
-pub fn queue_write_revision(revision: u64) {
-    try_enqueue(PersistOp::WriteRevision(revision));
+pub fn queue_write_revision(revision: u64) -> Result<(), PersistenceError> {
+    try_enqueue(PersistOp::WriteRevision(revision))
 }
 
-pub fn queue_snapshot_card_states(body: String) {
-    try_enqueue(PersistOp::SnapshotCardStates(body));
+pub fn queue_snapshot_card_states(body: String) -> Result<(), PersistenceError> {
+    try_enqueue(PersistOp::SnapshotCardStates(body))
 }
 
-pub fn queue_snapshot_associations(body: String) {
-    try_enqueue(PersistOp::SnapshotAssociations(body));
+pub fn queue_snapshot_associations(body: String) -> Result<(), PersistenceError> {
+    try_enqueue(PersistOp::SnapshotAssociations(body))
 }
 
-pub fn queue_snapshot_ask_jobs(body: String) {
-    try_enqueue(PersistOp::SnapshotAskJobs(body));
+pub fn queue_snapshot_ask_jobs(body: String) -> Result<(), PersistenceError> {
+    try_enqueue(PersistOp::SnapshotAskJobs(body))
 }
 
-pub fn queue_snapshot_turn_workers(body: String) {
-    try_enqueue(PersistOp::SnapshotTurnWorkers(body));
+pub fn queue_snapshot_turn_workers(body: String) -> Result<(), PersistenceError> {
+    try_enqueue(PersistOp::SnapshotTurnWorkers(body))
 }
 
 async fn run_persist_writer(mut rx: mpsc::Receiver<PersistOp>) {
     let mut pending = PendingSnapshots::default();
+    let mut last_failure: Option<String> = None;
     let debounce = Duration::from_millis(DEBOUNCE_MS);
     let mut debounce_sleep: Pin<Box<Sleep>> = Box::pin(time::sleep(debounce));
-    debounce_sleep.as_mut().reset(time::Instant::now() + debounce);
+    debounce_sleep
+        .as_mut()
+        .reset(time::Instant::now() + debounce);
 
     loop {
         tokio::select! {
             message = rx.recv() => {
                 let Some(op) = message else {
-                    flush_pending_snapshots(&mut pending).await;
+                    let _ = flush_pending_snapshots(&mut pending).await;
                     break;
                 };
                 match op {
                     PersistOp::AppendFeedLine(line) => {
                         if let Err(err) = append_feed_line(&line).await {
                             eprintln!("workspace persist: feed append failed: {err}");
+                            last_failure = Some(err.to_string());
                         }
                     }
                     PersistOp::WriteRevision(revision) => {
                         if let Err(err) = write_revision(revision).await {
                             eprintln!("workspace persist: revision write failed: {err}");
+                            last_failure = Some(err.to_string());
                         }
                     }
                     PersistOp::SnapshotCardStates(body) => {
@@ -166,36 +189,52 @@ async fn run_persist_writer(mut rx: mpsc::Receiver<PersistOp>) {
                         debounce_sleep.as_mut().reset(time::Instant::now() + debounce);
                     }
                     PersistOp::Flush(done) => {
-                        flush_pending_snapshots(&mut pending).await;
-                        let _ = done.send(());
+                        let result = flush_pending_snapshots(&mut pending).await.and_then(|()| {
+                            if let Some(message) = last_failure.take() {
+                                Err(PersistenceError::new(PersistenceErrorKind::PermanentIo, message))
+                            } else {
+                                Ok(())
+                            }
+                        });
+                        let _ = done.send(result);
                     }
                 }
             }
             _ = &mut debounce_sleep, if pending.any() => {
-                flush_pending_snapshots(&mut pending).await;
+                if let Err(error) = flush_pending_snapshots(&mut pending).await {
+                    eprintln!("workspace persist: snapshot flush failed: {error}");
+                    last_failure = Some(error.to_string());
+                }
             }
         }
     }
 }
 
-async fn flush_pending_snapshots(pending: &mut PendingSnapshots) {
+async fn flush_pending_snapshots(pending: &mut PendingSnapshots) -> Result<(), PersistenceError> {
     let batch = pending.take_all();
-    if let Some(body) = batch.card_states
-        && let Err(err) = write_file(CARD_STATE_FILE, &body).await {
-            eprintln!("workspace persist: card_states write failed: {err}");
-        }
-    if let Some(body) = batch.associations
-        && let Err(err) = write_file(ASSOC_FILE, &body).await {
-            eprintln!("workspace persist: associations write failed: {err}");
-        }
-    if let Some(body) = batch.ask_jobs
-        && let Err(err) = write_file(ASK_JOBS_FILE, &body).await {
-            eprintln!("workspace persist: ask_jobs write failed: {err}");
-        }
-    if let Some(body) = batch.turn_workers
-        && let Err(err) = write_file(TURN_WORKERS_FILE, &body).await {
-            eprintln!("workspace persist: turn_workers write failed: {err}");
-        }
+    if let Some(body) = batch.card_states {
+        write_file(CARD_STATE_FILE, &body).await.map_err(|error| {
+            PersistenceError::new(PersistenceErrorKind::PermanentIo, error.to_string())
+        })?;
+    }
+    if let Some(body) = batch.associations {
+        write_file(ASSOC_FILE, &body).await.map_err(|error| {
+            PersistenceError::new(PersistenceErrorKind::PermanentIo, error.to_string())
+        })?;
+    }
+    if let Some(body) = batch.ask_jobs {
+        write_file(ASK_JOBS_FILE, &body).await.map_err(|error| {
+            PersistenceError::new(PersistenceErrorKind::PermanentIo, error.to_string())
+        })?;
+    }
+    if let Some(body) = batch.turn_workers {
+        write_file(TURN_WORKERS_FILE, &body)
+            .await
+            .map_err(|error| {
+                PersistenceError::new(PersistenceErrorKind::PermanentIo, error.to_string())
+            })?;
+    }
+    Ok(())
 }
 
 async fn append_feed_line(line: &str) -> std::io::Result<()> {
@@ -218,43 +257,4 @@ async fn write_revision(revision: u64) -> std::io::Result<()> {
 async fn write_file(relative: &str, body: &str) -> std::io::Result<()> {
     ensure_workspace_dir().await?;
     fs::write(workspace_path(relative), body).await
-}
-
-fn apply_sync_fallback(op: PersistOp) {
-    match op {
-        PersistOp::AppendFeedLine(line) => {
-            let _ = std::fs::create_dir_all(workspace_dir());
-            if let Ok(mut file) = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(workspace_path(FEED_FILE))
-            {
-                use std::io::Write;
-                let _ = writeln!(file, "{line}");
-            }
-        }
-        PersistOp::WriteRevision(revision) => {
-            let _ = std::fs::create_dir_all(workspace_dir());
-            let _ = std::fs::write(workspace_path(REVISION_FILE), revision.to_string());
-        }
-        PersistOp::SnapshotCardStates(body) => {
-            let _ = std::fs::create_dir_all(workspace_dir());
-            let _ = std::fs::write(workspace_path(CARD_STATE_FILE), body);
-        }
-        PersistOp::SnapshotAssociations(body) => {
-            let _ = std::fs::create_dir_all(workspace_dir());
-            let _ = std::fs::write(workspace_path(ASSOC_FILE), body);
-        }
-        PersistOp::SnapshotAskJobs(body) => {
-            let _ = std::fs::create_dir_all(workspace_dir());
-            let _ = std::fs::write(workspace_path(ASK_JOBS_FILE), body);
-        }
-        PersistOp::SnapshotTurnWorkers(body) => {
-            let _ = std::fs::create_dir_all(workspace_dir());
-            let _ = std::fs::write(workspace_path(TURN_WORKERS_FILE), body);
-        }
-        PersistOp::Flush(done) => {
-            let _ = done.send(());
-        }
-    }
 }

@@ -301,7 +301,7 @@ impl TurnWorkerStore {
             }
         };
         drop(guard);
-        crate::workspace::persist::queue_snapshot_turn_workers(body);
+        let _ = crate::workspace::persist::queue_snapshot_turn_workers(body);
         Self::notify_turn_worker_changed(work_id, stasis_job_id);
     }
 
@@ -530,7 +530,7 @@ impl TurnWorkerStore {
         drop(live);
         let body = serde_json::to_string_pretty(&*guard).map_err(|error| error.to_string())?;
         drop(guard);
-        crate::workspace::persist::queue_snapshot_turn_workers(body);
+        let _ = crate::workspace::persist::queue_snapshot_turn_workers(body);
         Ok(())
     }
 

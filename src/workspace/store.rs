@@ -124,7 +124,7 @@ impl WorkspaceStore {
         let mut guard = self.revision.lock().expect("revision");
         *guard = guard.saturating_add(1);
         let value = *guard;
-        queue_write_revision(value);
+        let _ = queue_write_revision(value);
         value
     }
 
@@ -133,7 +133,7 @@ impl WorkspaceStore {
             let mut feed = self.feed.lock().expect("feed");
             feed.push(event.clone());
             if let Ok(line) = serde_json::to_string(&event) {
-                queue_append_feed_line(line);
+                let _ = queue_append_feed_line(line);
             }
         }
         self.bump_revision()
@@ -226,7 +226,7 @@ impl WorkspaceStore {
     fn persist_card_states(&self) {
         let snapshot = self.card_states.read().expect("card states").clone();
         if let Ok(raw) = serde_json::to_string_pretty(&snapshot) {
-            queue_snapshot_card_states(raw);
+            let _ = queue_snapshot_card_states(raw);
         }
     }
 
@@ -259,7 +259,7 @@ impl WorkspaceStore {
             })
             .collect::<Vec<_>>();
         if let Ok(raw) = serde_json::to_string_pretty(&rows) {
-            queue_snapshot_associations(raw);
+            let _ = queue_snapshot_associations(raw);
         }
     }
 

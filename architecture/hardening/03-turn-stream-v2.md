@@ -1,6 +1,6 @@
 # H03 — Bounded durable turn stream v2
 
-> **Status:** Draft for runtime/protocol review
+> **Status:** Implemented; release validation and retained benchmark evidence pending
 >
 > **Accountable owner:** engine runtime maintainers
 >
