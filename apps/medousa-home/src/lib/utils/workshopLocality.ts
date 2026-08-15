@@ -5,7 +5,7 @@ import { isTauri } from "$lib/platform";
 
 /**
  * Local workshops run on this device — Home folder pickers, Reveal, and
- * convertFileSrc are safe. Portal/paired workshops point at another host’s disk.
+ * trusted local-resource previews are available. Portal/paired workshops point at another host’s disk.
  */
 export function isCoLocatedWorkshop(): boolean {
   if (!isTauri()) {

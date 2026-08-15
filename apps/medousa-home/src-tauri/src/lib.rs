@@ -5,6 +5,8 @@ mod app_update;
 mod autostart;
 mod badge;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
+mod authorized_resource;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod browser_host;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod browser_report_bridge;
@@ -104,6 +106,11 @@ pub fn run() {
         .manage(DaemonState::new())
         .manage(daemon::local_inference::LocalInferenceStreamState::new())
         .manage(daemon::local_inference::LocalInferenceActivationState::new());
+
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        builder = builder.manage(authorized_resource::AuthorizedResourceState::default());
+    }
 
     // Desktop only: restore main window size / position / maximized across restarts.
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -398,6 +405,10 @@ pub fn run() {
             browser_host::browser_bridge_link_work_card,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             browser_host::browser_bridge_snapshot,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            authorized_resource::authorized_resource_admit,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            authorized_resource::authorized_resource_read,
             #[cfg(any(target_os = "ios", target_os = "android"))]
             browser_host_mobile::browser_host_search,
             #[cfg(any(target_os = "ios", target_os = "android"))]

@@ -4,6 +4,7 @@
   import { setLucideProps } from "@lucide/svelte";
   import { initializeStores } from "@skeletonlabs/skeleton";
   import { settings } from "$lib/stores/settings.svelte";
+  import { installCspViolationDiagnostics } from "$lib/security/cspDiagnostics";
 
   initializeStores();
   settings.applyTheme();
@@ -11,6 +12,7 @@
   setLucideProps({ strokeWidth: 2.15 });
 
   onMount(() => {
+    installCspViolationDiagnostics();
     const bootstrapSplash = document.getElementById("medousa-bootstrap-splash");
     if (!bootstrapSplash) return;
     bootstrapSplash.setAttribute("data-exiting", "true");

@@ -9,6 +9,20 @@ import { toast } from "$lib/stores/toast.svelte";
 
 let cachedVaultRoot: { path: string; fetchedAt: number } | null = null;
 const CACHE_MS = 5_000;
+const previewUrls = new Map<string, string>();
+
+interface AuthorizedResourceAdmission {
+  resourceId: string;
+  contentType: string;
+  size: number;
+  expiresInMs: number;
+}
+
+interface AuthorizedResourcePayload {
+  contentType: string;
+  base64: string;
+  size: number;
+}
 
 /** Reveal / open-with need the daemon's disk — explain instead of no-op. */
 function warnHostSideOnly(): boolean {
@@ -56,13 +70,47 @@ export async function getVaultRootAbsolutePath(): Promise<string | null> {
 
 export function invalidateVaultRootCache() {
   cachedVaultRoot = null;
+  for (const url of previewUrls.values()) URL.revokeObjectURL(url);
+  previewUrls.clear();
 }
 
 export async function localFilePreviewUrl(absolutePath: string): Promise<string | null> {
   if (!isTauri() || !isCoLocatedWorkshop() || !absolutePath.trim()) return null;
   try {
-    const { convertFileSrc } = await import("@tauri-apps/api/core");
-    return convertFileSrc(absolutePath.replace(/\\/g, "/"));
+    const normalized = absolutePath.trim().replace(/\\/g, "/");
+    const cached = previewUrls.get(normalized);
+    if (cached) return cached;
+
+    const root = (await getVaultRootAbsolutePath())?.replace(/\\/g, "/").replace(/\/+$/, "");
+    if (!root) return null;
+    const windowsPath = /^[A-Za-z]:\//.test(root);
+    const comparablePath = windowsPath ? normalized.toLowerCase() : normalized;
+    const comparableRoot = windowsPath ? root.toLowerCase() : root;
+    if (!comparablePath.startsWith(`${comparableRoot}/`)) return null;
+    const relativePath = normalized.slice(root.length + 1);
+    if (!relativePath || relativePath.split("/").some((part) => !part || part === "." || part === "..")) {
+      return null;
+    }
+
+    const admission = await invoke<AuthorizedResourceAdmission>("authorized_resource_admit", {
+      path: relativePath,
+      purpose: "image-preview",
+    });
+    const payload = await invoke<AuthorizedResourcePayload>("authorized_resource_read", {
+      resourceId: admission.resourceId,
+    });
+    if (payload.contentType !== admission.contentType || payload.size !== admission.size) return null;
+    const binary = Uint8Array.from(atob(payload.base64), (char) => char.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([binary], { type: payload.contentType }));
+    if (previewUrls.size >= 128) {
+      const oldest = previewUrls.entries().next().value as [string, string] | undefined;
+      if (oldest) {
+        URL.revokeObjectURL(oldest[1]);
+        previewUrls.delete(oldest[0]);
+      }
+    }
+    previewUrls.set(normalized, url);
+    return url;
   } catch {
     return null;
   }

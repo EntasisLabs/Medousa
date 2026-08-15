@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -12,6 +12,8 @@ const sortedUnique = (values) => [...new Set(values)].sort();
 
 const trusted = await readJson(join(tauriRoot, "capabilities", "default.json"));
 const remote = await readJson(join(tauriRoot, "capabilities", "browser-tab-webviews.json"));
+const tauriConfig = await readJson(join(tauriRoot, "tauri.conf.json"));
+const cargoManifest = await readFile(join(tauriRoot, "Cargo.toml"), "utf8");
 const lib = await readFile(join(tauriRoot, "src", "lib.rs"), "utf8");
 const bridge = await readFile(join(tauriRoot, "src", "browser_report_bridge.rs"), "utf8");
 const handlerStart = lib.indexOf(".invoke_handler(tauri::generate_handler![");
@@ -67,8 +69,68 @@ assert.equal(
   "trusted and remote webview labels overlap",
 );
 
+const csp = tauriConfig.app?.security?.csp;
+assert.equal(typeof csp, "string", "trusted shell production CSP must be enabled");
+const cspDirectives = Object.fromEntries(
+  csp
+    .split(";")
+    .map((directive) => directive.trim().split(/\s+/))
+    .filter(([name]) => name)
+    .map(([name, ...sources]) => [name, sources]),
+);
+for (const directive of [
+  "default-src",
+  "base-uri",
+  "object-src",
+  "form-action",
+  "frame-ancestors",
+  "script-src",
+  "style-src",
+  "font-src",
+  "img-src",
+  "connect-src",
+  "frame-src",
+  "worker-src",
+]) {
+  assert.ok(cspDirectives[directive], `trusted shell CSP is missing ${directive}`);
+}
+assert.deepEqual(cspDirectives["default-src"], ["'self'"]);
+assert.deepEqual(cspDirectives["object-src"], ["'none'"]);
+assert.deepEqual(cspDirectives["base-uri"], ["'self'"]);
+assert.deepEqual(cspDirectives["form-action"], ["'self'"]);
+assert.deepEqual(cspDirectives["frame-ancestors"], ["'none'"]);
+assert.deepEqual(cspDirectives["script-src"], ["'self'"]);
+for (const forbidden of ["'unsafe-eval'", "'unsafe-inline'", "http:", "https:", "data:", "blob:", "*"]) {
+  assert.ok(!cspDirectives["script-src"].includes(forbidden), `script-src permits ${forbidden}`);
+}
+assert.equal(
+  tauriConfig.app?.security?.assetProtocol?.enable ?? false,
+  false,
+  "broad Tauri asset protocol must stay disabled",
+);
+assert.ok(!cargoManifest.includes('"protocol-asset"'), "Tauri asset protocol feature must stay disabled");
+
+const sourceFiles = [];
+const collectSources = async (directory) => {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) await collectSources(path);
+    else if (/\.(?:ts|js|svelte)$/.test(entry.name)) sourceFiles.push(path);
+  }
+};
+await collectSources(join(root, "src"));
+for (const path of sourceFiles) {
+  assert.ok(!(await readFile(path, "utf8")).includes("convertFileSrc"), `raw asset URL flow remains in ${path}`);
+}
+
+const attackerSources = ["'unsafe-inline'", "'unsafe-eval'", "https:", "http:", "data:", "blob:", "*"];
+assert.ok(
+  attackerSources.every((source) => !cspDirectives["script-src"].includes(source)),
+  "trusted-shell injection fixture escaped script-src",
+);
+
 const inventory = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   applicationCommands,
   plugins: {
     "browser-bridge": browserBridgeCommands,
@@ -81,6 +143,10 @@ const inventory = {
     webviews: remoteWebviews,
     urls: remote.remote.urls,
     permissions: sortedUnique(remotePermissions),
+  },
+  trustedShell: {
+    csp,
+    assetProtocolEnabled: false,
   },
 };
 

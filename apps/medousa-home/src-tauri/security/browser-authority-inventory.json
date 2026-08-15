@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "applicationCommands": [
     "account_connections::account_begin_terminal_login",
     "account_connections::account_chatgpt_begin_device_login",
@@ -8,6 +8,8 @@
     "account_connections::account_sign_out",
     "app_update::app_update_open_download",
     "app_update::app_update_status",
+    "authorized_resource::authorized_resource_admit",
+    "authorized_resource::authorized_resource_read",
     "browser_host::browser_bridge_activate_tab",
     "browser_host::browser_bridge_close_tab",
     "browser_host::browser_bridge_create_tab_group",
@@ -471,5 +473,9 @@
     "permissions": [
       "browser-bridge:allow-report"
     ]
+  },
+  "trustedShell": {
+    "csp": "default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: http: https:; media-src 'self' data: blob: http: https:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* https: wss:; frame-src 'self' http: https:; worker-src 'self' blob:",
+    "assetProtocolEnabled": false
   }
 }
