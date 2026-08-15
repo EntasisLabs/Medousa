@@ -10,6 +10,7 @@ use crate::request_principal::{PrincipalKind, RequestPrincipal};
 
 #[derive(Debug, Deserialize)]
 pub struct WorkshopSteerRequest {
+    pub work_id: String,
     pub message: String,
 }
 
@@ -29,7 +30,12 @@ pub async fn steer_bound_workshop_handler(
         }
     };
     let speaker = resolve_steer_speaker(&principal);
-    match steer_bound_workshop_for_session(session_id, body.message.trim(), speaker) {
+    match steer_bound_workshop_for_session(
+        session_id,
+        body.work_id.trim(),
+        body.message.trim(),
+        speaker,
+    ) {
         Ok(value) => {
             let status = if value.is_ok() {
                 StatusCode::OK

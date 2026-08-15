@@ -574,16 +574,6 @@ impl TurnWorkerScheduler {
         })?;
         let bus = &parent.bus;
 
-        if self.store.active_bound_workshop(&bus.session_id).is_some() {
-            return Ok(EnterBoundWorkshopOutput::Failure {
-                ok: false,
-                workshop_entered: false,
-                error:
-                    "A bound workshop is already active for this session; steer or cancel it first."
-                        .to_string(),
-            });
-        }
-
         let task = goal.trim();
         if task.is_empty() {
             return Ok(EnterBoundWorkshopOutput::Failure {
@@ -692,7 +682,23 @@ impl TurnWorkerScheduler {
             updated_at: now,
         };
 
-        self.store.insert(record);
+        if let Err(error) = self.store.try_insert_bound(record) {
+            let error = match error {
+                super::store::BoundWorkshopAdmissionError::SessionDeleting => {
+                    "The session is being deleted; workshop admission was rejected.".to_string()
+                }
+                super::store::BoundWorkshopAdmissionError::ActiveGeneration { work_id } => {
+                    format!(
+                        "A bound workshop is already active for this session ({work_id}); steer or cancel that exact generation first."
+                    )
+                }
+            };
+            return Ok(EnterBoundWorkshopOutput::Failure {
+                ok: false,
+                workshop_entered: false,
+                error,
+            });
+        }
         ledger_bus_event(
             &bus.session_id,
             bus.stream_turn_id,
@@ -1626,5 +1632,98 @@ mod tests {
 
         drop(leases);
         assert_eq!(scheduler.active_parent_count(), 0);
+    }
+
+    #[test]
+    fn bound_workshop_admission_is_atomic_per_session() {
+        let store = Arc::new(TurnWorkerStore::empty_for_tests());
+        let barrier = Arc::new(std::sync::Barrier::new(3));
+        let spawn = |work_id: &'static str,
+                     store: Arc<TurnWorkerStore>,
+                     barrier: Arc<std::sync::Barrier>| {
+            std::thread::spawn(move || {
+                let mut record = sample_record(None, None);
+                record.work_id = work_id.to_string();
+                record.status = TurnWorkStatus::Pending;
+                record.disposition = TurnWorkDisposition::Bound;
+                barrier.wait();
+                store.try_insert_bound(record)
+            })
+        };
+        let first = spawn("bound-a", store.clone(), barrier.clone());
+        let second = spawn("bound-b", store.clone(), barrier.clone());
+        barrier.wait();
+        let results = [first.join().unwrap(), second.join().unwrap()];
+
+        assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+        assert_eq!(store.list_for_session("s1").len(), 1);
+        assert!(results.iter().any(|result| matches!(
+            result,
+            Err(super::super::store::BoundWorkshopAdmissionError::ActiveGeneration { .. })
+        )));
+    }
+
+    #[test]
+    fn stale_steer_cannot_mutate_replacement_workshop() {
+        let store = TurnWorkerStore::empty_for_tests();
+        let mut first = sample_record(None, None);
+        first.work_id = "bound-old".to_string();
+        first.status = TurnWorkStatus::Pending;
+        first.disposition = TurnWorkDisposition::Bound;
+        store.try_insert_bound(first).unwrap();
+        store.update("bound-old", |record| {
+            record.status = TurnWorkStatus::Cancelled
+        });
+
+        let mut replacement = sample_record(None, None);
+        replacement.work_id = "bound-new".to_string();
+        replacement.status = TurnWorkStatus::Pending;
+        replacement.disposition = TurnWorkDisposition::Bound;
+        store.try_insert_bound(replacement).unwrap();
+
+        let stale = store.push_steer_exact(
+            "s1",
+            "bound-old",
+            "stale guidance".to_string(),
+            Some("user:alice".to_string()),
+        );
+        assert!(matches!(
+            stale,
+            Err(super::super::store::BoundWorkshopMutationError::StaleGeneration {
+                active_work_id: Some(active),
+            }) if active == "bound-new"
+        ));
+        assert!(store.get("bound-new").unwrap().steer_messages.is_empty());
+
+        let updated = store
+            .push_steer_exact(
+                "s1",
+                "bound-new",
+                "current guidance".to_string(),
+                Some("user:alice".to_string()),
+            )
+            .unwrap();
+        assert_eq!(updated.steer_messages.len(), 1);
+    }
+
+    #[test]
+    fn exact_cancel_cannot_cross_session_authority() {
+        let store = TurnWorkerStore::empty_for_tests();
+        let mut record = sample_record(None, None);
+        record.work_id = "session-a-worker".to_string();
+        record.status = TurnWorkStatus::Running;
+        store.insert(record);
+
+        assert!(matches!(
+            store.cancel_exact("session-b", "session-a-worker"),
+            Err(super::super::store::TurnWorkerMutationError::ForeignSession)
+        ));
+        assert_eq!(
+            store.get("session-a-worker").unwrap().status,
+            TurnWorkStatus::Running
+        );
+
+        let cancelled = store.cancel_exact("s1", "session-a-worker").unwrap();
+        assert_eq!(cancelled.status, TurnWorkStatus::Cancelled);
     }
 }

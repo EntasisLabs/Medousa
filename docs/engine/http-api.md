@@ -126,8 +126,13 @@ for the protocol and surface-scoping rules.
 | GET | `/v1/sessions/{session_id}/turns` | turn list | `http().get` |
 | GET | `/v1/sessions/{session_id}/active-turn` | active turn ticket | `http().get` |
 | POST | `/v1/sessions/{session_id}/active-turn` | cancel active turn | `http().post` |
+| POST | `/v1/sessions/{session_id}/workshop/steer` | steer one exact bound-workshop generation (`work_id`, `message`) | `http().post` |
 | POST | `/v1/turns` | create turn ticket | `http().post` |
 | GET | `/v1/turns/{turn_id}` | turn ticket | `http().get` |
+
+Workshop steering requires the exact `work_id` returned by the bound-workshop
+handoff. A stale generation receives `409 Conflict` and cannot steer a newer
+workshop for the same session.
 
 `POST /v1/sessions` is the authority for new chat identifiers. Omit
 `session_id`; current daemons return a `ses_` identifier with 128 bits of

@@ -12,7 +12,7 @@ The host console tool loop tried to be both a conversational partner and an exec
 1. **Host = scheduler** — hot lane for memory, identity, runtime, vault read, `cognition_turn_begin_work`, and parallel `cognition_spawn_turn_worker`. No environment/canvas/web/grapheme execution on host.
 2. **Bound workshop** — `cognition_turn_begin_work(message, goal, intent?)` enqueues one async execution turn per session (reuses `run_worker_turn` + synthesis). Host ends with ack; principal sees ack → synthesis on same thread.
 3. **Parallel worker** — unchanged (`cognition_spawn_turn_worker`) for heavy multi-topic research.
-4. **Steering** — principal can inject messages into the active bound workshop via `POST /v1/sessions/{id}/workshop/steer`; workshop loop reads `[MEDOUSA_WORKSHOP_STEER]` each round.
+4. **Steering** — principal can inject messages into one exact bound-workshop generation via `POST /v1/sessions/{id}/workshop/steer` with `work_id`; workshop loop reads `[MEDOUSA_WORKSHOP_STEER]` each round. Stale generations are rejected.
 5. **Deprecate** `cognition_turn_update_user` — workshop internal monologue replaces mid-turn host status tools.
 6. **Host FSM** — cooperative prose on host (`host_scheduler_lane`); worker/workshop FSM unchanged.
 
@@ -27,7 +27,7 @@ The host console tool loop tried to be both a conversational partner and an exec
 **Tradeoffs**
 
 - Extra latency vs inline host execution (async job).
-- One bound workshop per session at a time.
+- One bound workshop per session at a time, enforced atomically at insertion.
 - Host must call `begin_work` with a concrete `goal` for execution work.
 
 ## Code anchors

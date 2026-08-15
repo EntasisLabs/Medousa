@@ -162,6 +162,26 @@ pub struct TurnWorkerStore {
     records: Mutex<HashMap<String, TurnWorkRecord>>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BoundWorkshopAdmissionError {
+    SessionDeleting,
+    ActiveGeneration { work_id: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BoundWorkshopMutationError {
+    SessionDeleting,
+    MissingGeneration,
+    StaleGeneration { active_work_id: Option<String> },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TurnWorkerMutationError {
+    SessionDeleting,
+    MissingWork,
+    ForeignSession,
+}
+
 impl Default for TurnWorkerStore {
     fn default() -> Self {
         Self::new()
@@ -175,6 +195,13 @@ impl TurnWorkerStore {
         };
         store.reload_from_disk();
         store
+    }
+
+    #[cfg(test)]
+    pub(crate) fn empty_for_tests() -> Self {
+        Self {
+            records: Mutex::new(HashMap::new()),
+        }
     }
 
     fn path() -> PathBuf {
@@ -310,6 +337,32 @@ impl TurnWorkerStore {
         self.persist(&work_id, stasis_job_id.as_deref());
     }
 
+    pub fn try_insert_bound(
+        &self,
+        record: TurnWorkRecord,
+    ) -> Result<(), BoundWorkshopAdmissionError> {
+        debug_assert_eq!(record.disposition, TurnWorkDisposition::Bound);
+        let Ok((_session, _mutation)) =
+            crate::session_deletion::acquire_mutation_for_str(&record.session_id)
+        else {
+            return Err(BoundWorkshopAdmissionError::SessionDeleting);
+        };
+        let work_id = record.work_id.clone();
+        let stasis_job_id = record.stasis_job_id.clone();
+        let mut records = self.records.lock().expect("turn worker records");
+        if let Some(active) = records.values().find(|candidate| {
+            is_active_bound(candidate) && candidate.session_id == record.session_id
+        }) {
+            return Err(BoundWorkshopAdmissionError::ActiveGeneration {
+                work_id: active.work_id.clone(),
+            });
+        }
+        records.insert(work_id.clone(), record);
+        drop(records);
+        self.persist(&work_id, stasis_job_id.as_deref());
+        Ok(())
+    }
+
     pub fn get(&self, work_id: &str) -> Option<TurnWorkRecord> {
         self.records
             .lock()
@@ -435,7 +488,10 @@ impl TurnWorkerStore {
             };
             let records = serde_json::from_str::<HashMap<String, TurnWorkRecord>>(&raw)
                 .map_err(|_| "turn-worker snapshot is corrupt".to_string())?;
-            if records.values().any(|record| record.session_id == session_id) {
+            if records
+                .values()
+                .any(|record| record.session_id == session_id)
+            {
                 return Ok(false);
             }
         }
@@ -447,39 +503,74 @@ impl TurnWorkerStore {
             .lock()
             .expect("turn worker records")
             .values()
-            .filter(|record| {
-                !record.archived
-                    && record.session_id == session_id
-                    && record.disposition == TurnWorkDisposition::Bound
-                    && matches!(
-                        record.status,
-                        TurnWorkStatus::Pending | TurnWorkStatus::Running
-                    )
-            })
+            .filter(|record| record.session_id == session_id && is_active_bound(record))
             .max_by_key(|record| record.updated_at)
             .cloned()
     }
 
-    pub fn push_steer(
+    pub fn push_steer_exact(
         &self,
+        session_id: &str,
         work_id: &str,
         text: String,
         speaker_profile_id: Option<String>,
-    ) -> Option<TurnWorkRecord> {
-        let trimmed = text.trim();
-        if trimmed.is_empty() {
-            return None;
+    ) -> Result<TurnWorkRecord, BoundWorkshopMutationError> {
+        let Ok((_session, _mutation)) =
+            crate::session_deletion::acquire_mutation_for_str(session_id)
+        else {
+            return Err(BoundWorkshopMutationError::SessionDeleting);
+        };
+        let mut records = self.records.lock().expect("turn worker records");
+        let active_work_id = records
+            .values()
+            .find(|record| record.session_id == session_id && is_active_bound(record))
+            .map(|record| record.work_id.clone());
+        if active_work_id.as_deref() != Some(work_id) {
+            return Err(BoundWorkshopMutationError::StaleGeneration { active_work_id });
         }
-        let speaker = speaker_profile_id
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty());
-        self.update(work_id, |record| {
-            record.steer_messages.push(WorkshopSteerMessage {
-                text: trimmed.to_string(),
-                at: Utc::now(),
-                speaker_profile_id: speaker,
-            });
-        })
+        let record = records
+            .get_mut(work_id)
+            .ok_or(BoundWorkshopMutationError::MissingGeneration)?;
+        record.steer_messages.push(WorkshopSteerMessage {
+            text,
+            at: Utc::now(),
+            speaker_profile_id,
+        });
+        record.updated_at = Utc::now();
+        let updated = record.clone();
+        drop(records);
+        self.persist(&updated.work_id, updated.stasis_job_id.as_deref());
+        Ok(updated)
+    }
+
+    pub fn cancel_exact(
+        &self,
+        session_id: &str,
+        work_id: &str,
+    ) -> Result<TurnWorkRecord, TurnWorkerMutationError> {
+        let Ok((_session, _mutation)) =
+            crate::session_deletion::acquire_mutation_for_str(session_id)
+        else {
+            return Err(TurnWorkerMutationError::SessionDeleting);
+        };
+        let mut records = self.records.lock().expect("turn worker records");
+        let record = records
+            .get_mut(work_id)
+            .ok_or(TurnWorkerMutationError::MissingWork)?;
+        if record.session_id != session_id {
+            return Err(TurnWorkerMutationError::ForeignSession);
+        }
+        if matches!(
+            record.status,
+            TurnWorkStatus::Pending | TurnWorkStatus::Running
+        ) {
+            record.status = TurnWorkStatus::Cancelled;
+            record.updated_at = Utc::now();
+        }
+        let updated = record.clone();
+        drop(records);
+        self.persist(&updated.work_id, updated.stasis_job_id.as_deref());
+        Ok(updated)
     }
 
     pub fn drain_steer_messages(&self, work_id: &str) -> Vec<WorkshopSteerMessage> {
@@ -494,6 +585,15 @@ impl TurnWorkerStore {
         self.get(work_id)
             .is_some_and(|record| record.status == TurnWorkStatus::Cancelled)
     }
+}
+
+fn is_active_bound(record: &TurnWorkRecord) -> bool {
+    !record.archived
+        && record.disposition == TurnWorkDisposition::Bound
+        && matches!(
+            record.status,
+            TurnWorkStatus::Pending | TurnWorkStatus::Running
+        )
 }
 
 #[cfg(test)]

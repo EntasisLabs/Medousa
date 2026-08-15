@@ -496,6 +496,14 @@ export class ChatStore {
     return false;
   }
 
+  activeWorkshopWorkId(): string | null {
+    for (const turn of this.turns.values()) {
+      if (turn.mode !== "interactive" || turn.terminal) continue;
+      if (turn.phase === "workshop_handoff") return turn.workspaceCardId ?? null;
+    }
+    return null;
+  }
+
   /** Non-terminal interactive ticket in flight (fork policy gate). */
   hasLiveInteractiveTurn(): boolean {
     for (const turn of this.turns.values()) {

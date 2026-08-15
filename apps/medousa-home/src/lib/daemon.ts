@@ -353,9 +353,10 @@ export async function cancelActiveSessionTurn(
 
 export async function steerBoundWorkshop(
   sessionId: string,
+  workId: string,
   message: string,
 ): Promise<{ ok: boolean; work_id?: string; error?: string }> {
-  return invoke("session_steer_bound_workshop", { sessionId, message });
+  return invoke("session_steer_bound_workshop", { sessionId, workId, message });
 }
 
 /** Plain JSON clone — strips Svelte proxies before Tauri IPC serialization. */

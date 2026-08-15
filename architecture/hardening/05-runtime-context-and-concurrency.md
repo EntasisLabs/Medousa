@@ -95,6 +95,16 @@ constructors see only the task-local compatibility projection. A two-worker barr
 proves distinct session canaries remain isolated while the shared fallback
 stays empty.
 
+Bound-workshop admission is now one atomic store operation: check and insert
+share the same lock, so two simultaneous begin requests for one session cannot
+both win. Steering carries the exact `work_id` generation from Home through
+Tauri and HTTP into a compare-before-mutate store operation. A stale steer
+reports the replacement generation and cannot append to it. Concurrent
+admission and stale-replacement tests freeze both races. Worker cancellation
+also names the exact `work_id` and verifies that its durable record belongs to
+the active host session before mutation; a cross-session regression test freezes
+that authority boundary.
+
 The current H05.0 request-state inventory is:
 
 | State | Classification | Current action |

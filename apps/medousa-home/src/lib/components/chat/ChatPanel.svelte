@@ -1131,7 +1131,9 @@
       }
 
       if (chat.hasWorkshopHandoff()) {
-        await steerBoundWorkshop(chat.sessionId, prompt);
+        const workId = chat.activeWorkshopWorkId();
+        if (!workId) throw new Error("Active workshop generation is missing");
+        await steerBoundWorkshop(chat.sessionId, workId, prompt);
         await chat.reloadCurrentSession();
         scrollToLatest(true);
         return;
