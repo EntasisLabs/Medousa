@@ -111,7 +111,21 @@ impl TurnPipelineOutput for InteractivePipelineOutput {
         });
         let event_log = Arc::clone(&self.event_log);
         let seq = emission.envelope.seq;
-        let receipt = tokio::task::spawn_blocking(move || event_log.append_sequenced(seq, journal))
+        let terminal = emission.envelope.event.is_terminal();
+        let receipt = tokio::task::spawn_blocking(move || {
+            let receipt = event_log.append_sequenced(seq, journal)?;
+            if terminal {
+                let commit = event_log.mark_committed()?;
+                if commit.through_seq != receipt.seq() {
+                    return Err(std::io::Error::other(format!(
+                        "journal commit fence {} diverged from terminal sequence {}",
+                        commit.through_seq,
+                        receipt.seq()
+                    )));
+                }
+            }
+            Ok::<_, std::io::Error>(receipt)
+        })
             .await
             .map_err(|error| TurnPipelineError::Output(format!("journal writer stopped: {error}")))?
             .map_err(|error| TurnPipelineError::Output(format!("journal append failed: {error}")))?;
