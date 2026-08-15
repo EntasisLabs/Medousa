@@ -1,7 +1,7 @@
 //! Phase 1 (b/c/e) — the durable per-turn event-log spine.
 
 use std::collections::VecDeque;
-use std::io::{BufRead, BufReader, BufWriter, Seek, SeekFrom, Write};
+use std::io::{BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -13,6 +13,7 @@ use chrono::Utc;
 use medousa_types::authority_id::TurnEventId;
 use medousa_types::session::ConversationTurn;
 use medousa_types::turn::TurnPart;
+use serde::{Deserialize, Serialize};
 
 use crate::turn_event::{Principal, SequencedTurnEvent, TurnEnvelope, TurnEvent};
 
@@ -27,6 +28,7 @@ const REPLAY_PAGE_MAX_BYTES: usize = 1024 * 1024;
 const JOURNAL_RECORD_MAX_BYTES: usize = 2 * 1024 * 1024;
 const SPARSE_INDEX_STRIDE: u64 = 64;
 const ACTIVE_SYNC_INTERVAL: Duration = Duration::from_millis(250);
+const COMMIT_MARKER_SCHEMA_VERSION: u8 = 1;
 
 static LOG_ROOT: OnceLock<PathBuf> = OnceLock::new();
 
@@ -133,6 +135,14 @@ pub struct JournalCommitReceipt {
     pub through_seq: u64,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct CommitMarker {
+    schema_version: u8,
+    turn_id: String,
+    through_seq: u64,
+    committed_at: chrono::DateTime<Utc>,
+}
+
 /// Append-only event log for a single turn (the spine).
 pub struct TurnEventLog {
     envelope: TurnEnvelope,
@@ -160,6 +170,11 @@ impl TurnEventLog {
         if journal.metadata()?.len() != scan.valid_bytes {
             journal.set_len(scan.valid_bytes)?;
         }
+        let committed = commit_marker_matches(
+            &root,
+            &turn_id,
+            scan.next_seq.saturating_sub(1),
+        );
         Ok(Self {
             envelope,
             root,
@@ -177,7 +192,7 @@ impl TurnEventLog {
                 journal_syncs: 0,
                 last_synced_seq: 0,
                 last_sync: Instant::now(),
-                committed: false,
+                committed,
             }),
         })
     }
@@ -459,7 +474,14 @@ impl TurnEventLog {
         }
         let turn_id = TurnEventId::parse(&self.envelope.turn_id).map_err(std::io::Error::other)?;
         let marker = commit_marker_name(&turn_id);
-        atomic_write(&self.root, &marker, Utc::now().to_rfc3339().as_bytes())?;
+        let marker_body = serde_json::to_vec(&CommitMarker {
+            schema_version: COMMIT_MARKER_SCHEMA_VERSION,
+            turn_id: turn_id.as_str().to_owned(),
+            through_seq,
+            committed_at: Utc::now(),
+        })
+        .map_err(std::io::Error::other)?;
+        atomic_write(&self.root, &marker, &marker_body)?;
         self.lock().committed = true;
         Ok(JournalCommitReceipt { through_seq })
     }
@@ -521,7 +543,48 @@ fn atomic_write(root: &Dir, name: &str, bytes: &[u8]) -> std::io::Result<()> {
         let _ = root.remove_file(&temporary);
         return Err(error);
     }
+    sync_directory(root)?;
     Ok(())
+}
+
+#[cfg(unix)]
+fn sync_directory(root: &Dir) -> std::io::Result<()> {
+    root.open(".")?.sync_all()
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_root: &Dir) -> std::io::Result<()> {
+    // Windows does not provide a portable Rust API for opening a directory
+    // handle with the flags required by FlushFileBuffers. The marker file is
+    // still synced before the atomic rename; Unix additionally fences the
+    // directory entry above.
+    Ok(())
+}
+
+fn commit_marker_matches(root: &Dir, turn_id: &TurnEventId, through_seq: u64) -> bool {
+    let name = commit_marker_name(turn_id);
+    if reject_link(root, &name).is_err() {
+        return false;
+    }
+    let mut options = OpenOptions::new();
+    options.read(true).follow(FollowSymlinks::No);
+    let Ok(file) = root.open_with(&name, &options) else {
+        return false;
+    };
+    let mut reader = BufReader::new(file).take(4097);
+    let mut bytes = Vec::with_capacity(256);
+    if reader.read_to_end(&mut bytes).is_err() {
+        return false;
+    }
+    if bytes.len() > 4096 {
+        return false;
+    }
+    let Ok(marker) = serde_json::from_slice::<CommitMarker>(&bytes) else {
+        return false;
+    };
+    marker.schema_version == COMMIT_MARKER_SCHEMA_VERSION
+        && marker.turn_id == turn_id.as_str()
+        && marker.through_seq == through_seq
 }
 
 fn reject_link(root: &Dir, name: &str) -> std::io::Result<()> {
@@ -638,13 +701,6 @@ pub fn recover_uncommitted(root: impl AsRef<Path>) -> Vec<RecoveredTurn> {
         if !matches!(entry.file_type(), Ok(file_type) if file_type.is_file()) {
             continue;
         }
-        let marker = marker_name_for_storage_key(stem);
-        if root
-            .symlink_metadata(&marker)
-            .is_ok_and(|metadata| metadata.is_file() && !metadata.file_type().is_symlink())
-        {
-            continue;
-        }
         let Some(events) = read_journal(&root, &name) else {
             continue;
         };
@@ -662,6 +718,10 @@ pub fn recover_uncommitted(root: impl AsRef<Path>) -> Vec<RecoveredTurn> {
                 .iter()
                 .any(|event| event.envelope.turn_id != turn_id.as_str())
         {
+            continue;
+        }
+        let through_seq = events.last().map(SequencedTurnEvent::seq).unwrap_or(0);
+        if commit_marker_matches(&root, &turn_id, through_seq) {
             continue;
         }
         let history = fold_history_from_events(&events);
@@ -993,6 +1053,34 @@ mod tests {
         assert_eq!(recovered[0].history.len(), 1);
         assert_eq!(recovered[0].history[0].content, "answer A");
 
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn recovery_only_trusts_a_marker_for_the_exact_durable_prefix() {
+        let root = tmp_root("commit-marker-validation");
+        let turn_id = TurnEventId::parse("turn-marker-validation").unwrap();
+        {
+            let log = TurnEventLog::open_in(&root, env(turn_id.as_str())).unwrap();
+            log.append(final_ev("durable answer", vec![])).unwrap();
+            let receipt = log.mark_committed().unwrap();
+            assert_eq!(receipt.through_seq, 1);
+        }
+
+        let reopened = TurnEventLog::open_in(&root, env(turn_id.as_str())).unwrap();
+        assert!(reopened.is_committed());
+        drop(reopened);
+
+        let marker_path = root.join(commit_marker_name(&turn_id));
+        fs::write(
+            &marker_path,
+            br#"{"schema_version":1,"turn_id":"turn-marker-validation","through_seq":0,"committed_at":"2026-01-01T00:00:00Z"}"#,
+        )
+        .unwrap();
+        assert_eq!(recover_uncommitted(&root).len(), 1);
+
+        fs::write(&marker_path, b"not a commit receipt").unwrap();
+        assert_eq!(recover_uncommitted(&root).len(), 1);
         fs::remove_dir_all(&root).ok();
     }
 
