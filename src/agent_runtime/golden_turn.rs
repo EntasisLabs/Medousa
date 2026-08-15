@@ -21,6 +21,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use genai::ModelIden;
@@ -28,6 +29,7 @@ use genai::adapter::AdapterKind;
 use genai::chat::{ChatOptions, ChatRequest, ChatResponse, MessageContent, Tool, ToolCall};
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 use stasis::application::orchestration::prompt_pipeline::{
     PromptExecutionContext, PromptExecutionPipeline,
@@ -42,9 +44,15 @@ use stasis::domain::errors::Result as StasisResult;
 use stasis::ports::outbound::ai_chat_client::{AiChatClient, StreamDelta};
 
 use crate::agent_runtime::stream_sink::{AgentStreamSink, SharedAgentStreamSink};
+use crate::agent_runtime::execution_context::{
+    ProviderRoute, SurfaceCapabilities, TurnExecutionContext, with_turn_execution_context,
+};
 use crate::agent_runtime::turn_completion::ToolLoopCompletionGate;
 use crate::medousa_tool_loop::MedousaToolLoopPipeline;
 use crate::payload_receipt::ArtifactReceiptMeta;
+use crate::request_principal::{RequestPrincipal, TransportClass};
+use crate::session_storage::SessionId;
+use crate::turn_continuation::TurnContinuationScope;
 use crate::turn_control_tools::{CognitionTurnCheckpointTool, CognitionTurnFinishTool};
 
 // ── Scripted model provider ──────────────────────────────────────────────────
@@ -349,6 +357,35 @@ struct GoldenOutcome {
     request_count: usize,
 }
 
+fn golden_execution_context() -> Arc<TurnExecutionContext> {
+    let turn_id = "golden-turn";
+    let scope = TurnContinuationScope {
+        turn_correlation_id: turn_id.to_string(),
+        session_id: "golden-session".to_string(),
+        identity_user_id: None,
+        original_prompt: "golden fixture".to_string(),
+        delivery_target: None,
+        provider: "golden-provider".to_string(),
+        model: "golden-model".to_string(),
+        response_depth_mode: "standard".to_string(),
+        supports_ui_artifacts: false,
+        supports_liquid_markdown: false,
+        supports_browser_host: false,
+        channel_surface: None,
+    };
+    Arc::new(TurnExecutionContext::new(
+        turn_id,
+        turn_id,
+        SessionId::parse("golden-session").unwrap(),
+        RequestPrincipal::anonymous(TransportClass::Loopback),
+        ProviderRoute::new("golden-provider", "golden-model"),
+        SurfaceCapabilities::default(),
+        CancellationToken::new(),
+        Instant::now() + Duration::from_secs(60),
+        scope,
+    ))
+}
+
 /// Run the real tool loop against a scripted model and capture the observable
 /// sink + outcome. `stream` toggles the streaming code path (and the bridge
 /// that forwards `StreamDelta::Content` to `content_chunk`, mirroring
@@ -408,15 +445,17 @@ async fn run_golden(
     };
 
     let chunk_tx_ref = if stream { Some(&chunk_tx) } else { None };
-    let response = pipeline
-        .execute_with_stream_prior_messages_max_rounds(
+    let response = with_turn_execution_context(
+        golden_execution_context(),
+        pipeline.execute_with_stream_prior_messages_max_rounds(
             request,
             Vec::new(),
             chunk_tx_ref,
             max_rounds,
             Some(&mut gate),
             None,
-        )
+        ),
+    )
         .await
         .expect("golden tool loop should not error");
 
@@ -470,15 +509,17 @@ async fn golden_round_context_is_injected_before_the_next_inference() {
         tool_call_mode: ToolCallMode::Auto,
     };
 
-    let response = pipeline
-        .execute_with_stream_prior_messages_max_rounds(
+    let response = with_turn_execution_context(
+        golden_execution_context(),
+        pipeline.execute_with_stream_prior_messages_max_rounds(
             request,
             Vec::new(),
             None,
             4,
             Some(&mut gate),
             None,
-        )
+        ),
+    )
         .await
         .expect("tool loop");
     assert_eq!(response.termination_reason, "cognition_turn_finish");
@@ -517,8 +558,17 @@ async fn golden_large_tool_output_is_bounded_for_model_but_preserved_in_receipt(
         tool_call_mode: ToolCallMode::Auto,
     };
 
-    let response = pipeline
-        .execute_with_stream_prior_messages_max_rounds(request, Vec::new(), None, 4, None, None)
+    let response = with_turn_execution_context(
+        golden_execution_context(),
+        pipeline.execute_with_stream_prior_messages_max_rounds(
+            request,
+            Vec::new(),
+            None,
+            4,
+            None,
+            None,
+        ),
+    )
         .await
         .expect("tool loop");
     assert_eq!(
@@ -557,8 +607,17 @@ async fn golden_model_visible_tools_refresh_after_a_tool_round() {
         tool_input: Value::Null,
         tool_call_mode: ToolCallMode::Auto,
     };
-    pipeline
-        .execute_with_stream_prior_messages_max_rounds(request, Vec::new(), None, 4, None, None)
+    with_turn_execution_context(
+        golden_execution_context(),
+        pipeline.execute_with_stream_prior_messages_max_rounds(
+            request,
+            Vec::new(),
+            None,
+            4,
+            None,
+            None,
+        ),
+    )
         .await
         .expect("tool loop");
     let requests = client.requests();

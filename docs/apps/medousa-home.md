@@ -110,6 +110,20 @@ Cookbooks: [Custom views](../cookbook/custom-views-and-canvas.md) · [Advanced](
 
 Full list: [`src-tauri/src/lib.rs`](../../apps/medousa-home/src-tauri/src/lib.rs) `generate_handler!` block.
 
+### Native browser request ownership
+
+Desktop snapshot, action, navigation-state, and find calls are correlated by a
+native request ID, concrete embed/pop-out surface, response kind, and navigation
+generation. Overlapping calls may complete in any order. Evaluation failure,
+timeout, caller drop, navigation, tab replacement, and close remove only the
+matching pending request; late or mismatched callbacks cannot consume a sibling
+request. The broker admits at most 64 pending calls and caps snapshot callback
+payloads at 8 MiB.
+
+`human_browser_request_diagnostics` exposes payload-free broker counts for
+pending/high-water, matched, late-or-unsolicited, wrong-kind, wrong-surface,
+stale-navigation, cancelled, oversize, and capacity-rejected outcomes.
+
 ## Mobile development
 
 iPhone on Mac: [`MOBILE-DEV.md`](../../apps/medousa-home/MOBILE-DEV.md). Operator guide: [mobile-and-lan cookbook](../cookbook/mobile-and-lan.md).

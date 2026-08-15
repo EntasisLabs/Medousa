@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use tokio_util::sync::CancellationToken;
@@ -463,6 +464,8 @@ tokio::task_local! {
     static ACTIVE_TURN_CONTEXT: Arc<TurnExecutionContext>;
 }
 
+static MISSING_TURN_CONTEXT_INVOCATIONS: AtomicU64 = AtomicU64::new(0);
+
 /// Zero-sized compatibility token for tools whose upstream trait cannot yet
 /// accept a typed invocation context. It carries no mutable fallback state.
 #[derive(Clone, Debug, Default)]
@@ -490,25 +493,17 @@ where
     ACTIVE_TURN_CONTEXT.scope(context, future).await
 }
 
-pub async fn with_optional_turn_execution_context<F>(
-    context: Option<Arc<TurnExecutionContext>>,
-    future: F,
-) -> F::Output
-where
-    F: Future,
-{
-    match context {
-        Some(context) => with_turn_execution_context(context, future).await,
-        None => future.await,
-    }
-}
-
 pub fn active_turn_execution_context() -> Option<Arc<TurnExecutionContext>> {
     ACTIVE_TURN_CONTEXT.try_with(Arc::clone).ok()
 }
 
+pub fn missing_turn_context_invocations() -> u64 {
+    MISSING_TURN_CONTEXT_INVOCATIONS.load(Ordering::Relaxed)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TurnExecutionBoundaryError {
+    MissingContext,
     Cancelled,
     DeadlineExceeded,
 }
@@ -516,6 +511,7 @@ pub enum TurnExecutionBoundaryError {
 impl fmt::Display for TurnExecutionBoundaryError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::MissingContext => formatter.write_str("turn execution context is missing"),
             Self::Cancelled => formatter.write_str("turn cancelled"),
             Self::DeadlineExceeded => formatter.write_str("turn execution deadline exceeded"),
         }
@@ -525,13 +521,14 @@ impl fmt::Display for TurnExecutionBoundaryError {
 impl std::error::Error for TurnExecutionBoundaryError {}
 
 /// Await one provider/tool leaf under the active turn's cancellation root and
-/// absolute deadline. Callers without an admitted context retain legacy behavior.
+/// absolute deadline. An unscoped leaf fails closed before it is polled.
 pub async fn await_turn_boundary<F, T>(future: F) -> Result<T, TurnExecutionBoundaryError>
 where
     F: Future<Output = T>,
 {
     let Some(context) = active_turn_execution_context() else {
-        return Ok(future.await);
+        MISSING_TURN_CONTEXT_INVOCATIONS.fetch_add(1, Ordering::Relaxed);
+        return Err(TurnExecutionBoundaryError::MissingContext);
     };
     let cancellation = context.cancellation().clone();
     let deadline = tokio::time::Instant::from_std(context.deadline());
@@ -847,8 +844,8 @@ mod tests {
         let expected = context.handle();
         let cancellation = context.cancellation().clone();
         let child_context = context.clone();
-        let child = tokio::spawn(with_optional_turn_execution_context(
-            Some(child_context),
+        let child = tokio::spawn(with_turn_execution_context(
+            child_context,
             async move {
                 let observed = active_turn_execution_context().unwrap().handle();
                 let result = await_turn_boundary(std::future::pending::<()>()).await;
@@ -861,5 +858,20 @@ mod tests {
 
         assert_eq!(observed, expected);
         assert_eq!(result, Err(TurnExecutionBoundaryError::Cancelled));
+    }
+
+    #[tokio::test]
+    async fn unscoped_leaf_fails_closed_without_polling() {
+        let before = missing_turn_context_invocations();
+        let polled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let observed = polled.clone();
+        let result = await_turn_boundary(async move {
+            observed.store(true, Ordering::Relaxed);
+        })
+        .await;
+
+        assert_eq!(result, Err(TurnExecutionBoundaryError::MissingContext));
+        assert!(!polled.load(Ordering::Relaxed));
+        assert!(missing_turn_context_invocations() > before);
     }
 }

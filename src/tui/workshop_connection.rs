@@ -377,8 +377,7 @@ mod tests {
     #[test]
     fn remember_and_active_round_trip() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let prev = std::env::var_os("MEDOUSA_DATA_DIR");
-        unsafe { std::env::set_var("MEDOUSA_DATA_DIR", dir.path()) };
+        let _data_dir = crate::paths::scoped_test_data_dir(dir.path());
 
         remember_daemon("http://10.0.0.2:7419", Some("Lab"), Some("paired-lab"))
             .expect("remember");
@@ -389,9 +388,5 @@ mod tests {
         assert_eq!(active.url, "http://10.0.0.2:7419");
         assert_eq!(active.workshop_id.as_deref(), Some("paired-lab"));
 
-        match prev {
-            Some(v) => unsafe { std::env::set_var("MEDOUSA_DATA_DIR", v) },
-            None => unsafe { std::env::remove_var("MEDOUSA_DATA_DIR") },
-        }
     }
 }

@@ -57,6 +57,7 @@ pub async fn stats(
         .map_err(internal_error)?;
 
     let last_tick_at_utc = *state.last_tick_at.read().await;
+    let execution_registry = &state.platform.agent_handle().execution_registry;
 
     Ok(Json(DaemonStatsResponse {
         enqueued_jobs: snapshot.enqueued_jobs,
@@ -67,6 +68,10 @@ pub async fn stats(
         pending_outbox_events: snapshot.pending_outbox_events,
         recurring_definitions: snapshot.recurring_definitions,
         last_tick_at_utc,
+        active_turn_executions: execution_registry.live_count(),
+        active_turn_executions_high_water: execution_registry.high_water(),
+        missing_turn_context_invocations:
+            crate::agent_runtime::execution_context::missing_turn_context_invocations(),
     }))
 }
 

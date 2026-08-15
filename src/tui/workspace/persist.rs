@@ -119,8 +119,7 @@ mod tests {
     #[test]
     fn round_trip_scoped_workspace_session() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let prev = std::env::var_os("MEDOUSA_DATA_DIR");
-        unsafe { std::env::set_var("MEDOUSA_DATA_DIR", dir.path()) };
+        let _data_dir = crate::paths::scoped_test_data_dir(dir.path());
 
         let mut shell = WorkspaceShell::bootstrap("sess-a", "Chat A");
         assert!(shell.split_active(SplitDirection::Right, "sess-b"));
@@ -136,17 +135,12 @@ mod tests {
         clear_workspace_session_for("personal").expect("clear");
         assert!(load_workspace_session_for("personal").is_none());
 
-        match prev {
-            Some(v) => unsafe { std::env::set_var("MEDOUSA_DATA_DIR", v) },
-            None => unsafe { std::env::remove_var("MEDOUSA_DATA_DIR") },
-        }
     }
 
     #[test]
     fn migrates_legacy_unscoped_once() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let prev = std::env::var_os("MEDOUSA_DATA_DIR");
-        unsafe { std::env::set_var("MEDOUSA_DATA_DIR", dir.path()) };
+        let _data_dir = crate::paths::scoped_test_data_dir(dir.path());
 
         let shell = WorkspaceShell::bootstrap("legacy", "Legacy");
         save_workspace_session(&shell).expect("legacy save");
@@ -158,9 +152,5 @@ mod tests {
         // Rename should have moved the legacy file away.
         assert!(!legacy_workspace_session_path().exists());
 
-        match prev {
-            Some(v) => unsafe { std::env::set_var("MEDOUSA_DATA_DIR", v) },
-            None => unsafe { std::env::remove_var("MEDOUSA_DATA_DIR") },
-        }
     }
 }

@@ -951,6 +951,12 @@ pub struct DaemonStatsResponse {
     pub pending_outbox_events: usize,
     pub recurring_definitions: usize,
     pub last_tick_at_utc: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub active_turn_executions: usize,
+    #[serde(default)]
+    pub active_turn_executions_high_water: usize,
+    #[serde(default)]
+    pub missing_turn_context_invocations: u64,
 }
 
 /// Live workshop runtime defaults from the daemon host (`tui_defaults.json` + env).

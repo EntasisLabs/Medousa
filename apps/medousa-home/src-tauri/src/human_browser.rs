@@ -352,7 +352,9 @@ pub struct SnapshotMarkdownDto {
 }
 
 const MAX_BROWSER_PENDING_REQUESTS: usize = 64;
+const MAX_BROWSER_PENDING_PER_SURFACE: usize = 8;
 const MAX_SNAPSHOT_REPORT_BYTES: usize = 8 * 1024 * 1024;
+const MAX_BROWSER_CONTROL_REPORT_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BrowserRequestKind {
@@ -395,6 +397,22 @@ struct BrowserBrokerCounters {
     stale_navigation: u64,
     cancelled: u64,
     oversize: u64,
+    capacity_rejected: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserRequestDiagnostics {
+    pub pending: usize,
+    pub high_water: usize,
+    pub matched: u64,
+    pub late_or_unsolicited: u64,
+    pub wrong_kind: u64,
+    pub wrong_surface: u64,
+    pub stale_navigation: u64,
+    pub cancelled: u64,
+    pub oversize: u64,
+    pub capacity_rejected: u64,
 }
 
 #[derive(Default)]
@@ -433,8 +451,23 @@ impl BrowserHostState {
     ) -> Result<String, String> {
         let mut state = self.broker.lock().expect("browser request broker");
         if state.pending.len() >= MAX_BROWSER_PENDING_REQUESTS {
+            state.counters.capacity_rejected =
+                state.counters.capacity_rejected.saturating_add(1);
             return Err(format!(
                 "browser request capacity reached (limit {MAX_BROWSER_PENDING_REQUESTS})"
+            ));
+        }
+        if state
+            .pending
+            .values()
+            .filter(|pending| pending.surface == surface)
+            .count()
+            >= MAX_BROWSER_PENDING_PER_SURFACE
+        {
+            state.counters.capacity_rejected =
+                state.counters.capacity_rejected.saturating_add(1);
+            return Err(format!(
+                "browser surface request capacity reached (limit {MAX_BROWSER_PENDING_PER_SURFACE})"
             ));
         }
         let sequence = self.next_request_id.fetch_add(1, Ordering::Relaxed);
@@ -468,11 +501,11 @@ impl BrowserHostState {
             state.counters.wrong_kind = state.counters.wrong_kind.saturating_add(1);
             return None;
         }
-        let pending = state.pending.remove(request_id).expect("pending request exists");
         if pending.surface != surface {
             state.counters.wrong_surface = state.counters.wrong_surface.saturating_add(1);
             return None;
         }
+        let pending = state.pending.remove(request_id).expect("pending request exists");
         if pending.navigation_generation != Self::navigation_generation(&state, surface) {
             state.counters.stale_navigation =
                 state.counters.stale_navigation.saturating_add(1);
@@ -514,17 +547,29 @@ impl BrowserHostState {
         state.counters.oversize = state.counters.oversize.saturating_add(1);
     }
 
-    #[cfg(test)]
-    fn pending_count(&self) -> usize {
-        self.broker
-            .lock()
-            .expect("browser request broker")
-            .pending
-            .len()
+    fn diagnostics(&self) -> BrowserRequestDiagnostics {
+        let state = self.broker.lock().expect("browser request broker");
+        BrowserRequestDiagnostics {
+            pending: state.pending.len(),
+            high_water: state.high_water,
+            matched: state.counters.matched,
+            late_or_unsolicited: state.counters.late_or_unsolicited,
+            wrong_kind: state.counters.wrong_kind,
+            wrong_surface: state.counters.wrong_surface,
+            stale_navigation: state.counters.stale_navigation,
+            cancelled: state.counters.cancelled,
+            oversize: state.counters.oversize,
+            capacity_rejected: state.counters.capacity_rejected,
+        }
     }
 }
 
 static BROWSER_HOST_STATE: LazyLock<BrowserHostState> = LazyLock::new(BrowserHostState::new);
+
+#[tauri::command]
+pub fn human_browser_request_diagnostics() -> BrowserRequestDiagnostics {
+    BROWSER_HOST_STATE.diagnostics()
+}
 
 struct BrowserPendingGuard<'a> {
     state: &'a BrowserHostState,
@@ -2926,6 +2971,17 @@ try{{
 
 #[tauri::command]
 pub fn human_browser_report_act(payload: BrowserActReport) -> Result<(), String> {
+    let report_bytes = payload.request_id.len()
+        + payload.surface.len()
+        + payload.url.len()
+        + payload.error.as_deref().map_or(0, str::len);
+    if report_bytes > MAX_BROWSER_CONTROL_REPORT_BYTES {
+        BROWSER_HOST_STATE.cancel_request(payload.request_id.trim());
+        BROWSER_HOST_STATE.record_oversize();
+        return Err(format!(
+            "browser action report exceeds {MAX_BROWSER_CONTROL_REPORT_BYTES} byte limit"
+        ));
+    }
     let surface = parse_surface(Some(payload.surface.as_str()));
     if let Some(BrowserPendingReply::Act(tx)) = BROWSER_HOST_STATE.take(
         payload.request_id.trim(),
@@ -3318,7 +3374,7 @@ mod request_broker_tests {
 
         assert_eq!(first_rx.await.unwrap().html, "first");
         assert_eq!(second_rx.await.unwrap().html, "second");
-        assert_eq!(state.pending_count(), 0);
+        assert_eq!(state.diagnostics().pending, 0);
     }
 
     #[tokio::test]
@@ -3341,7 +3397,7 @@ mod request_broker_tests {
                 )
                 .is_none()
         );
-        assert_eq!(state.pending_count(), 1);
+        assert_eq!(state.diagnostics().pending, 1);
         if let Some(BrowserPendingReply::Snapshot(tx)) = state.take(
             &request_id,
             BrowserSurface::Embed,
@@ -3409,11 +3465,11 @@ mod request_broker_tests {
         assert!(find_rx.await.unwrap().found);
         assert!(nav_rx.await.unwrap().can_go_back);
         assert!(act_rx.await.unwrap().ok);
-        assert_eq!(state.pending_count(), 0);
+        assert_eq!(state.diagnostics().pending, 0);
     }
 
     #[tokio::test]
-    async fn wrong_surface_closes_only_the_target_request() {
+    async fn wrong_surface_cannot_consume_the_target_request() {
         let state = BrowserHostState::new();
         let (tx, rx) = oneshot::channel();
         let request_id = state
@@ -3429,8 +3485,16 @@ mod request_broker_tests {
                 )
                 .is_none()
         );
-        assert!(rx.await.is_err());
-        assert_eq!(state.pending_count(), 0);
+        assert_eq!(state.diagnostics().pending, 1);
+        if let Some(BrowserPendingReply::Find(tx)) = state.take(
+            &request_id,
+            BrowserSurface::Embed,
+            BrowserRequestKind::Find,
+        ) {
+            tx.send(FindInPageResult { found: true }).unwrap();
+        }
+        assert!(rx.await.unwrap().found);
+        assert_eq!(state.diagnostics().pending, 0);
     }
 
     #[tokio::test]
@@ -3444,7 +3508,7 @@ mod request_broker_tests {
 
         drop(guard);
 
-        assert_eq!(state.pending_count(), 0);
+        assert_eq!(state.diagnostics().pending, 0);
         assert!(rx.await.is_err());
     }
 
@@ -3469,16 +3533,16 @@ mod request_broker_tests {
         state.advance_navigation(BrowserSurface::Embed);
 
         assert!(embed_rx.await.is_err());
-        assert_eq!(state.pending_count(), 1);
-        let state = state.broker.lock().expect("browser request broker");
-        assert_eq!(state.counters.cancelled, 1);
+        let diagnostics = state.diagnostics();
+        assert_eq!(diagnostics.pending, 1);
+        assert_eq!(diagnostics.cancelled, 1);
     }
 
     #[test]
     fn pending_request_admission_is_bounded() {
         let state = BrowserHostState::new();
         let mut receivers = Vec::new();
-        for _ in 0..MAX_BROWSER_PENDING_REQUESTS {
+        for _ in 0..MAX_BROWSER_PENDING_PER_SURFACE {
             let (tx, rx) = oneshot::channel();
             state
                 .register(BrowserSurface::Embed, BrowserPendingReply::Find(tx))
@@ -3494,7 +3558,48 @@ mod request_broker_tests {
                 )
                 .is_err()
         );
-        assert_eq!(state.pending_count(), MAX_BROWSER_PENDING_REQUESTS);
+        let diagnostics = state.diagnostics();
+        assert_eq!(diagnostics.pending, MAX_BROWSER_PENDING_PER_SURFACE);
+        assert_eq!(diagnostics.high_water, MAX_BROWSER_PENDING_PER_SURFACE);
+        assert_eq!(diagnostics.capacity_rejected, 1);
         drop(receivers);
+    }
+
+    #[test]
+    fn diagnostics_count_match_mismatch_cancel_and_oversize_paths() {
+        let state = BrowserHostState::new();
+        let (tx, _rx) = oneshot::channel();
+        let request_id = state
+            .register(BrowserSurface::Embed, BrowserPendingReply::Find(tx))
+            .unwrap();
+
+        assert!(
+            state
+                .take(
+                    &request_id,
+                    BrowserSurface::Embed,
+                    BrowserRequestKind::Snapshot,
+                )
+                .is_none()
+        );
+        state.record_oversize();
+        state.cancel_request(&request_id);
+        assert!(
+            state
+                .take(
+                    &request_id,
+                    BrowserSurface::Embed,
+                    BrowserRequestKind::Find,
+                )
+                .is_none()
+        );
+
+        let diagnostics = state.diagnostics();
+        assert_eq!(diagnostics.pending, 0);
+        assert_eq!(diagnostics.high_water, 1);
+        assert_eq!(diagnostics.wrong_kind, 1);
+        assert_eq!(diagnostics.cancelled, 1);
+        assert_eq!(diagnostics.oversize, 1);
+        assert_eq!(diagnostics.late_or_unsolicited, 1);
     }
 }

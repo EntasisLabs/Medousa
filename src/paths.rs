@@ -3,7 +3,31 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+#[cfg(test)]
+use std::cell::RefCell;
+
 static RESOLVED_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+#[cfg(test)]
+thread_local! {
+    static TEST_DATA_DIR: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) struct TestDataDirGuard(Option<PathBuf>);
+
+#[cfg(test)]
+impl Drop for TestDataDirGuard {
+    fn drop(&mut self) {
+        TEST_DATA_DIR.with(|slot| *slot.borrow_mut() = self.0.take());
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn scoped_test_data_dir(path: impl Into<PathBuf>) -> TestDataDirGuard {
+    let previous = TEST_DATA_DIR.with(|slot| slot.borrow_mut().replace(path.into()));
+    TestDataDirGuard(previous)
+}
 
 /// Filename under the default data dir that points at a custom engine storage root.
 pub const DATA_DIR_REDIRECT_FILENAME: &str = "data_dir";
@@ -51,6 +75,10 @@ pub fn resolve_medousa_data_dir() -> PathBuf {
 
 /// Resolved engine/client data directory for this process.
 pub fn medousa_data_dir() -> PathBuf {
+    #[cfg(test)]
+    if let Some(path) = TEST_DATA_DIR.with(|slot| slot.borrow().clone()) {
+        return path;
+    }
     RESOLVED_DATA_DIR
         .get_or_init(resolve_medousa_data_dir)
         .clone()
