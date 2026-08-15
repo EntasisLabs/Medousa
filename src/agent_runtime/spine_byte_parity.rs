@@ -29,8 +29,8 @@ mod tests {
         let log = TurnEventLog::open_in(&root, env(tag)).unwrap();
         log.append(TurnEvent::ContentDelta {
             delta: "live token".into(),
-        });
-        log.append(event);
+        }).unwrap();
+        log.append(event).unwrap();
         let folded = log.fold_history();
         assert_eq!(folded.len(), 1, "[{tag}] exactly one history body");
         let spine = &folded[0];

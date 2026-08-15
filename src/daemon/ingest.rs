@@ -194,9 +194,13 @@ pub fn publish_interactive_turn_event(
 ) {
     if let Ok(mut payload) = event {
         let journal = crate::sse_turn_projection::journal_turn_event_for_stream(&payload, None);
-        let sequenced = entry.log.append(journal);
-        payload.seq = sequenced.seq();
-        entry.channel.publish(payload);
+        match entry.log.append(journal) {
+            Ok(receipt) => {
+                payload.seq = receipt.seq();
+                entry.channel.publish(payload);
+            }
+            Err(error) => tracing::error!(%error, "interactive turn journal append failed"),
+        }
     }
 }
 

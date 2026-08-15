@@ -398,7 +398,7 @@ mod tests {
                 .unwrap();
                 log.append(medousa_engine::TurnEvent::ContentDelta {
                     delta: "fixture".to_string(),
-                });
+                }).unwrap();
                 drop(log);
                 crate::engine_recovery::mark_recovery_ledger(
                     session_id.as_str(),

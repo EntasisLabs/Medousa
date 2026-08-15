@@ -25,7 +25,8 @@ pub use turn_event::{
 };
 pub use turn_event_log::{
     configure_log_root, default_log_root, fold_history_from_events, project_turn_to_history,
-    recover_uncommitted, RecoveredTurn, TurnEventLog, TurnEventLogMetrics, TURN_LOG_DIR,
+    recover_uncommitted, JournalAppendReceipt, JournalCommitReceipt, JournalDurability,
+    RecoveredTurn, TurnEventLog, TurnEventLogMetrics, TURN_LOG_DIR,
 };
 pub use turn_pipeline::{
     TURN_PIPELINE_BATCH_BYTES, TURN_PIPELINE_BYTE_CAPACITY, TURN_PIPELINE_COALESCE,

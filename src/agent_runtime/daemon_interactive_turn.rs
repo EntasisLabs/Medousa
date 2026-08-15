@@ -109,14 +109,13 @@ impl TurnPipelineOutput for InteractivePipelineOutput {
         let journal = emission.journal_override.unwrap_or_else(|| {
             crate::sse_turn_projection::journal_turn_event_for_stream(&wire, None)
         });
-        let sequenced = self.event_log.append(journal);
-        if sequenced.seq() != emission.envelope.seq {
-            return Err(TurnPipelineError::Output(format!(
-                "journal sequence {} diverged from pipeline sequence {}",
-                sequenced.seq(), emission.envelope.seq
-            )));
-        }
-        wire.seq = sequenced.seq();
+        let event_log = Arc::clone(&self.event_log);
+        let seq = emission.envelope.seq;
+        let receipt = tokio::task::spawn_blocking(move || event_log.append_sequenced(seq, journal))
+            .await
+            .map_err(|error| TurnPipelineError::Output(format!("journal writer stopped: {error}")))?
+            .map_err(|error| TurnPipelineError::Output(format!("journal append failed: {error}")))?;
+        wire.seq = receipt.seq();
         self.stream_tx.publish(wire);
         Ok(())
     }

@@ -59,8 +59,10 @@ where
         });
     let events = log.snapshot_since(0);
     let outcome = TurnRunOutcome::from_events(&events);
-    if outcome.is_terminal() {
-        log.mark_committed();
+    if outcome.is_terminal()
+        && let Err(error) = log.mark_committed()
+    {
+        tracing::error!(turn_id, %error, "turn commit marker write failed");
     }
 
     tokio::time::sleep(Duration::from_secs(30)).await;
