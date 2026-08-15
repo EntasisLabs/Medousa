@@ -24,7 +24,7 @@ use crate::mcp_turn_token::mint_mcp_turn_token;
 use crate::semantic_values::{RequiredContent, TrimmedText};
 use crate::tools::{run_grapheme_via_runtime, validate_grapheme_source_for_schedule};
 use crate::turn_continuation::{
-    ContinuationAwaitMode, TurnContinuationScope, continuation_tool_metadata,
+    ContinuationAwaitMode, continuation_tool_metadata,
 };
 use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
 use crate::workflow::{
@@ -555,7 +555,7 @@ pub struct CognitionCapabilityInvokeTool {
     runtime: Arc<RuntimeComposition>,
     gateway_client: Arc<McpGatewayClient>,
     session_id: String,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     event_tx: mpsc::Sender<TuiEvent>,
 }
 
@@ -565,7 +565,7 @@ impl CognitionCapabilityInvokeTool {
         runtime: Arc<RuntimeComposition>,
         gateway_client: Arc<McpGatewayClient>,
         session_id: impl Into<String>,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
         event_tx: mpsc::Sender<TuiEvent>,
     ) -> Self {
         Self {
@@ -740,7 +740,7 @@ impl CognitionCapabilityInvokeTool {
             &self.turn_scope,
             &self.session_id,
         )
-        .await;
+        .await?;
 
         let mut last_error: Option<CapabilityInvokeResult> = None;
         for (index, binding) in candidates.iter().enumerate() {
@@ -813,7 +813,7 @@ pub struct CognitionMcpPromoteToJobTool {
     runtime: Arc<RuntimeComposition>,
     workflow_registry: Arc<WorkflowRegistry>,
     event_tx: mpsc::Sender<TuiEvent>,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 impl CognitionMcpPromoteToJobTool {
@@ -821,7 +821,7 @@ impl CognitionMcpPromoteToJobTool {
         runtime: Arc<RuntimeComposition>,
         workflow_registry: Arc<WorkflowRegistry>,
         event_tx: mpsc::Sender<TuiEvent>,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     ) -> Self {
         Self {
             runtime,
@@ -1170,7 +1170,7 @@ pub struct CognitionWebSearchTool {
     runtime: Arc<RuntimeComposition>,
     gateway_client: Arc<McpGatewayClient>,
     session_id: String,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     event_tx: mpsc::Sender<TuiEvent>,
 }
 
@@ -1180,7 +1180,7 @@ impl CognitionWebSearchTool {
         runtime: Arc<RuntimeComposition>,
         gateway_client: Arc<McpGatewayClient>,
         session_id: impl Into<String>,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
         event_tx: mpsc::Sender<TuiEvent>,
     ) -> Self {
         Self {
@@ -1322,12 +1322,11 @@ impl CognitionWebSearchTool {
             &self.turn_scope,
             &self.session_id,
         )
-        .await;
-        let turn_correlation_id = self
-            .turn_scope
-            .read()
+        .await?;
+        let turn_correlation_id = crate::agent_runtime::execution_context::turn_continuation_scope(
+            &self.turn_scope,
+        )
             .await
-            .as_ref()
             .map(|scope| scope.turn_correlation_id.clone())
             .unwrap_or_else(|| chat_session_id.clone());
 

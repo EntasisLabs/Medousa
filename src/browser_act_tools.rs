@@ -1,12 +1,11 @@
 //! `cognition_browser_act` — click/type automation on the shared human webview via Agent Browser.
 
-use std::sync::Arc;
 
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use stasis::domain::errors::StasisError;
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::mpsc;
 
 use crate::browser_host_client::browser_host_act;
 use crate::browser_search::{client_executed, surface_from_scope};
@@ -72,13 +71,13 @@ impl BrowserActAction {
 }
 
 pub struct CognitionBrowserActTool {
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     event_tx: mpsc::Sender<TuiEvent>,
 }
 
 impl CognitionBrowserActTool {
     pub fn new(
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
         event_tx: mpsc::Sender<TuiEvent>,
     ) -> Self {
         Self {
@@ -443,7 +442,7 @@ impl CognitionBrowserActTool {
 
 pub fn register_browser_act_tool(
     registry: &mut impl crate::typed_tools::ToolRegistration,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     event_tx: mpsc::Sender<TuiEvent>,
 ) -> stasis::prelude::Result<()> {
     registry.register_typed_tool(CognitionBrowserActTool::new(turn_scope, event_tx))?;

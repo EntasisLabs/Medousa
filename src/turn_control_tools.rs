@@ -596,17 +596,13 @@ impl CognitionTurnUpdateUserTool {
 
 pub struct CognitionTurnProposeModeTool {
     bootstrap_session_id: String,
-    turn_scope: std::sync::Arc<
-        tokio::sync::RwLock<Option<crate::turn_continuation::TurnContinuationScope>>,
-    >,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 impl CognitionTurnProposeModeTool {
     pub fn new(
         bootstrap_session_id: String,
-        turn_scope: std::sync::Arc<
-            tokio::sync::RwLock<Option<crate::turn_continuation::TurnContinuationScope>>,
-        >,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     ) -> Self {
         Self {
             bootstrap_session_id,
@@ -694,7 +690,7 @@ impl CognitionTurnProposeModeTool {
             &self.turn_scope,
             &self.bootstrap_session_id,
         )
-        .await;
+        .await?;
         let proposal = crate::agent_mode_state::propose_mode_transition(
             &session_id,
             command.mode,

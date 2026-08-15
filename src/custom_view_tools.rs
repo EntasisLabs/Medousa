@@ -13,7 +13,7 @@ use schemars::JsonSchema;
 use schemars::schema::{InstanceType, Schema, SchemaObject};
 use serde::{Deserialize, Serialize};
 use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::mpsc;
 
 use crate::custom_view_status::{
     DoctorDiagnosticOptions, build_environment_status, surface_nav_visible,
@@ -29,7 +29,6 @@ use crate::runtime_tools::{
     RuntimeRecurringRegisterOutput,
 };
 use crate::semantic_values::{RequiredContent, TrimmedText};
-use crate::turn_continuation::TurnContinuationScope;
 use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 use crate::ui_present_tools::{CognitionUiPresentTool, UiPresentInput, UiPresentOutput};
 
@@ -42,7 +41,7 @@ pub fn register_custom_view_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
     runtime: Arc<RuntimeComposition>,
     event_tx: mpsc::Sender<TuiEvent>,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 ) -> StasisResult<()> {
     crate::environment_patch::register_environment_patch_tool(registry)?;
     registry.register_typed_tool(CognitionCustomViewDoctorTool::new(runtime.clone()))?;
@@ -197,14 +196,14 @@ impl CognitionCustomViewDoctorTool {
 pub struct CognitionCustomViewComposeTool {
     runtime: Arc<RuntimeComposition>,
     event_tx: mpsc::Sender<TuiEvent>,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 impl CognitionCustomViewComposeTool {
     pub fn new(
         runtime: Arc<RuntimeComposition>,
         event_tx: mpsc::Sender<TuiEvent>,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     ) -> Self {
         Self {
             runtime,

@@ -8,7 +8,7 @@ use schemars::schema::{ArrayValidation, InstanceType, Schema, SchemaObject, Sing
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::events::TuiEvent;
@@ -19,7 +19,7 @@ use crate::runtime_composition_ext::RuntimeCompositionExt;
 use crate::runtime_job_spec::ToolJobSpec;
 use crate::semantic_values::RequiredContent;
 use crate::turn_continuation::{
-    ContinuationAwaitMode, TurnContinuationScope, continuation_tool_metadata, wire_turn_child_job,
+    ContinuationAwaitMode, continuation_tool_metadata, wire_turn_child_job,
 };
 use crate::typed_tools::{CompatOption, ExternalJson, ToolId, medousa_tool};
 
@@ -40,7 +40,7 @@ pub fn register_openshell_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
     runtime: Arc<RuntimeComposition>,
     event_tx: mpsc::Sender<TuiEvent>,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 ) -> stasis::prelude::Result<()> {
     registry.register_typed_tool(CognitionOpenshellStatusTool)?;
     registry.register_typed_tool(CognitionOpenshellSandboxRunTool::new(
@@ -102,14 +102,14 @@ impl CognitionOpenshellStatusTool {
 pub struct CognitionOpenshellSandboxRunTool {
     runtime: Arc<RuntimeComposition>,
     event_tx: mpsc::Sender<TuiEvent>,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 impl CognitionOpenshellSandboxRunTool {
     pub fn new(
         runtime: Arc<RuntimeComposition>,
         event_tx: mpsc::Sender<TuiEvent>,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     ) -> Self {
         Self {
             runtime,

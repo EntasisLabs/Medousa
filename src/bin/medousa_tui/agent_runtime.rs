@@ -608,7 +608,7 @@ pub(crate) async fn start_prompt_run(
     let session_scratch_seed =
         medousa::turn_slice::session_scratch_seed_from_history(&state.conversation, &prompt);
     let sink: Arc<dyn AgentStreamSink> = Arc::new(TuiStreamSink { tx: tx.clone() });
-    let turn_scope = tui_rt.turn_scope.clone();
+    let turn_scope = medousa::agent_runtime::execution_context::TurnScopeAccess::default();
     let execution_registry = tui_rt.execution_registry.clone();
     let worker_scheduler = tui_rt.worker_scheduler.clone();
     let tool_registry = tui_rt.tool_registry.clone();

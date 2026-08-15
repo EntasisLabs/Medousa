@@ -75,7 +75,7 @@ pub struct SurfaceCapabilities {
 }
 
 /// All values selected at admission and immutable for the execution lifetime.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct TurnExecutionContext {
     handle: TurnHandle,
     turn_id: Arc<str>,
@@ -87,6 +87,7 @@ pub struct TurnExecutionContext {
     cancellation: CancellationToken,
     deadline: Instant,
     legacy_scope: Arc<TurnContinuationScope>,
+    last_grapheme_source: Mutex<Option<Arc<str>>>,
     tasks: Arc<TurnTaskGroup>,
 }
 
@@ -115,6 +116,7 @@ impl TurnExecutionContext {
             cancellation,
             deadline,
             legacy_scope: Arc::new(legacy_scope),
+            last_grapheme_source: Mutex::new(None),
             tasks,
         }
     }
@@ -188,6 +190,20 @@ impl TurnExecutionContext {
 
     pub fn legacy_scope(&self) -> &TurnContinuationScope {
         &self.legacy_scope
+    }
+
+    pub fn remember_grapheme_source(&self, source: &str) {
+        *self
+            .last_grapheme_source
+            .lock()
+            .expect("turn grapheme source poisoned") = Some(Arc::from(source));
+    }
+
+    pub fn last_grapheme_source(&self) -> Option<Arc<str>> {
+        self.last_grapheme_source
+            .lock()
+            .expect("turn grapheme source poisoned")
+            .clone()
     }
 
     pub fn tasks(&self) -> &Arc<TurnTaskGroup> {
@@ -445,7 +461,23 @@ impl Drop for TurnExecutionLease {
 
 tokio::task_local! {
     static ACTIVE_TURN_CONTEXT: Arc<TurnExecutionContext>;
-    static ACTIVE_LEGACY_TURN_SCOPE: Arc<TurnContinuationScope>;
+}
+
+/// Zero-sized compatibility token for tools whose upstream trait cannot yet
+/// accept a typed invocation context. It carries no mutable fallback state.
+#[derive(Clone, Debug, Default)]
+pub struct TurnScopeAccess {
+    #[cfg(test)]
+    test_scope: Option<Arc<TurnContinuationScope>>,
+}
+
+#[cfg(test)]
+impl TurnScopeAccess {
+    pub(crate) fn for_test(scope: TurnContinuationScope) -> Self {
+        Self {
+            test_scope: Some(Arc::new(scope)),
+        }
+    }
 }
 
 pub async fn with_turn_execution_context<F>(
@@ -515,25 +547,20 @@ where
     }
 }
 
-pub async fn with_legacy_turn_scope<F>(scope: Arc<TurnContinuationScope>, future: F) -> F::Output
-where
-    F: Future,
-{
-    ACTIVE_LEGACY_TURN_SCOPE.scope(scope, future).await
-}
-
 /// Compatibility read for tools whose upstream trait cannot yet accept context.
-/// Admitted daemon turns never consult the shared fallback.
+/// The marker carries no fallback: an unscoped invocation fails closed.
+#[allow(unused_variables)]
 pub async fn turn_continuation_scope(
-    fallback: &tokio::sync::RwLock<Option<TurnContinuationScope>>,
+    access: &TurnScopeAccess,
 ) -> Option<TurnContinuationScope> {
     if let Some(context) = active_turn_execution_context() {
         return Some(context.legacy_scope().clone());
     }
-    if let Ok(scope) = ACTIVE_LEGACY_TURN_SCOPE.try_with(Arc::clone) {
+    #[cfg(test)]
+    if let Some(scope) = access.test_scope.as_ref() {
         return Some(scope.as_ref().clone());
     }
-    fallback.read().await.clone()
+    None
 }
 
 #[cfg(test)]
@@ -607,6 +634,18 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn invocation_scratch_is_owned_by_one_execution_generation() {
+        let first = context("session-a", "provider-a");
+        let second = context("session-a", "provider-a");
+
+        first.remember_grapheme_source("first-source");
+        second.remember_grapheme_source("second-source");
+
+        assert_eq!(first.last_grapheme_source().as_deref(), Some("first-source"));
+        assert_eq!(second.last_grapheme_source().as_deref(), Some("second-source"));
     }
 
     #[test]
@@ -684,28 +723,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn legacy_worker_scopes_are_isolated_without_shared_writes() {
-        let fallback = Arc::new(tokio::sync::RwLock::new(None));
+    async fn invocation_scopes_are_isolated_without_shared_writes() {
+        let access = TurnScopeAccess::default();
         let barrier = Arc::new(tokio::sync::Barrier::new(2));
         let run = |session: &'static str,
-                   fallback: Arc<tokio::sync::RwLock<Option<TurnContinuationScope>>>,
+                   access: TurnScopeAccess,
                    barrier: Arc<tokio::sync::Barrier>| async move {
-            let scope = context(session, "provider").legacy_scope().clone();
-            with_legacy_turn_scope(Arc::new(scope), async move {
+            let context = Arc::new(context(session, "provider"));
+            with_turn_execution_context(context, async move {
                 barrier.wait().await;
                 tokio::task::yield_now().await;
-                turn_continuation_scope(&fallback).await.unwrap().session_id
+                turn_continuation_scope(&access).await.unwrap().session_id
             })
             .await
         };
 
         let (first, second) = tokio::join!(
-            run("session-a", fallback.clone(), barrier.clone()),
-            run("session-b", fallback.clone(), barrier.clone())
+            run("session-a", access.clone(), barrier.clone()),
+            run("session-b", access, barrier.clone())
         );
         assert_eq!(first, "session-a");
         assert_eq!(second, "session-b");
-        assert!(fallback.read().await.is_none());
+        assert!(active_turn_execution_context().is_none());
     }
 
     #[test]

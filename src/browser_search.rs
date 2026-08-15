@@ -1,10 +1,8 @@
 //! Unified web search orchestration: BrowserHost → lite → Grapheme fallback.
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use tokio::sync::RwLock;
 
 use medousa_browser_lite::{search_ddg_html_cached_async, SearchResponse};
 
@@ -142,7 +140,7 @@ pub fn search_response_to_tool_json(
 }
 
 pub async fn resolve_browser_host_enabled(
-    turn_scope: &Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: &crate::agent_runtime::execution_context::TurnScopeAccess,
 ) -> (bool, Option<String>) {
     let scope =
         crate::agent_runtime::execution_context::turn_continuation_scope(turn_scope).await;
@@ -168,7 +166,7 @@ pub async fn resolve_browser_host_enabled(
 pub async fn run_browser_backed_search(
     query: &str,
     max_results: usize,
-    turn_scope: &Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: &crate::agent_runtime::execution_context::TurnScopeAccess,
     turn_correlation_id: &str,
     chat_session_id: &str,
     sink: Option<SharedAgentStreamSink>,

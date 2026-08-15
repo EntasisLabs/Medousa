@@ -1,17 +1,14 @@
 //! Rich HTML presentation tool (`cognition_ui_present`) for surfaces that opt in via
 //! `TurnSurfaceContext.supports_ui_artifacts`.
 
-use std::sync::Arc;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use stasis::prelude::{Result as StasisResult, StasisError};
-use tokio::sync::RwLock;
 
 use crate::daemon_api::TurnSurfaceContext;
 use crate::runtime_session::{require_active_chat_session_id_async, runtime_bootstrap_session_id};
 use crate::semantic_values::{RequiredContent, TrimmedText};
-use crate::turn_continuation::TurnContinuationScope;
 use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_UI_PRESENT: &str = "cognition_ui_present";
@@ -29,18 +26,18 @@ pub fn surface_supports_ui_artifacts(surface: Option<&TurnSurfaceContext>) -> bo
 
 pub fn register_ui_present_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 ) -> stasis::prelude::Result<()> {
     registry.register_typed_tool(CognitionUiPresentTool::new(turn_scope))?;
     Ok(())
 }
 
 pub struct CognitionUiPresentTool {
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 impl CognitionUiPresentTool {
-    pub fn new(turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>) -> Self {
+    pub fn new(turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess) -> Self {
         Self { turn_scope }
     }
 
@@ -54,10 +51,8 @@ impl CognitionUiPresentTool {
     }
 
     async fn active_surface_supports_ui_artifacts(&self) -> bool {
-        self.turn_scope
-            .read()
+        crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
             .await
-            .as_ref()
             .is_some_and(|scope| scope.supports_ui_artifacts)
     }
 }
@@ -457,10 +452,10 @@ mod tests {
 
     #[tokio::test]
     async fn ui_present_rejects_bootstrap_only_session_resolution() {
-        let turn_scope = Arc::new(RwLock::new(None::<TurnContinuationScope>));
+        let turn_scope = crate::agent_runtime::execution_context::TurnScopeAccess::default();
         let tool = CognitionUiPresentTool::new(turn_scope);
         let err = tool.resolve_session_id().await.expect_err("bootstrap-only");
-        assert!(err.to_string().contains("not a chat session"));
+        assert!(err.to_string().contains("execution context required"));
         assert!(is_runtime_bootstrap_session_id(
             RUNTIME_BOOTSTRAP_SESSION_ID
         ));
@@ -468,7 +463,7 @@ mod tests {
 
     #[tokio::test]
     async fn ui_present_uses_active_turn_session_not_bootstrap() {
-        let turn_scope = Arc::new(RwLock::new(Some(TurnContinuationScope {
+        let turn_scope = crate::agent_runtime::execution_context::TurnScopeAccess::for_test(crate::turn_continuation::TurnContinuationScope {
             turn_correlation_id: "turn-1".to_string(),
             session_id: "medousa-home".to_string(),
             identity_user_id: None,
@@ -481,7 +476,7 @@ mod tests {
             supports_liquid_markdown: true,
             supports_browser_host: false,
             channel_surface: Some("home-desktop".to_string()),
-        })));
+        });
         let tool = CognitionUiPresentTool::new(turn_scope);
         let session_id = tool.resolve_session_id().await.expect("turn scope session");
         assert_eq!(session_id, "medousa-home");

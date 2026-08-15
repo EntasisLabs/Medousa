@@ -19,7 +19,6 @@ use crate::capability_catalog::CapabilityRegistry;
 use crate::environment_store::{environment_hub, resolve_profile_id};
 use crate::feed_bus::{FeedPublishRequest, publish};
 use crate::semantic_values::{RequiredContent, TrimmedText};
-use crate::turn_continuation::TurnContinuationScope;
 use crate::typed_tools::{CompatList, CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_INTENT_RESOLVE: &str = "cognition_intent_resolve";
@@ -33,7 +32,7 @@ const COGNITION_FEED_SUBSCRIBE_ID: ToolId = ToolId::new(COGNITION_FEED_SUBSCRIBE
 pub fn register_feed_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
     capability_registry: Arc<RwLock<CapabilityRegistry>>,
-    _turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    _turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 ) -> StasisResult<()> {
     registry.register_typed_tool(CognitionIntentResolveTool::new(capability_registry.clone()))?;
     registry.register_typed_tool(CognitionFeedSubscribeTool)?;

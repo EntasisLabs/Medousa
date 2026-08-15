@@ -367,8 +367,7 @@ pub struct LocalTurnExecutionParams {
     pub identity_memory_store: Option<
         Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>,
     >,
-    pub turn_scope:
-        Arc<tokio::sync::RwLock<Option<crate::turn_continuation::TurnContinuationScope>>>,
+    pub turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     pub activation: TurnActivationDecision,
     pub pipeline: MedousaToolLoopPipeline,
     pub no_tools_pipeline: PromptExecutionPipeline,
@@ -573,7 +572,7 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
                 as Arc<
                     dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore,
                 >),
-            turn_scope: params.tui_rt.turn_scope.clone(),
+            turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess::default(),
             activation: activation.clone(),
             pipeline: pipeline_selection.pipeline.clone(),
             no_tools_pipeline,

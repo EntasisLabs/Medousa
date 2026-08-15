@@ -1,15 +1,12 @@
 //! On-demand session tool history (Phase 8C) — summary + detail by slice id.
 
-use std::sync::Arc;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use stasis::domain::errors::{Result as StasisResult, StasisError};
-use tokio::sync::RwLock;
 
 use crate::session::load_history;
 use crate::semantic_values::TrimmedText;
-use crate::turn_continuation::TurnContinuationScope;
 use crate::turn_slice::{
     DEFAULT_TOOL_HISTORY_DETAIL_CHARS, DEFAULT_TOOL_HISTORY_SUMMARY_TURNS, tool_history_detail_markdown,
     tool_history_summary_rows, ToolHistorySliceRow,
@@ -36,7 +33,7 @@ fn required_slice_id(value: Option<String>) -> Result<TrimmedText, StasisError> 
 
 pub fn register_tool_history_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 ) -> StasisResult<()> {
     registry.register_typed_tool(CognitionToolHistorySummaryTool {
         turn_scope: turn_scope.clone(),
@@ -46,7 +43,7 @@ pub fn register_tool_history_tools(
 }
 
 pub struct CognitionToolHistorySummaryTool {
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -152,7 +149,7 @@ impl CognitionToolHistorySummaryTool {
 }
 
 pub struct CognitionToolHistoryDetailTool {
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 #[derive(Debug, JsonSchema)]

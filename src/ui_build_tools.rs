@@ -20,7 +20,6 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::semantic_values::TrimmedText;
-use crate::turn_continuation::TurnContinuationScope;
 use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
 
 pub const COGNITION_UI_BUILD: &str = "cognition_ui_build";
@@ -213,7 +212,7 @@ type SessionMap = Arc<RwLock<HashMap<String, BuildSession>>>;
 
 pub fn register_ui_build_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 ) -> stasis::prelude::Result<()> {
     let sessions: SessionMap = Arc::new(RwLock::new(HashMap::new()));
     registry.register_typed_tool(CognitionUiBuildTool::new(turn_scope, sessions))?;
@@ -221,13 +220,13 @@ pub fn register_ui_build_tools(
 }
 
 pub struct CognitionUiBuildTool {
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     sessions: SessionMap,
 }
 
 impl CognitionUiBuildTool {
     pub(crate) fn new(
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
         sessions: SessionMap,
     ) -> Self {
         Self {
@@ -237,18 +236,14 @@ impl CognitionUiBuildTool {
     }
 
     async fn supports_ui(&self) -> bool {
-        self.turn_scope
-            .read()
+        crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
             .await
-            .as_ref()
             .is_some_and(|scope| scope.supports_ui_artifacts)
     }
 
     async fn turn_id(&self) -> StasisResult<String> {
-        self.turn_scope
-            .read()
+        crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
             .await
-            .as_ref()
             .map(|s| s.turn_correlation_id.clone())
             .ok_or_else(|| StasisError::PortFailure("no active turn scope".to_string()))
     }
@@ -264,11 +259,10 @@ impl CognitionUiBuildTool {
     }
 
     async fn begin(&self, command: &UiBuildCommand) -> StasisResult<Value> {
-        let scope = self
-            .turn_scope
-            .read()
+        let scope = crate::agent_runtime::execution_context::turn_continuation_scope(
+            &self.turn_scope,
+        )
             .await
-            .clone()
             .ok_or_else(|| StasisError::PortFailure("no active turn scope".to_string()))?;
         let surface_id = command
             .surface_id
@@ -709,8 +703,8 @@ mod tests {
     use super::*;
     use crate::daemon_api::TurnSurfaceContext;
 
-    fn scope(supports: bool) -> Arc<RwLock<Option<TurnContinuationScope>>> {
-        Arc::new(RwLock::new(Some(TurnContinuationScope {
+    fn scope(supports: bool) -> crate::agent_runtime::execution_context::TurnScopeAccess {
+        crate::agent_runtime::execution_context::TurnScopeAccess::for_test(crate::turn_continuation::TurnContinuationScope {
             turn_correlation_id: "turn-1".to_string(),
             session_id: "medousa-home".to_string(),
             identity_user_id: None,
@@ -723,7 +717,7 @@ mod tests {
             supports_liquid_markdown: supports,
             supports_browser_host: false,
             channel_surface: Some("home-desktop".to_string()),
-        })))
+        })
     }
 
     fn tool(supports: bool) -> CognitionUiBuildTool {

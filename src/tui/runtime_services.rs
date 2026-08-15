@@ -52,7 +52,6 @@ use crate::tools::{
     CognitionUtilityDayOfWeekTool, CognitionUtilityTimeNowTool, CognitionUtilityUuidTool,
     PolicyAwareToolRegistry, TuiRuntime,
 };
-use crate::turn_continuation::TurnContinuationScope;
 use crate::turn_control_tools::{
     CognitionTurnBeginWorkTool, CognitionTurnCheckpointTool, CognitionTurnFinishTool,
     CognitionTurnPrepareFinalTool, CognitionTurnProposeModeTool,
@@ -159,7 +158,7 @@ pub(crate) async fn assemble_tui_runtime(
     let workflow_registry = workflow::shared_workflow_registry();
     let catalog_handle = ToolCatalogHandle::default();
     let mut tool_registry = ToolRegistrar::new(crate::tool_catalog::first_party_placement_index());
-    let turn_scope = Arc::new(RwLock::new(None::<TurnContinuationScope>));
+    let turn_scope = crate::agent_runtime::execution_context::TurnScopeAccess::default();
     let compaction_target = GraphemeCompactionModelTarget {
         provider: resolved_provider.clone(),
         model: resolved_model.clone(),
@@ -530,7 +529,6 @@ pub(crate) async fn assemble_tui_runtime(
         memory_writer,
         memory_operations,
         client_registry,
-        turn_scope,
         execution_registry: crate::agent_runtime::execution_context::TurnExecutionRegistry::default(),
         worker_scheduler,
     })

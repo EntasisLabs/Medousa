@@ -1,17 +1,15 @@
 //! Agent tools for listing, reading, grepping, and revising HTML UI artifacts.
 
-use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 use stasis::prelude::{Result as StasisResult, StasisError};
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::mpsc;
 
 use crate::events::TuiEvent;
 use crate::runtime_session::{require_active_chat_session_id_async, runtime_bootstrap_session_id};
 use crate::semantic_values::{RequiredContent, TrimmedText};
-use crate::turn_continuation::TurnContinuationScope;
 use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_ARTIFACT_LIST: &str = "cognition_artifact_list";
@@ -50,7 +48,7 @@ pub fn is_artifact_cognition_tool(name: &str) -> bool {
 pub fn register_artifact_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
     event_tx: mpsc::Sender<TuiEvent>,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 ) -> StasisResult<()> {
     registry.register_typed_tool(CognitionArtifactListTool::new(
         event_tx.clone(),
@@ -80,20 +78,19 @@ fn emit_invoked(event_tx: &mpsc::Sender<TuiEvent>, tool_name: &str, summary: &st
 }
 
 struct ArtifactToolContext {
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 impl ArtifactToolContext {
-    fn new(turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>) -> Self {
+    fn new(turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess) -> Self {
         Self { turn_scope }
     }
 
     async fn require_ui_artifacts(&self) -> StasisResult<()> {
-        let supported = self
-            .turn_scope
-            .read()
+        let supported = crate::agent_runtime::execution_context::turn_continuation_scope(
+            &self.turn_scope,
+        )
             .await
-            .as_ref()
             .is_some_and(|scope| scope.supports_ui_artifacts);
         if supported {
             Ok(())
@@ -123,7 +120,7 @@ pub struct CognitionArtifactListTool {
 impl CognitionArtifactListTool {
     pub fn new(
         event_tx: mpsc::Sender<TuiEvent>,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     ) -> Self {
         Self {
             event_tx,
@@ -240,7 +237,7 @@ pub struct CognitionArtifactReadTool {
 impl CognitionArtifactReadTool {
     pub fn new(
         event_tx: mpsc::Sender<TuiEvent>,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     ) -> Self {
         Self {
             event_tx,
@@ -386,7 +383,7 @@ pub struct CognitionArtifactGrepTool {
 impl CognitionArtifactGrepTool {
     pub fn new(
         event_tx: mpsc::Sender<TuiEvent>,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     ) -> Self {
         Self {
             event_tx,
@@ -504,7 +501,7 @@ pub struct CognitionArtifactWriteTool {
 impl CognitionArtifactWriteTool {
     pub fn new(
         event_tx: mpsc::Sender<TuiEvent>,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     ) -> Self {
         Self {
             event_tx,
@@ -751,7 +748,7 @@ pub struct CognitionArtifactDeleteTool {
 impl CognitionArtifactDeleteTool {
     pub fn new(
         event_tx: mpsc::Sender<TuiEvent>,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     ) -> Self {
         Self {
             event_tx,

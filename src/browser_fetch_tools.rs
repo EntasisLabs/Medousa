@@ -1,12 +1,11 @@
 //! `cognition_browser_fetch` — gated on `supports_browser_host`.
 
-use std::sync::Arc;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use stasis::domain::errors::StasisError;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::mpsc;
 
 use crate::browser_host_client::{browser_host_fetch, browser_host_healthy};
 use crate::browser_search::surface_from_scope;
@@ -14,19 +13,18 @@ use crate::browser_tools::{
     BrowserUrlCommand, COGNITION_BROWSER_FETCH, surface_supports_browser_host,
 };
 use crate::events::TuiEvent;
-use crate::turn_continuation::TurnContinuationScope;
 use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 const COGNITION_BROWSER_FETCH_ID: ToolId = ToolId::new(COGNITION_BROWSER_FETCH);
 
 pub struct CognitionBrowserFetchTool {
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     event_tx: mpsc::Sender<TuiEvent>,
 }
 
 impl CognitionBrowserFetchTool {
     pub fn new(
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
         event_tx: mpsc::Sender<TuiEvent>,
     ) -> Self {
         Self {
@@ -161,7 +159,7 @@ impl CognitionBrowserFetchTool {
 
 pub fn register_browser_fetch_tool(
     registry: &mut impl crate::typed_tools::ToolRegistration,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     event_tx: mpsc::Sender<TuiEvent>,
 ) -> stasis::prelude::Result<()> {
     registry.register_typed_tool(CognitionBrowserFetchTool::new(turn_scope, event_tx))?;

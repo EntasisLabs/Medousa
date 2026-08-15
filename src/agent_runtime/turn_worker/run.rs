@@ -132,7 +132,7 @@ pub struct WorkerRuntimeContext {
     pub provider: String,
     pub model: String,
     pub base_url: Option<String>,
-    pub turn_scope: Arc<RwLock<Option<crate::turn_continuation::TurnContinuationScope>>>,
+    pub turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 impl WorkerRuntimeContext {
@@ -147,7 +147,7 @@ impl WorkerRuntimeContext {
             provider,
             model,
             base_url,
-            turn_scope: rt.turn_scope.clone(),
+            turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess::default(),
         }
     }
 }
@@ -885,10 +885,7 @@ pub async fn run_worker_turn(
     let _execution_lease = execution_lease;
     crate::agent_runtime::execution_context::with_turn_execution_context(
         execution_context,
-        crate::agent_runtime::execution_context::with_legacy_turn_scope(
-            Arc::new(scope),
-            run_worker_turn_inner(store, ctx, work_id, sink, stream_turn_id, record),
-        ),
+        run_worker_turn_inner(store, ctx, work_id, sink, stream_turn_id, record),
     )
     .await;
 }
@@ -1566,7 +1563,7 @@ mod tests {
     }
 
     fn parent_context(session_id: &str) -> (WorkerRuntimeContext, ActiveWorkerBusSession) {
-        let turn_scope = Arc::new(RwLock::new(None));
+        let turn_scope = crate::agent_runtime::execution_context::TurnScopeAccess::default();
         let runtime = WorkerRuntimeContext {
             tool_registry: Arc::new(InMemoryToolRegistry::default()),
             client_registry: crate::client_tools::ClientRegistry::new(),
