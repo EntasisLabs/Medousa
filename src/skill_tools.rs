@@ -6,7 +6,7 @@ use chrono::Utc;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::events::TuiEvent;
@@ -22,7 +22,7 @@ use crate::skill_execution::{
     resolve_skill_assets_dir,
 };
 use crate::skill_import::resolve_skill_source;
-use crate::turn_continuation::{ContinuationAwaitMode, TurnContinuationScope, wire_turn_child_job};
+use crate::turn_continuation::{ContinuationAwaitMode, wire_turn_child_job};
 use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_SKILL_DISCOVER: &str = "cognition_skill_discover";
@@ -47,7 +47,7 @@ pub fn register_skill_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
     runtime: Arc<RuntimeComposition>,
     event_tx: mpsc::Sender<TuiEvent>,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 ) -> stasis::prelude::Result<()> {
     registry.register_typed_tool(CognitionSkillDiscoverTool)?;
     registry.register_typed_tool(CognitionSkillProposeTool)?;
@@ -322,14 +322,14 @@ impl CognitionSkillProposeTool {
 pub struct CognitionSkillProbeTool {
     runtime: Arc<RuntimeComposition>,
     event_tx: mpsc::Sender<TuiEvent>,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 impl CognitionSkillProbeTool {
     pub fn new(
         runtime: Arc<RuntimeComposition>,
         event_tx: mpsc::Sender<TuiEvent>,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     ) -> Self {
         Self {
             runtime,
@@ -610,7 +610,7 @@ impl CognitionSkillProbeTool {
 async fn enqueue_openshell_job(
     runtime: &Arc<RuntimeComposition>,
     event_tx: &mpsc::Sender<TuiEvent>,
-    turn_scope: &Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: &crate::agent_runtime::execution_context::TurnScopeAccess,
     payload: OpenshellSandboxRunPayload,
     causation: &str,
 ) -> StasisResult<String> {

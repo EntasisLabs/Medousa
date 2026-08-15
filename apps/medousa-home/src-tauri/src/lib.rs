@@ -452,6 +452,8 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_report_snapshot,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_report_act,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_snapshot_html,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_snapshot_markdown,
@@ -475,6 +477,8 @@ pub fn run() {
             human_browser::human_browser_popout_find_in_page,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_report_find_result,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_request_diagnostics,
             #[cfg(target_os = "android")]
             human_browser_android::human_browser_navigate,
             #[cfg(target_os = "android")]

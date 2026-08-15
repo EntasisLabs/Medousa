@@ -1114,7 +1114,7 @@ async fn spawn_continuation_agent_turn(
                 agent_runtime.as_ref(),
                 sink,
                 Some(continuation_scope),
-                Some(execution_context),
+                execution_context,
                 None,
                 None,
             )
@@ -1136,7 +1136,7 @@ async fn spawn_continuation_agent_turn(
         interactive_request.manuscript_id.clone(),
         interactive_request.additional_manuscript_ids.clone(),
         interactive_request.suggested_capability_ids.clone(),
-        Some((execution_lease, execution_context)),
+        (execution_lease, execution_context),
     )
     .await;
     Ok(())
@@ -1160,7 +1160,7 @@ pub async fn spawn_daemon_api_agent_turn(
     let continuation_scope = crate::turn_continuation::TurnContinuationScope {
         turn_correlation_id: job_id.clone(),
         session_id: session_id.clone(),
-        identity_user_id: Some(identity_user_id),
+        identity_user_id: Some(identity_user_id.clone()),
         original_prompt: prompt.clone(),
         delivery_target: None,
         provider: provider.clone(),
@@ -1171,6 +1171,27 @@ pub async fn spawn_daemon_api_agent_turn(
         supports_browser_host: false,
         channel_surface: Some("api".to_string()),
     };
+    let execution = match crate::agent_runtime::execution_context::TurnExecutionContext::from_scope(
+        job_id.clone(),
+        crate::request_principal::RequestPrincipal::continuation(identity_user_id),
+        tokio_util::sync::CancellationToken::new(),
+        std::time::Instant::now() + std::time::Duration::from_secs(2 * 60 * 60),
+        continuation_scope.clone(),
+    ) {
+        Ok(execution) => execution,
+        Err(error) => {
+            tracing::warn!(job_id = %job_id, error = %error, "rejecting invalid API agent turn admission");
+            return;
+        }
+    };
+    let execution_lease = match state.platform.agent_handle().execution_registry.admit(execution) {
+        Ok(lease) => lease,
+        Err(error) => {
+            tracing::warn!(job_id = %job_id, error = %error, "rejecting API agent turn admission");
+            return;
+        }
+    };
+    let execution_context = execution_lease.context().clone();
     spawn_daemon_api_agent_turn_with_scope(
         state,
         job_id,
@@ -1184,7 +1205,7 @@ pub async fn spawn_daemon_api_agent_turn(
         manuscript_id,
         additional_manuscript_ids,
         suggested_capability_ids,
-        None,
+        (execution_lease, execution_context),
     )
     .await;
 }
@@ -1203,10 +1224,10 @@ pub async fn spawn_daemon_api_agent_turn_with_scope(
     manuscript_id: Option<String>,
     additional_manuscript_ids: Option<Vec<String>>,
     suggested_capability_ids: Option<Vec<String>>,
-    admitted_execution: Option<(
+    admitted_execution: (
         crate::agent_runtime::execution_context::TurnExecutionLease,
         Arc<crate::agent_runtime::execution_context::TurnExecutionContext>,
-    )>,
+    ),
 ) {
     state
         .agent_turn_jobs
@@ -1238,12 +1259,10 @@ pub async fn spawn_daemon_api_agent_turn_with_scope(
     let last_agent_turn_latency_ms = state.last_agent_turn_latency_ms.clone();
     let job_id_for_task = job_id.clone();
     let session_id_for_sink = session_id.clone();
-    let execution_context = admitted_execution
-        .as_ref()
-        .map(|(_, context)| context.clone());
+    let execution_context = admitted_execution.1.clone();
 
     tokio::spawn(async move {
-        let _execution_lease = admitted_execution.map(|(lease, _)| lease);
+        let _execution_lease = admitted_execution.0;
         let sink: Arc<dyn AgentStreamSink> = Arc::new(ApiAgentStreamSink {
             job_id: job_id_for_task.clone(),
             session_id: session_id_for_sink,
@@ -1973,7 +1992,26 @@ async fn start_ingest_ask_stream(
             .as_ref()
             .and_then(|surface| surface.channel_surface.clone()),
     };
+    let execution = crate::agent_runtime::execution_context::TurnExecutionContext::from_scope(
+        stream_id.clone(),
+        crate::request_principal::RequestPrincipal::continuation(
+            continuation_scope
+                .identity_user_id
+                .clone()
+                .unwrap_or_else(crate::user_profiles::resolve_workshop_identity_user_id),
+        ),
+        tokio_util::sync::CancellationToken::new(),
+        std::time::Instant::now() + std::time::Duration::from_secs(2 * 60 * 60),
+        continuation_scope.clone(),
+    )
+    .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    let execution_lease = agent_runtime
+        .execution_registry
+        .admit(execution)
+        .map_err(|error| (StatusCode::TOO_MANY_REQUESTS, error.to_string()))?;
+    let execution_context = execution_lease.context().clone();
     tokio::spawn(async move {
+        let _execution_lease = execution_lease;
         // Brief guard so the client's SSE subscribe wins the race against the first
         // (cosmetic) status event; answer tokens arrive far later regardless.
         tokio::time::sleep(Duration::from_millis(25)).await;
@@ -2010,7 +2048,7 @@ async fn start_ingest_ask_stream(
             agent_runtime.as_ref(),
             sink,
             Some(continuation_scope),
-            None,
+            execution_context,
             None,
             None,
         )

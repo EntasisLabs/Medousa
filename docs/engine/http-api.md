@@ -53,6 +53,12 @@ formats, profiles that no longer have access, and delivery targets for another
 session are abandoned rather than resumed. An accepted replay runs as a new
 bounded execution with its own cancellation root and deadline.
 
+`DaemonStatsResponse` also reports `active_turn_executions`, its process
+high-water mark, and `missing_turn_context_invocations`. The final counter is a
+fail-closed invariant signal: any non-zero increase means a provider or tool
+leaf reached the runtime without admission context and was rejected before the
+leaf future was polled.
+
 Stasis dashboard mounted at `/dashboard` (HTML UI).
 
 ---

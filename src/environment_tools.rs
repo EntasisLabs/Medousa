@@ -1,6 +1,5 @@
 //! Agent tools for environment spec and component canvas CRUD.
 
-use std::sync::Arc;
 
 use chrono::Utc;
 use medousa_types::environment::{
@@ -13,11 +12,9 @@ use schemars::schema::{InstanceType, Schema, SchemaObject};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Value, json};
 use stasis::prelude::{Result as StasisResult, StasisError};
-use tokio::sync::RwLock;
 
 use crate::environment_store::{environment_hub, resolve_profile_id};
 use crate::semantic_values::TrimmedText;
-use crate::turn_continuation::TurnContinuationScope;
 use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_ENVIRONMENT_GET: &str = "cognition_environment_get";
@@ -88,7 +85,7 @@ fn component_def_schema() -> Value {
 
 pub fn register_environment_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 ) -> StasisResult<()> {
     crate::environment_wiki_tools::register_environment_wiki_tools(registry)?;
     registry.register_typed_tool(CognitionEnvironmentGetTool)?;
@@ -485,11 +482,11 @@ impl CognitionComponentGetTool {
 }
 
 struct CognitionComponentCreateTool {
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 impl CognitionComponentCreateTool {
-    fn new(turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>) -> Self {
+    fn new(turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess) -> Self {
         Self { turn_scope }
     }
 }
@@ -677,11 +674,11 @@ impl CognitionComponentCreateTool {
 }
 
 struct CognitionComponentUpdateTool {
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 impl CognitionComponentUpdateTool {
-    fn new(turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>) -> Self {
+    fn new(turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess) -> Self {
         Self { turn_scope }
     }
 }
@@ -991,12 +988,10 @@ fn profile_from_typed(profile_id: Option<&str>) -> String {
 }
 
 async fn tool_session_id(
-    turn_scope: &Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: &crate::agent_runtime::execution_context::TurnScopeAccess,
 ) -> Option<String> {
-    turn_scope
-        .read()
+    crate::agent_runtime::execution_context::turn_continuation_scope(turn_scope)
         .await
-        .as_ref()
         .map(|scope| scope.session_id.clone())
         .filter(|id| !id.trim().is_empty())
 }

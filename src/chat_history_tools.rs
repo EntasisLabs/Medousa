@@ -1,15 +1,12 @@
 //! Read-only, profile-scoped access to durable Medousa chat history.
 
-use std::sync::Arc;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use stasis::domain::errors::{Result as StasisResult, StasisError};
-use tokio::sync::RwLock;
 
 use crate::semantic_values::TrimmedText;
 use crate::session::{ConversationTurn, SessionHistorySummary, load_history};
-use crate::turn_continuation::TurnContinuationScope;
 use crate::turn_parts::TurnPart;
 use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
@@ -32,7 +29,7 @@ const SEARCH_EXCERPT_CHARS: usize = 420;
 
 pub fn register_chat_history_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 ) -> StasisResult<()> {
     registry.register_typed_tool(CognitionChatHistorySearchTool {
         turn_scope: turn_scope.clone(),
@@ -48,7 +45,7 @@ struct HistoryAccess {
 }
 
 async fn history_access(
-    turn_scope: &RwLock<Option<TurnContinuationScope>>,
+    turn_scope: &crate::agent_runtime::execution_context::TurnScopeAccess,
     tool_name: &str,
 ) -> Result<HistoryAccess, StasisError> {
     let scope = crate::agent_runtime::execution_context::turn_continuation_scope(turn_scope)
@@ -203,7 +200,7 @@ pub struct ChatHistorySearchOutput {
 }
 
 pub struct CognitionChatHistorySearchTool {
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 #[medousa_tool(id = COGNITION_CHAT_HISTORY_SEARCH_ID)]
@@ -350,7 +347,7 @@ pub struct ChatHistoryReadOutput {
 }
 
 pub struct CognitionChatHistoryReadTool {
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 #[medousa_tool(id = COGNITION_CHAT_HISTORY_READ_ID)]
@@ -505,7 +502,7 @@ mod tests {
 
     #[tokio::test]
     async fn cross_session_access_requires_a_turn_principal() {
-        let scope = RwLock::new(Some(TurnContinuationScope {
+        let scope = crate::agent_runtime::execution_context::TurnScopeAccess::for_test(crate::turn_continuation::TurnContinuationScope {
             turn_correlation_id: "turn-1".to_string(),
             session_id: "session-a".to_string(),
             identity_user_id: None,
@@ -518,7 +515,7 @@ mod tests {
             supports_liquid_markdown: false,
             supports_browser_host: false,
             channel_surface: None,
-        }));
+        });
         let error = history_access(&scope, COGNITION_CHAT_HISTORY_SEARCH)
             .await
             .expect_err("missing principal must be denied");

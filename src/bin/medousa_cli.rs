@@ -217,6 +217,12 @@ async fn run_daemon_stats(daemon_url: &str) -> Result<()> {
         "outbox_pending={} recurring_definitions={} last_tick={:?}",
         payload.pending_outbox_events, payload.recurring_definitions, payload.last_tick_at_utc
     );
+    println!(
+        "turn_executions: active={} high_water={} missing_context={}",
+        payload.active_turn_executions,
+        payload.active_turn_executions_high_water,
+        payload.missing_turn_context_invocations
+    );
     Ok(())
 }
 

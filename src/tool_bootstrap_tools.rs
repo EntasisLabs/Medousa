@@ -1,26 +1,23 @@
 //! `cognition_tools_discover` — session-scoped tool domain unlock (Phase 9C).
 
 use std::collections::HashSet;
-use std::sync::Arc;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 use stasis::domain::errors::{Result as StasisResult, StasisError};
-use tokio::sync::RwLock;
 
 use crate::agent_runtime::turn_worker::{host_bus_tool_names, tool_allowed};
 use crate::tool_bootstrap::{
     COGNITION_TOOLS_DISCOVER, ToolSurfaceLane, bootstrap_tools, discover_session_domain,
     domain_catalog, load_session_tool_surface,
 };
-use crate::turn_continuation::TurnContinuationScope;
 use crate::typed_tools::{CompatOption, ToolCatalogHandle, ToolId, medousa_tool};
 
 const COGNITION_TOOLS_DISCOVER_ID: ToolId = ToolId::new(COGNITION_TOOLS_DISCOVER);
 
 pub fn register_tool_bootstrap_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     catalog: ToolCatalogHandle,
 ) -> StasisResult<()> {
     registry.register_typed_tool(CognitionToolsDiscoverTool {
@@ -31,7 +28,7 @@ pub fn register_tool_bootstrap_tools(
 }
 
 pub struct CognitionToolsDiscoverTool {
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     catalog: ToolCatalogHandle,
 }
 
@@ -347,7 +344,7 @@ fn domain_detail(
 }
 
 fn resolve_lane(
-    turn_scope: &Arc<RwLock<Option<TurnContinuationScope>>>,
+    _turn_scope: &crate::agent_runtime::execution_context::TurnScopeAccess,
     lane: Option<DiscoverLaneInput>,
 ) -> ToolSurfaceLane {
     match lane {
@@ -355,9 +352,8 @@ fn resolve_lane(
         Some(DiscoverLaneInput::Host) => return ToolSurfaceLane::Host,
         Some(DiscoverLaneInput::Auto) | None => {}
     }
-    if let Ok(scope) = turn_scope.try_read()
-        && scope.is_none() {
-            // Worker loops may run without host scope — caller should pass lane=worker.
-        }
+    if crate::agent_runtime::execution_context::active_turn_execution_context().is_none() {
+        // Worker loops may run without host scope — caller should pass lane=worker.
+    }
     ToolSurfaceLane::Host
 }

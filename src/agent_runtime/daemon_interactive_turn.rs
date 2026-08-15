@@ -908,7 +908,7 @@ pub async fn run_daemon_interactive_turn(
             agent_rt,
             sink,
             continuation_scope,
-            Some(execution_context),
+            execution_context,
             Some(interactive_sink),
             Some(project_state),
         )
@@ -927,56 +927,13 @@ pub async fn run_agent_turn(
     agent_rt: &super::runtime::MedousaAgentRuntime,
     sink: SharedAgentStreamSink,
     continuation_scope: Option<TurnContinuationScope>,
-    execution_context: Option<Arc<super::execution_context::TurnExecutionContext>>,
+    execution_context: Arc<super::execution_context::TurnExecutionContext>,
     context_telemetry: Option<Arc<InteractiveTurnStreamSink>>,
     project_state: Option<crate::daemon::state::AppState>,
 ) {
-    let previous_scope = if execution_context.is_none() {
-        Some(agent_rt.turn_scope.read().await.clone())
-    } else {
-        None
-    };
     let turn_correlation_id = continuation_scope
         .as_ref()
         .map(|scope| scope.turn_correlation_id.clone());
-    let supports_ui_artifacts =
-        crate::ui_present_tools::surface_supports_ui_artifacts(request.surface.as_ref());
-    let supports_liquid_markdown = request
-        .surface
-        .as_ref()
-        .is_some_and(|surface| surface.supports_liquid_markdown);
-    let supports_browser_host =
-        crate::browser_tools::surface_supports_browser_host(request.surface.as_ref());
-    let channel_surface = request
-        .surface
-        .as_ref()
-        .and_then(|surface| surface.channel_surface.clone());
-    let mut effective_scope = continuation_scope.unwrap_or_else(|| TurnContinuationScope {
-        turn_correlation_id: turn_id.to_string(),
-        session_id: request.session_id.clone(),
-        identity_user_id: Some(
-            request
-                .identity_user_id
-                .clone()
-                .unwrap_or_else(crate::user_profiles::resolve_workshop_identity_user_id),
-        ),
-        original_prompt: request.prompt.clone(),
-        delivery_target: None,
-        provider: request.provider.clone(),
-        model: request.model.clone(),
-        response_depth_mode: request.response_depth_mode.clone(),
-        supports_ui_artifacts,
-        supports_liquid_markdown,
-        supports_browser_host,
-        channel_surface: channel_surface.clone(),
-    });
-    effective_scope.supports_ui_artifacts = supports_ui_artifacts;
-    effective_scope.supports_liquid_markdown = supports_liquid_markdown;
-    effective_scope.supports_browser_host = supports_browser_host;
-    effective_scope.channel_surface = channel_surface;
-    if execution_context.is_none() {
-        *agent_rt.turn_scope.write().await = Some(effective_scope);
-    }
     let outcome: Arc<RwLock<Option<TurnOutcome>>> = Arc::new(RwLock::new(None));
     let tracking_sink: SharedAgentStreamSink = Arc::new(TurnOutcomeTrackingSink {
         inner: sink,
@@ -996,28 +953,24 @@ pub async fn run_agent_turn(
             project_state,
         ),
     );
-    if let Some(context) = execution_context {
-        let cancellation = context.cancellation().clone();
-        let deadline = tokio::time::Instant::from_std(context.deadline());
-        let scoped_turn =
-            super::execution_context::with_turn_execution_context(context, turn_future);
-        tokio::pin!(scoped_turn);
-        tokio::select! {
-            () = cancellation.cancelled() => {
-                tracking_sink
-                    .agent_error(0, "turn cancelled".to_string())
-                    .await;
-            }
-            () = tokio::time::sleep_until(deadline) => {
-                cancellation.cancel();
-                tracking_sink
-                    .agent_error(0, "turn execution deadline exceeded".to_string())
-                    .await;
-            }
-            () = &mut scoped_turn => {}
+    let cancellation = execution_context.cancellation().clone();
+    let deadline = tokio::time::Instant::from_std(execution_context.deadline());
+    let scoped_turn =
+        super::execution_context::with_turn_execution_context(execution_context, turn_future);
+    tokio::pin!(scoped_turn);
+    tokio::select! {
+        () = cancellation.cancelled() => {
+            tracking_sink
+                .agent_error(0, "turn cancelled".to_string())
+                .await;
         }
-    } else {
-        turn_future.await;
+        () = tokio::time::sleep_until(deadline) => {
+            cancellation.cancel();
+            tracking_sink
+                .agent_error(0, "turn execution deadline exceeded".to_string())
+                .await;
+        }
+        () = &mut scoped_turn => {}
     }
 
     if let Some(correlation_id) = turn_correlation_id {
@@ -1034,9 +987,6 @@ pub async fn run_agent_turn(
             .await;
     }
 
-    if let Some(previous_scope) = previous_scope {
-        *agent_rt.turn_scope.write().await = previous_scope;
-    }
 }
 
 async fn run_agent_turn_inner(

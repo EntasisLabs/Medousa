@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::process::Command;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Utc};
@@ -46,7 +46,7 @@ use crate::tui::runtime_services::{
     build_tool_loop_pipeline_for_target, build_tui_runtime_services,
 };
 use crate::turn_continuation::{
-    self, ContinuationAwaitMode, TurnContinuationScope, continuation_tool_metadata,
+    self, ContinuationAwaitMode, continuation_tool_metadata,
     wire_turn_child_job,
 };
 use crate::typed_tools::{CompatOption, ExternalJson, ToolId, medousa_tool};
@@ -183,20 +183,18 @@ pub(crate) async fn validate_grapheme_source_for_schedule(
     }))
 }
 
-static LAST_GRAPHEME_SOURCE: OnceLock<RwLock<Option<String>>> = OnceLock::new();
-
-fn last_grapheme_source_store() -> &'static RwLock<Option<String>> {
-    LAST_GRAPHEME_SOURCE.get_or_init(|| RwLock::new(None))
-}
-
 async fn remember_last_grapheme_source(source: &str) {
-    let mut guard = last_grapheme_source_store().write().await;
-    *guard = Some(source.to_string());
+    if let Some(context) =
+        crate::agent_runtime::execution_context::active_turn_execution_context()
+    {
+        context.remember_grapheme_source(source);
+    }
 }
 
 async fn read_last_grapheme_source() -> Option<String> {
-    let guard = last_grapheme_source_store().read().await;
-    guard.clone()
+    crate::agent_runtime::execution_context::active_turn_execution_context()
+        .and_then(|context| context.last_grapheme_source())
+        .map(|source| source.to_string())
 }
 
 async fn emit_compaction_observability(
@@ -280,14 +278,14 @@ async fn emit_compaction_observability(
 pub struct CognitionJobEnqueueTool {
     runtime: Arc<RuntimeComposition>,
     event_tx: mpsc::Sender<TuiEvent>,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 impl CognitionJobEnqueueTool {
     pub fn new(
         runtime: Arc<RuntimeComposition>,
         event_tx: mpsc::Sender<TuiEvent>,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     ) -> Self {
         Self {
             runtime,
@@ -458,7 +456,7 @@ pub struct CognitionGraphemeRunTool {
     event_tx: mpsc::Sender<TuiEvent>,
     session_id: String,
     model_target: GraphemeCompactionModelTarget,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 impl CognitionGraphemeRunTool {
@@ -467,7 +465,7 @@ impl CognitionGraphemeRunTool {
         event_tx: mpsc::Sender<TuiEvent>,
         session_id: String,
         model_target: GraphemeCompactionModelTarget,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     ) -> Self {
         Self {
             runtime,
@@ -668,7 +666,7 @@ impl CognitionGraphemeRunTool {
             &self.turn_scope,
             &self.session_id,
         )
-        .await;
+        .await?;
         let serialized_raw_output =
             serde_json::to_string(&raw_output).unwrap_or_else(|_| raw_output.to_string());
 
@@ -967,7 +965,7 @@ pub struct CognitionGraphemeCliRunTool {
     event_tx: mpsc::Sender<TuiEvent>,
     session_id: String,
     model_target: GraphemeCompactionModelTarget,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 impl CognitionGraphemeCliRunTool {
@@ -976,7 +974,7 @@ impl CognitionGraphemeCliRunTool {
         event_tx: mpsc::Sender<TuiEvent>,
         session_id: String,
         model_target: GraphemeCompactionModelTarget,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     ) -> Self {
         Self {
             runtime,
@@ -1053,7 +1051,7 @@ impl CognitionGraphemeCliRunTool {
             &self.turn_scope,
             &self.session_id,
         )
-        .await;
+        .await?;
 
         let output = maybe_compact_output_to_sttp(
             COGNITION_GRAPHEME_CLI_RUN_ID.as_str(),
@@ -1076,14 +1074,14 @@ impl CognitionGraphemeCliRunTool {
 pub struct CognitionGraphemePromoteToJobTool {
     runtime: Arc<RuntimeComposition>,
     event_tx: mpsc::Sender<TuiEvent>,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 impl CognitionGraphemePromoteToJobTool {
     pub fn new(
         runtime: Arc<RuntimeComposition>,
         event_tx: mpsc::Sender<TuiEvent>,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     ) -> Self {
         Self {
             runtime,
@@ -1266,14 +1264,14 @@ impl CognitionGraphemePromoteToJobTool {
 pub struct CognitionGraphemePromoteToRecurringTool {
     runtime: Arc<RuntimeComposition>,
     event_tx: mpsc::Sender<TuiEvent>,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 impl CognitionGraphemePromoteToRecurringTool {
     pub fn new(
         runtime: Arc<RuntimeComposition>,
         event_tx: mpsc::Sender<TuiEvent>,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     ) -> Self {
         Self {
             runtime,
@@ -1473,14 +1471,14 @@ impl CognitionGraphemePromoteToRecurringTool {
 pub struct CognitionGraphemePromoteLastRunToRecurringTool {
     runtime: Arc<RuntimeComposition>,
     event_tx: mpsc::Sender<TuiEvent>,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 impl CognitionGraphemePromoteLastRunToRecurringTool {
     pub fn new(
         runtime: Arc<RuntimeComposition>,
         event_tx: mpsc::Sender<TuiEvent>,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     ) -> Self {
         Self {
             runtime,
@@ -2324,7 +2322,7 @@ impl CognitionCapabilitySearchTool {
 pub struct CognitionMcpDiscoverTool {
     gateway_client: Arc<McpGatewayClient>,
     session_id: String,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     event_tx: mpsc::Sender<TuiEvent>,
 }
 
@@ -2332,7 +2330,7 @@ impl CognitionMcpDiscoverTool {
     pub fn new(
         gateway_client: Arc<McpGatewayClient>,
         session_id: impl Into<String>,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
         event_tx: mpsc::Sender<TuiEvent>,
     ) -> Self {
         Self {
@@ -2410,7 +2408,7 @@ impl CognitionMcpDiscoverTool {
             &self.turn_scope,
             &self.session_id,
         )
-        .await;
+        .await?;
         let turn_context = build_agent_mcp_turn_context(&session_id);
         let request = McpDiscoverRequest {
             query: query.to_string(),
@@ -2440,7 +2438,7 @@ impl CognitionMcpDiscoverTool {
 pub struct CognitionMcpInvokeTool {
     gateway_client: Arc<McpGatewayClient>,
     session_id: String,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     event_tx: mpsc::Sender<TuiEvent>,
 }
 
@@ -2448,7 +2446,7 @@ impl CognitionMcpInvokeTool {
     pub fn new(
         gateway_client: Arc<McpGatewayClient>,
         session_id: impl Into<String>,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
         event_tx: mpsc::Sender<TuiEvent>,
     ) -> Self {
         Self {
@@ -2527,7 +2525,7 @@ impl CognitionMcpInvokeTool {
             &self.turn_scope,
             &self.session_id,
         )
-        .await;
+        .await?;
         let turn_context = build_agent_mcp_turn_context(&session_id);
         let turn_token = if let Some(token) = input.turn_token {
             Some(token)
@@ -2886,7 +2884,6 @@ pub struct TuiRuntime {
     pub memory_operations:
         Arc<dyn stasis::ports::outbound::memory::memory_operations::MemoryOperations>,
     pub client_registry: crate::client_tools::ClientRegistry,
-    pub turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
     pub execution_registry: crate::agent_runtime::execution_context::TurnExecutionRegistry,
     pub worker_scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
 }

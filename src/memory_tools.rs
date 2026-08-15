@@ -17,7 +17,7 @@ use stasis::ports::outbound::memory::memory_models::{
     MemoryFindRequest, MemoryNode, MemorySortDirection, MemorySortField, MemoryStrictnessMode,
 };
 use stasis::ports::outbound::memory::memory_operations::MemoryOperations;
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::mpsc;
 
 use crate::events::TuiEvent;
 use crate::locus_memory::{
@@ -27,7 +27,6 @@ use crate::locus_memory::{
     typed_schema_first_guidance, typed_semantic_index_schema_guidance, validate_limit,
 };
 use crate::semantic_values::{RequiredContent, TrimmedText};
-use crate::turn_continuation::TurnContinuationScope;
 use crate::typed_tools::{CompatList, CompatOption, ToolId, medousa_tool};
 
 const COGNITION_MEMORY_SCHEMA_ID: ToolId = ToolId::new("cognition_memory_schema");
@@ -145,22 +144,22 @@ impl JsonSchema for CompatibleSemanticTags {
 
 async fn resolve_optional_locus_session_scope(
     session: &MemorySessionScopeInput,
-    turn_scope: &RwLock<Option<TurnContinuationScope>>,
+    turn_scope: &crate::agent_runtime::execution_context::TurnScopeAccess,
     fallback_chat_session_id: &str,
     workshop_dynamic: bool,
-) -> Option<String> {
+) -> stasis::prelude::Result<Option<String>> {
     if session.is_global() {
-        return None;
+        return Ok(None);
     }
-    Some(
+    Ok(Some(
         resolve_memory_tool_session_id_typed(
             session.explicit(),
             turn_scope,
             fallback_chat_session_id,
             workshop_dynamic,
         )
-        .await,
-    )
+        .await?,
+    ))
 }
 
 async fn emit_invoked(event_tx: &mpsc::Sender<TuiEvent>, tool_name: &str, summary: &str) {
@@ -381,7 +380,7 @@ pub struct CognitionMemoryStoreTool {
     profile_name: &'static str,
     fallback_chat_session_id: String,
     workshop_dynamic: bool,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     event_tx: mpsc::Sender<TuiEvent>,
 }
 
@@ -390,7 +389,7 @@ impl CognitionMemoryStoreTool {
         writer: Arc<dyn MemoryContextWriter>,
         fallback_chat_session_id: String,
         workshop_dynamic: bool,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
         event_tx: mpsc::Sender<TuiEvent>,
     ) -> Self {
         let profile_name = ingest_profile_name(resolve_locus_ingest_profile());
@@ -548,7 +547,7 @@ impl CognitionMemoryStoreTool {
             &self.fallback_chat_session_id,
             self.workshop_dynamic,
         )
-        .await;
+        .await?;
 
         emit_invoked(
             &self.event_tx,
@@ -625,7 +624,7 @@ pub struct CognitionMemoryCalibrateTool {
     calibration: Arc<CalibrationService>,
     fallback_chat_session_id: String,
     workshop_dynamic: bool,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     event_tx: mpsc::Sender<TuiEvent>,
 }
 
@@ -634,7 +633,7 @@ impl CognitionMemoryCalibrateTool {
         locus_store: Arc<dyn NodeStore>,
         fallback_chat_session_id: String,
         workshop_dynamic: bool,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
         event_tx: mpsc::Sender<TuiEvent>,
     ) -> Self {
         Self {
@@ -721,7 +720,7 @@ impl CognitionMemoryCalibrateTool {
             &self.fallback_chat_session_id,
             self.workshop_dynamic,
         )
-        .await;
+        .await?;
         let stability = input
             .stability
             .ok_or_else(|| StasisError::PortFailure("stability required".into()))?
@@ -771,7 +770,7 @@ pub struct CognitionMemoryContextTool {
     memory_reader: Arc<dyn MemoryContextReader>,
     fallback_chat_session_id: String,
     workshop_dynamic: bool,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     event_tx: mpsc::Sender<TuiEvent>,
 }
 
@@ -781,7 +780,7 @@ impl CognitionMemoryContextTool {
         memory_reader: Arc<dyn MemoryContextReader>,
         fallback_chat_session_id: String,
         workshop_dynamic: bool,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
         event_tx: mpsc::Sender<TuiEvent>,
     ) -> Self {
         Self {
@@ -965,7 +964,7 @@ impl CognitionMemoryContextTool {
             &self.fallback_chat_session_id,
             self.workshop_dynamic,
         )
-        .await;
+        .await?;
         let session_scope = session_scope.as_deref();
 
         let keywords = normalize_context_keywords(input.context_keywords.as_deref());
@@ -1083,7 +1082,7 @@ pub struct CognitionMemoryListTool {
     memory_reader: Arc<dyn MemoryContextReader>,
     fallback_chat_session_id: String,
     workshop_dynamic: bool,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     event_tx: mpsc::Sender<TuiEvent>,
 }
 
@@ -1093,7 +1092,7 @@ impl CognitionMemoryListTool {
         memory_reader: Arc<dyn MemoryContextReader>,
         fallback_chat_session_id: String,
         workshop_dynamic: bool,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
         event_tx: mpsc::Sender<TuiEvent>,
     ) -> Self {
         Self {
@@ -1175,7 +1174,7 @@ impl CognitionMemoryListTool {
             &self.fallback_chat_session_id,
             self.workshop_dynamic,
         )
-        .await;
+        .await?;
 
         let context_keywords = input.context_keywords.into_option();
         let tag_prefix = input.tag_prefix.into_option();
@@ -1252,7 +1251,7 @@ impl CognitionMemoryRecallTool {
         memory_reader: Arc<dyn MemoryContextReader>,
         fallback_chat_session_id: String,
         workshop_dynamic: bool,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
         event_tx: mpsc::Sender<TuiEvent>,
     ) -> Self {
         Self {
@@ -1398,7 +1397,7 @@ pub struct CognitionMemoryTagsTool {
     semantic_index: Arc<dyn locus_core_rs::SemanticIndexStore>,
     fallback_chat_session_id: String,
     workshop_dynamic: bool,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     event_tx: mpsc::Sender<TuiEvent>,
 }
 
@@ -1407,7 +1406,7 @@ impl CognitionMemoryTagsTool {
         semantic_index: Arc<dyn locus_core_rs::SemanticIndexStore>,
         fallback_chat_session_id: String,
         workshop_dynamic: bool,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
         event_tx: mpsc::Sender<TuiEvent>,
     ) -> Self {
         Self {
@@ -1480,7 +1479,7 @@ impl CognitionMemoryTagsTool {
                     &self.fallback_chat_session_id,
                     self.workshop_dynamic,
                 )
-                .await,
+                .await?,
             )
         } else {
             None
@@ -1654,7 +1653,7 @@ pub struct CognitionMemoryEvictTool {
     operations: Arc<dyn MemoryOperations>,
     fallback_chat_session_id: String,
     workshop_dynamic: bool,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     event_tx: mpsc::Sender<TuiEvent>,
 }
 
@@ -1663,7 +1662,7 @@ impl CognitionMemoryEvictTool {
         operations: Arc<dyn MemoryOperations>,
         fallback_chat_session_id: String,
         workshop_dynamic: bool,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
         event_tx: mpsc::Sender<TuiEvent>,
     ) -> Self {
         Self {
@@ -2003,7 +2002,7 @@ impl CognitionMemoryEvictTool {
             &self.fallback_chat_session_id,
             self.workshop_dynamic,
         )
-        .await;
+        .await?;
         let tenant = derive_locus_tenant_id(&locus_session);
         let mut scope = MemoryScope {
             session_ids: Some(vec![locus_session.clone()]),

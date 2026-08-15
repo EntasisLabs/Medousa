@@ -19,7 +19,6 @@ use stasis::application::orchestration::tool_registry::ToolRegistry;
 use stasis::domain::errors::StasisError;
 use tokio::sync::{Notify, oneshot};
 
-use crate::turn_continuation::TurnContinuationScope;
 
 const MAX_CLIENT_TOOLS: usize = 32;
 const MAX_TOOL_NAME_CHARS: usize = 64;
@@ -342,14 +341,14 @@ impl Default for ClientRegistry {
 pub struct ClientToolRegistry {
     inner: Arc<dyn ToolRegistry>,
     clients: ClientRegistry,
-    turn_scope: Arc<tokio::sync::RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 impl ClientToolRegistry {
     pub fn new(
         inner: Arc<dyn ToolRegistry>,
         clients: ClientRegistry,
-        turn_scope: Arc<tokio::sync::RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     ) -> Self {
         Self {
             inner,
@@ -598,7 +597,7 @@ mod tests {
     async fn dynamic_registry_lists_tools_for_active_surface() {
         let clients = ClientRegistry::new();
         registration(&clients);
-        let scope = Arc::new(tokio::sync::RwLock::new(Some(TurnContinuationScope {
+        let scope = crate::agent_runtime::execution_context::TurnScopeAccess::for_test(crate::turn_continuation::TurnContinuationScope {
             turn_correlation_id: "turn-one".to_string(),
             session_id: "session-one".to_string(),
             identity_user_id: None,
@@ -611,7 +610,7 @@ mod tests {
             supports_liquid_markdown: false,
             supports_browser_host: false,
             channel_surface: Some("browser".to_string()),
-        })));
+        });
         let inner: Arc<dyn ToolRegistry> = Arc::new(
             stasis::application::orchestration::tool_registry::InMemoryToolRegistry::default(),
         );

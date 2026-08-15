@@ -14,7 +14,7 @@ use stasis::domain::runtime::job::{Job, JobState};
 use stasis::domain::runtime::recurring::RecurringDefinition;
 use stasis::prelude::StasisError;
 use stasis::sdk::runtime_sdk::{RuntimeSdk, RuntimeStatsSnapshot};
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::events::TuiEvent;
@@ -28,7 +28,7 @@ use crate::runtime_composition_ext::RuntimeCompositionExt;
 use crate::semantic_values::{RequiredContent, TrimmedText};
 use crate::tools::validate_grapheme_source_for_schedule;
 use crate::turn_continuation::{
-    ContinuationAwaitMode, StoredDeliveryTarget, TurnContinuationScope, continuation_tool_metadata,
+    ContinuationAwaitMode, StoredDeliveryTarget, continuation_tool_metadata,
     find_active_job_by_correlation_id, materialize_recurring_now, patch_existing_job_correlation,
     register_turn_child_job,
 };
@@ -705,14 +705,14 @@ impl CognitionRuntimeRecurringDoctorTool {
 pub struct CognitionRuntimeRecurringRegisterTool {
     runtime: Arc<RuntimeComposition>,
     event_tx: mpsc::Sender<TuiEvent>,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 impl CognitionRuntimeRecurringRegisterTool {
     pub fn new(
         runtime: Arc<RuntimeComposition>,
         event_tx: mpsc::Sender<TuiEvent>,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     ) -> Self {
         Self {
             runtime,
@@ -1494,7 +1494,7 @@ pub struct CognitionRuntimeWorkflowRunTool {
     runtime: Arc<RuntimeComposition>,
     registry: Arc<WorkflowRegistry>,
     event_tx: mpsc::Sender<TuiEvent>,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 impl CognitionRuntimeWorkflowRunTool {
@@ -1502,7 +1502,7 @@ impl CognitionRuntimeWorkflowRunTool {
         runtime: Arc<RuntimeComposition>,
         registry: Arc<WorkflowRegistry>,
         event_tx: mpsc::Sender<TuiEvent>,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     ) -> Self {
         Self {
             runtime,
@@ -1699,7 +1699,7 @@ pub struct CognitionRuntimeWorkflowScheduleTool {
     runtime: Arc<RuntimeComposition>,
     registry: Arc<WorkflowRegistry>,
     event_tx: mpsc::Sender<TuiEvent>,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 impl CognitionRuntimeWorkflowScheduleTool {
@@ -1707,7 +1707,7 @@ impl CognitionRuntimeWorkflowScheduleTool {
         runtime: Arc<RuntimeComposition>,
         registry: Arc<WorkflowRegistry>,
         event_tx: mpsc::Sender<TuiEvent>,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     ) -> Self {
         Self {
             runtime,

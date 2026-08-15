@@ -8,7 +8,6 @@
 //! never inspects their shape). The model can go bones-first: emit a
 //! `plan_layout` with skeleton slots, then follow up with `fill_slot` batches.
 
-use std::sync::Arc;
 
 use schemars::JsonSchema;
 use schemars::schema::{InstanceType, Schema, SchemaObject};
@@ -19,9 +18,7 @@ use serde_json::json;
 #[cfg(test)]
 use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::prelude::StasisError;
-use tokio::sync::RwLock;
 
-use crate::turn_continuation::TurnContinuationScope;
 use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_UI_SCENE: &str = "cognition_ui_scene";
@@ -35,26 +32,24 @@ pub fn is_ui_scene_cognition_tool(name: &str) -> bool {
 
 pub fn register_ui_scene_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 ) -> stasis::prelude::Result<()> {
     registry.register_typed_tool(CognitionUiSceneTool::new(turn_scope))?;
     Ok(())
 }
 
 pub struct CognitionUiSceneTool {
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 impl CognitionUiSceneTool {
-    pub fn new(turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>) -> Self {
+    pub fn new(turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess) -> Self {
         Self { turn_scope }
     }
 
     async fn active_surface_supports_ui_artifacts(&self) -> bool {
-        self.turn_scope
-            .read()
+        crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
             .await
-            .as_ref()
             .is_some_and(|scope| scope.supports_ui_artifacts)
     }
 }
@@ -218,8 +213,8 @@ mod tests {
     use super::*;
     use crate::daemon_api::TurnSurfaceContext;
 
-    fn scope(supports: bool) -> Arc<RwLock<Option<TurnContinuationScope>>> {
-        Arc::new(RwLock::new(Some(TurnContinuationScope {
+    fn scope(supports: bool) -> crate::agent_runtime::execution_context::TurnScopeAccess {
+        crate::agent_runtime::execution_context::TurnScopeAccess::for_test(crate::turn_continuation::TurnContinuationScope {
             turn_correlation_id: "turn-1".to_string(),
             session_id: "medousa-home".to_string(),
             identity_user_id: None,
@@ -232,7 +227,7 @@ mod tests {
             supports_liquid_markdown: supports,
             supports_browser_host: false,
             channel_surface: Some("home-desktop".to_string()),
-        })))
+        })
     }
 
     #[test]

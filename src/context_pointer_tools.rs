@@ -1,19 +1,16 @@
 //! Context pointer follow tool.
 
-use std::sync::Arc;
 
 use medousa_types::environment::POINTER_KIND_SESSION;
 use medousa_types::environment::ContextPointerDigest;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 use stasis::prelude::{Result as StasisResult, StasisError};
-use tokio::sync::RwLock;
 
 use crate::context_pointer_index::resolve_pointer_slice;
 use crate::environment_store::{environment_hub, resolve_profile_id};
 use crate::semantic_values::TrimmedText;
 use crate::session::load_history;
-use crate::turn_continuation::TurnContinuationScope;
 use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_CONTEXT_FOLLOW_POINTER: &str = "cognition_context_follow_pointer";
@@ -25,7 +22,7 @@ const COGNITION_CONTEXT_LIST_POINTERS_ID: ToolId =
 
 pub fn register_context_pointer_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 ) -> StasisResult<()> {
     registry.register_typed_tool(CognitionContextFollowPointerTool {
         turn_scope: turn_scope.clone(),
@@ -35,7 +32,7 @@ pub fn register_context_pointer_tools(
 }
 
 struct CognitionContextFollowPointerTool {
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 fn default_pointer_scope() -> String {
@@ -183,7 +180,7 @@ impl CognitionContextFollowPointerTool {
 }
 
 struct CognitionContextListPointersTool {
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]

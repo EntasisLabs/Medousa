@@ -25,7 +25,7 @@ use crate::agent_runtime::coder_turn_checkpoint::{
 };
 use crate::agent_runtime::execution_context::{
     TurnExecutionBoundaryError, active_turn_execution_context, await_turn_boundary,
-    with_optional_turn_execution_context,
+    with_turn_execution_context,
 };
 use crate::agent_runtime::perception_governor::ToolPerceptionGovernor;
 use crate::agent_runtime::turn_completion::{ToolLoopCompletionGate, collect_tool_names};
@@ -803,10 +803,15 @@ impl MedousaToolLoopPipeline {
                             .await;
                         }
                         let registry = self.tool_registry.clone();
-                        let execution_context = active_turn_execution_context();
+                        let execution_context = active_turn_execution_context().ok_or_else(|| {
+                            turn_boundary_failure(
+                                "parallel tool invocation",
+                                TurnExecutionBoundaryError::MissingContext,
+                            )
+                        })?;
                         let run_id_spawn = run_id.clone();
                         join_set.spawn(async move {
-                            let output = with_optional_turn_execution_context(
+                            let output = with_turn_execution_context(
                                 execution_context,
                                 async {
                                     await_turn_boundary(

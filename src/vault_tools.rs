@@ -1,12 +1,11 @@
 //! Host-bus vault tools: list, read, search, write, tags.
 
-use std::sync::Arc;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use stasis::domain::errors::{Result as StasisResult, StasisError};
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::mpsc;
 
 use crate::daemon_api::{
     VaultDeleteResponse, VaultNote, VaultNotesListResponse, VaultSearchResponse, VaultWriteRequest,
@@ -15,7 +14,6 @@ use crate::daemon_api::{
 use crate::events::TuiEvent;
 use crate::locus_semantic_tags::parse_semantic_tags_from_value;
 use crate::semantic_values::{RequiredContent, TrimmedText};
-use crate::turn_continuation::TurnContinuationScope;
 use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 use crate::vault::VaultService;
 
@@ -32,7 +30,7 @@ const COGNITION_VAULT_MOVE_ID: ToolId = ToolId::new("cognition_vault_move");
 pub fn register_vault_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
     event_tx: mpsc::Sender<TuiEvent>,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     fallback_chat_session_id: String,
 ) -> StasisResult<()> {
     registry.register_typed_tool(CognitionVaultListTool::new(event_tx.clone()))?;
@@ -550,14 +548,14 @@ impl CognitionVaultTagsTool {
 
 pub struct CognitionVaultWriteTool {
     event_tx: mpsc::Sender<TuiEvent>,
-    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     fallback_chat_session_id: String,
 }
 
 impl CognitionVaultWriteTool {
     pub fn new(
         event_tx: mpsc::Sender<TuiEvent>,
-        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
         fallback_chat_session_id: String,
     ) -> Self {
         Self {
@@ -707,7 +705,7 @@ impl CognitionVaultWriteTool {
                 &self.turn_scope,
                 &self.fallback_chat_session_id,
             )
-            .await;
+            .await?;
             Some(crate::locus_memory::resolve_workshop_locus_session(
                 &chat_session_id,
             ))

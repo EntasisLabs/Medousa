@@ -899,7 +899,11 @@ pub async fn human_browser_find_in_page(
 }
 
 #[tauri::command]
-pub fn human_browser_report_find_result(_found: bool) -> Result<(), String> {
+pub fn human_browser_report_find_result(
+    _found: bool,
+    _request_id: Option<String>,
+    _surface: Option<String>,
+) -> Result<(), String> {
     Ok(())
 }
 

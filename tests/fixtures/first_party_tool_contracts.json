@@ -7956,7 +7956,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_turn_worker_cancel",
-      "description": "Mark a pending or running turn worker as cancelled (best-effort; in-flight worker may still finish).",
+      "description": "Cancel an exact worker generation owned by the active host session (best-effort; in-flight worker may still finish).",
       "input_schema": {
         "properties": {
           "work_id": {
@@ -8557,10 +8557,15 @@
           "message": {
             "description": "Steer text for the bound workshop",
             "type": "string"
+          },
+          "work_id": {
+            "description": "Exact bound-workshop generation returned by begin-work.",
+            "type": "string"
           }
         },
         "required": [
-          "message"
+          "message",
+          "work_id"
         ],
         "type": "object"
       },

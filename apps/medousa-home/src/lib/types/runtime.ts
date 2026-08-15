@@ -7,6 +7,9 @@ export interface DaemonStatsResponse {
   pending_outbox_events: number;
   recurring_definitions: number;
   last_tick_at_utc: string | null;
+  active_turn_executions: number;
+  active_turn_executions_high_water: number;
+  missing_turn_context_invocations: number;
 }
 
 export interface DeliveryHealthResponse {

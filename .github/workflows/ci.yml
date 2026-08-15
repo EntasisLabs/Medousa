@@ -27,6 +27,8 @@ jobs:
             . -> .cache/cargo-target
           cache-workspace-crates: true
           cache-on-failure: true
+      - name: Guard request-scoped runtime ownership
+        run: ./scripts/ci/check-runtime-context.sh
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets --exclude medousa-sdk-iroh -- -D warnings
       - name: cargo test (lib)

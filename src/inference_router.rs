@@ -162,6 +162,20 @@ pub fn provider_credential_requirement(provider: &str) -> ProviderCredentialRequ
     }
 }
 
+fn missing_credential_reason(
+    requirement: ProviderCredentialRequirement,
+    configured: bool,
+) -> Option<&'static str> {
+    if configured {
+        return None;
+    }
+    match requirement {
+        ProviderCredentialRequirement::None => None,
+        ProviderCredentialRequirement::ApiKey => Some("missing_api_key"),
+        ProviderCredentialRequirement::ChatGptOAuth => Some("missing_chatgpt_oauth"),
+    }
+}
+
 pub fn target_ineligibility_reason(
     target: &InferenceTarget,
     required: CapabilityRequirement,
@@ -169,13 +183,19 @@ pub fn target_ineligibility_reason(
     match provider_credential_requirement(&target.provider) {
         ProviderCredentialRequirement::None => {}
         ProviderCredentialRequirement::ApiKey => {
-            if !provider_api_key_configured(&target.provider) {
-                return Some("missing_api_key");
+            if let Some(reason) = missing_credential_reason(
+                ProviderCredentialRequirement::ApiKey,
+                provider_api_key_configured(&target.provider),
+            ) {
+                return Some(reason);
             }
         }
         ProviderCredentialRequirement::ChatGptOAuth => {
-            if !crate::session::chatgpt_oauth_configured() {
-                return Some("missing_chatgpt_oauth");
+            if let Some(reason) = missing_credential_reason(
+                ProviderCredentialRequirement::ChatGptOAuth,
+                crate::session::chatgpt_oauth_configured(),
+            ) {
+                return Some(reason);
             }
         }
     }
@@ -326,14 +346,6 @@ fn unknown_failure(message: &str) -> TurnFailure {
 mod tests {
     use super::*;
 
-    fn target(provider: &str) -> InferenceTarget {
-        InferenceTarget {
-            provider: provider.into(),
-            model: "test-model".into(),
-            base_url: None,
-        }
-    }
-
     #[test]
     fn auth_errors_advance_fallback() {
         assert!(should_advance_fallback(TurnFailureCategory::Auth));
@@ -366,13 +378,14 @@ mod tests {
     }
 
     #[test]
-    fn openai_codex_requires_oauth_not_api_key() {
+    fn openai_codex_missing_oauth_reason_does_not_consult_host_credentials() {
         assert_eq!(
-            target_ineligibility_reason(
-                &target(OPENAI_CODEX_PROVIDER_ID),
-                CapabilityRequirement::None
-            ),
+            missing_credential_reason(ProviderCredentialRequirement::ChatGptOAuth, false),
             Some("missing_chatgpt_oauth")
+        );
+        assert_eq!(
+            missing_credential_reason(ProviderCredentialRequirement::ChatGptOAuth, true),
+            None
         );
     }
 

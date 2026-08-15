@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use tokio_util::sync::CancellationToken;
@@ -75,7 +76,7 @@ pub struct SurfaceCapabilities {
 }
 
 /// All values selected at admission and immutable for the execution lifetime.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct TurnExecutionContext {
     handle: TurnHandle,
     turn_id: Arc<str>,
@@ -87,6 +88,7 @@ pub struct TurnExecutionContext {
     cancellation: CancellationToken,
     deadline: Instant,
     legacy_scope: Arc<TurnContinuationScope>,
+    last_grapheme_source: Mutex<Option<Arc<str>>>,
     tasks: Arc<TurnTaskGroup>,
 }
 
@@ -115,8 +117,40 @@ impl TurnExecutionContext {
             cancellation,
             deadline,
             legacy_scope: Arc::new(legacy_scope),
+            last_grapheme_source: Mutex::new(None),
             tasks,
         }
+    }
+
+    /// Build an execution owner from the compatibility scope at an admission
+    /// boundary. Keeping this conversion here makes route, surface, and
+    /// authority derivation identical for every non-HTTP turn source.
+    pub fn from_scope(
+        turn_id: impl Into<Arc<str>>,
+        principal: RequestPrincipal,
+        cancellation: CancellationToken,
+        deadline: Instant,
+        scope: TurnContinuationScope,
+    ) -> Result<Self, crate::session_storage::InvalidSessionId> {
+        let session_id = SessionId::parse(&scope.session_id)?;
+        let route = ProviderRoute::new(scope.provider.clone(), scope.model.clone());
+        let surface = SurfaceCapabilities {
+            ui_artifacts: scope.supports_ui_artifacts,
+            liquid_markdown: scope.supports_liquid_markdown,
+            browser_host: scope.supports_browser_host,
+        };
+        let correlation_id: Arc<str> = Arc::from(scope.turn_correlation_id.as_str());
+        Ok(Self::new(
+            turn_id,
+            correlation_id,
+            session_id,
+            principal,
+            route,
+            surface,
+            cancellation,
+            deadline,
+            scope,
+        ))
     }
 
     pub fn handle(&self) -> TurnHandle {
@@ -157,6 +191,20 @@ impl TurnExecutionContext {
 
     pub fn legacy_scope(&self) -> &TurnContinuationScope {
         &self.legacy_scope
+    }
+
+    pub fn remember_grapheme_source(&self, source: &str) {
+        *self
+            .last_grapheme_source
+            .lock()
+            .expect("turn grapheme source poisoned") = Some(Arc::from(source));
+    }
+
+    pub fn last_grapheme_source(&self) -> Option<Arc<str>> {
+        self.last_grapheme_source
+            .lock()
+            .expect("turn grapheme source poisoned")
+            .clone()
     }
 
     pub fn tasks(&self) -> &Arc<TurnTaskGroup> {
@@ -414,7 +462,25 @@ impl Drop for TurnExecutionLease {
 
 tokio::task_local! {
     static ACTIVE_TURN_CONTEXT: Arc<TurnExecutionContext>;
-    static ACTIVE_LEGACY_TURN_SCOPE: Arc<TurnContinuationScope>;
+}
+
+static MISSING_TURN_CONTEXT_INVOCATIONS: AtomicU64 = AtomicU64::new(0);
+
+/// Zero-sized compatibility token for tools whose upstream trait cannot yet
+/// accept a typed invocation context. It carries no mutable fallback state.
+#[derive(Clone, Debug, Default)]
+pub struct TurnScopeAccess {
+    #[cfg(test)]
+    test_scope: Option<Arc<TurnContinuationScope>>,
+}
+
+#[cfg(test)]
+impl TurnScopeAccess {
+    pub(crate) fn for_test(scope: TurnContinuationScope) -> Self {
+        Self {
+            test_scope: Some(Arc::new(scope)),
+        }
+    }
 }
 
 pub async fn with_turn_execution_context<F>(
@@ -427,25 +493,17 @@ where
     ACTIVE_TURN_CONTEXT.scope(context, future).await
 }
 
-pub async fn with_optional_turn_execution_context<F>(
-    context: Option<Arc<TurnExecutionContext>>,
-    future: F,
-) -> F::Output
-where
-    F: Future,
-{
-    match context {
-        Some(context) => with_turn_execution_context(context, future).await,
-        None => future.await,
-    }
-}
-
 pub fn active_turn_execution_context() -> Option<Arc<TurnExecutionContext>> {
     ACTIVE_TURN_CONTEXT.try_with(Arc::clone).ok()
 }
 
+pub fn missing_turn_context_invocations() -> u64 {
+    MISSING_TURN_CONTEXT_INVOCATIONS.load(Ordering::Relaxed)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TurnExecutionBoundaryError {
+    MissingContext,
     Cancelled,
     DeadlineExceeded,
 }
@@ -453,6 +511,7 @@ pub enum TurnExecutionBoundaryError {
 impl fmt::Display for TurnExecutionBoundaryError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::MissingContext => formatter.write_str("turn execution context is missing"),
             Self::Cancelled => formatter.write_str("turn cancelled"),
             Self::DeadlineExceeded => formatter.write_str("turn execution deadline exceeded"),
         }
@@ -462,13 +521,14 @@ impl fmt::Display for TurnExecutionBoundaryError {
 impl std::error::Error for TurnExecutionBoundaryError {}
 
 /// Await one provider/tool leaf under the active turn's cancellation root and
-/// absolute deadline. Callers without an admitted context retain legacy behavior.
+/// absolute deadline. An unscoped leaf fails closed before it is polled.
 pub async fn await_turn_boundary<F, T>(future: F) -> Result<T, TurnExecutionBoundaryError>
 where
     F: Future<Output = T>,
 {
     let Some(context) = active_turn_execution_context() else {
-        return Ok(future.await);
+        MISSING_TURN_CONTEXT_INVOCATIONS.fetch_add(1, Ordering::Relaxed);
+        return Err(TurnExecutionBoundaryError::MissingContext);
     };
     let cancellation = context.cancellation().clone();
     let deadline = tokio::time::Instant::from_std(context.deadline());
@@ -484,25 +544,20 @@ where
     }
 }
 
-pub async fn with_legacy_turn_scope<F>(scope: Arc<TurnContinuationScope>, future: F) -> F::Output
-where
-    F: Future,
-{
-    ACTIVE_LEGACY_TURN_SCOPE.scope(scope, future).await
-}
-
 /// Compatibility read for tools whose upstream trait cannot yet accept context.
-/// Admitted daemon turns never consult the shared fallback.
+/// The marker carries no fallback: an unscoped invocation fails closed.
+#[allow(unused_variables)]
 pub async fn turn_continuation_scope(
-    fallback: &tokio::sync::RwLock<Option<TurnContinuationScope>>,
+    access: &TurnScopeAccess,
 ) -> Option<TurnContinuationScope> {
     if let Some(context) = active_turn_execution_context() {
         return Some(context.legacy_scope().clone());
     }
-    if let Ok(scope) = ACTIVE_LEGACY_TURN_SCOPE.try_with(Arc::clone) {
+    #[cfg(test)]
+    if let Some(scope) = access.test_scope.as_ref() {
         return Some(scope.as_ref().clone());
     }
-    fallback.read().await.clone()
+    None
 }
 
 #[cfg(test)]
@@ -539,6 +594,55 @@ mod tests {
             Instant::now() + Duration::from_secs(60),
             scope,
         )
+    }
+
+    #[test]
+    fn scoped_admission_derives_route_and_surface_without_shared_state() {
+        let mut scope = context("session-a", "provider-a").legacy_scope().clone();
+        scope.supports_ui_artifacts = true;
+        scope.supports_browser_host = true;
+        let admitted = TurnExecutionContext::from_scope(
+            "turn-a",
+            RequestPrincipal::anonymous(TransportClass::Loopback),
+            CancellationToken::new(),
+            Instant::now() + Duration::from_secs(30),
+            scope,
+        )
+        .unwrap();
+
+        assert_eq!(admitted.session_id().as_str(), "session-a");
+        assert_eq!(admitted.route().provider(), "provider-a");
+        assert!(admitted.surface().ui_artifacts);
+        assert!(admitted.surface().browser_host);
+    }
+
+    #[test]
+    fn scoped_admission_rejects_invalid_session_authority() {
+        let mut scope = context("session-a", "provider-a").legacy_scope().clone();
+        scope.session_id = "../outside".to_string();
+
+        assert!(
+            TurnExecutionContext::from_scope(
+                "turn-a",
+                RequestPrincipal::anonymous(TransportClass::Loopback),
+                CancellationToken::new(),
+                Instant::now() + Duration::from_secs(30),
+                scope,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn invocation_scratch_is_owned_by_one_execution_generation() {
+        let first = context("session-a", "provider-a");
+        let second = context("session-a", "provider-a");
+
+        first.remember_grapheme_source("first-source");
+        second.remember_grapheme_source("second-source");
+
+        assert_eq!(first.last_grapheme_source().as_deref(), Some("first-source"));
+        assert_eq!(second.last_grapheme_source().as_deref(), Some("second-source"));
     }
 
     #[test]
@@ -616,28 +720,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn legacy_worker_scopes_are_isolated_without_shared_writes() {
-        let fallback = Arc::new(tokio::sync::RwLock::new(None));
+    async fn invocation_scopes_are_isolated_without_shared_writes() {
+        let access = TurnScopeAccess::default();
         let barrier = Arc::new(tokio::sync::Barrier::new(2));
         let run = |session: &'static str,
-                   fallback: Arc<tokio::sync::RwLock<Option<TurnContinuationScope>>>,
+                   access: TurnScopeAccess,
                    barrier: Arc<tokio::sync::Barrier>| async move {
-            let scope = context(session, "provider").legacy_scope().clone();
-            with_legacy_turn_scope(Arc::new(scope), async move {
+            let context = Arc::new(context(session, "provider"));
+            with_turn_execution_context(context, async move {
                 barrier.wait().await;
                 tokio::task::yield_now().await;
-                turn_continuation_scope(&fallback).await.unwrap().session_id
+                turn_continuation_scope(&access).await.unwrap().session_id
             })
             .await
         };
 
         let (first, second) = tokio::join!(
-            run("session-a", fallback.clone(), barrier.clone()),
-            run("session-b", fallback.clone(), barrier.clone())
+            run("session-a", access.clone(), barrier.clone()),
+            run("session-b", access, barrier.clone())
         );
         assert_eq!(first, "session-a");
         assert_eq!(second, "session-b");
-        assert!(fallback.read().await.is_none());
+        assert!(active_turn_execution_context().is_none());
     }
 
     #[test]
@@ -740,8 +844,8 @@ mod tests {
         let expected = context.handle();
         let cancellation = context.cancellation().clone();
         let child_context = context.clone();
-        let child = tokio::spawn(with_optional_turn_execution_context(
-            Some(child_context),
+        let child = tokio::spawn(with_turn_execution_context(
+            child_context,
             async move {
                 let observed = active_turn_execution_context().unwrap().handle();
                 let result = await_turn_boundary(std::future::pending::<()>()).await;
@@ -754,5 +858,20 @@ mod tests {
 
         assert_eq!(observed, expected);
         assert_eq!(result, Err(TurnExecutionBoundaryError::Cancelled));
+    }
+
+    #[tokio::test]
+    async fn unscoped_leaf_fails_closed_without_polling() {
+        let before = missing_turn_context_invocations();
+        let polled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let observed = polled.clone();
+        let result = await_turn_boundary(async move {
+            observed.store(true, Ordering::Relaxed);
+        })
+        .await;
+
+        assert_eq!(result, Err(TurnExecutionBoundaryError::MissingContext));
+        assert!(!polled.load(Ordering::Relaxed));
+        assert!(missing_turn_context_invocations() > before);
     }
 }

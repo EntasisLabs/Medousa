@@ -1,6 +1,6 @@
 # ADR-017: Request-scoped runtime context and exact ownership
 
-> **Status:** Proposed
+> **Status:** Accepted
 >
 > **Date:** 2026-08-13
 >

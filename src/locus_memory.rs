@@ -15,9 +15,7 @@ use stasis::ports::outbound::memory::memory_context_writer::MemoryContextWriter;
 use stasis::ports::outbound::memory::memory_models::{
     MemoryAvecState, MemoryNode, MemoryStoreRequest, MemoryStoreResponse,
 };
-use tokio::sync::RwLock;
 
-use crate::turn_continuation::TurnContinuationScope;
 
 pub const LOCUS_TENANT_SCOPE_PREFIX: &str = "tenant:";
 pub const LOCUS_TENANT_SCOPE_SEPARATOR: &str = "::session:";
@@ -72,10 +70,10 @@ pub fn identity_bridge_locus_session() -> String {
 /// Resolve Locus session for memory tools: explicit arg → turn scope chat id → fallback.
 pub async fn resolve_memory_tool_session_id(
     input: &Value,
-    turn_scope: &RwLock<Option<TurnContinuationScope>>,
+    turn_scope: &crate::agent_runtime::execution_context::TurnScopeAccess,
     bootstrap_fallback: &str,
     workshop_dynamic: bool,
-) -> String {
+) -> stasis::prelude::Result<String> {
     let explicit = crate::runtime_session::explicit_chat_session_id_from_input(input);
     resolve_memory_tool_session_id_typed(
         explicit.as_deref(),
@@ -88,27 +86,27 @@ pub async fn resolve_memory_tool_session_id(
 
 pub async fn resolve_memory_tool_session_id_typed(
     explicit_session_id: Option<&str>,
-    turn_scope: &RwLock<Option<TurnContinuationScope>>,
+    turn_scope: &crate::agent_runtime::execution_context::TurnScopeAccess,
     bootstrap_fallback: &str,
     workshop_dynamic: bool,
-) -> String {
+) -> stasis::prelude::Result<String> {
     if let Some(explicit) = explicit_session_id
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        return explicit.to_string();
+        return Ok(explicit.to_string());
     }
 
     let scoped_chat_session_id = crate::runtime_session::resolve_active_chat_session_id_async(
         turn_scope,
         bootstrap_fallback,
     )
-    .await;
+    .await?;
 
     if workshop_dynamic {
-        resolve_workshop_locus_session(&scoped_chat_session_id)
+        Ok(resolve_workshop_locus_session(&scoped_chat_session_id))
     } else {
-        scoped_chat_session_id
+        Ok(scoped_chat_session_id)
     }
 }
 
