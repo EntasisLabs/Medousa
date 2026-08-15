@@ -1,42 +1,38 @@
 import { describe, expect, it } from "vitest";
-import type { InteractiveTurnStreamEvent } from "@medousa/client";
+import type { TurnStreamEnvelopeV2, TurnStreamEventV2 } from "@medousa/client";
 import { createProjectionState, projectStreamEvent } from "./streamProjection";
 
-function event(overrides: Partial<InteractiveTurnStreamEvent>): InteractiveTurnStreamEvent {
+function envelope(event: TurnStreamEventV2): TurnStreamEnvelopeV2 {
   return {
+    schema_version: 2,
     turn_id: "turn-1",
     seq: 1,
-    event_type: "status",
-    phase: "working",
-    message: "",
-    terminal: false,
-    emitted_at_utc: "now",
-    ...overrides,
+    emitted_at_utc: "2026-08-15T00:00:00Z",
+    event,
   };
 }
 
 describe("Obsidian stream projection", () => {
   it("does not duplicate a final answer after streamed deltas", () => {
     const state = createProjectionState();
-    expect(projectStreamEvent(event({ event_type: "content", content_delta: "Hello" }), state)).toEqual([
+    expect(projectStreamEvent(envelope({ type: "content_append", text: "Hello" }), state)).toEqual([
       { kind: "answer_delta", text: "Hello" },
     ]);
-    expect(projectStreamEvent(event({ event_type: "done", terminal: true, final_text: "Hello" }), state)).toContainEqual({
-      kind: "terminal",
-      error: false,
-    });
-    expect(projectStreamEvent(event({ event_type: "done", terminal: true, final_text: "Hello" }), state)).not.toContainEqual({
-      kind: "answer_delta",
-      text: "Hello",
-    });
+    const terminal = projectStreamEvent(envelope({ type: "final", text: "Hello" }), state);
+    expect(terminal).toContainEqual({ kind: "terminal", error: false });
+    expect(terminal).not.toContainEqual({ kind: "answer_delta", text: "Hello" });
   });
 
   it("projects approval requests without exposing engine telemetry", () => {
     const projected = projectStreamEvent(
-      event({
-        budget_request_id: "budget-1",
+      envelope({
+        type: "budget_approval_required",
+        request_id: "budget-1",
         requested_rounds: 2,
-        operator_message: "interactive turn accepted; agent runtime started",
+        rounds_executed: 8,
+        max_tool_rounds: 8,
+        reason: "Need another lookup",
+        progress_summary: "interactive turn accepted; agent runtime started",
       }),
       createProjectionState(),
     );
@@ -49,11 +45,10 @@ describe("Obsidian stream projection", () => {
 
   it("marks workshop handoff as a composer boundary", () => {
     const projected = projectStreamEvent(
-      event({
-        event_type: "workshop_ack",
-        phase: "workshop_ack",
-        operator_message: "Medousa is in the workshop",
-        final_text: "I’m taking this into the workshop.",
+      envelope({
+        type: "worker_ack",
+        ack_kind: "workshop",
+        text: "I’m taking this into the workshop.",
         work_id: "work-1",
       }),
       createProjectionState(),

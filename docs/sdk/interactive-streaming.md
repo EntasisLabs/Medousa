@@ -135,6 +135,35 @@ async for event in client.interactive().stream_reconnecting(stream_url):
     ...
 ```
 
+### TypeScript
+
+The dependency-free `@medousa/client` package uses the typed v2 protocol for
+first-party browser, editor, and vault surfaces:
+
+```ts
+import {
+  createTurnStreamProjectionState,
+  MedousaClient,
+  projectTurnStreamEvent,
+} from "@medousa/client";
+
+const client = new MedousaClient({ baseUrl, bearerToken });
+const response = await client.startTurn(request);
+const projection = createTurnStreamProjectionState();
+
+for await (const envelope of client.streamTurnV2(response)) {
+  for (const event of projectTurnStreamEvent(envelope, projection)) {
+    render(event);
+  }
+}
+```
+
+`streamTurnV2` sends the v2 media type, reconnects with `?since=<last_seq>`,
+drops replay overlap, and stops on typed terminal variants. Pass
+`{ stopOnHandoff: true }` when the host should release its foreground composer
+after a worker/workshop acknowledgment. `streamTurn` is the frozen v1
+compatibility adapter and should not be used by new first-party code.
+
 ---
 
 ## Cancel
@@ -151,7 +180,10 @@ await client.interactive().cancel("my-session")
 
 ## Event handling
 
-Deserialize each SSE payload to `InteractiveTurnStreamEvent`. Key fields:
+Legacy clients deserialize each SSE payload to `InteractiveTurnStreamEvent`.
+V2 clients deserialize `TurnStreamEnvelopeV2` and switch exhaustively on
+`envelope.event.type`; terminal state is represented by typed variants instead
+of the legacy `terminal` boolean. Key legacy fields:
 
 | Field | Meaning |
 |-------|---------|

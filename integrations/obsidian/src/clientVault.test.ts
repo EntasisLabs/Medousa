@@ -5,19 +5,23 @@ describe("Medousa vault client", () => {
   it("stops the foreground stream at a workshop handoff", async () => {
     let streamRequests = 0;
     const handoff = {
+      schema_version: 2,
       turn_id: "turn-1",
       seq: 1,
-      event_type: "workshop_ack",
-      phase: "workshop_ack",
-      message: "bound workshop started",
-      operator_message: "Medousa is in the workshop",
-      terminal: false,
       emitted_at_utc: "now",
+      event: {
+        type: "worker_ack",
+        ack_kind: "workshop",
+        text: "I’m taking this into the workshop.",
+      },
     };
     const client = new MedousaClient({
       baseUrl: "http://127.0.0.1:7419",
       fetch: async (_input, init) => {
         if (init?.signal) expect(init.signal.aborted).toBe(false);
+        expect((init?.headers as Record<string, string>).Accept).toBe(
+          "text/event-stream; medousa-version=2",
+        );
         streamRequests += 1;
         const body = new ReadableStream<Uint8Array>({
           start(controller) {
@@ -30,7 +34,7 @@ describe("Medousa vault client", () => {
     });
 
     const events = [];
-    for await (const event of client.streamTurn({
+    for await (const event of client.streamTurnV2({
       accepted_at_utc: "now",
       fallback_to_local: false,
       stream_ready: true,
@@ -41,8 +45,65 @@ describe("Medousa vault client", () => {
     }
 
     expect(events).toHaveLength(1);
-    expect(events[0]?.event_type).toBe("workshop_ack");
+    expect(events[0]?.event.type).toBe("worker_ack");
     expect(streamRequests).toBe(1);
+  });
+
+  it("reconnects the v2 stream from the last sequence and drops replay overlap", async () => {
+    const requests: string[] = [];
+    const envelopes = [
+      {
+        schema_version: 2,
+        turn_id: "turn-1",
+        seq: 1,
+        emitted_at_utc: "now",
+        event: { type: "content_append", text: "Hel" },
+      },
+      {
+        schema_version: 2,
+        turn_id: "turn-1",
+        seq: 2,
+        emitted_at_utc: "now",
+        event: { type: "final", text: "Hello", finish_reason: "complete" },
+      },
+    ];
+    const client = new MedousaClient({
+      baseUrl: "http://127.0.0.1:7419",
+      fetch: async (input) => {
+        const requestUrl = String(input);
+        requests.push(requestUrl);
+        const replay = requests.length === 1 ? [envelopes[0]] : envelopes;
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            for (const envelope of replay) {
+              controller.enqueue(
+                new TextEncoder().encode(`data: ${JSON.stringify(envelope)}\n\n`),
+              );
+            }
+            controller.close();
+          },
+        });
+        return new Response(body, { headers: { "Content-Type": "text/event-stream" } });
+      },
+    });
+
+    const sequences: number[] = [];
+    for await (const envelope of client.streamTurnV2(
+      {
+        accepted_at_utc: "now",
+        fallback_to_local: false,
+        stream_ready: true,
+        stream_url: "/v1/interactive/turns/turn-1/stream",
+        turn_id: "turn-1",
+      },
+      { reconnectDelayMs: () => 0 },
+    )) {
+      sequences.push(envelope.seq);
+    }
+
+    expect(sequences).toEqual([1, 2]);
+    expect(requests).toHaveLength(2);
+    expect(new URL(requests[1] ?? "").searchParams.get("since")).toBe("1");
   });
 
   it("preserves the host receiver required by browser fetch", async () => {

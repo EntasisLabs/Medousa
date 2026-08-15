@@ -4,6 +4,7 @@ import {
   boundContext,
   hostContext,
   isBackgroundHandoffEvent,
+  isTurnStreamTerminal,
   MedousaClient,
   MedousaHttpError,
   type Diagnostic,
@@ -439,7 +440,7 @@ class MedousaChatView implements vscode.WebviewViewProvider {
       const turn = await client.startTurn(request, { signal: this.abortController.signal });
       const projection = createProjectionState(showEngineDetails());
       let handedOff = false;
-      for await (const event of client.streamTurn(turn, {
+      for await (const event of client.streamTurnV2(turn, {
         signal: this.abortController.signal,
         stopOnHandoff: true,
       })) {
@@ -498,12 +499,12 @@ class MedousaChatView implements vscode.WebviewViewProvider {
     }
 
     try {
-      for await (const event of client.streamTurn(response, {
+      for await (const event of client.streamTurnV2(response, {
         signal: watcher.signal,
         maxReconnectAttempts: 8,
       })) {
         if (isBackgroundHandoffEvent(event)) continue;
-        if (event.terminal) {
+        if (isTurnStreamTerminal(event)) {
           await this.pollWorkshopHistory(sessionId, watcher.signal, 8);
           if (!this.abortController && this.sessionId === sessionId) {
             this.post({ type: "status", text: "Connected", working: false });

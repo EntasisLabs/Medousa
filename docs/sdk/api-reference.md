@@ -141,6 +141,16 @@ non-Coder turns, and it is stored separately from the human prompt.
 
 Both Rust (`sse` feature) and Python ship built-in SSE clients — [interactive-streaming.md](interactive-streaming.md).
 
+The dependency-free TypeScript `@medousa/client` exposes
+`streamTurnV2(response, options)` as its recommended start-response +
+reconnecting stream helper. It negotiates the v2 media type and yields
+`TurnStreamEnvelopeV2`. Conversation surfaces should use
+`createTurnStreamProjectionState()` with `projectTurnStreamEvent()` for the
+shared exhaustive projection, and may use `isTurnStreamTerminal()` or
+`isBackgroundHandoffEvent()` for control flow. The older `streamTurn()` method
+is a frozen v1 compatibility adapter for the support window, not a first-party
+extension point.
+
 ---
 
 ## External-surface client tools

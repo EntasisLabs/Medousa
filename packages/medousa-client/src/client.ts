@@ -1,4 +1,10 @@
-import { isBackgroundHandoffEvent, readSse, streamPathWithSince } from "./stream.js";
+import {
+  isBackgroundHandoffEvent,
+  isTurnStreamTerminal,
+  readSse,
+  streamPathWithSince,
+  TURN_STREAM_V2_MEDIA_TYPE,
+} from "./stream.js";
 import type {
   AgentModeId,
   AgentModeListResponse,
@@ -20,6 +26,7 @@ import type {
   InteractiveTurnRequest,
   InteractiveTurnResponse,
   InteractiveTurnStreamEvent,
+  TurnStreamEnvelopeV2,
   SessionSummary,
   SessionSetDisplayNameResponse,
   SessionDeleteResponse,
@@ -434,6 +441,61 @@ export class MedousaClient {
           attempt = 0;
           yield event;
           if (event.terminal || (options.stopOnHandoff && isBackgroundHandoffEvent(event))) return;
+        }
+      } catch (error) {
+        if (options.signal?.aborted) return;
+        if (attempt >= maxAttempts) throw error;
+      }
+
+      if (attempt >= maxAttempts) throw new Error("Medousa stream reconnect limit reached");
+      await this.sleep(delay(attempt++), options.signal);
+      path = response.stream_url;
+    }
+  }
+
+  async *streamTurnV2(
+    response: InteractiveTurnResponse,
+    options: StreamOptions = {},
+  ): AsyncGenerator<TurnStreamEnvelopeV2> {
+    let path = response.stream_url;
+    let lastSeq = 0;
+    let attempt = 0;
+    const maxAttempts = options.maxReconnectAttempts ?? 10;
+    const delay =
+      options.reconnectDelayMs ?? ((current: number) => Math.min(500 * 2 ** current, 30_000));
+
+    while (true) {
+      if (options.signal?.aborted) return;
+      const streamPath = streamPathWithSince(path, lastSeq);
+      const streamResponse = await this.fetchImpl(this.resolve(streamPath), {
+        headers: { ...this.headers(), Accept: TURN_STREAM_V2_MEDIA_TYPE },
+        signal: options.signal,
+      });
+
+      if (!streamResponse.ok) {
+        const body = await streamResponse.text();
+        if (attempt >= maxAttempts) {
+          throw new MedousaHttpError(streamResponse.status, streamPath, body);
+        }
+        await this.sleep(delay(attempt++), options.signal);
+        continue;
+      }
+
+      try {
+        for await (const envelope of readSse<TurnStreamEnvelopeV2>(streamResponse)) {
+          if (envelope.schema_version !== 2) {
+            throw new Error(`Unsupported Medousa turn stream version ${envelope.schema_version}`);
+          }
+          if (envelope.seq <= lastSeq) continue;
+          lastSeq = envelope.seq;
+          attempt = 0;
+          yield envelope;
+          if (
+            isTurnStreamTerminal(envelope) ||
+            (options.stopOnHandoff && isBackgroundHandoffEvent(envelope))
+          ) {
+            return;
+          }
         }
       } catch (error) {
         if (options.signal?.aborted) return;

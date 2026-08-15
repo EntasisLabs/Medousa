@@ -1,26 +1,26 @@
 import { describe, expect, it } from "vitest";
-import type { InteractiveTurnStreamEvent } from "@medousa/client";
+import type { TurnStreamEnvelopeV2, TurnStreamEventV2 } from "@medousa/client";
 import { createProjectionState, projectStreamEvent } from "./streamProjection.js";
 
-function event(overrides: Partial<InteractiveTurnStreamEvent>): InteractiveTurnStreamEvent {
+function envelope(event: TurnStreamEventV2): TurnStreamEnvelopeV2 {
   return {
+    schema_version: 2,
     turn_id: "t1",
     seq: 1,
-    event_type: "status",
-    phase: "working",
-    message: "",
-    terminal: false,
-    emitted_at_utc: "now",
-    ...overrides,
+    emitted_at_utc: "2026-08-15T00:00:00Z",
+    event,
   };
 }
 
 describe("VS Code stream projection", () => {
   it("hides daemon lifecycle and context telemetry", () => {
-    const state = createProjectionState();
     const projected = projectStreamEvent(
-      event({ message: "interactive turn accepted; agent runtime started" }),
-      state,
+      envelope({
+        type: "status",
+        phase: "working",
+        operator_message: "interactive turn accepted; agent runtime started",
+      }),
+      createProjectionState(),
     );
     expect(projected).toEqual([]);
   });
@@ -28,20 +28,23 @@ describe("VS Code stream projection", () => {
   it("turns tool lifecycle into structured events", () => {
     const state = createProjectionState();
     const started = projectStreamEvent(
-      event({
-        event_type: "tool_started",
+      envelope({
+        type: "tool_started",
         tool_name: "cognition_vault_search",
         tool_run_id: "run-1",
-        tool_status: "running",
+        tool_round: 1,
+        input_summary: "query vault",
       }),
       state,
     );
     const finished = projectStreamEvent(
-      event({
-        event_type: "tool_finished",
+      envelope({
+        type: "tool_finished",
         tool_name: "cognition_vault_search",
         tool_run_id: "run-1",
-        tool_status: "succeeded",
+        tool_round: 1,
+        input_summary: "query vault",
+        status: "succeeded",
       }),
       state,
     );
@@ -51,17 +54,18 @@ describe("VS Code stream projection", () => {
 
   it("does not duplicate final text after streamed deltas", () => {
     const state = createProjectionState();
-    expect(projectStreamEvent(event({ event_type: "content", content_delta: "Hello" }), state)).toEqual([
+    expect(projectStreamEvent(envelope({ type: "content_append", text: "Hello" }), state)).toEqual([
       { kind: "answer_delta", text: "Hello" },
     ]);
-    expect(
-      projectStreamEvent(event({ event_type: "done", terminal: true, final_text: "Hello" }), state),
-    ).not.toContainEqual({ kind: "answer_delta", text: "Hello" });
+    expect(projectStreamEvent(envelope({ type: "final", text: "Hello" }), state)).not.toContainEqual({
+      kind: "answer_delta",
+      text: "Hello",
+    });
   });
 
   it("uses final text when no deltas arrived", () => {
     const projected = projectStreamEvent(
-      event({ event_type: "done", terminal: true, final_text: "A complete answer" }),
+      envelope({ type: "final", text: "A complete answer" }),
       createProjectionState(),
     );
     expect(projected).toContainEqual({ kind: "answer_delta", text: "A complete answer" });
@@ -69,15 +73,19 @@ describe("VS Code stream projection", () => {
 
   it("replaces interim prose with final synthesis after tool use", () => {
     const state = createProjectionState();
-    projectStreamEvent(event({ event_type: "content", content_delta: "Let me check." }), state);
-    projectStreamEvent(event({
-      event_type: "tool_started",
-      tool_name: "cognition_vault_search",
-      tool_run_id: "run-1",
-      tool_status: "running",
-    }), state);
+    projectStreamEvent(envelope({ type: "content_append", text: "Let me check." }), state);
+    projectStreamEvent(
+      envelope({
+        type: "tool_started",
+        tool_name: "cognition_vault_search",
+        tool_run_id: "run-1",
+        tool_round: 1,
+        input_summary: "query vault",
+      }),
+      state,
+    );
     const projected = projectStreamEvent(
-      event({ event_type: "done", terminal: true, final_text: "Here is the result." }),
+      envelope({ type: "final", text: "Here is the result." }),
       state,
     );
     expect(projected).toContainEqual({ kind: "answer_replace", text: "Here is the result." });
@@ -85,11 +93,10 @@ describe("VS Code stream projection", () => {
 
   it("releases the host turn when work enters the workshop", () => {
     const projected = projectStreamEvent(
-      event({
-        event_type: "workshop_ack",
-        phase: "workshop_ack",
-        operator_message: "Medousa is in the workshop",
-        final_text: "I’m taking this into the workshop.",
+      envelope({
+        type: "worker_ack",
+        ack_kind: "workshop",
+        text: "I’m taking this into the workshop.",
         work_id: "work-1",
       }),
       createProjectionState(),

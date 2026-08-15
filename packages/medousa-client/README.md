@@ -13,7 +13,9 @@ JavaScript runtimes.
 - session listing, history, naming, and deletion
 - workshop vault search, read, create, update, and backlinks
 - interactive turn start and cancellation
-- streaming SSE with sequence deduplication and bounded reconnect
+- typed v2 streaming SSE with sequence deduplication and bounded reconnect
+- one exhaustive stream projector shared by the VS Code, Obsidian, and browser
+  surfaces so new event variants cannot silently disappear in one host
 - explicit worker/workshop handoff detection so host composers can release while
   the durable workshop result is followed separately
 - bounded host-context helpers that produce typed `host_context` request data;
@@ -62,11 +64,20 @@ validated before they become model-visible. The current bridge requires every
 registered tool to declare `effect_class: "external_read"`; write and
 side-effecting classes will be enabled only with an approval flow.
 
-When a turn emits `worker_ack` or `workshop_ack`, the event is intentionally
-non-terminal: the host turn has handed work to a background lane. Surfaces that
-need to release their composer immediately can pass
-`{ stopOnHandoff: true }` to `streamTurn`, then follow the same stream or poll
-session history for the later synthesis.
+`streamTurnV2` is the canonical stream API for first-party TypeScript surfaces.
+It negotiates `text/event-stream; medousa-version=2`, reconnects with the last
+sequence cursor, drops replay overlap, and stops at a typed terminal event.
+Project envelopes with `createTurnStreamProjectionState` and
+`projectTurnStreamEvent` when implementing a conversation surface. The shared
+projector exhaustively handles every generated v2 event variant.
+
+When a turn emits a `worker_ack`, the event is intentionally non-terminal: the
+host turn has handed work to a background lane. Surfaces that need to release
+their composer immediately can pass `{ stopOnHandoff: true }` to
+`streamTurnV2`, then follow the same stream or poll session history for the
+later synthesis. `streamTurn` remains available only as a frozen v1
+compatibility adapter during the documented support window; do not use it for
+new first-party code.
 
 Conversation surfaces can manage the shared catalog and promote settled replies
 without reaching around the daemon:
