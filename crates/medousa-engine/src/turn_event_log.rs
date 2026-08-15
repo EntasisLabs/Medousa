@@ -202,10 +202,23 @@ impl TurnEventLog {
         seq: u64,
         event: TurnEvent,
     ) -> std::io::Result<JournalAppendReceipt> {
+        self.append_sequenced_with_stream_v2(seq, event, None, None)
+    }
+
+    /// Append an actor-sequenced domain event with its exact typed stream view.
+    pub fn append_sequenced_with_stream_v2(
+        &self,
+        seq: u64,
+        event: TurnEvent,
+        emitted_at_utc: Option<chrono::DateTime<chrono::Utc>>,
+        stream_event_v2: Option<medousa_types::TurnStreamEventV2>,
+    ) -> std::io::Result<JournalAppendReceipt> {
         let terminal = event.is_terminal();
         let sequenced = SequencedTurnEvent {
             envelope: self.envelope.at_seq(seq),
             event,
+            emitted_at_utc,
+            stream_event_v2,
         };
         let mut line = serde_json::to_vec(&sequenced).map_err(std::io::Error::other)?;
         line.push(b'\n');
@@ -916,6 +929,8 @@ mod tests {
         let valid_suffix = SequencedTurnEvent {
             envelope: envelope.at_seq(2),
             event: TurnEvent::Notice { message: "suffix".into() },
+            emitted_at_utc: None,
+            stream_event_v2: None,
         };
         let mut file = std::fs::OpenOptions::new().append(true).open(path).unwrap();
         writeln!(file, "{{malformed}}").unwrap();
@@ -978,6 +993,39 @@ mod tests {
         assert_eq!(recovered[0].history.len(), 1);
         assert_eq!(recovered[0].history[0].content, "answer A");
 
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn typed_stream_replay_metadata_survives_reopen() {
+        let root = tmp_root("typed-stream-replay");
+        let emitted_at = Utc::now();
+        {
+            let log = TurnEventLog::open_in(&root, env("turn-typed-stream")).unwrap();
+            log.append_sequenced_with_stream_v2(
+                1,
+                TurnEvent::Notice {
+                    message: "route selected".into(),
+                },
+                Some(emitted_at),
+                Some(medousa_types::TurnStreamEventV2::ModelReceipt {
+                    provider: "openai".into(),
+                    model: "gpt".into(),
+                }),
+            )
+            .unwrap();
+        }
+
+        let reopened = TurnEventLog::open_in(&root, env("turn-typed-stream")).unwrap();
+        let replay = reopened.snapshot_since(0);
+        assert_eq!(replay[0].emitted_at_utc, Some(emitted_at));
+        match replay[0].stream_event_v2.as_ref() {
+            Some(medousa_types::TurnStreamEventV2::ModelReceipt { provider, model }) => {
+                assert_eq!(provider, "openai");
+                assert_eq!(model, "gpt");
+            }
+            other => panic!("unexpected replay payload: {other:?}"),
+        }
         fs::remove_dir_all(&root).ok();
     }
 

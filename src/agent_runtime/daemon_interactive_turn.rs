@@ -106,14 +106,22 @@ struct InteractivePipelineOutput {
 impl TurnPipelineOutput for InteractivePipelineOutput {
     async fn publish(&self, emission: TurnPipelineEmission) -> Result<(), TurnPipelineError> {
         let mut wire = crate::sse_turn_projection::v2_to_v1(&emission.envelope);
+        let v2 = emission.envelope;
         let journal = emission.journal_override.unwrap_or_else(|| {
-            crate::sse_turn_projection::journal_turn_event_for_stream(&wire, None)
+            crate::sse_turn_projection::journal_turn_event_for_v2(&v2)
         });
         let event_log = Arc::clone(&self.event_log);
-        let seq = emission.envelope.seq;
-        let terminal = emission.envelope.event.is_terminal();
+        let seq = v2.seq;
+        let terminal = v2.event.is_terminal();
+        let emitted_at_utc = v2.emitted_at_utc;
+        let stream_event_v2 = crate::sse_turn_projection::frozen_v2_replay_event(&v2.event);
         let receipt = tokio::task::spawn_blocking(move || {
-            let receipt = event_log.append_sequenced(seq, journal)?;
+            let receipt = event_log.append_sequenced_with_stream_v2(
+                seq,
+                journal,
+                Some(emitted_at_utc),
+                stream_event_v2,
+            )?;
             if terminal {
                 let commit = event_log.mark_committed()?;
                 if commit.through_seq != receipt.seq() {
@@ -130,7 +138,7 @@ impl TurnPipelineOutput for InteractivePipelineOutput {
             .map_err(|error| TurnPipelineError::Output(format!("journal writer stopped: {error}")))?
             .map_err(|error| TurnPipelineError::Output(format!("journal append failed: {error}")))?;
         wire.seq = receipt.seq();
-        self.stream_tx.publish(wire);
+        self.stream_tx.publish_pair(wire, v2);
         Ok(())
     }
 }

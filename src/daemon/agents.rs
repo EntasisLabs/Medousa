@@ -1,16 +1,14 @@
 //! Daemon `/v1/agents` — hot-swappable external agent runtimes (ACP via SDK).
 
 use std::collections::HashMap;
-use std::convert::Infallible;
 use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::{Path as AxumPath, Query, State};
-use axum::http::StatusCode;
-use axum::response::sse::Sse;
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::Response;
 use axum::routing::{get, post};
 use chrono::Utc;
-use futures_util::Stream;
 use medousa_acp_client::{
     AcpClient, AcpEvent, AgentRuntimeKind, ExternalAcpClient, RuntimeAuthStatus,
     external_runtime_config, runtime_auth_probe, runtime_availability,
@@ -637,12 +635,17 @@ pub async fn agent_session_stream(
     State(state): State<AppState>,
     AxumPath(agent_session_id): AxumPath<String>,
     Query(query): Query<crate::daemon::ingest::StreamSinceQuery>,
-) -> Result<
-    Sse<impl Stream<Item = std::result::Result<axum::response::sse::Event, Infallible>> + use<>>,
-    (StatusCode, String),
-> {
+    headers: HeaderMap,
+) -> Result<Response, (StatusCode, String)> {
     let registry = state.interactive_turn_streams.clone();
-    stream_events_from_registry(&registry, &agent_session_id, "agent session", query.since).await
+    stream_events_from_registry(
+        &registry,
+        &agent_session_id,
+        "agent session",
+        query.since,
+        &headers,
+    )
+    .await
 }
 
 pub async fn list_agent_permission_requests(

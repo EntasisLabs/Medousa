@@ -43,6 +43,32 @@ while let Some(event) = events.next().await {
 }
 ```
 
+The legacy `stream` helper intentionally receives the v1 DTO. Opt into the
+typed v2 envelope with `stream_v2`; it sends
+`Accept: text/event-stream; medousa-version=2`:
+
+```rust
+use futures_util::StreamExt;
+use medousa_types::TurnStreamEventV2;
+
+let mut events = client.interactive().stream_v2(&stream_url);
+while let Some(envelope) = events.next().await {
+    let envelope = envelope?;
+    match envelope.event {
+        TurnStreamEventV2::ContentAppend { text } => print!("{text}"),
+        TurnStreamEventV2::Final { text, .. } => {
+            println!("{text}");
+            break;
+        }
+        _ => {}
+    }
+}
+```
+
+`stream_v2` is currently one-shot. The reconnecting helpers continue to use
+the frozen v1 projection until their typed v2 migration; raw v2 reconnects use
+the same URL with `?since=<last_seq>` and the v2 `Accept` header.
+
 ### Reconnecting stream (recommended)
 
 Tracks `event.seq`, reattaches with `?since=<last_seq>` after drops, and applies bounded exponential backoff + circuit breaker + overlap guard.

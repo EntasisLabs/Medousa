@@ -6,6 +6,7 @@ use crate::daemon_api::{
 };
 
 pub const TURN_STREAM_SCHEMA_VERSION: u8 = 2;
+pub const TURN_STREAM_V2_MEDIA_TYPE: &str = "text/event-stream; medousa-version=2";
 
 fn deserialize_v2<'de, D>(deserializer: D) -> Result<u8, D::Error>
 where

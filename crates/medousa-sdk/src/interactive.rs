@@ -1,5 +1,8 @@
 #[cfg(feature = "async")]
-use medousa_types::{InteractiveTurnRequest, InteractiveTurnResponse, InteractiveTurnStreamEvent};
+use medousa_types::{
+    InteractiveTurnRequest, InteractiveTurnResponse, InteractiveTurnStreamEvent,
+    TurnStreamEnvelopeV2,
+};
 
 #[cfg(all(feature = "async", feature = "sse"))]
 use futures_util::Stream;
@@ -12,9 +15,9 @@ use crate::client::MedousaClient;
 use crate::transport::decode;
 
 #[cfg(all(feature = "async", feature = "sse"))]
-use crate::streaming::{SseLineStream, decode_sse_json};
-#[cfg(all(feature = "async", feature = "sse"))]
 use crate::reconnecting_stream::ReconnectingInteractiveStream;
+#[cfg(all(feature = "async", feature = "sse"))]
+use crate::streaming::{SseLineStream, decode_sse_json};
 
 #[cfg(feature = "async")]
 pub struct InteractiveApi<'a> {
@@ -27,7 +30,8 @@ impl InteractiveApi<'_> {
         &self,
         request: &InteractiveTurnRequest,
     ) -> Result<InteractiveTurnResponse, crate::SdkError> {
-        let body = serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let body =
+            serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
         let value = self
             .client
             .transport()
@@ -79,6 +83,21 @@ impl InteractiveApi<'_> {
             .client
             .transport()
             .stream_sse(self.client.base_url(), stream_url.into());
+        SseLineStream::new(byte_stream).map(|line| line.and_then(|data| decode_sse_json(&data)))
+    }
+
+    /// Open the typed v2 turn stream. The legacy [`Self::stream`] contract
+    /// remains the default until first-party clients finish migrating.
+    #[cfg(feature = "sse")]
+    pub fn stream_v2(
+        &self,
+        stream_url: impl Into<String>,
+    ) -> impl Stream<Item = Result<TurnStreamEnvelopeV2, crate::SdkError>> + '_ {
+        let byte_stream = self.client.transport().stream_sse_with_accept(
+            self.client.base_url(),
+            stream_url.into(),
+            medousa_types::turn_stream::TURN_STREAM_V2_MEDIA_TYPE,
+        );
         SseLineStream::new(byte_stream).map(|line| line.and_then(|data| decode_sse_json(&data)))
     }
 

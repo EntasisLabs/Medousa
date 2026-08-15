@@ -125,6 +125,7 @@ per-surface results. Raw HTTP clients can query
 |--------|------|-------|
 | `start_turn(request)` | `POST /v1/interactive/turn` | `InteractiveTurnRequest` → `InteractiveTurnResponse` |
 | `stream(stream_url)` | SSE from `stream_url` | `InteractiveTurnStreamEvent` stream |
+| `stream_v2(stream_url)` | negotiated SSE from `stream_url` | `TurnStreamEnvelopeV2` stream |
 | `stream_turn(request)` | start + SSE | combined helper |
 | `stream_reconnecting(stream_url)` | SSE with `?since=` replay | `InteractiveTurnStreamEvent` stream (client helper) |
 | `stream_reconnecting_with_policy(stream_url, policy)` | SSE with custom `ReconnectPolicy` | `InteractiveTurnStreamEvent` stream |

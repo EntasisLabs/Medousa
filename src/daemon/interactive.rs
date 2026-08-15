@@ -8,12 +8,10 @@ use medousa_engine::{
 
 use axum::Json;
 use axum::extract::{Extension, Path as AxumPath, Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use chrono::Utc;
 use serde::Deserialize;
 use uuid::Uuid;
-
-use std::convert::Infallible;
 
 use crate::channel_delivery;
 use crate::daemon::ingest::{
@@ -25,8 +23,7 @@ use crate::daemon_api::{
     SessionActiveTurnsResponse, SessionDeleteQuery, SessionDeleteResponse, TurnTicketRecord,
     TurnTicketResponse,
 };
-use axum::response::sse::{Event, Sse};
-use futures_util::stream::Stream;
+use axum::response::Response;
 
 use crate::daemon::state::AppState;
 
@@ -601,10 +598,15 @@ pub async fn interactive_turn_stream(
     State(state): State<AppState>,
     AxumPath(turn_id): AxumPath<String>,
     Query(query): Query<crate::daemon::ingest::StreamSinceQuery>,
-) -> Result<
-    Sse<impl Stream<Item = std::result::Result<Event, Infallible>> + use<>>,
-    (StatusCode, String),
-> {
+    headers: HeaderMap,
+) -> Result<Response, (StatusCode, String)> {
     let registry = state.interactive_turn_streams.clone();
-    stream_events_from_registry(&registry, &turn_id, "interactive turn", query.since).await
+    stream_events_from_registry(
+        &registry,
+        &turn_id,
+        "interactive turn",
+        query.since,
+        &headers,
+    )
+    .await
 }

@@ -156,6 +156,16 @@ fn stream_mirror_from_event(event: &InteractiveTurnStreamEvent) -> TurnEvent {
 
 /// Project a sequenced spine event back to the SSE wire shape for replay.
 pub fn sequenced_to_stream_event(sequenced: &SequencedTurnEvent) -> InteractiveTurnStreamEvent {
+    if let Some(event) = &sequenced.stream_event_v2 {
+        let envelope = TurnStreamEnvelopeV2::new(
+            &sequenced.envelope.turn_id,
+            sequenced.seq(),
+            sequenced.emitted_at_utc.unwrap_or_else(Utc::now),
+            event.clone(),
+        )
+        .expect("sequenced journal event has valid envelope");
+        return v2_to_v1(&envelope);
+    }
     let turn_id = sequenced.envelope.turn_id.clone();
     let seq = sequenced.seq();
     match &sequenced.event {
@@ -175,6 +185,151 @@ pub fn sequenced_to_stream_event(sequenced: &SequencedTurnEvent) -> InteractiveT
         }
         other => typed_turn_event_to_stream(&turn_id, seq, other),
     }
+}
+
+pub fn sequenced_to_v2(sequenced: &SequencedTurnEvent) -> Result<TurnStreamEnvelopeV2, String> {
+    if let Some(event) = &sequenced.stream_event_v2 {
+        return TurnStreamEnvelopeV2::new(
+            sequenced.envelope.turn_id.clone(),
+            sequenced.seq(),
+            sequenced.emitted_at_utc.unwrap_or_else(Utc::now),
+            event.clone(),
+        )
+        .map_err(|error| error.to_string());
+    }
+    let event = match &sequenced.event {
+        TurnEvent::StreamMirror(_) => v1_to_v2(&sequenced_to_stream_event(sequenced))?.event,
+        TurnEvent::ContentDelta { delta } => TurnStreamEventV2::ContentAppend {
+            text: delta.clone(),
+        },
+        TurnEvent::ReasoningDelta { delta } => TurnStreamEventV2::ReasoningAppend {
+            text: delta.clone(),
+        },
+        TurnEvent::Progress {
+            message,
+            tool_names,
+        } => TurnStreamEventV2::Progress {
+            message: message.clone(),
+            tool_names: tool_names.clone(),
+        },
+        TurnEvent::ScratchReset => TurnStreamEventV2::ScratchReset,
+        TurnEvent::ToolRunStarted {
+            tool_run_id,
+            tool_name,
+            input_summary,
+            tool_round,
+        } => TurnStreamEventV2::ToolStarted {
+            tool_run_id: tool_run_id.clone(),
+            tool_name: tool_name.clone(),
+            input_summary: input_summary.clone(),
+            input_params: Vec::new(),
+            tool_round: *tool_round,
+        },
+        TurnEvent::ToolRunFinished {
+            tool_run_id,
+            tool_name,
+            status,
+            output_summary,
+            tool_round,
+        } => TurnStreamEventV2::ToolFinished {
+            tool_run_id: tool_run_id.clone(),
+            tool_name: tool_name.clone(),
+            status: status.clone(),
+            input_summary: String::new(),
+            input_params: Vec::new(),
+            output_summary: output_summary.clone(),
+            tool_round: *tool_round,
+            artifact_refs: Vec::new(),
+        },
+        TurnEvent::Notice { message } => TurnStreamEventV2::Status {
+            phase: "tool_loop".to_string(),
+            operator_message: None,
+            debug_message: Some(message.clone()),
+        },
+        TurnEvent::FinalResponse {
+            text, tool_names, ..
+        } => TurnStreamEventV2::Final {
+            text: text.clone(),
+            tool_names: tool_names.clone(),
+        },
+        TurnEvent::NeedsInput {
+            text, tool_names, ..
+        } => TurnStreamEventV2::NeedsInput {
+            text: text.clone(),
+            tool_names: tool_names.clone(),
+        },
+        TurnEvent::Checkpoint {
+            text, tool_names, ..
+        } => TurnStreamEventV2::Checkpoint {
+            text: text.clone(),
+            tool_names: tool_names.clone(),
+        },
+        TurnEvent::WorkerAck {
+            text,
+            tool_names,
+            work_id,
+            ..
+        } => TurnStreamEventV2::WorkerAck {
+            ack_kind: WorkerAckKind::Worker,
+            text: text.clone(),
+            tool_names: tool_names.clone(),
+            work_id: work_id.clone(),
+        },
+        TurnEvent::BudgetApprovalRequired {
+            request_id,
+            rounds_executed,
+            max_tool_rounds,
+            requested_rounds,
+            reason,
+            progress_summary,
+        } => TurnStreamEventV2::BudgetApprovalRequired {
+            request_id: request_id.clone(),
+            rounds_executed: *rounds_executed,
+            max_tool_rounds: *max_tool_rounds,
+            requested_rounds: *requested_rounds,
+            reason: reason.clone(),
+            progress_summary: progress_summary.clone(),
+        },
+        TurnEvent::Status {
+            phase,
+            operator_message,
+            debug_message,
+            ..
+        } => TurnStreamEventV2::Status {
+            phase: phase.clone(),
+            operator_message: operator_message.clone(),
+            debug_message: debug_message.clone(),
+        },
+        TurnEvent::BrowserChallenge {
+            session_id,
+            challenge_url,
+            reason,
+        } => TurnStreamEventV2::BrowserChallenge {
+            session_id: session_id.clone(),
+            challenge_url: challenge_url.clone(),
+            reason: reason.clone(),
+        },
+        TurnEvent::BrowserNavigated {
+            url,
+            title,
+            opened_by_agent,
+        } => TurnStreamEventV2::BrowserNavigated {
+            url: url.clone(),
+            title: title.clone(),
+            opened_by_agent: *opened_by_agent,
+        },
+        TurnEvent::Error { message } => TurnStreamEventV2::Error {
+            operator_message: message.clone(),
+            debug_message: None,
+        },
+    };
+    TurnStreamEnvelopeV2::new(
+        sequenced.envelope.turn_id.clone(),
+        sequenced.seq(),
+        sequenced.emitted_at_utc.unwrap_or_else(Utc::now),
+        event,
+    )
+    .map_err(|error| error.to_string())
 }
 
 fn typed_turn_event_to_stream(
@@ -602,7 +757,9 @@ pub fn v2_to_v1(envelope: &TurnStreamEnvelopeV2) -> InteractiveTurnStreamEvent {
             wire.message = format!(
                 "Turn paused at {rounds_executed}/{max_tool_rounds}. Requesting +{requested_rounds} rounds: {reason}"
             );
-            wire.operator_message = progress_summary.clone().or_else(|| Some(wire.message.clone()));
+            wire.operator_message = progress_summary
+                .clone()
+                .or_else(|| Some(wire.message.clone()));
             wire.budget_request_id = Some(request_id.clone());
             wire.requested_rounds = Some(*requested_rounds);
         }
@@ -652,6 +809,158 @@ pub fn v2_to_v1(envelope: &TurnStreamEnvelopeV2) -> InteractiveTurnStreamEvent {
     wire
 }
 
+/// Lift a legacy wire event into the v2 envelope. New pipeline events bypass
+/// this compatibility path and retain their original typed representation.
+pub fn v1_to_v2(event: &InteractiveTurnStreamEvent) -> Result<TurnStreamEnvelopeV2, String> {
+    let text = || {
+        event
+            .final_text
+            .clone()
+            .unwrap_or_else(|| event.message.clone())
+    };
+    let typed = match event.event_type.as_str() {
+        "content_delta" => TurnStreamEventV2::ContentAppend {
+            text: event.content_delta.clone().unwrap_or_default(),
+        },
+        "reasoning_delta" => TurnStreamEventV2::ReasoningAppend {
+            text: event.reasoning_delta.clone().unwrap_or_default(),
+        },
+        "status" => TurnStreamEventV2::Status {
+            phase: event.phase.clone(),
+            operator_message: event.operator_message.clone(),
+            debug_message: event.debug_message.clone(),
+        },
+        "turn_progress" => TurnStreamEventV2::Progress {
+            message: event.message.clone(),
+            tool_names: event.tool_names.clone().unwrap_or_default(),
+        },
+        "assistant_pack_hold" => TurnStreamEventV2::PackHold {
+            text: text(),
+            tool_names: event.tool_names.clone().unwrap_or_default(),
+        },
+        "model_receipt" => TurnStreamEventV2::ModelReceipt {
+            provider: event.response_provider.clone().unwrap_or_default(),
+            model: event.response_model.clone().unwrap_or_default(),
+        },
+        "final" => TurnStreamEventV2::Final {
+            text: text(),
+            tool_names: event.tool_names.clone().unwrap_or_default(),
+        },
+        "needs_input" => TurnStreamEventV2::NeedsInput {
+            text: text(),
+            tool_names: event.tool_names.clone().unwrap_or_default(),
+        },
+        "checkpoint" | "turn_checkpoint" => TurnStreamEventV2::Checkpoint {
+            text: text(),
+            tool_names: event.tool_names.clone().unwrap_or_default(),
+        },
+        "worker_synthesis" => TurnStreamEventV2::WorkerSynthesis {
+            text: text(),
+            tool_names: event.tool_names.clone().unwrap_or_default(),
+            work_id: event.work_id.clone(),
+        },
+        "worker_ack" | "workshop_ack" => TurnStreamEventV2::WorkerAck {
+            ack_kind: if event.event_type == "workshop_ack" {
+                WorkerAckKind::Workshop
+            } else {
+                WorkerAckKind::Worker
+            },
+            text: text(),
+            tool_names: event.tool_names.clone().unwrap_or_default(),
+            work_id: event.work_id.clone(),
+        },
+        "final_pending" => TurnStreamEventV2::FinalPending {
+            text: text(),
+            tool_names: event.tool_names.clone().unwrap_or_default(),
+        },
+        "error" => TurnStreamEventV2::Error {
+            operator_message: event
+                .operator_message
+                .clone()
+                .unwrap_or_else(|| event.message.clone()),
+            debug_message: event.debug_message.clone(),
+        },
+        "scratch_reset" => TurnStreamEventV2::ScratchReset,
+        "tool_started" => TurnStreamEventV2::ToolStarted {
+            tool_run_id: required_legacy(&event.tool_run_id, "tool_run_id")?,
+            tool_name: required_legacy(&event.tool_name, "tool_name")?,
+            input_summary: required_legacy(&event.tool_input_summary, "tool_input_summary")?,
+            input_params: event.tool_input_params.clone().unwrap_or_default(),
+            tool_round: event.tool_round.unwrap_or(1),
+        },
+        "tool_finished" => TurnStreamEventV2::ToolFinished {
+            tool_run_id: required_legacy(&event.tool_run_id, "tool_run_id")?,
+            tool_name: required_legacy(&event.tool_name, "tool_name")?,
+            status: required_legacy(&event.tool_status, "tool_status")?,
+            input_summary: event.tool_input_summary.clone().unwrap_or_default(),
+            input_params: event.tool_input_params.clone().unwrap_or_default(),
+            output_summary: event.tool_output_summary.clone(),
+            tool_round: event.tool_round.unwrap_or(1),
+            artifact_refs: event.tool_artifact_refs.clone().unwrap_or_default(),
+        },
+        "artifact_presented" => TurnStreamEventV2::ArtifactPresented {
+            artifact: required_legacy(&event.ui_artifact, "ui_artifact")?,
+        },
+        "artifact_updated" => TurnStreamEventV2::ArtifactUpdated {
+            previous_artifact_id: required_legacy(
+                &event.previous_artifact_id,
+                "previous_artifact_id",
+            )?,
+            artifact: required_legacy(&event.ui_artifact, "ui_artifact")?,
+            root_artifact_id: event.root_artifact_id.clone(),
+        },
+        "ui_scene" => TurnStreamEventV2::UiScene {
+            scene: required_legacy(&event.ui_scene, "ui_scene")?,
+        },
+        "budget_approval" => TurnStreamEventV2::BudgetApprovalRequired {
+            request_id: required_legacy(&event.budget_request_id, "budget_request_id")?,
+            rounds_executed: 0,
+            max_tool_rounds: 0,
+            requested_rounds: event.requested_rounds.unwrap_or(0),
+            reason: event.message.clone(),
+            progress_summary: event.operator_message.clone(),
+        },
+        "browser_challenge" => TurnStreamEventV2::BrowserChallenge {
+            session_id: required_legacy(&event.browser_session_id, "browser_session_id")?,
+            challenge_url: required_legacy(&event.browser_challenge_url, "browser_challenge_url")?,
+            reason: event.message.clone(),
+        },
+        "browser_navigated" => TurnStreamEventV2::BrowserNavigated {
+            url: event.message.clone(),
+            title: event.operator_message.clone(),
+            opened_by_agent: false,
+        },
+        "context_usage" => TurnStreamEventV2::ContextUsage {
+            report: required_legacy(&event.context_usage, "context_usage")?,
+            operator_summary: event.operator_message.clone(),
+        },
+        "permission_request" => TurnStreamEventV2::PermissionRequest {
+            request_id: required_legacy(&event.permission_request_id, "permission_request_id")?,
+            message: event.message.clone(),
+            agent_session_id: event.agent_session_id.clone(),
+            agent_runtime: event.agent_runtime.clone(),
+        },
+        other => {
+            return Err(format!(
+                "legacy stream event '{other}' has no v2 projection"
+            ));
+        }
+    };
+    TurnStreamEnvelopeV2::new(
+        event.turn_id.clone(),
+        event.seq,
+        event.emitted_at_utc,
+        typed,
+    )
+    .map_err(|error| error.to_string())
+}
+
+fn required_legacy<T: Clone>(value: &Option<T>, field: &str) -> Result<T, String> {
+    value
+        .clone()
+        .ok_or_else(|| format!("legacy stream event is missing {field}"))
+}
+
 fn terminal_body(
     wire: &mut InteractiveTurnStreamEvent,
     event_type: &str,
@@ -690,6 +999,176 @@ pub fn journal_turn_event_for_stream(
     stream_event_to_turn_event(event)
 }
 
+/// Preserve the canonical v2 payload in the journal while retaining the typed
+/// spine variants used by history folding and terminal commit semantics.
+pub fn journal_turn_event_for_v2(envelope: &TurnStreamEnvelopeV2) -> TurnEvent {
+    match &envelope.event {
+        TurnStreamEventV2::ContentAppend { text } => TurnEvent::ContentDelta {
+            delta: text.clone(),
+        },
+        TurnStreamEventV2::ReasoningAppend { text } => TurnEvent::ReasoningDelta {
+            delta: text.clone(),
+        },
+        TurnStreamEventV2::Progress {
+            message,
+            tool_names,
+        } => TurnEvent::Progress {
+            message: message.clone(),
+            tool_names: tool_names.clone(),
+        },
+        TurnStreamEventV2::ScratchReset => TurnEvent::ScratchReset,
+        TurnStreamEventV2::ToolStarted {
+            tool_run_id,
+            tool_name,
+            input_summary,
+            input_params,
+            tool_round,
+        } if input_params.is_empty() => TurnEvent::ToolRunStarted {
+            tool_run_id: tool_run_id.clone(),
+            tool_name: tool_name.clone(),
+            input_summary: input_summary.clone(),
+            tool_round: *tool_round,
+        },
+        TurnStreamEventV2::ToolFinished {
+            tool_run_id,
+            tool_name,
+            status,
+            input_summary,
+            input_params,
+            output_summary,
+            tool_round,
+            artifact_refs,
+        } if input_summary.is_empty() && input_params.is_empty() && artifact_refs.is_empty() => {
+            TurnEvent::ToolRunFinished {
+                tool_run_id: tool_run_id.clone(),
+                tool_name: tool_name.clone(),
+                status: status.clone(),
+                output_summary: output_summary.clone(),
+                tool_round: *tool_round,
+            }
+        }
+        TurnStreamEventV2::Final { text, tool_names } => TurnEvent::FinalResponse {
+            text: text.clone(),
+            tool_names: tool_names.clone(),
+            parts: Vec::new(),
+            committed_at: envelope.emitted_at_utc,
+        },
+        TurnStreamEventV2::NeedsInput { text, tool_names } => TurnEvent::NeedsInput {
+            text: text.clone(),
+            tool_names: tool_names.clone(),
+            parts: Vec::new(),
+            committed_at: envelope.emitted_at_utc,
+        },
+        TurnStreamEventV2::Checkpoint { text, tool_names } => TurnEvent::Checkpoint {
+            text: text.clone(),
+            tool_names: tool_names.clone(),
+            parts: Vec::new(),
+            committed_at: envelope.emitted_at_utc,
+        },
+        TurnStreamEventV2::WorkerAck {
+            ack_kind: WorkerAckKind::Worker,
+            text,
+            tool_names,
+            work_id,
+        } => TurnEvent::WorkerAck {
+            text: text.clone(),
+            tool_names: tool_names.clone(),
+            work_id: work_id.clone(),
+            parts: Vec::new(),
+            committed_at: envelope.emitted_at_utc,
+        },
+        TurnStreamEventV2::BudgetApprovalRequired {
+            request_id,
+            rounds_executed,
+            max_tool_rounds,
+            requested_rounds,
+            reason,
+            progress_summary,
+        } => TurnEvent::BudgetApprovalRequired {
+            request_id: request_id.clone(),
+            rounds_executed: *rounds_executed,
+            max_tool_rounds: *max_tool_rounds,
+            requested_rounds: *requested_rounds,
+            reason: reason.clone(),
+            progress_summary: progress_summary.clone(),
+        },
+        TurnStreamEventV2::Status {
+            phase,
+            operator_message,
+            debug_message,
+        } => TurnEvent::Status {
+            phase: phase.clone(),
+            message: operator_message
+                .clone()
+                .or_else(|| debug_message.clone())
+                .unwrap_or_default(),
+            operator_message: operator_message.clone(),
+            debug_message: debug_message.clone(),
+        },
+        TurnStreamEventV2::BrowserChallenge {
+            session_id,
+            challenge_url,
+            reason,
+        } => TurnEvent::BrowserChallenge {
+            session_id: session_id.clone(),
+            challenge_url: challenge_url.clone(),
+            reason: reason.clone(),
+        },
+        TurnStreamEventV2::BrowserNavigated {
+            url,
+            title,
+            opened_by_agent,
+        } => TurnEvent::BrowserNavigated {
+            url: url.clone(),
+            title: title.clone(),
+            opened_by_agent: *opened_by_agent,
+        },
+        TurnStreamEventV2::Error {
+            operator_message, ..
+        } => TurnEvent::Error {
+            message: operator_message.clone(),
+        },
+        _ => journal_turn_event_for_stream(&v2_to_v1(envelope), None),
+    }
+}
+
+/// Freeze only variants whose v2 fields cannot be recovered from the typed
+/// domain event. Common token/status events avoid duplicating their payload in
+/// every journal record.
+pub fn frozen_v2_replay_event(event: &TurnStreamEventV2) -> Option<TurnStreamEventV2> {
+    match event {
+        TurnStreamEventV2::PackHold { .. }
+        | TurnStreamEventV2::ModelReceipt { .. }
+        | TurnStreamEventV2::WorkerAck {
+            ack_kind: WorkerAckKind::Workshop,
+            ..
+        }
+        | TurnStreamEventV2::WorkerSynthesis { .. }
+        | TurnStreamEventV2::FinalPending { .. }
+        | TurnStreamEventV2::ArtifactPresented { .. }
+        | TurnStreamEventV2::ArtifactUpdated { .. }
+        | TurnStreamEventV2::UiScene { .. }
+        | TurnStreamEventV2::ContextUsage { .. }
+        | TurnStreamEventV2::PermissionRequest { .. } => Some(event.clone()),
+        TurnStreamEventV2::ToolStarted { input_params, .. } if !input_params.is_empty() => {
+            Some(event.clone())
+        }
+        TurnStreamEventV2::ToolFinished {
+            input_summary,
+            input_params,
+            artifact_refs,
+            ..
+        } if !input_summary.is_empty() || !input_params.is_empty() || !artifact_refs.is_empty() => {
+            Some(event.clone())
+        }
+        TurnStreamEventV2::Error {
+            debug_message: Some(_),
+            ..
+        } => Some(event.clone()),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -717,6 +1196,8 @@ mod tests {
         let sequenced = SequencedTurnEvent {
             envelope: envelope.at_seq(3),
             event: journal,
+            emitted_at_utc: None,
+            stream_event_v2: None,
         };
         let replay = sequenced_to_stream_event(&sequenced);
         assert_eq!(replay.event_type, "artifact_presented");
@@ -756,5 +1237,119 @@ mod tests {
         assert_eq!(legacy.event_type, "turn_checkpoint");
         assert_eq!(legacy.final_text.as_deref(), Some("continue when ready"));
         assert!(legacy.terminal);
+    }
+
+    #[test]
+    fn v2_budget_fields_survive_durable_replay() {
+        let envelope = TurnStreamEnvelopeV2::new(
+            "turn-budget",
+            7,
+            Utc::now(),
+            TurnStreamEventV2::BudgetApprovalRequired {
+                request_id: "budget-1".to_string(),
+                rounds_executed: 4,
+                max_tool_rounds: 5,
+                requested_rounds: 3,
+                reason: "more work".to_string(),
+                progress_summary: Some("almost there".to_string()),
+            },
+        )
+        .unwrap();
+        let sequenced = SequencedTurnEvent {
+            envelope: TurnEnvelope::new("turn-budget", Principal::operator()).at_seq(7),
+            event: journal_turn_event_for_v2(&envelope),
+            emitted_at_utc: Some(envelope.emitted_at_utc),
+            stream_event_v2: frozen_v2_replay_event(&envelope.event),
+        };
+
+        let replay = sequenced_to_v2(&sequenced).unwrap();
+        assert_eq!(replay.emitted_at_utc, envelope.emitted_at_utc);
+        assert!(sequenced.stream_event_v2.is_none());
+        match replay.event {
+            TurnStreamEventV2::BudgetApprovalRequired {
+                rounds_executed,
+                max_tool_rounds,
+                requested_rounds,
+                ..
+            } => {
+                assert_eq!(rounds_executed, 4);
+                assert_eq!(max_tool_rounds, 5);
+                assert_eq!(requested_rounds, 3);
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rich_v2_events_replay_without_legacy_field_loss() {
+        let artifact = StreamUiArtifact {
+            artifact_id: "art-2".to_string(),
+            mime: "text/html".to_string(),
+            label: "Dashboard".to_string(),
+            presentation: "inline".to_string(),
+            byte_size: Some(128),
+            height_px: Some(480),
+        };
+        let envelope = TurnStreamEnvelopeV2::new(
+            "turn-rich",
+            9,
+            Utc::now(),
+            TurnStreamEventV2::ArtifactPresented {
+                artifact: artifact.clone(),
+            },
+        )
+        .unwrap();
+        let sequenced = SequencedTurnEvent {
+            envelope: TurnEnvelope::new("turn-rich", Principal::operator()).at_seq(9),
+            event: journal_turn_event_for_v2(&envelope),
+            emitted_at_utc: Some(envelope.emitted_at_utc),
+            stream_event_v2: frozen_v2_replay_event(&envelope.event),
+        };
+
+        let replay = sequenced_to_v2(&sequenced).unwrap();
+        match replay.event {
+            TurnStreamEventV2::ArtifactPresented { artifact: replayed } => {
+                assert_eq!(replayed.artifact_id, artifact.artifact_id);
+                assert_eq!(replayed.height_px, artifact.height_px);
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        let legacy = sequenced_to_stream_event(&sequenced);
+        assert_eq!(legacy.event_type, "artifact_presented");
+        assert_eq!(legacy.ui_artifact.unwrap().label, "Dashboard");
+    }
+
+    #[test]
+    fn workshop_ack_freezes_only_the_ambiguous_v2_payload() {
+        let envelope = TurnStreamEnvelopeV2::new(
+            "turn-workshop",
+            11,
+            Utc::now(),
+            TurnStreamEventV2::WorkerAck {
+                ack_kind: WorkerAckKind::Workshop,
+                text: "workshop started".to_string(),
+                tool_names: vec!["forge".to_string()],
+                work_id: Some("work-1".to_string()),
+            },
+        )
+        .unwrap();
+        let sequenced = SequencedTurnEvent {
+            envelope: TurnEnvelope::new("turn-workshop", Principal::operator()).at_seq(11),
+            event: journal_turn_event_for_v2(&envelope),
+            emitted_at_utc: Some(envelope.emitted_at_utc),
+            stream_event_v2: frozen_v2_replay_event(&envelope.event),
+        };
+
+        assert!(sequenced.stream_event_v2.is_some());
+        match sequenced_to_v2(&sequenced).unwrap().event {
+            TurnStreamEventV2::WorkerAck { ack_kind, .. } => {
+                assert!(matches!(ack_kind, WorkerAckKind::Workshop));
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        assert_eq!(
+            sequenced_to_stream_event(&sequenced).event_type,
+            "workshop_ack"
+        );
     }
 }

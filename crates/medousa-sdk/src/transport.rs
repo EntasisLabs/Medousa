@@ -70,6 +70,24 @@ pub trait Transport: Send + Sync {
             dyn Stream<Item = Result<bytes::Bytes, SdkError>> + Send + 'a,
         >,
     >;
+
+    /// Open an SSE byte stream with an explicit negotiated media type.
+    #[cfg(feature = "sse")]
+    fn stream_sse_with_accept<'a>(
+        &'a self,
+        base_url: &'a str,
+        path: String,
+        accept: &'static str,
+    ) -> Pin<Box<dyn Stream<Item = Result<bytes::Bytes, SdkError>> + Send + 'a>> {
+        if accept == "text/event-stream" {
+            return self.stream_sse(base_url, path);
+        }
+        Box::pin(futures_util::stream::once(async move {
+            Err(SdkError::Transport(format!(
+                "transport does not support SSE media type {accept}"
+            )))
+        }))
+    }
 }
 
 pub async fn decode<T: DeserializeOwned>(value: serde_json::Value) -> Result<T, SdkError> {
@@ -271,6 +289,16 @@ impl Transport for HttpTransport {
             dyn Stream<Item = Result<bytes::Bytes, SdkError>> + Send + 'a,
         >,
     > {
+        self.stream_sse_with_accept(base_url, path, "text/event-stream")
+    }
+
+    #[cfg(feature = "sse")]
+    fn stream_sse_with_accept<'a>(
+        &'a self,
+        base_url: &'a str,
+        path: String,
+        accept: &'static str,
+    ) -> Pin<Box<dyn Stream<Item = Result<bytes::Bytes, SdkError>> + Send + 'a>> {
         use futures_util::{StreamExt, TryStreamExt};
         let url = Self::url(base_url, &path);
         let client = self.client.clone();
@@ -278,7 +306,7 @@ impl Transport for HttpTransport {
             futures_util::stream::once(async move {
                 let response = client
                     .get(&url)
-                    .header("Accept", "text/event-stream")
+                    .header("Accept", accept)
                     .send()
                     .await
                     .map_err(SdkError::from)?;
@@ -287,9 +315,9 @@ impl Transport for HttpTransport {
                     let text = response.text().await.unwrap_or_default();
                     return Err(SdkError::Http(format!("{status}: {text}")));
                 }
-                Ok(response.bytes_stream().map(|r| {
-                    r.map_err(|e| SdkError::Http(e.to_string()))
-                }))
+                Ok(response
+                    .bytes_stream()
+                    .map(|result| result.map_err(|error| SdkError::Http(error.to_string()))))
             })
             .try_flatten(),
         )

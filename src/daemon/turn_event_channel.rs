@@ -6,6 +6,19 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
 
 use crate::daemon_api::InteractiveTurnStreamEvent;
+use medousa_types::TurnStreamEnvelopeV2;
+
+#[derive(Debug, Clone)]
+pub struct PublishedTurnEvent {
+    pub v1: InteractiveTurnStreamEvent,
+    pub v2: Option<TurnStreamEnvelopeV2>,
+}
+
+impl PublishedTurnEvent {
+    pub fn seq(&self) -> u64 {
+        self.v1.seq
+    }
+}
 
 struct ChannelState {
     closed: bool,
@@ -13,7 +26,7 @@ struct ChannelState {
 
 /// Broadcast channel for one interactive turn's live event stream.
 pub struct TurnEventChannel {
-    tx: broadcast::Sender<InteractiveTurnStreamEvent>,
+    tx: broadcast::Sender<PublishedTurnEvent>,
     state: Mutex<ChannelState>,
 }
 
@@ -28,14 +41,23 @@ impl TurnEventChannel {
     }
 
     /// Subscribe to live events. Used by each attached SSE stream.
-    pub fn subscribe(&self) -> broadcast::Receiver<InteractiveTurnStreamEvent> {
+    pub fn subscribe(&self) -> broadcast::Receiver<PublishedTurnEvent> {
         self.tx.subscribe()
     }
 
     /// Broadcast a pre-sequenced event to live SSE subscribers.
     pub fn publish(&self, event: InteractiveTurnStreamEvent) {
         debug_assert!(event.seq > 0, "SSE events must carry spine-assigned seq");
-        let _ = self.tx.send(event);
+        let v2 = crate::sse_turn_projection::v1_to_v2(&event)
+            .inspect_err(|error| tracing::error!(%error, "stream event has no v2 projection"))
+            .ok();
+        let _ = self.tx.send(PublishedTurnEvent { v1: event, v2 });
+    }
+
+    /// Broadcast the canonical v2 event and its frozen v1 compatibility view.
+    pub fn publish_pair(&self, v1: InteractiveTurnStreamEvent, v2: TurnStreamEnvelopeV2) {
+        debug_assert_eq!(v1.seq, v2.seq, "v1/v2 stream sequence must match");
+        let _ = self.tx.send(PublishedTurnEvent { v1, v2: Some(v2) });
     }
 
     /// Mark the turn finished while the registry retains replay state.
@@ -67,7 +89,8 @@ mod tests {
         let mut rx = ch.subscribe();
         ch.publish(ev(1));
         let got = rx.try_recv().expect("live event");
-        assert_eq!(got.seq, 1);
+        assert_eq!(got.seq(), 1);
+        assert!(got.v2.is_some());
     }
 
     #[test]

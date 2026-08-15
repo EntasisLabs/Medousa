@@ -159,6 +159,8 @@ mod tests {
         SequencedTurnEvent {
             envelope: TurnEnvelope::new("t", Principal::operator()).at_seq(n),
             event,
+            emitted_at_utc: None,
+            stream_event_v2: None,
         }
     }
 
