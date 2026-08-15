@@ -1130,41 +1130,6 @@ async fn send_daemon_notice(
     Ok(())
 }
 
-#[cfg(test)]
-mod stream_v2_tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn typed_final_dispatches_one_terminal_response() {
-        let envelope = TurnStreamEnvelopeV2::new(
-            "daemon-turn-1",
-            1,
-            chrono::Utc::now(),
-            TurnStreamEventV2::Final {
-                text: "done".to_string(),
-                tool_names: vec!["search".to_string()],
-            },
-        )
-        .expect("v2 envelope");
-        let (event_tx, mut event_rx) = mpsc::channel(1);
-
-        let terminal = dispatch_daemon_stream_event(envelope, 7, &event_tx)
-            .await
-            .expect("dispatch");
-
-        assert!(terminal);
-        assert!(matches!(
-            event_rx.recv().await,
-            Some(TuiEvent::AgentResponse {
-                turn_id: 7,
-                text,
-                terminal: true,
-                ..
-            }) if text == "done"
-        ));
-    }
-}
-
 fn build_prior_messages(
     tool_catalog: &medousa::typed_tools::ToolCatalog,
     session_id: &str,
@@ -1208,5 +1173,40 @@ pub(crate) fn stop_active_generation(state: &mut TuiState) {
         state.session_tasks.remove(&state.session_id);
         super::flush_thinking_buffer(state);
         super::push_obs(state, "■ generation stopped".to_string());
+    }
+}
+
+#[cfg(test)]
+mod stream_v2_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn typed_final_dispatches_one_terminal_response() {
+        let envelope = TurnStreamEnvelopeV2::new(
+            "daemon-turn-1",
+            1,
+            chrono::Utc::now(),
+            TurnStreamEventV2::Final {
+                text: "done".to_string(),
+                tool_names: vec!["search".to_string()],
+            },
+        )
+        .expect("v2 envelope");
+        let (event_tx, mut event_rx) = mpsc::channel(1);
+
+        let terminal = dispatch_daemon_stream_event(envelope, 7, &event_tx)
+            .await
+            .expect("dispatch");
+
+        assert!(terminal);
+        assert!(matches!(
+            event_rx.recv().await,
+            Some(TuiEvent::AgentResponse {
+                turn_id: 7,
+                text,
+                terminal: true,
+                ..
+            }) if text == "done"
+        ));
     }
 }
