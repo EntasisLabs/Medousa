@@ -17,13 +17,17 @@ fn user_turn(content: &str) -> ConversationTurn {
     ConversationTurn::plain("user", content.to_string(), Utc::now(), vec![], None)
 }
 
-#[test]
-fn resolve_history_resume_target_uses_catalog_prefix_without_full_list() {
+#[tokio::test(flavor = "multi_thread")]
+async fn resolve_history_resume_target_uses_catalog_prefix_without_full_list() {
     let tmp = make_temp_data_dir();
     unsafe { env::set_var("XDG_DATA_HOME", &tmp) };
 
-    append_turn("abcdef-session-one", &user_turn("first"));
-    append_turn("abcdef-session-two", &user_turn("second"));
+    append_turn("abcdef-session-one", &user_turn("first"))
+        .await
+        .unwrap();
+    append_turn("abcdef-session-two", &user_turn("second"))
+        .await
+        .unwrap();
 
     assert_eq!(
         resolve_history_resume_target("abcdef-session-one"),
@@ -36,14 +40,20 @@ fn resolve_history_resume_target_uses_catalog_prefix_without_full_list() {
     );
 }
 
-#[test]
-fn session_turn_count_reads_catalog_not_full_history() {
+#[tokio::test(flavor = "multi_thread")]
+async fn session_turn_count_reads_catalog_not_full_history() {
     let tmp = make_temp_data_dir();
     unsafe { env::set_var("XDG_DATA_HOME", &tmp) };
 
-    append_turn("count-session", &user_turn("one"));
-    append_turn("count-session", &user_turn("two"));
-    append_turn("count-session", &user_turn("three"));
+    append_turn("count-session", &user_turn("one"))
+        .await
+        .unwrap();
+    append_turn("count-session", &user_turn("two"))
+        .await
+        .unwrap();
+    append_turn("count-session", &user_turn("three"))
+        .await
+        .unwrap();
 
     assert_eq!(session_turn_count("count-session"), 3);
 }

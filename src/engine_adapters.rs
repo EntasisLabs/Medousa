@@ -4,23 +4,22 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use medousa_engine::{
-    ToolSinkEvent, ToolSinkPort, TurnStorePort, TurnTicketPort, UpsertOutcome, StoreError,
+    StoreError, ToolSinkEvent, ToolSinkPort, TurnStorePort, TurnTicketPort, UpsertOutcome,
 };
 use medousa_types::session::ConversationTurn;
 
-use crate::daemon::turn_stream_registry::{
-    TurnStreamRegistry, TurnStreamRegistryPortAdapter,
-};
-use crate::engine_recovery::{
-    mark_recovery_ledger, recovery_ledger_contains,
-};
+use crate::daemon::turn_stream_registry::{TurnStreamRegistry, TurnStreamRegistryPortAdapter};
+use crate::engine_recovery::{mark_recovery_ledger, recovery_ledger_contains};
 
 /// Local newtype so the engine port can be implemented without orphan-rule issues.
 pub struct TurnTicketPortAdapter(pub crate::turn_ticket::TurnTicketRegistry);
 
 #[async_trait]
 impl TurnTicketPort for TurnTicketPortAdapter {
-    async fn register(&self, ticket: medousa_types::turn_ticket::TurnTicket) -> Result<(), medousa_types::turn_ticket::TurnTicketConflict> {
+    async fn register(
+        &self,
+        ticket: medousa_types::turn_ticket::TurnTicket,
+    ) -> Result<(), medousa_types::turn_ticket::TurnTicketConflict> {
         crate::turn_ticket::register_turn(&self.0, ticket).await
     }
     async fn note_event(&self, turn_id: &str, event_type: &str, terminal: bool) {
@@ -55,23 +54,19 @@ impl TurnStorePort for SessionTurnStore {
         if self.turn_exists(session_id, turn_id).await? {
             return Ok(UpsertOutcome::AlreadyPresent);
         }
-        crate::session_writer::persist_turn(session_id, turn, None);
+        crate::session_writer::persist_turn(session_id, turn, None)
+            .await
+            .map_err(|error| StoreError(error.to_string()))?;
         mark_recovery_ledger(session_id, turn_id);
         Ok(UpsertOutcome::Inserted)
     }
 
-    async fn turn_exists(
-        &self,
-        session_id: &str,
-        turn_id: &str,
-    ) -> Result<bool, StoreError> {
+    async fn turn_exists(&self, session_id: &str, turn_id: &str) -> Result<bool, StoreError> {
         Ok(recovery_ledger_contains(session_id, turn_id))
     }
 }
 
-pub fn turn_stream_registry_adapter(
-    registry: TurnStreamRegistry,
-) -> TurnStreamRegistryPortAdapter {
+pub fn turn_stream_registry_adapter(registry: TurnStreamRegistry) -> TurnStreamRegistryPortAdapter {
     TurnStreamRegistryPortAdapter::new(registry)
 }
 
@@ -143,8 +138,8 @@ pub async fn active_tool_sink() -> Option<Arc<dyn ToolSinkPort + Send + Sync>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use medousa_engine::TurnStreamRegistryPort;
     use chrono::Utc;
+    use medousa_engine::TurnStreamRegistryPort;
     use medousa_types::turn_ticket::{TurnTicket, TurnTicketMode, TurnTicketPhase};
 
     struct CanaryToolSink;
@@ -196,8 +191,13 @@ mod tests {
             started_at: Utc::now(),
             updated_at: Utc::now(),
         };
-        port.register(ticket("turn-1")).await.expect("first registers");
-        assert!(port.register(ticket("turn-2")).await.is_err(), "mutex holds");
+        port.register(ticket("turn-1"))
+            .await
+            .expect("first registers");
+        assert!(
+            port.register(ticket("turn-2")).await.is_err(),
+            "mutex holds"
+        );
         assert!(port.get("turn-1").await.is_some());
     }
 

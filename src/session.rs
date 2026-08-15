@@ -661,18 +661,6 @@ pub(crate) fn file_load_history(
         .collect()
 }
 
-pub(crate) fn file_append_turn(
-    files: &crate::session_storage::SessionFileStore,
-    session_id: &crate::session_storage::SessionId,
-    turn: &ConversationTurn,
-) {
-    let Ok(mut line) = serde_json::to_vec(turn) else {
-        return;
-    };
-    line.push(b'\n');
-    let _ = files.append(session_id, &line);
-}
-
 /// One-time backfill helper — loads full history per session. Not for list API hot path.
 pub(crate) fn file_build_history_summaries_from_files(
     files: &crate::session_storage::SessionFileStore,
@@ -756,31 +744,47 @@ pub fn load_history(session_id: &str) -> Vec<ConversationTurn> {
     crate::session_store::get_session_store().load_history(&session_id)
 }
 
-pub fn append_turn(session_id: &str, turn: &ConversationTurn) {
-    append_turn_with_scratch(session_id, turn, None)
+pub async fn append_turn(
+    session_id: &str,
+    turn: &ConversationTurn,
+) -> Result<crate::session_store::CommitReceipt, crate::session_store::StoreError> {
+    append_turn_with_scratch(session_id, turn, None).await
 }
 
-pub fn append_turn_with_scratch(
+pub async fn append_turn_with_scratch(
     session_id: &str,
     turn: &ConversationTurn,
     scratch: Option<&crate::agent_runtime::turn_context::TurnScratchpad>,
-) {
-    if let Err(error) = try_append_turn_with_scratch(session_id, turn, scratch) {
-        tracing::warn!(session_id, error, "rejected turn persistence");
-    }
+) -> Result<crate::session_store::CommitReceipt, crate::session_store::StoreError> {
+    try_append_turn_with_scratch(session_id, turn, scratch).await
 }
 
-pub fn try_append_turn_with_scratch(
+pub async fn try_append_turn_with_scratch(
     session_id: &str,
     turn: &ConversationTurn,
     scratch: Option<&crate::agent_runtime::turn_context::TurnScratchpad>,
-) -> Result<(), String> {
+) -> Result<crate::session_store::CommitReceipt, crate::session_store::StoreError> {
+    try_append_turn_batch_with_scratch(session_id, &[(turn.clone(), scratch.cloned())]).await
+}
+
+pub async fn try_append_turn_batch_with_scratch(
+    session_id: &str,
+    turns: &[(
+        ConversationTurn,
+        Option<crate::agent_runtime::turn_context::TurnScratchpad>,
+    )],
+) -> Result<crate::session_store::CommitReceipt, crate::session_store::StoreError> {
     let session_id = crate::session_storage::SessionId::parse(session_id)
-        .map_err(|error| error.to_string())?;
-    let _mutation = crate::session_deletion::acquire_mutation(&session_id)?;
-    let enriched = crate::turn_slice::ensure_turn_slice_summary(turn, scratch);
-    crate::session_store::get_session_store().append_turn(&session_id, &enriched);
-    Ok(())
+        .map_err(|error| crate::session_store::StoreError::InvalidInput(error.to_string()))?;
+    let _mutation = crate::session_deletion::acquire_mutation(&session_id)
+        .map_err(crate::session_store::StoreError::InvalidInput)?;
+    let enriched = turns
+        .iter()
+        .map(|(turn, scratch)| crate::turn_slice::ensure_turn_slice_summary(turn, scratch.as_ref()))
+        .collect::<Vec<_>>();
+    crate::session_store::get_session_store()
+        .append_turn_batch(&session_id, &enriched)
+        .await
 }
 
 pub fn list_history_sessions(limit: usize) -> Vec<SessionHistorySummary> {

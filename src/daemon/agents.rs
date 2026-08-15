@@ -921,7 +921,7 @@ async fn run_prompt_pump(
     }
 
     // Durable transcript (Synara/T3 reopen gap). SSE path unchanged.
-    crate::daemon::acp_turn_persist::persist_user_prompt(&live.session_id, &prompt);
+    crate::daemon::acp_turn_persist::persist_user_prompt(&live.session_id, &prompt).await?;
     let mut persist = crate::daemon::acp_turn_persist::AcpPromptPersistState::new();
 
     ACP_CLIENT
@@ -952,7 +952,8 @@ async fn run_prompt_pump(
                     &live.session_id,
                     &mut persist,
                     None,
-                );
+                )
+                .await?;
                 publish_agent_event(
                     &entry,
                     &live.agent_session_id,
@@ -1081,7 +1082,8 @@ async fn run_prompt_pump(
                     &live.session_id,
                     &mut persist,
                     Some("error"),
-                );
+                )
+                .await?;
                 if let (Some(adapter), Some(lease)) =
                     (forge_adapter.as_ref(), live.forge_lease.as_ref())
                 {
@@ -1129,7 +1131,8 @@ async fn run_prompt_pump(
                     &live.session_id,
                     &mut persist,
                     None,
-                );
+                )
+                .await?;
                 if let (Some(adapter), Some(lease)) =
                     (forge_adapter.as_ref(), live.forge_lease.as_ref())
                     && let Err(err) = adapter.heartbeat(lease)

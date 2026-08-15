@@ -119,17 +119,15 @@ impl InteractiveTurnStreamSink {
             .and_then(|mut slot| slot.take())
     }
 
-    /// Persist a finalized transcript turn off the hot path.
-    ///
-    /// Terminal sink methods publish the SSE event first and then hand the turn
-    /// to the single persistence writer actor (Phase 1d) so the client never
-    /// waits on the (potentially fsync-bound) SurrealKV write. The actor batches
-    /// commits and applies backpressure instead of the old per-turn
-    /// `tokio::spawn` fire-and-forget, which piled up unbounded under FD pressure
-    /// and dropped turns. The write is never silently dropped.
-    fn spawn_persist_turn(&self, turn: crate::session::ConversationTurn) {
+    /// Persist a finalized transcript turn through the bounded writer and wait
+    /// for the backing store's receipt. Terminal success is not published until
+    /// this acknowledgement arrives; failures become an explicit stream error.
+    async fn persist_turn(
+        &self,
+        turn: crate::session::ConversationTurn,
+    ) -> Result<crate::session_store::CommitReceipt, crate::session_store::StoreError> {
         let scratch = self.take_pending_scratch();
-        crate::session_writer::persist_turn(&self.session_id, turn, scratch);
+        crate::session_writer::persist_turn(&self.session_id, turn, scratch).await
     }
 
     /// Commit a finalized terminal/handoff body **through the durable event-log
@@ -142,14 +140,32 @@ impl InteractiveTurnStreamSink {
     /// the legacy direct persist (locked by the `fold_byte_matches_legacy_*`
     /// tests); the `unwrap_or` keeps an exact fallback should the projection ever
     /// decline a body.
-    fn persist_via_spine(
+    async fn persist_via_spine(
         &self,
         assistant_turn: crate::session::ConversationTurn,
         event: super::turn_event::TurnEvent,
-    ) {
+    ) -> Result<crate::session_store::CommitReceipt, crate::session_store::StoreError> {
         let projected =
             super::turn_event_log::project_turn_to_history(&event).unwrap_or(assistant_turn);
-        self.spawn_persist_turn(projected);
+        self.persist_turn(projected).await
+    }
+
+    async fn persist_or_publish_error(
+        &self,
+        assistant_turn: crate::session::ConversationTurn,
+        event: super::turn_event::TurnEvent,
+    ) -> bool {
+        if let Err(error) = self.persist_via_spine(assistant_turn, event).await {
+            let message = format!("turn persistence failed: {error}");
+            self.publish_tracked(interactive_turn_runtime::error_stream_event(
+                &self.turn_id,
+                &message,
+            ))
+            .await;
+            self.sync_ask_job_failed(message).await;
+            return false;
+        }
+        true
     }
 
     /// Terminal model/control output is the durable source of truth.
@@ -317,9 +333,13 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             work_id.as_deref(),
         );
         let event = super::turn_event::TurnEvent::worker_ack_from_turn(&assistant_turn, work_id);
-        self.publish_tracked_with_journal(wire, Some(event.clone()))
-            .await;
-        self.persist_via_spine(assistant_turn, event);
+        if !self
+            .persist_or_publish_error(assistant_turn, event.clone())
+            .await
+        {
+            return;
+        }
+        self.publish_tracked_with_journal(wire, Some(event)).await;
         self.sync_ask_job_interim(text).await;
     }
 
@@ -349,9 +369,13 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             work_id.as_deref(),
         );
         let event = super::turn_event::TurnEvent::worker_ack_from_turn(&assistant_turn, work_id);
-        self.publish_tracked_with_journal(wire, Some(event.clone()))
-            .await;
-        self.persist_via_spine(assistant_turn, event);
+        if !self
+            .persist_or_publish_error(assistant_turn, event.clone())
+            .await
+        {
+            return;
+        }
+        self.publish_tracked_with_journal(wire, Some(event)).await;
         self.sync_ask_job_interim(text).await;
     }
 
@@ -386,9 +410,14 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             tool_names.clone(),
         );
         let event = super::turn_event::TurnEvent::final_response_from_turn(&assistant_turn);
-        self.publish_tracked_with_journal(final_event, Some(event.clone()))
+        if !self
+            .persist_or_publish_error(assistant_turn, event.clone())
+            .await
+        {
+            return;
+        }
+        self.publish_tracked_with_journal(final_event, Some(event))
             .await;
-        self.persist_via_spine(assistant_turn, event);
         self.sync_ask_job_succeeded(body).await;
 
         if let Some(delivery) = &self.delivery {
@@ -431,9 +460,14 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             tool_names.clone(),
         );
         let event = super::turn_event::TurnEvent::checkpoint_from_turn(&assistant_turn);
-        self.publish_tracked_with_journal(checkpoint_event, Some(event.clone()))
+        if !self
+            .persist_or_publish_error(assistant_turn, event.clone())
+            .await
+        {
+            return;
+        }
+        self.publish_tracked_with_journal(checkpoint_event, Some(event))
             .await;
-        self.persist_via_spine(assistant_turn, event);
         self.sync_ask_job_succeeded(body).await;
 
         if let Some(delivery) = &self.delivery {
@@ -476,9 +510,14 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             tool_names.clone(),
         );
         let event = super::turn_event::TurnEvent::needs_input_from_turn(&assistant_turn);
-        self.publish_tracked_with_journal(needs_input_event, Some(event.clone()))
+        if !self
+            .persist_or_publish_error(assistant_turn, event.clone())
+            .await
+        {
+            return;
+        }
+        self.publish_tracked_with_journal(needs_input_event, Some(event))
             .await;
-        self.persist_via_spine(assistant_turn, event);
 
         if let Some(delivery) = &self.delivery {
             delivery.mark_complete(None).await;
@@ -939,8 +978,7 @@ pub async fn run_agent_turn(
         inner: sink,
         outcome: outcome.clone(),
     });
-    let tool_sink =
-        crate::engine_adapters::AgentStreamToolSinkAdapter::new(tracking_sink.clone());
+    let tool_sink = crate::engine_adapters::AgentStreamToolSinkAdapter::new(tracking_sink.clone());
     let turn_future = crate::engine_adapters::with_active_tool_sink(
         tool_sink,
         run_agent_turn_inner(
@@ -986,7 +1024,6 @@ pub async fn run_agent_turn(
             .mark_turn_finished(&correlation_id, final_outcome)
             .await;
     }
-
 }
 
 async fn run_agent_turn_inner(
@@ -1477,7 +1514,12 @@ async fn run_agent_turn_inner(
         // persist off the hot path so the user message write (and its catalog cascade)
         // doesn't block prompt prep / first token on a SurrealKV fsync.
         conversation.push(user_turn.clone());
-        crate::session_writer::persist_turn(&session_id, user_turn, None);
+        if let Err(error) = crate::session_writer::persist_turn(&session_id, user_turn, None).await
+        {
+            sink.agent_error(1, format!("user turn persistence failed: {error}"))
+                .await;
+            return;
+        }
     }
 
     let manuscript_id = request

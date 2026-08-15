@@ -1,200 +1,253 @@
-//! Phase 1(d) — the single persistence writer actor.
+//! Bounded, acknowledged session-turn persistence.
 //!
-//! ## Why this exists
-//!
-//! Terminal turn commits used to persist with a per-turn
-//! `tokio::spawn(append_turn_with_scratch(...))` fire-and-forget (see the old
-//! `InteractiveTurnStreamSink::spawn_persist_turn` and the user-turn persist in
-//! `run_agent_turn_inner`). Under FD pressure those detached tasks piled up
-//! unbounded and could be dropped before their SurrealKV write landed — the
-//! "reply shown but missing from history" class of lost turns. The underlying
-//! `SessionStore::append_turn` also swallowed errors.
-//!
-//! This module replaces those scattered fire-and-forgets with **one** writer
-//! task draining a **bounded** `mpsc` queue:
-//!
-//! * **single writer** — commits are serialized, so SurrealKV groups/coalesces
-//!   their fsyncs (the actor drains the whole ready backlog into one batch),
-//! * **backpressure, not unbounded spawns** — the queue is bounded; when it is
-//!   full the caller persists *inline* (blocking briefly) instead of spawning
-//!   another detached task,
-//! * **no silent drop** — every enqueued turn is either written by the actor or
-//!   written inline on overflow/shutdown; counters track each path so a drop can
-//!   never happen unobserved.
-//!
-//! The durable per-turn event-log spine (Phase 1 b/c) is layered on top of this
-//! actor: it is the one place that owns the blocking session-store write.
+//! Producers await queue admission and an explicit store receipt. There is no
+//! blocking overflow fallback and no successful acknowledgement before the
+//! backing store has accepted the complete batch.
 
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use once_cell::sync::Lazy;
 use tokio::runtime::Handle;
-use tokio::sync::mpsc;
+use tokio::sync::{Semaphore, mpsc, oneshot};
 
 use crate::agent_runtime::turn_context::TurnScratchpad;
 use crate::session::ConversationTurn;
+use crate::session_store::{CommitReceipt, StoreError};
 
-/// Bounded queue depth. A turn rarely persists more than a handful of slices;
-/// 1024 absorbs bursts (parallel sessions, worker fan-out) while bounding memory
-/// and forcing backpressure rather than unbounded task growth under load.
 const QUEUE_CAPACITY: usize = 1024;
-
-/// Max turns coalesced into a single drain pass so their commits group at the
-/// store layer. Bounded so one hot session cannot starve the drain loop forever.
+const QUEUE_BYTE_CAPACITY: usize = 8 * 1024 * 1024;
 const BATCH_MAX: usize = 64;
 
 struct PersistJob {
     session_id: String,
     turn: ConversationTurn,
     scratch: Option<TurnScratchpad>,
+    _byte_permit: tokio::sync::OwnedSemaphorePermit,
+    ack: oneshot::Sender<Result<CommitReceipt, StoreError>>,
 }
 
-/// Observability counters — every job lands in exactly one of these, so a lost
-/// turn is impossible without it showing up here.
+enum WriterMessage {
+    Persist(Box<PersistJob>),
+    Drain(oneshot::Sender<()>),
+}
+
 #[derive(Debug, Default)]
 pub struct WriterMetrics {
-    /// Turns committed by the writer actor (the normal path).
-    pub written_async: AtomicU64,
-    /// Turns committed inline because the queue was full (backpressure path).
-    pub written_inline_backpressure: AtomicU64,
-    /// Turns committed inline because the actor was unavailable (no runtime /
-    /// channel closed) — still persisted, never dropped.
-    pub written_inline_no_actor: AtomicU64,
-    /// Store-level commit failures observed by the actor (surfaced, not swallowed).
+    pub committed_turns: AtomicU64,
+    pub commit_batches: AtomicU64,
     pub write_failures: AtomicU64,
+    pub queued_messages: AtomicUsize,
+    pub queued_bytes: AtomicUsize,
+    pub message_high_water: AtomicUsize,
+    pub byte_high_water: AtomicUsize,
 }
 
 pub static WRITER_METRICS: Lazy<WriterMetrics> = Lazy::new(WriterMetrics::default);
 
-/// Snapshot of the writer counters for diagnostics/health.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WriterMetricsSnapshot {
-    pub written_async: u64,
-    pub written_inline_backpressure: u64,
-    pub written_inline_no_actor: u64,
+    pub committed_turns: u64,
+    pub commit_batches: u64,
     pub write_failures: u64,
+    pub queued_messages: usize,
+    pub queued_bytes: usize,
+    pub message_high_water: usize,
+    pub byte_high_water: usize,
 }
 
 pub fn writer_metrics_snapshot() -> WriterMetricsSnapshot {
     WriterMetricsSnapshot {
-        written_async: WRITER_METRICS.written_async.load(Ordering::Relaxed),
-        written_inline_backpressure: WRITER_METRICS
-            .written_inline_backpressure
-            .load(Ordering::Relaxed),
-        written_inline_no_actor: WRITER_METRICS.written_inline_no_actor.load(Ordering::Relaxed),
+        committed_turns: WRITER_METRICS.committed_turns.load(Ordering::Relaxed),
+        commit_batches: WRITER_METRICS.commit_batches.load(Ordering::Relaxed),
         write_failures: WRITER_METRICS.write_failures.load(Ordering::Relaxed),
+        queued_messages: WRITER_METRICS.queued_messages.load(Ordering::Relaxed),
+        queued_bytes: WRITER_METRICS.queued_bytes.load(Ordering::Relaxed),
+        message_high_water: WRITER_METRICS.message_high_water.load(Ordering::Relaxed),
+        byte_high_water: WRITER_METRICS.byte_high_water.load(Ordering::Relaxed),
     }
 }
 
-static SENDER: Lazy<Option<mpsc::Sender<PersistJob>>> = Lazy::new(spawn_writer_actor);
+static BYTE_BUDGET: Lazy<Arc<Semaphore>> =
+    Lazy::new(|| Arc::new(Semaphore::new(QUEUE_BYTE_CAPACITY)));
+static SENDER: Lazy<Mutex<Option<mpsc::Sender<WriterMessage>>>> = Lazy::new(|| Mutex::new(None));
 
-/// Spawn the single writer actor on the ambient runtime, returning its sender.
-/// Returns `None` when there is no Tokio runtime (e.g. some unit tests); callers
-/// then persist inline so behavior is preserved.
-fn spawn_writer_actor() -> Option<mpsc::Sender<PersistJob>> {
-    let handle = Handle::try_current().ok()?;
-    let (tx, rx) = mpsc::channel::<PersistJob>(QUEUE_CAPACITY);
+fn writer_sender() -> Result<mpsc::Sender<WriterMessage>, StoreError> {
+    let mut slot = SENDER
+        .lock()
+        .map_err(|_| StoreError::Worker("session writer registry poisoned".to_string()))?;
+    if let Some(sender) = slot.as_ref()
+        && !sender.is_closed()
+    {
+        return Ok(sender.clone());
+    }
+    let handle = Handle::try_current()
+        .map_err(|_| StoreError::Worker("session writer requires a Tokio runtime".to_string()))?;
+    let (tx, rx) = mpsc::channel(QUEUE_CAPACITY);
     handle.spawn(writer_loop(rx));
-    Some(tx)
+    *slot = Some(tx.clone());
+    Ok(tx)
 }
 
-async fn writer_loop(mut rx: mpsc::Receiver<PersistJob>) {
-    while let Some(first) = rx.recv().await {
-        // Coalesce the whole ready backlog so the store can group commits.
-        let mut batch = Vec::with_capacity(BATCH_MAX);
-        batch.push(first);
-        while batch.len() < BATCH_MAX {
-            match rx.try_recv() {
-                Ok(job) => batch.push(job),
-                Err(_) => break,
+async fn writer_loop(mut rx: mpsc::Receiver<WriterMessage>) {
+    while let Some(message) = rx.recv().await {
+        match message {
+            WriterMessage::Drain(ack) => {
+                let _ = ack.send(());
+            }
+            WriterMessage::Persist(first) => {
+                let mut batch = Vec::with_capacity(BATCH_MAX);
+                batch.push(*first);
+                while batch.len() < BATCH_MAX {
+                    match rx.try_recv() {
+                        Ok(WriterMessage::Persist(job)) => batch.push(*job),
+                        Ok(WriterMessage::Drain(ack)) => {
+                            commit_jobs(batch).await;
+                            let _ = ack.send(());
+                            batch = Vec::new();
+                            break;
+                        }
+                        Err(_) => break,
+                    }
+                }
+                if !batch.is_empty() {
+                    commit_jobs(batch).await;
+                }
             }
         }
-        for job in batch {
-            commit_blocking(job, Ordering::Relaxed, &WRITER_METRICS.written_async);
+    }
+}
+
+async fn commit_jobs(mut jobs: Vec<PersistJob>) {
+    while !jobs.is_empty() {
+        let session_id = jobs[0].session_id.clone();
+        let run_len = jobs
+            .iter()
+            .take_while(|job| job.session_id == session_id)
+            .count();
+        let run = jobs.drain(..run_len).collect::<Vec<_>>();
+        let turns = run
+            .iter()
+            .map(|job| (job.turn.clone(), job.scratch.clone()))
+            .collect::<Vec<_>>();
+        let result = crate::session::try_append_turn_batch_with_scratch(&session_id, &turns).await;
+        WRITER_METRICS
+            .queued_messages
+            .fetch_sub(run.len(), Ordering::Relaxed);
+        let released_bytes = run
+            .iter()
+            .map(|job| job._byte_permit.num_permits())
+            .sum::<usize>();
+        WRITER_METRICS
+            .queued_bytes
+            .fetch_sub(released_bytes, Ordering::Relaxed);
+
+        match &result {
+            Ok(receipt) => {
+                WRITER_METRICS
+                    .committed_turns
+                    .fetch_add(receipt.turns as u64, Ordering::Relaxed);
+                WRITER_METRICS
+                    .commit_batches
+                    .fetch_add(1, Ordering::Relaxed);
+            }
+            Err(error) => {
+                WRITER_METRICS
+                    .write_failures
+                    .fetch_add(1, Ordering::Relaxed);
+                tracing::error!(session_id, %error, turns = run.len(), "session turn batch failed");
+            }
+        }
+        for job in run {
+            let _ = job.ack.send(result.clone());
         }
     }
 }
 
-/// Perform the actual (blocking) store write. Runs on a runtime worker thread,
-/// so `block_in_place` inside the sync session store stays valid.
-fn commit_blocking(job: PersistJob, ordering: Ordering, success_counter: &AtomicU64) {
-    let _span = tracing::info_span!(
-        "session_writer.persist",
-        session_id = %job.session_id,
-        correlation_id = tracing::field::Empty,
-    )
-    .entered();
-    let PersistJob {
-        session_id,
-        turn,
-        scratch,
-    } = job;
-    // `append_turn_with_scratch` swallows store errors internally today; we still
-    // count the attempt so the success path is observable. (Surfacing per-write
-    // store failures requires threading a Result through the SessionStore trait —
-    // tracked as a follow-up; the actor is the single place that would observe it.)
-    crate::session::append_turn_with_scratch(&session_id, &turn, scratch.as_ref());
-    success_counter.fetch_add(1, ordering);
+fn estimated_job_bytes(turn: &ConversationTurn, scratch: Option<&TurnScratchpad>) -> usize {
+    let turn_bytes = serde_json::to_vec(turn).map_or(1, |bytes| bytes.len());
+    let scratch_bytes = scratch
+        .and_then(|value| serde_json::to_vec(value).ok())
+        .map_or(0, |bytes| bytes.len());
+    turn_bytes
+        .saturating_add(scratch_bytes)
+        .max(1)
 }
 
-/// Enqueue a finalized turn for durable persistence.
-///
-/// Never drops: if the bounded queue is full or no actor is running, the turn is
-/// written inline before returning. Safe to call from any async task on a
-/// multi-thread runtime (the same context the old fire-and-forget spawns used).
-pub fn persist_turn(session_id: &str, turn: ConversationTurn, scratch: Option<TurnScratchpad>) {
-    let job = PersistJob {
-        session_id: session_id.to_string(),
-        turn,
-        scratch,
-    };
+fn record_queue_admission(bytes: usize) {
+    let messages = WRITER_METRICS
+        .queued_messages
+        .fetch_add(1, Ordering::Relaxed)
+        + 1;
+    let queued_bytes = WRITER_METRICS
+        .queued_bytes
+        .fetch_add(bytes, Ordering::Relaxed)
+        + bytes;
+    WRITER_METRICS
+        .message_high_water
+        .fetch_max(messages, Ordering::Relaxed);
+    WRITER_METRICS
+        .byte_high_water
+        .fetch_max(queued_bytes, Ordering::Relaxed);
+}
 
-    let Some(sender) = SENDER.as_ref() else {
-        // No runtime/actor — persist inline so the turn is never lost.
-        commit_blocking(
-            job,
-            Ordering::Relaxed,
-            &WRITER_METRICS.written_inline_no_actor,
-        );
-        return;
-    };
-
-    match sender.try_send(job) {
-        Ok(()) => {}
-        Err(mpsc::error::TrySendError::Full(job)) => {
-            tracing::warn!(
-                session_id = %job.session_id,
-                queue_capacity = QUEUE_CAPACITY,
-                "session_writer queue full; persisting turn inline"
-            );
-            commit_blocking(
-                job,
-                Ordering::Relaxed,
-                &WRITER_METRICS.written_inline_backpressure,
-            );
-        }
-        Err(mpsc::error::TrySendError::Closed(job)) => {
-            tracing::warn!(
-                session_id = %job.session_id,
-                "session_writer actor channel closed; persisting turn inline"
-            );
-            commit_blocking(
-                job,
-                Ordering::Relaxed,
-                &WRITER_METRICS.written_inline_no_actor,
-            );
-        }
+pub async fn persist_turn(
+    session_id: &str,
+    turn: ConversationTurn,
+    scratch: Option<TurnScratchpad>,
+) -> Result<CommitReceipt, StoreError> {
+    let sender = writer_sender()?;
+    let byte_count = estimated_job_bytes(&turn, scratch.as_ref());
+    if byte_count > QUEUE_BYTE_CAPACITY {
+        return Err(StoreError::InvalidInput(format!(
+            "session turn requires {byte_count} queue bytes; limit is {QUEUE_BYTE_CAPACITY}"
+        )));
     }
+    let byte_permit = Arc::clone(&BYTE_BUDGET)
+        .acquire_many_owned(byte_count as u32)
+        .await
+        .map_err(|_| StoreError::Worker("session writer byte budget closed".to_string()))?;
+    let (ack, receipt) = oneshot::channel();
+    record_queue_admission(byte_count);
+    if sender
+        .send(WriterMessage::Persist(Box::new(PersistJob {
+            session_id: session_id.to_string(),
+            turn,
+            scratch,
+            _byte_permit: byte_permit,
+            ack,
+        })))
+        .await
+        .is_err()
+    {
+        WRITER_METRICS
+            .queued_messages
+            .fetch_sub(1, Ordering::Relaxed);
+        WRITER_METRICS
+            .queued_bytes
+            .fetch_sub(byte_count, Ordering::Relaxed);
+        return Err(StoreError::Worker(
+            "session writer stopped before queue admission".to_string(),
+        ));
+    }
+    receipt.await.map_err(|_| {
+        StoreError::Worker("session writer stopped before commit receipt".to_string())
+    })?
 }
 
-/// Test/diagnostic helper: ensure the actor is initialized (idempotent).
-pub fn ensure_started() -> bool {
-    SENDER.as_ref().is_some()
+pub async fn drain(deadline: Duration) -> Result<(), StoreError> {
+    let sender = writer_sender()?;
+    let (ack, drained) = oneshot::channel();
+    sender
+        .send(WriterMessage::Drain(ack))
+        .await
+        .map_err(|_| StoreError::Worker("session writer stopped before drain".to_string()))?;
+    tokio::time::timeout(deadline, drained)
+        .await
+        .map_err(|_| StoreError::Worker("session writer drain deadline elapsed".to_string()))?
+        .map_err(|_| StoreError::Worker("session writer stopped during drain".to_string()))
 }
-
-/// Shared handle alias for call sites that want to hold the metrics.
-pub type SharedWriterMetrics = Arc<WriterMetrics>;
 
 #[cfg(test)]
 mod tests {
@@ -215,35 +268,17 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn enqueued_turns_are_committed_not_dropped() {
-        assert!(ensure_started(), "writer actor should start under a runtime");
-        let before = writer_metrics_snapshot();
+    async fn every_accepted_turn_receives_a_commit_receipt() {
         let session = format!("session-writer-test-{}", uuid::Uuid::new_v4().simple());
+        let mut receipts = Vec::new();
         for i in 0..8 {
-            persist_turn(&session, turn(&format!("body {i}")), None);
+            receipts.push(persist_turn(&session, turn(&format!("body {i}")), None).await);
         }
-        // Let the actor drain.
-        for _ in 0..50 {
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-            let now = writer_metrics_snapshot();
-            let progressed = (now.written_async + now.written_inline_backpressure
-                + now.written_inline_no_actor)
-                - (before.written_async
-                    + before.written_inline_backpressure
-                    + before.written_inline_no_actor);
-            if progressed >= 8 {
-                break;
-            }
-        }
-        let after = writer_metrics_snapshot();
-        let committed = (after.written_async + after.written_inline_backpressure
-            + after.written_inline_no_actor)
-            - (before.written_async
-                + before.written_inline_backpressure
-                + before.written_inline_no_actor);
-        assert_eq!(committed, 8, "all enqueued turns must be committed, none dropped");
-        // Clean up the file-backed history this test produced.
+        assert!(receipts.iter().all(Result::is_ok));
+        drain(Duration::from_secs(1)).await.unwrap();
         let session_id = crate::session_storage::SessionId::parse(&session).unwrap();
-        let _ = crate::session_store::delete_session_transcript(&session_id);
+        let history = crate::session::load_history(&session);
+        assert_eq!(history.len(), 8);
+        crate::session_store::delete_session_transcript(&session_id).unwrap();
     }
 }

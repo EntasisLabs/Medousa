@@ -1,5 +1,7 @@
-use medousa::session::{ConversationTurn, SessionHistorySummary, append_turn, list_history_sessions, load_history};
 use medousa::SessionAppendTurnRequest;
+use medousa::session::{
+    ConversationTurn, SessionHistorySummary, append_turn, list_history_sessions, load_history,
+};
 
 use super::daemon_commands::{
     daemon_append_session_turn, daemon_list_history_sessions, daemon_load_session_history,
@@ -53,8 +55,15 @@ pub(crate) async fn append_turn_daemon_first(
     if daemon_append_session_turn(&state.daemon_url, session_id, &request)
         .await
         .is_err()
+        && let Err(error) = append_turn(session_id, turn).await
     {
-        append_turn(session_id, turn);
+        push_obs_alert(
+            state,
+            format!(
+                "◈ session append backend=local error={}",
+                truncate_error(&error.to_string(), 140)
+            ),
+        );
     }
 }
 

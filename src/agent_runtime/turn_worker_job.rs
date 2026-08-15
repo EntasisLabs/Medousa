@@ -387,7 +387,10 @@ impl crate::agent_runtime::stream_sink::AgentStreamSink for DurableWorkerStreamS
             tool_names.clone(),
             None,
         );
-        append_turn(&self.session_id, &turn);
+        if let Err(error) = append_turn(&self.session_id, &turn).await {
+            tracing::error!(session_id = %self.session_id, %error, "worker turn persistence failed");
+            return;
+        }
 
         if let Some(record) = turn_worker_store().get(&self.work_id)
             && let Err(err) = crate::turn_worker_notify::deliver_worker_result_to_ingest_channel(
@@ -442,8 +445,9 @@ impl crate::agent_runtime::stream_sink::AgentStreamSink for DurableWorkerStreamS
         self.flush_live_text();
         let store = turn_worker_store();
         store.update(&self.work_id, |record| {
-            record.live_tool_activity.push(
-                crate::agent_runtime::turn_worker::WorkerToolActivity {
+            record
+                .live_tool_activity
+                .push(crate::agent_runtime::turn_worker::WorkerToolActivity {
                     run_id: tool_run_id.clone(),
                     name: tool_name.clone(),
                     round: tool_round,
@@ -454,16 +458,12 @@ impl crate::agent_runtime::stream_sink::AgentStreamSink for DurableWorkerStreamS
                     output_summary: None,
                     started_at: Utc::now(),
                     finished_at: None,
-                },
-            );
+                });
             trim_tool_activity(&mut record.live_tool_activity);
         });
         if let Some(record) = store.get(&self.work_id) {
             crate::feed_adapters::publish_workshop_progress_activity(
-                &record,
-                &tool_name,
-                "started",
-                None,
+                &record, &tool_name, "started", None,
             )
             .await;
         }

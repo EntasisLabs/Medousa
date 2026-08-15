@@ -1184,7 +1184,12 @@ pub async fn spawn_daemon_api_agent_turn(
             return;
         }
     };
-    let execution_lease = match state.platform.agent_handle().execution_registry.admit(execution) {
+    let execution_lease = match state
+        .platform
+        .agent_handle()
+        .execution_registry
+        .admit(execution)
+    {
         Ok(lease) => lease,
         Err(error) => {
             tracing::warn!(job_id = %job_id, error = %error, "rejecting API agent turn admission");
@@ -1309,7 +1314,7 @@ impl AgentStreamSink for ApiAgentStreamSink {
         tool_names: Vec<String>,
         _work_id: Option<String>,
     ) {
-        crate::session::append_turn(
+        if let Err(error) = crate::session::append_turn(
             &self.session_id,
             &crate::turn_parts::conversation_turn_from_parts(
                 "assistant",
@@ -1320,7 +1325,12 @@ impl AgentStreamSink for ApiAgentStreamSink {
                     markdown: text.clone(),
                 }],
             ),
-        );
+        )
+        .await
+        {
+            tracing::error!(session_id = %self.session_id, %error, "API worker acknowledgement persistence failed");
+            return;
+        }
 
         if crate::workspace::ask_job_store::AskJobStore::is_ask_job_id(&self.job_id) {
             crate::workspace::ask_job_store::ask_job_store().set_interim_text(&self.job_id, text);
@@ -1339,7 +1349,7 @@ impl AgentStreamSink for ApiAgentStreamSink {
     }
 
     async fn agent_response(&self, _turn_id: u64, text: String, _tool_names: Vec<String>) {
-        crate::session::append_turn(
+        if let Err(error) = crate::session::append_turn(
             &self.session_id,
             &crate::session::ConversationTurn::plain(
                 "assistant",
@@ -1348,7 +1358,12 @@ impl AgentStreamSink for ApiAgentStreamSink {
                 _tool_names,
                 None,
             ),
-        );
+        )
+        .await
+        {
+            tracing::error!(session_id = %self.session_id, %error, "API terminal turn persistence failed");
+            return;
+        }
 
         if crate::workspace::ask_job_store::AskJobStore::is_ask_job_id(&self.job_id) {
             crate::workspace::ask_job_store::ask_job_store()
@@ -1423,7 +1438,7 @@ struct IngestAgentStreamSink {
 }
 
 impl IngestAgentStreamSink {
-    fn persist_assistant_turn(
+    async fn persist_assistant_turn(
         &self,
         content: String,
         tool_names: Vec<String>,
@@ -1448,7 +1463,9 @@ impl IngestAgentStreamSink {
                     vec![],
                 )
             });
-        crate::session::append_turn(&self.session_id, &turn);
+        if let Err(error) = crate::session::append_turn(&self.session_id, &turn).await {
+            tracing::error!(session_id = %self.session_id, %error, "ingest assistant turn persistence failed");
+        }
     }
 }
 
@@ -1504,7 +1521,10 @@ impl AgentStreamSink for IngestAgentStreamSink {
                     }],
                 )
             });
-        crate::session::append_turn(&self.session_id, &assistant_turn);
+        if let Err(error) = crate::session::append_turn(&self.session_id, &assistant_turn).await {
+            tracing::error!(session_id = %self.session_id, %error, "ingest worker acknowledgement persistence failed");
+            return;
+        }
 
         if crate::channel_delivery::is_external_push_channel(&self.delivery_target.channel) {
             let payload = crate::turn_worker_notify::TurnWorkerSpawnNotifyPayload {
@@ -1597,7 +1617,8 @@ impl AgentStreamSink for IngestAgentStreamSink {
             text.clone(),
             tool_names.clone(),
             Some("needs_input".to_string()),
-        );
+        )
+        .await;
 
         let latency_ms = self.delivery_started.elapsed().as_millis() as u64;
         let delivery_text = crate::agent_runtime::format_channel_delivery_text(
@@ -1666,7 +1687,8 @@ impl AgentStreamSink for IngestAgentStreamSink {
             return;
         }
 
-        self.persist_assistant_turn(text.clone(), tool_names.clone(), None);
+        self.persist_assistant_turn(text.clone(), tool_names.clone(), None)
+            .await;
 
         let latency_ms = self.delivery_started.elapsed().as_millis() as u64;
         let delivery_text = crate::agent_runtime::format_channel_delivery_text(

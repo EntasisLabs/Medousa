@@ -39,7 +39,18 @@ struct LogInner {
     next_seq: u64,
     events: Vec<SequencedTurnEvent>,
     journal: Option<File>,
+    journal_writes: u64,
+    journal_flushes: u64,
+    journal_bytes: u64,
     committed: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TurnEventLogMetrics {
+    pub retained_events: usize,
+    pub journal_writes: u64,
+    pub journal_flushes: u64,
+    pub journal_bytes: u64,
 }
 
 /// Append-only event log for a single turn (the spine).
@@ -72,6 +83,9 @@ impl TurnEventLog {
                 next_seq: 1,
                 events: Vec::new(),
                 journal: Some(journal),
+                journal_writes: 0,
+                journal_flushes: 0,
+                journal_bytes: 0,
                 committed: false,
             }),
         })
@@ -93,18 +107,43 @@ impl TurnEventLog {
             envelope: self.envelope.at_seq(seq),
             event,
         };
-        if let Some(journal) = inner.journal.as_mut()
-            && let Ok(line) = serde_json::to_string(&sequenced)
-            && writeln!(journal, "{line}")
-                .and_then(|_| journal.flush())
-                .is_err()
-        {
-            tracing::warn!(
-                turn_id = %self.envelope.turn_id,
-                correlation_id = %self.envelope.correlation_id,
-                seq,
-                "turn_event_log journal append failed"
-            );
+        if let Ok(mut line) = serde_json::to_vec(&sequenced) {
+            line.push(b'\n');
+            if inner.journal.is_some() {
+                let (write_result, flush_result) = {
+                    let journal = inner.journal.as_mut().expect("journal checked above");
+                    let write_result = journal.write_all(&line);
+                    let flush_result = write_result.is_ok().then(|| journal.flush());
+                    (write_result, flush_result)
+                };
+                match write_result {
+                    Ok(()) => {
+                        inner.journal_writes = inner.journal_writes.saturating_add(1);
+                        inner.journal_bytes = inner
+                            .journal_bytes
+                            .saturating_add(u64::try_from(line.len()).unwrap_or(u64::MAX));
+                        match flush_result.expect("successful write attempted a flush") {
+                            Ok(()) => {
+                                inner.journal_flushes = inner.journal_flushes.saturating_add(1);
+                            }
+                            Err(error) => tracing::warn!(
+                                turn_id = %self.envelope.turn_id,
+                                correlation_id = %self.envelope.correlation_id,
+                                seq,
+                                %error,
+                                "turn_event_log journal flush failed"
+                            ),
+                        }
+                    }
+                    Err(error) => tracing::warn!(
+                        turn_id = %self.envelope.turn_id,
+                        correlation_id = %self.envelope.correlation_id,
+                        seq,
+                        %error,
+                        "turn_event_log journal write failed"
+                    ),
+                }
+            }
         }
         inner.events.push(sequenced.clone());
         sequenced
@@ -148,6 +187,16 @@ impl TurnEventLog {
 
     pub fn is_committed(&self) -> bool {
         self.lock().committed
+    }
+
+    pub fn metrics(&self) -> TurnEventLogMetrics {
+        let inner = self.lock();
+        TurnEventLogMetrics {
+            retained_events: inner.events.len(),
+            journal_writes: inner.journal_writes,
+            journal_flushes: inner.journal_flushes,
+            journal_bytes: inner.journal_bytes,
+        }
     }
 
     /// Close the durable journal handle before a capability-owning adapter

@@ -35,7 +35,9 @@ pub async fn steer_bound_workshop_handler(
         body.work_id.trim(),
         body.message.trim(),
         speaker,
-    ) {
+    )
+    .await
+    {
         Ok(value) => {
             let status = if value.is_ok() {
                 StatusCode::OK
