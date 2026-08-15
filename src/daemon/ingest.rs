@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::convert::Infallible;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use anyhow::Result as AnyhowResult;
@@ -19,7 +19,7 @@ use chrono::{DateTime, Utc};
 use futures_util::stream;
 use serde_json::Value;
 use stasis::prelude::{JobState, RuntimeComposition};
-use tokio::sync::{RwLock, broadcast};
+use tokio::sync::{OwnedSemaphorePermit, RwLock, Semaphore, broadcast};
 use uuid::Uuid;
 
 use crate::agent_runtime::stream_sink::AgentStreamSink;
@@ -31,7 +31,9 @@ use crate::runtime_composition_ext::RuntimeCompositionExt;
 use medousa_engine::TurnStreamRegistryPort;
 use medousa_types::turn_stream::TURN_STREAM_V2_MEDIA_TYPE;
 
-use crate::daemon::turn_event_channel::{PublishedTurnEvent, TurnEventChannel};
+use crate::daemon::turn_event_channel::{
+    PublishedTurnEvent, TurnEventChannel, TurnEventSubscription,
+};
 use crate::daemon::turn_stream_registry::{TurnStreamEntry, TurnStreamRegistry};
 use crate::daemon_api::{
     DeliverPollResponse, DeliveryHealthResponse, IngestRequest, IngestResponse,
@@ -132,13 +134,25 @@ struct SseUnfoldState {
     /// Kept alive so the broadcast channel is not dropped while streaming.
     _channel: Arc<TurnEventChannel>,
     log: Arc<TurnEventLog>,
-    receiver: broadcast::Receiver<PublishedTurnEvent>,
+    receiver: TurnEventSubscription,
+    replay_permit: Option<OwnedSemaphorePermit>,
     pending: VecDeque<PublishedTurnEvent>,
     wire_version: StreamWireVersion,
     last_seq: u64,
     replay_until: Option<u64>,
     drain_after_replay: bool,
     drained: bool,
+}
+
+const MAX_CONCURRENT_TURN_REPLAY_READERS: usize = 32;
+static TURN_REPLAY_READER_PERMITS: OnceLock<Arc<Semaphore>> = OnceLock::new();
+
+fn try_acquire_replay_reader() -> Option<OwnedSemaphorePermit> {
+    TURN_REPLAY_READER_PERMITS
+        .get_or_init(|| Arc::new(Semaphore::new(MAX_CONCURRENT_TURN_REPLAY_READERS)))
+        .clone()
+        .try_acquire_owned()
+        .ok()
 }
 
 fn sse_event_from_payload(payload: PublishedTurnEvent, version: StreamWireVersion) -> Event {
@@ -184,7 +198,12 @@ pub async fn stream_events_from_registry(
 
     // Subscribe BEFORE snapshotting so no event can slip between the snapshot
     // and the live subscription. Any event in both is deduped by seq below.
-    let receiver = channel.subscribe();
+    let receiver = channel.try_subscribe().ok_or_else(|| {
+        (
+            StatusCode::TOO_MANY_REQUESTS,
+            "turn stream subscriber limit reached".to_string(),
+        )
+    })?;
     let since = since.unwrap_or(0);
     let replay_fence = log.replay_fence();
     if since > replay_fence {
@@ -193,11 +212,22 @@ pub async fn stream_events_from_registry(
             format!("stream cursor {since} is beyond current sequence {replay_fence}"),
         ));
     }
+    let replay_permit = if replay_fence > since {
+        Some(try_acquire_replay_reader().ok_or_else(|| {
+            (
+                StatusCode::TOO_MANY_REQUESTS,
+                "turn stream replay reader limit reached".to_string(),
+            )
+        })?)
+    } else {
+        None
+    };
 
     let initial = SseUnfoldState {
         _channel: channel,
         log,
         receiver,
+        replay_permit,
         pending: VecDeque::new(),
         wire_version,
         last_seq: since,
@@ -228,6 +258,7 @@ pub async fn stream_events_from_registry(
             if let Some(fence) = state.replay_until {
                 if state.last_seq >= fence {
                     state.replay_until = None;
+                    state.replay_permit = None;
                     if state.drain_after_replay {
                         state.drained = true;
                     }
@@ -268,6 +299,7 @@ pub async fn stream_events_from_registry(
                         state.pending = projected;
                         if !page.has_more {
                             state.replay_until = None;
+                            state.replay_permit = None;
                             if state.drain_after_replay && state.pending.is_empty() {
                                 state.drained = true;
                             }
@@ -319,14 +351,42 @@ pub async fn stream_events_from_registry(
                     // We fell behind the live ring; recover the gap from the
                     // durable spine rather than dropping events outright.
                     let fence = state.log.replay_fence();
-                    state.replay_until = (fence > state.last_seq).then_some(fence);
+                    if fence > state.last_seq {
+                        let Some(permit) = try_acquire_replay_reader() else {
+                            state.drained = true;
+                            return Some((
+                                Ok::<Event, Infallible>(
+                                    Event::default()
+                                        .event("error")
+                                        .data("turn stream replay reader limit reached"),
+                                ),
+                                state,
+                            ));
+                        };
+                        state.replay_permit = Some(permit);
+                        state.replay_until = Some(fence);
+                    }
                     continue;
                 }
                 Err(broadcast::error::RecvError::Closed) => {
                     // Senders gone: drain any buffered tail from the spine so a
                     // client reconnecting right at the end still sees it.
                     let fence = state.log.replay_fence();
-                    state.replay_until = (fence > state.last_seq).then_some(fence);
+                    if fence > state.last_seq {
+                        let Some(permit) = try_acquire_replay_reader() else {
+                            state.drained = true;
+                            return Some((
+                                Ok::<Event, Infallible>(
+                                    Event::default()
+                                        .event("error")
+                                        .data("turn stream replay reader limit reached"),
+                                ),
+                                state,
+                            ));
+                        };
+                        state.replay_permit = Some(permit);
+                        state.replay_until = Some(fence);
+                    }
                     state.drain_after_replay = true;
                     if state.replay_until.is_none() {
                         state.drained = true;
@@ -2288,7 +2348,9 @@ pub async fn get_job_attempts_graceful(
 #[cfg(test)]
 mod stream_version_tests {
     use super::*;
+    use axum::body::to_bytes;
     use axum::http::HeaderValue;
+    use medousa_engine::{Principal, TurnEnvelope};
 
     #[test]
     fn stream_v1_remains_the_default() {
@@ -2334,5 +2396,55 @@ mod stream_version_tests {
             requested_stream_version(&headers).unwrap(),
             StreamWireVersion::V1
         );
+    }
+
+    #[tokio::test]
+    async fn replay_live_join_emits_each_sequence_exactly_once() {
+        let root = std::env::temp_dir().join(format!("medousa-sse-join-{}", Uuid::new_v4()));
+        let turn_id = "turn-replay-live-join";
+        let entry = TurnStreamEntry {
+            channel: TurnEventChannel::new(8),
+            log: Arc::new(
+                TurnEventLog::open_in(
+                    &root,
+                    TurnEnvelope::new(turn_id, Principal::operator()),
+                )
+                .unwrap(),
+            ),
+        };
+        publish_interactive_turn_event(
+            &entry,
+            crate::interactive_turn_runtime::status_stream_event(turn_id, "one", "replay"),
+        );
+        let registry = crate::daemon::turn_stream_registry::new_turn_stream_registry();
+        registry
+            .write()
+            .await
+            .insert(turn_id.to_string(), entry.clone());
+
+        let response = stream_events_from_registry(
+            &registry,
+            turn_id,
+            "test stream",
+            Some(0),
+            &HeaderMap::new(),
+        )
+        .await
+        .unwrap();
+
+        publish_interactive_turn_event(
+            &entry,
+            crate::interactive_turn_runtime::status_stream_event(turn_id, "two", "live"),
+        );
+        entry.channel.mark_closed();
+
+        let body = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert_eq!(body.matches("\"seq\":1").count(), 1, "{body}");
+        assert_eq!(body.matches("\"seq\":2").count(), 1, "{body}");
+        assert!(body.find("\"seq\":1").unwrap() < body.find("\"seq\":2").unwrap());
+
+        entry.log.close_journal();
+        std::fs::remove_dir_all(root).ok();
     }
 }
