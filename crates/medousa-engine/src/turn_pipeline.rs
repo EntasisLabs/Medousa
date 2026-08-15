@@ -63,6 +63,7 @@ struct PipelineCommand {
 
 struct PipelineAdmission {
     bytes: usize,
+    _turn_message: tokio::sync::OwnedSemaphorePermit,
     _turn_bytes: tokio::sync::OwnedSemaphorePermit,
     _global_bytes: tokio::sync::OwnedSemaphorePermit,
 }
@@ -122,6 +123,7 @@ impl TurnPipelineMetrics {
 #[derive(Clone)]
 pub struct TurnPipelineHandle {
     tx: mpsc::Sender<PipelineMessage>,
+    turn_messages: Arc<Semaphore>,
     turn_bytes: Arc<Semaphore>,
     global_bytes: Arc<Semaphore>,
     metrics: Arc<TurnPipelineMetrics>,
@@ -148,6 +150,7 @@ impl TurnPipelineHandle {
         ));
         Self {
             tx,
+            turn_messages: Arc::new(Semaphore::new(TURN_PIPELINE_COMMAND_CAPACITY)),
             turn_bytes: Arc::new(Semaphore::new(TURN_PIPELINE_BYTE_CAPACITY)),
             global_bytes,
             metrics,
@@ -198,6 +201,13 @@ impl TurnPipelineHandle {
             });
         }
         let blocked_at = std::time::Instant::now();
+        let turn_message = tokio::select! {
+            biased;
+            () = self.cancellation.cancelled() => return Err(TurnPipelineError::Cancelled),
+            permit = Arc::clone(&self.turn_messages).acquire_owned() => {
+                permit.map_err(|_| TurnPipelineError::Closed)?
+            }
+        };
         let turn_bytes = tokio::select! {
             biased;
             () = self.cancellation.cancelled() => return Err(TurnPipelineError::Cancelled),
@@ -228,6 +238,7 @@ impl TurnPipelineHandle {
             journal_override,
             admission: PipelineAdmission {
                 bytes,
+                _turn_message: turn_message,
                 _turn_bytes: turn_bytes,
                 _global_bytes: global_bytes,
             },
@@ -409,6 +420,9 @@ async fn coalesce_text(
                 ack: next.ack,
             });
             metrics.coalesced_commands.fetch_add(1, Ordering::Relaxed);
+            if receipts.len() >= TURN_PIPELINE_COMMAND_CAPACITY {
+                break;
+            }
             continue;
         }
         return (
