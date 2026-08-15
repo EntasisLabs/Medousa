@@ -17,5 +17,6 @@ fn report<R: Runtime>(webview: Webview<R>, report: BrowserPageReport) -> Result<
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("browser-bridge")
         .invoke_handler(tauri::generate_handler![report])
+        .on_drop(|_| crate::human_browser::shutdown_browser_bridge())
         .build()
 }

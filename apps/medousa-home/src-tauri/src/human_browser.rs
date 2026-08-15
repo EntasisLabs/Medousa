@@ -462,6 +462,8 @@ pub struct SnapshotReport {
     pub surface: String,
     pub url: String,
     pub html: String,
+    #[serde(default)]
+    pub truncated: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -469,6 +471,7 @@ pub struct SnapshotReport {
 pub struct SnapshotHtmlDto {
     pub url: String,
     pub html: String,
+    pub truncated: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -477,12 +480,16 @@ pub struct SnapshotMarkdownDto {
     pub url: String,
     pub title: String,
     pub markdown: String,
+    pub truncated: bool,
 }
 
 const MAX_BROWSER_PENDING_REQUESTS: usize = 64;
 const MAX_BROWSER_PENDING_PER_SURFACE: usize = 8;
-const MAX_SNAPSHOT_REPORT_BYTES: usize = 8 * 1024 * 1024;
+const MAX_SNAPSHOT_CAPTURE_CHARS: usize = 128 * 1024;
+const MAX_SNAPSHOT_REPORT_BYTES: usize = 512 * 1024;
 const MAX_BROWSER_CONTROL_REPORT_BYTES: usize = 64 * 1024;
+const MAX_SNAPSHOT_MARKDOWN_CHARS: usize = 64 * 1024;
+const MAX_SNAPSHOT_SEARCH_RESULTS: usize = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BrowserRequestKind {
@@ -555,6 +562,7 @@ pub(crate) enum BrowserPageReportV1 {
     Snapshot {
         request_id: String,
         html: String,
+        truncated: bool,
     },
     Action {
         request_id: String,
@@ -706,6 +714,25 @@ impl BrowserHostState {
         }
     }
 
+    fn cancel_kind(&self, kind: BrowserRequestKind) {
+        let mut state = self.broker.lock().expect("browser request broker");
+        let before = state.pending.len();
+        state
+            .pending
+            .retain(|_, pending| pending.reply.kind() != kind);
+        state.counters.cancelled = state
+            .counters
+            .cancelled
+            .saturating_add((before - state.pending.len()) as u64);
+    }
+
+    fn cancel_all(&self) {
+        let mut state = self.broker.lock().expect("browser request broker");
+        let cancelled = state.pending.len() as u64;
+        state.pending.clear();
+        state.counters.cancelled = state.counters.cancelled.saturating_add(cancelled);
+    }
+
     fn advance_navigation(&self, surface: BrowserSurface) {
         let mut state = self.broker.lock().expect("browser request broker");
         let before = state.pending.len();
@@ -774,7 +801,11 @@ pub(crate) fn accept_browser_page_report<R: tauri::Runtime>(
     let surface = identity.surface.as_str().to_string();
 
     match message.report {
-        BrowserPageReportV1::Snapshot { request_id, html } => {
+        BrowserPageReportV1::Snapshot {
+            request_id,
+            html,
+            truncated,
+        } => {
             let validated_request_id = validate_request_id(&request_id)?;
             if html.len() > MAX_SNAPSHOT_REPORT_BYTES {
                 BROWSER_HOST_STATE.cancel_request(validated_request_id);
@@ -793,6 +824,7 @@ pub(crate) fn accept_browser_page_report<R: tauri::Runtime>(
                     surface,
                     url: native_url,
                     html,
+                    truncated,
                 });
             }
         }
@@ -864,6 +896,17 @@ pub(crate) fn accept_browser_page_report<R: tauri::Runtime>(
 #[tauri::command]
 pub fn human_browser_request_diagnostics() -> BrowserRequestDiagnostics {
     BROWSER_HOST_STATE.diagnostics()
+}
+
+pub(crate) fn revoke_agent_browser_actions() {
+    BROWSER_HOST_STATE.cancel_kind(BrowserRequestKind::Act);
+}
+
+pub(crate) fn shutdown_browser_bridge() {
+    BROWSER_HOST_STATE.cancel_all();
+    if let Ok(mut webviews) = BROWSER_WEBVIEWS.lock() {
+        webviews.clear();
+    }
 }
 
 struct BrowserPendingGuard<'a> {
@@ -3045,11 +3088,44 @@ fn snapshot_capture_js(request_id: &str) -> Result<String, String> {
     let request_id = serde_json::to_string(request_id).map_err(|err| err.to_string())?;
     Ok(format!(r#"(function(){{
 try{{
-  var html=document.documentElement?document.documentElement.outerHTML:"";
-  var url=window.location.href||"";
+  var limit={MAX_SNAPSHOT_CAPTURE_CHARS},chunks=[],used=0,truncated=false,nodes=0;
+  function add(value){{
+    if(truncated||value==null)return;
+    var text=String(value),remaining=limit-used;
+    if(remaining<=0){{truncated=true;return;}}
+    if(text.length>remaining){{chunks.push(text.slice(0,remaining));used=limit;truncated=true;return;}}
+    chunks.push(text);used+=text.length;
+  }}
+  function escaped(value,attribute){{
+    var remaining=Math.max(0,Math.min(limit-used,4096));
+    return String(value||"").slice(0,remaining).replace(attribute?/([&<>"])/g:/([&<>])/g,function(ch){{return ch==="&"?"&amp;":ch==="<"?"&lt;":ch===">"?"&gt;":"&quot;";}});
+  }}
+  var voidTags={{area:1,base:1,br:1,col:1,embed:1,hr:1,img:1,input:1,link:1,meta:1,param:1,source:1,track:1,wbr:1}};
+  function walk(node,depth){{
+    if(truncated)return;
+    if(++nodes>50000||depth>64){{truncated=true;return;}}
+    if(node.nodeType===3){{add(escaped(node.nodeValue,false));return;}}
+    if(node.nodeType!==1)return;
+    var tag=String(node.localName||node.nodeName||"div").toLowerCase().slice(0,64);
+    if(tag==="script"||tag==="style"||tag==="template"||tag==="noscript")return;
+    add("<"+tag);
+    var attrs=node.attributes||[],attrCount=Math.min(attrs.length,64);
+    for(var a=0;a<attrCount&&!truncated;a++){{
+      var attr=attrs[a],name=String(attr.name||"").toLowerCase().slice(0,128);
+      if(!name||name.indexOf("on")===0)continue;
+      add(" "+name+"=\"");add(escaped(attr.value,true));add("\"");
+    }}
+    add(">");
+    if(!voidTags[tag]){{
+      for(var child=node.firstChild;child&&!truncated;child=child.nextSibling)walk(child,depth+1);
+      add("</"+tag+">");
+    }}
+  }}
+  if(document.documentElement)walk(document.documentElement,0);
+  var html=chunks.join("");
   var i=window.__TAURI_INTERNALS__||window.__TAURI__;
   if(!i||!i.invoke)return;
-  i.invoke("plugin:browser-bridge|report",{{report:{{version:1,kind:"snapshot",requestId:{request_id},html:html}}}});
+  i.invoke("plugin:browser-bridge|report",{{report:{{version:1,kind:"snapshot",requestId:{request_id},html:html,truncated:truncated}}}});
 }}catch(e){{}}
 }})();"#))
 }
@@ -3088,9 +3164,26 @@ try{{
     var r=el.getBoundingClientRect();
     return r.width>0&&r.height>0;
   }}
+  function forbidden(el,action){{
+    if(!el)return null;
+    var type=String(el.getAttribute&&el.getAttribute("type")||"").toLowerCase();
+    var autocomplete=String(el.getAttribute&&el.getAttribute("autocomplete")||"").toLowerCase();
+    if(type==="password"||type==="file")return "operator-only credential or file input";
+    if(autocomplete==="current-password"||autocomplete==="new-password"||autocomplete==="one-time-code"||autocomplete.indexOf("cc-")===0||autocomplete.indexOf("webauthn")>=0)return "operator-only credential or payment input";
+    if(el.hasAttribute&&el.hasAttribute("download"))return "operator-only download";
+    var href=String(el.getAttribute&&el.getAttribute("href")||"").trim().toLowerCase();
+    if(/^(javascript|file|data|intent|mailto|tel):/.test(href))return "operator-only external or active link";
+    if((action==="click"||action==="press")&&el.closest){{
+      var form=el.closest("form");
+      if(form&&form.querySelector('input[type="password"],input[type="file"],[autocomplete="current-password"],[autocomplete="new-password"],[autocomplete="one-time-code"],[autocomplete^="cc-"]'))return "operator-only sensitive form";
+    }}
+    return null;
+  }}
   var el=req.selector?document.querySelector(req.selector):null;
-  if(req.selector&&!el){{done(false,"no element matches selector: "+req.selector);return;}}
-  if(req.selector&&!visible(el)){{done(false,"target element is not visible: "+req.selector);return;}}
+  if(req.selector&&!el){{done(false,"no element matches selector");return;}}
+  if(req.selector&&!visible(el)){{done(false,"target element is not visible");return;}}
+  var forbiddenReason=forbidden(el,req.action);
+  if(forbiddenReason){{done(false,forbiddenReason);return;}}
   switch(req.action){{
     case "click": el.click(); done(true); return;
     case "type":
@@ -3113,7 +3206,7 @@ try{{
       el.dispatchEvent(new Event("change",{{bubbles:true}}));
       done(true); return;
     case "wait":
-      setTimeout(function(){{done(true);}},Math.min(Math.max(req.ms||1000,0),15000));
+      setTimeout(function(){{done(true);}},Math.min(Math.max(req.ms||1000,0),5000));
       return;
     default: done(false,"unsupported action: "+req.action); return;
   }}
@@ -3140,10 +3233,62 @@ pub struct BrowserActRequest {
     pub ms: Option<u64>,
 }
 
+fn validate_browser_act_request(request: &BrowserActRequest) -> Result<(), String> {
+    const MAX_SELECTOR_BYTES: usize = 2 * 1024;
+    const MAX_TEXT_BYTES: usize = 16 * 1024;
+    const MAX_KEY_BYTES: usize = 64;
+    const MAX_WAIT_MS: u64 = 5_000;
+    const MAX_SCROLL_DELTA: i64 = 10_000;
+
+    if !matches!(
+        request.action.as_str(),
+        "click" | "type" | "press" | "scroll" | "select" | "wait"
+    ) {
+        return Err("unsupported browser action".to_string());
+    }
+    if request
+        .selector
+        .as_deref()
+        .is_some_and(|value| value.is_empty() || value.len() > MAX_SELECTOR_BYTES)
+    {
+        return Err(format!("browser selector exceeds {MAX_SELECTOR_BYTES} byte limit"));
+    }
+    for value in [request.text.as_deref(), request.value.as_deref()].into_iter().flatten() {
+        if value.len() > MAX_TEXT_BYTES {
+            return Err(format!("browser action text exceeds {MAX_TEXT_BYTES} byte limit"));
+        }
+    }
+    if request
+        .key
+        .as_deref()
+        .is_some_and(|value| value.is_empty() || value.len() > MAX_KEY_BYTES)
+    {
+        return Err(format!("browser key exceeds {MAX_KEY_BYTES} byte limit"));
+    }
+    if request.ms.unwrap_or(0) > MAX_WAIT_MS {
+        return Err(format!("browser wait exceeds {MAX_WAIT_MS} ms limit"));
+    }
+    if request
+        .delta_y
+        .is_some_and(|delta| delta.unsigned_abs() > MAX_SCROLL_DELTA as u64)
+    {
+        return Err(format!(
+            "browser scroll exceeds {MAX_SCROLL_DELTA} pixel limit"
+        ));
+    }
+    if matches!(request.action.as_str(), "click" | "type" | "press" | "select")
+        && request.selector.is_none()
+    {
+        return Err("browser action requires a selector".to_string());
+    }
+    Ok(())
+}
+
 pub async fn browser_act_embed(
     app: &AppHandle,
     request: &BrowserActRequest,
 ) -> Result<BrowserActReport, String> {
+    validate_browser_act_request(request)?;
     let content = embedded_content_webview(app)
         .ok_or_else(|| "browser content webview not ready".to_string())?;
     let identity = request_identity(&content, BrowserSurface::Embed)?;
@@ -3187,6 +3332,7 @@ pub async fn human_browser_snapshot_html(app: AppHandle) -> Result<SnapshotHtmlD
     Ok(SnapshotHtmlDto {
         url: report.url,
         html: report.html,
+        truncated: report.truncated,
     })
 }
 
@@ -3196,11 +3342,15 @@ pub async fn human_browser_snapshot_markdown(
     max_chars: Option<usize>,
 ) -> Result<SnapshotMarkdownDto, String> {
     let report = capture_html(&app).await?;
-    let fetched = markdown_from_html(&report.html, &report.url, max_chars.unwrap_or(4000));
+    let max_chars = max_chars
+        .unwrap_or(4000)
+        .clamp(1, MAX_SNAPSHOT_MARKDOWN_CHARS);
+    let fetched = markdown_from_html(&report.html, &report.url, max_chars);
     Ok(SnapshotMarkdownDto {
         url: fetched.url,
         title: fetched.title,
         markdown: fetched.markdown,
+        truncated: report.truncated,
     })
 }
 
@@ -3215,7 +3365,7 @@ pub async fn human_browser_snapshot_search(
         &report.html,
         &report.url,
         &query,
-        max_results.unwrap_or(8),
+        max_results.unwrap_or(8).clamp(1, MAX_SNAPSHOT_SEARCH_RESULTS),
     ))
 }
 
@@ -3231,7 +3381,11 @@ pub async fn snapshot_markdown_for_url(
         ));
     }
     let report = capture_html(app).await?;
-    Ok(markdown_from_html(&report.html, &report.url, max_chars))
+    Ok(markdown_from_html(
+        &report.html,
+        &report.url,
+        max_chars.clamp(1, MAX_SNAPSHOT_MARKDOWN_CHARS),
+    ))
 }
 
 #[tauri::command]
@@ -3499,7 +3653,51 @@ mod request_broker_tests {
             surface: "embed".to_string(),
             url: format!("https://example.test/{marker}"),
             html: marker.to_string(),
+            truncated: false,
         }
+    }
+
+    #[test]
+    fn action_inputs_are_bounded_before_script_generation() {
+        let valid = BrowserActRequest {
+            action: "type".to_string(),
+            selector: Some("#query".to_string()),
+            text: Some("hello".to_string()),
+            key: None,
+            value: None,
+            delta_y: None,
+            ms: None,
+        };
+        assert!(validate_browser_act_request(&valid).is_ok());
+
+        let mut oversized = valid.clone();
+        oversized.text = Some("x".repeat(16 * 1024 + 1));
+        assert!(validate_browser_act_request(&oversized).is_err());
+
+        let mut selectorless = valid.clone();
+        selectorless.selector = None;
+        assert!(validate_browser_act_request(&selectorless).is_err());
+
+        let mut unknown = valid;
+        unknown.action = "executeScript".to_string();
+        assert!(validate_browser_act_request(&unknown).is_err());
+    }
+
+    #[test]
+    fn snapshot_capture_is_bounded_without_outer_html_materialization() {
+        let script = snapshot_capture_js("browser-42").unwrap();
+        assert!(!script.contains("outerHTML"));
+        assert!(script.contains("var limit=131072"));
+        assert!(script.contains("nodes>50000"));
+        assert!(script.contains("truncated:truncated"));
+    }
+
+    #[test]
+    fn request_ids_are_small_opaque_tokens() {
+        assert_eq!(validate_request_id("browser-42").unwrap(), "browser-42");
+        assert!(validate_request_id("").is_err());
+        assert!(validate_request_id("../../shell").is_err());
+        assert!(validate_request_id(&"x".repeat(MAX_BROWSER_REQUEST_ID_BYTES + 1)).is_err());
     }
 
     #[tokio::test]
