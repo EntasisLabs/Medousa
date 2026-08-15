@@ -3,15 +3,25 @@
 //! merge-base games for evidence), and explicit checkpoint identity via env
 //! vars (Forge never impersonates the user).
 
-use std::io::Write as _;
+use std::io::{Read as _, Write as _};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
+
+use sha2::{Digest as _, Sha256};
 
 use crate::error::{ForgeError, Result};
 use crate::execution::{
     MAX_CAPTURE_BYTES, capture_child_output_bounded, redact_git_text, run_command_bounded,
 };
 use crate::model::{GitOid, RepoId, RepoIdentity, SubmodulePin};
+
+/// Streaming digest of a worktree binary diff (never materializes the patch).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StreamedDiffDigest {
+    pub digest: String,
+    pub bytes_hashed: u64,
+    pub truncated: bool,
+}
 
 fn format_git_spawn_error(args: &[&str], err: &impl std::fmt::Display) -> String {
     format!(
@@ -641,6 +651,10 @@ impl GitEngine {
     }
 
     /// Stream-friendly bounded worktree diff used for observation hashing.
+    ///
+    /// Truncation is signaled by returning a buffer shorter than the live
+    /// stream together with callers that prefer [`Self::hash_diff_binary_worktree_streaming`]
+    /// for Exact/Incomplete honesty.
     pub fn diff_binary_worktree_bounded(
         &self,
         cwd: &Path,
@@ -661,6 +675,110 @@ impl GitEngine {
             }
             _ => {
                 let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
+                Err(ForgeError::Git(format_git_command_error(
+                    &["diff", "--binary", "--full-index"],
+                    if stderr.is_empty() {
+                        status.to_string()
+                    } else {
+                        stderr
+                    },
+                )))
+            }
+        }
+    }
+
+    /// Hash `git diff --binary` stdout incrementally without retaining the patch.
+    pub fn hash_diff_binary_worktree_streaming(
+        &self,
+        cwd: &Path,
+        baseline: &GitOid,
+        max_bytes: u64,
+    ) -> Result<StreamedDiffDigest> {
+        let max_bytes = max_bytes.min(MAX_CAPTURE_BYTES as u64).max(1);
+        let mut child = self
+            .command()
+            .args(["diff", "--binary", "--full-index", baseline.as_str()])
+            .current_dir(cwd)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|err| {
+                ForgeError::Git(format_git_spawn_error(
+                    &["diff", "--binary", "--full-index"],
+                    &err,
+                ))
+            })?;
+        let mut stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| ForgeError::Git("git stdout was unavailable".into()))?;
+        let mut stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| ForgeError::Git("git stderr was unavailable".into()))?;
+        let stderr_thread = std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            let mut chunk = [0u8; 8192];
+            let mut truncated = false;
+            loop {
+                match stderr.read(&mut chunk) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        if buf.len() < 64 * 1024 {
+                            let take = (64 * 1024 - buf.len()).min(n);
+                            buf.extend_from_slice(&chunk[..take]);
+                            if take < n {
+                                truncated = true;
+                            }
+                        } else {
+                            truncated = true;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            (buf, truncated)
+        });
+        let mut hasher = Sha256::new();
+        let mut chunk = [0u8; 64 * 1024];
+        let mut bytes_hashed = 0u64;
+        let mut truncated = false;
+        loop {
+            let read = stdout.read(&mut chunk).map_err(ForgeError::Io)?;
+            if read == 0 {
+                break;
+            }
+            if bytes_hashed >= max_bytes {
+                truncated = true;
+                continue;
+            }
+            let remaining = (max_bytes - bytes_hashed) as usize;
+            let take = remaining.min(read);
+            hasher.update(&chunk[..take]);
+            bytes_hashed = bytes_hashed.saturating_add(take as u64);
+            if take < read {
+                truncated = true;
+            }
+        }
+        let status = child
+            .wait()
+            .map_err(|err| ForgeError::Git(format!("git wait failed: {err}")))?;
+        let (stderr_bytes, stderr_trunc) = stderr_thread
+            .join()
+            .map_err(|_| ForgeError::Git("git stderr reader panicked".into()))?;
+        let _ = stderr_trunc;
+        match status.code() {
+            Some(0) | Some(1) => Ok(StreamedDiffDigest {
+                digest: format!("{:x}", hasher.finalize()),
+                bytes_hashed,
+                truncated,
+            }),
+            _ => {
+                let stderr = String::from_utf8_lossy(&stderr_bytes).trim().to_string();
                 Err(ForgeError::Git(format_git_command_error(
                     &["diff", "--binary", "--full-index"],
                     if stderr.is_empty() {
@@ -1715,6 +1833,18 @@ summary second
             .commit_checkpoint(tmp.path(), "forge: noop", &CheckpointAuthor::default())
             .unwrap();
         assert_eq!(again, base);
+    }
+
+    #[test]
+    fn hash_diff_binary_worktree_streaming_truncates_without_materializing() {
+        let (tmp, git, head) = init_repo();
+        fs::write(tmp.path().join("hello.txt"), "x".repeat(32 * 1024)).unwrap();
+        let digest = git
+            .hash_diff_binary_worktree_streaming(tmp.path(), &head, 128)
+            .unwrap();
+        assert!(digest.truncated);
+        assert!(digest.bytes_hashed <= 128);
+        assert_eq!(digest.digest.len(), 64);
     }
 
     #[test]

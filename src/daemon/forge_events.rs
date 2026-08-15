@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
+use medousa_forge::observation::SharedWatcherFence;
 use serde::Serialize;
 use tokio::sync::broadcast;
 
@@ -53,8 +54,7 @@ pub struct ForgeEventBus {
     project_log: Arc<Mutex<VecDeque<ForgeProjectEvent>>>,
     /// Latest known worktree root per work item (for FS observation).
     worktrees: Arc<Mutex<HashMap<String, std::path::PathBuf>>>,
-    watcher_generation: Arc<AtomicU64>,
-    watcher_overflow: Arc<std::sync::atomic::AtomicBool>,
+    watcher_fence: SharedWatcherFence,
 }
 
 impl Default for ForgeEventBus {
@@ -65,6 +65,10 @@ impl Default for ForgeEventBus {
 
 impl ForgeEventBus {
     pub fn new() -> Self {
+        Self::with_watcher_fence(SharedWatcherFence::new())
+    }
+
+    pub fn with_watcher_fence(watcher_fence: SharedWatcherFence) -> Self {
         let (item_tx, _) = broadcast::channel(ITEM_CAPACITY);
         let (project_tx, _) = broadcast::channel(PROJECT_BROADCAST_CAPACITY);
         Self {
@@ -73,26 +77,28 @@ impl ForgeEventBus {
             next_seq: Arc::new(AtomicU64::new(0)),
             project_log: Arc::new(Mutex::new(VecDeque::with_capacity(PROJECT_CAPACITY))),
             worktrees: Arc::new(Mutex::new(HashMap::new())),
-            watcher_generation: Arc::new(AtomicU64::new(1)),
-            watcher_overflow: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            watcher_fence,
         }
     }
 
+    pub fn watcher_fence(&self) -> SharedWatcherFence {
+        self.watcher_fence.clone()
+    }
+
     pub fn watcher_generation(&self) -> u64 {
-        self.watcher_generation.load(Ordering::Relaxed)
+        self.watcher_fence.generation()
     }
 
     pub fn watcher_overflow(&self) -> bool {
-        self.watcher_overflow.load(Ordering::Relaxed)
+        self.watcher_fence.overflow()
     }
 
     pub fn bump_watcher_generation(&self) {
-        self.watcher_generation.fetch_add(1, Ordering::Relaxed);
+        self.watcher_fence.bump_generation();
     }
 
     pub fn mark_watcher_overflow(&self) {
-        self.watcher_overflow.store(true, Ordering::Relaxed);
-        self.bump_watcher_generation();
+        self.watcher_fence.mark_overflow();
     }
 
     pub fn publish(&self, work_id: &str, state: &str, event_kind: &str) {
@@ -124,7 +130,12 @@ impl ForgeEventBus {
     pub fn tracked_worktrees(&self) -> Vec<(String, std::path::PathBuf)> {
         self.worktrees
             .lock()
-            .map(|guard| guard.iter().map(|(id, path)| (id.clone(), path.clone())).collect())
+            .map(|guard| {
+                guard
+                    .iter()
+                    .map(|(id, path)| (id.clone(), path.clone()))
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
@@ -159,11 +170,7 @@ impl ForgeEventBus {
         self.project_tx.subscribe()
     }
 
-    pub fn snapshot_project_since(
-        &self,
-        work_id: &str,
-        since: u64,
-    ) -> Vec<ForgeProjectEvent> {
+    pub fn snapshot_project_since(&self, work_id: &str, since: u64) -> Vec<ForgeProjectEvent> {
         self.project_log
             .lock()
             .map(|log| {
@@ -214,5 +221,16 @@ mod tests {
         assert_eq!(replay[0].seq, third.seq);
         assert_eq!(replay[0].path.as_deref(), Some("a2.rs"));
         assert_eq!(replay[0].old_path.as_deref(), Some("a.rs"));
+    }
+
+    #[test]
+    fn watcher_overflow_is_sticky_on_shared_fence() {
+        let fence = SharedWatcherFence::new();
+        let bus = ForgeEventBus::with_watcher_fence(fence.clone());
+        assert!(!bus.watcher_overflow());
+        bus.mark_watcher_overflow();
+        assert!(bus.watcher_overflow());
+        assert!(fence.overflow());
+        assert!(bus.watcher_generation() > 1);
     }
 }

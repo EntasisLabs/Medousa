@@ -24,7 +24,7 @@ use crate::model::{
     RecoveryDisposition, ReviewComment, ReviewCommentId, ReviewDecision, ReviewDecisionId, WorkId,
     WorkItem, WorkPolicy, WorkState, WorkTarget, anchor_digest_for, compose_revision_brief,
 };
-use crate::observation::WorkspaceObserver;
+use crate::observation::{SharedWatcherFence, WorkspaceObserver};
 use crate::owner::ForgeItemRegistry;
 use crate::store::FsWorkStore;
 
@@ -158,6 +158,7 @@ pub struct Forge {
     pub(crate) catalog: ForgeCatalog,
     pub(crate) slugs: SlugReservationJournal,
     pub(crate) observer: WorkspaceObserver,
+    pub(crate) watcher_fence: SharedWatcherFence,
     pub(crate) execution: Option<Arc<ForgeExecutionService>>,
 }
 
@@ -182,6 +183,7 @@ impl Forge {
             catalog,
             slugs,
             observer: WorkspaceObserver::default(),
+            watcher_fence: SharedWatcherFence::new(),
             execution: None,
         };
         // Catalog rebuild is an unbounded snapshot scan — callers (daemon boot,
@@ -194,6 +196,10 @@ impl Forge {
         self.execution = Some(execution);
     }
 
+    pub fn attach_watcher_fence(&mut self, fence: SharedWatcherFence) {
+        self.watcher_fence = fence;
+    }
+
     pub fn execution(&self) -> Option<Arc<ForgeExecutionService>> {
         self.execution.clone()
     }
@@ -204,6 +210,10 @@ impl Forge {
 
     pub fn observer(&self) -> &WorkspaceObserver {
         &self.observer
+    }
+
+    pub fn watcher_fence(&self) -> &SharedWatcherFence {
+        &self.watcher_fence
     }
 
     /// Rebuild the listing catalog from on-disk snapshots. Must run under

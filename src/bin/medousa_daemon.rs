@@ -432,6 +432,8 @@ async fn main() -> Result<()> {
     let forge_execution = Arc::new(medousa_forge::execution::ForgeExecutionService::new());
     let mut forge = medousa::daemon::forge_host::open_forge()?;
     forge.attach_execution(Arc::clone(&forge_execution));
+    let forge_events = medousa::daemon::forge_events::ForgeEventBus::new();
+    forge.attach_watcher_fence(forge_events.watcher_fence());
     let forge = Arc::new(forge);
     // Startup catalog rebuild + boot reconcile are unbounded scans — admit them
     // off the Tokio worker before serving HTTP.
@@ -529,7 +531,7 @@ async fn main() -> Result<()> {
         client_registry: platform.client_registry(),
         forge,
         forge_execution,
-        forge_events: medousa::daemon::forge_events::ForgeEventBus::new(),
+        forge_events,
         coding_engine: Some(medousa::daemon::coding_engine_host::CodingEngineHost::new()),
         shell_sessions: Some(medousa::daemon::shell_session_host::ShellSessionHost::new()),
         detamu: match medousa::daemon::detamu_host::DetamuHost::open(

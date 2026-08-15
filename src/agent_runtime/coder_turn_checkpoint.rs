@@ -15,9 +15,7 @@ use medousa_forge::forge::Forge;
 use medousa_forge::model::{
     AttemptId, AttemptState, ExecutionLease, GovernedEnv, RecoveryDisposition, WorkId,
 };
-use medousa_forge::observation::{
-    GenerationCapture, ObservationCompleteness, WorkspaceObserver,
-};
+use medousa_forge::observation::ObservationCompleteness;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -887,14 +885,13 @@ fn observe_environment(
     if actual_root != worktree {
         return Err("checkpoint worktree root no longer matches Forge authority".into());
     }
-    let capture = GenerationCapture {
-        workspace_generation: u64::from(environment.generation),
-        watcher_generation: 0,
-        repository_generation: u64::from(environment.generation),
-        watcher_overflow: false,
-    };
-    let observation = WorkspaceObserver::default()
-        .observe_exact(forge.git(), work_id, &worktree, &capture, true)
+    let capture_source = forge.watcher_fence().bind(
+        u64::from(environment.generation),
+        u64::from(environment.generation),
+    );
+    let observation = forge
+        .observer()
+        .observe_exact(forge.git(), work_id, &worktree, &capture_source, true)
         .map_err(|err| format!("cannot observe checkpoint worktree: {err}"))?;
     if observation.completeness != ObservationCompleteness::Exact {
         return Err(format!(
