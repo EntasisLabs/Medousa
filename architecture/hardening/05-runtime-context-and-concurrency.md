@@ -1,6 +1,6 @@
 # H05 — Request-scoped runtime context and concurrency
 
-> **Status:** Implementing — H05.1 daemon execution ownership underway
+> **Status:** Implementing — H05.1/H05.3 execution and worker ownership underway
 >
 > **Accountable owner:** daemon runtime maintainers
 >
@@ -75,13 +75,24 @@ contexts; existing detached spawn sites still need conversion to the tracked
 task API, plus cancellation/deadline propagation into every blocking leaf,
 before H05.1 is complete.
 
+H05.3 has started at the host/worker boundary. `TurnWorkerScheduler` no longer
+stores a process-wide `runtime_ctx` or `bus_session`. Each local turn receives
+an opaque `WorkerParentHandle`; the scheduler admits a bounded parent record
+containing that turn's runtime services, sink, session, route, delivery,
+handoff, continuity, and surface capabilities. Worker tools resolve only the
+handle scoped to their invoking turn. An RAII lease compare-removes the exact
+`Arc` generation on every return path, replacing ten unconditional clear calls
+that could erase a newer sibling. The scheduler reports live/high-water counts,
+and barrier tests prove concurrent parents cannot cross sessions while stale
+lease cleanup cannot remove a replacement generation.
+
 The current H05.0 request-state inventory is:
 
 | State | Classification | Current action |
 | --- | --- | --- |
 | Ambient tool sink | Per-turn request state | Task-scoped compatibility bridge; global slot deleted; H05.2 deletion remains |
 | Shared `TurnContinuationScope` | Per-turn request state retained by tool/runtime modules and installed by non-daemon save/restore paths | Daemon writes removed; authority-sensitive reads prefer immutable task context; TUI/worker/ingest removal remains |
-| Worker scheduler `runtime_ctx` and `bus_session` | Per-parent/worker request state in two process-wide `Option` slots | Open; freeze stale-clear and sibling-parent races before H05.3 |
+| Worker scheduler `runtime_ctx` and `bus_session` | Per-parent/worker request state formerly held in two process-wide `Option` slots | Slots deleted; bounded keyed parent registry and exact leases landed; child execution and bound-workshop generation ownership remain |
 | Browser `SNAPSHOT_TX`, `ACT_TX`, `NAV_STATE_TX`, `FIND_TX` | Per-request reply state in four process-wide singleton mailboxes | Open; freeze overlap, reverse completion, timeout, and navigation races before H05.5 |
 | `LAST_GRAPHEME_SOURCE` | Per-invocation source selected through one global last-value slot | Open; key to invocation context in H05.2 |
 | Continuation last-resume value | Process diagnostic snapshot, not execution authority | Retain only as bounded diagnostics; never select runtime behavior from it |

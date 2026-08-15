@@ -865,6 +865,13 @@ fn require_operator_budget_gate() -> bool {
 }
 
 pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnExecutionParams) {
+    super::turn_worker::with_worker_parent_scope(execute_local_turn_inner(sink, params)).await;
+}
+
+async fn execute_local_turn_inner(
+    sink: SharedAgentStreamSink,
+    params: LocalTurnExecutionParams,
+) {
     let LocalTurnExecutionParams {
         agent_mode,
         turn_id,
@@ -974,18 +981,6 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         .map(|i| i.as_str());
     sink.notice(host_route_notice(&host_profile)).await;
 
-    worker_scheduler
-        .set_runtime_context(WorkerRuntimeContext {
-            tool_registry: tool_registry.clone(),
-            client_registry: client_registry.clone(),
-            identity_memory_store: identity_memory_store.clone(),
-            provider: provider.clone(),
-            model: model.clone(),
-            base_url: base_url.clone(),
-            turn_scope: turn_scope.clone(),
-        })
-        .await;
-
     let scope_snapshot = super::execution_context::turn_continuation_scope(&turn_scope).await;
     if let Some(bundle) = host_continuity_bundle.as_mut() {
         bundle.parent_turn_correlation_id = scope_snapshot
@@ -996,8 +991,16 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
     }
     let handoff_continuity_bundle = host_continuity_bundle.clone();
     let host_handoff_slot = Arc::new(tokio::sync::RwLock::new(None));
-    worker_scheduler
-        .set_bus_session(ActiveWorkerBusSession {
+    let worker_runtime = WorkerRuntimeContext {
+        tool_registry: tool_registry.clone(),
+        client_registry: client_registry.clone(),
+        identity_memory_store: identity_memory_store.clone(),
+        provider: provider.clone(),
+        model: model.clone(),
+        base_url: base_url.clone(),
+        turn_scope: turn_scope.clone(),
+    };
+    let worker_bus = ActiveWorkerBusSession {
             sink: sink.clone(),
             stream_turn_id: turn_id,
             session_id: session_id.clone(),
@@ -1019,8 +1022,15 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             supports_ui_artifacts: params.supports_ui_artifacts,
             supports_liquid_markdown: params.supports_liquid_markdown,
             supports_browser_host: params.supports_browser_host,
-        })
-        .await;
+        };
+    let _worker_parent_lease = match worker_scheduler.register_parent(worker_runtime, worker_bus) {
+        Ok(lease) => lease,
+        Err(error) => {
+            sink.agent_error(turn_id, format!("worker parent admission failed: {error}"))
+                .await;
+            return;
+        }
+    };
 
     let pipeline = if host_bus {
         pipeline_for_turn_profile(
@@ -1132,7 +1142,6 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             )
             .await;
             emit_orchestration_summary(&sink, &orchestration_state).await;
-            worker_scheduler.clear_bus_session().await;
             return;
         }
         orchestration_state.final_mode = "prompt_only".to_string();
@@ -1192,7 +1201,6 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 emit_orchestration_summary(&sink, &orchestration_state).await;
             }
         }
-        worker_scheduler.clear_bus_session().await;
         return;
     }
 
@@ -1231,7 +1239,6 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         )
         .await;
         emit_orchestration_summary(&sink, &orchestration_state).await;
-        worker_scheduler.clear_bus_session().await;
         return;
     }
     orchestration_state.final_mode = "tool_loop".to_string();
@@ -1467,7 +1474,6 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 sink.agent_worker_ack(turn_id, final_text, tool_names, work_id)
                     .await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
-                worker_scheduler.clear_bus_session().await;
                 return;
             }
             if response.termination_reason == "workshop_entered" {
@@ -1481,7 +1487,6 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 sink.agent_workshop_ack(turn_id, final_text, tool_names, work_id)
                     .await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
-                worker_scheduler.clear_bus_session().await;
                 return;
             }
             if response.termination_reason == "cognition_turn_checkpoint" {
@@ -1501,7 +1506,6 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 )
                 .await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
-                worker_scheduler.clear_bus_session().await;
                 return;
             }
             let tool_budget_exhausted = response.termination_reason
@@ -1675,7 +1679,6 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                         sink.agent_error(turn_id, "turn budget exhausted before retry".to_string())
                             .await;
                         emit_orchestration_summary(&sink, &orchestration_state).await;
-                        worker_scheduler.clear_bus_session().await;
                         return;
                     }
                     orchestration_state.final_mode = "tool_loop_retry".to_string();
@@ -1726,7 +1729,6 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                             .await;
                             orchestration_state.final_mode = "tool_loop_retry_success".to_string();
                             emit_orchestration_summary(&sink, &orchestration_state).await;
-                            worker_scheduler.clear_bus_session().await;
                             return;
                         }
                         Err(retry_err) => {
@@ -1801,7 +1803,6 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
     }
 
     stream_bridge.drain().await;
-    worker_scheduler.clear_bus_session().await;
 }
 
 #[cfg(test)]

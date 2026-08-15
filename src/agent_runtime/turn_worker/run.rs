@@ -1,6 +1,8 @@
 //! Worker execution and host synthesis (Phase 1).
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::future::Future;
+use std::sync::{Arc, Mutex, Weak};
 
 use chrono::Utc;
 use schemars::JsonSchema;
@@ -159,9 +161,64 @@ impl WorkerRuntimeContext {
 
 pub struct TurnWorkerScheduler {
     store: Arc<TurnWorkerStore>,
-    runtime_ctx: RwLock<Option<WorkerRuntimeContext>>,
     runtime: RwLock<Option<Arc<RuntimeComposition>>>,
-    bus_session: RwLock<Option<ActiveWorkerBusSession>>,
+    parents: Mutex<WorkerParentState>,
+}
+
+const MAX_ACTIVE_WORKER_PARENTS: usize = 256;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct WorkerParentHandle(uuid::Uuid);
+
+impl WorkerParentHandle {
+    fn new() -> Self {
+        Self(uuid::Uuid::new_v4())
+    }
+}
+
+struct WorkerParentContext {
+    runtime: WorkerRuntimeContext,
+    bus: ActiveWorkerBusSession,
+}
+
+struct WorkerParentState {
+    live: HashMap<WorkerParentHandle, Arc<WorkerParentContext>>,
+    high_water: usize,
+}
+
+pub struct WorkerParentLease {
+    scheduler: Weak<TurnWorkerScheduler>,
+    handle: WorkerParentHandle,
+    context: Arc<WorkerParentContext>,
+}
+
+impl Drop for WorkerParentLease {
+    fn drop(&mut self) {
+        let Some(scheduler) = self.scheduler.upgrade() else {
+            return;
+        };
+        let mut state = scheduler.parents.lock().expect("worker parents poisoned");
+        if state
+            .live
+            .get(&self.handle)
+            .is_some_and(|current| Arc::ptr_eq(current, &self.context))
+        {
+            state.live.remove(&self.handle);
+        }
+    }
+}
+
+tokio::task_local! {
+    static ACTIVE_WORKER_PARENT: WorkerParentHandle;
+}
+
+pub async fn with_worker_parent_scope<F>(future: F) -> F::Output
+where
+    F: Future,
+{
+    ACTIVE_WORKER_PARENT
+        .scope(WorkerParentHandle::new(), future)
+        .await
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -206,36 +263,75 @@ impl TurnWorkerScheduler {
     pub fn new(store: Arc<TurnWorkerStore>) -> Self {
         Self {
             store,
-            runtime_ctx: RwLock::new(None),
             runtime: RwLock::new(None),
-            bus_session: RwLock::new(None),
+            parents: Mutex::new(WorkerParentState {
+                live: HashMap::with_capacity(MAX_ACTIVE_WORKER_PARENTS),
+                high_water: 0,
+            }),
         }
     }
 
-    pub async fn set_runtime_context(&self, ctx: WorkerRuntimeContext) {
-        *self.runtime_ctx.write().await = Some(ctx);
-    }
-
     pub async fn attach_runtime(&self, runtime: Arc<crate::tools::TuiRuntime>) {
-        self.set_runtime_context(WorkerRuntimeContext::from_tui_runtime(runtime.as_ref()))
-            .await;
         *self.runtime.write().await = Some(runtime.runtime.clone());
     }
 
-    pub async fn set_bus_session(&self, session: ActiveWorkerBusSession) {
-        *self.bus_session.write().await = Some(session);
-    }
-
-    pub async fn clear_bus_session(&self) {
-        *self.bus_session.write().await = None;
+    pub fn register_parent(
+        self: &Arc<Self>,
+        runtime: WorkerRuntimeContext,
+        bus: ActiveWorkerBusSession,
+    ) -> Result<WorkerParentLease, &'static str> {
+        let handle = ACTIVE_WORKER_PARENT
+            .try_with(|handle| *handle)
+            .map_err(|_| "worker parent scope missing")?;
+        let context = Arc::new(WorkerParentContext { runtime, bus });
+        let mut state = self.parents.lock().expect("worker parents poisoned");
+        if state.live.len() >= MAX_ACTIVE_WORKER_PARENTS {
+            return Err("worker parent capacity reached");
+        }
+        if state.live.contains_key(&handle) {
+            return Err("worker parent already registered");
+        }
+        state.live.insert(handle, context.clone());
+        state.high_water = state.high_water.max(state.live.len());
+        Ok(WorkerParentLease {
+            scheduler: Arc::downgrade(self),
+            handle,
+            context,
+        })
     }
 
     pub async fn active_bus_session_id(&self) -> Option<String> {
-        self.bus_session
-            .read()
-            .await
-            .as_ref()
-            .map(|session| session.session_id.clone())
+        self.active_parent()
+            .ok()
+            .map(|parent| parent.bus.session_id.clone())
+    }
+
+    fn active_parent(&self) -> Result<Arc<WorkerParentContext>, &'static str> {
+        let handle = ACTIVE_WORKER_PARENT
+            .try_with(|handle| *handle)
+            .map_err(|_| "worker parent scope missing")?;
+        self.parents
+            .lock()
+            .expect("worker parents poisoned")
+            .live
+            .get(&handle)
+            .cloned()
+            .ok_or("worker parent is not registered")
+    }
+
+    pub fn active_parent_count(&self) -> usize {
+        self.parents
+            .lock()
+            .expect("worker parents poisoned")
+            .live
+            .len()
+    }
+
+    pub fn parent_high_water(&self) -> usize {
+        self.parents
+            .lock()
+            .expect("worker parents poisoned")
+            .high_water
     }
 
     pub fn store(&self) -> Arc<TurnWorkerStore> {
@@ -253,18 +349,13 @@ impl TurnWorkerScheduler {
         stage_role: Option<&str>,
         model_hint: Option<&str>,
     ) -> stasis::prelude::Result<SpawnTurnWorkerOutput> {
-        let bus = self.bus_session.read().await.clone().ok_or_else(|| {
-            stasis::domain::errors::StasisError::PortFailure(
-                "cognition_spawn_turn_worker: no active host turn session".to_string(),
-            )
+        let parent = self.active_parent().map_err(|error| {
+            stasis::domain::errors::StasisError::PortFailure(format!(
+                "cognition_spawn_turn_worker: {error}"
+            ))
         })?;
-
-        let runtime_ctx = self.runtime_ctx.read().await.clone().ok_or_else(|| {
-            stasis::domain::errors::StasisError::PortFailure(
-                "cognition_spawn_turn_worker: agent runtime context not ready (start a turn first)"
-                    .to_string(),
-            )
-        })?;
+        let bus = &parent.bus;
+        let runtime_ctx = &parent.runtime;
 
         let parent_turn_correlation_id = bus.parent_turn_correlation_id.clone();
         let delivery_target = bus.delivery_target.clone();
@@ -482,11 +573,12 @@ impl TurnWorkerScheduler {
         goal: &str,
         intent: TurnWorkerIntent,
     ) -> stasis::prelude::Result<EnterBoundWorkshopOutput> {
-        let bus = self.bus_session.read().await.clone().ok_or_else(|| {
-            stasis::domain::errors::StasisError::PortFailure(
-                "cognition_turn_begin_work: no active host turn session".to_string(),
-            )
+        let parent = self.active_parent().map_err(|error| {
+            stasis::domain::errors::StasisError::PortFailure(format!(
+                "cognition_turn_begin_work: {error}"
+            ))
         })?;
+        let bus = &parent.bus;
 
         if self.store.active_bound_workshop(&bus.session_id).is_some() {
             return Ok(EnterBoundWorkshopOutput::Failure {
@@ -497,13 +589,6 @@ impl TurnWorkerScheduler {
                         .to_string(),
             });
         }
-
-        let _runtime_ctx = self.runtime_ctx.read().await.clone().ok_or_else(|| {
-            stasis::domain::errors::StasisError::PortFailure(
-                "cognition_turn_begin_work: agent runtime context not ready (start a turn first)"
-                    .to_string(),
-            )
-        })?;
 
         let task = goal.trim();
         if task.is_empty() {
@@ -671,17 +756,6 @@ impl TurnWorkerScheduler {
 
 fn record_stage_role_for_response(stage_role: Option<&str>) -> Option<String> {
     stage_role.map(str::to_string)
-}
-
-impl Clone for TurnWorkerScheduler {
-    fn clone(&self) -> Self {
-        Self {
-            store: self.store.clone(),
-            runtime_ctx: RwLock::new(None),
-            runtime: RwLock::new(None),
-            bus_session: RwLock::new(None),
-        }
-    }
 }
 
 fn ledger_bus_event(
@@ -1308,6 +1382,63 @@ pub fn system_prompt_for_host_bus(base: &str, host_bus: bool) -> String {
 mod tests {
     use super::*;
     use crate::agent_runtime::turn_worker::store::{TurnWorkRecord, TurnWorkStatus};
+    use async_trait::async_trait;
+    use medousa_engine::receipt::ArtifactReceiptMeta;
+    use serde_json::Value;
+    use stasis::application::orchestration::tool_registry::InMemoryToolRegistry;
+
+    struct NoopSink;
+
+    #[async_trait]
+    impl crate::agent_runtime::stream_sink::AgentStreamSink for NoopSink {
+        async fn content_chunk(&self, _turn_id: u64, _delta: String) {}
+        async fn reasoning_chunk(&self, _turn_id: u64, _delta: String) {}
+        async fn agent_response(&self, _turn_id: u64, _text: String, _tools: Vec<String>) {}
+        async fn agent_error(&self, _turn_id: u64, _message: String) {}
+        async fn notice(&self, _message: String) {}
+        async fn tool_invoked(&self, _tool_name: String, _input_summary: String) {}
+        async fn tool_payload(
+            &self,
+            _tool_name: String,
+            _tool_input: Value,
+            _tool_output: Value,
+            _input_receipt: Option<ArtifactReceiptMeta>,
+            _output_receipt: Option<ArtifactReceiptMeta>,
+        ) {
+        }
+    }
+
+    fn parent_context(session_id: &str) -> (WorkerRuntimeContext, ActiveWorkerBusSession) {
+        let turn_scope = Arc::new(RwLock::new(None));
+        let runtime = WorkerRuntimeContext {
+            tool_registry: Arc::new(InMemoryToolRegistry::default()),
+            client_registry: crate::client_tools::ClientRegistry::new(),
+            identity_memory_store: None,
+            provider: "provider".to_string(),
+            model: "model".to_string(),
+            base_url: None,
+            turn_scope,
+        };
+        let bus = ActiveWorkerBusSession {
+            sink: Arc::new(NoopSink),
+            stream_turn_id: 1,
+            session_id: session_id.to_string(),
+            backend: "memory".to_string(),
+            parent_user_prompt: "prompt".to_string(),
+            provider: "provider".to_string(),
+            model: "model".to_string(),
+            response_depth_mode: "standard".to_string(),
+            parent_turn_correlation_id: Some(format!("turn-{session_id}")),
+            delivery_target: None,
+            host_handoff_slot: Arc::new(RwLock::new(None)),
+            host_continuity_bundle: None,
+            configured_max_tool_rounds: 8,
+            supports_ui_artifacts: false,
+            supports_liquid_markdown: false,
+            supports_browser_host: false,
+        };
+        (runtime, bus)
+    }
 
     fn sample_record(
         termination_reason: Option<&str>,
@@ -1392,5 +1523,94 @@ mod tests {
             Some("cognition_turn_finish"),
             Some("Here is the report.")
         )));
+    }
+
+    #[tokio::test]
+    async fn concurrent_parent_scopes_never_cross_sessions() {
+        let scheduler = Arc::new(TurnWorkerScheduler::new(turn_worker_store()));
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        let run = |session: &'static str,
+                   scheduler: Arc<TurnWorkerScheduler>,
+                   barrier: Arc<tokio::sync::Barrier>| async move {
+            with_worker_parent_scope(async move {
+                let (runtime, bus) = parent_context(session);
+                let _lease = scheduler.register_parent(runtime, bus).unwrap();
+                barrier.wait().await;
+                tokio::task::yield_now().await;
+                scheduler.active_bus_session_id().await.unwrap()
+            })
+            .await
+        };
+
+        let (first, second) = tokio::join!(
+            run("session-a", scheduler.clone(), barrier.clone()),
+            run("session-b", scheduler.clone(), barrier.clone())
+        );
+
+        assert_eq!(first, "session-a");
+        assert_eq!(second, "session-b");
+        assert_eq!(scheduler.active_parent_count(), 0);
+        assert_eq!(scheduler.parent_high_water(), 2);
+    }
+
+    #[tokio::test]
+    async fn stale_parent_lease_cannot_remove_replacement_generation() {
+        let scheduler = Arc::new(TurnWorkerScheduler::new(turn_worker_store()));
+        with_worker_parent_scope(async {
+            let (runtime, bus) = parent_context("stale-session");
+            let stale = scheduler.register_parent(runtime, bus).unwrap();
+            let handle = ACTIVE_WORKER_PARENT.with(|handle| *handle);
+            let (runtime, bus) = parent_context("replacement-session");
+            let replacement = Arc::new(WorkerParentContext { runtime, bus });
+            scheduler
+                .parents
+                .lock()
+                .unwrap()
+                .live
+                .insert(handle, replacement.clone());
+
+            drop(stale);
+
+            let current = scheduler
+                .parents
+                .lock()
+                .unwrap()
+                .live
+                .get(&handle)
+                .cloned()
+                .expect("replacement must remain live");
+            assert!(Arc::ptr_eq(&current, &replacement));
+            assert_eq!(current.bus.session_id, "replacement-session");
+            scheduler.parents.lock().unwrap().live.remove(&handle);
+        })
+        .await;
+        assert_eq!(scheduler.active_parent_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn parent_admission_is_bounded_and_returns_to_zero() {
+        let scheduler = Arc::new(TurnWorkerScheduler::new(turn_worker_store()));
+        let mut leases = Vec::with_capacity(MAX_ACTIVE_WORKER_PARENTS);
+        for index in 0..MAX_ACTIVE_WORKER_PARENTS {
+            let session_id = format!("session-{index}");
+            let lease = with_worker_parent_scope(async {
+                let (runtime, bus) = parent_context(&session_id);
+                scheduler.register_parent(runtime, bus).unwrap()
+            })
+            .await;
+            leases.push(lease);
+        }
+
+        let error = with_worker_parent_scope(async {
+            let (runtime, bus) = parent_context("over-capacity");
+            scheduler.register_parent(runtime, bus).err().unwrap()
+        })
+        .await;
+        assert_eq!(error, "worker parent capacity reached");
+        assert_eq!(scheduler.active_parent_count(), MAX_ACTIVE_WORKER_PARENTS);
+        assert_eq!(scheduler.parent_high_water(), MAX_ACTIVE_WORKER_PARENTS);
+
+        drop(leases);
+        assert_eq!(scheduler.active_parent_count(), 0);
     }
 }
