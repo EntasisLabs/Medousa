@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   turnStreamPayloadToLegacy,
+  turnStreamPayloadToV2,
   turnStreamV2ToLegacy,
 } from "$lib/stream/v2ToLegacy";
 import type {
@@ -149,5 +150,13 @@ describe("turnStreamV2ToLegacy", () => {
   it("passes a legacy payload through during the compatibility window", () => {
     const legacy = turnStreamV2ToLegacy(envelope(variants[0], 1));
     expect(turnStreamPayloadToLegacy(legacy)).toBe(legacy);
+  });
+
+  it("keeps v2 payloads allocation-free and projects legacy payloads only on fallback", () => {
+    const current = envelope(variants[0], 1);
+    expect(turnStreamPayloadToV2(current)).toBe(current);
+
+    const legacy = turnStreamV2ToLegacy(envelope(variants[14], 3));
+    expect(turnStreamPayloadToV2(legacy)).toMatchObject(envelope(variants[14], 3));
   });
 });

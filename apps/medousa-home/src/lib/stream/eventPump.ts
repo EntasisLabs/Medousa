@@ -1,16 +1,16 @@
-import type { InteractiveTurnStreamEvent } from "$lib/types/chat";
+import type { TurnStreamEnvelopeV2 } from "$lib/types/generated/daemon_api";
 
 export interface StreamEventTarget {
   sessionId: string;
-  event: InteractiveTurnStreamEvent;
+  event: TurnStreamEnvelopeV2;
 }
 
 type ScheduleFlush = (flush: () => void) => () => void;
 
 interface PendingAppend {
   latest: StreamEventTarget;
-  content: string[];
-  reasoning: string[];
+  type: "content_append" | "reasoning_append";
+  chunks: string[];
 }
 
 const BACKGROUND_FLUSH_MS = 50;
@@ -68,22 +68,23 @@ export class StreamEventPump {
       }
     }
 
-    if (!isAppendEvent(target.event)) {
+    const append = appendEvent(target.event);
+    if (!append) {
       this.flushKey(key);
       this.apply(target);
       return;
     }
 
     const pending = this.pendingAppends.get(key);
-    if (pending) {
+    if (pending && pending.type === append.type) {
       pending.latest = target;
-      if (target.event.content_delta) pending.content.push(target.event.content_delta);
-      if (target.event.reasoning_delta) pending.reasoning.push(target.event.reasoning_delta);
+      pending.chunks.push(append.text);
     } else {
+      if (pending) this.flushKey(key);
       this.pendingAppends.set(key, {
         latest: target,
-        content: target.event.content_delta ? [target.event.content_delta] : [],
-        reasoning: target.event.reasoning_delta ? [target.event.reasoning_delta] : [],
+        type: append.type,
+        chunks: [append.text],
       });
     }
     this.ensureScheduled();
@@ -121,24 +122,24 @@ function streamKey(target: StreamEventTarget): string {
   return `${target.sessionId}\u0000${target.event.turn_id}`;
 }
 
-function isAppendEvent(event: InteractiveTurnStreamEvent): boolean {
-  return (
-    !event.terminal &&
-    !event.final_text &&
-    (event.event_type === "content_delta" || event.event_type === "reasoning_delta")
-  );
+function appendEvent(event: TurnStreamEnvelopeV2):
+  | { type: "content_append" | "reasoning_append"; text: string }
+  | null {
+  return event.event.type === "content_append" || event.event.type === "reasoning_append"
+    ? event.event
+    : null;
 }
 
 function materializeAppend(pending: PendingAppend): StreamEventTarget {
-  const content = pending.content.join("");
-  const reasoning = pending.reasoning.join("");
+  const text = pending.chunks.join("");
   return {
     sessionId: pending.latest.sessionId,
     event: {
       ...pending.latest.event,
-      event_type: content ? "content_delta" : "reasoning_delta",
-      content_delta: content || null,
-      reasoning_delta: reasoning || null,
+      event:
+        pending.type === "content_append"
+          ? { type: "content_append", text }
+          : { type: "reasoning_append", text },
     },
   };
 }

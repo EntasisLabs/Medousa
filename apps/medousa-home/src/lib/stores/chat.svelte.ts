@@ -19,6 +19,7 @@ import type {
   ToolRunState,
   TurnTicketState,
 } from "$lib/types/chat";
+import type { TurnStreamEnvelopeV2 } from "$lib/types/generated/daemon_api";
 import type { WorkCardDetail } from "$lib/types/card";
 import type {
   SessionHistoryResponse,
@@ -59,6 +60,7 @@ import {
 } from "$lib/utils/streamOwnership";
 import { applyStreamSeq, streamPathWithSince } from "$lib/stream/reconnect";
 import { StreamEventPump, type StreamEventTarget } from "$lib/stream/eventPump";
+import { turnStreamV2ToLegacy } from "$lib/stream/v2ToLegacy";
 import { resolveTurnContent } from "$lib/utils/resolveTurnContent";
 import { friendlyUserError, MAX_MEDIA_REFS_PER_TURN } from "$lib/utils/normieErrors";
 import { settings } from "$lib/stores/settings.svelte";
@@ -2420,7 +2422,7 @@ export class ChatStore {
     }
   }
 
-  applyStreamEvent(event: InteractiveTurnStreamEvent) {
+  applyStreamEvent(event: TurnStreamEnvelopeV2) {
     const owner = this.streamOwners.get(event.turn_id);
     const targetSession = owner?.sessionId?.trim() || this.sessionId;
     const appliedSeq = this.lastAppliedSeq(targetSession, event.turn_id);
@@ -2429,7 +2431,7 @@ export class ChatStore {
 
   private applyPumpedStreamEvent(target: StreamEventTarget) {
     this.withSessionFields(target.sessionId, () => {
-      this.applyStreamEventOnFocusedFields(target.event);
+      this.applyStreamEventOnFocusedFields(turnStreamV2ToLegacy(target.event));
     });
   }
 

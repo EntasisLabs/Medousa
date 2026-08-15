@@ -16,7 +16,7 @@ import {
   notifyTurnTicketTerminal,
   notifyWorkerHandoff,
 } from "$lib/notifications";
-import { isWorkerHandoffStreamEvent, isRecoverableStreamError } from "$lib/utils/streamEvents";
+import { isRecoverableStreamError } from "$lib/utils/streamEvents";
 import {
   DEFAULT_INTERACTIVE_BACKOFF,
   DEFAULT_WORKSPACE_BACKOFF,
@@ -50,9 +50,12 @@ import {
 } from "$lib/stores/environment.svelte";
 import type { EnvironmentStreamEvent } from "$lib/types/environment";
 import { homeChannelSurface } from "$lib/platform";
-import type { InteractiveTurnStreamEvent } from "$lib/types/chat";
-import type { TurnStreamEnvelopeV2 } from "$lib/types/generated/daemon_api";
-import { turnStreamPayloadToLegacy } from "$lib/stream/v2ToLegacy";
+import type {
+  InteractiveTurnStreamEvent,
+  TurnStreamEnvelopeV2,
+} from "$lib/types/generated/daemon_api";
+import { turnStreamPayloadToV2 } from "$lib/stream/v2ToLegacy";
+import { isTerminalTurnStreamEventV2 } from "$lib/stream/v2";
 import type { WorkspaceStreamEvent } from "$lib/types/workspace";
 
 export type WorkshopConnection = {
@@ -207,32 +210,35 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
   );
   unlisteners.push(
     onInteractiveEvent<TurnStreamEnvelopeV2 | InteractiveTurnStreamEvent>((payload) => {
-      const event = turnStreamPayloadToLegacy(payload);
-      const turnBefore = chat.turns.get(event.turn_id);
-      chat.applyStreamEvent(event);
+      const envelope = turnStreamPayloadToV2(payload);
+      const turnBefore = chat.turns.get(envelope.turn_id);
+      chat.applyStreamEvent(envelope);
       if (!isTauriMobilePlatform()) return;
 
-      if (event.event_type === "budget_approval") {
-        const requestId = budgetRequestIdFromStreamEvent(event);
+      if (envelope.event.type === "budget_approval_required") {
+        const requestId = budgetRequestIdFromStreamEvent(envelope);
         if (requestId) {
           void notifyBudgetApprovalRequired(
-            event.message.split(".")[0]?.trim() || "Turn paused",
+            envelope.event.reason.split(".")[0]?.trim() || "Turn paused",
             requestId,
-            event.message,
+            envelope.event.reason,
           );
           haptic("warning");
         }
         return;
       }
 
-      if (isWorkerHandoffStreamEvent(event)) {
-        void notifyWorkerHandoff(event, turnBefore?.workspaceCardId);
+      if (
+        envelope.event.type === "worker_ack" &&
+        envelope.event.ack_kind === "worker"
+      ) {
+        void notifyWorkerHandoff(envelope, turnBefore?.workspaceCardId);
         haptic("light");
         return;
       }
 
-      if (event.terminal) {
-        void notifyTurnTicketTerminal(event, turnBefore?.workspaceCardId);
+      if (isTerminalTurnStreamEventV2(envelope.event)) {
+        void notifyTurnTicketTerminal(envelope, turnBefore?.workspaceCardId);
         haptic("success");
       }
     }),

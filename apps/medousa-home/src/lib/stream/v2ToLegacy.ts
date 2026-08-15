@@ -3,6 +3,7 @@ import type {
   TurnStreamEnvelopeV2,
   TurnStreamEventV2,
 } from "$lib/types/generated/daemon_api";
+import { isTurnStreamEnvelopeV2 } from "$lib/stream/v2";
 
 /**
  * The single Home compatibility seam while the mature chat policies still
@@ -29,10 +30,160 @@ export function turnStreamPayloadToLegacy(
   return isTurnStreamEnvelopeV2(payload) ? turnStreamV2ToLegacy(payload) : payload;
 }
 
-function isTurnStreamEnvelopeV2(
+/**
+ * Cold compatibility path for workshops that predate stream v2 negotiation.
+ * Current Home/daemon traffic is already v2 and returns without allocation.
+ */
+export function turnStreamPayloadToV2(
   payload: TurnStreamEnvelopeV2 | InteractiveTurnStreamEvent,
-): payload is TurnStreamEnvelopeV2 {
-  return "schema_version" in payload && "event" in payload;
+): TurnStreamEnvelopeV2 {
+  if (isTurnStreamEnvelopeV2(payload)) return payload;
+  return {
+    schema_version: 2,
+    turn_id: payload.turn_id,
+    seq: payload.seq ?? 0,
+    emitted_at_utc: payload.emitted_at_utc,
+    event: legacyEventToV2(payload),
+  };
+}
+
+function legacyEventToV2(event: InteractiveTurnStreamEvent): TurnStreamEventV2 {
+  const text = event.final_text ?? event.message;
+  const toolNames = event.tool_names ?? [];
+  switch (event.event_type) {
+    case "content_delta":
+      return { type: "content_append", text: event.content_delta ?? "" };
+    case "reasoning_delta":
+      return { type: "reasoning_append", text: event.reasoning_delta ?? "" };
+    case "status":
+      return {
+        type: "status",
+        phase: event.phase,
+        operator_message: event.operator_message,
+        debug_message: event.debug_message,
+      };
+    case "turn_progress":
+      return { type: "progress", message: event.message, tool_names: toolNames };
+    case "assistant_pack_hold":
+      return { type: "pack_hold", text, tool_names: toolNames };
+    case "model_receipt":
+      return {
+        type: "model_receipt",
+        provider: event.response_provider ?? "",
+        model: event.response_model ?? "",
+      };
+    case "final":
+      return { type: "final", text, tool_names: toolNames };
+    case "needs_input":
+      return { type: "needs_input", text, tool_names: toolNames };
+    case "checkpoint":
+    case "turn_checkpoint":
+      return { type: "checkpoint", text, tool_names: toolNames };
+    case "worker_synthesis":
+      return { type: "worker_synthesis", text, tool_names: toolNames, work_id: event.work_id };
+    case "worker_ack":
+    case "workshop_ack":
+      return {
+        type: "worker_ack",
+        ack_kind: event.event_type === "workshop_ack" ? "workshop" : "worker",
+        text,
+        tool_names: toolNames,
+        work_id: event.work_id,
+      };
+    case "final_pending":
+      return { type: "final_pending", text, tool_names: toolNames };
+    case "error":
+      return {
+        type: "error",
+        operator_message: event.operator_message ?? event.message,
+        debug_message: event.debug_message,
+      };
+    case "scratch_reset":
+      return { type: "scratch_reset" };
+    case "tool_started":
+      return {
+        type: "tool_started",
+        tool_run_id: requiredLegacy(event.tool_run_id, "tool_run_id"),
+        tool_name: requiredLegacy(event.tool_name, "tool_name"),
+        input_summary: requiredLegacy(event.tool_input_summary, "tool_input_summary"),
+        input_params: event.tool_input_params ?? [],
+        tool_round: event.tool_round ?? 1,
+      };
+    case "tool_finished":
+      return {
+        type: "tool_finished",
+        tool_run_id: requiredLegacy(event.tool_run_id, "tool_run_id"),
+        tool_name: requiredLegacy(event.tool_name, "tool_name"),
+        status: requiredLegacy(event.tool_status, "tool_status"),
+        input_summary: event.tool_input_summary ?? "",
+        input_params: event.tool_input_params ?? [],
+        output_summary: event.tool_output_summary,
+        tool_round: event.tool_round ?? 1,
+        artifact_refs: event.tool_artifact_refs ?? [],
+      };
+    case "artifact_presented":
+      return {
+        type: "artifact_presented",
+        artifact: requiredLegacy(event.ui_artifact, "ui_artifact"),
+      };
+    case "artifact_updated":
+      return {
+        type: "artifact_updated",
+        previous_artifact_id: requiredLegacy(
+          event.previous_artifact_id,
+          "previous_artifact_id",
+        ),
+        artifact: requiredLegacy(event.ui_artifact, "ui_artifact"),
+        root_artifact_id: event.root_artifact_id,
+      };
+    case "ui_scene":
+      return { type: "ui_scene", scene: requiredLegacy(event.ui_scene, "ui_scene") };
+    case "budget_approval":
+      return {
+        type: "budget_approval_required",
+        request_id: requiredLegacy(event.budget_request_id, "budget_request_id"),
+        rounds_executed: 0,
+        max_tool_rounds: 0,
+        requested_rounds: event.requested_rounds ?? 0,
+        reason: event.message,
+        progress_summary: event.operator_message,
+      };
+    case "browser_challenge":
+      return {
+        type: "browser_challenge",
+        session_id: requiredLegacy(event.browser_session_id, "browser_session_id"),
+        challenge_url: requiredLegacy(event.browser_challenge_url, "browser_challenge_url"),
+        reason: event.message,
+      };
+    case "browser_navigated":
+      return {
+        type: "browser_navigated",
+        url: event.message,
+        title: event.operator_message,
+        opened_by_agent: false,
+      };
+    case "context_usage":
+      return {
+        type: "context_usage",
+        report: requiredLegacy(event.context_usage, "context_usage"),
+        operator_summary: event.operator_message,
+      };
+    case "permission_request":
+      return {
+        type: "permission_request",
+        request_id: requiredLegacy(event.permission_request_id, "permission_request_id"),
+        message: event.message,
+        agent_session_id: event.agent_session_id,
+        agent_runtime: event.agent_runtime,
+      };
+    default:
+      throw new Error(`legacy stream event '${event.event_type}' has no v2 projection`);
+  }
+}
+
+function requiredLegacy<T>(value: T | null | undefined, field: string): T {
+  if (value == null) throw new Error(`legacy stream event is missing ${field}`);
+  return value;
 }
 
 function projectEvent(

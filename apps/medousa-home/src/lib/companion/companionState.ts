@@ -1,8 +1,8 @@
-import type { InteractiveTurnStreamEvent } from "$lib/types/chat";
+import type { TurnStreamEnvelopeV2 } from "$lib/types/generated/daemon_api";
 import {
-  isBudgetApprovalStreamEvent,
-  isPermissionRequestStreamEvent,
-} from "$lib/utils/streamEvents";
+  isTerminalTurnStreamEventV2,
+  terminalTurnStreamTextV2,
+} from "$lib/stream/v2";
 
 export type CompanionFeedbackTone = "success" | "error" | "attention";
 
@@ -35,51 +35,43 @@ function concise(value: string | null | undefined, fallback: string): string {
 
 export function applyCompanionStreamEvent(
   activity: CompanionActivity,
-  event: InteractiveTurnStreamEvent,
+  envelope: TurnStreamEnvelopeV2,
 ): CompanionEventResult {
   const activeTurnIds = new Set(activity.activeTurnIds);
   let feedback = activity.feedback;
   let approvalChanged = false;
+  const event = envelope.event;
 
-  if (isBudgetApprovalStreamEvent(event)) {
-    activeTurnIds.delete(event.turn_id);
+  if (event.type === "budget_approval_required") {
+    activeTurnIds.delete(envelope.turn_id);
     feedback = {
       tone: "attention",
       message: concise(
-        event.operator_message || event.message,
+        event.progress_summary || event.reason,
         "Medousa needs approval to continue.",
       ),
     };
     approvalChanged = true;
-  } else if (isPermissionRequestStreamEvent(event)) {
-    activeTurnIds.delete(event.turn_id);
+  } else if (event.type === "permission_request") {
+    activeTurnIds.delete(envelope.turn_id);
     feedback = {
       tone: "attention",
-      message: concise(
-        event.operator_message || event.message,
-        "An agent needs permission to continue.",
-      ),
+      message: concise(event.message, "An agent needs permission to continue."),
     };
-  } else if (event.event_type === "error") {
-    activeTurnIds.delete(event.turn_id);
+  } else if (event.type === "error") {
+    activeTurnIds.delete(envelope.turn_id);
     feedback = {
       tone: "error",
-      message: concise(
-        event.operator_message || event.message,
-        "That turn could not finish.",
-      ),
+      message: concise(event.operator_message, "That turn could not finish."),
     };
-  } else if (event.terminal) {
-    activeTurnIds.delete(event.turn_id);
+  } else if (isTerminalTurnStreamEventV2(event)) {
+    activeTurnIds.delete(envelope.turn_id);
     feedback = {
       tone: "success",
-      message: concise(
-        event.operator_message || event.final_text || event.message,
-        "Done.",
-      ),
+      message: concise(terminalTurnStreamTextV2(event), "Done."),
     };
   } else {
-    activeTurnIds.add(event.turn_id);
+    activeTurnIds.add(envelope.turn_id);
   }
 
   return { activeTurnIds, feedback, approvalChanged };
