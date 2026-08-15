@@ -10,6 +10,7 @@
   const content = $derived(typeof node.props.markdown === "string" ? node.props.markdown : "");
   /** Plain mode renders verbatim text (user/system turns), never parsed as markdown. */
   const plain = $derived(node.props.plain === true);
+  const streaming = $derived(node.props.streaming === true);
 </script>
 
 <div class="liquid-prose">
@@ -20,6 +21,7 @@
       {content}
       titleByPath={ctx.titleByPath}
       openLinksInWeb={ctx.openLinksInWeb ?? false}
+      {streaming}
     />
   {/if}
 </div>

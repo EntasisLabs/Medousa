@@ -247,6 +247,53 @@ function normalizeRenderOptions(
   return {};
 }
 
+function renderMarkdownWithState(
+  source: string,
+  options: MarkdownRenderOptions,
+  headingSlugCounts: Map<string, number>,
+  taskCheckboxIndex: { value: number },
+): string {
+  if (!source.trim()) return "";
+  const parser = createMarked(options, headingSlugCounts, taskCheckboxIndex);
+  const preprocessed = preprocessMarkdown(source, options.titleByPath);
+  const raw = parser.parse(preprocessed, { async: false }) as string;
+  return sanitizeHtml(enhanceResumePresentation(wrapMarkdownTables(raw)));
+}
+
+export interface MarkdownRenderSession {
+  /** Render a block once and advance heading/task identity for later blocks. */
+  renderStable(source: string): string;
+  /** Render a replaceable tail without advancing stable identity. */
+  renderTail(source: string): string;
+}
+
+/** Invocation-scoped renderer state for one stable-block Markdown surface. */
+export function createMarkdownRenderSession(
+  options?: Map<string, string> | MarkdownRenderOptions,
+): MarkdownRenderSession {
+  const renderOptions = normalizeRenderOptions(options);
+  const headingSlugCounts = new Map<string, number>();
+  const taskCheckboxIndex = { value: 0 };
+  return {
+    renderStable(source) {
+      return renderMarkdownWithState(
+        source,
+        renderOptions,
+        headingSlugCounts,
+        taskCheckboxIndex,
+      );
+    },
+    renderTail(source) {
+      return renderMarkdownWithState(
+        source,
+        renderOptions,
+        new Map(headingSlugCounts),
+        { value: taskCheckboxIndex.value },
+      );
+    },
+  };
+}
+
 /**
  * Inline-only markdown for titles / headings (`**bold**`, *italics*, `code`,
  * links). Does not produce block wrappers — safe inside `<h*>` / spans.
@@ -263,16 +310,7 @@ export function renderMarkdown(
   source: string,
   options?: Map<string, string> | MarkdownRenderOptions,
 ): string {
-  if (!source.trim()) return "";
-
-  const renderOptions = normalizeRenderOptions(options);
-  const parser = createMarked(renderOptions, new Map(), { value: 0 });
-  const preprocessed = preprocessMarkdown(
-    source,
-    renderOptions.titleByPath,
-  );
-  const raw = parser.parse(preprocessed, { async: false }) as string;
-  return sanitizeHtml(enhanceResumePresentation(wrapMarkdownTables(raw)));
+  return createMarkdownRenderSession(options).renderStable(source);
 }
 
 /** Strip tags for short-cell heuristics (skills / expertise matrices). */

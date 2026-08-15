@@ -18,7 +18,7 @@
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "check:browser-capabilities": "node scripts/verify-browser-capabilities.mjs",
     "test:browser-attacker": "node scripts/browser-attacker-server.mjs",
-    "bench:p02": "node scripts/p02-stream-render-baseline.mjs",
+    "bench:p02": "node --expose-gc scripts/p02-stream-render-baseline.mjs",
     "pretest": "tsc -p ../../packages/medousa-liquid-markdown/tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",

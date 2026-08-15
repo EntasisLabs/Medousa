@@ -1,5 +1,10 @@
 <script lang="ts">
-  import { renderMarkdown } from "$lib/markdown";
+  import {
+    createMarkdownRenderSession,
+    renderMarkdown,
+    type MarkdownRenderSession,
+  } from "$lib/markdown/render";
+  import { StreamingMarkdownBlocks } from "$lib/markdown/streamingBlocks";
   import { hydrateMarkdownContainer } from "$lib/markdown/hydrateMarkdownContainer";
   import { destroyLiquidEmbeds } from "$lib/markdown/hydrateLiquidEmbeds";
   import { destroyDrawEmbeds } from "$lib/draw/hydrateDrawEmbeds";
@@ -8,7 +13,8 @@
     type LiquidRenderContext,
   } from "$lib/liquid/render/context";
   import { openInBrowser, isHttpUrl } from "$lib/utils/openInBrowser";
-  import { onDestroy } from "svelte";
+  import { onDestroy, untrack } from "svelte";
+  import HydratedMarkdownBlock from "$lib/components/ui/HydratedMarkdownBlock.svelte";
 
   interface Props {
     content: string;
@@ -17,6 +23,8 @@
     openLinksInWeb?: boolean;
     /** Optional override; defaults to inherited Liquid context when inside a scene. */
     liquidContext?: LiquidRenderContext;
+    /** Retain completed blocks while only the final Markdown token is changing. */
+    streaming?: boolean;
   }
 
   let {
@@ -24,11 +32,18 @@
     titleByPath,
     openLinksInWeb = false,
     liquidContext,
+    streaming = false,
   }: Props = $props();
 
   let container: HTMLDivElement | undefined = $state();
 
   const inherited = getLiquidContext();
+  let stableMode = $state(untrack(() => streaming));
+  let stableBlocks = $state<{ id: number; html: string }[]>([]);
+  let tailHtml = $state("");
+  let nextBlockId = 0;
+  const streamingBlocks = new StreamingMarkdownBlocks();
+  let renderSession: MarkdownRenderSession = createStreamingRenderSession();
 
   function resolveContext(): LiquidRenderContext {
     return {
@@ -41,13 +56,46 @@
     };
   }
 
+  function createStreamingRenderSession(): MarkdownRenderSession {
+    const ctx = resolveContext();
+    return createMarkdownRenderSession({
+      titleByPath: ctx.titleByPath,
+      resolveLocalImages: Boolean(ctx.localImagePath),
+    });
+  }
+
   const html = $derived.by(() => {
+    if (stableMode) return "";
     const ctx = resolveContext();
     return renderMarkdown(content, {
       titleByPath: ctx.titleByPath,
       // Nested slide/report bodies need the same vault image pipeline as preview.
       resolveLocalImages: Boolean(ctx.localImagePath),
     });
+  });
+
+  $effect(() => {
+    const source = content;
+    const terminal = !streaming;
+    if (streaming) stableMode = true;
+    if (!stableMode) return;
+
+    const update = streamingBlocks.update(source, terminal);
+    if (update.reset) {
+      stableBlocks = [];
+      nextBlockId = 0;
+      renderSession = createStreamingRenderSession();
+    }
+    if (update.completed.length > 0) {
+      stableBlocks = [
+        ...stableBlocks,
+        ...update.completed.map((block) => ({
+          id: nextBlockId++,
+          html: renderSession.renderStable(block),
+        })),
+      ];
+    }
+    tailHtml = renderSession.renderTail(update.tail);
   });
 
   function handleLinkClick(event: MouseEvent) {
@@ -67,6 +115,7 @@
   }
 
   $effect(() => {
+    if (stableMode) return;
     html;
     if (!container) return;
     const ctx = resolveContext();
@@ -97,5 +146,15 @@
   onclick={handleLinkClick}
   onkeydown={handleLinkKeydown}
 >
-  {@html html}
+  {#if stableMode}
+    {@const ctx = resolveContext()}
+    {#each stableBlocks as block (block.id)}
+      <HydratedMarkdownBlock html={block.html} liquidContext={ctx} />
+    {/each}
+    {#if tailHtml}
+      <div data-streaming-markdown-tail="">{@html tailHtml}</div>
+    {/if}
+  {:else}
+    {@html html}
+  {/if}
 </div>
