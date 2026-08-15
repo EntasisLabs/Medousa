@@ -9,10 +9,15 @@ Forge/Git work is admitted through `ForgeExecutionService` before it runs.
 
 | Symptom | Meaning | Action |
 |---------|---------|--------|
-| HTTP `503` with `kind: overloaded` | Command, byte, class, or repository-lane budget is exhausted | Retry with backoff. Do not restart the daemon to “clear” a healthy queue. Reduce concurrent Home/API clients or wait for network Git / observation jobs to finish. |
+| HTTP `503` with `kind: overloaded` | Global command queue (64) or queued-byte budget is exhausted, or estimated retained bytes exceed the class budget / lane registry is full | Retry with backoff. Do not restart the daemon to “clear” a healthy queue. Reduce concurrent Home/API clients or wait for network Git / observation jobs to finish. |
+| Forge request waits while others run | Class worker or repository-lane slot is busy; the job is queued under the global cap | Expected. Health and unrelated streams should still respond (ASYNC-001). |
 | Health stays up while Forge is slow | Expected. Blocking work is off Tokio request workers | Confirm `/health` and H03 streams still respond. If they stall, file an ASYNC-001 regression. |
 
-Caps (starting numbers): 64 queued commands, 8 blocking jobs, 2 network Git processes, 2 observation jobs, 8 MiB queued bytes, 1 mutating operation per repository.
+Caps: 64 admitted commands (queued or running), 8 blocking workers, 2 network Git
+processes, 2 observation jobs, 8 MiB queued bytes, 1 mutating operation per
+repository. Class and repository-lane slots **wait** inside the 64-command
+queue; only a full global queue or exhausted byte budget returns `503`
+immediately.
 
 ## Slug and catalog repair
 
