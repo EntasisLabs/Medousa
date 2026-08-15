@@ -159,11 +159,31 @@ impl TurnPipelineHandle {
         self.emit_with_journal(event, None).await
     }
 
+    /// Transfers an event into the bounded actor without waiting for output.
+    /// Semantic and terminal producers should use [`Self::emit`]; this is for
+    /// high-frequency provider text whose final fence is a later semantic event.
+    pub async fn admit(&self, event: TurnStreamEventV2) -> Result<(), TurnPipelineError> {
+        self.send(event, None).await.map(drop)
+    }
+
     pub async fn emit_with_journal(
         &self,
         event: TurnStreamEventV2,
         journal_override: Option<TurnEvent>,
     ) -> Result<u64, TurnPipelineError> {
+        let receipt = self.send(event, journal_override).await?;
+        tokio::select! {
+            biased;
+            () = self.cancellation.cancelled() => Err(TurnPipelineError::Cancelled),
+            result = receipt => result.map_err(|_| TurnPipelineError::Closed)?,
+        }
+    }
+
+    async fn send(
+        &self,
+        event: TurnStreamEventV2,
+        journal_override: Option<TurnEvent>,
+    ) -> Result<oneshot::Receiver<Result<u64, TurnPipelineError>>, TurnPipelineError> {
         let mut encoded_size = EncodedSize::default();
         serde_json::to_writer(&mut encoded_size, &event)
             .map_err(|error| TurnPipelineError::Output(error.to_string()))?;
@@ -213,11 +233,7 @@ impl TurnPipelineHandle {
             },
             ack,
         }));
-        tokio::select! {
-            biased;
-            () = self.cancellation.cancelled() => Err(TurnPipelineError::Cancelled),
-            result = receipt => result.map_err(|_| TurnPipelineError::Closed)?,
-        }
+        Ok(receipt)
     }
 
     /// Forces a semantic coalescing boundary after all previously admitted events.
@@ -581,6 +597,23 @@ mod tests {
             TurnStreamEventV2::ContentAppend { text } if text == "hello world"
         ));
         assert_eq!(pipeline.metrics().coalesced_commands, 1);
+    }
+
+    #[tokio::test]
+    async fn admitted_provider_fragments_batch_before_a_semantic_fence() {
+        let output = Arc::new(RecordingOutput::default());
+        let pipeline = pipeline(Arc::clone(&output));
+
+        pipeline.admit(content("one")).await.unwrap();
+        pipeline.admit(content(" two")).await.unwrap();
+        pipeline.flush().await.unwrap();
+
+        let events = output.events.lock().unwrap();
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            &events[0].event,
+            TurnStreamEventV2::ContentAppend { text } if text == "one two"
+        ));
     }
 
     #[tokio::test]

@@ -257,7 +257,21 @@ impl InteractiveTurnStreamSink {
             )
             .await;
         }
-        if let Err(error) = self.pipeline.emit_with_journal(event, journal_override).await {
+        let deferred_append = journal_override.is_none()
+            && matches!(
+                &event,
+                TurnStreamEventV2::ContentAppend { .. }
+                    | TurnStreamEventV2::ReasoningAppend { .. }
+        );
+        let result = if deferred_append {
+            self.pipeline.admit(event).await
+        } else {
+            self.pipeline
+                .emit_with_journal(event, journal_override)
+                .await
+                .map(|_| ())
+        };
+        if let Err(error) = result {
             tracing::warn!(turn_id = %self.turn_id, %error, "turn pipeline rejected stream event");
         }
     }
@@ -348,9 +362,6 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             return;
         }
         self.append_stream_delta(&delta);
-        if let Ok(mut parts) = self.parts.lock() {
-            parts.push_content_delta(&delta);
-        }
         self.publish_tracked(TurnStreamEventV2::ContentAppend { text: delta })
         .await;
     }

@@ -13,6 +13,7 @@ use stasis::application::orchestration::tool_loop_pipeline::ToolLoopExecutionReq
 use tokio::sync::RwLock;
 
 use crate::agent_runtime::stream_sink::SharedAgentStreamSink;
+use crate::agent_runtime::provider_stream::{ProviderStreamBridge, fail_on_stream_overflow};
 use crate::agent_runtime::system_prompt::DEFAULT_SYSTEM_PROMPT;
 use crate::agent_runtime::turn_completion::ToolLoopCompletionGate;
 use crate::agent_runtime::turn_ledger::append_tool_loop_policy;
@@ -34,7 +35,7 @@ use stasis::application::orchestration::prompt_pipeline::{
     PromptExecutionPipeline, PromptExecutionRequest,
 };
 use stasis::application::orchestration::tool_registry::ToolRegistry;
-use stasis::ports::outbound::ai_chat_client::{AiChatClient, StreamDelta};
+use stasis::ports::outbound::ai_chat_client::AiChatClient;
 
 use stasis::prelude::RuntimeComposition;
 
@@ -779,30 +780,6 @@ fn ledger_bus_event(
     persist_ledger_record(Some(session_id), &record);
 }
 
-struct WorkerChunkPump {
-    task: Option<tokio::task::JoinHandle<()>>,
-}
-
-impl WorkerChunkPump {
-    fn new(task: tokio::task::JoinHandle<()>) -> Self {
-        Self { task: Some(task) }
-    }
-
-    async fn drain(mut self) {
-        if let Some(task) = self.task.take() {
-            let _ = task.await;
-        }
-    }
-}
-
-impl Drop for WorkerChunkPump {
-    fn drop(&mut self) {
-        if let Some(task) = self.task.take() {
-            task.abort();
-        }
-    }
-}
-
 pub async fn run_worker_turn(
     store: Arc<TurnWorkerStore>,
     ctx: WorkerRuntimeContext,
@@ -1077,34 +1054,22 @@ async fn run_worker_turn_inner(
         return;
     }
 
-    // Stream worker tokens into the sink so Home can show live reasoning and
-    // draft output. The sink batches these before touching the store.
-    let (chunk_tx, mut chunk_rx) = tokio::sync::mpsc::unbounded_channel::<StreamDelta>();
-    let chunk_sink = sink.clone();
-    let chunk_pump = WorkerChunkPump::new(tokio::spawn(async move {
-        while let Some(delta) = chunk_rx.recv().await {
-            match delta {
-                StreamDelta::Content(delta) => chunk_sink.content_chunk(0, delta).await,
-                StreamDelta::Reasoning(delta) | StreamDelta::ThoughtSignature(delta) => {
-                    chunk_sink.reasoning_chunk(0, delta).await
-                }
-            }
-        }
-    }));
+    let mut chunk_bridge = ProviderStreamBridge::new(sink.clone(), stream_turn_id);
+    let chunk_stream = chunk_bridge.attempt();
 
     let result = worker_pipeline
         .execute_with_stream_prior_messages_max_rounds(
             request,
             Vec::new(),
-            Some(&chunk_tx),
+            Some(chunk_stream.sender()),
             worker_max_rounds,
             Some(&mut completion_gate),
             None,
         )
         .await;
 
-    drop(chunk_tx);
-    chunk_pump.drain().await;
+    let result = fail_on_stream_overflow(result, chunk_stream.finish().await);
+    chunk_bridge.drain().await;
 
     match result {
         Ok(response) => {
@@ -1890,23 +1855,4 @@ mod tests {
         assert_eq!(store.live_execution_count(), 0);
     }
 
-    #[tokio::test]
-    async fn dropped_worker_chunk_pump_aborts_with_live_sender() {
-        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<()>();
-        let pump = WorkerChunkPump::new(tokio::spawn(async move {
-            while receiver.recv().await.is_some() {}
-        }));
-        let task = pump.task.as_ref().unwrap().abort_handle();
-
-        drop(pump);
-        for _ in 0..10 {
-            if task.is_finished() {
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
-
-        assert!(task.is_finished());
-        drop(sender);
-    }
 }

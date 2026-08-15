@@ -10,6 +10,7 @@ pub mod active_stream_sink;
 pub mod ambient_context;
 pub mod daemon_interactive_turn;
 pub mod execution_context;
+pub(crate) mod provider_stream;
 #[cfg(test)]
 mod golden_turn;
 #[cfg(test)]
