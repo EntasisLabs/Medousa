@@ -167,6 +167,13 @@ impl Drop for OverlapPermit {
 
 /// Strip any existing query string and append `?since=<seq>` for spine replay.
 pub fn stream_path_with_since(path: &str, since: u64) -> String {
+    if let Ok(mut url) = reqwest::Url::parse(path) {
+        url.set_query(None);
+        if since > 0 {
+            url.query_pairs_mut().append_pair("since", &since.to_string());
+        }
+        return url.into();
+    }
     let base = path.split('?').next().unwrap_or(path);
     if since == 0 {
         return path_with_query(base, &[]);
@@ -191,6 +198,17 @@ mod tests {
         assert_eq!(
             stream_path_with_since("/v1/interactive/turn/t1/stream?since=1", 99),
             "/v1/interactive/turn/t1/stream?since=99"
+        );
+    }
+
+    #[test]
+    fn stream_path_preserves_absolute_origin() {
+        assert_eq!(
+            stream_path_with_since(
+                "https://workshop.example/v1/interactive/turn/t1/stream?since=1",
+                99,
+            ),
+            "https://workshop.example/v1/interactive/turn/t1/stream?since=99"
         );
     }
 

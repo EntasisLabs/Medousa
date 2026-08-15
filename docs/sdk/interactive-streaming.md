@@ -106,6 +106,9 @@ let mut events = client
 ```
 
 Helper: `medousa_sdk::stream_path_with_since("/v1/interactive/turn/t1/stream", 42)` → `...?since=42`.
+Absolute `stream_url` values retain their scheme and authority when the cursor
+is replaced; `HttpTransport` accepts both absolute daemon responses and
+relative paths.
 
 The unsuffixed `stream_reconnecting*` and `stream_turn_reconnecting` methods
 remain frozen v1 compatibility adapters during the support window.
@@ -207,7 +210,12 @@ See [custom-chat-ui.md](../cookbook/custom-chat-ui.md).
 
 ## Tauri / workshop transport
 
-`medousa-home` routes JSON + SSE through [`medousa-sdk-iroh`](../../crates/medousa-sdk-iroh/) (`WorkshopTransport`). Reconnect discipline for the webview lives in [`apps/medousa-home/src/lib/stream/reconnect.ts`](../../apps/medousa-home/src/lib/stream/reconnect.ts) — bounded backoff, overlap guard, and `?since=<seq>` replay aligned with the Rust/Python SDK helpers. Multipart uploads still use the legacy `workshop_transport` helpers.
+`medousa-home` routes JSON + SSE through [`medousa-sdk-iroh`](../../crates/medousa-sdk-iroh/) (`WorkshopTransport`), which forwards the negotiated v2 media type over both LAN and Iroh routes. Reconnect discipline for the webview lives in [`apps/medousa-home/src/lib/stream/reconnect.ts`](../../apps/medousa-home/src/lib/stream/reconnect.ts) — bounded backoff, overlap guard, and `?since=<seq>` replay aligned with the Rust/Python SDK helpers. Multipart uploads still use the legacy `workshop_transport` helpers.
+
+The first-party TUI and channel adapter ingest paths use the Rust SDK's typed
+v2 reconnect stream directly. They do not maintain separate string-buffer SSE
+parsers or project through `InteractiveTurnStreamEvent`; replay overlap and
+terminal detection therefore follow the same SDK state machine as integrators.
 
 ---
 

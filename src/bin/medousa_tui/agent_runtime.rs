@@ -6,7 +6,7 @@ use stasis::application::orchestration::tool_loop_pipeline::ToolCallMode;
 use tokio::sync::mpsc;
 
 use medousa::{
-    InteractiveTurnRequest, InteractiveTurnStreamEvent, TuiRuntime,
+    InteractiveTurnRequest, TuiRuntime,
     agent_runtime::{
         prompt_prep,
         stream_sink::AgentStreamSink,
@@ -25,6 +25,8 @@ use medousa::{
     payload_receipt::ArtifactReceiptMeta,
     turn_continuation::TurnContinuationScope,
 };
+use medousa_sdk::{HttpTransport, MedousaClient};
+use medousa_types::{TurnStreamEnvelopeV2, TurnStreamEventV2};
 use serde_json::Value;
 
 use super::daemon_commands::daemon_start_interactive_turn;
@@ -832,34 +834,18 @@ async fn consume_daemon_interactive_stream(
         medousa_local_credential::TUI_LOCAL_NAME,
     )
     .map_err(|err| err.to_string())?;
-    let response = client
-        .get(stream_url)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?
-        .error_for_status()
-        .map_err(|err| err.to_string())?;
-
-    let mut bytes = response.bytes_stream();
-    let mut buffer = String::new();
+    let sdk = MedousaClient::with_transport(
+        Arc::new(HttpTransport::with_client(client)),
+        stream_url,
+    );
+    let interactive = sdk.interactive();
+    let mut events = interactive.stream_reconnecting_v2(stream_url);
     let mut saw_terminal = false;
 
-    while let Some(chunk) = bytes.next().await {
-        let chunk = chunk.map_err(|err| err.to_string())?;
-        let text = String::from_utf8_lossy(&chunk).to_string();
-        buffer.push_str(&text);
-
-        while let Some(idx) = buffer.find("\n\n") {
-            let frame = buffer[..idx].to_string();
-            buffer = buffer[idx + 2..].to_string();
-
-            let Some(payload) = parse_daemon_stream_payload(&frame) else {
-                continue;
-            };
-
-            if dispatch_daemon_stream_event(payload, turn_id, event_tx).await? {
-                saw_terminal = true;
-            }
+    while let Some(payload) = events.next().await {
+        let payload = payload.map_err(|err| err.to_string())?;
+        if dispatch_daemon_stream_event(payload, turn_id, event_tx).await? {
+            saw_terminal = true;
         }
     }
 
@@ -870,119 +856,97 @@ async fn consume_daemon_interactive_stream(
     Ok(())
 }
 
-fn parse_daemon_stream_payload(frame: &str) -> Option<InteractiveTurnStreamEvent> {
-    let data = frame
-        .lines()
-        .filter_map(|line| {
-            if let Some(value) = line.strip_prefix("data: ") {
-                Some(value)
-            } else if let Some(value) = line.strip_prefix("data:") {
-                Some(value.trim_start())
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    if data.trim().is_empty() {
-        return None;
-    }
-
-    serde_json::from_str::<InteractiveTurnStreamEvent>(&data).ok()
-}
-
 async fn dispatch_daemon_stream_event(
-    payload: InteractiveTurnStreamEvent,
+    payload: TurnStreamEnvelopeV2,
     turn_id: u64,
     event_tx: &mpsc::Sender<TuiEvent>,
 ) -> std::result::Result<bool, String> {
-    match payload.event_type.as_str() {
-        "scratch_reset" => {
+    let terminal = payload.event.is_terminal();
+    match payload.event {
+        TurnStreamEventV2::ScratchReset => {
             event_tx
                 .send(TuiEvent::AgentScratchReset { turn_id })
                 .await
                 .map_err(|err| err.to_string())?;
         }
-        "assistant_pack_hold" => {
-            let held = payload
-                .final_text
-                .or_else(|| {
-                    let trimmed = payload.message.trim();
-                    if trimmed.is_empty() {
-                        None
-                    } else {
-                        Some(trimmed.to_string())
-                    }
-                })
-                .unwrap_or_default();
+        TurnStreamEventV2::PackHold {
+            text: held,
+            tool_names,
+        } => {
             event_tx
                 .send(TuiEvent::AgentPackHold {
                     turn_id,
                     held,
-                    tool_names: payload.tool_names.unwrap_or_default(),
+                    tool_names,
                 })
                 .await
                 .map_err(|err| err.to_string())?;
         }
-        "content_delta" => {
-            if let Some(delta) = payload.content_delta {
+        TurnStreamEventV2::ContentAppend { text } => {
+            if !text.is_empty() {
                 event_tx
-                    .send(TuiEvent::AgentChunk { turn_id, delta })
-                    .await
-                    .map_err(|err| err.to_string())?;
-            }
-        }
-        "reasoning_delta" => {
-            if let Some(delta) = payload.reasoning_delta {
-                event_tx
-                    .send(TuiEvent::AgentReasoningChunk { turn_id, delta })
-                    .await
-                    .map_err(|err| err.to_string())?;
-            }
-        }
-        "tool_started" => {
-            if let (Some(run_id), Some(tool_name)) = (payload.tool_run_id, payload.tool_name) {
-                event_tx
-                    .send(TuiEvent::ToolRunStarted {
-                        tool_run_id: run_id,
-                        tool_name,
-                        input_summary: payload.tool_input_summary.unwrap_or_default(),
-                        tool_round: payload.tool_round.unwrap_or(1),
+                    .send(TuiEvent::AgentChunk {
+                        turn_id,
+                        delta: text,
                     })
                     .await
                     .map_err(|err| err.to_string())?;
             }
         }
-        "tool_finished" => {
-            if let (Some(run_id), Some(tool_name)) = (payload.tool_run_id, payload.tool_name) {
+        TurnStreamEventV2::ReasoningAppend { text } => {
+            if !text.is_empty() {
                 event_tx
-                    .send(TuiEvent::ToolRunFinished {
-                        tool_run_id: run_id,
-                        tool_name,
-                        status: payload
-                            .tool_status
-                            .unwrap_or_else(|| "succeeded".to_string()),
-                        input_summary: payload.tool_input_summary.unwrap_or_default(),
-                        output_summary: payload.tool_output_summary,
-                        tool_round: payload.tool_round.unwrap_or(1),
+                    .send(TuiEvent::AgentReasoningChunk {
+                        turn_id,
+                        delta: text,
                     })
                     .await
                     .map_err(|err| err.to_string())?;
             }
         }
-        "needs_input" => {
-            let text = payload
-                .final_text
-                .or_else(|| {
-                    if payload.message.trim().is_empty() {
-                        None
-                    } else {
-                        Some(payload.message.clone())
-                    }
+        TurnStreamEventV2::ToolStarted {
+            tool_run_id,
+            tool_name,
+            input_summary,
+            tool_round,
+            ..
+        } => {
+            event_tx
+                .send(TuiEvent::ToolRunStarted {
+                    tool_run_id,
+                    tool_name,
+                    input_summary,
+                    tool_round,
                 })
-                .unwrap_or_else(|| "(empty clarification request)".to_string());
-            let tool_names = payload.tool_names.unwrap_or_default();
+                .await
+                .map_err(|err| err.to_string())?;
+        }
+        TurnStreamEventV2::ToolFinished {
+            tool_run_id,
+            tool_name,
+            status,
+            input_summary,
+            output_summary,
+            tool_round,
+            ..
+        } => {
+            event_tx
+                .send(TuiEvent::ToolRunFinished {
+                    tool_run_id,
+                    tool_name,
+                    status,
+                    input_summary,
+                    output_summary,
+                    tool_round,
+                })
+                .await
+                .map_err(|err| err.to_string())?;
+        }
+        TurnStreamEventV2::NeedsInput {
+            text,
+            tool_names,
+        } => {
+            let text = fallback_text(text, "(empty clarification request)");
             event_tx
                 .send(TuiEvent::AgentNeedsInput {
                     turn_id,
@@ -992,35 +956,30 @@ async fn dispatch_daemon_stream_event(
                 .await
                 .map_err(|err| err.to_string())?;
         }
-        "turn_checkpoint" => {
-            let text = payload
-                .final_text
-                .or_else(|| {
-                    if payload.message.trim().is_empty() {
-                        None
-                    } else {
-                        Some(payload.message.clone())
-                    }
-                })
-                .unwrap_or_else(|| "(empty checkpoint update)".to_string());
-            let tool_names = payload.tool_names.unwrap_or_default();
+        TurnStreamEventV2::Checkpoint {
+            text,
+            tool_names,
+        } => {
             event_tx
                 .send(TuiEvent::AgentResponse {
                     turn_id,
-                    text,
+                    text: fallback_text(text, "(empty checkpoint update)"),
                     tool_names,
-                    terminal: payload.terminal,
+                    terminal: true,
                     work_id: None,
                 })
                 .await
                 .map_err(|err| err.to_string())?;
         }
-        "final_pending" | "turn_progress" => {
-            let message = payload.message.trim();
+        TurnStreamEventV2::FinalPending { text, tool_names }
+        | TurnStreamEventV2::Progress {
+            message: text,
+            tool_names,
+        } => {
+            let message = text.trim();
             if message.is_empty() {
                 return Ok(false);
             }
-            let tool_names = payload.tool_names.unwrap_or_default();
             event_tx
                 .send(TuiEvent::AgentTurnProgress {
                     turn_id,
@@ -1030,107 +989,180 @@ async fn dispatch_daemon_stream_event(
                 .await
                 .map_err(|err| err.to_string())?;
         }
-        "worker_ack" | "workshop_ack" => {
-            let text = payload
-                .final_text
-                .or_else(|| {
-                    if payload.message.trim().is_empty() {
-                        None
-                    } else {
-                        Some(payload.message.clone())
-                    }
-                })
-                .unwrap_or_else(|| "(worker handoff)".to_string());
+        TurnStreamEventV2::WorkerAck {
+            text,
+            tool_names,
+            work_id,
+            ..
+        } => {
             event_tx
                 .send(TuiEvent::AgentResponse {
                     turn_id,
-                    text,
-                    tool_names: payload.tool_names.unwrap_or_default(),
-                    terminal: false,
-                    work_id: payload.work_id,
-                })
-                .await
-                .map_err(|err| err.to_string())?;
-        }
-        "worker_synthesis" => {
-            let text = payload
-                .final_text
-                .or_else(|| {
-                    if payload.message.trim().is_empty() {
-                        None
-                    } else {
-                        Some(payload.message.clone())
-                    }
-                })
-                .unwrap_or_else(|| "(empty worker synthesis)".to_string());
-            event_tx
-                .send(TuiEvent::AgentResponse {
-                    turn_id,
-                    text,
-                    tool_names: payload.tool_names.unwrap_or_default(),
-                    terminal: true,
-                    work_id: payload.work_id,
-                })
-                .await
-                .map_err(|err| err.to_string())?;
-        }
-        "final" => {
-            let text = payload
-                .final_text
-                .or_else(|| {
-                    if payload.message.trim().is_empty() {
-                        None
-                    } else {
-                        Some(payload.message.clone())
-                    }
-                })
-                .unwrap_or_else(|| "(empty daemon final response)".to_string());
-            let tool_names = payload.tool_names.unwrap_or_default();
-            let handoff_phase = payload.phase == "worker_ack" || payload.phase == "workshop_ack";
-            event_tx
-                .send(TuiEvent::AgentResponse {
-                    turn_id,
-                    text,
+                    text: fallback_text(text, "(worker handoff)"),
                     tool_names,
-                    terminal: payload.terminal,
-                    work_id: if handoff_phase { payload.work_id } else { None },
+                    terminal: false,
+                    work_id,
                 })
                 .await
                 .map_err(|err| err.to_string())?;
         }
-        "error" => {
-            let message = if payload.message.trim().is_empty() {
-                "daemon interactive stream failed".to_string()
-            } else {
-                payload.message
-            };
+        TurnStreamEventV2::WorkerSynthesis {
+            text,
+            tool_names,
+            work_id,
+        } => {
             event_tx
-                .send(TuiEvent::AgentError { turn_id, message })
+                .send(TuiEvent::AgentResponse {
+                    turn_id,
+                    text: fallback_text(text, "(empty worker synthesis)"),
+                    tool_names,
+                    terminal: true,
+                    work_id,
+                })
                 .await
                 .map_err(|err| err.to_string())?;
         }
-        "context_usage" => {
-            if let Some(report) = payload.context_usage {
-                event_tx
-                    .send(TuiEvent::ContextUsage { report })
-                    .await
-                    .map_err(|err| err.to_string())?;
-            }
+        TurnStreamEventV2::Final { text, tool_names } => {
+            event_tx
+                .send(TuiEvent::AgentResponse {
+                    turn_id,
+                    text: fallback_text(text, "(empty daemon final response)"),
+                    tool_names,
+                    terminal: true,
+                    work_id: None,
+                })
+                .await
+                .map_err(|err| err.to_string())?;
         }
-        _ => {
-            if !payload.message.trim().is_empty() {
-                event_tx
-                    .send(TuiEvent::UiNotice(format!(
-                        "◈ daemon interactive {} {}",
-                        payload.phase, payload.message
-                    )))
-                    .await
-                    .map_err(|err| err.to_string())?;
-            }
+        TurnStreamEventV2::Error {
+            operator_message, ..
+        } => {
+            event_tx
+                .send(TuiEvent::AgentError {
+                    turn_id,
+                    message: fallback_text(
+                        operator_message,
+                        "daemon interactive stream failed",
+                    ),
+                })
+                .await
+                .map_err(|err| err.to_string())?;
         }
+        TurnStreamEventV2::ContextUsage { report, .. } => {
+            event_tx
+                .send(TuiEvent::ContextUsage { report })
+                .await
+                .map_err(|err| err.to_string())?;
+        }
+        TurnStreamEventV2::Status {
+            phase,
+            operator_message: Some(message),
+            ..
+        } => {
+            send_daemon_notice(event_tx, &phase, &message).await?;
+        }
+        TurnStreamEventV2::BudgetApprovalRequired {
+            request_id,
+            rounds_executed,
+            max_tool_rounds,
+            requested_rounds,
+            progress_summary,
+            reason,
+        } => {
+            event_tx
+                .send(TuiEvent::TurnBudgetApprovalRequired {
+                    turn_id,
+                    request_id,
+                    rounds_executed,
+                    max_tool_rounds,
+                    requested_rounds,
+                    reason,
+                    progress_summary,
+                })
+                .await
+                .map_err(|err| err.to_string())?;
+        }
+        TurnStreamEventV2::BrowserChallenge { reason, .. } => {
+            send_daemon_notice(event_tx, "browser challenge", &reason).await?;
+        }
+        TurnStreamEventV2::BrowserNavigated { title, url, .. } => {
+            send_daemon_notice(
+                event_tx,
+                "browser navigated",
+                title.as_deref().unwrap_or(&url),
+            )
+            .await?;
+        }
+        TurnStreamEventV2::PermissionRequest { message, .. } => {
+            send_daemon_notice(event_tx, "permission required", &message).await?;
+        }
+        TurnStreamEventV2::Status { .. }
+        | TurnStreamEventV2::ModelReceipt { .. }
+        | TurnStreamEventV2::ArtifactPresented { .. }
+        | TurnStreamEventV2::ArtifactUpdated { .. }
+        | TurnStreamEventV2::UiScene { .. } => {}
     }
 
-    Ok(payload.terminal)
+    Ok(terminal)
+}
+
+fn fallback_text(text: String, fallback: &str) -> String {
+    if text.trim().is_empty() {
+        fallback.to_string()
+    } else {
+        text
+    }
+}
+
+async fn send_daemon_notice(
+    event_tx: &mpsc::Sender<TuiEvent>,
+    phase: &str,
+    message: &str,
+) -> std::result::Result<(), String> {
+    if !message.trim().is_empty() {
+        event_tx
+            .send(TuiEvent::UiNotice(format!(
+                "◈ daemon interactive {phase} {message}"
+            )))
+            .await
+            .map_err(|err| err.to_string())?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod stream_v2_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn typed_final_dispatches_one_terminal_response() {
+        let envelope = TurnStreamEnvelopeV2::new(
+            "daemon-turn-1",
+            1,
+            chrono::Utc::now(),
+            TurnStreamEventV2::Final {
+                text: "done".to_string(),
+                tool_names: vec!["search".to_string()],
+            },
+        )
+        .expect("v2 envelope");
+        let (event_tx, mut event_rx) = mpsc::channel(1);
+
+        let terminal = dispatch_daemon_stream_event(envelope, 7, &event_tx)
+            .await
+            .expect("dispatch");
+
+        assert!(terminal);
+        assert!(matches!(
+            event_rx.recv().await,
+            Some(TuiEvent::AgentResponse {
+                turn_id: 7,
+                text,
+                terminal: true,
+                ..
+            }) if text == "done"
+        ));
+    }
 }
 
 fn build_prior_messages(

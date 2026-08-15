@@ -196,7 +196,10 @@ async fn typed_v2_stream_reconnects_with_cursor_and_dedupes_replay() {
 
     let events: Vec<_> = client
         .interactive()
-        .stream_reconnecting_v2_with_policy("/v1/interactive/turn/turn-1/stream", policy)
+        .stream_reconnecting_v2_with_policy(
+            "https://workshop.example/v1/interactive/turn/turn-1/stream",
+            policy,
+        )
         .map(|event| event.expect("v2 event"))
         .collect()
         .await;
@@ -210,14 +213,44 @@ async fn typed_v2_stream_reconnects_with_cursor_and_dedupes_replay() {
         [
             (
                 medousa_types::turn_stream::TURN_STREAM_V2_MEDIA_TYPE.to_string(),
-                "/v1/interactive/turn/turn-1/stream".to_string(),
+                "https://workshop.example/v1/interactive/turn/turn-1/stream".to_string(),
             ),
             (
                 medousa_types::turn_stream::TURN_STREAM_V2_MEDIA_TYPE.to_string(),
-                "/v1/interactive/turn/turn-1/stream?since=1".to_string(),
+                "https://workshop.example/v1/interactive/turn/turn-1/stream?since=1".to_string(),
             ),
         ]
     );
+}
+
+#[cfg(feature = "sse")]
+#[tokio::test]
+async fn typed_v2_stream_exhausts_retries_without_sequence_progress() {
+    use futures_util::StreamExt;
+    use medousa_sdk::{BackoffPolicy, ReconnectPolicy};
+    use std::time::Duration;
+
+    let transport = Arc::new(MockTransport::new().with_sse_batches(vec![vec![], vec![]]));
+    let client =
+        medousa_sdk::MedousaClient::with_transport(transport, "http://127.0.0.1:8080");
+    let policy = ReconnectPolicy {
+        backoff: BackoffPolicy {
+            base: Duration::ZERO,
+            max: Duration::ZERO,
+            max_attempts: Some(1),
+            ..BackoffPolicy::default()
+        },
+        ..ReconnectPolicy::default()
+    };
+    let error = client
+        .interactive()
+        .stream_reconnecting_v2_with_policy("/stream", policy)
+        .next()
+        .await
+        .expect("reconnect error")
+        .expect_err("stream should exhaust retries");
+
+    assert!(error.to_string().contains("attempts exhausted"));
 }
 
 #[tokio::test]

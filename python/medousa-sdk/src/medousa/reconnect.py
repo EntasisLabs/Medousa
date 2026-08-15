@@ -159,30 +159,35 @@ class ReconnectingInteractiveStream(Generic[TEvent]):
                     accept=self._accept,
                 )
                 async with stream:
-                    self._breaker.on_success()
-                    self._attempt = 0
                     async for event in stream:
                         self._last_seq, keep = apply_sequence(self._last_seq, int(event.seq))
                         if not keep:
                             continue
+                        self._breaker.on_success()
+                        self._attempt = 0
                         yield event
                         if self._terminal(event):
                             terminal_seen = True
                             return
             except Exception:
-                self._breaker.on_failure()
-                if not self._policy.backoff.may_retry(self._attempt):
-                    raise RuntimeError("interactive stream reconnect attempts exhausted") from None
-                if not self._breaker.allow():
-                    raise RuntimeError("interactive stream reconnect circuit open") from None
-                if not self._overlap.try_enter():
-                    raise RuntimeError("interactive stream reconnect already running") from None
-                try:
-                    delay = self._policy.backoff.delay(self._attempt)
-                    self._attempt += 1
-                    await asyncio.sleep(delay)
-                finally:
-                    self._overlap.release()
+                await self._backoff_or_raise()
+            else:
+                await self._backoff_or_raise()
+
+    async def _backoff_or_raise(self) -> None:
+        self._breaker.on_failure()
+        if not self._policy.backoff.may_retry(self._attempt):
+            raise RuntimeError("interactive stream reconnect attempts exhausted") from None
+        if not self._breaker.allow():
+            raise RuntimeError("interactive stream reconnect circuit open") from None
+        if not self._overlap.try_enter():
+            raise RuntimeError("interactive stream reconnect already running") from None
+        try:
+            delay = self._policy.backoff.delay(self._attempt)
+            self._attempt += 1
+            await asyncio.sleep(delay)
+        finally:
+            self._overlap.release()
 
 
 def is_turn_stream_terminal(event: TurnStreamEnvelopeV2) -> bool:

@@ -223,12 +223,12 @@ where
                 Phase::Streaming(mut inner) => match Pin::new(&mut inner).poll_next(cx) {
                     Poll::Ready(Some(Ok(event))) => {
                         self.phase = Phase::Streaming(inner);
-                        self.breaker.on_success();
-                        self.reconnect_attempt = 0;
                         if self.terminal_seen {
                             self.phase = Phase::Done;
                         }
                         if let Some(out) = self.ingest(event) {
+                            self.breaker.on_success();
+                            self.reconnect_attempt = 0;
                             if self.terminal_seen {
                                 self.phase = Phase::Done;
                             }

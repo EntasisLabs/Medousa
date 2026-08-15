@@ -84,6 +84,9 @@ impl WorkshopTransport {
     }
 
     fn url(&self, path: &str) -> String {
+        if path.starts_with("http://") || path.starts_with("https://") {
+            return path.to_string();
+        }
         let path = if path.starts_with('/') {
             path.to_string()
         } else {
@@ -317,30 +320,41 @@ impl Transport for WorkshopTransport {
     #[cfg(feature = "sse")]
     fn stream_sse<'a>(
         &'a self,
+        base_url: &'a str,
+        path: String,
+    ) -> Pin<Box<dyn Stream<Item = Result<bytes::Bytes, SdkError>> + Send + 'a>> {
+        self.stream_sse_with_accept(base_url, path, "text/event-stream")
+    }
+
+    #[cfg(feature = "sse")]
+    fn stream_sse_with_accept<'a>(
+        &'a self,
         _base_url: &'a str,
         path: String,
+        accept: &'static str,
     ) -> Pin<Box<dyn Stream<Item = Result<bytes::Bytes, SdkError>> + Send + 'a>> {
         let transport = self.clone();
         Box::pin(
             futures_util::stream::once(async move {
                 let route = transport.pick_workshop_route().await;
-                let headers: Vec<(String, String)> = transport
+                let mut headers: Vec<(String, String)> = transport
                     .auth_header_pairs()
                     .into_iter()
                     .map(|(k, v)| (k.to_string(), v))
                     .collect();
+                headers.push(("Accept".to_string(), accept.to_string()));
                 let header_refs: Vec<(&str, &str)> = headers
                     .iter()
                     .map(|(k, v)| (k.as_str(), v.as_str()))
                     .collect();
 
                 match route {
-                    WorkshopRoute::Lan => open_lan_sse(&transport, &path).await,
+                    WorkshopRoute::Lan => open_lan_sse(&transport, &path, accept).await,
                     WorkshopRoute::Iroh => {
                         let hook = transport.iroh.as_ref().ok_or_else(|| {
                             SdkError::Transport("iroh hook missing".to_string())
                         })?;
-                        Ok(hook.stream_sse(path.clone(), &header_refs))
+                        Ok(hook.stream_sse(stream_route_path(&path), &header_refs))
                     }
                 }
             })
@@ -373,11 +387,12 @@ impl WorkshopTransport {
 async fn open_lan_sse(
     transport: &WorkshopTransport,
     path: &str,
+    accept: &str,
 ) -> Result<Pin<Box<dyn Stream<Item = Result<bytes::Bytes, SdkError>> + Send>>, SdkError> {
     let client = crate::pool::streaming_client();
     let url = transport.url(path);
     let response = transport
-        .apply_headers(client.get(url).header("Accept", "text/event-stream"))
+        .apply_headers(client.get(url).header("Accept", accept))
         .send()
         .await
         .map_err(|e| SdkError::Http(e.to_string()))?;
@@ -393,9 +408,22 @@ async fn open_lan_sse(
     ))
 }
 
+#[cfg(feature = "sse")]
+fn stream_route_path(path: &str) -> String {
+    if let Ok(url) = reqwest::Url::parse(path) {
+        let mut route = url.path().to_string();
+        if let Some(query) = url.query() {
+            route.push('?');
+            route.push_str(query);
+        }
+        return route;
+    }
+    path.to_string()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::parse_iroh_json_bytes;
+    use super::{parse_iroh_json_bytes, stream_route_path};
 
     #[test]
     fn parse_iroh_json_bytes_treats_whitespace_as_null() {
@@ -406,5 +434,14 @@ mod tests {
     fn parse_iroh_json_bytes_parses_object() {
         let value = parse_iroh_json_bytes(br#"{"turn_id":"t1"}"#).unwrap();
         assert_eq!(value["turn_id"], "t1");
+    }
+
+    #[cfg(feature = "sse")]
+    #[test]
+    fn absolute_stream_url_becomes_iroh_route_path() {
+        assert_eq!(
+            stream_route_path("https://workshop.example/v1/turn/t1/stream?since=7"),
+            "/v1/turn/t1/stream?since=7"
+        );
     }
 }

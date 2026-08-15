@@ -1,6 +1,7 @@
 import json
 
 import httpx
+import pytest
 
 from medousa import MedousaClient
 from medousa.reconnect import (
@@ -100,3 +101,26 @@ async def test_v2_reconnect_negotiates_cursor_and_dedupes_replay():
         ("/v1/interactive/turn/turn-1/stream", "text/event-stream; medousa-version=2"),
         ("/v1/interactive/turn/turn-1/stream?since=1", "text/event-stream; medousa-version=2"),
     ]
+
+
+async def test_v2_reconnect_exhausts_without_sequence_progress():
+    class EmptyTransport:
+        async def stream_sse_with_accept(
+            self, _base_url: str, _path: str, _accept: str
+        ) -> httpx.Response:
+            return httpx.Response(200, content=b"")
+
+    client = MedousaClient(
+        "http://127.0.0.1:7419",
+        transport=EmptyTransport(),  # type: ignore[arg-type]
+    )
+    policy = ReconnectPolicy(
+        backoff=BackoffPolicy(base_ms=0, max_ms=0, max_attempts=1)
+    )
+
+    with pytest.raises(RuntimeError, match="attempts exhausted"):
+        async for _event in client.interactive().stream_reconnecting_v2(
+            "/v1/interactive/turn/turn-1/stream",
+            policy=policy,
+        ):
+            pass

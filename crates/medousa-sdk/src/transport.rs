@@ -141,6 +141,9 @@ impl HttpTransport {
     }
 
     fn url(base_url: &str, path: &str) -> String {
+        if path.starts_with("http://") || path.starts_with("https://") {
+            return path.to_string();
+        }
         let base = base_url.trim_end_matches('/');
         let path = if path.starts_with('/') {
             path.to_string()
