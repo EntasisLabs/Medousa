@@ -16,8 +16,8 @@ use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use fs2::FileExt;
 use sha2::{Digest as _, Sha256};
@@ -95,6 +95,7 @@ pub struct TailMeta {
 pub struct FsWorkStore {
     root: PathBuf,
     tails: Mutex<HashMap<String, TailMeta>>,
+    append_gates: Mutex<HashMap<String, Arc<Mutex<()>>>>,
 }
 
 impl FsWorkStore {
@@ -119,6 +120,7 @@ impl FsWorkStore {
         Ok(Self {
             root,
             tails: Mutex::new(HashMap::new()),
+            append_gates: Mutex::new(HashMap::new()),
         })
     }
 
@@ -180,15 +182,54 @@ impl FsWorkStore {
         payload: EventPayload,
         seq: u64,
     ) -> Result<TransitionEvent> {
+        let gate = {
+            let mut gates = self
+                .append_gates
+                .lock()
+                .map_err(|_| ForgeError::Store("append gate poisoned".into()))?;
+            Arc::clone(
+                gates
+                    .entry(work_id.as_str().to_owned())
+                    .or_insert_with(|| Arc::new(Mutex::new(()))),
+            )
+        };
+        let _append_guard = gate
+            .lock()
+            .map_err(|_| ForgeError::Store("append gate poisoned".into()))?;
+
         let dir = self.item_dir(work_id);
         fs::create_dir_all(&dir)?;
+        // Always re-scan the durable log before writing so a stale in-memory
+        // tail cannot reuse sequences past a torn or repaired prefix.
+        let tail = self.recover_tail(work_id)?;
+        if seq != tail.last_seq.saturating_add(1) {
+            return Err(ForgeError::Conflict(format!(
+                "append sequence fence: expected {}, got {seq}",
+                tail.last_seq.saturating_add(1)
+            )));
+        }
+        let path = self.events_path(work_id);
+        if path.exists() {
+            let len = fs::metadata(&path)?.len();
+            if len > tail.last_offset {
+                // Incomplete final record only — truncate before appending so
+                // the next frame cannot glue onto torn bytes.
+                let file = OpenOptions::new().write(true).open(&path)?;
+                file.set_len(tail.last_offset)?;
+                file.sync_all()?;
+            } else if len < tail.last_offset {
+                return Err(ForgeError::Store(format!(
+                    "events log shorter than recovered tail at {}",
+                    path.display()
+                )));
+            }
+        }
         let event = TransitionEvent::new(work_id.clone(), seq, actor.clone(), payload);
         if event.schema_version != EVENT_SCHEMA_VERSION {
             return Err(ForgeError::Store("event schema drift".into()));
         }
         let mut line = serde_json::to_vec(&event)?;
         line.push(b'\n');
-        let path = self.events_path(work_id);
         let mut file = OpenOptions::new().create(true).append(true).open(&path)?;
         file.write_all(&line)?;
         file.sync_all()?;
@@ -209,7 +250,18 @@ impl FsWorkStore {
             .get(work_id.as_str())
             .cloned()
         {
-            return Ok(tail);
+            let path = self.events_path(work_id);
+            let len = if path.exists() {
+                fs::metadata(&path)?.len()
+            } else {
+                0
+            };
+            // Accept the cache only when it still matches the durable file
+            // length. A longer file means a torn final record; shorter means
+            // external truncation — both require a fresh disk recovery.
+            if len == tail.last_offset {
+                return Ok(tail);
+            }
         }
         let tail = self.recover_tail(work_id)?;
         self.tails
@@ -221,6 +273,9 @@ impl FsWorkStore {
 
     /// Stream the log once, keeping only tail metadata. Does not build a
     /// `Vec<String>` of the whole file.
+    ///
+    /// Tolerates only a demonstrably incomplete final record (unparseable
+    /// bytes at EOF). Corruption anywhere before EOF fails closed.
     pub fn recover_tail(&self, work_id: &WorkId) -> Result<TailMeta> {
         let path = self.events_path(work_id);
         if !path.exists() {
@@ -232,55 +287,8 @@ impl FsWorkStore {
                 operations_started: 0,
             });
         }
-        let file = File::open(&path)?;
-        let reader = BufReader::new(file);
-        let mut last_seq = 0u64;
-        let mut last_hash = [0u8; 32];
-        let mut lease_acquisitions = 0u64;
-        let mut operations_started = 0u64;
-        let mut last_good_offset = 0u64;
-        let mut offset = 0u64;
-        let mut previous_seq = 0u64;
-        for (idx, line) in reader.lines().enumerate() {
-            let line = line?;
-            let line_len = line.len() as u64 + 1;
-            if line.trim().is_empty() {
-                offset += line_len;
-                continue;
-            }
-            match serde_json::from_str::<TransitionEvent>(&line) {
-                Ok(event) => {
-                    if event.seq <= previous_seq && previous_seq != 0 {
-                        return Err(ForgeError::Store(format!(
-                            "non-monotonic seq at {} ({} then {})",
-                            path.display(),
-                            previous_seq,
-                            event.seq
-                        )));
-                    }
-                    previous_seq = event.seq;
-                    last_seq = event.seq;
-                    last_hash = hash_line(&line);
-                    if matches!(event.payload, EventPayload::LeaseAcquired { .. }) {
-                        lease_acquisitions += 1;
-                    }
-                    if matches!(event.payload, EventPayload::OperationStarted { .. }) {
-                        operations_started += 1;
-                    }
-                    offset += line_len;
-                    last_good_offset = offset;
-                    let _ = idx;
-                }
-                Err(_) => break,
-            }
-        }
-        Ok(TailMeta {
-            last_seq,
-            last_offset: last_good_offset,
-            last_hash,
-            lease_acquisitions,
-            operations_started,
-        })
+        let data = fs::read(&path)?;
+        scan_jsonl_tail(&path, &data)
     }
 
     fn remember_tail(&self, work_id: &WorkId, event: &TransitionEvent, offset: u64) {
@@ -487,6 +495,85 @@ impl FsWorkStore {
     }
 }
 
+fn scan_jsonl_tail(path: &Path, data: &[u8]) -> Result<TailMeta> {
+    let mut last_seq = 0u64;
+    let mut last_hash = [0u8; 32];
+    let mut lease_acquisitions = 0u64;
+    let mut operations_started = 0u64;
+    let mut last_good_offset = 0u64;
+    let mut previous_seq = 0u64;
+    let mut start = 0usize;
+
+    while start < data.len() {
+        let relative_newline = data[start..]
+            .iter()
+            .position(|&byte| byte == b'\n');
+        let (line_end, record_end, at_eof) = match relative_newline {
+            Some(index) => {
+                let line_end = start + index;
+                (line_end, line_end + 1, line_end + 1 >= data.len())
+            }
+            None => (data.len(), data.len(), true),
+        };
+        let line_bytes = &data[start..line_end];
+        if line_bytes
+            .iter()
+            .all(|&byte| byte == b' ' || byte == b'\t' || byte == b'\r')
+        {
+            // Blank lines are ignored but do not extend the committed prefix.
+            start = record_end;
+            continue;
+        }
+        let line = std::str::from_utf8(line_bytes).map_err(|_| {
+            ForgeError::Store(format!(
+                "corrupt event encoding at {} offset {start}",
+                path.display()
+            ))
+        })?;
+        match serde_json::from_str::<TransitionEvent>(line) {
+            Ok(event) => {
+                if event.seq <= previous_seq && previous_seq != 0 {
+                    return Err(ForgeError::Store(format!(
+                        "non-monotonic seq at {} ({} then {})",
+                        path.display(),
+                        previous_seq,
+                        event.seq
+                    )));
+                }
+                previous_seq = event.seq;
+                last_seq = event.seq;
+                last_hash = hash_line(line);
+                if matches!(event.payload, EventPayload::LeaseAcquired { .. }) {
+                    lease_acquisitions += 1;
+                }
+                if matches!(event.payload, EventPayload::OperationStarted { .. }) {
+                    operations_started += 1;
+                }
+                last_good_offset = record_end as u64;
+                start = record_end;
+            }
+            Err(err) => {
+                if at_eof {
+                    // Demonstrably incomplete final record only.
+                    break;
+                }
+                return Err(ForgeError::Store(format!(
+                    "corrupt event at {} offset {start}: {err}",
+                    path.display()
+                )));
+            }
+        }
+    }
+
+    Ok(TailMeta {
+        last_seq,
+        last_offset: last_good_offset,
+        last_hash,
+        lease_acquisitions,
+        operations_started,
+    })
+}
+
 fn hash_line(line: &str) -> [u8; 32] {
     let digest = Sha256::digest(line.as_bytes());
     let mut out = [0u8; 32];
@@ -632,9 +719,228 @@ mod tests {
         let events = store.replay(&item.id).unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].payload, registered(&item));
-        // Appending after the truncated tail resumes at seq 2.
+        // Appending after the truncated tail resumes at seq 2 and truncates
+        // the torn bytes so the new record is not glued onto garbage.
         let next = store.append(&item.id, &actor(), registered(&item)).unwrap();
         assert_eq!(next.seq, 2);
+        let raw = fs::read_to_string(&path).unwrap();
+        assert_eq!(raw.lines().count(), 2);
+        assert!(store.replay(&item.id).unwrap().len() == 2);
+    }
+
+    #[test]
+    fn recover_tail_rejects_corrupt_middle_record() {
+        let tmp = TempDir::new().unwrap();
+        let store = FsWorkStore::open(tmp.path()).unwrap();
+        let item = WorkItem::new("t", "b", target(), "user-1");
+        store.append(&item.id, &actor(), registered(&item)).unwrap();
+        let path = store.events_path(&item.id);
+        let original = fs::read_to_string(&path).unwrap();
+        fs::write(&path, format!("{original}not-json\n{original}")).unwrap();
+        let err = store.recover_tail(&item.id).unwrap_err();
+        assert!(matches!(err, ForgeError::Store(_)));
+        // Sequence must not advance past the corruption.
+        let err = store
+            .append(
+                &item.id,
+                &actor(),
+                EventPayload::StateChanged {
+                    from: crate::model::WorkState::Draft,
+                    to: crate::model::WorkState::Ready,
+                    reason: None,
+                },
+            )
+            .unwrap_err();
+        assert!(matches!(err, ForgeError::Store(_) | ForgeError::Conflict(_)));
+    }
+
+    #[test]
+    fn recover_tail_accepts_complete_final_record_without_newline() {
+        let tmp = TempDir::new().unwrap();
+        let store = FsWorkStore::open(tmp.path()).unwrap();
+        let item = WorkItem::new("t", "b", target(), "user-1");
+        let event = store.append(&item.id, &actor(), registered(&item)).unwrap();
+        let path = store.events_path(&item.id);
+        let mut raw = fs::read_to_string(&path).unwrap();
+        assert!(raw.ends_with('\n'));
+        raw.pop();
+        fs::write(&path, &raw).unwrap();
+        // Fresh process/open — empty in-memory cache.
+        let reopened = FsWorkStore::open(tmp.path()).unwrap();
+        let tail = reopened.recover_tail(&item.id).unwrap();
+        assert_eq!(tail.last_seq, event.seq);
+        assert_eq!(tail.last_offset, raw.len() as u64);
+        let next = reopened
+            .append(
+                &item.id,
+                &actor(),
+                EventPayload::StateChanged {
+                    from: crate::model::WorkState::Draft,
+                    to: crate::model::WorkState::Ready,
+                    reason: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(next.seq, 2);
+    }
+
+    #[test]
+    fn stale_cached_tail_is_refreshed_from_disk_before_append() {
+        let tmp = TempDir::new().unwrap();
+        let store = FsWorkStore::open(tmp.path()).unwrap();
+        let item = WorkItem::new("t", "b", target(), "user-1");
+        store.append(&item.id, &actor(), registered(&item)).unwrap();
+        let path = store.events_path(&item.id);
+        // Poison the in-memory cache as if a concurrent writer advanced it.
+        {
+            let mut tails = store.tails.lock().unwrap();
+            tails.insert(
+                item.id.as_str().to_owned(),
+                TailMeta {
+                    last_seq: 99,
+                    last_offset: fs::metadata(&path).unwrap().len(),
+                    last_hash: [9; 32],
+                    lease_acquisitions: 0,
+                    operations_started: 0,
+                },
+            );
+        }
+        // File length still matches the poisoned cache offset, but append_at
+        // re-scans disk and fences the bogus sequence.
+        let err = store
+            .append_at(
+                &item.id,
+                &actor(),
+                EventPayload::StateChanged {
+                    from: crate::model::WorkState::Draft,
+                    to: crate::model::WorkState::Ready,
+                    reason: None,
+                },
+                100,
+            )
+            .unwrap_err();
+        assert!(matches!(err, ForgeError::Conflict(_)));
+        // Torn bytes beyond the cache offset force a disk refresh.
+        {
+            let mut tails = store.tails.lock().unwrap();
+            let len = fs::metadata(&path).unwrap().len();
+            tails.insert(
+                item.id.as_str().to_owned(),
+                TailMeta {
+                    last_seq: 1,
+                    last_offset: len,
+                    last_hash: [1; 32],
+                    lease_acquisitions: 0,
+                    operations_started: 0,
+                },
+            );
+        }
+        let mut file = OpenOptions::new().append(true).open(&path).unwrap();
+        file.write_all(b"{\"partial\":").unwrap();
+        drop(file);
+        let tail = store.cached_tail(&item.id).unwrap();
+        assert_eq!(tail.last_seq, 1);
+        assert!(tail.last_offset < fs::metadata(&path).unwrap().len());
+        let next = store
+            .append(
+                &item.id,
+                &actor(),
+                EventPayload::StateChanged {
+                    from: crate::model::WorkState::Draft,
+                    to: crate::model::WorkState::Ready,
+                    reason: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(next.seq, 2);
+        assert_eq!(
+            fs::metadata(&path).unwrap().len(),
+            store.recover_tail(&item.id).unwrap().last_offset
+        );
+    }
+
+    #[test]
+    fn concurrent_append_fencing_rejects_duplicate_sequences() {
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+
+        let tmp = TempDir::new().unwrap();
+        let store = Arc::new(FsWorkStore::open(tmp.path()).unwrap());
+        let item = WorkItem::new("t", "b", target(), "user-1");
+        store
+            .append(&item.id, &actor(), registered(&item))
+            .unwrap();
+        let barrier = Arc::new(Barrier::new(2));
+        let mut handles = Vec::new();
+        for _ in 0..2 {
+            let store = Arc::clone(&store);
+            let work_id = item.id.clone();
+            let barrier = Arc::clone(&barrier);
+            handles.push(thread::spawn(move || {
+                barrier.wait();
+                store.append_at(
+                    &work_id,
+                    &actor(),
+                    EventPayload::StateChanged {
+                        from: crate::model::WorkState::Draft,
+                        to: crate::model::WorkState::Ready,
+                        reason: None,
+                    },
+                    2,
+                )
+            }));
+        }
+        let results: Vec<_> = handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect();
+        let wins = results.iter().filter(|result| result.is_ok()).count();
+        let losses = results.iter().filter(|result| result.is_err()).count();
+        assert_eq!(wins, 1);
+        assert_eq!(losses, 1);
+        assert_eq!(store.replay(&item.id).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn restart_recovery_reads_disk_not_previous_process_cache() {
+        let tmp = TempDir::new().unwrap();
+        let item = WorkItem::new("t", "b", target(), "user-1");
+        {
+            let store = FsWorkStore::open(tmp.path()).unwrap();
+            store
+                .append(&item.id, &actor(), registered(&item))
+                .unwrap();
+            store
+                .append(
+                    &item.id,
+                    &actor(),
+                    EventPayload::StateChanged {
+                        from: crate::model::WorkState::Draft,
+                        to: crate::model::WorkState::Ready,
+                        reason: None,
+                    },
+                )
+                .unwrap();
+            let path = store.events_path(&item.id);
+            let mut file = OpenOptions::new().append(true).open(&path).unwrap();
+            file.write_all(b"{\"schema_version\":1,").unwrap();
+        }
+        let reopened = FsWorkStore::open(tmp.path()).unwrap();
+        let tail = reopened.recover_tail(&item.id).unwrap();
+        assert_eq!(tail.last_seq, 2);
+        let next = reopened
+            .append(
+                &item.id,
+                &actor(),
+                EventPayload::StateChanged {
+                    from: crate::model::WorkState::Ready,
+                    to: crate::model::WorkState::Draft,
+                    reason: Some("repair".into()),
+                },
+            )
+            .unwrap();
+        assert_eq!(next.seq, 3);
+        assert_eq!(reopened.replay(&item.id).unwrap().len(), 3);
     }
 
     #[test]
