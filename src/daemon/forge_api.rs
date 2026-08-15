@@ -8,10 +8,10 @@ use std::path::{Component, Path as FsPath, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, LazyLock, Mutex};
 
+use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{delete, get, patch, post, put};
-use axum::Json;
 use medousa_forge::adapter::{ScriptAdapter, export_bundle};
 use medousa_forge::error::ForgeError;
 use medousa_forge::forge::{Forge, SealOptions};
@@ -28,11 +28,11 @@ use crate::daemon_api::{
     CodeProjectSource, SessionCodeProjectResponse, StartSessionCodeProjectRequest,
 };
 
+use crate::daemon::forge_events::ForgeProjectEventKind;
 use crate::daemon::forge_projections::{
     ItemProjection, ReviewCommentProjection, ReviewProjection, build_review_for_attempt,
     evidence_dir, project_item, project_items, read_lines_page,
 };
-use crate::daemon::forge_events::ForgeProjectEventKind;
 use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
@@ -68,13 +68,9 @@ fn publish_project_change(
         ForgeProjectEventKind::Snapshot => "project_snapshot",
     };
     publish_item(state, item, event_kind);
-    state.forge_events.publish_project(
-        item.id.as_str(),
-        kind,
-        path,
-        old_path,
-        digest,
-    );
+    state
+        .forge_events
+        .publish_project(item.id.as_str(), kind, path, old_path, digest);
 }
 
 fn ok_item(state: &AppState, item: WorkItem, kind: &str) -> Json<ItemProjection> {
@@ -107,102 +103,366 @@ pub fn forge_surface() -> DeclaredRouter<AppState> {
             ),
             post(start_session_code_project),
         )
-        .route(forge_post_policy("/v1/forge/repositories/inspect"), post(inspect_repository))
+        .route(
+            forge_post_policy("/v1/forge/repositories/inspect"),
+            post(inspect_repository),
+        )
         .methods([
-            (forge_read_policy("/v1/forge/repositories/provider"), get(provider_repository_capabilities)),
-            (forge_post_policy("/v1/forge/repositories/provider"), post(clone_provider_repository)),
+            (
+                forge_read_policy("/v1/forge/repositories/provider"),
+                get(provider_repository_capabilities),
+            ),
+            (
+                forge_post_policy("/v1/forge/repositories/provider"),
+                post(clone_provider_repository),
+            ),
         ])
         .methods([
-            (forge_read_policy("/v1/forge/repositories"), get(list_repositories)),
-            (forge_mutation_policy(axum::http::Method::PUT, "/v1/forge/repositories", 256 * 1024), put(update_repository_pin)),
+            (
+                forge_read_policy("/v1/forge/repositories"),
+                get(list_repositories),
+            ),
+            (
+                forge_mutation_policy(
+                    axum::http::Method::PUT,
+                    "/v1/forge/repositories",
+                    256 * 1024,
+                ),
+                put(update_repository_pin),
+            ),
         ])
-        .route(forge_read_policy("/v1/forge/repositories/browse"), get(browse_repositories))
-        .route(forge_read_policy("/v1/forge/items/{work_id}"), get(get_item))
+        .route(
+            forge_read_policy("/v1/forge/repositories/browse"),
+            get(browse_repositories),
+        )
+        .route(
+            forge_read_policy("/v1/forge/items/{work_id}"),
+            get(get_item),
+        )
         .methods([
-            (forge_read_policy("/v1/forge/items/{work_id}/source"), get(read_source)),
-            (forge_mutation_policy(axum::http::Method::POST, "/v1/forge/items/{work_id}/source", 8 * 1024 * 1024), post(create_source)),
-            (forge_mutation_policy(axum::http::Method::PUT, "/v1/forge/items/{work_id}/source", 8 * 1024 * 1024), put(save_source)),
-            (forge_mutation_policy(axum::http::Method::PATCH, "/v1/forge/items/{work_id}/source", 256 * 1024), patch(rename_source)),
-            (forge_mutation_policy(axum::http::Method::DELETE, "/v1/forge/items/{work_id}/source", 1024), delete(delete_source)),
+            (
+                forge_read_policy("/v1/forge/items/{work_id}/source"),
+                get(read_source),
+            ),
+            (
+                forge_mutation_policy(
+                    axum::http::Method::POST,
+                    "/v1/forge/items/{work_id}/source",
+                    8 * 1024 * 1024,
+                ),
+                post(create_source),
+            ),
+            (
+                forge_mutation_policy(
+                    axum::http::Method::PUT,
+                    "/v1/forge/items/{work_id}/source",
+                    8 * 1024 * 1024,
+                ),
+                put(save_source),
+            ),
+            (
+                forge_mutation_policy(
+                    axum::http::Method::PATCH,
+                    "/v1/forge/items/{work_id}/source",
+                    256 * 1024,
+                ),
+                patch(rename_source),
+            ),
+            (
+                forge_mutation_policy(
+                    axum::http::Method::DELETE,
+                    "/v1/forge/items/{work_id}/source",
+                    1024,
+                ),
+                delete(delete_source),
+            ),
         ])
-        .route(forge_read_policy("/v1/forge/items/{work_id}/tree"), get(source_tree))
-        .route(forge_read_policy("/v1/forge/items/{work_id}/changes"), get(get_changes))
+        .route(
+            forge_read_policy("/v1/forge/items/{work_id}/tree"),
+            get(source_tree),
+        )
+        .route(
+            forge_read_policy("/v1/forge/items/{work_id}/changes"),
+            get(get_changes),
+        )
         .methods([
-            (forge_read_policy("/v1/forge/items/{work_id}/changes/file"), get(get_changes_file)),
-            (forge_post_policy("/v1/forge/items/{work_id}/changes/file"), post(restore_changes_file)),
+            (
+                forge_read_policy("/v1/forge/items/{work_id}/changes/file"),
+                get(get_changes_file),
+            ),
+            (
+                forge_post_policy("/v1/forge/items/{work_id}/changes/file"),
+                post(restore_changes_file),
+            ),
         ])
-        .route(forge_post_policy("/v1/forge/items/{work_id}/changes/fetch"), post(changes_fetch))
-        .route(forge_post_policy("/v1/forge/items/{work_id}/changes/pull"), post(changes_pull))
-        .route(forge_post_policy("/v1/forge/items/{work_id}/changes/push"), post(changes_push))
-        .route(forge_post_policy("/v1/forge/items/{work_id}/changes/sync"), post(changes_sync))
-        .route(forge_post_policy("/v1/forge/items/{work_id}/changes/checkpoint"), post(changes_checkpoint))
-        .route(forge_read_policy("/v1/forge/items/{work_id}/changes/history"), get(changes_history))
-        .route(forge_read_policy("/v1/forge/items/{work_id}/changes/blame"), get(changes_blame))
-        .route(forge_post_policy("/v1/forge/items/{work_id}/changes/conflict"), post(resolve_changes_conflict))
-        .route(forge_post_policy("/v1/forge/items/{work_id}/changes/file/hunk"), post(revert_changes_hunk))
-        .route(forge_mutation_policy(axum::http::Method::PUT, "/v1/forge/items/{work_id}/source/batch", 32 * 1024 * 1024), put(save_source_batch))
-        .route(forge_mutation_policy(axum::http::Method::PUT, "/v1/forge/items/{work_id}/source/workspace-edit", MAX_SOURCE_WORKSPACE_EDIT_BODY_BYTES), put(apply_source_workspace_edit))
-        .route(forge_stream_policy("/v1/forge/items/{work_id}/project-events"), get(forge_project_event_stream))
-        .route(forge_read_policy("/v1/forge/items/{work_id}/search"), get(search_source))
-        .route(forge_mutation_policy(axum::http::Method::POST, "/v1/forge/items/{work_id}/search/replace", 8 * 1024 * 1024), post(replace_source))
+        .route(
+            forge_post_policy("/v1/forge/items/{work_id}/changes/fetch"),
+            post(changes_fetch),
+        )
+        .route(
+            forge_post_policy("/v1/forge/items/{work_id}/changes/pull"),
+            post(changes_pull),
+        )
+        .route(
+            forge_post_policy("/v1/forge/items/{work_id}/changes/push"),
+            post(changes_push),
+        )
+        .route(
+            forge_post_policy("/v1/forge/items/{work_id}/changes/sync"),
+            post(changes_sync),
+        )
+        .route(
+            forge_post_policy("/v1/forge/items/{work_id}/changes/checkpoint"),
+            post(changes_checkpoint),
+        )
+        .route(
+            forge_read_policy("/v1/forge/items/{work_id}/changes/history"),
+            get(changes_history),
+        )
+        .route(
+            forge_read_policy("/v1/forge/items/{work_id}/changes/blame"),
+            get(changes_blame),
+        )
+        .route(
+            forge_post_policy("/v1/forge/items/{work_id}/changes/conflict"),
+            post(resolve_changes_conflict),
+        )
+        .route(
+            forge_post_policy("/v1/forge/items/{work_id}/changes/file/hunk"),
+            post(revert_changes_hunk),
+        )
+        .route(
+            forge_mutation_policy(
+                axum::http::Method::PUT,
+                "/v1/forge/items/{work_id}/source/batch",
+                32 * 1024 * 1024,
+            ),
+            put(save_source_batch),
+        )
+        .route(
+            forge_mutation_policy(
+                axum::http::Method::PUT,
+                "/v1/forge/items/{work_id}/source/workspace-edit",
+                MAX_SOURCE_WORKSPACE_EDIT_BODY_BYTES,
+            ),
+            put(apply_source_workspace_edit),
+        )
+        .route(
+            forge_stream_policy("/v1/forge/items/{work_id}/project-events"),
+            get(forge_project_event_stream),
+        )
+        .route(
+            forge_read_policy("/v1/forge/items/{work_id}/search"),
+            get(search_source),
+        )
+        .route(
+            forge_mutation_policy(
+                axum::http::Method::POST,
+                "/v1/forge/items/{work_id}/search/replace",
+                8 * 1024 * 1024,
+            ),
+            post(replace_source),
+        )
         .methods([
-            (forge_read_policy("/v1/forge/items/{work_id}/workspace-state"), get(read_workspace_state)),
-            (forge_mutation_policy(axum::http::Method::PUT, "/v1/forge/items/{work_id}/workspace-state", 8 * 1024 * 1024), put(save_workspace_state)),
+            (
+                forge_read_policy("/v1/forge/items/{work_id}/workspace-state"),
+                get(read_workspace_state),
+            ),
+            (
+                forge_mutation_policy(
+                    axum::http::Method::PUT,
+                    "/v1/forge/items/{work_id}/workspace-state",
+                    8 * 1024 * 1024,
+                ),
+                put(save_workspace_state),
+            ),
         ])
-        .route(forge_read_policy("/v1/forge/items/{work_id}/review"), get(get_review))
+        .route(
+            forge_read_policy("/v1/forge/items/{work_id}/review"),
+            get(get_review),
+        )
         .methods([
-            (forge_read_policy("/v1/forge/items/{work_id}/review/comments"), get(list_review_comments)),
-            (forge_post_policy("/v1/forge/items/{work_id}/review/comments"), post(add_review_comment)),
+            (
+                forge_read_policy("/v1/forge/items/{work_id}/review/comments"),
+                get(list_review_comments),
+            ),
+            (
+                forge_post_policy("/v1/forge/items/{work_id}/review/comments"),
+                post(add_review_comment),
+            ),
         ])
         .methods([
-            (forge_mutation_policy(axum::http::Method::PATCH, "/v1/forge/items/{work_id}/review/comments/{comment_id}", 1024 * 1024), patch(patch_review_comment)),
-            (forge_mutation_policy(axum::http::Method::DELETE, "/v1/forge/items/{work_id}/review/comments/{comment_id}", 1024), delete(delete_review_comment)),
+            (
+                forge_mutation_policy(
+                    axum::http::Method::PATCH,
+                    "/v1/forge/items/{work_id}/review/comments/{comment_id}",
+                    1024 * 1024,
+                ),
+                patch(patch_review_comment),
+            ),
+            (
+                forge_mutation_policy(
+                    axum::http::Method::DELETE,
+                    "/v1/forge/items/{work_id}/review/comments/{comment_id}",
+                    1024,
+                ),
+                delete(delete_review_comment),
+            ),
         ])
-        .route(forge_post_policy("/v1/forge/items/{work_id}/review/request-changes"), post(request_review_changes))
-        .route(forge_post_policy("/v1/forge/items/{work_id}/review/continue-editing"), post(continue_editing))
+        .route(
+            forge_post_policy("/v1/forge/items/{work_id}/review/request-changes"),
+            post(request_review_changes),
+        )
+        .route(
+            forge_post_policy("/v1/forge/items/{work_id}/review/continue-editing"),
+            post(continue_editing),
+        )
         .methods([
-            (forge_read_policy("/v1/forge/items/{work_id}/review/file"), get(get_review_file)),
-            (forge_post_policy("/v1/forge/items/{work_id}/review/file"), post(restore_review_file)),
+            (
+                forge_read_policy("/v1/forge/items/{work_id}/review/file"),
+                get(get_review_file),
+            ),
+            (
+                forge_post_policy("/v1/forge/items/{work_id}/review/file"),
+                post(restore_review_file),
+            ),
         ])
-        .route(forge_read_policy("/v1/forge/items/{work_id}/tasks"), get(list_project_tasks))
-        .route(forge_post_policy("/v1/forge/items/{work_id}/tasks/{task_id}/run"), post(run_project_task))
-        .route(forge_post_policy("/v1/forge/items/{work_id}/tasks/{task_id}/runs"), post(start_project_task_run))
+        .route(
+            forge_read_policy("/v1/forge/items/{work_id}/tasks"),
+            get(list_project_tasks),
+        )
+        .route(
+            forge_post_policy("/v1/forge/items/{work_id}/tasks/{task_id}/run"),
+            post(run_project_task),
+        )
+        .route(
+            forge_post_policy("/v1/forge/items/{work_id}/tasks/{task_id}/runs"),
+            post(start_project_task_run),
+        )
         .methods([
-            (forge_read_policy("/v1/forge/items/{work_id}/task-runs/{run_id}"), get(get_project_task_run)),
-            (forge_mutation_policy(axum::http::Method::DELETE, "/v1/forge/items/{work_id}/task-runs/{run_id}", 1024), delete(cancel_project_task_run)),
+            (
+                forge_read_policy("/v1/forge/items/{work_id}/task-runs/{run_id}"),
+                get(get_project_task_run),
+            ),
+            (
+                forge_mutation_policy(
+                    axum::http::Method::DELETE,
+                    "/v1/forge/items/{work_id}/task-runs/{run_id}",
+                    1024,
+                ),
+                delete(cancel_project_task_run),
+            ),
         ])
-        .route(forge_stream_policy("/v1/forge/items/{work_id}/task-runs/{run_id}/events"), get(project_task_run_events))
-        .route(forge_post_policy("/v1/forge/items/{work_id}/task-runs/{run_id}/preview"), post(create_task_run_preview))
-        .route(forge_read_policy("/v1/forge/items/{work_id}/tests"), get(list_project_tests))
-        .route(forge_post_policy("/v1/forge/items/{work_id}/provision"), post(provision_item))
-        .route(forge_post_policy("/v1/forge/items/{work_id}/attempts"), post(begin_attempt))
-        .route(forge_post_policy("/v1/forge/items/{work_id}/handoff"), post(prepare_handoff))
+        .route(
+            forge_stream_policy("/v1/forge/items/{work_id}/task-runs/{run_id}/events"),
+            get(project_task_run_events),
+        )
+        .route(
+            forge_post_policy("/v1/forge/items/{work_id}/task-runs/{run_id}/preview"),
+            post(create_task_run_preview),
+        )
+        .route(
+            forge_read_policy("/v1/forge/items/{work_id}/tests"),
+            get(list_project_tests),
+        )
+        .route(
+            forge_post_policy("/v1/forge/items/{work_id}/provision"),
+            post(provision_item),
+        )
+        .route(
+            forge_post_policy("/v1/forge/items/{work_id}/attempts"),
+            post(begin_attempt),
+        )
+        .route(
+            forge_post_policy("/v1/forge/items/{work_id}/handoff"),
+            post(prepare_handoff),
+        )
         .methods([
-            (forge_read_policy("/v1/forge/items/{work_id}/provider"), get(get_provider_handoff)),
-            (forge_post_policy("/v1/forge/items/{work_id}/provider"), post(share_provider_handoff)),
+            (
+                forge_read_policy("/v1/forge/items/{work_id}/provider"),
+                get(get_provider_handoff),
+            ),
+            (
+                forge_post_policy("/v1/forge/items/{work_id}/provider"),
+                post(share_provider_handoff),
+            ),
         ])
-        .route(forge_mutation_policy(axum::http::Method::PUT, "/v1/forge/items/{work_id}/provider/context", 8 * 1024 * 1024), put(save_provider_context))
+        .route(
+            forge_mutation_policy(
+                axum::http::Method::PUT,
+                "/v1/forge/items/{work_id}/provider/context",
+                8 * 1024 * 1024,
+            ),
+            put(save_provider_context),
+        )
         .methods([
-            (forge_read_policy("/v1/forge/items/{work_id}/provider/comments"), get(list_provider_comments)),
-            (forge_post_policy("/v1/forge/items/{work_id}/provider/comments"), post(import_provider_comment)),
+            (
+                forge_read_policy("/v1/forge/items/{work_id}/provider/comments"),
+                get(list_provider_comments),
+            ),
+            (
+                forge_post_policy("/v1/forge/items/{work_id}/provider/comments"),
+                post(import_provider_comment),
+            ),
         ])
-        .route(forge_post_policy("/v1/forge/items/{work_id}/decisions"), post(record_decision))
-        .route(forge_post_policy("/v1/forge/items/{work_id}/apply"), post(apply_decision))
-        .route(forge_post_policy("/v1/forge/items/{work_id}/discard"), post(discard_item))
-        .route(forge_post_policy("/v1/forge/items/{work_id}/run-script"), post(run_script))
-        .route(forge_post_policy("/v1/forge/items/{work_id}/export"), post(export_item))
-        .route(forge_read_policy("/v1/forge/evidence/{evidence_id}/patch"), get(evidence_patch))
-        .route(forge_read_policy("/v1/forge/evidence/{evidence_id}/commands"), get(evidence_commands))
-        .route(forge_read_policy("/v1/forge/evidence/{evidence_id}/receipts"), get(evidence_receipts))
+        .route(
+            forge_post_policy("/v1/forge/items/{work_id}/decisions"),
+            post(record_decision),
+        )
+        .route(
+            forge_post_policy("/v1/forge/items/{work_id}/apply"),
+            post(apply_decision),
+        )
+        .route(
+            forge_post_policy("/v1/forge/items/{work_id}/discard"),
+            post(discard_item),
+        )
+        .route(
+            forge_post_policy("/v1/forge/items/{work_id}/run-script"),
+            post(run_script),
+        )
+        .route(
+            forge_post_policy("/v1/forge/items/{work_id}/export"),
+            post(export_item),
+        )
+        .route(
+            forge_read_policy("/v1/forge/evidence/{evidence_id}/patch"),
+            get(evidence_patch),
+        )
+        .route(
+            forge_read_policy("/v1/forge/evidence/{evidence_id}/commands"),
+            get(evidence_commands),
+        )
+        .route(
+            forge_read_policy("/v1/forge/evidence/{evidence_id}/receipts"),
+            get(evidence_receipts),
+        )
         .route(forge_stream_policy("/v1/forge/stream"), get(forge_stream))
-        .route(forge_post_policy("/v1/forge/leases/{lease_id}/heartbeat"), post(heartbeat_lease))
-        .route(forge_post_policy("/v1/forge/leases/{lease_id}/complete"), post(complete_lease))
-        .route(forge_post_policy("/v1/forge/leases/{lease_id}/interrupt"), post(interrupt_lease))
-        .route(forge_post_policy("/v1/forge/leases/{lease_id}/fail"), post(fail_lease))
+        .route(
+            forge_post_policy("/v1/forge/leases/{lease_id}/heartbeat"),
+            post(heartbeat_lease),
+        )
+        .route(
+            forge_post_policy("/v1/forge/leases/{lease_id}/complete"),
+            post(complete_lease),
+        )
+        .route(
+            forge_post_policy("/v1/forge/leases/{lease_id}/interrupt"),
+            post(interrupt_lease),
+        )
+        .route(
+            forge_post_policy("/v1/forge/leases/{lease_id}/fail"),
+            post(fail_lease),
+        )
 }
 
 fn forge_read_policy(path: &'static str) -> RoutePolicy {
-    forge_policy(axum::http::Method::GET, path, 1024, RateLimitClass::Administration)
+    forge_policy(
+        axum::http::Method::GET,
+        path,
+        1024,
+        RateLimitClass::Administration,
+    )
 }
 
 fn forge_stream_policy(path: &'static str) -> RoutePolicy {
@@ -460,7 +720,10 @@ fn resolve_new_directory_path(root: &FsPath, raw: &str) -> ApiResult<(PathBuf, S
             "a path already exists at that location",
         ));
     }
-    if let Some(parent) = relative.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+    if let Some(parent) = relative
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
         let parent_joined = root.join(parent);
         if !parent_joined.exists() {
             std::fs::create_dir_all(&parent_joined).map_err(|err| {
@@ -1380,7 +1643,10 @@ fn start_code_project_for_session_inner(
     let (repo_path, created_repository) = match command.source {
         CodeProjectSource::Blank => (create_blank_repository(title, &base_ref)?, true),
         CodeProjectSource::Repository => {
-            let path = command.repo_path.as_ref().expect("validated repository path");
+            let path = command
+                .repo_path
+                .as_ref()
+                .expect("validated repository path");
             (PathBuf::from(path.as_str()), false)
         }
     };
@@ -1836,7 +2102,7 @@ fn source_search_options_from_query(query: &SourceSearchQuery) -> ApiResult<Sour
             return Err(request_error(
                 StatusCode::BAD_REQUEST,
                 "mode must be literal or regex",
-            ))
+            ));
         }
     };
     let scope = query
@@ -1852,7 +2118,7 @@ fn source_search_options_from_query(query: &SourceSearchQuery) -> ApiResult<Sour
             return Err(request_error(
                 StatusCode::BAD_REQUEST,
                 "scope must be all or changed",
-            ))
+            ));
         }
     };
     let limit = query.limit.unwrap_or(100).clamp(1, 500) as usize;
@@ -1895,7 +2161,11 @@ fn changed_repository_paths(root: &FsPath) -> ApiResult<Vec<String>> {
         ));
     }
     let mut paths = Vec::new();
-    for entry in output.stdout.split(|&b| b == 0).filter(|chunk| !chunk.is_empty()) {
+    for entry in output
+        .stdout
+        .split(|&b| b == 0)
+        .filter(|chunk| !chunk.is_empty())
+    {
         if entry.len() < 3 {
             continue;
         }
@@ -3551,7 +3821,9 @@ fn build_changes_response(state: &AppState, work_id: &WorkId) -> ApiResult<Forge
         files.push(ForgeChangesFile {
             path,
             status: status.to_owned(),
-            old_path: entry.orig_path.map(|p| medousa_forge::policy::normalize_git_path(&p)),
+            old_path: entry
+                .orig_path
+                .map(|p| medousa_forge::policy::normalize_git_path(&p)),
         });
     }
     files.sort_unstable_by(|left, right| left.path.cmp(&right.path));
@@ -3769,9 +4041,10 @@ async fn restore_changes_file(
         _ => {}
     }
     let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let environment = item.workspace_environment().cloned().ok_or_else(|| {
-        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
-    })?;
+    let environment = item
+        .workspace_environment()
+        .cloned()
+        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
     let restore_path = comparison
         .old_path
         .as_deref()
@@ -3817,7 +4090,9 @@ async fn restore_changes_file(
         })?;
         let digest = source_digest(content.as_bytes());
         if comparison.conflict || comparison.status == "unmerged" {
-            let _ = forge(&state).git().add_path(&environment.worktree, &restore_path);
+            let _ = forge(&state)
+                .git()
+                .add_path(&environment.worktree, &restore_path);
         }
         publish_project_change(
             &state,
@@ -3936,9 +4211,10 @@ async fn changes_fetch(
 ) -> ApiResult<Json<ChangesSyncResult>> {
     let id = parse_work_id(&work_id)?;
     let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let environment = item.workspace_environment().cloned().ok_or_else(|| {
-        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
-    })?;
+    let environment = item
+        .workspace_environment()
+        .cloned()
+        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
     let remote = body.remote.as_deref().unwrap_or("origin");
     let message = forge(&state)
         .git()
@@ -3974,9 +4250,10 @@ async fn changes_pull(
 ) -> ApiResult<Json<ChangesSyncResult>> {
     let id = parse_work_id(&work_id)?;
     let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let environment = item.workspace_environment().cloned().ok_or_else(|| {
-        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
-    })?;
+    let environment = item
+        .workspace_environment()
+        .cloned()
+        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
     changes_sync_preflight(forge(&state).as_ref(), &environment)?;
     if has_tracked_worktree_edits(forge(&state).as_ref(), &environment)? {
         return Err(request_error(
@@ -4024,9 +4301,10 @@ async fn changes_push(
 ) -> ApiResult<Json<ChangesSyncResult>> {
     let id = parse_work_id(&work_id)?;
     let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let environment = item.workspace_environment().cloned().ok_or_else(|| {
-        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
-    })?;
+    let environment = item
+        .workspace_environment()
+        .cloned()
+        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
     changes_sync_preflight(forge(&state).as_ref(), &environment)?;
     let WorkTarget::Git(target) = &item.target;
     if environment.branch == target.base_ref {
@@ -4039,9 +4317,7 @@ async fn changes_push(
     let message = forge(&state)
         .git()
         .push_branch(&environment.worktree, remote, &environment.branch)
-        .map_err(|err| {
-            request_error(StatusCode::CONFLICT, format!("push refused: {err}"))
-        })?;
+        .map_err(|err| request_error(StatusCode::CONFLICT, format!("push refused: {err}")))?;
     remember_worktree(&state, &item, &environment.worktree);
     publish_project_change(
         &state,
@@ -4072,9 +4348,10 @@ async fn changes_sync(
 ) -> ApiResult<Json<ChangesSyncResult>> {
     let id = parse_work_id(&work_id)?;
     let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let environment = item.workspace_environment().cloned().ok_or_else(|| {
-        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
-    })?;
+    let environment = item
+        .workspace_environment()
+        .cloned()
+        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
     changes_sync_preflight(forge(&state).as_ref(), &environment)?;
     let remote = body.remote.as_deref().unwrap_or("origin");
     let mut messages = Vec::new();
@@ -4083,12 +4360,7 @@ async fn changes_sync(
     let fetch_msg = forge(&state)
         .git()
         .fetch(&environment.worktree, remote)
-        .map_err(|err| {
-            request_error(
-                StatusCode::CONFLICT,
-                format!("sync fetch failed: {err}"),
-            )
-        })?;
+        .map_err(|err| request_error(StatusCode::CONFLICT, format!("sync fetch failed: {err}")))?;
     let fetched = true;
     if !fetch_msg.trim().is_empty() {
         messages.push(fetch_msg.trim().to_owned());
@@ -4107,10 +4379,7 @@ async fn changes_sync(
             .git()
             .pull_ff_only(&environment.worktree, remote)
             .map_err(|err| {
-                request_error(
-                    StatusCode::CONFLICT,
-                    format!("sync pull refused: {err}"),
-                )
+                request_error(StatusCode::CONFLICT, format!("sync pull refused: {err}"))
             })?;
         pulled = true;
         messages.push(if msg.trim().is_empty() {
@@ -4225,9 +4494,10 @@ async fn changes_history(
 ) -> ApiResult<Json<ChangesHistoryResponse>> {
     let id = parse_work_id(&work_id)?;
     let item = forge(&state).load(&id).map_err(map_err)?;
-    let environment = item.workspace_environment().cloned().ok_or_else(|| {
-        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
-    })?;
+    let environment = item
+        .workspace_environment()
+        .cloned()
+        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
     let limit = query.limit.unwrap_or(50).clamp(1, 200);
     let range = format!("{}..HEAD", environment.baseline_oid.as_str());
     let commits = forge(&state)
@@ -4285,9 +4555,10 @@ async fn changes_blame(
     let id = parse_work_id(&work_id)?;
     let (_, path) = normalize_source_relative(&query.path)?;
     let item = forge(&state).load(&id).map_err(map_err)?;
-    let environment = item.workspace_environment().cloned().ok_or_else(|| {
-        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
-    })?;
+    let environment = item
+        .workspace_environment()
+        .cloned()
+        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
     let hunks = forge(&state)
         .git()
         .blame(&environment.worktree, &path)
@@ -4337,9 +4608,10 @@ async fn resolve_changes_conflict(
     let id = parse_work_id(&work_id)?;
     let (_, path) = normalize_source_relative(&body.path)?;
     let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let environment = item.workspace_environment().cloned().ok_or_else(|| {
-        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
-    })?;
+    let environment = item
+        .workspace_environment()
+        .cloned()
+        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
     let comparison = changes_file_diff(&state, &id, &path)?;
     if !comparison.conflict && comparison.status != "unmerged" {
         return Err(request_error(
@@ -4458,11 +4730,7 @@ struct RevertChangesHunkRequest {
     generation: u64,
 }
 
-fn apply_hunks_except(
-    baseline: &str,
-    hunks: &[ReviewDiffHunk],
-    skip: usize,
-) -> ApiResult<String> {
+fn apply_hunks_except(baseline: &str, hunks: &[ReviewDiffHunk], skip: usize) -> ApiResult<String> {
     let mut lines: Vec<String> = if baseline.is_empty() {
         Vec::new()
     } else {
@@ -4530,10 +4798,7 @@ async fn revert_changes_hunk(
         ));
     }
     if comparison.hunks.is_empty() {
-        return Err(request_error(
-            StatusCode::CONFLICT,
-            "no hunks to revert",
-        ));
+        return Err(request_error(StatusCode::CONFLICT, "no hunks to revert"));
     }
     if body.hunk_index >= comparison.hunks.len() {
         return Err(request_error(
@@ -4554,9 +4819,10 @@ async fn revert_changes_hunk(
     let baseline = comparison.baseline.content.clone().unwrap_or_default();
     let next = apply_hunks_except(&baseline, &comparison.hunks, body.hunk_index)?;
     let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let environment = item.workspace_environment().cloned().ok_or_else(|| {
-        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
-    })?;
+    let environment = item
+        .workspace_environment()
+        .cloned()
+        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
     let candidate = environment.worktree.join(&comparison.path);
     let (destination, relative) = if candidate.is_file() || comparison.working.exists {
         if candidate.is_file() {
@@ -5399,42 +5665,140 @@ struct ProjectTaskOutputEvent {
 
 const TASK_OUTPUT_CAP: usize = 256 * 1024;
 const TASK_CHUNK_REPLAY_CAP: usize = 400;
+const TASK_CHUNK_REPLAY_BYTES: usize = 1024 * 1024;
+const PROJECT_TASK_RUN_CAP: usize = 128;
+const PROJECT_TASK_TERMINAL_CAP: usize = 64;
+const PROJECT_TASK_RUN_MEMORY_RESERVATION: u32 = 2 * 1024 * 1024;
+const PROJECT_TASK_GLOBAL_MEMORY_BYTES: usize = 64 * 1024 * 1024;
+const PROJECT_TASK_TERMINAL_TTL: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 const CONFIGURED_TASK_CAP: usize = 24;
+
+#[derive(Default)]
+struct TaskOutputTail {
+    chunks: std::collections::VecDeque<String>,
+    bytes: usize,
+}
+
+impl TaskOutputTail {
+    fn append(&mut self, chunk: &str) -> bool {
+        if chunk.is_empty() {
+            return false;
+        }
+        let mut retained = chunk;
+        let mut truncated = false;
+        if retained.len() > TASK_OUTPUT_CAP {
+            let mut start = retained.len() - TASK_OUTPUT_CAP;
+            while start < retained.len() && !retained.is_char_boundary(start) {
+                start += 1;
+            }
+            retained = &retained[start..];
+            self.chunks.clear();
+            self.bytes = 0;
+            truncated = true;
+        }
+        self.bytes = self.bytes.saturating_add(retained.len());
+        self.chunks.push_back(retained.to_owned());
+        while self.bytes > TASK_OUTPUT_CAP {
+            let Some(evicted) = self.chunks.pop_front() else {
+                break;
+            };
+            self.bytes = self.bytes.saturating_sub(evicted.len());
+            truncated = true;
+        }
+        truncated
+    }
+
+    fn materialize(&self) -> String {
+        let mut output = String::with_capacity(self.bytes);
+        for chunk in &self.chunks {
+            output.push_str(chunk);
+        }
+        output
+    }
+
+    fn clear(&mut self) {
+        self.chunks.clear();
+        self.bytes = 0;
+    }
+}
 
 struct ProjectTaskRunStore {
     run: ProjectTaskRun,
     root: PathBuf,
     ready_re: Option<regex::Regex>,
     problem_re: Option<(regex::Regex, ProjectProblemPattern)>,
-    chunks: std::collections::VecDeque<ProjectTaskOutputEvent>,
-    tx: tokio::sync::broadcast::Sender<ProjectTaskOutputEvent>,
+    stdout: TaskOutputTail,
+    stderr: TaskOutputTail,
+    chunks: std::collections::VecDeque<(Arc<ProjectTaskOutputEvent>, usize)>,
+    chunk_bytes: usize,
+    tx: tokio::sync::broadcast::Sender<Arc<ProjectTaskOutputEvent>>,
+}
+
+impl ProjectTaskRunStore {
+    fn snapshot(&self) -> ProjectTaskRun {
+        let mut run = self.run.clone();
+        if let Some(result) = &run.result {
+            run.stdout = result.stdout.clone();
+            run.stderr = result.stderr.clone();
+        } else {
+            run.stdout = self.stdout.materialize();
+            run.stderr = self.stderr.materialize();
+        }
+        run
+    }
+}
+
+struct ProjectTaskRunHandle {
+    store: tokio::sync::Mutex<ProjectTaskRunStore>,
+    terminal_at: Mutex<Option<std::time::Instant>>,
+    _memory_permit: tokio::sync::OwnedSemaphorePermit,
 }
 
 static PROJECT_TASK_RUNS: LazyLock<
-    tokio::sync::RwLock<std::collections::HashMap<String, ProjectTaskRunStore>>,
+    tokio::sync::RwLock<std::collections::HashMap<String, Arc<ProjectTaskRunHandle>>>,
 > = LazyLock::new(|| tokio::sync::RwLock::new(std::collections::HashMap::new()));
+static PROJECT_TASK_MEMORY: LazyLock<Arc<tokio::sync::Semaphore>> = LazyLock::new(|| {
+    Arc::new(tokio::sync::Semaphore::new(
+        PROJECT_TASK_GLOBAL_MEMORY_BYTES,
+    ))
+});
 static PROJECT_TASK_CHILDREN: LazyLock<
     tokio::sync::RwLock<
         std::collections::HashMap<String, Arc<tokio::sync::Mutex<tokio::process::Child>>>,
     >,
 > = LazyLock::new(|| tokio::sync::RwLock::new(std::collections::HashMap::new()));
 
-fn append_bounded_output(buf: &mut String, chunk: &str, truncated: &mut bool) {
-    if chunk.is_empty() {
-        return;
+fn prune_project_task_runs(
+    runs: &mut std::collections::HashMap<String, Arc<ProjectTaskRunHandle>>,
+) {
+    let now = std::time::Instant::now();
+    runs.retain(|_, handle| {
+        handle
+            .terminal_at
+            .lock()
+            .expect("project task terminal timestamp")
+            .is_none_or(|terminal| now.duration_since(terminal) < PROJECT_TASK_TERMINAL_TTL)
+    });
+    let mut terminal = runs
+        .iter()
+        .filter_map(|(id, handle)| {
+            handle
+                .terminal_at
+                .lock()
+                .expect("project task terminal timestamp")
+                .map(|at| (at, id.clone()))
+        })
+        .collect::<Vec<_>>();
+    terminal.sort_by_key(|(at, _)| *at);
+    let overflow = terminal.len().saturating_sub(PROJECT_TASK_TERMINAL_CAP);
+    for (_, id) in terminal.into_iter().take(overflow) {
+        runs.remove(&id);
     }
-    buf.push_str(chunk);
-    if buf.len() <= TASK_OUTPUT_CAP {
-        return;
-    }
-    *truncated = true;
-    let drain = buf.len() - TASK_OUTPUT_CAP;
-    let drain = buf
-        .char_indices()
-        .find(|(index, _)| *index >= drain)
-        .map(|(index, _)| index)
-        .unwrap_or(drain);
-    buf.drain(..drain);
+}
+
+async fn project_task_run_snapshot(run_id: &str) -> Option<ProjectTaskRun> {
+    let handle = PROJECT_TASK_RUNS.read().await.get(run_id).cloned()?;
+    Some(handle.store.lock().await.snapshot())
 }
 
 fn task_run_is_terminal(run: &ProjectTaskRun) -> bool {
@@ -5444,6 +5808,26 @@ fn task_run_is_terminal(run: &ProjectTaskRun) -> bool {
 
 fn task_output_event_is_terminal(event: &ProjectTaskOutputEvent) -> bool {
     event.kind == "state" && event.result.is_some()
+}
+
+fn task_replay_gap_event(
+    run_id: &str,
+    requested: u64,
+    available_from: u64,
+) -> ProjectTaskOutputEvent {
+    ProjectTaskOutputEvent {
+        seq: requested,
+        run_id: run_id.to_owned(),
+        kind: "gap".into(),
+        stream: None,
+        text: Some(format!(
+            "requested sequence {requested} expired; replay resumes at {available_from}"
+        )),
+        state: Some("replay_gap".into()),
+        result: None,
+        locations: None,
+        ready_url: None,
+    }
 }
 
 fn default_ready_pattern() -> &'static str {
@@ -5462,9 +5846,7 @@ fn compile_ready_pattern(task: &ProjectTask) -> Option<regex::Regex> {
     regex::Regex::new(pattern).ok()
 }
 
-fn compile_problem_pattern(
-    task: &ProjectTask,
-) -> Option<(regex::Regex, ProjectProblemPattern)> {
+fn compile_problem_pattern(task: &ProjectTask) -> Option<(regex::Regex, ProjectProblemPattern)> {
     let pattern = task.problem_matcher.as_ref()?;
     let re = regex::Regex::new(&pattern.regexp).ok()?;
     Some((re, pattern.clone()))
@@ -5549,9 +5931,18 @@ fn parse_output_locations_with_matcher(
 }
 
 fn push_task_event(store: &mut ProjectTaskRunStore, event: ProjectTaskOutputEvent) {
-    store.chunks.push_back(event.clone());
-    while store.chunks.len() > TASK_CHUNK_REPLAY_CAP {
-        store.chunks.pop_front();
+    let encoded_bytes = serde_json::to_vec(&event).map_or(0, |bytes| bytes.len());
+    let event = Arc::new(event);
+    store.chunk_bytes = store.chunk_bytes.saturating_add(encoded_bytes);
+    store
+        .chunks
+        .push_back((Arc::clone(&event), encoded_bytes));
+    while store.chunks.len() > TASK_CHUNK_REPLAY_CAP || store.chunk_bytes > TASK_CHUNK_REPLAY_BYTES
+    {
+        let Some((_evicted, bytes)) = store.chunks.pop_front() else {
+            break;
+        };
+        store.chunk_bytes = store.chunk_bytes.saturating_sub(bytes);
     }
     let _ = store.tx.send(event);
 }
@@ -5560,21 +5951,21 @@ async fn publish_task_output(run_id: &str, stream: &str, text: &str) {
     if text.is_empty() {
         return;
     }
-    let became_ready = {
-        let mut runs = PROJECT_TASK_RUNS.write().await;
-        let Some(store) = runs.get_mut(run_id) else {
+    let Some(handle) = PROJECT_TASK_RUNS.read().await.get(run_id).cloned() else {
+        return;
+    };
+    let (became_ready, work_id, ready_url) = {
+        let mut store = handle.store.lock().await;
+        if store.run.run_id != run_id {
             return;
-        };
-        if stream == "stderr" {
-            append_bounded_output(&mut store.run.stderr, text, &mut store.run.output_truncated);
-        } else {
-            append_bounded_output(&mut store.run.stdout, text, &mut store.run.output_truncated);
         }
-        let matched = parse_output_locations_with_matcher(
-            &store.root,
-            text,
-            store.problem_re.as_ref(),
-        );
+        if stream == "stderr" {
+            store.run.output_truncated |= store.stderr.append(text);
+        } else {
+            store.run.output_truncated |= store.stdout.append(text);
+        }
+        let matched =
+            parse_output_locations_with_matcher(&store.root, text, store.problem_re.as_ref());
         let before = store.run.locations.len();
         merge_task_locations(&mut store.run.locations, matched);
         let new_locations = if store.run.locations.len() > before {
@@ -5585,7 +5976,7 @@ async fn publish_task_output(run_id: &str, stream: &str, text: &str) {
         let seq = store.run.next_seq;
         store.run.next_seq = seq.saturating_add(1);
         push_task_event(
-            store,
+            &mut store,
             ProjectTaskOutputEvent {
                 seq,
                 run_id: run_id.to_owned(),
@@ -5601,28 +5992,28 @@ async fn publish_task_output(run_id: &str, stream: &str, text: &str) {
         let waiting_for_ready = store.run.task.long_running
             && matches!(store.run.state.as_str(), "running")
             && store.ready_re.is_some();
-        let matched_ready = waiting_for_ready
-            && store
-                .ready_re
-                .as_ref()
-                .is_some_and(|re| re.is_match(text));
+        let matched_ready =
+            waiting_for_ready && store.ready_re.as_ref().is_some_and(|re| re.is_match(text));
         if matched_ready {
-            let haystack = format!("{}\n{}\n{}", store.run.stdout, store.run.stderr, text);
+            let haystack = format!(
+                "{}\n{}\n{}",
+                store.stdout.materialize(),
+                store.stderr.materialize(),
+                text
+            );
             if let Some(url) = crate::daemon::forge_preview::extract_ready_url(&haystack) {
                 store.run.ready_url = Some(url);
             } else if let Some(url) = crate::daemon::forge_preview::extract_ready_url(text) {
                 store.run.ready_url = Some(url);
             }
         }
-        matched_ready
+        (
+            matched_ready,
+            store.run.work_id.clone(),
+            store.run.ready_url.clone(),
+        )
     };
     if became_ready {
-        let (work_id, ready_url) = {
-            let runs = PROJECT_TASK_RUNS.read().await;
-            runs.get(run_id)
-                .map(|store| (store.run.work_id.clone(), store.run.ready_url.clone()))
-                .unwrap_or_default()
-        };
         if let (true, Some(url)) = (!work_id.is_empty(), ready_url.as_ref()) {
             let _ = crate::daemon::forge_preview::mint_preview_grant(&work_id, run_id, url).await;
         }
@@ -5630,53 +6021,49 @@ async fn publish_task_output(run_id: &str, stream: &str, text: &str) {
     }
 }
 
-async fn publish_task_state(
-    run_id: &str,
-    state: &str,
-    result: Option<ProjectTaskResult>,
-) {
-    let mut runs = PROJECT_TASK_RUNS.write().await;
-    let Some(store) = runs.get_mut(run_id) else {
+async fn publish_task_state(run_id: &str, state: &str, result: Option<ProjectTaskResult>) {
+    let Some(handle) = PROJECT_TASK_RUNS.read().await.get(run_id).cloned() else {
         return;
     };
+    let mut store = handle.store.lock().await;
     // Readiness must not clobber cancel/terminal states.
     if state == "ready" && store.run.state != "running" {
         return;
     }
     store.run.state = state.to_owned();
     if let Some(result) = result.clone() {
-        if !result.stdout.is_empty() {
-            store.run.stdout = result.stdout.clone();
-        }
-        if !result.stderr.is_empty() {
-            store.run.stderr = result.stderr.clone();
-        }
         store.run.output_truncated = store.run.output_truncated || result.truncated;
         if !result.locations.is_empty() {
             merge_task_locations(&mut store.run.locations, result.locations.clone());
         }
         store.run.result = Some(result);
+        store.stdout.clear();
+        store.stderr.clear();
     }
     let seq = store.run.next_seq;
     store.run.next_seq = seq.saturating_add(1);
-    push_task_event(
-        store,
-        ProjectTaskOutputEvent {
-            seq,
-            run_id: run_id.to_owned(),
-            kind: "state".into(),
-            stream: None,
-            text: None,
-            state: Some(state.to_owned()),
-            result: store.run.result.clone(),
-            locations: if store.run.locations.is_empty() {
-                None
-            } else {
-                Some(store.run.locations.clone())
-            },
-            ready_url: store.run.ready_url.clone(),
+    let event = ProjectTaskOutputEvent {
+        seq,
+        run_id: run_id.to_owned(),
+        kind: "state".into(),
+        stream: None,
+        text: None,
+        state: Some(state.to_owned()),
+        result: store.run.result.clone(),
+        locations: if store.run.locations.is_empty() {
+            None
+        } else {
+            Some(store.run.locations.clone())
         },
-    );
+        ready_url: store.run.ready_url.clone(),
+    };
+    push_task_event(&mut store, event);
+    if task_run_is_terminal(&store.run) {
+        *handle
+            .terminal_at
+            .lock()
+            .expect("project task terminal timestamp") = Some(std::time::Instant::now());
+    }
 }
 
 async fn pump_task_stream(
@@ -5698,10 +6085,7 @@ async fn pump_task_stream(
     }
 }
 
-async fn pump_task_stderr(
-    run_id: String,
-    mut reader: tokio::process::ChildStderr,
-) {
+async fn pump_task_stderr(run_id: String, mut reader: tokio::process::ChildStderr) {
     use tokio::io::AsyncReadExt;
     let mut buf = [0u8; 4096];
     loop {
@@ -6003,9 +6387,9 @@ fn configured_project_tasks(root: &FsPath) -> Vec<ProjectTask> {
             || item
                 .get("problemMatcher")
                 .map(|matcher| match matcher {
-                    serde_json::Value::Array(items) => items
-                        .iter()
-                        .any(|entry| entry.get("background").is_some()),
+                    serde_json::Value::Array(items) => {
+                        items.iter().any(|entry| entry.get("background").is_some())
+                    }
                     other => other.get("background").is_some(),
                 })
                 .unwrap_or(false);
@@ -6329,6 +6713,14 @@ async fn start_project_task_run(
         locations: Vec::new(),
         ready_url: None,
     };
+    let memory_permit = Arc::clone(&PROJECT_TASK_MEMORY)
+        .try_acquire_many_owned(PROJECT_TASK_RUN_MEMORY_RESERVATION)
+        .map_err(|_| {
+            request_error(
+                StatusCode::TOO_MANY_REQUESTS,
+                "Project task memory budget is exhausted; wait for an earlier run to expire",
+            )
+        })?;
     let mut child = background_tokio_command(&task.argv[0])
         .args(&task.argv[1..])
         .current_dir(&root)
@@ -6343,17 +6735,34 @@ async fn start_project_task_run(
             )
         })?;
     let (tx, _) = tokio::sync::broadcast::channel(256);
-    PROJECT_TASK_RUNS.write().await.insert(
-        run_id.clone(),
-        ProjectTaskRunStore {
-            run: run.clone(),
-            root: root.clone(),
-            ready_re,
-            problem_re,
-            chunks: std::collections::VecDeque::new(),
-            tx,
-        },
-    );
+    {
+        let mut runs = PROJECT_TASK_RUNS.write().await;
+        prune_project_task_runs(&mut runs);
+        if runs.len() >= PROJECT_TASK_RUN_CAP {
+            return Err(request_error(
+                StatusCode::TOO_MANY_REQUESTS,
+                "Project task run registry is full; wait for a terminal run to expire",
+            ));
+        }
+        runs.insert(
+            run_id.clone(),
+            Arc::new(ProjectTaskRunHandle {
+                store: tokio::sync::Mutex::new(ProjectTaskRunStore {
+                    run: run.clone(),
+                    root: root.clone(),
+                    ready_re,
+                    problem_re,
+                    stdout: TaskOutputTail::default(),
+                    stderr: TaskOutputTail::default(),
+                    chunks: std::collections::VecDeque::new(),
+                    chunk_bytes: 0,
+                    tx,
+                }),
+                terminal_at: Mutex::new(None),
+                _memory_permit: memory_permit,
+            }),
+        );
+    }
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
     if let Some(stdout) = stdout {
@@ -6377,26 +6786,23 @@ async fn start_project_task_run(
                 // Give stream pumps a moment to flush final bytes.
                 tokio::time::sleep(std::time::Duration::from_millis(50)).await;
                 let (stdout, stderr, output_truncated, prior_locations, problem_re) = {
-                    let runs = PROJECT_TASK_RUNS.read().await;
-                    runs.get(&run_id_for_task)
-                        .map(|store| {
-                            (
-                                store.run.stdout.clone(),
-                                store.run.stderr.clone(),
-                                store.run.output_truncated,
-                                store.run.locations.clone(),
-                                store.problem_re.clone(),
-                            )
-                        })
-                        .unwrap_or_else(|| {
-                            (
-                                String::new(),
-                                String::new(),
-                                false,
-                                Vec::new(),
-                                None,
-                            )
-                        })
+                    let handle = PROJECT_TASK_RUNS
+                        .read()
+                        .await
+                        .get(&run_id_for_task)
+                        .cloned();
+                    if let Some(handle) = handle {
+                        let store = handle.store.lock().await;
+                        (
+                            store.stdout.materialize(),
+                            store.stderr.materialize(),
+                            store.run.output_truncated,
+                            store.run.locations.clone(),
+                            store.problem_re.clone(),
+                        )
+                    } else {
+                        (String::new(), String::new(), false, Vec::new(), None)
+                    }
                 };
                 let mut locations = prior_locations;
                 merge_task_locations(
@@ -6417,13 +6823,17 @@ async fn start_project_task_run(
                     duration_ms: started.elapsed().as_millis(),
                     locations,
                 };
-                let cancelled = PROJECT_TASK_RUNS
+                let handle = PROJECT_TASK_RUNS
                     .read()
                     .await
                     .get(&run_id_for_task)
-                    .is_some_and(|store| {
-                        matches!(store.run.state.as_str(), "cancelled")
-                    });
+                    .cloned();
+                let cancelled = if let Some(handle) = handle {
+                    let store = handle.store.lock().await;
+                    matches!(store.run.state.as_str(), "cancelled")
+                } else {
+                    false
+                };
                 let _ = forge.append_command_log(&lease, &serde_json::json!({"kind":if cancelled {"project_task_cancelled"} else {"project_task"},"run_id":run_id_for_task,"task":result.task,"success":result.success,"exit_code":result.exit_code,"duration_ms":result.duration_ms,"stdout":result.stdout,"stderr":result.stderr,"truncated":result.truncated,"locations":result.locations}));
                 let final_state = if cancelled {
                     "cancelled"
@@ -6446,11 +6856,8 @@ async fn start_project_task_run(
 async fn get_project_task_run(
     Path((work_id, run_id)): Path<(String, String)>,
 ) -> ApiResult<Json<ProjectTaskRun>> {
-    let run = PROJECT_TASK_RUNS
-        .read()
+    let run = project_task_run_snapshot(&run_id)
         .await
-        .get(&run_id)
-        .map(|store| store.run.clone())
         .filter(|run| run.work_id == work_id)
         .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "Project run was not found"))?;
     Ok(Json(run))
@@ -6469,11 +6876,8 @@ struct TaskRunPreviewResponse {
 async fn create_task_run_preview(
     Path((work_id, run_id)): Path<(String, String)>,
 ) -> ApiResult<Json<TaskRunPreviewResponse>> {
-    let run = PROJECT_TASK_RUNS
-        .read()
+    let run = project_task_run_snapshot(&run_id)
         .await
-        .get(&run_id)
-        .map(|store| store.run.clone())
         .filter(|run| run.work_id == work_id)
         .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "Project run was not found"))?;
     let ready_url = run.ready_url.clone().ok_or_else(|| {
@@ -6489,9 +6893,7 @@ async fn create_task_run_preview(
         Some(token) => token,
         None => crate::daemon::forge_preview::mint_preview_grant(&work_id, &run_id, &ready_url)
             .await
-            .ok_or_else(|| {
-                request_error(StatusCode::CONFLICT, "Could not mint a preview grant")
-            })?,
+            .ok_or_else(|| request_error(StatusCode::CONFLICT, "Could not mint a preview grant"))?,
     };
     Ok(Json(TaskRunPreviewResponse {
         work_id,
@@ -6506,11 +6908,9 @@ async fn create_task_run_preview(
 async fn cancel_project_task_run(
     Path((work_id, run_id)): Path<(String, String)>,
 ) -> ApiResult<Json<ProjectTaskRun>> {
-    if PROJECT_TASK_RUNS
-        .read()
+    if project_task_run_snapshot(&run_id)
         .await
-        .get(&run_id)
-        .is_none_or(|store| store.run.work_id != work_id)
+        .is_none_or(|run| run.work_id != work_id)
     {
         return Err(request_error(
             StatusCode::NOT_FOUND,
@@ -6530,11 +6930,8 @@ async fn cancel_project_task_run(
         )
     })?;
     publish_task_state(&run_id, "cancelled", None).await;
-    let run = PROJECT_TASK_RUNS
-        .read()
+    let run = project_task_run_snapshot(&run_id)
         .await
-        .get(&run_id)
-        .map(|store| store.run.clone())
         .filter(|run| run.work_id == work_id)
         .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "Project run was not found"))?;
     Ok(Json(run))
@@ -6552,7 +6949,7 @@ async fn project_task_run_events(
 ) -> ApiResult<
     axum::response::Sse<
         impl futures_util::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>
-            + Send,
+        + Send,
     >,
 > {
     use axum::response::sse::{Event, KeepAlive, Sse};
@@ -6562,30 +6959,51 @@ async fn project_task_run_events(
 
     let since = query.since.unwrap_or(0);
     let (pending, rx, terminal) = {
-        let runs = PROJECT_TASK_RUNS.read().await;
-        let store = runs
+        let handle = PROJECT_TASK_RUNS
+            .read()
+            .await
             .get(&run_id)
-            .filter(|store| store.run.work_id == work_id)
+            .cloned()
             .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "Project run was not found"))?;
-        let pending = store
+        let store = handle.store.lock().await;
+        if store.run.work_id != work_id {
+            return Err(request_error(
+                StatusCode::NOT_FOUND,
+                "Project run was not found",
+            ));
+        }
+        let mut pending = store
             .chunks
             .iter()
-            .filter(|event| event.seq >= since)
-            .cloned()
+            .filter(|(event, _)| event.seq >= since)
+            .map(|(event, _)| Arc::clone(event))
             .collect::<std::collections::VecDeque<_>>();
+        let available_from = store
+            .chunks
+            .front()
+            .map_or(store.run.next_seq, |(event, _)| event.seq);
+        if available_from > since {
+            pending.push_front(Arc::new(task_replay_gap_event(
+                &run_id,
+                since,
+                available_from,
+            )));
+        }
         // Cancel may flip state before the process exits and final result lands.
         let terminal = task_run_is_terminal(&store.run);
         (pending, store.tx.subscribe(), terminal)
     };
 
     struct StreamState {
-        pending: std::collections::VecDeque<ProjectTaskOutputEvent>,
-        rx: tokio::sync::broadcast::Receiver<ProjectTaskOutputEvent>,
+        run_id: String,
+        pending: std::collections::VecDeque<Arc<ProjectTaskOutputEvent>>,
+        rx: tokio::sync::broadcast::Receiver<Arc<ProjectTaskOutputEvent>>,
         last_seq: u64,
         terminal: bool,
     }
 
     let initial = StreamState {
+        run_id: run_id.clone(),
         pending,
         rx,
         last_seq: since.saturating_sub(1),
@@ -6595,12 +7013,15 @@ async fn project_task_run_events(
     let stream = unfold(initial, |mut state| async move {
         loop {
             if let Some(event) = state.pending.pop_front() {
-                if event.seq <= state.last_seq {
+                let gap = event.kind == "gap";
+                if !gap && event.seq <= state.last_seq {
                     continue;
                 }
-                state.last_seq = event.seq;
+                if !gap {
+                    state.last_seq = event.seq;
+                }
                 let done = task_output_event_is_terminal(&event);
-                let data = serde_json::to_string(&event).unwrap_or_else(|_| "{}".into());
+                let data = serde_json::to_string(event.as_ref()).unwrap_or_else(|_| "{}".into());
                 if done {
                     state.terminal = true;
                 }
@@ -6619,7 +7040,13 @@ async fn project_task_run_events(
                     }
                     state.pending.push_back(event);
                 }
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                    state.pending.push_back(Arc::new(task_replay_gap_event(
+                        &state.run_id,
+                        state.last_seq.saturating_add(1),
+                        state.last_seq.saturating_add(skipped).saturating_add(1),
+                    )));
+                }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                     state.terminal = true;
                 }
@@ -8054,7 +8481,7 @@ async fn forge_project_event_stream(
 ) -> ApiResult<
     axum::response::Sse<
         impl futures_util::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>
-            + use<>,
+        + use<>,
     >,
 > {
     use axum::response::sse::{Event, KeepAlive, Sse};
@@ -8292,15 +8719,124 @@ mod source_tests {
 
     #[test]
     fn task_output_is_bounded_and_marks_truncation() {
-        let mut buf = String::new();
-        let mut truncated = false;
-        append_bounded_output(&mut buf, &"a".repeat(TASK_OUTPUT_CAP), &mut truncated);
-        assert!(!truncated);
-        assert_eq!(buf.len(), TASK_OUTPUT_CAP);
-        append_bounded_output(&mut buf, "xyz", &mut truncated);
-        assert!(truncated);
-        assert_eq!(buf.len(), TASK_OUTPUT_CAP);
-        assert!(buf.ends_with("xyz"));
+        let mut tail = TaskOutputTail::default();
+        assert!(!tail.append(&"a".repeat(TASK_OUTPUT_CAP)));
+        assert_eq!(tail.bytes, TASK_OUTPUT_CAP);
+        assert!(tail.append("xyz"));
+        let output = tail.materialize();
+        assert!(output.len() <= TASK_OUTPUT_CAP);
+        assert!(output.ends_with("xyz"));
+        assert!(tail.chunks.len() <= 2);
+    }
+
+    fn test_project_task_run_store(run_id: &str) -> ProjectTaskRunStore {
+        let task = ProjectTask {
+            id: "cargo-check".into(),
+            label: "Check".into(),
+            kind: "verify".into(),
+            argv: vec!["cargo".into(), "check".into()],
+            provider: "cargo".into(),
+            long_running: false,
+            ready_pattern: None,
+            problem_matcher: None,
+        };
+        let (tx, _) = tokio::sync::broadcast::channel(8);
+        ProjectTaskRunStore {
+            run: ProjectTaskRun {
+                run_id: run_id.into(),
+                work_id: "work-1".into(),
+                state: "running".into(),
+                task,
+                result: None,
+                stdout: String::new(),
+                stderr: String::new(),
+                output_truncated: false,
+                next_seq: 0,
+                locations: Vec::new(),
+                ready_url: None,
+            },
+            root: PathBuf::new(),
+            ready_re: None,
+            problem_re: None,
+            stdout: TaskOutputTail::default(),
+            stderr: TaskOutputTail::default(),
+            chunks: std::collections::VecDeque::new(),
+            chunk_bytes: 0,
+            tx,
+        }
+    }
+
+    fn test_project_task_handle(
+        run_id: &str,
+        terminal_at: Option<std::time::Instant>,
+    ) -> Arc<ProjectTaskRunHandle> {
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+        Arc::new(ProjectTaskRunHandle {
+            store: tokio::sync::Mutex::new(test_project_task_run_store(run_id)),
+            terminal_at: Mutex::new(terminal_at),
+            _memory_permit: semaphore.try_acquire_owned().unwrap(),
+        })
+    }
+
+    #[test]
+    fn task_replay_is_bounded_by_count_and_bytes_with_explicit_gap() {
+        let mut store = test_project_task_run_store("run-1");
+        for seq in 0..600 {
+            push_task_event(
+                &mut store,
+                ProjectTaskOutputEvent {
+                    seq,
+                    run_id: "run-1".into(),
+                    kind: "output".into(),
+                    stream: Some("stdout".into()),
+                    text: Some("x".repeat(4096)),
+                    state: None,
+                    result: None,
+                    locations: None,
+                    ready_url: None,
+                },
+            );
+        }
+        assert!(store.chunks.len() <= TASK_CHUNK_REPLAY_CAP);
+        assert!(store.chunk_bytes <= TASK_CHUNK_REPLAY_BYTES);
+        let available_from = store.chunks.front().unwrap().0.seq;
+        assert!(available_from > 0);
+        let gap = task_replay_gap_event("run-1", 0, available_from);
+        assert_eq!(gap.kind, "gap");
+        assert_eq!(gap.state.as_deref(), Some("replay_gap"));
+    }
+
+    #[test]
+    fn terminal_registry_retention_never_evicts_active_runs() {
+        let now = std::time::Instant::now();
+        let mut runs = std::collections::HashMap::new();
+        runs.insert(
+            "expired".into(),
+            test_project_task_handle(
+                "expired",
+                Some(now - PROJECT_TASK_TERMINAL_TTL - std::time::Duration::from_secs(1)),
+            ),
+        );
+        for index in 0..70 {
+            let id = format!("terminal-{index}");
+            runs.insert(id.clone(), test_project_task_handle(&id, Some(now)));
+        }
+        for index in 0..3 {
+            let id = format!("active-{index}");
+            runs.insert(id.clone(), test_project_task_handle(&id, None));
+        }
+
+        prune_project_task_runs(&mut runs);
+
+        assert!(!runs.contains_key("expired"));
+        assert_eq!(
+            runs.keys().filter(|id| id.starts_with("active-")).count(),
+            3
+        );
+        assert_eq!(
+            runs.keys().filter(|id| id.starts_with("terminal-")).count(),
+            PROJECT_TASK_TERMINAL_CAP
+        );
     }
 
     #[test]
@@ -8405,7 +8941,10 @@ mod source_tests {
         )
         .unwrap();
         let tasks = project_tasks(root.path());
-        let lint = tasks.iter().find(|task| task.id == "configured-lint").unwrap();
+        let lint = tasks
+            .iter()
+            .find(|task| task.id == "configured-lint")
+            .unwrap();
         assert_eq!(lint.argv, vec!["npm", "run", "lint"]);
         assert_eq!(lint.provider, "vscode-tasks");
         assert!(lint.problem_matcher.is_some());
@@ -8501,9 +9040,11 @@ mod source_tests {
         let (nested, nested_relative) =
             resolve_new_source_path(root.path(), "missing/new.rs").unwrap();
         assert_eq!(nested_relative, "missing/new.rs");
-        assert!(nested
-            .parent()
-            .is_some_and(|parent| parent.ends_with("missing")));
+        assert!(
+            nested
+                .parent()
+                .is_some_and(|parent| parent.ends_with("missing"))
+        );
         assert!(resolve_new_source_path(root.path(), ".git/hooks/new-hook").is_err());
         std::fs::write(root.path().join("src/existing.rs"), "fn existing() {}\n").unwrap();
         assert!(resolve_new_source_path(root.path(), "src/existing.rs").is_err());
@@ -8893,8 +9434,7 @@ mod source_tests {
             limit: 1,
             skip: 0,
         };
-        let (page1, truncated, next) =
-            run_repository_search(root.path(), &options).unwrap();
+        let (page1, truncated, next) = run_repository_search(root.path(), &options).unwrap();
         assert_eq!(page1.len(), 1);
         assert!(truncated);
         assert_eq!(next.as_deref(), Some("1"));
