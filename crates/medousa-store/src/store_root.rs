@@ -936,12 +936,10 @@ fn rename_noreplace(directory: &Dir, from: &str, to: &str) -> std::io::Result<()
     use std::ffi::CString;
     use std::os::fd::AsRawFd as _;
 
-    let from_c = CString::new(from).map_err(|_| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, "path contains NUL")
-    })?;
-    let to_c = CString::new(to).map_err(|_| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, "path contains NUL")
-    })?;
+    let from_c = CString::new(from)
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "path contains NUL"))?;
+    let to_c = CString::new(to)
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "path contains NUL"))?;
     // SAFETY: directory fd is live; paths are relative C strings without NUL.
     let rc = unsafe {
         libc::renameat2(
@@ -965,12 +963,10 @@ fn rename_noreplace(directory: &Dir, from: &str, to: &str) -> std::io::Result<()
     use std::os::fd::AsRawFd as _;
 
     const RENAME_EXCL: u32 = 0x0000_0004;
-    let from_c = CString::new(from).map_err(|_| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, "path contains NUL")
-    })?;
-    let to_c = CString::new(to).map_err(|_| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, "path contains NUL")
-    })?;
+    let from_c = CString::new(from)
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "path contains NUL"))?;
+    let to_c = CString::new(to)
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "path contains NUL"))?;
     // SAFETY: directory fd is live; paths are relative C strings without NUL.
     let rc = unsafe {
         libc::renameatx_np(
@@ -994,12 +990,10 @@ fn rename_noreplace(directory: &Dir, from: &str, to: &str) -> std::io::Result<()
     use std::ffi::CString;
     use std::os::fd::AsRawFd as _;
 
-    let from_c = CString::new(from).map_err(|_| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, "path contains NUL")
-    })?;
-    let to_c = CString::new(to).map_err(|_| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, "path contains NUL")
-    })?;
+    let from_c = CString::new(from)
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "path contains NUL"))?;
+    let to_c = CString::new(to)
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "path contains NUL"))?;
     let rc = unsafe {
         libc::linkat(
             directory.as_raw_fd(),
@@ -1023,7 +1017,7 @@ fn rename_noreplace(directory: &Dir, from: &str, to: &str) -> std::io::Result<()
     use std::path::PathBuf;
     use windows::Win32::Foundation::{HANDLE, MAX_PATH};
     use windows::Win32::Storage::FileSystem::{
-        CreateHardLinkW, GetFinalPathNameByHandleW, FILE_NAME_NORMALIZED,
+        CreateHardLinkW, FILE_NAME_NORMALIZED, GetFinalPathNameByHandleW,
     };
     use windows::core::PCWSTR;
 
@@ -1032,13 +1026,7 @@ fn rename_noreplace(directory: &Dir, from: &str, to: &str) -> std::io::Result<()
     // the temporary. Hard-link creation is the Windows no-replace fence.
     let mut buffer = vec![0u16; MAX_PATH as usize];
     let handle = HANDLE(directory.as_raw_handle() as *mut _);
-    let len = unsafe {
-        GetFinalPathNameByHandleW(
-            handle,
-            &mut buffer,
-            FILE_NAME_NORMALIZED,
-        )
-    };
+    let len = unsafe { GetFinalPathNameByHandleW(handle, &mut buffer, FILE_NAME_NORMALIZED) };
     if len == 0 || len as usize >= buffer.len() {
         return Err(std::io::Error::last_os_error());
     }
@@ -1047,9 +1035,7 @@ fn rename_noreplace(directory: &Dir, from: &str, to: &str) -> std::io::Result<()
     // Strip \\?\ prefix when present for path joining consistency.
     let dir_path = dir_path
         .to_str()
-        .map(|s| {
-            PathBuf::from(s.strip_prefix(r"\\?\").unwrap_or(s))
-        })
+        .map(|s| PathBuf::from(s.strip_prefix(r"\\?\").unwrap_or(s)))
         .unwrap_or(dir_path);
     let from_path = dir_path.join(from);
     let to_path = dir_path.join(to);

@@ -71,7 +71,8 @@ impl VaultApi<'_> {
         &self,
         request: &VaultAddRootRequest,
     ) -> Result<VaultRootsResponse, crate::SdkError> {
-        let body = serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let body =
+            serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
         let value = self
             .client
             .transport()
@@ -84,7 +85,8 @@ impl VaultApi<'_> {
         &self,
         request: &VaultSetActiveRootRequest,
     ) -> Result<VaultRootsResponse, crate::SdkError> {
-        let body = serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let body =
+            serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
         let value = self
             .client
             .transport()
@@ -110,7 +112,8 @@ impl VaultApi<'_> {
         &self,
         request: &VaultWriteRequest,
     ) -> Result<VaultWriteResponse, crate::SdkError> {
-        let body = serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let body =
+            serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
         let value = self
             .client
             .transport()
@@ -255,10 +258,7 @@ impl VaultApi<'_> {
         decode(value).await
     }
 
-    pub async fn restore_trash(
-        &self,
-        path: &str,
-    ) -> Result<serde_json::Value, crate::SdkError> {
+    pub async fn restore_trash(&self, path: &str) -> Result<serde_json::Value, crate::SdkError> {
         let body = serde_json::json!({ "path": path });
         let value = self
             .client
@@ -367,11 +367,7 @@ impl VaultApi<'_> {
         decode(value).await
     }
 
-    pub async fn git_restore(
-        &self,
-        commit: &str,
-        path: &str,
-    ) -> Result<(), crate::SdkError> {
+    pub async fn git_restore(&self, commit: &str, path: &str) -> Result<(), crate::SdkError> {
         let body = serde_json::json!({
             "commit": commit,
             "path": path,

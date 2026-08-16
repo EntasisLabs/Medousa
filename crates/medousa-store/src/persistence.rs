@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 
-use crate::store_root::{StorePath, StoreRoot, StoreRootError, StoreRootPath};
+use crate::store_root::{StoreRoot, StoreRootError, StoreRootPath};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -360,6 +360,7 @@ impl FileTransaction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::store_root::StorePath;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct FailAt {

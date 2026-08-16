@@ -878,11 +878,8 @@ impl VaultStore {
         value
             .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|duration| {
-                DateTime::<Utc>::from_timestamp(
-                    duration.as_secs() as i64,
-                    duration.subsec_nanos(),
-                )
-                .unwrap_or_else(Utc::now)
+                DateTime::<Utc>::from_timestamp(duration.as_secs() as i64, duration.subsec_nanos())
+                    .unwrap_or_else(Utc::now)
             })
             .unwrap_or_else(Utc::now)
     }

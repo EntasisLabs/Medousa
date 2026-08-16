@@ -104,7 +104,9 @@ impl VaultService {
         let truncated = notes.len() > limit;
         let notes: Vec<_> = notes.into_iter().take(limit).collect();
         let next_cursor = if truncated {
-            notes.last().map(|note| format!("{generation}:{}", note.path))
+            notes
+                .last()
+                .map(|note| format!("{generation}:{}", note.path))
         } else {
             None
         };

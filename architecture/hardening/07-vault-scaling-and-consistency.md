@@ -1,9 +1,9 @@
 # H07 — Incremental vault index and atomic mutation
 
-> **Status:** Implementing — repair train in progress; H07.0 scaffolding only.
-> Advertised H07.1–H07.5 guarantees are not merge-ready until the repair cars
-> close no-replace CAS, recovery, freshness, admission, incremental hot paths,
-> API semantics, and Home virtualization.
+> **Status:** Implementing — repair cars R0–R7 landed on `scaling/H07-vault-atomic`.
+> Exit tests for no-replace CAS, receipt recovery, freshness fencing, admission,
+> incremental hot paths, cursor/generation API, and Home virtualization are green.
+> Findings stay Mitigated (not Validated) until multi-OS P06/P07 evidence is retained.
 >
 > **Accountable owner:** vault engine maintainers
 >

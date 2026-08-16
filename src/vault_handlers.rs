@@ -253,7 +253,9 @@ pub async fn get_vault_note(
     Path(note_path): Path<String>,
 ) -> Result<Json<VaultNoteContentResponse>, (StatusCode, String)> {
     vault_io()
-        .run_anyhow(VaultIoClass::Scan, move || VaultService::get_note(&note_path))
+        .run_anyhow(VaultIoClass::Scan, move || {
+            VaultService::get_note(&note_path)
+        })
         .await
         .map(Json)
         .map_err(map_vault_error)
@@ -263,7 +265,9 @@ pub async fn get_vault_file(
     Path(file_path): Path<String>,
 ) -> Result<Json<VaultFileContentResponse>, (StatusCode, String)> {
     vault_io()
-        .run_anyhow(VaultIoClass::Scan, move || VaultService::read_file(&file_path))
+        .run_anyhow(VaultIoClass::Scan, move || {
+            VaultService::read_file(&file_path)
+        })
         .await
         .map(Json)
         .map_err(map_vault_error)
@@ -305,7 +309,9 @@ pub async fn post_vault_note(
     Json(request): Json<VaultWriteRequest>,
 ) -> Result<Json<VaultWriteResponse>, (StatusCode, String)> {
     vault_io()
-        .run_anyhow(VaultIoClass::Mutation, move || VaultService::create_note(&request))
+        .run_anyhow(VaultIoClass::Mutation, move || {
+            VaultService::create_note(&request)
+        })
         .await
         .map(Json)
         .map_err(map_vault_error)
@@ -315,7 +321,9 @@ pub async fn delete_vault_note(
     Path(note_path): Path<String>,
 ) -> Result<Json<VaultDeleteResponse>, (StatusCode, String)> {
     vault_io()
-        .run_anyhow(VaultIoClass::Mutation, move || VaultService::delete_note(&note_path))
+        .run_anyhow(VaultIoClass::Mutation, move || {
+            VaultService::delete_note(&note_path)
+        })
         .await
         .map(Json)
         .map_err(map_vault_error)
@@ -359,11 +367,7 @@ pub async fn list_vault_changes(
     let cursor = query.cursor;
     vault_io()
         .run_anyhow(VaultIoClass::Scan, move || {
-            Ok(VaultService::changes_since(
-                since,
-                cursor.as_deref(),
-                limit,
-            ))
+            Ok(VaultService::changes_since(since, cursor.as_deref(), limit))
         })
         .await
         .map(Json)
@@ -381,7 +385,9 @@ pub async fn get_vault_backlinks(
         .ok_or_else(|| (StatusCode::BAD_REQUEST, "path is required".to_string()))?
         .to_string();
     vault_io()
-        .run_anyhow(VaultIoClass::Scan, move || VaultService::backlinks(&note_path))
+        .run_anyhow(VaultIoClass::Scan, move || {
+            VaultService::backlinks(&note_path)
+        })
         .await
         .map(Json)
         .map_err(map_vault_error)

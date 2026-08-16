@@ -69,12 +69,10 @@ impl VaultIoService {
     }
 
     async fn admit(&self, class: VaultIoClass) -> Result<Admission, VaultMutationError> {
-        let queue = Arc::clone(&self.queue)
-            .try_acquire_owned()
-            .map_err(|_| {
-                self.metrics.rejected.fetch_add(1, Ordering::Relaxed);
-                VaultMutationError::Overloaded
-            })?;
+        let queue = Arc::clone(&self.queue).try_acquire_owned().map_err(|_| {
+            self.metrics.rejected.fetch_add(1, Ordering::Relaxed);
+            VaultMutationError::Overloaded
+        })?;
         let class_sem = self.class_semaphore(class);
         let class_permit = class_sem.acquire_owned().await.map_err(|_| {
             self.metrics.rejected.fetch_add(1, Ordering::Relaxed);
@@ -89,11 +87,7 @@ impl VaultIoService {
 
     /// Admit then run `work` on the blocking pool. Never runs vault I/O inline
     /// on the calling Tokio worker.
-    pub async fn run<T, F>(
-        &self,
-        class: VaultIoClass,
-        work: F,
-    ) -> Result<T, VaultMutationError>
+    pub async fn run<T, F>(&self, class: VaultIoClass, work: F) -> Result<T, VaultMutationError>
     where
         T: Send + 'static,
         F: FnOnce() -> Result<T, VaultMutationError> + Send + 'static,
@@ -116,13 +110,21 @@ impl VaultIoService {
         F: FnOnce() -> Result<T, anyhow::Error> + Send + 'static,
     {
         match self
-            .run(class, move || work().map_err(|error| VaultMutationError::Invalid(error.to_string())))
+            .run(class, move || {
+                work().map_err(|error| VaultMutationError::Invalid(error.to_string()))
+            })
             .await
         {
             Ok(value) => Ok(value),
             Err(VaultMutationError::Overloaded) => Err(anyhow::anyhow!("vault overloaded")),
             Err(other) => Err(anyhow::anyhow!(other.to_string())),
         }
+    }
+}
+
+impl Default for VaultIoService {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

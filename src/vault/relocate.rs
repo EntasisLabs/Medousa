@@ -5,7 +5,7 @@ use std::sync::Arc;
 use medousa_store::{DurabilityLevel, StorePath};
 use serde::{Deserialize, Serialize};
 
-use crate::vault::contracts::{VaultCommitOutcome, VaultMutationError, VaultRootId, vault_receipt};
+use crate::vault::contracts::{VaultCommitOutcome, VaultMutationError, vault_receipt};
 use crate::vault::note::VaultNoteSource;
 use crate::vault::owner::VaultIndexOwner;
 use crate::vault::path::VaultPath;
@@ -231,7 +231,7 @@ fn unique_trash_path(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vault::contracts::MutationPrecondition;
+    use crate::vault::contracts::{MutationPrecondition, VaultRootId};
     use crate::vault::mutation::{WriteMutation, commit_write};
     use medousa_store::StoreRoot;
     use tempfile::tempdir;

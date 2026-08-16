@@ -110,14 +110,13 @@ fn note_path_for(shape: VaultFixtureShape, index: usize, total: usize) -> String
             format!("bucket-{bucket}/note-{index:04}.md")
         }
         VaultFixtureShape::LinkHeavy => {
-            let hub = if index == 0 {
+            if index == 0 {
                 "hub.md".to_string()
             } else if index < total.saturating_div(2).max(1) {
                 format!("spokes/spoke-{index:04}.md")
             } else {
                 format!("leaves/leaf-{index:04}.md")
-            };
-            hub
+            }
         }
     }
 }
