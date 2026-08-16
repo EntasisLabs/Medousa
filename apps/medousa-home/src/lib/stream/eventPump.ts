@@ -1,5 +1,7 @@
 import type { TurnStreamEnvelopeV2 } from "$lib/types/generated/daemon_api";
 
+export { reduceTranscriptEnvelope, transcriptLegacyFromV2 } from "./transcriptReducer";
+
 export interface StreamEventTarget {
   sessionId: string;
   event: TurnStreamEnvelopeV2;

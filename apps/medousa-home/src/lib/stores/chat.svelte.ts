@@ -36,7 +36,6 @@ import { chatInteractions } from "$lib/liquid/surfaces/chat/chatInteractions";
 import type { MediaRef } from "$lib/types/media";
 import {
   attachChatFiles,
-  chatMediaAttachmentsFromRefs,
   uploadChatFiles,
   uploadChatPaths,
 } from "$lib/utils/chatMediaUpload";
@@ -60,7 +59,7 @@ import {
 } from "$lib/utils/streamOwnership";
 import { applyStreamSeq, streamPathWithSince } from "$lib/stream/reconnect";
 import { StreamEventPump, type StreamEventTarget } from "$lib/stream/eventPump";
-import { turnStreamV2ToLegacy } from "$lib/stream/v2ToLegacy";
+import { reduceTranscriptEnvelope } from "$lib/stream/transcriptReducer";
 import { resolveTurnContent } from "$lib/utils/resolveTurnContent";
 import { friendlyUserError, MAX_MEDIA_REFS_PER_TURN } from "$lib/utils/normieErrors";
 import { settings } from "$lib/stores/settings.svelte";
@@ -84,13 +83,22 @@ import {
 } from "$lib/stores/chatSessionRuntime";
 import { chatStreamPool } from "$lib/stores/chatStreamPool.svelte";
 import { MAX_SHELL_PANES } from "$lib/types/shellTabs";
+import {
+  clearDraftForSession,
+  DRAFT_PERSIST_DEBOUNCE_MS,
+  loadDraftForSession,
+  persistDraftForSession,
+} from "$lib/chat/draftPersistence";
+import { beginTurnMessages, turnStateFromTicket } from "$lib/chat/turnController";
+import {
+  selectDraftFor,
+  selectMessagesFor,
+  selectStreamErrorFor,
+} from "$lib/chat/chatSelectors";
 
 const SESSION_KEY = "medousa-home-session-id";
 const PINS_KEY = "medousa-home-pinned-sessions";
-const DRAFTS_KEY = "medousa-home-chat-drafts";
 const PROMOTED_ASKS_KEY = "medousa-home-promoted-asks-v1";
-const DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-const DRAFT_PERSIST_DEBOUNCE_MS = 300;
 const SESSIONS_STALE_MS = 30_000;
 const SESSIONS_REFRESH_DEBOUNCE_MS = 1_500;
 const PROMOTED_ASKS_MAX = 200;
@@ -315,6 +323,19 @@ export class ChatStore {
     return this.streamApplyPrincipalId ?? this.sessionId;
   }
 
+  private selectorSnapshot() {
+    return {
+      sessionId: this.sessionId,
+      focusedSessionId: this.focusedSessionId,
+      streamApplyPrincipalId: this.streamApplyPrincipalId,
+      messages: this.messages,
+      draft: this.draft,
+      streamError: this.streamError,
+      historyLoading: this.historyLoading,
+      runtimes: this.sessionRuntimes,
+    };
+  }
+
   /** Whether public fields currently belong to `focusedSessionId` (not a stream-apply swap). */
   private fieldsMatchFocused(): boolean {
     return this.streamApplyPrincipalId == null;
@@ -323,53 +344,17 @@ export class ChatStore {
   /** Transcript for any cached/live session (for non-focused panes). */
   messagesFor(sessionId: string): ChatMessage[] {
     void this.runtimeRevision;
-    const trimmed = sessionId.trim();
-    if (!trimmed) return [];
-    if (this.fieldsMatchFocused() && trimmed === this.sessionId) return this.messages;
-    // During background stream apply, principal data lives in the stash map.
-    if (
-      this.streamApplyPrincipalId &&
-      trimmed === this.streamApplyPrincipalId
-    ) {
-      return this.sessionRuntimes.get(trimmed)?.messages ?? [];
-    }
-    // Session currently loaded into public fields (apply target or focused).
-    if (trimmed === this.sessionId) return this.messages;
-    return this.sessionRuntimes.get(trimmed)?.messages ?? [];
+    return selectMessagesFor(this.selectorSnapshot(), sessionId);
   }
 
   draftFor(sessionId: string): string {
     void this.runtimeRevision;
-    const trimmed = sessionId.trim();
-    if (!trimmed) return "";
-    if (this.fieldsMatchFocused() && trimmed === this.sessionId) return this.draft;
-    if (
-      this.streamApplyPrincipalId &&
-      trimmed === this.streamApplyPrincipalId
-    ) {
-      return (
-        this.sessionRuntimes.get(trimmed)?.draft ?? loadDraftForSession(trimmed)
-      );
-    }
-    if (trimmed === this.sessionId) return this.draft;
-    return this.sessionRuntimes.get(trimmed)?.draft ?? loadDraftForSession(trimmed);
+    return selectDraftFor(this.selectorSnapshot(), sessionId);
   }
 
   streamErrorFor(sessionId: string): string | null {
     void this.runtimeRevision;
-    const trimmed = sessionId.trim();
-    if (!trimmed) return null;
-    if (this.fieldsMatchFocused() && trimmed === this.sessionId) {
-      return this.streamError;
-    }
-    if (
-      this.streamApplyPrincipalId &&
-      trimmed === this.streamApplyPrincipalId
-    ) {
-      return this.sessionRuntimes.get(trimmed)?.streamError ?? null;
-    }
-    if (trimmed === this.sessionId) return this.streamError;
-    return this.sessionRuntimes.get(trimmed)?.streamError ?? null;
+    return selectStreamErrorFor(this.selectorSnapshot(), sessionId);
   }
 
   /** Dismiss the error banner for one session (focused or stashed runtime). */
@@ -1232,15 +1217,7 @@ export class ChatStore {
     this.activeTurnId =
       ticket.mode === "interactive" ? ticket.turn_id : this.activeTurnId;
     const next = new Map(this.turns);
-    next.set(ticket.turn_id, {
-      turnId: ticket.turn_id,
-      mode: ticket.mode,
-      phase: ticket.phase,
-      messageId,
-      streamAttached: true,
-      terminal: false,
-      workspaceCardId: ticket.workspace_card_id ?? null,
-    });
+    next.set(ticket.turn_id, turnStateFromTicket(ticket, messageId));
     this.turns = next;
   }
 
@@ -1256,39 +1233,16 @@ export class ChatStore {
     this.historyNotice = null;
     this.askHandoffNotice = null;
     const assistantId = crypto.randomUUID();
-    const isAsk = ticket.mode === "background";
-    const askJobId = ticket.workspace_card_id ?? ticket.turn_id;
-    const lane = isAsk ? ("ask" as const) : ("chat" as const);
-    const speaker =
-      typeof speakerProfileId === "string" && speakerProfileId.trim()
-        ? speakerProfileId.trim()
-        : null;
     this.messages = [
       ...this.messages,
-      {
-        id: crypto.randomUUID(),
-        role: "user",
-        content: userContent,
-        turnId: ticket.turn_id,
-        lane,
-        askJobId: isAsk ? askJobId : null,
-        speakerProfileId: speaker,
-        mediaAttachments:
-          mediaRefs.length > 0
-            ? chatMediaAttachmentsFromRefs(mediaRefs)
-            : undefined,
-      },
-      {
-        id: assistantId,
-        role: "assistant",
-        content: "",
-        streaming: true,
-        turnId: ticket.turn_id,
-        lane,
-        askJobId: isAsk ? askJobId : null,
-        statusLine:
-          ticket.mode === "background" ? "Background turn started" : null,
-      },
+      ...beginTurnMessages({
+        userContent,
+        ticket,
+        mediaRefs,
+        speakerProfileId,
+        userMessageId: crypto.randomUUID(),
+        assistantId,
+      }),
     ];
     this.registerTurn(ticket, assistantId);
     if (ticket.mode === "interactive") {
@@ -1342,7 +1296,7 @@ export class ChatStore {
       const response = await listSessionTurns(sessionId, true);
       if (response.turns.length === 0) {
         const legacy = await getActiveSessionTurn(sessionId);
-        if (!legacy.active || !legacy.turn) {
+        if (!legacy?.active || !legacy.turn) {
           this.activeTurnId = null;
           // Daemon finished (or never had) an interactive turn — release any
           // stale local lease left behind when mobile SSE died mid-turn.
@@ -2431,7 +2385,19 @@ export class ChatStore {
 
   private applyPumpedStreamEvent(target: StreamEventTarget) {
     this.withSessionFields(target.sessionId, () => {
-      this.applyStreamEventOnFocusedFields(turnStreamV2ToLegacy(target.event));
+      const reduced = reduceTranscriptEnvelope(this.messages, target.event, {
+        messageIdForTurn: (turnId) => this.messageIdForTurn(turnId),
+        messageIdForToolStream: (turnId) => this.messageIdForToolStream(turnId),
+        showEngineDetails: settings.showEngineDetailsInChat,
+      });
+      if (reduced.handled) {
+        if (!this.isRelevantStreamEvent(reduced.legacy)) return;
+        if (!applyStreamSeq(this.lastSeqByTurn, reduced.legacy)) return;
+        this.messages = reduced.messages;
+        if (reduced.contextUsage) this.contextUsage = reduced.contextUsage;
+        return;
+      }
+      this.applyStreamEventOnFocusedFields(reduced.legacy);
     });
   }
 
@@ -3692,59 +3658,6 @@ function loadSessionId(): string {
   const existing = localStorage.getItem(SESSION_KEY);
   if (existing) return existing;
   return "";
-}
-
-interface StoredDraft {
-  text: string;
-  updatedAt: number;
-}
-
-function loadDraftStore(): Record<string, StoredDraft> {
-  if (typeof localStorage === "undefined") return {};
-  try {
-    const raw = localStorage.getItem(DRAFTS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as Record<string, StoredDraft>;
-    if (!parsed || typeof parsed !== "object") return {};
-    const now = Date.now();
-    const pruned: Record<string, StoredDraft> = {};
-    for (const [sessionId, entry] of Object.entries(parsed)) {
-      if (!entry || typeof entry.text !== "string") continue;
-      if (!entry.text.trim()) continue;
-      if (now - (entry.updatedAt ?? 0) > DRAFT_MAX_AGE_MS) continue;
-      pruned[sessionId] = entry;
-    }
-    if (Object.keys(pruned).length !== Object.keys(parsed).length) {
-      localStorage.setItem(DRAFTS_KEY, JSON.stringify(pruned));
-    }
-    return pruned;
-  } catch {
-    return {};
-  }
-}
-
-function loadDraftForSession(sessionId: string): string {
-  const trimmed = sessionId.trim();
-  if (!trimmed) return "";
-  return loadDraftStore()[trimmed]?.text ?? "";
-}
-
-function persistDraftForSession(sessionId: string, text: string) {
-  if (typeof localStorage === "undefined") return;
-  const trimmed = sessionId.trim();
-  if (!trimmed) return;
-  const store = loadDraftStore();
-  const value = text;
-  if (!value.trim()) {
-    delete store[trimmed];
-  } else {
-    store[trimmed] = { text: value, updatedAt: Date.now() };
-  }
-  localStorage.setItem(DRAFTS_KEY, JSON.stringify(store));
-}
-
-function clearDraftForSession(sessionId: string) {
-  persistDraftForSession(sessionId, "");
 }
 
 export const chat = new ChatStore();

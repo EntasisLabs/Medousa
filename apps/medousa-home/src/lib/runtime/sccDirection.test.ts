@@ -74,4 +74,8 @@ describe("former markdown-liquid-vault SCC stays acyclic", () => {
   it("chart export does not import vault export hydrate", () => {
     expect(source("src/lib/utils/chartExport.ts")).not.toMatch(/vaultExportPrep/);
   });
+
+  it("chat store does not import v2ToLegacy", () => {
+    expect(source("src/lib/stores/chat.svelte.ts")).not.toMatch(/v2ToLegacy/);
+  });
 });
