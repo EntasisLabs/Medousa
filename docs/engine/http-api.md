@@ -286,6 +286,7 @@ limited to 16 operations.
 | GET/PUT/DELETE | `/v1/vault/notes/{*note_path}` | Read / write / delete note |
 | GET | `/v1/vault/tags` | List tags |
 | GET | `/v1/vault/search` | Full-text search |
+| GET | `/v1/vault/changes` | Note deltas since a vault generation |
 | GET | `/v1/vault/backlinks` | Backlinks for path |
 
 See [vault.md](vault.md).

@@ -27,6 +27,19 @@ export interface VaultNotesListResponse {
   reset_required?: boolean;
 }
 
+export interface VaultChangeEntry {
+  path: string;
+  kind: string;
+  note_version?: string | null;
+}
+
+export interface VaultChangesResponse {
+  vault_generation: number;
+  changes: VaultChangeEntry[];
+  next_cursor?: string | null;
+  reset_required?: boolean;
+}
+
 export interface VaultNoteContentResponse {
   note: VaultNote;
   content: string;

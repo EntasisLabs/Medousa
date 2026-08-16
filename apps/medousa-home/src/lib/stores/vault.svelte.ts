@@ -5,6 +5,7 @@ import {
   getVaultBacklinks,
   getVaultNote,
   listVaultNotes,
+  listVaultChanges,
   listVaultRoots,
   listVaultTags,
   saveVaultNote,
@@ -93,6 +94,11 @@ import {
   withSelectionAncestors,
   type VaultLookupSnapshot,
 } from "$lib/utils/vaultLookup";
+import {
+  VAULT_LIST_MAX_PAGES,
+  VAULT_LIST_PAGE_LIMIT,
+  listingIncompleteAfterPages,
+} from "$lib/utils/vaultListing";
 import {
   addAttachments,
   guessMimeFromPath,
@@ -216,6 +222,7 @@ export class VaultStore {
   /** Shared per-generation lookup maps — rebuilt when notes/generation change. */
   lookupSnapshot = $state<VaultLookupSnapshot>(buildVaultLookupSnapshot([], 0));
   vaultGeneration = $state(0);
+  listingIncomplete = $state(false);
   tree = $state<VaultTreeNode[]>([]);
   selectedPath = $state<string | null>(loadLastNote());
   /** Multi-select in the vault rail (tree / browse lists). */
@@ -1531,11 +1538,33 @@ export class VaultStore {
   async refreshNotes() {
     this.error = null;
     try {
-      const pageLimit = 200;
+      if (this.vaultGeneration > 0) {
+        const delta = await listVaultChanges({
+          sinceGeneration: this.vaultGeneration,
+          limit: 500,
+        });
+        if (!delta.reset_required && delta.changes.every((change) => change.kind === "delete")) {
+          const removed = new Set(
+            delta.changes.map((change) => change.path),
+          );
+          this.notes = this.notes.filter((note) => !removed.has(note.path));
+          this.vaultGeneration = delta.vault_generation;
+          this.listingIncomplete = false;
+          this.rebuildLookupSnapshot();
+          this.rebuildTree();
+          if (this.libraryBrowseMode === "tags") {
+            void this.refreshVaultTags();
+          }
+          return;
+        }
+      }
+
+      const pageLimit = VAULT_LIST_PAGE_LIMIT;
       const notes: typeof this.notes = [];
       let cursor: string | undefined;
       let generation: number | undefined;
-      for (let page = 0; page < 50; page += 1) {
+      let incomplete = false;
+      for (let page = 0; page < VAULT_LIST_MAX_PAGES; page += 1) {
         const response = await listVaultNotes({
           limit: pageLimit,
           cursor,
@@ -1564,10 +1593,27 @@ export class VaultStore {
         generation = response.vault_generation ?? generation;
         if (!response.truncated || !response.next_cursor) {
           this.vaultGeneration = generation ?? this.vaultGeneration + 1;
+          incomplete = false;
+          break;
+        }
+        if (
+          listingIncompleteAfterPages(
+            page + 1,
+            Boolean(response.truncated),
+            response.next_cursor,
+          )
+        ) {
+          incomplete = true;
           break;
         }
         cursor = response.next_cursor;
       }
+      if (incomplete) {
+        this.listingIncomplete = true;
+        this.error = "Vault listing is incomplete; page until the listing finishes.";
+        return;
+      }
+      this.listingIncomplete = false;
       this.notes = notes;
       this.rebuildLookupSnapshot();
       this.rebuildTree();

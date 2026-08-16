@@ -54,6 +54,26 @@ describe("vaultTreeVirtual", () => {
     ]);
   });
 
+  it("folds recent rows into the flat list at fixed height", () => {
+    const tree = [folder("a", [note("a/one.md")])];
+    const rows = flattenExpandedTreeRows(
+      tree,
+      () => true,
+      (node) => node.dropPrefix ?? node.path ?? node.name,
+      (node) => (node.dropPrefix === "a/" ? ["a/recent.md"] : []),
+      () => true,
+    );
+    expect(rows.map((row) => row.id)).toEqual([
+      "a/:0:f",
+      "recent-header:a/:0",
+      "recent:a/recent.md:0",
+      "a/one.md:1:n",
+    ]);
+    const window = visibleWindow(rows.length, 0, 56, 28, 0);
+    expect(window.totalHeight).toBe(rows.length * 28);
+    expect(window.end - window.start).toBeLessThanOrEqual(rows.length);
+  });
+
   it("windows rows with overscan", () => {
     const window = visibleWindow(100, 280, 100, 28, 2);
     expect(window.start).toBe(8);

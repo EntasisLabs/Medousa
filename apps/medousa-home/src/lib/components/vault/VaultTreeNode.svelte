@@ -304,13 +304,5 @@
         />
       {/each}
     </div>
-  {:else if expanded && virtualized && recentRows.length > 0}
-    <VaultTreeRecentRows
-      paths={recentRows}
-      depth={depth}
-      {selectedPath}
-      {labelByPath}
-      {onSelect}
-    />
   {/if}
 </div>

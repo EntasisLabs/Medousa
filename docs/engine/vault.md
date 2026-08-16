@@ -16,6 +16,7 @@ The vault is Medousa's markdown note store with wikilinks, backlinks, tags, and 
 | GET/PUT/DELETE | `/v1/vault/notes/{*note_path}` | CRUD single note (`VaultNote` + body) |
 | GET | `/v1/vault/tags` | Tag index |
 | GET | `/v1/vault/search` | Search (`q` query param) |
+| GET | `/v1/vault/changes` | Generation delta (`since_generation`) |
 | GET | `/v1/vault/backlinks` | Backlinks for path |
 
 Optimistic concurrency: `If-Match` on note PUT maps to a strict daemon

@@ -104,7 +104,11 @@
     if (!root) return;
     void hydrateMarkdownContainer(root, {
       liquidContext: {
-        titleByPath: new Map(vault.notes.map((note) => [note.path, note.title] as const)),
+        titleByPath: new Map(
+          [...vault.lookupSnapshot.metadataByPath.entries()].map(
+            ([path, note]) => [path, note.title] as const,
+          ),
+        ),
         openLinksInWeb: false,
         localImagePath: notePath,
         onOpenCardDetail: (detail) => vault.openCardDetail(detail),

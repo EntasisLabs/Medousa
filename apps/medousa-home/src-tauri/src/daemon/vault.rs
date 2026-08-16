@@ -1,11 +1,11 @@
 use crate::daemon::types::{
-    VaultBacklinksResponse, VaultFileContentResponse, VaultNoteContentResponse,
-    VaultNotesListResponse, VaultRootsResponse, VaultSearchResponse, VaultTagsListResponse,
-    VaultWriteResponse,
+    VaultBacklinksResponse, VaultChangesResponse, VaultFileContentResponse,
+    VaultNoteContentResponse, VaultNotesListResponse, VaultRootsResponse, VaultSearchResponse,
+    VaultTagsListResponse, VaultWriteResponse,
 };
 use medousa_types::{
-    VaultAddRootRequest, VaultBacklinksQuery, VaultNotesQuery, VaultPutQuery, VaultSearchQuery,
-    VaultSetActiveRootRequest, VaultTagsQuery, VaultWriteRequest,
+    VaultAddRootRequest, VaultBacklinksQuery, VaultChangesQuery, VaultNotesQuery, VaultPutQuery,
+    VaultSearchQuery, VaultSetActiveRootRequest, VaultTagsQuery, VaultWriteRequest,
 };
 use tauri::State;
 
@@ -41,6 +41,25 @@ pub async fn vault_list_notes(
     client(&state)
         .vault()
         .list_notes(&query)
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn vault_list_changes(
+    state: State<'_, DaemonState>,
+    since_generation: Option<u64>,
+    cursor: Option<String>,
+    limit: Option<usize>,
+) -> Result<VaultChangesResponse, String> {
+    let query = VaultChangesQuery {
+        since_generation,
+        cursor: cursor.filter(|value| !value.trim().is_empty()),
+        limit,
+    };
+    client(&state)
+        .vault()
+        .list_changes(&query)
         .await
         .map_err(sdk_error)
 }

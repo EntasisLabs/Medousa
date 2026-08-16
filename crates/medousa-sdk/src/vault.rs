@@ -1,10 +1,10 @@
 #[cfg(feature = "async")]
 use medousa_types::{
     VaultAddRootRequest, VaultBacklinksQuery, VaultBacklinksResponse, VaultDeleteResponse,
-    VaultFileContentResponse, VaultNoteContentResponse, VaultNotesListResponse, VaultNotesQuery,
-    VaultPutQuery, VaultRootsResponse, VaultSearchQuery, VaultSearchResponse,
+    VaultFileContentResponse, VaultNoteContentResponse, VaultNotesListResponse,
+    VaultNotesQuery, VaultPutQuery, VaultRootsResponse, VaultSearchQuery, VaultSearchResponse,
     VaultSetActiveRootRequest, VaultTagsListResponse, VaultTagsQuery, VaultWriteRequest,
-    VaultWriteResponse,
+    VaultChangesQuery, VaultChangesResponse, VaultWriteResponse,
 };
 
 #[cfg(feature = "async")]
@@ -37,6 +37,21 @@ fn vault_notes_query_params(query: &VaultNotesQuery) -> Vec<(&str, String)> {
     }
     if let Some(generation) = query.generation {
         params.push(("generation", generation.to_string()));
+    }
+    params
+}
+
+#[cfg(feature = "async")]
+fn vault_changes_query_params(query: &VaultChangesQuery) -> Vec<(&str, String)> {
+    let mut params = Vec::new();
+    if let Some(since) = query.since_generation {
+        params.push(("since_generation", since.to_string()));
+    }
+    if let Some(cursor) = &query.cursor {
+        params.push(("cursor", cursor.clone()));
+    }
+    if let Some(limit) = query.limit {
+        params.push(("limit", limit.to_string()));
     }
     params
 }
@@ -100,6 +115,19 @@ impl VaultApi<'_> {
         query: &VaultNotesQuery,
     ) -> Result<VaultNotesListResponse, crate::SdkError> {
         let path = path_with_query("/v1/vault/notes", &vault_notes_query_params(query));
+        let value = self
+            .client
+            .transport()
+            .get_json(self.client.base_url(), &path)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn list_changes(
+        &self,
+        query: &VaultChangesQuery,
+    ) -> Result<VaultChangesResponse, crate::SdkError> {
+        let path = path_with_query("/v1/vault/changes", &vault_changes_query_params(query));
         let value = self
             .client
             .transport()

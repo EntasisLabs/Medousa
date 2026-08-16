@@ -7,6 +7,11 @@ vi.mock("$lib/daemon", () => ({
   getVaultBacklinks: vi.fn(async () => ({ backlinks: [] })),
   getVaultNote: vi.fn(),
   listVaultNotes: vi.fn(async () => ({ notes: [] })),
+  listVaultChanges: vi.fn(async () => ({
+    vault_generation: 0,
+    changes: [],
+    reset_required: true,
+  })),
   listVaultRoots: vi.fn(async () => ({ roots: [] })),
   listVaultTags: vi.fn(async () => ({ tags: [] })),
   saveVaultNote: vi.fn(),

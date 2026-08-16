@@ -621,6 +621,7 @@ fn run_home() {
             daemon::interactive_stream_stop,
             daemon::interactive_stream_stop_turn,
             daemon::vault::vault_list_notes,
+            daemon::vault::vault_list_changes,
             daemon::vault::vault_list_tags,
             daemon::vault::vault_list_roots,
             daemon::vault::vault_set_active_root,

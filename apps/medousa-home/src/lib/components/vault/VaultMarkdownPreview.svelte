@@ -102,6 +102,7 @@
           selectedContent: fullContent,
           labelByPath,
           knownPaths: vault.lookupSnapshot.knownPaths,
+          lookup: vault.lookupSnapshot,
         });
       }
       if (epoch !== resolveEpoch) return;
