@@ -1,6 +1,7 @@
 # H07 — Incremental vault index and atomic mutation
 
-> **Status:** Draft for vault/storage/frontend review
+> **Status:** Implementing — H07.0–H07.5 code landed; packaged multi-OS
+> validation and retained P06/P07 evidence pending (H07.6)
 >
 > **Accountable owner:** vault engine maintainers
 >

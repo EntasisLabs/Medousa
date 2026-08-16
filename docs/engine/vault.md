@@ -18,9 +18,21 @@ The vault is Medousa's markdown note store with wikilinks, backlinks, tags, and 
 | GET | `/v1/vault/search` | Search (`q` query param) |
 | GET | `/v1/vault/backlinks` | Backlinks for path |
 
-Optimistic concurrency: `If-Match` on note PUT (hash of last known content).
+Optimistic concurrency: `If-Match` on note PUT maps to a strict daemon
+compare-and-write (`Match` precondition) inside a per-path mutation lane.
+Exactly one writer with a given expected version commits; losers receive a
+typed stale/conflict outcome. Create uses create-only publication (no
+check-then-write). Responses may include opaque `vault_generation` /
+`note_version` fields (H07).
 
-`GET /v1/vault/notes` returns light `VaultNoteSummary` rows (path, title, mtime, kind, tags) from the write-time index with cheap mtime-incremental refresh — not a full body re-parse on every list. Full `VaultNote` (wikilinks, backlinks, hashes) remains on get-one / write responses.
+`GET /v1/vault/notes` returns light `VaultNoteSummary` rows (path, title, mtime,
+kind, tags) from the resident generation-stamped projection. The historical
+`limit: 500` behavior is a **bounded adapter** and must not be treated as a
+complete vault corpus — use cursors/`truncated` (when present) for large vaults.
+
+External editors: Medousa writers have strict CAS. Uncooperative filesystem
+edits are observed as separate versions / conflicts; Medousa does not claim
+portable byte-CAS against arbitrary processes.
 
 Multi-workshop / data dir: [upgrade-and-data-dir runbook](../runbooks/upgrade-and-data-dir.md), ADR-003.
 
