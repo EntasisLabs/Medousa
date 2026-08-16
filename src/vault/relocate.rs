@@ -113,7 +113,22 @@ fn commit_relocate(
         }
     }
 
-    let vault_generation = owner.bump_generation();
+    let vault_generation = match owner.bump_generation() {
+        Ok(generation) => generation,
+        Err(_) => {
+            return Ok(VaultCommitOutcome {
+                receipt: vault_receipt(
+                    format!("relocate:{operation_id}"),
+                    owner.current_generation(),
+                    0,
+                    DurabilityLevel::Synced,
+                ),
+                note_version: crate::vault::contracts::NoteVersion::from_digest(operation_id),
+                vault_generation: owner.current_generation(),
+                index_repair_required: true,
+            });
+        }
+    };
     let receipt_path = StorePath::parse(&format!(".medousa/vault/receipts/{operation_id}.json"))
         .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
     let receipt_bytes = serde_json::to_vec(&intent)
@@ -175,11 +190,12 @@ pub fn recover_pending_relocate(
     let source_exists = tx.root().is_file(&source).unwrap_or(false);
     let dest_exists = tx.root().is_file(&dest).unwrap_or(false);
     if dest_exists && !source_exists {
-        // Move/delete already published; write receipt.
-        let vault_generation = owner.bump_generation();
+        // Move/delete already published; write receipt. Keep intent until
+        // the receipt is durable.
+        let vault_generation = owner.bump_generation()?;
         let receipt_bytes = serde_json::to_vec(&intent)
             .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
-        let _ = tx.write_receipt(&receipt_path, &receipt_bytes, DurabilityLevel::Synced);
+        tx.write_receipt(&receipt_path, &receipt_bytes, DurabilityLevel::Synced)?;
         let _ = tx.root().remove_file(&intent_path);
         return Ok(Some(VaultCommitOutcome {
             receipt: vault_receipt(
@@ -361,6 +377,11 @@ mod tests {
                 .is_file(&VaultPath::parse("from.md").unwrap())
                 .unwrap()
         );
+        let recover_err = crate::vault::mutation::recover_all_pending_writes(&owner).unwrap_err();
+        assert!(matches!(
+            recover_err,
+            crate::vault::contracts::VaultMutationError::Persistence(_)
+        ));
         owner.set_transaction(FileTransaction::with_faults(
             Arc::clone(&root),
             Arc::new(NoTransactionFaults),

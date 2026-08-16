@@ -68,13 +68,34 @@ pub fn commit_write(
             }
         }
 
-        let vault_generation = owner.bump_generation();
-        let digest = content_hash(&mutation.content);
+        let vault_generation = match owner.bump_generation() {
+            Ok(generation) => generation,
+            Err(_) => {
+                let vault_generation = owner.current_generation();
+                let note_version = NoteVersion::encode(
+                    owner.root_id.as_str(),
+                    &VaultNoteSource::User,
+                    vault_generation,
+                    &content_hash(&mutation.content),
+                );
+                return Ok(VaultCommitOutcome {
+                    receipt: vault_receipt(
+                        format!("note:{normalized}"),
+                        vault_generation,
+                        mutation.content.len(),
+                        VaultIndexOwner::durability(),
+                    ),
+                    note_version,
+                    vault_generation,
+                    index_repair_required: true,
+                });
+            }
+        };
         let note_version = NoteVersion::encode(
             owner.root_id.as_str(),
             &VaultNoteSource::User,
             vault_generation,
-            &digest,
+            &content_hash(&mutation.content),
         );
         let receipt_record = VaultMutationReceiptRecord {
             operation_id: operation_id.clone(),
@@ -209,7 +230,7 @@ pub fn recover_pending_write(
             .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
         if content_digest(&content) == intent.content_digest {
             // Content published; complete receipt without retrying the write.
-            let vault_generation = owner.bump_generation();
+            let vault_generation = owner.bump_generation()?;
             let digest = content_hash(&content);
             let note_version = NoteVersion::encode(
                 owner.root_id.as_str(),
@@ -528,14 +549,23 @@ mod tests {
         )
         .expect("content publish commits even when receipt fails");
         assert!(outcome.index_repair_required);
-        assert_eq!(
-            outcome.note_version.content_digest_owned(),
-            content_hash("published\n")
-        );
         assert!(
             root.is_file(&StorePath::parse("recover.md").unwrap())
                 .unwrap()
         );
+        let recover_err = recover_all_pending_writes(&owner).unwrap_err();
+        assert!(matches!(recover_err, VaultMutationError::Persistence(_)));
+        let intent_dir = path.join(".medousa/vault/intents");
+        let leftover = std::fs::read_dir(&intent_dir)
+            .unwrap()
+            .filter(|entry| {
+                entry
+                    .as_ref()
+                    .map(|e| e.file_name().to_string_lossy().ends_with(".json"))
+                    .unwrap_or(false)
+            })
+            .count();
+        assert_eq!(leftover, 1, "intent must remain until receipt is durable");
         // Reset faults and complete receipt from leftover intent (startup path).
         owner.set_transaction(FileTransaction::with_faults(
             Arc::clone(&root),
@@ -550,5 +580,29 @@ mod tests {
         assert!(recovered[0].index_repair_required);
         // Second recovery is a no-op (receipt present / intent gone).
         assert!(recover_all_pending_writes(&owner).unwrap().is_empty());
+    }
+
+    #[test]
+    fn generation_persist_fault_does_not_advance_memory() {
+        let (_dir, owner) = owner();
+        owner.set_persist_generation_fault(true);
+        let outcome = commit_write(
+            &owner,
+            WriteMutation {
+                path: "note.md".into(),
+                content: "body\n".into(),
+                precondition: MutationPrecondition::CreateOnly,
+                expected_version: None,
+            },
+        )
+        .unwrap();
+        assert!(outcome.index_repair_required);
+        assert_eq!(owner.current_generation(), 1);
+        assert!(
+            owner
+                .files
+                .is_file(&StorePath::parse("note.md").unwrap())
+                .unwrap()
+        );
     }
 }

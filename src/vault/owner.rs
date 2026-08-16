@@ -23,6 +23,8 @@ pub struct VaultIndexOwner {
     pub vault_generation: AtomicU64,
     pub active: AtomicBool,
     transaction: RwLock<FileTransaction>,
+    generation_lock: Mutex<()>,
+    persist_generation_fault: AtomicBool,
 }
 
 impl VaultIndexOwner {
@@ -36,6 +38,8 @@ impl VaultIndexOwner {
             admission: VaultAdmission::new(),
             vault_generation: AtomicU64::new(loaded.max(1)),
             active: AtomicBool::new(true),
+            generation_lock: Mutex::new(()),
+            persist_generation_fault: AtomicBool::new(false),
         })
     }
 
@@ -57,10 +61,20 @@ impl VaultIndexOwner {
         self.vault_generation.load(Ordering::Acquire)
     }
 
-    pub fn bump_generation(&self) -> u64 {
-        let next = self.vault_generation.fetch_add(1, Ordering::AcqRel) + 1;
-        persist_generation(&self.files, next);
-        next
+    pub fn bump_generation(&self) -> Result<u64, VaultMutationError> {
+        let _guard = self
+            .generation_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let next = self.vault_generation.load(Ordering::Acquire).saturating_add(1);
+        persist_generation(self, next)?;
+        self.vault_generation.store(next, Ordering::Release);
+        Ok(next)
+    }
+
+    pub fn set_persist_generation_fault(&self, fault: bool) {
+        self.persist_generation_fault
+            .store(fault, Ordering::Release);
     }
 
     pub fn shutdown(&self) {
@@ -147,11 +161,20 @@ fn load_persisted_generation(files: &StoreRoot) -> Option<u64> {
     text.trim().parse().ok()
 }
 
-fn persist_generation(files: &StoreRoot, generation: u64) {
-    let Ok(path) = generation_store_path() else {
-        return;
-    };
-    let _ = files.atomic_write(&path, generation.to_string().as_bytes());
+fn persist_generation(
+    owner: &VaultIndexOwner,
+    generation: u64,
+) -> Result<(), VaultMutationError> {
+    if owner.persist_generation_fault.load(Ordering::Acquire) {
+        return Err(VaultMutationError::Persistence(
+            "injected generation persist fault".into(),
+        ));
+    }
+    let path = generation_store_path()?;
+    owner
+        .files
+        .atomic_write(&path, generation.to_string().as_bytes())
+        .map_err(VaultMutationError::from)
 }
 
 pub fn ensure_owner_for_active_root() -> Result<Arc<VaultIndexOwner>, VaultMutationError> {
@@ -163,8 +186,7 @@ pub fn ensure_owner_for_active_root() -> Result<Arc<VaultIndexOwner>, VaultMutat
     let files = crate::vault::path::user_vault_capability()
         .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
     let owner = VaultIndexOwner::new(VaultRootId::new(root_key), files);
-    // Complete or abandon interrupted intent→publish→receipt sequences.
-    let _ = crate::vault::mutation::recover_all_pending_writes(&owner);
+    crate::vault::mutation::recover_all_pending_writes(&owner)?;
     vault_registry().insert(Arc::clone(&owner));
     Ok(owner)
 }
@@ -196,7 +218,10 @@ mod tests {
         let root = StoreRoot::open_or_create_nofollow(&path).unwrap();
         let owner = VaultIndexOwner::new(VaultRootId::new("test"), Arc::new(root));
         assert_eq!(owner.current_generation(), 1);
-        assert_eq!(owner.bump_generation(), 2);
+        assert_eq!(owner.bump_generation().unwrap(), 2);
+        owner.set_persist_generation_fault(true);
+        assert!(owner.bump_generation().is_err());
+        assert_eq!(owner.current_generation(), 2);
         owner.shutdown();
         assert!(!owner.active.load(Ordering::Acquire));
     }
