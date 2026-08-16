@@ -1,6 +1,6 @@
 # ADR-020: Feature boundaries, lazy runtime, and optional workloads
 
-> **Status:** Proposed
+> **Status:** Accepted
 >
 > **Date:** 2026-08-13
 >

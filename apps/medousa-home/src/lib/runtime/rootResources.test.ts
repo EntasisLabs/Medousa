@@ -31,11 +31,11 @@ describe("root resource probe", () => {
       "command-spotlight-hotkeys",
     ]);
     const source = readFileSync(
-      join(homeRoot, "src/lib/components/layout/AppShell.svelte"),
+      join(homeRoot, "src/lib/runtime/shellLifecycle.ts"),
       "utf8",
     );
     for (const id of APP_SHELL_ROOT_RESOURCE_IDS) {
-      expect(source, `AppShell must record ${id}`).toContain(`"${id}"`);
+      expect(source, `shell lifecycle must record ${id}`).toContain(`"${id}"`);
     }
   });
 
@@ -63,9 +63,11 @@ describe("eager AppShell graph freeze", () => {
     }
     expect(source).not.toMatch(/import WorkshopShell from/);
     expect(source).not.toMatch(/import MobileShell from/);
-    expect(source).toContain("probeClientPlatform");
-    expect(source).toContain("loadDesktopShell");
-    expect(source).toContain("loadMobileShell");
+    expect(source).not.toMatch(/from ["']\$lib\/stores\/vault/);
+    expect(source).not.toMatch(/from ["']\$lib\/stores\/lmeWorkspace/);
+    expect(source).not.toMatch(/from ["']\$lib\/stores\/workspace/);
+    expect(source).toContain("startShellRootResources");
+    expect(source).toContain("ShellChunkError");
   });
 });
 

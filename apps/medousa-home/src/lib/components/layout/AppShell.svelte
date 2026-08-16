@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import HomeSplash from "$lib/components/layout/HomeSplash.svelte";
+  import ShellChunkError from "$lib/components/layout/ShellChunkError.svelte";
   import CommandSpotlight from "$lib/components/layout/CommandSpotlight.svelte";
   import WorkAskDockPopover from "$lib/components/work/WorkAskDockPopover.svelte";
   import WizardContainer from "$lib/components/wizard/WizardContainer.svelte";
@@ -13,29 +14,21 @@
   import MobileBrowserWorkshop from "$lib/components/mobile/MobileBrowserWorkshop.svelte";
   import ToastHost from "$lib/components/layout/ToastHost.svelte";
   import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
-  import { initMobileNative } from "$lib/mobileNative";
-  import { setPendingPeerNavigation } from "$lib/peerNavigation";
-  import { startPeerMessageNotificationPolling } from "$lib/peerNotifications";
   import { layout } from "$lib/stores/layout.svelte";
-  import { toast } from "$lib/stores/toast.svelte";
-  import { vault } from "$lib/stores/vault.svelte";
-  import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { wizard } from "$lib/stores/wizard.svelte";
-  import { workshops } from "$lib/stores/workshops.svelte";
-  import { workspace } from "$lib/stores/workspace.svelte";
   import { chat } from "$lib/stores/chat.svelte";
-  import { applyNativeMobileShellLayout, isTauri, isTauriMobilePlatform, watchMobileViewport } from "$lib/platform";
-  import { handoffBrowserShell } from "$lib/utils/browserShellHandoff";
-  import { attachAgentBrowserCoord } from "$lib/utils/agentBrowserCoord";
-  import { humanBrowserSetMobileShellActive } from "$lib/humanBrowser";
+  import { isTauriMobilePlatform } from "$lib/platform";
   import BrowserWorkshop from "$lib/components/browser/BrowserWorkshop.svelte";
-  import { bindRootResource, recordRootResource } from "$lib/runtime/rootResources";
   import { probeClientPlatform } from "$lib/runtime/platformProbe";
+  import { startShellRootResources } from "$lib/runtime/shellLifecycle";
+  import { focusChatComposer } from "$lib/runtime/shellUseCases";
 
   const loadDesktopShell = () => import("$lib/components/layout/WorkshopShell.svelte");
   const loadMobileShell = () => import("$lib/components/mobile/MobileShell.svelte");
   const initialPlatform = probeClientPlatform();
   void (initialPlatform === "mobile" ? loadMobileShell() : loadDesktopShell());
+
+  let shellEpoch = $state(0);
 
   $effect(() => {
     void chat.sessionId;
@@ -43,166 +36,7 @@
     chat.scheduleDraftPersist();
   });
 
-  function focusChatComposer() {
-    layout.navigateDesktop("chat", { bump: true });
-    void chat.ensureSessionHydrated();
-    window.dispatchEvent(new CustomEvent("medousa-chat-composer-focus"));
-  }
-
-  async function openWorkCard(cardId: string) {
-    if (layout.isMobile) {
-      layout.setMobileTab("home");
-    } else {
-      workspace.workView = "hub";
-    }
-    await workspace.selectCard(cardId);
-  }
-
-  async function openVaultNote(notePath: string) {
-    layout.navigateDesktop("library");
-    await lmeWorkspace.openNote(notePath);
-  }
-
-  async function openPeerThread(input: {
-    workshopId: string;
-    peerDeviceId?: string;
-    messageId?: string;
-  }) {
-    setPendingPeerNavigation(input.workshopId);
-    if (layout.isMobile) {
-      layout.openMore("peers");
-    } else {
-      layout.navigateDesktop("peers", { bump: true });
-    }
-  }
-
-  async function openCalendarEvent(uid: string) {
-    const { calendar } = await import("$lib/stores/calendar.svelte");
-    if (layout.isMobile) {
-      layout.openMore("calendar");
-    } else {
-      layout.navigateDesktop("calendar", { bump: true });
-    }
-    await calendar.refresh();
-    const match = calendar.events.find((event) => event.uid === uid);
-    if (match) calendar.openEdit(match);
-  }
-
-  onMount(() => {
-    commandSpotlight.closeSpotlight();
-    document.querySelectorAll(".command-spotlight-backdrop").forEach((node) => {
-      node.closest(".body-portal-host")?.remove() ?? node.remove();
-    });
-
-    void wizard.bootstrap();
-    const stopWizard = recordRootResource("wizard-bootstrap");
-    const stopViewport = bindRootResource("viewport-tracking", layout.attachViewportTracking());
-    if (isTauri()) {
-      void humanBrowserSetMobileShellActive(layout.isMobile);
-    }
-    const stopNativeLayout = bindRootResource(
-      "native-mobile-layout",
-      applyNativeMobileShellLayout(),
-    );
-    const stopMobileViewport = bindRootResource(
-      "mobile-viewport",
-      isTauriMobilePlatform()
-        ? () => {
-            layout.setMobile(true);
-          }
-        : watchMobileViewport((mobile) => {
-            const wasMobile = layout.isMobile;
-            layout.setMobile(mobile);
-            if (wasMobile !== mobile) {
-              handoffBrowserShell(mobile);
-            }
-          }),
-    );
-    const stopNative = bindRootResource(
-      "mobile-native",
-      initMobileNative(openWorkCard, openVaultNote, {
-      onPairLink: (pairUrl) => {
-        // Global handler for medousa://pair/… (camera / Messages). Wizard may override while onboarding.
-        void workshops
-          .joinFromPairLink(pairUrl)
-          .then((result) => {
-            toast.show(`Connected to ${result.workshopPeerName}`);
-            if (result.workshopId) {
-              void workshops.selectWorkshop(result.workshopId);
-            }
-          })
-          .catch((err) => {
-            toast.show(err instanceof Error ? err.message : String(err), {
-              durationMs: 4500,
-            });
-          });
-      },
-      onOpenPeer: openPeerThread,
-      onOpenCalendar: openCalendarEvent,
-    });
-    const stopPeerNotifications = bindRootResource(
-      "peer-message-notifications",
-      startPeerMessageNotificationPolling(),
-    );
-    const stopAgentBrowserCoord = bindRootResource(
-      "agent-browser-coord",
-      attachAgentBrowserCoord(),
-    );
-
-    const onKeydown = (event: KeyboardEvent) => {
-      if (layout.isMobile) return;
-
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        commandSpotlight.toggleSpotlight();
-        return;
-      }
-      if (
-        (event.metaKey || event.ctrlKey) &&
-        event.shiftKey &&
-        event.key.toLowerCase() === "p"
-      ) {
-        const target = event.target as HTMLElement | null;
-        const typing =
-          target &&
-          (target.tagName === "INPUT" ||
-            target.tagName === "TEXTAREA" ||
-            target.isContentEditable);
-        if (typing) return;
-        // Vault PDF keeps Mod+Shift+P while a note editor is focused.
-        if (target?.closest?.("[data-vault-editor]")) return;
-        event.preventDefault();
-        commandSpotlight.openCommandPalette();
-        return;
-      }
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "o") {
-        const target = event.target as HTMLElement | null;
-        const typing =
-          target &&
-          (target.tagName === "INPUT" ||
-            target.tagName === "TEXTAREA" ||
-            target.isContentEditable);
-        if (typing) return;
-        event.preventDefault();
-        commandSpotlight.openNotes();
-      }
-    };
-    window.addEventListener("keydown", onKeydown);
-    const stopHotkeys = bindRootResource("command-spotlight-hotkeys", () => {
-      window.removeEventListener("keydown", onKeydown);
-    });
-
-    return () => {
-      stopWizard();
-      stopNativeLayout();
-      stopViewport();
-      stopMobileViewport();
-      stopNative();
-      stopPeerNotifications();
-      stopAgentBrowserCoord();
-      stopHotkeys();
-    };
-  });
+  onMount(() => startShellRootResources());
 </script>
 
 {#if wizard.loading}
@@ -210,21 +44,25 @@
 {:else if wizard.visible && isTauriMobilePlatform()}
   <WizardContainer />
 {:else if layout.isMobile}
-  {#await loadMobileShell()}
-    <HomeSplash />
-  {:then { default: MobileShell }}
-    <MobileShell />
-  {:catch}
-    <HomeSplash />
-  {/await}
+  {#key shellEpoch}
+    {#await loadMobileShell()}
+      <HomeSplash />
+    {:then { default: MobileShell }}
+      <MobileShell />
+    {:catch}
+      <ShellChunkError onRetry={() => { shellEpoch += 1; }} />
+    {/await}
+  {/key}
 {:else}
-  {#await loadDesktopShell()}
-    <HomeSplash />
-  {:then { default: WorkshopShell }}
-    <WorkshopShell onOpenSpotlight={() => commandSpotlight.openSpotlight()} />
-  {:catch}
-    <HomeSplash />
-  {/await}
+  {#key shellEpoch}
+    {#await loadDesktopShell()}
+      <HomeSplash />
+    {:then { default: WorkshopShell }}
+      <WorkshopShell onOpenSpotlight={() => commandSpotlight.openSpotlight()} />
+    {:catch}
+      <ShellChunkError onRetry={() => { shellEpoch += 1; }} />
+    {/await}
+  {/key}
 {/if}
 
 <CommandSpotlight onFocusChat={focusChatComposer} />
@@ -238,25 +76,14 @@
 <ShellContextMenu />
 <VaultAttachmentPanel />
 {#if !layout.isMobile}
-  <VaultNoteWorkshop
-    onOpenFullChat={() => {
-      layout.navigateDesktop("chat", { bump: true });
-      void chat.ensureSessionHydrated();
-    }}
-  />
-  <BrowserWorkshop
-    onOpenFullChat={() => {
-      layout.navigateDesktop("chat", { bump: true });
-      void chat.ensureSessionHydrated();
-    }}
-  />
+  <VaultNoteWorkshop onOpenFullChat={focusChatComposer} />
+  <BrowserWorkshop onOpenFullChat={focusChatComposer} />
 {:else}
   <MobileBrowserWorkshop
     onOpenFullChat={async () => {
       const { browserWorkshop } = await import("$lib/stores/browserWorkshop.svelte");
       browserWorkshop.close();
-      layout.setMobileTab("chat");
-      await chat.ensureSessionHydrated();
+      focusChatComposer();
     }}
   />
 {/if}

@@ -23,7 +23,7 @@ Short, durable decisions — not sprint plans. For build history see [../../../a
 | [adr-017-request-scoped-runtime-context.md](adr-017-request-scoped-runtime-context.md) | Request-scoped runtime context and exact ownership | Proposed |
 | [adr-018-untrusted-webview-isolation.md](adr-018-untrusted-webview-isolation.md) | Untrusted webview isolation and minimal browser bridge | Proposed |
 | [adr-019-generated-api-contract.md](adr-019-generated-api-contract.md) | Route-owned generated API and client contract | Proposed |
-| [adr-020-feature-boundaries-and-lazy-runtime.md](adr-020-feature-boundaries-and-lazy-runtime.md) | Feature boundaries, lazy runtime, and optional workloads | Proposed |
+| [adr-020-feature-boundaries-and-lazy-runtime.md](adr-020-feature-boundaries-and-lazy-runtime.md) | Feature boundaries, lazy runtime, and optional workloads | Accepted |
 
 > **Numbering note:** two accepted decisions were independently assigned
 > ADR-010. Their filenames and identifiers remain unchanged so existing links

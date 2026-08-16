@@ -29,7 +29,7 @@ export class FeatureLoadError extends Error {
 export async function loadFeature(
   id: FeatureId,
   importModule: FeatureModuleLoader,
-  context: Omit<FeatureContext, "signal"> & { signal?: AbortSignal },
+  context: Omit<FeatureContext, "signal" | "track"> & { signal?: AbortSignal },
 ): Promise<FeatureInstance> {
   const existing = live.get(id);
   if (existing) return existing;

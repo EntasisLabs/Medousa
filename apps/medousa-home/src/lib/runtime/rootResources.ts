@@ -47,8 +47,6 @@ export const APP_SHELL_EAGER_MODULES = [
   "VaultNoteWorkshop",
   "BrowserWorkshop",
   "MobileBrowserWorkshop",
-  "$lib/stores/vault.svelte",
-  "$lib/stores/lmeWorkspace.svelte",
   "$lib/stores/chat.svelte",
 ] as const;
 
