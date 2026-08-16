@@ -2,7 +2,7 @@
   /** `section` molecule — the narrative connector: heading + optional sub + content. */
   import Slot from "$lib/liquid/render/Slot.svelte";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
-  import { renderInlineMarkdown } from "$lib/markdown";
+  import { renderInlineMarkdown } from "$lib/markdown/render";
 
   let { node }: ArchetypeProps = $props();
 

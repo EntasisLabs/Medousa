@@ -3,6 +3,7 @@
   import { renderMarkdownPreview, type MarkdownRenderOptions } from "$lib/markdown/render";
   import { hydrateMarkdownContainer } from "$lib/markdown/hydrateMarkdownContainer";
   import { destroyLiquidEmbeds } from "$lib/markdown/hydrateLiquidEmbeds";
+  import "$lib/components/ui/bindMarkdownView";
   import { destroyDrawEmbeds } from "$lib/draw/hydrateDrawEmbeds";
   import { vault } from "$lib/stores/vault.svelte";
   import { vaultFind } from "$lib/stores/vaultFind.svelte";

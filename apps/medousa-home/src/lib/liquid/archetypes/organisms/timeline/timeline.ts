@@ -1,8 +1,6 @@
 /** `timeline` organism — chronological event rail (sacred seven). */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Timeline from "./Timeline.svelte";
 
 export const timeline = defineArchetype({
   id: "timeline",
@@ -21,5 +19,3 @@ export const timeline = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-
-registerComponent(timeline.id, Timeline);

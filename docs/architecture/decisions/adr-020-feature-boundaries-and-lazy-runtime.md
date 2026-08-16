@@ -1,6 +1,6 @@
 # ADR-020: Feature boundaries, lazy runtime, and optional workloads
 
-> **Status:** Proposed
+> **Status:** Accepted
 >
 > **Date:** 2026-08-13
 >
@@ -78,9 +78,10 @@ scoped state, listeners, polling, workers, caches, and native subscriptions.
 `dispose` deterministically removes them. A feature cannot initialize through a
 module-level singleton side effect.
 
-The shell loads on navigation, explicit user intent, restored active destination,
-or bounded idle prefetch after first interaction. A dynamic import scheduled
-unconditionally at startup is counted as startup work and fails the boundary.
+The shell loads on navigation, explicit user intent, or restored active
+destination. A dynamic import scheduled unconditionally at startup is counted as
+startup work and fails the boundary. Catalog preload is `"never"` or `"intent"`;
+idle/post-launch feature prefetch is not a policy.
 
 ### 3. Dependencies point inward, never sideways through globals
 
@@ -193,14 +194,18 @@ applies this decision to Rust/Cargo/sidecars/packages and owns DEP-001 closure.
 
 P08/P09 in the [performance budgets](../../../architecture/hardening/verification/performance-budgets.md)
 govern startup and optional workload composition. CI retains Vite manifest
-closure, first-use traces, runtime import graph/SCC inventory, CSS ownership,
-feature lifecycle leak tests, and daemon/package feature graphs.
+closure, runtime import graph/SCC inventory, CSS ownership, feature lifecycle
+leak tests (`npm run test:h09`), and daemon/package feature graphs. Packaged
+cold-start paint/interaction/heap (P08) is still required before Validated.
 
 ## Code anchors
 
 - `apps/medousa-home/src/lib/components/layout/AppShell.svelte`
+- `apps/medousa-home/src/lib/runtime/features/`
 - `apps/medousa-home/src/lib/stores/*.svelte.ts`
 - Markdown/Liquid registries and hydrators
 - `apps/medousa-home/src/app.postcss`
 - `apps/medousa-home/tailwind.config.ts`
+- `apps/medousa-home/security/css-inventory.json`
+- `apps/medousa-home/static/themes/` (generated selected-theme sheets)
 - Home/Tauri/daemon feature and command composition

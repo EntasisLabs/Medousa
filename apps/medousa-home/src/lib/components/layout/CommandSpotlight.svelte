@@ -7,7 +7,6 @@
   } from "$lib/commands/collectCommands";
   import { jumpPinSlot } from "$lib/commands/pinCommands";
   import { executeWorkshopCommand } from "$lib/commands/runWorkshopCommand";
-  import VaultExportPreviewModal from "$lib/components/vault/VaultExportPreviewModal.svelte";
   import { getVaultNote } from "$lib/daemon";
   import { chat } from "$lib/stores/chat.svelte";
   import { connection } from "$lib/stores/connection.svelte";
@@ -24,6 +23,7 @@
   } from "$lib/utils/browserPopoverOverlay";
   import { noteExcerpt } from "$lib/utils/vaultNoteBridge";
   import { formatShortcut } from "$lib/platform";
+  import { loadVaultExportPreviewModal } from "$lib/runtime/viewLoaders";
 
   interface Props {
     onFocusChat?: () => void;
@@ -442,12 +442,16 @@
   </div>
 {/if}
 
-<VaultExportPreviewModal
-  open={sessionExportPreview.open}
-  title={sessionExportPreview.title}
-  content={sessionExportPreview.content}
-  labelByPath={new Map()}
-  notePath={null}
-  initialFormat="pdf"
-  onClose={() => sessionExportPreview.close()}
-/>
+{#if sessionExportPreview.open}
+  {#await loadVaultExportPreviewModal() then { default: VaultExportPreviewModal }}
+    <VaultExportPreviewModal
+      open={sessionExportPreview.open}
+      title={sessionExportPreview.title}
+      content={sessionExportPreview.content}
+      labelByPath={new Map()}
+      notePath={null}
+      initialFormat="pdf"
+      onClose={() => sessionExportPreview.close()}
+    />
+  {/await}
+{/if}

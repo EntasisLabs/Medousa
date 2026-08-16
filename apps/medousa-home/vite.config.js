@@ -1,7 +1,12 @@
 import { defineConfig } from "vite";
 import { sveltekit } from "@sveltejs/kit/vite";
+import { mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { buildSync } from "esbuild";
 import { buildThemeBootScript } from "./src/lib/theme/themeRegistry";
 
+const homeRoot = dirname(fileURLToPath(import.meta.url));
 const host = process.env.TAURI_DEV_HOST;
 const devPort = 1420;
 
@@ -10,6 +15,35 @@ function viteOriginFromHost(devHost) {
   if (!devHost) return null;
   const wrapped = devHost.includes(":") ? `[${devHost}]` : devHost;
   return `http://${wrapped}:${devPort}`;
+}
+
+function themeCssPlugin() {
+  async function writeSelectedThemeSheets() {
+    const outfile = join(homeRoot, ".svelte-kit/medousa-theme-css-emit.mjs");
+    mkdirSync(join(homeRoot, ".svelte-kit"), { recursive: true });
+    buildSync({
+      absWorkingDir: homeRoot,
+      entryPoints: [join(homeRoot, "themes/emit-theme-css.ts")],
+      outfile,
+      bundle: true,
+      format: "esm",
+      platform: "node",
+      packages: "external",
+      logLevel: "silent",
+    });
+    const href = `${pathToFileURL(outfile).href}?t=${Date.now()}`;
+    const { emitSelectedThemeSheets } = await import(href);
+    emitSelectedThemeSheets(homeRoot);
+  }
+  return {
+    name: "medousa-theme-css",
+    async buildStart() {
+      await writeSelectedThemeSheets();
+    },
+    async configureServer() {
+      await writeSelectedThemeSheets();
+    },
+  };
 }
 
 function themeBootPlugin() {
@@ -60,7 +94,10 @@ function mobileDevOriginPlugin() {
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [mobileDevOriginPlugin(), sveltekit(), themeBootPlugin()],
+  plugins: [themeCssPlugin(), mobileDevOriginPlugin(), sveltekit(), themeBootPlugin()],
+  build: {
+    manifest: true,
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

@@ -1,0 +1,150 @@
+{
+  "schemaVersion": 2,
+  "notes": "H09 ARCH-001 migration ledger. Zero new SCCs, boundary violations, or cross-store edges. Existing cross-store edges are burn-down debt, not validation evidence.",
+  "sccs": [],
+  "crossStoreEdges": [
+    "src/lib/stores/chat.svelte.ts -> src/lib/stores/chatSessionRuntime.ts",
+    "src/lib/stores/chat.svelte.ts -> src/lib/stores/chatStreamPool.svelte.ts",
+    "src/lib/stores/chat.svelte.ts -> src/lib/stores/settings.svelte.ts",
+    "src/lib/stores/contextShell.svelte.ts -> src/lib/stores/contextThreads.svelte.ts",
+    "src/lib/stores/cron.svelte.ts -> src/lib/stores/automationDraft.svelte.ts",
+    "src/lib/stores/environment.svelte.ts -> src/lib/stores/layout.svelte.ts",
+    "src/lib/stores/humanBrowser.svelte.ts -> src/lib/stores/browserHistory.svelte.ts",
+    "src/lib/stores/humanBrowserSurface.ts -> src/lib/stores/humanBrowser.svelte.ts",
+    "src/lib/stores/layoutEdit.svelte.ts -> src/lib/stores/environment.svelte.ts",
+    "src/lib/stores/lmeWorkspace.svelte.ts -> src/lib/stores/artifacts.svelte.ts",
+    "src/lib/stores/lmeWorkspace.svelte.ts -> src/lib/stores/automations.svelte.ts",
+    "src/lib/stores/lmeWorkspace.svelte.ts -> src/lib/stores/catalog.svelte.ts",
+    "src/lib/stores/lmeWorkspace.svelte.ts -> src/lib/stores/codeWorkspace.svelte.ts",
+    "src/lib/stores/lmeWorkspace.svelte.ts -> src/lib/stores/externalDesk.svelte.ts",
+    "src/lib/stores/lmeWorkspace.svelte.ts -> src/lib/stores/flows.svelte.ts",
+    "src/lib/stores/lmeWorkspace.svelte.ts -> src/lib/stores/graphemeScriptEditor.svelte.ts",
+    "src/lib/stores/lmeWorkspace.svelte.ts -> src/lib/stores/vault.svelte.ts",
+    "src/lib/stores/noteEditorRuntimes.svelte.ts -> src/lib/stores/noteEditorRuntime.ts",
+    "src/lib/stores/recurring.svelte.ts -> src/lib/stores/automations.svelte.ts",
+    "src/lib/stores/scriptRenameUi.svelte.ts -> src/lib/stores/graphemeScriptEditor.svelte.ts",
+    "src/lib/stores/scriptRenameUi.svelte.ts -> src/lib/stores/lmeWorkspace.svelte.ts",
+    "src/lib/stores/settings.svelte.ts -> src/lib/stores/workshopDefaults.svelte.ts",
+    "src/lib/stores/settingsNav.svelte.ts -> src/lib/stores/workshopDefaults.svelte.ts",
+    "src/lib/stores/sharedMode.svelte.ts -> src/lib/stores/userProfiles.svelte.ts",
+    "src/lib/stores/shellTabs.svelte.ts -> src/lib/stores/chat.svelte.ts",
+    "src/lib/stores/shellTabs.svelte.ts -> src/lib/stores/chatStreamPool.svelte.ts",
+    "src/lib/stores/shellTabs.svelte.ts -> src/lib/stores/codeWorkspace.svelte.ts",
+    "src/lib/stores/shellTabs.svelte.ts -> src/lib/stores/humanBrowser.svelte.ts",
+    "src/lib/stores/shellTabs.svelte.ts -> src/lib/stores/layout.svelte.ts",
+    "src/lib/stores/shellTabs.svelte.ts -> src/lib/stores/lmeWorkspace.svelte.ts",
+    "src/lib/stores/shellTabs.svelte.ts -> src/lib/stores/vault.svelte.ts",
+    "src/lib/stores/spotlightPins.svelte.ts -> src/lib/stores/workshops.svelte.ts",
+    "src/lib/stores/vault.svelte.ts -> src/lib/stores/noteEditorRuntimes.svelte.ts",
+    "src/lib/stores/vault.svelte.ts -> src/lib/stores/noteSaveQueue.ts",
+    "src/lib/stores/vault.svelte.ts -> src/lib/stores/toast.svelte.ts",
+    "src/lib/stores/vault.svelte.ts -> src/lib/stores/vaultLeaveFlush.ts",
+    "src/lib/stores/vault.svelte.ts -> src/lib/stores/vaultOverlay.svelte.ts",
+    "src/lib/stores/vaultQuickSwitcher.svelte.ts -> src/lib/stores/commandSpotlight.svelte.ts",
+    "src/lib/stores/vaultVersions.svelte.ts -> src/lib/stores/workshopDefaults.svelte.ts",
+    "src/lib/stores/wizard.svelte.ts -> src/lib/stores/layout.svelte.ts",
+    "src/lib/stores/workshopDefaults.svelte.ts -> src/lib/stores/runtime.svelte.ts",
+    "src/lib/stores/workshopDefaults.svelte.ts -> src/lib/stores/voicePresets.svelte.ts",
+    "src/lib/stores/workshops.svelte.ts -> src/lib/stores/toast.svelte.ts",
+    "src/lib/stores/workshops.svelte.ts -> src/lib/stores/workshopDefaults.svelte.ts",
+    "src/lib/stores/workspace.svelte.ts -> src/lib/stores/workerTranscripts.svelte.ts"
+  ],
+  "sideEffectImports": [
+    {
+      "from": "src/lib/components/automations/AutomationCreateForm.svelte",
+      "specifier": "$lib/components/skills/agentEditor.css"
+    },
+    {
+      "from": "src/lib/components/automations/FlowAddStepPopover.svelte",
+      "specifier": "$lib/components/skills/agentEditor.css"
+    },
+    {
+      "from": "src/lib/components/automations/FlowComposer.svelte",
+      "specifier": "./flowComposer.css"
+    },
+    {
+      "from": "src/lib/components/automations/FlowPlanPopover.svelte",
+      "specifier": "$lib/components/skills/agentEditor.css"
+    },
+    {
+      "from": "src/lib/components/automations/FlowSchedulePopover.svelte",
+      "specifier": "$lib/components/skills/agentEditor.css"
+    },
+    {
+      "from": "src/lib/components/automations/ScheduleCreatePopover.svelte",
+      "specifier": "$lib/components/skills/agentEditor.css"
+    },
+    {
+      "from": "src/lib/components/automations/ScheduleDeliveriesPopover.svelte",
+      "specifier": "$lib/components/skills/agentEditor.css"
+    },
+    {
+      "from": "src/lib/components/automations/ScheduleRunsPopover.svelte",
+      "specifier": "$lib/components/skills/agentEditor.css"
+    },
+    {
+      "from": "src/lib/components/browser/HumanBrowserPanel.svelte",
+      "specifier": "$lib/styles/browser.postcss"
+    },
+    {
+      "from": "src/lib/components/chat/ChatSessionView.svelte",
+      "specifier": "$lib/components/ui/bindMarkdownView"
+    },
+    {
+      "from": "src/lib/components/chat/LiquidChatMessage.svelte",
+      "specifier": "$lib/components/ui/bindMarkdownView"
+    },
+    {
+      "from": "src/lib/components/environment/EnvironmentSceneView.svelte",
+      "specifier": "$lib/components/ui/bindMarkdownView"
+    },
+    {
+      "from": "src/lib/components/lme/LmeFlowEditor.svelte",
+      "specifier": "$lib/components/automations/flowComposer.css"
+    },
+    {
+      "from": "src/lib/components/mobile/HomePanel.svelte",
+      "specifier": "$lib/styles/mobile-home-convergence.postcss"
+    },
+    {
+      "from": "src/lib/components/mobile/MobileShell.svelte",
+      "specifier": "$lib/styles/mobile-home-convergence.postcss"
+    },
+    {
+      "from": "src/lib/components/onboarding/HomeOnboarding.svelte",
+      "specifier": "../wizard/wizardExperience.css"
+    },
+    {
+      "from": "src/lib/components/peers/PeersPanel.svelte",
+      "specifier": "$lib/styles/peers.postcss"
+    },
+    {
+      "from": "src/lib/components/skills/SpecialistDetailEditor.svelte",
+      "specifier": "./agentEditor.css"
+    },
+    {
+      "from": "src/lib/components/terminal/TerminalPane.svelte",
+      "specifier": "@xterm/xterm/css/xterm.css"
+    },
+    {
+      "from": "src/lib/components/vault/VaultMarkdownPreview.svelte",
+      "specifier": "$lib/components/ui/bindMarkdownView"
+    },
+    {
+      "from": "src/lib/components/wizard/WizardContainer.svelte",
+      "specifier": "./wizardExperience.css"
+    },
+    {
+      "from": "src/lib/liquid/archetypes/organisms/slides/FigureGridBody.svelte",
+      "specifier": "$lib/liquid/styles/liquidFigureGrid.css"
+    },
+    {
+      "from": "src/routes/+layout.svelte",
+      "specifier": "../app.postcss"
+    },
+    {
+      "from": "src/routes/dev/liquid/+page.svelte",
+      "specifier": "$lib/components/ui/bindMarkdownView"
+    }
+  ]
+}

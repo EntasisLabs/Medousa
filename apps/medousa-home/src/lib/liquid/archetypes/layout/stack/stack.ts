@@ -1,8 +1,6 @@
-/** `stack` layout primitive — descriptor + self-registration. */
+/** `stack` layout primitive — descriptor only. */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Stack from "./Stack.svelte";
 
 export const stack = defineArchetype({
   id: "stack",
@@ -19,5 +17,3 @@ export const stack = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-
-registerComponent(stack.id, Stack);

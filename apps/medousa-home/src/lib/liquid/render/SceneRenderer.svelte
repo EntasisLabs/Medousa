@@ -6,7 +6,7 @@
    */
   import { untrack } from "svelte";
   import type { SceneNode } from "$lib/liquid/core";
-  import { resolveComponent } from "./componentRegistry";
+  import { loadComponent } from "./componentRegistry";
   import { setLiquidContext, type LiquidRenderContext } from "./context";
   import SkeletonBlock from "./SkeletonBlock.svelte";
 
@@ -21,17 +21,23 @@
   const rootContext = untrack(() => context);
   if (rootContext) setLiquidContext(rootContext);
 
-  const Renderer = $derived(resolveComponent(node.type));
+  const renderer = $derived(loadComponent(node.type));
 </script>
 
 {#if node.fillState === "skeleton"}
   <SkeletonBlock type={node.type} />
-{:else if Renderer}
-  <Renderer {node} />
 {:else}
-  <div class="liquid-unknown" role="note">
-    Unknown archetype <code>{node.type}</code>
-  </div>
+  {#await renderer}
+    <SkeletonBlock type={node.type} />
+  {:then Renderer}
+    {#if Renderer}
+      <Renderer {node} />
+    {:else}
+      <div class="liquid-unknown" role="note">
+        Unknown archetype <code>{node.type}</code>
+      </div>
+    {/if}
+  {/await}
 {/if}
 
 <style>

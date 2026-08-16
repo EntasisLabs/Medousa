@@ -2,15 +2,13 @@
 
 import { humanBrowserEmbed, humanBrowserPopout } from "$lib/stores/humanBrowser.svelte";
 import type { HumanBrowserStore } from "$lib/stores/humanBrowser.svelte";
+import {
+  isPopoutBrowserChrome,
+  type HumanBrowserSurface,
+} from "$lib/utils/humanBrowserWindow";
 
-export type HumanBrowserSurface = "embed" | "popout";
-
-export function isPopoutBrowserChrome(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    window.location.pathname.includes("/popout/browser-chrome")
-  );
-}
+export type { HumanBrowserSurface };
+export { isPopoutBrowserChrome };
 
 export function humanBrowserForWindow(): HumanBrowserStore {
   return isPopoutBrowserChrome() ? humanBrowserPopout : humanBrowserEmbed;

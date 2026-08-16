@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import { card } from "./card";
 import { createNode, registry, validateNode } from "$lib/liquid/core";
 import { hasComponent } from "$lib/liquid/render/componentRegistry";
+import { registerLiquidUiFactories } from "$lib/liquid/archetypes/registerUi";
+
+registerLiquidUiFactories();
 
 describe("card archetype", () => {
-  it("self-registers descriptor + component", () => {
+  it("registers its descriptor and has a lazy component factory", () => {
     expect(registry.has("card")).toBe(true);
     expect(hasComponent("card")).toBe(true);
     expect(card.slots).toContain("detail");

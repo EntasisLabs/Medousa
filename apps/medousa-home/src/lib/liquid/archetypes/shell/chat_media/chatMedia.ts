@@ -1,8 +1,6 @@
-/** `chat_media` shell archetype — descriptor + self-registration. */
+/** `chat_media` shell archetype — descriptor only. */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import ChatMedia from "./ChatMedia.svelte";
 
 export const chatMedia = defineArchetype({
   id: "chat_media",
@@ -15,5 +13,3 @@ export const chatMedia = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-
-registerComponent(chatMedia.id, ChatMedia);

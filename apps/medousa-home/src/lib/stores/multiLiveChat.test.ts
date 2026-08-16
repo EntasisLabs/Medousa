@@ -75,6 +75,7 @@ describe("multi-live chat session runtimes", () => {
 
   it("bootstrapMultiLive sets maxLive to pane cap and acquires current session", async () => {
     const { store, chatStreamPool } = await loadStore();
+    store.sessionId = "sess-focused";
     store.bootstrapMultiLive();
     expect(chatStreamPool.maxLiveStreams).toBe(MAX_SHELL_PANES);
     expect(chatStreamPool.isLive(store.sessionId)).toBe(true);

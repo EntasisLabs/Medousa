@@ -2,8 +2,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { isTauriMobilePlatform } from "$lib/platform";
-import { isPopoutBrowserChrome } from "$lib/stores/humanBrowserSurface";
-import type { HumanBrowserSurface } from "$lib/stores/humanBrowserSurface";
+import { isPopoutBrowserChrome, type HumanBrowserSurface } from "$lib/utils/humanBrowserWindow";
 
 export type { HumanBrowserSurface };
 

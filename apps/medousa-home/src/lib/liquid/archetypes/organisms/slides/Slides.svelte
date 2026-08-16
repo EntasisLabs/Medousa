@@ -2,7 +2,7 @@
   /**
    * `slides` organism — labeled 16:9 deck frames with atmosphere washes / images.
    */
-  import { renderInlineMarkdown } from "$lib/markdown";
+  import { renderInlineMarkdown } from "$lib/markdown/render";
   import { getLiquidContext } from "$lib/liquid/render/context";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
   import {

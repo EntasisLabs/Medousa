@@ -1,4 +1,5 @@
 import { getSpaceById } from "$lib/config/vaultSpaces";
+import { slugifyTitle } from "$lib/utils/vaultSlug";
 
 import {
   wrapWithFrontmatter,
@@ -32,14 +33,7 @@ export const SLASH_TOC_TEMPLATE = "```medousa-toc\n```\n\n";
 export const SLASH_BOARD_TEMPLATE = `${serializeKanbanColumns(DEFAULT_KANBAN_COLUMNS)}\n\n`;
 export const SLASH_DRAW_TEMPLATE = `${serializeDrawFence(createEmptyDrawDocument())}\n\n`;
 
-export function slugifyTitle(title: string): string {
-  const slug = title
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return slug || "note";
-}
+export { slugifyTitle } from "$lib/utils/vaultSlug";
 
 export function isoDateLocal(date = new Date()): string {
   return date.toISOString().slice(0, 10);

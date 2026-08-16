@@ -80,6 +80,9 @@ jobs:
           cache-dependency-path: apps/medousa-home/package-lock.json
       - run: npm ci
       - run: npm run check
+      - run: npm run test:h09
+      - run: npm run build
+      - run: npm run check:bundle-budget
 
   browser-authority:
     name: Browser authority (${{ matrix.os }})

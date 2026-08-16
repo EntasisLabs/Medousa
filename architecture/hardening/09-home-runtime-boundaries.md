@@ -1,6 +1,13 @@
 # H09 — Home runtime and feature boundaries
 
-> **Status:** Draft for Home architecture review
+> **Status:** Implementing. The repair train now measures the real selected-shell
+> startup graphs and enforces SCCs, inward dependency direction, cross-store edge
+> growth, side-effect imports, source-size growth, and feature lifecycle races.
+> FRONT-001, ARCH-001, and ARCH-002 remain **Proposed**: the real desktop startup
+> graph is 3,595,119 bytes JS / 823,781 bytes CSS and mobile is 6,093,545 bytes JS /
+> 880,060 bytes CSS; 45 grandfathered cross-store edges and seven source owners
+> above 2,000 lines remain explicit burn-down debt. Validated/Shipped also need
+> retained P08 packaged multi-OS evidence.
 >
 > **Accountable owner:** Medousa Home maintainers
 >
@@ -29,6 +36,11 @@ below effects/reactivity/components. Cross-feature behavior goes through typed
 ports and shell orchestration instead of importing singleton stores. Mega-files
 are decomposed by state/authority owner, with generated inventories and CI
 boundaries preventing reassembly under new filenames.
+
+The outcome above is the closure target, not the current claim. CI currently
+prevents regression and makes remaining debt visible; it does not turn the
+grandfathered cross-store edges, large owners, or over-budget startup graphs into
+exceptions or validation evidence.
 
 H09 owns Home loading, runtime dependency direction, frontend state/component/
 CSS ownership, and the UI side of feature composition. H03 owns stream batching
@@ -73,15 +85,11 @@ platform, session, or feature change.
 
 ### Runtime cycles
 
-Markdown's barrel exports Liquid hydration; hydration loads `LiquidMdHost`;
-the host side-effect-loads the archetype registry; prose imports Markdown again.
-Vault/workshop stores and presentation/export helpers join this SCC. Smaller
-cycles tie workspace/shell/work controllers, vault configuration/templates,
-browser compositor/popover, identity/profiles, and defaults/presets.
-
-These are not harmless type cycles. Runtime imports make evaluation order part
-of behavior, block reliable chunking/tree-shaking, and force tests to initialize
-unrelated singleton state.
+Train 3 deleted the first-party SCCs. The Markdown barrel is parse/sanitize
+only; Liquid descriptor `index.ts` has no component/CSS side effects; prose
+renders through the parse pipeline; vault/workshop/export helpers no longer
+close a loop through hydrate. `check:runtime-graph` requires an empty ledger.
+ARCH-001 is **Mitigated** on that unit/CI exit; Validated still needs P08.
 
 ### State and component mega-owners
 
@@ -94,6 +102,13 @@ integration, services, and several independently loadable UI modes.
 
 Splitting only source text would create mutually importing siblings. Authority
 must move first into reducers, controllers, adapters, and feature-local state.
+
+Train 4 moved chat transcript/turn/draft owners, injected the H07 vault lookup
+and note buffers, routed code/work panels through document and undertaking
+controllers, deleted the remaining high-leverage feature-store imports via
+shell ports, and added start/dispose leak tests for workshop/platform/navigate
+cycles. ARCH-002 is **Mitigated** on that unit/CI exit; Validated still needs
+P08.
 
 ### CSS and themes
 
@@ -195,7 +210,7 @@ interface FeatureDescriptor {
   destinations: readonly DestinationId[];
   clientPlatforms: readonly ClientPlatform[];
   requiredCapabilities: readonly CapabilityId[];
-  preload: "never" | "intent" | "post-interaction-idle";
+  preload: "never" | "intent";
 }
 
 interface FeatureModule {
@@ -407,11 +422,17 @@ parameters, note/chat content, filesystem paths, or raw errors containing data.
 
 ### H09.0 — Reproducible graph and P08 baseline
 
-- Check in manifest closure/CSS analyzer and exact P08 workload/machine record.
-- Add Svelte/TypeScript runtime graph analyzer and seven-SCC migration ledger.
-- Instrument feature module evaluation and root-started resources.
+- Check in manifest closure/CSS analyzer and exact P08 workload/machine record
+  (`apps/medousa-home/scripts/verify-bundle-budget.mjs`,
+  `apps/medousa-home/security/bundle-budget.json`; `npm run build` then
+  `npm run check:bundle-budget`).
+- Add Svelte/TypeScript runtime graph analyzer and seven-SCC migration ledger
+  (`apps/medousa-home/scripts/verify-runtime-graph.mjs`,
+  `apps/medousa-home/security/runtime-scc-ledger.json`; `npm run check:runtime-graph`).
+- Instrument feature module evaluation and root-started resources
+  (`apps/medousa-home/src/lib/runtime/rootResources.ts`).
 - Add screenshot/accessibility/interaction fixtures for desktop/mobile and major
-  overlays before changing composition.
+  overlays before changing composition (`SHELL_A11Y_FIXTURES` in rootResources).
 
 ### H09.1 — Shell composition and lifecycle kernel
 
@@ -428,6 +449,18 @@ parameters, note/chat content, filesystem paths, or raw errors containing data.
 - Keep descriptor registry dependency-light and prove no eager dynamic imports.
 - Move each feature's CSS with its entry and measure ratchet after every split.
 - Establish H11 capability/package state without importing optional implementation.
+- Train 2 measured root static closure: 3,067,547 JS (gzip 970,441) / 1,075,634 CSS
+  across 29 JS / 4 CSS files; largest initial JS chunk 1,583,570. Desktop static
+  closure contains 0 `MobileShell` / `src/lib/components/mobile/` destinations.
+- Train 5's 2,109,096 JS / 640,347 CSS result measured only shared SvelteKit
+  roots and omitted the selected shell. It is superseded and must not be used as
+  FRONT-001 evidence.
+- Repair-train real eager closures (shared roots plus selected shell): desktop
+  3,595,119 JS (gzip 1,189,100) / 823,781 CSS (gzip 120,375), largest chunk
+  852,924; mobile 6,093,545 JS (gzip 1,900,361) / 880,060 CSS (gzip 133,140),
+  largest chunk 1,457,578. Lazy Liquid renderer factories removed roughly 266 KB
+  JS / 110 KB CSS from desktop and 206 KB JS / 99 KB CSS from mobile versus the
+  first correct baseline. Both platforms remain above validation ratchets.
 
 ### H09.3 — Break cycles from contracts upward
 
@@ -451,16 +484,25 @@ parameters, note/chat content, filesystem paths, or raw errors containing data.
 - Classify all global CSS; delete dead/duplicate rules with visual evidence.
 - Move feature/component rules into lazy assets and declare cascade layers.
 - Replace build-expanded theme catalog with selected token stylesheet loading.
+  Inventory: `apps/medousa-home/security/css-inventory.json`. Browser/peers
+  sheets load from their feature entries; vault/chat/settings remain
+  pending-extract in `app.postcss`. Contrast fixtures in
+  `themes/theme-contract.test.ts`; reduced-motion remains in `app.postcss`
+  and `SHELL_A11Y_FIXTURES`.
 - Validate CSP, visual regression, contrast, reduced motion, zoom, and platforms.
 
 ### H09.6 — Enforce and close
 
-- Make graph, manifest, CSS, lifecycle, accessibility, and P08 budgets required CI.
-- Run cold/warm startup and each first-use path on packaged desktop/mobile/web
-  targets where supported.
-- Remove compatibility loaders, singleton stores, exception ledger, dead CSS,
-  and immediate-post-launch preloads.
-- Update contributor and Home architecture docs with shipped boundaries.
+- Graph, manifest, CSS inventory, and lifecycle leak tests are required CI
+  (`npm run check` includes runtime-graph and source-ownership checks; home job also runs
+  `test:h09`, `npm run build`, `check:bundle-budget`). P08 packaged
+  paint/interaction/heap remains a Validated gate, not this train.
+- Catalog preload is `"never"` or `"intent"` only; no post-launch feature
+  prefetch, no `void import(` cheat, SCC ledger is empty.
+- Runtime ledger currently records 45 cross-store edges and 24 side-effect
+  imports; source ownership records 28 review alarms, seven of which block
+  ARCH-002 validation. New edges/side effects/oversized files and growth fail CI.
+- Contributor and Home architecture docs record allowed dependency direction.
 
 H09.1 precedes broad splits. H09.2 and SCC work can interleave carefully, but a
 dynamic import cannot be used to hide a cycle. Chat decomposition aligns with

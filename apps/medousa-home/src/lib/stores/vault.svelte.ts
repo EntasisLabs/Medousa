@@ -87,13 +87,16 @@ import {
   stripFrontmatter,
   type VaultNoteKind,
 } from "$lib/utils/vaultFrontmatter";
-import { workshopSessionIdForVaultSave } from "$lib/utils/vaultNoteWorkshop";
+import { workshopSessionIdForVaultSave } from "$lib/utils/vaultSaveSession";
 import { parseWikilinkTarget, resolveWikilinkTarget, suggestPathForWikilinkToken } from "$lib/utils/resolveWikilink";
 import {
   buildVaultLookupSnapshot,
   withSelectionAncestors,
   type VaultLookupSnapshot,
 } from "$lib/utils/vaultLookup";
+import { publishVaultLookupSnapshot } from "$lib/vault/vaultLookupLive";
+import { setVaultNoteBufferPort } from "$lib/vault/vaultNoteBufferPort";
+import { publishVaultDirty } from "$lib/runtime/vaultDirtySnapshot";
 import {
   VAULT_LIST_MAX_PAGES,
   VAULT_LIST_PAGE_LIMIT,
@@ -149,8 +152,9 @@ import {
   type NoteSaveResult,
 } from "$lib/stores/noteSaveQueue";
 import { noteEditorRuntimes } from "$lib/stores/noteEditorRuntimes.svelte";
+import { vaultOverlay } from "$lib/stores/vaultOverlay.svelte";
 import { invokeVaultLeaveFlush } from "$lib/stores/vaultLeaveFlush";
-import { significantLiveText } from "$lib/vault/live/liveMarkdownCodec";
+import { significantLiveText } from "$lib/vault/live/liveSignificantText";
 import {
   extractMedousaViewBlocks,
   replaceMedousaViewFenceAt,
@@ -247,7 +251,14 @@ export class VaultStore {
   noteTags = $state<string[]>([]);
   title = $state("");
   selectedKind = $state<VaultNoteKind>("note");
-  dirty = $state(false);
+  private dirtyState = $state(false);
+  get dirty(): boolean {
+    return this.dirtyState;
+  }
+  set dirty(next: boolean) {
+    this.dirtyState = next;
+    publishVaultDirty(next);
+  }
   saveStatus = $state<VaultSaveStatus>("idle");
   conflictMessage = $state<string | null>(null);
   /** True while fetching note content (open/reload) — not list refresh. */
@@ -297,7 +308,12 @@ export class VaultStore {
   previewingAttachmentPath = $state<string | null>(null);
   /** pane = Your files library column; panel = floating popup over a note. */
   previewPresentation = $state<"pane" | "panel">("pane");
-  garageWizardOpen = $state(false);
+  get garageWizardOpen() {
+    return vaultOverlay.garageWizardOpen;
+  }
+  set garageWizardOpen(value: boolean) {
+    vaultOverlay.garageWizardOpen = value;
+  }
   newGroupDialogOpen = $state(false);
   noteActionsOpen = $state(false);
   vaultRoots = $state<VaultRootView[]>([]);
@@ -595,6 +611,13 @@ export class VaultStore {
     if (!raw) return "";
     if (isAbsoluteDiskPath(raw)) return raw;
     return this.normalizeNotePath(raw);
+  }
+
+  /** Injected H07 buffer peek — features read via getVaultNoteBuffer. */
+  noteBufferFor(path: string): NoteBuffer | undefined {
+    const key = this.bufferKey(path);
+    if (!key) return undefined;
+    return this.noteBuffers.get(key);
   }
 
   /** Markdown for any path — focused live fields or a background buffer. */
@@ -1631,6 +1654,7 @@ export class VaultStore {
       this.vaultGeneration,
       this.selectedPath,
     );
+    publishVaultLookupSnapshot(this.lookupSnapshot);
   }
 
   selectionAncestorSet(): Set<string> {
@@ -1780,6 +1804,7 @@ export class VaultStore {
     if (buffered) {
       this.selectedPath = nextPath;
       this.lookupSnapshot = withSelectionAncestors(this.lookupSnapshot, nextPath);
+      publishVaultLookupSnapshot(this.lookupSnapshot);
       this.restoreBufferIntoFocused(buffered);
       this.restoreEditorUi(nextPath);
       localStorage.setItem(LAST_NOTE_KEY, nextPath);
@@ -1798,6 +1823,7 @@ export class VaultStore {
     this.error = null;
     this.selectedPath = nextPath;
     this.lookupSnapshot = withSelectionAncestors(this.lookupSnapshot, nextPath);
+    publishVaultLookupSnapshot(this.lookupSnapshot);
     this.content = "";
     this.baselineContent = "";
     this.contentHash = null;
@@ -2865,11 +2891,18 @@ export class VaultStore {
     if (!path.trim()) return;
     this.previewingAttachmentPath = path;
     this.previewPresentation = presentation;
+    this.syncAttachmentPanelOverlay();
   }
 
   closeAttachmentPreview() {
     this.previewingAttachmentPath = null;
     this.previewPresentation = "pane";
+    this.syncAttachmentPanelOverlay();
+  }
+
+  private syncAttachmentPanelOverlay() {
+    vaultOverlay.attachmentPanelOpen =
+      this.previewPresentation === "panel" && Boolean(this.previewingAttachmentPath);
   }
 
   openGarageWizard() {
@@ -3001,3 +3034,5 @@ function isRecentAgentWrite(
 }
 
 export const vault = new VaultStore();
+publishVaultLookupSnapshot(vault.lookupSnapshot);
+setVaultNoteBufferPort((path) => vault.noteBufferFor(path));

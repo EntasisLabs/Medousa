@@ -30,6 +30,33 @@ Library on mobile includes **Notes** and **Artifacts** tabs; artifacts open full
 
 Active roadmap: [architecture/ROADMAP.md](../../architecture/ROADMAP.md).
 
+## Runtime boundaries
+
+Startup contains boot, connection, platform selection, layout primitives, and
+eager chat. Desktop versus mobile composition is chosen before that shell graph
+imports. Vault, code/work, browser, settings, spotlight, wizard, exporters, and
+rich renderers load on real user or restored-state intent through
+[`src/lib/runtime/features/`](../../apps/medousa-home/src/lib/runtime/features/)
+and [`viewLoaders.ts`](../../apps/medousa-home/src/lib/runtime/viewLoaders.ts).
+
+Allowed dependency direction ([ADR-020](../architecture/decisions/adr-020-feature-boundaries-and-lazy-runtime.md)):
+
+- Catalog/descriptors import no stores or `.svelte` implementations.
+- Feature stores do not import sibling feature stores.
+- Dynamic `import()` is a load boundary, not a way to hide a cycle.
+- Chat stays eager; overlays listed in `APP_SHELL_LAZY_OVERLAYS` stay out of the
+  static closure.
+- Feature CSS loads with its entry. `app.postcss` declares cascade layers and
+  does not `@import` feature sheets. Theme tokens are one stored
+  `/themes/<name>.css` sheet, not a compiled 50-palette Tailwind tree.
+
+Enforcement (home CI): `npm run check` (includes `check:runtime-graph`),
+`npm run test:h09`, `npm run build`, `npm run check:bundle-budget`.
+
+H09 code trains are complete. ARCH-001 and ARCH-002 are Mitigated on unit/CI
+exit tests. FRONT-001 stays Proposed: root CSS is still above 600 KiB.
+Validated/Shipped still need P08 packaged multi-OS evidence.
+
 ## Transport stack
 
 ```

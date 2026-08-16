@@ -1,8 +1,6 @@
 /** `feed` organism — hydrate last-good Stasis/recurring output by feed id. */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Feed from "./Feed.svelte";
 
 export const feed = defineArchetype({
   id: "feed",
@@ -21,5 +19,3 @@ export const feed = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-
-registerComponent(feed.id, Feed);

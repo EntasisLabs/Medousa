@@ -1,6 +1,7 @@
 <script lang="ts">
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
   import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
+  import "$lib/components/ui/bindMarkdownView";
   import { chat } from "$lib/stores/chat.svelte";
   import { LoaderCircle, MessageSquare } from "@lucide/svelte";
 

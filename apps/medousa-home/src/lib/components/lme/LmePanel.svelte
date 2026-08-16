@@ -1,13 +1,16 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
-  import LmeEditorHost from "$lib/components/lme/LmeEditorHost.svelte";
+  import LazyFeatureView from "$lib/components/layout/LazyFeatureView.svelte";
+  import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import ConnectionsInviteSheet from "$lib/components/lme/ConnectionsInviteSheet.svelte";
   import VaultNewGroupDialog from "$lib/components/vault/VaultNewGroupDialog.svelte";
   import VaultNewNoteDialog from "$lib/components/vault/VaultNewNoteDialog.svelte";
   import { automationsNav } from "$lib/stores/automationsNav.svelte";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
+  import { layout } from "$lib/stores/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
+  import { loadLmeEditorHost } from "$lib/runtime/viewLoaders";
 
   interface Props {
     visible: boolean;
@@ -58,6 +61,12 @@
     if (!visible || !interactive || lmeWorkspace.explorerMode !== "scripts") return;
     void workshop.refreshModulesAndScripts();
   });
+
+  const hasEditorTarget = $derived.by(() => {
+    const id = lmeTabId?.trim();
+    if (id) return lmeWorkspace.tabs.some((tab) => tab.tabId === id);
+    return useActiveTabWhenUnbound && lmeWorkspace.activeTab != null;
+  });
 </script>
 
 <section
@@ -67,16 +76,30 @@
   data-debug-label="lme-panel"
   aria-label="Workspace"
 >
-  <LmeEditorHost
-    {visible}
-    {interactive}
-    {lmeTabId}
-    {useActiveTabWhenUnbound}
-    {emptyMessage}
-    {onOpenChat}
-    {onOpenWork}
-    {onSelectCard}
-  />
+  {#if hasEditorTarget}
+    <LazyFeatureView
+      loader={loadLmeEditorHost}
+      {visible}
+      {interactive}
+      {lmeTabId}
+      {useActiveTabWhenUnbound}
+      {emptyMessage}
+      {onOpenChat}
+      {onOpenWork}
+      {onSelectCard}
+    />
+  {:else}
+    <div class="flex flex-1 flex-col">
+      {#if !layout.shellSidebarExpanded}
+        <div class="flex items-center px-2 pt-1.5">
+          <ShellSidebarExpandButton label="Show workspace browser" />
+        </div>
+      {/if}
+      <div class="flex flex-1 items-center justify-center p-8 text-sm text-content-quiet">
+        {emptyMessage}
+      </div>
+    </div>
+  {/if}
 </section>
 
 {#if interactive}

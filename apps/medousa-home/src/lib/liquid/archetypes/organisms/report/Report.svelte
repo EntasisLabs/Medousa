@@ -4,7 +4,7 @@
    * Paste-first from ```report markdown. Body re-enters MarkdownContent so
    * nested chart placeholders hydrate like brief section bodies.
    */
-  import { renderInlineMarkdown } from "$lib/markdown";
+  import { renderInlineMarkdown } from "$lib/markdown/render";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
   import FigureGridBody from "../slides/FigureGridBody.svelte";
 

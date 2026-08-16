@@ -1,13 +1,7 @@
 <script lang="ts">
-  import ArtifactLibraryPreview from "$lib/components/artifacts/ArtifactLibraryPreview.svelte";
-  import LmeAgentEditor from "$lib/components/lme/LmeAgentEditor.svelte";
-  import UndertakingsPanel from "$lib/components/work/UndertakingsPanel.svelte";
-  import LmeFlowEditor from "$lib/components/lme/LmeFlowEditor.svelte";
-  import LmeScheduleEditor from "$lib/components/lme/LmeScheduleEditor.svelte";
-  import LmeScriptEditor from "$lib/components/lme/LmeScriptEditor.svelte";
+  import LazyFeatureView from "$lib/components/layout/LazyFeatureView.svelte";
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import VaultAttachmentPreviewContent from "$lib/components/vault/VaultAttachmentPreviewContent.svelte";
-  import VaultEditor from "$lib/components/vault/VaultEditor.svelte";
   import { artifacts } from "$lib/stores/artifacts.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { layout } from "$lib/stores/layout.svelte";
@@ -16,6 +10,15 @@
   import { vault } from "$lib/stores/vault.svelte";
   import { openAttachmentPath } from "$lib/utils/vaultAttachmentPicker";
   import { attachmentFileName } from "$lib/utils/vaultAttachments";
+  import {
+    loadArtifactLibraryPreview,
+    loadLmeAgentEditor,
+    loadLmeFlowEditor,
+    loadLmeScheduleEditor,
+    loadLmeScriptEditor,
+    loadUndertakingsPanel,
+    loadVaultEditor,
+  } from "$lib/runtime/viewLoaders";
 
   interface Props {
     visible?: boolean;
@@ -150,7 +153,8 @@
         aria-hidden={!isActiveNote}
         inert={!isActiveNote ? true : undefined}
       >
-        <VaultEditor
+        <LazyFeatureView
+          loader={loadVaultEditor}
           visible={visible && isActiveNote}
           interactive={interactive && isActiveNote}
           keepAlive={true}
@@ -164,7 +168,7 @@
 
     {#if active.kind === "script"}
       <div class="relative z-10 flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <LmeScriptEditor {visible} />
+        <LazyFeatureView loader={loadLmeScriptEditor} {visible} />
       </div>
     {:else if active.kind === "file"}
       <div class="external-file-library-preview relative z-10 flex h-full min-h-0 min-w-0 flex-1 flex-col">
@@ -197,37 +201,44 @@
       </div>
     {:else if active.kind === "code"}
       <div class="relative z-10 flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <UndertakingsPanel
+        <LazyFeatureView
+          loader={loadUndertakingsPanel}
           showBrowser={false}
           workId={active.workId}
           resource={active.resource}
-          interactive={interactive}
+          {interactive}
         />
       </div>
     {:else if active.kind === "deck"}
       <div class="relative z-10 flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <ArtifactLibraryPreview
-          artifact={deckArtifact}
-          sessionTitle={deckArtifact ? artifacts.sessionTitle(deckArtifact.session_id) : ""}
-          bind:panelOpen={deckPanelOpen}
-          {onOpenChat}
-          onOpenSession={(sessionId) => {
-            chat.sessionId = sessionId;
-            onOpenChat();
-          }}
-        />
+        {#await loadArtifactLibraryPreview()}
+          <div class="flex h-full items-center justify-center p-8 text-sm text-content-quiet">
+            Loading…
+          </div>
+        {:then { default: ArtifactLibraryPreview }}
+          <ArtifactLibraryPreview
+            artifact={deckArtifact}
+            sessionTitle={deckArtifact ? artifacts.sessionTitle(deckArtifact.session_id) : ""}
+            bind:panelOpen={deckPanelOpen}
+            {onOpenChat}
+            onOpenSession={(sessionId) => {
+              chat.sessionId = sessionId;
+              onOpenChat();
+            }}
+          />
+        {/await}
       </div>
     {:else if active.kind === "manuscript"}
       <div class="relative z-10 flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <LmeAgentEditor {onOpenChat} />
+        <LazyFeatureView loader={loadLmeAgentEditor} {onOpenChat} />
       </div>
     {:else if active.kind === "flow"}
       <div class="relative z-10 flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <LmeFlowEditor />
+        <LazyFeatureView loader={loadLmeFlowEditor} />
       </div>
     {:else if active.kind === "schedule"}
       <div class="relative z-10 flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <LmeScheduleEditor />
+        <LazyFeatureView loader={loadLmeScheduleEditor} />
       </div>
     {/if}
   {/if}

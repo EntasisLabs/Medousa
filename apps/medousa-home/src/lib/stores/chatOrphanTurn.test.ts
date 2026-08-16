@@ -70,7 +70,9 @@ describe("orphaned interactive turn lease", () => {
       active: false,
       turn: null,
     } as never);
-    return { store: new ChatStore() };
+    const store = new ChatStore();
+    store.sessionId = "sess-test";
+    return { store };
   }
 
   it("releases stale interactive lease when daemon has no active turn", async () => {

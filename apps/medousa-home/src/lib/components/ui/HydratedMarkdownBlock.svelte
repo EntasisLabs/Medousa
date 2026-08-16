@@ -1,9 +1,10 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
 
-  import { destroyDrawEmbeds } from "$lib/draw/hydrateDrawEmbeds";
-  import { hydrateMarkdownContainer } from "$lib/markdown/hydrateMarkdownContainer";
-  import { destroyLiquidEmbeds } from "$lib/markdown/hydrateLiquidEmbeds";
+  import {
+    destroyMarkdownContainer,
+    hydrateMarkdownContainer,
+  } from "$lib/markdown/hydrateMarkdownContainer";
   import type { LiquidRenderContext } from "$lib/liquid/render/context";
 
   interface Props {
@@ -30,8 +31,7 @@
 
   onDestroy(() => {
     if (!container) return;
-    destroyLiquidEmbeds(container);
-    destroyDrawEmbeds(container);
+    void destroyMarkdownContainer(container);
   });
 </script>
 

@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 2,
+  "notes": "FRONT-001 regression ceilings for the real desktop/mobile startup closures. These are binding regression ratchets, not evidence that the H09 target has been met.",
+  "manifest": ".svelte-kit/output/client/.vite/manifest.json",
+  "ceilings": {
+    "desktop": {
+      "shellEntry": "src/lib/components/layout/WorkshopShell.svelte",
+      "jsFiles": 233,
+      "cssFiles": 26,
+      "jsBytes": 3595119,
+      "jsGzipBytes": 1189100,
+      "cssBytes": 823781,
+      "cssGzipBytes": 120375,
+      "largestJsChunkBytes": 852924
+    },
+    "mobile": {
+      "shellEntry": "src/lib/components/mobile/MobileShell.svelte",
+      "jsFiles": 270,
+      "cssFiles": 37,
+      "jsBytes": 6093545,
+      "jsGzipBytes": 1900361,
+      "cssBytes": 880060,
+      "cssGzipBytes": 133140,
+      "largestJsChunkBytes": 1457578
+    }
+  },
+  "measured": {
+    "rootEntries": [
+      ".svelte-kit/generated/client-optimized/app.js",
+      ".svelte-kit/generated/client-optimized/nodes/0.js",
+      ".svelte-kit/generated/client-optimized/nodes/2.js",
+      "node_modules/@sveltejs/kit/src/runtime/client/entry.js"
+    ],
+    "desktop": {
+      "shellEntry": "src/lib/components/layout/WorkshopShell.svelte",
+      "jsFiles": 233,
+      "cssFiles": 26,
+      "jsBytes": 3595119,
+      "jsGzipBytes": 1189100,
+      "cssBytes": 823781,
+      "cssGzipBytes": 120375,
+      "largestJsChunkBytes": 852924
+    },
+    "mobile": {
+      "shellEntry": "src/lib/components/mobile/MobileShell.svelte",
+      "jsFiles": 270,
+      "cssFiles": 37,
+      "jsBytes": 6093545,
+      "jsGzipBytes": 1900361,
+      "cssBytes": 880060,
+      "cssGzipBytes": 133140,
+      "largestJsChunkBytes": 1457578
+    }
+  }
+}

@@ -6,7 +6,7 @@
   import { getLiquidContext } from "$lib/liquid/render/context";
   import { createSceneEvent } from "$lib/liquid/core";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
-  import { renderInlineMarkdown } from "$lib/markdown";
+  import { renderInlineMarkdown } from "$lib/markdown/render";
 
   interface TreeNode {
     id: string;

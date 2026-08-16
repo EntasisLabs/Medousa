@@ -1,8 +1,6 @@
-/** `metadata` atom — descriptor + self-registration. */
+/** `metadata` atom — descriptor only. */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Metadata from "./Metadata.svelte";
 
 export const metadata = defineArchetype({
   id: "metadata",
@@ -15,5 +13,3 @@ export const metadata = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-
-registerComponent(metadata.id, Metadata);

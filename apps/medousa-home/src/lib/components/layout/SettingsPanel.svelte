@@ -1,15 +1,8 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
+  import LazyFeatureView from "$lib/components/layout/LazyFeatureView.svelte";
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import SettingsNav from "$lib/components/settings/SettingsNav.svelte";
-  import SettingsPreferencesSection from "$lib/components/settings/SettingsPreferencesSection.svelte";
-  import SettingsAgentSection from "$lib/components/settings/SettingsAgentSection.svelte";
-  import SettingsRuntimeSection from "$lib/components/settings/SettingsRuntimeSection.svelte";
-  import SettingsNetworkSection from "$lib/components/settings/SettingsNetworkSection.svelte";
-  import SettingsConnectionsSection from "$lib/components/settings/SettingsConnectionsSection.svelte";
-  import SettingsBasementSection from "$lib/components/settings/SettingsBasementSection.svelte";
-  import SettingsPackagesSection from "$lib/components/settings/SettingsPackagesSection.svelte";
-  import SettingsMcpSection from "$lib/components/settings/SettingsMcpSection.svelte";
   import type { DaemonHealth } from "$lib/daemon";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
@@ -20,6 +13,16 @@
   import { appUpdate } from "$lib/stores/appUpdate.svelte";
   import { isTauri } from "$lib/window";
   import type { SettingsSectionId } from "$lib/types/settings";
+  import {
+    loadSettingsAgentSection,
+    loadSettingsBasementSection,
+    loadSettingsConnectionsSection,
+    loadSettingsMcpSection,
+    loadSettingsNetworkSection,
+    loadSettingsPackagesSection,
+    loadSettingsPreferencesSection,
+    loadSettingsRuntimeSection,
+  } from "$lib/runtime/viewLoaders";
 
   interface Props {
     visible: boolean;
@@ -129,21 +132,27 @@
 
     <div class="mobile-you-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4">
       {#if activeSection === "preferences"}
-        <SettingsPreferencesSection {mobile} />
+        <LazyFeatureView loader={loadSettingsPreferencesSection} {mobile} />
       {:else if activeSection === "agent"}
-        <SettingsAgentSection {mobile} />
+        <LazyFeatureView loader={loadSettingsAgentSection} {mobile} />
       {:else if activeSection === "runtime"}
-        <SettingsRuntimeSection {mobile} />
+        <LazyFeatureView loader={loadSettingsRuntimeSection} {mobile} />
       {:else if activeSection === "network"}
-        <SettingsNetworkSection {mobile} {visible} {health} />
+        <LazyFeatureView loader={loadSettingsNetworkSection} {mobile} {visible} {health} />
       {:else if activeSection === "connections"}
-        <SettingsConnectionsSection />
+        <LazyFeatureView loader={loadSettingsConnectionsSection} />
       {:else if activeSection === "packages"}
-        <SettingsPackagesSection {mobile} />
+        <LazyFeatureView loader={loadSettingsPackagesSection} {mobile} />
       {:else if activeSection === "mcp"}
-        <SettingsMcpSection {mobile} />
+        <LazyFeatureView loader={loadSettingsMcpSection} {mobile} />
       {:else}
-        <SettingsBasementSection {revision} {health} {onDaemonHealth} {mobile} />
+        <LazyFeatureView
+          loader={loadSettingsBasementSection}
+          {revision}
+          {health}
+          {onDaemonHealth}
+          {mobile}
+        />
       {/if}
     </div>
   </div>

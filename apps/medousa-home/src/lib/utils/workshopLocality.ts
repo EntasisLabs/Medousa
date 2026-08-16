@@ -1,7 +1,13 @@
 /** Whether Home and the active workshop daemon share this machine’s disk. */
 
-import { workshops } from "$lib/stores/workshops.svelte";
 import { isTauri } from "$lib/platform";
+
+let kindPort: () => string | undefined = () => undefined;
+
+/** Bound by shell lifecycle so this helper does not import the workshops store. */
+export function setActiveWorkshopKindPort(port: () => string | undefined): void {
+  kindPort = port;
+}
 
 /**
  * Local workshops run on this device — Home folder pickers, Reveal, and
@@ -14,7 +20,7 @@ export function isCoLocatedWorkshop(): boolean {
   }
   // Unknown kind is treated as remote — assuming local hands Home paths to a
   // daemon that may not share this disk.
-  return workshops.activeWorkshop?.kind === "local";
+  return kindPort() === "local";
 }
 
 export function vaultHostSideHint(): string {

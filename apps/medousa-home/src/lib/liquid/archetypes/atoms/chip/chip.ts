@@ -1,8 +1,6 @@
-/** `chip` atom — descriptor + self-registration. */
+/** `chip` atom — descriptor only. */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Chip from "./Chip.svelte";
 
 export const chip = defineArchetype({
   id: "chip",
@@ -19,5 +17,3 @@ export const chip = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-
-registerComponent(chip.id, Chip);

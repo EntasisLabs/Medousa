@@ -90,7 +90,7 @@ and performance budgets must prevent the same classes of defect from returning.
 | H06 | [06-forge-coder-scaling.md](06-forge-coder-scaling.md) | Incremental Forge state, checkpoint observation, blocking work | PERF-002, PERF-004, ASYNC-001 | ADR-016, H05 | Implementing; H06.0–H06.11 landed; darwin evidence recorded; findings not Validated; multi-OS packaging pending |
 | H07 | [07-vault-scaling-and-consistency.md](07-vault-scaling-and-consistency.md) | Incremental index, atomic mutation, backend/frontend lookups | PERF-003, PERF-006, CONSIST-001 | ADR-014, ADR-016 | Implementing; semantics train exit tests landed |
 | H08 | [08-desktop-browser-isolation.md](08-desktop-browser-isolation.md) | Remote webview capabilities and request-correlated bridge | DESKTOP-001 | ADR-018, H05 | Implemented; packaged-platform release validation pending |
-| H09 | [09-home-runtime-boundaries.md](09-home-runtime-boundaries.md) | Feature loading, runtime cycles, store/component/CSS ownership | FRONT-001, ARCH-001, ARCH-002 | ADR-020, H03 | Draft |
+| H09 | [09-home-runtime-boundaries.md](09-home-runtime-boundaries.md) | Feature loading, runtime cycles, store/component/CSS ownership | FRONT-001, ARCH-001, ARCH-002 | ADR-020, H03 | Implementing; real platform startup graphs are ratcheted, 0 SCCs enforced, 45 cross-store edges and 7 oversized owners remain burn-down debt |
 | H10 | [10-api-contract-generation.md](10-api-contract-generation.md) | Authoritative API definition and generated clients/tests | CONTRACT-001 | ADR-019, H01 | Draft |
 | H11 | `11-package-and-dependency-boundaries.md` | Optional workload features and dependency budgets | DEP-001 | ADR-020 | Proposed |
 | H12 | `12-quality-gates.md` | CI matrix, deterministic tests, benchmarks and budgets | CI-001, TEST-001, PERF-007 | All workstreams | Proposed |
@@ -109,7 +109,7 @@ duplicate ADR-010 history.
 | [ADR-017](../../docs/architecture/decisions/adr-017-request-scoped-runtime-context.md) | Request-scoped runtime context; no process-global turn state | Extends ADR-005/ADR-008 | Proposed |
 | [ADR-018](../../docs/architecture/decisions/adr-018-untrusted-webview-isolation.md) | Untrusted webview isolation and minimal browser bridge | Revises browser-host assumptions | Proposed |
 | [ADR-019](../../docs/architecture/decisions/adr-019-generated-api-contract.md) | Route-owned generated API and client contract | Replaces handwritten parity convention | Proposed |
-| [ADR-020](../../docs/architecture/decisions/adr-020-feature-boundaries-and-lazy-runtime.md) | Feature boundaries, lazy loading, and optional workload packaging | Formalizes Home-first optional packages | Proposed |
+| [ADR-020](../../docs/architecture/decisions/adr-020-feature-boundaries-and-lazy-runtime.md) | Feature boundaries, lazy loading, and optional workload packaging | Formalizes Home-first optional packages | Accepted |
 
 An ADR must state exactly which earlier consequence it supersedes. New language
 must not quietly contradict an accepted decision while leaving both marked
@@ -151,10 +151,10 @@ one without retaining the history.
 | STORE-002 | High | H04 | C | Mitigated; retained benchmark evidence pending | Incremental feed/workspace journals and pre-serialization mutation coalescing; P03 artifact pending |
 | PERF-004 | Critical | H06 | C | Implementing; not validated | P05 darwin scenario matrix recorded; model-only zero-Git boundary proof and multi-OS packaging pending |
 | PERF-005 | Critical | H03 | C | Mitigated; retained browser profile pending | Browser streaming render/long-task profile |
-| FRONT-001 | High | H09 | D | Proposed | Manifest and cold-start budgets |
-| ARCH-001 | High | H09 | D | Proposed | Zero-new-cycle check and migration ledger |
+| FRONT-001 | High | H09 | D | Proposed | Real eager desktop closure is 3,595,119 JS / 823,781 CSS; mobile is 6,093,545 JS / 880,060 CSS; both exceed ratchets |
+| ARCH-001 | High | H09 | D | Proposed / Implementing | Analyzer enforces 0 SCCs, inward rules, side-effect inventory, and no new cross-store edges; 45 existing cross-store edges remain |
 | PERF-006 | High | H07 | C | Mitigated; P07 multi-OS Validated evidence pending | Large-vault tree/link; Home pages to completion and virtualizes recents at fixed height |
-| ARCH-002 | High | H09 | D | Proposed | Boundary tests and deleted legacy ownership paths |
+| ARCH-002 | High | H09 | D | Proposed / Implementing | Lifecycle races are covered and source growth is fenced; 7 owners above 2,000 lines still block validation |
 | CONTRACT-001 | High | H10 | D | Proposed | Generated artifact diff plus black-box API contract |
 | DEP-001 | High | H11 | D | Proposed | Feature/dependency graph and build/package budgets |
 | CI-001 | High | H12 | D | Proposed | Required green supported-platform matrix |

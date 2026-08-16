@@ -27,6 +27,8 @@ async fn fetch_vault_tree(daemon_url: &str) -> Vec<String> {
             limit: Some(200),
             tags: None,
             tag_prefix: None,
+            cursor: None,
+            generation: None,
         })
         .await
     {
@@ -83,6 +85,8 @@ pub(crate) async fn refresh_notes_picker(state: &mut TuiState) {
                 limit: Some(80),
                 tags: None,
                 tag_prefix: None,
+                cursor: None,
+                generation: None,
             })
             .await
             .map(|resp| {

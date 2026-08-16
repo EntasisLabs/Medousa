@@ -3,38 +3,14 @@
    * Host for markdown-hydrated Liquid embeds.
    * Mounted into placeholder divs by hydrateLiquidEmbeds.
    */
-  import "$lib/liquid/archetypes";
+  import { installLiquidUi } from "$lib/liquid/archetypes/registerUi";
   import { untrack } from "svelte";
   import { createNode } from "$lib/liquid/core";
   import {
     setLiquidContext,
     type LiquidRenderContext,
   } from "$lib/liquid/render/context";
-  import Card from "$lib/liquid/archetypes/molecules/card/Card.svelte";
-  import Carousel from "$lib/liquid/archetypes/molecules/carousel/Carousel.svelte";
-  import ActionRow from "$lib/liquid/archetypes/molecules/action_row/ActionRow.svelte";
-  import Callout from "$lib/liquid/archetypes/molecules/callout/Callout.svelte";
-  import Cite from "$lib/liquid/archetypes/molecules/cite/Cite.svelte";
-  import Compare from "$lib/liquid/archetypes/organisms/compare/Compare.svelte";
-  import Plan from "$lib/liquid/archetypes/organisms/plan/Plan.svelte";
-  import Timeline from "$lib/liquid/archetypes/organisms/timeline/Timeline.svelte";
-  import Shortlist from "$lib/liquid/archetypes/organisms/shortlist/Shortlist.svelte";
-  import Decision from "$lib/liquid/archetypes/organisms/decision/Decision.svelte";
-  import Brief from "$lib/liquid/archetypes/organisms/brief/Brief.svelte";
-  import Dashboard from "$lib/liquid/archetypes/organisms/dashboard/Dashboard.svelte";
-  import Feed from "$lib/liquid/archetypes/organisms/feed/Feed.svelte";
-  import Chart from "$lib/liquid/archetypes/organisms/chart/Chart.svelte";
-  import Report from "$lib/liquid/archetypes/organisms/report/Report.svelte";
-  import Slides from "$lib/liquid/archetypes/organisms/slides/Slides.svelte";
-  import Section from "$lib/liquid/archetypes/molecules/section/Section.svelte";
-  import Block from "$lib/liquid/archetypes/molecules/block/Block.svelte";
-  import ChipGroup from "$lib/liquid/archetypes/molecules/chip_group/ChipGroup.svelte";
-  import Media from "$lib/liquid/archetypes/atoms/media/Media.svelte";
-  import Tabs from "$lib/liquid/archetypes/molecules/tabs/Tabs.svelte";
-  import Steps from "$lib/liquid/archetypes/molecules/steps/Steps.svelte";
-  import Accordion from "$lib/liquid/archetypes/molecules/accordion/Accordion.svelte";
-  import CodeEmbed from "$lib/liquid/archetypes/molecules/code/Code.svelte";
-  import Tree from "$lib/liquid/archetypes/molecules/tree/Tree.svelte";
+  import SceneRenderer from "$lib/liquid/render/SceneRenderer.svelte";
   import type {
     LiquidActionProps,
     LiquidAccordionProps,
@@ -63,6 +39,8 @@
     LiquidTreeProps,
   } from "$lib/markdown/liquidEmbeds";
   import { LIQUID_ICON_MAP } from "$lib/liquid/icons/liquidIcons";
+
+  void installLiquidUi();
 
   interface Props {
     kind: LiquidEmbedKind | "icon";
@@ -594,106 +572,106 @@
 
 {#if kind === "card" && card}
   <div class="{hostClass} liquid-md-host-card">
-    <Card node={card} />
+    <SceneRenderer node={card} />
   </div>
 {:else if kind === "carousel" && carousel}
   <div class="{hostClass} liquid-md-host-carousel">
-    <Carousel node={carousel} />
+    <SceneRenderer node={carousel} />
   </div>
 {:else if kind === "actions" && actions.length}
   <div class="{hostClass} liquid-md-host-actions">
     <p class="liquid-md-actions-whisper">Suggested</p>
     {#each actions as action (action.id)}
-      <ActionRow node={action} />
+      <SceneRenderer node={action} />
     {/each}
   </div>
 {:else if kind === "callout" && callout}
   <div class="{hostClass} liquid-md-host-callout">
-    <Callout node={callout} />
+    <SceneRenderer node={callout} />
   </div>
 {:else if kind === "section" && section}
   <div class="{hostClass} liquid-md-host-section">
-    <Section node={section} />
+    <SceneRenderer node={section} />
   </div>
 {:else if kind === "block" && styledBlock}
   <div class="{hostClass} liquid-md-host-block">
-    <Block node={styledBlock} />
+    <SceneRenderer node={styledBlock} />
   </div>
 {:else if kind === "chips" && chips}
   <div class="{hostClass} liquid-md-host-chips">
-    <ChipGroup node={chips} />
+    <SceneRenderer node={chips} />
   </div>
 {:else if kind === "media" && media}
   <div class="{hostClass} liquid-md-host-media">
-    <Media node={media} />
+    <SceneRenderer node={media} />
   </div>
 {:else if kind === "cite" && cite}
   <div class="{hostClass} liquid-md-host-cite">
-    <Cite node={cite} />
+    <SceneRenderer node={cite} />
   </div>
 {:else if kind === "compare" && compare}
   <div class="{hostClass} liquid-md-host-compare">
-    <Compare node={compare} />
+    <SceneRenderer node={compare} />
   </div>
 {:else if kind === "plan" && plan}
   <div class="{hostClass} liquid-md-host-plan">
-    <Plan node={plan} />
+    <SceneRenderer node={plan} />
   </div>
 {:else if kind === "timeline" && timeline}
   <div class="{hostClass} liquid-md-host-timeline">
-    <Timeline node={timeline} />
+    <SceneRenderer node={timeline} />
   </div>
 {:else if kind === "shortlist" && shortlist}
   <div class="{hostClass} liquid-md-host-shortlist">
-    <Shortlist node={shortlist} />
+    <SceneRenderer node={shortlist} />
   </div>
 {:else if kind === "decision" && decision}
   <div class="{hostClass} liquid-md-host-decision">
-    <Decision node={decision} />
+    <SceneRenderer node={decision} />
   </div>
 {:else if kind === "brief" && brief}
   <div class="{hostClass} liquid-md-host-brief">
-    <Brief node={brief} />
+    <SceneRenderer node={brief} />
   </div>
 {:else if kind === "dashboard" && dashboard}
   <div class="{hostClass} liquid-md-host-dashboard">
-    <Dashboard node={dashboard} />
+    <SceneRenderer node={dashboard} />
   </div>
 {:else if kind === "feed" && feed}
   <div class="{hostClass} liquid-md-host-feed">
-    <Feed node={feed} />
+    <SceneRenderer node={feed} />
   </div>
 {:else if kind === "report" && report}
   <div class="{hostClass} liquid-md-host-report">
-    <Report node={report} />
+    <SceneRenderer node={report} />
   </div>
 {:else if kind === "slides" && slides}
   <div class="{hostClass} liquid-md-host-slides">
-    <Slides node={slides} />
+    <SceneRenderer node={slides} />
   </div>
 {:else if kind === "chart" && chart}
   <div class="{hostClass} liquid-md-host-chart">
-    <Chart node={chart} />
+    <SceneRenderer node={chart} />
   </div>
 {:else if kind === "tabs" && tabs}
   <div class="{hostClass} liquid-md-host-tabs">
-    <Tabs node={tabs} />
+    <SceneRenderer node={tabs} />
   </div>
 {:else if kind === "steps" && steps}
   <div class="{hostClass} liquid-md-host-steps">
-    <Steps node={steps} />
+    <SceneRenderer node={steps} />
   </div>
 {:else if kind === "accordion" && accordion}
   <div class="{hostClass} liquid-md-host-accordion">
-    <Accordion node={accordion} />
+    <SceneRenderer node={accordion} />
   </div>
 {:else if kind === "code" && code}
   <div class="{hostClass} liquid-md-host-code">
-    <CodeEmbed node={code} />
+    <SceneRenderer node={code} />
   </div>
 {:else if kind === "tree" && tree}
   <div class="{hostClass} liquid-md-host-tree">
-    <Tree node={tree} />
+    <SceneRenderer node={tree} />
   </div>
 {:else if kind === "icon" && IconComp}
   <span class="liquid-md-host-icon">

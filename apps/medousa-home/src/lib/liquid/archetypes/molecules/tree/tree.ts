@@ -1,8 +1,6 @@
 /** `tree` molecule — file/folder tree from indented list (```tree fences). */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Tree from "./Tree.svelte";
 
 export const tree = defineArchetype({
   id: "tree",
@@ -19,5 +17,3 @@ export const tree = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-
-registerComponent(tree.id, Tree);

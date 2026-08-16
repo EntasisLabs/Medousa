@@ -1,8 +1,6 @@
-/** `thinking` shell archetype — descriptor + self-registration. */
+/** `thinking` shell archetype — descriptor only. */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Thinking from "./Thinking.svelte";
 
 export const thinking = defineArchetype({
   id: "thinking",
@@ -18,5 +16,3 @@ export const thinking = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-
-registerComponent(thinking.id, Thinking);

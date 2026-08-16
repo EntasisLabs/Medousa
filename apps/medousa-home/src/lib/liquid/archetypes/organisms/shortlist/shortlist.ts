@@ -1,8 +1,6 @@
 /** `shortlist` organism — ranked candidates / find-me options (sacred seven). */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Shortlist from "./Shortlist.svelte";
 
 export const shortlist = defineArchetype({
   id: "shortlist",
@@ -21,5 +19,3 @@ export const shortlist = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-
-registerComponent(shortlist.id, Shortlist);

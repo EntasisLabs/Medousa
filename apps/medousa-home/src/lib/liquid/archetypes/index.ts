@@ -1,10 +1,7 @@
 /**
- * Liquid UI archetype barrel — importing this registers the vocabulary into both
- * the domain descriptor registry and the Svelte component registry (side effects
- * at import). Consumers import this once before rendering a scene.
+ * Liquid UI archetype descriptors — parse/validate path only.
+ * Svelte bodies and CSS register through `./registerUi`.
  */
-
-import "$lib/liquid/styles/liquidOverflow.css";
 
 // atoms
 export { prose } from "./atoms/prose/prose";

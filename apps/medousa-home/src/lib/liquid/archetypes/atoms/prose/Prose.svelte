@@ -1,6 +1,6 @@
 <script lang="ts">
-  /** `prose` atom — narrative text. Wraps the existing markdown pipeline. */
-  import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
+  /** `prose` atom — narrative text. Uses the parse renderer, not MarkdownContent. */
+  import { renderMarkdown } from "$lib/markdown/render";
   import { getLiquidContext } from "$lib/liquid/render/context";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
 
@@ -8,21 +8,21 @@
   const ctx = getLiquidContext();
 
   const content = $derived(typeof node.props.markdown === "string" ? node.props.markdown : "");
-  /** Plain mode renders verbatim text (user/system turns), never parsed as markdown. */
   const plain = $derived(node.props.plain === true);
-  const streaming = $derived(node.props.streaming === true);
+  const html = $derived(
+    plain
+      ? ""
+      : renderMarkdown(content, {
+          titleByPath: ctx.titleByPath,
+        }),
+  );
 </script>
 
 <div class="liquid-prose">
   {#if plain}
     <p class="liquid-prose-plain">{content}</p>
   {:else}
-    <MarkdownContent
-      {content}
-      titleByPath={ctx.titleByPath}
-      openLinksInWeb={ctx.openLinksInWeb ?? false}
-      {streaming}
-    />
+    <div class="markdown-content min-w-0 max-w-full">{@html html}</div>
   {/if}
 </div>
 

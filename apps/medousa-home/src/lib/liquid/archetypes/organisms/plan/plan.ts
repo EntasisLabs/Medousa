@@ -1,8 +1,6 @@
 /** `plan` organism — phased itinerary / trip flow (sacred seven). */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Plan from "./Plan.svelte";
 
 export const plan = defineArchetype({
   id: "plan",
@@ -20,5 +18,3 @@ export const plan = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-
-registerComponent(plan.id, Plan);

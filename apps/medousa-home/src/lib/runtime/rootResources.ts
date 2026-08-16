@@ -1,0 +1,79 @@
+/** Root-owned resources that exist for the full AppShell lifetime. */
+
+export const APP_SHELL_ROOT_RESOURCE_IDS = [
+  "wizard-bootstrap",
+  "viewport-tracking",
+  "native-mobile-layout",
+  "mobile-viewport",
+  "mobile-native",
+  "peer-message-notifications",
+  "command-spotlight-hotkeys",
+  "work-ask-focus",
+] as const;
+
+export type RootResourceId = (typeof APP_SHELL_ROOT_RESOURCE_IDS)[number];
+
+const live = new Map<RootResourceId, number>();
+
+export function recordRootResource(id: RootResourceId): () => void {
+  live.set(id, (live.get(id) ?? 0) + 1);
+  return () => {
+    const next = (live.get(id) ?? 1) - 1;
+    if (next <= 0) live.delete(id);
+    else live.set(id, next);
+  };
+}
+
+export function bindRootResource(id: RootResourceId, stop: () => void): () => void {
+  const release = recordRootResource(id);
+  return () => {
+    stop();
+    release();
+  };
+}
+
+export function listLiveRootResources(): RootResourceId[] {
+  return [...live.keys()].sort();
+}
+
+export function resetRootResourcesForTests(): void {
+  live.clear();
+}
+
+export { DESTINATION_FEATURE_IDS } from "./features/disposeDestinations";
+
+/** Chat stays in the AppShell static graph; overlays load on intent. */
+export const APP_SHELL_EAGER_MODULES = ["$lib/stores/chat.svelte"] as const;
+
+export const APP_SHELL_LAZY_OVERLAYS = [
+  "CommandSpotlight",
+  "WizardContainer",
+  "VaultNoteWorkshop",
+  "BrowserWorkshop",
+  "MobileBrowserWorkshop",
+  "WorkAskDockPopover",
+  "VaultGarageImportWizard",
+  "VaultContextMenu",
+  "ScriptContextMenu",
+  "ShellContextMenu",
+  "VaultAttachmentPanel",
+] as const;
+
+export const SHELL_A11Y_FIXTURES = {
+  desktop: {
+    file: "src/lib/components/layout/WorkshopShell.svelte",
+    mustContain: [
+      'data-debug-label="app-root"',
+      'data-debug-label="workshop-main"',
+      "workshop-app-root",
+    ],
+  },
+  mobile: {
+    file: "src/lib/components/mobile/MobileShell.svelte",
+    mustContain: ['class="mobile-shell', "<main ", "ChatPanel"],
+  },
+  chat: {
+    file: "src/lib/components/chat/ChatPanel.svelte",
+    mustContain: ["medousa-chat-composer-focus"],
+  },
+} as const;

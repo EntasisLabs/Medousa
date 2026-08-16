@@ -70,3 +70,5 @@ export const allThemes: CustomThemeConfig[] = [
   solarizedLightTheme,
   ...brandMarkThemes,
 ];
+
+export { themeCatalogEntries, themeTokenPath } from "./theme-css";

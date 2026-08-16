@@ -1,8 +1,6 @@
 /** `chart` organism — paste-first plots from ```chart markdown fences. */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Chart from "./Chart.svelte";
 
 export const chart = defineArchetype({
   id: "chart",
@@ -43,5 +41,3 @@ export const chart = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-
-registerComponent(chart.id, Chart);

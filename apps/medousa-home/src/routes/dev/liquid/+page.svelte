@@ -4,7 +4,7 @@
    * the Monogram molecule composition (section / carousel / card+detail / chips /
    * action_row) with a live event log. Not shipped in nav; reach it at /dev/liquid.
    */
-  import "$lib/liquid/archetypes";
+  import { installLiquidUi } from "$lib/liquid/archetypes/registerUi";
   import { SceneRenderer } from "$lib/liquid/render";
   import type { LiquidRenderContext } from "$lib/liquid/render";
   import type { EventSink } from "$lib/liquid/ports";
@@ -13,6 +13,9 @@
   import { createChatEventSink } from "$lib/liquid/surfaces/chat/chatEventSink";
   import { chatInteractions } from "$lib/liquid/surfaces/chat/chatInteractions";
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
+  import "$lib/components/ui/bindMarkdownView";
+
+  void installLiquidUi();
 
   const DEMO_IMAGE =
     "data:image/svg+xml;utf8," +
@@ -220,7 +223,11 @@
     refreshBuffer();
   }
 
-  const monogramContext: LiquidRenderContext = { sink, openLinksInWeb: false };
+  const monogramContext: LiquidRenderContext = {
+    sink,
+    openLinksInWeb: false,
+    markdownView: MarkdownContent,
+  };
 
   // ---- Charts gallery ------------------------------------------------------
 

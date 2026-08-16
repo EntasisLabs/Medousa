@@ -1,8 +1,6 @@
-/** `card` molecule — descriptor + self-registration. */
+/** `card` molecule — descriptor only. */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Card from "./Card.svelte";
 
 export const card = defineArchetype({
   id: "card",
@@ -27,5 +25,3 @@ export const card = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-
-registerComponent(card.id, Card);

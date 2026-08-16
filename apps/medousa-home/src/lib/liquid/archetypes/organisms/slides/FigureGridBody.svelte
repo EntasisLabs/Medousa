@@ -4,8 +4,7 @@
    * - report: prose full-bleed; chart/media/compare share columns
    * - split: prose + figures sit side-by-side in the column track
    */
-  import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
-  import { getLiquidContext } from "$lib/liquid/render/context";
+  import MarkdownViewHost from "$lib/liquid/render/MarkdownViewHost.svelte";
   import "$lib/liquid/styles/liquidFigureGrid.css";
 
   interface Props {
@@ -22,7 +21,6 @@
     flow = "report",
     class: className = "",
   }: Props = $props();
-  const ctx = getLiquidContext();
 </script>
 
 {#if body}
@@ -33,11 +31,7 @@
     data-flow={flow}
     style:--figure-cols={columns}
   >
-    <MarkdownContent
-      content={body}
-      titleByPath={ctx.titleByPath}
-      openLinksInWeb={ctx.openLinksInWeb ?? false}
-    />
+    <MarkdownViewHost content={body} />
   </div>
 {/if}
 

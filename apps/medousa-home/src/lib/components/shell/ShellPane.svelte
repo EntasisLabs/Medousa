@@ -1,27 +1,30 @@
 <script lang="ts">
-  import HumanBrowserPanel from "$lib/components/browser/HumanBrowserPanel.svelte";
-  import CalendarPanel from "$lib/components/calendar/CalendarPanel.svelte";
   import ChatSessionView from "$lib/components/chat/ChatSessionView.svelte";
+  import LazyFeatureView from "$lib/components/layout/LazyFeatureView.svelte";
+  import ShellChunkError from "$lib/components/layout/ShellChunkError.svelte";
   import ChatPaneIdle from "$lib/components/shell/ChatPaneIdle.svelte";
   import WebPaneIdle from "$lib/components/shell/WebPaneIdle.svelte";
-  import { chatStreamPool } from "$lib/stores/chatStreamPool.svelte";
-  import MapPanel from "$lib/components/context/MapPanel.svelte";
-  import EnvironmentRenderer from "$lib/components/environment/EnvironmentRenderer.svelte";
-  import SettingsPanel from "$lib/components/layout/SettingsPanel.svelte";
-  import LmePanel from "$lib/components/lme/LmePanel.svelte";
-  import MessagingPanel from "$lib/components/messaging/MessagingPanel.svelte";
-  import PeersPanel from "$lib/components/peers/PeersPanel.svelte";
-  import ProfilesPanel from "$lib/components/profiles/ProfilesPanel.svelte";
-  import RuntimePanel from "$lib/components/runtime/RuntimePanel.svelte";
   import ShellTabStrip from "$lib/components/shell/ShellTabStrip.svelte";
-  import TerminalPane from "$lib/components/terminal/TerminalPane.svelte";
-  import WorkPanel from "$lib/components/work/WorkPanel.svelte";
-  import { chat } from "$lib/stores/chat.svelte";
+  import { chatStreamPool } from "$lib/stores/chatStreamPool.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { usesUnifiedTitlebar } from "$lib/platform";
   import type { DaemonHealth } from "$lib/daemon";
   import { refreshDaemonHealth } from "$lib/workshopConnection";
+  import {
+    loadCalendarPanel,
+    loadEnvironmentRenderer,
+    loadHumanBrowserPanel,
+    loadLmePanel,
+    loadMapPanel,
+    loadMessagingPanel,
+    loadPeersPanel,
+    loadProfilesPanel,
+    loadRuntimePanel,
+    loadSettingsPanel,
+    loadTerminalPane,
+    loadWorkPanel,
+  } from "$lib/runtime/viewLoaders";
 
   interface Props {
     groupId: string;
@@ -49,6 +52,8 @@
     onDaemonHealth,
     ownsWebHost,
   }: Props = $props();
+
+  let surfaceChunkEpoch = $state(0);
 
   /** Pointer in the top hot-zone (reveals tabs). */
   let nearTop = $state(false);
@@ -193,14 +198,16 @@
       {/if}
     {:else if activeTab?.kind === "terminal"}
       {#key activeTab.sessionId}
-        <TerminalPane
+        <LazyFeatureView
+          loader={loadTerminalPane}
           sessionId={activeTab.sessionId}
           workId={activeTab.workId}
           title={activeTab.title}
         />
       {/key}
     {:else if showLme}
-      <LmePanel
+      <LazyFeatureView
+        loader={loadLmePanel}
         visible={true}
         interactive={focused}
         lmeTabId={activeTab.kind === "lme" ? activeTab.lmeTabId : null}
@@ -213,42 +220,67 @@
         {onSelectCard}
       />
     {:else if showWeb}
-      <HumanBrowserPanel visible={true} workRailVisible={false} shellTabChrome={true} />
+      <LazyFeatureView
+        loader={loadHumanBrowserPanel}
+        visible={true}
+        workRailVisible={false}
+        shellTabChrome={true}
+      />
     {:else if showSurface}
-      <EnvironmentRenderer surfaceId={showSurface}>
-        {#snippet builtin()}
-          {#if showSurface === "calendar"}
-            <CalendarPanel visible={true} />
-          {:else if showSurface === "context" || showSurface === "map"}
-            <MapPanel visible={true} />
-          {:else if showSurface === "profiles"}
-            <ProfilesPanel visible={true} onOpenChat={onOpenChat} />
-          {:else if showSurface === "peers"}
-            <PeersPanel visible={true} />
-          {:else if showSurface === "messaging"}
-            <MessagingPanel visible={true} {health} />
-          {:else if showSurface === "work"}
-            <WorkPanel
-              visible={true}
-              {onOpenNote}
-              {onOpenChat}
-              {onSelectCard}
-            />
-          {:else if showSurface === "runtime"}
-            <RuntimePanel visible={true} inMotionCount={workspace.inMotionCount()} />
-          {:else if showSurface === "settings"}
-            <SettingsPanel
-              visible={true}
-              revision={workspace.revision}
-              {health}
-              onDaemonHealth={async () => {
-                const next = await refreshDaemonHealth();
-                onDaemonHealth?.(next);
-              }}
-            />
-          {/if}
-        {/snippet}
-      </EnvironmentRenderer>
+      {#key surfaceChunkEpoch}
+        {#await loadEnvironmentRenderer()}
+          <div class="flex h-full items-center justify-center p-8 text-sm text-content-quiet">
+            Loading…
+          </div>
+        {:then { default: EnvironmentRenderer }}
+          <EnvironmentRenderer surfaceId={showSurface}>
+            {#snippet builtin()}
+              {#if showSurface === "calendar"}
+                <LazyFeatureView loader={loadCalendarPanel} visible={true} />
+              {:else if showSurface === "context" || showSurface === "map"}
+                <LazyFeatureView loader={loadMapPanel} visible={true} />
+              {:else if showSurface === "profiles"}
+                <LazyFeatureView loader={loadProfilesPanel} visible={true} {onOpenChat} />
+              {:else if showSurface === "peers"}
+                <LazyFeatureView loader={loadPeersPanel} visible={true} />
+              {:else if showSurface === "messaging"}
+                <LazyFeatureView loader={loadMessagingPanel} visible={true} {health} />
+              {:else if showSurface === "work"}
+                <LazyFeatureView
+                  loader={loadWorkPanel}
+                  visible={true}
+                  {onOpenNote}
+                  {onOpenChat}
+                  {onSelectCard}
+                />
+              {:else if showSurface === "runtime"}
+                <LazyFeatureView
+                  loader={loadRuntimePanel}
+                  visible={true}
+                  inMotionCount={workspace.inMotionCount()}
+                />
+              {:else if showSurface === "settings"}
+                <LazyFeatureView
+                  loader={loadSettingsPanel}
+                  visible={true}
+                  revision={workspace.revision}
+                  {health}
+                  onDaemonHealth={async () => {
+                    const next = await refreshDaemonHealth();
+                    onDaemonHealth?.(next);
+                  }}
+                />
+              {/if}
+            {/snippet}
+          </EnvironmentRenderer>
+        {:catch}
+          <ShellChunkError
+            onRetry={() => {
+              surfaceChunkEpoch += 1;
+            }}
+          />
+        {/await}
+      {/key}
     {:else if activeTab?.kind === "web"}
       <WebPaneIdle {groupId} />
     {:else}

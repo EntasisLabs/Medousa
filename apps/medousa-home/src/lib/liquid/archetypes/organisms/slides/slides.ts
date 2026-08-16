@@ -1,8 +1,6 @@
 /** `slides` organism — labeled deck frames with nested figure grid bodies. */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Slides from "./Slides.svelte";
 
 export const slides = defineArchetype({
   id: "slides",
@@ -23,5 +21,3 @@ export const slides = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-
-registerComponent(slides.id, Slides);

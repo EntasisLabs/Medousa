@@ -5,6 +5,7 @@ import {
   type ColorThemeId,
 } from "$lib/types/colorThemes";
 import { resolveSkeletonThemeName } from "$lib/types/themeResolve";
+import { applySelectedThemeStylesheet } from "$lib/theme/themeStylesheet";
 import { loadTuiDefaults, persistTuiDefaults } from "$lib/config";
 import { getRuntimeDefaults } from "$lib/daemon";
 import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
@@ -67,6 +68,7 @@ export class SettingsStore {
     const skeletonTheme = resolveSkeletonThemeName(this.colorTheme, this.darkMode);
     document.documentElement.dataset.theme = skeletonTheme;
     document.body.dataset.theme = skeletonTheme;
+    applySelectedThemeStylesheet(skeletonTheme);
   }
 
   setDarkMode(enabled: boolean) {

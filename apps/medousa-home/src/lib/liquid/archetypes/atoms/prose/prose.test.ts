@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import { prose } from "./prose";
 import { createNode, registry, validateNode } from "$lib/liquid/core";
 import { hasComponent } from "$lib/liquid/render/componentRegistry";
+import { registerLiquidUiFactories } from "$lib/liquid/archetypes/registerUi";
+
+registerLiquidUiFactories();
 
 describe("prose archetype", () => {
-  it("self-registers descriptor + component", () => {
+  it("registers its descriptor and has a lazy component factory", () => {
     expect(registry.has("prose")).toBe(true);
     expect(hasComponent("prose")).toBe(true);
     expect(prose.tier).toBe("atom");

@@ -1,8 +1,6 @@
-/** `tool_trace` shell archetype — descriptor + self-registration. */
+/** `tool_trace` shell archetype — descriptor only. */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import ToolTrace from "./ToolTrace.svelte";
 
 export const toolTrace = defineArchetype({
   id: "tool_trace",
@@ -19,5 +17,3 @@ export const toolTrace = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-
-registerComponent(toolTrace.id, ToolTrace);

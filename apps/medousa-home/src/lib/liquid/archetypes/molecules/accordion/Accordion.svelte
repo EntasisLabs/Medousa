@@ -7,7 +7,7 @@
   import { createSceneEvent } from "$lib/liquid/core";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
   import LiquidGlyph from "$lib/liquid/icons/LiquidGlyph.svelte";
-  import { renderInlineMarkdown, renderMarkdown } from "$lib/markdown";
+  import { renderInlineMarkdown, renderMarkdown } from "$lib/markdown/render";
 
   interface AccordionItem {
     id: string;

@@ -7,7 +7,7 @@
  * inline SVG; LayerCake Html-layer marks fall back to PNG guidance.
  */
 
-import { snapshotElementToPng } from "$lib/utils/vaultExportPrep";
+import { snapshotElementToPng } from "$lib/utils/elementSnapshot";
 import type { ChartViewModel } from "$lib/liquid/archetypes/organisms/chart/chartModel";
 import { chartSeriesColor } from "$lib/liquid/archetypes/organisms/chart/chartModel";
 

@@ -13,7 +13,7 @@ import {
   type HumanBrowserEmbedBounds,
 } from "$lib/humanBrowser";
 import { measureBrowserWebviewBounds } from "$lib/browserWebview";
-import { getBrowserPopoverOverlayDepth } from "$lib/utils/browserPopoverOverlay";
+import { getBrowserPopoverOverlayDepth, setBrowserPopoverLayoutPort } from "$lib/utils/browserPopoverOverlay";
 import {
   isMobileBottomChromeMeasured,
   measureDesktopBrowserEmbedBounds,
@@ -418,11 +418,22 @@ let sharedCompositor: BrowserCompositor | null = null;
 
 export function registerBrowserCompositor(compositor: BrowserCompositor | null) {
   sharedCompositor = compositor;
+  setBrowserPopoverLayoutPort(
+    compositor
+      ? {
+          scheduleLayout: () => compositor.scheduleLayout(),
+          flushLayout: () => compositor.flushLayout(),
+        }
+      : null,
+  );
 }
 
 /** Only clear the shared slot if this instance still owns it (split remount races). */
 export function unregisterBrowserCompositor(compositor: BrowserCompositor) {
-  if (sharedCompositor === compositor) sharedCompositor = null;
+  if (sharedCompositor === compositor) {
+    sharedCompositor = null;
+    setBrowserPopoverLayoutPort(null);
+  }
 }
 
 export function getBrowserCompositor(): BrowserCompositor | null {

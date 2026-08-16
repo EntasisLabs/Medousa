@@ -4,7 +4,6 @@
   import AskComposer from "$lib/components/work/AskComposer.svelte";
   import { workAskDock } from "$lib/stores/workAskDock.svelte";
   import { placeDockPopover } from "$lib/utils/dockPopoverPlace";
-  import { WORK_FOCUS_ASK_EVENT } from "$lib/utils/workChromeEvents";
   import { attachComposerMenuDismiss } from "$lib/utils/composerMenuDismiss";
 
   let panelEl = $state<HTMLDivElement | null>(null);
@@ -62,17 +61,6 @@
         ),
       onDismiss: () => workAskDock.closeDock(),
     });
-  });
-
-  $effect(() => {
-    const onFocusAsk = () => {
-      const trigger =
-        document.querySelector<HTMLElement>('[data-work-ask-trigger="true"]') ??
-        null;
-      workAskDock.openDock(trigger);
-    };
-    window.addEventListener(WORK_FOCUS_ASK_EVENT, onFocusAsk);
-    return () => window.removeEventListener(WORK_FOCUS_ASK_EVENT, onFocusAsk);
   });
 </script>
 

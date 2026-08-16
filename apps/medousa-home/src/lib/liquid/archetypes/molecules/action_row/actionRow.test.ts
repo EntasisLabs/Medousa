@@ -3,15 +3,18 @@ import { actionRow } from "./actionRow";
 import { chip } from "$lib/liquid/archetypes/atoms/chip/chip";
 import { createNode, registry, validateNode } from "$lib/liquid/core";
 import { hasComponent } from "$lib/liquid/render/componentRegistry";
+import { registerLiquidUiFactories } from "$lib/liquid/archetypes/registerUi";
+
+registerLiquidUiFactories();
 
 describe("action_row + chip archetypes", () => {
-  it("action_row self-registers and emits submit", () => {
+  it("action_row registers its descriptor and lazy renderer", () => {
     expect(registry.has("action_row")).toBe(true);
     expect(hasComponent("action_row")).toBe(true);
     expect(actionRow.emits).toContain("submit");
   });
 
-  it("chip self-registers and emits select", () => {
+  it("chip registers its descriptor and lazy renderer", () => {
     expect(registry.has("chip")).toBe(true);
     expect(hasComponent("chip")).toBe(true);
     expect(chip.emits).toContain("select");

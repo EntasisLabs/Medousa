@@ -2,7 +2,7 @@
   /** `callout` molecule — GitHub-style aside (accent bar + icon title). */
   import { ChevronDown } from "@lucide/svelte";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
-  import { renderInlineMarkdown } from "$lib/markdown";
+  import { renderInlineMarkdown } from "$lib/markdown/render";
   import {
     calloutDefaultTitle,
     calloutIconForTone,

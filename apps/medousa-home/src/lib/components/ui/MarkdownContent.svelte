@@ -5,9 +5,7 @@
     type MarkdownRenderSession,
   } from "$lib/markdown/render";
   import { StreamingMarkdownBlocks } from "$lib/markdown/streamingBlocks";
-  import { hydrateMarkdownContainer } from "$lib/markdown/hydrateMarkdownContainer";
-  import { destroyLiquidEmbeds } from "$lib/markdown/hydrateLiquidEmbeds";
-  import { destroyDrawEmbeds } from "$lib/draw/hydrateDrawEmbeds";
+  import { hydrateMarkdownContainer, destroyMarkdownContainer } from "$lib/markdown/hydrateMarkdownContainer";
   import {
     getLiquidContext,
     type LiquidRenderContext,
@@ -15,6 +13,7 @@
   import { openInBrowser, isHttpUrl } from "$lib/utils/openInBrowser";
   import { onDestroy, untrack } from "svelte";
   import HydratedMarkdownBlock from "$lib/components/ui/HydratedMarkdownBlock.svelte";
+  import { getMarkdownViewComponent } from "$lib/components/ui/markdownView";
 
   interface Props {
     content: string;
@@ -53,6 +52,11 @@
       titleByPath: titleByPath ?? liquidContext?.titleByPath ?? inherited.titleByPath,
       localImagePath:
         liquidContext?.localImagePath ?? inherited.localImagePath ?? null,
+      markdownView:
+        liquidContext?.markdownView ??
+        inherited.markdownView ??
+        getMarkdownViewComponent() ??
+        undefined,
     };
   }
 
@@ -131,8 +135,7 @@
 
   onDestroy(() => {
     if (container) {
-      destroyLiquidEmbeds(container);
-      destroyDrawEmbeds(container);
+      void destroyMarkdownContainer(container);
     }
   });
 </script>

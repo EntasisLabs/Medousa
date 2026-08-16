@@ -1,8 +1,6 @@
-/** `presentation` shell archetype — descriptor + self-registration. */
+/** `presentation` shell archetype — descriptor only. */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Presentation from "./Presentation.svelte";
 
 export const presentation = defineArchetype({
   id: "presentation",
@@ -15,5 +13,3 @@ export const presentation = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-
-registerComponent(presentation.id, Presentation);

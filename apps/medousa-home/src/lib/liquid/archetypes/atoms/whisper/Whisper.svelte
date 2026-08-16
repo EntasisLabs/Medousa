@@ -1,21 +1,22 @@
 <script lang="ts">
   /** `whisper` atom — a muted stage-direction line above the main voice. */
-  import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
+  import { renderMarkdown } from "$lib/markdown/render";
   import { getLiquidContext } from "$lib/liquid/render/context";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
 
   let { node }: ArchetypeProps = $props();
   const ctx = getLiquidContext();
   const text = $derived(typeof node.props.text === "string" ? node.props.text : "");
+  const html = $derived(
+    renderMarkdown(text, {
+      titleByPath: ctx.titleByPath,
+    }),
+  );
 </script>
 
 {#if text}
   <div class="liquid-whisper">
-    <MarkdownContent
-      content={text}
-      titleByPath={ctx.titleByPath}
-      openLinksInWeb={ctx.openLinksInWeb ?? false}
-    />
+    <div class="markdown-content min-w-0 max-w-full">{@html html}</div>
   </div>
 {/if}
 

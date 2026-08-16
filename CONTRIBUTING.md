@@ -47,6 +47,24 @@ cd apps/medousa-home && npm ci && npm run check
 
 Optional: `bash scripts/ci/validate-workflows.sh` after editing `.github/workflows/`.
 
+## Home runtime boundaries
+
+Home startup is a product boundary ([ADR-020](docs/architecture/decisions/adr-020-feature-boundaries-and-lazy-runtime.md), [H09](architecture/hardening/09-home-runtime-boundaries.md)):
+
+- Feature catalog/descriptors (`apps/medousa-home/src/lib/runtime/features/catalog.ts`) import no stores or Svelte implementations.
+- Feature stores do not import sibling feature stores; cross-feature work goes through typed ports and shell orchestration.
+- Destinations and overlays load with `import()` on user/restored-state intent. Do not use dynamic import to hide a cycle. Chat stays in the AppShell static graph.
+- Tailwind compiles no palettes. Boot loads one stored `/themes/<name>.css` sheet. Feature CSS loads with its entry, not from `app.postcss`.
+- Do not prefetch dormant features on boot.
+
+From `apps/medousa-home`, CI already requires:
+
+```bash
+npm run check              # includes check:runtime-graph (0 first-party SCCs)
+npm run test:h09           # leak, overlay freeze, SCC direction, CSS inventory, contrast
+npm run build && npm run check:bundle-budget
+```
+
 ## What to work on
 
 | Area | Good first contributions |

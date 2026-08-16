@@ -6,6 +6,7 @@ import {
 import type { JSONContent } from "@tiptap/core";
 import { markdownToLiveDoc } from "./markdownToLiveDoc";
 import { liveDocToMarkdown } from "./liveDocToMarkdown";
+export { significantLiveText } from "./liveSignificantText";
 
 export type LiveMarkdownParts = {
   frontmatter: string | null;
@@ -33,13 +34,4 @@ export function serializeLiveMarkdown(
   const body = liveDocToMarkdown(doc);
   if (frontmatter == null) return body;
   return serializeFrontmatter(frontmatter, body);
-}
-
-/** Significant text for “did we eat content?” checks (fences + prose). */
-export function significantLiveText(markdown: string): string {
-  const { content } = stripFrontmatter(markdown);
-  return content
-    .replace(/```[\s\S]*?```/g, (m) => m)
-    .replace(/\s+/g, " ")
-    .trim();
 }

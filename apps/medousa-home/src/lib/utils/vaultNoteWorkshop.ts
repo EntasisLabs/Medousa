@@ -213,11 +213,4 @@ export async function addVaultSelectionToChat(input: {
   });
 }
 
-/** When a note is pinned to the workshop chat, pass session id on save for linking tags. */
-export function workshopSessionIdForVaultSave(path: string | null): string | undefined {
-  if (!path) return undefined;
-  if (!chat.pinVaultNoteContext || !chat.vaultNoteContext) return undefined;
-  if (chat.vaultNoteContext.path !== path) return undefined;
-  const sessionId = chat.sessionId?.trim();
-  return sessionId || undefined;
-}
+export { workshopSessionIdForVaultSave } from "$lib/utils/vaultSaveSession";

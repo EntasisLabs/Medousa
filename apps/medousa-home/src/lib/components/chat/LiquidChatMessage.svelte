@@ -3,7 +3,9 @@
    * Renders one chat message through the Liquid scene renderer.
    * Runtime turn template is the governor; daemon `ui_scene` roots still win when present.
    */
-  import "$lib/liquid/archetypes";
+  import { installLiquidUi } from "$lib/liquid/archetypes/registerUi";
+  import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
+  import "$lib/components/ui/bindMarkdownView";
   import { SceneRenderer } from "$lib/liquid/render";
   import type { LiquidRenderContext } from "$lib/liquid/render";
   import { resolveChatScene } from "$lib/liquid/surfaces/chat/mergeBuilderBody";
@@ -15,6 +17,8 @@
   import type { ChatMessage } from "$lib/types/chat";
   import type { ToolHistorySliceRef } from "$lib/types/toolHistory";
   import type { CardDetailPayload } from "$lib/markdown/liquidEmbeds";
+
+  void installLiquidUi();
 
   interface Props {
     message: ChatMessage;
@@ -74,6 +78,7 @@
     openLinksInWeb: true,
     onPromoteToFlow,
     onOpenCardDetail,
+    markdownView: MarkdownContent,
   });
 </script>
 

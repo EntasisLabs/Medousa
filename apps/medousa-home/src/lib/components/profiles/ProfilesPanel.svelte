@@ -89,7 +89,10 @@
   });
 
   async function refreshField() {
-    await identity.refresh({ relationshipLimit: 32 });
+    await identity.refresh({
+      relationshipLimit: 32,
+      userId: userProfiles.resolvedUserId,
+    });
     try {
       const preview = await getIdentityDigestPreview({
         mode: "cognitive",

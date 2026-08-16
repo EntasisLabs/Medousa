@@ -1,8 +1,6 @@
 /** `observability` molecule — thinking + tool lineage behind one disclosure. */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Observability from "./Observability.svelte";
 
 export const observability = defineArchetype({
   id: "observability",
@@ -19,5 +17,3 @@ export const observability = defineArchetype({
   virtualization: "none",
   defaultOwner: "app",
 });
-
-registerComponent(observability.id, Observability);

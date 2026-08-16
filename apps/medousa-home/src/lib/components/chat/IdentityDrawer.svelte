@@ -23,7 +23,10 @@
 
   $effect(() => {
     if (open) {
-      void identity.refresh({ relationshipLimit: 8 });
+      void identity.refresh({
+        relationshipLimit: 8,
+        userId: userProfiles.resolvedUserId,
+      });
     }
   });
 
