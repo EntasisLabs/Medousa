@@ -4,6 +4,10 @@
 //! provider transcript and loop counters needed to continue an exact turn.
 //! It only accepts snapshots produced after a complete model-only boundary or
 //! after every tool call in a batch has a matching result.
+//!
+//! H06.10 persists logical checkpoint generations through a durable journal and
+//! references the H03 turn journal via [`medousa_engine::TranscriptCursor`]
+//! rather than duplicating the canonical event stream.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -16,11 +20,16 @@ use medousa_forge::model::{
     AttemptId, AttemptState, ExecutionLease, GovernedEnv, RecoveryDisposition, WorkId,
 };
 use medousa_forge::observation::ObservationCompleteness;
-use once_cell::sync::Lazy;
+use once_cell::sync::{Lazy, OnceCell};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
 use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
+
+use crate::persistence::{
+    CommitReceipt, DurabilityLevel, FileTransaction, StoreKind, TransactionFaultPoint,
+};
+use crate::store_root::{StoreEntryKind, StoreRoot};
 
 use super::coder_activity::{CoderActivityKind, CoderActivityStore};
 use super::coder_mode::CoderEntryContext;
@@ -29,10 +38,12 @@ use super::turn_budget::TurnOrchestrationState;
 use super::turn_context::TurnScratchpad;
 
 pub const ACTIVE_TURN_CHECKPOINT_SCHEMA_VERSION: u32 = 1;
+pub const LOGICAL_CHECKPOINT_JOURNAL_SCHEMA_VERSION: u32 = 1;
 pub const TOOL_ROUND_BUDGET_EXHAUSTED_REASON: &str = "tool_round_budget_exhausted";
 
 const CHECKPOINT_DIR: &str = "coder_turn_checkpoints";
 const CHECKPOINT_OBJECT_DOMAIN: &[u8] = b"coder-turn-checkpoint";
+const CHECKPOINT_JOURNAL_DOMAIN: &[u8] = b"coder-turn-checkpoint-journal";
 const MAX_CHECKPOINT_BYTES: u64 = 512 * 1024;
 const MAX_TRANSCRIPT_BYTES: usize = 224 * 1024;
 const MAX_TRANSCRIPT_MESSAGES: usize = 192;
@@ -43,6 +54,7 @@ const MAX_CHANGED_PATHS: usize = 160;
 const MAX_VISIBLE_TOOLS: usize = 160;
 const MAX_FIELD_CHARS: usize = 16_000;
 const MAX_JSON_VALUE_BYTES: usize = 24_000;
+const MAX_JOURNAL_RECORD_BYTES: usize = 768 * 1024;
 
 static CODER_TURN_CHECKPOINT_STORE: Lazy<Arc<CoderTurnCheckpointStore>> = Lazy::new(|| {
     Arc::new(CoderTurnCheckpointStore::open(
@@ -281,21 +293,66 @@ pub trait ActiveTurnCheckpointSink: Send + Sync {
     fn set_model_route(&self, provider: &str, model: &str) -> Result<(), String>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct LogicalCheckpointRecord {
+    schema_version: u32,
+    generation: u64,
+    turn_id: String,
+    session_id: String,
+    work_id: String,
+    published_at_utc: DateTime<Utc>,
+    body_digest: String,
+    body: LogicalCheckpointBody,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum LogicalCheckpointBody {
+    /// Full logical state at a protocol-safe boundary (replace semantics).
+    Boundary { checkpoint: ActiveTurnCheckpoint },
+}
+
 pub struct CoderTurnCheckpointStore {
+    root_path: PathBuf,
     files: crate::session_storage::SessionDirectoryStore,
+    transaction: OnceCell<FileTransaction>,
     lock: Mutex<()>,
+}
+
+impl std::fmt::Debug for CoderTurnCheckpointStore {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("CoderTurnCheckpointStore")
+            .field("root_path", &self.root_path)
+            .field("transaction_ready", &self.transaction.get().is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 impl CoderTurnCheckpointStore {
     pub fn open(root: impl Into<PathBuf>) -> Self {
+        let root_path = root.into();
         Self {
             files: crate::session_storage::SessionDirectoryStore::new_with_legacy_directory(
-                root.into(),
+                root_path.clone(),
                 checkpoint_legacy_session_directory,
             ),
+            root_path,
+            transaction: OnceCell::new(),
             lock: Mutex::new(()),
         }
+    }
+
+    fn transaction(&self) -> Result<&FileTransaction, String> {
+        self.transaction
+            .get_or_try_init(|| {
+                let root = Arc::new(
+                    StoreRoot::open_or_create(&self.root_path)
+                        .map_err(|error| format!("cannot open Coder checkpoint store: {error}"))?,
+                );
+                Ok(FileTransaction::new(root))
+            })
+            .map_err(|error: String| error)
     }
 
     pub fn load_latest_resume_candidate(
@@ -313,10 +370,16 @@ impl CoderTurnCheckpointStore {
         };
         let mut latest_by_turn = HashMap::<String, ActiveTurnCheckpoint>::new();
         for entry in entries {
-            if entry.kind != crate::store_root::StoreEntryKind::File
-                || entry.size == 0
-                || entry.size > MAX_CHECKPOINT_BYTES
-            {
+            if entry.kind != StoreEntryKind::File || entry.size == 0 {
+                continue;
+            }
+            let name = entry.path.file_name();
+            if name.ends_with(".jsonl") {
+                // Prefer the published head; journals are folded only when the
+                // head is missing for a turn discovered via the journal name.
+                continue;
+            }
+            if entry.size > MAX_CHECKPOINT_BYTES {
                 continue;
             }
             let raw = match self
@@ -329,7 +392,7 @@ impl CoderTurnCheckpointStore {
             let checkpoint = match serde_json::from_slice::<ActiveTurnCheckpoint>(&raw) {
                 Ok(checkpoint) => checkpoint,
                 Err(err) => {
-                    tracing::warn!(error = %err, entry = entry.path.file_name(), "ignoring malformed Coder turn checkpoint");
+                    tracing::warn!(error = %err, entry = name, "ignoring malformed Coder turn checkpoint");
                     continue;
                 }
             };
@@ -337,17 +400,35 @@ impl CoderTurnCheckpointStore {
                 continue;
             }
             let turn_id = checkpoint.daemon_turn_id.clone();
-            if latest_by_turn
-                .get(&turn_id)
-                .is_none_or(|current| checkpoint.updated_at_utc >= current.updated_at_utc)
-            {
+            if latest_by_turn.get(&turn_id).is_none_or(|current| {
+                checkpoint.checkpoint_generation > current.checkpoint_generation
+                    || (checkpoint.checkpoint_generation == current.checkpoint_generation
+                        && checkpoint.updated_at_utc >= current.updated_at_utc)
+            }) {
                 latest_by_turn.insert(turn_id, checkpoint);
             }
         }
         Ok(latest_by_turn
             .into_values()
             .filter(|checkpoint| checkpoint.status.is_resume_candidate())
-            .max_by_key(|checkpoint| checkpoint.updated_at_utc))
+            .max_by_key(|checkpoint| {
+                (
+                    checkpoint.checkpoint_generation,
+                    checkpoint.updated_at_utc.timestamp_millis(),
+                )
+            }))
+    }
+
+    /// Fold the durable logical journal for a turn after a crash or missing head.
+    pub fn recover_from_journal(
+        &self,
+        session_id: &str,
+        turn_id: &str,
+    ) -> Result<Option<ActiveTurnCheckpoint>, String> {
+        let session_id = crate::session_storage::SessionId::parse(session_id)
+            .map_err(|error| error.to_string())?;
+        let _guard = self.lock.lock().map_err(|err| err.to_string())?;
+        self.fold_journal_unlocked(&session_id, turn_id)
     }
 
     pub fn save(&self, checkpoint: &ActiveTurnCheckpoint) -> Result<(), String> {
@@ -365,6 +446,7 @@ impl CoderTurnCheckpointStore {
         superseded.safe_boundary = SafeCheckpointBoundary::Terminal;
         superseded.updated_at_utc = Utc::now();
         superseded.termination_reason = Some(truncate(reason, 2_000));
+        superseded.checkpoint_generation = superseded.checkpoint_generation.saturating_add(1);
         self.save(&superseded)
     }
 
@@ -380,21 +462,173 @@ impl CoderTurnCheckpointStore {
         let mut bounded = checkpoint.clone();
         bound_checkpoint(&mut bounded);
         evict_prefix_to_budget(&mut bounded);
-        let bytes = serde_json::to_vec(&bounded)
+        let head_bytes = serde_json::to_vec(&bounded)
             .map_err(|err| format!("cannot serialize Coder turn checkpoint: {err}"))?;
-        if bytes.len() as u64 > MAX_CHECKPOINT_BYTES {
+        if head_bytes.len() as u64 > MAX_CHECKPOINT_BYTES {
             return Err(format!(
                 "Coder turn checkpoint exceeds {} bytes after bounding",
                 MAX_CHECKPOINT_BYTES
             ));
         }
-        self.files
-            .atomic_write(
-                &session_id,
-                &checkpoint_path(&bounded.daemon_turn_id),
-                &bytes,
-            )
-            .map_err(|err| format!("cannot persist Coder turn checkpoint: {err}"))
+
+        if let Some(existing) = self.fold_journal_unlocked(&session_id, &bounded.daemon_turn_id)? {
+            if bounded.checkpoint_generation < existing.checkpoint_generation {
+                return Err(format!(
+                    "stale checkpoint generation {} rejected; durable generation is {}",
+                    bounded.checkpoint_generation, existing.checkpoint_generation
+                ));
+            }
+            if bounded.checkpoint_generation == existing.checkpoint_generation {
+                if checkpoint_body_digest(&existing) == checkpoint_body_digest(&bounded) {
+                    return Ok(());
+                }
+                return Err(format!(
+                    "stale checkpoint writer collided at generation {}",
+                    bounded.checkpoint_generation
+                ));
+            }
+        }
+
+        let body = LogicalCheckpointBody::Boundary {
+            checkpoint: bounded.clone(),
+        };
+        let body_digest = logical_body_digest(&body);
+        let record = LogicalCheckpointRecord {
+            schema_version: LOGICAL_CHECKPOINT_JOURNAL_SCHEMA_VERSION,
+            generation: bounded.checkpoint_generation,
+            turn_id: bounded.daemon_turn_id.clone(),
+            session_id: bounded.session_id.clone(),
+            work_id: bounded.forge.work_id.clone(),
+            published_at_utc: Utc::now(),
+            body_digest: body_digest.clone(),
+            body,
+        };
+        let record_bytes = serde_json::to_vec(&record)
+            .map_err(|err| format!("cannot serialize logical checkpoint delta: {err}"))?;
+        if record_bytes.len() > MAX_JOURNAL_RECORD_BYTES {
+            return Err(format!(
+                "logical checkpoint delta exceeds {MAX_JOURNAL_RECORD_BYTES} bytes"
+            ));
+        }
+
+        let journal_rel = checkpoint_journal_path(&bounded.daemon_turn_id);
+        let head_rel = checkpoint_path(&bounded.daemon_turn_id);
+        let journal_path = self
+            .files
+            .resolve_write_path(&session_id, &journal_rel)
+            .map_err(|err| format!("cannot resolve Coder checkpoint journal path: {err}"))?;
+        let head_path = self
+            .files
+            .resolve_write_path(&session_id, &head_rel)
+            .map_err(|err| format!("cannot resolve Coder checkpoint head path: {err}"))?;
+        let tx = self.transaction()?;
+        tx.check(TransactionFaultPoint::BeforeCheckpointDelta)
+            .map_err(|err| format!("checkpoint journal fault before delta: {err}"))?;
+        tx.append_record(&journal_path, &record_bytes, DurabilityLevel::Synced)
+            .map_err(|err| format!("cannot append Coder checkpoint journal: {err}"))?;
+        tx.check(TransactionFaultPoint::AfterCheckpointDelta)
+            .map_err(|err| format!("checkpoint journal fault after delta: {err}"))?;
+        tx.replace_snapshot(&head_path, &head_bytes, DurabilityLevel::Synced)
+            .map_err(|err| format!("cannot publish Coder checkpoint head: {err}"))?;
+        let _ = CommitReceipt::new(
+            StoreKind::CoderCheckpoint,
+            &bounded.daemon_turn_id,
+            bounded.checkpoint_generation,
+            DurabilityLevel::Synced,
+            head_bytes.len(),
+        );
+        Ok(())
+    }
+
+    fn fold_journal_unlocked(
+        &self,
+        session_id: &crate::session_storage::SessionId,
+        turn_id: &str,
+    ) -> Result<Option<ActiveTurnCheckpoint>, String> {
+        let journal_rel = checkpoint_journal_path(turn_id);
+        let path = match self.files.resolve_read_path(session_id, &journal_rel) {
+            Ok(path) => path,
+            Err(_) => return Ok(None),
+        };
+        let tx = self.transaction()?;
+        let raw = match tx
+            .root()
+            .read_limited(&path, MAX_CHECKPOINT_BYTES.saturating_mul(8))
+        {
+            Ok(raw) => raw,
+            Err(error) if error.is_not_found() => return Ok(None),
+            Err(error) => {
+                return Err(format!("cannot read Coder checkpoint journal: {error}"));
+            }
+        };
+        if raw.is_empty() {
+            return Ok(None);
+        }
+        let mut latest: Option<ActiveTurnCheckpoint> = None;
+        let mut last_generation: Option<u64> = None;
+        for (index, line) in raw.split(|byte| *byte == b'\n').enumerate() {
+            if line.iter().all(u8::is_ascii_whitespace) {
+                continue;
+            }
+            let record: LogicalCheckpointRecord = match serde_json::from_slice(line) {
+                Ok(record) => record,
+                Err(error) => {
+                    let is_final = !raw.ends_with(b"\n")
+                        && raw
+                            .rsplit(|byte| *byte == b'\n')
+                            .next()
+                            .is_some_and(|tail| tail == line);
+                    if is_final {
+                        // Incomplete final journal record only — keep prior prefix.
+                        break;
+                    }
+                    return Err(format!(
+                        "Coder checkpoint journal corruption at record {index}: {error}"
+                    ));
+                }
+            };
+            if record.schema_version != LOGICAL_CHECKPOINT_JOURNAL_SCHEMA_VERSION {
+                return Err(format!(
+                    "unsupported Coder checkpoint journal schema {}",
+                    record.schema_version
+                ));
+            }
+            if record.turn_id != turn_id {
+                return Err("Coder checkpoint journal turn_id mismatch".into());
+            }
+            let LogicalCheckpointBody::Boundary { checkpoint } = &record.body;
+            let digest = logical_body_digest(&record.body);
+            if digest != record.body_digest {
+                return Err(format!(
+                    "Coder checkpoint journal digest mismatch at generation {}",
+                    record.generation
+                ));
+            }
+            match last_generation {
+                Some(previous) if record.generation < previous => {
+                    return Err(format!(
+                        "Coder checkpoint journal generation {} is not monotonic",
+                        record.generation
+                    ));
+                }
+                Some(previous) if record.generation == previous => {
+                    if latest.as_ref().is_some_and(|current| {
+                        checkpoint_body_digest(current) == checkpoint_body_digest(checkpoint)
+                    }) {
+                        continue;
+                    }
+                    return Err(format!(
+                        "Coder checkpoint journal generation {} collided with a different body",
+                        record.generation
+                    ));
+                }
+                _ => {
+                    last_generation = Some(record.generation);
+                    latest = Some(checkpoint.clone());
+                }
+            }
+        }
+        Ok(latest)
     }
 
     pub fn delete_session(
@@ -553,6 +787,7 @@ pub struct CoderTurnCheckpointController {
     forge: Arc<Forge>,
     entry: Arc<CoderEntryContext>,
     registry: Arc<CoderBoundToolRegistry>,
+    event_log: Option<Arc<medousa_engine::TurnEventLog>>,
 }
 
 pub struct CoderTurnCheckpointControllerParams {
@@ -569,6 +804,7 @@ pub struct CoderTurnCheckpointControllerParams {
     pub entry: Arc<CoderEntryContext>,
     pub registry: Arc<CoderBoundToolRegistry>,
     pub resume_from: Option<ActiveTurnCheckpoint>,
+    pub event_log: Option<Arc<medousa_engine::TurnEventLog>>,
 }
 
 impl CoderTurnCheckpointController {
@@ -665,6 +901,7 @@ impl CoderTurnCheckpointController {
             forge: params.forge,
             entry: params.entry,
             registry: params.registry,
+            event_log: params.event_log,
         });
         controller.persist_current()?;
         if let Some(source) = params.resume_from.as_ref()
@@ -689,6 +926,36 @@ impl CoderTurnCheckpointController {
             .lock()
             .map(|checkpoint| checkpoint.daemon_turn_id.clone())
             .map_err(|err| err.to_string())
+    }
+
+    fn attach_transcript_cursor(
+        &self,
+        checkpoint: &mut ActiveTurnCheckpoint,
+    ) -> Result<(), String> {
+        let Some(log) = self.event_log.as_ref() else {
+            return Ok(());
+        };
+        let cursor = medousa_engine::TranscriptCursor::from_log(log);
+        if cursor.fence > 0 {
+            log.ensure_synced_through(cursor.fence).map_err(|error| {
+                format!("cannot sync H03 transcript before checkpoint publication: {error}")
+            })?;
+            cursor
+                .verify(log)
+                .map_err(|error| format!("H03 transcript cursor failed verification: {error}"))?;
+        }
+        checkpoint.transcript_cursor = Some(cursor);
+        Ok(())
+    }
+
+    fn publish_logical_checkpoint(
+        &self,
+        checkpoint: &mut ActiveTurnCheckpoint,
+    ) -> Result<(), String> {
+        self.attach_transcript_cursor(checkpoint)?;
+        checkpoint.checkpoint_generation = checkpoint.checkpoint_generation.saturating_add(1);
+        checkpoint.updated_at_utc = Utc::now();
+        self.store.save(checkpoint)
     }
 
     fn refresh_runtime_metadata(
@@ -734,15 +1001,13 @@ impl CoderTurnCheckpointController {
     fn persist_current(&self) -> Result<(), String> {
         let mut checkpoint = self.checkpoint.lock().map_err(|err| err.to_string())?;
         self.refresh_runtime_metadata(&mut checkpoint)?;
-        checkpoint.updated_at_utc = Utc::now();
-        self.store.save(&checkpoint)
+        self.publish_logical_checkpoint(&mut checkpoint)
     }
 }
 
 impl ActiveTurnCheckpointSink for CoderTurnCheckpointController {
     fn persist_boundary(&self, state: ToolLoopCheckpointState) -> Result<(), String> {
         let mut checkpoint = self.checkpoint.lock().map_err(|err| err.to_string())?;
-        checkpoint.checkpoint_generation = checkpoint.checkpoint_generation.saturating_add(1);
         checkpoint.status = state.status;
         checkpoint.safe_boundary = state.boundary;
         checkpoint.counters = state.counters;
@@ -756,7 +1021,6 @@ impl ActiveTurnCheckpointSink for CoderTurnCheckpointController {
         checkpoint.scratch = state.scratch;
         checkpoint.outstanding_boundary = state.outstanding_boundary;
         checkpoint.termination_reason = state.termination_reason;
-        checkpoint.updated_at_utc = Utc::now();
         if state.boundary == SafeCheckpointBoundary::ToolBatchCompleted {
             checkpoint.last_completed_tool_boundary = Some(CompletedToolBoundary {
                 batch_index: checkpoint.counters.tool_batches_completed,
@@ -767,7 +1031,7 @@ impl ActiveTurnCheckpointSink for CoderTurnCheckpointController {
                 environment_digest: checkpoint.forge.dirty_digest.clone(),
             });
         }
-        self.store.save(&checkpoint)
+        self.publish_logical_checkpoint(&mut checkpoint)
     }
 
     fn mark_status(
@@ -778,14 +1042,12 @@ impl ActiveTurnCheckpointSink for CoderTurnCheckpointController {
         orchestration: Option<&TurnOrchestrationState>,
     ) -> Result<(), String> {
         let mut checkpoint = self.checkpoint.lock().map_err(|err| err.to_string())?;
-        checkpoint.checkpoint_generation = checkpoint.checkpoint_generation.saturating_add(1);
         checkpoint.status = status;
         checkpoint.safe_boundary = boundary;
         checkpoint.termination_reason = reason.map(|reason| truncate(reason, 2_000));
         checkpoint.counters.orchestration = orchestration.cloned();
         checkpoint.counters.retry_count = orchestration.map(|state| state.retries).unwrap_or(0);
-        checkpoint.updated_at_utc = Utc::now();
-        self.store.save(&checkpoint)
+        self.publish_logical_checkpoint(&mut checkpoint)
     }
 
     fn latest_safe_resume(&self) -> Result<Option<ActiveTurnResumeState>, String> {
@@ -833,8 +1095,7 @@ impl ActiveTurnCheckpointSink for CoderTurnCheckpointController {
         let mut checkpoint = self.checkpoint.lock().map_err(|err| err.to_string())?;
         checkpoint.provider = truncate(provider, 200);
         checkpoint.model = truncate(model, 300);
-        checkpoint.updated_at_utc = Utc::now();
-        self.store.save(&checkpoint)
+        self.publish_logical_checkpoint(&mut checkpoint)
     }
 }
 
@@ -1032,15 +1293,7 @@ fn bound_checkpoint(checkpoint: &mut ActiveTurnCheckpoint) {
         .into_iter()
         .rev()
         .collect();
-    evict_front_to_budget(
-        &mut checkpoint.invocations,
-        MAX_INVOCATION_BYTES,
-        |invocation| {
-            invocation.tool_name.len()
-                + estimated_json_bytes(&invocation.tool_input)
-                + estimated_json_bytes(&invocation.tool_output)
-        },
-    );
+    evict_front_to_exact_budget(&mut checkpoint.invocations, MAX_INVOCATION_BYTES);
     checkpoint.transcript.user_lane_prefix = bounded_messages(
         &checkpoint.transcript.user_lane_prefix,
         MAX_TRANSCRIPT_MESSAGES / 2,
@@ -1090,7 +1343,7 @@ fn bounded_messages(
     if bounded.len() > max_messages {
         bounded.drain(0..bounded.len() - max_messages);
     }
-    evict_front_to_budget(&mut bounded, max_bytes, estimated_message_bytes);
+    evict_front_to_exact_budget(&mut bounded, max_bytes);
     strip_orphaned_tool_responses(&mut bounded);
     bounded
 }
@@ -1161,13 +1414,13 @@ fn bounded_chat_message(message: &ChatMessage) -> ChatMessage {
 
 fn bounded_json_value(value: &Value) -> Value {
     let redacted = redact_checkpoint_json_value(&crate::settings_guard::redact_json_value(value));
-    if estimated_json_bytes(&redacted) <= MAX_JSON_VALUE_BYTES {
+    if serialized_size(&redacted) <= MAX_JSON_VALUE_BYTES {
         return redacted;
     }
     json!({
         "checkpoint_truncated": true,
         "sha256": full_digest(&redacted.to_string()),
-        "logical_bytes": estimated_json_bytes(&redacted),
+        "logical_bytes": serialized_size(&redacted),
     })
 }
 
@@ -1236,50 +1489,54 @@ fn bounded_checkpoint_text(value: &str, max_chars: usize) -> String {
     )
 }
 
-fn estimated_json_bytes(value: &Value) -> usize {
-    match value {
-        Value::Null | Value::Bool(_) => 8,
-        Value::Number(_) => 16,
-        Value::String(text) => text.len(),
-        Value::Array(items) => items.iter().map(estimated_json_bytes).sum::<usize>().saturating_add(2),
-        Value::Object(map) => map
-            .iter()
-            .map(|(key, value)| key.len().saturating_add(estimated_json_bytes(value)))
-            .sum::<usize>()
-            .saturating_add(2),
-    }
-}
-
-fn estimated_message_bytes(message: &ChatMessage) -> usize {
-    serde_json::to_vec(message)
+fn serialized_size(value: &impl Serialize) -> usize {
+    serde_json::to_vec(value)
         .map(|bytes| bytes.len())
-        .unwrap_or(256)
+        .unwrap_or(usize::MAX)
 }
 
 fn evict_prefix_to_budget(checkpoint: &mut ActiveTurnCheckpoint) {
-    evict_front_to_budget(
+    evict_front_to_exact_budget(
         &mut checkpoint.transcript.tool_lane_messages,
         MAX_TRANSCRIPT_BYTES,
-        estimated_message_bytes,
     );
     strip_orphaned_tool_responses(&mut checkpoint.transcript.tool_lane_messages);
-    evict_front_to_budget(
+    evict_front_to_exact_budget(
         &mut checkpoint.transcript.user_lane_prefix,
         MAX_TRANSCRIPT_BYTES / 3,
-        estimated_message_bytes,
     );
 }
 
-fn evict_front_to_budget<T>(items: &mut Vec<T>, max_bytes: usize, estimate: impl Fn(&T) -> usize) {
-    let mut bytes: usize = items.iter().map(&estimate).sum();
+fn evict_front_to_exact_budget<T: Serialize>(items: &mut Vec<T>, max_bytes: usize) {
+    if items.is_empty() {
+        return;
+    }
+    let mut sizes: Vec<usize> = items.iter().map(serialized_size).collect();
+    let mut total: usize = sizes.iter().copied().sum();
     let mut drop_count = 0;
-    while bytes > max_bytes && drop_count + 1 < items.len() {
-        bytes = bytes.saturating_sub(estimate(&items[drop_count]));
+    while total > max_bytes && drop_count + 1 < items.len() {
+        total = total.saturating_sub(sizes[drop_count]);
         drop_count += 1;
     }
     if drop_count > 0 {
         items.drain(0..drop_count);
+        sizes.drain(0..drop_count);
+        let _ = sizes;
     }
+}
+
+fn checkpoint_body_digest(checkpoint: &ActiveTurnCheckpoint) -> String {
+    format!(
+        "sha256:{:x}",
+        Sha256::digest(serde_json::to_vec(checkpoint).unwrap_or_default())
+    )
+}
+
+fn logical_body_digest(body: &LogicalCheckpointBody) -> String {
+    format!(
+        "sha256:{:x}",
+        Sha256::digest(serde_json::to_vec(body).unwrap_or_default())
+    )
 }
 
 fn truncate(value: &str, max_chars: usize) -> String {
@@ -1292,6 +1549,10 @@ fn truncate(value: &str, max_chars: usize) -> String {
 
 fn checkpoint_path(turn_id: &str) -> crate::store_root::StorePath {
     crate::session_storage::session_object_path(CHECKPOINT_OBJECT_DOMAIN, turn_id, "json")
+}
+
+fn checkpoint_journal_path(turn_id: &str) -> crate::store_root::StorePath {
+    crate::session_storage::session_object_path(CHECKPOINT_JOURNAL_DOMAIN, turn_id, "jsonl")
 }
 
 fn checkpoint_legacy_session_directory(
@@ -1927,6 +2188,177 @@ mod tests {
             .expect("checkpoint");
         assert_eq!(loaded.checkpoint_generation, 2);
         assert!(loaded.checkpoint_generation > first.checkpoint_generation);
+    }
+
+    #[test]
+    fn restart_recovers_logical_checkpoint_from_journal_when_head_missing() {
+        let root = tempdir().unwrap();
+        let store = CoderTurnCheckpointStore::open(root.path());
+        let mut first = checkpoint("session-restart", "turn-restart", "work-restart");
+        first.checkpoint_generation = 1;
+        first.transcript_cursor = Some(medousa_engine::TranscriptCursor {
+            turn_id: "turn-restart".into(),
+            journal_seq: 2,
+            fence: 2,
+            digest: "sha256:abc".into(),
+        });
+        store.save(&first).unwrap();
+        let session = session_id("session-restart");
+        let head = checkpoint_path("turn-restart");
+        store.files.remove_file(&session, &head).unwrap();
+
+        let recovered = store
+            .recover_from_journal("session-restart", "turn-restart")
+            .unwrap()
+            .expect("journal fold");
+        assert_eq!(recovered.checkpoint_generation, 1);
+        assert_eq!(
+            recovered.transcript_cursor.as_ref().map(|c| c.fence),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn advanced_log_verification_survives_later_h03_events() {
+        let root = tempdir().unwrap();
+        let log_root = root.path().join("turn_log");
+        std::fs::create_dir_all(&log_root).unwrap();
+        let envelope = medousa_engine::TurnEnvelope::new(
+            "turn-advanced-cursor",
+            medousa_engine::Principal::operator(),
+        );
+        let log = medousa_engine::TurnEventLog::open_in(&log_root, envelope).unwrap();
+        log.append(medousa_engine::TurnEvent::Notice {
+            message: "boundary".into(),
+        })
+        .unwrap();
+        let cursor = medousa_engine::TranscriptCursor::from_log(&log);
+        log.append(medousa_engine::TurnEvent::Notice {
+            message: "after-checkpoint".into(),
+        })
+        .unwrap();
+        assert!(cursor.verify(&log).is_ok());
+        let prefix = medousa_engine::reconstruct_from_journal(&log, &cursor).unwrap();
+        assert_eq!(prefix.len(), 1);
+
+        let store = CoderTurnCheckpointStore::open(root.path().join("checkpoints"));
+        let mut durable = checkpoint("session-advanced", "turn-advanced", "work-advanced");
+        durable.checkpoint_generation = 3;
+        durable.transcript_cursor = Some(cursor);
+        store.save(&durable).unwrap();
+        let loaded = store
+            .load_latest_resume_candidate("session-advanced", "work-advanced")
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.transcript_cursor.as_ref().map(|c| c.fence), Some(1));
+    }
+
+    #[test]
+    fn journal_corruption_in_the_middle_fails_closed() {
+        let root = tempdir().unwrap();
+        let store = CoderTurnCheckpointStore::open(root.path());
+        let mut first = checkpoint("session-corrupt", "turn-corrupt", "work-corrupt");
+        first.checkpoint_generation = 1;
+        store.save(&first).unwrap();
+        let session = session_id("session-corrupt");
+        let journal = checkpoint_journal_path("turn-corrupt");
+        let path = store.files.resolve_write_path(&session, &journal).unwrap();
+        let tx = store.transaction().unwrap();
+        let mut raw = tx.root().read(&path).unwrap();
+        raw.extend_from_slice(b"{\"not\":\"a record\"}\n");
+        raw.extend_from_slice(br#"{"schema_version":1,"generation":2,"turn_id":"turn-corrupt","session_id":"session-corrupt","work_id":"work-corrupt","published_at_utc":"2026-01-01T00:00:00Z","body_digest":"sha256:dead","body":{"kind":"boundary","checkpoint":{}}}"#);
+        raw.push(b'\n');
+        tx.root().atomic_write(&path, &raw).unwrap();
+        let error = store
+            .recover_from_journal("session-corrupt", "turn-corrupt")
+            .unwrap_err();
+        assert!(
+            error.contains("corruption") || error.contains("digest"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn stale_writer_cannot_replace_newer_generation() {
+        let root = tempdir().unwrap();
+        let store = CoderTurnCheckpointStore::open(root.path());
+        let mut newer = checkpoint("session-stale", "turn-stale", "work-stale");
+        newer.checkpoint_generation = 5;
+        store.save(&newer).unwrap();
+        let mut stale = newer.clone();
+        stale.checkpoint_generation = 4;
+        stale.current_goal = "stale overwrite".into();
+        let error = store.save(&stale).unwrap_err();
+        assert!(error.contains("stale checkpoint generation"), "{error}");
+        let loaded = store
+            .load_latest_resume_candidate("session-stale", "work-stale")
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.checkpoint_generation, 5);
+        assert_ne!(loaded.current_goal, "stale overwrite");
+    }
+
+    #[test]
+    fn idempotent_recovery_replays_the_same_generation() {
+        let root = tempdir().unwrap();
+        let store = CoderTurnCheckpointStore::open(root.path());
+        let mut first = checkpoint("session-idem", "turn-idem", "work-idem");
+        first.checkpoint_generation = 2;
+        store.save(&first).unwrap();
+        store.save(&first).unwrap();
+        let loaded = store
+            .load_latest_resume_candidate("session-idem", "work-idem")
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.checkpoint_generation, 2);
+    }
+
+    #[test]
+    fn exact_serialized_byte_budgets_bound_retained_memory() {
+        let root = tempdir().unwrap();
+        let store = CoderTurnCheckpointStore::open(root.path());
+        let mut oversized = checkpoint("session-budget", "turn-budget", "work-budget");
+        oversized.checkpoint_generation = 1;
+        oversized.transcript.tool_lane_messages = (0..80)
+            .map(|index| ChatMessage::assistant("x".repeat(8_000) + &index.to_string()))
+            .collect();
+        store.save(&oversized).unwrap();
+        let loaded = store
+            .load_latest_resume_candidate("session-budget", "work-budget")
+            .unwrap()
+            .unwrap();
+        let encoded = serde_json::to_vec(&loaded.transcript.tool_lane_messages).unwrap();
+        assert!(encoded.len() <= MAX_TRANSCRIPT_BYTES);
+        assert!(serde_json::to_vec(&loaded).unwrap().len() as u64 <= MAX_CHECKPOINT_BYTES);
+    }
+
+    #[test]
+    fn journal_replay_preserves_complete_prefix_after_partial_tail() {
+        let root = tempdir().unwrap();
+        let store = CoderTurnCheckpointStore::open(root.path());
+        let mut first = checkpoint("session-replay", "turn-replay", "work-replay");
+        first.checkpoint_generation = 1;
+        first.current_goal = "first boundary".into();
+        store.save(&first).unwrap();
+        let mut second = first.clone();
+        second.checkpoint_generation = 2;
+        second.current_goal = "second boundary".into();
+        store.save(&second).unwrap();
+
+        let session = session_id("session-replay");
+        let journal = checkpoint_journal_path("turn-replay");
+        let path = store.files.resolve_write_path(&session, &journal).unwrap();
+        let tx = store.transaction().unwrap();
+        let mut raw = tx.root().read(&path).unwrap();
+        raw.extend_from_slice(b"{\"generation\":3,\"partial\":");
+        tx.root().atomic_write(&path, &raw).unwrap();
+
+        let recovered = store
+            .recover_from_journal("session-replay", "turn-replay")
+            .unwrap()
+            .unwrap();
+        assert_eq!(recovered.checkpoint_generation, 2);
+        assert_eq!(recovered.current_goal, "second boundary");
     }
 
     #[test]

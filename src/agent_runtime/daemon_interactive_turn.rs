@@ -1523,6 +1523,16 @@ async fn run_agent_turn_inner(
         super::coder_turn_checkpoint::CoderTurnCheckpointController::initial_resume_state(
             coder_resume_checkpoint.clone(),
         );
+    let event_log = if let Some(state) = project_state.as_ref() {
+        state
+            .interactive_turn_streams
+            .read()
+            .await
+            .get(turn_id)
+            .map(|entry| entry.log.clone())
+    } else {
+        None
+    };
     let active_turn_checkpoint_sink: Option<
         Arc<dyn super::coder_turn_checkpoint::ActiveTurnCheckpointSink>,
     > = if let (Some(authority), Some(registry), Some(entry), Some(forge)) = (
@@ -1550,6 +1560,7 @@ async fn run_agent_turn_inner(
                 entry: entry.clone(),
                 registry: registry.clone(),
                 resume_from: coder_resume_checkpoint.clone(),
+                event_log,
             },
         ) {
             Ok(controller) => Some(controller),

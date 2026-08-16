@@ -308,6 +308,26 @@ impl SessionDirectoryStore {
         self.root()?.atomic_write(&directory.join(relative)?, bytes)
     }
 
+    /// Resolve a session-relative object path for writes (creates/migrates the session dir).
+    pub fn resolve_write_path(
+        &self,
+        session_id: &SessionId,
+        relative: &StorePath,
+    ) -> Result<StorePath, StoreRootError> {
+        let directory = self.session_dir_for_write(session_id)?;
+        directory.join(relative)
+    }
+
+    /// Resolve a session-relative object path for reads.
+    pub fn resolve_read_path(
+        &self,
+        session_id: &SessionId,
+        relative: &StorePath,
+    ) -> Result<StorePath, StoreRootError> {
+        let directory = self.session_dir_for_read(session_id)?;
+        directory.join(relative)
+    }
+
     pub fn list(&self, session_id: &SessionId) -> Result<Vec<StoreEntry>, StoreRootError> {
         let directory = self.session_dir_for_read(session_id)?;
         self.root()?.list_directory(&directory)

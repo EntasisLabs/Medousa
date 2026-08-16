@@ -24,9 +24,7 @@ pub use stream_sink::{AgentStreamSink, SharedAgentStreamSink, ToolInputParam};
 pub use turn_event::{
     Principal, PrincipalKind, SequencedTurnEvent, TurnEnvelope, TurnEvent, TurnSurface,
 };
-pub use transcript_cursor::{
-    reconstruct_from_journal, TranscriptCursor,
-};
+pub use transcript_cursor::{digest_events, reconstruct_from_journal, TranscriptCursor};
 pub use turn_event_log::{
     configure_log_root, default_log_root, fold_history_from_events, project_turn_to_history,
     prune_committed, recover_uncommitted, JournalAppendReceipt, JournalCommitReceipt,

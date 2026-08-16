@@ -310,12 +310,25 @@ impl TurnEventLog {
     }
 
     pub fn snapshot_since(&self, since: u64) -> Vec<SequencedTurnEvent> {
-        let fence = self.replay_fence();
+        self.snapshot_range(since, self.replay_fence())
+    }
+
+    /// Return the durable journal events with sequence in `(since, through]`.
+    pub fn snapshot_through(&self, through: u64) -> Vec<SequencedTurnEvent> {
+        self.snapshot_range(0, through)
+    }
+
+    fn snapshot_range(&self, since: u64, through: u64) -> Vec<SequencedTurnEvent> {
+        let fence = through.min(self.replay_fence());
         let mut cursor = since;
         let mut events = Vec::new();
         while cursor < fence {
-            let Ok(page) = self.replay_page(cursor, fence) else { break };
-            let Some(last) = page.events.last() else { break };
+            let Ok(page) = self.replay_page(cursor, fence) else {
+                break;
+            };
+            let Some(last) = page.events.last() else {
+                break;
+            };
             cursor = last.seq();
             events.extend(page.events);
             if !page.has_more {
@@ -332,6 +345,43 @@ impl TurnEventLog {
 
     pub fn replay_fence(&self) -> u64 {
         self.lock().next_seq.saturating_sub(1)
+    }
+
+    pub fn last_synced_seq(&self) -> u64 {
+        self.lock().last_synced_seq
+    }
+
+    /// Ensure the durable journal bytes through `through_seq` have been synced.
+    ///
+    /// Checkpoint publication must wait for this fence so a crash cannot leave a
+    /// logical checkpoint referencing an unsynced H03 prefix.
+    pub fn ensure_synced_through(&self, through_seq: u64) -> std::io::Result<()> {
+        if through_seq == 0 {
+            return Ok(());
+        }
+        let mut inner = self.lock();
+        let available = inner.next_seq.saturating_sub(1);
+        if through_seq > available {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "cannot sync through {through_seq}; journal fence is only {available}"
+                ),
+            ));
+        }
+        if inner.last_synced_seq >= through_seq {
+            return Ok(());
+        }
+        let journal = inner
+            .journal
+            .as_mut()
+            .ok_or_else(|| std::io::Error::other("turn journal is closed"))?;
+        journal.flush()?;
+        journal.get_ref().sync_data()?;
+        inner.journal_syncs = inner.journal_syncs.saturating_add(1);
+        inner.last_synced_seq = through_seq;
+        inner.last_sync = Instant::now();
+        Ok(())
     }
 
     /// Read one event/byte-bounded page after `since`, never beyond `fence`.
