@@ -249,12 +249,7 @@ pub fn recover_pending_write(
 }
 
 fn versions_match(existing: &NoteVersion, expected: &NoteVersion) -> bool {
-    if existing == expected {
-        return true;
-    }
-    let left = existing.content_digest_owned();
-    let right = expected.content_digest_owned();
-    left == right || left == expected.as_str() || existing.as_str() == right
+    existing.matches_precondition(expected)
 }
 
 fn check_precondition(
@@ -390,7 +385,7 @@ mod tests {
     #[test]
     fn cm006_exactly_one_match_writer_commits() {
         let (_dir, owner) = owner();
-        commit_write(
+        let seeded = commit_write(
             &owner,
             WriteMutation {
                 path: "note.md".into(),
@@ -400,7 +395,7 @@ mod tests {
             },
         )
         .unwrap();
-        let version = NoteVersion::from_digest(content_hash("v1\n"));
+        let version = seeded.note_version;
         let barrier = Arc::new(Barrier::new(2));
         let successes = Arc::new(AtomicUsize::new(0));
         let stale = Arc::new(AtomicUsize::new(0));
@@ -437,6 +432,75 @@ mod tests {
         }
         assert_eq!(successes.load(Ordering::SeqCst), 1);
         assert_eq!(stale.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn encoded_match_rejects_same_digest_wrong_generation() {
+        let (_dir, owner) = owner();
+        let first = commit_write(
+            &owner,
+            WriteMutation {
+                path: "note.md".into(),
+                content: "body\n".into(),
+                precondition: MutationPrecondition::CreateOnly,
+                expected_version: None,
+            },
+        )
+        .unwrap();
+        let digest = content_hash("body\n");
+        let stale_token = NoteVersion::encode(
+            owner.root_id.as_str(),
+            &VaultNoteSource::User,
+            999,
+            &digest,
+        );
+        assert_ne!(stale_token.as_str(), first.note_version.as_str());
+        let err = commit_write(
+            &owner,
+            WriteMutation {
+                path: "note.md".into(),
+                content: "next\n".into(),
+                precondition: MutationPrecondition::Match,
+                expected_version: Some(stale_token),
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, VaultMutationError::StaleVersion { .. }));
+        let digest_only = NoteVersion::from_digest(digest);
+        let err = commit_write(
+            &owner,
+            WriteMutation {
+                path: "note.md".into(),
+                content: "next\n".into(),
+                precondition: MutationPrecondition::Match,
+                expected_version: Some(digest_only),
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, VaultMutationError::StaleVersion { .. }));
+        commit_write(
+            &owner,
+            WriteMutation {
+                path: "note.md".into(),
+                content: "next\n".into(),
+                precondition: MutationPrecondition::Match,
+                expected_version: Some(first.note_version),
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn legacy_digest_matches_only_legacy_resident() {
+        let legacy = NoteVersion::from_digest("sha256:abc");
+        let also_legacy = NoteVersion::from_digest("sha256:abc");
+        let other_legacy = NoteVersion::from_digest("sha256:def");
+        let encoded = NoteVersion::encode("root", &VaultNoteSource::User, 2, "sha256:abc");
+        assert!(legacy.matches_precondition(&also_legacy));
+        assert!(!legacy.matches_precondition(&other_legacy));
+        assert!(!encoded.matches_precondition(&legacy));
+        assert!(!encoded.matches_precondition(&NoteVersion::from_digest("sha256:abc")));
+        assert!(encoded.matches_precondition(&encoded));
     }
 
     #[test]

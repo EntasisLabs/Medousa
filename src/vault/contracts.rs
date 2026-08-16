@@ -61,12 +61,33 @@ impl NoteVersion {
         &self.0
     }
 
+    /// Parse a client If-Match token (opaque blob or legacy digest).
+    pub fn parse(raw: impl Into<String>) -> Self {
+        Self(raw.into())
+    }
+
+    pub fn is_encoded(&self) -> bool {
+        Self::decode_parts(self).is_some()
+    }
+
     /// Content digest embedded in an opaque version, or the raw string for legacy digests.
     pub fn content_digest_owned(&self) -> String {
         if let Some((_, _, _, _, digest)) = Self::decode_parts(self) {
             return digest;
         }
         self.0.clone()
+    }
+
+    /// Exact match for encoded tokens. Legacy digest tokens match only a
+    /// still-legacy resident version with the same digest string.
+    pub fn matches_precondition(&self, expected: &NoteVersion) -> bool {
+        if self == expected {
+            return true;
+        }
+        if self.is_encoded() {
+            return false;
+        }
+        !expected.is_encoded() && self.0 == expected.0
     }
 
     fn decode_parts(version: &NoteVersion) -> Option<(String, String, String, u64, String)> {

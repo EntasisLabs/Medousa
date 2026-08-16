@@ -586,6 +586,15 @@ impl VaultStore {
         content: &str,
         if_match: Option<&str>,
     ) -> Result<VaultIndexEntry> {
+        Ok(self.write_content_versioned(path, content, if_match)?.0)
+    }
+
+    pub fn write_content_versioned(
+        &self,
+        path: &str,
+        content: &str,
+        if_match: Option<&str>,
+    ) -> Result<(VaultIndexEntry, crate::vault::contracts::NoteVersion)> {
         let path = VaultPath::parse(path)?;
         let normalized = path.to_string();
 
@@ -607,7 +616,7 @@ impl VaultStore {
             let expected_version = if_match
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
-                .map(NoteVersion::from_digest);
+                .map(NoteVersion::parse);
             let outcome = commit_write(
                 &owner,
                 WriteMutation {
@@ -669,7 +678,7 @@ impl VaultStore {
             self.persist_index();
             self.publish_note_delta(&entry, content, outcome.vault_generation);
             let _ = existed;
-            return Ok(entry);
+            return Ok((entry, outcome.note_version));
         }
 
         let files = user_vault_capability()?;
@@ -742,7 +751,13 @@ impl VaultStore {
         self.rebuild_link_index();
         self.persist_index();
         self.publish_projection();
-        Ok(entry)
+        let note_version = crate::vault::contracts::NoteVersion::encode(
+            "local",
+            &VaultNoteSource::User,
+            1,
+            &entry.content_hash,
+        );
+        Ok((entry, note_version))
     }
 
     pub fn delete_note(&self, path: &str) -> Result<()> {

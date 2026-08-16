@@ -310,7 +310,8 @@ impl VaultService {
             request.semantic_tags.as_deref(),
             auto_workshop_tags,
         );
-        let entry = vault_store().write_content(target_path, &content, if_match)?;
+        let (entry, note_version) =
+            vault_store().write_content_versioned(target_path, &content, if_match)?;
         append_vault_feed_event(&entry.path, &entry.title, !existed, actor, tool_name);
         let generation = crate::vault::store::vault_projection().generation;
         Ok(VaultWriteResponse {
@@ -318,7 +319,7 @@ impl VaultService {
             created: !existed,
             content: Some(content),
             vault_generation: Some(generation),
-            note_version: Some(entry.content_hash.clone()),
+            note_version: Some(note_version.as_str().to_string()),
         })
     }
 
@@ -653,6 +654,19 @@ mod tests {
             );
             assert!(written.note.tags.iter().any(|tag| tag == "smoke-test"));
             let read = VaultService::get_note(&path).expect("read");
+            assert_eq!(
+                written.note_version.as_deref(),
+                read.note_version.as_deref(),
+                "write and get must return the same opaque NoteVersion"
+            );
+            assert!(
+                written
+                    .note_version
+                    .as_ref()
+                    .is_some_and(|value| crate::vault::contracts::NoteVersion::parse(value.clone())
+                        .is_encoded()),
+                "write must return an encoded NoteVersion, not a raw digest"
+            );
             assert!(read.content.contains("tags:"));
             let search =
                 VaultService::search(Some(&format!("token {token}")), 5, None).expect("search");
