@@ -385,10 +385,8 @@ impl ForgeExecutionService {
         self.metrics
             .canary_delay_us
             .store(delay.as_micros() as u64, Ordering::Relaxed);
-        let result = join
-            .await
-            .map_err(|err| ForgeError::Store(format!("execution worker failed: {err}")))?;
-        result
+        join.await
+            .map_err(|err| ForgeError::Store(format!("execution worker failed: {err}")))?
     }
 
     /// Admit capacity, then run an already-async job (supervised Git) without

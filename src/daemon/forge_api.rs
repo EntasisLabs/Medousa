@@ -3170,42 +3170,38 @@ async fn replace_source(
     });
 
     if dry_run {
-        let item = forge(&state).load(&id).map_err(map_err)?;
-        let environment = item.workspace_environment().cloned().ok_or_else(|| {
-            request_error(
-                StatusCode::CONFLICT,
-                "prepare the governed workspace before replacing source files",
-            )
-        })?;
-        let root = std::fs::canonicalize(&environment.worktree).map_err(|err| {
-            request_error(
-                StatusCode::CONFLICT,
-                format!("governed workspace is unavailable: {err}"),
-            )
-        })?;
         let replacement = body.replacement.clone();
         let filter = path_filter.clone();
-        let (files, truncated) = match state
-            .forge_execution
-            .run(
-                medousa_forge::execution::ExecutionClass::LocalMutation,
-                256 * 1024,
-                move || {
-                    Ok(run_repository_replace_plan(
-                        &root,
-                        &options,
-                        &replacement,
-                        file_limit,
-                        filter.as_deref(),
-                    ))
-                },
-            )
-            .await
-        {
-            Ok(Ok(value)) => value,
-            Ok(Err(error)) => return Err(error),
-            Err(error) => return Err(map_err(error)),
-        };
+        let state_for_run = state.clone();
+        let id_for_run = id.clone();
+        let (files, truncated) = admit_forge(
+            &state,
+            medousa_forge::execution::ExecutionClass::LocalMutation,
+            256 * 1024,
+            move || {
+                let item = forge(&state_for_run).load(&id_for_run).map_err(map_err)?;
+                let environment = item.workspace_environment().cloned().ok_or_else(|| {
+                    request_error(
+                        StatusCode::CONFLICT,
+                        "prepare the governed workspace before replacing source files",
+                    )
+                })?;
+                let root = std::fs::canonicalize(&environment.worktree).map_err(|err| {
+                    request_error(
+                        StatusCode::CONFLICT,
+                        format!("governed workspace is unavailable: {err}"),
+                    )
+                })?;
+                run_repository_replace_plan(
+                    &root,
+                    &options,
+                    &replacement,
+                    file_limit,
+                    filter.as_deref(),
+                )
+            },
+        )
+        .await?;
         return Ok(Json(SourceReplaceResponse {
             work_id: id.as_str().to_owned(),
             files,
@@ -3234,45 +3230,42 @@ async fn replace_source(
             "preconditions are required when applying a replace",
         ));
     }
-    let (item, lease) = require_work_lease(&state, &id, lease_id, generation)?;
-    let environment = item
-        .environment_for_attempt(&lease.attempt_id)
-        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?
-        .clone();
-    let root = std::fs::canonicalize(&environment.worktree).map_err(|err| {
-        request_error(
-            StatusCode::CONFLICT,
-            format!("governed workspace is unavailable: {err}"),
-        )
-    })?;
+    let lease_id = lease_id.to_owned();
     let replacement = body.replacement.clone();
     let filter = path_filter.clone();
-    let (files, truncated) = match state
-        .forge_execution
-        .run(
-            medousa_forge::execution::ExecutionClass::LocalMutation,
-            256 * 1024,
-            {
-                let root = root.clone();
-                let options = options.clone();
-                move || {
-                    Ok(run_repository_replace_plan(
-                        &root,
-                        &options,
-                        &replacement,
-                        file_limit,
-                        filter.as_deref(),
-                    ))
-                }
-            },
-        )
-        .await
-    {
-        Ok(Ok(value)) => value,
-        Ok(Err(error)) => return Err(error),
-        Err(error) => return Err(map_err(error)),
-    };
-    apply_repository_replace_plan(&root, &files, &preconditions)?;
+    let state_for_run = state.clone();
+    let id_for_run = id.clone();
+    let (item, environment, files, truncated) = admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::LocalMutation,
+        256 * 1024,
+        move || {
+            let (item, lease) =
+                require_work_lease(&state_for_run, &id_for_run, &lease_id, generation)?;
+            let environment = item
+                .environment_for_attempt(&lease.attempt_id)
+                .ok_or_else(|| {
+                    request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+                })?
+                .clone();
+            let root = std::fs::canonicalize(&environment.worktree).map_err(|err| {
+                request_error(
+                    StatusCode::CONFLICT,
+                    format!("governed workspace is unavailable: {err}"),
+                )
+            })?;
+            let (files, truncated) = run_repository_replace_plan(
+                &root,
+                &options,
+                &replacement,
+                file_limit,
+                filter.as_deref(),
+            )?;
+            apply_repository_replace_plan(&root, &files, &preconditions)?;
+            Ok((item, environment, files, truncated))
+        },
+    )
+    .await?;
     for file in &files {
         publish_project_change(
             &state,
@@ -9512,7 +9505,17 @@ async fn forge_project_event_stream(
     use std::time::Duration;
 
     let id = parse_work_id(&work_id)?;
-    let item = forge(&state).load(&id).map_err(map_err)?;
+    let item = admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        {
+            let state = state.clone();
+            let id = id.clone();
+            move || forge(&state).load(&id).map_err(map_err)
+        },
+    )
+    .await?;
     if let Some(env) = item
         .attempts
         .last()

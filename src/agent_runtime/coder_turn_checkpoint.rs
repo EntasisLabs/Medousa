@@ -481,7 +481,7 @@ impl CoderTurnCheckpointStore {
                 ));
             }
             if bounded.checkpoint_generation == existing.checkpoint_generation {
-                if checkpoint_body_digest(&existing) == checkpoint_body_digest(&bounded) {
+                if checkpoint_body_digest(existing) == checkpoint_body_digest(&bounded) {
                     return Ok(());
                 }
                 return Err(format!(
