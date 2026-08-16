@@ -538,8 +538,45 @@ impl StoreRoot {
         path: &impl StoreRootPath,
         bytes: &[u8],
     ) -> Result<(), StoreRootError> {
-        let (parent, leaf) = self.open_parent(path, true, "atomic_write")?;
-        reject_symlink(&parent, leaf, "atomic_write")?;
+        self.atomic_publish(path, bytes, false, "atomic_write")
+    }
+
+    /// Create-only atomic publication. Fails if the destination leaf exists.
+    pub fn atomic_create(
+        &self,
+        path: &impl StoreRootPath,
+        bytes: &[u8],
+    ) -> Result<(), StoreRootError> {
+        self.atomic_publish(path, bytes, true, "atomic_create")
+    }
+
+    /// Sync the parent directory of `path` when the platform supports it.
+    ///
+    /// On Windows this is currently a documented no-op at the directory level;
+    /// the published file itself is still data-synced before rename.
+    pub fn sync_parent_of(&self, path: &impl StoreRootPath) -> Result<(), StoreRootError> {
+        let (parent, _leaf) = self.open_parent(path, false, "sync_parent")?;
+        sync_directory(&parent).map_err(|error| StoreRootError::io("sync_parent", error))
+    }
+
+    fn atomic_publish(
+        &self,
+        path: &impl StoreRootPath,
+        bytes: &[u8],
+        create_only: bool,
+        operation: &'static str,
+    ) -> Result<(), StoreRootError> {
+        let (parent, leaf) = self.open_parent(path, true, operation)?;
+        reject_symlink(&parent, leaf, operation)?;
+        if create_only && parent.symlink_metadata(leaf).is_ok() {
+            return Err(StoreRootError::io(
+                operation,
+                std::io::Error::new(
+                    std::io::ErrorKind::AlreadyExists,
+                    "destination already exists",
+                ),
+            ));
+        }
 
         let temporary = format!(".medousa-tmp-{}", uuid::Uuid::new_v4().simple());
         let mut options = OpenOptions::new();
@@ -555,6 +592,16 @@ impl StoreRoot {
             return Err(StoreRootError::io("write_temporary", error));
         }
         drop(file);
+        if create_only && parent.symlink_metadata(leaf).is_ok() {
+            let _ = parent.remove_file(&temporary);
+            return Err(StoreRootError::io(
+                operation,
+                std::io::Error::new(
+                    std::io::ErrorKind::AlreadyExists,
+                    "destination already exists",
+                ),
+            ));
+        }
         if let Err(error) = parent.rename(&temporary, &parent, leaf) {
             let _ = parent.remove_file(&temporary);
             return Err(StoreRootError::io("publish_atomic", error));
