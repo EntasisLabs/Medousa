@@ -155,7 +155,8 @@ impl VaultStore {
                 }
             }
         }
-        let discovered = Self::finalize_entries(by_path.into_values().collect());
+        let resident = self.index.read().expect("vault index").clone();
+        let discovered = Self::finalize_entries(by_path.into_values().collect(), &resident);
         *self.index.write().expect("vault index") = discovered;
         self.rebuild_link_index();
         self.persist_index();
@@ -239,6 +240,7 @@ impl VaultStore {
         }
 
         let mut drafts = Vec::with_capacity(to_read.len());
+        let mut skipped_dirty = false;
         for meta in to_read {
             let body = match meta.files.read(&meta.relative) {
                 Ok(bytes) => {
@@ -248,10 +250,16 @@ impl VaultStore {
                         .fetch_add(bytes.len() as u64, Ordering::Relaxed);
                     match String::from_utf8(bytes) {
                         Ok(body) => body,
-                        Err(_) => continue,
+                        Err(_) => {
+                            skipped_dirty = true;
+                            continue;
+                        }
                     }
                 }
-                Err(_) => continue,
+                Err(_) => {
+                    skipped_dirty = true;
+                    continue;
+                }
             };
             drafts.push(ScanDraft {
                 path: meta.path,
@@ -261,7 +269,7 @@ impl VaultStore {
                 source: meta.source,
             });
         }
-        let updated = Self::finalize_entries(drafts);
+        let updated = Self::finalize_entries(drafts, &existing);
 
         {
             let mut index = self.index.write().expect("vault index");
@@ -291,6 +299,12 @@ impl VaultStore {
         self.rebuild_link_index();
         self.persist_index();
         self.publish_projection();
+        if skipped_dirty {
+            // publish_projection certifies via clear_stale; reopen the fence
+            // so a failed dirty read is retried on the next accessor.
+            PROJECTION.mark_stale_reconciling();
+            return Ok(());
+        }
         PROJECTION.certify_reconcile(epoch);
         Ok(())
     }
@@ -345,23 +359,35 @@ impl VaultStore {
         let _ = persist_link_index(&self.link_index.read().expect("vault links"));
     }
 
-    fn finalize_entries(drafts: Vec<ScanDraft>) -> HashMap<String, VaultIndexEntry> {
-        let known: HashSet<String> = drafts.iter().map(|draft| draft.path.clone()).collect();
-        let seed_entries: Vec<VaultIndexEntry> = drafts
-            .iter()
-            .map(|draft| VaultIndexEntry {
-                path: draft.path.clone(),
-                title: crate::vault::note::extract_title(&draft.body, &draft.path),
-                byte_size: draft.body.len(),
-                content_hash: content_hash(&draft.body),
-                modified_at_utc: draft.modified_at,
-                created_at_utc: draft.created_at,
-                tags: Vec::new(),
-                wikilinks_out: Vec::new(),
-                kind: None,
-                source: draft.source.clone(),
-            })
-            .collect();
+    fn finalize_entries(
+        drafts: Vec<ScanDraft>,
+        resident: &HashMap<String, VaultIndexEntry>,
+    ) -> HashMap<String, VaultIndexEntry> {
+        // Wikilinks resolve against the resident corpus with dirty drafts
+        // overlayed; unmodified notes must remain addressable.
+        let mut known: HashSet<String> = resident.keys().cloned().collect();
+        for draft in &drafts {
+            known.insert(draft.path.clone());
+        }
+        let mut seed_by_path = resident.clone();
+        for draft in &drafts {
+            seed_by_path.insert(
+                draft.path.clone(),
+                VaultIndexEntry {
+                    path: draft.path.clone(),
+                    title: crate::vault::note::extract_title(&draft.body, &draft.path),
+                    byte_size: draft.body.len(),
+                    content_hash: content_hash(&draft.body),
+                    modified_at_utc: draft.modified_at,
+                    created_at_utc: draft.created_at,
+                    tags: Vec::new(),
+                    wikilinks_out: Vec::new(),
+                    kind: None,
+                    source: draft.source.clone(),
+                },
+            );
+        }
+        let seed_entries: Vec<VaultIndexEntry> = seed_by_path.into_values().collect();
 
         let mut out = HashMap::new();
         for draft in drafts {

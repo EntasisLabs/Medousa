@@ -706,4 +706,89 @@ mod tests {
             assert!(!outside.path().join("new.md").exists());
         });
     }
+
+    #[test]
+    fn incremental_reconcile_resolves_wikilinks_against_resident() {
+        with_temp_vault(|| {
+            let suffix = uuid::Uuid::new_v4().simple();
+            let target = format!("journal/resident-b-{suffix}.md");
+            let source = format!("journal/resident-a-{suffix}.md");
+            VaultService::write_note(
+                Some(&target),
+                &VaultWriteRequest {
+                    path: Some(target.clone()),
+                    content: "# Target\n".to_string(),
+                    ..Default::default()
+                },
+                None,
+            )
+            .expect("target");
+            VaultService::write_note(
+                Some(&source),
+                &VaultWriteRequest {
+                    path: Some(source.clone()),
+                    content: format!("# Source\n\nSee [[resident-b-{suffix}]]\n"),
+                    ..Default::default()
+                },
+                None,
+            )
+            .expect("source");
+
+            let files = crate::vault::path::user_vault_capability().expect("capability");
+            let source_path = crate::vault::path::VaultPath::parse(&source).expect("path");
+            files
+                .atomic_write(
+                    &source_path,
+                    format!("# Source\n\nSee [[resident-b-{suffix}]]\n\nextra\n").as_bytes(),
+                )
+                .expect("dirty source on disk");
+            crate::vault::store::PROJECTION.mark_stale_reconciling();
+            vault_store()
+                .ensure_index_fresh()
+                .expect("incremental reconcile");
+
+            let read = VaultService::get_note(&source).expect("read source");
+            assert!(
+                read.note.wikilinks_out.iter().any(|path| path == &target),
+                "forward link to unmodified resident note must survive dirty reconcile"
+            );
+            let backlinks = VaultService::backlinks(&target).expect("backlinks");
+            assert!(
+                backlinks.backlinks.iter().any(|path| path == &source),
+                "backlink from dirty note must be retained without rewriting the target"
+            );
+        });
+    }
+
+    #[test]
+    fn skipped_dirty_read_does_not_certify_reconcile() {
+        with_temp_vault(|| {
+            let path = format!("journal/skip-{}.md", uuid::Uuid::new_v4().simple());
+            VaultService::write_note(
+                Some(&path),
+                &VaultWriteRequest {
+                    path: Some(path.clone()),
+                    content: "# Ok\n".to_string(),
+                    ..Default::default()
+                },
+                None,
+            )
+            .expect("write");
+            let files = crate::vault::path::user_vault_capability().expect("capability");
+            files
+                .atomic_write(
+                    &crate::vault::path::VaultPath::parse(&path).expect("path"),
+                    &[0xff, 0xfe, 0x00],
+                )
+                .expect("invalid utf-8");
+            crate::vault::store::PROJECTION.mark_stale_reconciling();
+            vault_store()
+                .ensure_index_fresh()
+                .expect("reconcile with skipped dirty");
+            assert!(
+                crate::vault::store::PROJECTION.needs_reconcile(),
+                "failed dirty reads must not certify the reconcile epoch"
+            );
+        });
+    }
 }
