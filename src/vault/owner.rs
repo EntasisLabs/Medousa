@@ -3,7 +3,7 @@
 //! Until H07.1d, legacy `VaultStore` writers remain authoritative. This owner
 //! is constructed and tested but is not the active write path.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -13,6 +13,16 @@ use crate::vault::admission::VaultAdmission;
 use crate::vault::contracts::{VaultCommitOutcome, VaultLaneKey, VaultMutationError, VaultRootId};
 use crate::vault::lanes::VaultLaneRegistry;
 use crate::vault::note::VaultNoteSource;
+
+const CHANGE_LOG_CAP: usize = 4096;
+
+#[derive(Debug, Clone)]
+pub struct VaultChangeRecord {
+    pub generation: u64,
+    pub path: String,
+    pub kind: String,
+    pub note_version: Option<String>,
+}
 
 #[derive()]
 pub struct VaultIndexOwner {
@@ -25,6 +35,7 @@ pub struct VaultIndexOwner {
     transaction: RwLock<FileTransaction>,
     generation_lock: Mutex<()>,
     persist_generation_fault: AtomicBool,
+    change_log: Mutex<VecDeque<VaultChangeRecord>>,
 }
 
 impl VaultIndexOwner {
@@ -40,6 +51,7 @@ impl VaultIndexOwner {
             active: AtomicBool::new(true),
             generation_lock: Mutex::new(()),
             persist_generation_fault: AtomicBool::new(false),
+            change_log: Mutex::new(VecDeque::new()),
         })
     }
 
@@ -75,6 +87,58 @@ impl VaultIndexOwner {
     pub fn set_persist_generation_fault(&self, fault: bool) {
         self.persist_generation_fault
             .store(fault, Ordering::Release);
+    }
+
+    pub fn record_change(&self, record: VaultChangeRecord) {
+        let mut log = self
+            .change_log
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        log.push_back(record);
+        while log.len() > CHANGE_LOG_CAP {
+            log.pop_front();
+        }
+    }
+
+    pub fn changes_since(
+        &self,
+        since: u64,
+        after_generation: Option<u64>,
+        after_path: Option<&str>,
+        limit: usize,
+    ) -> (Vec<VaultChangeRecord>, bool, bool) {
+        let current = self.current_generation();
+        if since >= current {
+            return (Vec::new(), false, false);
+        }
+        let log = self
+            .change_log
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let first_gen = log.front().map(|record| record.generation);
+        if first_gen.is_none_or(|first| first > since + 1) {
+            return (Vec::new(), false, true);
+        }
+        let mut changes = Vec::new();
+        let mut truncated = false;
+        for record in log.iter() {
+            if record.generation <= since {
+                continue;
+            }
+            if let (Some(after_gen), Some(after_path)) = (after_generation, after_path) {
+                if record.generation < after_gen
+                    || (record.generation == after_gen && record.path.as_str() <= after_path)
+                {
+                    continue;
+                }
+            }
+            if changes.len() >= limit {
+                truncated = true;
+                break;
+            }
+            changes.push(record.clone());
+        }
+        (changes, truncated, false)
     }
 
     pub fn shutdown(&self) {

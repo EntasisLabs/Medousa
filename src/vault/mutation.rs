@@ -11,7 +11,7 @@ use crate::vault::contracts::{
     VaultMutationReceiptRecord, vault_receipt,
 };
 use crate::vault::note::{VaultNoteSource, content_hash};
-use crate::vault::owner::VaultIndexOwner;
+use crate::vault::owner::{VaultChangeRecord, VaultIndexOwner};
 use crate::vault::path::VaultPath;
 
 #[derive(Debug, Clone)]
@@ -124,6 +124,13 @@ pub fn commit_write(
                 }
                 Err(_) => true, // intent retained for startup recovery
             };
+
+        owner.record_change(VaultChangeRecord {
+            generation: vault_generation,
+            path: normalized.clone(),
+            kind: "upsert".into(),
+            note_version: Some(note_version.as_str().to_string()),
+        });
 
         Ok(VaultCommitOutcome {
             receipt,

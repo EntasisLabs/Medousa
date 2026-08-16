@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::vault::contracts::{VaultCommitOutcome, VaultMutationError, vault_receipt};
 use crate::vault::note::VaultNoteSource;
-use crate::vault::owner::VaultIndexOwner;
+use crate::vault::owner::{VaultChangeRecord, VaultIndexOwner};
 use crate::vault::path::VaultPath;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -145,6 +145,43 @@ fn commit_relocate(
             }
             Err(_) => true,
         };
+
+    match kind {
+        RelocateKind::Move => {
+            owner.record_change(VaultChangeRecord {
+                generation: vault_generation,
+                path: source.to_string(),
+                kind: "delete".into(),
+                note_version: None,
+            });
+            owner.record_change(VaultChangeRecord {
+                generation: vault_generation,
+                path: dest.to_string(),
+                kind: "upsert".into(),
+                note_version: Some(
+                    crate::vault::contracts::NoteVersion::from_digest(&operation_id)
+                        .as_str()
+                        .to_string(),
+                ),
+            });
+        }
+        RelocateKind::Delete => {
+            owner.record_change(VaultChangeRecord {
+                generation: vault_generation,
+                path: source.to_string(),
+                kind: "delete".into(),
+                note_version: None,
+            });
+        }
+        RelocateKind::Restore => {
+            owner.record_change(VaultChangeRecord {
+                generation: vault_generation,
+                path: dest.to_string(),
+                kind: "upsert".into(),
+                note_version: None,
+            });
+        }
+    }
 
     Ok(VaultCommitOutcome {
         receipt,

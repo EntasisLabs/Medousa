@@ -17,6 +17,7 @@ pub struct VaultProjection {
     pub forward_links: HashMap<String, BTreeSet<String>>,
     pub back_links: HashMap<String, BTreeSet<String>>,
     pub unresolved_by_token: HashMap<String, BTreeSet<String>>,
+    pub sorted_paths: BTreeSet<String>,
 }
 
 impl VaultProjection {
@@ -38,6 +39,7 @@ impl VaultProjection {
         }
         self.insert_lookups(&entry);
         self.insert_links(&entry);
+        self.sorted_paths.insert(entry.path.clone());
         self.by_path.insert(entry.path.clone(), entry);
         self.generation = generation;
     }
@@ -47,6 +49,7 @@ impl VaultProjection {
             self.remove_lookups(&previous);
             self.remove_links(path);
         }
+        self.sorted_paths.remove(path);
         self.generation = generation;
     }
 
